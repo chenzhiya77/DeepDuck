@@ -1,0 +1,183 @@
+"""DashScope (Aliyun Bailian) embedding client (spec §3.3).
+
+One call per batch yields **both** the dense and the sparse vector via
+``output_type=dense&sparse`` — the reason the whole embedding/rerank选型 moved
+to Bailian (bge-m3's OpenAI-compatible API never exposes the sparse path).
+The sparse payload (``[{index, value, token}, ...]``) is converted to Qdrant
+``SparseVector`` indices/values, dropping the display-only ``token`` strings.
+
+Contract (verified against the Aliyun Model Studio docs):
+- ``POST {base_url}/api/v1/services/embeddings/text-embedding/text-embedding``
+- body ``{"model", "input": {"texts": [...]}, "parameters": {"dimension",
+  "output_type": "dense&sparse", "text_type": "document"|"query"}}``
+- ``qwen3.7-text-embedding`` takes at most 20 rows per call → client-side
+  batching; retrieval tasks distinguish ``query`` vs ``document`` text types.
+- Failures: non-2xx HTTP, or a 2xx body with a non-empty ``code``.
+
+The API key always comes from ``DASHSCOPE_EMBEDDING_API_KEY`` — never from the
+caller (consistent with the MinerU token rule).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+import httpx
+from qdrant_client.models import SparseVector
+
+logger = logging.getLogger(__name__)
+
+DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
+_EMBEDDING_PATH = "/api/v1/services/embeddings/text-embedding/text-embedding"
+_KEY_ENV_VAR = "DASHSCOPE_EMBEDDING_API_KEY"
+
+#: qwen3.7-text-embedding accepts at most 20 rows per call (Aliyun docs).
+DASHSCOPE_BATCH_LIMIT = 20
+
+
+class EmbedderError(Exception):
+    """Any DashScope embedding failure after retries are exhausted."""
+
+
+class EmbedderAuthError(EmbedderError):
+    """Missing or rejected API key (never retried)."""
+
+
+@dataclass(slots=True)
+class EmbeddingResult:
+    """One text's dense+sparse vector pair from a single DashScope call."""
+
+    dense: list[float]
+    sparse: SparseVector
+
+
+class DashScopeEmbedder:
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str = DASHSCOPE_BASE_URL,
+        dimension: int = 1024,
+        batch_size: int = DASHSCOPE_BATCH_LIMIT,
+        max_retries: int = 3,
+        retry_backoff_seconds: float = 0.5,
+        client: httpx.AsyncClient | None = None,
+        timeout_seconds: float = 60.0,
+    ) -> None:
+        if model is None:
+            from deerflow.config.app_config import get_app_config
+
+            model = get_app_config().rag.embedding_model
+        self._model = model
+        self._api_key = api_key  # resolved lazily so env-only usage never passes keys around
+        self._base_url = base_url.rstrip("/")
+        self._dimension = dimension
+        self.batch_size = batch_size
+        self._max_retries = max(1, max_retries)
+        self._retry_backoff = retry_backoff_seconds
+        self._client = client
+        self._timeout = timeout_seconds
+
+    def _read_api_key(self) -> str:
+        key = self._api_key or os.environ.get(_KEY_ENV_VAR)
+        if not key:
+            raise EmbedderAuthError(f"{_KEY_ENV_VAR} is not set; add it to .env (see .env.example)")
+        return key
+
+    async def embed(self, texts: Sequence[str], *, text_type: str = "document") -> list[EmbeddingResult]:
+        """Embed texts in input order; batches over the limit are split sequentially."""
+        if not texts:
+            return []
+        results: list[EmbeddingResult] = []
+        for start in range(0, len(texts), self.batch_size):
+            batch = list(texts[start : start + self.batch_size])
+            results.extend(await self._embed_batch(batch, text_type=text_type))
+        return results
+
+    async def _embed_batch(self, texts: list[str], *, text_type: str) -> list[EmbeddingResult]:
+        payload = {
+            "model": self._model,
+            "input": {"texts": texts},
+            "parameters": {"dimension": self._dimension, "output_type": "dense&sparse", "text_type": text_type},
+        }
+        body = await self._post_with_retry(payload)
+        items = body.get("output", {}).get("embeddings") or []
+        by_index = {int(item.get("text_index", i)): item for i, item in enumerate(items)}
+        results: list[EmbeddingResult] = []
+        for i in range(len(texts)):
+            item = by_index.get(i)
+            if item is None:
+                raise EmbedderError(f"DashScope response missing embedding for text_index {i}")
+            sparse_items = item.get("sparse_embedding") or []
+            results.append(
+                EmbeddingResult(
+                    dense=[float(v) for v in (item.get("embedding") or [])],
+                    sparse=SparseVector(
+                        indices=[int(entry["index"]) for entry in sparse_items],
+                        values=[float(entry["value"]) for entry in sparse_items],
+                    ),
+                )
+            )
+        return results
+
+    async def _post_with_retry(self, payload: dict) -> dict:
+        url = f"{self._base_url}{_EMBEDDING_PATH}"
+        headers = {"Authorization": f"Bearer {self._read_api_key()}", "Content-Type": "application/json"}
+        close_client = False
+        client = self._client
+        if client is None:
+            client = httpx.AsyncClient(timeout=self._timeout)
+            close_client = True
+        try:
+            last_error: Exception | None = None
+            for attempt in range(self._max_retries):
+                try:
+                    response = await client.post(url, headers=headers, json=payload)
+                except httpx.HTTPError as exc:  # transport-level: retryable
+                    last_error = EmbedderError(f"DashScope request failed: {exc}")
+                    if attempt < self._max_retries - 1:
+                        await asyncio.sleep(self._retry_backoff * (2**attempt))
+                        continue
+                    raise last_error from exc
+                body = self._decode_body(response)
+                if response.status_code in (401, 403):
+                    raise EmbedderAuthError(self._error_message(response.status_code, body))
+                if response.status_code == 429 or response.status_code >= 500:
+                    last_error = EmbedderError(self._error_message(response.status_code, body))
+                    if attempt < self._max_retries - 1:
+                        await asyncio.sleep(self._retry_backoff * (2**attempt))
+                        continue
+                    raise last_error
+                if response.status_code != 200:
+                    raise EmbedderError(self._error_message(response.status_code, body))
+                code = str(body.get("code") or "")
+                if code:
+                    message = self._error_message(response.status_code, body)
+                    if "apikey" in code.lower().replace("_", ""):
+                        raise EmbedderAuthError(message)
+                    raise EmbedderError(message)
+                return body
+            raise last_error or EmbedderError("DashScope embedding failed")
+        finally:
+            if close_client:
+                await client.aclose()
+
+    @staticmethod
+    def _decode_body(response: httpx.Response) -> dict:
+        try:
+            body = response.json()
+        except ValueError:
+            return {}
+        return body if isinstance(body, dict) else {}
+
+    @staticmethod
+    def _error_message(status_code: int, body: dict) -> str:
+        code = body.get("code") or ""
+        message = body.get("message") or ""
+        detail = f"{code}: {message}".strip(": ") or "no error detail"
+        return f"DashScope embedding failed (HTTP {status_code}): {detail}"

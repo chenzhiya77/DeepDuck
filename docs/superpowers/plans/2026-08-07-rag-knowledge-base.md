@@ -71,12 +71,12 @@
 - Modify: `backend/packages/harness/deerflow/knowledge/vector_store.py` (sparse vector wiring)
 - Create: `backend/tests/knowledge/test_indexer.py`
 
-- [ ] Write failing tests: embedder parses DashScope response into dense+sparse pair via `output_type=dense&sparse` (mocked HTTP); indexer upserts N chunks with payload fields per spec §3.3 and updates `documents.chunk_count`; failed embed marks chunk failed without aborting batch.
-- [ ] Run tests, capture RED.
-- [ ] Implement embedder (`embed(texts) -> list[(dense, sparse)]` from a single DashScope call, batch size limit, retry with backoff) and indexer stage (`index_chunks(kb_id, doc_id, chunks)`).
-- [ ] Tests GREEN (Qdrant local); verify one real fixture chunk end-to-end with live key (manual, not committed).
-- [ ] Revert embedder batching, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add qwen3.7-text-embedding embedder and vector indexing stage`.
+- [x] Write failing tests: embedder parses DashScope response into dense+sparse pair via `output_type=dense&sparse` (mocked HTTP); indexer upserts N chunks with payload fields per spec §3.3 and updates `documents.chunk_count`; failed embed marks chunk failed without aborting batch.
+- [x] Run tests, capture RED.
+- [x] Implement embedder (`embed(texts) -> list[(dense, sparse)]` from a single DashScope call, batch size limit, retry with backoff) and indexer stage (`index_chunks(kb_id, doc_id, chunks)`).
+- [x] Tests GREEN (Qdrant local); verify one real fixture chunk end-to-end with live key (manual, not committed).
+- [x] Revert embedder batching, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add qwen3.7-text-embedding embedder and vector indexing stage`.
 
 ## Task 5: Graph path indexing (extract → normalize → store → backfill)
 
