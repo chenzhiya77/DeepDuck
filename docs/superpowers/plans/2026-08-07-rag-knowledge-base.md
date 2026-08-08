@@ -57,12 +57,12 @@
 - Create: `backend/packages/harness/deerflow/knowledge/chunker.py`
 - Create: `backend/tests/knowledge/test_chunker.py`, `test_parser.py`, fixtures under `backend/tests/knowledge/fixtures/`
 
-- [ ] Write failing chunker tests from fixture markdown: heading-boundary splits; >1024-token block subdivided by paragraph; <100-token block merged with sibling; each chunk carries `heading_path`, `chunk_index`, `token_count`; target 512±256.
-- [ ] Write failing parser tests with mocked HTTP: submit file → poll task → fetch markdown + image list; timeout and 4xx/5xx error mapping; token read from env, never from caller. Write failing caption test: image refs → VLM caption (mocked Qwen3-VL call) → `![caption](...)` merged back into the markdown stream before chunking; VLM failure degrades to filename placeholder without aborting the document.
-- [ ] Run tests, capture RED.
-- [ ] Implement `chunker.py` (`chunk_markdown(md: str, doc_id: str) -> list[Chunk]` per spec §3.2 schema), `parser.py` (`parse_document(file_path) -> ParsedDocument` with caption-eligible image refs), and `captioner.py` (`caption_images(refs) -> mapping` writing captions back into markdown per spec §3.1).
-- [ ] Tests GREEN; revert one chunker rule (merge), prove its test RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add MinerU parse client and structure-aware chunker`.
+- [x] Write failing chunker tests from fixture markdown: heading-boundary splits; >1024-token block subdivided by paragraph; <100-token block merged with sibling; each chunk carries `heading_path`, `chunk_index`, `token_count`; target 512±256.
+- [x] Write failing parser tests with mocked HTTP: submit file → poll task → fetch markdown + image list; timeout and 4xx/5xx error mapping; token read from env, never from caller. Write failing caption test: image refs → VLM caption (mocked Qwen3-VL call) → `![caption](...)` merged back into the markdown stream before chunking; VLM failure degrades to filename placeholder without aborting the document.
+- [x] Run tests, capture RED.
+- [x] Implement `chunker.py` (`chunk_markdown(md: str, doc_id: str) -> list[Chunk]` per spec §3.2 schema), `parser.py` (`parse_document(file_path) -> ParsedDocument` with caption-eligible image refs), and `captioner.py` (`caption_images(refs) -> mapping` writing captions back into markdown per spec §3.1).
+- [x] Tests GREEN; revert one chunker rule (merge), prove its test RED, restore, GREEN.
+- [x] Commit: `feat(rag): add MinerU parse client and structure-aware chunker`.
 
 ## Task 4: Vector path indexing (embed + upsert)
 
