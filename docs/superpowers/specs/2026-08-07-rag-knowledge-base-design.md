@@ -44,8 +44,9 @@
 
 ### 3.1 文档解析
 
-- 解析器：**MinerU**（覆盖 PDF/Word/Markdown；版面分析分区标题/正文/表格/图片）
-- 多模态策略：**文本化路线**——图片经 VLM API 生成 caption 入库，不引入多模态向量
+- 解析器：**MinerU** 官方 API（覆盖 PDF/Word/Markdown；版面分析分区标题/正文/表格/图片）
+- 多模态策略：**文本化路线**——MinerU 产出图片引用 → **VLM caption 子步骤**（Qwen3-VL-30B-A3B，逐图生成中文描述）→ caption 以 `![caption](...)` 形式写回 Markdown 文本流后再切片，不引入多模态向量
+- 原始文件存储：本地磁盘 `{base_dir}/data/kb_uploads/{kb_id}/{doc_id}/`，`documents.storage_path` 记录路径（重传覆盖、删文档级联删文件）
 - 二期候选：Excel（表格切片专项策略）、网页 URL（正文抽取）
 
 ### 3.2 切片策略：结构感知为主 + 大小约束兜底
@@ -73,12 +74,14 @@
 
 `entities` 由图谱路抽取后回填（归一化实体名），是机制 B 的双向链接点之一。
 
+**切片存储归属**：切片正文与状态存业务库 `chunks` 表（chunk_id/doc_id/kb_id/chunk_index/text/heading_path/page/token_count/entities/extract_status/extract_error），Qdrant `kb_chunks` 只存向量 + 检索用元数据（含 chunk_id 指针）——状态管理、分页查询、引用展开都走业务库，Qdrant 不管正文。
+
 ### 3.3 向量路产物
 
 Qdrant 单 collection `kb_chunks`，named vectors：
 
-- `"dense"`：1024 维，COSINE（bge-m3 稠密输出）
-- `"sparse"`：稀疏向量，DOT（bge-m3 lexical weights）——单次 API 调用同得双路
+- `"dense"`：1024 维（以模型实际输出为准，可配），COSINE（**阿里百炼 qwen3.7-text-embedding**，DashScope API）
+- `"sparse"`：稀疏向量，DOT——**同模型单次调用双路产出**（DashScope `output_type=dense&sparse`）。选型修正：bge-m3 的 OpenAI 兼容 API 不暴露 sparse，故 embedding/rerank 整体切换至百炼，恢复“一次调用双路同产”的原始设计；VLM 仍走硅基流动
 
 payload 索引字段（仅为过滤条件建索引）：
 
@@ -157,6 +160,7 @@ payload 索引字段（仅为过滤条件建索引）：
 ### 3.7 索引任务执行载体与级联删除
 
 - **执行载体**：索引进程为长任务（万级文档需数十万抽取调用），不阻塞上传请求。上传接口仅入库 Document 记录并投递异步任务；任务在 backend 后台 worker（asyncio 任务 + 并发上限）中执行，状态推进实时写回 Document 表，前端轮询/SSE 获取进度
+- **启动恢复**：worker 启动时扫描非终态 documents（非 ready/failed）重新入队；切片级抽取状态机保证续跑不重抽
 - **级联删除**（删文档时三库一致性）：
   1. Qdrant：按 `doc_id` 批量删 `kb_chunks` 切片点
   2. 图存储：删该文档切片贡献的实体/关系条目；实体 `source_chunk_ids` 清空后成为孤儿节点→删除（其向量从 `kb_entities` 同步删除）；仅剩部分来源失效的实体保留并更新 description（标记 dirty 增量再摘要）
@@ -169,9 +173,9 @@ payload 索引字段（仅为过滤条件建索引）：
 ### 4.1 hybrid_search（向量路）
 
 ```
-query → bge-m3 API（一次调用得 dense+sparse）
+query → qwen3.7-text-embedding API（dense+sparse 单次双路产出）
       → Qdrant Query API：prefetch 双路各 top-20 → RRF 融合（粗排）
-      → bge-reranker-v2-m3 精排 → top-5
+      → qwen3-rerank 精排 → top-5
       → 返回切片文本 + doc_name/page/heading_path（供引用）
 ```
 
@@ -203,6 +207,16 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 ### 4.6 引用溯源契约
 
 工具返回的每条证据携带 `{doc_name, page, heading_path, chunk_id}`；SOUL.md 约束主 LLM 回答中使用 `[序号]` 标注引用；前端将引用渲染为可点击卡片（显示来源文档+页码），点击展开切片原文。检索工具执行过程复用现有 tool_progress middleware 的进度事件，前端显示"正在检索知识库…"等状态。
+
+### 4.7 检索模式开关（已定：方案 C——默认自主 + 显式深度强制）
+
+参照主流产品共识（ChatGPT Deep Research、Kimi 深度研究、Perplexity Pro Search 均为显式按钮）：默认便宜快答，用户一键升级深度模式。
+
+- **传递链**（复用现有 thinking_enabled 同类开关通道）：右栏对话面板「深度检索」开关 → `context.deep_research` → P2 装配/prompt 层
+- **关（默认）**：模型自主选路；SOUL.md 引导"简单问题优先向量路，按需再升级 wiki/图谱"——控成本、控延迟
+- **开**：prompt 注入强制指令"本轮必须调用 wiki_search 和 graph_search，并综合三路证据作答"
+- **边界**：开关是"强制升级"而非三路总开关——默认模式下模型仍保有自主调用 wiki/图谱的能力，不被阉割
+- **一期实现为 prompt 软强制**：SOUL.md 是静态文件无法按 run 切换——双模式静态规则写入 SOUL.md，动态强制指令由 middleware（before_model 钩子读取 `context.deep_research`）按 run 注入；二期以召回测试的评测数据为支撑，再评估是否在工具层做硬编排（三路强制并行 + 统一 rerank）
 
 ## 5. DeerFlow 集成方案
 
@@ -241,6 +255,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 - 点击文档行：切片预览抽屉（见 3.6）
 - 删除：确认弹窗（提示三路级联清理）→ 后台异步执行
 - 对话：右栏选中库即绑定，kb_id 单值注入 run context；每库独立 thread 列表（隔离）
+- 深度检索开关：右栏对话输入区提供「深度检索」开关，状态随 `context.deep_research` 传递（见 4.7）
 
 **复用与路由**：
 
@@ -285,8 +300,8 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 | 文档解析 | MinerU | PDF/Word/MD 一期全覆盖 |
 | 多模态 | VLM API caption | 文本化路线 |
 | 向量库 | Qdrant（独立服务） | 三 collection：kb_chunks / kb_entities / kb_wiki_entries |
-| embedding | bge-m3（API） | 单次调用同产稠密+稀疏 |
-| rerank | bge-reranker-v2-m3（API） | 精排 |
+| embedding | qwen3.7-text-embedding（阿里百炼 DashScope） | `output_type=dense&sparse` 单次调用同产稠密+稀疏 |
+| rerank | qwen3-rerank（阿里百炼） | 精排 |
 | 图存储 | Kùzu 或 SQLite+NetworkX | 嵌入式，不添容器 |
 | 条目/文档元数据 | backend 统一 database（SQLite/PG） | 状态机所在 |
 | 抽取 LLM | 小模型（成本） + 主力模型（归一化/摘要/wiki） | 万级文档约数十万抽取调用 |
@@ -304,6 +319,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 
 3. 绑定模式：库间对话隔离的单库绑定（ima 式，见 4.5/5.2）
 4. 入口层级与建库关系：侧边栏一级入口 + ima 式三栏布局，分组组头「+」建库（见 5.2）
+5. 检索模式：方案 C 混合模式——默认模型自主选路 + 显式「深度检索」开关强制三路（见 4.7）
 
 **动手前需定**：
 
