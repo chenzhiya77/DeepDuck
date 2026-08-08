@@ -6,6 +6,7 @@
 #   - frontend:    Next.js production server
 #   - gateway:     FastAPI Gateway API + agent runtime
 #   - redis:       Redis Streams backend for cross-worker SSE stream bridge
+#   - qdrant:      Vector store for the RAG knowledge base (port 6333, loopback)
 #   - provisioner: (optional) Sandbox provisioner for Kubernetes mode
 #
 # Key environment variables (set via environment/.env or scripts/deploy.sh):
@@ -34,6 +35,28 @@ services:
       - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - deer-flow
+    restart: unless-stopped
+
+  # ── Qdrant Vector Store (RAG knowledge base) ─────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: deer-flow-qdrant
+    # Published on the loopback interface only (same policy as the nginx entry)
+    # so a host-side process can reach Qdrant without exposing it on the LAN.
+    # Container-to-container traffic uses the compose network.
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The qdrant image ships no curl/wget; probe the HTTP listener directly
+      # in /proc/net/tcp instead (6333 = 0x18BD, LISTEN state).
+      test: ["CMD-SHELL", "grep -q ':18BD' /proc/net/tcp || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -144,6 +167,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     networks:
       - deer-flow
     restart: unless-stopped
@@ -190,6 +215,7 @@ services:
       retries: 6
 volumes:
   redis-data:
+  qdrant_data:
 
 networks:
   deer-flow:

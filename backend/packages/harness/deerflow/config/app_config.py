@@ -138,6 +138,22 @@ class LoggingConfig(BaseModel):
     enhance: LoggingEnhanceConfig = Field(default_factory=LoggingEnhanceConfig, description="Request trace correlation logging settings.")
 
 
+class RagConfig(BaseModel):
+    """Configuration for the RAG knowledge-base subsystem.
+
+    Non-secret knobs only: API keys come from environment variables
+    (``DASHSCOPE_EMBEDDING_API_KEY``, ``DASHSCOPE_RERANK_API_KEY``,
+    ``SILICONFLOW_VLM_API_KEY``, ``MINERU_API_TOKEN``), never from config.yaml.
+    """
+
+    qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant server URL hosting the knowledge vector collections (kb_chunks / kb_entities / kb_wiki_entries).")
+    embedding_model: str = Field(default="qwen3.7-text-embedding", description="DashScope (Aliyun Bailian) embedding model producing dense+sparse vectors in a single call.")
+    rerank_model: str = Field(default="qwen3-rerank", description="DashScope rerank model used for hybrid-search precision ranking.")
+    vlm_model: str = Field(default="Qwen/Qwen3-VL-30B-A3B-Instruct", description="SiliconFlow VLM model used to caption images extracted by the document parser.")
+    worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
+    extract_rate_limit_rps: float = Field(default=5.0, gt=0, description="Rate limit (requests/second) for graph-extraction LLM calls during indexing.")
+
+
 def is_trace_correlation_enabled(config: Any) -> bool:
     """Return ``True`` when ``logging.enhance.enabled`` is set on *config*.
 
@@ -318,6 +334,7 @@ class AppConfig(BaseModel):
             field_doc="Inbound webhook dedupe storage backend (memory / postgres / auto) for cross-pod redelivery dedup. See issue #4120.",
         ),
     )
+    rag: RagConfig = Field(default_factory=RagConfig, description="RAG knowledge-base configuration (Qdrant endpoint, embedding/rerank/VLM model names, indexing worker knobs)")
 
     # Name -> config lookup tables, (re)built after validation by
     # ``_build_name_indexes``. They make ``get_model_config`` / ``get_tool_config``

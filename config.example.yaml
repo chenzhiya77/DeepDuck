@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 33
+config_version: 34
 
 # ============================================================================
 # Logging
@@ -2522,3 +2522,31 @@ authorization:
 #   # packages whose absence changes behaviour rather than just observability.
 #   - use: acme_required_middleware:install
 #     required: true
+
+# ============================================================================
+# RAG Knowledge Base
+# ============================================================================
+# Phase-1 RAG knowledge base: document ingestion (PDF/Word/MD via the MinerU
+# API) indexed offline into three retrieval paths — vector hybrid, knowledge
+# graph, and wiki — exposed to a `rag` custom agent as builtin tools.
+#
+# Secrets come from .env, never from this file:
+#   DASHSCOPE_EMBEDDING_API_KEY  — Aliyun Bailian embedding (dense+sparse)
+#   DASHSCOPE_RERANK_API_KEY     — Aliyun Bailian rerank
+#   SILICONFLOW_VLM_API_KEY      — SiliconFlow VLM image captioning
+#   MINERU_API_TOKEN             — MinerU document parsing API
+rag:
+  # Qdrant server hosting the kb_chunks / kb_entities / kb_wiki_entries
+  # collections. Default matches the qdrant service in docker-compose*.yaml.
+  qdrant_url: http://localhost:6333
+  # DashScope (Aliyun Bailian) embedding model; produces dense+sparse vectors
+  # in a single call (output_type=dense&sparse).
+  embedding_model: qwen3.7-text-embedding
+  # DashScope rerank model for hybrid-search precision ranking.
+  rerank_model: qwen3-rerank
+  # SiliconFlow VLM model used to caption images extracted from documents.
+  vlm_model: Qwen/Qwen3-VL-30B-A3B-Instruct
+  # Max documents the offline indexing worker processes concurrently.
+  worker_concurrency: 2
+  # Requests/second cap for graph-extraction LLM calls during indexing.
+  extract_rate_limit_rps: 5.0

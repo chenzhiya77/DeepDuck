@@ -46,6 +46,8 @@ dependencies = [
     "alembic>=1.13",
     "cryptography>=50.0.0",
     "e2b-code-interpreter>=2.8.0",
+    "qdrant-client>=1.19.0",
+    "networkx>=3.6.1",
 ]
 
 [project.scripts]
