@@ -1,0 +1,250 @@
+"""Async indexing worker: drives documents through the status machine (spec §3.6/§3.7).
+
+The upload API only persists the ``documents`` row and enqueues the doc id;
+this worker runs the long pipeline in the background with a semaphore cap
+(``rag.worker_concurrency``):
+
+    uploaded → parsing → chunking → indexing → ready / failed
+
+Resume semantics (spec §3.7 启动恢复):
+- Startup recovery re-enqueues every non-terminal document.
+- A crash before ``indexing`` re-runs parse → chunk from scratch after wiping
+  the partial chunk/vector/graph output (chunk ids are deterministic).
+- A crash inside ``indexing`` re-runs the vector leg (point ids are
+  deterministic ``uuid5`` — upserts overwrite in place) and the graph leg,
+  which only processes ``pending`` chunks, so ``done`` slices are never
+  re-extracted.
+- ``progress_percent`` tracks graph-settled/total chunks (the slowest leg).
+
+Wiki: once the KB's completion share crosses the trigger threshold, the first
+batch runs full-head generation; afterwards the worker runs the dirty
+incremental pass (spec §3.7 触发式批量 → dirty 增量).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
+
+from deerflow.knowledge.captioner import apply_captions, caption_images
+from deerflow.knowledge.chunker import chunk_markdown
+from deerflow.knowledge.embedder import DashScopeEmbedder, EmbeddingResult
+from deerflow.knowledge.graph.indexer import index_document_graph
+from deerflow.knowledge.graph.store import GraphStore
+from deerflow.knowledge.indexer import index_chunks
+from deerflow.knowledge.parser import ParsedDocument, parse_document
+from deerflow.knowledge.store import KnowledgeStore
+from deerflow.knowledge.vector_store import KnowledgeVectorStore
+from deerflow.knowledge.wiki.generator import generate_wiki, wiki_trigger_ready
+from deerflow.knowledge.wiki.store import WikiStore
+
+logger = logging.getLogger(__name__)
+
+
+class _LLM(Protocol):
+    async def ainvoke(self, messages: Any) -> Any: ...
+
+
+class _Embedder(Protocol):
+    batch_size: int
+
+    async def embed(self, texts, *, text_type: str = "document") -> list[EmbeddingResult]: ...
+
+
+class KnowledgeIndexWorker:
+    """Background asyncio worker for the offline indexing pipeline."""
+
+    def __init__(
+        self,
+        *,
+        store: KnowledgeStore,
+        vector_store: KnowledgeVectorStore,
+        graph_store: GraphStore | None = None,
+        wiki_store: WikiStore | None = None,
+        concurrency: int = 2,
+        parse_fn: Callable[[str], Awaitable[ParsedDocument]] | None = None,
+        embedder: _Embedder | None = None,
+        llm: _LLM | None = None,
+        main_llm: _LLM | None = None,
+        gleaning_rounds: int = 1,
+    ) -> None:
+        self._store = store
+        self._vector_store = vector_store
+        self._graph_store = graph_store or GraphStore(store._sf)
+        self._wiki_store = wiki_store or WikiStore(store._sf)
+        self._parse_fn = parse_fn or parse_document
+        self._embedder = embedder
+        self._llm = llm
+        self._main_llm = main_llm
+        self._gleaning_rounds = gleaning_rounds
+        self._sem = asyncio.Semaphore(concurrency)
+        self._queue: asyncio.Queue[str] = asyncio.Queue()
+        self._dispatcher: asyncio.Task[None] | None = None
+        self._inflight: set[asyncio.Task[None]] = set()
+
+    # ── lifecycle ────────────────────────────────────────────────────────
+
+    async def start(self) -> None:
+        """Start the dispatcher after startup-recovery re-enqueues (spec §3.7).
+
+        A Qdrant outage must not block gateway startup: collection init
+        failures are logged and the dispatcher still runs — affected documents
+        surface as ``failed`` with the connection error, and the next gateway
+        restart re-enqueues them.
+        """
+        if self._dispatcher is not None:
+            return
+        try:
+            await self._vector_store.init_collections()
+        except Exception:
+            logger.exception("Qdrant collection init failed at worker start; indexing will fail per-document until Qdrant is reachable")
+        recovered = await self.recover()
+        if recovered:
+            logger.info("knowledge worker recovery: re-enqueued %d non-terminal document(s)", recovered)
+        self._dispatcher = asyncio.create_task(self._dispatch_loop(), name="knowledge-index-worker")
+
+    async def stop(self) -> None:
+        dispatcher, self._dispatcher = self._dispatcher, None
+        if dispatcher is not None:
+            dispatcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await dispatcher
+        if self._inflight:
+            await asyncio.gather(*list(self._inflight), return_exceptions=True)
+
+    async def recover(self) -> int:
+        """Re-enqueue every non-terminal document; returns the count."""
+        documents = await self._store.list_non_terminal_documents()
+        for document in documents:
+            await self.submit(document["id"])
+        return len(documents)
+
+    async def submit(self, doc_id: str) -> None:
+        await self._queue.put(doc_id)
+
+    async def wait_idle(self) -> None:
+        """Block until the queue drains and in-flight documents settle (tests)."""
+        await self._queue.join()
+        # task_done fires in _run_guarded's finally just before task completion;
+        # gather lets those tasks finish and surfaces exceptions. The sleep(0)
+        # yields to the loop so done-callbacks (inflight discard) can run —
+        # awaiting an already-finished task never yields and would spin forever.
+        while self._inflight:
+            await asyncio.gather(*list(self._inflight), return_exceptions=True)
+            await asyncio.sleep(0)
+
+    async def _dispatch_loop(self) -> None:
+        while True:
+            doc_id = await self._queue.get()
+            task = asyncio.create_task(self._run_guarded(doc_id))
+            self._inflight.add(task)
+            task.add_done_callback(self._inflight.discard)
+
+    async def _run_guarded(self, doc_id: str) -> None:
+        try:
+            async with self._sem:
+                await self.process_document(doc_id)
+        finally:
+            self._queue.task_done()
+
+    # ── pipeline ─────────────────────────────────────────────────────────
+
+    async def process_document(self, doc_id: str) -> dict[str, Any] | None:
+        """Run one document through the status machine; never raises."""
+        document = await self._store.get_document(doc_id)
+        if document is None or document["status"] in ("ready", "failed"):
+            return document
+        kb_id = document["kb_id"]
+        try:
+            if document["status"] in ("uploaded", "parsing", "chunking"):
+                await self._reparse_and_chunk(doc_id, kb_id, document["storage_path"])
+
+            await self._store.update_document_status(doc_id, "indexing")
+            chunks = await self._store.list_chunks(doc_id, limit=1_000_000)
+            embedder = self._embedder or DashScopeEmbedder()
+            if chunks:
+                await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=chunks)
+
+            async def _on_progress(settled: int, total: int) -> None:
+                percent = (settled * 100) // total if total else 100
+                await self._store.update_document_status(doc_id, "indexing", progress_percent=percent)
+
+            await index_document_graph(
+                self._store,
+                self._graph_store,
+                self._vector_store,
+                kb_id=kb_id,
+                doc_id=doc_id,
+                chunks=chunks,
+                llm=self._llm,
+                embedder=embedder,
+                gleaning_rounds=self._gleaning_rounds,
+                progress_callback=_on_progress,
+            )
+            await self._store.update_document_status(doc_id, "ready", progress_percent=100)
+            await self._maybe_generate_wiki(kb_id, embedder)
+        except Exception as exc:
+            logger.exception("knowledge indexing failed for document %s", doc_id)
+            await self._store.update_document_status(doc_id, "failed", error=str(exc)[:500])
+        return await self._store.get_document(doc_id)
+
+    async def _reparse_and_chunk(self, doc_id: str, kb_id: str, storage_path: str) -> None:
+        """Parse → caption → chunk, wiping any partial output first (idempotent)."""
+        existing = await self._store.list_chunks(doc_id, limit=1_000_000)
+        if existing:
+            chunk_ids = [chunk["chunk_id"] for chunk in existing]
+            orphaned, _affected = await self._graph_store.remove_chunk_contributions(kb_id, chunk_ids)
+            if orphaned:
+                await self._vector_store.delete_entities(kb_id, orphaned)
+            await self._vector_store.delete_by_doc(doc_id)
+            await self._store.delete_chunks_by_doc(doc_id)
+
+        await self._store.update_document_status(doc_id, "parsing")
+        parsed = await self._parse_fn(storage_path)
+        markdown = parsed.markdown
+        if parsed.images:
+            captions = await caption_images(parsed.images)
+            markdown = apply_captions(markdown, captions)
+
+        await self._store.update_document_status(doc_id, "chunking")
+        chunks = chunk_markdown(markdown, doc_id)
+        await self._store.insert_chunks(
+            [
+                {
+                    "chunk_id": chunk.chunk_id,
+                    "doc_id": doc_id,
+                    "kb_id": kb_id,
+                    "chunk_index": chunk.chunk_index,
+                    "text": chunk.text,
+                    "heading_path": chunk.heading_path,
+                    "page": chunk.page,
+                    "token_count": chunk.token_count,
+                }
+                for chunk in chunks
+            ]
+        )
+        await self._store.update_document_status(doc_id, "indexing", chunk_count=len(chunks))
+
+    async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder) -> None:
+        """Triggered batch on first completion, dirty incremental afterwards."""
+        if self._main_llm is None:
+            return
+        try:
+            if not await wiki_trigger_ready(self._store, kb_id):
+                return
+            existing = await self._wiki_store.list(kb_id)
+            await generate_wiki(
+                self._store,
+                self._graph_store,
+                self._wiki_store,
+                self._vector_store,
+                kb_id=kb_id,
+                llm=self._main_llm,
+                embedder=embedder,
+                only_dirty=bool(existing),
+            )
+        except Exception:
+            logger.exception("wiki generation trigger failed for kb %s", kb_id)

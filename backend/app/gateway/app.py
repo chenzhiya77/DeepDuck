@@ -26,6 +26,7 @@ from app.gateway.routers import (
     github_webhooks,
     input_polish,
     integrations,
+    knowledge_bases,
     mcp,
     memory,
     models,
@@ -39,6 +40,7 @@ from app.gateway.routers import (
 )
 from app.gateway.trace_middleware import TraceMiddleware, resolve_trace_enabled
 from deerflow.config import app_config as deerflow_app_config
+from deerflow.config.paths import get_paths
 from deerflow.logging_config import DEFAULT_LOG_DATE_FORMAT, DEFAULT_LOG_FORMAT, configure_logging
 from deerflow.tracing.monocle import setup_monocle_tracing_if_enabled
 from deerflow.uploads.manager import cleanup_stale_upload_staging_files
@@ -329,6 +331,42 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("Failed to initialize scheduled task service")
 
+        # RAG knowledge base: vector store + background index worker + API service.
+        # The worker start is Qdrant-outage tolerant (per-document failures
+        # instead of a boot failure); a total wiring failure degrades the
+        # knowledge API to 503 without taking the gateway down.
+        try:
+            from app.gateway.services.knowledge_service import KnowledgeService
+            from deerflow.knowledge.store import get_knowledge_store
+            from deerflow.knowledge.vector_store import get_vector_store
+            from deerflow.knowledge.worker import KnowledgeIndexWorker
+            from deerflow.models.factory import create_chat_model
+
+            knowledge_store = get_knowledge_store()
+            knowledge_vector_store = get_vector_store()
+            try:
+                wiki_main_llm = create_chat_model()
+            except Exception:
+                logger.exception("Main model unavailable; wiki auto-generation disabled")
+                wiki_main_llm = None
+            knowledge_worker = KnowledgeIndexWorker(
+                store=knowledge_store,
+                vector_store=knowledge_vector_store,
+                concurrency=startup_config.rag.worker_concurrency,
+                main_llm=wiki_main_llm,
+            )
+            app.state.knowledge_worker = knowledge_worker
+            app.state.knowledge_service = KnowledgeService(
+                store=knowledge_store,
+                vector_store=knowledge_vector_store,
+                worker=knowledge_worker,
+                data_dir=get_paths().base_dir / "data",
+            )
+            await knowledge_worker.start()
+            logger.info("Knowledge index worker started (concurrency=%d)", startup_config.rag.worker_concurrency)
+        except Exception:
+            logger.exception("Failed to initialize knowledge base service")
+
         yield
 
         try:
@@ -357,6 +395,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 await app.state.scheduled_task_service.stop()
             except Exception:
                 logger.exception("Failed to stop scheduled task service")
+
+        if getattr(app.state, "knowledge_worker", None) is not None:
+            try:
+                await asyncio.wait_for(app.state.knowledge_worker.stop(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+            except TimeoutError:
+                logger.warning("Knowledge worker shutdown exceeded %.1fs; proceeding with worker exit.", _SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+            except Exception:
+                logger.exception("Failed to stop knowledge index worker")
 
         try:
             from deerflow.community.browser_automation import get_browser_session_manager
@@ -643,6 +689,9 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
 
     # Scheduled tasks API is mounted at /api/scheduled-tasks
     app.include_router(scheduled_tasks.router)
+
+    # Knowledge bases API (RAG) is mounted at /api/knowledge-bases
+    app.include_router(knowledge_bases.router)
 
     # Agents API is mounted at /api/agents
     app.include_router(agents.router)

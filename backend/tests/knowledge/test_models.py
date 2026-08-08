@@ -295,3 +295,78 @@ async def test_delete_kb_cascades_all_six_tables(session_factory):
         for row_cls in (ChunkRow, DocumentRow, GraphEntityRow, GraphRelationRow, WikiEntryRow, KnowledgeBaseRow):
             remaining = (await session.execute(select(row_cls).where(row_cls.kb_id == "kb-1") if row_cls is not KnowledgeBaseRow else select(row_cls).where(row_cls.id == "kb-1"))).scalars().all()
             assert remaining == [], f"{row_cls.__tablename__} rows left after delete_kb"
+
+
+@pytest.mark.asyncio
+async def test_update_kb_renames_and_descriptions(session_factory):
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="旧名", description="旧描述")
+
+    updated = await store.update_kb("kb-1", name="新名", description="新描述")
+
+    assert updated is not None
+    assert updated["name"] == "新名"
+    assert updated["description"] == "新描述"
+    assert (await store.get_kb("kb-1"))["name"] == "新名"
+
+
+@pytest.mark.asyncio
+async def test_update_kb_partial_and_missing(session_factory):
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="名", description="述")
+
+    updated = await store.update_kb("kb-1", name="只改名")
+    assert updated is not None
+    assert updated["name"] == "只改名"
+    assert updated["description"] == "述"  # untouched
+
+    assert await store.update_kb("kb-nope", name="x") is None
+
+
+@pytest.mark.asyncio
+async def test_list_non_terminal_documents_for_startup_recovery(session_factory):
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    for doc_id, status in [("d-uploaded", "uploaded"), ("d-parsing", "parsing"), ("d-indexing", "indexing"), ("d-ready", "ready"), ("d-failed", "failed")]:
+        await store.create_document(doc_id=doc_id, kb_id="kb-1", uploader_id="user-1", name=f"{doc_id}.pdf", size_bytes=1, storage_path="p")
+        if status != "uploaded":
+            await store.update_document_status(doc_id, status)
+
+    recovered = await store.list_non_terminal_documents()
+
+    assert sorted(d["id"] for d in recovered) == ["d-indexing", "d-parsing", "d-uploaded"]
+
+
+@pytest.mark.asyncio
+async def test_delete_chunks_by_doc_only_that_document(session_factory):
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=1, storage_path="p")
+    await store.create_document(doc_id="doc-2", kb_id="kb-1", uploader_id="user-1", name="b.pdf", size_bytes=1, storage_path="p")
+    await store.insert_chunks(
+        [
+            {"chunk_id": "doc-1#0000", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 0, "text": "t1", "heading_path": [], "page": None, "token_count": 1},
+            {"chunk_id": "doc-2#0000", "doc_id": "doc-2", "kb_id": "kb-1", "chunk_index": 0, "text": "t2", "heading_path": [], "page": None, "token_count": 1},
+        ]
+    )
+
+    assert await store.delete_chunks_by_doc("doc-1") == 1
+    assert await store.count_chunks("doc-1") == 0
+    assert await store.count_chunks("doc-2") == 1
+
+
+@pytest.mark.asyncio
+async def test_reset_document_for_retry_clears_failure_state(session_factory):
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=1, storage_path="p")
+    await store.update_document_status("doc-1", "failed", progress_percent=40, chunk_count=3, error="boom")
+
+    reset = await store.reset_document_for_retry("doc-1")
+
+    assert reset is not None
+    assert reset["status"] == "uploaded"
+    assert reset["progress_percent"] == 0
+    assert reset["chunk_count"] is None
+    assert reset["error"] is None
+    assert await store.reset_document_for_retry("doc-nope") is None

@@ -15,7 +15,7 @@ import pytest_asyncio
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PayloadSchemaType, SparseVector
 
-from deerflow.knowledge.vector_store import ChunkUpsert, KnowledgeVectorStore
+from deerflow.knowledge.vector_store import ChunkUpsert, EntityUpsert, KnowledgeVectorStore
 
 from .conftest import QDRANT_TEST_URL, requires_qdrant
 
@@ -186,3 +186,18 @@ async def test_delete_by_kb_wipes_points_across_collections(vector_store):
     for name in store.collection_names:
         count = await client.count(name, exact=True)
         assert count.count == 0, name
+
+
+async def test_delete_entities(vector_store):
+    store, client = vector_store
+    await store.upsert_entities([EntityUpsert(name="实体甲", kb_id="kb-1", dense=[0.1] * 1024), EntityUpsert(name="实体乙", kb_id="kb-1", dense=[0.2] * 1024)])
+
+    await store.delete_entities("kb-1", ["实体甲"])
+
+    assert (await client.count(store.entities_collection, exact=True)).count == 1
+    remaining = await client.scroll(store.entities_collection, limit=10, with_payload=True)
+    assert remaining[0][0].payload["name"] == "实体乙"
+    # unknown name / empty list are no-ops
+    await store.delete_entities("kb-1", ["不存在"])
+    await store.delete_entities("kb-1", [])
+    assert (await client.count(store.entities_collection, exact=True)).count == 1

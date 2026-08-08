@@ -123,12 +123,12 @@
 - Create: `backend/app/gateway/services/knowledge_service.py`, `backend/packages/harness/deerflow/knowledge/worker.py`
 - Create: `backend/tests/knowledge/test_api.py`, `test_worker.py`
 
-- [ ] Write failing API tests (contract per spec §5.3): kb CRUD; document upload (multipart) returns 202 + document row in `uploaded`; document list includes status/progress_percent/chunk_count/uploader_id; chunks endpoint paginates; delete cascades (mock stores); non-owner gets 403 via `can_access`; wiki/generate enqueues.
-- [ ] Write failing worker tests: pipeline advances document status `uploaded→parsing→chunking→indexing→ready`; failure sets `failed` with error; progress_percent = graph-done/total; concurrency cap respected; startup recovery re-enqueues non-terminal documents without re-processing done chunks (spec §3.7 启动恢复).
-- [ ] Run tests, capture RED.
-- [ ] Implement router (thin) + service + asyncio worker with semaphore (config `rag.worker_concurrency`), wiring Task 3–6 stages; register router in gateway app.
-- [ ] Tests GREEN; revert one status transition, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add knowledge base API and async index worker`.
+- [x] Write failing API tests (contract per spec §5.3): kb CRUD; document upload (multipart) returns 202 + document row in `uploaded`; document list includes status/progress_percent/chunk_count/uploader_id; chunks endpoint paginates; delete cascades (mock stores); non-owner gets 403 via `can_access`; wiki/generate enqueues.
+- [x] Write failing worker tests: pipeline advances document status `uploaded→parsing→chunking→indexing→ready`; failure sets `failed` with error; progress_percent = graph-done/total; concurrency cap respected; startup recovery re-enqueues non-terminal documents without re-processing done chunks (spec §3.7 启动恢复).
+- [x] Run tests, capture RED.
+- [x] Implement router (thin) + service + asyncio worker with semaphore (config `rag.worker_concurrency`), wiring Task 3–6 stages; register router in gateway app.
+- [x] Tests GREEN; revert one status transition, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add knowledge base API and async index worker`.
 
 ## Task 9: `rag` custom agent assembly
 

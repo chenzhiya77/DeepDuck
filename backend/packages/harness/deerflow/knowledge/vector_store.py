@@ -216,6 +216,15 @@ class KnowledgeVectorStore:
         await self._client.upsert(collection_name=self.entities_collection, points=points)
         return len(points)
 
+    async def delete_entities(self, kb_id: str, names: Sequence[str]) -> None:
+        """Delete entity points from ``kb_entities`` (orphan cleanup after doc delete)."""
+        if not names:
+            return
+        await self._client.delete(
+            collection_name=self.entities_collection,
+            points_selector=[self._entity_point_id(kb_id, name) for name in names],
+        )
+
     async def set_chunk_entities(self, entities_by_chunk: Mapping[str, Sequence[str]]) -> None:
         """Backfill normalized entity names onto ``kb_chunks`` payloads.
 

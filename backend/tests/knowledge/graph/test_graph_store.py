@@ -118,3 +118,37 @@ async def test_load_networkx_empty_kb(session_factory):
     graph = await store.load_networkx("kb-nope")
 
     assert len(graph.nodes) == 0
+
+
+@pytest.mark.asyncio
+async def test_remove_chunk_contributions_orphans_and_survivors(session_factory):
+    store = GraphStore(session_factory)
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="孤儿实体", type="概念", description="仅来自 c-1")], chunk_id="c-1")
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="幸存实体", type="概念", description="来自 c-1")], chunk_id="c-1")
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="幸存实体", type="概念", description="也来自 c-2")], chunk_id="c-2")
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="无关实体", type="概念", description="仅 c-2")], chunk_id="c-2")
+    await store.upsert_relations("kb-1", [ExtractedRelation(source="孤儿实体", target="幸存实体", relation="关联", description="")], chunk_id="c-1")
+    await store.upsert_relations("kb-1", [ExtractedRelation(source="幸存实体", target="无关实体", relation="引用", description="")], chunk_id="c-2")
+
+    orphaned, affected = await store.remove_chunk_contributions("kb-1", ["c-1"])
+
+    assert orphaned == ["孤儿实体"]
+    assert sorted(affected) == ["幸存实体"]
+    names = {e["name"] for e in await store.list_entities("kb-1")}
+    assert names == {"幸存实体", "无关实体"}
+    survivor = {e["name"]: e for e in await store.list_entities("kb-1")}["幸存实体"]
+    assert survivor["source_chunk_ids"] == ["c-2"]
+    relations = await store.list_relations("kb-1")
+    assert [(r["source"], r["target"], r["relation"]) for r in relations] == [("幸存实体", "无关实体", "引用")]
+
+
+@pytest.mark.asyncio
+async def test_remove_chunk_contributions_scoped_per_kb(session_factory):
+    store = GraphStore(session_factory)
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="共享名", type="概念", description="kb-1 的")], chunk_id="c-1")
+    await store.upsert_entities("kb-2", [ExtractedEntity(name="共享名", type="概念", description="kb-2 的")], chunk_id="c-1")
+
+    orphaned, _ = await store.remove_chunk_contributions("kb-1", ["c-1"])
+
+    assert orphaned == ["共享名"]
+    assert [e["name"] for e in await store.list_entities("kb-2")] == ["共享名"]

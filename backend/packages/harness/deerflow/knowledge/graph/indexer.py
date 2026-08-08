@@ -13,7 +13,7 @@ field — visible on the document list, never a silently-incomplete graph.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -63,17 +63,31 @@ async def index_document_graph(
     embedder: _Embedder | None = None,
     gleaning_rounds: int = 1,
     name_similarity_threshold: float = 0.92,
+    progress_callback: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> GraphIndexStats:
     """Run graph extraction over a document's pending chunks.
 
     Only ``pending`` chunks are processed — ``done``/``empty``/``failed`` rows
     are left untouched, so a restarted worker resumes without re-extracting
     (spec §3.7 启动恢复).
+
+    ``progress_callback`` (when given) fires after every settled chunk with
+    ``(settled, total)`` in whole-document units: ``settled`` counts chunks in
+    any resolved extract state (done/empty/failed, including pre-existing
+    ones), so the worker can persist ``documents.progress_percent`` (spec §3.6
+    进度口径：图谱路为全流水线最慢阶段，近似整体进度).
     """
     pending = [chunk for chunk in chunks if chunk.get("extract_status", "pending") == "pending"]
     stats = GraphIndexStats(total=len(pending))
     if not pending:
         return stats
+
+    total_all = len(chunks)
+    settled = sum(1 for chunk in chunks if chunk.get("extract_status") in ("done", "empty", "failed"))
+
+    async def _report() -> None:
+        if progress_callback is not None:
+            await progress_callback(settled, total_all)
 
     touched_entities: set[str] = set()
     backfill: dict[str, list[str]] = {}
@@ -85,10 +99,14 @@ async def index_document_graph(
             logger.warning("graph extraction failed for chunk %s: %s", chunk_id, exc)
             await store.update_chunk_extract(chunk_id, "failed", error=str(exc))
             stats.failed_chunk_ids.append(chunk_id)
+            settled += 1
+            await _report()
             continue
         if not result.entities and not result.relations:
             await store.update_chunk_extract(chunk_id, "empty")
             stats.empty += 1
+            settled += 1
+            await _report()
             continue
 
         name_vectors = None
@@ -104,6 +122,8 @@ async def index_document_graph(
         backfill[chunk_id] = names
         touched_entities.update(names)
         stats.done += 1
+        settled += 1
+        await _report()
 
     # Reverse link: normalized names onto the kb_chunks payload.
     if vector_store is not None and backfill:

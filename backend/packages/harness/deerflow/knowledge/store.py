@@ -81,6 +81,20 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             return [self._row_to_dict(row) for row in result.scalars().all()]
 
+    async def update_kb(self, kb_id: str, *, name: str | None = None, description: str | None = None) -> dict[str, Any] | None:
+        """Rename / re-describe a KB; ``None`` leaves a field unchanged."""
+        async with self._sf() as session:
+            row = await session.get(KnowledgeBaseRow, kb_id)
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if description is not None:
+                row.description = description
+            await session.commit()
+            await session.refresh(row)
+            return self._row_to_dict(row)
+
     async def delete_kb(self, kb_id: str) -> bool:
         """Delete a KB and cascade across all six business tables.
 
@@ -138,6 +152,13 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             return [self._row_to_dict(row) for row in result.scalars().all()]
 
+    async def list_non_terminal_documents(self) -> list[dict[str, Any]]:
+        """Documents not in a terminal state — the worker re-enqueues these on startup (spec §3.7 启动恢复)."""
+        stmt = select(DocumentRow).where(DocumentRow.status.not_in(("ready", "failed"))).order_by(DocumentRow.created_at, DocumentRow.id)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return [self._row_to_dict(row) for row in result.scalars().all()]
+
     async def update_document_status(
         self,
         doc_id: str,
@@ -159,6 +180,22 @@ class KnowledgeStore:
                 row.chunk_count = chunk_count
             if error is not None:
                 row.error = error
+            await session.commit()
+            await session.refresh(row)
+            return self._row_to_dict(row)
+
+    async def reset_document_for_retry(self, doc_id: str) -> dict[str, Any] | None:
+        """Reset a failed document to ``uploaded`` for re-indexing: clears progress,
+        chunk count, and the error (unlike ``update_document_status`` whose ``None``
+        means \"leave unchanged\")."""
+        async with self._sf() as session:
+            row = await session.get(DocumentRow, doc_id)
+            if row is None:
+                return None
+            row.status = "uploaded"
+            row.progress_percent = 0
+            row.chunk_count = None
+            row.error = None
             await session.commit()
             await session.refresh(row)
             return self._row_to_dict(row)
@@ -246,6 +283,13 @@ class KnowledgeStore:
             await session.commit()
             await session.refresh(row)
             return self._row_to_dict(row, datetime_keys=())
+
+    async def delete_chunks_by_doc(self, doc_id: str) -> int:
+        """Drop one document's chunk rows (re-parse / retry wipe; spec §3.7)."""
+        async with self._sf() as session:
+            result = await session.execute(delete(ChunkRow).where(ChunkRow.doc_id == doc_id))
+            await session.commit()
+            return int(result.rowcount or 0)
 
     async def delete_chunks_by_kb(self, kb_id: str) -> int:
         async with self._sf() as session:

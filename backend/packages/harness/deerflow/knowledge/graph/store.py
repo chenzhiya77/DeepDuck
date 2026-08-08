@@ -113,6 +113,49 @@ class GraphStore:
             result = await session.execute(stmt)
             return [row.to_dict() for row in result.scalars().all()]
 
+    async def remove_chunk_contributions(self, kb_id: str, chunk_ids: Sequence[str]) -> tuple[list[str], list[str]]:
+        """Remove a set of chunks' contributions from the graph (document delete/retry).
+
+        For every entity/relation in this KB, the given chunk ids are removed
+        from ``source_chunk_ids``. Entities left with zero sources are orphan
+        nodes and deleted outright (their relations go with them); entities
+        that still have other sources survive. Relations left with zero
+        sources are deleted.
+
+        Returns ``(orphaned_entity_names, affected_entity_names)`` — callers
+        delete the orphans' vectors from ``kb_entities`` and mark the
+        affected entities' wiki entries dirty (spec §3.7 级联删除).
+        """
+        if not chunk_ids:
+            return [], []
+        targets = set(chunk_ids)
+        orphaned: list[str] = []
+        affected: list[str] = []
+        async with self._sf() as session:
+            entity_rows = (await session.execute(select(GraphEntityRow).where(GraphEntityRow.kb_id == kb_id))).scalars().all()
+            for row in entity_rows:
+                remaining = [cid for cid in (row.source_chunk_ids or []) if cid not in targets]
+                if len(remaining) == len(row.source_chunk_ids or []):
+                    continue
+                if not remaining:
+                    orphaned.append(row.name)
+                    await session.delete(row)
+                else:
+                    affected.append(row.name)
+                    row.source_chunk_ids = remaining
+            relation_rows = (await session.execute(select(GraphRelationRow).where(GraphRelationRow.kb_id == kb_id))).scalars().all()
+            for row in relation_rows:
+                if row.source in orphaned or row.target in orphaned:
+                    await session.delete(row)
+                    continue
+                remaining = [cid for cid in (row.source_chunk_ids or []) if cid not in targets]
+                if len(remaining) != len(row.source_chunk_ids or []) and not remaining:
+                    await session.delete(row)
+                elif len(remaining) != len(row.source_chunk_ids or []):
+                    row.source_chunk_ids = remaining
+            await session.commit()
+        return orphaned, affected
+
     async def load_networkx(self, kb_id: str) -> nx.DiGraph:
         """Load the KB graph into memory. Multiple relations between the same
         endpoint pair collapse into one edge whose attributes join them
