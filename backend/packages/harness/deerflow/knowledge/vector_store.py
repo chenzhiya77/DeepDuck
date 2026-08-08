@@ -29,6 +29,7 @@ from qdrant_client.models import (
     FilterSelector,
     Fusion,
     FusionQuery,
+    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -242,6 +243,46 @@ class KnowledgeVectorStore:
             return 0
         await self._client.upsert(collection_name=self.wiki_entries_collection, points=points)
         return len(points)
+
+    async def query_entities(self, *, dense: list[float], kb_id: str, top_k: int = 5, score_threshold: float | None = None) -> list[ScoredPoint]:
+        """Dense match over ``kb_entities`` (graph_search query-entity landing).
+
+        ``score_threshold`` filters out far-neighbor noise: an unmatched query
+        entity must surface nothing, not the closest unrelated entity."""
+        response = await self._client.query_points(
+            collection_name=self.entities_collection,
+            query=dense,
+            using="dense",
+            query_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+            limit=top_k,
+            score_threshold=score_threshold,
+            with_payload=True,
+        )
+        return response.points
+
+    async def query_wiki_entries(self, *, dense: list[float], kb_id: str, top_k: int = 3) -> list[ScoredPoint]:
+        """Dense top-k over ``kb_wiki_entries``; payload carries the entry pointer."""
+        response = await self._client.query_points(
+            collection_name=self.wiki_entries_collection,
+            query=dense,
+            using="dense",
+            query_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+            limit=top_k,
+            with_payload=True,
+        )
+        return response.points
+
+    async def scroll_chunks_by_entities(self, *, kb_id: str, entity_names: Sequence[str], limit: int = 20) -> list[ScoredPoint]:
+        """Elastic back-query: chunks whose payload ``entities`` contains any of the names."""
+        if not entity_names:
+            return []
+        points, _ = await self._client.scroll(
+            collection_name=self.chunks_collection,
+            scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id)), FieldCondition(key="entities", match=MatchAny(any=list(entity_names)))]),
+            with_payload=True,
+            limit=limit,
+        )
+        return points
 
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""

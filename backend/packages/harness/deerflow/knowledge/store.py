@@ -252,3 +252,13 @@ class KnowledgeStore:
             result = await session.execute(delete(ChunkRow).where(ChunkRow.kb_id == kb_id))
             await session.commit()
             return int(result.rowcount or 0)
+
+
+def get_knowledge_store() -> KnowledgeStore:
+    """Build the store from the globally-initialized persistence engine."""
+    from deerflow.persistence.engine import get_session_factory
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("persistence engine is not initialized")
+    return KnowledgeStore(session_factory)

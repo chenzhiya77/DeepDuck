@@ -110,11 +110,11 @@
 - Modify: `config.example.yaml` (`tool_groups: [{name: rag, tools: [hybrid_search, wiki_search, graph_search]}]`), tool registry
 - Create: `backend/tests/knowledge/tools/test_hybrid_search.py`, `test_wiki_search.py`, `test_graph_search.py`, `test_access.py`
 
-- [ ] Write failing tests per spec §4: hybrid (RRF prefetch → reranker → top-5, chunk text fetched from business-DB `chunks` table by `chunk_id`, payload supplies doc_name/page/heading_path); graph (query-entity extraction → kb_entities match → 1–2 hop expansion → source_chunk_ids fetch chunk text from `chunks` table + entities back-query; empty → honest "not found"); wiki (vector top-k → full entry from `wiki_entries` table by `entry_id`); each tool reads `kb_id` via `ToolRuntime` context and missing `kb_id` returns guidance text; `can_access` Phase-1 = owner check; tool denies when access fails.
-- [ ] Run tests, capture RED.
-- [ ] Implement tools with `@tool(parse_docstring=True)`, docstrings stating when-to-use per spec §5.1; `access.py`; tool group registration.
-- [ ] Tests GREEN; revert access gate, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add hybrid/wiki/graph search tools with access gate`.
+- [x] Write failing tests per spec §4: hybrid (RRF prefetch → reranker → top-5, chunk text fetched from business-DB `chunks` table by `chunk_id`, payload supplies doc_name/page/heading_path); graph (query-entity extraction → kb_entities match → 1–2 hop expansion → source_chunk_ids fetch chunk text from `chunks` table + entities back-query; empty → honest "not found"); wiki (vector top-k → full entry from `wiki_entries` table by `entry_id`); each tool reads `kb_id` via `ToolRuntime` context and missing `kb_id` returns guidance text; `can_access` Phase-1 = owner check; tool denies when access fails.
+- [x] Run tests, capture RED.
+- [x] Implement tools with `@tool(parse_docstring=True)`, docstrings stating when-to-use per spec §5.1; `access.py`; tool group registration.
+- [x] Tests GREEN; revert access gate, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add hybrid/wiki/graph search tools with access gate`.
 
 ## Task 8: Knowledge-base API + async index worker
 

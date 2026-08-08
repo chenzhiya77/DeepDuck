@@ -108,7 +108,7 @@ def _merge(base: ExtractionResult, extra: ExtractionResult) -> ExtractionResult:
     return base
 
 
-def _default_llm():
+def get_extract_llm():
     """Small extraction model: config ``rag.extract_model``, else the first model."""
     from deerflow.config.app_config import get_app_config
     from deerflow.models.factory import create_chat_model
@@ -119,7 +119,7 @@ def _default_llm():
 async def extract_graph(text: str, *, llm: Any = None, gleaning_rounds: int = 1) -> ExtractionResult:
     """Extract entities+relations from one chunk, with optional gleaning rounds."""
     if llm is None:
-        llm = _default_llm()
+        llm = get_extract_llm()
     messages: list[dict[str, str]] = [
         {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
         {"role": "user", "content": text},

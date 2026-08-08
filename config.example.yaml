@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 35
+config_version: 36
 
 # ============================================================================
 # Logging
@@ -668,6 +668,9 @@ tool_groups:
   - name: file:write
   - name: bash
   - name: browser
+  # RAG knowledge-base retrieval (see the `rag:` section). Only agents whose
+  # AgentConfig lists the `rag` group (e.g. the built-in rag agent) see these.
+  - name: rag
 
 # ============================================================================
 # Tools Configuration
@@ -683,6 +686,20 @@ tools:
     # backend: auto          # DDGS backend(s): auto, duckduckgo, brave, wikipedia, etc.
     # region: wt-wt          # wt-wt is normalized for Wikipedia when backend includes auto/all/wikipedia.
     # safesearch: moderate   # on, moderate, off
+
+  # RAG knowledge-base retrieval tools (require the `rag:` section + Qdrant):
+  # hybrid vector search (dense+sparse → RRF → rerank), wiki entry search,
+  # and knowledge-graph navigation. Each reads the bound kb_id from the run
+  # context and enforces the Phase-1 owner-only access gate.
+  - name: hybrid_search
+    group: rag
+    use: deerflow.tools.builtins.hybrid_search_tool:hybrid_search
+  - name: wiki_search
+    group: rag
+    use: deerflow.tools.builtins.wiki_search_tool:wiki_search
+  - name: graph_search
+    group: rag
+    use: deerflow.tools.builtins.graph_search_tool:graph_search
 
   # Web search tool (uses SearXNG, self-hosted, no API key required)
   # SearXNG is a free internet metasearch engine which aggregates results from
