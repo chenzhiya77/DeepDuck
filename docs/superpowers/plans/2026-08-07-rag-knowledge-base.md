@@ -137,11 +137,11 @@
 - Modify: `config.example.yaml` comments referencing the rag tool group
 - Create: `backend/tests/knowledge/test_rag_agent_assembly.py`
 
-- [ ] Write failing test: assembling with `agent_name="rag"` yields tools restricted to the rag group; system prompt includes SOUL.md citation/拒答 rules; lead_agent (no agent_name) does NOT include rag tools; with `context.deep_research=true` the prompt gains the mandatory three-path instruction (spec §4.7), and without it the prompt carries the default vector-first guidance.
-- [ ] Run test, capture RED.
-- [ ] Author `SOUL.md` (citation format `[n]`, source attribution, "检索不到就说不知道" refusal policy, retrieval workflow guidance, dual-mode retrieval behavior per spec §4.7) and agent `config.yaml` (`tool_groups: ["rag"]`, `skills: []`, `model_settings.temperature: 0.1`); implement deep_research as a **middleware dynamic injection** (before_model hook reads `context.deep_research` and injects the mandatory three-path instruction per run — SOUL.md stays static), soft enforcement only in Phase 1.
-- [ ] Test GREEN; revert tool_groups filter, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add rag custom agent with citation-focused soul`.
+- [x] Write failing test: assembling with `agent_name="rag"` yields tools restricted to the rag group; system prompt includes SOUL.md citation/拒答 rules; lead_agent (no agent_name) does NOT include rag tools; with `context.deep_research=true` the prompt gains the mandatory three-path instruction (spec §4.7), and without it the prompt carries the default vector-first guidance.
+- [x] Run test, capture RED.
+- [x] Author `SOUL.md` (citation format `[n]`, source attribution, "检索不到就说不知道" refusal policy, retrieval workflow guidance, dual-mode retrieval behavior per spec §4.7) and agent `config.yaml` (`tool_groups: ["rag"]`, `skills: []`, `model_settings.temperature: 0.1`); implement deep_research as a **middleware dynamic injection** (before_model hook reads `context.deep_research` and injects the mandatory three-path instruction per run — SOUL.md stays static), soft enforcement only in Phase 1.
+- [x] Test GREEN; revert tool_groups filter, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add rag custom agent with citation-focused soul`.
 
 ## Task 10: Frontend knowledge three-column page
 

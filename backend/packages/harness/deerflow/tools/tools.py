@@ -69,7 +69,9 @@ def get_available_tools(
         List of available tools.
     """
     config = app_config or get_app_config()
-    tool_configs = [tool for tool in config.tools if groups is None or tool.group in groups]
+    # groups=None resolves the default (lead-agent) toolset: opt-in tools are
+    # excluded unless their group is explicitly listed.
+    tool_configs = [tool for tool in config.tools if (tool.group in groups if groups is not None else not tool.opt_in)]
 
     # Do not expose host bash by default when LocalSandboxProvider is active.
     if not is_host_bash_allowed(config):

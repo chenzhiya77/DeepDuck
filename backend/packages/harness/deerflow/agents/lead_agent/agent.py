@@ -422,6 +422,9 @@ def build_middlewares(
         runtime_middleware_kwargs["deferred_setup"] = deferred_setup
     middlewares = build_lead_runtime_middlewares(**runtime_middleware_kwargs)
 
+    # Per-agent middleware extras (e.g. the rag agent's deep-research injector).
+    middlewares.extend(_extra_agent_middlewares(agent_name))
+
     # Always inject current date (and optionally memory) as <system-reminder> into the
     # first HumanMessage to keep the system prompt fully static for prefix-cache reuse.
     from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
@@ -666,6 +669,20 @@ def make_lead_agent(config: RunnableConfig):
     freeze_checkpoint_snapshot_frequency(runtime_app_config.database.checkpoint_delta.snapshot_frequency)
     inject_checkpoint_mode(config, mode)
     return _make_lead_agent(config, app_config=runtime_app_config)
+
+
+def _extra_agent_middlewares(agent_name: str | None) -> list:
+    """Per-agent middleware extras, keyed by custom agent name.
+
+    The built-in ``rag`` agent gets the deep-research injector (spec §4.7:
+    ``context.deep_research=true`` appends the mandatory three-path retrieval
+    instruction per run). The default agent and other custom agents get none.
+    """
+    if agent_name == "rag":
+        from deerflow.agents.middlewares.deep_research_middleware import DeepResearchMiddleware
+
+        return [DeepResearchMiddleware()]
+    return []
 
 
 def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):

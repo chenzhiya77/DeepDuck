@@ -81,6 +81,7 @@ def test_config_loaded_async_only_tool_gets_sync_wrapper(mock_bash, mock_cfg):
     tool_cfg = MagicMock()
     tool_cfg.name = "async_tool"
     tool_cfg.group = "test"
+    tool_cfg.opt_in = False
     tool_cfg.use = "tests.fake:async_tool"
     mock_cfg.return_value = _make_minimal_config([tool_cfg])
 
