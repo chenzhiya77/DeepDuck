@@ -74,6 +74,21 @@ class EntityUpsert:
     description: str = ""
 
 
+@dataclass(slots=True)
+class WikiEntryUpsert:
+    """One wiki entry's dense vector + pointer payload for ``kb_wiki_entries``.
+
+    The full entry text stays in the business DB ``wiki_entries`` table — the
+    payload only carries the ``entry_id`` pointer, ``title`` and ``kb_id``
+    (spec §3.5 向量库存指针、正文存业务库).
+    """
+
+    entry_id: str
+    kb_id: str
+    title: str
+    dense: list[float]
+
+
 class KnowledgeVectorStore:
     """Qdrant facade for the three knowledge collections."""
 
@@ -118,6 +133,11 @@ class KnowledgeVectorStore:
     def _entity_point_id(kb_id: str, name: str) -> str:
         """Deterministic UUID per (kb, entity) so re-embeds overwrite in place."""
         return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-entity:{kb_id}:{name}").hex
+
+    @staticmethod
+    def _wiki_point_id(entry_id: str) -> str:
+        """Deterministic UUID per wiki entry so regenerations overwrite in place."""
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-wiki:{entry_id}").hex
 
     async def init_collections(self) -> None:
         """Create the three collections + payload indexes, idempotently."""
@@ -207,6 +227,21 @@ class KnowledgeVectorStore:
                 payload={"entities": list(names)},
                 points=FilterSelector(filter=Filter(must=[FieldCondition(key="chunk_id", match=MatchValue(value=chunk_id))])),
             )
+
+    async def upsert_wiki_entries(self, entries: Sequence[WikiEntryUpsert]) -> int:
+        """Upsert wiki-entry dense vectors into ``kb_wiki_entries`` (pointer payload only)."""
+        points = [
+            PointStruct(
+                id=self._wiki_point_id(entry.entry_id),
+                vector={"dense": entry.dense},
+                payload={"entry_id": entry.entry_id, "kb_id": entry.kb_id, "title": entry.title},
+            )
+            for entry in entries
+        ]
+        if not points:
+            return 0
+        await self._client.upsert(collection_name=self.wiki_entries_collection, points=points)
+        return len(points)
 
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""

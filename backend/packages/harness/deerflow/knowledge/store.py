@@ -212,6 +212,16 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             return int(result.scalar_one())
 
+    async def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[dict[str, Any]]:
+        """Fetch chunk rows by id (graph/wiki aggregation of source_chunk_ids)."""
+        if not chunk_ids:
+            return []
+        stmt = select(ChunkRow).where(ChunkRow.chunk_id.in_(chunk_ids))
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            rows = {row.chunk_id: self._row_to_dict(row, datetime_keys=()) for row in result.scalars().all()}
+        return [rows[chunk_id] for chunk_id in chunk_ids if chunk_id in rows]
+
     async def update_chunk_extract(
         self,
         chunk_id: str,

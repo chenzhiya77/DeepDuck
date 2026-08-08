@@ -96,11 +96,11 @@
 - Create: `backend/packages/harness/deerflow/knowledge/wiki/` (`generator.py`, `store.py`)
 - Create: `backend/tests/knowledge/wiki/test_generator.py`
 
-- [ ] Write failing tests: head-entity selection (~top 20% by degree/frequency); entry generation aggregates source chunks via graph `source_chunk_ids`; entry written to `wiki_entries` + vector upserted to `kb_wiki_entries` (payload: entry_id/title/kb_id); new doc marks affected entries `dirty`; regeneration clears dirty.
-- [ ] Run tests, capture RED.
-- [ ] Implement generator (`generate_wiki(kb_id)`) with main-model call per spec §3.5, triggered-batch semantics (threshold or manual), dirty incremental path.
-- [ ] Tests GREEN; revert dirty marking, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add wiki entry generation and incremental refresh`.
+- [x] Write failing tests: head-entity selection (~top 20% by degree/frequency); entry generation aggregates source chunks via graph `source_chunk_ids`; entry written to `wiki_entries` + vector upserted to `kb_wiki_entries` (payload: entry_id/title/kb_id); new doc marks affected entries `dirty`; regeneration clears dirty.
+- [x] Run tests, capture RED.
+- [x] Implement generator (`generate_wiki(kb_id)`) with main-model call per spec §3.5, triggered-batch semantics (threshold or manual), dirty incremental path.
+- [x] Tests GREEN; revert dirty marking, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add wiki entry generation and incremental refresh`.
 
 ## Task 7: Three retrieval tools + tool group + access gate
 

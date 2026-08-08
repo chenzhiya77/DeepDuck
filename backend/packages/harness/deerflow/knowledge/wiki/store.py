@@ -1,0 +1,84 @@
+"""Wiki entry persistence (spec §3.5).
+
+Full text + status live here in the business DB; Qdrant ``kb_wiki_entries``
+only mirrors the dense vector + an ``entry_id`` pointer. Entry ids are
+deterministic per ``(kb_id, title)`` so regenerating an entry overwrites the
+same row (and, via the same id, the same vector point).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Collection
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from deerflow.knowledge.models import WikiEntryRow
+from deerflow.utils.time import coerce_iso
+
+
+def wiki_entry_id(kb_id: str, title: str) -> str:
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-wiki-entry:{kb_id}:{title}").hex
+
+
+class WikiStore:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sf = session_factory
+
+    @staticmethod
+    def _to_dict(row: WikiEntryRow) -> dict[str, Any]:
+        data = row.to_dict()
+        if data.get("updated_at") is not None:
+            data["updated_at"] = coerce_iso(data["updated_at"])
+        return data
+
+    async def upsert_entry(
+        self,
+        kb_id: str,
+        *,
+        title: str,
+        content: str,
+        source_chunk_ids: list[str],
+        status: str = "ready",
+    ) -> dict[str, Any]:
+        """Create or fully refresh an entry; regeneration clears ``dirty``."""
+        entry_id = wiki_entry_id(kb_id, title)
+        async with self._sf() as session:
+            row = await session.get(WikiEntryRow, entry_id)
+            if row is None:
+                row = WikiEntryRow(id=entry_id, kb_id=kb_id, title=title, content=content, status=status, source_chunk_ids=list(source_chunk_ids))
+                session.add(row)
+            else:
+                row.content = content
+                row.status = status
+                row.source_chunk_ids = list(source_chunk_ids)
+                row.updated_at = datetime.now(UTC)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_dict(row)
+
+    async def get_entry(self, entry_id: str) -> dict[str, Any] | None:
+        async with self._sf() as session:
+            row = await session.get(WikiEntryRow, entry_id)
+            return None if row is None else self._to_dict(row)
+
+    async def list_entries(self, kb_id: str, *, status: str | None = None) -> list[dict[str, Any]]:
+        stmt = select(WikiEntryRow).where(WikiEntryRow.kb_id == kb_id)
+        if status is not None:
+            stmt = stmt.where(WikiEntryRow.status == status)
+        stmt = stmt.order_by(WikiEntryRow.updated_at.desc(), WikiEntryRow.id.desc())
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return [self._to_dict(row) for row in result.scalars().all()]
+
+    async def mark_dirty_for_titles(self, kb_id: str, titles: Collection[str]) -> int:
+        """Flag entries whose title is one of ``titles`` as ``dirty``."""
+        if not titles:
+            return 0
+        async with self._sf() as session:
+            result = await session.execute(update(WikiEntryRow).where(WikiEntryRow.kb_id == kb_id, WikiEntryRow.title.in_(list(titles)), WikiEntryRow.status != "dirty").values(status="dirty"))
+            await session.commit()
+            return int(result.rowcount or 0)
