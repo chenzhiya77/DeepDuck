@@ -1,0 +1,181 @@
+"""Qdrant vector store for the RAG knowledge base.
+
+Three collections (spec §3.3–§3.5), all with named vectors ``dense``
+(1024-dim COSINE) + ``sparse`` (Qdrant sparse vectors always score by dot
+product, giving the DOT path):
+
+- ``kb_chunks``       — chunk vectors; payload carries the ``chunk_id``
+  pointer, filter fields (``kb_id``/``doc_id``/``entities``) and unindexed
+  display metadata (``doc_name``/``heading_path``/``page``). Never the chunk
+  text — text lives only in the business DB ``chunks`` table.
+- ``kb_entities``     — entity name+description dense vectors (graph path).
+- ``kb_wiki_entries`` — wiki entry vectors (payload: entry pointer + title).
+
+The async client keeps the offline indexing worker and the online retrieval
+tools off the event loop's blocking path.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+
+from qdrant_client import AsyncQdrantClient
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    Fusion,
+    FusionQuery,
+    MatchValue,
+    PayloadSchemaType,
+    PointStruct,
+    Prefetch,
+    ScoredPoint,
+    SparseVector,
+    SparseVectorParams,
+    VectorParams,
+)
+
+#: Payload fields that get a KEYWORD index on ``kb_chunks`` (spec §3.3) —
+#: only filter conditions are indexed; display metadata stays unindexed.
+_CHUNKS_PAYLOAD_INDEXES: tuple[str, ...] = ("kb_id", "doc_id", "entities")
+
+
+@dataclass(slots=True)
+class ChunkUpsert:
+    """One chunk vector + its Qdrant payload (no chunk text, by design)."""
+
+    chunk_id: str
+    kb_id: str
+    doc_id: str
+    dense: list[float]
+    sparse: SparseVector
+    doc_name: str = ""
+    heading_path: list[str] = field(default_factory=list)
+    page: int | None = None
+    entities: list[str] = field(default_factory=list)
+
+
+class KnowledgeVectorStore:
+    """Qdrant facade for the three knowledge collections."""
+
+    def __init__(
+        self,
+        url: str | None = None,
+        *,
+        client: AsyncQdrantClient | None = None,
+        collection_prefix: str = "kb",
+        dense_size: int = 1024,
+    ) -> None:
+        if client is None:
+            if url is None:
+                raise ValueError("KnowledgeVectorStore requires a Qdrant url or a client")
+            client = AsyncQdrantClient(url)
+        self._client = client
+        self._prefix = collection_prefix
+        self._dense_size = dense_size
+
+    @property
+    def chunks_collection(self) -> str:
+        return f"{self._prefix}_chunks"
+
+    @property
+    def entities_collection(self) -> str:
+        return f"{self._prefix}_entities"
+
+    @property
+    def wiki_entries_collection(self) -> str:
+        return f"{self._prefix}_wiki_entries"
+
+    @property
+    def collection_names(self) -> tuple[str, str, str]:
+        return (self.chunks_collection, self.entities_collection, self.wiki_entries_collection)
+
+    @staticmethod
+    def _point_id(chunk_id: str) -> str:
+        """Deterministic UUID per chunk so re-upserts overwrite in place."""
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-chunk:{chunk_id}").hex
+
+    async def init_collections(self) -> None:
+        """Create the three collections + payload indexes, idempotently."""
+        for name in self.collection_names:
+            if await self._client.collection_exists(name):
+                continue
+            await self._client.create_collection(
+                collection_name=name,
+                vectors_config={"dense": VectorParams(size=self._dense_size, distance=Distance.COSINE)},
+                sparse_vectors_config={"sparse": SparseVectorParams()},
+            )
+        # create_payload_index is itself idempotent (same name+schema → ok).
+        for field_name in _CHUNKS_PAYLOAD_INDEXES:
+            await self._client.create_payload_index(self.chunks_collection, field_name, PayloadSchemaType.KEYWORD)
+        await self._client.create_payload_index(self.entities_collection, "kb_id", PayloadSchemaType.KEYWORD)
+        await self._client.create_payload_index(self.wiki_entries_collection, "kb_id", PayloadSchemaType.KEYWORD)
+
+    async def upsert_chunks(self, chunks: Sequence[ChunkUpsert]) -> int:
+        points = [
+            PointStruct(
+                id=self._point_id(chunk.chunk_id),
+                vector={"dense": chunk.dense, "sparse": chunk.sparse},
+                payload={
+                    "chunk_id": chunk.chunk_id,
+                    "kb_id": chunk.kb_id,
+                    "doc_id": chunk.doc_id,
+                    "entities": chunk.entities,
+                    "doc_name": chunk.doc_name,
+                    "heading_path": chunk.heading_path,
+                    "page": chunk.page,
+                },
+            )
+            for chunk in chunks
+        ]
+        if not points:
+            return 0
+        await self._client.upsert(collection_name=self.chunks_collection, points=points)
+        return len(points)
+
+    async def hybrid_query(
+        self,
+        *,
+        dense: list[float],
+        sparse: SparseVector,
+        kb_id: str,
+        top_k: int = 5,
+        per_path_limit: int = 20,
+    ) -> list[ScoredPoint]:
+        """Dense+sparse prefetch (per-path limit) fused with RRF, scoped to one KB."""
+        kb_filter = Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
+        response = await self._client.query_points(
+            collection_name=self.chunks_collection,
+            prefetch=[
+                Prefetch(query=dense, using="dense", filter=kb_filter, limit=per_path_limit),
+                Prefetch(query=sparse, using="sparse", filter=kb_filter, limit=per_path_limit),
+            ],
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=top_k,
+            with_payload=True,
+        )
+        return response.points
+
+    async def delete_by_doc(self, doc_id: str) -> None:
+        """Drop all chunk points of one document (re-upload / delete path)."""
+        await self._client.delete(
+            collection_name=self.chunks_collection,
+            points_selector=FilterSelector(filter=Filter(must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))])),
+        )
+
+    async def delete_by_kb(self, kb_id: str) -> None:
+        """Wipe every point of a KB across all three collections (spec §3.7)."""
+        kb_filter = Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
+        for name in self.collection_names:
+            await self._client.delete(collection_name=name, points_selector=FilterSelector(filter=kb_filter))
+
+
+def get_vector_store() -> KnowledgeVectorStore:
+    """Build the store from the ``rag.qdrant_url`` app config section."""
+    from deerflow.config.app_config import get_app_config
+
+    return KnowledgeVectorStore(get_app_config().rag.qdrant_url)

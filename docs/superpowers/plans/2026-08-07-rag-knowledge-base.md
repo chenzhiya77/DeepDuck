@@ -27,13 +27,13 @@
 - Modify: `backend/pyproject.toml` (uv add `qdrant-client`, `networkx`)
 - Create: `backend/tests/test_rag_config.py`
 
-- [ ] Write failing test: `RagConfig` loads defaults; `rag.qdrant_url`/`models` overridable from dict; unknown rag keys rejected or tolerated per AppConfig `extra` policy.
-- [ ] Run `cd backend && uv run pytest tests/test_rag_config.py -q` and capture RED (no RagConfig).
-- [ ] Implement `RagConfig` (qdrant_url default `http://localhost:6333`, model name fields, `worker_concurrency: int = 2`, `extract_rate_limit_rps: float = 5.0`), wire into AppConfig; update `config.example.yaml`.
-- [ ] Add qdrant service to both compose files (no published port beyond loopback; follow existing service patterns); add `qdrant_data` volume.
-- [ ] `uv add qdrant-client networkx`; run test GREEN; revert RagConfig field, prove RED, restore, GREEN.
-- [ ] Validate compose: `docker compose -f docker/docker-compose-dev.yaml config -q`.
-- [ ] Commit: `feat(rag): add rag config section, qdrant service, and deps`.
+- [x] Write failing test: `RagConfig` loads defaults; `rag.qdrant_url`/`models` overridable from dict; unknown rag keys rejected or tolerated per AppConfig `extra` policy.
+- [x] Run `cd backend && uv run pytest tests/test_rag_config.py -q` and capture RED (no RagConfig).
+- [x] Implement `RagConfig` (qdrant_url default `http://localhost:6333`, model name fields, `worker_concurrency: int = 2`, `extract_rate_limit_rps: float = 5.0`), wire into AppConfig; update `config.example.yaml`.
+- [x] Add qdrant service to both compose files (no published port beyond loopback; follow existing service patterns); add `qdrant_data` volume.
+- [x] `uv add qdrant-client networkx`; run test GREEN; revert RagConfig field, prove RED, restore, GREEN.
+- [x] Validate compose: `docker compose -f docker/docker-compose-dev.yaml config -q`.
+- [x] Commit: `feat(rag): add rag config section, qdrant service, and deps`.
 
 ## Task 2: Data model & storage layer
 
@@ -43,12 +43,12 @@
 - Create: `backend/packages/harness/deerflow/knowledge/vector_store.py` (Qdrant client + collection init)
 - Create: `backend/tests/knowledge/test_models.py`, `test_vector_store.py`
 
-- [ ] Write failing tests: table CRUD round-trip; `knowledge_bases` has `owner_id`/`visibility` default `private`; `documents` has `uploader_id`/`status`/`progress_percent`/`chunk_count`/`storage_path`; `chunks` table carries text + `extract_status` (pending/done/empty/failed) for resume; Qdrant init creates 3 collections idempotently with named vectors (dense 1024 COSINE + sparse DOT) and payload indexes (`kb_id`, `doc_id`, `entities`); `upsert_chunks` payload carries `chunk_id` pointer + filter fields (`kb_id`/`doc_id`/`entities`) + unindexed display metadata (`doc_name`/`heading_path`/`page` per spec §3.3), never chunk text (text lives in the business DB per spec §3.2 切片存储归属).
-- [ ] Run tests, capture RED.
-- [ ] Implement SQLAlchemy models + migration (`knowledge_bases`: id/owner_id/name/description/visibility/created_at; `documents`: id/kb_id/uploader_id/name/size_bytes/storage_path/status/progress_percent/chunk_count/error/created_at; `chunks`: chunk_id/doc_id/kb_id/chunk_index/text/heading_path/page/token_count/entities/extract_status/extract_error; `graph_entities`: id/kb_id/name/type/description/source_chunk_ids jsonb/status; `graph_relations`: id/kb_id/source/target/relation/description/source_chunk_ids; `wiki_entries`: id/kb_id/title/content/status/source_chunk_ids/updated_at).
-- [ ] Implement `vector_store.py`: `init_collections()` idempotent create, `upsert_chunks()`, `hybrid_query(dense, sparse, kb_id, top_k)` with prefetch+RRF, `delete_by_doc()`, `delete_by_kb()`.
-- [ ] Tests GREEN against local Qdrant (docker service); revert collection init, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add knowledge data model, migration, and qdrant store`.
+- [x] Write failing tests: table CRUD round-trip; `knowledge_bases` has `owner_id`/`visibility` default `private`; `documents` has `uploader_id`/`status`/`progress_percent`/`chunk_count`/`storage_path`; `chunks` table carries text + `extract_status` (pending/done/empty/failed) for resume; Qdrant init creates 3 collections idempotently with named vectors (dense 1024 COSINE + sparse DOT) and payload indexes (`kb_id`, `doc_id`, `entities`); `upsert_chunks` payload carries `chunk_id` pointer + filter fields (`kb_id`/`doc_id`/`entities`) + unindexed display metadata (`doc_name`/`heading_path`/`page` per spec §3.3), never chunk text (text lives in the business DB per spec §3.2 切片存储归属).
+- [x] Run tests, capture RED.
+- [x] Implement SQLAlchemy models + migration (`knowledge_bases`: id/owner_id/name/description/visibility/created_at; `documents`: id/kb_id/uploader_id/name/size_bytes/storage_path/status/progress_percent/chunk_count/error/created_at; `chunks`: chunk_id/doc_id/kb_id/chunk_index/text/heading_path/page/token_count/entities/extract_status/extract_error; `graph_entities`: id/kb_id/name/type/description/source_chunk_ids jsonb/status; `graph_relations`: id/kb_id/source/target/relation/description/source_chunk_ids; `wiki_entries`: id/kb_id/title/content/status/source_chunk_ids/updated_at).
+- [x] Implement `vector_store.py`: `init_collections()` idempotent create, `upsert_chunks()`, `hybrid_query(dense, sparse, kb_id, top_k)` with prefetch+RRF, `delete_by_doc()`, `delete_by_kb()`.
+- [x] Tests GREEN against local Qdrant (docker service); revert collection init, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add knowledge data model, migration, and qdrant store`.
 
 ## Task 3: MinerU parse client & structure-aware chunker
 

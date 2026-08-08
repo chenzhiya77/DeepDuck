@@ -14,6 +14,14 @@ its storage implementation lives in ``deerflow.runtime.events.store.db`` and
 there is no matching entity directory.
 """
 
+from deerflow.knowledge.models import (
+    ChunkRow,
+    DocumentRow,
+    GraphEntityRow,
+    GraphRelationRow,
+    KnowledgeBaseRow,
+    WikiEntryRow,
+)
 from deerflow.persistence.agents.model import AgentRow
 from deerflow.persistence.channel_connections.model import (
     ChannelConnectionRow,
@@ -36,7 +44,12 @@ __all__ = [
     "ChannelConversationRow",
     "ChannelCredentialRow",
     "ChannelOAuthStateRow",
+    "ChunkRow",
+    "DocumentRow",
     "FeedbackRow",
+    "GraphEntityRow",
+    "GraphRelationRow",
+    "KnowledgeBaseRow",
     "RunEventRow",
     "RunRow",
     "ScheduledTaskRow",
@@ -44,4 +57,5 @@ __all__ = [
     "ThreadMetaRow",
     "UserRow",
     "WebhookDeliveryRow",
+    "WikiEntryRow",
 ]
