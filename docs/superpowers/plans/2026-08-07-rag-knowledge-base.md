@@ -84,11 +84,11 @@
 - Create: `backend/packages/harness/deerflow/knowledge/graph/` (`extractor.py`, `normalizer.py`, `store.py`, `indexer.py`)
 - Create: `backend/tests/knowledge/graph/test_extractor.py`, `test_normalizer.py`, `test_graph_store.py`
 
-- [ ] Write failing tests: extractor parses LLM JSON (entities+relations), malformed JSON → chunk `failed`, empty result → `empty`; gleaning second pass merges new entities; normalizer merges alias pairs (case/plural/embedding-similarity stub); graph store persists entity/relation with `source_chunk_ids`, same-name entity merges descriptions; entities backfilled into `kb_chunks` payload; per-chunk status transitions `pending→done/empty/failed` persist for resume.
-- [ ] Run tests, capture RED.
-- [ ] Implement extractor (small-model call, gleaning=1, JSON schema prompt), normalizer (alias table + embedding merge threshold), SQLite graph store + NetworkX in-memory loader, backfill step, doc-level "graph degraded" flag at >30% failures.
-- [ ] Tests GREEN; revert gleaning merge, prove RED, restore, GREEN.
-- [ ] Commit: `feat(rag): add graph extraction, normalization, store, and backfill`.
+- [x] Write failing tests: extractor parses LLM JSON (entities+relations), malformed JSON → chunk `failed`, empty result → `empty`; gleaning second pass merges new entities; normalizer merges alias pairs (case/plural/embedding-similarity stub); graph store persists entity/relation with `source_chunk_ids`, same-name entity merges descriptions; entities backfilled into `kb_chunks` payload; per-chunk status transitions `pending→done/empty/failed` persist for resume.
+- [x] Run tests, capture RED.
+- [x] Implement extractor (small-model call, gleaning=1, JSON schema prompt), normalizer (alias table + embedding merge threshold), SQLite graph store + NetworkX in-memory loader, backfill step, doc-level "graph degraded" flag at >30% failures.
+- [x] Tests GREEN; revert gleaning merge, prove RED, restore, GREEN.
+- [x] Commit: `feat(rag): add graph extraction, normalization, store, and backfill`.
 
 ## Task 6: Wiki path indexing (triggered batch + dirty incremental)
 

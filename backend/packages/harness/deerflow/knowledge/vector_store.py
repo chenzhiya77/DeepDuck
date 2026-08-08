@@ -18,7 +18,7 @@ tools off the event loop's blocking path.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from qdrant_client import AsyncQdrantClient
@@ -57,6 +57,21 @@ class ChunkUpsert:
     heading_path: list[str] = field(default_factory=list)
     page: int | None = None
     entities: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class EntityUpsert:
+    """One entity's dense vector + payload for ``kb_entities`` (graph path).
+
+    Dense-only by design: entity matching is a name+description semantic
+    lookup, the sparse path adds nothing there.
+    """
+
+    name: str
+    kb_id: str
+    dense: list[float]
+    type: str = ""
+    description: str = ""
 
 
 class KnowledgeVectorStore:
@@ -98,6 +113,11 @@ class KnowledgeVectorStore:
     def _point_id(chunk_id: str) -> str:
         """Deterministic UUID per chunk so re-upserts overwrite in place."""
         return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-chunk:{chunk_id}").hex
+
+    @staticmethod
+    def _entity_point_id(kb_id: str, name: str) -> str:
+        """Deterministic UUID per (kb, entity) so re-embeds overwrite in place."""
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-entity:{kb_id}:{name}").hex
 
     async def init_collections(self) -> None:
         """Create the three collections + payload indexes, idempotently."""
@@ -159,6 +179,34 @@ class KnowledgeVectorStore:
             with_payload=True,
         )
         return response.points
+
+    async def upsert_entities(self, entities: Sequence[EntityUpsert]) -> int:
+        """Upsert entity dense vectors into ``kb_entities`` (graph path)."""
+        points = [
+            PointStruct(
+                id=self._entity_point_id(entity.kb_id, entity.name),
+                vector={"dense": entity.dense},
+                payload={"kb_id": entity.kb_id, "name": entity.name, "type": entity.type, "description": entity.description},
+            )
+            for entity in entities
+        ]
+        if not points:
+            return 0
+        await self._client.upsert(collection_name=self.entities_collection, points=points)
+        return len(points)
+
+    async def set_chunk_entities(self, entities_by_chunk: Mapping[str, Sequence[str]]) -> None:
+        """Backfill normalized entity names onto ``kb_chunks`` payloads.
+
+        The reverse half of the graph↔vector two-way link (spec §3.4): chunk_id keeps
+        the precise path, the ``entities`` payload field keeps the elastic one.
+        """
+        for chunk_id, names in entities_by_chunk.items():
+            await self._client.set_payload(
+                collection_name=self.chunks_collection,
+                payload={"entities": list(names)},
+                points=FilterSelector(filter=Filter(must=[FieldCondition(key="chunk_id", match=MatchValue(value=chunk_id))])),
+            )
 
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""

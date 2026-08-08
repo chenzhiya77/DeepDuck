@@ -15,6 +15,7 @@ class TestRagConfig:
         assert config.embedding_model == "qwen3.7-text-embedding"
         assert config.rerank_model == "qwen3-rerank"
         assert config.vlm_model == "Qwen/Qwen3-VL-30B-A3B-Instruct"
+        assert config.extract_model is None
         assert config.worker_concurrency == 2
         assert config.extract_rate_limit_rps == 5.0
 
@@ -25,6 +26,7 @@ class TestRagConfig:
                 "embedding_model": "custom-embedding",
                 "rerank_model": "custom-rerank",
                 "vlm_model": "custom-vlm",
+                "extract_model": "small-json-model",
                 "worker_concurrency": 8,
                 "extract_rate_limit_rps": 1.5,
             }

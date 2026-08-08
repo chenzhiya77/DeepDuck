@@ -150,6 +150,7 @@ class RagConfig(BaseModel):
     embedding_model: str = Field(default="qwen3.7-text-embedding", description="DashScope (Aliyun Bailian) embedding model producing dense+sparse vectors in a single call.")
     rerank_model: str = Field(default="qwen3-rerank", description="DashScope rerank model used for hybrid-search precision ranking.")
     vlm_model: str = Field(default="Qwen/Qwen3-VL-30B-A3B-Instruct", description="SiliconFlow VLM model used to caption images extracted by the document parser.")
+    extract_model: str | None = Field(default=None, description="Name of the config `models:` entry used for graph extraction (small, cheap, stable JSON output); None uses the first configured model.")
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
     extract_rate_limit_rps: float = Field(default=5.0, gt=0, description="Rate limit (requests/second) for graph-extraction LLM calls during indexing.")
 

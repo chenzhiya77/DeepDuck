@@ -1,0 +1,141 @@
+"""Entity normalization (spec §3.4).
+
+Two merge mechanisms, applied in order:
+
+1. **Surface alias table** — names are keyed by ``casefold`` + whitespace
+   removal, with a naive English plural (trailing ``s``) fold for pure-ASCII
+   names. The first-seen display name wins; alias descriptions are appended
+   so no extraction content is lost.
+2. **Embedding-similarity merge** — when the caller supplies ``name_vectors``
+   (name → dense vector, e.g. from the DashScope embedder), representative
+   names whose cosine similarity meets the threshold union-merge into the
+   first-seen name.
+
+Relation endpoints are rewritten through the same mapping; self-loops created
+by a merge are dropped. The normalized names are what get backfilled into
+chunk ``entities`` fields and used as graph node names.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+
+from deerflow.knowledge.graph.extractor import ExtractedEntity, ExtractedRelation, ExtractionResult
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _alias_key(name: str) -> str:
+    key = _WS_RE.sub("", name).casefold()
+    # Naive English plural fold: "models" → "model" (ASCII names only, so
+    # Chinese names are never touched).
+    if len(key) > 3 and key.isascii() and key.endswith("s") and not key.endswith("ss"):
+        key = key[:-1]
+    return key
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _merge_descriptions(existing: str, extra: str) -> str:
+    parts = [part for part in existing.split("\n") if part]
+    for part in extra.split("\n"):
+        if part and part not in parts:
+            parts.append(part)
+    return "\n".join(parts)
+
+
+def normalize_extraction(
+    result: ExtractionResult,
+    *,
+    name_vectors: dict[str, list[float]] | None = None,
+    similarity_threshold: float = 0.92,
+) -> ExtractionResult:
+    """Return a new ExtractionResult with alias/similar names merged."""
+    # Union-find over entity indices.
+    parent = list(range(len(result.entities)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        root_i, root_j = find(i), find(j)
+        if root_i == root_j:
+            return
+        # Keep the lower index (first-seen) as the representative.
+        parent[max(root_i, root_j)] = min(root_i, root_j)
+
+    # Pass 1: surface alias table.
+    by_key: dict[str, int] = {}
+    for i, entity in enumerate(result.entities):
+        key = _alias_key(entity.name)
+        if key in by_key:
+            union(i, by_key[key])
+        else:
+            by_key[key] = i
+
+    # Pass 2: embedding-similarity merge over representatives.
+    if name_vectors:
+        reps = sorted({find(i) for i in range(len(result.entities))})
+        for pos, i in enumerate(reps):
+            vec_i = name_vectors.get(result.entities[i].name)
+            if vec_i is None:
+                continue
+            for j in reps[pos + 1 :]:
+                vec_j = name_vectors.get(result.entities[j].name)
+                if vec_j is None or len(vec_i) != len(vec_j):
+                    continue
+                if _cosine(vec_i, vec_j) >= similarity_threshold:
+                    union(i, j)
+
+    # Rebuild entities: representative keeps its display name, absorbing the
+    # alias descriptions in first-seen order.
+    merged_entities: dict[int, ExtractedEntity] = {}
+    for i, entity in enumerate(result.entities):
+        root = find(i)
+        if root not in merged_entities:
+            merged_entities[root] = ExtractedEntity(name=result.entities[root].name, type=result.entities[root].type, description=result.entities[root].description)
+        if i != root:
+            merged_entities[root].description = _merge_descriptions(merged_entities[root].description, entity.description)
+    entities = [merged_entities[root] for root in sorted(merged_entities)]
+
+    # Rewrite relation endpoints through the mapping; drop merge-created loops.
+    name_of = {i: merged_entities[find(i)].name for i in range(len(result.entities))} if merged_entities else {}
+    index_of = {id(entity): i for i, entity in enumerate(result.entities)}
+    relations: list[ExtractedRelation] = []
+    seen: set[tuple[str, str, str]] = set()
+    for relation in result.relations:
+        source = _map_name(relation.source, result.entities, name_of, index_of)
+        target = _map_name(relation.target, result.entities, name_of, index_of)
+        if source == target:
+            continue
+        triple = (source, target, relation.relation)
+        if triple in seen:
+            continue
+        seen.add(triple)
+        relations.append(ExtractedRelation(source=source, target=target, relation=relation.relation, description=relation.description))
+    return ExtractionResult(entities=entities, relations=relations)
+
+
+def _map_name(name: str, entities: list[ExtractedEntity], name_of: dict[int, str], index_of: dict[int, int]) -> str:
+    """Map a (possibly alias) endpoint name to its representative display name."""
+    for entity in entities:
+        if entity.name == name:
+            return name_of.get(index_of[id(entity)], name)
+    # Endpoint not extracted as an entity (dangling): alias-fold it if the key
+    # matches a known representative, else pass through unchanged.
+    key = _alias_key(name)
+    for i, entity in enumerate(entities):
+        if _alias_key(entity.name) == key:
+            return name_of.get(i, entity.name)
+    return name

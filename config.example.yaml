@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 34
+config_version: 35
 
 # ============================================================================
 # Logging
@@ -2546,6 +2546,9 @@ rag:
   rerank_model: qwen3-rerank
   # SiliconFlow VLM model used to caption images extracted from documents.
   vlm_model: Qwen/Qwen3-VL-30B-A3B-Instruct
+  # Name of the `models:` entry used for graph extraction — pick a small,
+  # cheap model with stable JSON output. Omit to use the first configured model.
+  # extract_model: deepseek-v4-flash
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
   # Requests/second cap for graph-extraction LLM calls during indexing.
