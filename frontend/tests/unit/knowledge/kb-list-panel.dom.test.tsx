@@ -54,6 +54,18 @@ describe("KbListPanel", () => {
     expect(onSelect).toHaveBeenCalledWith("kb-b");
   });
 
+  it("renders the collapse button only when onCollapse is provided", () => {
+    renderPanel();
+    expect(screen.queryByRole("button", { name: "收起列表栏" })).toBeNull();
+
+    cleanup();
+    const onCollapse = rs.fn();
+    renderPanel({ onCollapse });
+    const button = screen.getByRole("button", { name: "收起列表栏" });
+    fireEvent.click(button);
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+
   it("marks the selected kb row as current", () => {
     renderPanel({ selectedKbId: "kb-a" });
     const selected = screen.getByText("产品资料").closest("[data-active]");

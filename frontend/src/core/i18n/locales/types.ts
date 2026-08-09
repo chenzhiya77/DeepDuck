@@ -240,6 +240,8 @@ export interface Translations {
     emptyKbList: string;
     selectKbTitle: string;
     selectKbHint: string;
+    collapseKbList: string;
+    expandKbList: string;
     uploadDocuments: string;
     uploadingDocuments: string;
     generateWiki: string;

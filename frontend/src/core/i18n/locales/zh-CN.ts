@@ -298,6 +298,8 @@ export const zhCN: Translations = {
     emptyKbList: "还没有知识库，点击右上角「+」新建",
     selectKbTitle: "未选择知识库",
     selectKbHint: "请先在左侧选择要检索的知识库",
+    collapseKbList: "收起列表栏",
+    expandKbList: "展开列表栏",
     uploadDocuments: "上传文档",
     uploadingDocuments: "上传中…",
     generateWiki: "生成百科",

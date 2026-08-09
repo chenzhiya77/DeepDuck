@@ -314,6 +314,8 @@ export const enUS: Translations = {
     emptyKbList: "No knowledge bases yet — click \"+\" above to create one",
     selectKbTitle: "No knowledge base selected",
     selectKbHint: "Select a knowledge base on the left to start asking",
+    collapseKbList: "Collapse the list panel",
+    expandKbList: "Expand the list panel",
     uploadDocuments: "Upload documents",
     uploadingDocuments: "Uploading…",
     generateWiki: "Generate wiki",

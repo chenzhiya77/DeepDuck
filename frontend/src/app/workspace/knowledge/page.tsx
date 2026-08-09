@@ -7,6 +7,7 @@ import { KnowledgeChatPanel } from "@/components/workspace/knowledge/chat-panel"
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { DocumentPanel } from "@/components/workspace/knowledge/document-panel";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
+import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   useCreateKnowledgeBase,
@@ -65,26 +66,27 @@ export default function KnowledgePage() {
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
 
   return (
-    <div className="flex size-full min-h-0 overflow-x-auto" data-testid="knowledge-page">
-      <aside className="w-56 shrink-0 border-r xl:w-64">
-        <KbListPanel
-          kbs={kbs}
-          selectedKbId={selectedKbId}
-          onSelect={setSelectedKbId}
-          onCreate={async (name, description) => {
-            try {
-              const created = await createKb.mutateAsync({ name, description });
-              setSelectedKbId(created.id);
-            } catch (error) {
-              showMutationError(error, tk.errors.createFailed);
-            }
-          }}
-        />
-      </aside>
-
-      <section className="min-w-[20rem] flex-1 border-r">
-        {selectedKb ? (
-          <DocumentPanel
+    <div className="size-full min-h-0" data-testid="knowledge-page">
+      <KnowledgePanelsShell
+        left={({ collapseLeft }) => (
+          <KbListPanel
+            kbs={kbs}
+            selectedKbId={selectedKbId}
+            onSelect={setSelectedKbId}
+            onCollapse={collapseLeft}
+            onCreate={async (name, description) => {
+              try {
+                const created = await createKb.mutateAsync({ name, description });
+                setSelectedKbId(created.id);
+              } catch (error) {
+                showMutationError(error, tk.errors.createFailed);
+              }
+            }}
+          />
+        )}
+        middle={
+          selectedKb ? (
+            <DocumentPanel
             kb={selectedKb}
             documents={documents}
             uploading={uploadDocument.isPending}
@@ -132,17 +134,15 @@ export default function KnowledgePage() {
               });
             }}
             onOpenChunks={setDrawerDoc}
-          />
-        ) : (
-          <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-            {tk.selectKbHint}
-          </div>
-        )}
-      </section>
-
-      <aside className="w-[22rem] shrink-0 xl:w-[26rem]">
-        <KnowledgeChatPanel kb={selectedKb} />
-      </aside>
+            />
+          ) : (
+            <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+              {tk.selectKbHint}
+            </div>
+          )
+        }
+        right={<KnowledgeChatPanel kb={selectedKb} />}
+      />
 
       {drawerDoc && selectedKbId && (
         <ChunkDrawer
