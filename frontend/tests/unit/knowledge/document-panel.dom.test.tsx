@@ -59,17 +59,17 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
 afterEach(cleanup);
 
 describe("DocumentPanel header", () => {
-  it("renders kb name, type tag and the three header actions", () => {
+  it("renders kb name, type tag and the header actions", () => {
     renderPanel();
     expect(screen.getByText("产品资料")).toBeTruthy();
     expect(screen.getByRole("button", { name: "上传文档" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "生成百科" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
   });
 
-  it("invokes onGenerateWiki from the header action", () => {
+  it("invokes onGenerateWiki from the overflow menu", async () => {
     const { onGenerateWiki } = renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "生成百科" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByText("生成百科"));
     expect(onGenerateWiki).toHaveBeenCalled();
   });
 

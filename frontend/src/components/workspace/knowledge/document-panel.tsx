@@ -108,18 +108,16 @@ export function DocumentPanel({
         handleFiles(event.dataTransfer?.files ?? null);
       }}
     >
-      {/* Header: kb name + type tag + actions */}
-      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
+      {/* Header: kb name + type tag + the upload CTA. All library actions
+          live in the overflow menu so the header stays one stable line no
+          matter how many actions are added later (spec §5.2). */}
+      <div className="flex items-center gap-2 border-b px-4 py-3">
         <h2 className="min-w-0 truncate text-sm font-semibold">{kb.name}</h2>
-        <Badge variant="outline">{t.knowledge.personalKBs}</Badge>
-        <div className="ml-auto flex items-center gap-1.5">
+        <Badge className="shrink-0" variant="outline">{t.knowledge.personalKBs}</Badge>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button size="sm" variant="secondary" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
             <Upload className="size-4" />
             {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
-          </Button>
-          <Button size="sm" variant="secondary" onClick={onGenerateWiki}>
-            <BookOpen className="size-4" />
-            {tk.generateWiki}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -128,6 +126,10 @@ export function DocumentPanel({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onSelect={onGenerateWiki}>
+                <BookOpen className="size-4" />
+                {tk.generateWiki}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => {
                   setRenameValue(kb.name);
