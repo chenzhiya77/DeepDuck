@@ -2,10 +2,10 @@
 
 import type { Message } from "@langchain/langgraph-sdk";
 import {
+  ArrowUpIcon,
   ArrowUpRightIcon,
   HistoryIcon,
   PlusIcon,
-  SendHorizonalIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -208,41 +208,45 @@ export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
         )}
       </div>
 
+      {/* Composer styled after the home-page InputBox: one rounded container
+          holds the textarea, the deep-retrieval toggle, and the send button. */}
       <div className="shrink-0 border-t p-3">
-        <label
-          className="text-muted-foreground flex items-center gap-2 pb-2 text-xs"
-          title={tc.deepResearchHint}
-        >
-          <Switch
-            checked={deepResearch}
-            disabled={!kb}
-            onCheckedChange={setDeepResearch}
+        <div className="focus-within:border-ring focus-within:ring-ring/50 rounded-xl border shadow-xs transition-colors focus-within:ring-[3px]">
+          <Textarea
+            className="max-h-32 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+            disabled={!kb || thread.isLoading}
+            placeholder={tc.inputPlaceholder}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                handleSubmit();
+              }
+            }}
           />
-          <span>{tc.deepResearch}</span>
-        </label>
-        <Textarea
-          className="max-h-32 min-h-16 resize-none"
-          disabled={!kb || thread.isLoading}
-          placeholder={tc.inputPlaceholder}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              handleSubmit();
-            }
-          }}
-        />
-        <div className="flex justify-end pt-2">
-          <Button
-            aria-label={tc.send}
-            disabled={!canSend}
-            size="sm"
-            onClick={handleSubmit}
-          >
-            <SendHorizonalIcon className="size-4" />
-            {tc.send}
-          </Button>
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <label
+              className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs"
+              title={tc.deepResearchHint}
+            >
+              <Switch
+                checked={deepResearch}
+                disabled={!kb}
+                onCheckedChange={setDeepResearch}
+              />
+              <span>{tc.deepResearch}</span>
+            </label>
+            <Button
+              aria-label={tc.send}
+              className="rounded-full"
+              disabled={!canSend}
+              size="icon-sm"
+              onClick={handleSubmit}
+            >
+              <ArrowUpIcon className="size-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
