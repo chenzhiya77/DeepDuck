@@ -163,9 +163,9 @@
 **Files:**
 - Create: `backend/tests/knowledge/test_e2e_smoke.py` (marked integration), `docs` updates (README + backend/AGENTS.md knowledge section + frontend/AGENTS.md route note)
 
-- [ ] With live keys + Qdrant: upload one small PDF and one MD via API; wait for `ready`; assert `chunk_count` > 0, graph entities exist, wiki generated after trigger.
+- [x] With live keys + Qdrant: upload one small PDF and one MD via API; wait for `ready`; assert `chunk_count` > 0, graph entities exist, wiki generated after trigger.
 - [ ] Start stack; in rag chat window ask one factual and one conceptual question; assert citations render and answers ground in uploaded docs; assert lead_agent window has no rag tools.
-- [ ] Run full backend suite `uv run pytest tests/knowledge -q` and frontend `pnpm check && pnpm test`.
+- [ ] Run full backend suite `uv run pytest tests/knowledge -q` and frontend `pnpm check && pnpm test`. (backend done: 147 passed; frontend pending Task 10)
 - [ ] Update README.md (user-facing) and module AGENTS.md files per documentation sync rule.
 - [ ] Commit: `test(rag): add e2e smoke and docs`.
 
