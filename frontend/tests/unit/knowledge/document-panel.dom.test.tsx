@@ -91,7 +91,9 @@ describe("DocumentPanel header", () => {
     const { onRenameKb } = renderPanel();
     fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
     fireEvent.click(await screen.findByText("重命名知识库"));
-    fireEvent.change(screen.getByDisplayValue("产品资料"), { target: { value: "新名称" } });
+    // The dialog opens deferred (runAfterMenuClose) once the menu's dismissal
+    // layer has torn down, so wait for it asynchronously.
+    fireEvent.change(await screen.findByDisplayValue("产品资料"), { target: { value: "新名称" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(onRenameKb).toHaveBeenCalledWith("新名称");
   });
@@ -100,7 +102,7 @@ describe("DocumentPanel header", () => {
     const { onDeleteKb } = renderPanel();
     fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
     fireEvent.click(await screen.findByText("删除知识库"));
-    expect(screen.getByText(/将同时删除全部文档、切片、向量、图谱与百科条目/)).toBeTruthy();
+    expect(await screen.findByText(/将同时删除全部文档、切片、向量、图谱与百科条目/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     expect(onDeleteKb).toHaveBeenCalled();
   });

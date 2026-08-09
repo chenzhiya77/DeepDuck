@@ -74,6 +74,30 @@ const STATUS_BADGE_VARIANT: Record<KnowledgeDocumentStatus, "default" | "seconda
 };
 
 /**
+ * Defer an action until the Radix menu (dropdown/context) has fully torn down
+ * its dismissal layer — exit animation finished and the body pointer-events
+ * restored. Opening a second modal layer (rename/delete dialog, chunk drawer)
+ * synchronously from onSelect interleaves both layers' body pointer-events
+ * bookkeeping in react-dismissable-layer, leaving `pointer-events: none`
+ * stuck on <body> after the second layer closes: the page then looks frozen
+ * and only a refresh recovers (right-click → 查看切片 → click outside
+ * reproduces it). Poll instead of a fixed timeout so we don't guess the
+ * animation length; the deadline keeps the action alive if the menu never
+ * settles (e.g. happy-dom).
+ */
+function runAfterMenuClose(action: () => void) {
+  const deadline = Date.now() + 500;
+  const tick = () => {
+    if (document.body.style.pointerEvents !== "none" || Date.now() > deadline) {
+      action();
+      return;
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/**
  * Middle column of the knowledge page (spec §5.2/§3.6). Presentational: the
  * page owns data fetching, polling (via `useDocuments`), and mutations.
  */
@@ -216,13 +240,13 @@ export function DocumentPanel({
               <DropdownMenuItem
                 onSelect={() => {
                   setRenameValue(kb.name);
-                  setRenameOpen(true);
+                  runAfterMenuClose(() => setRenameOpen(true));
                 }}
               >
                 {tk.renameKb}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => setDeleteKbOpen(true)}>
+              <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setDeleteKbOpen(true))}>
                 {tk.deleteKb}
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -436,7 +460,7 @@ export function DocumentPanel({
                           <ContextMenuLabel>{tk.selectedCount(selectedIds.size)}</ContextMenuLabel>
                           <ContextMenuItem
                             variant="destructive"
-                            onSelect={() => setDeleteTargets([...selectedIds])}
+                            onSelect={() => runAfterMenuClose(() => setDeleteTargets([...selectedIds]))}
                           >
                             <Trash2 className="size-4" />
                             {tk.deleteSelected}
@@ -448,7 +472,7 @@ export function DocumentPanel({
                         </>
                       ) : (
                         <>
-                          <ContextMenuItem onSelect={() => onOpenChunks(doc)}>
+                          <ContextMenuItem onSelect={() => runAfterMenuClose(() => onOpenChunks(doc))}>
                             <FileText className="size-4" />
                             {tk.openChunks}
                           </ContextMenuItem>
@@ -461,7 +485,7 @@ export function DocumentPanel({
                           <ContextMenuSeparator />
                           <ContextMenuItem
                             variant="destructive"
-                            onSelect={() => setDeleteTargets([doc.id])}
+                            onSelect={() => runAfterMenuClose(() => setDeleteTargets([doc.id]))}
                           >
                             <Trash2 className="size-4" />
                             {tk.deleteDocument}

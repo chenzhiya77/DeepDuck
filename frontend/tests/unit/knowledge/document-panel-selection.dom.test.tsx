@@ -141,7 +141,9 @@ describe("DocumentPanel context menu", () => {
     expect(await screen.findByRole("menuitem", { name: "查看切片" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "删除" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "查看切片" }));
-    expect(handlers.onOpenChunks).toHaveBeenCalledWith(DOCS[1]);
+    // onOpenChunks is deferred until the menu's dismissal layer fully tears
+    // down (runAfterMenuClose), so it arrives asynchronously.
+    await waitFor(() => expect(handlers.onOpenChunks).toHaveBeenCalledWith(DOCS[1]), { timeout: 2000 });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await new Promise((resolve) => setTimeout(resolve, 400));
   });
