@@ -156,12 +156,12 @@ export function DocumentPanel({
         />
       </div>
 
-      {/* Document table */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Document table (horizontal scroll protects the six columns on narrow widths) */}
+      <div className="min-h-0 flex-1 overflow-auto">
         {documents.length === 0 ? (
           <p className="text-muted-foreground px-4 py-10 text-center text-sm">{tk.emptyDocuments}</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[36rem] text-sm">
             <thead>
               <tr className="text-muted-foreground border-b text-left text-xs">
                 <th className="px-4 py-2 font-medium">{tk.table.name}</th>

@@ -65,8 +65,8 @@ export default function KnowledgePage() {
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
 
   return (
-    <div className="flex size-full min-h-0" data-testid="knowledge-page">
-      <aside className="w-64 shrink-0 border-r">
+    <div className="flex size-full min-h-0 overflow-x-auto" data-testid="knowledge-page">
+      <aside className="w-56 shrink-0 border-r xl:w-64">
         <KbListPanel
           kbs={kbs}
           selectedKbId={selectedKbId}
@@ -82,7 +82,7 @@ export default function KnowledgePage() {
         />
       </aside>
 
-      <section className="min-w-0 flex-1 border-r">
+      <section className="min-w-[20rem] flex-1 border-r">
         {selectedKb ? (
           <DocumentPanel
             kb={selectedKb}
@@ -140,7 +140,7 @@ export default function KnowledgePage() {
         )}
       </section>
 
-      <aside className="w-[26rem] shrink-0">
+      <aside className="w-[22rem] shrink-0 xl:w-[26rem]">
         <KnowledgeChatPanel kb={selectedKb} />
       </aside>
 
