@@ -1,7 +1,7 @@
 "use client";
 
-import { BookOpen, FileText, MoreHorizontal, RotateCcw, Trash2, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowUpDown, BookOpen, Check, FileText, MoreHorizontal, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,14 +17,29 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/core/i18n/hooks";
 import { aggregateDocumentStats, formatBytes } from "@/core/knowledge/document-stats";
+import {
+  DEFAULT_DOCUMENT_SORT,
+  filterDocuments,
+  sortDocuments,
+  type DocumentSortKey,
+  type SortDirection,
+} from "@/core/knowledge/document-view";
 import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentStatus } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
+
+const SORT_OPTIONS: { key: DocumentSortKey; labelKey: "createdAt" | "name" | "size" | "chunks" }[] = [
+  { key: "created_at", labelKey: "createdAt" },
+  { key: "name", labelKey: "name" },
+  { key: "size_bytes", labelKey: "size" },
+  { key: "chunk_count", labelKey: "chunks" },
+];
 
 function formatTimestamp(value: string, locale: string): string {
   const date = new Date(value);
@@ -84,9 +99,18 @@ export function DocumentPanel({
   const [renameValue, setRenameValue] = useState(kb.name);
   const [deleteKbOpen, setDeleteKbOpen] = useState(false);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<{ key: DocumentSortKey; direction: SortDirection }>(DEFAULT_DOCUMENT_SORT);
 
   const stats = aggregateDocumentStats(documents);
   const statusText = (status: KnowledgeDocumentStatus) => tk.status[status] ?? status;
+  // The list endpoint returns the full collection, so the toolbar filter and
+  // sort stay client-side (spec §5.2); the stats row always aggregates the
+  // unfiltered list.
+  const visibleDocuments = useMemo(
+    () => sortDocuments(filterDocuments(documents, query), sort.key, sort.direction),
+    [documents, query, sort],
+  );
 
   const handleFiles = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
@@ -176,10 +200,65 @@ export function DocumentPanel({
         </div>
       )}
 
+      {/* Toolbar: name filter + sort dropdown (client-side view controls) */}
+      <div className="flex items-center gap-2 border-b px-4 py-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+          <Input
+            aria-label={tk.searchDocuments}
+            className="h-7 pr-7 pl-7 text-xs"
+            placeholder={tk.searchDocuments}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query && (
+            <button
+              aria-label={tk.clearSearch}
+              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2"
+              type="button"
+              onClick={() => setQuery("")}
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label={tk.sortDocuments} size="icon-sm" variant="ghost">
+              <ArrowUpDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuLabel>{tk.sortDocuments}</DropdownMenuLabel>
+            {SORT_OPTIONS.map((option) => (
+              <DropdownMenuItem
+                key={option.key}
+                onSelect={() => setSort((current) => ({ ...current, key: option.key }))}
+              >
+                <Check className={cn("size-4", sort.key !== option.key && "invisible")} />
+                {tk.sort[option.labelKey]}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            {(["asc", "desc"] as const).map((direction) => (
+              <DropdownMenuItem
+                key={direction}
+                onSelect={() => setSort((current) => ({ ...current, direction }))}
+              >
+                <Check className={cn("size-4", sort.direction !== direction && "invisible")} />
+                {tk.sort[direction]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {/* Document table (horizontal scroll protects the six columns on narrow widths) */}
       <div className="min-h-0 flex-1 overflow-auto">
         {documents.length === 0 ? (
           <p className="text-muted-foreground px-4 py-10 text-center text-sm">{tk.emptyDocuments}</p>
+        ) : visibleDocuments.length === 0 ? (
+          <p className="text-muted-foreground px-4 py-10 text-center text-sm">{tk.noMatchingDocuments}</p>
         ) : (
           <table className="w-full min-w-[36rem] text-sm">
             <thead>
@@ -194,7 +273,7 @@ export function DocumentPanel({
               </tr>
             </thead>
             <tbody>
-              {documents.map((doc) => (
+              {visibleDocuments.map((doc) => (
                 <tr
                   key={doc.id}
                   className="hover:bg-muted/50 cursor-pointer border-b last:border-0"

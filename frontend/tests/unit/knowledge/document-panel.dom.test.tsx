@@ -210,3 +210,45 @@ describe("DocumentPanel stats row and upload", () => {
     expect(screen.getByText(/还没有文档/)).toBeTruthy();
   });
 });
+
+describe("DocumentPanel toolbar", () => {
+  const docs = [
+    doc({ id: "a", name: "产品手册.pdf", size_bytes: 4096, created_at: "2026-08-08T10:00:00Z" }),
+    doc({ id: "b", name: "Roadmap.md", size_bytes: 1024, created_at: "2026-08-09T09:00:00Z" }),
+    doc({ id: "c", name: "研发规范.docx", size_bytes: 2048, created_at: "2026-08-09T10:00:00Z" }),
+  ];
+
+  function rowNames(): string[] {
+    return [...document.querySelectorAll("tbody tr td:first-child")].map(
+      (cell) => cell.textContent ?? "",
+    );
+  }
+
+  it("filters rows by the search box and offers a clear button", () => {
+    renderPanel({ documents: docs });
+    const search = screen.getByPlaceholderText("搜索文档…");
+    fireEvent.change(search, { target: { value: "roadmap" } });
+    expect(rowNames()).toEqual(["Roadmap.md"]);
+    fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
+    expect(rowNames()).toHaveLength(3);
+  });
+
+  it("shows the no-match hint when the filter matches nothing", () => {
+    renderPanel({ documents: docs });
+    fireEvent.change(screen.getByPlaceholderText("搜索文档…"), { target: { value: "不存在" } });
+    expect(screen.getByText("没有匹配的文档")).toBeTruthy();
+  });
+
+  it("sorts by upload time descending by default and re-sorts via the dropdown", async () => {
+    renderPanel({ documents: docs });
+    expect(rowNames()).toEqual(["研发规范.docx", "Roadmap.md", "产品手册.pdf"]);
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "大小" }));
+    expect(rowNames()).toEqual(["产品手册.pdf", "研发规范.docx", "Roadmap.md"]);
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "升序" }));
+    expect(rowNames()).toEqual(["Roadmap.md", "研发规范.docx", "产品手册.pdf"]);
+  });
+});

@@ -245,6 +245,18 @@ export interface Translations {
     uploadDocuments: string;
     uploadingDocuments: string;
     dropToUpload: string;
+    searchDocuments: string;
+    clearSearch: string;
+    noMatchingDocuments: string;
+    sortDocuments: string;
+    sort: {
+      createdAt: string;
+      name: string;
+      size: string;
+      chunks: string;
+      asc: string;
+      desc: string;
+    };
     generateWiki: string;
     wikiEnqueued: string;
     settings: string;
