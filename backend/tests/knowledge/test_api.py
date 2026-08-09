@@ -9,6 +9,7 @@ covered in test_worker.py.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -224,3 +225,26 @@ async def test_wiki_generate_enqueues_background_task(service):
     assert response.status_code == 202
     assert response.json()["status"] == "enqueued"
     generate.assert_called_once_with(kb["id"])
+
+
+async def test_manual_wiki_trigger_passes_embedder(service, monkeypatch):
+    """Regression: the manual trigger must pass an embedder to generate_wiki.
+
+    generate_wiki silently skips the vector upsert when embedder is None, so a
+    service that forgets it produces entries wiki_search can never find — the
+    live smoke caught exactly that (entries existed, kb_wiki_entries stayed
+    empty).
+    """
+    captured: dict = {}
+
+    async def _fake_generate(*args, **kwargs):
+        captured.update(kwargs)
+        return MagicMock(generated=0, titles=[])
+
+    monkeypatch.setattr("app.gateway.services.knowledge_service.generate_wiki", _fake_generate)
+
+    service.trigger_wiki_generation("kb-1")
+    await asyncio.gather(*list(service._wiki_tasks))
+
+    assert captured.get("kb_id") == "kb-1"
+    assert captured.get("embedder") is not None, "manual wiki trigger must pass an embedder or entries get no vectors"

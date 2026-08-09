@@ -235,7 +235,7 @@ class KnowledgeIndexWorker:
         try:
             if not await wiki_trigger_ready(self._store, kb_id):
                 return
-            existing = await self._wiki_store.list(kb_id)
+            existing = await self._wiki_store.list_entries(kb_id)
             await generate_wiki(
                 self._store,
                 self._graph_store,

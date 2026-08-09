@@ -24,6 +24,7 @@ from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import ParsedDocument
 from deerflow.knowledge.store import KnowledgeStore
+from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.knowledge.worker import KnowledgeIndexWorker
 
 SAMPLE_MD = """# 第一章 概述
@@ -72,6 +73,7 @@ def _vector_store_mock() -> MagicMock:
     vs.set_chunk_entities = AsyncMock()
     vs.delete_by_doc = AsyncMock()
     vs.delete_entities = AsyncMock()
+    vs.upsert_wiki_entries = AsyncMock(return_value=0)
     return vs
 
 
@@ -229,3 +231,34 @@ async def test_startup_recovery_skips_terminal_and_done_chunks(session_factory):
     assert "待抽取切片" in llm.seen_texts[0]
     # terminal doc untouched (parse_fn default would fail loudly if invoked — none was provided)
     assert (await store.get_document("doc-b"))["status"] == "ready"
+
+
+class _WikiLLM:
+    """Main-model fake for wiki entry generation."""
+
+    async def ainvoke(self, messages):
+        return SimpleNamespace(content="# DeerFlow\n\nDeerFlow 是基于 LangGraph 的超级智能体系统，包含 Gateway 与沙箱。")
+
+
+@pytest.mark.asyncio
+async def test_ready_document_auto_triggers_wiki_generation(session_factory):
+    """Regression: the auto wiki trigger must use the real WikiStore interface.
+
+    Live smoke caught ``_maybe_generate_wiki`` calling ``wiki_store.list()``
+    (the real method is ``list_entries``) — with a mocked wiki store the slip
+    was invisible, and the trigger silently produced nothing.
+    """
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm, main_llm=_WikiLLM())
+
+    await worker.process_document("doc-1")
+
+    assert (await store.get_document("doc-1"))["status"] == "ready"
+    entries = await WikiStore(session_factory).list_entries("kb-1")
+    assert entries, "auto wiki trigger produced no entries"
+    assert entries[0]["title"] == "DeerFlow"
+    assert entries[0]["status"] == "ready"
+    assert worker._vector_store.upsert_wiki_entries.await_count == 1

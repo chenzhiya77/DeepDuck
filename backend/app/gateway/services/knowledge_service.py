@@ -154,7 +154,11 @@ class KnowledgeService:
 
     async def _run_wiki_generation(self, kb_id: str) -> None:
         try:
-            await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id)
+            from deerflow.knowledge.embedder import DashScopeEmbedder
+
+            # generate_wiki silently skips the vector upsert without an embedder —
+            # entries would exist but wiki_search could never find them.
+            await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, embedder=DashScopeEmbedder())
         except Exception:
             logger.exception("wiki generation failed for kb %s", kb_id)
 
