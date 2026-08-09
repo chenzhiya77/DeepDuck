@@ -75,6 +75,18 @@ function renderPanel(kb: KnowledgeBase | null = KB) {
 
 beforeEach(() => {
   capturedMessageListProps = null;
+  // The real sendMessage fires options.onSent once the in-flight guard passes;
+  // the human-input handler reports success through that callback.
+  mockSendMessage.mockImplementation(
+    async (
+      _threadId: string,
+      _message: unknown,
+      _extraContext?: unknown,
+      options?: { onSent?: () => void },
+    ) => {
+      options?.onSent?.();
+    },
+  );
   mockUseThreadStream.mockImplementation(() => ({
     thread: makeThreadState(),
     sendMessage: mockSendMessage,
@@ -224,5 +236,50 @@ describe("KnowledgeChatPanel", () => {
     );
     expect(screen.getByText("参考来源")).toBeTruthy();
     expect(screen.getByText("产品手册.pdf")).toBeTruthy();
+  });
+
+  it("wires onSubmitHumanInput so clarification cards stay interactive", async () => {
+    renderPanel();
+    expect(capturedMessageListProps).not.toBeNull();
+    const onSubmitHumanInput = capturedMessageListProps!
+      .onSubmitHumanInput as (
+      request: unknown,
+      response: unknown,
+    ) => Promise<unknown>;
+    expect(typeof onSubmitHumanInput).toBe("function");
+
+    const request = {
+      version: 1,
+      kind: "human_input_request",
+      source: "ask_clarification",
+      request_id: "req-1",
+      question: "想查什么？",
+      input_mode: "free_text",
+    };
+    const response = {
+      version: 1,
+      kind: "human_input_response",
+      source: "ask_clarification",
+      request_id: "req-1",
+      response_kind: "text",
+      value: "三路检索",
+    };
+    let result: unknown;
+    await act(async () => {
+      result = await onSubmitHumanInput(request, response);
+    });
+    expect(result).toBe(true);
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    const [, message, extraContext, options] = mockSendMessage.mock.calls[0] as [
+      string,
+      { text: string; files: unknown[] },
+      Record<string, unknown>,
+      { additionalKwargs: Record<string, unknown> },
+    ];
+    expect(message.files).toEqual([]);
+    expect(message.text).toContain("三路检索");
+    expect(extraContext.agent_name).toBe("rag");
+    expect(options.additionalKwargs.hide_from_ui).toBe(true);
+    expect(options.additionalKwargs.human_input_response).toEqual(response);
   });
 });

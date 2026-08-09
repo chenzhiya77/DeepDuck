@@ -26,6 +26,11 @@ import { useI18n } from "@/core/i18n/hooks";
 import { sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
 import type { KnowledgeBase } from "@/core/knowledge/types";
+import {
+  buildHumanInputResponseText,
+  type HumanInputRequest,
+  type HumanInputResponse,
+} from "@/core/messages/human-input";
 import { useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { cn } from "@/lib/utils";
@@ -135,6 +140,33 @@ export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
     [thread.messages],
   );
 
+  // Mirrors the general chat page: answering an ask_clarification interrupt
+  // sends a hidden message carrying the structured human_input_response.
+  const handleSubmitHumanInput = useCallback(
+    async (request: HumanInputRequest, response: HumanInputResponse) => {
+      let sent = false;
+      await sendMessage(
+        threadId,
+        {
+          text: buildHumanInputResponseText(request, response),
+          files: [],
+        },
+        { agent_name: "rag" },
+        {
+          additionalKwargs: {
+            hide_from_ui: true,
+            human_input_response: response,
+          },
+          onSent: () => {
+            sent = true;
+          },
+        },
+      );
+      return sent;
+    },
+    [sendMessage, threadId],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="knowledge-chat-panel">
       <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
@@ -200,6 +232,7 @@ export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
             loadMoreHistory={loadMoreHistory}
             isHistoryLoading={isHistoryLoading}
             renderMessageFooter={renderMessageFooter}
+            onSubmitHumanInput={handleSubmitHumanInput}
           />
         ) : (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
