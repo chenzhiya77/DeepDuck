@@ -14,6 +14,7 @@ import {
   useMemo,
   useState,
   type ImgHTMLAttributes,
+  type ReactNode,
 } from "react";
 
 import { Loader } from "@/components/ai-elements/loader";
@@ -149,6 +150,7 @@ export function MessageListItem({
   canEdit = false,
   isEditPending = false,
   onEditAndRegenerate,
+  footer,
 }: {
   className?: string;
   message: Message;
@@ -162,6 +164,8 @@ export function MessageListItem({
   canEdit?: boolean;
   isEditPending?: boolean;
   onEditAndRegenerate?: (replacementText: string) => void | Promise<boolean>;
+  /** Extra content rendered after the message body (e.g. kb citation cards). */
+  footer?: ReactNode;
 }) {
   const { t } = useI18n();
   const isHuman = message.type === "human";
@@ -229,6 +233,7 @@ export function MessageListItem({
             : undefined
         }
       />
+      {footer}
       {!isLoading && showCopyButton && (
         <MessageToolbar
           className={cn(

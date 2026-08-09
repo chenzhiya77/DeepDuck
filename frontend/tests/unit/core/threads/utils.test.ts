@@ -3,6 +3,7 @@ import { expect, test } from "@rstest/core";
 
 import type { AgentThread } from "@/core/threads/types";
 import {
+  buildThreadCreatedMetadata,
   channelSourceOfThread,
   isThreadPinned,
   pathOfThread,
@@ -182,4 +183,21 @@ test("textOfMessage returns null when array content has no text", () => {
   } as unknown as Message;
 
   expect(textOfMessage(message)).toBeNull();
+});
+
+test("buildThreadCreatedMetadata carries agent_name only when present", () => {
+  expect(buildThreadCreatedMetadata({ agent_name: "researcher" })).toEqual({ agent_name: "researcher" });
+  expect(buildThreadCreatedMetadata({})).toEqual({});
+});
+
+test("buildThreadCreatedMetadata carries kb_id for knowledge threads (spec 5.2 isolation)", () => {
+  expect(buildThreadCreatedMetadata({ agent_name: "rag", kb_id: "kb-1" })).toEqual({
+    agent_name: "rag",
+    kb_id: "kb-1",
+  });
+  // kb_id without agent_name still persists (metadata gates the update call)
+  expect(buildThreadCreatedMetadata({ kb_id: "kb-1" })).toEqual({ kb_id: "kb-1" });
+  // empty / non-string kb_id never persists
+  expect(buildThreadCreatedMetadata({ agent_name: "rag", kb_id: "" })).toEqual({ agent_name: "rag" });
+  expect(buildThreadCreatedMetadata({ agent_name: "rag", kb_id: 7 })).toEqual({ agent_name: "rag" });
 });

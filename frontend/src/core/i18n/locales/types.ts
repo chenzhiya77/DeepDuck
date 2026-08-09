@@ -11,6 +11,7 @@ export interface Translations {
     home: string;
     settings: string;
     delete: string;
+    confirmDelete: string;
     edit: string;
     rename: string;
     renameFailed: string;
@@ -227,6 +228,86 @@ export interface Translations {
     scheduledTasks: string;
     agentsDisabledTooltip: string;
     channels: string;
+    knowledge: string;
+  };
+
+  // Knowledge base (RAG workspace page, spec §5.2)
+  knowledge: {
+    personalKBs: string;
+    createKB: string;
+    kbNamePlaceholder: string;
+    kbDescriptionPlaceholder: string;
+    emptyKbList: string;
+    selectKbTitle: string;
+    selectKbHint: string;
+    uploadDocuments: string;
+    uploadingDocuments: string;
+    generateWiki: string;
+    wikiEnqueued: string;
+    settings: string;
+    renameKb: string;
+    deleteKb: string;
+    deleteKbConfirmTitle: string;
+    deleteKbConfirmDescription: string;
+    statsDocuments: string;
+    statsChunks: string;
+    statsReady: string;
+    statsIndexing: string;
+    statsFailed: string;
+    table: {
+      name: string;
+      uploader: string;
+      size: string;
+      chunks: string;
+      status: string;
+      createdAt: string;
+      actions: string;
+    };
+    status: {
+      uploaded: string;
+      parsing: string;
+      chunking: string;
+      indexing: string;
+      ready: string;
+      failed: string;
+    };
+    deleteDocument: string;
+    deleteDocumentConfirmTitle: string;
+    deleteDocumentConfirmDescription: string;
+    retryDocument: string;
+    uploaderMe: string;
+    dropzoneHint: string;
+    emptyDocuments: string;
+    chunkDrawer: {
+      title: string;
+      page: string;
+      tokens: string;
+      entities: string;
+      empty: string;
+      loadMore: string;
+      loading: string;
+    };
+    chat: {
+      newChat: string;
+      history: string;
+      noHistory: string;
+      deepResearch: string;
+      deepResearchHint: string;
+      sources: string;
+      expandToFullPage: string;
+      pageLabel: (page: number) => string;
+      inputPlaceholder: string;
+      send: string;
+    };
+    errors: {
+      createFailed: string;
+      renameFailed: string;
+      deleteFailed: string;
+      uploadFailed: string;
+      deleteDocumentFailed: string;
+      retryFailed: string;
+      wikiFailed: string;
+    };
   };
 
   // Scheduled tasks

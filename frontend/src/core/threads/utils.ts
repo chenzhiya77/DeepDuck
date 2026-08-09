@@ -70,6 +70,23 @@ export function isThreadPinned(thread: Pick<AgentThread, "metadata">) {
   return thread.metadata?.[THREAD_PINNED_METADATA_KEY] === true;
 }
 
+/**
+ * Metadata persisted on thread creation (the ``onCreated`` hook in
+ * `core/threads/hooks.ts`). ``agent_name`` has always been stored; ``kb_id``
+ * joins it for knowledge-page conversations so the global recent-chat list
+ * can exclude them and the per-kb history popover can find them (spec §5.2).
+ */
+export function buildThreadCreatedMetadata(context: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  if (typeof context.agent_name === "string" && context.agent_name) {
+    metadata.agent_name = context.agent_name;
+  }
+  if (typeof context.kb_id === "string" && context.kb_id) {
+    metadata.kb_id = context.kb_id;
+  }
+  return metadata;
+}
+
 export function sortPinnedThreads<T extends Pick<AgentThread, "metadata">>(
   threads: readonly T[],
 ) {

@@ -1,0 +1,93 @@
+/**
+ * Left column of the knowledge page (spec §5.2): the 个人知识库 group with
+ * the header「+」create dialog, selection state, and empty-state copy.
+ * Purely presentational — data and mutations arrive via props.
+ */
+import { afterEach, describe, expect, it, rs } from "@rstest/core";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
+import { I18nContext } from "@/core/i18n/context";
+import { zhCN } from "@/core/i18n/locales/zh-CN";
+import type { KnowledgeBase } from "@/core/knowledge/types";
+
+const KB_A: KnowledgeBase = {
+  id: "kb-a",
+  owner_id: "user-1",
+  name: "产品资料",
+  description: "",
+  visibility: "private",
+  created_at: "2026-08-09T10:00:00Z",
+};
+const KB_B: KnowledgeBase = { ...KB_A, id: "kb-b", name: "研发文档" };
+
+function renderPanel(props?: Partial<Parameters<typeof KbListPanel>[0]>) {
+  const onSelect = rs.fn();
+  const onCreate = rs.fn().mockResolvedValue(undefined);
+  render(
+    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <KbListPanel
+        kbs={[KB_A, KB_B]}
+        selectedKbId={null}
+        onSelect={onSelect}
+        onCreate={onCreate}
+        {...props}
+      />
+    </I18nContext.Provider>,
+  );
+  return { onSelect, onCreate };
+}
+
+afterEach(cleanup);
+
+describe("KbListPanel", () => {
+  it("renders the 个人知识库 group with every kb", () => {
+    renderPanel();
+    expect(screen.getByText("个人知识库")).toBeTruthy();
+    expect(screen.getByText("产品资料")).toBeTruthy();
+    expect(screen.getByText("研发文档")).toBeTruthy();
+  });
+
+  it("invokes onSelect when a kb row is clicked", () => {
+    const { onSelect } = renderPanel();
+    fireEvent.click(screen.getByText("研发文档"));
+    expect(onSelect).toHaveBeenCalledWith("kb-b");
+  });
+
+  it("marks the selected kb row as current", () => {
+    renderPanel({ selectedKbId: "kb-a" });
+    const selected = screen.getByText("产品资料").closest("[data-active]");
+    expect(selected?.getAttribute("data-active")).toBe("true");
+    const other = screen.getByText("研发文档").closest("[data-active]");
+    expect(other?.getAttribute("data-active")).toBe("false");
+  });
+
+  it("creates a kb through the header + dialog", () => {
+    const { onCreate } = renderPanel({ kbs: [] });
+    fireEvent.click(screen.getByRole("button", { name: "新建知识库" }));
+
+    fireEvent.change(screen.getByPlaceholderText("知识库名称"), {
+      target: { value: "市场部资料" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("描述（可选）"), {
+      target: { value: "对外材料" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    expect(onCreate).toHaveBeenCalledWith("市场部资料", "对外材料");
+  });
+
+  it("keeps the create submit disabled until a name is entered", () => {
+    renderPanel({ kbs: [] });
+    fireEvent.click(screen.getByRole("button", { name: "新建知识库" }));
+    const submit = screen.getByRole("button", { name: "创建" });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText("知识库名称"), { target: { value: "x" } });
+    expect(submit.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("shows the empty-state copy when no kb exists", () => {
+    renderPanel({ kbs: [] });
+    expect(screen.getByText(/还没有知识库/)).toBeTruthy();
+  });
+});

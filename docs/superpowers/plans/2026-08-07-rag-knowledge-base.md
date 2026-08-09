@@ -148,14 +148,18 @@
 **Files:**
 - Create: `frontend/src/app/workspace/knowledge/page.tsx` (+ layout, left/middle/right column components)
 - Create: `frontend/src/core/knowledge/` (API client, hooks, types)
-- Modify: workspace sidebar navigation (add 知识库 entry)
+- Create: right-panel chat history popover component (current-kb thread list)
+- Modify: `frontend/src/components/workspace/workspace-nav-chat-list.tsx` (add 知识库 first-level entry → `/workspace/knowledge`)
+- Modify: `frontend/src/components/workspace/recent-chat-list.tsx` (exclude threads carrying `metadata.kb_id` — kb conversations stay isolated inside the knowledge page, ima-style)
+- Modify: i18n locale files (zh-CN + en) for all new copy
 - Create: `frontend/tests/unit/knowledge/*.test.tsx`
 
-- [ ] Write failing component tests: kb list groups (个人知识库 + 「+」); document table columns (名称/上传者/大小/切片数/状态/时间) with progress badge and "—" chunk placeholder; bottom stats row aggregated client-side; upload drag-drop → POST → polling until ready/failed; row click opens read-only chunk drawer (text/heading_path/page/token_count/entities); chat panel binds current kb (`context.kb_id` single value, `assistantId="rag"`); 深度检索 toggle renders in the chat input area and propagates as `context.deep_research` (spec §4.7); citation card renders from tool metadata.
-- [ ] Run `cd frontend && pnpm test`, capture RED.
-- [ ] Implement page against Task 8 contract (mock server first); wire useStream chat panel reusing existing chat kit; sidebar entry.
-- [ ] Tests GREEN; `pnpm check` clean.
-- [ ] Revert citation card, prove RED, restore, GREEN.
+- [x] Write failing kb/document tests: kb list groups (个人知识库 + 组头「+」新建); header [设置] → kb rename (PATCH) / delete (DELETE with cascade-warning confirm dialog); document table columns (名称/上传者/大小/切片数/状态/时间) with progress badge and "—" chunk placeholder; 图谱降级 surfaced via the document `error` field text (per-path sub-marker fields are a Phase-2 contract addition — Phase 1 shows main status + progress only); bottom stats row aggregated client-side; upload drag-drop → POST → polling until ready/failed; row actions: 删除 with cascade-warning confirm → DELETE, failed doc shows 重试 → POST retry; header [生成百科] → POST wiki/generate; row click opens read-only chunk drawer (text/heading_path/page/token_count/entities) paginating through the chunks endpoint.
+- [x] Write failing chat-panel tests: binds current kb (`context.kb_id` single value, `assistantId="rag"`); new thread creation writes `metadata.kb_id`; panel header has 新建会话 + history clock popover listing only current-kb threads (filter by `metadata.kb_id`, date-grouped, reusing `useInfiniteThreads`), switching threads loads that conversation; global `RecentChatList` excludes `metadata.kb_id` threads; no-kb-selected state shows guidance + disabled input (spec §4.5); 深度检索 toggle renders in the chat input area and propagates as `context.deep_research` (spec §4.7); citation card renders from tool metadata, click expands chunk text via the shared chunk display component (spec §4.6/§3.6); tool_progress retrieval status renders via the existing chat kit; "expand" entry navigates to `/workspace/agents/rag/chats/{thread_id}` (spec §5.2).
+- [x] Run `cd frontend && pnpm test`, capture RED.
+- [x] Implement page against Task 8 contract (mock server first); wire useStream chat panel reusing existing chat kit; sidebar entry; RecentChatList reverse filter; chat history popover; i18n keys.
+- [x] Tests GREEN; `pnpm check` clean.
+- [x] Revert citation card, prove RED, restore, GREEN.
 - [ ] Commit: `feat(frontend): add knowledge base three-column workspace page`.
 
 ## Task 11: End-to-end verification

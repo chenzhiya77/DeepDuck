@@ -282,6 +282,7 @@ export function MessageList({
   sidecarSurface = false,
   initialScroll = "smooth",
   resizeScroll = "smooth",
+  renderMessageFooter,
 }: {
   className?: string;
   testId?: string;
@@ -315,6 +316,8 @@ export function MessageList({
   sidecarSurface?: boolean;
   initialScroll?: ConversationProps["initial"];
   resizeScroll?: ConversationProps["resize"];
+  /** Optional per-message footer (e.g. kb citation cards on assistant answers). */
+  renderMessageFooter?: (message: Message) => ReactNode;
 }) {
   const { t } = useI18n();
   const sidecar = useMaybeSidecar();
@@ -1011,6 +1014,7 @@ export function MessageList({
                             thread.isLoading &&
                             groupIndex === groupedMessages.length - 1
                           }
+                          footer={renderMessageFooter?.(msg)}
                           threadId={threadId}
                           artifactPaths={artifactPaths}
                           runId={

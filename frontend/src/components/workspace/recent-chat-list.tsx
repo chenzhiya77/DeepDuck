@@ -48,6 +48,7 @@ import { resetThreadChatAfterDelete } from "@/components/workspace/chats/use-thr
 import { getAPIClient } from "@/core/api";
 import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
+import { excludeKnowledgeThreads } from "@/core/knowledge/kb-threads";
 import { exportThread, type ThreadExportFormat } from "@/core/threads/export";
 import {
   useDeleteThread,
@@ -88,7 +89,12 @@ export function RecentChatList() {
     () => buildThreadListModel(infiniteThreads?.pages ?? []),
     [infiniteThreads?.pages],
   );
-  const { threads } = threadListModel;
+  // KB-bound conversations stay inside the knowledge page (spec §5.2 库间隔离):
+  // the global recent list never shows threads carrying metadata.kb_id.
+  const threads = useMemo(
+    () => excludeKnowledgeThreads(threadListModel.threads),
+    [threadListModel],
+  );
   const displayedThreads = useMemo(() => {
     if (
       !threadIdFromPath ||
@@ -96,12 +102,14 @@ export function RecentChatList() {
         (thread) => thread.thread_id === threadIdFromPath,
       )
     ) {
-      return threadListModel.displayedThreads;
+      return excludeKnowledgeThreads(threadListModel.displayedThreads);
     }
     const activeThread = threadListModel.byId.get(threadIdFromPath);
-    return activeThread
-      ? [...threadListModel.displayedThreads, activeThread]
-      : threadListModel.displayedThreads;
+    return excludeKnowledgeThreads(
+      activeThread
+        ? [...threadListModel.displayedThreads, activeThread]
+        : threadListModel.displayedThreads,
+    );
   }, [threadIdFromPath, threadListModel]);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
