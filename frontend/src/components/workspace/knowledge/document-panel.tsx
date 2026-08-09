@@ -338,7 +338,7 @@ export function DocumentPanel({
         ) : (
           <table className="w-full min-w-[36rem] text-sm">
             <thead>
-              <tr className="text-muted-foreground border-b text-left text-xs">
+              <tr className="text-muted-foreground border-b text-left text-xs whitespace-nowrap">
                 <th className="w-8 px-2 py-2">
                   <Checkbox
                     aria-label={tk.selectAllDocuments}
