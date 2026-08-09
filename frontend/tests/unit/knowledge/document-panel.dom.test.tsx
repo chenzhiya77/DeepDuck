@@ -59,11 +59,25 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
 afterEach(cleanup);
 
 describe("DocumentPanel header", () => {
-  it("renders kb name, type tag and the header actions", () => {
+  it("renders kb name, type tag and the overflow menu trigger", () => {
     renderPanel();
     expect(screen.getByText("产品资料")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "上传文档" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "上传文档" })).toBeNull();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
+  });
+
+  it("uploads via the overflow menu item", async () => {
+    const clickSpy = rs
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    try {
+      renderPanel();
+      fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+      fireEvent.click(await screen.findByText("上传文档"));
+      expect(clickSpy).toHaveBeenCalled();
+    } finally {
+      clickSpy.mockRestore();
+    }
   });
 
   it("invokes onGenerateWiki from the overflow menu", async () => {
@@ -178,6 +192,17 @@ describe("DocumentPanel stats row and upload", () => {
     const file = new File(["x"], "拖入.md", { type: "text/markdown" });
     fireEvent.drop(zone, { dataTransfer: { files: [file] } });
     expect(onUpload).toHaveBeenCalledWith([file]);
+  });
+
+  it("shows a drop-hint overlay while a file is dragged over the panel", () => {
+    renderPanel();
+    const zone = screen.getByTestId("document-dropzone");
+    expect(screen.queryByTestId("document-drop-overlay")).toBeNull();
+    fireEvent.dragOver(zone);
+    expect(screen.getByTestId("document-drop-overlay")).toBeTruthy();
+    expect(screen.getByText("释放以上传到当前知识库")).toBeTruthy();
+    fireEvent.dragLeave(zone);
+    expect(screen.queryByTestId("document-drop-overlay")).toBeNull();
   });
 
   it("shows the empty-state copy when the kb has no documents", () => {

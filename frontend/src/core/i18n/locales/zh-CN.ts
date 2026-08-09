@@ -302,6 +302,7 @@ export const zhCN: Translations = {
     expandKbList: "展开列表栏",
     uploadDocuments: "上传文档",
     uploadingDocuments: "上传中…",
+    dropToUpload: "释放以上传到当前知识库",
     generateWiki: "生成百科",
     wikiEnqueued: "百科生成任务已提交，完成后条目自动可查",
     settings: "设置",

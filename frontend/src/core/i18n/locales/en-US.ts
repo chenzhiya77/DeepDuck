@@ -318,6 +318,7 @@ export const enUS: Translations = {
     expandKbList: "Expand the list panel",
     uploadDocuments: "Upload documents",
     uploadingDocuments: "Uploading…",
+    dropToUpload: "Drop to upload into this knowledge base",
     generateWiki: "Generate wiki",
     wikiEnqueued: "Wiki generation queued — entries become searchable when ready",
     settings: "Settings",

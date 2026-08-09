@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, FileText, RotateCcw, Settings, Trash2, Upload } from "lucide-react";
+import { BookOpen, FileText, MoreHorizontal, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -108,24 +108,28 @@ export function DocumentPanel({
         handleFiles(event.dataTransfer?.files ?? null);
       }}
     >
-      {/* Header: kb name + type tag + the upload CTA. All library actions
-          live in the overflow menu so the header stays one stable line no
-          matter how many actions are added later (spec §5.2). */}
+      {/* Header: kb name + type tag only; every library action (upload,
+          generate wiki, rename, delete, and future ones) lives in the ⋯
+          overflow menu so the header stays one stable line (spec §5.2).
+          Dragging files anywhere onto this panel also uploads. */}
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <h2 className="min-w-0 truncate text-sm font-semibold">{kb.name}</h2>
         <Badge className="shrink-0" variant="outline">{t.knowledge.personalKBs}</Badge>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <Button size="sm" variant="secondary" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-            <Upload className="size-4" />
-            {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
-          </Button>
+        <div className="ml-auto flex shrink-0 items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button aria-label={tk.settings} size="sm" variant="ghost">
-                <Settings className="size-4" />
+                <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                disabled={uploading}
+                onSelect={() => fileInputRef.current?.click()}
+              >
+                <Upload className="size-4" />
+                {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={onGenerateWiki}>
                 <BookOpen className="size-4" />
                 {tk.generateWiki}
@@ -157,6 +161,20 @@ export function DocumentPanel({
           }}
         />
       </div>
+
+      {/* Drop feedback overlay: makes the drop affordance explicit while a
+          file hovers over the panel (the root bg tint alone is too subtle). */}
+      {dragActive && (
+        <div
+          className="bg-background/70 pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed"
+          data-testid="document-drop-overlay"
+        >
+          <p className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
+            <Upload className="size-4" />
+            {tk.dropToUpload}
+          </p>
+        </div>
+      )}
 
       {/* Document table (horizontal scroll protects the six columns on narrow widths) */}
       <div className="min-h-0 flex-1 overflow-auto">

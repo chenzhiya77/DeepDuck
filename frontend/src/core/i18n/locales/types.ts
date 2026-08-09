@@ -244,6 +244,7 @@ export interface Translations {
     expandKbList: string;
     uploadDocuments: string;
     uploadingDocuments: string;
+    dropToUpload: string;
     generateWiki: string;
     wikiEnqueued: string;
     settings: string;
