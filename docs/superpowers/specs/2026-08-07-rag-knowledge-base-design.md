@@ -46,7 +46,7 @@
 
 - 解析器：**MinerU** 官方 API（覆盖 PDF/Word/Markdown；版面分析分区标题/正文/表格/图片）
 - 多模态策略：**文本化路线**——MinerU 产出图片引用 → **VLM caption 子步骤**（Qwen3-VL-30B-A3B，逐图生成中文描述）→ caption 以 `![caption](...)` 形式写回 Markdown 文本流后再切片，不引入多模态向量
-- 原始文件存储：本地磁盘 `{base_dir}/data/kb_uploads/{kb_id}/{doc_id}/`，`documents.storage_path` 记录路径（重传覆盖、删文档级联删文件）
+- 原始文件存储：本地磁盘 `{base_dir}/data/knowledge/{kb_id}/{doc_id}/`（`base_dir` 为 gateway 数据根 `DEER_FLOW_HOME`，dev 下即 `backend/.deer-flow`），`documents.storage_path` 记录落盘绝对路径（重传覆盖、删文档级联删目录）
 - 二期候选：Excel（表格切片专项策略）、网页 URL（正文抽取）
 
 ### 3.2 切片策略：结构感知为主 + 大小约束兜底

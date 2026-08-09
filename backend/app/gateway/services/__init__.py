@@ -300,6 +300,11 @@ _CONTEXT_CONFIGURABLE_KEYS: frozenset[str] = frozenset(
         "max_total_subagents",
         "agent_name",
         "is_bootstrap",
+        # RAG knowledge page (spec §4.5/§4.7): conversation→kb binding read by
+        # the retrieval tools via runtime.context, and the three-path toggle
+        # read by DeepResearchMiddleware.
+        "kb_id",
+        "deep_research",
     }
 )
 

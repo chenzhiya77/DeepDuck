@@ -925,6 +925,26 @@ The lead agent can spawn sub-agents on the fly — each with its own scoped cont
 
 For example, independent read-only research can run concurrently when the wall-clock savings outweigh duplicated discovery and synthesis cost, while a repository refactor with shared files and sequential test feedback remains with the lead agent. When `max_concurrent_subagents` is `1`, parallel and multi-batch routing guidance is disabled; delegation remains available only for material specialist or context-isolation benefit.
 
+### Knowledge Bases (RAG)
+
+The knowledge base workspace is a dedicated Q&A window alongside the general chat: open **知识库 / Knowledge** in the sidebar, create a base, drop in PDF / Word / Markdown documents, and ask questions in the right-hand chat panel once indexing reaches `ready`. Answers carry numbered citation cards that expand to the original chunk text.
+
+Retrieval runs three complementary paths over one shared chunk base — vector search (`hybrid_search`) for factual detail, a knowledge graph (`graph_search`) for multi-hop relations, and a generated wiki (`wiki_search`, triggered per base via **生成百科 / Generate wiki**) for concept-level summaries. The agent picks and fuses paths per question; a **深度检索 / Deep retrieval** toggle in the chat input forces all three paths for broader but slower recall. Conversations stay bound to their base (`metadata.kb_id`), so they appear only in that base's history popover and never in the global recent-chat list.
+
+Indexing needs a Qdrant instance plus embedding / rerank / VLM models, configured in the `rag:` block of `config.yaml`:
+
+```yaml
+rag:
+  qdrant_url: http://localhost:6333
+  embedding_model: qwen3.7-text-embedding
+  rerank_model: qwen3-rerank
+  vlm_model: Qwen/Qwen3-VL-30B-A3B-Instruct
+  worker_concurrency: 2
+  extract_rate_limit_rps: 5.0
+```
+
+Deleting a document or a base cascades through its chunks, vectors, graph triples, and wiki entries.
+
 ### Sandbox & File System
 
 `E2BSandboxProvider` uses `wait` as its default overflow policy. It waits for

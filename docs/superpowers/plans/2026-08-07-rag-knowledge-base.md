@@ -160,7 +160,7 @@
 - [x] Implement page against Task 8 contract (mock server first); wire useStream chat panel reusing existing chat kit; sidebar entry; RecentChatList reverse filter; chat history popover; i18n keys.
 - [x] Tests GREEN; `pnpm check` clean.
 - [x] Revert citation card, prove RED, restore, GREEN.
-- [ ] Commit: `feat(frontend): add knowledge base three-column workspace page`.
+- [x] Commit: `feat(frontend): add knowledge base three-column workspace page`.
 
 ## Task 11: End-to-end verification
 
@@ -168,9 +168,9 @@
 - Create: `backend/tests/knowledge/test_e2e_smoke.py` (marked integration), `docs` updates (README + backend/AGENTS.md knowledge section + frontend/AGENTS.md route note)
 
 - [x] With live keys + Qdrant: upload one small PDF and one MD via API; wait for `ready`; assert `chunk_count` > 0, graph entities exist, wiki generated after trigger.
-- [ ] Start stack; in rag chat window ask one factual and one conceptual question; assert citations render and answers ground in uploaded docs; assert lead_agent window has no rag tools.
-- [ ] Run full backend suite `uv run pytest tests/knowledge -q` and frontend `pnpm check && pnpm test`. (backend done: 147 passed; frontend pending Task 10)
-- [ ] Update README.md (user-facing) and module AGENTS.md files per documentation sync rule.
+- [x] Start stack; in rag chat window ask one factual and one conceptual question; assert citations render and answers ground in uploaded docs; assert lead_agent window has no rag tools. (browser-verified on 2026-08-09: factual + conceptual answers carry citation cards grounded in the uploaded PDF/MD + generated wiki entries; citation click expands the chunk原文; kb threads stay out of the global recent list; lead_agent tool isolation pinned by `test_default_tool_resolution_excludes_opt_in_rag_tools`. Two live-found defects fixed: gateway context whitelist dropped `kb_id`/`deep_research`; knowledge layout missed ArtifactsProvider/PromptInputProvider)
+- [x] Run full backend suite `uv run pytest tests/knowledge -q` and frontend `pnpm check && pnpm test`. (backend done: 147 passed; frontend done: 1073 passed + `pnpm check` clean)
+- [x] Update README.md (user-facing) and module AGENTS.md files per documentation sync rule.
 - [ ] Commit: `test(rag): add e2e smoke and docs`.
 
 ## Final verification

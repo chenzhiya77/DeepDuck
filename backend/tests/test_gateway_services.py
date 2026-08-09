@@ -1445,6 +1445,26 @@ def test_merge_run_context_overrides_noop_for_empty_context():
     assert config == before
 
 
+def test_merge_run_context_overrides_forwards_kb_binding_and_deep_research():
+    """RAG knowledge-page binding (spec §4.5/§4.7): the knowledge workspace sends
+    ``kb_id`` (the bound knowledge base) and ``deep_research`` (three-path retrieval
+    toggle) in ``body.context``. Retrieval tools read ``kb_id`` from
+    ``runtime.context`` (``resolve_kb_scope``) and DeepResearchMiddleware reads
+    ``deep_research`` — dropping them at this boundary made the live rag window
+    answer "no knowledge base is bound" despite a selected kb. ``kb_id`` also
+    lands in ``configurable`` like ``agent_name`` so a resumed run keeps its binding.
+    """
+    from app.gateway.services import build_run_config, merge_run_context_overrides
+
+    config = build_run_config("thread-1", None, None)
+    merge_run_context_overrides(config, {"kb_id": "kb-1", "deep_research": True, "agent_name": "rag"})
+
+    assert config["context"]["kb_id"] == "kb-1"
+    assert config["context"]["deep_research"] is True
+    assert config["configurable"]["kb_id"] == "kb-1"
+    assert config["configurable"]["deep_research"] is True
+
+
 def test_merge_run_context_overrides_forwards_context_only_keys():
     """``github_token`` and ``disable_clarification`` must reach ``config['context']``
     (runtime context → ``runtime.context``) so the bash tool and ClarificationMiddleware
