@@ -21,6 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
+import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
@@ -226,26 +227,30 @@ export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
             }}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <label
-              className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs"
-              title={tc.deepResearchHint}
-            >
-              <Switch
-                checked={deepResearch}
-                disabled={!kb}
-                onCheckedChange={setDeepResearch}
-              />
-              <span>{tc.deepResearch}</span>
-            </label>
-            <Button
-              aria-label={tc.send}
-              className="rounded-full"
-              disabled={!canSend}
-              size="icon-sm"
-              onClick={handleSubmit}
-            >
-              <ArrowUpIcon className="size-4" />
-            </Button>
+            <Tooltip content={tc.deepResearchHint}>
+              <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs">
+                <Switch
+                  checked={deepResearch}
+                  disabled={!kb}
+                  onCheckedChange={setDeepResearch}
+                />
+                <span>{tc.deepResearch}</span>
+              </label>
+            </Tooltip>
+            <Tooltip content={tc.send}>
+              {/* The span keeps the tooltip reachable while the button is disabled */}
+              <span className="inline-flex">
+                <Button
+                  aria-label={tc.send}
+                  className="rounded-full"
+                  disabled={!canSend}
+                  size="icon-sm"
+                  onClick={handleSubmit}
+                >
+                  <ArrowUpIcon className="size-4" />
+                </Button>
+              </span>
+            </Tooltip>
           </div>
         </div>
       </div>
