@@ -5,6 +5,15 @@ import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -98,9 +107,11 @@ export function DocumentPanel({
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState(kb.name);
   const [deleteKbOpen, setDeleteKbOpen] = useState(false);
-  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: DocumentSortKey; direction: SortDirection }>(DEFAULT_DOCUMENT_SORT);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  // Batch delete reuses the single-doc confirm dialog with a target list.
+  const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null);
 
   const stats = aggregateDocumentStats(documents);
   const statusText = (status: KnowledgeDocumentStatus) => tk.status[status] ?? status;
@@ -111,6 +122,50 @@ export function DocumentPanel({
     () => sortDocuments(filterDocuments(documents, query), sort.key, sort.direction),
     [documents, query, sort],
   );
+
+  // Selection (checkbox model, spec §5.2): filtering clears it so a bulk
+  // delete can never hit rows the user can no longer see.
+  const updateQuery = (value: string) => {
+    setQuery(value);
+    setSelectedIds(new Set());
+  };
+  const visibleIds = visibleDocuments.map((doc) => doc.id);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const someVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
+  const headerChecked = allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false;
+  const toggleSelectAll = () => {
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(visibleIds));
+  };
+  const toggleSelect = (docId: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(docId);
+      } else {
+        next.delete(docId);
+      }
+      return next;
+    });
+  };
+  // File-manager convention: right-clicking an unselected row selects just
+  // that row; right-clicking a selected row keeps the batch context.
+  const handleRowContextMenu = (docId: string) => {
+    if (!selectedIds.has(docId)) {
+      setSelectedIds(new Set([docId]));
+    }
+  };
+  const confirmDeleteTargets = async () => {
+    if (!deleteTargets) {
+      return;
+    }
+    const removed = new Set(deleteTargets);
+    await Promise.allSettled(
+      deleteTargets.map((id) => Promise.resolve(onDeleteDocument(id))),
+    );
+    setSelectedIds((current) => new Set([...current].filter((id) => !removed.has(id))));
+    setDeleteTargets(null);
+  };
 
   const handleFiles = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
@@ -200,28 +255,48 @@ export function DocumentPanel({
         </div>
       )}
 
-      {/* Toolbar: name filter + sort dropdown (client-side view controls) */}
-      <div className="flex items-center gap-2 border-b px-4 py-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-          <Input
-            aria-label={tk.searchDocuments}
-            className="h-7 pr-7 pl-7 text-xs"
-            placeholder={tk.searchDocuments}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {query && (
-            <button
-              aria-label={tk.clearSearch}
-              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2"
-              type="button"
-              onClick={() => setQuery("")}
-            >
-              <X className="size-3.5" />
-            </button>
-          )}
+      {/* Toolbar: batch actions while selecting, otherwise the name filter
+          and sort dropdown (client-side view controls) */}
+      {selectedIds.size > 0 ? (
+        <div className="flex items-center gap-2 border-b px-4 py-2" data-testid="document-batch-bar">
+          <span className="min-w-0 flex-1 text-xs font-medium">
+            {tk.selectedCount(selectedIds.size)}
+          </span>
+          <Button
+            className="h-7"
+            size="sm"
+            variant="destructive"
+            onClick={() => setDeleteTargets([...selectedIds])}
+          >
+            <Trash2 className="size-3.5" />
+            {tk.deleteSelected}
+          </Button>
+          <Button className="h-7" size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            {tk.cancelSelection}
+          </Button>
         </div>
+      ) : (
+        <div className="flex items-center gap-2 border-b px-4 py-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+            <Input
+              aria-label={tk.searchDocuments}
+              className="h-7 pr-7 pl-7 text-xs"
+              placeholder={tk.searchDocuments}
+              value={query}
+              onChange={(event) => updateQuery(event.target.value)}
+            />
+            {query && (
+              <button
+                aria-label={tk.clearSearch}
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2"
+                type="button"
+                onClick={() => updateQuery("")}
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button aria-label={tk.sortDocuments} size="icon-sm" variant="ghost">
@@ -251,7 +326,8 @@ export function DocumentPanel({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+        </div>
+      )}
 
       {/* Document table (horizontal scroll protects the six columns on narrow widths) */}
       <div className="min-h-0 flex-1 overflow-auto">
@@ -263,7 +339,14 @@ export function DocumentPanel({
           <table className="w-full min-w-[36rem] text-sm">
             <thead>
               <tr className="text-muted-foreground border-b text-left text-xs">
-                <th className="px-4 py-2 font-medium">{tk.table.name}</th>
+                <th className="w-8 px-2 py-2">
+                  <Checkbox
+                    aria-label={tk.selectAllDocuments}
+                    checked={headerChecked}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </th>
+                <th className="px-2 py-2 font-medium">{tk.table.name}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.uploader}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.size}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.chunks}</th>
@@ -273,18 +356,37 @@ export function DocumentPanel({
               </tr>
             </thead>
             <tbody>
-              {visibleDocuments.map((doc) => (
-                <tr
-                  key={doc.id}
-                  className="hover:bg-muted/50 cursor-pointer border-b last:border-0"
-                  onClick={() => onOpenChunks(doc)}
-                >
-                  <td className="max-w-48 px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="text-muted-foreground size-4 shrink-0" />
-                      <span className="truncate">{doc.name}</span>
-                    </div>
-                  </td>
+              {visibleDocuments.map((doc) => {
+                const isSelected = selectedIds.has(doc.id);
+                return (
+                  <ContextMenu key={doc.id}>
+                    <ContextMenuTrigger asChild>
+                      <tr
+                        className={cn(
+                          "group hover:bg-muted/50 cursor-pointer border-b last:border-0",
+                          isSelected && "bg-muted/60",
+                        )}
+                        data-selected={isSelected}
+                        onClick={() => onOpenChunks(doc)}
+                        onContextMenu={() => handleRowContextMenu(doc.id)}
+                      >
+                        <td className="w-8 px-2 py-2" onClick={(event) => event.stopPropagation()}>
+                          <Checkbox
+                            aria-label={`${tk.selectDocument}: ${doc.name}`}
+                            checked={isSelected}
+                            className={cn(
+                              "opacity-0 transition-opacity group-hover:opacity-100 data-[state=checked]:opacity-100",
+                              selectedIds.size > 0 && "opacity-100",
+                            )}
+                            onCheckedChange={(checked) => toggleSelect(doc.id, checked === true)}
+                          />
+                        </td>
+                        <td className="max-w-48 px-2 py-2">
+                          <div className="flex items-center gap-2">
+                            <FileText className="text-muted-foreground size-4 shrink-0" />
+                            <span className="truncate">{doc.name}</span>
+                          </div>
+                        </td>
                   <td className="text-muted-foreground px-2 py-2">
                     {doc.uploader_id === kb.owner_id ? tk.uploaderMe : doc.uploader_id}
                   </td>
@@ -320,14 +422,56 @@ export function DocumentPanel({
                         aria-label={tk.deleteDocument}
                         size="icon"
                         variant="ghost"
-                        onClick={() => setDeleteDocId(doc.id)}
+                        onClick={() => setDeleteTargets([doc.id])}
                       >
                         <Trash2 className="size-4" />
                       </Button>
                     </div>
                   </td>
-                </tr>
-              ))}
+                      </tr>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-44">
+                      {isSelected && selectedIds.size > 1 ? (
+                        <>
+                          <ContextMenuLabel>{tk.selectedCount(selectedIds.size)}</ContextMenuLabel>
+                          <ContextMenuItem
+                            variant="destructive"
+                            onSelect={() => setDeleteTargets([...selectedIds])}
+                          >
+                            <Trash2 className="size-4" />
+                            {tk.deleteSelected}
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onSelect={() => setSelectedIds(new Set())}>
+                            {tk.cancelSelection}
+                          </ContextMenuItem>
+                        </>
+                      ) : (
+                        <>
+                          <ContextMenuItem onSelect={() => onOpenChunks(doc)}>
+                            <FileText className="size-4" />
+                            {tk.openChunks}
+                          </ContextMenuItem>
+                          {doc.status === "failed" && (
+                            <ContextMenuItem onSelect={() => onRetryDocument(doc.id)}>
+                              <RotateCcw className="size-4" />
+                              {tk.retryDocument}
+                            </ContextMenuItem>
+                          )}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            variant="destructive"
+                            onSelect={() => setDeleteTargets([doc.id])}
+                          >
+                            <Trash2 className="size-4" />
+                            {tk.deleteDocument}
+                          </ContextMenuItem>
+                        </>
+                      )}
+                    </ContextMenuContent>
+                  </ContextMenu>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -390,24 +534,19 @@ export function DocumentPanel({
       </Dialog>
 
       {/* Document delete confirm */}
-      <Dialog open={deleteDocId !== null} onOpenChange={(open) => !open && setDeleteDocId(null)}>
+      <Dialog open={deleteTargets !== null} onOpenChange={(open) => !open && setDeleteTargets(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>{tk.deleteDocumentConfirmTitle}</DialogTitle>
             <DialogDescription>{tk.deleteDocumentConfirmDescription}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDocId(null)}>
+            <Button variant="outline" onClick={() => setDeleteTargets(null)}>
               {t.common.cancel}
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
-                if (deleteDocId) {
-                  void onDeleteDocument(deleteDocId);
-                }
-                setDeleteDocId(null);
-              }}
+              onClick={() => void confirmDeleteTargets()}
             >
               {t.common.confirmDelete}
             </Button>

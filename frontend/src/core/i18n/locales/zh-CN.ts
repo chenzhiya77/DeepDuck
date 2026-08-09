@@ -306,6 +306,12 @@ export const zhCN: Translations = {
     searchDocuments: "搜索文档…",
     clearSearch: "清空搜索",
     noMatchingDocuments: "没有匹配的文档",
+    selectAllDocuments: "全选",
+    selectDocument: "选择文档",
+    selectedCount: (count: number) => `已选 ${count} 项`,
+    deleteSelected: "删除所选",
+    cancelSelection: "取消选择",
+    openChunks: "查看切片",
     sortDocuments: "排序方式",
     sort: {
       createdAt: "上传时间",

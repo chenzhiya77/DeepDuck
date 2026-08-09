@@ -219,7 +219,8 @@ describe("DocumentPanel toolbar", () => {
   ];
 
   function rowNames(): string[] {
-    return [...document.querySelectorAll("tbody tr td:first-child")].map(
+    // First column is the selection checkbox; the name is the second cell.
+    return [...document.querySelectorAll("tbody tr td:nth-child(2)")].map(
       (cell) => cell.textContent ?? "",
     );
   }

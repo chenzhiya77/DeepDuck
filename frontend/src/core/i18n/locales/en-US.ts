@@ -322,6 +322,12 @@ export const enUS: Translations = {
     searchDocuments: "Search documents…",
     clearSearch: "Clear search",
     noMatchingDocuments: "No documents match",
+    selectAllDocuments: "Select all",
+    selectDocument: "Select document",
+    selectedCount: (count: number) => `${count} selected`,
+    deleteSelected: "Delete selected",
+    cancelSelection: "Cancel selection",
+    openChunks: "View chunks",
     sortDocuments: "Sort documents",
     sort: {
       createdAt: "Upload time",

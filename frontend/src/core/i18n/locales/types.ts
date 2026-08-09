@@ -248,6 +248,12 @@ export interface Translations {
     searchDocuments: string;
     clearSearch: string;
     noMatchingDocuments: string;
+    selectAllDocuments: string;
+    selectDocument: string;
+    selectedCount: (count: number) => string;
+    deleteSelected: string;
+    cancelSelection: string;
+    openChunks: string;
     sortDocuments: string;
     sort: {
       createdAt: string;
