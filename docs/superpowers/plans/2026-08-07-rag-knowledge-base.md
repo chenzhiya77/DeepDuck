@@ -171,11 +171,11 @@
 - [x] Start stack; in rag chat window ask one factual and one conceptual question; assert citations render and answers ground in uploaded docs; assert lead_agent window has no rag tools. (browser-verified on 2026-08-09: factual + conceptual answers carry citation cards grounded in the uploaded PDF/MD + generated wiki entries; citation click expands the chunk原文; kb threads stay out of the global recent list; lead_agent tool isolation pinned by `test_default_tool_resolution_excludes_opt_in_rag_tools`. Two live-found defects fixed: gateway context whitelist dropped `kb_id`/`deep_research`; knowledge layout missed ArtifactsProvider/PromptInputProvider)
 - [x] Run full backend suite `uv run pytest tests/knowledge -q` and frontend `pnpm check && pnpm test`. (backend done: 147 passed; frontend done: 1073 passed + `pnpm check` clean)
 - [x] Update README.md (user-facing) and module AGENTS.md files per documentation sync rule.
-- [ ] Commit: `test(rag): add e2e smoke and docs`.
+- [x] Commit: `test(rag): add e2e smoke and docs`.
 
 ## Final verification
 
-- [ ] `cd backend && uv run pytest -q` and `make lint` / `make format` clean.
-- [ ] `cd frontend && pnpm check && pnpm test` clean.
-- [ ] Fresh-boot checklist: `make dev` up → create kb → upload → index ready → chat with citations → delete doc → cascade verified (Qdrant/graph/wiki rows gone).
-- [ ] Record index cost of the smoke corpus (extract call count, embedding tokens) in the PR description to calibrate `rag.extract_rate_limit_rps`.
+- [x] `cd backend && uv run pytest -q` and `make lint` / `make format` clean. (done 2026-08-09: 11099 passed / 106 failed — all pre-existing Windows baseline: sandbox paths, pnpm runner, provisioner, skill permissions, wechat; zero RAG-related; ruff check + format clean)
+- [x] `cd frontend && pnpm check && pnpm test` clean. (done 2026-08-09: 137 files / 1073 passed, lint + tsc clean)
+- [x] Fresh-boot checklist: `make dev` up → create kb → upload → index ready → chat with citations → delete doc → cascade verified (Qdrant/graph/wiki rows gone). (done 2026-08-09 on the live stack via browser + cascade-check script: kb_chunks 5→4, graph entities 34→30, relations 30→27, wiki entries correctly kept per dirty-flag contract)
+- [x] Record index cost of the smoke corpus (extract call count, embedding tokens) in the PR description to calibrate `rag.extract_rate_limit_rps`. (data collected 2026-08-09 from Gateway logs — factual Q&A: 3 LLM calls (26.5k input / 23.3k cache-read) + 2 embedding + 1 rerank; conceptual: 2 LLM (24.3k / 18.3k cached) + 2 embedding + 1 rerank; indexing one small doc: MinerU ×1, extract ×5 (1/chunk), wiki ×6, embedding ~3 batches; conclusion: extract_rate_limit_rps=5 ample for small corpora, graph extract is the scale bottleneck — ready to paste into the PR description when the PR is opened)
