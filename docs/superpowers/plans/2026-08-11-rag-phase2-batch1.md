@@ -45,11 +45,11 @@
 - `GET /api/knowledge-bases/{kb_id}/wiki/entries` → 列表（title/summary/status/updated_at，不含全文）；`GET .../wiki/entries/{entry_id}` → 全文（一期已落地，直接消费）。
 - 中栏 tab 容器契约：`{ documents: <DocumentPanel/>, wiki: <WikiPanel/> }`；`activeTab: "documents" | "wiki"` 由 page 持有；**条目全文抽屉状态独立于 tab**（`entryDrawerId: string | null` 由 page 持有）：`openWikiEntry(entryId)` = 仅开右侧抽屉展示全文（不切 tab——引用点击是验证性动作，叠加层不劫持中栏状态，见 spec §4 修正说明），`revealWikiEntry(entryId)` = 切 tab + 定位条目（抽屉内「在百科 tab 中查看」二级入口用）。
 - 百科 tab 只读：不做重生成/编辑等管理操作（"可视化管理"属后续项）。
-- **中栏三行结构（层级归属决策）**：第一行 = 库名 + ⋯库级菜单（重命名/删除/生成百科——对所有 tab 有意义，从 DocumentPanel header 拆分上移）；第二行 = tab 导航条；第三行起 = 各 tab 内容。上传/搜索/排序留在文档 tab 自己的工具行（上传是文档动作）。DocumentPanel 保持可独立渲染（props 不变），既有 dom 测试零改动。
+- **中栏三行结构（层级归属决策）**：第一行 = 库名 + ⋯库级菜单（上传/生成百科/重命名/删除——库级动作，对所有 tab 可见，从 DocumentPanel header 拆分上移）；第二行 = tab 导航条；第三行起 = 各 tab 内容。文档 tab 工具行保持精简（搜索 + 排序）。〔2026-08-11 修正：上传从文档工具行挪回 ⋯菜单——用户反馈工具行拥挤；上传实为库级动作（往当前库加文档），与生成百科同级〕DocumentPanel 保持可独立渲染，既有 dom 测试迁移至 MiddleTabs。
 - **tab 内容 keep-alive**：三个面板保持挂载（`hidden` 属性切换，不卸载）——文档 tab 的搜索词/排序/选中行/滚动位置与 indexing 轮询在切换时不丢；百科/检索测试的数据 hook 用 `enabled: activeTab === ...` 门控 lazy，首次激活才拉取。
 - 窄窗口：三 tab 标签约 200px，中栏保底 `min-w-[20rem]` 下无溢出；既有横向滚动宪底不动。
 
-- [x] 写失败测试：tab 切换渲染；条目列表渲染（含 dirty 徽标）；点击条目开抽屉加载全文；`openWikiEntry` 只开抽屉不切 tab；`revealWikiEntry` 切 tab + 定位；keep-alive（切换后文档 tab 的搜索词/选中行保留）；库名与⋯菜单在第一行、上传按钮在文档 tab 工具行。
+- [x] 写失败测试：tab 切换渲染；条目列表渲染（含 dirty 徽标）；点击条目开抽屉加载全文；`openWikiEntry` 只开抽屉不切 tab；`revealWikiEntry` 切 tab + 定位；keep-alive（切换后文档 tab 的搜索词/选中行保留）；库名与⋯菜单（含上传）在第一行、文档 tab 工具行仅搜索+排序。
 - [x] 运行 `pnpm test` 捕获 RED。
 - [x] 实现组件 + hooks + i18n；测试 GREEN；`pnpm check` 干净。
 - [x] Commit: `feat(frontend): add middle-column tabs with read-only wiki entries panel`。
