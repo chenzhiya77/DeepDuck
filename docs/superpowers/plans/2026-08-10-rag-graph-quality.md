@@ -106,9 +106,9 @@
 - Modify: `backend/packages/harness/deerflow/knowledge/vector_store.py`（删 `scroll_chunks_by_entities`）
 - Modify: 涉及 docstring/注释中"elastic back-query"的残留描述（如 `set_chunk_entities` docstring 中 "elastic one" 措辞改为切片可视化/提及标注地基定位）
 
-- [ ] Grep 全仓确认 `scroll_chunks_by_entities` 零调用方（`backend/` 与 `frontend/` 均无引用；Task 1 已移除唯一调用）。
-- [ ] 删除方法；运行 `uv run pytest tests/knowledge -q` 全量 GREEN（含 `test_vector_store.py` 若有该方法的直接单测，一并删除）。
-- [ ] Commit: `refactor(rag): drop redundant entities back-query from vector store`。
+- [x] Grep 全仓确认 `scroll_chunks_by_entities` 零调用方（`backend/` 与 `frontend/` 均无引用；Task 1 已移除唯一调用）。
+- [x] 删除方法；运行 `uv run pytest tests/knowledge -q` 全量 GREEN（含 `test_vector_store.py` 若有该方法的直接单测，一并删除）。
+- [x] Commit: `refactor(rag): drop redundant entities back-query from vector store`。
 
 ## Task 5: 文档同步与全量回归
 

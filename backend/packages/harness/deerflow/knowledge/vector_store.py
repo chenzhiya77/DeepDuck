@@ -29,7 +29,6 @@ from qdrant_client.models import (
     FilterSelector,
     Fusion,
     FusionQuery,
-    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -228,8 +227,11 @@ class KnowledgeVectorStore:
     async def set_chunk_entities(self, entities_by_chunk: Mapping[str, Sequence[str]]) -> None:
         """Backfill normalized entity names onto ``kb_chunks`` payloads.
 
-        The reverse half of the graph↔vector two-way link (spec §3.4): chunk_id keeps
-        the precise path, the ``entities`` payload field keeps the elastic one.
+        The reverse half of the graph↔vector two-way link (spec §3.4): the
+        business-DB ``chunks.entities`` column is the source of truth feeding
+        the chunk-drawer "关联实体" display; this payload mirror is its
+        queryable twin and the foundation for a future true-mention marker
+        (spec 2026-08-10 D4 保留边界).
         """
         for chunk_id, names in entities_by_chunk.items():
             await self._client.set_payload(
@@ -280,18 +282,6 @@ class KnowledgeVectorStore:
             with_payload=True,
         )
         return response.points
-
-    async def scroll_chunks_by_entities(self, *, kb_id: str, entity_names: Sequence[str], limit: int = 20) -> list[ScoredPoint]:
-        """Elastic back-query: chunks whose payload ``entities`` contains any of the names."""
-        if not entity_names:
-            return []
-        points, _ = await self._client.scroll(
-            collection_name=self.chunks_collection,
-            scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id)), FieldCondition(key="entities", match=MatchAny(any=list(entity_names)))]),
-            with_payload=True,
-            limit=limit,
-        )
-        return points
 
     async def get_chunk_vectors(self, chunk_ids: Sequence[str]) -> dict[str, list[float]]:
         """Retrieve dense chunk vectors by chunk ids (deterministic point ids).

@@ -198,28 +198,14 @@ async def test_graph_search_evidence_carries_scores(tools_env):
         assert isinstance(item["score"], float)
 
 
-@requires_qdrant
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_graph_search_never_calls_elastic_back_query(tools_env, monkeypatch):
-    """D4 (call-side): the channel-3 ``entities`` payload back-query is gone —
-    patching it to raise must not affect the search at all."""
+def test_elastic_back_query_method_removed():
+    """D4: the channel-3 elastic back-query is gone for good — the vector
+    store no longer exposes ``scroll_chunks_by_entities`` (the payload
+    ``entities`` tag and its KEYWORD index stay: they feed the chunk-drawer
+    display and the future true-mention marker)."""
+    from deerflow.knowledge.vector_store import KnowledgeVectorStore
 
-    async def _forbidden(*args, **kwargs):
-        raise AssertionError("elastic back-query must not be called (channel 3 removed)")
-
-    monkeypatch.setattr(tools_env["vector_store"], "scroll_chunks_by_entities", _forbidden)
-
-    result = await _graph_search_impl(
-        "Gateway 和哪些组件交互？",
-        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
-        **_impl_args(tools_env, _QueryLLM(["Gateway"])),
-        neighbor_min_score=0.0,
-    )
-
-    texts = [e["text"] for e in result["evidence"]]
-    assert any("会话管理" in t for t in texts)
-    assert any("文档解析" in t for t in texts)
+    assert not hasattr(KnowledgeVectorStore, "scroll_chunks_by_entities")
 
 
 @requires_qdrant
