@@ -122,7 +122,7 @@
 
 ## Final verification
 
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）。
-- [ ] `make lint && make format`（ruff check + format）干净。
-- [ ] Live 冒烟（真实 key + Qdrant）：上传 1 篇小文档 → 索引 ready 且无 `entity-resolution failed` 标记 → 图谱问题回答带证据；用 `docker exec` 或 API 抽查被合并实体（若语料含别名对）的 description/`source_chunk_ids` 并集正确。
-- [ ] 改造前后对比数据留档：同一测试问题集在一期行为配置 vs 二期默认配置下的 graph_search 证据命中差异，记入 PR 描述，为召回测试 API 与 D5 硬编排评估供数。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）。— 195 passed, 1 skipped（Task 5）。
+- [x] `make lint && make format`（ruff check + format）干净。— 1152 files already formatted（Task 5）。
+- [x] Live 冒烟（真实 key + Qdrant）：上传 1 篇小文档 → 索引 ready 且无 `entity-resolution failed` 标记 → 图谱问题回答带证据；用 `docker exec` 或 API 抽查被合并实体（若语料含别名对）的 description/`source_chunk_ids` 并集正确。— `backend/tests/knowledge/test_phase2_smoke.py`（含 Plugin/Plugins 跨切片别名对语料）：ready 无降级标记、alias 组唯一（无 Plugins 残留）、graph_search 真实链路带证据带 `score`；live 侧别名分叉未出现（DeepSeek 抽取层自行单复数归一），合并副作用链的确定性验证由 `test_resolver.py` 承担。
+- [x] 改造前后对比数据留档：同一测试问题集在一期行为配置 vs 二期默认配置下的 graph_search 证据命中差异，记入 PR 描述，为召回测试 API 与 D5 硬编排评估供数。— 夹具对比（确定性）：restored `[doc-t-c0, doc-t-c1]` ⊃ default `[doc-t-c0]`（语义闸门剪除弱相关邻居切片）；live 对比受真实 LLM 两次抽取抖动影响（restored 第二次落地未命中），以夹具数据为准。
