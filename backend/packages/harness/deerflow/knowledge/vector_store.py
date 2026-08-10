@@ -316,6 +316,29 @@ class KnowledgeVectorStore:
                 vectors[str(chunk_id)] = list(dense)
         return vectors
 
+    async def get_entity_vectors(self, kb_id: str, names: Sequence[str]) -> dict[str, list[float]]:
+        """Retrieve dense entity vectors by name (deterministic point ids).
+
+        Powers the D2 semantic gate (neighbour pruning) and the D3 alias
+        re-resolution. Missing points are skipped silently — a name without a
+        vector scores 0 and is pruned downstream.
+        """
+        if not names:
+            return {}
+        points = await self._client.retrieve(
+            collection_name=self.entities_collection,
+            ids=[self._entity_point_id(kb_id, str(name)) for name in names],
+            with_vectors=True,
+        )
+        vectors: dict[str, list[float]] = {}
+        for point in points:
+            name = (point.payload or {}).get("name")
+            vector = point.vector if isinstance(point.vector, dict) else {}
+            dense = vector.get("dense")
+            if name and dense:
+                vectors[str(name)] = list(dense)
+        return vectors
+
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""
         await self._client.delete(

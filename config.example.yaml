@@ -2594,3 +2594,12 @@ rag:
   # Experimental A/B knob: subtract penalty × hop from competition scores;
   # keep 0 for the pure chunk-score order.
   graph_hop_penalty: 0.0
+  # --- Phase-2 expansion pruning (spec 2026-08-10 D2) ---
+  # Cosine gate a neighbour entity must pass against the query to enter the
+  # expansion. Set 0 to restore the phase-1 full-BFS behaviour.
+  graph_neighbor_min_score: 0.4
+  # Hard budget on the expanded subgraph size; hop-0 entities always survive.
+  graph_max_expanded_nodes: 25
+  # Nodes above this degree only spread their neighbours when semantically
+  # relevant (hop-0 entities are exempt).
+  graph_hub_degree_threshold: 50

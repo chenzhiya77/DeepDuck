@@ -66,12 +66,12 @@
 - RagConfig 新增：`graph_neighbor_min_score: float = 0.4`、`graph_max_expanded_nodes: int = 25`、`graph_hub_degree_threshold: int = 50`。
 - 已知默认行为说明（写进函数 docstring）：默认参数下枢纽守护的拦截分支仅当配置放松入口不变式（如阈值设 0）时触发，hop0 豁免是主路径；邻居语义分即 D1 的实体分副产品。
 
-- [ ] 写失败测试 `expand_neighborhood`（纯函数，stub `fetch_vectors`）：低于阈值邻居被剪、≥阈值保留；向量缺失被剪；hop 标记正确（1/2 跳）；hop0 高扇出枢纽低分仍扩展（豁免）；非 hop0 枢纽高分扩展/低分拦截（构造注入 `entity_scores` 覆盖两分支）；预算截断保 hop0 + 高分邻居；`hops=1` 不扩第二跳。
-- [ ] 写失败测试（集成）：既有 `test_graph_search_expands_and_fetches_evidence` 传入 `neighbor_min_score=0.0`（one-hot embedder 下异词余弦为 0，必须走一期行为还原路径——同时验证配置可还原一期）；新增用例以共享维度的相关向量构造"相关邻居过闸/无关邻居被剪"。
-- [ ] 运行捕获 RED。
-- [ ] 实现 `expand_neighborhood` + `get_entity_vectors` + 工具替换 + 配置键。
-- [ ] GREEN；revert 语义剪枝阈值判断，证明相关用例 RED，restore，GREEN。
-- [ ] Commit: `feat(rag): prune graph expansion semantically with node budget and hub guard`。
+- [x] 写失败测试 `expand_neighborhood`（纯函数，stub `fetch_vectors`）：低于阈值邻居被剪、≥阈值保留；向量缺失被剪；hop 标记正确（1/2 跳）；hop0 高扇出枢纽低分仍扩展（豁免）；非 hop0 枢纽高分扩展/低分拦截（构造注入 `entity_scores` 覆盖两分支）；预算截断保 hop0 + 高分邻居；`hops=1` 不扩第二跳。
+- [x] 写失败测试（集成）：既有 `test_graph_search_expands_and_fetches_evidence` 传入 `neighbor_min_score=0.0`（one-hot embedder 下异词余弦为 0，必须走一期行为还原路径——同时验证配置可还原一期）；新增用例以共享维度的相关向量构造"相关邻居过闸/无关邻居被剪"。
+- [x] 运行捕获 RED。
+- [x] 实现 `expand_neighborhood` + `get_entity_vectors` + 工具替换 + 配置键。
+- [x] GREEN；revert 语义剪枝阈值判断，证明相关用例 RED，restore，GREEN。
+- [x] Commit: `feat(rag): prune graph expansion semantically with node budget and hub guard`。
 
 ## Task 3: D3 增量全局实体再归一
 

@@ -21,10 +21,12 @@ database — so the whole policy is unit-testable without IO.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import networkx as nx
+
+from deerflow.knowledge.graph.normalizer import cosine_similarity
 
 
 @dataclass(slots=True)
@@ -146,3 +148,104 @@ def select_evidence(
     rest.sort(key=lambda cid: (-(scores.get(cid, 0.0) - hop_penalty * candidates[cid].hop), candidates[cid].hop, cid))
     selected.extend(rest[: max(0, limit - len(selected))])
     return selected
+
+
+@dataclass(slots=True)
+class ExpansionResult:
+    """Outcome of a pruned graph expansion (D2).
+
+    ``entity_scores``: hop-0 entities carry their landing score, neighbours
+    the cosine that passed the semantic gate — the by-product D1 reuses for
+    the guarantee payout order.
+    """
+
+    seen: set[str]
+    hop_by_node: dict[str, int]
+    entity_scores: dict[str, float]
+
+
+def hub_may_expand(
+    *,
+    degree: int,
+    hop: int,
+    entity_score: float,
+    hub_degree_threshold: int,
+    neighbor_min_score: float,
+) -> bool:
+    """Hub guard (D2): high-degree nodes may only spread when relevant.
+
+    Degree never decides whether an entity stays — only whether its fan-out
+    is allowed to pull in more neighbours. hop-0 (directly matched) entities
+    are exempt: the landing threshold is deliberately lower than the neighbor
+    gate, and the user's own entity must never be blocked by its own fan-out.
+    Under the default pipeline the blocking branch is structurally
+    unreachable for hop≥1 nodes (they already passed the gate to enter
+    ``seen``); the predicate remains as a configuration safety margin.
+    """
+    if degree <= hub_degree_threshold:
+        return True
+    if hop == 0:
+        return True
+    return entity_score >= neighbor_min_score
+
+
+async def expand_neighborhood(
+    graph: nx.DiGraph,
+    seed_scores: Mapping[str, float],
+    *,
+    hops: int,
+    query_vector: Sequence[float],
+    fetch_vectors: Callable[[list[str]], Awaitable[Mapping[str, list[float]]]],
+    neighbor_min_score: float = 0.4,
+    max_expanded_nodes: int = 25,
+    hub_degree_threshold: int = 50,
+) -> ExpansionResult:
+    """1–2 hop expansion with semantic pruning, a node budget and a hub guard.
+
+    Per hop: the hub guard filters the frontier first, then all candidate
+    neighbours' vectors are fetched in one batch and only those whose cosine
+    against the query reaches ``neighbor_min_score`` enter ``seen`` (missing
+    vectors score 0 and are pruned). Zero extra embedding calls — neighbour
+    vectors already live in ``kb_entities``. After the last hop, a pure cost
+    budget trims ``seen`` to ``max_expanded_nodes``, always keeping hop-0
+    entities and preferring higher-scored neighbours. ``hops`` semantics are
+    unchanged; an empty ``seen`` is the caller's honest-answer path.
+    """
+    seen = {name for name in seed_scores if graph.has_node(name)}
+    hop_by_node = {name: 0 for name in seen}
+    entity_scores = {name: float(seed_scores[name]) for name in seen}
+    frontier = set(seen)
+    for hop in range(1, max(0, hops) + 1):
+        neighbor_names: set[str] = set()
+        for node in frontier:
+            if not hub_may_expand(
+                degree=int(graph.degree(node) or 0),
+                hop=hop_by_node[node],
+                entity_score=entity_scores.get(node, 0.0),
+                hub_degree_threshold=hub_degree_threshold,
+                neighbor_min_score=neighbor_min_score,
+            ):
+                continue
+            neighbor_names |= set(graph.successors(node)) | set(graph.predecessors(node))
+        neighbor_names -= seen
+        if not neighbor_names:
+            break
+        vectors = await fetch_vectors(sorted(neighbor_names))
+        frontier = set()
+        for name in sorted(neighbor_names):
+            vector = vectors.get(name)
+            score = cosine_similarity(list(query_vector), list(vector)) if vector is not None else 0.0
+            if score < neighbor_min_score:
+                continue
+            seen.add(name)
+            hop_by_node[name] = hop
+            entity_scores[name] = score
+            frontier.add(name)
+    if len(seen) > max_expanded_nodes:
+        hop0 = {name for name, hop in hop_by_node.items() if hop == 0}
+        others = sorted(seen - hop0, key=lambda name: (-entity_scores.get(name, 0.0), name))
+        keep = hop0 | set(others[: max(0, max_expanded_nodes - len(hop0))])
+        seen = keep
+        hop_by_node = {name: hop for name, hop in hop_by_node.items() if name in keep}
+        entity_scores = {name: score for name, score in entity_scores.items() if name in keep}
+    return ExpansionResult(seen=seen, hop_by_node=hop_by_node, entity_scores=entity_scores)

@@ -162,6 +162,10 @@ class RagConfig(BaseModel):
     graph_rerank: bool = Field(default=False, description="Opt-in qwen3-rerank precision pass over graph evidence candidates; RerankerError degrades to the embedding-cosine order.")
     graph_rerank_threshold: int = Field(default=12, ge=0, description="Only rerank when the candidate pool exceeds this size.")
     graph_hop_penalty: float = Field(default=0.0, ge=0, description="Experimental A/B knob: subtract penalty × hop from the competition score; 0 keeps the pure chunk-score order.")
+    # Phase-2 expansion pruning (spec 2026-08-10 D2).
+    graph_neighbor_min_score: float = Field(default=0.4, ge=0, description="Cosine gate a neighbour entity must pass against the query to enter the expansion; 0 restores phase-1 full BFS.")
+    graph_max_expanded_nodes: int = Field(default=25, ge=1, description="Hard budget on the expanded subgraph size; hop-0 entities always survive the trim.")
+    graph_hub_degree_threshold: int = Field(default=50, ge=0, description="Nodes above this degree only spread their neighbours when semantically relevant (hop-0 exempt).")
 
 
 def is_trace_correlation_enabled(config: Any) -> bool:

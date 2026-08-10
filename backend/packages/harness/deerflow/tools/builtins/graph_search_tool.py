@@ -1,13 +1,13 @@
-"""graph_search — the graph path (spec §4.2 + 2026-08-10 phase-2 D1).
+"""graph_search — the graph path (spec §4.2 + 2026-08-10 phase-2 D1/D2).
 
 Chain: query → local LLM entity/keyword extraction → ``kb_entities`` vector
-match → NetworkX 1–2 hop expansion (both directions) → chunk evidence via
-``source_chunk_ids`` (precise recall), ranked by semantic scores: the graph
-structure only defines the candidate pool, then dedupe → per-source caps →
-hop-0 guarantee (round-robin payout) → pure-score competition decides who
-gets in (D1). Chunk text always comes from the business-DB ``chunks`` table.
-An empty answer is returned honestly — the navigator never fabricates graph
-content.
+match → NetworkX 1–2 hop expansion with semantic pruning (D2: neighbor gate
++ node budget + hub guard) → chunk evidence via ``source_chunk_ids`` (precise
+recall), ranked by semantic scores: the graph structure only defines the
+candidate pool, then dedupe → per-source caps → hop-0 guarantee (round-robin
+payout) → pure-score competition decides who gets in (D1). Chunk text always
+comes from the business-DB ``chunks`` table. An empty answer is returned
+honestly — the navigator never fabricates graph content.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can
 from deerflow.knowledge.embedder import DashScopeEmbedder
 from deerflow.knowledge.graph.extractor import _strip_fence, get_extract_llm
 from deerflow.knowledge.graph.normalizer import cosine_similarity
-from deerflow.knowledge.graph.retrieval import Candidate, apply_source_caps, collect_candidates, select_evidence
+from deerflow.knowledge.graph.retrieval import Candidate, apply_source_caps, collect_candidates, expand_neighborhood, select_evidence
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.reranker import DashScopeReranker, RerankerError
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
@@ -115,6 +115,9 @@ async def _graph_search_impl(
     graph_rerank: bool = False,
     rerank_threshold: int = 12,
     hop_penalty: float = 0.0,
+    neighbor_min_score: float = 0.4,
+    max_expanded_nodes: int = 25,
+    hub_degree_threshold: int = 50,
 ) -> dict:
     """Core implementation — testable without the @tool wrapper."""
     kb_id, user_id = resolve_kb_scope(runtime)
@@ -152,19 +155,25 @@ async def _graph_search_impl(
     if not matched_names:
         return _empty(f"知识图谱中未找到与「{'、'.join(query_names)}」相关的实体。")
 
-    # 4. 1–2 hop expansion over the in-memory graph (both directions),
-    # tracking the hop level per node (semantic pruning arrives with D2).
+    # 4. 1–2 hop expansion over the in-memory graph (both directions) with
+    # D2 pruning: semantic gate per neighbour, node budget, hub guard.
     graph = await graph_store.load_networkx(kb_id)
-    hop_by_node: dict[str, int] = {name: 0 for name in matched_names if graph.has_node(name)}
-    frontier = set(hop_by_node)
-    for hop in range(1, max(0, hops) + 1):
-        nxt: set[str] = set()
-        for node in frontier:
-            nxt |= set(graph.successors(node)) | set(graph.predecessors(node))
-        nxt -= set(hop_by_node)
-        for node in nxt:
-            hop_by_node[node] = hop
-        frontier = nxt
+
+    async def _fetch_entity_vectors(names: list[str]):
+        return await vector_store.get_entity_vectors(kb_id, names)
+
+    expansion = await expand_neighborhood(
+        graph,
+        entity_scores,
+        hops=hops,
+        query_vector=query_dense,
+        fetch_vectors=_fetch_entity_vectors,
+        neighbor_min_score=neighbor_min_score,
+        max_expanded_nodes=max_expanded_nodes,
+        hub_degree_threshold=hub_degree_threshold,
+    )
+    hop_by_node = expansion.hop_by_node
+    entity_scores = expansion.entity_scores
     if not hop_by_node:
         return _empty(f"知识图谱中未找到与「{'、'.join(query_names)}」相关的实体。")
     seen = set(hop_by_node)
@@ -269,4 +278,7 @@ async def graph_search(
         graph_rerank=rag.graph_rerank,
         rerank_threshold=rag.graph_rerank_threshold,
         hop_penalty=rag.graph_hop_penalty,
+        neighbor_min_score=rag.graph_neighbor_min_score,
+        max_expanded_nodes=rag.graph_max_expanded_nodes,
+        hub_degree_threshold=rag.graph_hub_degree_threshold,
     )

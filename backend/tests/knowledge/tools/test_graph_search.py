@@ -19,7 +19,7 @@ from deerflow.knowledge.reranker import RerankerError
 from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
 
 from ..conftest import requires_qdrant
-from .conftest import DOC_ID, KB_ID, OWNER_ID
+from .conftest import DOC_ID, KB_ID, OWNER_ID, KeywordEmbedder
 
 
 class _QueryLLM:
@@ -78,6 +78,9 @@ async def test_graph_search_expands_and_fetches_evidence(tools_env):
         embedder=tools_env["embedder"],
         llm=llm,
         hops=2,
+        # Phase-1 behaviour restore path: the one-hot keyword embedder makes
+        # cross-keyword cosines 0, so the semantic gate must be disabled here.
+        neighbor_min_score=0.0,
     )
 
     # Matched entity plus its 1-2 hop neighborhood.
@@ -211,6 +214,7 @@ async def test_graph_search_never_calls_elastic_back_query(tools_env, monkeypatc
         "Gateway 和哪些组件交互？",
         _runtime(kb_id=KB_ID, user_id=OWNER_ID),
         **_impl_args(tools_env, _QueryLLM(["Gateway"])),
+        neighbor_min_score=0.0,
     )
 
     texts = [e["text"] for e in result["evidence"]]
@@ -238,6 +242,7 @@ async def test_graph_search_reranker_decides_order_when_enabled(tools_env):
         reranker=_FixedReranker([(2, 0.99), (1, 0.5), (0, 0.01)]),
         graph_rerank=True,
         rerank_threshold=1,
+        neighbor_min_score=0.0,
     )
 
     assert [e["chunk_id"] for e in result["evidence"]] == [f"{DOC_ID}-c2", f"{DOC_ID}-c0", f"{DOC_ID}-c1"]
@@ -262,8 +267,64 @@ async def test_graph_search_reranker_error_falls_back_to_embedding_order(tools_e
         reranker=_FailingReranker(),
         graph_rerank=True,
         rerank_threshold=1,
+        neighbor_min_score=0.0,
     )
 
     # Cosine order: c0/c1 contain the Gateway keyword (1.0), c2 does not (0.0)
     # — guarantee draws c0 then c2, competition appends c1.
     assert [e["chunk_id"] for e in result["evidence"]] == [f"{DOC_ID}-c0", f"{DOC_ID}-c2", f"{DOC_ID}-c1"]
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_graph_search_prunes_irrelevant_neighbors(tools_env):
+    """D2: with the default gate, neighbours orthogonal to the query (cosine 0
+    under the one-hot embedder) never enter the seen subgraph."""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_impl_args(tools_env, _QueryLLM(["Gateway"])),
+        neighbor_min_score=0.4,
+    )
+
+    assert {e["name"] for e in result["entities"]} == {"Gateway"}
+    assert result["relations"] == []  # both edges lose one endpoint to pruning
+    assert [e["chunk_id"] for e in result["evidence"]] == [f"{DOC_ID}-c0"]
+
+
+class _BlendEmbedder(KeywordEmbedder):
+    """Query embeddings mentioning DeerFlow get its one-hot dim blended in, so
+    the DeerFlow neighbour passes the semantic gate (cosine ≈ 0.57) while
+    MinerU stays orthogonal."""
+
+    async def embed(self, texts, *, text_type: str = "document"):
+        results = await super().embed(texts, text_type=text_type)
+        if text_type == "query":
+            for result, text in zip(results, texts, strict=True):
+                if "DeerFlow" in text:
+                    result.dense[30] = 0.7
+        return results
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_graph_search_semantic_gate_keeps_related_neighbor(tools_env):
+    """D2: a related neighbour passes the gate, an unrelated one is pruned."""
+    result = await _graph_search_impl(
+        "DeerFlow 的 Gateway 如何交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        store=tools_env["store"],
+        graph_store=tools_env["graph_store"],
+        vector_store=tools_env["vector_store"],
+        embedder=_BlendEmbedder(),
+        llm=_QueryLLM(["Gateway"]),
+        neighbor_min_score=0.4,
+    )
+
+    assert {e["name"] for e in result["entities"]} == {"Gateway", "DeerFlow"}
+    triples = {(r["source"], r["relation"], r["target"]) for r in result["relations"]}
+    assert ("DeerFlow", "包含", "Gateway") in triples
+    assert ("Gateway", "调用", "MinerU") not in triples  # MinerU pruned
+    assert [e["chunk_id"] for e in result["evidence"]] == [f"{DOC_ID}-c0"]

@@ -68,6 +68,10 @@ class TestRagConfig:
         assert config.graph_rerank is False
         assert config.graph_rerank_threshold == 12
         assert config.graph_hop_penalty == 0.0
+        # D2 expansion pruning.
+        assert config.graph_neighbor_min_score == 0.4
+        assert config.graph_max_expanded_nodes == 25
+        assert config.graph_hub_degree_threshold == 50
 
     def test_graph_quality_overridable_from_dict(self):
         config = RagConfig(
@@ -89,6 +93,19 @@ class TestRagConfig:
         assert config.graph_rerank is True
         assert config.graph_rerank_threshold == 20
         assert config.graph_hop_penalty == 0.15
+
+    def test_graph_expansion_overridable_from_dict(self):
+        config = RagConfig(
+            **{
+                "graph_neighbor_min_score": 0.0,
+                "graph_max_expanded_nodes": 100,
+                "graph_hub_degree_threshold": 10,
+            }
+        )
+
+        assert config.graph_neighbor_min_score == 0.0
+        assert config.graph_max_expanded_nodes == 100
+        assert config.graph_hub_degree_threshold == 10
 
 
 class TestAppConfigRagSection:
