@@ -115,10 +115,10 @@
 **Files:**
 - Modify: `backend/AGENTS.md`（图谱路检索描述更新：两阶段证据选取、语义剪枝扩展、再归一时机）、`docs/superpowers/specs/2026-08-10-rag-graph-quality-design.md`（头部状态：待评审 → 已落地）
 
-- [ ] 按仓库文档同步规则更新 `backend/AGENTS.md` 知识图谱检索小节（参数走 `rag.*`、一期行为可配置还原的说明）；spec 状态翻转为已落地并标注日期。
-- [ ] 一期行为近似还原验证：配置限流 999/`graph_neighbor_min_score: 0`/`graph_hop0_guarantee: 0`，对 tools 集成夹具跑一次 graph_search，确认实体/关系/证据覆盖与一期一致（仅顺序可能不同）。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净。
-- [ ] Commit: `docs(rag): sync agent guides and spec status for graph quality phase`。
+- [x] 按仓库文档同步规则更新 `backend/AGENTS.md` 知识图谱检索小节（参数走 `rag.*`、一期行为可配置还原的说明）；spec 状态翻转为已落地并标注日期。
+- [x] 一期行为近似还原验证：配置限流 999/`graph_neighbor_min_score: 0`/`graph_hop0_guarantee: 0`，对 tools 集成夹具跑一次 graph_search，确认实体/关系/证据覆盖与一期一致（仅顺序可能不同）。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净。
+- [x] Commit: `docs(rag): sync agent guides and spec status for graph quality phase`。
 
 ## Final verification
 

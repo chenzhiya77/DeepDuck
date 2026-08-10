@@ -835,6 +835,21 @@ E2B output sync records remote file versions and actual host file metadata in a 
 - Missing ACP executables now return an actionable error message instead of a raw `[Errno 2]`
 - Each ACP agent uses a per-thread workspace at `{base_dir}/users/{user_id}/threads/{thread_id}/acp-workspace/`. The workspace is accessible to the lead agent via the virtual path `/mnt/acp-workspace/` (read-only). In docker sandbox mode, the directory is volume-mounted into the container at `/mnt/acp-workspace` (read-only); in local sandbox mode, path translation is handled by `tools.py`
 
+### Knowledge Base / RAG (`packages/harness/deerflow/knowledge/`)
+
+Per-user knowledge bases with three retrieval paths over one ingestion pipeline:
+
+- **Ingestion**: upload → MinerU parse (VLM captions for extracted images) → chunk → async worker (`knowledge/worker.py`, `rag.worker_concurrency`) builds all three indexes. Per-document status carries non-fatal sub-markers (`graph degraded`, `entity-resolution failed`) instead of failing the document.
+- **Storage split**: business rows (documents / chunks / entities / relations / wiki entries) in SQLite via `knowledge/store.py`; dense+sparse vectors in Qdrant (`kb_chunks` / `kb_entities` / `kb_wiki_entries`, deterministic `uuid5` point ids); the entity/relation graph in `knowledge/graph/store.py` (SQLite, queried as a NetworkX DiGraph). The business-column `chunks.entities` is the source of truth for the chunk-drawer display; `vector_store.set_chunk_entities` mirrors it into the `kb_chunks` payload (foundation for a future true-mention marker).
+- **Retrieval tools** (`tools/builtins/`): `hybrid_search` (vector RRF + qwen3-rerank), `graph_search` (structure-driven), `wiki_search` (pre-digested entries). Access is gated per-thread by KB binding.
+
+**Graph path online flow** (`graph_search_tool.py` orchestrating the pure `knowledge/graph/retrieval.py`; spec `docs/superpowers/specs/2026-08-10-rag-graph-quality-design.md`):
+query-entity extraction → seed match (entity scores) → `expand_neighborhood` (semantic gate: neighbour cosine ≥ `graph_neighbor_min_score`, missing vectors pruned; node budget `graph_max_expanded_nodes` with hop-0 always kept; hub guard above `graph_hub_degree_threshold`, hop-0 exempt) → `collect_candidates` (dedupe by chunk id, merge entity/edge sources) → score (`get_chunk_vectors` cosine; opt-in `graph_rerank` when the pool exceeds `graph_rerank_threshold`, `RerankerError` falls back to the embedding order) → `apply_source_caps` (`graph_per_entity_cap` / `graph_per_edge_cap`) → `select_evidence`: phase-1 hop-0 guarantee paid out round-robin by entity score (`graph_hop0_guarantee`), phase-2 pure chunk-score competition (`graph_hop_penalty` defaults 0 — A/B knob only) → hard cap `graph_evidence_limit`. Evidence items carry `score` (that run's raw score, comparable only within the same result set).
+
+**Offline entity re-resolution**: after `index_document_graph`, the worker runs `graph/resolver.py::resolve_entity_aliases` — full entity table below `graph_resolution_full_scan_threshold` rows, else touched entities + 1-hop neighbours — clustering aliases (alias fold + `entity_merge_similarity` cosine union-find, deterministic representative) and applying an idempotent five-step side-effect chain: merge entity rows → rewrite relation endpoints (dedupe triples, drop self-loops) → delete alias vectors + re-embed the representative → rewrite chunk entities in both the business column and the Qdrant payload → mark affected wiki entries dirty. Failure degrades to the `entity-resolution failed` sub-marker; the document still reaches `ready`.
+
+All knobs live in `RagConfig` (`rag.*` in config.yaml; secrets only via env: `DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `SILICONFLOW_VLM_API_KEY` / `MINERU_API_TOKEN`). Phase-1 graph behaviour is recoverable by config: caps very large, `graph_neighbor_min_score: 0`, `graph_hop0_guarantee: 0`. Selection/expansion/clustering logic (`retrieval.py` / `resolver.py` / `normalizer.py`) is pure and unit-tested without Qdrant or the DB; integration tests need a local Qdrant (`docker start qdrant`, marker `requires_qdrant`).
+
 ### MCP System (`packages/harness/deerflow/mcp/`)
 
 - Uses `langchain-mcp-adapters` `MultiServerMCPClient` for multi-server management
