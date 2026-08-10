@@ -47,7 +47,7 @@
 - 解析器：**MinerU** 官方 API（覆盖 PDF/Word/Markdown；版面分析分区标题/正文/表格/图片）
 - 多模态策略：**文本化路线**——MinerU 产出图片引用 → **VLM caption 子步骤**（Qwen3-VL-30B-A3B，逐图生成中文描述）→ caption 以 `![caption](...)` 形式写回 Markdown 文本流后再切片，不引入多模态向量
 - 原始文件存储：本地磁盘 `{base_dir}/data/knowledge/{kb_id}/{doc_id}/`（`base_dir` 为 gateway 数据根 `DEER_FLOW_HOME`，dev 下即 `backend/.deer-flow`），`documents.storage_path` 记录落盘绝对路径（重传覆盖、删文档级联删目录）
-- 二期候选：Excel（表格切片专项策略）、网页 URL（正文抽取）
+- 二期第一批已扩展（2026-08-09 定）：TXT/CSV 本地直读（不经 MinerU，复用 md 路径）；PPT/PPTX 与 PNG/JPG 图片走 MinerU（图片经 VLM caption 文本化，管线同上述多模态策略）。上传入口补前后端双白名单校验（一期遗留缺口：无白名单时任意格式可上传、到解析期才 failed）——支持集合 = `.md/.markdown/.txt/.csv/.pdf/.doc/.docx/.ppt/.pptx/.png/.jpg/.jpeg`。Excel（表格切片专项策略）、网页 URL（正文抽取）延后
 
 ### 3.2 切片策略：结构感知为主 + 大小约束兜底
 
@@ -146,7 +146,7 @@ payload 索引字段（仅为过滤条件建索引）：
 | 上传者 | `uploader_id` | **一期必埋字段**：一期恒为库 owner，二期共享库激活语义（谁传的文档一目了然） |
 | 大小 | `size_bytes` | 字节数 |
 | 切片数 | `chunk_count` | 索引完成后回填；未完成显示 "—" |
-| 状态 | `status` + `progress_percent` | 主状态机 + 每路径子标记；indexing 中显示百分比 |
+| 状态 | `status` + `progress_percent` + 三路子标记 | 主状态机 + 每路径子标记（向量/图谱/wiki 各状态，二期第一批补齐契约字段，悬停展示「向量✓ / 图谱 87% / wiki 待生成」）；indexing 中显示百分比 |
 | 时间 | `created_at` | 上传时间 |
 
 底部统计行（共 N 文档 · M 切片）：前端从列表聚合，不占 API 契约。
@@ -155,7 +155,7 @@ payload 索引字段（仅为过滤条件建索引）：
 
 主状态机：`uploaded → parsing → chunking → indexing → ready / failed`；向量/wiki/图谱各带子标记（如"图谱 87%"），允许向量先就绪先可搜。
 
-**切片可视化**（主流开发者向 RAG 平台标配，Dify/RAGFlow 均有）：点击文档行 → 抽屉展示该文档全部切片（文本 + heading_path + 页码 + token 数 + 关联实体），一期做只读预览；召回测试（输入 query 看命中切片+得分，Dify/RAGFlow 验证过的调优闭环）二期；切片编辑/禁用（写回三库）三期。与 4.6 引用卡片的“展开切片原文”复用同一展示组件。
+**切片可视化**（主流开发者向 RAG 平台标配，Dify/RAGFlow 均有）：点击文档行 → 抽屉展示该文档全部切片（文本 + heading_path + 页码 + token 数 + 关联实体），一期做只读预览；召回测试（输入 query 看命中切片+得分，Dify/RAGFlow 验证过的调优闭环）二期第一批；切片编辑/禁用（写回三库）三期。与 4.6 引用卡片的“展开切片原文”复用同一展示组件。
 
 ### 3.7 索引任务执行载体与级联删除
 
@@ -206,7 +206,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 
 ### 4.6 引用溯源契约
 
-工具返回的每条证据携带 `{doc_name, page, heading_path, chunk_id}`；SOUL.md 约束主 LLM 回答中使用 `[序号]` 标注引用；前端将引用渲染为可点击卡片（显示来源文档+页码），点击展开切片原文。检索工具执行过程复用现有 tool_progress middleware 的进度事件，前端显示"正在检索知识库…"等状态。
+工具返回的每条证据携带 `{doc_name, page, heading_path, chunk_id}`；SOUL.md 约束主 LLM 回答中使用 `[序号]` 标注引用；前端将引用渲染为可点击卡片（显示来源文档+页码），点击展开切片原文。**二期第一批补充**：来源卡片带类型徽标（文档 / 百科）——一期 wiki 条目与文档切片在引用列表混排无区分，用户无法辨识来源类型；百科来源点击跳转中栏百科 tab 对应条目全文。检索工具执行过程复用现有 tool_progress middleware 的进度事件，前端显示"正在检索知识库…"等状态。
 
 ### 4.7 检索模式开关（已定：方案 C——默认自主 + 显式深度强制）
 
@@ -240,11 +240,13 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 /workspace/knowledge
 ├── 左栏：知识库分组列表
 │     ├── 个人知识库（组头「+」新建）—— 一期
-│     ├── 共享知识库（「+」新建 / 通过邀请链接加入）—— 二期
+│     ├── 共享知识库（「+」新建 / 通过邀请链接加入）—— 二期后段
 │     └── （订阅知识库 / 广场 —— 远期可选，参照 ima 生态）
-├── 中栏：选中库的文档管理
-│     ├── 头部：库名 + 类型标签 + 统计 + [上传文档][生成百科][设置]
-│     └── 文档表格：名称 / 上传者 / 大小 / 切片数 / 状态（主状态 + 进度百分比 + 三路子标记）/ 时间 / 操作（删除、失败重试）+ 底部统计行（见 3.6）
+├── 中栏：选中库的内容管理（tab 分区：文档 | 百科 | 检索测试）
+│     ├── 头部：库名 + 类型标签 + ⋯操作菜单（上传文档/生成百科/重命名/删除）
+│     ├── 文档 tab：文档表格（名称 / 上传者 / 大小 / 切片数 / 状态 / 时间 / 操作）+ 搜索/排序工具行 + 批量选择与右键菜单 + 底部统计行（见 3.6）
+│     ├── 百科 tab：wiki 条目列表（标题 / 摘要 / dirty·ready 状态 / 更新时间），点击条目右侧抽屉看全文；「生成百科」进度在此展示
+│     └── 检索测试 tab：输入 query → 三路（向量/图谱/wiki）命中结果分组展示 + 得分（对应 5.3 recall-test 端点；Dify/RAGFlow 验证过的调优闭环）
 └── 右栏：对话面板（内嵌聊天组件，基于当前库提问）
 ```
 
@@ -272,7 +274,9 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 | `/api/knowledge-bases/{kb_id}/documents` | GET/POST | 文档列表（含状态）/ 上传（multipart，异步索引） |
 | `/api/knowledge-bases/{kb_id}/documents/{doc_id}` | DELETE/POST retry | 删除（级联）/ 失败重试 |
 | `/api/knowledge-bases/{kb_id}/documents/{doc_id}/chunks` | GET | 切片列表（分页；切片预览抽屉，一期只读） |
-| `/api/knowledge-bases/{kb_id}/recall-test` | POST | 召回测试：query → 命中切片+得分（二期） |
+| `/api/knowledge-bases/{kb_id}/wiki/entries` | GET | wiki 条目列表（百科 tab：title/summary/status/updated_at；不含全文） |
+| `/api/knowledge-bases/{kb_id}/wiki/entries/{entry_id}` | GET | wiki 条目全文（条目抽屉 + 引用跳转落地） |
+| `/api/knowledge-bases/{kb_id}/recall-test` | POST | 召回测试：query → 三路命中切片/条目+得分（二期第一批落地） |
 | `/api/knowledge-bases/{kb_id}/wiki/generate` | POST | 触发 wiki 批量生成（见 3.7） |
 
 ### 5.4 知识库权限模型（已定：私有起步 + 邀请制共享二期）
@@ -328,6 +332,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 **分期**：
 
 - 一期：PDF/Word/MD + 三路检索 + 专精窗口 + 文档管理列表 + 私有知识库（含三个权限钩子）+ 切片只读预览
-- 二期：邀请制共享（kb_members + 邀请链接）、Excel/网页解析、召回测试、评测体系建设、引用来源类型标识与 wiki 条目可视化管理（一期问答引用中 wiki 条目与文档切片混排无区分，用户无法辨识来源类型——需为引用卡片加「百科/文档」类型徽标，并将百科条目提升为中栏可查看/管理的标签页）
+- 二期第一批（2026-08-09 锁定）：入库类型扩展（TXT/CSV 直读 + PPT/图片走 MinerU，前后端白名单）、中栏 tab 结构（文档 | 百科 | 检索测试）、引用来源类型徽标与 wiki 条目可视化管理、召回测试端点落地、文档状态三路子标记、轻量召回评测脚本（golden set，工程脚本非产品功能）
+- 二期后段：邀请制共享（kb_members + 邀请链接，暂缓）、Excel/网页解析（暂缓）、图谱可视化（形态待定：力导向图或轻量实体列表）、评测驱动的检索硬编排评估（依赖召回测试数据）
 - 三期：切片编辑/禁用（写回三库）、admin/editor 角色
 - 升级预留：若评测证明需要固化流程（如深度研究报告的确定性 DAG），再注册第二张图做显式编排，P0–P8 生命周期仍复用
