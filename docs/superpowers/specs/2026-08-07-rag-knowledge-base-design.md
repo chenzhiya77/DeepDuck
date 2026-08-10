@@ -47,7 +47,7 @@
 - 解析器：**MinerU** 官方 API（覆盖 PDF/Word/Markdown；版面分析分区标题/正文/表格/图片）
 - 多模态策略：**文本化路线**——MinerU 产出图片引用 → **VLM caption 子步骤**（Qwen3-VL-30B-A3B，逐图生成中文描述）→ caption 以 `![caption](...)` 形式写回 Markdown 文本流后再切片，不引入多模态向量
 - 原始文件存储：本地磁盘 `{base_dir}/data/knowledge/{kb_id}/{doc_id}/`（`base_dir` 为 gateway 数据根 `DEER_FLOW_HOME`，dev 下即 `backend/.deer-flow`），`documents.storage_path` 记录落盘绝对路径（重传覆盖、删文档级联删目录）
-- 二期第一批已扩展（2026-08-09 定）：TXT/CSV 本地直读（不经 MinerU，复用 md 路径）；PPT/PPTX 与 PNG/JPG 图片走 MinerU（图片经 VLM caption 文本化，管线同上述多模态策略）。上传入口补前后端双白名单校验（一期遗留缺口：无白名单时任意格式可上传、到解析期才 failed）——支持集合 = `.md/.markdown/.txt/.csv/.pdf/.doc/.docx/.ppt/.pptx/.png/.jpg/.jpeg`。Excel（表格切片专项策略）、网页 URL（正文抽取）延后
+- 二期第一批扩展（2026-08-09 定稿；截至 2026-08-11 未实施，实施契约见 `2026-08-11-rag-phase2-batch1-design.md` §6）：TXT/CSV 本地直读（不经 MinerU，复用 md 路径）；PPT/PPTX 与 PNG/JPG 图片走 MinerU（图片经 VLM caption 文本化，管线同上述多模态策略）。上传入口补前后端双白名单校验（一期遗留缺口：无白名单时任意格式可上传、到解析期才 failed）——支持集合 = `.md/.markdown/.txt/.csv/.pdf/.doc/.docx/.ppt/.pptx/.png/.jpg/.jpeg`。Excel（表格切片专项策略）、网页 URL（正文抽取）延后
 
 ### 3.2 切片策略：结构感知为主 + 大小约束兜底
 
@@ -146,7 +146,7 @@ payload 索引字段（仅为过滤条件建索引）：
 | 上传者 | `uploader_id` | **一期必埋字段**：一期恒为库 owner，二期共享库激活语义（谁传的文档一目了然） |
 | 大小 | `size_bytes` | 字节数 |
 | 切片数 | `chunk_count` | 索引完成后回填；未完成显示 "—" |
-| 状态 | `status` + `progress_percent` + 三路子标记 | 主状态机 + 每路径子标记（向量/图谱/wiki 各状态，二期第一批补齐契约字段，悬停展示「向量✓ / 图谱 87% / wiki 待生成」）；indexing 中显示百分比 |
+| 状态 | `status` + `progress_percent` + 三路子标记 | 主状态机 + 每路径子标记（向量/图谱/wiki 各状态，二期第一批补齐契约字段，悬停展示「向量✓ / 图谱 87% / wiki 待生成」，实施契约见 `2026-08-11-rag-phase2-batch1-design.md` §5）；indexing 中显示百分比 |
 | 时间 | `created_at` | 上传时间 |
 
 底部统计行（共 N 文档 · M 切片）：前端从列表聚合，不占 API 契约。
@@ -208,7 +208,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 
 ### 4.6 引用溯源契约
 
-工具返回的每条证据携带 `{doc_name, page, heading_path, chunk_id}`；SOUL.md 约束主 LLM 回答中使用 `[序号]` 标注引用；前端将引用渲染为可点击卡片（显示来源文档+页码），点击展开切片原文。**二期第一批补充**：来源卡片带类型徽标（文档 / 百科）——一期 wiki 条目与文档切片在引用列表混排无区分，用户无法辨识来源类型；百科来源点击跳转中栏百科 tab 对应条目全文。检索工具执行过程复用现有 tool_progress middleware 的进度事件，前端显示"正在检索知识库…"等状态。
+工具返回的每条证据携带 `{doc_name, page, heading_path, chunk_id}`；SOUL.md 约束主 LLM 回答中使用 `[序号]` 标注引用；前端将引用渲染为可点击卡片（显示来源文档+页码），点击展开切片原文。**二期第一批补充**：来源卡片带类型徽标（文档 / 百科）——一期 wiki 条目与文档切片在引用列表混排无区分，用户无法辨识来源类型；百科来源点击跳转中栏百科 tab 对应条目全文（实施契约见 `2026-08-11-rag-phase2-batch1-design.md` §4）。检索工具执行过程复用现有 tool_progress middleware 的进度事件，前端显示"正在检索知识库…"等状态。
 
 ### 4.7 检索模式开关（已定：方案 C——默认自主 + 显式深度强制）
 
@@ -278,7 +278,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 | `/api/knowledge-bases/{kb_id}/documents/{doc_id}/chunks` | GET | 切片列表（分页；切片预览抽屉，一期只读） |
 | `/api/knowledge-bases/{kb_id}/wiki/entries` | GET | wiki 条目列表（百科 tab：title/summary/status/updated_at；不含全文） |
 | `/api/knowledge-bases/{kb_id}/wiki/entries/{entry_id}` | GET | wiki 条目全文（条目抽屉 + 引用跳转落地） |
-| `/api/knowledge-bases/{kb_id}/recall-test` | POST | 召回测试：query → 三路命中切片/条目+得分（二期第一批落地） |
+| `/api/knowledge-bases/{kb_id}/recall-test` | POST | 召回测试：query → 三路命中切片/条目+得分（二期第一批落地，实施契约见 `2026-08-11-rag-phase2-batch1-design.md` §3） |
 | `/api/knowledge-bases/{kb_id}/wiki/generate` | POST | 触发 wiki 批量生成（见 3.7） |
 
 ### 5.4 知识库权限模型（已定：私有起步 + 邀请制共享二期）
