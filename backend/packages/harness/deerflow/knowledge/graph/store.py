@@ -7,12 +7,15 @@ descriptions append (deduped per fragment) and ``source_chunk_ids`` union, so
 re-indexing or incremental documents never trigger a full graph rebuild. Uniqueness scope
 is ``(kb_id, name)`` / ``(kb_id, source, target, relation)`` — two KBs keep
 independent graphs.
+
+``merge_entities`` / ``rewrite_relation_endpoints`` (spec 2026-08-10 D3) are
+the cross-slice alias merge primitives used by the incremental re-resolver.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import networkx as nx
@@ -155,6 +158,85 @@ class GraphStore:
                     row.source_chunk_ids = remaining
             await session.commit()
         return orphaned, affected
+
+    async def merge_entities(self, kb_id: str, representative: str, aliases: Sequence[str]) -> dict[str, Any] | None:
+        """Merge alias rows into the representative entity (spec 2026-08-10 D3).
+
+        Description fragments append (deduped), ``source_chunk_ids`` union,
+        type backfilled when empty; alias rows are deleted. Returns the merged
+        representative row as a dict (``None`` when the representative does
+        not exist). Idempotent — re-running with already-merged aliases is a
+        no-op.
+        """
+        if not aliases:
+            return None
+        async with self._sf() as session:
+            rep_row = await session.get(GraphEntityRow, _entity_id(kb_id, representative))
+            if rep_row is None:
+                return None
+            for alias in aliases:
+                alias_row = await session.get(GraphEntityRow, _entity_id(kb_id, alias))
+                if alias_row is None:
+                    continue
+                rep_row.description = _merge_text(rep_row.description, alias_row.description or "")
+                if alias_row.type and not rep_row.type:
+                    rep_row.type = alias_row.type
+                for chunk_id in alias_row.source_chunk_ids or []:
+                    rep_row.source_chunk_ids = _merge_chunk_ids(rep_row.source_chunk_ids, chunk_id)
+                await session.delete(alias_row)
+            # Read attributes before commit: afterwards they expire and
+            # touching them would trigger implicit IO (MissingGreenlet).
+            merged = {
+                "name": representative,
+                "type": rep_row.type or "",
+                "description": rep_row.description or "",
+                "source_chunk_ids": list(rep_row.source_chunk_ids or []),
+            }
+            await session.commit()
+            return merged
+
+    async def rewrite_relation_endpoints(self, kb_id: str, name_map: Mapping[str, str]) -> None:
+        """Rewrite relation endpoints through ``name_map`` (spec 2026-08-10 D3).
+
+        Duplicates created by the rewrite merge via the usual upsert semantics
+        (description append + chunk-id union); self-loops produced by the
+        merge are dropped. Idempotent — endpoints already rewritten are left
+        untouched.
+        """
+        if not name_map:
+            return
+        async with self._sf() as session:
+            rows = (await session.execute(select(GraphRelationRow).where(GraphRelationRow.kb_id == kb_id))).scalars().all()
+            for row in rows:
+                new_source = name_map.get(row.source, row.source)
+                new_target = name_map.get(row.target, row.target)
+                if new_source == row.source and new_target == row.target:
+                    continue
+                relation, description = row.relation, row.description or ""
+                chunk_ids = list(row.source_chunk_ids or [])
+                if new_source == new_target:
+                    await session.delete(row)
+                    continue
+                existing = await session.get(GraphRelationRow, _relation_id(kb_id, new_source, new_target, relation))
+                if existing is not None and existing.id != row.id:
+                    existing.description = _merge_text(existing.description, description)
+                    for chunk_id in chunk_ids:
+                        existing.source_chunk_ids = _merge_chunk_ids(existing.source_chunk_ids, chunk_id)
+                    await session.delete(row)
+                else:
+                    await session.delete(row)
+                    session.add(
+                        GraphRelationRow(
+                            id=_relation_id(kb_id, new_source, new_target, relation),
+                            kb_id=kb_id,
+                            source=new_source,
+                            target=new_target,
+                            relation=relation,
+                            description=description,
+                            source_chunk_ids=chunk_ids,
+                        )
+                    )
+            await session.commit()
 
     async def load_networkx(self, kb_id: str) -> nx.DiGraph:
         """Load the KB graph into memory. Multiple relations between the same

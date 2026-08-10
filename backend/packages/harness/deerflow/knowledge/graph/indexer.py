@@ -42,13 +42,18 @@ class _Embedder(Protocol):
 
 @dataclass(slots=True)
 class GraphIndexStats:
-    """Outcome of one document's graph indexing run (this invocation only)."""
+    """Outcome of one document's graph indexing run (this invocation only).
+
+    ``touched_entities`` feeds the D3 incremental re-resolution: the worker
+    triggers it after this stage with exactly the entities this run wrote.
+    """
 
     total: int
     done: int = 0
     empty: int = 0
     failed_chunk_ids: list[str] = field(default_factory=list)
     degraded: bool = False
+    touched_entities: set[str] = field(default_factory=set)
 
 
 async def index_document_graph(
@@ -158,4 +163,5 @@ async def index_document_graph(
                 document["status"],
                 error=f"graph degraded: {len(stats.failed_chunk_ids)}/{stats.total} chunks failed extraction",
             )
+    stats.touched_entities = touched_entities
     return stats

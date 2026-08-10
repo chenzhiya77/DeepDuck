@@ -74,6 +74,7 @@ def _vector_store_mock() -> MagicMock:
     vs.delete_by_doc = AsyncMock()
     vs.delete_entities = AsyncMock()
     vs.upsert_wiki_entries = AsyncMock(return_value=0)
+    vs.get_entity_vectors = AsyncMock(return_value={})
     return vs
 
 
@@ -262,3 +263,66 @@ async def test_ready_document_auto_triggers_wiki_generation(session_factory):
     assert entries[0]["title"] == "DeerFlow"
     assert entries[0]["status"] == "ready"
     assert worker._vector_store.upsert_wiki_entries.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_resolution_runs_after_graph_indexing(session_factory, monkeypatch):
+    """D3: the worker triggers the incremental re-resolution with the touched
+    entity set right after the graph leg, before marking the document ready."""
+    from deerflow.knowledge.graph.resolver import ResolutionStats
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    spy = AsyncMock(return_value=ResolutionStats())
+    monkeypatch.setattr("deerflow.knowledge.worker.resolve_entity_aliases", spy)
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm)
+
+    await worker.process_document("doc-1")
+
+    assert (await store.get_document("doc-1"))["status"] == "ready"
+    assert spy.await_count == 1
+    assert spy.await_args.kwargs["kb_id"] == "kb-1"
+    assert spy.await_args.kwargs["touched_entities"] == {"DeerFlow"}
+
+
+class _PartialFailLLM:
+    """First chunk extracts fine, the '坏切片' chunk returns malformed JSON."""
+
+    async def ainvoke(self, messages):
+        last = messages[-1] if isinstance(messages, list) else messages
+        text = str(last["content"] if isinstance(last, dict) else getattr(last, "content", last))
+        if "遗漏" in text:
+            return SimpleNamespace(content='{"entities": [], "relations": []}')
+        if "坏切片" in text:
+            return SimpleNamespace(content="这不是 JSON")
+        return SimpleNamespace(content=json.dumps({"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_entity_resolution_failure_degrades_without_blocking(session_factory, monkeypatch):
+    """D3: a failing re-resolution never blocks the pipeline — the document
+    still reaches ``ready`` and the error field gains a visible sub-marker
+    alongside any existing ``graph degraded`` flag; wiki generation proceeds."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    await store.update_document_status("doc-1", "indexing", chunk_count=2)
+    await store.insert_chunks(
+        [
+            {"chunk_id": "doc-1#0000", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 0, "text": "DeerFlow 智能体", "heading_path": [], "page": None, "token_count": 5},
+            {"chunk_id": "doc-1#0001", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 1, "text": "坏切片", "heading_path": [], "page": None, "token_count": 5},
+        ]
+    )
+    monkeypatch.setattr("deerflow.knowledge.worker.resolve_entity_aliases", AsyncMock(side_effect=RuntimeError("resolution boom")))
+    worker = _worker(store, session_factory, llm=_PartialFailLLM(), main_llm=_WikiLLM())
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert "graph degraded" in doc["error"]  # 1/2 chunks failed > 30%
+    assert "entity-resolution failed" in doc["error"]
+    entries = await WikiStore(session_factory).list_entries("kb-1")
+    assert entries, "wiki generation must not be blocked by the resolution failure"

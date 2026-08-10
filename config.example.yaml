@@ -2603,3 +2603,11 @@ rag:
   # Nodes above this degree only spread their neighbours when semantically
   # relevant (hop-0 entities are exempt).
   graph_hub_degree_threshold: 50
+  # --- Phase-2 entity re-resolution (spec 2026-08-10 D3) ---
+  # Below this graph size the re-resolver scans the whole entity table after
+  # each document's graph leg; larger graphs resolve only the touched
+  # entities + their 1-hop neighbours.
+  graph_resolution_full_scan_threshold: 500
+  # Cosine threshold for merging alias entity names — shared by the per-slice
+  # normalizer and the incremental re-resolver.
+  entity_merge_similarity: 0.92

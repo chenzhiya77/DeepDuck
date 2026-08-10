@@ -72,6 +72,9 @@ class TestRagConfig:
         assert config.graph_neighbor_min_score == 0.4
         assert config.graph_max_expanded_nodes == 25
         assert config.graph_hub_degree_threshold == 50
+        # D3 entity re-resolution.
+        assert config.graph_resolution_full_scan_threshold == 500
+        assert config.entity_merge_similarity == 0.92
 
     def test_graph_quality_overridable_from_dict(self):
         config = RagConfig(
@@ -106,6 +109,12 @@ class TestRagConfig:
         assert config.graph_neighbor_min_score == 0.0
         assert config.graph_max_expanded_nodes == 100
         assert config.graph_hub_degree_threshold == 10
+
+    def test_graph_resolution_overridable_from_dict(self):
+        config = RagConfig(**{"graph_resolution_full_scan_threshold": 100, "entity_merge_similarity": 0.95})
+
+        assert config.graph_resolution_full_scan_threshold == 100
+        assert config.entity_merge_similarity == 0.95
 
 
 class TestAppConfigRagSection:

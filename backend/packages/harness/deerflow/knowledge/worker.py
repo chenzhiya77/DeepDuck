@@ -33,6 +33,7 @@ from deerflow.knowledge.captioner import apply_captions, caption_images
 from deerflow.knowledge.chunker import chunk_markdown
 from deerflow.knowledge.embedder import DashScopeEmbedder, EmbeddingResult
 from deerflow.knowledge.graph.indexer import index_document_graph
+from deerflow.knowledge.graph.resolver import resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.indexer import index_chunks
 from deerflow.knowledge.parser import ParsedDocument, parse_document
@@ -70,6 +71,8 @@ class KnowledgeIndexWorker:
         llm: _LLM | None = None,
         main_llm: _LLM | None = None,
         gleaning_rounds: int = 1,
+        resolution_full_scan_threshold: int = 500,
+        entity_merge_similarity: float = 0.92,
     ) -> None:
         self._store = store
         self._vector_store = vector_store
@@ -80,6 +83,8 @@ class KnowledgeIndexWorker:
         self._llm = llm
         self._main_llm = main_llm
         self._gleaning_rounds = gleaning_rounds
+        self._resolution_full_scan_threshold = resolution_full_scan_threshold
+        self._entity_merge_similarity = entity_merge_similarity
         self._sem = asyncio.Semaphore(concurrency)
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._dispatcher: asyncio.Task[None] | None = None
@@ -172,7 +177,7 @@ class KnowledgeIndexWorker:
                 percent = (settled * 100) // total if total else 100
                 await self._store.update_document_status(doc_id, "indexing", progress_percent=percent)
 
-            await index_document_graph(
+            stats = await index_document_graph(
                 self._store,
                 self._graph_store,
                 self._vector_store,
@@ -182,14 +187,44 @@ class KnowledgeIndexWorker:
                 llm=self._llm,
                 embedder=embedder,
                 gleaning_rounds=self._gleaning_rounds,
+                name_similarity_threshold=self._entity_merge_similarity,
                 progress_callback=_on_progress,
             )
+            # D3: merge cross-slice entity aliases right after the graph leg.
+            # A failing resolution never blocks the pipeline — the document
+            # still reaches ``ready`` with a visible error sub-marker.
+            try:
+                await resolve_entity_aliases(
+                    self._store,
+                    self._graph_store,
+                    self._vector_store,
+                    self._wiki_store,
+                    embedder,
+                    kb_id=kb_id,
+                    touched_entities=stats.touched_entities,
+                    full_scan_threshold=self._resolution_full_scan_threshold,
+                    similarity_threshold=self._entity_merge_similarity,
+                )
+            except Exception:
+                logger.exception("entity re-resolution failed for document %s", doc_id)
+                await self._append_error_marker(doc_id, "entity-resolution failed")
             await self._store.update_document_status(doc_id, "ready", progress_percent=100)
             await self._maybe_generate_wiki(kb_id, embedder)
         except Exception as exc:
             logger.exception("knowledge indexing failed for document %s", doc_id)
             await self._store.update_document_status(doc_id, "failed", error=str(exc)[:500])
         return await self._store.get_document(doc_id)
+
+    async def _append_error_marker(self, doc_id: str, marker: str) -> None:
+        """Append a visible sub-marker to the document error field without
+        clobbering an existing one (e.g. "graph degraded") — degraded stages
+        stack their markers, never silently (spec 2026-08-10 D3 降级)."""
+        document = await self._store.get_document(doc_id)
+        if document is None or marker in (document.get("error") or ""):
+            return
+        existing = document.get("error") or ""
+        error = f"{existing}; {marker}" if existing else marker
+        await self._store.update_document_status(doc_id, document["status"], error=error)
 
     async def _reparse_and_chunk(self, doc_id: str, kb_id: str, storage_path: str) -> None:
         """Parse → caption → chunk, wiping any partial output first (idempotent)."""

@@ -9,6 +9,7 @@ deletes across all six tables.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -258,6 +259,30 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             rows = {row.chunk_id: self._row_to_dict(row, datetime_keys=()) for row in result.scalars().all()}
         return [rows[chunk_id] for chunk_id in chunk_ids if chunk_id in rows]
+
+    async def rewrite_chunk_entities(self, chunk_ids: Sequence[str], name_map: Mapping[str, str]) -> int:
+        """Rewrite the ``entities`` column on chunk rows through ``name_map``
+        (spec 2026-08-10 D3 dual-write, business-DB half — the Qdrant payload
+        half goes through ``set_chunk_entities``; both mirrors must move
+        together). Returns the number of rows actually changed. Idempotent.
+        """
+        if not chunk_ids or not name_map:
+            return 0
+        changed = 0
+        async with self._sf() as session:
+            result = await session.execute(select(ChunkRow).where(ChunkRow.chunk_id.in_(list(chunk_ids))))
+            for row in result.scalars().all():
+                current = list(row.entities or [])
+                rewritten: list[str] = []
+                for name in current:
+                    mapped = name_map.get(name, name)
+                    if mapped not in rewritten:
+                        rewritten.append(mapped)
+                if rewritten != current:
+                    row.entities = rewritten
+                    changed += 1
+            await session.commit()
+        return changed
 
     async def update_chunk_extract(
         self,

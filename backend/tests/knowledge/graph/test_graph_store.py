@@ -152,3 +152,78 @@ async def test_remove_chunk_contributions_scoped_per_kb(session_factory):
 
     assert orphaned == ["共享名"]
     assert [e["name"] for e in await store.list_entities("kb-2")] == ["共享名"]
+
+
+# ── D3 merge primitives ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_merge_entities_absorbs_alias_into_representative(session_factory):
+    store = GraphStore(session_factory)
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="Model", type="概念", description="片段A")], chunk_id="c-1")
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="Models", type="概念", description="片段B")], chunk_id="c-2")
+
+    merged = await store.merge_entities("kb-1", "Model", ["Models"])
+
+    entities = await store.list_entities("kb-1")
+    assert len(entities) == 1
+    row = entities[0]
+    assert row["name"] == "Model"
+    assert "片段A" in row["description"] and "片段B" in row["description"]
+    assert sorted(row["source_chunk_ids"]) == ["c-1", "c-2"]
+    assert merged is not None
+    assert merged["name"] == "Model"
+    assert "片段B" in merged["description"]
+
+    # Idempotent: the alias row is gone, re-running is a no-op.
+    again = await store.merge_entities("kb-1", "Model", ["Models"])
+    assert again is not None
+    assert len(await store.list_entities("kb-1")) == 1
+
+
+@pytest.mark.asyncio
+async def test_merge_entities_missing_representative_returns_none(session_factory):
+    store = GraphStore(session_factory)
+
+    assert await store.merge_entities("kb-1", "不存在", ["Models"]) is None
+
+
+@pytest.mark.asyncio
+async def test_rewrite_relation_endpoints_merges_duplicates_and_drops_self_loops(session_factory):
+    store = GraphStore(session_factory)
+    await store.upsert_entities(
+        "kb-1",
+        [
+            ExtractedEntity(name="Model", type="概念", description=""),
+            ExtractedEntity(name="Models", type="概念", description=""),
+            ExtractedEntity(name="Trainer", type="概念", description=""),
+        ],
+        chunk_id="c-1",
+    )
+    await store.upsert_relations("kb-1", [ExtractedRelation(source="Model", target="Trainer", relation="依赖", description="d1")], chunk_id="c-1")
+    await store.upsert_relations("kb-1", [ExtractedRelation(source="Models", target="Trainer", relation="依赖", description="d2")], chunk_id="c-2")
+    await store.upsert_relations("kb-1", [ExtractedRelation(source="Model", target="Models", relation="同义", description="loop")], chunk_id="c-1")
+
+    await store.rewrite_relation_endpoints("kb-1", {"Models": "Model"})
+
+    relations = await store.list_relations("kb-1")
+    assert [(r["source"], r["target"], r["relation"]) for r in relations] == [("Model", "Trainer", "依赖")]
+    relation = relations[0]
+    assert "d1" in relation["description"] and "d2" in relation["description"]
+    assert sorted(relation["source_chunk_ids"]) == ["c-1", "c-2"]
+
+    # Idempotent: no alias endpoints left to rewrite.
+    await store.rewrite_relation_endpoints("kb-1", {"Models": "Model"})
+    assert len(await store.list_relations("kb-1")) == 1
+
+
+@pytest.mark.asyncio
+async def test_rewrite_relation_endpoints_noop_without_hits(session_factory):
+    store = GraphStore(session_factory)
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="A", type="t", description=""), ExtractedEntity(name="B", type="t", description="")], chunk_id="c-1")
+    await store.upsert_relations("kb-1", [ExtractedRelation(source="A", target="B", relation="r", description="")], chunk_id="c-1")
+
+    await store.rewrite_relation_endpoints("kb-1", {"无关": "A"})
+
+    relations = await store.list_relations("kb-1")
+    assert [(r["source"], r["target"]) for r in relations] == [("A", "B")]

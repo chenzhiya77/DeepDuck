@@ -14,12 +14,17 @@ Two merge mechanisms, applied in order:
 Relation endpoints are rewritten through the same mapping; self-loops created
 by a merge are dropped. The normalized names are what get backfilled into
 chunk ``entities`` fields and used as graph node names.
+
+``normalize_extraction`` works on one chunk's extraction result (per-slice);
+``cluster_alias_groups`` (spec 2026-08-10 D3) reuses the same two mechanisms
+over plain stored-name lists for the cross-slice re-resolution.
 """
 
 from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping, Sequence
 
 from deerflow.knowledge.graph.extractor import ExtractedEntity, ExtractedRelation, ExtractionResult
 
@@ -144,3 +149,59 @@ def _map_name(name: str, entities: list[ExtractedEntity], name_of: dict[int, str
         if _alias_key(entity.name) == key:
             return name_of.get(i, entity.name)
     return name
+
+
+def cluster_alias_groups(
+    names: Sequence[str],
+    name_vectors: Mapping[str, list[float]] | None,
+    similarity_threshold: float,
+) -> dict[str, list[str]]:
+    """Cluster stored entity names into alias groups (spec 2026-08-10 D3).
+
+    Same two mechanisms as ``normalize_extraction`` — surface alias fold,
+    then embedding-similarity union over representatives — but over a plain
+    name list. The representative is the first name in input order
+    (``list_entities`` sorts by name, so the choice is deterministic).
+    Returns only non-trivial groups: ``{representative: [alias, ...]}``.
+    """
+    parent = list(range(len(names)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        root_i, root_j = find(i), find(j)
+        if root_i == root_j:
+            return
+        parent[max(root_i, root_j)] = min(root_i, root_j)
+
+    by_key: dict[str, int] = {}
+    for i, name in enumerate(names):
+        key = _alias_key(name)
+        if key in by_key:
+            union(i, by_key[key])
+        else:
+            by_key[key] = i
+
+    if name_vectors:
+        reps = sorted({find(i) for i in range(len(names))})
+        for pos, i in enumerate(reps):
+            vec_i = name_vectors.get(names[i])
+            if vec_i is None:
+                continue
+            for j in reps[pos + 1 :]:
+                vec_j = name_vectors.get(names[j])
+                if vec_j is None or len(vec_i) != len(vec_j):
+                    continue
+                if cosine_similarity(vec_i, vec_j) >= similarity_threshold:
+                    union(i, j)
+
+    groups: dict[int, list[str]] = {}
+    for i, name in enumerate(names):
+        root = find(i)
+        if root != i:
+            groups.setdefault(root, []).append(name)
+    return {names[root]: aliases for root, aliases in groups.items()}

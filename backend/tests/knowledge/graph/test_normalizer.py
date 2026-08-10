@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 
 from deerflow.knowledge.graph.extractor import ExtractedEntity, ExtractedRelation, ExtractionResult
-from deerflow.knowledge.graph.normalizer import normalize_extraction
+from deerflow.knowledge.graph.normalizer import cluster_alias_groups, normalize_extraction
 
 
 def _result(names: list[str], relations: list[tuple[str, str, str]] | None = None) -> ExtractionResult:
@@ -92,3 +92,30 @@ def test_embedding_merge_rewrites_relation_endpoints():
 
     assert len(merged.entities) == 1
     assert merged.relations[0].source == "深度学习"
+
+
+# ── cluster_alias_groups (D3: cross-slice re-resolution building block) ──
+
+
+def test_cluster_alias_groups_surface_fold():
+    groups = cluster_alias_groups(["Model", "Models", "Qdrant"], None, 0.92)
+
+    assert groups == {"Model": ["Models"]}
+
+
+def test_cluster_alias_groups_embedding_merge():
+    vectors = {"深度学习": _unit([1.0, 0.0]), "深度神经网络": _unit([0.999, 0.0447]), "数据库": _unit([0.0, 1.0])}
+
+    groups = cluster_alias_groups(["深度学习", "深度神经网络", "数据库"], vectors, 0.95)
+
+    assert groups == {"深度学习": ["深度神经网络"]}
+
+
+def test_cluster_alias_groups_representative_is_first_in_input_order():
+    groups = cluster_alias_groups(["b", "B"], None, 0.92)
+
+    assert groups == {"b": ["B"]}  # first-seen display name wins
+
+
+def test_cluster_alias_groups_empty_when_nothing_merges():
+    assert cluster_alias_groups(["Alpha", "Beta", "Gamma"], None, 0.92) == {}

@@ -93,12 +93,12 @@
 - RagConfig 新增：`graph_resolution_full_scan_threshold: int = 500`、`entity_merge_similarity: float = 0.92`（worker 同时传给 `index_document_graph` 的 `name_similarity_threshold`，两处 0.92 收敛为单一配置）。
 - worker 编排：`stats = await index_document_graph(...)` → `try: await resolve_entity_aliases(..., touched_entities=stats.touched_entities)` → `except Exception: logger.exception` + 在文档 `error` 字段追加 `entity-resolution failed` 子标记（读出现存 error、`; ` 拼接、已含则不重复——不覆盖 `graph degraded`）→ 照常 `ready` + `_maybe_generate_wiki`（wiki dirty 已在 resolver 内完成，生成链路自然消化）。
 
-- [ ] 写失败测试 `test_resolver.py`：表面别名合并（`Model`/`Models` 跨切片两行 → 一行，描述去重追加、chunk 并集）；向量相似 ≥0.92 合并 / <0.92 不动；代表名确定性；关系端点重写 + 重复三元组合并 + 自环丢弃；`kb_entities` 别名向量删除 + 代表重 embed；chunks 业务库列与 payload 双写替换；wiki dirty 覆盖代表名与别名；二次运行零合并（幂等）；图 < 阈值全表扫描可合并非 touched 别名对、≥ 阈值仅 touched+一跳范围。
-- [ ] 写失败测试：`test_graph_store.py`（`merge_entities`/`rewrite_relation_endpoints` 单测）、`test_graph_indexer.py`（stats 携带 touched_entities）、`test_worker.py`（resolver 抛错 → 文档仍 ready、error 同时含 `graph degraded` 与 `entity-resolution failed`、wiki 生成未被阻断）、`test_normalizer.py`（`cluster_alias_groups` 与 `normalize_extraction` 回归）。
-- [ ] 运行捕获 RED。
-- [ ] 实现 resolver + 各 store 方法 + worker 接线 + 配置键。
-- [ ] GREEN；revert 副作用链第②步端点重写，证明对应用例 RED，restore，GREEN。
-- [ ] Commit: `feat(rag): merge cross-slice entity aliases after document graph indexing`。
+- [x] 写失败测试 `test_resolver.py`：表面别名合并（`Model`/`Models` 跨切片两行 → 一行，描述去重追加、chunk 并集）；向量相似 ≥0.92 合并 / <0.92 不动；代表名确定性；关系端点重写 + 重复三元组合并 + 自环丢弃；`kb_entities` 别名向量删除 + 代表重 embed；chunks 业务库列与 payload 双写替换；wiki dirty 覆盖代表名与别名；二次运行零合并（幂等）；图 < 阈值全表扫描可合并非 touched 别名对、≥ 阈值仅 touched+一跳范围。
+- [x] 写失败测试：`test_graph_store.py`（`merge_entities`/`rewrite_relation_endpoints` 单测）、`test_graph_indexer.py`（stats 携带 touched_entities）、`test_worker.py`（resolver 抛错 → 文档仍 ready、error 同时含 `graph degraded` 与 `entity-resolution failed`、wiki 生成未被阻断）、`test_normalizer.py`（`cluster_alias_groups` 与 `normalize_extraction` 回归）。
+- [x] 运行捕获 RED。
+- [x] 实现 resolver + 各 store 方法 + worker 接线 + 配置键。
+- [x] GREEN；revert 副作用链第②步端点重写，证明对应用例 RED，restore，GREEN。
+- [x] Commit: `feat(rag): merge cross-slice entity aliases after document graph indexing`。
 
 ## Task 4: D4 通道③方法清理
 

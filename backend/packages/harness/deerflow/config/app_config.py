@@ -166,6 +166,9 @@ class RagConfig(BaseModel):
     graph_neighbor_min_score: float = Field(default=0.4, ge=0, description="Cosine gate a neighbour entity must pass against the query to enter the expansion; 0 restores phase-1 full BFS.")
     graph_max_expanded_nodes: int = Field(default=25, ge=1, description="Hard budget on the expanded subgraph size; hop-0 entities always survive the trim.")
     graph_hub_degree_threshold: int = Field(default=50, ge=0, description="Nodes above this degree only spread their neighbours when semantically relevant (hop-0 exempt).")
+    # Phase-2 entity re-resolution (spec 2026-08-10 D3).
+    graph_resolution_full_scan_threshold: int = Field(default=500, ge=1, description="Below this graph size the re-resolver scans the whole entity table; larger graphs resolve only touched entities + 1-hop neighbours.")
+    entity_merge_similarity: float = Field(default=0.92, ge=0, le=1, description="Cosine threshold for merging alias entity names, shared by per-slice normalization and the incremental re-resolver.")
 
 
 def is_trace_correlation_enabled(config: Any) -> bool:

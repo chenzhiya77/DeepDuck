@@ -354,6 +354,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 vector_store=knowledge_vector_store,
                 concurrency=startup_config.rag.worker_concurrency,
                 main_llm=wiki_main_llm,
+                resolution_full_scan_threshold=startup_config.rag.graph_resolution_full_scan_threshold,
+                entity_merge_similarity=startup_config.rag.entity_merge_similarity,
             )
             app.state.knowledge_worker = knowledge_worker
             app.state.knowledge_service = KnowledgeService(

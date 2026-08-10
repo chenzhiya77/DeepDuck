@@ -127,6 +127,8 @@ async def test_end_to_end_status_backfill_and_entity_vectors(graph_env):
     assert stats.empty == 1  # default route yields no entities
     assert stats.failed_chunk_ids == []
     assert stats.degraded is False
+    # D3 hook: the resolver consumes the touched entity set after indexing.
+    assert stats.touched_entities == {"DeerFlow", "Gateway", "Parser"}
 
     # Per-chunk status + normalized entity names persisted on the chunk rows.
     rows = {c["chunk_id"]: c for c in await store.list_chunks(doc_id, limit=10)}
@@ -211,6 +213,7 @@ async def test_resume_skips_non_pending_chunks(session_factory):
     assert stats.total == 1
     assert len(llm.calls) == 1
     assert "索引流水线" in llm.calls[0]
+    assert stats.touched_entities == {"Parser"}
     rows = {c["chunk_id"]: c for c in await store.list_chunks("doc-r", limit=10)}
     assert rows["doc-r-c0"]["entities"] == ["DeerFlow"]  # unchanged
     assert rows["doc-r-c1"]["extract_status"] == "done"
