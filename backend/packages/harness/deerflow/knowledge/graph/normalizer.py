@@ -35,7 +35,12 @@ def _alias_key(name: str) -> str:
     return key
 
 
-def _cosine(a: list[float], b: list[float]) -> float:
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two dense vectors (0.0 for zero norms).
+
+    Shared by the offline normalizer, the online evidence scorer (D1) and the
+    entity re-resolver (D3) — one metric, one implementation.
+    """
     dot = sum(x * y for x, y in zip(a, b, strict=True))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
@@ -95,7 +100,7 @@ def normalize_extraction(
                 vec_j = name_vectors.get(result.entities[j].name)
                 if vec_j is None or len(vec_i) != len(vec_j):
                     continue
-                if _cosine(vec_i, vec_j) >= similarity_threshold:
+                if cosine_similarity(vec_i, vec_j) >= similarity_threshold:
                     union(i, j)
 
     # Rebuild entities: representative keeps its display name, absorbing the

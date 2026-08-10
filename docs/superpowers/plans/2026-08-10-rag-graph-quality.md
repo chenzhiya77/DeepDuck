@@ -40,12 +40,12 @@
 
 **编排新流程（`_graph_search_impl`）：** 查询实体抽取（不变）→ 新增一次 `embedder.embed([query], text_type="query")` 得 query 向量 → 落地匹配并记录 `seed_scores`（同一图实体多 query 命中取最大分）→ BFS 扩展（本 Task 仅补 `hop_by_node` 跟踪，剪枝属 Task 2）→ `collect_candidates`（删除 `scroll_chunks_by_entities` 调用）→ 打分：默认 `get_chunk_vectors` + 余弦（复用 normalizer 的余弦，提升为公开函数 `cosine_similarity`）；`graph_rerank=True` 且候选数 > `graph_rerank_threshold` 时先取全量候选行文本走 `DashScopeReranker.rerank`，`RerankerError` 降级回 embedding 序 → `apply_source_caps` → `select_evidence` → `get_chunks_by_ids(selected)`（返回序=传入序，天然保序）→ evidence 项附 `score`。
 
-- [ ] 写失败测试 `test_retrieval.py`：去重（边+节点重复命中只留一份）；每实体 5 切片限到 3、每边 4 限到 2（按分取）；保底取 hop0 实体内切片分 top-2；溢出逐轮出资（5 个 hop0×2>8 预算 → 每实体 ≥1 条、实体分高者先得第 2 条、尾部不为 0——禁止瀑布）；不足额实体出了就完；重叠来源切片被 E1 出资后 E2 取下一条未选；竞争阶段纯切片分排序（hop1 高分压过 hop0 低分，`hop_penalty=0`）；同分 `(hop, chunk_id)` 决胜；`hop_penalty>0` 实验路径改变次序；hop0 边切片不进保底但可经竞争上浮；条数截断。
-- [ ] 写失败测试（`test_graph_search.py` 集成 + `test_rag_config.py`）：evidence 项含 `score`；spy 断言 `scroll_chunks_by_entities` 不再被调用（patch 为抛错仍搜索成功）；`graph_rerank=True` + 低阈值时假 reranker 决定顺序、`RerankerError` 时落回 embedding 序；既有 `test_graph_search_expands_and_fetches_evidence` 等不断言旧拼接顺序的用例保持 GREEN；新配置键默认值/覆盖加载。
-- [ ] 运行 `uv run pytest tests/knowledge/graph/test_retrieval.py tests/knowledge/tools/test_graph_search.py tests/test_rag_config.py -q`，捕获 RED。
-- [ ] 实现 `retrieval.py` + `get_chunk_vectors` + 编排重写 + 配置键 + `config.example.yaml`；工具模块 docstring 与测试文件 docstring 同步删掉 "entities payload back-query" 描述。
-- [ ] 测试 GREEN；revert `select_evidence` 的逐轮出资为瀑布式，证明溢出用例 RED，restore，GREEN。
-- [ ] Commit: `feat(rag): rank graph evidence by semantic scores with guarantee-plus-competition selection`。
+- [x] 写失败测试 `test_retrieval.py`：去重（边+节点重复命中只留一份）；每实体 5 切片限到 3、每边 4 限到 2（按分取）；保底取 hop0 实体内切片分 top-2；溢出逐轮出资（5 个 hop0×2>8 预算 → 每实体 ≥1 条、实体分高者先得第 2 条、尾部不为 0——禁止瀑布）；不足额实体出了就完；重叠来源切片被 E1 出资后 E2 取下一条未选；竞争阶段纯切片分排序（hop1 高分压过 hop0 低分，`hop_penalty=0`）；同分 `(hop, chunk_id)` 决胜；`hop_penalty>0` 实验路径改变次序；hop0 边切片不进保底但可经竞争上浮；条数截断。
+- [x] 写失败测试（`test_graph_search.py` 集成 + `test_rag_config.py`）：evidence 项含 `score`；spy 断言 `scroll_chunks_by_entities` 不再被调用（patch 为抛错仍搜索成功）；`graph_rerank=True` + 低阈值时假 reranker 决定顺序、`RerankerError` 时落回 embedding 序；既有 `test_graph_search_expands_and_fetches_evidence` 等不断言旧拼接顺序的用例保持 GREEN；新配置键默认值/覆盖加载。
+- [x] 运行 `uv run pytest tests/knowledge/graph/test_retrieval.py tests/knowledge/tools/test_graph_search.py tests/test_rag_config.py -q`，捕获 RED。
+- [x] 实现 `retrieval.py` + `get_chunk_vectors` + 编排重写 + 配置键 + `config.example.yaml`；工具模块 docstring 与测试文件 docstring 同步删掉 "entities payload back-query" 描述。
+- [x] 测试 GREEN；revert `select_evidence` 的逐轮出资为瀑布式，证明溢出用例 RED，restore，GREEN。
+- [x] Commit: `feat(rag): rank graph evidence by semantic scores with guarantee-plus-competition selection`。
 
 ## Task 2: D2 扩展剪枝
 

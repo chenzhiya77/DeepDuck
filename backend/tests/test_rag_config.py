@@ -57,6 +57,39 @@ class TestRagConfig:
         with pytest.raises(ValueError):
             RagConfig(extract_rate_limit_rps=-1)
 
+    def test_loads_graph_quality_defaults(self):
+        """Phase-2 graph-quality knobs (spec 2026-08-10 D1/D2)."""
+        config = RagConfig()
+
+        assert config.graph_per_entity_cap == 3
+        assert config.graph_per_edge_cap == 2
+        assert config.graph_hop0_guarantee == 2
+        assert config.graph_evidence_limit == 8
+        assert config.graph_rerank is False
+        assert config.graph_rerank_threshold == 12
+        assert config.graph_hop_penalty == 0.0
+
+    def test_graph_quality_overridable_from_dict(self):
+        config = RagConfig(
+            **{
+                "graph_per_entity_cap": 5,
+                "graph_per_edge_cap": 4,
+                "graph_hop0_guarantee": 0,
+                "graph_evidence_limit": 10,
+                "graph_rerank": True,
+                "graph_rerank_threshold": 20,
+                "graph_hop_penalty": 0.15,
+            }
+        )
+
+        assert config.graph_per_entity_cap == 5
+        assert config.graph_per_edge_cap == 4
+        assert config.graph_hop0_guarantee == 0
+        assert config.graph_evidence_limit == 10
+        assert config.graph_rerank is True
+        assert config.graph_rerank_threshold == 20
+        assert config.graph_hop_penalty == 0.15
+
 
 class TestAppConfigRagSection:
     def test_rag_section_has_defaults(self):

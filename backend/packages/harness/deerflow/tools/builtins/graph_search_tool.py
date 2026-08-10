@@ -1,11 +1,13 @@
-"""graph_search — the graph path (spec §4.2).
+"""graph_search — the graph path (spec §4.2 + 2026-08-10 phase-2 D1).
 
 Chain: query → local LLM entity/keyword extraction → ``kb_entities`` vector
 match → NetworkX 1–2 hop expansion (both directions) → chunk evidence via
-``source_chunk_ids`` (precise recall) + the ``entities`` payload back-query on
-``kb_chunks`` (elastic recall). Chunk text always comes from the business-DB
-``chunks`` table. An empty answer is returned honestly — the navigator never
-fabricates graph content.
+``source_chunk_ids`` (precise recall), ranked by semantic scores: the graph
+structure only defines the candidate pool, then dedupe → per-source caps →
+hop-0 guarantee (round-robin payout) → pure-score competition decides who
+gets in (D1). Chunk text always comes from the business-DB ``chunks`` table.
+An empty answer is returned honestly — the navigator never fabricates graph
+content.
 """
 
 from __future__ import annotations
@@ -19,7 +21,10 @@ from langchain.tools import tool
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
 from deerflow.knowledge.embedder import DashScopeEmbedder
 from deerflow.knowledge.graph.extractor import _strip_fence, get_extract_llm
+from deerflow.knowledge.graph.normalizer import cosine_similarity
+from deerflow.knowledge.graph.retrieval import Candidate, apply_source_caps, collect_candidates, select_evidence
 from deerflow.knowledge.graph.store import GraphStore
+from deerflow.knowledge.reranker import DashScopeReranker, RerankerError
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
 from deerflow.tools.types import Runtime
@@ -54,6 +59,43 @@ async def _extract_query_entities(query: str, llm: Any) -> list[str]:
     return [str(name).strip() for name in (data.get("entities") or []) if str(name).strip()]
 
 
+async def _score_candidates(
+    query: str,
+    query_dense: list[float],
+    candidates: dict[str, Candidate],
+    *,
+    store: KnowledgeStore,
+    vector_store: KnowledgeVectorStore,
+    reranker: Any,
+    graph_rerank: bool,
+    rerank_threshold: int,
+) -> dict[str, float]:
+    """Score every candidate chunk against the query — one global ruler.
+
+    Default: embedding cosine against the stored chunk vectors (one batched
+    retrieve, zero extra embedding calls). With ``graph_rerank`` enabled and
+    a pool above ``rerank_threshold``, qwen3-rerank takes over (texts fetched
+    from the business DB, candidates fed in chunk-id order for a
+    deterministic index mapping); any ``RerankerError`` degrades back to the
+    embedding order.
+    """
+    chunk_ids = list(candidates)
+    if graph_rerank and reranker is not None and len(chunk_ids) > rerank_threshold:
+        rows = await store.get_chunks_by_ids(sorted(chunk_ids))
+        try:
+            pairs = await reranker.rerank(query, [row["text"] for row in rows], top_n=len(rows))
+        except RerankerError as exc:
+            logger.warning("graph_search: reranker failed, falling back to embedding order: %s", exc)
+        else:
+            scores = {chunk_id: 0.0 for chunk_id in chunk_ids}
+            for index, score in pairs:
+                if 0 <= index < len(rows):
+                    scores[rows[index]["chunk_id"]] = float(score)
+            return scores
+    vectors = await vector_store.get_chunk_vectors(chunk_ids)
+    return {chunk_id: (cosine_similarity(query_dense, vectors[chunk_id]) if chunk_id in vectors else 0.0) for chunk_id in chunk_ids}
+
+
 async def _graph_search_impl(
     query: str,
     runtime: Any,
@@ -63,9 +105,16 @@ async def _graph_search_impl(
     vector_store: KnowledgeVectorStore | None = None,
     embedder: Any = None,
     llm: Any = None,
+    reranker: Any = None,
     per_entity_match: int = 3,
     hops: int = 2,
+    per_entity_cap: int = 3,
+    per_edge_cap: int = 2,
+    hop0_guarantee: int = 2,
     evidence_limit: int = 8,
+    graph_rerank: bool = False,
+    rerank_threshold: int = 12,
+    hop_penalty: float = 0.0,
 ) -> dict:
     """Core implementation — testable without the @tool wrapper."""
     kb_id, user_id = resolve_kb_scope(runtime)
@@ -84,52 +133,81 @@ async def _graph_search_impl(
     if not query_names:
         return _empty("未能从问题中识别出可检索的实体；该问题可能更适合向量检索（hybrid_search）。")
 
-    # 2. Land on graph entities via kb_entities vector match.
+    # 2. One query embedding serves all semantic scoring.
+    (query_embedding,) = await embedder.embed([query], text_type="query")
+    query_dense = query_embedding.dense
+
+    # 3. Land on graph entities via kb_entities vector match; the landing
+    # score doubles as the entity score (max when several query entities hit
+    # the same graph entity).
     matched_names: list[str] = []
+    entity_scores: dict[str, float] = {}
     for name in query_names:
-        (query_vector,) = await embedder.embed([name], text_type="query")
-        for point in await vector_store.query_entities(dense=query_vector.dense, kb_id=kb_id, top_k=per_entity_match, score_threshold=ENTITY_MATCH_MIN_SCORE):
-            matched_names.append(str(point.payload["name"]))
+        (name_vector,) = await embedder.embed([name], text_type="query")
+        for point in await vector_store.query_entities(dense=name_vector.dense, kb_id=kb_id, top_k=per_entity_match, score_threshold=ENTITY_MATCH_MIN_SCORE):
+            entity_name = str(point.payload["name"])
+            matched_names.append(entity_name)
+            entity_scores[entity_name] = max(entity_scores.get(entity_name, 0.0), float(point.score))
     matched_names = list(dict.fromkeys(matched_names))
     if not matched_names:
         return _empty(f"知识图谱中未找到与「{'、'.join(query_names)}」相关的实体。")
 
-    # 3. 1–2 hop expansion over the in-memory graph (both directions).
+    # 4. 1–2 hop expansion over the in-memory graph (both directions),
+    # tracking the hop level per node (semantic pruning arrives with D2).
     graph = await graph_store.load_networkx(kb_id)
-    seen: set[str] = {name for name in matched_names if graph.has_node(name)}
-    frontier = set(seen)
-    for _ in range(max(0, hops)):
+    hop_by_node: dict[str, int] = {name: 0 for name in matched_names if graph.has_node(name)}
+    frontier = set(hop_by_node)
+    for hop in range(1, max(0, hops) + 1):
         nxt: set[str] = set()
         for node in frontier:
             nxt |= set(graph.successors(node)) | set(graph.predecessors(node))
-        nxt -= seen
-        seen |= nxt
+        nxt -= set(hop_by_node)
+        for node in nxt:
+            hop_by_node[node] = hop
         frontier = nxt
-    if not seen:
+    if not hop_by_node:
         return _empty(f"知识图谱中未找到与「{'、'.join(query_names)}」相关的实体。")
+    seen = set(hop_by_node)
 
     relations = []
-    chunk_ids: list[str] = []
     for source, target, data in graph.edges(data=True):
         if source in seen and target in seen:
             relations.append({"source": source, "target": target, "relation": data.get("relation", ""), "description": data.get("description", "")})
-            chunk_ids.extend(data.get("source_chunk_ids") or [])
     entities = []
     for node in sorted(seen):
         data = graph.nodes[node]
         entities.append({"name": node, "type": data.get("type") or "", "description": data.get("description") or ""})
-        chunk_ids.extend(data.get("source_chunk_ids") or [])
 
-    # 4. Elastic back-query: chunks whose payload entities contain the names.
-    backfill_points = await vector_store.scroll_chunks_by_entities(kb_id=kb_id, entity_names=sorted(seen), limit=20)
-    chunk_ids.extend(str(point.payload["chunk_id"]) for point in backfill_points if point.payload.get("chunk_id"))
-    chunk_ids = list(dict.fromkeys(chunk_ids))
+    # 5. Evidence (D1): the graph defines the pool, semantics decides —
+    # dedupe → per-source caps → hop-0 guarantee → pure-score competition.
+    candidates = collect_candidates(graph, hop_by_node)
+    scores = await _score_candidates(
+        query,
+        query_dense,
+        candidates,
+        store=store,
+        vector_store=vector_store,
+        reranker=reranker,
+        graph_rerank=graph_rerank,
+        rerank_threshold=rerank_threshold,
+    )
+    apply_source_caps(candidates, scores, per_entity_cap=per_entity_cap, per_edge_cap=per_edge_cap)
+    selected = select_evidence(
+        candidates,
+        scores,
+        entity_scores,
+        [name for name, hop in hop_by_node.items() if hop == 0],
+        guarantee=hop0_guarantee,
+        limit=evidence_limit,
+        hop_penalty=hop_penalty,
+    )
 
-    # 5. Evidence: chunk text from the business DB, doc names joined once each.
-    rows = await store.get_chunks_by_ids(chunk_ids)
+    # 6. Evidence text from the business DB in the selected order
+    # (get_chunks_by_ids preserves the input order).
+    rows = await store.get_chunks_by_ids(selected)
     doc_names: dict[str, str] = {}
     evidence = []
-    for row in rows[:evidence_limit]:
+    for row in rows:
         doc_id = row["doc_id"]
         if doc_id not in doc_names:
             document = await store.get_document(doc_id)
@@ -141,6 +219,7 @@ async def _graph_search_impl(
                 "doc_name": doc_names[doc_id],
                 "heading_path": row.get("heading_path") or [],
                 "page": row.get("page"),
+                "score": float(scores.get(row["chunk_id"], 0.0)),
             }
         )
 
@@ -175,4 +254,19 @@ async def graph_search(
         query: The relationship/structure question, phrased in the user's language.
         hops: Graph expansion depth from the matched entities (1 or 2, default 2).
     """
-    return await _graph_search_impl(query, runtime, hops=hops)
+    from deerflow.config.app_config import get_app_config
+
+    rag = get_app_config().rag
+    return await _graph_search_impl(
+        query,
+        runtime,
+        hops=hops,
+        reranker=DashScopeReranker() if rag.graph_rerank else None,
+        per_entity_cap=rag.graph_per_entity_cap,
+        per_edge_cap=rag.graph_per_edge_cap,
+        hop0_guarantee=rag.graph_hop0_guarantee,
+        evidence_limit=rag.graph_evidence_limit,
+        graph_rerank=rag.graph_rerank,
+        rerank_threshold=rag.graph_rerank_threshold,
+        hop_penalty=rag.graph_hop_penalty,
+    )

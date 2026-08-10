@@ -153,6 +153,15 @@ class RagConfig(BaseModel):
     extract_model: str | None = Field(default=None, description="Name of the config `models:` entry used for graph extraction (small, cheap, stable JSON output); None uses the first configured model.")
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
     extract_rate_limit_rps: float = Field(default=5.0, gt=0, description="Rate limit (requests/second) for graph-extraction LLM calls during indexing.")
+    # Phase-2 graph-quality knobs (spec 2026-08-10 D1). Setting the caps large
+    # and the guarantee to 0 approximates the phase-1 behaviour.
+    graph_per_entity_cap: int = Field(default=3, ge=1, description="Max candidate evidence chunks kept per entity source before selection.")
+    graph_per_edge_cap: int = Field(default=2, ge=1, description="Max candidate evidence chunks kept per relation edge source before selection.")
+    graph_hop0_guarantee: int = Field(default=2, ge=0, description="Guaranteed evidence slices per directly-matched (hop-0) entity, paid out round-robin by entity score.")
+    graph_evidence_limit: int = Field(default=8, ge=1, description="Hard cap on evidence chunks returned by graph_search after ranking.")
+    graph_rerank: bool = Field(default=False, description="Opt-in qwen3-rerank precision pass over graph evidence candidates; RerankerError degrades to the embedding-cosine order.")
+    graph_rerank_threshold: int = Field(default=12, ge=0, description="Only rerank when the candidate pool exceeds this size.")
+    graph_hop_penalty: float = Field(default=0.0, ge=0, description="Experimental A/B knob: subtract penalty × hop from the competition score; 0 keeps the pure chunk-score order.")
 
 
 def is_trace_correlation_enabled(config: Any) -> bool:

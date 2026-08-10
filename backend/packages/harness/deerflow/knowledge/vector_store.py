@@ -293,6 +293,29 @@ class KnowledgeVectorStore:
         )
         return points
 
+    async def get_chunk_vectors(self, chunk_ids: Sequence[str]) -> dict[str, list[float]]:
+        """Retrieve dense chunk vectors by chunk ids (deterministic point ids).
+
+        Powers the D1 evidence scoring: one batched retrieve, zero extra
+        embedding calls. Missing points (deleted / not yet indexed) are
+        skipped silently — their candidates simply score 0 downstream.
+        """
+        if not chunk_ids:
+            return {}
+        points = await self._client.retrieve(
+            collection_name=self.chunks_collection,
+            ids=[self._point_id(str(chunk_id)) for chunk_id in chunk_ids],
+            with_vectors=True,
+        )
+        vectors: dict[str, list[float]] = {}
+        for point in points:
+            chunk_id = (point.payload or {}).get("chunk_id")
+            vector = point.vector if isinstance(point.vector, dict) else {}
+            dense = vector.get("dense")
+            if chunk_id and dense:
+                vectors[str(chunk_id)] = list(dense)
+        return vectors
+
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""
         await self._client.delete(

@@ -2576,3 +2576,21 @@ rag:
   worker_concurrency: 2
   # Requests/second cap for graph-extraction LLM calls during indexing.
   extract_rate_limit_rps: 5.0
+  # --- Phase-2 graph-path quality knobs (spec 2026-08-10 D1) ---
+  # Max candidate evidence chunks kept per entity / relation source before
+  # selection. Set large + graph_hop0_guarantee: 0 to approximate phase-1.
+  graph_per_entity_cap: 3
+  graph_per_edge_cap: 2
+  # Guaranteed evidence slices per directly-matched (hop-0) entity, paid out
+  # round-robin by entity score so crowded budgets never shave tail entities.
+  graph_hop0_guarantee: 2
+  # Hard cap on evidence chunks returned by graph_search after ranking.
+  graph_evidence_limit: 8
+  # Opt-in qwen3-rerank precision pass over graph evidence candidates
+  # (RerankerError degrades to the embedding-cosine order).
+  graph_rerank: false
+  # Only rerank when the candidate pool exceeds this size.
+  graph_rerank_threshold: 12
+  # Experimental A/B knob: subtract penalty × hop from competition scores;
+  # keep 0 for the pure chunk-score order.
+  graph_hop_penalty: 0.0
