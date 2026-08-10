@@ -147,6 +147,31 @@ class KnowledgeService:
         """Fire-and-forget wiki batch generation (manual "生成百科" button)."""
         self.wiki_generate_fn(kb_id)
 
+    async def list_wiki_entries(self, kb_id: str) -> list[dict[str, Any]]:
+        """Summary-only listing for the wiki tab (phase-2 batch-1).
+
+        Full content stays out of the list payload — the drawer fetches it via
+        the detail endpoint. ``summary`` is a plain content prefix.
+        """
+        entries = await self.wiki_store.list_entries(kb_id)
+        return [
+            {
+                "id": entry["id"],
+                "title": entry["title"],
+                "summary": entry["content"][:120],
+                "status": entry["status"],
+                "updated_at": entry["updated_at"],
+            }
+            for entry in entries
+        ]
+
+    async def get_wiki_entry(self, *, kb_id: str, entry_id: str) -> dict[str, Any] | None:
+        """Full entry for the drawer; None when missing or owned by another kb."""
+        entry = await self.wiki_store.get_entry(entry_id)
+        if entry is None or entry["kb_id"] != kb_id:
+            return None
+        return entry
+
     def _schedule_wiki_generation(self, kb_id: str) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id), name=f"kb-wiki-{kb_id}")
         self._wiki_tasks.add(task)

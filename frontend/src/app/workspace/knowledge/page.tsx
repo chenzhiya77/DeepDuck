@@ -7,7 +7,10 @@ import { KnowledgeChatPanel } from "@/components/workspace/knowledge/chat-panel"
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { DocumentPanel } from "@/components/workspace/knowledge/document-panel";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
+import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
+import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
+import { WikiPanel } from "@/components/workspace/knowledge/wiki-panel";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   useCreateKnowledgeBase,
@@ -19,8 +22,9 @@ import {
   useRetryDocument,
   useUpdateKnowledgeBase,
   useUploadDocument,
+  useWikiEntries,
 } from "@/core/knowledge/hooks";
-import type { KnowledgeDocument } from "@/core/knowledge/types";
+import type { KnowledgeDocument, WikiEntrySummary } from "@/core/knowledge/types";
 
 function showMutationError(error: unknown, fallback: string) {
   toast.error(error instanceof Error && error.message ? error.message : fallback);
@@ -36,6 +40,11 @@ export default function KnowledgePage() {
   const tk = t.knowledge;
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
   const [drawerDoc, setDrawerDoc] = useState<KnowledgeDocument | null>(null);
+  // Middle-column tab + entry drawer state (phase-2 batch-1). The drawer is
+  // an overlay — opening it never switches the tab; only the drawer's
+  // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
+  const [activeTab, setActiveTab] = useState<KnowledgeMiddleTab>("documents");
+  const [drawerEntryId, setDrawerEntryId] = useState<string | null>(null);
 
   const kbsQuery = useKnowledgeBases();
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
@@ -56,6 +65,17 @@ export default function KnowledgePage() {
 
   const documentsQuery = useDocuments(selectedKbId);
   const documents = documentsQuery.data ?? [];
+  // Lazy: the wiki list only fetches once its tab is first activated
+  // (keep-alive panes stay mounted, so the gate is what keeps it lazy).
+  const wikiEntriesQuery = useWikiEntries(selectedKbId, activeTab === "wiki");
+  const wikiEntries = wikiEntriesQuery.data ?? [];
+
+  const openWikiEntry = (entry: WikiEntrySummary) => setDrawerEntryId(entry.id);
+  const revealWikiEntry = (entryId: string) => {
+    setActiveTab("wiki");
+    setDrawerEntryId(null);
+    void entryId; // the list is unpaginated — the entry is visible after the switch
+  };
 
   const createKb = useCreateKnowledgeBase();
   const updateKb = useUpdateKnowledgeBase();
@@ -86,54 +106,68 @@ export default function KnowledgePage() {
         )}
         middle={
           selectedKb ? (
-            <DocumentPanel
-            kb={selectedKb}
-            documents={documents}
-            uploading={uploadDocument.isPending}
-            onUpload={(files) => {
-              void (async () => {
-                for (const file of files) {
-                  try {
-                    await uploadDocument.mutateAsync(file);
-                  } catch (error) {
-                    showMutationError(error, tk.errors.uploadFailed);
-                  }
+            <MiddleTabs
+              kb={selectedKb}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              onGenerateWiki={() => {
+                generateWiki.mutate(undefined, {
+                  onSuccess: () => toast.success(tk.wikiEnqueued),
+                  onError: (error) => showMutationError(error, tk.errors.wikiFailed),
+                });
+              }}
+              onRenameKb={async (name) => {
+                try {
+                  await updateKb.mutateAsync({ kbId: selectedKb.id, patch: { name } });
+                } catch (error) {
+                  showMutationError(error, tk.errors.renameFailed);
                 }
-              })();
-            }}
-            onGenerateWiki={() => {
-              generateWiki.mutate(undefined, {
-                onSuccess: () => toast.success(tk.wikiEnqueued),
-                onError: (error) => showMutationError(error, tk.errors.wikiFailed),
-              });
-            }}
-            onRenameKb={async (name) => {
-              try {
-                await updateKb.mutateAsync({ kbId: selectedKb.id, patch: { name } });
-              } catch (error) {
-                showMutationError(error, tk.errors.renameFailed);
+              }}
+              onDeleteKb={async () => {
+                try {
+                  await deleteKb.mutateAsync(selectedKb.id);
+                } catch (error) {
+                  showMutationError(error, tk.errors.deleteFailed);
+                }
+              }}
+              documents={
+                <DocumentPanel
+                  kb={selectedKb}
+                  documents={documents}
+                  uploading={uploadDocument.isPending}
+                  onUpload={(files) => {
+                    void (async () => {
+                      for (const file of files) {
+                        try {
+                          await uploadDocument.mutateAsync(file);
+                        } catch (error) {
+                          showMutationError(error, tk.errors.uploadFailed);
+                        }
+                      }
+                    })();
+                  }}
+                  onDeleteDocument={async (docId) => {
+                    try {
+                      await deleteDocument.mutateAsync(docId);
+                    } catch (error) {
+                      showMutationError(error, tk.errors.deleteDocumentFailed);
+                    }
+                  }}
+                  onRetryDocument={(docId) => {
+                    retryDocument.mutate(docId, {
+                      onError: (error) => showMutationError(error, tk.errors.retryFailed),
+                    });
+                  }}
+                  onOpenChunks={setDrawerDoc}
+                />
               }
-            }}
-            onDeleteKb={async () => {
-              try {
-                await deleteKb.mutateAsync(selectedKb.id);
-              } catch (error) {
-                showMutationError(error, tk.errors.deleteFailed);
+              wiki={
+                <WikiPanel
+                  entries={wikiEntries}
+                  loading={wikiEntriesQuery.isLoading}
+                  onOpenEntry={openWikiEntry}
+                />
               }
-            }}
-            onDeleteDocument={async (docId) => {
-              try {
-                await deleteDocument.mutateAsync(docId);
-              } catch (error) {
-                showMutationError(error, tk.errors.deleteDocumentFailed);
-              }
-            }}
-            onRetryDocument={(docId) => {
-              retryDocument.mutate(docId, {
-                onError: (error) => showMutationError(error, tk.errors.retryFailed),
-              });
-            }}
-            onOpenChunks={setDrawerDoc}
             />
           ) : (
             <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
@@ -154,6 +188,20 @@ export default function KnowledgePage() {
               setDrawerDoc(null);
             }
           }}
+        />
+      )}
+
+      {drawerEntryId && selectedKbId && (
+        <WikiEntryDrawer
+          entryId={drawerEntryId}
+          kbId={selectedKbId}
+          open={drawerEntryId !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDrawerEntryId(null);
+            }
+          }}
+          onRevealInTab={revealWikiEntry}
         />
       )}
     </div>

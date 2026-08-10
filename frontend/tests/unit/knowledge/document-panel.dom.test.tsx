@@ -41,9 +41,6 @@ function doc(partial: Partial<KnowledgeDocument>): KnowledgeDocument {
 function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
   const handlers = {
     onUpload: rs.fn(),
-    onGenerateWiki: rs.fn(),
-    onRenameKb: rs.fn().mockResolvedValue(undefined),
-    onDeleteKb: rs.fn().mockResolvedValue(undefined),
     onDeleteDocument: rs.fn().mockResolvedValue(undefined),
     onRetryDocument: rs.fn(),
     onOpenChunks: rs.fn(),
@@ -58,53 +55,24 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
 
 afterEach(cleanup);
 
-describe("DocumentPanel header", () => {
-  it("renders kb name, type tag and the overflow menu trigger", () => {
-    renderPanel();
-    expect(screen.getByText("产品资料")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "上传文档" })).toBeNull();
-    expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
-  });
-
-  it("uploads via the overflow menu item", async () => {
+describe("DocumentPanel toolbar", () => {
+  it("uploads via the toolbar button (a document action, not a library one)", async () => {
     const clickSpy = rs
       .spyOn(HTMLInputElement.prototype, "click")
       .mockImplementation(() => undefined);
     try {
       renderPanel();
-      fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-      fireEvent.click(await screen.findByText("上传文档"));
+      fireEvent.click(screen.getByRole("button", { name: "上传文档" }));
       expect(clickSpy).toHaveBeenCalled();
     } finally {
       clickSpy.mockRestore();
     }
   });
 
-  it("invokes onGenerateWiki from the overflow menu", async () => {
-    const { onGenerateWiki } = renderPanel();
-    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByText("生成百科"));
-    expect(onGenerateWiki).toHaveBeenCalled();
-  });
-
-  it("renames the kb through the settings menu", async () => {
-    const { onRenameKb } = renderPanel();
-    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByText("重命名知识库"));
-    // The dialog opens deferred (runAfterMenuClose) once the menu's dismissal
-    // layer has torn down, so wait for it asynchronously.
-    fireEvent.change(await screen.findByDisplayValue("产品资料"), { target: { value: "新名称" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
-    expect(onRenameKb).toHaveBeenCalledWith("新名称");
-  });
-
-  it("deletes the kb only after the cascade-warning confirm", async () => {
-    const { onDeleteKb } = renderPanel();
-    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByText("删除知识库"));
-    expect(await screen.findByText(/将同时删除全部文档、切片、向量、图谱与百科条目/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    expect(onDeleteKb).toHaveBeenCalled();
+  it("keeps library-level chrome out of the pane (moved to MiddleTabs)", () => {
+    renderPanel();
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
+    expect(screen.queryByText("生成百科")).toBeNull();
   });
 });
 

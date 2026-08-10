@@ -56,6 +56,26 @@ export interface WikiGenerateAck {
   status: "enqueued" | string;
 }
 
+/** Wiki tab list item (phase-2 batch-1): summary-only, no full content. */
+export interface WikiEntrySummary {
+  id: string;
+  title: string;
+  summary: string;
+  status: "ready" | "dirty" | string;
+  updated_at: string;
+}
+
+/** Full wiki entry, fetched on demand for the entry drawer. */
+export interface WikiEntryDetail {
+  id: string;
+  kb_id: string;
+  title: string;
+  content: string;
+  status: "ready" | "dirty" | string;
+  source_chunk_ids: string[];
+  updated_at: string;
+}
+
 /** Citation source carried by the retrieval tools' JSON output (spec §4.6). */
 export interface KnowledgeCitation {
   chunk_id: string;

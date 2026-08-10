@@ -22,7 +22,16 @@
   - `progress_percent` 只跟踪图谱路（最慢腿）；向量路完成状态无持久化——P3 的 `path_status` 列即载体。
   - rag agent SOUL 模板在 `backend/packages/harness/deerflow/agents/assets/rag/SOUL.md`（L14 已有 `[n]` 引用规则）。
 
-## Task 1: 中栏 tab 容器 + 百科只读 tab（前端基础设施）
+## Task 1: 中栏 tab 容器 + 百科只读 tab（前端基础设施）✅ 已完成（2026-08-11）
+
+**实施期偏差记录（契约修正）：**
+1. `GET wiki/entries` 两个端点**一期并未落地**——存储层（`WikiStore.list_entries/get_entry`）存在但 HTTP 未透出。本 Task 一并补建：service `list_wiki_entries`（列表组装 summary=content[:120]，不含全文）/ `get_wiki_entry`（kb 归属校验，跨库 404）+ 两个 thin router 端点 + 3 个契约测试。
+2. plan 原契约"DocumentPanel props 不变、既有测试零改动"**不成立**——三行结构必然要求 header 拆分：props 收窄（移除 onGenerateWiki/onRenameKb/onDeleteKb），库名+⋯菜单上移至 MiddleTabs 第一行；header 相关既有测试迁移至 wiki-panel.dom.test.tsx 的 MiddleTabs describe（覆盖不丢：rename/delete 对话框交互原样搬移）。上传按钮从 ⋯菜单移入文档 tab 工具行（文档动作归文档 tab）。
+3. keep-alive 断言方式：Radix `forceMount` 保持挂载但**不加 hidden 属性**——可见性由 `data-[state=inactive]:hidden` 类承担，dom 测试以 `data-state` 断言。
+4. `runAfterMenuClose` / 时间格式化抽为共享模块（`run-after-menu-close.ts` / `core/knowledge/format.ts`），DocumentPanel 改引用。
+5. 副发现：Radix Tabs 在 happy-dom 中点击不激活（automatic 模式挂 mouseDown），测试用 `fireEvent.mouseDown`。
+
+**验证结果**：后端 197 passed + 1 skipped；前端 knowledge 114 passed；`pnpm check` 干净；ruff check/format 干净。
 
 **Files:**
 - Modify: `frontend/src/app/workspace/knowledge/page.tsx`（中栏槽位改造为 tab 容器，`activeTab`/`activeEntryId` 状态提升到 page，供 P2 跳转复用）
@@ -40,10 +49,10 @@
 - **tab 内容 keep-alive**：三个面板保持挂载（`hidden` 属性切换，不卸载）——文档 tab 的搜索词/排序/选中行/滚动位置与 indexing 轮询在切换时不丢；百科/检索测试的数据 hook 用 `enabled: activeTab === ...` 门控 lazy，首次激活才拉取。
 - 窄窗口：三 tab 标签约 200px，中栏保底 `min-w-[20rem]` 下无溢出；既有横向滚动宪底不动。
 
-- [ ] 写失败测试：tab 切换渲染；条目列表渲染（含 dirty 徽标）；点击条目开抽屉加载全文；`openWikiEntry` 只开抽屉不切 tab；`revealWikiEntry` 切 tab + 定位；keep-alive（切换后文档 tab 的搜索词/选中行保留）；库名与⋯菜单在第一行、上传按钮在文档 tab 工具行。
-- [ ] 运行 `pnpm test` 捕获 RED。
-- [ ] 实现组件 + hooks + i18n；测试 GREEN；`pnpm check` 干净。
-- [ ] Commit: `feat(frontend): add middle-column tabs with read-only wiki entries panel`。
+- [x] 写失败测试：tab 切换渲染；条目列表渲染（含 dirty 徽标）；点击条目开抽屉加载全文；`openWikiEntry` 只开抽屉不切 tab；`revealWikiEntry` 切 tab + 定位；keep-alive（切换后文档 tab 的搜索词/选中行保留）；库名与⋯菜单在第一行、上传按钮在文档 tab 工具行。
+- [x] 运行 `pnpm test` 捕获 RED。
+- [x] 实现组件 + hooks + i18n；测试 GREEN；`pnpm check` 干净。
+- [x] Commit: `feat(frontend): add middle-column tabs with read-only wiki entries panel`。
 
 ## Task 2: P1 召回测试后端 API（TDD）
 

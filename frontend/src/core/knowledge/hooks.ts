@@ -104,5 +104,38 @@ export function useDocumentChunks(kbId: string | null, docId: string | null, off
 }
 
 export function useGenerateWiki(kbId: string) {
-  return useMutation({ mutationFn: () => api.generateWiki(kbId) });
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.generateWiki(kbId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) });
+    },
+  });
+}
+
+export function knowledgeWikiEntriesKey(kbId: string) {
+  return ["knowledge-bases", kbId, "wiki-entries"] as const;
+}
+
+/**
+ * Wiki tab listing (phase-2 batch-1). Lazy: the caller gates with
+ * ``enabled`` so the list only loads once the tab is first activated —
+ * keep-alive panes stay mounted, so without the gate every tab would fetch
+ * eagerly.
+ */
+export function useWikiEntries(kbId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: knowledgeWikiEntriesKey(kbId ?? ""),
+    queryFn: () => api.listWikiEntries(kbId!),
+    enabled: enabled && kbId !== null,
+  });
+}
+
+/** Full entry text for the drawer; null-gated until the drawer opens. */
+export function useWikiEntry(kbId: string | null, entryId: string | null) {
+  return useQuery({
+    queryKey: [...knowledgeWikiEntriesKey(kbId ?? ""), entryId ?? ""] as const,
+    queryFn: () => api.getWikiEntry(kbId!, entryId!),
+    enabled: kbId !== null && entryId !== null,
+  });
 }

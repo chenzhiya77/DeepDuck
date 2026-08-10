@@ -174,3 +174,18 @@ async def generate_wiki_entries(request: Request, kb_id: str):
     service = await _require_kb_access(request, kb_id)
     service.trigger_wiki_generation(kb_id)
     return {"status": "enqueued"}
+
+
+@router.get("/{kb_id}/wiki/entries")
+async def list_wiki_entries(request: Request, kb_id: str):
+    service = await _require_kb_access(request, kb_id)
+    return await service.list_wiki_entries(kb_id)
+
+
+@router.get("/{kb_id}/wiki/entries/{entry_id}")
+async def get_wiki_entry(request: Request, kb_id: str, entry_id: str):
+    service = await _require_kb_access(request, kb_id)
+    entry = await service.get_wiki_entry(kb_id=kb_id, entry_id=entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Wiki entry not found")
+    return entry

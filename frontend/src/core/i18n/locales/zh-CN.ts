@@ -366,6 +366,21 @@ export const zhCN: Translations = {
       loadMore: "加载更多",
       loading: "加载中…",
     },
+    tabs: {
+      documents: "文档",
+      wiki: "百科",
+    },
+    wikiPanel: {
+      empty: "还没有百科条目，从右上角菜单「生成百科」",
+      loading: "加载中…",
+      dirty: "待更新",
+      updatedAt: "更新于",
+    },
+    wikiDrawer: {
+      openInTab: "在百科 tab 中查看",
+      loading: "加载中…",
+      notFound: "条目不存在或已删除",
+    },
     chat: {
       newChat: "新建会话",
       history: "历史会话",

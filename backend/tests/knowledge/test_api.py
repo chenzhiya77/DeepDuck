@@ -106,6 +106,8 @@ async def test_non_owner_gets_403_on_every_kb_scoped_route(service):
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/documents").status_code == 403
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# t", "text/markdown")}).status_code == 403
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate").status_code == 403
+    assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").status_code == 403
+    assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/whatever").status_code == 403
     # the stranger's own listing stays empty (no cross-owner leakage)
     assert stranger.get("/api/knowledge-bases").json() == []
 
@@ -248,3 +250,43 @@ async def test_manual_wiki_trigger_passes_embedder(service, monkeypatch):
 
     assert captured.get("kb_id") == "kb-1"
     assert captured.get("embedder") is not None, "manual wiki trigger must pass an embedder or entries get no vectors"
+
+
+async def test_wiki_entries_list_and_detail(service):
+    """Wiki tab contract (phase-2 batch-1): list is summary-only (no full
+    content), detail carries the full entry; both scoped to the kb."""
+    client = _client(service)
+    kb = _create_kb(client)
+    long_content = " DeerFlow 是一个超级代理系统。" * 20
+    await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content=long_content, source_chunk_ids=["d#0000"])
+    await service.wiki_store.upsert_entry(kb["id"], title="Gateway", content="网关简介", source_chunk_ids=["d#0001"], status="dirty")
+
+    listing = client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries")
+    assert listing.status_code == 200
+    items = {item["title"]: item for item in listing.json()}
+    assert set(items) == {"DeerFlow", "Gateway"}
+    deerflow = items["DeerFlow"]
+    assert set(deerflow) == {"id", "title", "summary", "status", "updated_at"}
+    assert deerflow["summary"] == long_content[:120]
+    assert len(deerflow["summary"]) == 120
+    assert items["Gateway"]["status"] == "dirty"
+    assert items["Gateway"]["summary"] == "网关简介"
+
+    detail = client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{deerflow['id']}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["title"] == "DeerFlow"
+    assert body["content"] == long_content
+    assert body["source_chunk_ids"] == ["d#0000"]
+
+
+async def test_wiki_entry_detail_404_on_missing_or_cross_kb(service):
+    client = _client(service)
+    kb = _create_kb(client)
+    other_kb = _create_kb(client, name="另一个库")
+    entry = await service.wiki_store.upsert_entry(other_kb["id"], title="Secret", content="x", source_chunk_ids=[])
+
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/missing").status_code == 404
+    # an entry that exists but belongs to another kb must not leak
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}").status_code == 404
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").json() == []

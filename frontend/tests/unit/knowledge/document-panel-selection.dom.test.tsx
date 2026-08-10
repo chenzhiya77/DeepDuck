@@ -43,9 +43,6 @@ function doc(partial: Partial<KnowledgeDocument>): KnowledgeDocument {
 function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
   const handlers = {
     onUpload: rs.fn(),
-    onGenerateWiki: rs.fn(),
-    onRenameKb: rs.fn().mockResolvedValue(undefined),
-    onDeleteKb: rs.fn().mockResolvedValue(undefined),
     onDeleteDocument: rs.fn().mockResolvedValue(undefined),
     onRetryDocument: rs.fn(),
     onOpenChunks: rs.fn(),

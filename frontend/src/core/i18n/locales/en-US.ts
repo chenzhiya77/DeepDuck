@@ -382,6 +382,21 @@ export const enUS: Translations = {
       loadMore: "Load more",
       loading: "Loading…",
     },
+    tabs: {
+      documents: "Documents",
+      wiki: "Wiki",
+    },
+    wikiPanel: {
+      empty: "No wiki entries yet — generate them from the menu above",
+      loading: "Loading…",
+      dirty: "Stale",
+      updatedAt: "Updated",
+    },
+    wikiDrawer: {
+      openInTab: "Open in the Wiki tab",
+      loading: "Loading…",
+      notFound: "Entry missing or deleted",
+    },
     chat: {
       newChat: "New chat",
       history: "History",

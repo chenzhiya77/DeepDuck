@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpDown, BookOpen, Check, FileText, MoreHorizontal, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowUpDown, Check, FileText, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -40,8 +40,11 @@ import {
   type DocumentSortKey,
   type SortDirection,
 } from "@/core/knowledge/document-view";
+import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
 import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentStatus } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
+
+import { runAfterMenuClose } from "./run-after-menu-close";
 
 const SORT_OPTIONS: { key: DocumentSortKey; labelKey: "createdAt" | "name" | "size" | "chunks" }[] = [
   { key: "created_at", labelKey: "createdAt" },
@@ -49,20 +52,6 @@ const SORT_OPTIONS: { key: DocumentSortKey; labelKey: "createdAt" | "name" | "si
   { key: "size_bytes", labelKey: "size" },
   { key: "chunk_count", labelKey: "chunks" },
 ];
-
-function formatTimestamp(value: string, locale: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
 
 const STATUS_BADGE_VARIANT: Record<KnowledgeDocumentStatus, "default" | "secondary" | "destructive" | "outline"> = {
   uploaded: "outline",
@@ -74,41 +63,17 @@ const STATUS_BADGE_VARIANT: Record<KnowledgeDocumentStatus, "default" | "seconda
 };
 
 /**
- * Defer an action until the Radix menu (dropdown/context) has fully torn down
- * its dismissal layer — exit animation finished and the body pointer-events
- * restored. Opening a second modal layer (rename/delete dialog, chunk drawer)
- * synchronously from onSelect interleaves both layers' body pointer-events
- * bookkeeping in react-dismissable-layer, leaving `pointer-events: none`
- * stuck on <body> after the second layer closes: the page then looks frozen
- * and only a refresh recovers (right-click → 查看切片 → click outside
- * reproduces it). Poll instead of a fixed timeout so we don't guess the
- * animation length; the deadline keeps the action alive if the menu never
- * settles (e.g. happy-dom).
- */
-function runAfterMenuClose(action: () => void) {
-  const deadline = Date.now() + 500;
-  const tick = () => {
-    if (document.body.style.pointerEvents !== "none" || Date.now() > deadline) {
-      action();
-      return;
-    }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-/**
- * Middle column of the knowledge page (spec §5.2/§3.6). Presentational: the
+ * Documents pane of the middle column (spec §5.2/§3.6). Presentational: the
  * page owns data fetching, polling (via `useDocuments`), and mutations.
+ * Library-level actions (rename/delete/generate wiki) live in the
+ * `MiddleTabs` header row — this pane owns document actions only (upload,
+ * search/sort, row operations).
  */
 export function DocumentPanel({
   kb,
   documents,
   uploading = false,
   onUpload,
-  onGenerateWiki,
-  onRenameKb,
-  onDeleteKb,
   onDeleteDocument,
   onRetryDocument,
   onOpenChunks,
@@ -117,9 +82,6 @@ export function DocumentPanel({
   documents: KnowledgeDocument[];
   uploading?: boolean;
   onUpload: (files: File[]) => void;
-  onGenerateWiki: () => void;
-  onRenameKb: (name: string) => Promise<void> | void;
-  onDeleteKb: () => Promise<void> | void;
   onDeleteDocument: (docId: string) => Promise<void> | void;
   onRetryDocument: (docId: string) => void;
   onOpenChunks: (doc: KnowledgeDocument) => void;
@@ -128,9 +90,6 @@ export function DocumentPanel({
   const tk = t.knowledge;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameValue, setRenameValue] = useState(kb.name);
-  const [deleteKbOpen, setDeleteKbOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: DocumentSortKey; direction: SortDirection }>(DEFAULT_DOCUMENT_SORT);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -211,59 +170,20 @@ export function DocumentPanel({
         handleFiles(event.dataTransfer?.files ?? null);
       }}
     >
-      {/* Header: kb name + type tag only; every library action (upload,
-          generate wiki, rename, delete, and future ones) lives in the ⋯
-          overflow menu so the header stays one stable line (spec §5.2).
-          Dragging files anywhere onto this panel also uploads. */}
-      <div className="flex items-center gap-2 border-b px-4 py-3">
-        <h2 className="min-w-0 truncate text-sm font-semibold">{kb.name}</h2>
-        <Badge className="shrink-0" variant="outline">{t.knowledge.personalKBs}</Badge>
-        <div className="ml-auto flex shrink-0 items-center">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label={tk.settings} size="sm" variant="ghost">
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem
-                disabled={uploading}
-                onSelect={() => fileInputRef.current?.click()}
-              >
-                <Upload className="size-4" />
-                {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onGenerateWiki}>
-                <BookOpen className="size-4" />
-                {tk.generateWiki}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  setRenameValue(kb.name);
-                  runAfterMenuClose(() => setRenameOpen(true));
-                }}
-              >
-                {tk.renameKb}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setDeleteKbOpen(true))}>
-                {tk.deleteKb}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <input
-          ref={fileInputRef}
-          multiple
-          className="hidden"
-          data-testid="document-upload-input"
-          type="file"
-          onChange={(event) => {
-            handleFiles(event.target.files);
-            event.target.value = "";
-          }}
-        />
-      </div>
+      {/* The library header row (kb name + overflow menu) lives in
+          `MiddleTabs`; this pane starts at its own toolbar. Dragging files
+          anywhere onto this pane also uploads. */}
+      <input
+        ref={fileInputRef}
+        multiple
+        className="hidden"
+        data-testid="document-upload-input"
+        type="file"
+        onChange={(event) => {
+          handleFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
 
       {/* Drop feedback overlay: makes the drop affordance explicit while a
           file hovers over the panel (the root bg tint alone is too subtle). */}
@@ -279,8 +199,9 @@ export function DocumentPanel({
         </div>
       )}
 
-      {/* Toolbar: batch actions while selecting, otherwise the name filter
-          and sort dropdown (client-side view controls) */}
+      {/* Toolbar: batch actions while selecting, otherwise the name filter,
+          the sort dropdown and the upload button (a document action, so it
+          lives in this pane rather than the library header) */}
       {selectedIds.size > 0 ? (
         <div className="flex items-center gap-2 border-b px-4 py-2" data-testid="document-batch-bar">
           <span className="min-w-0 flex-1 text-xs font-medium">
@@ -350,6 +271,15 @@ export function DocumentPanel({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+          <Button
+            aria-label={tk.uploadDocuments}
+            disabled={uploading}
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="size-4" />
+          </Button>
         </div>
       )}
 
@@ -432,7 +362,7 @@ export function DocumentPanel({
                     </div>
                   </td>
                   <td className="text-muted-foreground px-2 py-2 whitespace-nowrap">
-                    {formatTimestamp(doc.created_at, locale)}
+                    {formatKnowledgeTimestamp(doc.created_at, locale)}
                   </td>
                   <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center gap-1">
@@ -506,56 +436,6 @@ export function DocumentPanel({
         {tk.statsDocuments} {stats.total} · {tk.statsChunks} {stats.totalChunks} · {formatBytes(stats.totalBytes)} ·{" "}
         {tk.statsReady} {stats.ready} · {tk.statsIndexing} {stats.inProgress} · {tk.statsFailed} {stats.failed}
       </div>
-
-      {/* Rename dialog */}
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>{tk.renameKb}</DialogTitle>
-          </DialogHeader>
-          <div className="py-2">
-            <Input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameOpen(false)}>
-              {t.common.cancel}
-            </Button>
-            <Button
-              disabled={!renameValue.trim()}
-              onClick={() => {
-                void onRenameKb(renameValue.trim());
-                setRenameOpen(false);
-              }}
-            >
-              {t.common.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* KB delete confirm (cascade warning, spec §3.7) */}
-      <Dialog open={deleteKbOpen} onOpenChange={setDeleteKbOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>{tk.deleteKbConfirmTitle}</DialogTitle>
-            <DialogDescription>{tk.deleteKbConfirmDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteKbOpen(false)}>
-              {t.common.cancel}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                void onDeleteKb();
-                setDeleteKbOpen(false);
-              }}
-            >
-              {t.common.confirmDelete}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Document delete confirm */}
       <Dialog open={deleteTargets !== null} onOpenChange={(open) => !open && setDeleteTargets(null)}>

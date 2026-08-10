@@ -308,6 +308,21 @@ export interface Translations {
       loadMore: string;
       loading: string;
     };
+    tabs: {
+      documents: string;
+      wiki: string;
+    };
+    wikiPanel: {
+      empty: string;
+      loading: string;
+      dirty: string;
+      updatedAt: string;
+    };
+    wikiDrawer: {
+      openInTab: string;
+      loading: string;
+      notFound: string;
+    };
     chat: {
       newChat: string;
       history: string;

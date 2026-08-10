@@ -11,6 +11,8 @@ import type {
   KnowledgeBase,
   KnowledgeChunkPage,
   KnowledgeDocument,
+  WikiEntryDetail,
+  WikiEntrySummary,
   WikiGenerateAck,
 } from "./types";
 
@@ -138,5 +140,17 @@ export function listDocumentChunks(
 export function generateWiki(kbId: string): Promise<WikiGenerateAck> {
   return fetch(kbUrl(kbId, "/wiki/generate"), { method: "POST" }).then((r) =>
     readResponse<WikiGenerateAck>(r, "Failed to trigger wiki generation"),
+  );
+}
+
+export function listWikiEntries(kbId: string): Promise<WikiEntrySummary[]> {
+  return fetch(kbUrl(kbId, "/wiki/entries")).then((r) =>
+    readResponse<WikiEntrySummary[]>(r, "Failed to fetch wiki entries"),
+  );
+}
+
+export function getWikiEntry(kbId: string, entryId: string): Promise<WikiEntryDetail> {
+  return fetch(kbUrl(kbId, `/wiki/entries/${encodeURIComponent(entryId)}`)).then((r) =>
+    readResponse<WikiEntryDetail>(r, "Failed to fetch wiki entry"),
   );
 }
