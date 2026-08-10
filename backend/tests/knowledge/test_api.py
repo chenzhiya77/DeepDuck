@@ -108,6 +108,7 @@ async def test_non_owner_gets_403_on_every_kb_scoped_route(service):
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate").status_code == 403
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").status_code == 403
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/whatever").status_code == 403
+    assert stranger.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "x"}).status_code == 403
     # the stranger's own listing stays empty (no cross-owner leakage)
     assert stranger.get("/api/knowledge-bases").json() == []
 

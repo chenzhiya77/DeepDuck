@@ -15,15 +15,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from deerflow.knowledge.graph.store import GraphStore
+from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.wiki.generator import generate_wiki
 from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
+from deerflow.tools.builtins.hybrid_search_tool import _hybrid_search_impl
+from deerflow.tools.builtins.wiki_search_tool import _wiki_search_impl
 from deerflow.uploads.manager import normalize_filename
 from deerflow.utils.file_io import run_file_io
 
@@ -171,6 +177,120 @@ class KnowledgeService:
         if entry is None or entry["kb_id"] != kb_id:
             return None
         return entry
+
+    # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
+
+    #: Score semantics differ per path — never compare across paths.
+    _RECALL_SCORE_TYPES = {
+        "vector": "qwen3-rerank relevance",
+        "graph": "embedding cosine（当次可比）",
+        "wiki": "embedding cosine",
+    }
+
+    async def recall_test(self, *, kb_id: str, user_id: str, query: str, top_k: int) -> dict[str, Any]:
+        """Fan one query out to the three retrieval paths (spec P1).
+
+        Reuses the online tools' ``_*_impl`` verbatim — the only difference
+        from the agent path is that no LLM answer synthesis happens and raw
+        hits/scores/elapsed are returned. A single path's failure degrades to
+        empty hits with a failure note instead of failing the whole response.
+        """
+        from deerflow.config.app_config import get_app_config
+
+        rag = get_app_config().rag
+        runtime = SimpleNamespace(context={"kb_id": kb_id, "user_id": user_id})
+
+        async def _timed(coro) -> tuple[Any, int]:
+            start = time.monotonic()
+            try:
+                return await coro, int((time.monotonic() - start) * 1000)
+            except Exception as exc:  # degradation is the contract — one path must not sink the response
+                logger.exception("recall-test path failed for kb %s", kb_id)
+                return exc, int((time.monotonic() - start) * 1000)
+
+        (vector_raw, vector_ms), (graph_raw, graph_ms), (wiki_raw, wiki_ms) = await asyncio.gather(
+            _timed(_hybrid_search_impl(query, runtime, store=self.store, vector_store=self.vector_store, top_k=top_k)),
+            _timed(
+                _graph_search_impl(
+                    query,
+                    runtime,
+                    store=self.store,
+                    graph_store=self.graph_store,
+                    vector_store=self.vector_store,
+                    # mirror the online wrapper's config-driven parameters;
+                    # the recall test's top_k maps to evidence_limit
+                    reranker=DashScopeReranker() if rag.graph_rerank else None,
+                    per_entity_cap=rag.graph_per_entity_cap,
+                    per_edge_cap=rag.graph_per_edge_cap,
+                    hop0_guarantee=rag.graph_hop0_guarantee,
+                    evidence_limit=top_k,
+                    graph_rerank=rag.graph_rerank,
+                    rerank_threshold=rag.graph_rerank_threshold,
+                    hop_penalty=rag.graph_hop_penalty,
+                    neighbor_min_score=rag.graph_neighbor_min_score,
+                    max_expanded_nodes=rag.graph_max_expanded_nodes,
+                    hub_degree_threshold=rag.graph_hub_degree_threshold,
+                )
+            ),
+            _timed(_wiki_search_impl(query, runtime, store=self.store, wiki_store=self.wiki_store, vector_store=self.vector_store, top_k=top_k)),
+        )
+
+        def _failure_note(exc: BaseException) -> str:
+            return f"该路检索失败（{type(exc).__name__}），详情见服务端日志。"
+
+        if isinstance(vector_raw, BaseException):
+            vector_path: dict[str, Any] = {"hits": [], "message": _failure_note(vector_raw)}
+        else:
+            vector_path = {
+                "hits": [
+                    {
+                        "chunk_id": item["chunk_id"],
+                        "doc_name": item.get("doc_name") or "",
+                        "text": item.get("text", ""),
+                        "heading_path": item.get("heading_path") or [],
+                        "page": item.get("page"),
+                        # rerank 降级时 impl 不返回 score 键 → 显式 null（schema 可空）
+                        "score": item.get("score"),
+                        "rank": rank,
+                    }
+                    for rank, item in enumerate(vector_raw.get("results", []), start=1)
+                ],
+                "message": vector_raw.get("message", ""),
+            }
+
+        if isinstance(graph_raw, BaseException):
+            graph_path: dict[str, Any] = {"entities": [], "relations": [], "evidence": [], "message": _failure_note(graph_raw)}
+        else:
+            graph_path = {
+                "entities": graph_raw.get("entities", []),
+                "relations": graph_raw.get("relations", []),
+                "evidence": graph_raw.get("evidence", []),
+                "message": graph_raw.get("message", ""),
+            }
+
+        if isinstance(wiki_raw, BaseException):
+            wiki_path: dict[str, Any] = {"hits": [], "message": _failure_note(wiki_raw)}
+        else:
+            wiki_path = {
+                "hits": [
+                    {
+                        "entry_id": entry["entry_id"],
+                        "title": entry["title"],
+                        "summary": (entry.get("content") or "")[:120],
+                        "score": entry.get("score"),
+                        "rank": rank,
+                    }
+                    for rank, entry in enumerate(wiki_raw.get("entries", []), start=1)
+                ],
+                "message": wiki_raw.get("message", ""),
+            }
+
+        return {
+            "query": query,
+            "paths": {"vector": vector_path, "graph": graph_path, "wiki": wiki_path},
+            "score_type": dict(self._RECALL_SCORE_TYPES),
+            "elapsed_ms": {"vector": vector_ms, "graph": graph_ms, "wiki": wiki_ms},
+        }
 
     def _schedule_wiki_generation(self, kb_id: str) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id), name=f"kb-wiki-{kb_id}")

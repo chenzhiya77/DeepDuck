@@ -1,9 +1,9 @@
 """Knowledge-base management API (spec §5.3, Phase-1 subset).
 
 Thin router: resolve caller → owner-only gate (``can_access`` → 403) →
-delegate to :class:`KnowledgeService`. The recall-test endpoint is Phase 2
-and deliberately absent. Uploads return 202 — indexing runs in the
-background worker (spec §3.7), progress is polled via the documents list.
+delegate to :class:`KnowledgeService`. Uploads return 202 — indexing runs
+in the background worker (spec §3.7), progress is polled via the documents
+list.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.gateway.services.knowledge_service import KnowledgeService
 from deerflow.knowledge.access import can_access
@@ -43,6 +43,21 @@ class KbUpdateRequest(BaseModel):
             value = value.strip()
             if not value:
                 raise ValueError("name must not be blank")
+        return value
+
+
+class RecallTestRequest(BaseModel):
+    """P1 recall-test payload: one query fanned out to the three paths."""
+
+    query: str
+    top_k: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("query")
+    @classmethod
+    def _query_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("query must not be blank")
         return value
 
 
@@ -189,3 +204,14 @@ async def get_wiki_entry(request: Request, kb_id: str, entry_id: str):
     if entry is None:
         raise HTTPException(status_code=404, detail="Wiki entry not found")
     return entry
+
+
+@router.post("/{kb_id}/recall-test")
+async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
+    """P1 召回测试：一个 query 并行扇出到 vector/graph/wiki 三路检索 impl。
+
+    走真实检索链路（embedding/rerank/实体抽取 LLM），按调试接口定位——
+    无速率豁免；单路失败降级为空 hits，不拖垮整响应。
+    """
+    service = await _require_kb_access(request, kb_id)
+    return await service.recall_test(kb_id=kb_id, user_id=_user_id(request), query=body.query, top_k=body.top_k)

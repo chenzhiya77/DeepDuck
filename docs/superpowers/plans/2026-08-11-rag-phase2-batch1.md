@@ -54,7 +54,9 @@
 - [x] 实现组件 + hooks + i18n；测试 GREEN；`pnpm check` 干净。
 - [x] Commit: `feat(frontend): add middle-column tabs with read-only wiki entries panel`。
 
-## Task 2: P1 召回测试后端 API（TDD）
+## Task 2: P1 召回测试后端 API（TDD）✅ 已完成（2026-08-11）
+
+**实施记录**：契约与 plan 一致，无偏差。单测 5 个（mock 三 impl 于 service 模块边界）+ 集成测试 1 个（requires_qdrant，`tools_env` 真实 impl 直调对比一致）。revert 证明点已执行：`_timed` 降级改为 re-raise → 降级用例 RED（500）→ restore → GREEN。实施中发现的一个坑：`_extract_query_entities` 期望 `{"entities": [...]}` dict 格式，测试 LLM stub 返回裸 list 会被静默丢弃为 []——stub 已对齐全仓 test_graph_search.py 的 `{"entities": ...}` 形态。
 
 **Files:**
 - Modify: `backend/app/gateway/routers/knowledge_bases.py`（新增 `POST /{kb_id}/recall-test`；删除文件 docstring 中 "The recall-test endpoint is Phase 2 and deliberately absent" 一句）
@@ -67,10 +69,10 @@
 - 单路异常不拖垮整响应：该路降级为空 hits + 该路 `message` 注明失败（gather return_exceptions 收集）。
 - 门禁复用 `_require_kb_access`；401/403/404 语义与现有一致。
 
-- [ ] 写失败测试（mock 三 impl）：200 组装正确（score 可空/score_type/elapsed_ms/top_k→evidence_limit 映射断言）；单路抛错降级；query 空白 422；越权 403；不存在 404。
-- [ ] 集成测试（`requires_qdrant`，tools fixture 真实 impl）：对一个已索引夹具 kb 发召回测试，三路返回结构与 impl 直调一致。
-- [ ] 运行捕获 RED → 实现 → GREEN；revert 单路降级为整响应 500，证明降级用例 RED，restore，GREEN。
-- [ ] Commit: `feat(rag): add recall-test API over the three retrieval impls`。
+- [x] 写失败测试（mock 三 impl）：200 组装正确（score 可空/score_type/elapsed_ms/top_k→evidence_limit 映射断言）；单路抛错降级；query 空白 422；越权 403；不存在 404。
+- [x] 集成测试（`requires_qdrant`，tools fixture 真实 impl）：对一个已索引夹具 kb 发召回测试，三路返回结构与 impl 直调一致。
+- [x] 运行捕获 RED → 实现 → GREEN；revert 单路降级为整响应 500，证明降级用例 RED，restore，GREEN。
+- [x] Commit: `feat(rag): add recall-test API over the three retrieval impls`。
 
 ## Task 3: P1 前端「检索测试」tab
 
