@@ -58,6 +58,7 @@ function renderWithI18n(node: React.ReactNode) {
 
 function renderTabs(props?: Partial<Parameters<typeof MiddleTabs>[0]>) {
   const handlers = {
+    onUpload: rs.fn(),
     onGenerateWiki: rs.fn(),
     onRenameKb: rs.fn().mockResolvedValue(undefined),
     onDeleteKb: rs.fn().mockResolvedValue(undefined),
@@ -116,12 +117,30 @@ describe("MiddleTabs", () => {
     expect(screen.getByText("文档内容")).toBeTruthy();
   });
 
-  it("carries library-level actions in the overflow menu (no upload — it lives in the documents tab)", async () => {
+  it("carries library-level actions in the overflow menu (incl. upload — a library action)", async () => {
+    const clickSpy = rs
+      .spyOn(HTMLInputElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    try {
+      const handlers = renderTabs();
+      fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+      fireEvent.click(await screen.findByText("上传文档"));
+      expect(clickSpy).toHaveBeenCalled();
+      // selecting an item closes the menu — reopen for the next action
+      fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+      fireEvent.click(await screen.findByText("生成百科"));
+      expect(handlers.onGenerateWiki).toHaveBeenCalled();
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it("uploads via the hidden file input in the library header", () => {
     const handlers = renderTabs();
-    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByText("生成百科"));
-    expect(handlers.onGenerateWiki).toHaveBeenCalled();
-    expect(screen.queryByText("上传文档")).toBeNull();
+    const input = screen.getByTestId("document-upload-input");
+    const file = new File(["x"], "新手册.pdf", { type: "application/pdf" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(handlers.onUpload).toHaveBeenCalledWith([file]);
   });
 
   it("renames the kb through the overflow menu dialog", async () => {

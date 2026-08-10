@@ -1,7 +1,7 @@
 "use client";
 
-import { BookOpen, MoreHorizontal } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { BookOpen, MoreHorizontal, Upload } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,12 +37,16 @@ export type KnowledgeMiddleTab = "documents" | "wiki";
  *   row 3 — tab panes, keep-alive via forceMount so switching never unmounts
  *           the document table (search/sort/selection state and the indexing
  *           refetch interval survive) nor the wiki list.
- * Upload stays inside the documents pane — it is a document action.
+ * Upload lives in the library menu (adding a document is a library-level
+ * action, like generate-wiki/rename); the documents pane keeps its toolbar
+ * lean (search + sort) and still accepts drag-drop anywhere on the pane.
  */
 export function MiddleTabs({
   kb,
   activeTab,
   onTabChange,
+  onUpload,
+  uploading = false,
   onGenerateWiki,
   onRenameKb,
   onDeleteKb,
@@ -52,6 +56,8 @@ export function MiddleTabs({
   kb: KnowledgeBase;
   activeTab: KnowledgeMiddleTab;
   onTabChange: (tab: KnowledgeMiddleTab) => void;
+  onUpload: (files: File[]) => void;
+  uploading?: boolean;
   onGenerateWiki: () => void;
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
@@ -60,6 +66,7 @@ export function MiddleTabs({
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState(kb.name);
   const [deleteKbOpen, setDeleteKbOpen] = useState(false);
@@ -78,6 +85,13 @@ export function MiddleTabs({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                disabled={uploading}
+                onSelect={() => fileInputRef.current?.click()}
+              >
+                <Upload className="size-4" />
+                {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={onGenerateWiki}>
                 <BookOpen className="size-4" />
                 {tk.generateWiki}
@@ -97,6 +111,20 @@ export function MiddleTabs({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        <input
+          ref={fileInputRef}
+          multiple
+          className="hidden"
+          data-testid="document-upload-input"
+          type="file"
+          onChange={(event) => {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+              onUpload(Array.from(files));
+            }
+            event.target.value = "";
+          }}
+        />
       </div>
 
       {/* Rows 2+3: tab strip + keep-alive panes */}

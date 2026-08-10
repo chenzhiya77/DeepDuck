@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpDown, Check, FileText, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,6 @@ const STATUS_BADGE_VARIANT: Record<KnowledgeDocumentStatus, "default" | "seconda
 export function DocumentPanel({
   kb,
   documents,
-  uploading = false,
   onUpload,
   onDeleteDocument,
   onRetryDocument,
@@ -80,7 +79,6 @@ export function DocumentPanel({
 }: {
   kb: KnowledgeBase;
   documents: KnowledgeDocument[];
-  uploading?: boolean;
   onUpload: (files: File[]) => void;
   onDeleteDocument: (docId: string) => Promise<void> | void;
   onRetryDocument: (docId: string) => void;
@@ -88,7 +86,6 @@ export function DocumentPanel({
 }) {
   const { t, locale } = useI18n();
   const tk = t.knowledge;
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: DocumentSortKey; direction: SortDirection }>(DEFAULT_DOCUMENT_SORT);
@@ -170,20 +167,9 @@ export function DocumentPanel({
         handleFiles(event.dataTransfer?.files ?? null);
       }}
     >
-      {/* The library header row (kb name + overflow menu) lives in
-          `MiddleTabs`; this pane starts at its own toolbar. Dragging files
-          anywhere onto this pane also uploads. */}
-      <input
-        ref={fileInputRef}
-        multiple
-        className="hidden"
-        data-testid="document-upload-input"
-        type="file"
-        onChange={(event) => {
-          handleFiles(event.target.files);
-          event.target.value = "";
-        }}
-      />
+      {/* The library header row (kb name + overflow menu incl. upload)
+          lives in `MiddleTabs`; this pane starts at its own toolbar.
+          Dragging files anywhere onto this pane also uploads. */}
 
       {/* Drop feedback overlay: makes the drop affordance explicit while a
           file hovers over the panel (the root bg tint alone is too subtle). */}
@@ -199,9 +185,9 @@ export function DocumentPanel({
         </div>
       )}
 
-      {/* Toolbar: batch actions while selecting, otherwise the name filter,
-          the sort dropdown and the upload button (a document action, so it
-          lives in this pane rather than the library header) */}
+      {/* Toolbar: batch actions while selecting, otherwise the name filter
+          and the sort dropdown (client-side view controls; upload lives in
+          the library menu so this row stays lean) */}
       {selectedIds.size > 0 ? (
         <div className="flex items-center gap-2 border-b px-4 py-2" data-testid="document-batch-bar">
           <span className="min-w-0 flex-1 text-xs font-medium">
@@ -271,15 +257,6 @@ export function DocumentPanel({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-          <Button
-            aria-label={tk.uploadDocuments}
-            disabled={uploading}
-            size="icon-sm"
-            variant="ghost"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="size-4" />
-          </Button>
         </div>
       )}
 

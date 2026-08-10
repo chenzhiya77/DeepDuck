@@ -56,21 +56,11 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
 afterEach(cleanup);
 
 describe("DocumentPanel toolbar", () => {
-  it("uploads via the toolbar button (a document action, not a library one)", async () => {
-    const clickSpy = rs
-      .spyOn(HTMLInputElement.prototype, "click")
-      .mockImplementation(() => undefined);
-    try {
-      renderPanel();
-      fireEvent.click(screen.getByRole("button", { name: "上传文档" }));
-      expect(clickSpy).toHaveBeenCalled();
-    } finally {
-      clickSpy.mockRestore();
-    }
-  });
-
-  it("keeps library-level chrome out of the pane (moved to MiddleTabs)", () => {
+  it("keeps the toolbar lean: search + sort only (upload/settings live in MiddleTabs)", () => {
     renderPanel();
+    expect(screen.getByLabelText("搜索文档…")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "排序方式" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "上传文档" })).toBeNull();
     expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
     expect(screen.queryByText("生成百科")).toBeNull();
   });
@@ -146,14 +136,6 @@ describe("DocumentPanel stats row and upload", () => {
     expect(statsRow.textContent).toContain("3");
     expect(statsRow.textContent).toContain("4.0 KB");
     expect(statsRow.textContent).toContain("5");
-  });
-
-  it("uploads via the file input", () => {
-    const { onUpload } = renderPanel();
-    const input = screen.getByTestId("document-upload-input");
-    const file = new File(["x"], "新手册.pdf", { type: "application/pdf" });
-    fireEvent.change(input, { target: { files: [file] } });
-    expect(onUpload).toHaveBeenCalledWith([file]);
   });
 
   it("uploads via drag-drop on the panel", () => {

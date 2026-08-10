@@ -110,6 +110,18 @@ export default function KnowledgePage() {
               kb={selectedKb}
               activeTab={activeTab}
               onTabChange={setActiveTab}
+              uploading={uploadDocument.isPending}
+              onUpload={(files) => {
+                void (async () => {
+                  for (const file of files) {
+                    try {
+                      await uploadDocument.mutateAsync(file);
+                    } catch (error) {
+                      showMutationError(error, tk.errors.uploadFailed);
+                    }
+                  }
+                })();
+              }}
               onGenerateWiki={() => {
                 generateWiki.mutate(undefined, {
                   onSuccess: () => toast.success(tk.wikiEnqueued),
@@ -134,7 +146,6 @@ export default function KnowledgePage() {
                 <DocumentPanel
                   kb={selectedKb}
                   documents={documents}
-                  uploading={uploadDocument.isPending}
                   onUpload={(files) => {
                     void (async () => {
                       for (const file of files) {
