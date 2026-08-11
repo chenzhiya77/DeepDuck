@@ -66,6 +66,24 @@ def _impl_args(tools_env, llm):
 @requires_qdrant
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_graph_search_falls_back_to_query_when_extraction_empty(tools_env):
+    """Terse entity-only queries ("Gateway") make the LLM extractor flaky — it
+    may return {"entities": []}. The query itself must then serve as the
+    landing candidate; the cosine floor keeps chit-chat honest."""
+    result = await _graph_search_impl(
+        "Gateway",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_impl_args(tools_env, _QueryLLM([])),
+    )
+
+    names = {e["name"] for e in result["entities"]}
+    assert "Gateway" in names, "query fallback must land on the Gateway entity"
+    assert result["evidence"], "the landed entity must surface its source chunks as evidence"
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_graph_search_expands_and_fetches_evidence(tools_env):
     llm = _QueryLLM(["Gateway"])
 

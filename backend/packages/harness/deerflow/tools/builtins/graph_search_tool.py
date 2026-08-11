@@ -135,6 +135,14 @@ async def _graph_search_impl(
     # 1. Query-side entity/keyword extraction (small model).
     query_names = await _extract_query_entities(query, llm)
     if not query_names:
+        # The extractor is flaky on terse entity-only queries ("PDF") and may
+        # return {"entities": []}. Fall back to the query itself as the
+        # landing candidate — the ENTITY_MATCH_MIN_SCORE floor still keeps
+        # chit-chat honest (an unrelated query matches no entity).
+        stripped = query.strip()
+        if stripped:
+            query_names = [stripped]
+    if not query_names:
         return _empty("未能从问题中识别出可检索的实体；该问题可能更适合向量检索（hybrid_search）。")
 
     # 2. One query embedding serves all semantic scoring.
