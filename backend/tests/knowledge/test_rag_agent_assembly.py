@@ -56,6 +56,13 @@ def test_builtin_rag_soul_contains_citation_and_refusal_rules():
     assert "知识库中没有找到相关内容" in soul, "refusal policy missing"
     assert "hybrid_search" in soul and "wiki_search" in soul and "graph_search" in soul
     assert "深度检索" in soul, "static dual-mode guidance missing"
+    # Vector-floor discipline: enumerated discretion, not open-ended "upgrade as
+    # needed" — every factual question must hit hybrid_search at least once;
+    # the ONLY skip case is a pure concept-definition question, and a wiki
+    # miss must fall back to hybrid_search.
+    assert "任何事实性问题必须至少调用一次" in soul, "vector-floor rule missing"
+    assert "纯概念定义题" in soul, "the sole wiki-only exception must be enumerated"
+    assert "回补" in soul, "wiki-miss fallback to hybrid_search missing"
 
 
 def test_rag_group_tools_are_exactly_the_three_retrieval_tools(app_config):
