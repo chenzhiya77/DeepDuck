@@ -320,9 +320,10 @@ export function MessageList({
   /** Optional per-message footer (e.g. kb citation cards on assistant answers). */
   renderMessageFooter?: (message: Message) => ReactNode;
   /**
-   * Optional per-message body renderer (e.g. kb citation superscripts).
-   * Return undefined/null to fall back to the default MarkdownContent —
-   * surfaces that never pass this see zero behaviour change.
+   * Optional per-message body renderer for the human/assistant branch
+   * (e.g. kb citation superscripts). Return undefined/null to fall back to
+   * the default MarkdownContent — surfaces that never pass this see zero
+   * behaviour change.
    */
   renderMessageContent?: (message: Message, content: string, isLoading: boolean) => ReactNode;
 }) {
@@ -1022,6 +1023,11 @@ export function MessageList({
                             groupIndex === groupedMessages.length - 1
                           }
                           footer={renderMessageFooter?.(msg)}
+                          renderContent={
+                            renderMessageContent
+                              ? (content, loading) => renderMessageContent(msg, content, loading)
+                              : undefined
+                          }
                           threadId={threadId}
                           artifactPaths={artifactPaths}
                           runId={
@@ -1160,12 +1166,10 @@ export function MessageList({
                     group,
                     groupIndex,
                     <div className="w-full">
-                      {renderMessageContent?.(message, extractContentFromMessage(message), thread.isLoading) ?? (
-                        <MarkdownContent
-                          content={extractContentFromMessage(message)}
-                          isLoading={thread.isLoading}
-                        />
-                      )}
+                      <MarkdownContent
+                        content={extractContentFromMessage(message)}
+                        isLoading={thread.isLoading}
+                      />
                       {renderTokenUsage({
                         messages: group.messages,
                         turnUsageMessages,

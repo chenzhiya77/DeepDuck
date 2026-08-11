@@ -151,6 +151,7 @@ export function MessageListItem({
   isEditPending = false,
   onEditAndRegenerate,
   footer,
+  renderContent,
 }: {
   className?: string;
   message: Message;
@@ -166,6 +167,12 @@ export function MessageListItem({
   onEditAndRegenerate?: (replacementText: string) => void | Promise<boolean>;
   /** Extra content rendered after the message body (e.g. kb citation cards). */
   footer?: ReactNode;
+  /**
+   * Optional body renderer (e.g. kb citation superscripts on assistant
+   * answers). Return undefined/null to fall back to the default
+   * MarkdownContent — callers that never pass this see zero change.
+   */
+  renderContent?: (content: string, isLoading: boolean) => ReactNode;
 }) {
   const { t } = useI18n();
   const isHuman = message.type === "human";
@@ -219,6 +226,7 @@ export function MessageListItem({
         threadId={threadId}
         artifactPaths={artifactPaths}
         runId={runId}
+        renderContent={renderContent}
         showWorkspaceChanges={showWorkspaceChanges}
         editState={
           isHuman && isEditing
@@ -372,6 +380,7 @@ function MessageContent_({
   runId,
   showWorkspaceChanges = false,
   editState,
+  renderContent,
 }: {
   className?: string;
   message: Message;
@@ -380,6 +389,7 @@ function MessageContent_({
   artifactPaths: readonly string[];
   runId?: string;
   showWorkspaceChanges?: boolean;
+  renderContent?: (content: string, isLoading: boolean) => ReactNode;
   editState?: {
     draft: string;
     disabled: boolean;
@@ -571,12 +581,14 @@ function MessageContent_({
           <SafeReasoningContent>{reasoningContent}</SafeReasoningContent>
         </Reasoning>
       )}
-      <MarkdownContent
-        content={contentToDisplay}
-        isLoading={isLoading}
-        className="my-3"
-        components={components}
-      />
+      {renderContent?.(contentToDisplay, isLoading ?? false) ?? (
+        <MarkdownContent
+          content={contentToDisplay}
+          isLoading={isLoading}
+          className="my-3"
+          components={components}
+        />
+      )}
       <CitationSourcesPanel sources={citationSources} />
       {message.type === "ai" && showWorkspaceChanges && (
         <WorkspaceChangeBadge
