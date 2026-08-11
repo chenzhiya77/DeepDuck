@@ -6,6 +6,7 @@ import {
   ArrowUpRightIcon,
   HistoryIcon,
   PlusIcon,
+  Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -31,7 +32,7 @@ import {
   type HumanInputRequest,
   type HumanInputResponse,
 } from "@/core/messages/human-input";
-import { useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
+import { useDeleteThread, useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { cn } from "@/lib/utils";
 
@@ -123,6 +124,23 @@ export function KnowledgeChatPanel({
     setThreadId(nextThreadId);
     setIsNewThread(false);
   }, []);
+
+  // Same operation logic as the general recent-chat list: useDeleteThread
+  // cascades sidecar cleanup + remote delete + local data + query-cache
+  // eviction (the history popover re-renders without the row automatically).
+  // Deleting the OPEN conversation resets the panel to a fresh chat, mirroring
+  // the general list's isCurrentThread handling.
+  const { mutate: deleteThread } = useDeleteThread();
+  const handleDeleteThread = useCallback(
+    (deletedThreadId: string) => {
+      const isCurrent = !isNewThread && deletedThreadId === threadId;
+      deleteThread({
+        threadId: deletedThreadId,
+        onRemoteDeleted: isCurrent ? handleNewChat : undefined,
+      });
+    },
+    [deleteThread, handleNewChat, isNewThread, threadId],
+  );
 
   const canSend = Boolean(kbId) && draft.trim().length > 0 && !thread.isLoading;
   const handleSubmit = useCallback(() => {
@@ -228,11 +246,27 @@ export function KnowledgeChatPanel({
                   {dayThreads.map((kbThread) => (
                     <DropdownMenuItem
                       key={kbThread.thread_id}
+                      className="group/history-item"
                       onClick={() => handleSelectThread(kbThread.thread_id)}
                     >
                       <span className="truncate">
                         {kbThread.values?.title ?? kbThread.thread_id}
                       </span>
+                      {/* stopPropagation keeps the row from being selected and
+                          the popover open, so several stale conversations can
+                          be cleaned up in one go. */}
+                      <button
+                        aria-label={tc.deleteChat}
+                        className="text-muted-foreground hover:text-foreground ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity focus-visible:opacity-100 group-hover/history-item:opacity-100"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          event.preventDefault();
+                          handleDeleteThread(kbThread.thread_id);
+                        }}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </button>
                     </DropdownMenuItem>
                   ))}
                 </div>

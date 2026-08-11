@@ -10,10 +10,12 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 const mockUseThreadStream = rs.fn();
 const mockUseInfiniteThreads = rs.fn();
 const mockSendMessage = rs.fn();
+const mockDeleteThread = rs.fn();
 
 rs.mock("@/core/threads/hooks", () => ({
   useThreadStream: (options: unknown) => mockUseThreadStream(options),
   useInfiniteThreads: (params?: unknown) => mockUseInfiniteThreads(params),
+  useDeleteThread: () => ({ mutate: mockDeleteThread }),
 }));
 
 let capturedMessageListProps: Record<string, unknown> | null = null;
@@ -166,6 +168,41 @@ describe("KnowledgeChatPanel", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });
     fireEvent.click(screen.getByText("如何上传文档"));
     expect(latestStreamOptions().threadId).toBe("thread-kb1-a");
+  });
+
+  it("deletes a history conversation via its delete button WITHOUT selecting it", () => {
+    renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });
+    // Only the current-kb thread is listed, so exactly one delete button.
+    const deleteButton = screen.getByRole("button", { name: "删除会话" });
+    fireEvent.click(deleteButton);
+    expect(mockDeleteThread).toHaveBeenCalledTimes(1);
+    const args = mockDeleteThread.mock.calls[0]![0] as {
+      threadId: string;
+      onRemoteDeleted?: () => void;
+    };
+    expect(args.threadId).toBe("thread-kb1-a");
+    // Not the open conversation → no reset callback.
+    expect(args.onRemoteDeleted).toBeUndefined();
+    // The row must not become the selected conversation.
+    expect(latestStreamOptions().threadId).toBeUndefined();
+  });
+
+  it("resets to a fresh conversation when the OPEN conversation is deleted", () => {
+    renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByText("如何上传文档"));
+    expect(latestStreamOptions().threadId).toBe("thread-kb1-a");
+    fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    const args = mockDeleteThread.mock.calls[0]![0] as {
+      threadId: string;
+      onRemoteDeleted?: () => void;
+    };
+    expect(args.threadId).toBe("thread-kb1-a");
+    expect(typeof args.onRemoteDeleted).toBe("function");
+    act(() => args.onRemoteDeleted!());
+    expect(latestStreamOptions().threadId).toBeUndefined();
   });
 
   it("resets to a fresh thread via the new-chat button after picking history", () => {

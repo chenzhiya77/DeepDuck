@@ -417,6 +417,7 @@ export const enUS: Translations = {
       newChat: "New chat",
       history: "History",
       noHistory: "No conversations for this knowledge base yet",
+      deleteChat: "Delete conversation",
       deepResearch: "Deep retrieval",
       deepResearchHint: "Query vector, graph and wiki paths together (slower but broader)",
       sources: "Sources",

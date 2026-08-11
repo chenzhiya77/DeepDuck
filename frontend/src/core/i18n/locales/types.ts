@@ -343,6 +343,7 @@ export interface Translations {
       newChat: string;
       history: string;
       noHistory: string;
+      deleteChat: string;
       deepResearch: string;
       deepResearchHint: string;
       sources: string;
