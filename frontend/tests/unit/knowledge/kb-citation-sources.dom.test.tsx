@@ -1,7 +1,8 @@
 /**
- * Citation cards under an assistant answer (spec §4.6/§3.6): the answer's
- * retrieval sources render as a numbered "参考来源" list; clicking a source
- * expands the shared ChunkCard with the original chunk text.
+ * Citation cards under an assistant answer (spec §4.6/§3.6; phase-2 batch-1
+ * P2 reworked the strip: collapsed one-line entry by default, expanding
+ * shows merged cards). These cases keep the phase-1 in-place ChunkCard
+ * expand/collapse behaviour honest under the new interaction.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -38,15 +39,24 @@ function renderWithI18n(node: React.ReactNode) {
   );
 }
 
+function renderSources(sources: KnowledgeCitation[] = SOURCES) {
+  renderWithI18n(<KbCitationSources messageId="m1" sources={sources} />);
+  // P2: the strip is collapsed by default — open it to reach the cards.
+  fireEvent.click(screen.getByText(/参考来源 ·/));
+}
+
 afterEach(() => {
   cleanup();
   rs.clearAllMocks();
 });
 
 describe("KbCitationSources", () => {
-  it("renders the sources label with one numbered entry per source", () => {
-    renderWithI18n(<KbCitationSources sources={SOURCES} />);
-    expect(screen.getByText("参考来源")).toBeTruthy();
+  it("collapsed by default; expanding reveals numbered cards with doc name and page", () => {
+    renderWithI18n(<KbCitationSources messageId="m1" sources={SOURCES} />);
+    expect(screen.getByText(/参考来源 · 2/)).toBeTruthy();
+    expect(screen.queryByText("产品手册.pdf")).toBeNull();
+
+    fireEvent.click(screen.getByText(/参考来源 · 2/));
     expect(screen.getByText("[1]")).toBeTruthy();
     expect(screen.getByText("[2]")).toBeTruthy();
     expect(screen.getByText("产品手册.pdf")).toBeTruthy();
@@ -55,32 +65,34 @@ describe("KbCitationSources", () => {
   });
 
   it("renders nothing when there are no sources", () => {
-    const { container } = renderWithI18n(<KbCitationSources sources={[]} />);
+    const { container } = renderWithI18n(<KbCitationSources messageId="m1" sources={[]} />);
     expect(container.innerHTML).toBe("");
   });
 
   it("expands the shared chunk card with the original text on click", () => {
-    renderWithI18n(<KbCitationSources sources={SOURCES} />);
-    expect(screen.queryByText(SOURCES[0]!.text)).toBeNull();
+    renderSources();
+    // collapsed: only the card's in-place excerpt carries the text (once)
+    expect(screen.getAllByText(SOURCES[0]!.text)).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: /产品手册\.pdf/ }));
-    expect(screen.getByText(SOURCES[0]!.text)).toBeTruthy();
+    // expanded: excerpt + ChunkCard full text
+    expect(screen.getAllByText(SOURCES[0]!.text)).toHaveLength(2);
     // The other source stays collapsed.
-    expect(screen.queryByText(SOURCES[1]!.text)).toBeNull();
+    expect(screen.getAllByText(SOURCES[1]!.text)).toHaveLength(1);
   });
 
   it("collapses the expanded chunk when the same source is clicked again", () => {
-    renderWithI18n(<KbCitationSources sources={SOURCES} />);
+    renderSources();
     fireEvent.click(screen.getByRole("button", { name: /产品手册\.pdf/ }));
-    expect(screen.getByText(SOURCES[0]!.text)).toBeTruthy();
+    expect(screen.getAllByText(SOURCES[0]!.text)).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /产品手册\.pdf/ }));
-    expect(screen.queryByText(SOURCES[0]!.text)).toBeNull();
+    expect(screen.getAllByText(SOURCES[0]!.text)).toHaveLength(1);
   });
 
   it("switches the expanded chunk when another source is clicked", () => {
-    renderWithI18n(<KbCitationSources sources={SOURCES} />);
+    renderSources();
     fireEvent.click(screen.getByRole("button", { name: /产品手册\.pdf/ }));
     fireEvent.click(screen.getByRole("button", { name: /架构设计\.md/ }));
-    expect(screen.queryByText(SOURCES[0]!.text)).toBeNull();
-    expect(screen.getByText(SOURCES[1]!.text)).toBeTruthy();
+    expect(screen.getAllByText(SOURCES[0]!.text)).toHaveLength(1);
+    expect(screen.getAllByText(SOURCES[1]!.text)).toHaveLength(2);
   });
 });

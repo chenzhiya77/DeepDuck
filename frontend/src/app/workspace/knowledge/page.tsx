@@ -193,7 +193,12 @@ export default function KnowledgePage() {
             </div>
           )
         }
-        right={<KnowledgeChatPanel kb={selectedKb} />}
+        right={
+          <KnowledgeChatPanel
+            kb={selectedKb}
+            onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
+          />
+        }
       />
 
       {drawerDoc && selectedKbId && (

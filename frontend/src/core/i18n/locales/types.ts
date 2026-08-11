@@ -346,6 +346,13 @@ export interface Translations {
       deepResearch: string;
       deepResearchHint: string;
       sources: string;
+      sourcesTitle: (count: number) => string;
+      chunkSources: (count: number) => string;
+      wikiSources: (count: number) => string;
+      viewAllSources: string;
+      sourceTypeChunk: string;
+      sourceTypeWiki: string;
+      sourceMarkAriaLabel: (index: number, name: string) => string;
       expandToFullPage: string;
       pageLabel: (page: number) => string;
       inputPlaceholder: string;

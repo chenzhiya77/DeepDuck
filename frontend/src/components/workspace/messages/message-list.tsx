@@ -283,6 +283,7 @@ export function MessageList({
   initialScroll = "smooth",
   resizeScroll = "smooth",
   renderMessageFooter,
+  renderMessageContent,
 }: {
   className?: string;
   testId?: string;
@@ -318,6 +319,12 @@ export function MessageList({
   resizeScroll?: ConversationProps["resize"];
   /** Optional per-message footer (e.g. kb citation cards on assistant answers). */
   renderMessageFooter?: (message: Message) => ReactNode;
+  /**
+   * Optional per-message body renderer (e.g. kb citation superscripts).
+   * Return undefined/null to fall back to the default MarkdownContent —
+   * surfaces that never pass this see zero behaviour change.
+   */
+  renderMessageContent?: (message: Message, content: string, isLoading: boolean) => ReactNode;
 }) {
   const { t } = useI18n();
   const sidecar = useMaybeSidecar();
@@ -1153,10 +1160,12 @@ export function MessageList({
                     group,
                     groupIndex,
                     <div className="w-full">
-                      <MarkdownContent
-                        content={extractContentFromMessage(message)}
-                        isLoading={thread.isLoading}
-                      />
+                      {renderMessageContent?.(message, extractContentFromMessage(message), thread.isLoading) ?? (
+                        <MarkdownContent
+                          content={extractContentFromMessage(message)}
+                          isLoading={thread.isLoading}
+                        />
+                      )}
                       {renderTokenUsage({
                         messages: group.messages,
                         turnUsageMessages,

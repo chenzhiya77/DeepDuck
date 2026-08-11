@@ -18,7 +18,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
-function toCitation(value: unknown, fallbackName?: string): KnowledgeCitation | null {
+function toCitation(value: unknown, fallbackName: string | undefined, sourceType: "chunk" | "wiki"): KnowledgeCitation | null {
   const record = asRecord(value);
   if (!record) return null;
   const chunkId = record.chunk_id ?? record.entry_id;
@@ -31,6 +31,7 @@ function toCitation(value: unknown, fallbackName?: string): KnowledgeCitation | 
     heading_path: Array.isArray(record.heading_path) ? (record.heading_path as string[]) : [],
     text,
     score: typeof record.score === "number" ? record.score : 0,
+    source_type: sourceType,
   };
 }
 
@@ -52,9 +53,12 @@ export function parseRetrievalToolContent(toolName: string | null | undefined, c
     return [];
   }
   const key = toolName === "hybrid_search" ? "results" : toolName === "wiki_search" ? "entries" : "evidence";
+  // source_type is derived from the tool the payload came through — zero
+  // backend change (phase-2 batch-1, spec §4).
+  const sourceType = toolName === "wiki_search" ? "wiki" : "chunk";
   const items = Array.isArray(record[key]) ? (record[key] as unknown[]) : [];
   return items
-    .map((item) => toCitation(item, typeof asRecord(item)?.title === "string" ? (asRecord(item)?.title as string) : undefined))
+    .map((item) => toCitation(item, typeof asRecord(item)?.title === "string" ? (asRecord(item)?.title as string) : undefined, sourceType))
     .filter((citation): citation is KnowledgeCitation => citation !== null);
 }
 

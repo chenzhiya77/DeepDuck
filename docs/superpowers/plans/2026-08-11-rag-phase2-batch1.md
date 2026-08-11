@@ -90,7 +90,15 @@
 - [x] 写失败测试 → RED → 实现 → GREEN → `pnpm check`。
 - [x] Commit: `feat(frontend): add recall test tab with three-path result panes`。
 
-## Task 4: P2 引用 UX 改造
+## Task 4: P2 引用 UX 改造 ✅ 已完成（2026-08-11）
+
+**实施记录**：
+1. **MessageList 注入点**：新增可选 prop `renderMessageContent(message, content, isLoading)`，仅作用于 assistant group 正文渲染点；不传时行为与现状完全一致（通用面板零影响）。KnowledgeChatPanel 的实现对非 ai 消息返回 undefined（人类消息中的 `[1]` 不会误上标化）。
+2. **`[n]` 分片走 rehype 插件**（`rehype-citation-marks.ts`，手写递归遍历、无新依赖）：hast text 节点 → `<sup data-citation-index>`；跳过 code/pre 子树；限 1–2 位数字（`[100]` 不误伤）。`sup` 组件覆写按消息 sources 闭包取数，无效 index 回退裸 `<sup>` 不崩溃。
+3. **锚点联动用 CustomEvent**（`kb-citation-jump`，detail `{messageId, index}`）：正文标记与底部来源区分属 MessageList 的两个 render prop，无共同 React 状态祖先，事件总线自包含；来源区按 messageId 过滤，跳转 → 展开 + 高亮 2s + chunk 自动展开 ChunkCard（覆盖移动端 tap 契约）。
+4. **一期 kb-citation-sources/chat-panel 既有测试迁移**到新交互（先展开再断言；摘录与 ChunkCard 全文同文多处匹配，断言改 `getAllByText` 计数）。
+5. **工程教训**：Write 工具覆盖已存在文件两次出现旧内容残留（新内容+旧尾部拼接）；且 PowerShell `Get-Content/Set-Content` 截断含中文的 UTF-8 文件会按 GBK 误读造成乱码+BOM。修复方式：DeleteFile 后 Write 重建，并用 Read 验证中文完整性。
+6. revert 证明点已执行：折叠默认态改 `useState(true)` → 10 个折叠相关用例 RED → restore → GREEN。
 
 **Files:**
 - Modify: `frontend/src/core/knowledge/citations.ts`（`toCitation` 填充 `source_type`：`toolName === "wiki_search" ? "wiki" : "chunk"`）、`types.ts`（`KnowledgeCitation.source_type?`）
@@ -107,10 +115,10 @@
 - 锚点联动：点击标记 → 来源区展开并滚动到对应项短暂高亮；移动端 tap → 直接展开切片。
 - 兼容：无 `source_type` 的历史引用按 `"chunk"` 渲染。
 
-- [ ] 写失败测试：`source_type` 填充；上标渲染（流式中不渲染、结束后渲染）；折叠/展开交互；徽标展示；wiki 点击回调；一句多标不崩溃。
-- [ ] RED → 实现 → GREEN；revert 折叠为默认展开，证明折叠用例 RED，restore，GREEN。
-- [ ] `pnpm check` + backend `test_rag_agent_assembly.py` GREEN。
-- [ ] Commit: `feat(frontend): rework citation UX with superscript marks and collapsible source cards`。
+- [x] 写失败测试：`source_type` 填充；上标渲染（流式中不渲染、结束后渲染）；折叠/展开交互；徽标展示；wiki 点击回调；一句多标不崩溃。
+- [x] RED → 实现 → GREEN；revert 折叠为默认展开，证明折叠用例 RED，restore，GREEN。
+- [x] `pnpm check` + backend `test_rag_agent_assembly.py` GREEN。
+- [x] Commit: `feat(frontend): rework citation UX with superscript marks and collapsible source cards`。
 
 ## Task 5: P3 文档状态三路子标记
 

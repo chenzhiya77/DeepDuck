@@ -49,6 +49,7 @@ def test_builtin_rag_soul_contains_citation_and_refusal_rules():
 
     assert soul is not None
     assert "[n]" in soul, "citation format rule missing"
+    assert "禁止一句多标" in soul, "citation overload discipline missing (phase-2 batch-1 P2)"
     assert "知识库中没有找到相关内容" in soul, "refusal policy missing"
     assert "hybrid_search" in soul and "wiki_search" in soul and "graph_search" in soul
     assert "深度检索" in soul, "static dual-mode guidance missing"

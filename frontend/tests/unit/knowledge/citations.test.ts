@@ -57,6 +57,12 @@ describe("parseRetrievalToolContent", () => {
     expect(citations[0]).toMatchObject({ chunk_id: "c1", doc_name: "手册.pdf", page: 3, text: "切片一" });
   });
 
+  test("stamps source_type from the tool name (phase-2 batch-1: zero backend change)", () => {
+    expect(parseRetrievalToolContent("hybrid_search", JSON.stringify(HYBRID))[0]?.source_type).toBe("chunk");
+    expect(parseRetrievalToolContent("graph_search", JSON.stringify(GRAPH))[0]?.source_type).toBe("chunk");
+    expect(parseRetrievalToolContent("wiki_search", JSON.stringify(WIKI))[0]?.source_type).toBe("wiki");
+  });
+
   test("parses wiki_search entries into entry citations (title as source name)", () => {
     const citations = parseRetrievalToolContent("wiki_search", JSON.stringify(WIKI));
     expect(citations).toHaveLength(1);

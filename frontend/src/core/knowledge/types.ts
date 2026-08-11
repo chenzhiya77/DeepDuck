@@ -84,6 +84,12 @@ export interface KnowledgeCitation {
   heading_path: string[];
   text: string;
   score: number;
+  /**
+   * Filled by the frontend parse layer from the tool name (phase-2 batch-1):
+   * wiki_search → "wiki", hybrid/graph → "chunk". Undefined on legacy
+   * citations — render those as "chunk".
+   */
+  source_type?: "chunk" | "wiki";
 }
 
 // ── P1 recall test (phase-2 batch-1) ─────────────────────────────────────

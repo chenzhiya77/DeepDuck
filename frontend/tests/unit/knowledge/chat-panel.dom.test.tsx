@@ -234,7 +234,10 @@ describe("KnowledgeChatPanel", () => {
         {renderFooter(aiMessage)}
       </I18nContext.Provider>,
     );
-    expect(screen.getByText("参考来源")).toBeTruthy();
+    expect(screen.getByText(/参考来源 · 1/)).toBeTruthy();
+    // P2: collapsed by default — the doc name appears after expanding
+    expect(screen.queryByText("产品手册.pdf")).toBeNull();
+    fireEvent.click(screen.getByText(/参考来源 · 1/));
     expect(screen.getByText("产品手册.pdf")).toBeTruthy();
   });
 

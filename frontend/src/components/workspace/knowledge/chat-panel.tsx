@@ -35,6 +35,7 @@ import { useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { cn } from "@/lib/utils";
 
+import { KbAssistantContent } from "./kb-assistant-content";
 import { KbCitationSources } from "./kb-citation-sources";
 
 /**
@@ -44,7 +45,14 @@ import { KbCitationSources } from "./kb-citation-sources";
  * the history popover lists only this kb's threads, and the global recent-chat
  * list filters kb threads out (ima-style isolation).
  */
-export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
+export function KnowledgeChatPanel({
+  kb,
+  onOpenWikiEntry,
+}: {
+  kb: KnowledgeBase | null;
+  /** Wiki citation cards open the entry drawer (overlay) via this page-held callback. */
+  onOpenWikiEntry?: (entryId: string) => void;
+}) {
   const { t } = useI18n();
   const tc = t.knowledge.chat;
   const kbId = kb?.id ?? null;
@@ -133,6 +141,29 @@ export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
       }
       return (
         <KbCitationSources
+          messageId={message.id ?? ""}
+          onOpenWikiEntry={onOpenWikiEntry}
+          sources={sourcesForAssistantMessage(thread.messages, message.id)}
+        />
+      );
+    },
+    [thread.messages, onOpenWikiEntry],
+  );
+
+  // P2 citation UX (phase-2 batch-1): the answer's [n] markers become
+  // superscript CitationMarks once streaming ends (deferred — a half-typed
+  // `[` mid-stream never flickers). Human messages stay untouched; surfaces
+  // without this prop render plain markdown as before.
+  const renderMessageContent = useCallback(
+    (message: Message, content: string, isLoading: boolean) => {
+      if (message.type !== "ai") {
+        return undefined;
+      }
+      return (
+        <KbAssistantContent
+          content={content}
+          isLoading={isLoading}
+          messageId={message.id ?? ""}
           sources={sourcesForAssistantMessage(thread.messages, message.id)}
         />
       );
@@ -231,6 +262,7 @@ export function KnowledgeChatPanel({ kb }: { kb: KnowledgeBase | null }) {
             hasMoreHistory={hasMoreHistory}
             loadMoreHistory={loadMoreHistory}
             isHistoryLoading={isHistoryLoading}
+            renderMessageContent={renderMessageContent}
             renderMessageFooter={renderMessageFooter}
             onSubmitHumanInput={handleSubmitHumanInput}
           />
