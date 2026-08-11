@@ -233,15 +233,17 @@ async def _graph_search_impl(
             }
         )
 
-    # Shared per-run citation counter — see hybrid_search_tool.
+    # Shared per-run citation counter — see hybrid_search_tool. The span is
+    # also stated in the message text (prose >> JSON fields for attention).
     start = claim_citation_range(runtime, len(evidence))
     for i, item in enumerate(evidence):
         item["citation_no"] = start + i + 1
+    span = f"[{start + 1}]" if len(evidence) == 1 else f"[{start + 1}]-[{start + len(evidence)}]"
     return {
         "entities": entities,
         "relations": relations,
         "evidence": evidence,
-        "message": f"命中 {len(matched_names)} 个实体，扩展出 {len(seen)} 个节点、{len(relations)} 条关系、{len(evidence)} 条切片证据。",
+        "message": f"命中 {len(matched_names)} 个实体，扩展出 {len(seen)} 个节点、{len(relations)} 条关系、{len(evidence)} 条切片证据（引用编号 {span}，标注时照抄 citation_no）。",
     }
 
 

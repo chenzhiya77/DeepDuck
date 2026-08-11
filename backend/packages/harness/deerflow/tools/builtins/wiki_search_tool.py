@@ -62,11 +62,13 @@ async def _wiki_search_impl(
         )
     if not entries:
         return {"entries": [], "message": "百科条目库中未找到相关内容（该知识库可能尚未生成百科条目）。"}
-    # Shared per-run citation counter — see hybrid_search_tool.
+    # Shared per-run citation counter — see hybrid_search_tool. The span is
+    # also stated in the message text (prose >> JSON fields for attention).
     start = claim_citation_range(runtime, len(entries))
     for i, item in enumerate(entries):
         item["citation_no"] = start + i + 1
-    return {"entries": entries, "message": f"命中 {len(entries)} 篇百科条目。"}
+    span = f"[{start + 1}]" if len(entries) == 1 else f"[{start + 1}]-[{start + len(entries)}]"
+    return {"entries": entries, "message": f"命中 {len(entries)} 篇百科条目（引用编号 {span}，标注时照抄 citation_no）。"}
 
 
 @tool(parse_docstring=True)

@@ -78,9 +78,11 @@ async def test_hybrid_calls_share_one_counter(tools_env) -> None:
     first = await _hybrid_search_impl("Gateway 的作用", runtime, **kwargs)
     second = await _hybrid_search_impl("MinerU 的角色", runtime, **kwargs)
     assert [item["citation_no"] for item in first["results"]] == [1, 2]
+    assert "引用编号 [1]-[2]" in first["message"], "the span must be stated in prose (JSON fields get little attention)"
     assert [item["citation_no"] for item in second["results"]] == [3, 4], (
         "the second call must continue the shared counter instead of renumbering from 1"
     )
+    assert "引用编号 [3]-[4]" in second["message"]
 
 
 @requires_qdrant
@@ -110,6 +112,7 @@ async def test_wiki_continues_after_hybrid(tools_env) -> None:
     assert [item["citation_no"] for item in wiki["entries"]] == [3], (
         "wiki entries must continue the counter the vector call started"
     )
+    assert "引用编号 [3]" in wiki["message"], "single-item spans collapse to one number"
 
 
 @requires_qdrant
@@ -137,3 +140,4 @@ async def test_graph_continues_after_hybrid(tools_env) -> None:
     assert min(item["citation_no"] for item in graph["evidence"]) == 3, (
         "graph evidence must continue the shared counter"
     )
+    assert "引用编号 [3]" in graph["message"], "graph message states the evidence span in prose"

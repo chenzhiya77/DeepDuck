@@ -89,11 +89,14 @@ async def _hybrid_search_impl(
         results.append(item)
     # Shared per-run citation counter: the model cites [n] copied from
     # citation_no, and all three retrieval tools must agree on one numbering
-    # space or the model's marks collapse onto colliding [1]s.
+    # space or the model's marks collapse onto colliding [1]s. The number
+    # span is ALSO stated in the message text — JSON fields get far less
+    # model attention than prose.
     start = claim_citation_range(runtime, len(results))
     for i, item in enumerate(results):
         item["citation_no"] = start + i + 1
-    return {"results": results, "message": f"检索到 {len(results)} 条相关切片。{degrade_note}"}
+    span = f"[{start + 1}]" if len(results) == 1 else f"[{start + 1}]-[{start + len(results)}]"
+    return {"results": results, "message": f"检索到 {len(results)} 条相关切片（引用编号 {span}，标注时照抄 citation_no）。{degrade_note}"}
 
 
 @tool(parse_docstring=True)
