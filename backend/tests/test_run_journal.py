@@ -112,6 +112,28 @@ class TestLlmCallbacks:
         assert messages[0]["content"]["content"] == "Answer"
 
     @pytest.mark.anyio
+    async def test_on_llm_end_nostream_tag_skips_message_event(self, journal_setup):
+        """Auxiliary LLM calls tagged TAG_NOSTREAM (e.g. graph_search's internal
+        query-entity extraction) must not persist an llm.ai.response row — the
+        message feed reads the event store, so a persisted row renders as a bare
+        assistant bubble containing the helper model's raw output."""
+        from langgraph.constants import TAG_NOSTREAM
+
+        j, store = journal_setup
+        usage = {"input_tokens": 75, "output_tokens": 21, "total_tokens": 96}
+        j.on_llm_end(
+            _make_llm_response('{"entities": ["智能体"]}', usage=usage),
+            run_id=uuid4(),
+            parent_run_id=None,
+            tags=[TAG_NOSTREAM],
+        )
+        await j.flush()
+        messages = await store.list_messages("t1")
+        assert messages == []
+        # Token accounting still records the auxiliary call.
+        assert j._total_tokens == 96
+
+    @pytest.mark.anyio
     async def test_on_llm_end_with_tool_calls_produces_ai_tool_call(self, journal_setup):
         """LLM response with pending tool_calls emits llm.ai.response with tool_calls in content."""
         j, store = journal_setup

@@ -27,6 +27,7 @@ from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage, ToolMessage, messages_from_dict
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.types import Command
 
 from deerflow.agents.human_input import read_human_input_response
@@ -432,6 +433,13 @@ class RunJournal(BaseCallbackHandler):
                 else:
                     logger.warning(f"on_llm_end {run_id}: generation has no message attribute: {gen}")
 
+        # Auxiliary helper-model calls (e.g. graph_search's internal query-entity
+        # extraction) are tagged TAG_NOSTREAM so their tokens stay off the client
+        # message stream. The journal must honor the same contract: persisting
+        # their responses as llm.ai.response rows would leak the helper's raw
+        # output into the message feed as a bare assistant bubble.
+        is_auxiliary_call = bool(tags) and TAG_NOSTREAM in tags
+
         for message in messages:
             caller = self._identify_caller(tags)
             self._remember_current_run_tool_calls(message, caller=caller)
@@ -466,19 +474,20 @@ class RunJournal(BaseCallbackHandler):
                 self._seen_llm_starts.add(rid)
 
             # Message event: checkpoint-aligned llm.ai.response payload.
-            self._put(
-                event_type=LLM_AI_RESPONSE_EVENT.event_type,
-                category=LLM_AI_RESPONSE_EVENT.category,
-                content=message.model_dump(),
-                metadata={
-                    "caller": caller,
-                    "usage": usage_dict,
-                    "latency_ms": latency_ms,
-                    "llm_call_index": call_index,
-                },
-            )
-            if rid not in self._counted_message_llm_run_ids:
-                self._record_message_summary(message, caller=caller)
+            if not is_auxiliary_call:
+                self._put(
+                    event_type=LLM_AI_RESPONSE_EVENT.event_type,
+                    category=LLM_AI_RESPONSE_EVENT.category,
+                    content=message.model_dump(),
+                    metadata={
+                        "caller": caller,
+                        "usage": usage_dict,
+                        "latency_ms": latency_ms,
+                        "llm_call_index": call_index,
+                    },
+                )
+                if rid not in self._counted_message_llm_run_ids:
+                    self._record_message_summary(message, caller=caller)
 
             # Token accumulation (dedup by langchain run_id to avoid double-counting
             # when the callback fires more than once for the same response)
