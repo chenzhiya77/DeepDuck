@@ -155,8 +155,14 @@ async def _graph_search_impl(
     matched_names: list[str] = []
     entity_scores: dict[str, float] = {}
     for name in query_names:
-        (name_vector,) = await embedder.embed([name], text_type="query")
-        for point in await vector_store.query_entities(dense=name_vector.dense, kb_id=kb_id, top_k=per_entity_match, score_threshold=ENTITY_MATCH_MIN_SCORE):
+        if name == query.strip():
+            # Query-fallback landing: the candidate IS the query — reuse the
+            # embedding from step 2 instead of paying a duplicate remote call.
+            name_dense = query_dense
+        else:
+            (name_vector,) = await embedder.embed([name], text_type="query")
+            name_dense = name_vector.dense
+        for point in await vector_store.query_entities(dense=name_dense, kb_id=kb_id, top_k=per_entity_match, score_threshold=ENTITY_MATCH_MIN_SCORE):
             entity_name = str(point.payload["name"])
             matched_names.append(entity_name)
             entity_scores[entity_name] = max(entity_scores.get(entity_name, 0.0), float(point.score))
