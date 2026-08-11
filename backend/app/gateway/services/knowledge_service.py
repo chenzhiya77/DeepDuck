@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import time
 import uuid
@@ -238,6 +239,14 @@ class KnowledgeService:
         def _failure_note(exc: BaseException) -> str:
             return f"该路检索失败（{type(exc).__name__}），详情见服务端日志。"
 
+        # Impl messages carry a model-directed citation-span note（引用编号…
+        # 照抄 citation_no）— prompt plumbing for the answering model. The
+        # recall-test UI shows messages to humans, so strip the note here.
+        span_note = re.compile(r"（引用编号 [^）]*）")
+
+        def _user_facing(message: str) -> str:
+            return span_note.sub("", message)
+
         if isinstance(vector_raw, BaseException):
             vector_path: dict[str, Any] = {"hits": [], "message": _failure_note(vector_raw)}
         else:
@@ -255,7 +264,7 @@ class KnowledgeService:
                     }
                     for rank, item in enumerate(vector_raw.get("results", []), start=1)
                 ],
-                "message": vector_raw.get("message", ""),
+                "message": _user_facing(vector_raw.get("message", "")),
             }
 
         if isinstance(graph_raw, BaseException):
@@ -265,7 +274,7 @@ class KnowledgeService:
                 "entities": graph_raw.get("entities", []),
                 "relations": graph_raw.get("relations", []),
                 "evidence": graph_raw.get("evidence", []),
-                "message": graph_raw.get("message", ""),
+                "message": _user_facing(graph_raw.get("message", "")),
             }
 
         if isinstance(wiki_raw, BaseException):
@@ -282,7 +291,7 @@ class KnowledgeService:
                     }
                     for rank, entry in enumerate(wiki_raw.get("entries", []), start=1)
                 ],
-                "message": wiki_raw.get("message", ""),
+                "message": _user_facing(wiki_raw.get("message", "")),
             }
 
         return {

@@ -256,4 +256,9 @@ async def test_recall_test_matches_direct_impl_results(tools_env, monkeypatch, t
     assert {hit["entry_id"] for hit in result["paths"]["wiki"]["hits"]} == {entry["entry_id"] for entry in direct_wiki["entries"]}
     assert result["paths"]["graph"]["entities"], f"graph 路应命中种子实体 Gateway: {result['paths']['graph']!r}"
     assert result["paths"]["graph"]["evidence"], "graph 路应带出切片证据"
+    # The citation-span note in impl messages is model-facing prompt plumbing;
+    # the recall-test UI shows messages to humans, so it must be stripped.
+    for path in result["paths"].values():
+        assert "引用编号" not in path["message"], f"model-directed note leaked into the UI message: {path['message']!r}"
+    assert "检索到" in result["paths"]["vector"]["message"], "the human-facing summary must survive stripping"
     assert all(isinstance(value, int) for value in result["elapsed_ms"].values())
