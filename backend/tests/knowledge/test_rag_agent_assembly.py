@@ -52,6 +52,7 @@ def test_builtin_rag_soul_contains_citation_and_refusal_rules():
     assert "禁止一句多标" in soul, "citation overload discipline missing (phase-2 batch-1 P2)"
     assert "citation_no" in soul, "marks must copy the evidence's citation_no (shared numbering space)"
     assert "不要在回答末尾输出引用清单" in soul, "the redundant trailing reference list must be banned (the structured sources strip covers it)"
+    assert "不向用户解释检索过程与路由行为" in soul, "meta-commentary about retrieval routing/source quality must be banned (mainstream products stay silent)"
     assert "知识库中没有找到相关内容" in soul, "refusal policy missing"
     assert "hybrid_search" in soul and "wiki_search" in soul and "graph_search" in soul
     assert "深度检索" in soul, "static dual-mode guidance missing"
