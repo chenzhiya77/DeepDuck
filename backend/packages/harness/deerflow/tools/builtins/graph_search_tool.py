@@ -19,6 +19,7 @@ from typing import Annotated, Any
 from langchain.tools import tool
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
+from deerflow.knowledge.citation_counter import claim_citation_range
 from deerflow.knowledge.embedder import DashScopeEmbedder
 from deerflow.knowledge.graph.extractor import _strip_fence, get_extract_llm
 from deerflow.knowledge.graph.normalizer import cosine_similarity
@@ -232,6 +233,10 @@ async def _graph_search_impl(
             }
         )
 
+    # Shared per-run citation counter — see hybrid_search_tool.
+    start = claim_citation_range(runtime, len(evidence))
+    for i, item in enumerate(evidence):
+        item["citation_no"] = start + i + 1
     return {
         "entities": entities,
         "relations": relations,

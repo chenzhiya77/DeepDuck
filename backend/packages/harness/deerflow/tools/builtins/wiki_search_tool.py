@@ -13,6 +13,7 @@ from typing import Annotated, Any
 from langchain.tools import tool
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
+from deerflow.knowledge.citation_counter import claim_citation_range
 from deerflow.knowledge.embedder import DashScopeEmbedder
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
@@ -61,6 +62,10 @@ async def _wiki_search_impl(
         )
     if not entries:
         return {"entries": [], "message": "百科条目库中未找到相关内容（该知识库可能尚未生成百科条目）。"}
+    # Shared per-run citation counter — see hybrid_search_tool.
+    start = claim_citation_range(runtime, len(entries))
+    for i, item in enumerate(entries):
+        item["citation_no"] = start + i + 1
     return {"entries": entries, "message": f"命中 {len(entries)} 篇百科条目。"}
 
 
