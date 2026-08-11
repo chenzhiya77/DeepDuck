@@ -91,6 +91,27 @@ describe("CitationMark", () => {
       window.removeEventListener(KB_CITATION_JUMP_EVENT, listener);
     }
   });
+
+  it("maps the model's citation_no to the display number (sorted card position)", () => {
+    // Production overlap: the model wrote backend citation_no [9], which
+    // merged onto the sample chunk whose sorted position is 2 — the mark must
+    // show/jump the DISPLAY number 2, never the raw 9 (Perplexity-style: the
+    // visible number space is the deduped, sorted card list).
+    const wiki: KnowledgeCitation = { ...WIKI_1, citation_nos: [1] };
+    const chunk: KnowledgeCitation = { ...CHUNK_1, citation_nos: [5, 9] };
+    const listener = rs.fn();
+    window.addEventListener(KB_CITATION_JUMP_EVENT, listener);
+    try {
+      const Sup = createCitationSupRenderer([wiki, chunk], "m1");
+      renderWithI18n(<Sup data-citation-index="9">9</Sup>);
+      const mark = screen.getByRole("button", { name: "引用 2：手册.pdf" });
+      expect(mark.textContent).toBe("2");
+      fireEvent.click(mark);
+      expect(listener.mock.calls[0]![0].detail).toEqual({ messageId: "m1", index: 2 });
+    } finally {
+      window.removeEventListener(KB_CITATION_JUMP_EVENT, listener);
+    }
+  });
 });
 
 describe("KbAssistantContent (deferred superscripts)", () => {
@@ -183,6 +204,18 @@ describe("KbCitationSources (collapsed by default)", () => {
     expect(highlighted.getAttribute("data-citation-highlight")).toBe("true");
     // chunk card auto-expanded (移动端 tap 直接展开切片)
     expect(screen.getAllByText(/切片原文一/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows display numbers (sorted positions) even when citations carry backend citation_nos", () => {
+    // The card must show its display number [1] — not the merged backend
+    // numbers [4]·[9] — so the visible number space stays 1..N continuous.
+    const chunk: KnowledgeCitation = { ...CHUNK_1, citation_nos: [4, 9] };
+    renderWithI18n(<KbCitationSources messageId="m1" sources={[chunk]} />);
+    fireEvent.click(screen.getByText(/参考来源 · 1/));
+    const card = screen.getByTestId("citation-card-chunk-c1");
+    expect(card.textContent).toContain("[1]");
+    expect(card.textContent).not.toContain("[4]");
+    expect(card.textContent).not.toContain("[9]");
   });
 
   it("ignores jump events for other messages", () => {

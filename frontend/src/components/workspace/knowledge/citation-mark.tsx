@@ -47,6 +47,7 @@ export function CitationMark({
   messageId,
 }: {
   citation: KnowledgeCitation;
+  /** The DISPLAY number (the source's sorted strip position) — rendered on the mark and used as the jump target. */
   index: number;
   messageId: string;
 }) {
@@ -77,18 +78,33 @@ export function CitationMark({
 
 /**
  * Build the markdown ``sup`` component override for one assistant message.
- * The rehype-citation-marks plugin emits ``<sup data-citation-index="n">``;
- * valid indexes (1-based into ``sources``) become CitationMark, anything
- * else falls back to a plain sup so stale/foreign marks never crash.
+ * The rehype-citation-marks plugin emits ``<sup data-citation-index="n">``
+ * where ``n`` is the number the model wrote (the backend citation_no — an
+ * internal handle, NEVER shown). The mark renders the DISPLAY number: the
+ * source's 1-based position in the deduped, citation_no-sorted strip, so the
+ * visible number space is continuous (1..N) and matches the cards exactly
+ * (Perplexity-style). Resolution: (1) the source whose merged citation_nos
+ * contains ``n`` — hybrid/graph overlap assigns one chunk several numbers,
+ * and the model may cite any of them; (2) positional fallback for legacy
+ * sources without citation_nos. Anything else falls back to a plain sup so
+ * stale/foreign marks never crash.
  */
 export function createCitationSupRenderer(sources: KnowledgeCitation[], messageId: string) {
   return function CitationSupRenderer(props: ComponentProps<"sup">) {
     const raw = (props as Record<string, unknown>)["data-citation-index"];
-    const index = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
-    const citation = Number.isInteger(index) && index >= 1 ? sources[index - 1] : undefined;
+    const cited = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+    if (!Number.isInteger(cited) || cited < 1) {
+      return <sup {...props} />;
+    }
+    let position = sources.findIndex((source) => source.citation_nos?.includes(cited));
+    if (position < 0 && sources.every((source) => !source.citation_nos)) {
+      // Legacy payloads carry no citation numbers at all — positional mapping.
+      position = cited - 1 < sources.length ? cited - 1 : -1;
+    }
+    const citation = position >= 0 ? sources[position] : undefined;
     if (!citation) {
       return <sup {...props} />;
     }
-    return <CitationMark citation={citation} index={index} messageId={messageId} />;
+    return <CitationMark citation={citation} index={position + 1} messageId={messageId} />;
   };
 }

@@ -24,6 +24,7 @@ function toCitation(value: unknown, fallbackName: string | undefined, sourceType
   const chunkId = record.chunk_id ?? record.entry_id;
   const text = record.text ?? record.content;
   if (typeof chunkId !== "string" || typeof text !== "string") return null;
+  const citationNo = typeof record.citation_no === "number" ? record.citation_no : null;
   return {
     chunk_id: chunkId,
     doc_name: typeof record.doc_name === "string" ? record.doc_name : (fallbackName ?? ""),
@@ -32,6 +33,7 @@ function toCitation(value: unknown, fallbackName: string | undefined, sourceType
     text,
     score: typeof record.score === "number" ? record.score : 0,
     source_type: sourceType,
+    ...(citationNo != null ? { citation_nos: [citationNo] } : {}),
   };
 }
 
@@ -65,7 +67,11 @@ export function parseRetrievalToolContent(toolName: string | null | undefined, c
 /**
  * Sources for one assistant answer: every retrieval tool message between the
  * preceding human message and that answer, merged in order and deduped by
- * chunk_id (first recall wins — it carries the better rank).
+ * chunk_id. First recall wins for the card content (better rank), but the
+ * citation numbers of EVERY path merge onto the surviving card: hybrid and
+ * graph often recall the same chunk under different citation_no ranges, and
+ * the model cites either number — dropping one would strand those ``[n]``
+ * marks (they'd point past the end of the deduped list).
  */
 export function sourcesForAssistantMessage(
   messages: readonly Message[],
@@ -85,7 +91,7 @@ export function sourcesForAssistantMessage(
       break;
     }
   }
-  const seen = new Set<string>();
+  const byChunkId = new Map<string, KnowledgeCitation>();
   const sources: KnowledgeCitation[] = [];
   for (let index = turnStart; index < answerIndex; index += 1) {
     const message = messages[index];
@@ -94,12 +100,34 @@ export function sourcesForAssistantMessage(
     }
     const toolName = (message as { name?: string }).name;
     for (const citation of parseRetrievalToolContent(toolName, message.content)) {
-      if (seen.has(citation.chunk_id)) {
+      const existing = byChunkId.get(citation.chunk_id);
+      if (existing) {
+        if (citation.citation_nos) {
+          const merged = existing.citation_nos ?? (existing.citation_nos = []);
+          for (const no of citation.citation_nos) {
+            if (!merged.includes(no)) {
+              merged.push(no);
+            }
+          }
+        }
         continue;
       }
-      seen.add(citation.chunk_id);
+      byChunkId.set(citation.chunk_id, citation);
       sources.push(citation);
     }
   }
-  return sources;
+  // Display order: sort by each card's smallest merged citation_no. Tool
+  // completion order varies run to run (wiki may finish before or after the
+  // chunk tools), but the citation numbers are what the model saw — sorting
+  // by them keeps the strip stable, and the sorted position becomes the
+  // display number (1..N), the only number the user ever sees. Cards without
+  // citation numbers (legacy payloads) keep their relative order at the end.
+  return sources
+    .map((source, index) => ({ source, index }))
+    .sort((a, b) => minCitationNo(a.source) - minCitationNo(b.source) || a.index - b.index)
+    .map((entry) => entry.source);
+}
+
+function minCitationNo(source: KnowledgeCitation): number {
+  return source.citation_nos?.length ? Math.min(...source.citation_nos) : Number.POSITIVE_INFINITY;
 }

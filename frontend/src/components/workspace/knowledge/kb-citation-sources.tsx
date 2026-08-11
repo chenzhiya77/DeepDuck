@@ -1,7 +1,7 @@
 "use client";
 
 import { BookOpenIcon, ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/core/i18n/hooks";
@@ -65,6 +65,7 @@ export function KbCitationSources({
   const [showAll, setShowAll] = useState(false);
   const [expandedChunkId, setExpandedChunkId] = useState<string | null>(null);
   const [highlightNumber, setHighlightNumber] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => groupSources(sources), [sources]);
   const chunkCount = useMemo(() => sources.filter((s) => (s.source_type ?? "chunk") === "chunk").length, [sources]);
@@ -85,7 +86,9 @@ export function KbCitationSources({
         setExpandedChunkId(group.items[0]!.citation.chunk_id);
       }
       window.setTimeout(() => {
-        document.querySelector(`[data-citation-highlight="true"]`)?.scrollIntoView?.({ block: "nearest" });
+        // Scoped to this strip — a document-wide selector could scroll to a
+        // highlight left over in ANOTHER message's sources.
+        rootRef.current?.querySelector(`[data-citation-highlight="true"]`)?.scrollIntoView?.({ block: "nearest" });
       }, 0);
       window.setTimeout(() => setHighlightNumber(null), HIGHLIGHT_MS);
     };
@@ -102,7 +105,7 @@ export function KbCitationSources({
     groups.flatMap((group) => group.items).find((item) => item.citation.chunk_id === expandedChunkId)?.citation ?? null;
 
   return (
-    <div className="mt-3 flex flex-col gap-1.5" data-testid="kb-citation-sources">
+    <div ref={rootRef} className="mt-3 flex flex-col gap-1.5" data-testid="kb-citation-sources">
       <button
         aria-expanded={expanded}
         className="text-muted-foreground hover:bg-muted/60 flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors"
@@ -122,6 +125,10 @@ export function KbCitationSources({
             const first = group.items[0]!;
             const isWiki = group.sourceType === "wiki";
             const isHighlighted = group.items.some((item) => item.number === highlightNumber);
+            // Display numbers only: each item's number IS its sorted strip
+            // position (the raw backend citation_nos are internal handles and
+            // never shown), so the visible number space stays 1..N continuous
+            // and one card carries exactly one number per merged slice.
             const numbers = group.items.map((item) => `[${item.number}]`).join("·");
             return (
               <li key={group.key}>

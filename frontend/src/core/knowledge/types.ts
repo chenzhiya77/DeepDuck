@@ -90,6 +90,14 @@ export interface KnowledgeCitation {
    * citations — render those as "chunk".
    */
   source_type?: "chunk" | "wiki";
+  /**
+   * Backend-assigned citation numbers (rag citation_counter) — INTERNAL
+   * handles, never shown to the user. A chunk recalled by multiple paths
+   * (hybrid AND graph) carries every number it was assigned; the answer's
+   * ``[n]`` marks resolve through these to this card, and the card's sorted
+   * strip position becomes the display number actually rendered.
+   */
+  citation_nos?: number[];
 }
 
 // ── P1 recall test (phase-2 batch-1) ─────────────────────────────────────
