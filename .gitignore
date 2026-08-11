@@ -37,6 +37,8 @@ extensions_config.json
 # IDE
 .idea/
 .vscode/
+# Qoder auto-generated repowiki knowledge base
+.qoder/
 
 # Coverage report
 coverage.xml
