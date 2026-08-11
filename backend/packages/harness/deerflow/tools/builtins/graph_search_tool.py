@@ -44,11 +44,16 @@ def _empty(message: str) -> dict:
 
 
 async def _extract_query_entities(query: str, llm: Any) -> list[str]:
+    from langgraph.constants import TAG_NOSTREAM
+
     response = await llm.ainvoke(
         [
             {"role": "system", "content": _QUERY_ENTITY_SYSTEM_PROMPT},
             {"role": "user", "content": query},
-        ]
+        ],
+        # Internal helper call: keep its raw JSON tokens off the run's
+        # messages stream, otherwise they render as assistant messages.
+        config={"tags": [TAG_NOSTREAM]},
     )
     try:
         data = json.loads(_strip_fence(str(response.content)))

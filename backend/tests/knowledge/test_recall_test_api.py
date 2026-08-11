@@ -219,7 +219,7 @@ class _QueryLLM:
     def __init__(self, names: list[str]) -> None:
         self._names = names
 
-    async def ainvoke(self, messages) -> SimpleNamespace:
+    async def ainvoke(self, messages, **_kwargs) -> SimpleNamespace:
         # _extract_query_entities expects {"entities": [...]}, not a bare list
         return SimpleNamespace(content=json.dumps({"entities": self._names}, ensure_ascii=False))
 

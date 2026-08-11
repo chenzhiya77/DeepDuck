@@ -35,7 +35,7 @@ class _QueryLLM:
     def __init__(self, names: list[str]) -> None:
         self._names = names
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, **_kwargs):
         import json
 
         return SimpleNamespace(content=json.dumps({"entities": self._names}))

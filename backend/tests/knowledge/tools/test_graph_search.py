@@ -22,6 +22,35 @@ from ..conftest import requires_qdrant
 from .conftest import DOC_ID, KB_ID, OWNER_ID, KeywordEmbedder
 
 
+class _ConfigRecordingLLM:
+    """Captures the invoke config so tests can assert stream-isolation tags."""
+
+    def __init__(self) -> None:
+        self.configs: list[dict] = []
+
+    async def ainvoke(self, messages, config=None, **kwargs):
+        self.configs.append(config or {})
+        return SimpleNamespace(content=json.dumps({"entities": ["x"]}, ensure_ascii=False))
+
+
+@pytest.mark.asyncio
+async def test_extract_query_entities_isolated_from_messages_stream():
+    """The extractor is an internal LLM call: without langgraph's TAG_NOSTREAM
+    its raw JSON tokens leak onto the run's messages stream and render as an
+    assistant message in the UI."""
+    from langgraph.constants import TAG_NOSTREAM
+
+    from deerflow.tools.builtins.graph_search_tool import _extract_query_entities
+
+    llm = _ConfigRecordingLLM()
+    names = await _extract_query_entities("PDF", llm)
+
+    assert names == ["x"]
+    assert llm.configs, "the extractor must invoke the llm"
+    tags = llm.configs[0].get("tags") or []
+    assert TAG_NOSTREAM in tags, "extractor tokens must stay off the messages stream"
+
+
 class _QueryLLM:
     """Extracts the keyword found in the query as the entity list."""
 
@@ -29,7 +58,7 @@ class _QueryLLM:
         self._entities = entities
         self.calls: list[str] = []
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, **_kwargs):
         self.calls.append(str(messages))
         return SimpleNamespace(content=json.dumps({"entities": self._entities}, ensure_ascii=False))
 

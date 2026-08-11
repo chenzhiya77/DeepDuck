@@ -34,7 +34,10 @@ class DeepResearchMiddleware(AgentMiddleware):
         # ToolMessage and must not be re-injected.
         if not messages or not isinstance(messages[-1], HumanMessage):
             return request
-        return request.override(messages=[*messages, HumanMessage(content=DEEP_RESEARCH_INSTRUCTION, name="deep_research_mode")])
+        # hide_from_ui: model-facing plumbing — without it the run journal
+        # mistakes the instruction for the user's input (first_human_message)
+        # and the frontend renders it as a user bubble.
+        return request.override(messages=[*messages, HumanMessage(content=DEEP_RESEARCH_INSTRUCTION, name="deep_research_mode", additional_kwargs={"hide_from_ui": True})])
 
     @override
     def wrap_model_call(self, request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]) -> ModelCallResult:

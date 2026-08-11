@@ -123,6 +123,10 @@ def test_deep_research_middleware_injects_three_path_instruction_when_enabled():
     assert "wiki_search" in injected.content
     assert "graph_search" in injected.content
     assert "必须" in injected.content
+    # The injected instruction is model-facing plumbing: without hide_from_ui
+    # the run journal mistakes it for the user's input (first_human_message)
+    # and the frontend renders it as a user bubble.
+    assert injected.additional_kwargs.get("hide_from_ui") is True, "injected instruction must be hidden from UI surfaces"
 
 
 def test_deep_research_middleware_noop_without_flag():
