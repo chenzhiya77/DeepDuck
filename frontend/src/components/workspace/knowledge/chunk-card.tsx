@@ -46,8 +46,10 @@ export function ChunkCard({
           </span>
         )}
         {entities && entities.length > 0 && (
-          <span className="flex items-center gap-1">
-            <span>{tc.entities}:</span>
+          // flex-wrap: many long entity badges must flow onto multiple lines
+          // inside the card; shrink-0 keeps the label from being squeezed.
+          <span className="flex flex-wrap items-center gap-1">
+            <span className="shrink-0">{tc.entities}:</span>
             {entities.map((entity) => (
               <Badge key={entity} className="text-[10px]" variant="secondary">
                 {entity}

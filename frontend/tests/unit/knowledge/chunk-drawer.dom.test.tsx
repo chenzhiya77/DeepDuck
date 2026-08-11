@@ -74,6 +74,17 @@ describe("ChunkCard", () => {
     expect(screen.getByText(/产品手册\.pdf/)).toBeTruthy();
     expect(screen.getByText(CHUNK.text)).toBeTruthy();
   });
+
+  it("lets the entity badge row wrap so many long entities never overflow the card", () => {
+    // Production repro: six long entity badges (知识库 RAG 一期 / 三路索引 /
+    // 三栏工作台 / …) rendered on ONE nowrap flex line and spilled past the
+    // card boundary; the 实体: label got squeezed into a vertical column.
+    const many = ["知识库 RAG 一期", "三路索引", "三栏工作台", "多租户共享与权限", "召回测试与评估面板", "图谱可视化探索"];
+    renderWithI18n(<ChunkCard text={CHUNK.text} entities={many} />);
+    const label = screen.getByText(/实体/);
+    expect(label.className).toContain("shrink-0");
+    expect(label.parentElement!.className).toContain("flex-wrap");
+  });
 });
 
 describe("ChunkDrawer", () => {
