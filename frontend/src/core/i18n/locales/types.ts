@@ -311,6 +311,7 @@ export interface Translations {
     tabs: {
       documents: string;
       wiki: string;
+      recall: string;
     };
     wikiPanel: {
       empty: string;
@@ -322,6 +323,21 @@ export interface Translations {
       openInTab: string;
       loading: string;
       notFound: string;
+    };
+    recallTest: {
+      queryPlaceholder: string;
+      run: string;
+      running: string;
+      costHint: string;
+      topK: string;
+      vectorPath: string;
+      graphPath: string;
+      wikiPath: string;
+      entities: string;
+      relations: string;
+      evidence: string;
+      empty: string;
+      failed: string;
     };
     chat: {
       newChat: string;

@@ -385,6 +385,7 @@ export const enUS: Translations = {
     tabs: {
       documents: "Documents",
       wiki: "Wiki",
+      recall: "Recall test",
     },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",
@@ -396,6 +397,21 @@ export const enUS: Translations = {
       openInTab: "Open in the Wiki tab",
       loading: "Loading…",
       notFound: "Entry missing or deleted",
+    },
+    recallTest: {
+      queryPlaceholder: "Enter a test query…",
+      run: "Run",
+      running: "Running…",
+      costHint: "Hits the live retrieval chain — model calls are billed",
+      topK: "Hits per path",
+      vectorPath: "Vector",
+      graphPath: "Graph",
+      wikiPath: "Wiki",
+      entities: "Entities",
+      relations: "Relations",
+      evidence: "Chunk evidence",
+      empty: "Run a query to compare hits and scores across the three paths",
+      failed: "Recall test failed",
     },
     chat: {
       newChat: "New chat",

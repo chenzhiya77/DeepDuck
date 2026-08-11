@@ -9,6 +9,7 @@ import { DocumentPanel } from "@/components/workspace/knowledge/document-panel";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
+import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
 import { WikiPanel } from "@/components/workspace/knowledge/wiki-panel";
 import { useI18n } from "@/core/i18n/hooks";
@@ -177,6 +178,12 @@ export default function KnowledgePage() {
                   entries={wikiEntries}
                   loading={wikiEntriesQuery.isLoading}
                   onOpenEntry={openWikiEntry}
+                />
+              }
+              recall={
+                <RecallTestPanel
+                  kbId={selectedKb.id}
+                  onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
                 />
               }
             />

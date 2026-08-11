@@ -11,6 +11,7 @@ import type {
   KnowledgeBase,
   KnowledgeChunkPage,
   KnowledgeDocument,
+  RecallTestResponse,
   WikiEntryDetail,
   WikiEntrySummary,
   WikiGenerateAck,
@@ -153,4 +154,12 @@ export function getWikiEntry(kbId: string, entryId: string): Promise<WikiEntryDe
   return fetch(kbUrl(kbId, `/wiki/entries/${encodeURIComponent(entryId)}`)).then((r) =>
     readResponse<WikiEntryDetail>(r, "Failed to fetch wiki entry"),
   );
+}
+
+export function recallTest(kbId: string, body: { query: string; top_k: number }): Promise<RecallTestResponse> {
+  return fetch(kbUrl(kbId, "/recall-test"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then((r) => readResponse<RecallTestResponse>(r, "Failed to run recall test"));
 }

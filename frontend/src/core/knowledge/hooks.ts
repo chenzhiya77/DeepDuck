@@ -139,3 +139,14 @@ export function useWikiEntry(kbId: string | null, entryId: string | null) {
     enabled: kbId !== null && entryId !== null,
   });
 }
+
+/**
+ * P1 recall test (phase-2 batch-1): a mutation, not a query — each run hits
+ * the live retrieval chain (embedding + rerank + entity-extraction LLM), so
+ * results must never be cached/refetched implicitly.
+ */
+export function useRecallTest(kbId: string) {
+  return useMutation({
+    mutationFn: (body: { query: string; top_k: number }) => api.recallTest(kbId, body),
+  });
+}

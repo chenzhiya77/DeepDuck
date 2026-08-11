@@ -74,7 +74,9 @@
 - [x] 运行捕获 RED → 实现 → GREEN；revert 单路降级为整响应 500，证明降级用例 RED，restore，GREEN。
 - [x] Commit: `feat(rag): add recall-test API over the three retrieval impls`。
 
-## Task 3: P1 前端「检索测试」tab
+## Task 3: P1 前端「检索测试」tab ✅ 已完成（2026-08-11）
+
+**实施记录**：契约与 plan 一致，两处实现期决策记录：① top_k 控件用 `Input type=number`（提交时 clamp 1–20）而非 Select——中栏窄、选项型交互在此无收益且 dom 测试更稳；② “请求去抖”落实为 isPending 禁用提交 + Enter/按钮同一入口（显式动作场景，输入去抖无意义）。组件自治（useRecallTest + 本地 state），keep-alive 下上次结果跨 tab 切换保留。wiki 命中点击经 page 的 `setDrawerEntryId` 走右侧抽屉（不切 tab，与 Task 1 叠加层设计一致）。
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/recall-test-panel.tsx`
@@ -85,8 +87,8 @@
 - UI：query 输入 + top_k 选择 + 成本提示文案（"会产生检索调用成本"）+ 三路分栏（各带 `score_type` 标注与 `elapsed_ms`）；命中项复用 `ChunkCard` 展开原文；wiki 命中点击 → `openWikiEntry`（右侧抽屉，不切中栏）。
 - 请求去抖/进行中禁用提交；错误 toast。
 
-- [ ] 写失败测试 → RED → 实现 → GREEN → `pnpm check`。
-- [ ] Commit: `feat(frontend): add recall test tab with three-path result panes`。
+- [x] 写失败测试 → RED → 实现 → GREEN → `pnpm check`。
+- [x] Commit: `feat(frontend): add recall test tab with three-path result panes`。
 
 ## Task 4: P2 引用 UX 改造
 

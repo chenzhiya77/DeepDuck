@@ -85,3 +85,65 @@ export interface KnowledgeCitation {
   text: string;
   score: number;
 }
+
+// ── P1 recall test (phase-2 batch-1) ─────────────────────────────────────
+
+export interface RecallVectorHit {
+  chunk_id: string;
+  doc_name: string;
+  text: string;
+  heading_path: string[];
+  page: number | null;
+  /** null when the reranker degraded to RRF order (schema deliberately nullable). */
+  score: number | null;
+  rank: number;
+}
+
+export interface RecallGraphEntity {
+  name: string;
+  type: string;
+  description: string;
+}
+
+export interface RecallGraphRelation {
+  source: string;
+  target: string;
+  relation: string;
+  description: string;
+}
+
+export interface RecallGraphEvidence {
+  chunk_id: string;
+  doc_name: string;
+  text: string;
+  heading_path: string[];
+  page: number | null;
+  score: number;
+}
+
+export interface RecallWikiHit {
+  entry_id: string;
+  title: string;
+  summary: string;
+  score: number | null;
+  rank: number;
+}
+
+export type RecallPathName = "vector" | "graph" | "wiki";
+
+export interface RecallTestResponse {
+  query: string;
+  paths: {
+    vector: { hits: RecallVectorHit[]; message: string };
+    graph: {
+      entities: RecallGraphEntity[];
+      relations: RecallGraphRelation[];
+      evidence: RecallGraphEvidence[];
+      message: string;
+    };
+    wiki: { hits: RecallWikiHit[]; message: string };
+  };
+  /** Per-path score semantics — never compare scores across paths. */
+  score_type: Record<RecallPathName, string>;
+  elapsed_ms: Record<RecallPathName, number>;
+}

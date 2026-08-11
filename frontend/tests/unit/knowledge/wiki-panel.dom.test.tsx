@@ -73,6 +73,7 @@ function renderTabs(props?: Partial<Parameters<typeof MiddleTabs>[0]>) {
           onTabChange={setTab}
           documents={<div data-testid="documents-pane">文档内容</div>}
           wiki={<div data-testid="wiki-pane">百科内容</div>}
+          recall={<div data-testid="recall-pane">检索测试内容</div>}
           {...handlers}
           {...props}
         />
@@ -115,6 +116,16 @@ describe("MiddleTabs", () => {
     expect(stateOf(screen.getByTestId("documents-pane"))).toBe("inactive");
     // still in the DOM — state/polling survive the switch
     expect(screen.getByText("文档内容")).toBeTruthy();
+  });
+
+  it("switches to the recall-test tab (keep-alive, inactive panes hidden)", () => {
+    renderTabs();
+    // Radix activates a tab trigger on mouseDown (automatic mode).
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "检索测试" }));
+    const stateOf = (node: HTMLElement) => node.closest("[data-slot='tabs-content']")?.getAttribute("data-state");
+    expect(stateOf(screen.getByTestId("recall-pane"))).toBe("active");
+    expect(stateOf(screen.getByTestId("documents-pane"))).toBe("inactive");
+    expect(screen.getByText("百科内容")).toBeTruthy();
   });
 
   it("carries library-level actions in the overflow menu (incl. upload — a library action)", async () => {

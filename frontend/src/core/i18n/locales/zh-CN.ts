@@ -369,6 +369,7 @@ export const zhCN: Translations = {
     tabs: {
       documents: "文档",
       wiki: "百科",
+      recall: "检索测试",
     },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",
@@ -380,6 +381,21 @@ export const zhCN: Translations = {
       openInTab: "在百科 tab 中查看",
       loading: "加载中…",
       notFound: "条目不存在或已删除",
+    },
+    recallTest: {
+      queryPlaceholder: "输入测试问题…",
+      run: "开始检索",
+      running: "检索中…",
+      costHint: "走真实检索链路，会产生检索调用成本",
+      topK: "每路条数",
+      vectorPath: "向量路",
+      graphPath: "图谱路",
+      wikiPath: "百科路",
+      entities: "实体",
+      relations: "关系",
+      evidence: "切片证据",
+      empty: "输入问题后开始检索，对比三路命中与得分",
+      failed: "检索测试失败",
     },
     chat: {
       newChat: "新建会话",

@@ -27,16 +27,17 @@ import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { runAfterMenuClose } from "./run-after-menu-close";
 
-export type KnowledgeMiddleTab = "documents" | "wiki";
+export type KnowledgeMiddleTab = "documents" | "wiki" | "recall";
 
 /**
  * Middle-column container (phase-2 batch-1, spec §3 三行结构):
  *   row 1 — library header: kb name + overflow menu (generate wiki / rename /
  *           delete — library-scoped, visible for every tab);
- *   row 2 — the 文档|百科 tab strip;
+ *   row 2 — the 文档|百科|检索测试 tab strip;
  *   row 3 — tab panes, keep-alive via forceMount so switching never unmounts
  *           the document table (search/sort/selection state and the indexing
- *           refetch interval survive) nor the wiki list.
+ *           refetch interval survive), the wiki list, or the recall-test
+ *           panel's last result.
  * Upload lives in the library menu (adding a document is a library-level
  * action, like generate-wiki/rename); the documents pane keeps its toolbar
  * lean (search + sort) and still accepts drag-drop anywhere on the pane.
@@ -52,6 +53,7 @@ export function MiddleTabs({
   onDeleteKb,
   documents,
   wiki,
+  recall,
 }: {
   kb: KnowledgeBase;
   activeTab: KnowledgeMiddleTab;
@@ -63,6 +65,7 @@ export function MiddleTabs({
   onDeleteKb: () => Promise<void> | void;
   documents: ReactNode;
   wiki: ReactNode;
+  recall: ReactNode;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
@@ -136,6 +139,7 @@ export function MiddleTabs({
         <TabsList className="mx-4 mt-2" variant="line">
           <TabsTrigger value="documents">{tk.tabs.documents}</TabsTrigger>
           <TabsTrigger value="wiki">{tk.tabs.wiki}</TabsTrigger>
+          <TabsTrigger value="recall">{tk.tabs.recall}</TabsTrigger>
         </TabsList>
         <TabsContent
           className="min-h-0 data-[state=inactive]:hidden"
@@ -150,6 +154,13 @@ export function MiddleTabs({
           value="wiki"
         >
           <div className="flex h-full min-h-0 flex-col">{wiki}</div>
+        </TabsContent>
+        <TabsContent
+          className="min-h-0 data-[state=inactive]:hidden"
+          forceMount
+          value="recall"
+        >
+          <div className="flex h-full min-h-0 flex-col">{recall}</div>
         </TabsContent>
       </Tabs>
 
