@@ -79,9 +79,7 @@ async def test_hybrid_calls_share_one_counter(tools_env) -> None:
     second = await _hybrid_search_impl("MinerU 的角色", runtime, **kwargs)
     assert [item["citation_no"] for item in first["results"]] == [1, 2]
     assert "引用编号 [1]-[2]" in first["message"], "the span must be stated in prose (JSON fields get little attention)"
-    assert [item["citation_no"] for item in second["results"]] == [3, 4], (
-        "the second call must continue the shared counter instead of renumbering from 1"
-    )
+    assert [item["citation_no"] for item in second["results"]] == [3, 4], "the second call must continue the shared counter instead of renumbering from 1"
     assert "引用编号 [3]-[4]" in second["message"]
 
 
@@ -109,9 +107,7 @@ async def test_wiki_continues_after_hybrid(tools_env) -> None:
         top_k=1,
     )
     assert [item["citation_no"] for item in hybrid["results"]] == [1, 2]
-    assert [item["citation_no"] for item in wiki["entries"]] == [3], (
-        "wiki entries must continue the counter the vector call started"
-    )
+    assert [item["citation_no"] for item in wiki["entries"]] == [3], "wiki entries must continue the counter the vector call started"
     assert "引用编号 [3]" in wiki["message"], "single-item spans collapse to one number"
 
 
@@ -137,7 +133,5 @@ async def test_graph_continues_after_hybrid(tools_env) -> None:
         graph_store=tools_env["graph_store"],
     )
     assert graph["evidence"], "graph path must surface evidence for the seeded subgraph"
-    assert min(item["citation_no"] for item in graph["evidence"]) == 3, (
-        "graph evidence must continue the shared counter"
-    )
+    assert min(item["citation_no"] for item in graph["evidence"]) == 3, "graph evidence must continue the shared counter"
     assert "引用编号 [3]" in graph["message"], "graph message states the evidence span in prose"

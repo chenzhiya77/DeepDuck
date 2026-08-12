@@ -168,8 +168,14 @@ class KnowledgeStore:
         progress_percent: int | None = None,
         chunk_count: int | None = None,
         error: str | None = None,
+        path_status: dict[str, str] | None = None,
     ) -> dict[str, Any] | None:
-        """Advance the document status machine; ``None`` leaves a field unchanged."""
+        """Advance the document status machine; ``None`` leaves a field unchanged.
+
+        ``path_status`` merges **partially** (spec 2026-08-11 §5): only the
+        keys passed on this call are updated — the other paths' sub-states
+        persist untouched. A wholesale overwrite would violate the contract.
+        """
         async with self._sf() as session:
             row = await session.get(DocumentRow, doc_id)
             if row is None:
@@ -181,6 +187,10 @@ class KnowledgeStore:
                 row.chunk_count = chunk_count
             if error is not None:
                 row.error = error
+            if path_status is not None:
+                merged = dict(row.path_status or {})
+                merged.update(path_status)
+                row.path_status = merged
             await session.commit()
             await session.refresh(row)
             return self._row_to_dict(row)
@@ -188,7 +198,8 @@ class KnowledgeStore:
     async def reset_document_for_retry(self, doc_id: str) -> dict[str, Any] | None:
         """Reset a failed document to ``uploaded`` for re-indexing: clears progress,
         chunk count, and the error (unlike ``update_document_status`` whose ``None``
-        means \"leave unchanged\")."""
+        means \"leave unchanged\"). The per-path sub-status is cleared too — the
+        re-run rebuilds it from scratch (spec 2026-08-11 §5)."""
         async with self._sf() as session:
             row = await session.get(DocumentRow, doc_id)
             if row is None:
@@ -197,6 +208,7 @@ class KnowledgeStore:
             row.progress_percent = 0
             row.chunk_count = None
             row.error = None
+            row.path_status = None
             await session.commit()
             await session.refresh(row)
             return self._row_to_dict(row)

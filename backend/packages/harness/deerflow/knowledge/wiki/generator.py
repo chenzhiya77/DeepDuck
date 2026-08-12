@@ -42,6 +42,17 @@ DEFAULT_TRIGGER_THRESHOLD = 0.9
 #: Characters of entry content folded into the embedding text.
 EMBED_CONTENT_CHARS = 500
 
+#: In-flight generation runs per KB (single-process asyncio counter). Feeds the
+#: library-level ``wiki: generating`` sub-status on the documents endpoint —
+#: covers both the manual button and the worker's auto trigger (spec §5 P3).
+_IN_FLIGHT: dict[str, int] = {}
+
+
+def wiki_generation_in_progress(kb_id: str) -> bool:
+    """True while any ``generate_wiki`` run for the KB is active."""
+    return _IN_FLIGHT.get(kb_id, 0) > 0
+
+
 WIKI_SYSTEM_PROMPT = """你是知识库百科撰写者。根据给定的实体信息与来源切片，撰写一篇简明的中文百科条目：
 - 第一行输出 markdown 一级标题（# 实体名）。
 - 正文 2~4 段：先给定义与定位，再展开关键事实、与其他实体的关系，最后补充应用场景或注意事项（若材料支持）。
@@ -132,41 +143,49 @@ async def generate_wiki(
     if llm is None:
         llm = _default_llm()
 
-    if only_dirty:
-        dirty = await wiki_store.list_entries(kb_id, status="dirty")
-        if not dirty:
-            return WikiStats()
-        entity_rows = {row["name"]: row for row in await graph_store.list_entities(kb_id)}
-        targets = [entity_rows[entry["title"]] for entry in dirty if entry["title"] in entity_rows]
-        if len(targets) < len(dirty):
-            logger.info("wiki regeneration: %d dirty entries have no graph entity left, skipped", len(dirty) - len(targets))
-    else:
-        targets = await select_head_entities(graph_store, kb_id, top_ratio=top_ratio)
+    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    try:
+        if only_dirty:
+            dirty = await wiki_store.list_entries(kb_id, status="dirty")
+            if not dirty:
+                return WikiStats()
+            entity_rows = {row["name"]: row for row in await graph_store.list_entities(kb_id)}
+            targets = [entity_rows[entry["title"]] for entry in dirty if entry["title"] in entity_rows]
+            if len(targets) < len(dirty):
+                logger.info("wiki regeneration: %d dirty entries have no graph entity left, skipped", len(dirty) - len(targets))
+        else:
+            targets = await select_head_entities(graph_store, kb_id, top_ratio=top_ratio)
 
-    stats = WikiStats(selected=len(targets))
-    if not targets:
+        stats = WikiStats(selected=len(targets))
+        if not targets:
+            return stats
+
+        for row in targets:
+            chunk_ids = list(row.get("source_chunk_ids") or [])
+            chunks = await store.get_chunks_by_ids(chunk_ids)
+            materials = "\n\n".join(f"【切片 {i + 1}】{chunk['text']}" for i, chunk in enumerate(chunks))
+            messages = [
+                {"role": "system", "content": WIKI_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (f"实体：{row['name']}\n类型：{row.get('type') or '未分类'}\n已有描述：{row.get('description') or '无'}\n\n来源切片：\n{materials or '（无切片材料）'}"),
+                },
+            ]
+            response = await llm.ainvoke(messages)
+            content = str(response.content).strip()
+            if not content:
+                logger.warning("wiki generation returned empty content for entity %s, skipped", row["name"])
+                continue
+            entry = await wiki_store.upsert_entry(kb_id, title=row["name"], content=content, source_chunk_ids=chunk_ids, status="ready")
+            if vector_store is not None and embedder is not None:
+                (embedding,) = await embedder.embed([f"{row['name']}\n{content[:EMBED_CONTENT_CHARS]}"])
+                await vector_store.upsert_wiki_entries([WikiEntryUpsert(entry_id=entry["id"], kb_id=kb_id, title=row["name"], dense=embedding.dense)])
+            stats.generated += 1
+            stats.titles.append(row["name"])
         return stats
-
-    for row in targets:
-        chunk_ids = list(row.get("source_chunk_ids") or [])
-        chunks = await store.get_chunks_by_ids(chunk_ids)
-        materials = "\n\n".join(f"【切片 {i + 1}】{chunk['text']}" for i, chunk in enumerate(chunks))
-        messages = [
-            {"role": "system", "content": WIKI_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (f"实体：{row['name']}\n类型：{row.get('type') or '未分类'}\n已有描述：{row.get('description') or '无'}\n\n来源切片：\n{materials or '（无切片材料）'}"),
-            },
-        ]
-        response = await llm.ainvoke(messages)
-        content = str(response.content).strip()
-        if not content:
-            logger.warning("wiki generation returned empty content for entity %s, skipped", row["name"])
-            continue
-        entry = await wiki_store.upsert_entry(kb_id, title=row["name"], content=content, source_chunk_ids=chunk_ids, status="ready")
-        if vector_store is not None and embedder is not None:
-            (embedding,) = await embedder.embed([f"{row['name']}\n{content[:EMBED_CONTENT_CHARS]}"])
-            await vector_store.upsert_wiki_entries([WikiEntryUpsert(entry_id=entry["id"], kb_id=kb_id, title=row["name"], dense=embedding.dense)])
-        stats.generated += 1
-        stats.titles.append(row["name"])
-    return stats
+    finally:
+        remaining = _IN_FLIGHT.get(kb_id, 0) - 1
+        if remaining > 0:
+            _IN_FLIGHT[kb_id] = remaining
+        else:
+            _IN_FLIGHT.pop(kb_id, None)

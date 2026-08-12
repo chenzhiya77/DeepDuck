@@ -53,6 +53,11 @@ class DocumentRow(Base):
     # Backfilled when indexing finishes; NULL renders as "—" in the doc list.
     chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-path sub-status (phase-2 batch-1 P3, spec 2026-08-11 §5):
+    # {"vector": pending/indexing/done/failed, "graph": .../degraded/...}.
+    # NULL on legacy rows — the frontend renders no hover then. The wiki leg
+    # is NOT stored here: it is a library-level mirror injected at read time.
+    path_status: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 

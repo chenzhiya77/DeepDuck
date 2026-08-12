@@ -148,6 +148,47 @@ async def test_document_list_carries_indexing_fields(service):
     assert doc["uploader_id"] == OWNER_ID
 
 
+async def test_document_list_injects_library_level_wiki_status(service):
+    """spec 2026-08-11 §5：列表响应携带 path_status；wiki 子状态为库级镜像，
+    响应组装时注入、全库文档共享；dirty 条目计入已生成（2026-08-12 口径）；
+    库存为 null 的老行不注入（前端不展示悬停）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
+    doc_id = upload.json()["id"]
+    # 模拟 worker 推进后的 per-path 子状态
+    await service.store.update_document_status(doc_id, "indexing", path_status={"vector": "done", "graph": "indexing"})
+    # 老行：path_status 为 null
+    await service.store.create_document(doc_id="doc-legacy", kb_id=kb["id"], uploader_id=OWNER_ID, name="old.md", size_bytes=1, storage_path="p")
+
+    listing = client.get(f"/api/knowledge-bases/{kb['id']}/documents")
+    by_id = {doc["id"]: doc for doc in listing.json()}
+    # 库无 ready 条目且未在生成 → pending；同一库级值注入到所有文档
+    assert by_id[doc_id]["path_status"] == {"vector": "done", "graph": "indexing", "wiki": "pending"}
+    assert by_id["doc-legacy"]["path_status"] is None
+
+    # dirty = 已生成待刷新，内容过期但可用，仍属已生成态
+    await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="旧内容", source_chunk_ids=["c1"], status="dirty")
+    listing = client.get(f"/api/knowledge-bases/{kb['id']}/documents")
+    by_id = {doc["id"]: doc for doc in listing.json()}
+    assert by_id[doc_id]["path_status"]["wiki"] == "ready"
+    assert by_id["doc-legacy"]["path_status"] is None
+
+
+async def test_document_list_wiki_generating_only_when_in_flight(service, monkeypatch):
+    """generating：库无已生成条目且存在进行中的生成（手动或自动触发）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
+    doc_id = upload.json()["id"]
+    await service.store.update_document_status(doc_id, "indexing", path_status={"vector": "done", "graph": "done"})
+
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
+    listing = client.get(f"/api/knowledge-bases/{kb['id']}/documents")
+    (doc,) = listing.json()
+    assert doc["path_status"]["wiki"] == "generating"
+
+
 async def test_chunks_endpoint_paginates(service, session_factory):
     client = _client(service)
     kb = _create_kb(client)

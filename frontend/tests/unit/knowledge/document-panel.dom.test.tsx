@@ -7,9 +7,10 @@
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-import { DocumentPanel } from "@/components/workspace/knowledge/document-panel";
+import { DocumentPanel, PathStatusBreakdown } from "@/components/workspace/knowledge/document-panel";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
+import { pathStatusLines } from "@/core/knowledge/path-status";
 import type { KnowledgeBase, KnowledgeDocument } from "@/core/knowledge/types";
 
 const KB: KnowledgeBase = {
@@ -33,6 +34,7 @@ function doc(partial: Partial<KnowledgeDocument>): KnowledgeDocument {
     progress_percent: 100,
     chunk_count: 12,
     error: null,
+    path_status: null,
     created_at: "2026-08-09T10:00:00Z",
     ...partial,
   };
@@ -160,6 +162,73 @@ describe("DocumentPanel stats row and upload", () => {
   it("shows the empty-state copy when the kb has no documents", () => {
     renderPanel({ documents: [] });
     expect(screen.getByText(/还没有文档/)).toBeTruthy();
+  });
+});
+
+describe("DocumentPanel per-path status hover (P3, spec 2026-08-11 §5)", () => {
+  it("wraps the status badge with a tooltip trigger when path_status is present", () => {
+    renderPanel({
+      documents: [
+        doc({
+          status: "indexing",
+          progress_percent: 87,
+          chunk_count: null,
+          path_status: { vector: "done", graph: "indexing", wiki: "pending" },
+        }),
+      ],
+    });
+    expect(screen.getByTestId("path-status-trigger")).toBeTruthy();
+  });
+
+  it("renders no tooltip trigger for legacy rows whose path_status is null", () => {
+    renderPanel();
+    expect(screen.queryByTestId("path-status-trigger")).toBeNull();
+  });
+
+  it("assembles the three-path breakdown, combining the graph-sourced percent", () => {
+    render(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <PathStatusBreakdown
+          doc={doc({
+            status: "indexing",
+            progress_percent: 87,
+            path_status: { vector: "done", graph: "indexing", wiki: "pending" },
+          })}
+        />
+      </I18nContext.Provider>,
+    );
+    const breakdown = screen.getByTestId("path-status-breakdown");
+    expect(breakdown.textContent).toContain("向量");
+    expect(breakdown.textContent).toContain("已完成");
+    // 悬停文案组合展示百分比（progress_percent 与图谱路同源）
+    expect(breakdown.textContent).toContain("图谱");
+    expect(breakdown.textContent).toContain("索引中 87%");
+    // wiki 为库级镜像——文案挑明库级语义
+    expect(breakdown.textContent).toContain("百科（库级）");
+    expect(breakdown.textContent).toContain("待处理");
+  });
+
+  it("renders degraded / failed / wiki-ready states verbatim", () => {
+    render(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <PathStatusBreakdown
+          doc={doc({
+            status: "ready",
+            path_status: { vector: "failed", graph: "degraded", wiki: "ready" },
+          })}
+        />
+      </I18nContext.Provider>,
+    );
+    const breakdown = screen.getByTestId("path-status-breakdown");
+    expect(breakdown.textContent).toContain("失败");
+    expect(breakdown.textContent).toContain("部分降级");
+    expect(breakdown.textContent).toContain("已生成");
+    // 就绪态不组合百分比
+    expect(breakdown.textContent).not.toContain("%");
+  });
+
+  it("pathStatusLines returns null for legacy rows (no hover)", () => {
+    expect(pathStatusLines(doc({ path_status: null }))).toBeNull();
   });
 });
 

@@ -138,6 +138,116 @@ async def test_parse_failure_marks_failed_with_error(session_factory):
     doc = await store.get_document("doc-1")
     assert doc["status"] == "failed"
     assert "MinerU 服务不可用" in (doc["error"] or "")
+    # 解析失败时索引阶段未进入，path_status 保持 null（不展示悬停）
+    assert doc["path_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_path_status_tracks_pipeline_stages(session_factory):
+    """spec 2026-08-11 §5：worker 各阶段推进时顺手写入 path_status，且写入
+    时序必须体现「向量先就绪」（vector done 先于 graph done）。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    snapshots: list[dict[str, str]] = []
+    original = store.update_document_status
+
+    async def spy(doc_id, status, **kwargs):
+        result = await original(doc_id, status, **kwargs)
+        if result is not None and kwargs.get("path_status") is not None:
+            snapshots.append(dict(result["path_status"]))
+        return result
+
+    store.update_document_status = spy  # type: ignore[method-assign]
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm)
+
+    await worker.process_document("doc-1")
+
+    assert snapshots == [
+        {"vector": "pending", "graph": "pending"},  # 进入 indexing
+        {"vector": "done", "graph": "pending"},  # index_chunks 完成 → 向量先就绪
+        {"vector": "done", "graph": "indexing"},  # 图谱路开始
+        {"vector": "done", "graph": "done"},  # 图谱路完成
+    ]
+
+
+@pytest.mark.asyncio
+async def test_path_status_graph_degraded_shares_source_with_error_marker(session_factory):
+    """graph=degraded 与 error 子标记 ``graph degraded`` 同源（同一 stats.degraded 判定）。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    await store.update_document_status("doc-1", "indexing", chunk_count=2)
+    await store.insert_chunks(
+        [
+            {"chunk_id": "doc-1#0000", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 0, "text": "DeerFlow 智能体", "heading_path": [], "page": None, "token_count": 5},
+            {"chunk_id": "doc-1#0001", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 1, "text": "坏切片", "heading_path": [], "page": None, "token_count": 5},
+        ]
+    )
+    worker = _worker(store, session_factory, llm=_PartialFailLLM())
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert "graph degraded" in doc["error"]  # 1/2 切片失败超阈值
+    assert doc["path_status"] == {"vector": "done", "graph": "degraded"}
+
+
+@pytest.mark.asyncio
+async def test_path_status_marks_unfinished_legs_failed_on_pipeline_error(session_factory):
+    """流水线硬失败：所有未达终态的路标记 failed（done/degraded 不被覆写）。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    vs = _vector_store_mock()
+    vs.upsert_chunks = AsyncMock(side_effect=RuntimeError("qdrant down"))
+    worker = _worker(store, session_factory, vector_store=vs, parse_fn=_parse_fn(), llm=FakeLLM({}))
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "failed"
+    assert doc["path_status"] == {"vector": "failed", "graph": "failed"}
+
+
+class _FailingEmbedder:
+    """EmbedderError 软失败：index_chunks 逐批降级，不阻断文档 ready。
+
+    仅首次调用（向量路切片批次）抛错；后续调用（图谱路实体向量）正常返回——
+    模拟部分限流场景：向量路零切片入库，但图谱路实体向量仍可写入。
+    """
+
+    batch_size = 20
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def embed(self, texts, *, text_type: str = "document"):
+        from deerflow.knowledge.embedder import EmbedderError
+
+        self.calls += 1
+        if self.calls == 1:
+            raise EmbedderError("embedding service down")
+        return [EmbeddingResult(dense=[0.01 * (i + 1)] * 1024, sparse=SparseVector(indices=[i + 1], values=[0.5])) for i, _ in enumerate(texts)]
+
+
+@pytest.mark.asyncio
+async def test_path_status_vector_failed_when_embed_soft_fails(session_factory):
+    """向量路软失败（零切片入向量库）：文档仍 ready，但 path_status 如实
+    标记 vector=failed——这是该失败首个可观测面（此前完全静默）。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm, embedder=_FailingEmbedder())
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert doc["path_status"] == {"vector": "failed", "graph": "done"}
 
 
 @pytest.mark.asyncio

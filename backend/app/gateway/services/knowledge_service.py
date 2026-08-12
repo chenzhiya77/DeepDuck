@@ -26,7 +26,7 @@ from typing import Any
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
-from deerflow.knowledge.wiki.generator import generate_wiki
+from deerflow.knowledge.wiki.generator import generate_wiki, wiki_generation_in_progress
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
 from deerflow.tools.builtins.hybrid_search_tool import _hybrid_search_impl
@@ -61,6 +61,38 @@ class KnowledgeService:
         self._wiki_tasks: set[asyncio.Task[None]] = set()
 
     # ── documents ────────────────────────────────────────────────────────
+
+    async def list_documents(self, kb_id: str) -> list[dict[str, Any]]:
+        """Documents with the per-path sub-status (phase-2 batch-1 P3, spec §5).
+
+        The stored ``path_status`` carries vector/graph only; the wiki leg is a
+        **library-level mirror** injected here at assembly time — every document
+        of the KB shares the same wiki status. Rows whose stored path_status is
+        NULL (legacy) stay NULL so the frontend renders no hover for them.
+        """
+        documents = await self.store.list_documents(kb_id)
+        wiki_status = await self._wiki_path_status(kb_id)
+        for document in documents:
+            path_status = document.get("path_status")
+            if path_status is None:
+                continue
+            document["path_status"] = {**path_status, "wiki": wiki_status}
+        return documents
+
+    async def _wiki_path_status(self, kb_id: str) -> str:
+        """Library-level wiki status (shared by all documents of the KB).
+
+        ready/dirty entries mean generated content is available — dirty =
+        generated-but-stale still counts as ready (2026-08-12 口径). Otherwise
+        an in-flight run (manual button or worker auto trigger) reports
+        ``generating``; nothing at all reports ``pending``.
+        """
+        entries = await self.wiki_store.list_entries(kb_id)
+        if any(entry["status"] in ("ready", "dirty") for entry in entries):
+            return "ready"
+        if wiki_generation_in_progress(kb_id):
+            return "generating"
+        return "pending"
 
     async def upload_document(self, *, kb_id: str, uploader_id: str, filename: str, content: bytes) -> dict[str, Any]:
         """Persist the file, create the ``uploaded`` row, enqueue indexing."""

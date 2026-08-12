@@ -132,7 +132,8 @@ async def delete_knowledge_base(request: Request, kb_id: str):
 @router.get("/{kb_id}/documents")
 async def list_documents(request: Request, kb_id: str):
     service = await _require_kb_access(request, kb_id)
-    return await service.store.list_documents(kb_id)
+    # service 层组装：path_status 携带 vector/graph，wiki 为库级镜像注入（spec §5）
+    return await service.list_documents(kb_id)
 
 
 @router.post("/{kb_id}/documents", status_code=202)

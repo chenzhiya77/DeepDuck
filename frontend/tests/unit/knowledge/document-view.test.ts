@@ -23,6 +23,7 @@ function doc(partial: Partial<KnowledgeDocument>): KnowledgeDocument {
     progress_percent: 100,
     chunk_count: 10,
     error: null,
+    path_status: null,
     created_at: "2026-08-09T10:00:00Z",
     ...partial,
   };

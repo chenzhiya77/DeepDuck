@@ -163,20 +163,34 @@ class KnowledgeIndexWorker:
         if document is None or document["status"] in ("ready", "failed"):
             return document
         kb_id = document["kb_id"]
+        legs: dict[str, str] = {}
         try:
             if document["status"] in ("uploaded", "parsing", "chunking"):
                 await self._reparse_and_chunk(doc_id, kb_id, document["storage_path"])
 
-            await self._store.update_document_status(doc_id, "indexing")
+            # P3 per-path sub-status (spec 2026-08-11 §5): partial-merge writes
+            # as each leg advances. The wiki leg is NOT tracked on the row — it
+            # is a library-level mirror injected at read time by the API.
+            legs = {"vector": "pending", "graph": "pending"}
+            await self._store.update_document_status(doc_id, "indexing", path_status=legs)
             chunks = await self._store.list_chunks(doc_id, limit=1_000_000)
             embedder = self._embedder or DashScopeEmbedder()
             if chunks:
-                await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=chunks)
+                index_stats = await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=chunks)
+                # Every batch soft-failed (EmbedderError degradation) → nothing
+                # indexed: surface the first observable failure marker for the
+                # vector leg instead of a misleading "done".
+                legs["vector"] = "done" if index_stats.indexed > 0 else "failed"
+            else:
+                legs["vector"] = "done"
+            await self._store.update_document_status(doc_id, "indexing", path_status={"vector": legs["vector"]})
 
             async def _on_progress(settled: int, total: int) -> None:
                 percent = (settled * 100) // total if total else 100
                 await self._store.update_document_status(doc_id, "indexing", progress_percent=percent)
 
+            legs["graph"] = "indexing"
+            await self._store.update_document_status(doc_id, "indexing", path_status={"graph": "indexing"})
             stats = await index_document_graph(
                 self._store,
                 self._graph_store,
@@ -190,6 +204,9 @@ class KnowledgeIndexWorker:
                 name_similarity_threshold=self._entity_merge_similarity,
                 progress_callback=_on_progress,
             )
+            # Same verdict source as the ``graph degraded`` error sub-marker.
+            legs["graph"] = "degraded" if stats.degraded else "done"
+            await self._store.update_document_status(doc_id, "indexing", path_status={"graph": legs["graph"]})
             # D3: merge cross-slice entity aliases right after the graph leg.
             # A failing resolution never blocks the pipeline — the document
             # still reaches ``ready`` with a visible error sub-marker.
@@ -212,7 +229,10 @@ class KnowledgeIndexWorker:
             await self._maybe_generate_wiki(kb_id, embedder)
         except Exception as exc:
             logger.exception("knowledge indexing failed for document %s", doc_id)
-            await self._store.update_document_status(doc_id, "failed", error=str(exc)[:500])
+            # Legs that never reached a terminal state fail with the document;
+            # terminal verdicts (done/degraded) are preserved.
+            failed_legs = {leg: "failed" for leg, state in legs.items() if state not in ("done", "degraded")}
+            await self._store.update_document_status(doc_id, "failed", error=str(exc)[:500], path_status=failed_legs or None)
         return await self._store.get_document(doc_id)
 
     async def _append_error_marker(self, doc_id: str, marker: str) -> None:

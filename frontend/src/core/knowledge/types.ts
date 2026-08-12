@@ -16,6 +16,22 @@ export interface KnowledgeBase {
 /** Document status machine (spec §3.6): uploaded → parsing → chunking → indexing → ready / failed. */
 export type KnowledgeDocumentStatus = "uploaded" | "parsing" | "chunking" | "indexing" | "ready" | "failed";
 
+// ── P3 per-path sub-status (phase-2 batch-1, spec 2026-08-11 §5) ──────────
+
+/** Vector leg: pending → indexing → done / failed. */
+export type VectorPathState = "pending" | "indexing" | "done" | "failed" | string;
+/** Graph leg adds "degraded" (partial extraction failure — same verdict source as the "graph degraded" error marker). */
+export type GraphPathState = "pending" | "indexing" | "done" | "degraded" | "failed" | string;
+/** Wiki leg: a library-level mirror injected at read time — identical for every document of the KB. */
+export type WikiPathState = "pending" | "generating" | "ready" | "failed" | string;
+
+/** Per-path indexing sub-status persisted on the document row (wiki mirrored library-wide). */
+export interface DocumentPathStatus {
+  vector: VectorPathState;
+  graph: GraphPathState;
+  wiki: WikiPathState;
+}
+
 export interface KnowledgeDocument {
   id: string;
   kb_id: string;
@@ -29,6 +45,11 @@ export interface KnowledgeDocument {
   chunk_count: number | null;
   /** Failure reason; also carries the "graph degraded" marker (spec §3.4). */
   error: string | null;
+  /**
+   * Per-path sub-status (P3). Null on legacy rows and before the indexing
+   * stage — the status cell renders no hover breakdown then (spec §5 兼容).
+   */
+  path_status: DocumentPathStatus | null;
   created_at: string;
 }
 

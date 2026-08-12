@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { aggregateDocumentStats, formatBytes } from "@/core/knowledge/document-stats";
 import {
@@ -41,6 +42,7 @@ import {
   type SortDirection,
 } from "@/core/knowledge/document-view";
 import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
+import { pathStatusLines } from "@/core/knowledge/path-status";
 import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentStatus } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +63,41 @@ const STATUS_BADGE_VARIANT: Record<KnowledgeDocumentStatus, "default" | "seconda
   ready: "default",
   failed: "destructive",
 };
+
+/**
+ * Hover breakdown for the status column (P3, spec 2026-08-11 §5): three
+ * per-path lines — vector / graph (percent combined mid-indexing) / wiki.
+ * The wiki line carries the library-level hint because it is a library-wide
+ * mirror, not a per-document state. Exported for dom tests.
+ */
+export function PathStatusBreakdown({
+  doc,
+}: {
+  doc: Pick<KnowledgeDocument, "path_status" | "progress_percent" | "status">;
+}) {
+  const { t } = useI18n();
+  const ps = t.knowledge.pathStatus;
+  const lines = pathStatusLines(doc);
+  if (!lines) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-1" data-testid="path-status-breakdown">
+      {lines.map((line) => (
+        <div key={line.path} className="flex items-center justify-between gap-4 text-xs">
+          <span className="text-muted-foreground">
+            {ps[line.path]}
+            {line.path === "wiki" ? ps.libraryHint : ""}
+          </span>
+          <span>
+            {ps.state[line.state as keyof typeof ps.state] ?? line.state}
+            {line.percent !== undefined ? ` ${line.percent}%` : ""}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Documents pane of the middle column (spec §5.2/§3.6). Presentational: the
@@ -325,12 +362,25 @@ export function DocumentPanel({
                   <td className="text-muted-foreground px-2 py-2">{doc.chunk_count ?? "—"}</td>
                   <td className="px-2 py-2">
                     <div className="flex flex-col gap-0.5">
-                      <span className="flex items-center gap-1.5">
-                        <Badge variant={STATUS_BADGE_VARIANT[doc.status] ?? "outline"}>{statusText(doc.status)}</Badge>
-                        {doc.status !== "ready" && doc.status !== "failed" && (
-                          <span className="text-muted-foreground text-xs">{doc.progress_percent}%</span>
-                        )}
-                      </span>
+                      {(() => {
+                        const statusIndicator = (
+                          <span
+                            className="flex w-fit items-center gap-1.5"
+                            data-testid={doc.path_status ? "path-status-trigger" : undefined}
+                          >
+                            <Badge variant={STATUS_BADGE_VARIANT[doc.status] ?? "outline"}>{statusText(doc.status)}</Badge>
+                            {doc.status !== "ready" && doc.status !== "failed" && (
+                              <span className="text-muted-foreground text-xs">{doc.progress_percent}%</span>
+                            )}
+                          </span>
+                        );
+                        // P3：path_status 非 null 才挂悬停（老行/未进索引不展示）
+                        return doc.path_status ? (
+                          <Tooltip content={<PathStatusBreakdown doc={doc} />}>{statusIndicator}</Tooltip>
+                        ) : (
+                          statusIndicator
+                        );
+                      })()}
                       {doc.error && (
                         <span className="text-destructive max-w-56 truncate text-xs" title={doc.error}>
                           {doc.error}

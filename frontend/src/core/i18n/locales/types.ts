@@ -292,6 +292,21 @@ export interface Translations {
       ready: string;
       failed: string;
     };
+    pathStatus: {
+      vector: string;
+      graph: string;
+      wiki: string;
+      libraryHint: string;
+      state: {
+        pending: string;
+        indexing: string;
+        done: string;
+        degraded: string;
+        failed: string;
+        generating: string;
+        ready: string;
+      };
+    };
     deleteDocument: string;
     deleteDocumentConfirmTitle: string;
     deleteDocumentConfirmDescription: string;

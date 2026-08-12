@@ -108,6 +108,72 @@ async def test_document_status_machine_update(session_factory):
 
 
 @pytest.mark.asyncio
+async def test_document_path_status_defaults_null(session_factory):
+    """spec §5 兼容：新旧行缺省 `path_status` 为 null，前端不展示悬停。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="kb")
+    doc = await store.create_document(
+        doc_id="doc-1",
+        kb_id="kb-1",
+        uploader_id="user-1",
+        name="a.md",
+        size_bytes=10,
+        storage_path="p",
+    )
+    assert doc["path_status"] is None
+    assert (await store.get_document("doc-1"))["path_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_document_path_status_partial_merge(session_factory):
+    """spec §5：path_status 写入语义为局部合并——只更新当次阶段对应的 key，
+    不覆盖其他路。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="kb")
+    await store.create_document(
+        doc_id="doc-1",
+        kb_id="kb-1",
+        uploader_id="user-1",
+        name="a.md",
+        size_bytes=10,
+        storage_path="p",
+    )
+
+    entered = await store.update_document_status("doc-1", "indexing", path_status={"vector": "pending", "graph": "pending"})
+    assert entered["path_status"] == {"vector": "pending", "graph": "pending"}
+
+    # 只写 vector=done，graph 必须保持 pending（整体覆盖即违反契约）
+    merged = await store.update_document_status("doc-1", "indexing", path_status={"vector": "done"})
+    assert merged["path_status"] == {"vector": "done", "graph": "pending"}
+
+    # 独立读取与列表序列化同样携带合并结果（持久化而非内存态）
+    assert (await store.get_document("doc-1"))["path_status"] == {"vector": "done", "graph": "pending"}
+    listed = await store.list_documents("kb-1")
+    assert listed[0]["path_status"] == {"vector": "done", "graph": "pending"}
+
+
+@pytest.mark.asyncio
+async def test_reset_document_for_retry_clears_path_status(session_factory):
+    """retry 重置：path_status 与 progress/error 一起清空（worker 重跑时重建）。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="kb")
+    await store.create_document(
+        doc_id="doc-1",
+        kb_id="kb-1",
+        uploader_id="user-1",
+        name="a.md",
+        size_bytes=10,
+        storage_path="p",
+    )
+    await store.update_document_status("doc-1", "failed", error="boom", path_status={"vector": "done", "graph": "failed"})
+
+    reset = await store.reset_document_for_retry("doc-1")
+    assert reset is not None
+    assert reset["status"] == "uploaded"
+    assert reset["path_status"] is None
+
+
+@pytest.mark.asyncio
 async def test_chunks_insert_list_and_extract_status(session_factory):
     store = KnowledgeStore(session_factory)
     await store.create_kb(kb_id="kb-1", owner_id="user-1", name="kb")

@@ -120,7 +120,17 @@
 - [x] `pnpm check` + backend `test_rag_agent_assembly.py` GREEN。
 - [x] Commit: `feat(frontend): rework citation UX with superscript marks and collapsible source cards`。
 
-## Task 5: P3 文档状态三路子标记
+## Task 5: P3 文档状态三路子标记 ✅ 已完成（2026-08-12）
+
+**实施记录（契约偏差与实现期决策）：**
+1. **vector 软失败语义细化**：plan 原文“`index_chunks` 完成 → done”落地为——全部批次 EmbedderError 软失败（`indexed == 0`）时记 `failed`（该失败此前完全静默，path_status 是其首个可观测面）；部分批次失败仍记 `done`（vector 枚举无 degraded）。
+2. **`generating` 数据源**：`generate_wiki` 增加进程内 in-flight 计数注册表（`wiki_generation_in_progress`），手动按钮与 worker 自动触发同源覆盖；判定优先级「存在 ready/dirty 条目 → ready」恒高于 generating——批量上传期间增量重生频繁，避免徽标抖动。
+3. **head 机械 bump**：0012 入链后 5 处既有断言更新（0004/0007/bootstrap/bootstrap_concurrency/bootstrap_regression）。
+4. **drive-by format**：`test_citation_numbering.py` 三处 assert 折行被 ruff 新版单行偏好重排（无语义改动）。
+5. **前端 tooltip 测试遵循 P2 先例**：不测 Radix 悬停开启机制；`PathStatusBreakdown` 导出直渲测内容装配，`path-status-trigger` testid 测挂载条件；悬停内容装配抽为纯函数 `core/knowledge/path-status.ts`。
+6. revert 证明点已执行：局部合并改整体覆盖 → `test_document_path_status_partial_merge` RED → restore → GREEN。
+
+**验证结果**：backend knowledge 220 passed + 2 skipped（live-key 用例）；migration/bootstrap 39 passed；前端 knowledge 157 passed；`pnpm check` 干净；ruff check/format 干净。
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0012_documents_path_status.py`（`documents ADD COLUMN path_status JSON NULL`；参照 0002 的 add-column 模式）
@@ -136,10 +146,10 @@
 - wiki 子状态库级判定：`pending`（库无 ready 条目且未在生成）/ `generating`（手动或自动触发进行中）/ `ready`（库存在 ready **或 dirty** 条目——dirty = 已生成待刷新，内容过期但可用，仍属已生成态，见 Task 5b）；`failed` 暂不启用（wiki 失败现有 error 通道）。
 - 兼容：老行 `path_status` 为 `null` 时前端不展示悬停。
 
-- [ ] 写失败测试：migration up/down；worker 各阶段写入断言（vector done 先于 graph done）；graph degraded 同源；retry 重置；列表响应携带；wiki 库级镜像。
-- [ ] RED → 实现 → GREEN；revert 局部合并为整体覆盖，证明合并语义用例 RED，restore，GREEN。
-- [ ] `pnpm check` + backend 全量 knowledge 测试 GREEN。
-- [ ] Commit: `feat(rag): persist per-path document status with hover breakdown`。
+- [x] 写失败测试：migration up/down；worker 各阶段写入断言（vector done 先于 graph done）；graph degraded 同源；retry 重置；列表响应携带；wiki 库级镜像。
+- [x] RED → 实现 → GREEN；revert 局部合并为整体覆盖，证明合并语义用例 RED，restore，GREEN。
+- [x] `pnpm check` + backend 全量 knowledge 测试 GREEN。
+- [x] Commit: `feat(rag): persist per-path document status with hover breakdown`。
 
 ## Task 5b: wiki dirty 钩子接线 + 新晋头部补条目（一期 §3.5 缺陷修复与语义修订）
 
