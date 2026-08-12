@@ -203,6 +203,26 @@
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净；`cd frontend && pnpm test && pnpm check` 干净。
 - [ ] Commit: `docs(rag): sync agent guides and spec status for phase-2 batch-1`。
 
+## Task 8: wiki 条目资格制（卫生过滤 + 跨切片 freq≥2，无总数上限，增量补写节流）（2026-08-12 插入，独立于 Task 6/7 先行实施）
+
+**背景**：比例制头部策略在 2026-08-12 实测中暴露缺陷（单篇概念密集文档 11 切片 → 头部 54 席、尾部混入薄条目；`&&`/`"abc"` 级垃圾实体入图）。用户拍板改为资格制：freq≥2 才值得综述（freq=1 由向量路直接服务），总数不设上限，score 仅排序。主 spec §3.5 / 本批 spec §1 已同步修订。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/wiki/generator.py`（`select_head_entities` → `select_eligible_entities`：卫生过滤 + `len(source_chunk_ids)≥2`，按 score=degree+freq 降序（name tie-break 保持确定性）；移除 `top_ratio`/`DEFAULT_TOP_RATIO`；`only_dirty` 路径补写段节流 ≤20 篇/次，dirty 重生成本身不受限）
+- Modify: `backend/tests/knowledge/wiki/test_generator.py`（比例制用例改写为资格制：卫生过滤各规则、freq=1 排除、合格数 >54 验证无 20% 截断、score 仅排序、节流上限 + dirty 不受限、既有降级保留/幂等用例适配）
+
+**接口契约（实现前冻结）：**
+- 资格 = 卫生过滤通过 ∧ `len(source_chunk_ids) ≥ 2`；无总数上限；score 仅用于排序。
+- 卫生过滤（wiki 选型期执行，不动图谱入库与图谱路检索）：纯符号/运算符（不含任何字母数字）、引号包裹字面量、单字符、长度 >30 的碎片。
+- 全量模式（手动按钮/首次触发）：写全部合格实体，不节流；自动增量（`only_dirty=True`）：dirty 条目全部重生成 + 无条目合格实体按 score 降序补写 ≤20 篇/次，剩余排队后续触发。
+- 既有条目不因资格变化而删除（降级保留原则不变）；幂等不变（已有条目不重复补）。
+- 调用方适配：`generate_wiki` 的 `top_ratio` 形参移除，调用处（router 手动生成/worker）同步清理。
+
+- [ ] 写失败测试：卫生过滤各规则；freq=1 排除；无 20% 截断；score 仅排序；节流 20 上限且 dirty 不受限；幂等/降级保留适配。
+- [ ] RED → 实现 → GREEN；revert 证明点：revert freq≥2 资格 → freq=1 排除用例 RED → restore → GREEN。
+- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [ ] Commit: `feat(rag): switch wiki entries to cross-chunk eligibility with paced backfill`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。
