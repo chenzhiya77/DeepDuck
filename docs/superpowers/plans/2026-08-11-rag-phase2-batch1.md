@@ -288,6 +288,29 @@
 - [ ] `pnpm check` + backend 全量 GREEN。
 - [ ] Commit: `feat(rag): duplicate-upload interception with replace-or-keep choice`。
 
+## Task 12: wiki 条目生命周期级联（失格/消失/合并的条目处置）（2026-08-12 设计讨论定稿）
+
+**背景**：资格制落地后条目生命周期只覆盖了"新增/材料变化"（backfill + dirty），删除侧三缺口：①删除文档致实体失格（freq 2→1）→ 条目冻结残留，可能含着已删文档的知识（违背删除意图）；②实体被孤儿清除 → 条目成无源残留；③D3 合并后别名条目标 dirty 但无实体可重生成 → 永远刷不掉。用户拍板原则：**资格即条目存在理由，失格即删**（比例制语境的"挤出保留不删"原则随资格制废止；主 spec §3.5 已补生命周期条款）。
+
+**Files:**
+- Modify: `backend/.../knowledge/wiki/store.py`（`delete_entries(kb_id, titles) -> int`，幂等）
+- Modify: `backend/.../knowledge/vector_store.py`（`delete_wiki_entries(kb_id, titles)`——按 payload 的 kb_id+title 过滤删点）
+- Modify: `backend/app/gateway/services/knowledge_service.py`（`delete_document_cascade`：`affected` 拆分——剩余 freq≥2 → 标 dirty；<2 → 删条目+条目向量；`orphaned` → 删条目+条目向量）
+- Modify: `backend/.../knowledge/graph/resolver.py`（合并副作用⑤：代表名条目标 dirty 不变；别名条目由标 dirty 改为删除行+条目向量）
+- Modify: `backend/tests/knowledge/test_api.py`（级联：失格删条目/仍合格标 dirty/孤儿删条目）、`tests/knowledge/graph/test_resolver.py`（别名条目删除+代表 dirty）
+
+**接口契约（实现前冻结）：**
+- 失格判定以 `remove_chunk_contributions` 之后的剩余 `source_chunk_ids` 长度为准（<2 即失格）；卫生过滤不重查（条目能存在说明名字当初过了关）。
+- 删条目 = `wiki_entries` 行 + `kb_wiki_entries` 向量点；**实体节点与 `kb_entities` 实体向量不动**（freq≥1 的实体照常图谱检索）。
+- 幂等：删除不存在的条目返回 0 不报错；级联失败仅 log 不阻断文档删除（沿用现有 try/except 风格）。
+- `generate_wiki` 只写不删的语义不变；生命周期只由删除/合并事件驱动。
+- wiki 库级状态自然衔接：条目被级联清空且无 ready/dirty 条目且无在途生成 → pending。
+
+- [ ] 写失败测试：失格删条目+向量（实体与实体向量保留）；仍合格标 dirty；孤儿删条目；合并别名条目删+代表 dirty；幂等重复删。
+- [ ] RED → 实现 → GREEN；revert 证明点：revert 失格删条目 → 失格用例 RED → restore → GREEN。
+- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [ ] Commit: `feat(rag): cascade wiki entry lifecycle on entity eligibility loss and merges`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。
