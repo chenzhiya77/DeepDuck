@@ -203,7 +203,9 @@
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净；`cd frontend && pnpm test && pnpm check` 干净。
 - [ ] Commit: `docs(rag): sync agent guides and spec status for phase-2 batch-1`。
 
-## Task 8: wiki 条目资格制 + 材料束批量生成（2026-08-12 插入，独立于 Task 6/7 先行实施）
+## Task 8: wiki 条目资格制 + 材料束批量生成（2026-08-12 插入，独立于 Task 6/7 先行实施） ✅ 已完成（2026-08-12）
+
+**验证结果**：tests/knowledge 232 passed + 2 skipped（较 Task 9 基线 +6）；revert 证明点已执行（freq 门改 ≥1 → 资格用例 RED → restore → GREEN）；ruff check/format 干净。实施记录：①卫生谓词落在 `normalizer.is_low_quality_entity_name`（Task 10 入库过滤将复用同一实现，不另起炉灶）；②worker 两个 wiki 触发回归用例适配资格制（双切片语料 `TWO_CHUNK_MD` + 3 切片夹具让 DeerFlow 达 freq2）；③测试 fake 教训——`str(messages)` 会把换行 repr 成字面 `\n`，批量花名册解析必须读真实 content 字符串；④打包/解析/降级/节流/幂等/资格全部用例纯 DB 化（`vector_store=None`），仅既有的 3 个集成用例依赖 Qdrant。
 
 **背景**：比例制头部策略在 2026-08-12 实测中暴露两个缺陷：①席位随实体总数膨胀（单篇概念密集文档 11 切片 → 54 席、尾部混入薄条目）；②生成轴心与材料轴心错位——27 切片/152 合格实体逐条生成需 518 次切片搬运、152 次串行调用（≈60 分钟）。用户拍板：资格制（卫生过滤 + freq≥2，无总数上限，score 仅排序）+ 材料束批量生成（同簇实体共享一次调用），补写节流放宽到 40 篇/次。主 spec §3.5 / 本批 spec §1 已同步修订。
 
@@ -220,10 +222,10 @@
 - 既有条目不因资格变化而删除（降级保留原则不变）；幂等不变（已有条目不重复补）。
 - 调用方适配：`generate_wiki` 的 `top_ratio` 形参移除，调用处（router 手动生成/worker）同步清理。
 
-- [ ] 写失败测试：资格过滤各规则；freq=1 排除；无 20% 截断；打包聚簇/切包/确定性；批量解析与两级降级；节流 40 上限且 dirty 不受限；幂等/降级保留适配。
-- [ ] RED → 实现 → GREEN；revert 证明点：revert freq≥2 资格 → freq=1 排除用例 RED → restore → GREEN。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `feat(rag): switch wiki entries to cross-chunk eligibility with batched generation`。
+- [x] 写失败测试：资格过滤各规则；freq=1 排除；无 20% 截断；打包聚簇/切包/确定性；批量解析与两级降级；节流 40 上限且 dirty 不受限；幂等/降级保留适配。
+- [x] RED → 实现 → GREEN；revert 证明点：revert freq≥2 资格 → freq=1 排除用例 RED → restore → GREEN。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [x] Commit: `feat(rag): switch wiki entries to cross-chunk eligibility with batched generation`。
 
 ## Task 9: 文档删除竞态护栏 + 存量幽灵数据修复（2026-08-12 插入，用户拍板立即处理） ✅ 已完成（2026-08-12）
 

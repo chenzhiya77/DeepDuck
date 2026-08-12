@@ -40,6 +40,22 @@ def _alias_key(name: str) -> str:
     return key
 
 
+#: Quote pairs for the hygiene gate's "quoted literal" rule.
+_QUOTE_OPEN_CLOSE = {'"': '"', "'": "'", "`": "`", "「": "」", "『": "』", "“": "”", "‘": "’"}
+
+
+def is_low_quality_entity_name(name: str) -> bool:
+    """Hygiene gate shared by wiki eligibility (spec §3.5 Task 8) and ingestion
+    filtering (Task 10): pure symbols/operators, quoted literals, single chars,
+    and overlong fragments never deserve an entity node or a wiki entry."""
+    stripped = name.strip()
+    if len(stripped) <= 1 or len(stripped) > 30:
+        return True
+    if not any(ch.isalnum() for ch in stripped):
+        return True
+    return len(stripped) >= 2 and stripped[0] in _QUOTE_OPEN_CLOSE and stripped[-1] == _QUOTE_OPEN_CLOSE[stripped[0]]
+
+
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     """Cosine similarity between two dense vectors (0.0 for zero norms).
 

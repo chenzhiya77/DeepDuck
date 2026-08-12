@@ -1,14 +1,19 @@
-"""Tests for the wiki path: head-entity selection, entry generation, dirty refresh (spec §3.5).
+"""Tests for the wiki path: eligibility selection, entry generation, dirty refresh (spec §3.5).
 
-Entity-level entries only in Phase 1: the top ~20% entities by degree+frequency
+Entity-level entries only in Phase 1: entities eligible for an entry (hygiene
+pass ∧ cross-chunk freq≥2; score only orders generation — 2026-08-12 Task 8)
 each get one LLM-written entry (main model), whose full text lives in the
 ``wiki_entries`` table while its dense vector lands in ``kb_wiki_entries``
-(payload: entry_id pointer + title + kb_id). A newly indexed doc marks the
-affected entries ``dirty``; regeneration rewrites them and clears the flag.
+(payload: entry_id pointer + title + kb_id). New entries are written in
+material-bundle batches (entities sharing chunk sets share one LLM call); a
+newly indexed doc marks the affected entries ``dirty`` and regeneration
+rewrites them per-entity.
 """
 
 from __future__ import annotations
 
+import json
+import re
 import zlib
 from types import SimpleNamespace
 
@@ -16,11 +21,13 @@ import pytest
 from qdrant_client.models import FieldCondition, Filter, MatchValue, SparseVector
 
 from deerflow.knowledge.embedder import EmbeddingResult
+from deerflow.knowledge.graph.extractor import ExtractedEntity
 from deerflow.knowledge.wiki.generator import (
     WikiStats,
     generate_wiki,
     mark_dirty_for_entities,
-    select_head_entities,
+    plan_entry_batches,
+    select_eligible_entities,
     wiki_trigger_ready,
 )
 from deerflow.knowledge.wiki.store import WikiStore
@@ -29,20 +36,62 @@ from ..conftest import requires_qdrant
 
 
 class _WikiLLM:
-    """Writes a deterministic entry mentioning the entity named in the prompt."""
+    """Dual-mode fake: batch prompts (实体清单) get a JSON array; single prompts a lone entry."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
 
     async def ainvoke(self, messages):
-        text = str(messages)
+        # Read the real content string (str(messages) would repr-escape \n and
+        # break the roster line parsing below).
+        last = messages[-1] if isinstance(messages, list) else messages
+        text = str(last["content"] if isinstance(last, dict) else getattr(last, "content", last))
         self.calls.append(text)
-        title = "条目"
-        for name in ("DeerFlow", "Gateway", "Qdrant", "LangGraph", "MinerU"):
-            if f"《{name}》" in text or f"实体：{name}" in text or name in text:
-                title = name
-                break
+        if "实体清单：" in text:
+            roster = text.split("实体清单：", 1)[1].split("\n", 1)[0]
+            names = [n.strip() for n in roster.split("、") if n.strip()]
+            items = [{"title": n, "content": f"# {n}\n\n这是 {n} 的百科综述正文。"} for n in names]
+            return SimpleNamespace(content=json.dumps(items, ensure_ascii=False))
+        match = re.search(r"实体：([^\n]+)", text)
+        title = match.group(1).strip() if match else "条目"
         return SimpleNamespace(content=f"# {title}\n\n这是 {title} 的百科综述正文。")
+
+
+class _BatchOmitLLM(_WikiLLM):
+    """Batch answers that drop one requested title (drives the per-entity fallback)."""
+
+    def __init__(self, omit: str) -> None:
+        super().__init__()
+        self._omit = omit
+
+    async def ainvoke(self, messages):
+        last = messages[-1] if isinstance(messages, list) else messages
+        text = str(last["content"] if isinstance(last, dict) else getattr(last, "content", last))
+        if "实体清单：" in text:
+            self.calls.append(text)
+            roster = text.split("实体清单：", 1)[1].split("\n", 1)[0]
+            names = [n.strip() for n in roster.split("、") if n.strip() and n.strip() != self._omit]
+            items = [{"title": n, "content": f"# {n}\n\n这是 {n} 的百科综述正文。"} for n in names]
+            return SimpleNamespace(content=json.dumps(items, ensure_ascii=False))
+        return await super().ainvoke(messages)
+
+
+class _BatchGarbageLLM(_WikiLLM):
+    """Batch answers that are not JSON at all (the whole batch falls back)."""
+
+    async def ainvoke(self, messages):
+        last = messages[-1] if isinstance(messages, list) else messages
+        text = str(last["content"] if isinstance(last, dict) else getattr(last, "content", last))
+        if "实体清单：" in text:
+            self.calls.append(text)
+            return SimpleNamespace(content="这不是 JSON")
+        return await super().ainvoke(messages)
+
+
+async def _add_entity(graph_store, kb_id: str, name: str, chunk_ids: list[str]) -> None:
+    """Give ``name`` one contribution per chunk id (drives its frequency)."""
+    for chunk_id in chunk_ids:
+        await graph_store.upsert_entities(kb_id, [ExtractedEntity(name=name, type="概念", description=f"{name} 描述")], chunk_id=chunk_id)
 
 
 class _StubEmbedder:
@@ -65,23 +114,29 @@ class _StubEmbedder:
 
 
 @pytest.mark.asyncio
-async def test_head_entity_selection_top_ratio_by_degree_and_frequency(wiki_db_env):
+async def test_eligible_entities_hygiene_cross_chunk_and_no_ratio_cap(wiki_db_env):
+    """Eligibility = hygiene pass ∧ freq≥2, ordered by score only (no ~20% cut)."""
     graph_store, kb_id = wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    # Junk names with freq 2 must still be filtered out.
+    for junk in ("&&", '"abc"', "C", "x" * 31):
+        await _add_entity(graph_store, kb_id, junk, ["doc-w-c0", "doc-w-c1"])
+    # Legit cross-chunk entities all qualify — no ratio truncation (4/11 > 20%).
+    for name in ("Alpha", "Beta", "Gamma"):
+        await _add_entity(graph_store, kb_id, name, ["doc-w-c0", "doc-w-c1"])
 
-    top_20 = await select_head_entities(graph_store, kb_id, top_ratio=0.2)
-    assert [e["name"] for e in top_20] == ["DeerFlow"]  # 5 entities → 1 head slot
+    eligible = await select_eligible_entities(graph_store, kb_id)
 
-    top_40 = await select_head_entities(graph_store, kb_id, top_ratio=0.4)
-    assert [e["name"] for e in top_40] == ["DeerFlow", "Gateway"]  # scores 5 and 3
-    # Rows carry the aggregation inputs for the generator.
-    assert set(top_40[0]["source_chunk_ids"]) == {"doc-w-c0", "doc-w-c1"}
+    # DeerFlow score 5 (deg 3 + freq 2) first; extras score 2 tie-break by name.
+    assert [row["name"] for row in eligible] == ["DeerFlow", "Alpha", "Beta", "Gamma"]
+    # Fixture entities with freq 1 (Gateway/LangGraph/Qdrant/MinerU) are out.
+    assert set(eligible[0]["source_chunk_ids"]) == {"doc-w-c0", "doc-w-c1"}
 
 
 @pytest.mark.asyncio
-async def test_head_entity_selection_empty_graph(session_factory):
+async def test_eligible_entities_empty_graph(session_factory):
     from deerflow.knowledge.graph.store import GraphStore
 
-    selected = await select_head_entities(GraphStore(session_factory), "kb-void", top_ratio=0.2)
+    selected = await select_eligible_entities(GraphStore(session_factory), "kb-void")
     assert selected == []
 
 
@@ -111,8 +166,10 @@ async def test_generate_wiki_writes_entry_and_vector(wiki_env):
     vector_store, client, kb_id = wiki_env["vector_store"], wiki_env["client"], wiki_env["kb_id"]
     wiki_store = WikiStore(store._sf)
     llm, embedder = _WikiLLM(), _StubEmbedder()
+    # Gateway joins the eligible set once a second chunk references it (freq 2).
+    await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])
 
-    stats = await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=llm, embedder=embedder, top_ratio=0.4)
+    stats = await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=llm, embedder=embedder)
 
     assert isinstance(stats, WikiStats)
     assert stats.selected == 2
@@ -152,7 +209,8 @@ async def test_generate_wiki_writes_entry_and_vector(wiki_env):
 async def test_new_doc_marks_affected_entries_dirty(wiki_env):
     store, graph_store, wiki_store = wiki_env["store"], wiki_env["graph_store"], WikiStore(wiki_env["store"]._sf)
     kb_id = wiki_env["kb_id"]
-    await generate_wiki(store, graph_store, wiki_store, wiki_env["vector_store"], kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder(), top_ratio=0.4)
+    await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])  # freq 2 → eligible
+    await generate_wiki(store, graph_store, wiki_store, wiki_env["vector_store"], kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder())
 
     # A newly indexed doc touched DeerFlow → its entry goes dirty, Gateway stays ready.
     marked = await mark_dirty_for_entities(wiki_store, kb_id, ["DeerFlow"])
@@ -170,7 +228,8 @@ async def test_regeneration_clears_dirty_and_only_touches_dirty(wiki_env):
     store, graph_store, vector_store = wiki_env["store"], wiki_env["graph_store"], wiki_env["vector_store"]
     kb_id = wiki_env["kb_id"]
     wiki_store = WikiStore(store._sf)
-    await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder(), top_ratio=0.4)
+    await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])  # freq 2 → eligible
+    await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder())
     await mark_dirty_for_entities(wiki_store, kb_id, ["DeerFlow"])
 
     llm, embedder = _WikiLLM(), _StubEmbedder()
@@ -207,55 +266,143 @@ async def test_empty_graph_generates_nothing(session_factory):
     assert llm.calls == []
 
 
-# ── Task 5b: incremental targets = dirty ∪ (current heads without an entry) ───
+# ── Task 5b: incremental targets = dirty ∪ (eligible entities without an entry) ──
 
 
 @pytest.mark.asyncio
-async def test_only_dirty_backfills_newly_promoted_head(wiki_db_env):
-    """A head entity with no entry yet gets one even when nothing is dirty —
-    new content must not wait for a manual full regeneration (spec §3.5
-    2026-08-12 revision). Pure-DB: no vector store needed for the target set."""
+async def test_only_dirty_backfills_newly_eligible_entity(wiki_db_env):
+    """An entity that crosses the freq≥2 threshold gets its entry on the next
+    incremental run even when nothing is dirty (spec §3.5 2026-08-12 revision).
+    Pure-DB: no vector store needed for the target set."""
     store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
     wiki_store = WikiStore(store._sf)
-    # First batch with a narrower head slice: only DeerFlow gets an entry.
-    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM(), top_ratio=0.2)
+    # First batch: only DeerFlow is cross-chunk eligible (Gateway has freq 1).
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
     assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow"}
 
-    # Gateway is promoted into the head slice (a re-ranked graph widens the
-    # head — proxied here by a larger ratio). Nothing is dirty; the backfill
-    # must still write Gateway's entry.
+    # Gateway becomes eligible when a second chunk references it (freq 1→2).
+    await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])
     llm = _WikiLLM()
-    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, top_ratio=0.4, only_dirty=True)
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
 
     assert stats.selected == 1
     assert stats.generated == 1
     assert stats.titles == ["Gateway"]
     assert len(llm.calls) == 1
-    # After the backfill the entry set matches the current head slice exactly.
-    heads = {row["name"] for row in await select_head_entities(graph_store, kb_id, top_ratio=0.4)}
+    # After the backfill the entry set matches the eligible set exactly.
+    eligible = {row["name"] for row in await select_eligible_entities(graph_store, kb_id)}
     entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
-    assert set(entries) == heads == {"DeerFlow", "Gateway"}
+    assert set(entries) == eligible == {"DeerFlow", "Gateway"}
     assert all(entry["status"] == "ready" for entry in entries.values())
 
 
 @pytest.mark.asyncio
-async def test_only_dirty_idempotent_and_demoted_heads_retained(wiki_db_env):
-    """Existing entries are never re-written (idempotent); entities demoted
-    out of the head slice keep their entries (never deleted)."""
+async def test_only_dirty_idempotent_and_ineligible_entries_retained(wiki_db_env):
+    """Existing entries are never re-written (idempotent); entries whose entity
+    lost eligibility (freq back below 2) are retained, never deleted."""
     store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
     wiki_store = WikiStore(store._sf)
-    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM(), top_ratio=0.4)
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
+    # An entry written for a now-ineligible entity (freq 1) is kept as-is.
+    await wiki_store.upsert_entry(kb_id, title="Qdrant", content="旧条目", source_chunk_ids=["doc-w-c1"], status="ready")
 
-    # Idempotent: every head already has an entry and nothing is dirty → no work.
+    # Idempotent: every eligible entity already has an entry, nothing dirty → no work.
     llm = _WikiLLM()
-    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, top_ratio=0.4, only_dirty=True)
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
     assert stats.selected == 0 and stats.generated == 0
     assert llm.calls == []
-
-    # Demotion: the head slice narrows to DeerFlow — Gateway's entry is kept.
-    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, top_ratio=0.2, only_dirty=True)
-    assert stats.generated == 0
-    assert llm.calls == []
     entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
-    assert set(entries) == {"DeerFlow", "Gateway"}
-    assert entries["Gateway"]["status"] == "ready"
+    assert set(entries) == {"DeerFlow", "Qdrant"}
+    assert entries["Qdrant"]["status"] == "ready"
+
+
+# ── Task 8: material-bundle batching ──────────────────────────────────────────
+
+
+def test_plan_entry_batches_clusters_by_shared_chunks():
+    rows = [
+        {"name": "A", "source_chunk_ids": ["c1", "c2"]},
+        {"name": "B", "source_chunk_ids": ["c1", "c2"]},  # identical set → same bundle
+        {"name": "C", "source_chunk_ids": ["c9", "c8"]},  # disjoint → own bundle
+        {"name": "D", "source_chunk_ids": ["c2", "c9"]},  # ≤0.5 overlap with both → own bundle
+    ]
+
+    batches = plan_entry_batches(rows)
+
+    assert [[row["name"] for row in batch] for batch in batches] == [["A", "B"], ["C"], ["D"]]
+
+
+def test_plan_entry_batches_size_cap_and_determinism():
+    rows = [{"name": f"E{i}", "source_chunk_ids": ["c1", "c2"]} for i in range(5)]
+
+    batches = plan_entry_batches(rows, batch_size=2)
+
+    assert [len(batch) for batch in batches] == [2, 2, 1]
+    rerun = plan_entry_batches(rows, batch_size=2)
+    assert [[row["name"] for row in batch] for batch in batches] == [[row["name"] for row in batch] for batch in rerun]
+
+
+@pytest.mark.asyncio
+async def test_batch_generation_shares_one_call_per_bundle(wiki_db_env):
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await _add_entity(graph_store, kb_id, "Alpha", ["doc-w-c0", "doc-w-c1"])
+    await _add_entity(graph_store, kb_id, "Beta", ["doc-w-c0", "doc-w-c1"])
+    llm = _WikiLLM()
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm)
+
+    assert stats.selected == 3 and stats.generated == 3
+    assert sorted(stats.titles) == ["Alpha", "Beta", "DeerFlow"]
+    assert len(llm.calls) == 1  # three entities share ONE material-bundle call
+    assert "实体清单：" in llm.calls[0]
+    entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
+    assert set(entries) == {"DeerFlow", "Alpha", "Beta"}
+    assert all(entry["status"] == "ready" for entry in entries.values())
+
+
+@pytest.mark.asyncio
+async def test_batch_missing_title_falls_back_to_single(wiki_db_env):
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await _add_entity(graph_store, kb_id, "Alpha", ["doc-w-c0", "doc-w-c1"])
+    llm = _BatchOmitLLM(omit="Alpha")
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm)
+
+    assert sorted(stats.titles) == ["Alpha", "DeerFlow"]
+    assert len(llm.calls) == 2  # one bundle call + one single-call fallback
+    assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow", "Alpha"}
+
+
+@pytest.mark.asyncio
+async def test_batch_garbage_response_falls_back_for_all(wiki_db_env):
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await _add_entity(graph_store, kb_id, "Alpha", ["doc-w-c0", "doc-w-c1"])
+    llm = _BatchGarbageLLM()
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm)
+
+    assert sorted(stats.titles) == ["Alpha", "DeerFlow"]
+    assert len(llm.calls) == 3  # garbage bundle call + two single-call fallbacks
+    assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow", "Alpha"}
+
+
+@pytest.mark.asyncio
+async def test_backfill_limit_paces_new_entries_but_not_dirty(wiki_db_env):
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await _add_entity(graph_store, kb_id, "Alpha", ["doc-w-c0", "doc-w-c1"])
+    await _add_entity(graph_store, kb_id, "Beta", ["doc-w-c0", "doc-w-c1"])
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0"], status="dirty")
+    llm = _WikiLLM()
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True, backfill_limit=1)
+
+    # Dirty regeneration is never capped; only one new entry written this run.
+    assert sorted(stats.titles) == ["Alpha", "DeerFlow"]
+    assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow", "Alpha"}
+    # The queued remainder is picked up by the next trigger.
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True, backfill_limit=1)
+    assert stats.titles == ["Beta"]

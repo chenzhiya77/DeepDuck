@@ -36,6 +36,21 @@ DeerFlow 是超级智能体系统，Gateway 负责会话管理。
 索引流水线由 Parser 与 Chunker 组成，Chunker 按标题切片。
 """
 
+#: Two sections each exceeding the chunker's merge threshold (>100 tokens), so
+#: DeerFlow lands in two chunks — the freq≥2 wiki eligibility needs it (Task 8).
+TWO_CHUNK_MD = """# 第一章 DeerFlow 概述
+
+DeerFlow 是超级智能体系统，负责编排规划、工具调用与沙箱执行。DeerFlow 的设计目标是让复杂任务在多代理协作下自动完成，
+DeerFlow 的核心环路包含规划、执行、观察与再规划四个阶段，DeerFlow 通过网关对外提供统一的会话入口与流式响应，
+DeerFlow 的运行时状态全部落盘以便断点续跑，DeerFlow 的每一次工具调用都带有完整的审计记录，DeerFlow 支持技能扩展与多渠道接入。
+
+## 1.1 DeerFlow 架构
+
+DeerFlow 的索引流水线由 Parser 与 Chunker 组成，Chunker 按标题切片。DeerFlow 的图谱路从切片中抽取实体与关系并做归一化合并，
+DeerFlow 的向量路把切片嵌入到向量库供召回排序，DeerFlow 的百科路为重要实体撰写百科条目，DeerFlow 的三路检索在问答期协同，
+DeerFlow 的引用系统为每个论断提供来源编号，DeerFlow 的权限模型保证知识库级隔离与访问门禁。
+"""
+
 
 class FakeEmbedder:
     batch_size = 20
@@ -385,7 +400,7 @@ async def test_ready_document_auto_triggers_wiki_generation(session_factory):
     await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
     llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
-    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm, main_llm=_WikiLLM())
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(md=TWO_CHUNK_MD), llm=llm, main_llm=_WikiLLM())
 
     await worker.process_document("doc-1")
 
@@ -440,11 +455,13 @@ async def test_entity_resolution_failure_degrades_without_blocking(session_facto
     store = KnowledgeStore(session_factory)
     await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
-    await store.update_document_status("doc-1", "indexing", chunk_count=2)
+    await store.update_document_status("doc-1", "indexing", chunk_count=3)
     await store.insert_chunks(
         [
             {"chunk_id": "doc-1#0000", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 0, "text": "DeerFlow 智能体", "heading_path": [], "page": None, "token_count": 5},
             {"chunk_id": "doc-1#0001", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 1, "text": "坏切片", "heading_path": [], "page": None, "token_count": 5},
+            # Second good chunk: DeerFlow reaches freq 2 — wiki eligibility (Task 8).
+            {"chunk_id": "doc-1#0002", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 2, "text": "DeerFlow 运行时", "heading_path": [], "page": None, "token_count": 5},
         ]
     )
     monkeypatch.setattr("deerflow.knowledge.worker.resolve_entity_aliases", AsyncMock(side_effect=RuntimeError("resolution boom")))
@@ -454,7 +471,7 @@ async def test_entity_resolution_failure_degrades_without_blocking(session_facto
 
     doc = await store.get_document("doc-1")
     assert doc["status"] == "ready"
-    assert "graph degraded" in doc["error"]  # 1/2 chunks failed > 30%
+    assert "graph degraded" in doc["error"]  # 1/3 chunks failed > 30%
     assert "entity-resolution failed" in doc["error"]
     entries = await WikiStore(session_factory).list_entries("kb-1")
     assert entries, "wiki generation must not be blocked by the resolution failure"
