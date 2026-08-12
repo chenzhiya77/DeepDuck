@@ -205,3 +205,57 @@ async def test_empty_graph_generates_nothing(session_factory):
 
     assert stats.selected == 0 and stats.generated == 0
     assert llm.calls == []
+
+
+# ── Task 5b: incremental targets = dirty ∪ (current heads without an entry) ───
+
+
+@pytest.mark.asyncio
+async def test_only_dirty_backfills_newly_promoted_head(wiki_db_env):
+    """A head entity with no entry yet gets one even when nothing is dirty —
+    new content must not wait for a manual full regeneration (spec §3.5
+    2026-08-12 revision). Pure-DB: no vector store needed for the target set."""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    # First batch with a narrower head slice: only DeerFlow gets an entry.
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM(), top_ratio=0.2)
+    assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow"}
+
+    # Gateway is promoted into the head slice (a re-ranked graph widens the
+    # head — proxied here by a larger ratio). Nothing is dirty; the backfill
+    # must still write Gateway's entry.
+    llm = _WikiLLM()
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, top_ratio=0.4, only_dirty=True)
+
+    assert stats.selected == 1
+    assert stats.generated == 1
+    assert stats.titles == ["Gateway"]
+    assert len(llm.calls) == 1
+    # After the backfill the entry set matches the current head slice exactly.
+    heads = {row["name"] for row in await select_head_entities(graph_store, kb_id, top_ratio=0.4)}
+    entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
+    assert set(entries) == heads == {"DeerFlow", "Gateway"}
+    assert all(entry["status"] == "ready" for entry in entries.values())
+
+
+@pytest.mark.asyncio
+async def test_only_dirty_idempotent_and_demoted_heads_retained(wiki_db_env):
+    """Existing entries are never re-written (idempotent); entities demoted
+    out of the head slice keep their entries (never deleted)."""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM(), top_ratio=0.4)
+
+    # Idempotent: every head already has an entry and nothing is dirty → no work.
+    llm = _WikiLLM()
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, top_ratio=0.4, only_dirty=True)
+    assert stats.selected == 0 and stats.generated == 0
+    assert llm.calls == []
+
+    # Demotion: the head slice narrows to DeerFlow — Gateway's entry is kept.
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, top_ratio=0.2, only_dirty=True)
+    assert stats.generated == 0
+    assert llm.calls == []
+    entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
+    assert set(entries) == {"DeerFlow", "Gateway"}
+    assert entries["Gateway"]["status"] == "ready"

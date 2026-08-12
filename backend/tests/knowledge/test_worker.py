@@ -458,3 +458,44 @@ async def test_entity_resolution_failure_degrades_without_blocking(session_facto
     assert "entity-resolution failed" in doc["error"]
     entries = await WikiStore(session_factory).list_entries("kb-1")
     assert entries, "wiki generation must not be blocked by the resolution failure"
+
+
+@pytest.mark.asyncio
+async def test_new_document_marks_touched_wiki_entries_dirty(session_factory):
+    """Task 5b: the new-document hook flags the touched entities' entries as
+    dirty; untouched entries stay ready (spec §3.5 2026-08-12 revision)."""
+    store = KnowledgeStore(session_factory)
+    wiki_store = WikiStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    # The library already has entries: DeerFlow gets touched by the new
+    # document, Gateway does not.
+    await wiki_store.upsert_entry("kb-1", title="DeerFlow", content="旧条目", source_chunk_ids=[], status="ready")
+    await wiki_store.upsert_entry("kb-1", title="Gateway", content="旧条目", source_chunk_ids=[], status="ready")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm)
+
+    await worker.process_document("doc-1")
+
+    assert (await store.get_document("doc-1"))["status"] == "ready"
+    entries = {entry["title"]: entry for entry in await wiki_store.list_entries("kb-1")}
+    assert entries["DeerFlow"]["status"] == "dirty"
+    assert entries["Gateway"]["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_wiki_dirty_hook_failure_never_blocks_ready(session_factory, monkeypatch):
+    """Task 5b: a failing dirty hook degrades to a log line only — the document
+    still reaches ``ready`` and gains no error sub-marker (library-level concern)."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    monkeypatch.setattr("deerflow.knowledge.worker.mark_dirty_for_entities", AsyncMock(side_effect=RuntimeError("wiki store down")))
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm)
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert doc["error"] is None

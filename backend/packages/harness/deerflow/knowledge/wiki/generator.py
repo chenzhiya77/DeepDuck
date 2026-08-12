@@ -8,8 +8,9 @@
   simply calls ``generate_wiki`` directly); afterwards the KB runs in dirty
   incremental mode.
 - **Dirty incremental**: a newly indexed doc marks the entries of its touched
-  entities ``dirty``; ``generate_wiki(only_dirty=True)`` regenerates exactly
-  those against the entity's *current* source chunks and clears the flag.
+  entities ``dirty``; ``generate_wiki(only_dirty=True)`` regenerates those
+  against the entity's *current* source chunks and clears the flag, and also
+  backfills current head entities that have no entry yet (2026-08-12 revision).
 
 Each entry is written by the main model (stable long-form Chinese), full text
 stored in ``wiki_entries``, dense vector (title + content head) upserted to
@@ -138,7 +139,8 @@ async def generate_wiki(
     """Generate (or regenerate) wiki entries for a KB.
 
     Default mode processes the current head entities (triggered batch);
-    ``only_dirty=True`` processes exactly the dirty entries (incremental).
+    ``only_dirty=True`` processes the dirty entries plus any current head
+    entity that has no entry yet (incremental; spec §3.5 2026-08-12 revision).
     """
     if llm is None:
         llm = _default_llm()
@@ -147,12 +149,19 @@ async def generate_wiki(
     try:
         if only_dirty:
             dirty = await wiki_store.list_entries(kb_id, status="dirty")
-            if not dirty:
-                return WikiStats()
             entity_rows = {row["name"]: row for row in await graph_store.list_entities(kb_id)}
             targets = [entity_rows[entry["title"]] for entry in dirty if entry["title"] in entity_rows]
             if len(targets) < len(dirty):
                 logger.info("wiki regeneration: %d dirty entries have no graph entity left, skipped", len(dirty) - len(targets))
+            # 2026-08-12 revision (spec §3.5): targets = dirty ∪ (current heads
+            # \ existing entry titles) — a newly promoted head gets its entry
+            # without waiting for a manual full regeneration. Entries with any
+            # status are never re-written here unless dirty (idempotent), and
+            # demoted heads keep theirs (never deleted).
+            entry_titles = {entry["title"] for entry in await wiki_store.list_entries(kb_id)}
+            for head in await select_head_entities(graph_store, kb_id, top_ratio=top_ratio):
+                if head["name"] not in entry_titles:
+                    targets.append(head)
         else:
             targets = await select_head_entities(graph_store, kb_id, top_ratio=top_ratio)
 

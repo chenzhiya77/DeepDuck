@@ -39,7 +39,7 @@ from deerflow.knowledge.indexer import index_chunks
 from deerflow.knowledge.parser import ParsedDocument, parse_document
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
-from deerflow.knowledge.wiki.generator import generate_wiki, wiki_trigger_ready
+from deerflow.knowledge.wiki.generator import generate_wiki, mark_dirty_for_entities, wiki_trigger_ready
 from deerflow.knowledge.wiki.store import WikiStore
 
 logger = logging.getLogger(__name__)
@@ -226,6 +226,15 @@ class KnowledgeIndexWorker:
             except Exception:
                 logger.exception("entity re-resolution failed for document %s", doc_id)
                 await self._append_error_marker(doc_id, "entity-resolution failed")
+            # Task 5b (spec §3.5 2026-08-12 revision): flag the wiki entries of
+            # the entities this document touched as ``dirty`` so the following
+            # incremental refresh regenerates exactly them. Library-level
+            # concern: a failure degrades to a log line only — never blocks
+            # ``ready``, never appends an error sub-marker.
+            try:
+                await mark_dirty_for_entities(self._wiki_store, kb_id, stats.touched_entities)
+            except Exception:
+                logger.exception("wiki dirty marking failed for kb %s", kb_id)
             await self._store.update_document_status(doc_id, "ready", progress_percent=100)
             await self._maybe_generate_wiki(kb_id, embedder)
         except Exception as exc:

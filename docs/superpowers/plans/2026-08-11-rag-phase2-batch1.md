@@ -152,7 +152,9 @@
 - [x] `pnpm check` + backend 全量 knowledge 测试 GREEN。
 - [x] Commit: `feat(rag): persist per-path document status with hover breakdown`。
 
-## Task 5b: wiki dirty 钩子接线 + 新晋头部补条目（一期 §3.5 缺陷修复与语义修订）
+## Task 5b: wiki dirty 钩子接线 + 新晋头部补条目（一期 §3.5 缺陷修复与语义修订） ✅ 已完成（2026-08-12）
+
+**验证结果**：tests/knowledge 225 passed + 2 skipped（live-key 用例，较 Task 5 基线 +4）；revert 证明点已执行（摘除 backfill 差集 → `test_only_dirty_backfills_newly_promoted_head` RED → restore → GREEN）；ruff check/format 干净。无契约偏差——实现与冻结契约一致；两个 generator 新用例走纯 DB（`vector_store=None`），不依赖 Qdrant。
 
 **背景**：一期 §3.5 契约“新文档涉及的实体条目标记 `dirty`，后台增量重生成”从未生效——`mark_dirty_for_entities`（docstring 自封 "New-document hook"）在 worker 里从未被调用，全仓仅测试在用；`_maybe_generate_wiki` 的 `only_dirty=True` 增量因此恒空转，新内容进 wiki 只能靠手动「生成百科」全量。本 Task 接线该钩子，并按 2026-08-12 用户确认的语义修订把增量目标扩为 dirty ∪ 新晋头部（主 spec §3.5 已同步修订）。
 
@@ -168,10 +170,10 @@
 - 失败降级：`mark_dirty_for_entities` 异常仅 `logger.exception`，不阻断 ready、不追加 error 子标记。
 - 与 Task 5 协同：wiki 库级子状态判定中 `dirty` 条目计入“已生成”（Task 5 契约已同步）。
 
-- [ ] 写失败测试：worker 三断言（touched 变 dirty / 未触及不变 / 钩子抛错仍 ready）；generator 四断言（新晋头部进 targets / 补写后头部⇔条目一致 / 幂等 / 旧头部保留）。
-- [ ] RED → 实现 → GREEN；revert 证明点：revert 目标集差集逻辑 → 新晋头部用例 RED → restore → GREEN。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `fix(rag): wire new-document wiki dirty hook and backfill new head entries`。
+- [x] 写失败测试：worker 三断言（touched 变 dirty / 未触及不变 / 钩子抛错仍 ready）；generator 四断言（新晋头部进 targets / 补写后头部⇔条目一致 / 幂等 / 旧头部保留）。
+- [x] RED → 实现 → GREEN；revert 证明点：revert 目标集差集逻辑 → 新晋头部用例 RED → restore → GREEN。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [x] Commit: `fix(rag): wire new-document wiki dirty hook and backfill new head entries`。
 
 ## Task 6: P4 解析能力扩展第一批 + 上传白名单
 
