@@ -247,6 +247,45 @@
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
 - [x] Commit: `fix(rag): abort indexing pipeline when document is deleted mid-flight`。
 
+## Task 10: 图谱抽取质量包（prompt 卫生约束 + 括号别名折叠 + 入库卫生过滤 + 悬空边处理）（2026-08-12 设计讨论定稿）
+
+**背景**：幽灵数据修复暴露了抽取质量三缺口——①垃圾实体源于抽取器本身（`"abc"`/`&&`/`2乘以8`）；②跨语言同义词永不合并（`字符串`/`String`，名字向量 0.92 阈值够不着）；③卫生过滤只在 wiki 选型侧（Task 8），垃圾仍进图谱污染度数与检索。用户拍板：prompt 约束 + 下沉过滤 + 悬空边处理；④name+description 合并废弃（每次归一重嵌 + description 漂移，损耗不值），以零成本的括号别名折叠替代。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/graph/extractor.py`（抽取 prompt：不抽代码字面量/运算符/无概念内容关键字；实体名用规范形；跨语言概念用「中文（英文）」）
+- Modify: `backend/packages/harness/deerflow/knowledge/graph/normalizer.py`（`_alias_key` → `_alias_keys` 多 key：`A（B）`/`A(B)` 形式以 A、B、全名三键注册；新增共享谓词 `is_low_quality_entity_name`——纯符号（无字母数字）/引号包裹字面量/单字符/长度>30；`normalize_extraction` 出口剔除低质实体并连带丢弃其关系边）
+- Modify: `backend/tests/knowledge/graph/test_normalizer.py` + `test_extractor.py`（prompt 文本断言、括号折叠三键、卫生过滤各规则、连带丢边、自然悬空保留）
+
+**接口契约（实现前冻结）：**
+- 卫生谓词与 Task 8 wiki 资格共用同一实现（`is_low_quality_entity_name`），规则不两处拷贝。
+- 括号折叠：`A（B）` → keys {A（B）, A, B}；B 为空或与 A 相同退化为单 key；仅包裹式括号触发。
+- 悬空边分两类：端点被卫生过滤丢弃的 → 连带丢边；端点天然未抽为实体的 → **保留**（未来跨片链接价值，对图谱检索无害）。
+- prompt 变更不破坏现有 JSON 输出契约；gleaning 流程不变。
+
+- [ ] 写失败测试：prompt 约束文本存在；括号三键折叠（含 D3 路径）；卫生过滤各规则；连带丢边/自然悬空保留。
+- [ ] RED → 实现 → GREEN；revert 证明点：revert 括号折叠 → 三键用例 RED → restore → GREEN。
+- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [ ] Commit: `feat(rag): extraction hygiene constraints with parenthetical alias folding`。
+
+## Task 11: 重复上传拦截（同名预检 + 替换/保留两份）（2026-08-12 设计讨论定稿）
+
+**背景**：同一文件重复上传导致重复抽取、实体变体裂变（`String str1`/`str2`），是幽灵数据事故的源头之一。用户拍板：同名同类型文件已存在时让用户决定——替换（级联删除旧文档+重新索引）或保留两份。
+
+**Files:**
+- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0013_documents_content_hash.py`（`documents ADD COLUMN content_hash TEXT NULL`；老行 NULL=未知）
+- Modify: `backend/.../knowledge/models.py` + `store.py`（upload 写入 SHA-256；列表 API 返回 `content_hash`）
+- Modify: `frontend/src/components/workspace/knowledge/document-panel.tsx`（选择文件后 WebCrypto 计算 SHA-256，与当前库文档列表比对同名+同扩展名；命中弹确认框）+ i18n + 单测
+
+**接口契约（实现前冻结）：**
+- 三分支：同名且 hash 相同 → 「内容完全一致」：跳过（默认）/ 仍入库副本；同名但 hash 不同或未知 → 「替换 / 保留两份（自动改名 `name (2).ext`，冲突递增）」；未命中 → 正常上传。
+- 替换 = 先 `DELETE`（走级联，图谱/向量/wiki 全清）后重新上传，复用现有端点，后端不加新端点。
+- 副本与保留两份均为合法新文档行（name 非唯一键；保留两份的前端改名仅为展示区分）。
+
+- [ ] 写失败测试：migration up/down；hash 写入与返回；前端三分支弹窗；替换路径调用顺序（先删后传）。
+- [ ] RED → 实现 → GREEN；revert 证明点：revert hash 写入 → 列表返回用例 RED → restore → GREEN。
+- [ ] `pnpm check` + backend 全量 GREEN。
+- [ ] Commit: `feat(rag): duplicate-upload interception with replace-or-keep choice`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。
