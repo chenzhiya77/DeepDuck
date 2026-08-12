@@ -203,25 +203,47 @@
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净；`cd frontend && pnpm test && pnpm check` 干净。
 - [ ] Commit: `docs(rag): sync agent guides and spec status for phase-2 batch-1`。
 
-## Task 8: wiki 条目资格制（卫生过滤 + 跨切片 freq≥2，无总数上限，增量补写节流）（2026-08-12 插入，独立于 Task 6/7 先行实施）
+## Task 8: wiki 条目资格制 + 材料束批量生成（2026-08-12 插入，独立于 Task 6/7 先行实施）
 
-**背景**：比例制头部策略在 2026-08-12 实测中暴露缺陷（单篇概念密集文档 11 切片 → 头部 54 席、尾部混入薄条目；`&&`/`"abc"` 级垃圾实体入图）。用户拍板改为资格制：freq≥2 才值得综述（freq=1 由向量路直接服务），总数不设上限，score 仅排序。主 spec §3.5 / 本批 spec §1 已同步修订。
+**背景**：比例制头部策略在 2026-08-12 实测中暴露两个缺陷：①席位随实体总数膨胀（单篇概念密集文档 11 切片 → 54 席、尾部混入薄条目）；②生成轴心与材料轴心错位——27 切片/152 合格实体逐条生成需 518 次切片搬运、152 次串行调用（≈60 分钟）。用户拍板：资格制（卫生过滤 + freq≥2，无总数上限，score 仅排序）+ 材料束批量生成（同簇实体共享一次调用），补写节流放宽到 40 篇/次。主 spec §3.5 / 本批 spec §1 已同步修订。
 
 **Files:**
-- Modify: `backend/packages/harness/deerflow/knowledge/wiki/generator.py`（`select_head_entities` → `select_eligible_entities`：卫生过滤 + `len(source_chunk_ids)≥2`，按 score=degree+freq 降序（name tie-break 保持确定性）；移除 `top_ratio`/`DEFAULT_TOP_RATIO`；`only_dirty` 路径补写段节流 ≤20 篇/次，dirty 重生成本身不受限）
-- Modify: `backend/tests/knowledge/wiki/test_generator.py`（比例制用例改写为资格制：卫生过滤各规则、freq=1 排除、合格数 >54 验证无 20% 截断、score 仅排序、节流上限 + dirty 不受限、既有降级保留/幂等用例适配）
+- Modify: `backend/packages/harness/deerflow/knowledge/wiki/generator.py`（`select_head_entities` → `select_eligible_entities`：卫生过滤 + `len(source_chunk_ids)≥2`，score=degree+freq 降序、name tie-break；移除 `top_ratio`/`DEFAULT_TOP_RATIO`；新增纯函数 `plan_entry_batches`（Jaccard≥0.5 贪心聚簇、簇内 ≤7 实体/包）与批量生成路径（共享并集切片 + JSON 数组输出 + title 白名单校验 + 缺篇/坏 JSON 降级逐条）；`only_dirty` 路径：dirty 逐条重生成 + 无条目合格实体按 score 降序补写 ≤40 篇/次）
+- Modify: `backend/tests/knowledge/wiki/test_generator.py`（比例制用例改写：资格过滤各规则、freq=1 排除、无 20% 截断、score 仅排序；打包纯函数聚簇/切包/确定性；批量解析正常/缺篇降级/坏 JSON 降级；节流 40 上限 + dirty 不受限；既有幂等/降级保留用例适配）
 
 **接口契约（实现前冻结）：**
 - 资格 = 卫生过滤通过 ∧ `len(source_chunk_ids) ≥ 2`；无总数上限；score 仅用于排序。
 - 卫生过滤（wiki 选型期执行，不动图谱入库与图谱路检索）：纯符号/运算符（不含任何字母数字）、引号包裹字面量、单字符、长度 >30 的碎片。
-- 全量模式（手动按钮/首次触发）：写全部合格实体，不节流；自动增量（`only_dirty=True`）：dirty 条目全部重生成 + 无条目合格实体按 score 降序补写 ≤20 篇/次，剩余排队后续触发。
+- 打包：实体按 score 降序贪心入包——与某包并集切片的 Jaccard≥0.5 且包内 <7 实体则并入，否则开新包；确定性（同输入同输出）。
+- 批量输出：JSON 数组 `[{title, content}]`，title 必须 ∈ 请求实体清单；缺篇或解析失败 → 该包缺篇实体降级逐条生成。
+- dirty 重生成逐条不打包；自动增量补写 ≤40 篇/次（超出排队后续触发）；全量模式（手动/首次）不节流。
 - 既有条目不因资格变化而删除（降级保留原则不变）；幂等不变（已有条目不重复补）。
 - 调用方适配：`generate_wiki` 的 `top_ratio` 形参移除，调用处（router 手动生成/worker）同步清理。
 
-- [ ] 写失败测试：卫生过滤各规则；freq=1 排除；无 20% 截断；score 仅排序；节流 20 上限且 dirty 不受限；幂等/降级保留适配。
+- [ ] 写失败测试：资格过滤各规则；freq=1 排除；无 20% 截断；打包聚簇/切包/确定性；批量解析与两级降级；节流 40 上限且 dirty 不受限；幂等/降级保留适配。
 - [ ] RED → 实现 → GREEN；revert 证明点：revert freq≥2 资格 → freq=1 排除用例 RED → restore → GREEN。
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `feat(rag): switch wiki entries to cross-chunk eligibility with paced backfill`。
+- [ ] Commit: `feat(rag): switch wiki entries to cross-chunk eligibility with batched generation`。
+
+## Task 9: 文档删除竞态护栏 + 存量幽灵数据修复（2026-08-12 插入，用户拍板立即处理）
+
+**背景**：实测发现图谱残留——`graph_entities.source_chunk_ids` 引用 4 个已删除文档的切片（幽灵引用），chunks 表存在 11 行孤儿切片（doc 行已删）。级联删除稳态正确（store/图谱/service 三层测试在绿），根因是**删除与 worker 索引的竞态**：删除清空业务行后，仍在运行的 worker 继续 `insert_chunks`/图谱 upsert 把数据复活（`update_document_status` 对不存在行静默 no-op，流水线无感知）。幽灵引用污染 freq（String freq=10 中仅 2-3 个存活），直接威胁 Task 8 资格制的 freq≥2 判定。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/worker.py`（`_DocumentDeletedError` + 存活护栏检查点：解析完成后（insert_chunks 前）、向量路前、图谱路前、图谱路完成后；命中则安静中止——info 日志、不写 failed、不再产生任何写入）
+- Modify: `backend/tests/knowledge/test_worker.py`（解析中删除 → chunks/图谱无残留、文档行不复活）
+- 存量修复（一次性执行，不落脚本文件）：幽灵 chunk id = 图谱引用 - chunks 表现存 → `remove_chunk_contributions` + Qdrant `delete_entities`（孤儿实体）+ `delete_by_doc`（孤儿切片点）+ 孤儿 chunk 行删除；修复前后对账（实体数/关系数/freq 分布）
+
+**接口契约（实现前冻结）：**
+- 护栏语义：任何检查点发现文档行消失 → 抛 `_DocumentDeletedError`，外层单独捕获，info 级日志后返回 None；不更新状态、不写 error、不产生新数据。
+- 图谱路执行中被删除的残留窗口予以承认并在代码注释记录（由存量修复逻辑兜底，可重复执行幂等）。
+- 存量修复复用 `GraphStore.remove_chunk_contributions`（与级联删除同一路径），不手写 SQL 改图谱。
+
+- [ ] 写失败测试：解析中删除 → 无 chunks/无实体/文档行不复活。
+- [ ] RED → 实现 → GREEN。
+- [ ] 存量修复执行 + 对账（修复后全库图谱引用 100% 存活）。
+- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [ ] Commit: `fix(rag): abort indexing pipeline when document is deleted mid-flight`。
 
 ## Final verification
 
