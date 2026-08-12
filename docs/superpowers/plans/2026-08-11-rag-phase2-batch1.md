@@ -133,13 +133,34 @@
 
 **接口契约（实现前冻结）：**
 - `path_status` 枚举严格按 spec §5；写入语义为**局部合并**（只更新当次阶段对应的 key，不覆盖其他路）。
-- wiki 子状态库级判定：`pending`（库无 ready 条目且未在生成）/ `generating`（手动或自动触发进行中）/ `ready`（库存在 ready 条目）；`failed` 暂不启用（wiki 失败现有 error 通道）。
+- wiki 子状态库级判定：`pending`（库无 ready 条目且未在生成）/ `generating`（手动或自动触发进行中）/ `ready`（库存在 ready **或 dirty** 条目——dirty = 已生成待刷新，内容过期但可用，仍属已生成态，见 Task 5b）；`failed` 暂不启用（wiki 失败现有 error 通道）。
 - 兼容：老行 `path_status` 为 `null` 时前端不展示悬停。
 
 - [ ] 写失败测试：migration up/down；worker 各阶段写入断言（vector done 先于 graph done）；graph degraded 同源；retry 重置；列表响应携带；wiki 库级镜像。
 - [ ] RED → 实现 → GREEN；revert 局部合并为整体覆盖，证明合并语义用例 RED，restore，GREEN。
 - [ ] `pnpm check` + backend 全量 knowledge 测试 GREEN。
 - [ ] Commit: `feat(rag): persist per-path document status with hover breakdown`。
+
+## Task 5b: wiki dirty 钩子接线 + 新晋头部补条目（一期 §3.5 缺陷修复与语义修订）
+
+**背景**：一期 §3.5 契约“新文档涉及的实体条目标记 `dirty`，后台增量重生成”从未生效——`mark_dirty_for_entities`（docstring 自封 "New-document hook"）在 worker 里从未被调用，全仓仅测试在用；`_maybe_generate_wiki` 的 `only_dirty=True` 增量因此恒空转，新内容进 wiki 只能靠手动「生成百科」全量。本 Task 接线该钩子，并按 2026-08-12 用户确认的语义修订把增量目标扩为 dirty ∪ 新晋头部（主 spec §3.5 已同步修订）。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/worker.py`（`resolve_entity_aliases` 的 try/except 之后、`_maybe_generate_wiki` 之前：调 `mark_dirty_for_entities(self._wiki_store, kb_id, stats.touched_entities)`；try/except 降级仅 log——wiki 是库级功能，脏标记失败不阻断文档 ready、不写 per-文档 error 子标记）
+- Modify: `backend/packages/harness/deerflow/knowledge/wiki/generator.py`（`only_dirty=True` 目标集扩为：dirty 条目对应实体 ∪ 当前 `select_head_entities` 头部中无 wiki 条目的实体；被挤出头部的旧条目保留不删；已有条目不重复补——幂等）
+- Modify: `backend/tests/knowledge/test_worker.py`（索引新文档后 touched 实体条目 dirty、未触及保持 ready、mark_dirty 抛错文档仍 ready）
+- Modify: `backend/tests/knowledge/wiki/test_generator.py`（增量目标含新晋头部、补写后头部⇔条目集合一致、幂等不重复补、降级旧头部保留）
+
+**接口契约（实现前冻结）：**
+- 标记时机：`resolve_entity_aliases`（D3）**之后**、`_maybe_generate_wiki` 之前，用 `stats.touched_entities`（以合并后最终实体名为准；被合并掉的旧名由 `mark_dirty_for_titles` 的标题匹配天然忽略）。
+- 增量目标集（主 spec §3.5 2026-08-12 修订）：`targets = dirty 条目对应实体 ∪（当前头部 \ 已有条目标题）`；反向不处理（降级旧头部保留）。
+- 失败降级：`mark_dirty_for_entities` 异常仅 `logger.exception`，不阻断 ready、不追加 error 子标记。
+- 与 Task 5 协同：wiki 库级子状态判定中 `dirty` 条目计入“已生成”（Task 5 契约已同步）。
+
+- [ ] 写失败测试：worker 三断言（touched 变 dirty / 未触及不变 / 钩子抛错仍 ready）；generator 四断言（新晋头部进 targets / 补写后头部⇔条目一致 / 幂等 / 旧头部保留）。
+- [ ] RED → 实现 → GREEN；revert 证明点：revert 目标集差集逻辑 → 新晋头部用例 RED → restore → GREEN。
+- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [ ] Commit: `fix(rag): wire new-document wiki dirty hook and backfill new head entries`。
 
 ## Task 6: P4 解析能力扩展第一批 + 上传白名单
 

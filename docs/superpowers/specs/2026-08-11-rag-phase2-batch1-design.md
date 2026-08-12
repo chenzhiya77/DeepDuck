@@ -13,6 +13,8 @@
 
 另一处隐藏前置（2026-08-11 核查）：**中栏「文档 | 百科」tab 容器前端未实施**——当前中栏是 DocumentPanel 单面板，百科 tab 不存在（后端 `wiki/entries` API 已在一期落地）。P1 的第三 tab 与 P2 的百科查看入口都依赖该容器，本批一并交付。
 
+另一处一期遗留缺陷（2026-08-12 核查）：主 spec §3.5 契约“新文档实体条目标 dirty 增量重生成”从未生效——`mark_dirty_for_entities` 钩子未接入 worker，增量恒空转，新内容进 wiki 只能靠手动全量。本批随 P3 一并修复（plan Task 5b），并将增量语义修订为「dirty ∪ 新晋头部自动补写」（主 spec §3.5 已同步修订，2026-08-12 用户确认）。
+
 本 spec 将四项契约从主 spec 抽出独立成文，作为实施阶段的单一事实源；主 spec 原文保留，对应位置加交叉引用。
 
 ## 2. 交付项与建议顺序
@@ -98,7 +100,7 @@ POST /api/knowledge-bases/{kb_id}/recall-test
   **写入时机（worker 各阶段推进时顺手更新，一次写入多处读取，避免查询期实时聚合）**：
   - `vector`：`index_chunks` 完成 → `done`（现无持久化，本列即载体；向量路先于图谱路执行，天然可能"向量先就绪先可搜"）；
   - `graph`：复用现有进度口径（`done 切片数 / 总切片数`，`progress_percent` 同源）；失败率超阈值 → `degraded`（与 error 子标记 `graph degraded` 同源）；
-  - `wiki`：**库级状态镜像**而非 per-文档计算——百科是库级触发式批量，所有文档共享库的 wiki 状态（未触发 `pending` / 生成中 `generating` / 已生成 `ready`）；主 spec 悬停示例"wiki 待生成"本就是库级语义，per-文档 join `source_chunk_ids` 计算覆盖既昂贵又语义牵强，不做。
+  - `wiki`：**库级状态镜像**而非 per-文档计算——百科是库级触发式批量，所有文档共享库的 wiki 状态（未触发 `pending` / 生成中 `generating` / 已生成 `ready`；`dirty` 条目视为已生成态——内容过期但可用，库级判定时计入 ready）；主 spec 悬停示例"wiki 待生成"本就是库级语义，per-文档 join `source_chunk_ids` 计算覆盖既昂贵又语义牵强，不做。
 - indexing 中的细分百分比继续由 `progress_percent` 承担，子标记不重复表达数字（悬停文案可组合展示「图谱 87%」）。
 - 前端：状态列悬停 tooltip 展示三路子状态；不新增列。
 

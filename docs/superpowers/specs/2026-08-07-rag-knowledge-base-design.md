@@ -124,7 +124,7 @@ payload 索引字段（仅为过滤条件建索引）：
 - 条目 = 实体的百科页：`{entry_id, title, content, kb_id, status(dirty/ready), source_chunk_ids[], updated_at}`
 - 粒度两级：**实体级**（重要实体各一篇）+ **主题级**（图上紧密社区各一篇，借鉴 GraphRAG 社区摘要）
 - **头部实体策略**：仅头部 ~20% 实体（按度数/频率）生成条目，长尾靠图谱碎片
-- 更新：新文档涉及的实体条目标记 `dirty`，后台增量重生成，不重建全库
+- 更新：新文档涉及的实体条目标记 `dirty`，后台增量重生成，不重建全库。**2026-08-12 修订**：①增量目标集扩为「dirty 条目 ∪ 当前头部中尚无条目的实体」（新晋头部自动补写；被挤出头部的旧条目保留不删）——原契约只管内容过期刷新，不管头部成员资格变化；②落地注记：dirty 钩子（`mark_dirty_for_entities`）一期未接入 worker 导致增量空转，已随二期第一批修复（实施契约见 `2026-08-11-rag-phase2-batch1-design.md` 的 plan Task 5b）
 - 存储：全文+状态放 backend 统一 database（SQLite/PG）`wiki_entries` 表；向量放 Qdrant `kb_wiki_entries`（payload 只存 entry_id 指针 + title + kb_id）——"向量库存指针、正文存业务库"
 
 **wiki 与图谱的边界**：图谱管跨实体结构广度（在线遍历受跳数与上下文预算限制），wiki 管单实体消化深度（离线预算充裕，可消化全部关联切片浓缩成文）。两者不构成替代关系。
