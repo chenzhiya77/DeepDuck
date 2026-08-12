@@ -225,7 +225,9 @@
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
 - [ ] Commit: `feat(rag): switch wiki entries to cross-chunk eligibility with batched generation`。
 
-## Task 9: 文档删除竞态护栏 + 存量幽灵数据修复（2026-08-12 插入，用户拍板立即处理）
+## Task 9: 文档删除竞态护栏 + 存量幽灵数据修复（2026-08-12 插入，用户拍板立即处理） ✅ 已完成（2026-08-12）
+
+**验证结果**：tests/knowledge 226 passed + 2 skipped（较 Task 5b 基线 +1）；ruff check/format 干净。存量修复对账（KB `5d96a1e3`）：幽灵引用 22 + 孤儿切片 11 共 33 项贡献移除 → 实体 266→181（85 个零引用实体清除，几乎全是重复上传滋生的薄实体）、关系 409→144、切片 27→16、phantom_refs=0；Qdrant 同步清理（delete_by_doc + 85 个实体向量）；6 个旧 wiki 条目的幽灵溯源引用已剥除。**修复后资格制真实估算（纠正此前被污染的数据）**：freq 分布 freq=1→160 / freq=2→19 / freq=3→1 / freq=5→1，freq≥2 合格实体仅 **21**（原估 152 系幽灵引用注水）；String 真实 score=13（freq 3 + deg 10，原 34 系注水）。
 
 **背景**：实测发现图谱残留——`graph_entities.source_chunk_ids` 引用 4 个已删除文档的切片（幽灵引用），chunks 表存在 11 行孤儿切片（doc 行已删）。级联删除稳态正确（store/图谱/service 三层测试在绿），根因是**删除与 worker 索引的竞态**：删除清空业务行后，仍在运行的 worker 继续 `insert_chunks`/图谱 upsert 把数据复活（`update_document_status` 对不存在行静默 no-op，流水线无感知）。幽灵引用污染 freq（String freq=10 中仅 2-3 个存活），直接威胁 Task 8 资格制的 freq≥2 判定。
 
@@ -239,11 +241,11 @@
 - 图谱路执行中被删除的残留窗口予以承认并在代码注释记录（由存量修复逻辑兜底，可重复执行幂等）。
 - 存量修复复用 `GraphStore.remove_chunk_contributions`（与级联删除同一路径），不手写 SQL 改图谱。
 
-- [ ] 写失败测试：解析中删除 → 无 chunks/无实体/文档行不复活。
-- [ ] RED → 实现 → GREEN。
-- [ ] 存量修复执行 + 对账（修复后全库图谱引用 100% 存活）。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `fix(rag): abort indexing pipeline when document is deleted mid-flight`。
+- [x] 写失败测试：解析中删除 → 无 chunks/无实体/文档行不复活。
+- [x] RED → 实现 → GREEN。
+- [x] 存量修复执行 + 对账（修复后全库图谱引用 100% 存活）。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [x] Commit: `fix(rag): abort indexing pipeline when document is deleted mid-flight`。
 
 ## Final verification
 

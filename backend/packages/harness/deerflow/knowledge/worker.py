@@ -45,6 +45,10 @@ from deerflow.knowledge.wiki.store import WikiStore
 logger = logging.getLogger(__name__)
 
 
+class _DocumentDeletedError(Exception):
+    """The document row vanished mid-pipeline (user deleted it) — abort quietly."""
+
+
 class _LLM(Protocol):
     async def ainvoke(self, messages: Any) -> Any: ...
 
@@ -130,6 +134,14 @@ class KnowledgeIndexWorker:
     async def submit(self, doc_id: str) -> None:
         await self._queue.put(doc_id)
 
+    async def _require_alive(self, doc_id: str) -> None:
+        """Liveness checkpoint against the delete-vs-worker race: a document
+        deleted mid-pipeline must not be resurrected by further writes
+        (insert_chunks / graph upserts would otherwise recreate zombie rows
+        and phantom chunk references; status updates no-op silently)."""
+        if await self._store.get_document(doc_id) is None:
+            raise _DocumentDeletedError(doc_id)
+
     async def wait_idle(self) -> None:
         """Block until the queue drains and in-flight documents settle (tests)."""
         await self._queue.join()
@@ -173,6 +185,7 @@ class KnowledgeIndexWorker:
             if document["status"] in ("uploaded", "parsing", "chunking"):
                 await self._reparse_and_chunk(doc_id, kb_id, document["storage_path"])
 
+            await self._require_alive(doc_id)  # checkpoint: before the vector leg
             await self._store.update_document_status(doc_id, "indexing", path_status=legs)
             chunks = await self._store.list_chunks(doc_id, limit=1_000_000)
             embedder = self._embedder or DashScopeEmbedder()
@@ -192,6 +205,7 @@ class KnowledgeIndexWorker:
 
             legs["graph"] = "indexing"
             await self._store.update_document_status(doc_id, "indexing", path_status={"graph": "indexing"})
+            await self._require_alive(doc_id)  # checkpoint: before the (slowest) graph leg
             stats = await index_document_graph(
                 self._store,
                 self._graph_store,
@@ -205,6 +219,11 @@ class KnowledgeIndexWorker:
                 name_similarity_threshold=self._entity_merge_similarity,
                 progress_callback=_on_progress,
             )
+            # Checkpoint: the graph leg is the longest window for a delete to
+            # land in. Entities written before this point CAN still reference a
+            # since-deleted doc's chunks — that residual window is acknowledged
+            # and covered by the phantom-contribution cleanup (plan Task 9).
+            await self._require_alive(doc_id)
             # Same verdict source as the ``graph degraded`` error sub-marker.
             legs["graph"] = "degraded" if stats.degraded else "done"
             await self._store.update_document_status(doc_id, "indexing", path_status={"graph": legs["graph"]})
@@ -237,6 +256,9 @@ class KnowledgeIndexWorker:
                 logger.exception("wiki dirty marking failed for kb %s", kb_id)
             await self._store.update_document_status(doc_id, "ready", progress_percent=100)
             await self._maybe_generate_wiki(kb_id, embedder)
+        except _DocumentDeletedError:
+            logger.info("document %s was deleted mid-indexing; pipeline aborted quietly", doc_id)
+            return None
         except Exception as exc:
             logger.exception("knowledge indexing failed for document %s", doc_id)
             # Legs that never reached a terminal state fail with the document;
@@ -274,6 +296,7 @@ class KnowledgeIndexWorker:
             captions = await caption_images(parsed.images)
             markdown = apply_captions(markdown, captions)
 
+        await self._require_alive(doc_id)  # checkpoint: after the long external parse, before any write
         await self._store.update_document_status(doc_id, "chunking")
         chunks = chunk_markdown(markdown, doc_id)
         await self._store.insert_chunks(

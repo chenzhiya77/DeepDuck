@@ -499,3 +499,28 @@ async def test_wiki_dirty_hook_failure_never_blocks_ready(session_factory, monke
     doc = await store.get_document("doc-1")
     assert doc["status"] == "ready"
     assert doc["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_aborts_quietly_when_document_deleted_mid_parse(session_factory):
+    """Task 9: a document deleted mid-indexing must not be resurrected — the
+    worker hits the next liveness checkpoint and aborts with no further writes
+    (regression: phantom chunk refs and zombie chunks from the delete race)."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+
+    async def _parse_deleting(path: str) -> ParsedDocument:
+        await store.delete_document("doc-1")  # user hits delete while the parser runs
+        return ParsedDocument(markdown=SAMPLE_MD, images=[])
+
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    worker = _worker(store, session_factory, parse_fn=_parse_deleting, llm=llm)
+
+    result = await worker.process_document("doc-1")
+
+    assert result is None
+    assert await store.get_document("doc-1") is None  # row stays deleted
+    assert await store.list_chunks("doc-1", limit=10) == []  # no zombie chunks
+    graph = await GraphStore(session_factory).load_networkx("kb-1")
+    assert len(graph.nodes) == 0  # no phantom entities
