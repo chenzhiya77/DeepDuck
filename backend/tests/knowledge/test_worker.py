@@ -138,8 +138,29 @@ async def test_parse_failure_marks_failed_with_error(session_factory):
     doc = await store.get_document("doc-1")
     assert doc["status"] == "failed"
     assert "MinerU 服务不可用" in (doc["error"] or "")
-    # 解析失败时索引阶段未进入，path_status 保持 null（不展示悬停）
-    assert doc["path_status"] is None
+    # 解析期已初始化 pending/pending（悬停全程可用）；硬失败时未达终态的路记 failed
+    assert doc["path_status"] == {"vector": "failed", "graph": "failed"}
+
+
+@pytest.mark.asyncio
+async def test_path_status_initialized_at_parsing(session_factory):
+    """path_status 初始化前移到 parsing 起点（2026-08-12 体验修正）：解析阶段
+    悬停即可用，显示「待处理」——不再等到 indexing 才首次写入。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    observed: list[dict[str, str] | None] = []
+
+    async def parse_spy(path: str) -> ParsedDocument:
+        doc = await store.get_document("doc-1")
+        observed.append(None if doc["path_status"] is None else dict(doc["path_status"]))
+        return ParsedDocument(markdown=SAMPLE_MD, images=[])
+
+    worker = _worker(store, session_factory, parse_fn=parse_spy, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    # parse_fn 执行时点（状态已是 parsing）：path_status 必须已初始化
+    assert observed == [{"vector": "pending", "graph": "pending"}]
 
 
 @pytest.mark.asyncio
@@ -165,7 +186,8 @@ async def test_path_status_tracks_pipeline_stages(session_factory):
     await worker.process_document("doc-1")
 
     assert snapshots == [
-        {"vector": "pending", "graph": "pending"},  # 进入 indexing
+        {"vector": "pending", "graph": "pending"},  # 进入 parsing（初始化前移）
+        {"vector": "pending", "graph": "pending"},  # 进入 indexing（幂等重写同值）
         {"vector": "done", "graph": "pending"},  # index_chunks 完成 → 向量先就绪
         {"vector": "done", "graph": "indexing"},  # 图谱路开始
         {"vector": "done", "graph": "done"},  # 图谱路完成

@@ -163,15 +163,16 @@ class KnowledgeIndexWorker:
         if document is None or document["status"] in ("ready", "failed"):
             return document
         kb_id = document["kb_id"]
-        legs: dict[str, str] = {}
+        # P3 per-path sub-status (spec 2026-08-11 §5): initialized up front so the
+        # hover breakdown exists from the parsing stage on (2026-08-12 UX fix) —
+        # only pre-0012 legacy rows stay NULL and render no hover. Partial-merge
+        # writes follow as each leg advances; the wiki leg is NOT tracked on the
+        # row (library-level mirror injected at read time by the API).
+        legs: dict[str, str] = {"vector": "pending", "graph": "pending"}
         try:
             if document["status"] in ("uploaded", "parsing", "chunking"):
                 await self._reparse_and_chunk(doc_id, kb_id, document["storage_path"])
 
-            # P3 per-path sub-status (spec 2026-08-11 §5): partial-merge writes
-            # as each leg advances. The wiki leg is NOT tracked on the row — it
-            # is a library-level mirror injected at read time by the API.
-            legs = {"vector": "pending", "graph": "pending"}
             await self._store.update_document_status(doc_id, "indexing", path_status=legs)
             chunks = await self._store.list_chunks(doc_id, limit=1_000_000)
             embedder = self._embedder or DashScopeEmbedder()
@@ -257,7 +258,7 @@ class KnowledgeIndexWorker:
             await self._vector_store.delete_by_doc(doc_id)
             await self._store.delete_chunks_by_doc(doc_id)
 
-        await self._store.update_document_status(doc_id, "parsing")
+        await self._store.update_document_status(doc_id, "parsing", path_status={"vector": "pending", "graph": "pending"})
         parsed = await self._parse_fn(storage_path)
         markdown = parsed.markdown
         if parsed.images:

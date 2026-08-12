@@ -92,6 +92,23 @@ describe("DocumentPanel table", () => {
     expect(screen.getByText(/40%/)).toBeTruthy();
   });
 
+  it("hides the percent for pre-indexing stages (no real progress source there)", () => {
+    // 2026-08-12 体验修正：待解析/解析中/切片中无可测进度（MinerU 单次调用无
+    // 回调），只显示阶段徽章，不挂无信息量的 0%
+    renderPanel({
+      documents: [
+        doc({
+          status: "parsing",
+          progress_percent: 0,
+          chunk_count: null,
+          path_status: { vector: "pending", graph: "pending", wiki: "pending" },
+        }),
+      ],
+    });
+    expect(screen.getByText("解析中")).toBeTruthy();
+    expect(screen.queryByText(/\d+%/)).toBeNull();
+  });
+
   it("surfaces the error text (graph degraded marker rides the error field)", () => {
     renderPanel({ documents: [doc({ status: "ready", error: "图谱抽取降级：失败率 45%" })] });
     expect(screen.getByText(/图谱抽取降级/)).toBeTruthy();

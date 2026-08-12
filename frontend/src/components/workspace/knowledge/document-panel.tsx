@@ -369,7 +369,8 @@ export function DocumentPanel({
                             data-testid={doc.path_status ? "path-status-trigger" : undefined}
                           >
                             <Badge variant={STATUS_BADGE_VARIANT[doc.status] ?? "outline"}>{statusText(doc.status)}</Badge>
-                            {doc.status !== "ready" && doc.status !== "failed" && (
+                            {/* 百分比只在 indexing 显示——前置阶段（解析/切片）无可测进度，不挂无信息量的 0% */}
+                            {doc.status === "indexing" && (
                               <span className="text-muted-foreground text-xs">{doc.progress_percent}%</span>
                             )}
                           </span>

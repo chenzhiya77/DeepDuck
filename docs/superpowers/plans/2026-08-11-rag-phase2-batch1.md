@@ -129,6 +129,7 @@
 4. **drive-by format**：`test_citation_numbering.py` 三处 assert 折行被 ruff 新版单行偏好重排（无语义改动）。
 5. **前端 tooltip 测试遵循 P2 先例**：不测 Radix 悬停开启机制；`PathStatusBreakdown` 导出直渲测内容装配，`path-status-trigger` testid 测挂载条件；悬停内容装配抽为纯函数 `core/knowledge/path-status.ts`。
 6. revert 证明点已执行：局部合并改整体覆盖 → `test_document_path_status_partial_merge` RED → restore → GREEN。
+7. **2026-08-12 体验修正（用户实测反馈，单独 fix commit）**：①path_status 初始化前移到 parsing 起点——此前解析阶段悬停无反应（null 与老行语义混杂），前移后新文档全生命周期可悬停，null 唯一含义=0012 前遗产行；解析期硬失败两路记 failed。②百分比只在 indexing 显示——待解析/解析中/切片中无可测进度（MinerU 单次 API 调用无回调），摘掉无信息量的 0%（对标 Dify「无数据不编数字」原则）。③老文档决策（用户拍板）：不 backfill，自然过渡。
 
 **验证结果**：backend knowledge 220 passed + 2 skipped（live-key 用例）；migration/bootstrap 39 passed；前端 knowledge 157 passed；`pnpm check` 干净；ruff check/format 干净。
 
