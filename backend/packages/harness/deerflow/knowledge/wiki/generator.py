@@ -308,7 +308,9 @@ async def generate_wiki(
                 logger.info("wiki regeneration: %d dirty entries have no graph entity left, skipped", len(dirty) - len(singles))
             # 2026-08-12 revision (spec §3.5): backfill = eligible entities
             # without an entry (any status counts — idempotent), paced per run.
-            # Entities that lost eligibility keep their entries (never deleted).
+            # Disqualified/vanished entities' entries are deleted by the
+            # Task 12 lifecycle cascade (delete/merge events) — generate_wiki
+            # itself only writes, never deletes.
             entry_titles = {entry["title"] for entry in await wiki_store.list_entries(kb_id)}
             backfill = [row for row in await select_eligible_entities(graph_store, kb_id) if row["name"] not in entry_titles][:backfill_limit]
         else:
