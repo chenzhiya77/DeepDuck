@@ -66,9 +66,13 @@ class KnowledgeService:
         """Documents with the per-path sub-status (phase-2 batch-1 P3, spec §5).
 
         The stored ``path_status`` carries vector/graph only; the wiki leg is a
-        **library-level mirror** injected here at assembly time — every document
-        of the KB shares the same wiki status. Rows whose stored path_status is
-        NULL (legacy) stay NULL so the frontend renders no hover for them.
+        **library-level mirror** injected here at assembly time. The mirror
+        only applies to terminal documents (ready/failed): a document still in
+        the indexing pipeline has not been digested by the wiki leg at all, so
+        its wiki line reports ``pending`` instead of mirroring the library's
+        stale ``ready`` (2026-08-13 口径——否则新文档在索引期间会错误显示旧内容
+        的「已生成」). Rows whose stored path_status is NULL (legacy) stay NULL
+        so the frontend renders no hover for them.
         """
         documents = await self.store.list_documents(kb_id)
         wiki_status = await self._wiki_path_status(kb_id)
@@ -76,7 +80,8 @@ class KnowledgeService:
             path_status = document.get("path_status")
             if path_status is None:
                 continue
-            document["path_status"] = {**path_status, "wiki": wiki_status}
+            wiki = wiki_status if document["status"] in ("ready", "failed") else "pending"
+            document["path_status"] = {**path_status, "wiki": wiki}
         return documents
 
     async def _wiki_path_status(self, kb_id: str) -> str:

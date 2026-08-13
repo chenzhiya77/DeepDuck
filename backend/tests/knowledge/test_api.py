@@ -170,8 +170,13 @@ async def test_document_list_injects_library_level_wiki_status(service):
     assert by_id[doc_id]["path_status"] == {"vector": "done", "graph": "indexing", "wiki": "pending"}
     assert by_id["doc-legacy"]["path_status"] is None
 
-    # dirty = 已生成待刷新，内容过期但可用，仍属已生成态
+    # dirty = 已生成待刷新，内容过期但可用，仍属已生成态；但库级镜像只对终
+    # 态文档生效（2026-08-13 口径：流水线中的文档尚未被 wiki 消化 → pending）
     await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="旧内容", source_chunk_ids=["c1"], status="dirty")
+    listing = client.get(f"/api/knowledge-bases/{kb['id']}/documents")
+    by_id = {doc["id"]: doc for doc in listing.json()}
+    assert by_id[doc_id]["path_status"]["wiki"] == "pending"
+    await service.store.update_document_status(doc_id, "ready", path_status={"vector": "done", "graph": "done"})
     listing = client.get(f"/api/knowledge-bases/{kb['id']}/documents")
     by_id = {doc["id"]: doc for doc in listing.json()}
     assert by_id[doc_id]["path_status"]["wiki"] == "ready"
@@ -179,17 +184,23 @@ async def test_document_list_injects_library_level_wiki_status(service):
 
 
 async def test_document_list_wiki_generating_only_when_in_flight(service, monkeypatch):
-    """generating：库无已生成条目且存在进行中的生成（手动或自动触发）。"""
+    """generating：存在进行中的生成（手动或自动触发）；流水线中的文档除外——
+    它尚未被 wiki 消化，wiki 行恒为 pending（2026-08-13 口径）。"""
     client = _client(service)
     kb = _create_kb(client)
     upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
     doc_id = upload.json()["id"]
-    await service.store.update_document_status(doc_id, "indexing", path_status={"vector": "done", "graph": "done"})
+    await service.store.update_document_status(doc_id, "ready", path_status={"vector": "done", "graph": "done"})
 
     monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
     listing = client.get(f"/api/knowledge-bases/{kb['id']}/documents")
     (doc,) = listing.json()
     assert doc["path_status"]["wiki"] == "generating"
+
+    # 同一时刻仍在索引流水线的文档：wiki 尚未消化它 → pending，不镜像库级在途
+    await service.store.update_document_status(doc_id, "indexing", path_status={"vector": "done", "graph": "indexing"})
+    (doc,) = client.get(f"/api/knowledge-bases/{kb['id']}/documents").json()
+    assert doc["path_status"]["wiki"] == "pending"
 
 
 async def test_document_list_wiki_in_flight_overrides_ready_entries(service, monkeypatch):
@@ -201,7 +212,7 @@ async def test_document_list_wiki_in_flight_overrides_ready_entries(service, mon
     kb = _create_kb(client)
     upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
     doc_id = upload.json()["id"]
-    await service.store.update_document_status(doc_id, "indexing", path_status={"vector": "done", "graph": "done"})
+    await service.store.update_document_status(doc_id, "ready", path_status={"vector": "done", "graph": "done"})
     await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="已有内容", source_chunk_ids=["c1", "c2"])
 
     monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
