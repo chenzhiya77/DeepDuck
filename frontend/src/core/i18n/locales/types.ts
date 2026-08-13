@@ -263,7 +263,11 @@ export interface Translations {
       asc: string;
       desc: string;
     };
-    generateWiki: string;
+    updateWiki: string;
+    rebuildWiki: string;
+    rebuildWikiConfirmTitle: string;
+    rebuildWikiConfirmDescription: string;
+    rebuildWikiConfirmAction: string;
     wikiEnqueued: string;
     settings: string;
     renameKb: string;

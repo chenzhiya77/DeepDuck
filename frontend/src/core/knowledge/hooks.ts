@@ -106,7 +106,7 @@ export function useDocumentChunks(kbId: string | null, docId: string | null, off
 export function useGenerateWiki(kbId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.generateWiki(kbId),
+    mutationFn: (mode: api.WikiGenerateMode) => api.generateWiki(kbId, mode),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) });
     },

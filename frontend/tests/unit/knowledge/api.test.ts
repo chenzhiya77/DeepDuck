@@ -190,13 +190,22 @@ describe("document endpoints", () => {
 });
 
 describe("wiki endpoint", () => {
-  test("generateWiki POSTs and accepts the enqueued ack", async () => {
+  test("generateWiki defaults to incremental mode", async () => {
     mockedFetch.mockResolvedValueOnce(jsonResponse(202, { status: "enqueued" }));
     const result = await generateWiki("kb-1");
     expect(mockedFetch).toHaveBeenCalledWith(
-      "http://gw/api/knowledge-bases/kb-1/wiki/generate",
+      "http://gw/api/knowledge-bases/kb-1/wiki/generate?mode=incremental",
       expect.objectContaining({ method: "POST" }),
     );
     expect(result.status).toBe("enqueued");
+  });
+
+  test("generateWiki full mode maps to the full rebuild query", async () => {
+    mockedFetch.mockResolvedValueOnce(jsonResponse(202, { status: "enqueued" }));
+    await generateWiki("kb-1", "full");
+    expect(mockedFetch).toHaveBeenCalledWith(
+      "http://gw/api/knowledge-bases/kb-1/wiki/generate?mode=full",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

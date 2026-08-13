@@ -139,11 +139,28 @@ describe("MiddleTabs", () => {
       expect(clickSpy).toHaveBeenCalled();
       // selecting an item closes the menu — reopen for the next action
       fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-      fireEvent.click(await screen.findByText("生成百科"));
-      expect(handlers.onGenerateWiki).toHaveBeenCalled();
+      fireEvent.click(await screen.findByText("更新百科"));
+      expect(handlers.onGenerateWiki).toHaveBeenCalledWith("incremental");
     } finally {
       clickSpy.mockRestore();
     }
+  });
+
+  it("asks for confirmation before a full wiki rebuild (Task 14)", async () => {
+    const handlers = renderTabs();
+    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByText("全部重建"));
+
+    // confirm dialog with the cost warning; cancel does nothing
+    expect(await screen.findByText("全部重建百科？")).toBeTruthy();
+    fireEvent.click(screen.getByText("取消"));
+    expect(handlers.onGenerateWiki).not.toHaveBeenCalled();
+
+    // reopen and confirm → full mode
+    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByText("全部重建"));
+    fireEvent.click(await screen.findByText("确认重建"));
+    expect(handlers.onGenerateWiki).toHaveBeenCalledWith("full");
   });
 
   it("uploads via the hidden file input in the library header", () => {

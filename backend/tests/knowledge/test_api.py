@@ -368,7 +368,27 @@ async def test_wiki_generate_enqueues_background_task(service):
 
     assert response.status_code == 202
     assert response.json()["status"] == "enqueued"
-    generate.assert_called_once_with(kb["id"])
+    # Task 14: default mode is incremental (only_dirty=True).
+    generate.assert_called_once_with(kb["id"], True)
+
+
+async def test_wiki_generate_full_mode_maps_to_full_rebuild(service):
+    generate = MagicMock(return_value=None)
+    service.wiki_generate_fn = generate
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate?mode=full")
+
+    assert response.status_code == 202
+    generate.assert_called_once_with(kb["id"], False)
+
+
+async def test_wiki_generate_rejects_unknown_mode(service):
+    client = _client(service)
+    kb = _create_kb(client)
+
+    assert client.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate?mode=everything").status_code == 422
 
 
 async def test_manual_wiki_trigger_passes_embedder(service, monkeypatch):
@@ -392,6 +412,7 @@ async def test_manual_wiki_trigger_passes_embedder(service, monkeypatch):
 
     assert captured.get("kb_id") == "kb-1"
     assert captured.get("embedder") is not None, "manual wiki trigger must pass an embedder or entries get no vectors"
+    assert captured.get("only_dirty") is True, "Task 14: manual trigger defaults to incremental mode"
 
 
 async def test_wiki_entries_list_and_detail(service):

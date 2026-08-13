@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, MoreHorizontal, Upload } from "lucide-react";
+import { BookOpen, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useI18n } from "@/core/i18n/hooks";
+import type { WikiGenerateMode } from "@/core/knowledge/api";
 import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { runAfterMenuClose } from "./run-after-menu-close";
@@ -60,7 +61,7 @@ export function MiddleTabs({
   onTabChange: (tab: KnowledgeMiddleTab) => void;
   onUpload: (files: File[]) => void;
   uploading?: boolean;
-  onGenerateWiki: () => void;
+  onGenerateWiki: (mode: WikiGenerateMode) => void;
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
   documents: ReactNode;
@@ -73,6 +74,7 @@ export function MiddleTabs({
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState(kb.name);
   const [deleteKbOpen, setDeleteKbOpen] = useState(false);
+  const [rebuildOpen, setRebuildOpen] = useState(false);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="knowledge-middle-tabs">
@@ -95,9 +97,13 @@ export function MiddleTabs({
                 <Upload className="size-4" />
                 {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onGenerateWiki}>
+              <DropdownMenuItem onSelect={() => onGenerateWiki("incremental")}>
                 <BookOpen className="size-4" />
-                {tk.generateWiki}
+                {tk.updateWiki}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setRebuildOpen(true))}>
+                <RefreshCw className="size-4" />
+                {tk.rebuildWiki}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => {
@@ -209,6 +215,28 @@ export function MiddleTabs({
               }}
             >
               {t.common.confirmDelete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Wiki full-rebuild confirm (Task 14: full mode is for rule upgrades) */}
+      <Dialog open={rebuildOpen} onOpenChange={setRebuildOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>{tk.rebuildWikiConfirmTitle}</DialogTitle>
+            <DialogDescription>{tk.rebuildWikiConfirmDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRebuildOpen(false)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={() => {
+                onGenerateWiki("full");
+                setRebuildOpen(false);
+              }}
+            >
+              {tk.rebuildWikiConfirmAction}
             </Button>
           </DialogFooter>
         </DialogContent>

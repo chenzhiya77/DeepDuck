@@ -329,6 +329,27 @@
 - [x] 前端：组件测试 14 passed（新增确认/取消两用例）；`pnpm check` 干净。
 - [x] Commit: `feat(rag): manual wiki entry deletion with lifecycle-consistent cascade`。
 
+## Task 14: wiki 生成双模式（手动按钮默认增量 + 保留全量重建）（2026-08-13 用户拍板） ✅ 已完成（2026-08-13）
+
+**验证结果**：后端 tests/knowledge 246 passed + 2 skipped（较 Task 10 基线 +2：mode=full 映射 + 非法 422；另 2 用例原位强化：默认增量断言 + embedder 回归补 only_dirty 透传断言）；前端知识库三测试文件 37 passed（api 双 mode URL / hooks 透传 / 菜单「更新百科」即调 incremental +「全部重建」确认框取消不调确认调 full）；`pnpm check`、ruff check/format 干净。
+
+**背景**：手动「生成百科」按钮走 `_run_wiki_generation` → `generate_wiki` 不传 `only_dirty`（默认 False）→ 永远全量重建——用户点「更新」只想消化 1 条 dirty，实测 33/33 条目被重写，语义与成本双错位。拍板双模式：**日常「更新」= 增量**（dirty 逐条重生 + backfill 合格无条目 ≤40/次），**「全部重建」= 全量**（prompt/模板升级场景专用，前端带确认框）。worker 自动路径不变（`only_dirty=bool(existing)`）。
+
+**Files:**
+- Modify: `backend/app/gateway/routers/knowledge_bases.py`（`POST /{kb_id}/wiki/generate?mode=incremental|full`，默认 incremental；非法值 422）
+- Modify: `backend/app/gateway/services/knowledge_service.py`（`trigger_wiki_generation(kb_id, *, only_dirty)`；`_schedule/_run_wiki_generation` 透传；`wiki_generate_fn` 调用签名 `(kb_id, only_dirty)`）
+- Modify: `frontend/src/core/knowledge/api.ts`（`generateWiki(kbId, mode="incremental")` → `?mode=`）、`hooks.ts`（`useGenerateWiki` mutationFn 收 mode）、`middle-tabs.tsx`（「更新百科」即点即走 +「全部重建」确认 Dialog）、`app/workspace/knowledge/page.tsx`（接线）、i18n 三文件（updateWiki/rebuildWiki/rebuildWikiConfirmTitle/rebuildWikiConfirmDescription，移除死键 generateWiki）
+- Modify: `backend/tests/knowledge/test_api.py`（默认增量断言 + mode=full + 非法 422）、`frontend/tests/unit/knowledge/api.test.ts`（两 mode 的 URL）、`hooks.dom.test.tsx`（mode 透传）、`wiki-panel.dom.test.tsx`（更新即调 incremental / 重建确认后调 full / 取消不调）
+
+**接口契约（实现前冻结）：**
+- 默认（无 mode 参数）= incremental，与按钮新语义一致；`full` 为唯一合法第二值。
+- 增量语义复用 Task 8 既有 only_dirty 实现，不动 generator。
+- 空库首建走 backfill 通道自然达成（≤40/次，多次触发补齐），不需要特殊分支。
+
+- [x] 后端 TDD：RED（mode 映射/422）→ 实现 → GREEN。
+- [x] 前端：组件/钩子/api 测试适配两按钮；`pnpm check` 干净。
+- [x] Commit: `feat(rag): split manual wiki generation into incremental update and confirmed full rebuild`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。

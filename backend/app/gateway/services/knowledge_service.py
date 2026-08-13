@@ -49,7 +49,7 @@ class KnowledgeService:
         wiki_store: WikiStore | None = None,
         worker: Any = None,
         data_dir: str | Path,
-        wiki_generate_fn: Callable[[str], None] | None = None,
+        wiki_generate_fn: Callable[[str, bool], None] | None = None,
     ) -> None:
         self.store = store
         self.vector_store = vector_store
@@ -219,9 +219,10 @@ class KnowledgeService:
 
     # ── wiki ─────────────────────────────────────────────────────────────
 
-    def trigger_wiki_generation(self, kb_id: str) -> None:
-        """Fire-and-forget wiki batch generation (manual "生成百科" button)."""
-        self.wiki_generate_fn(kb_id)
+    def trigger_wiki_generation(self, kb_id: str, *, only_dirty: bool = True) -> None:
+        """Fire-and-forget wiki generation (Task 14: incremental by default;
+        ``only_dirty=False`` rebuilds every eligible entry)."""
+        self.wiki_generate_fn(kb_id, only_dirty)
 
     async def list_wiki_entries(self, kb_id: str) -> list[dict[str, Any]]:
         """Summary-only listing for the wiki tab (phase-2 batch-1).
@@ -385,18 +386,18 @@ class KnowledgeService:
             "elapsed_ms": {"vector": vector_ms, "graph": graph_ms, "wiki": wiki_ms},
         }
 
-    def _schedule_wiki_generation(self, kb_id: str) -> None:
-        task = asyncio.create_task(self._run_wiki_generation(kb_id), name=f"kb-wiki-{kb_id}")
+    def _schedule_wiki_generation(self, kb_id: str, only_dirty: bool = True) -> None:
+        task = asyncio.create_task(self._run_wiki_generation(kb_id, only_dirty=only_dirty), name=f"kb-wiki-{kb_id}")
         self._wiki_tasks.add(task)
         task.add_done_callback(self._wiki_tasks.discard)
 
-    async def _run_wiki_generation(self, kb_id: str) -> None:
+    async def _run_wiki_generation(self, kb_id: str, *, only_dirty: bool = True) -> None:
         try:
             from deerflow.knowledge.embedder import DashScopeEmbedder
 
             # generate_wiki silently skips the vector upsert without an embedder —
             # entries would exist but wiki_search could never find them.
-            await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, embedder=DashScopeEmbedder())
+            await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, embedder=DashScopeEmbedder(), only_dirty=only_dirty)
         except Exception:
             logger.exception("wiki generation failed for kb %s", kb_id)
 

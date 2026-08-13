@@ -162,7 +162,15 @@ describe("useGenerateWiki", () => {
     const { result } = renderHook(() => useGenerateWiki("kb-1"), {
       wrapper: createWrapper(freshQueryClient()),
     });
-    await result.current.mutateAsync();
-    expect(api.generateWiki).toHaveBeenCalledWith("kb-1");
+    await result.current.mutateAsync("incremental");
+    expect(api.generateWiki).toHaveBeenCalledWith("kb-1", "incremental");
+  });
+
+  it("passes the full-rebuild mode through", async () => {
+    const { result } = renderHook(() => useGenerateWiki("kb-1"), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    await result.current.mutateAsync("full");
+    expect(api.generateWiki).toHaveBeenCalledWith("kb-1", "full");
   });
 });

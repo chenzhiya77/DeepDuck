@@ -125,8 +125,8 @@ export default function KnowledgePage() {
                   }
                 })();
               }}
-              onGenerateWiki={() => {
-                generateWiki.mutate(undefined, {
+              onGenerateWiki={(mode) => {
+                generateWiki.mutate(mode, {
                   onSuccess: () => toast.success(tk.wikiEnqueued),
                   onError: (error) => showMutationError(error, tk.errors.wikiFailed),
                 });

@@ -9,6 +9,7 @@ list.
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
@@ -186,9 +187,12 @@ async def list_document_chunks(
 
 
 @router.post("/{kb_id}/wiki/generate", status_code=202)
-async def generate_wiki_entries(request: Request, kb_id: str):
+async def generate_wiki_entries(request: Request, kb_id: str, mode: Literal["incremental", "full"] = "incremental"):
+    """Enqueue wiki generation (Task 14): ``incremental`` (default) digests
+    dirty entries and backfills missing eligible ones; ``full`` rebuilds every
+    eligible entry (rule-upgrade scenario)."""
     service = await _require_kb_access(request, kb_id)
-    service.trigger_wiki_generation(kb_id)
+    service.trigger_wiki_generation(kb_id, only_dirty=mode != "full")
     return {"status": "enqueued"}
 
 

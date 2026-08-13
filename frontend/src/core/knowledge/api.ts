@@ -138,8 +138,10 @@ export function listDocumentChunks(
   );
 }
 
-export function generateWiki(kbId: string): Promise<WikiGenerateAck> {
-  return fetch(kbUrl(kbId, "/wiki/generate"), { method: "POST" }).then((r) =>
+export type WikiGenerateMode = "incremental" | "full";
+
+export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental"): Promise<WikiGenerateAck> {
+  return fetch(kbUrl(kbId, `/wiki/generate?mode=${mode}`), { method: "POST" }).then((r) =>
     readResponse<WikiGenerateAck>(r, "Failed to trigger wiki generation"),
   );
 }
