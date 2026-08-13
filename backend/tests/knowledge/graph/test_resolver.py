@@ -4,7 +4,8 @@ Per-slice normalization only merges aliases inside one chunk's extraction;
 this resolver runs after a document's graph indexing and merges cross-slice
 aliases (``Model``/``Models`` living on different chunks) with the full
 side-effect chain: graph rows → relation endpoints → ``kb_entities`` vectors
-→ chunk entity tags (business DB + payload dual write) → wiki dirty flags.
+→ chunk entity tags (business DB + payload dual write) → wiki lifecycle
+(alias entries deleted outright, the representative marked dirty).
 Everything is idempotent; failure never blocks the indexing pipeline (the
 worker degrades with a visible document error sub-marker).
 """
@@ -18,8 +19,8 @@ from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.extractor import ExtractedEntity, ExtractedRelation
 from deerflow.knowledge.graph.resolver import ResolutionStats, resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
-from deerflow.knowledge.vector_store import ChunkUpsert, EntityUpsert
-from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.knowledge.vector_store import ChunkUpsert, EntityUpsert, WikiEntryUpsert
+from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 
 from ..conftest import requires_qdrant
 
@@ -102,6 +103,12 @@ async def test_merges_surface_aliases_and_rewrites_everything(graph_env):
     )
     await wiki_store.upsert_entry(kb_id, title="Model", content="# Model", source_chunk_ids=[c0])
     await wiki_store.upsert_entry(kb_id, title="Models", content="# Models", source_chunk_ids=[c1])
+    await vector_store.upsert_wiki_entries(
+        [
+            WikiEntryUpsert(entry_id=wiki_entry_id(kb_id, "Model"), kb_id=kb_id, title="Model", dense=_dims({5: 1.0})),
+            WikiEntryUpsert(entry_id=wiki_entry_id(kb_id, "Models"), kb_id=kb_id, title="Models", dense=_dims({6: 1.0})),
+        ]
+    )
     embedder = _TableEmbedder()
 
     stats = await resolve_entity_aliases(store, graph_store, vector_store, wiki_store, embedder, kb_id=kb_id, touched_entities={"Model", "Models"})
@@ -141,8 +148,18 @@ async def test_merges_surface_aliases_and_rewrites_everything(graph_env):
     by_chunk = {p.payload["chunk_id"]: p for p in points}
     assert sorted(by_chunk[c0].payload["entities"]) == ["Model", "Trainer"]
     assert by_chunk[c1].payload["entities"] == ["Model"]
-    # ⑤ Wiki entries titled by either name are dirty.
-    assert {e["title"]: e["status"] for e in await wiki_store.list_entries(kb_id)} == {"Model": "dirty", "Models": "dirty"}
+    # ⑤ Wiki lifecycle: the merged-away alias entry is deleted outright —
+    #    business row and kb_wiki_entries vector point both go (its entity no
+    #    longer exists, so the title has nothing left to regenerate from);
+    #    the representative's entry turns dirty for incremental regeneration.
+    assert {e["title"]: e["status"] for e in await wiki_store.list_entries(kb_id)} == {"Model": "dirty"}
+    wpoints, _ = await client.scroll(
+        vector_store.wiki_entries_collection,
+        scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+        with_payload=True,
+        limit=10,
+    )
+    assert [p.payload["title"] for p in wpoints] == ["Model"]
 
     # Idempotent: a second run finds nothing to merge.
     second = await resolve_entity_aliases(store, graph_store, vector_store, wiki_store, embedder, kb_id=kb_id, touched_entities={"Model"})

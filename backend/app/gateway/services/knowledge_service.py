@@ -2,7 +2,7 @@
 
 Owns everything between the thin router and the harness layer: upload
 persistence (host-side file + ``documents`` row + worker enqueue), cascade
-deletes across the three stores (Qdrant → graph → wiki dirty → business
+deletes across the three stores (Qdrant → graph → wiki lifecycle → business
 rows), failed-document retry, and fire-and-forget wiki generation.
 
 Cascade ordering rule (mirrors ``KnowledgeStore.delete_kb``'s docstring): the
@@ -18,7 +18,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -135,11 +135,38 @@ class KnowledgeService:
                 await self.vector_store.delete_entities(kb_id, orphaned)
             except Exception:
                 logger.exception("qdrant delete_entities failed for %s orphans", doc_id)
+        # 条目生命周期（spec §3.5：资格即条目存在理由，失格即删）：剩余
+        # freq ≥ 2 的受影响实体仅标 dirty 等增量重生成；跌下阈值的失格实体
+        # 与消失实体（孤儿）的条目连行带向量一并删除。实体节点与
+        # kb_entities 不动 —— 剩余活切片仍由向量路直接服务。
+        disqualified = list(orphaned)
         if affected:
-            await self.wiki_store.mark_dirty_for_titles(kb_id, affected)
+            remaining = {row["name"]: len(row.get("source_chunk_ids") or []) for row in await self.graph_store.list_entities(kb_id)}
+            still_eligible = [name for name in affected if remaining.get(name, 0) >= 2]
+            if still_eligible:
+                await self.wiki_store.mark_dirty_for_titles(kb_id, still_eligible)
+            disqualified.extend(name for name in affected if remaining.get(name, 0) < 2)
+        if disqualified:
+            await self._delete_wiki_entries(kb_id, disqualified)
         await self.store.delete_document(doc_id)
         await self._remove_dir(self.data_dir / "knowledge" / kb_id / doc_id)
         return True
+
+    async def _delete_wiki_entries(self, kb_id: str, titles: Collection[str]) -> None:
+        """Delete wiki entries whose entity lost eligibility or vanished.
+
+        Qdrant first, failures logged and swallowed (the module-level cascade
+        ordering rule); the business row always goes so a vector outage never
+        strands the lifecycle half-applied. Idempotent.
+        """
+        titles = list(titles)
+        if not titles:
+            return
+        try:
+            await self.vector_store.delete_wiki_entries(kb_id, titles)
+        except Exception:
+            logger.exception("qdrant delete_wiki_entries failed for kb %s (%d titles)", kb_id, len(titles))
+        await self.wiki_store.delete_entries(kb_id, titles)
 
     async def retry_document(self, *, kb_id: str, doc_id: str) -> dict[str, Any] | None:
         """Wipe a failed document's derived state and re-enqueue indexing."""
@@ -160,6 +187,8 @@ class KnowledgeService:
                 except Exception:
                     logger.exception("qdrant delete_entities failed during retry of %s", doc_id)
             if affected:
+                # Retry re-indexes the same document right away, so plain
+                # dirty suffices — no eligibility cascade on this path.
                 await self.wiki_store.mark_dirty_for_titles(kb_id, affected)
             await self.store.delete_chunks_by_doc(doc_id)
         reset = await self.store.reset_document_for_retry(doc_id)

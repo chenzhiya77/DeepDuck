@@ -13,7 +13,7 @@ from collections.abc import Collection
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from deerflow.knowledge.models import WikiEntryRow
@@ -73,6 +73,23 @@ class WikiStore:
         async with self._sf() as session:
             result = await session.execute(stmt)
             return [self._to_dict(row) for row in result.scalars().all()]
+
+    async def delete_entries(self, kb_id: str, titles: Collection[str]) -> int:
+        """Delete entries titled in ``titles`` (spec §3.5 条目生命周期：失格即删).
+
+        Eligibility is the entry's raison d'être: once the entity drops below
+        the wiki threshold or disappears/merges away, the entry (and its
+        ``kb_wiki_entries`` vector point, deleted by the caller) goes with it.
+        The entity node and its ``kb_entities`` vector stay untouched — the
+        surviving chunks still serve it through the vector path. Idempotent:
+        re-deleting an absent title is a no-op.
+        """
+        if not titles:
+            return 0
+        async with self._sf() as session:
+            result = await session.execute(delete(WikiEntryRow).where(WikiEntryRow.kb_id == kb_id, WikiEntryRow.title.in_(list(titles))))
+            await session.commit()
+            return int(result.rowcount or 0)
 
     async def mark_dirty_for_titles(self, kb_id: str, titles: Collection[str]) -> int:
         """Flag entries whose title is one of ``titles`` as ``dirty``."""

@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
 from app.gateway.services.knowledge_service import KnowledgeService
+from deerflow.knowledge.graph.extractor import ExtractedEntity
 from deerflow.knowledge.store import KnowledgeStore
 
 pytestmark = pytest.mark.asyncio
@@ -42,6 +43,7 @@ def service(session_factory, tmp_path) -> KnowledgeService:
     vector_store.delete_by_doc = AsyncMock()
     vector_store.delete_by_kb = AsyncMock()
     vector_store.delete_entities = AsyncMock()
+    vector_store.delete_wiki_entries = AsyncMock()
     worker = MagicMock()
     worker.submit = AsyncMock()
     return KnowledgeService(
@@ -220,6 +222,52 @@ async def test_delete_document_cascades_vectors_graph_wiki_and_rows(service, ses
     assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
     # deleting again is a 404, not an error
     assert client.delete(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}").status_code == 404
+
+
+async def test_delete_document_cascades_wiki_lifecycle(service, session_factory):
+    """Task 12 条目生命周期级联（spec §3.5）：资格即条目存在理由，失格即删。
+
+    - 失格（remove_chunk_contributions 后剩余 freq < 2）→ 删条目行 +
+      ``kb_wiki_entries`` 向量点；实体节点与 ``kb_entities`` 不动（剩余活
+      切片仍由向量路直接服务，不违背删除意图）；
+    - 仍合格（剩余 freq ≥ 2）→ 标 dirty，等增量重生成；
+    - 实体消失（孤儿）→ 条目同样连行带向量删除；
+    - 幂等：重复删同一标题返回 0，不报错。
+    """
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")}).json()["id"]
+    store = KnowledgeStore(session_factory)
+    doomed = f"{doc_id}#0"
+    await store.insert_chunks([{"chunk_id": doomed, "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 0, "text": "切片", "heading_path": ["h"], "page": 1, "token_count": 10}])
+
+    async def _seed_entity(name: str, chunk_ids: list[str]) -> None:
+        for chunk_id in chunk_ids:
+            await service.graph_store.upsert_entities(kb["id"], [ExtractedEntity(name=name, type="概念", description=f"{name} 描述")], chunk_id=chunk_id)
+
+    # Alpha：删除后 freq 2→1 失格；Beta：3→2 仍合格；Gamma：1→0 孤儿。
+    await _seed_entity("Alpha", [doomed, "keeper#0"])
+    await _seed_entity("Beta", [doomed, "keeper#0", "keeper#1"])
+    await _seed_entity("Gamma", [doomed])
+    for name in ("Alpha", "Beta", "Gamma"):
+        await service.wiki_store.upsert_entry(kb["id"], title=name, content=f"# {name}", source_chunk_ids=[doomed])
+
+    assert client.delete(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}").status_code == 204
+
+    # 失格 + 孤儿条目连行带向量删除；仍合格的 Beta 仅标 dirty。
+    assert {e["title"]: e["status"] for e in await service.wiki_store.list_entries(kb["id"])} == {"Beta": "dirty"}
+    service.vector_store.delete_wiki_entries.assert_awaited_once()
+    wiki_call = service.vector_store.delete_wiki_entries.await_args
+    assert wiki_call.args[0] == kb["id"]
+    assert set(wiki_call.args[1]) == {"Alpha", "Gamma"}
+    # 实体节点与 kb_entities 不动：只有孤儿实体 Gamma 的向量被删。
+    service.vector_store.delete_entities.assert_awaited_once_with(kb["id"], ["Gamma"])
+    by_name = {e["name"]: e for e in await service.graph_store.list_entities(kb["id"])}
+    assert sorted(by_name) == ["Alpha", "Beta"]
+    assert len(by_name["Alpha"]["source_chunk_ids"]) == 1
+    assert len(by_name["Beta"]["source_chunk_ids"]) == 2
+    # 幂等：重复删同一标题是 no-op。
+    assert await service.wiki_store.delete_entries(kb["id"], ["Alpha"]) == 0
 
 
 async def test_delete_kb_cascades_vector_collections(service):

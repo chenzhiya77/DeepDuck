@@ -306,10 +306,10 @@
 - `generate_wiki` 只写不删的语义不变；生命周期只由删除/合并事件驱动。
 - wiki 库级状态自然衔接：条目被级联清空且无 ready/dirty 条目且无在途生成 → pending。
 
-- [ ] 写失败测试：失格删条目+向量（实体与实体向量保留）；仍合格标 dirty；孤儿删条目；合并别名条目删+代表 dirty；幂等重复删。
-- [ ] RED → 实现 → GREEN；revert 证明点：revert 失格删条目 → 失格用例 RED → restore → GREEN。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `feat(rag): cascade wiki entry lifecycle on entity eligibility loss and merges`。
+- [x] 写失败测试：失格删条目+向量（实体与实体向量保留）；仍合格标 dirty；孤儿删条目；合并别名条目删+代表 dirty；幂等重复删。——`test_api.py::test_delete_document_cascades_wiki_lifecycle`（Alpha 2→1 失格删 / Beta 3→2 dirty / Gamma 孤儿删 + 幂等重删返回 0）+ `test_resolver.py` 主用例 ⑤ 改断言（别名行+向量点删、代表 dirty）
+- [x] RED → 实现 → GREEN；revert 证明点：revert 失格拆分为旧行为（全量标 dirty）→ 失格用例 RED → restore → GREEN。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（233 passed + 2 skipped）；ruff check/format 干净。
+- [x] Commit: `feat(rag): cascade wiki entry lifecycle on entity eligibility loss and merges`。
 
 ## Final verification
 

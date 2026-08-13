@@ -29,6 +29,7 @@ from qdrant_client.models import (
     FilterSelector,
     Fusion,
     FusionQuery,
+    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -254,6 +255,28 @@ class KnowledgeVectorStore:
             return 0
         await self._client.upsert(collection_name=self.wiki_entries_collection, points=points)
         return len(points)
+
+    async def delete_wiki_entries(self, kb_id: str, titles: Sequence[str]) -> None:
+        """Delete wiki-entry points from ``kb_wiki_entries`` (spec §3.5 条目生命周期).
+
+        Payload-filter delete (kb_id + title in list) rather than point-id
+        recompute, so this module stays decoupled from the business-DB
+        ``wiki_entry_id`` scheme. Idempotent: deleting an absent point is a
+        no-op.
+        """
+        if not titles:
+            return
+        await self._client.delete(
+            collection_name=self.wiki_entries_collection,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(key="kb_id", match=MatchValue(value=kb_id)),
+                        FieldCondition(key="title", match=MatchAny(any=list(titles))),
+                    ]
+                )
+            ),
+        )
 
     async def query_entities(self, *, dense: list[float], kb_id: str, top_k: int = 5, score_threshold: float | None = None) -> list[ScoredPoint]:
         """Dense match over ``kb_entities`` (graph_search query-entity landing).

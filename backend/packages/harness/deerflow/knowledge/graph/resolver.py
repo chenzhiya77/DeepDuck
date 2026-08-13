@@ -19,8 +19,12 @@ idempotency is the recovery story):
    from its merged description.
 4. Chunk entity tags dual-written: business-DB ``chunks.entities`` column and
    the ``kb_chunks`` payload — the two mirrors must move together.
-5. Wiki entries titled by either name are marked ``dirty``; the existing
-   incremental refresh chain digests them.
+5. Wiki lifecycle (spec §3.5 条目生命周期): entries titled by a merged-away
+   alias are deleted outright — business row + ``kb_wiki_entries`` vector
+   point — since the entity is gone and the title has nothing left to
+   regenerate from; the representative's entry is marked ``dirty`` and the
+   existing incremental refresh chain regenerates it from the merged
+   material.
 
 Failure handling lives in the worker: a failing resolution never blocks the
 pipeline — the document still reaches ``ready`` and gains a visible
@@ -118,8 +122,13 @@ async def resolve_entity_aliases(
             await store.rewrite_chunk_entities(affected_chunks, name_map)
             chunk_rows = await store.get_chunks_by_ids(affected_chunks)
             await vector_store.set_chunk_entities({row["chunk_id"]: list(row.get("entities") or []) for row in chunk_rows})
-        # ⑤ Wiki dirty flags on both the representative and the alias titles.
-        await wiki_store.mark_dirty_for_titles(kb_id, {representative, *aliases})
+        # ⑤ Wiki lifecycle: alias entries are deleted outright (the entity is
+        #    gone, so the title has nothing to regenerate from); the
+        #    representative's entry turns dirty for incremental regeneration
+        #    from the merged material.
+        await vector_store.delete_wiki_entries(kb_id, aliases)
+        await wiki_store.delete_entries(kb_id, aliases)
+        await wiki_store.mark_dirty_for_titles(kb_id, {representative})
         stats.merged_groups += 1
         stats.merged_entities += len(aliases)
         logger.info("entity re-resolution merged %s into %s (kb %s)", aliases, representative, kb_id)
