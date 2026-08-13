@@ -391,6 +391,10 @@ export const zhCN: Translations = {
       loading: "加载中…",
       dirty: "待更新",
       updatedAt: "更新于",
+      deleteEntry: "删除条目",
+      deleteConfirmTitle: "删除这条百科条目？",
+      deleteConfirmDescription:
+        "将删除条目正文与检索向量，实体本身保留。若实体仍符合生成资格，下次生成时会按最新材料重新创建该条目。",
     },
     wikiDrawer: {
       openInTab: "在百科 tab 中查看",
@@ -440,6 +444,7 @@ export const zhCN: Translations = {
       deleteDocumentFailed: "删除文档失败",
       retryFailed: "重试失败",
       wikiFailed: "百科生成任务提交失败",
+      deleteWikiEntryFailed: "删除百科条目失败",
     },
   },
 

@@ -177,7 +177,7 @@ describe("MiddleTabs", () => {
 
 describe("WikiPanel", () => {
   it("renders entries with title, summary, dirty badge and updated time", () => {
-    renderWithI18n(<WikiPanel entries={[ENTRY, DIRTY_ENTRY]} onOpenEntry={() => undefined} />);
+    renderWithI18n(<WikiPanel entries={[ENTRY, DIRTY_ENTRY]} onOpenEntry={() => undefined} onDeleteEntry={() => undefined} />);
     expect(screen.getByText("DeerFlow")).toBeTruthy();
     expect(screen.getByText(/LangGraph 超级代理系统/)).toBeTruthy();
     expect(screen.getByText("Gateway")).toBeTruthy();
@@ -188,14 +188,35 @@ describe("WikiPanel", () => {
 
   it("invokes onOpenEntry with the clicked entry", () => {
     const onOpenEntry = rs.fn();
-    renderWithI18n(<WikiPanel entries={[ENTRY]} onOpenEntry={onOpenEntry} />);
+    renderWithI18n(<WikiPanel entries={[ENTRY]} onOpenEntry={onOpenEntry} onDeleteEntry={() => undefined} />);
     fireEvent.click(screen.getByText("DeerFlow"));
     expect(onOpenEntry).toHaveBeenCalledWith(ENTRY);
   });
 
   it("shows the empty-state copy when the kb has no entries", () => {
-    renderWithI18n(<WikiPanel entries={[]} onOpenEntry={() => undefined} />);
+    renderWithI18n(<WikiPanel entries={[]} onOpenEntry={() => undefined} onDeleteEntry={() => undefined} />);
     expect(screen.getByText(/还没有百科条目/)).toBeTruthy();
+  });
+
+  it("deletes an entry only after the confirm dialog (Task 13)", async () => {
+    const onDeleteEntry = rs.fn();
+    renderWithI18n(<WikiPanel entries={[ENTRY]} onOpenEntry={() => undefined} onDeleteEntry={onDeleteEntry} />);
+    // Row hover action carries the aria-label; clicking it opens the confirm.
+    fireEvent.click(screen.getByRole("button", { name: "删除条目" }));
+    expect(await screen.findByText("删除这条百科条目？")).toBeTruthy();
+    // The copy states the regeneration semantics.
+    expect(screen.getByText(/下次生成时会按最新材料重新创建/)).toBeTruthy();
+    expect(onDeleteEntry).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    expect(onDeleteEntry).toHaveBeenCalledWith(ENTRY);
+  });
+
+  it("cancel leaves the entry untouched", async () => {
+    const onDeleteEntry = rs.fn();
+    renderWithI18n(<WikiPanel entries={[ENTRY]} onOpenEntry={() => undefined} onDeleteEntry={onDeleteEntry} />);
+    fireEvent.click(screen.getByRole("button", { name: "删除条目" }));
+    fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+    expect(onDeleteEntry).not.toHaveBeenCalled();
   });
 });
 

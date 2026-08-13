@@ -311,6 +311,20 @@
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（233 passed + 2 skipped）；ruff check/format 干净。
 - [x] Commit: `feat(rag): cascade wiki entry lifecycle on entity eligibility loss and merges`。
 
+## Task 13: wiki 条目手动删除（可视化管理首项）（2026-08-13 用户拍板）
+
+**背景**：生命周期级联（Task 12）只覆盖事件驱动的条目处置；用户要求百科每条条目支持手动删除。拍板两项：①**接受重建语义**——仍合格实体的条目删除后，下次 `generate_wiki` backfill 会按最新材料重建（相当于「重置」），确认弹窗文案明示；仅失格/无源实体的条目删除是永久的；②按钮位置**仅列表行悬停**（不进抽屉）。
+
+**Files:**
+- Modify: `backend/app/gateway/routers/knowledge_bases.py`（`DELETE /{kb_id}/wiki/entries/{entry_id}` → 204/404）
+- Modify: `backend/app/gateway/services/knowledge_service.py`（`delete_wiki_entry`：复用 Task 12 `_delete_wiki_entries`——向量点+业务行，实体不动）
+- Modify: `frontend/src/components/workspace/knowledge/wiki-panel.tsx`（行悬停 Trash2 + 确认 Dialog，文案含重建语义）、`core/knowledge/api.ts`（`deleteWikiEntry`）、`core/knowledge/hooks.ts`（`useDeleteWikiEntry`）、`app/workspace/knowledge/page.tsx`（接线 + toast）、i18n 三文件
+- Modify: `backend/tests/knowledge/test_api.py`（删行+向量/重复删 404/stranger 403）、`frontend/tests/unit/knowledge/wiki-panel.dom.test.tsx`（确认才删/取消不删）
+
+- [x] 后端 TDD：RED 2 红（路由缺失）→ 实现 → GREEN；全量 234 passed + 2 skipped；ruff 干净。
+- [x] 前端：组件测试 14 passed（新增确认/取消两用例）；`pnpm check` 干净。
+- [x] Commit: `feat(rag): manual wiki entry deletion with lifecycle-consistent cascade`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。

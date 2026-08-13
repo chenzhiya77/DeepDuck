@@ -1,29 +1,44 @@
 "use client";
 
-import { BookOpen } from "lucide-react";
+import { BookOpen, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useI18n } from "@/core/i18n/hooks";
 import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
 import type { WikiEntrySummary } from "@/core/knowledge/types";
 
 /**
- * Read-only wiki entries list (phase-2 batch-1): title + summary + dirty
- * badge + updated time. Row click opens the right-side entry drawer; the
- * drawer owns the full-text fetch. Management actions (regenerate/edit) are
- * intentionally absent — 可视化管理 is a later item.
+ * Wiki entries list (phase-2 batch-1; Task 13 added per-row delete): title +
+ * summary + dirty badge + updated time. Row click opens the right-side entry
+ * drawer; the drawer owns the full-text fetch. Row hover reveals the delete
+ * action behind a confirm dialog whose copy states the regeneration
+ * semantics: an eligible entity's entry comes back on the next generation
+ * run (a reset), only a disqualified/vanished entity's entry stays deleted.
  */
 export function WikiPanel({
   entries,
   loading = false,
   onOpenEntry,
+  onDeleteEntry,
 }: {
   entries: WikiEntrySummary[];
   loading?: boolean;
   onOpenEntry: (entry: WikiEntrySummary) => void;
+  onDeleteEntry: (entry: WikiEntrySummary) => void;
 }) {
   const { t, locale } = useI18n();
   const tw = t.knowledge.wikiPanel;
+  const [deleteTarget, setDeleteTarget] = useState<WikiEntrySummary | null>(null);
 
   if (loading && entries.length === 0) {
     return <p className="text-muted-foreground px-4 py-10 text-center text-sm">{tw.loading}</p>;
@@ -33,30 +48,67 @@ export function WikiPanel({
   }
 
   return (
-    <ul className="min-h-0 flex-1 overflow-y-auto px-2 py-2" data-testid="wiki-entry-list">
-      {entries.map((entry) => (
-        <li key={entry.id}>
-          <button
-            className="hover:bg-muted/50 flex w-full flex-col gap-1 rounded-md px-2 py-2 text-left"
-            type="button"
-            onClick={() => onOpenEntry(entry)}
-          >
-            <span className="flex items-center gap-2">
-              <BookOpen className="text-muted-foreground size-4 shrink-0" />
-              <span className="min-w-0 truncate text-sm font-medium">{entry.title}</span>
-              {entry.status === "dirty" && (
-                <Badge className="shrink-0" variant="secondary">
-                  {tw.dirty}
-                </Badge>
-              )}
-            </span>
-            <span className="text-muted-foreground line-clamp-2 pl-6 text-xs">{entry.summary}</span>
-            <span className="text-muted-foreground pl-6 text-xs">
-              {tw.updatedAt} {formatKnowledgeTimestamp(entry.updated_at, locale)}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="min-h-0 flex-1 overflow-y-auto px-2 py-2" data-testid="wiki-entry-list">
+        {entries.map((entry) => (
+          <li className="group relative" key={entry.id}>
+            <button
+              className="hover:bg-muted/50 flex w-full flex-col gap-1 rounded-md px-2 py-2 pr-9 text-left"
+              type="button"
+              onClick={() => onOpenEntry(entry)}
+            >
+              <span className="flex items-center gap-2">
+                <BookOpen className="text-muted-foreground size-4 shrink-0" />
+                <span className="min-w-0 truncate text-sm font-medium">{entry.title}</span>
+                {entry.status === "dirty" && (
+                  <Badge className="shrink-0" variant="secondary">
+                    {tw.dirty}
+                  </Badge>
+                )}
+              </span>
+              <span className="text-muted-foreground line-clamp-2 pl-6 text-xs">{entry.summary}</span>
+              <span className="text-muted-foreground pl-6 text-xs">
+                {tw.updatedAt} {formatKnowledgeTimestamp(entry.updated_at, locale)}
+              </span>
+            </button>
+            <Button
+              aria-label={tw.deleteEntry}
+              className="text-muted-foreground hover:text-destructive absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100"
+              size="icon"
+              variant="ghost"
+              onClick={() => setDeleteTarget(entry)}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Entry delete confirm (regeneration semantics in the copy) */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>{tw.deleteConfirmTitle}</DialogTitle>
+            <DialogDescription>{tw.deleteConfirmDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTarget) {
+                  onDeleteEntry(deleteTarget);
+                }
+                setDeleteTarget(null);
+              }}
+            >
+              {t.common.confirmDelete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

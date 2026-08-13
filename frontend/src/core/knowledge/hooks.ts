@@ -141,6 +141,21 @@ export function useWikiEntry(kbId: string | null, entryId: string | null) {
 }
 
 /**
+ * Manual single-entry delete (Task 13). Regeneration semantics: an eligible
+ * entity's entry comes back on the next generation run (a reset); only
+ * disqualified/vanished entities' entries stay deleted.
+ */
+export function useDeleteWikiEntry(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (entryId: string) => api.deleteWikiEntry(kbId, entryId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) });
+    },
+  });
+}
+
+/**
  * P1 recall test (phase-2 batch-1): a mutation, not a query — each run hits
  * the live retrieval chain (embedding + rerank + entity-extraction LLM), so
  * results must never be cached/refetched implicitly.

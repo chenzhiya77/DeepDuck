@@ -240,6 +240,21 @@ class KnowledgeService:
             return None
         return entry
 
+    async def delete_wiki_entry(self, *, kb_id: str, entry_id: str) -> bool:
+        """Manually delete one wiki entry: business row + vector point (Task 13).
+
+        The entity node and its ``kb_entities`` vector stay untouched.
+        Regeneration semantics (2026-08-13 拍板): if the entity is still
+        eligible, the next ``generate_wiki`` backfill recreates the entry
+        from current material — a manual delete is a *reset* for eligible
+        entries and permanent only for disqualified/vanished ones.
+        """
+        entry = await self.wiki_store.get_entry(entry_id)
+        if entry is None or entry["kb_id"] != kb_id:
+            return False
+        await self._delete_wiki_entries(kb_id, [entry["title"]])
+        return True
+
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
     #: Score semantics differ per path — never compare across paths.

@@ -17,6 +17,7 @@ import {
   useCreateKnowledgeBase,
   useDeleteDocument,
   useDeleteKnowledgeBase,
+  useDeleteWikiEntry,
   useDocuments,
   useGenerateWiki,
   useKnowledgeBases,
@@ -85,6 +86,7 @@ export default function KnowledgePage() {
   const deleteDocument = useDeleteDocument(selectedKbId ?? "");
   const retryDocument = useRetryDocument(selectedKbId ?? "");
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
+  const deleteWikiEntry = useDeleteWikiEntry(selectedKbId ?? "");
 
   return (
     <div className="size-full min-h-0" data-testid="knowledge-page">
@@ -178,6 +180,11 @@ export default function KnowledgePage() {
                   entries={wikiEntries}
                   loading={wikiEntriesQuery.isLoading}
                   onOpenEntry={openWikiEntry}
+                  onDeleteEntry={(entry) => {
+                    deleteWikiEntry.mutate(entry.id, {
+                      onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
+                    });
+                  }}
                 />
               }
               recall={

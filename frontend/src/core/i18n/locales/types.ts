@@ -333,6 +333,9 @@ export interface Translations {
       loading: string;
       dirty: string;
       updatedAt: string;
+      deleteEntry: string;
+      deleteConfirmTitle: string;
+      deleteConfirmDescription: string;
     };
     wikiDrawer: {
       openInTab: string;
@@ -382,6 +385,7 @@ export interface Translations {
       deleteDocumentFailed: string;
       retryFailed: string;
       wikiFailed: string;
+      deleteWikiEntryFailed: string;
     };
   };
 

@@ -407,6 +407,10 @@ export const enUS: Translations = {
       loading: "Loading…",
       dirty: "Stale",
       updatedAt: "Updated",
+      deleteEntry: "Delete entry",
+      deleteConfirmTitle: "Delete this wiki entry?",
+      deleteConfirmDescription:
+        "Deletes the entry text and its search vector; the entity itself stays. If the entity is still eligible, the next generation run recreates the entry from current material.",
     },
     wikiDrawer: {
       openInTab: "Open in the Wiki tab",
@@ -456,6 +460,7 @@ export const enUS: Translations = {
       deleteDocumentFailed: "Failed to delete the document",
       retryFailed: "Retry failed",
       wikiFailed: "Failed to queue wiki generation",
+      deleteWikiEntryFailed: "Failed to delete the wiki entry",
     },
   },
 

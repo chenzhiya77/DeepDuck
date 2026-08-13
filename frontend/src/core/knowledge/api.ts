@@ -156,6 +156,13 @@ export function getWikiEntry(kbId: string, entryId: string): Promise<WikiEntryDe
   );
 }
 
+export async function deleteWikiEntry(kbId: string, entryId: string): Promise<void> {
+  const response = await fetch(kbUrl(kbId, `/wiki/entries/${encodeURIComponent(entryId)}`), {
+    method: "DELETE",
+  });
+  return readEmptyResponse(response, "Failed to delete wiki entry");
+}
+
 export function recallTest(kbId: string, body: { query: string; top_k: number }): Promise<RecallTestResponse> {
   return fetch(kbUrl(kbId, "/recall-test"), {
     method: "POST",

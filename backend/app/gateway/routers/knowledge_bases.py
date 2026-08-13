@@ -207,6 +207,15 @@ async def get_wiki_entry(request: Request, kb_id: str, entry_id: str):
     return entry
 
 
+@router.delete("/{kb_id}/wiki/entries/{entry_id}", status_code=204)
+async def delete_wiki_entry(request: Request, kb_id: str, entry_id: str):
+    service = await _require_kb_access(request, kb_id)
+    deleted = await service.delete_wiki_entry(kb_id=kb_id, entry_id=entry_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Wiki entry not found")
+    return Response(status_code=204)
+
+
 @router.post("/{kb_id}/recall-test")
 async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     """P1 召回测试：一个 query 并行扇出到 vector/graph/wiki 三路检索 impl。

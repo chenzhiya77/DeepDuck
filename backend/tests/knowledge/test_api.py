@@ -110,6 +110,7 @@ async def test_non_owner_gets_403_on_every_kb_scoped_route(service):
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate").status_code == 403
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").status_code == 403
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/whatever").status_code == 403
+    assert stranger.delete(f"/api/knowledge-bases/{kb['id']}/wiki/entries/whatever").status_code == 403
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "x"}).status_code == 403
     # the stranger's own listing stays empty (no cross-owner leakage)
     assert stranger.get("/api/knowledge-bases").json() == []
@@ -268,6 +269,25 @@ async def test_delete_document_cascades_wiki_lifecycle(service, session_factory)
     assert len(by_name["Beta"]["source_chunk_ids"]) == 2
     # 幂等：重复删同一标题是 no-op。
     assert await service.wiki_store.delete_entries(kb["id"], ["Alpha"]) == 0
+
+
+async def test_delete_wiki_entry_removes_row_and_vector(service):
+    """Task 13 手动删除条目：删业务行 + kb_wiki_entries 向量点（实体不动）。
+
+    重建语义（2026-08-13 拍板）：若实体仍合格，下次 generate_wiki 的
+    backfill 会按最新材料重建该条目——手动删除对它相当于「重置」；只有
+    失格/无源实体的条目删除才是永久的。
+    """
+    client = _client(service)
+    kb = _create_kb(client)
+    entry = await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="# DeerFlow", source_chunk_ids=["c1", "c2"])
+
+    assert client.delete(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}").status_code == 204
+
+    assert await service.wiki_store.list_entries(kb["id"]) == []
+    service.vector_store.delete_wiki_entries.assert_awaited_once_with(kb["id"], ["DeerFlow"])
+    # 重复删除是 404，不是错误
+    assert client.delete(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}").status_code == 404
 
 
 async def test_delete_kb_cascades_vector_collections(service):
