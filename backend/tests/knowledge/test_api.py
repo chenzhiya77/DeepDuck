@@ -192,6 +192,27 @@ async def test_document_list_wiki_generating_only_when_in_flight(service, monkey
     assert doc["path_status"]["wiki"] == "generating"
 
 
+async def test_document_list_wiki_in_flight_overrides_ready_entries(service, monkeypatch):
+    """在途优先口径（2026-08-13）：库里已有 ready 条目时，增量生成在途仍显
+    示 generating——否则「生成中」只在空库首次生成出现一次，之后新文档触
+    发的增量消化永远不可见。dirty 不触发 generating（已生成待更新口径不
+    变，轮询也不会空转）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
+    doc_id = upload.json()["id"]
+    await service.store.update_document_status(doc_id, "indexing", path_status={"vector": "done", "graph": "done"})
+    await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="已有内容", source_chunk_ids=["c1", "c2"])
+
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
+    (doc,) = client.get(f"/api/knowledge-bases/{kb['id']}/documents").json()
+    assert doc["path_status"]["wiki"] == "generating"
+
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: False)
+    (doc,) = client.get(f"/api/knowledge-bases/{kb['id']}/documents").json()
+    assert doc["path_status"]["wiki"] == "ready"
+
+
 async def test_chunks_endpoint_paginates(service, session_factory):
     client = _client(service)
     kb = _create_kb(client)

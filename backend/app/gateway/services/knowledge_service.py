@@ -82,16 +82,19 @@ class KnowledgeService:
     async def _wiki_path_status(self, kb_id: str) -> str:
         """Library-level wiki status (shared by all documents of the KB).
 
-        ready/dirty entries mean generated content is available — dirty =
-        generated-but-stale still counts as ready (2026-08-12 口径). Otherwise
-        an in-flight run (manual button or worker auto trigger) reports
-        ``generating``; nothing at all reports ``pending``.
+        An in-flight run (manual button or worker auto trigger) reports
+        ``generating`` — checked FIRST, otherwise the state could only ever
+        appear on an empty library's very first generation and every later
+        incremental digest would be invisible (2026-08-13 口径调整).
+        Otherwise ready/dirty entries mean generated content is available
+        (dirty = generated-but-stale still counts as ready, 2026-08-12 口径);
+        nothing at all reports ``pending``.
         """
+        if wiki_generation_in_progress(kb_id):
+            return "generating"
         entries = await self.wiki_store.list_entries(kb_id)
         if any(entry["status"] in ("ready", "dirty") for entry in entries):
             return "ready"
-        if wiki_generation_in_progress(kb_id):
-            return "generating"
         return "pending"
 
     async def upload_document(self, *, kb_id: str, uploader_id: str, filename: str, content: bytes) -> dict[str, Any]:
