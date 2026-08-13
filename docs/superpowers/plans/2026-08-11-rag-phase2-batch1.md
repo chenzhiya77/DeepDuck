@@ -130,6 +130,7 @@
 5. **前端 tooltip 测试遵循 P2 先例**：不测 Radix 悬停开启机制；`PathStatusBreakdown` 导出直渲测内容装配，`path-status-trigger` testid 测挂载条件；悬停内容装配抽为纯函数 `core/knowledge/path-status.ts`。
 6. revert 证明点已执行：局部合并改整体覆盖 → `test_document_path_status_partial_merge` RED → restore → GREEN。
 7. **2026-08-12 体验修正（用户实测反馈，单独 fix commit）**：①path_status 初始化前移到 parsing 起点——此前解析阶段悬停无反应（null 与老行语义混杂），前移后新文档全生命周期可悬停，null 唯一含义=0012 前遗产行；解析期硬失败两路记 failed。②百分比只在 indexing 显示——待解析/解析中/切片中无可测进度（MinerU 单次 API 调用无回调），摘掉无信息量的 0%（对标 Dify「无数据不编数字」原则）。③老文档决策（用户拍板）：不 backfill，自然过渡。
+8. **2026-08-13 库级 wiki 镜像三连修（用户实测反馈，三个 fix commit）**：①轮询冻结修复（`4d292b6b`）——文档全终态后轮询停止，把库级 wiki 镜像冻在「生成中」；`documentsRefetchInterval` 增补 `path_status.wiki === "generating"` 续跑条件。②在途优先（`381f18f6`）——`_wiki_path_status` 原「有 ready/dirty 条目即 ready」短路使 generating 只在空库首次生成出现一次，增量消化不可见；改为在途优先，dirty 仍计 ready 且不触发 generating（轮询不空转）。③镜像终态门控（`1071a19d`）——镜像原无差别投到所有文档，流水线中文档错误显示库旧内容的「已生成」；改为镜像只对终态文档（ready/failed）生效，流水线中文档 wiki 行恒 pending。完整口径：解析/索引中→待处理 → 索引完+增量在途→生成中 → 消化完→已生成。
 
 **验证结果**：backend knowledge 220 passed + 2 skipped（live-key 用例）；migration/bootstrap 39 passed；前端 knowledge 157 passed；`pnpm check` 干净；ruff check/format 干净。
 
@@ -249,25 +250,25 @@
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
 - [x] Commit: `fix(rag): abort indexing pipeline when document is deleted mid-flight`。
 
-## Task 10: 图谱抽取质量包（prompt 卫生约束 + 括号别名折叠 + 入库卫生过滤 + 悬空边处理）（2026-08-12 设计讨论定稿）
+## Task 10: 跨语言别名合并（prompt 规范形 + 括号别名折叠 + 代表优先级）（2026-08-12 设计定稿，2026-08-13 用户收缩范围）
 
-**背景**：幽灵数据修复暴露了抽取质量三缺口——①垃圾实体源于抽取器本身（`"abc"`/`&&`/`2乘以8`）；②跨语言同义词永不合并（`字符串`/`String`，名字向量 0.92 阈值够不着）；③卫生过滤只在 wiki 选型侧（Task 8），垃圾仍进图谱污染度数与检索。用户拍板：prompt 约束 + 下沉过滤 + 悬空边处理；④name+description 合并废弃（每次归一重嵌 + description 漂移，损耗不值），以零成本的括号别名折叠替代。
+**背景**：跨语言同义词永不合并（`字符串`/`String`，名字向量 0.92 阈值够不着）。2026-08-13 用户复审收缩范围：①**不加** prompt 卫生约束（过度限制干扰模型判断，`&&` 等确可能是讲解对象）；②卫生过滤**不下沉**（维持只在 wiki 选型侧，Task 8 已落地）；③悬空边**维持现状**（归一层 `_map_name` 天然保留，检索层只用双端在子图的边，无害）。保留两项：prompt 跨语言规范形 + 括号别名折叠（零成本机制）。代表名规则：合并只负责分簇、不产生名字，簇内必须选代表——现状是切片内 first-seen（巧合）/ D3 名字序（ASCII 恒胜），均非规范形；故加「括号全名优先」。
 
 **Files:**
-- Modify: `backend/packages/harness/deerflow/knowledge/graph/extractor.py`（抽取 prompt：不抽代码字面量/运算符/无概念内容关键字；实体名用规范形；跨语言概念用「中文（英文）」）
-- Modify: `backend/packages/harness/deerflow/knowledge/graph/normalizer.py`（`_alias_key` → `_alias_keys` 多 key：`A（B）`/`A(B)` 形式以 A、B、全名三键注册；新增共享谓词 `is_low_quality_entity_name`——纯符号（无字母数字）/引号包裹字面量/单字符/长度>30；`normalize_extraction` 出口剔除低质实体并连带丢弃其关系边）
-- Modify: `backend/tests/knowledge/graph/test_normalizer.py` + `test_extractor.py`（prompt 文本断言、括号折叠三键、卫生过滤各规则、连带丢边、自然悬空保留）
+- Modify: `backend/.../knowledge/graph/extractor.py`（`EXTRACT_SYSTEM_PROMPT` 只加一条：跨语言概念的 name 用「中文（英文）」规范形；不加任何卫生约束）
+- Modify: `backend/.../knowledge/graph/normalizer.py`（`_alias_key` → `_alias_keys` 多键：行尾包裹式括号 `A（B）`/`A(B)` → {全名， A, B} 三键注册；B 为空/同 A/≤1 字符退化；代表优先级：簇内含括号全名优先当代表，否则维持 first-seen/名字序）
+- Modify: `backend/tests/knowledge/graph/test_extractor.py`（prompt 文本断言）、`test_normalizer.py`（三键/退化/非包裹不拆/同 chunk 合并全名代表/D3 簇代表）、`test_resolver.py`（D3 集成：String + 字符串（String） → 全名代表、别名行/向量删、wiki 生命周期）
 
 **接口契约（实现前冻结）：**
-- 卫生谓词与 Task 8 wiki 资格共用同一实现（`is_low_quality_entity_name`），规则不两处拷贝。
-- 括号折叠：`A（B）` → keys {A（B）, A, B}；B 为空或与 A 相同退化为单 key；仅包裹式括号触发。
-- 悬空边分两类：端点被卫生过滤丢弃的 → 连带丢边；端点天然未抽为实体的 → **保留**（未来跨片链接价值，对图谱检索无害）。
 - prompt 变更不破坏现有 JSON 输出契约；gleaning 流程不变。
+- 括号折叠：仅行尾包裹式括号（A 非空、括号成对收尾、内层无嵌套括号）触发；keys = {_alias_key(全名）, _alias_key(A), _alias_key(B)}；B 为空、与 A 同键或 ≤1 字符 → 不注册 B。
+- 代表优先级：簇内存在括号全名 → 全名当代表（多个括号名取输入序第一个）；无括号名 → 维持现状（normalize_extraction first-seen；cluster_alias_groups 输入序）。
+- 合并既有副作用链不变（resolver 五连 + Task 12 wiki 生命周期）。
 
-- [ ] 写失败测试：prompt 约束文本存在；括号三键折叠（含 D3 路径）；卫生过滤各规则；连带丢边/自然悬空保留。
-- [ ] RED → 实现 → GREEN；revert 证明点：revert 括号折叠 → 三键用例 RED → restore → GREEN。
+- [ ] 写失败测试：prompt 文本断言；三键/退化/非包裹不拆；同 chunk `String`+`字符串（String）` 合并且全名代表；D3 簇全名代表。
+- [ ] RED → 实现 → GREEN；revert 证明点：revert 代表优先级 → 全名代表用例 RED → restore → GREEN。
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `feat(rag): extraction hygiene constraints with parenthetical alias folding`。
+- [ ] Commit: `feat(rag): merge cross-language aliases via parenthetical folding`。
 
 ## Task 11: 重复上传拦截（同名预检 + 替换/保留两份）（2026-08-12 设计讨论定稿）
 
@@ -310,6 +311,7 @@
 - [x] RED → 实现 → GREEN；revert 证明点：revert 失格拆分为旧行为（全量标 dirty）→ 失格用例 RED → restore → GREEN。
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（233 passed + 2 skipped）；ruff check/format 干净。
 - [x] Commit: `feat(rag): cascade wiki entry lifecycle on entity eligibility loss and merges`。
+- [x] 存量清扫（2026-08-13，一次性执行，复用本 Task 交付的 `delete_entries`/`delete_wiki_entries`）：比例制时代 6 篇无源条目（实体早已消失、溯源已被 Task 9 剥除、旧「保留不删」原则遗留）按失格即删口径清除，`wiki_entries` 行与 `kb_wiki_entries` 向量点均清零；实体节点与 `kb_entities` 未动。
 
 ## Task 13: wiki 条目手动删除（可视化管理首项）（2026-08-13 用户拍板）
 
