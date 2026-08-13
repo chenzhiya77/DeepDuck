@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from deerflow.knowledge.graph.extractor import (
+    EXTRACT_SYSTEM_PROMPT,
     ExtractionError,
     ExtractionResult,
     extract_graph,
@@ -136,3 +137,9 @@ async def test_gleaning_prompt_mentions_missed_items():
     follow_up = str(llm.calls[1])
     assert "遗漏" in follow_up or "miss" in follow_up.lower()
     assert '"A"' in follow_up or "A" in follow_up  # already-found entities shown for context
+
+
+def test_extract_prompt_guides_cross_language_canonical_names():
+    """Task 10: the extraction prompt asks for the cross-language canonical
+    form 「中文（英文）」 so the two halves of one concept arrive pre-linked."""
+    assert "中文（英文）" in EXTRACT_SYSTEM_PROMPT

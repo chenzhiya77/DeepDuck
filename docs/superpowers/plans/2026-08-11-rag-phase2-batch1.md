@@ -250,7 +250,9 @@
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
 - [x] Commit: `fix(rag): abort indexing pipeline when document is deleted mid-flight`。
 
-## Task 10: 跨语言别名合并（prompt 规范形 + 括号别名折叠 + 代表优先级）（2026-08-12 设计定稿，2026-08-13 用户收缩范围）
+## Task 10: 跨语言别名合并（prompt 规范形 + 括号别名折叠 + 代表优先级）（2026-08-12 设计定稿，2026-08-13 用户收缩范围） ✅ 已完成（2026-08-13）
+
+**验证结果**：tests/knowledge 244 passed + 2 skipped（较 Task 13 基线 +9：prompt 断言 1 + normalizer 7 + resolver 集成 1）；revert 证明点已执行（回退代表优先级为 names[0] → 三个全名代表用例 RED：同 chunk 合并/cluster/D3 集成 → restore → GREEN）；ruff check/format 干净。实施记录：①退化形态全部收敛为单键（B 空由正则 `[内层]+` 天然拒绝、B 同 A 键/空 A 显式判退、单字符 B 不注册）；②`_map_name` 悬空端点匹配升级为键集合求交（双向可命中）；③`is_low_quality_entity_name` docstring 同步收缩决策（明确不下沉入库及理由）。
 
 **背景**：跨语言同义词永不合并（`字符串`/`String`，名字向量 0.92 阈值够不着）。2026-08-13 用户复审收缩范围：①**不加** prompt 卫生约束（过度限制干扰模型判断，`&&` 等确可能是讲解对象）；②卫生过滤**不下沉**（维持只在 wiki 选型侧，Task 8 已落地）；③悬空边**维持现状**（归一层 `_map_name` 天然保留，检索层只用双端在子图的边，无害）。保留两项：prompt 跨语言规范形 + 括号别名折叠（零成本机制）。代表名规则：合并只负责分簇、不产生名字，簇内必须选代表——现状是切片内 first-seen（巧合）/ D3 名字序（ASCII 恒胜），均非规范形；故加「括号全名优先」。
 
@@ -265,10 +267,10 @@
 - 代表优先级：簇内存在括号全名 → 全名当代表（多个括号名取输入序第一个）；无括号名 → 维持现状（normalize_extraction first-seen；cluster_alias_groups 输入序）。
 - 合并既有副作用链不变（resolver 五连 + Task 12 wiki 生命周期）。
 
-- [ ] 写失败测试：prompt 文本断言；三键/退化/非包裹不拆；同 chunk `String`+`字符串（String）` 合并且全名代表；D3 簇全名代表。
-- [ ] RED → 实现 → GREEN；revert 证明点：revert 代表优先级 → 全名代表用例 RED → restore → GREEN。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
-- [ ] Commit: `feat(rag): merge cross-language aliases via parenthetical folding`。
+- [x] 写失败测试：prompt 文本断言；三键/退化/非包裹不拆；同 chunk `String`+`字符串（String）` 合并且全名代表；D3 簇全名代表。
+- [x] RED → 实现 → GREEN；revert 证明点：revert 代表优先级 → 全名代表用例 RED → restore → GREEN。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
+- [x] Commit: `feat(rag): merge cross-language aliases via parenthetical folding`。
 
 ## Task 11: 重复上传拦截（同名预检 + 替换/保留两份）（2026-08-12 设计讨论定稿）
 

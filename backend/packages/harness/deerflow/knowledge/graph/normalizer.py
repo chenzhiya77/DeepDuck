@@ -4,8 +4,12 @@ Two merge mechanisms, applied in order:
 
 1. **Surface alias table** — names are keyed by ``casefold`` + whitespace
    removal, with a naive English plural (trailing ``s``) fold for pure-ASCII
-   names. The first-seen display name wins; alias descriptions are appended
-   so no extraction content is lost.
+   names and a parenthetical fold (Task 10): a trailing wrapped ``A（B）`` /
+   ``A(B)`` name registers the full name plus the ``A`` and ``B`` keys, so a
+   cross-language canonical name 「中文（英文）」 meets either half in the
+   table. Cluster display name: the parenthetical full name wins when the
+   cluster has one, otherwise the first-seen name; alias descriptions are
+   appended so no extraction content is lost.
 2. **Embedding-similarity merge** — when the caller supplies ``name_vectors``
    (name → dense vector, e.g. from the DashScope embedder), representative
    names whose cosine similarity meets the threshold union-merge into the
@@ -40,14 +44,72 @@ def _alias_key(name: str) -> str:
     return key
 
 
+#: Trailing wrapped parenthetical: ``A（B）`` / ``A(B)`` (no nested parens).
+_PAREN_RE = re.compile(r"^(?P<outer>[^()（）]+?)[（(](?P<inner>[^()（）]+)[)）]$")
+
+
+def _parenthetical_parts(name: str) -> tuple[str, str] | None:
+    """Split a trailing wrapped-parenthetical name into (outer, inner) parts.
+
+    Anything else — no parens, non-trailing parens (``C++（进阶）指南``), an
+    empty inner — returns ``None``.
+    """
+    match = _PAREN_RE.match(name)
+    if not match:
+        return None
+    return match.group("outer").strip(), match.group("inner").strip()
+
+
+def _alias_keys(name: str) -> list[str]:
+    """All surface alias keys for a name (Task 10 parenthetical fold).
+
+    A trailing wrapped parenthetical ``A（B）`` registers up to three keys —
+    the full name, the outer ``A`` and the inner ``B`` — so a cross-language
+    canonical name meets either half in the alias table. Degenerate forms
+    keep only the full key: empty inner (the regex rejects it), inner folding
+    to the same key as the outer (``String（string）``), or an empty outer
+    (``（String）``). A single-character inner is not registered (too fuzzy).
+    """
+    full = _alias_key(name)
+    parts = _parenthetical_parts(name)
+    if not parts:
+        return [full]
+    outer_key = _alias_key(parts[0])
+    inner_key = _alias_key(parts[1])
+    if not outer_key or not inner_key or inner_key == outer_key:
+        return [full]
+    keys = [full, outer_key]
+    if len(inner_key) > 1:
+        keys.append(inner_key)
+    return keys
+
+
+def _is_parenthetical_full_name(name: str) -> bool:
+    parts = _parenthetical_parts(name)
+    return bool(parts and parts[0] and parts[1])
+
+
+def _choose_representative_name(names: list[str]) -> str:
+    """Display name for a merged cluster: the first parenthetical full name in
+    input order wins (Task 10); clusters without one keep the historical
+    convention (first name in input order) unchanged."""
+    for name in names:
+        if _is_parenthetical_full_name(name):
+            return name
+    return names[0]
+
+
 #: Quote pairs for the hygiene gate's "quoted literal" rule.
 _QUOTE_OPEN_CLOSE = {'"': '"', "'": "'", "`": "`", "「": "」", "『": "』", "“": "”", "‘": "’"}
 
 
 def is_low_quality_entity_name(name: str) -> bool:
-    """Hygiene gate shared by wiki eligibility (spec §3.5 Task 8) and ingestion
-    filtering (Task 10): pure symbols/operators, quoted literals, single chars,
-    and overlong fragments never deserve an entity node or a wiki entry."""
+    """Hygiene gate for wiki eligibility (spec §3.5 Task 8): pure
+    symbols/operators, quoted literals, single chars, and overlong fragments
+    never deserve a wiki entry. Deliberately NOT applied at graph ingestion
+    (Task 10 收缩): a filtered-out node would also vanish from graph-path
+    retrieval, while a kept one is harmless (the landing/expansion gates
+    filter noise at query time)."""
     stripped = name.strip()
     if len(stripped) <= 1 or len(stripped) > 30:
         return True
@@ -101,14 +163,15 @@ def normalize_extraction(
         # Keep the lower index (first-seen) as the representative.
         parent[max(root_i, root_j)] = min(root_i, root_j)
 
-    # Pass 1: surface alias table.
+    # Pass 1: surface alias table (multi-key: parenthetical names register
+    # their outer/inner halves too).
     by_key: dict[str, int] = {}
     for i, entity in enumerate(result.entities):
-        key = _alias_key(entity.name)
-        if key in by_key:
-            union(i, by_key[key])
-        else:
-            by_key[key] = i
+        for key in _alias_keys(entity.name):
+            if key in by_key:
+                union(i, by_key[key])
+            else:
+                by_key[key] = i
 
     # Pass 2: embedding-similarity merge over representatives.
     if name_vectors:
@@ -124,15 +187,23 @@ def normalize_extraction(
                 if cosine_similarity(vec_i, vec_j) >= similarity_threshold:
                     union(i, j)
 
-    # Rebuild entities: representative keeps its display name, absorbing the
-    # alias descriptions in first-seen order.
+    # Rebuild entities: one display name per cluster — the parenthetical full
+    # name when present, else the first-seen name — absorbing the alias
+    # descriptions in first-seen order.
+    clusters: dict[int, list[int]] = {}
+    for i in range(len(result.entities)):
+        clusters.setdefault(find(i), []).append(i)
     merged_entities: dict[int, ExtractedEntity] = {}
-    for i, entity in enumerate(result.entities):
-        root = find(i)
-        if root not in merged_entities:
-            merged_entities[root] = ExtractedEntity(name=result.entities[root].name, type=result.entities[root].type, description=result.entities[root].description)
-        if i != root:
-            merged_entities[root].description = _merge_descriptions(merged_entities[root].description, entity.description)
+    for root, indices in clusters.items():
+        entity = ExtractedEntity(
+            name=_choose_representative_name([result.entities[index].name for index in indices]),
+            type=result.entities[root].type,
+            description=result.entities[root].description,
+        )
+        for index in indices:
+            if index != root:
+                entity.description = _merge_descriptions(entity.description, result.entities[index].description)
+        merged_entities[root] = entity
     entities = [merged_entities[root] for root in sorted(merged_entities)]
 
     # Rewrite relation endpoints through the mapping; drop merge-created loops.
@@ -158,11 +229,11 @@ def _map_name(name: str, entities: list[ExtractedEntity], name_of: dict[int, str
     for entity in entities:
         if entity.name == name:
             return name_of.get(index_of[id(entity)], name)
-    # Endpoint not extracted as an entity (dangling): alias-fold it if the key
-    # matches a known representative, else pass through unchanged.
-    key = _alias_key(name)
+    # Endpoint not extracted as an entity (dangling): alias-fold it when any
+    # of its keys meets a known entity's keys, else pass through unchanged.
+    keys = set(_alias_keys(name))
     for i, entity in enumerate(entities):
-        if _alias_key(entity.name) == key:
+        if keys & set(_alias_keys(entity.name)):
             return name_of.get(i, entity.name)
     return name
 
@@ -176,7 +247,8 @@ def cluster_alias_groups(
 
     Same two mechanisms as ``normalize_extraction`` — surface alias fold,
     then embedding-similarity union over representatives — but over a plain
-    name list. The representative is the first name in input order
+    name list. The representative is the parenthetical full name when the
+    cluster has one (Task 10), else the first name in input order
     (``list_entities`` sorts by name, so the choice is deterministic).
     Returns only non-trivial groups: ``{representative: [alias, ...]}``.
     """
@@ -196,11 +268,11 @@ def cluster_alias_groups(
 
     by_key: dict[str, int] = {}
     for i, name in enumerate(names):
-        key = _alias_key(name)
-        if key in by_key:
-            union(i, by_key[key])
-        else:
-            by_key[key] = i
+        for key in _alias_keys(name):
+            if key in by_key:
+                union(i, by_key[key])
+            else:
+                by_key[key] = i
 
     if name_vectors:
         reps = sorted({find(i) for i in range(len(names))})
@@ -215,9 +287,13 @@ def cluster_alias_groups(
                 if cosine_similarity(vec_i, vec_j) >= similarity_threshold:
                     union(i, j)
 
-    groups: dict[int, list[str]] = {}
-    for i, name in enumerate(names):
-        root = find(i)
-        if root != i:
-            groups.setdefault(root, []).append(name)
-    return {names[root]: aliases for root, aliases in groups.items()}
+    clusters: dict[int, list[int]] = {}
+    for i in range(len(names)):
+        clusters.setdefault(find(i), []).append(i)
+    groups: dict[str, list[str]] = {}
+    for members in clusters.values():
+        if len(members) < 2:
+            continue
+        representative = _choose_representative_name([names[index] for index in members])
+        groups[representative] = [names[index] for index in members if names[index] != representative]
+    return groups

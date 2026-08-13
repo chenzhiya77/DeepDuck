@@ -119,3 +119,62 @@ def test_cluster_alias_groups_representative_is_first_in_input_order():
 
 def test_cluster_alias_groups_empty_when_nothing_merges():
     assert cluster_alias_groups(["Alpha", "Beta", "Gamma"], None, 0.92) == {}
+
+
+# ── Task 10: parenthetical alias folding (cross-language canonical names) ──
+
+
+def test_alias_keys_parenthetical_registers_three_keys():
+    from deerflow.knowledge.graph.normalizer import _alias_keys
+
+    assert set(_alias_keys("字符串（String）")) == {"字符串（string）", "字符串", "string"}
+
+
+def test_alias_keys_degenerate_parenthetical_forms():
+    from deerflow.knowledge.graph.normalizer import _alias_keys
+
+    assert _alias_keys("模型（）") == ["模型（）"]  # empty inner → full key only
+    assert _alias_keys("String（string）") == ["string（string）"]  # inner folds to outer → full key only
+    assert set(_alias_keys("字符串（S）")) == {"字符串（s）", "字符串"}  # single-char inner not registered
+
+
+def test_alias_keys_non_wrapping_parentheses_not_split():
+    from deerflow.knowledge.graph.normalizer import _alias_keys
+
+    assert _alias_keys("C++（进阶）指南") == ["c++（进阶）指南"]
+    assert _alias_keys("Vector DB") == ["vectordb"]
+
+
+def test_parenthetical_fold_merges_cross_language_pair_and_prefers_full_name():
+    result = _result(
+        ["String", "字符串（String）"],
+        [("String", "JVM", "运行于"), ("字符串（String）", "JVM", "运行于")],
+    )
+
+    merged = normalize_extraction(result)
+
+    assert len(merged.entities) == 1
+    entity = merged.entities[0]
+    assert entity.name == "字符串（String）"  # 括号全名优先（first-seen 本是 "String"）
+    assert "String 的描述" in entity.description and "字符串（String） 的描述" in entity.description
+    assert [(r.source, r.target, r.relation) for r in merged.relations] == [("字符串（String）", "JVM", "运行于")]
+
+
+def test_parenthetical_fold_rewrites_dangling_endpoint():
+    result = _result(["字符串（String）"], [("String", "JVM", "运行于")])
+
+    merged = normalize_extraction(result)
+
+    assert merged.relations[0].source == "字符串（String）"
+
+
+def test_cluster_alias_groups_parenthetical_fold_prefers_full_name():
+    groups = cluster_alias_groups(["String", "字符串（String）"], None, 0.92)
+
+    assert groups == {"字符串（String）": ["String"]}
+
+
+def test_cluster_alias_groups_without_parenthetical_keeps_input_order():
+    groups = cluster_alias_groups(["Models", "Model"], None, 0.92)
+
+    assert groups == {"Models": ["Model"]}  # 无括号全名 → 维持输入序第一

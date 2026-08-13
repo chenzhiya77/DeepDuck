@@ -196,6 +196,77 @@ async def test_embedding_similarity_merge_respects_threshold(graph_env):
 @requires_qdrant
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_parenthetical_fold_merges_cross_language_pair(graph_env):
+    """Task 10: ``String``/``字符串（String）`` share a parenthetical fold key, so
+    they merge even with orthogonal vectors, and the parenthetical full name
+    becomes the representative (name order would pick the pure-ASCII ``String``)."""
+    env = _resolver_env(graph_env)
+    store, graph_store, vector_store, wiki_store, client = env["store"], env["graph_store"], env["vector_store"], env["wiki_store"], env["client"]
+    kb_id, doc_id = env["kb_id"], env["doc_id"]
+    c0, c1 = f"{doc_id}-c0", f"{doc_id}-c1"
+    await _seed_chunk_points(vector_store, kb_id, doc_id)
+
+    await graph_store.upsert_entities(kb_id, [ExtractedEntity(name="String", type="概念", description="字符串类型片段A")], chunk_id=c0)
+    await graph_store.upsert_entities(kb_id, [ExtractedEntity(name="字符串（String）", type="概念", description="字符串类型片段B")], chunk_id=c1)
+    await graph_store.upsert_entities(kb_id, [ExtractedEntity(name="JVM", type="组件", description="运行时")], chunk_id=c0)
+    await graph_store.upsert_relations(kb_id, [ExtractedRelation(source="String", target="JVM", relation="运行于", description="关系A")], chunk_id=c0)
+    await store.update_chunk_extract(c0, "done", entities=["String", "JVM"])
+    await store.update_chunk_extract(c1, "done", entities=["字符串（String）"])
+    # Orthogonal vectors: only the parenthetical fold can merge this pair.
+    await vector_store.upsert_entities(
+        [
+            EntityUpsert(name="String", kb_id=kb_id, type="概念", description="字符串类型片段A", dense=_dims({0: 1.0})),
+            EntityUpsert(name="字符串（String）", kb_id=kb_id, type="概念", description="字符串类型片段B", dense=_dims({1: 1.0})),
+            EntityUpsert(name="JVM", kb_id=kb_id, type="组件", description="运行时", dense=_dims({2: 1.0})),
+        ]
+    )
+    await wiki_store.upsert_entry(kb_id, title="String", content="# String", source_chunk_ids=[c0])
+    await wiki_store.upsert_entry(kb_id, title="字符串（String）", content="# 字符串（String）", source_chunk_ids=[c1])
+    await vector_store.upsert_wiki_entries(
+        [
+            WikiEntryUpsert(entry_id=wiki_entry_id(kb_id, "String"), kb_id=kb_id, title="String", dense=_dims({5: 1.0})),
+            WikiEntryUpsert(entry_id=wiki_entry_id(kb_id, "字符串（String）"), kb_id=kb_id, title="字符串（String）", dense=_dims({6: 1.0})),
+        ]
+    )
+
+    stats = await resolve_entity_aliases(store, graph_store, vector_store, wiki_store, _TableEmbedder(), kb_id=kb_id, touched_entities={"String"})
+
+    assert stats.merged_groups == 1
+    assert stats.merged_entities == 1
+    # ① Entity rows: full name absorbs the ASCII alias; descriptions/chunks union.
+    by_name = {e["name"]: e for e in await graph_store.list_entities(kb_id)}
+    assert sorted(by_name) == ["JVM", "字符串（String）"]
+    assert "字符串类型片段A" in by_name["字符串（String）"]["description"] and "字符串类型片段B" in by_name["字符串（String）"]["description"]
+    assert sorted(by_name["字符串（String）"]["source_chunk_ids"]) == sorted([c0, c1])
+    # ② Relation endpoint rewritten onto the representative.
+    relations = await graph_store.list_relations(kb_id)
+    assert [(r["source"], r["target"]) for r in relations] == [("字符串（String）", "JVM")]
+    # ③ kb_entities: alias vector deleted; only representative + JVM remain.
+    epoints, _ = await client.scroll(
+        vector_store.entities_collection,
+        scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+        with_payload=True,
+        limit=10,
+    )
+    assert sorted(p.payload["name"] for p in epoints) == ["JVM", "字符串（String）"]
+    # ④ Chunk entity tags rewritten (business DB + Qdrant payload dual write).
+    rows = {c["chunk_id"]: c for c in await store.list_chunks(doc_id, limit=10)}
+    assert sorted(rows[c0]["entities"]) == ["JVM", "字符串（String）"]
+    assert rows[c1]["entities"] == ["字符串（String）"]
+    # ⑤ Wiki lifecycle: alias entry + vector point deleted; representative dirty.
+    assert {e["title"]: e["status"] for e in await wiki_store.list_entries(kb_id)} == {"字符串（String）": "dirty"}
+    wpoints, _ = await client.scroll(
+        vector_store.wiki_entries_collection,
+        scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+        with_payload=True,
+        limit=10,
+    )
+    assert [p.payload["title"] for p in wpoints] == ["字符串（String）"]
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_scope_limited_to_touched_plus_one_hop_on_large_graph(graph_env):
     env = _resolver_env(graph_env)
     graph_store = env["graph_store"]
