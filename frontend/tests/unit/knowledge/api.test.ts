@@ -21,6 +21,7 @@ import {
   deleteKnowledgeBase,
   generateWiki,
   getKnowledgeBase,
+  getSupportedFormats,
   listDocuments,
   listDocumentChunks,
   listKnowledgeBases,
@@ -186,6 +187,15 @@ describe("document endpoints", () => {
     );
     expect(result.total).toBe(1);
     expect(result.items[0]!.entities).toEqual(["DeerFlow"]);
+  });
+});
+
+describe("supported formats endpoint", () => {
+  test("getSupportedFormats fetches the allowlist (Task 6)", async () => {
+    mockedFetch.mockResolvedValueOnce(jsonResponse(200, { suffixes: [".md", ".txt"] }));
+    const result = await getSupportedFormats();
+    expect(mockedFetch).toHaveBeenCalledWith("http://gw/api/knowledge-bases/supported-formats");
+    expect(result.suffixes).toEqual([".md", ".txt"]);
   });
 });
 

@@ -68,6 +68,13 @@ export function listKnowledgeBases(): Promise<KnowledgeBase[]> {
   );
 }
 
+/** Upload allowlist (Task 6, spec §6) — static data, cached indefinitely. */
+export function getSupportedFormats(): Promise<{ suffixes: string[] }> {
+  return fetch(`${getBackendBaseURL()}/api/knowledge-bases/supported-formats`).then((r) =>
+    readResponse<{ suffixes: string[] }>(r, "Failed to fetch supported formats"),
+  );
+}
+
 export function createKnowledgeBase(input: { name: string; description?: string }): Promise<KnowledgeBase> {
   return fetch(`${getBackendBaseURL()}/api/knowledge-bases`, {
     method: "POST",

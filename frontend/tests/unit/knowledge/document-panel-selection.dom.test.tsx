@@ -50,7 +50,7 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
   };
   render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <DocumentPanel kb={KB} documents={[doc({})]} {...handlers} {...props} />
+      <DocumentPanel kb={KB} documents={[doc({})]} supportedSuffixes={[".md", ".pdf", ".txt"]} {...handlers} {...props} />
     </I18nContext.Provider>,
   );
   return handlers;

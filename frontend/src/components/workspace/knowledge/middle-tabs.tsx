@@ -2,6 +2,7 @@
 
 import { BookOpen, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useI18n } from "@/core/i18n/hooks";
 import type { WikiGenerateMode } from "@/core/knowledge/api";
+import { acceptAttribute, partitionFilesBySuffix } from "@/core/knowledge/supported-formats";
 import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { runAfterMenuClose } from "./run-after-menu-close";
@@ -49,6 +51,7 @@ export function MiddleTabs({
   onTabChange,
   onUpload,
   uploading = false,
+  supportedSuffixes,
   onGenerateWiki,
   onRenameKb,
   onDeleteKb,
@@ -61,6 +64,8 @@ export function MiddleTabs({
   onTabChange: (tab: KnowledgeMiddleTab) => void;
   onUpload: (files: File[]) => void;
   uploading?: boolean;
+  /** Upload allowlist (Task 6, spec §6): gates the picker accept + intercept. */
+  supportedSuffixes: readonly string[];
   onGenerateWiki: (mode: WikiGenerateMode) => void;
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
@@ -123,13 +128,22 @@ export function MiddleTabs({
         <input
           ref={fileInputRef}
           multiple
+          accept={acceptAttribute(supportedSuffixes)}
           className="hidden"
           data-testid="document-upload-input"
           type="file"
           onChange={(event) => {
             const files = event.target.files;
             if (files && files.length > 0) {
-              onUpload(Array.from(files));
+              // Task 6: pre-upload allowlist intercept (accept is advisory;
+              // users can still pick anything via "all files").
+              const { accepted, rejected } = partitionFilesBySuffix(Array.from(files), supportedSuffixes);
+              if (rejected.length > 0) {
+                toast.error(tk.unsupportedFilesSkipped(rejected.map((f) => f.name).join(", ")));
+              }
+              if (accepted.length > 0) {
+                onUpload(accepted);
+              }
             }
             event.target.value = "";
           }}

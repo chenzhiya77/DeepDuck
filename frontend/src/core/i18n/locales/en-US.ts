@@ -319,6 +319,7 @@ export const enUS: Translations = {
     uploadDocuments: "Upload documents",
     uploadingDocuments: "Uploading…",
     dropToUpload: "Drop to upload into this knowledge base",
+    unsupportedFilesSkipped: (names: string) => `Skipped unsupported files: ${names}`,
     searchDocuments: "Search documents…",
     clearSearch: "Clear search",
     noMatchingDocuments: "No documents match",

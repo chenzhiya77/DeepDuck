@@ -235,3 +235,80 @@ async def test_missing_vlm_key_degrades_all_images(monkeypatch):
 
     assert captions == {"images/p1.jpg": "图片 p1.jpg"}
     assert recorded == []  # no outbound call without a key
+
+
+# ── Task 6: local-read extension (.txt/.csv) + upload allowlist ────────────
+
+
+def test_supported_upload_suffixes_contract():
+    """spec §6 frozen set; helpers are case-insensitive, suffixes carry the dot."""
+    from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_local_suffix, is_supported_suffix
+
+    assert SUPPORTED_UPLOAD_SUFFIXES == frozenset(
+        {
+            ".md",
+            ".markdown",
+            ".txt",
+            ".csv",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".ppt",
+            ".pptx",
+            ".png",
+            ".jpg",
+            ".jpeg",
+        }
+    )
+    assert is_supported_suffix(".TXT")  # case-insensitive
+    assert not is_supported_suffix(".exe")
+    assert not is_supported_suffix("")
+    for suffix in (".md", ".markdown", ".txt", ".csv"):
+        assert is_local_suffix(suffix), suffix
+    assert not is_local_suffix(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_parse_txt_utf8_short_circuits_mineru(tmp_path, monkeypatch):
+    # No token at all — local read must not touch the network or the env var.
+    monkeypatch.delenv("MINERU_API_TOKEN", raising=False)
+    recorded: list[httpx.Request] = []
+    client = httpx.AsyncClient(transport=_mineru_transport(recorded))
+    txt = tmp_path / "笔记.txt"
+    txt.write_text("第一行\n第二行", encoding="utf-8")
+
+    doc = await parse_document(txt, client=client)
+
+    assert doc.markdown == "第一行\n第二行"
+    assert doc.images == []
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_parse_txt_gbk_fallback(tmp_path):
+    txt = tmp_path / "国标.txt"
+    txt.write_bytes("中文标题\n正文第二行".encode("gbk"))
+
+    doc = await parse_document(txt, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+    assert doc.markdown == "中文标题\n正文第二行"
+
+
+@pytest.mark.asyncio
+async def test_parse_csv_local_read_gbk(tmp_path):
+    """CSV is read verbatim (no table-structure understanding, spec §6)."""
+    csv = tmp_path / "数据.csv"
+    csv.write_bytes("名称,数量\n苹果,3".encode("gbk"))
+
+    doc = await parse_document(csv, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+    assert "苹果,3" in doc.markdown
+
+
+@pytest.mark.asyncio
+async def test_parse_local_read_undecodable_raises_value_error(tmp_path):
+    bad = tmp_path / "坏编码.txt"
+    bad.write_bytes(b"\xff\xff\xfe\xfd")  # neither UTF-8 nor GBK
+
+    with pytest.raises(ValueError, match="坏编码.txt"):
+        await parse_document(bad, client=httpx.AsyncClient(transport=_mineru_transport([])))

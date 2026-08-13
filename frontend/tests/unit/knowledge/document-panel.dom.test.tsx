@@ -6,12 +6,17 @@
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { toast } from "sonner";
 
 import { DocumentPanel, PathStatusBreakdown } from "@/components/workspace/knowledge/document-panel";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { pathStatusLines } from "@/core/knowledge/path-status";
 import type { KnowledgeBase, KnowledgeDocument } from "@/core/knowledge/types";
+
+rs.mock("sonner", () => ({
+  toast: { error: rs.fn(), success: rs.fn() },
+}));
 
 const KB: KnowledgeBase = {
   id: "kb-1",
@@ -49,7 +54,7 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
   };
   render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <DocumentPanel kb={KB} documents={[doc({})]} {...handlers} {...props} />
+      <DocumentPanel kb={KB} documents={[doc({})]} supportedSuffixes={[".md", ".pdf", ".txt"]} {...handlers} {...props} />
     </I18nContext.Provider>,
   );
   return handlers;
@@ -163,6 +168,16 @@ describe("DocumentPanel stats row and upload", () => {
     const file = new File(["x"], "拖入.md", { type: "text/markdown" });
     fireEvent.drop(zone, { dataTransfer: { files: [file] } });
     expect(onUpload).toHaveBeenCalledWith([file]);
+  });
+
+  it("intercepts unsupported dropped files before upload (Task 6)", () => {
+    const { onUpload } = renderPanel();
+    const zone = screen.getByTestId("document-dropzone");
+    const good = new File(["y"], "拖入.txt");
+    fireEvent.drop(zone, { dataTransfer: { files: [new File(["x"], "evil.exe"), good] } });
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("evil.exe"));
+    expect(onUpload).toHaveBeenCalledTimes(1);
+    expect(onUpload).toHaveBeenCalledWith([good]);
   });
 
   it("shows a drop-hint overlay while a file is dragged over the panel", () => {

@@ -2,6 +2,7 @@
 
 import { ArrowUpDown, Check, FileText, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ import {
 } from "@/core/knowledge/document-view";
 import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
 import { pathStatusLines } from "@/core/knowledge/path-status";
+import { partitionFilesBySuffix } from "@/core/knowledge/supported-formats";
 import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentStatus } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
@@ -113,6 +115,7 @@ export function DocumentPanel({
   onDeleteDocument,
   onRetryDocument,
   onOpenChunks,
+  supportedSuffixes,
 }: {
   kb: KnowledgeBase;
   documents: KnowledgeDocument[];
@@ -120,6 +123,8 @@ export function DocumentPanel({
   onDeleteDocument: (docId: string) => Promise<void> | void;
   onRetryDocument: (docId: string) => void;
   onOpenChunks: (doc: KnowledgeDocument) => void;
+  /** Upload allowlist (Task 6, spec §6): drag-drop pre-upload intercept. */
+  supportedSuffixes: readonly string[];
 }) {
   const { t, locale } = useI18n();
   const tk = t.knowledge;
@@ -186,7 +191,14 @@ export function DocumentPanel({
 
   const handleFiles = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return;
-    onUpload(Array.from(files));
+    // Task 6: pre-upload allowlist intercept for drag-drop (no picker gate here).
+    const { accepted, rejected } = partitionFilesBySuffix(Array.from(files), supportedSuffixes);
+    if (rejected.length > 0) {
+      toast.error(tk.unsupportedFilesSkipped(rejected.map((f) => f.name).join(", ")));
+    }
+    if (accepted.length > 0) {
+      onUpload(accepted);
+    }
   };
 
   return (

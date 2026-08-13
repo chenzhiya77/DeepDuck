@@ -303,6 +303,7 @@ export const zhCN: Translations = {
     uploadDocuments: "上传文档",
     uploadingDocuments: "上传中…",
     dropToUpload: "释放以上传到当前知识库",
+    unsupportedFilesSkipped: (names: string) => `已跳过不支持的文件：${names}`,
     searchDocuments: "搜索文档…",
     clearSearch: "清空搜索",
     noMatchingDocuments: "没有匹配的文档",

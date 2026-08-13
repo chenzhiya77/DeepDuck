@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from deerflow.knowledge.graph.store import GraphStore
+from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
 from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.wiki.generator import generate_wiki, wiki_generation_in_progress
@@ -106,6 +107,11 @@ class KnowledgeService:
         """Persist the file, create the ``uploaded`` row, enqueue indexing."""
         doc_id = uuid.uuid4().hex
         safe_name = normalize_filename(filename or "document")
+        # Task 6 (spec §6): upload allowlist gate — reject before any file I/O.
+        suffix = Path(safe_name).suffix.lower()
+        if not is_supported_suffix(suffix):
+            supported = ", ".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
+            raise ValueError(f"unsupported file type '{suffix or '(none)'}'; supported formats: {supported}")
         doc_dir = self.data_dir / "knowledge" / kb_id / doc_id
         dest = doc_dir / safe_name
 

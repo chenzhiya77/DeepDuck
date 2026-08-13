@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.gateway.services.knowledge_service import KnowledgeService
 from deerflow.knowledge.access import can_access
+from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
 
 router = APIRouter(prefix="/api/knowledge-bases", tags=["knowledge-bases"])
 
@@ -109,6 +110,14 @@ async def create_knowledge_base(request: Request, body: KbCreateRequest):
         name=body.name,
         description=body.description,
     )
+
+
+@router.get("/supported-formats")
+async def supported_formats():
+    """Upload allowlist (Task 6, spec §6). Registered before ``/{kb_id}`` so
+    the literal segment wins over the path parameter. Static data — the
+    frontend uses it for the file-picker ``accept`` and pre-upload intercept."""
+    return {"suffixes": sorted(SUPPORTED_UPLOAD_SUFFIXES)}
 
 
 @router.get("/{kb_id}")

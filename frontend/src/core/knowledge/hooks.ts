@@ -24,6 +24,19 @@ export function useKnowledgeBases() {
   return useQuery({ queryKey: knowledgeBasesKey(), queryFn: api.listKnowledgeBases });
 }
 
+export function supportedFormatsKey() {
+  return ["knowledge-bases", "supported-formats"] as const;
+}
+
+/** Upload allowlist (Task 6): static data — never goes stale within a session. */
+export function useSupportedFormats() {
+  return useQuery({
+    queryKey: supportedFormatsKey(),
+    queryFn: api.getSupportedFormats,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
 export function useCreateKnowledgeBase() {
   const queryClient = useQueryClient();
   return useMutation({

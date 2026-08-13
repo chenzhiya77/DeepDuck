@@ -136,6 +136,34 @@ async def test_upload_document_returns_202_with_uploaded_row_and_enqueues(servic
     assert str(tmp_path) in str(stored)
 
 
+async def test_upload_rejects_unsupported_suffix(service):
+    """Task 6 (spec §6): allowlist gate at the upload entry; rejection lists
+    the supported set and leaves no document row behind."""
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("evil.exe", b"MZ", "application/octet-stream")})
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert ".exe" in detail
+    assert ".md" in detail  # 拒绝文案列出支持集合
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
+
+
+async def test_supported_formats_endpoint_matches_parser_constant(service):
+    """Registered before ``/{kb_id}`` so the literal segment wins; payload is
+    exactly the parser allowlist (frontend accept/intercept source)."""
+    from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
+
+    client = _client(service)
+
+    response = client.get("/api/knowledge-bases/supported-formats")
+
+    assert response.status_code == 200
+    assert response.json() == {"suffixes": sorted(SUPPORTED_UPLOAD_SUFFIXES)}
+
+
 async def test_document_list_carries_indexing_fields(service):
     client = _client(service)
     kb = _create_kb(client)

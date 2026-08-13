@@ -22,10 +22,12 @@ import {
   useGenerateWiki,
   useKnowledgeBases,
   useRetryDocument,
+  useSupportedFormats,
   useUpdateKnowledgeBase,
   useUploadDocument,
   useWikiEntries,
 } from "@/core/knowledge/hooks";
+import { FALLBACK_SUPPORTED_SUFFIXES } from "@/core/knowledge/supported-formats";
 import type { KnowledgeDocument, WikiEntrySummary } from "@/core/knowledge/types";
 
 function showMutationError(error: unknown, fallback: string) {
@@ -72,6 +74,11 @@ export default function KnowledgePage() {
   const wikiEntriesQuery = useWikiEntries(selectedKbId, activeTab === "wiki");
   const wikiEntries = wikiEntriesQuery.data ?? [];
 
+  // Task 6 upload allowlist: endpoint is the source of truth, with a local
+  // mirror as fallback until the query resolves (spec §6).
+  const supportedFormatsQuery = useSupportedFormats();
+  const supportedSuffixes = supportedFormatsQuery.data?.suffixes ?? FALLBACK_SUPPORTED_SUFFIXES;
+
   const openWikiEntry = (entry: WikiEntrySummary) => setDrawerEntryId(entry.id);
   const revealWikiEntry = (entryId: string) => {
     setActiveTab("wiki");
@@ -114,6 +121,7 @@ export default function KnowledgePage() {
               activeTab={activeTab}
               onTabChange={setActiveTab}
               uploading={uploadDocument.isPending}
+              supportedSuffixes={supportedSuffixes}
               onUpload={(files) => {
                 void (async () => {
                   for (const file of files) {
@@ -149,6 +157,7 @@ export default function KnowledgePage() {
                 <DocumentPanel
                   kb={selectedKb}
                   documents={documents}
+                  supportedSuffixes={supportedSuffixes}
                   onUpload={(files) => {
                     void (async () => {
                       for (const file of files) {

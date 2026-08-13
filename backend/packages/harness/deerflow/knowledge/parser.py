@@ -9,8 +9,9 @@ Local-file flow (精准解析 API):
    state is ``done`` (grab ``full_zip_url``) or ``failed``.
 4. Download the result zip and unpack ``full.md`` + ``images/*``.
 
-Markdown inputs short-circuit: a ``.md`` file is already parse output, so it
-is read locally without any MinerU call. The API token always comes from the
+Markdown/text inputs short-circuit: ``.md``/``.markdown``/``.txt``/``.csv``
+files are already parse output (or plain text), so they are read locally
+without any MinerU call. The API token always comes from the
 ``MINERU_API_TOKEN`` env var — never from the caller.
 """
 
@@ -36,6 +37,28 @@ _AUTH_CODES = {"A0202", "A0211"}
 #: Poll states that mean "keep waiting".
 _PENDING_STATES = frozenset({"waiting-file", "pending", "running", "converting"})
 
+#: Upload allowlist (spec §6, frozen): local-read text formats + MinerU-parsed
+#: document/image formats. Lowercase, dot-prefixed.
+SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = frozenset(
+    {
+        ".md",
+        ".markdown",
+        ".txt",
+        ".csv",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".ppt",
+        ".pptx",
+        ".png",
+        ".jpg",
+        ".jpeg",
+    }
+)
+
+#: Suffixes read locally as text — they never hit MinerU.
+_LOCAL_READ_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt", ".csv"})
+
 _MEDIA_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -44,6 +67,34 @@ _MEDIA_TYPES = {
     ".bmp": "image/bmp",
     ".webp": "image/webp",
 }
+
+
+def is_supported_suffix(suffix: str) -> bool:
+    """Case-insensitive upload-allowlist membership (dot-prefixed suffix)."""
+    return suffix.lower() in SUPPORTED_UPLOAD_SUFFIXES
+
+
+def is_local_suffix(suffix: str) -> bool:
+    """Case-insensitive check for local-read (no MinerU) suffixes."""
+    return suffix.lower() in _LOCAL_READ_SUFFIXES
+
+
+def _read_local_text(path: Path) -> str:
+    """Read a local text file: UTF-8 strict, then GBK fallback (legacy
+    Windows encodings), else an explicit ``ValueError``. Newlines are
+    normalized to ``\n`` (mirrors ``Path.read_text`` universal-newlines)."""
+    raw = path.read_bytes()
+    text: str | None = None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if text is None:
+        try:
+            text = raw.decode("gbk")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"cannot decode {path.name}: not valid UTF-8 or GBK") from exc
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 class MineruError(Exception):
@@ -179,14 +230,14 @@ async def parse_document(
 ) -> ParsedDocument:
     """Parse a local document via the MinerU v4 API.
 
-    ``.md``/``.markdown`` files are read locally (they are already parse
-    output) and never hit the network. The token comes from the
-    ``MINERU_API_TOKEN`` env var. Image references in the returned markdown
+    ``.md``/``.markdown``/``.txt``/``.csv`` files are read locally (UTF-8
+    strict with GBK fallback) and never hit the network. The token comes from
+    the ``MINERU_API_TOKEN`` env var. Image references in the returned markdown
     point at ``ParsedImage.ref`` entries (relative zip paths).
     """
     path = Path(file_path)
-    if path.suffix.lower() in {".md", ".markdown"}:
-        return ParsedDocument(markdown=path.read_text(encoding="utf-8"), images=[])
+    if is_local_suffix(path.suffix):
+        return ParsedDocument(markdown=_read_local_text(path), images=[])
 
     token = _read_token()
     own_client = client is None

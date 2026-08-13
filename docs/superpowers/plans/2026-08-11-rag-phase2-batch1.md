@@ -176,7 +176,9 @@
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
 - [x] Commit: `fix(rag): wire new-document wiki dirty hook and backfill new head entries`。
 
-## Task 6: P4 解析能力扩展第一批 + 上传白名单
+## Task 6: P4 解析能力扩展第一批 + 上传白名单 ✅ 已完成（2026-08-13）
+
+**验证结果**：后端 tests/knowledge 253 passed + 2 skipped（较 Task 14 基线 +7：parser 契约/UTF-8 直读/GBK 回退×2/坏编码 ValueError/上传 400/formats 端点）；revert 证明点已执行（回退 GBK 回退 → 两个 GBK 用例 RED → restore → GREEN）；前端知识库 21 文件 176 passed（新 supported-formats 纯函数 5 用例 + api 端点 1 用例 + MiddleTabs 拦截 3 用例 + DocumentPanel 拖拽拦截 1 用例）；`pnpm check`、ruff check/format 干净。实施记录：①`_read_local_text` 按字节解码（UTF-8 严格 → GBK 回退）并归一化 `\r\n`→`\n`，与 `Path.read_text` universal-newlines 语义对齐；②白名单闸在 `upload_document` 写盘前（ValueError → 路由既有 400 映射复用，无新异常路径）；③`GET /supported-formats` 注册于 `/{kb_id}` 之前；④前端两个上传入口（中栏菜单 input + 文档面板拖拽）共用 `partitionFilesBySuffix` 拦截 + toast，端点为真源、`FALLBACK_SUPPORTED_SUFFIXES` 本地镜像兜底。
 
 **Files:**
 - Modify: `backend/packages/harness/deerflow/knowledge/parser.py`（导出 `SUPPORTED_UPLOAD_SUFFIXES: frozenset[str]`；本地直读集合扩为 `{.md, .markdown, .txt, .csv}`，UTF-8 严格解码 → GBK 回退 → 明确 `ValueError`；`is_local_suffix` / `is_supported_suffix` 辅助函数）
@@ -190,10 +192,10 @@
 - 拒绝文案列出支持集合；HTTP 400。
 - CSV 不做表格结构理解（原文直读）。
 
-- [ ] 写失败测试：GBK txt/csv 直读成功；坏编码明确报错；白名单外后缀上传 400；formats 端点返回与常量一致；前端超集选择被拦截。
-- [ ] RED → 实现 → GREEN；revert GBK 回退，证明编码用例 RED，restore，GREEN。
-- [ ] `pnpm check` + backend knowledge 测试 GREEN。
-- [ ] Commit: `feat(rag): extend local parsing to txt/csv with upload allowlist`。
+- [x] 写失败测试：GBK txt/csv 直读成功；坏编码明确报错；白名单外后缀上传 400；formats 端点返回与常量一致；前端超集选择被拦截。
+- [x] RED → 实现 → GREEN；revert GBK 回退，证明编码用例 RED，restore，GREEN。
+- [x] `pnpm check` + backend knowledge 测试 GREEN。
+- [x] Commit: `feat(rag): extend local parsing to txt/csv with upload allowlist`。
 
 ## Task 7: 文档同步与全量回归
 

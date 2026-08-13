@@ -10,10 +10,7 @@
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-
-rs.mock("@/core/knowledge/hooks", () => ({
-  useWikiEntry: rs.fn(),
-}));
+import { toast } from "sonner";
 
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
@@ -22,6 +19,14 @@ import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { useWikiEntry } from "@/core/knowledge/hooks";
 import type { KnowledgeBase, WikiEntryDetail, WikiEntrySummary } from "@/core/knowledge/types";
+
+rs.mock("@/core/knowledge/hooks", () => ({
+  useWikiEntry: rs.fn(),
+}));
+
+rs.mock("sonner", () => ({
+  toast: { error: rs.fn(), success: rs.fn() },
+}));
 
 const KB: KnowledgeBase = {
   id: "kb-1",
@@ -71,6 +76,7 @@ function renderTabs(props?: Partial<Parameters<typeof MiddleTabs>[0]>) {
           kb={KB}
           activeTab={tab}
           onTabChange={setTab}
+          supportedSuffixes={[".md", ".pdf", ".txt"]}
           documents={<div data-testid="documents-pane">文档内容</div>}
           wiki={<div data-testid="wiki-pane">百科内容</div>}
           recall={<div data-testid="recall-pane">检索测试内容</div>}
@@ -169,6 +175,30 @@ describe("MiddleTabs", () => {
     const file = new File(["x"], "新手册.pdf", { type: "application/pdf" });
     fireEvent.change(input, { target: { files: [file] } });
     expect(handlers.onUpload).toHaveBeenCalledWith([file]);
+  });
+
+  it("gates the file picker with an accept attribute from the supported suffixes (Task 6)", () => {
+    renderTabs();
+    expect(screen.getByTestId("document-upload-input").getAttribute("accept")).toBe(".md,.pdf,.txt");
+  });
+
+  it("intercepts unsupported picks client-side before upload (Task 6)", () => {
+    const handlers = renderTabs();
+    const input = screen.getByTestId("document-upload-input");
+    const good = new File(["y"], "笔记.txt");
+    fireEvent.change(input, { target: { files: [new File(["x"], "evil.exe"), good] } });
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("evil.exe"));
+    expect(handlers.onUpload).toHaveBeenCalledTimes(1);
+    expect(handlers.onUpload).toHaveBeenCalledWith([good]);
+  });
+
+  it("drops the pick entirely when every file is unsupported (Task 6)", () => {
+    const handlers = renderTabs();
+    fireEvent.change(screen.getByTestId("document-upload-input"), {
+      target: { files: [new File(["x"], "evil.exe")] },
+    });
+    expect(handlers.onUpload).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalled();
   });
 
   it("renames the kb through the overflow menu dialog", async () => {

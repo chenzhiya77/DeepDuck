@@ -245,6 +245,7 @@ export interface Translations {
     uploadDocuments: string;
     uploadingDocuments: string;
     dropToUpload: string;
+    unsupportedFilesSkipped: (names: string) => string;
     searchDocuments: string;
     clearSearch: string;
     noMatchingDocuments: string;
