@@ -352,6 +352,25 @@
 - [x] 前端：组件/钩子/api 测试适配两按钮；`pnpm check` 干净。
 - [x] Commit: `feat(rag): split manual wiki generation into incremental update and confirmed full rebuild`。
 
+## Task 15: 内嵌图 caption 双模式（文字图完整转录）（2026-08-13 用户实测 badcase 拍板） ✅ 已完成（2026-08-13）
+
+**验证结果**：tests/knowledge 255 passed + 2 skipped（较 Task 6 基线 +2：prompt 双模式断言 + max_tokens=1024 断言）；退化两用例（无 key 全占位 / 单张失败单张占位）原位保持绿；ruff check/format 干净。
+
+**背景**：同一内容、容器不同导致理解深度不一致——图片直传走 MinerU 整页 OCR（全文转录入库），而嵌在 .docx 里的同一张图只被 VLM「一句简洁描述 + max_tokens=256」概括（用户实测：实习.jpg 直传全文入库，嵌入 Word 后只剩一句「该图片描述了…」）。Qwen3-VL 本具 OCR 能力，被 prompt 人为限制。拍板**双模式 caption prompt**：文字密集型图完整转录、其余一句话概括；`max_tokens` 256 → 1024。不做统一管线（内嵌图回送 MinerU 成本翻倍，否决）、不做多模态 embedding（无足够 badcase 积累）。
+
+**边界**：只对新解析的文档生效；存量文档保留旧概括，需受益则删除重传。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/captioner.py`（`_CAPTION_PROMPT` 双模式；`_caption_one` `max_tokens` 1024）
+- Modify: `backend/tests/knowledge/test_parser.py`（captioner 段：prompt 双模式断言 + max_tokens 断言；退化两用例保持绿）
+
+**接口契约（实现前冻结）：**
+- prompt 同条内双分支：文字为主（文档截图/表格/代码）→ 完整转录全部文字；否则 → 一句简洁中文描述。仍面向检索索引、只输出文本。
+- `max_tokens` 1024；temperature 0.2 不变；退化语义（无 key 全占位 / 单张失败单张占位）不变。
+
+- [x] 后端 TDD：RED（prompt 断言 + max_tokens 断言）→ 实现 → GREEN。
+- [x] Commit: `feat(rag): dual-mode image captioning with full transcription for text-dense images`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。

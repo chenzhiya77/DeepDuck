@@ -237,6 +237,33 @@ async def test_missing_vlm_key_degrades_all_images(monkeypatch):
     assert recorded == []  # no outbound call without a key
 
 
+# ── Task 15: dual-mode captioning (full transcription for text-dense images) ──
+
+
+def test_caption_prompt_offers_transcription_mode_for_text_dense_images():
+    """Task 15: text-dense images (doc screenshots/tables/code) must be fully
+    transcribed; other images keep the one-sentence summary. One prompt, two
+    branches, still retrieval-oriented."""
+    from deerflow.knowledge.captioner import _CAPTION_PROMPT
+
+    assert "完整转录" in _CAPTION_PROMPT  # text-dense branch
+    assert "一句" in _CAPTION_PROMPT  # summary branch kept
+
+
+@pytest.mark.asyncio
+async def test_caption_request_allows_transcription_length(monkeypatch):
+    """Task 15: max_tokens raised from 256 (one sentence) to 1024 so a full
+    page of transcribed text fits."""
+    monkeypatch.setenv("SILICONFLOW_VLM_API_KEY", "vlm-key")
+    recorded: list[httpx.Request] = []
+    client = httpx.AsyncClient(transport=_vlm_transport(recorded))
+
+    await caption_images([_SAMPLE_IMAGE], client=client, model="m")
+
+    body = json.loads(recorded[0].content)
+    assert body["max_tokens"] == 1024
+
+
 # ── Task 6: local-read extension (.txt/.csv) + upload allowlist ────────────
 
 

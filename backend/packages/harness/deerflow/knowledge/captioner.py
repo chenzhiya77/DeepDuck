@@ -1,11 +1,13 @@
-"""VLM image captioning for parsed documents (spec §3.1).
+"""VLM image captioning for parsed documents (spec §3.1, Task 15 dual-mode).
 
-Each image extracted by the parser gets a one-line Chinese caption from the
-SiliconFlow VLM (Qwen3-VL); captions are written back into the markdown as
-``![caption](ref)`` alt text *before* chunking, so image content becomes
-searchable text. Captioning is an enhancement, never a hard dependency: a VLM
-failure (or a missing key) degrades that image to a filename placeholder
-without aborting the document.
+Each image extracted by the parser gets a Chinese caption from the SiliconFlow
+VLM (Qwen3-VL), written back into the markdown as ``![caption](ref)`` alt text
+*before* chunking, so image content becomes searchable text. The prompt is
+dual-mode (Task 15): text-dense images (document screenshots, tables, code)
+are transcribed in full — matching the depth standalone image uploads get from
+MinerU OCR — while other images get a one-sentence summary. Captioning is an
+enhancement, never a hard dependency: a VLM failure (or a missing key)
+degrades that image to a filename placeholder without aborting the document.
 """
 
 from __future__ import annotations
@@ -26,7 +28,9 @@ logger = logging.getLogger(__name__)
 SILICONFLOW_CHAT_URL = "https://api.siliconflow.cn/v1/chat/completions"
 _KEY_ENV_VAR = "SILICONFLOW_VLM_API_KEY"
 
-_CAPTION_PROMPT = "请用一句简洁的中文描述这张图片的主要内容（对象、场景、关键文字），用于文档检索索引。只输出描述文本，不要多余解释。"
+_CAPTION_PROMPT = (
+    "请分析这张图片，用于文档检索索引：如果图片以文字内容为主（如文档截图、表格、代码），请完整转录图中的全部文字，保留原有结构；否则请用一句简洁的中文描述图片的主要内容（对象、场景、关键文字）。只输出转录或描述文本，不要多余解释。"
+)
 
 _IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -51,7 +55,7 @@ async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, model: 
                     ],
                 }
             ],
-            "max_tokens": 256,
+            "max_tokens": 1024,  # Task 15: room for full-page transcription
             "temperature": 0.2,
         },
     )
