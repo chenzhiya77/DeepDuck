@@ -24,7 +24,7 @@ EXTRACT_SYSTEM_PROMPT = """你是知识图谱抽取器。从用户给出的文�
 {"entities": [{"name": "...", "type": "...", "description": "..."}], "relations": [{"source": "...", "target": "...", "relation": "...", "description": "..."}]}
 要求：
 - name 使用原文中的规范名称；type 用简短类别词（如 系统/组件/人物/概念/服务/框架）；description 用一句话概括其在该文本中的角色。
-- 跨语言概念的 name 统一用「中文（英文）」规范形（中文名在前，英文名放全角括号内），例如 字符串（String）。
+- 若原文中同一概念同时出现了中文名称与英文名称（跨语言概念），其 name 用「中文（英文）」规范形（中文名在前，英文名放全角括号内）；英文名必须来自原文，不要自行翻译。
 - relations 的 source 与 target 必须出现在 entities 的 name 中；relation 用简短动词或关系词。
 - 文本中没有可抽取内容时，输出 {"entities": [], "relations": []}。"""
 

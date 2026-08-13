@@ -141,5 +141,10 @@ async def test_gleaning_prompt_mentions_missed_items():
 
 def test_extract_prompt_guides_cross_language_canonical_names():
     """Task 10: the extraction prompt asks for the cross-language canonical
-    form 「中文（英文）」 so the two halves of one concept arrive pre-linked."""
+    form 「中文（英文）」 so the two halves of one concept arrive pre-linked.
+    Task 10 revision (user badcase): no example (the model was mimicking it and
+    inventing translations for every Chinese entity), an explicit definition of
+    跨语言 (both names present in the source text), and a no-translation ban."""
     assert "中文（英文）" in EXTRACT_SYSTEM_PROMPT
+    assert "不要自行翻译" in EXTRACT_SYSTEM_PROMPT
+    assert "字符串（String）" not in EXTRACT_SYSTEM_PROMPT  # example removed
