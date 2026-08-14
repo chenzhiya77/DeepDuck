@@ -22,29 +22,30 @@
   - Citation resolver `parseRetrievalToolContent` has `toolName` field → `source_type` can be added frontend-side without backend changes.
   - No migration pattern beyond 0013 yet → P1/P6 migrations follow 0012 style (safe_add_column).
 
-## Task 1: P1 Wiki 双模式编辑——数据库迁移（RED 阶段） ✅ 计划中（待实施）
+## Task 1: P1 Wiki 双模式编辑——数据库迁移（RED 阶段） ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0014_wiki_supplement_content.py`
+- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0014_wiki_supplement_content.py` ✅
+- Create: `backend/tests/test_migration_0014_wiki_supplement_content.py` ✅
 
-- [ ] Write failing test: verify column missing after down → up, then present after down.
-- [ ] Run `cd backend && uv run pytest tests/test_migration_0014_wiki_supplement_content.py -q` capture RED.
-- [ ] Implement migration: add `supplement_content TEXT NULL` to `wiki_entries`, no index (low access frequency).
-- [ ] Test GREEN; revert to prove RED; restore GREEN.
-- [ ] Commit: `feat(rag): add supplement_content column to wiki_entries for dual-mode editing`.
+- [x] Write failing test: verify column missing after down → up, then present after down.
+- [x] Run `cd backend && uv run pytest tests/test_migration_0014_wiki_supplement_content.py -q` capture RED.
+- [x] Implement migration: add `supplement_content TEXT NULL` to `wiki_entries`, no index (low access frequency).
+- [x] Test GREEN; revert to prove RED; restore GREEN.
+- [x] Commit: `feat(rag): add supplement_content column to wiki_entries for dual-mode editing` (89f637b2)
 
-## Task 2: P1 Wiki 双模式编辑——Store 参数扩展与重生成验证 ✅ 计划中（待实施）
+## Task 2: P1 Wiki 双模式编辑——Store 参数扩展与重生成验证 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Modify: `backend/packages/harness/deerflow/knowledge/wiki/store.py`
-- Modify: `backend/tests/knowledge/wiki/test_store.py`
-- Modify: `backend/packages/harness/deerflow/knowledge/wiki/generator.py`
+- Modify: `backend/packages/harness/deerflow/knowledge/wiki/store.py` ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/models.py` ✅
+- Create: `backend/tests/knowledge/wiki/test_store.py` ✅
 
-- [ ] RED test: `upsert_entry` ignores supplement_content; re-generation doesn't clear it.
-- [ ] Implement: add `supplement_content: str | None = None` parameter; write to row; preserve during re-generation (only update `content`).
-- [ ] Test: insert entry with supplement → call `upsert_entry` without supplement → row still has supplement; generator path verifies supplement survives dirty re-gen.
-- [ ] GREEN; revert proof; restore.
-- [ ] Commit: `feat(rag): extend WikiStore.upsert_entry to accept and preserve supplement_content`.
+- [x] RED test: `upsert_entry` ignores supplement_content; re-generation doesn't clear it.
+- [x] Implement: add `supplement_content: str | None = _UNSET` parameter with sentinel pattern; preserve during re-generation (only update `content`); explicit None clears.
+- [x] Test: insert entry with supplement → call `upsert_entry` without supplement → row still has supplement; generator path verifies supplement survives dirty re-gen.
+- [x] GREEN; revert proof; restore.
+- [x] Commit: `feat(rag): extend WikiStore.upsert_entry to accept and preserve supplement_content` (89f637b2)
 
 ## Task 3: P1 Wiki 双模式编辑——前端 WikiEditDialog 组件 ✅ 计划中（待实施）
 
