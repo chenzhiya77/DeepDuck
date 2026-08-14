@@ -35,13 +35,12 @@ def _make_result_zip() -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def _ensure_dashscope_key():
+def _ensure_dashscope_key(monkeypatch):
     """Ensure DASHSCOPE_API_KEY is set for all tests (Task 16 migration).
-    Tests that explicitly monkeypatch.delenv will override this fixture."""
-    import os
-
-    if "DASHSCOPE_API_KEY" not in os.environ:
-        os.environ["DASHSCOPE_API_KEY"] = "test-dash-key"
+    Tests that explicitly monkeypatch.delenv will override this fixture.
+    Unconditional: app_config's load_dotenv() injects the real .env key at
+    import time, so a presence check would silently leak it into assertions."""
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-dash-key")
 
 
 def _mineru_transport(recorded: list[httpx.Request], *, poll_states: list[dict] | None = None) -> httpx.MockTransport:
