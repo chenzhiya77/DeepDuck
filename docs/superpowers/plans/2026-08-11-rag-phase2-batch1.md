@@ -276,7 +276,9 @@
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；ruff check/format 干净。
 - [x] Commit: `feat(rag): merge cross-language aliases via parenthetical folding`。
 
-## Task 11: 重复上传拦截（同名预检 + 替换/保留两份）（2026-08-12 设计讨论定稿）
+## Task 11: 重复上传拦截（同名预检 + 替换/保留两份）（2026-08-12 设计讨论定稿） ✅ 已完成（2026-08-14）
+
+**验证结果**：backend tests/knowledge 261 passed + 2 skipped（较 Task 16 基线 +3：store hash 写入/legacy NULL/列表返回）；migration 0013 up/down 2 passed；frontend 149 文件 1190 passed（新 duplicate-check 12 用例 + dialog 9 用例 + flow 4 用例）；`pnpm check`、ruff check/format 干净。revert 证明点已执行（摘除 store hash 写入 → 两个 hash 用例 RED → restore → GREEN）。实施记录：①拦截点落在 page.tsx 统一 `uploadFilesWithCheck`，两个上传入口（MiddleTabs 库级菜单 + DocumentPanel 拖拽/选择）共享——plan 原文只提 document-panel，实际 MiddleTabs 也有入口，拦截必须上移才全覆盖；②替换顺序契约落实为纯函数 `duplicate-upload-flow.ts::executeDuplicateAction`（先 deleteDocument 后 uploadFile，调用顺序数组断言）；③弹窗队列经 Promise + state 逐文件串行，WebCrypto 不可用（非安全上下文）降级为直接上传不阻断；④drive-by fix（单独 commit `7e3fbeee`）：`test_parser.py` 的 DASHSCOPE_API_KEY fixture 存在性检查被 app_config 的 `load_dotenv()` 导入期注入真实 key 架空，改 monkeypatch 无条件注入。
 
 **背景**：同一文件重复上传导致重复抽取、实体变体裂变（`String str1`/`str2`），是幽灵数据事故的源头之一。用户拍板：同名同类型文件已存在时让用户决定——替换（级联删除旧文档+重新索引）或保留两份。
 
@@ -290,10 +292,10 @@
 - 替换 = 先 `DELETE`（走级联，图谱/向量/wiki 全清）后重新上传，复用现有端点，后端不加新端点。
 - 副本与保留两份均为合法新文档行（name 非唯一键；保留两份的前端改名仅为展示区分）。
 
-- [ ] 写失败测试：migration up/down；hash 写入与返回；前端三分支弹窗；替换路径调用顺序（先删后传）。
-- [ ] RED → 实现 → GREEN；revert 证明点：revert hash 写入 → 列表返回用例 RED → restore → GREEN。
-- [ ] `pnpm check` + backend 全量 GREEN。
-- [ ] Commit: `feat(rag): duplicate-upload interception with replace-or-keep choice`。
+- [x] 写失败测试：migration up/down；hash 写入与返回；前端三分支弹窗；替换路径调用顺序（先删后传）。
+- [x] RED → 实现 → GREEN；revert 证明点：revert hash 写入 → 列表返回用例 RED → restore → GREEN。
+- [x] `pnpm check` + backend 全量 GREEN。
+- [x] Commit: `feat(rag): duplicate-upload interception with replace-or-keep choice`（`3cc301a5`）。
 
 ## Task 12: wiki 条目生命周期级联（失格/消失/合并的条目处置）（2026-08-12 设计讨论定稿）
 
