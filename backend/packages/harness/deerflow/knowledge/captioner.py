@@ -28,7 +28,10 @@ from deerflow.knowledge.parser import ParsedImage
 logger = logging.getLogger(__name__)
 
 # OpenAI-compatible endpoint for qwen3.7-flash on DashScope
-VL_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# Default endpoint (no workspace ID needed). Override via DASHSCOPE_VL_BASE_URL
+# for workspace-specific domains, e.g. Beijing region:
+# https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+VL_BASE_URL = os.getenv("DASHSCOPE_VL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 # Env var name can be overridden via config
 VL_API_KEY_ENV = "DASHSCOPE_API_KEY"
 
@@ -44,7 +47,7 @@ def _placeholder(ref: str) -> str:
 async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, model: str, api_key: str) -> str:
     image_b64 = base64.b64encode(image.content).decode("ascii")
     response = await client.post(
-        VL_BASE_URL,
+        VL_BASE_URL + "/chat/completions",  # Append chat completions endpoint
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
             "model": model,
