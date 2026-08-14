@@ -156,7 +156,7 @@
 **Files:**
 - Modify: `backend/AGENTS.md` (RAG 小节新增补充层/手动卡片/混排检索描述)
 - Modify: `docs/superpowers/specs/2026-08-15-rag-phase3-editing-design.md`（状态翻转 + 日期）
-- Modify: `docs/superpowers/plans/2026-08-15-rag-phase3-edition.md`（本 Plan）
+- Modify: `docs/superpowers/plans/2026-08-15-rag-phase3-editing.md`（本 Plan）
 
 - [ ] Spec 状态翻转为「✅ 已落地」，标注 2026-08-15.
 - [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN; `make lint && make format` clean.
