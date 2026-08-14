@@ -229,6 +229,32 @@ async def delete_wiki_entry(request: Request, kb_id: str, entry_id: str):
     return Response(status_code=204)
 
 
+class UpdateWikiEntryRequest(BaseModel):
+    """Phase-3 Batch-1 P1: dual-mode wiki entry editing."""
+
+    content: str = Field(min_length=1, description="Main content (replaceable on re-generation)")
+    supplement_content: str | None = Field(default=None, description="User annotations (persistent)")
+
+
+@router.patch("/{kb_id}/wiki/entries/{entry_id}")
+async def update_wiki_entry(request: Request, kb_id: str, entry_id: str, body: UpdateWikiEntryRequest):
+    """Update wiki entry content and supplement layer (Phase-3 Batch-1 P1).
+
+    Main content can be replaced by next LLM re-generation; supplement layer
+    persists across regeneration cycles.
+    """
+    service = await _require_kb_access(request, kb_id)
+    entry = await service.update_wiki_entry(
+        kb_id=kb_id,
+        entry_id=entry_id,
+        content=body.content,
+        supplement_content=body.supplement_content,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Wiki entry not found")
+    return entry
+
+
 @router.post("/{kb_id}/recall-test")
 async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     """P1 召回测试：一个 query 并行扇出到 vector/graph/wiki 三路检索 impl。

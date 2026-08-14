@@ -277,6 +277,35 @@ class KnowledgeService:
         await self._delete_wiki_entries(kb_id, [entry["title"]])
         return True
 
+    async def update_wiki_entry(
+        self,
+        *,
+        kb_id: str,
+        entry_id: str,
+        content: str,
+        supplement_content: str | None,
+    ) -> dict | None:
+        """Update wiki entry content and supplement layer (Phase-3 Batch-1 P1).
+
+        Main content can be replaced by next LLM re-generation; supplement layer
+        persists across regeneration cycles.
+        """
+        # Verify entry exists and belongs to this kb
+        entry = await self.wiki_store.get_entry(entry_id)
+        if entry is None or entry["kb_id"] != kb_id:
+            return None
+
+        # Update via store (title comes from existing entry)
+        updated = await self.wiki_store.upsert_entry(
+            kb_id=kb_id,
+            title=entry["title"],
+            content=content,
+            source_chunk_ids=entry["source_chunk_ids"],
+            status=entry["status"],
+            supplement_content=supplement_content,
+        )
+        return updated
+
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
     #: Score semantics differ per path — never compare across paths.
