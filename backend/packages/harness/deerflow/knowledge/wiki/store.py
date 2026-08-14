@@ -35,6 +35,12 @@ class WikiStore:
             data["updated_at"] = coerce_iso(data["updated_at"])
         return data
 
+    # Sentinel to distinguish "parameter not provided" from "explicitly set to None".
+    # This enables two operations:
+    #   - Omitting supplement_content: preserve existing value (dirty re-generation)
+    #   - Passing supplement_content=None: explicitly clear existing value
+    _UNSET = object()
+
     async def upsert_entry(
         self,
         kb_id: str,
@@ -43,18 +49,39 @@ class WikiStore:
         content: str,
         source_chunk_ids: list[str],
         status: str = "ready",
+        supplement_content: str | None = _UNSET,
     ) -> dict[str, Any]:
-        """Create or fully refresh an entry; regeneration clears ``dirty``."""
+        """Create or fully refresh an entry; regeneration clears ``dirty``.
+        
+        supplement_content (Phase-3 Batch-1 P1): user annotations that survive
+        dirty re-generation cycles. If provided, it overwrites existing value;
+        if omitted or None, the column is explicitly set to provided value (allowing
+        explicit nulling). The main ``content`` area is replaced on every call.
+        """
         entry_id = wiki_entry_id(kb_id, title)
         async with self._sf() as session:
             row = await session.get(WikiEntryRow, entry_id)
             if row is None:
-                row = WikiEntryRow(id=entry_id, kb_id=kb_id, title=title, content=content, status=status, source_chunk_ids=list(source_chunk_ids))
+                # For new entries, _UNSET means "no supplement provided" → set to None
+                supplement_value = None if supplement_content is self._UNSET else supplement_content
+                row = WikiEntryRow(
+                    id=entry_id, kb_id=kb_id, title=title, content=content, 
+                    status=status, source_chunk_ids=list(source_chunk_ids),
+                    supplement_content=supplement_value
+                )
                 session.add(row)
             else:
                 row.content = content
                 row.status = status
                 row.source_chunk_ids = list(source_chunk_ids)
+                # Phase-3 Batch-1 P1: supplement_content persists across regeneration.
+                # Two modes:
+                #   - If caller omits the parameter (default _UNSET): preserve existing value
+                #   - If caller provides any value (including None): replace existing value
+                # This allows dirty re-generation to keep user annotations while still
+                # enabling explicit clearing via None.
+                if supplement_content is not self._UNSET:
+                    row.supplement_content = supplement_content
                 row.updated_at = datetime.now(UTC)
             await session.commit()
             await session.refresh(row)

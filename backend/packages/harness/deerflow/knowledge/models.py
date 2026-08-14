@@ -117,6 +117,8 @@ class WikiEntryRow(Base):
     kb_id: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(512))
     content: Mapped[str] = mapped_column(Text)
+    # User annotations that survive dirty regeneration (Phase-3 Batch-1 P1).
+    supplement_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # ready / dirty (affected by newly indexed docs → regenerate, spec §3.5).
     status: Mapped[str] = mapped_column(String(16), default="ready", index=True)
     source_chunk_ids: Mapped[list] = mapped_column(JSON, default=list)
