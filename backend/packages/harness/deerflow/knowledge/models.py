@@ -58,6 +58,9 @@ class DocumentRow(Base):
     # NULL on legacy rows — the frontend renders no hover then. The wiki leg
     # is NOT stored here: it is a library-level mirror injected at read time.
     path_status: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # File content hash (Task 11): SHA-256 for duplicate detection;
+    # written at upload time, NULL on legacy rows (no backfill).
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 

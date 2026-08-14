@@ -124,6 +124,7 @@ class KnowledgeStore:
         name: str,
         size_bytes: int,
         storage_path: str,
+        content_hash: str | None = None,
     ) -> dict[str, Any]:
         row = DocumentRow(
             id=doc_id,
@@ -134,6 +135,7 @@ class KnowledgeStore:
             storage_path=storage_path,
             status="uploaded",
             progress_percent=0,
+            content_hash=content_hash,
             created_at=datetime.now(UTC),
         )
         async with self._sf() as session:

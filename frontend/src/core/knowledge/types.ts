@@ -50,6 +50,13 @@ export interface KnowledgeDocument {
    * stage — the status cell renders no hover breakdown then (spec §5 兼容).
    */
   path_status: DocumentPathStatus | null;
+  /**
+   * SHA-256 of the file content (Task 11 duplicate-upload interception).
+   * Written at upload time; null on legacy rows (no backfill) — the upload
+   * pre-check treats those as "hash unknown" and falls into the conflict
+   * branch (replace / keep-both).
+   */
+  content_hash: string | null;
   created_at: string;
 }
 

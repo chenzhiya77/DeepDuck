@@ -105,6 +105,8 @@ class KnowledgeService:
 
     async def upload_document(self, *, kb_id: str, uploader_id: str, filename: str, content: bytes) -> dict[str, Any]:
         """Persist the file, create the ``uploaded`` row, enqueue indexing."""
+        import hashlib
+
         doc_id = uuid.uuid4().hex
         safe_name = normalize_filename(filename or "document")
         # Task 6 (spec §6): upload allowlist gate — reject before any file I/O.
@@ -112,6 +114,10 @@ class KnowledgeService:
         if not is_supported_suffix(suffix):
             supported = ", ".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
             raise ValueError(f"unsupported file type '{suffix or '(none)'}'; supported formats: {supported}")
+
+        # Task 11: compute SHA-256 hash for duplicate detection
+        content_hash = hashlib.sha256(content).hexdigest()
+
         doc_dir = self.data_dir / "knowledge" / kb_id / doc_id
         dest = doc_dir / safe_name
 
@@ -127,6 +133,7 @@ class KnowledgeService:
             name=safe_name,
             size_bytes=len(content),
             storage_path=str(dest),
+            content_hash=content_hash,
         )
         if self.worker is not None:
             await self.worker.submit(doc_id)

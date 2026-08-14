@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { KnowledgeChatPanel } from "@/components/workspace/knowledge/chat-panel";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { DocumentPanel } from "@/components/workspace/knowledge/document-panel";
+import {
+  DuplicateUploadDialog,
+  type DuplicateAction,
+} from "@/components/workspace/knowledge/duplicate-upload-dialog";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
@@ -13,6 +17,13 @@ import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-pa
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
 import { WikiPanel } from "@/components/workspace/knowledge/wiki-panel";
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  computeSha256,
+  findDuplicateByName,
+  nextCopyName,
+  verdictForDuplicate,
+} from "@/core/knowledge/duplicate-check";
+import { executeDuplicateAction } from "@/core/knowledge/duplicate-upload-flow";
 import {
   useCreateKnowledgeBase,
   useDeleteDocument,
@@ -68,7 +79,7 @@ export default function KnowledgePage() {
   }, [kbs, selectedKb, selectedKbId]);
 
   const documentsQuery = useDocuments(selectedKbId);
-  const documents = documentsQuery.data ?? [];
+  const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
   // Lazy: the wiki list only fetches once its tab is first activated
   // (keep-alive panes stay mounted, so the gate is what keeps it lazy).
   const wikiEntriesQuery = useWikiEntries(selectedKbId, activeTab === "wiki");
@@ -94,6 +105,86 @@ export default function KnowledgePage() {
   const retryDocument = useRetryDocument(selectedKbId ?? "");
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
   const deleteWikiEntry = useDeleteWikiEntry(selectedKbId ?? "");
+
+  // ── Task 11 duplicate-upload interception ─────────────────────────────
+  // Both upload entries (MiddleTabs library menu + DocumentPanel drag/pick)
+  // funnel into `uploadFilesWithCheck`: hash the file, pre-check against the
+  // current document list, and queue a confirm dialog on a same-name hit.
+  const [pendingDuplicate, setPendingDuplicate] = useState<{
+    fileName: string;
+    kind: "identical" | "conflict";
+    doc: KnowledgeDocument;
+    copyName: string;
+    resolve: (action: DuplicateAction) => void;
+  } | null>(null);
+  // Fresh document list for the pre-check — props in flight during the loop
+  // would otherwise go stale after a replace mutation.
+  const documentsRef = useRef(documents);
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
+
+  const doUpload = async (file: File) => {
+    try {
+      await uploadDocument.mutateAsync(file);
+    } catch (error) {
+      showMutationError(error, tk.errors.uploadFailed);
+    }
+  };
+
+  const uploadFilesWithCheck = (files: File[]) => {
+    void (async () => {
+      for (const file of files) {
+        let hash: string;
+        try {
+          hash = await computeSha256(file);
+        } catch {
+          // WebCrypto unavailable (non-secure context) — degrade to a plain
+          // upload rather than blocking the pipeline.
+          await doUpload(file);
+          continue;
+        }
+        const currentDocs = documentsRef.current;
+        const verdict = verdictForDuplicate(findDuplicateByName(file.name, currentDocs), hash);
+        if (verdict.kind === "clean") {
+          await doUpload(file);
+          continue;
+        }
+        const copyName = nextCopyName(file.name, new Set(currentDocs.map((d) => d.name)));
+        const action = await new Promise<DuplicateAction>((resolve) => {
+          setPendingDuplicate({
+            fileName: file.name,
+            kind: verdict.kind,
+            doc: verdict.doc,
+            copyName,
+            resolve: (chosen) => {
+              setPendingDuplicate(null);
+              resolve(chosen);
+            },
+          });
+        });
+        try {
+          const outcome = await executeDuplicateAction(
+            action,
+            { file, doc: verdict.doc, copyName },
+            {
+              deleteDocument: (docId) => deleteDocument.mutateAsync(docId),
+              uploadFile: doUpload,
+            },
+          );
+          if (outcome === "skipped") {
+            toast.info(tk.duplicateUpload.skippedDuplicate(file.name));
+          } else if (outcome === "copied") {
+            toast.success(tk.duplicateUpload.uploadedAsCopy(copyName));
+          } else if (outcome === "replaced") {
+            toast.success(tk.duplicateUpload.replacedDocument(file.name));
+          }
+        } catch (error) {
+          showMutationError(error, tk.errors.uploadFailed);
+        }
+      }
+    })();
+  };
 
   return (
     <div className="size-full min-h-0" data-testid="knowledge-page">
@@ -122,17 +213,7 @@ export default function KnowledgePage() {
               onTabChange={setActiveTab}
               uploading={uploadDocument.isPending}
               supportedSuffixes={supportedSuffixes}
-              onUpload={(files) => {
-                void (async () => {
-                  for (const file of files) {
-                    try {
-                      await uploadDocument.mutateAsync(file);
-                    } catch (error) {
-                      showMutationError(error, tk.errors.uploadFailed);
-                    }
-                  }
-                })();
-              }}
+              onUpload={uploadFilesWithCheck}
               onGenerateWiki={(mode) => {
                 generateWiki.mutate(mode, {
                   onSuccess: () => toast.success(tk.wikiEnqueued),
@@ -158,17 +239,7 @@ export default function KnowledgePage() {
                   kb={selectedKb}
                   documents={documents}
                   supportedSuffixes={supportedSuffixes}
-                  onUpload={(files) => {
-                    void (async () => {
-                      for (const file of files) {
-                        try {
-                          await uploadDocument.mutateAsync(file);
-                        } catch (error) {
-                          showMutationError(error, tk.errors.uploadFailed);
-                        }
-                      }
-                    })();
-                  }}
+                  onUpload={uploadFilesWithCheck}
                   onDeleteDocument={async (docId) => {
                     try {
                       await deleteDocument.mutateAsync(docId);
@@ -243,6 +314,12 @@ export default function KnowledgePage() {
           onRevealInTab={revealWikiEntry}
         />
       )}
+
+      {/* Task 11 duplicate-upload confirm (queued per conflicting file) */}
+      <DuplicateUploadDialog
+        pending={pendingDuplicate}
+        onResolve={(action) => pendingDuplicate?.resolve(action)}
+      />
     </div>
   );
 }

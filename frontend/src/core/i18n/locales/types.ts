@@ -246,6 +246,20 @@ export interface Translations {
     uploadingDocuments: string;
     dropToUpload: string;
     unsupportedFilesSkipped: (names: string) => string;
+    duplicateUpload: {
+      identicalTitle: string;
+      identicalDescription: (name: string) => string;
+      conflictTitle: string;
+      conflictDescription: (name: string) => string;
+      copyNamePreview: (name: string) => string;
+      skipUpload: string;
+      keepCopy: string;
+      keepBoth: string;
+      replaceOld: string;
+      skippedDuplicate: (name: string) => string;
+      uploadedAsCopy: (name: string) => string;
+      replacedDocument: (name: string) => string;
+    };
     searchDocuments: string;
     clearSearch: string;
     noMatchingDocuments: string;

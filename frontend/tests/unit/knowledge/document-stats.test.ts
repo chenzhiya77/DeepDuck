@@ -25,6 +25,7 @@ function doc(partial: Partial<KnowledgeDocument>): KnowledgeDocument {
     chunk_count: null,
     error: null,
     path_status: null,
+    content_hash: null,
     created_at: "2026-08-09T10:00:00Z",
     ...partial,
   };
