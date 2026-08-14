@@ -44,17 +44,17 @@ describe("WikiEditDialog", () => {
 
   it("pre-fills form with existing entry data", () => {
     renderDialog();
-    const mainContent = screen.getByLabelText(/主内容区/) as HTMLTextAreaElement;
-    const supplement = screen.getByLabelText(/补充层/) as HTMLTextAreaElement;
-    expect(mainContent.value).toBe("Polymorphism is an OOP feature.");
-    expect(supplement.value).toBe("User note: includes overloading and overriding");
+    const mainContent = screen.getByLabelText(/主内容区/);
+    const supplement = screen.getByLabelText(/补充层/);
+    expect((mainContent as HTMLTextAreaElement).value).toBe("Polymorphism is an OOP feature.");
+    expect((supplement as HTMLTextAreaElement).value).toBe("User note: includes overloading and overriding");
   });
 
   it("calls onSave with trimmed content and supplement on submit", async () => {
     const { onSave } = renderDialog();
 
-    const mainContent = screen.getByLabelText(/主内容区/) as HTMLTextAreaElement;
-    const supplement = screen.getByLabelText(/补充层/) as HTMLTextAreaElement;
+    const mainContent = screen.getByLabelText(/主内容区/);
+    const supplement = screen.getByLabelText(/补充层/);
 
     fireEvent.change(mainContent, { target: { value: "Updated main content  " } });
     fireEvent.change(supplement, { target: { value: "Updated supplement  " } });
@@ -70,11 +70,11 @@ describe("WikiEditDialog", () => {
   it("disables save button when main content is empty", () => {
     renderDialog();
 
-    const mainContent = screen.getByLabelText(/主内容区/) as HTMLTextAreaElement;
+    const mainContent = screen.getByLabelText(/主内容区/);
     fireEvent.change(mainContent, { target: { value: "" } });
 
-    const saveButton = screen.getByRole("button", { name: "保存" }) as HTMLButtonElement;
-    expect(saveButton.disabled).toBe(true);
+    const saveButton = screen.getByRole("button", { name: "保存" });
+    expect((saveButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("shows audit timestamp when entry has updated_at", () => {
@@ -100,14 +100,14 @@ describe("WikiEditDialog", () => {
     };
     renderDialog(entryWithNullSupplement);
 
-    const supplement = screen.getByLabelText(/补充层/) as HTMLTextAreaElement;
-    expect(supplement.value).toBe("");
+    const supplement = screen.getByLabelText(/补充层/);
+    expect((supplement as HTMLTextAreaElement).value).toBe("");
   });
 
   it("sends null when supplement is trimmed to empty string", async () => {
     const { onSave } = renderDialog();
 
-    const supplement = screen.getByLabelText(/补充层/) as HTMLTextAreaElement;
+    const supplement = screen.getByLabelText(/补充层/);
     fireEvent.change(supplement, { target: { value: "   " } }); // Only whitespace
 
     const saveButton = screen.getByRole("button", { name: "保存" });

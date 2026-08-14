@@ -172,6 +172,20 @@ export async function deleteWikiEntry(kbId: string, entryId: string): Promise<vo
   return readEmptyResponse(response, "Failed to delete wiki entry");
 }
 
+/** Phase-3 Batch-1 P1: update wiki entry content and supplement layer. */
+export async function updateWikiEntry(
+  kbId: string,
+  entryId: string,
+  body: { content: string; supplement_content: string | null },
+): Promise<WikiEntryDetail> {
+  const response = await fetch(kbUrl(kbId, `/wiki/entries/${encodeURIComponent(entryId)}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readResponse<WikiEntryDetail>(response, "Failed to update wiki entry");
+}
+
 export function recallTest(kbId: string, body: { query: string; top_k: number }): Promise<RecallTestResponse> {
   return fetch(kbUrl(kbId, "/recall-test"), {
     method: "POST",

@@ -14,6 +14,7 @@ import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
+import { WikiEditDialog } from "@/components/workspace/knowledge/wiki-edit-dialog";
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
 import { WikiPanel } from "@/components/workspace/knowledge/wiki-panel";
 import { useI18n } from "@/core/i18n/hooks";
@@ -35,8 +36,10 @@ import {
   useRetryDocument,
   useSupportedFormats,
   useUpdateKnowledgeBase,
+  useUpdateWikiEntry,
   useUploadDocument,
   useWikiEntries,
+  useWikiEntry,
 } from "@/core/knowledge/hooks";
 import { FALLBACK_SUPPORTED_SUFFIXES } from "@/core/knowledge/supported-formats";
 import type { KnowledgeDocument, WikiEntrySummary } from "@/core/knowledge/types";
@@ -60,6 +63,9 @@ export default function KnowledgePage() {
   // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
   const [activeTab, setActiveTab] = useState<KnowledgeMiddleTab>("documents");
   const [drawerEntryId, setDrawerEntryId] = useState<string | null>(null);
+  // Phase-3 Batch-1 P1: wiki entry editing state
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const kbsQuery = useKnowledgeBases();
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
@@ -96,6 +102,11 @@ export default function KnowledgePage() {
     setDrawerEntryId(null);
     void entryId; // the list is unpaginated — the entry is visible after the switch
   };
+  // Phase-3 Batch-1 P1: open edit dialog for a wiki entry
+  const handleEditEntry = (entry: WikiEntrySummary) => {
+    setEditingEntryId(entry.id);
+    setEditDialogOpen(true);
+  };
 
   const createKb = useCreateKnowledgeBase();
   const updateKb = useUpdateKnowledgeBase();
@@ -105,6 +116,10 @@ export default function KnowledgePage() {
   const retryDocument = useRetryDocument(selectedKbId ?? "");
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
   const deleteWikiEntry = useDeleteWikiEntry(selectedKbId ?? "");
+  const updateWikiEntry = useUpdateWikiEntry(selectedKbId ?? "");
+  // Fetch full entry detail when editing
+  const editingEntryQuery = useWikiEntry(selectedKbId, editingEntryId);
+  const editingEntry = editingEntryQuery.data ?? null;
 
   // ── Task 11 duplicate-upload interception ─────────────────────────────
   // Both upload entries (MiddleTabs library menu + DocumentPanel drag/pick)
@@ -260,6 +275,7 @@ export default function KnowledgePage() {
                   entries={wikiEntries}
                   loading={wikiEntriesQuery.isLoading}
                   onOpenEntry={openWikiEntry}
+                  onEditEntry={handleEditEntry}
                   onDeleteEntry={(entry) => {
                     deleteWikiEntry.mutate(entry.id, {
                       onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
@@ -320,6 +336,28 @@ export default function KnowledgePage() {
         pending={pendingDuplicate}
         onResolve={(action) => pendingDuplicate?.resolve(action)}
       />
+
+      {/* Phase-3 Batch-1 P1: Wiki entry edit dialog */}
+      {editingEntry && (
+        <WikiEditDialog
+          entry={editingEntry}
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          onSave={async (entryId, content, supplementContent) => {
+            try {
+              await updateWikiEntry.mutateAsync({
+                entryId,
+                body: { content, supplement_content: supplementContent },
+              });
+              toast.success("Wiki 条目已更新");
+              setEditingEntryId(null);
+            } catch (error) {
+              showMutationError(error, "更新 Wiki 条目失败");
+              throw error; // Re-throw to keep dialog open on error
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

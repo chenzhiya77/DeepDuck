@@ -168,6 +168,18 @@ export function useDeleteWikiEntry(kbId: string) {
   });
 }
 
+/** Phase-3 Batch-1 P1: update wiki entry (main content + supplement layer). */
+export function useUpdateWikiEntry(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ entryId, body }: { entryId: string; body: { content: string; supplement_content: string | null } }) =>
+      api.updateWikiEntry(kbId, entryId, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) });
+    },
+  });
+}
+
 /**
  * P1 recall test (phase-2 batch-1): a mutation, not a query — each run hits
  * the live retrieval chain (embedding + rerank + entity-extraction LLM), so
