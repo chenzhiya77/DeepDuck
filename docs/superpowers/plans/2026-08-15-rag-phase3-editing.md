@@ -47,21 +47,34 @@
 - [x] GREEN; revert proof; restore.
 - [x] Commit: `feat(rag): extend WikiStore.upsert_entry to accept and preserve supplement_content` (89f637b2)
 
-## Task 3: P1 Wiki 双模式编辑——前端 WikiEditDialog 组件 ✅ 已完成（2026-08-15）
+## Task 3: P1 Wiki 双模式编辑——前后端完整实现 ✅ 已完成（2026-08-15）
 
-**Files:**
+**Files (Backend):**
+- Modify: `backend/app/gateway/routers/knowledge_bases.py` (PATCH endpoint) ✅
+- Modify: `backend/app/gateway/services/knowledge_service.py` (update_wiki_entry method) ✅
+
+**Files (Frontend):**
 - Create: `frontend/src/components/workspace/knowledge/wiki-edit-dialog.tsx` ✅
 - Create: `frontend/src/components/ui/label.tsx` ✅
 - Modify: `frontend/src/components/workspace/knowledge/wiki-panel.tsx` (edit button integration) ✅
 - Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts` ✅
 - Modify: `frontend/src/core/knowledge/types.ts` (add supplement_content) ✅
+- Modify: `frontend/src/core/knowledge/api.ts` (updateWikiEntry method) ✅
+- Modify: `frontend/src/core/knowledge/hooks.ts` (useUpdateWikiEntry hook) ✅
+- Modify: `frontend/src/app/workspace/knowledge/page.tsx` (wire edit state) ✅
 - Create: `frontend/tests/unit/knowledge/wiki-edit-dialog.dom.test.tsx` ✅
 - Modify: `frontend/tests/unit/knowledge/wiki-panel.dom.test.tsx` (add supplement_content) ✅
 
-- [x] RED test: render dialog with existing entry shows both textareas (main + supplement); audit badges display `last_edited_at` when updated.
-- [x] Implement: dual-mode form with validation (main required, supplement optional); save sends PATCH `/knowledge-bases/{kb_id}/wiki/entries/{entry_id}` body `{content, supplement_content}`; error toast on failure.
-- [x] Test GREEN (8 test cases passed); revert proof; restore.
-- [x] Commit: `feat(frontend): add WikiEditDialog with dual-mode editor and audit badges` (712de755, 24b48bf6)
+- [x] **Backend**: Add PATCH `/knowledge-bases/{kb_id}/wiki/entries/{entry_id}` endpoint with UpdateWikiEntryRequest model (content + supplement_content); implement `KnowledgeService.update_wiki_entry` method using WikiStore.upsert_entry with sentinel pattern.
+- [x] **Frontend RED test**: render dialog with existing entry shows both textareas (main + supplement); audit badges display `last_edited_at` when updated.
+- [x] **Frontend Implement**: dual-mode form with validation (main required, supplement optional); save sends PATCH body `{content, supplement_content}`; error toast on failure.
+- [x] **Frontend Integration**: wire `onEditEntry` callback through page.tsx → WikiPanel → edit button; fetch full WikiEntryDetail via useWikiEntry hook; connect save handler to updateWikiEntry mutation with cache invalidation.
+- [x] **Test GREEN**: 8 frontend DOM test cases passed; 1198 total frontend tests passed; backend lint + format clean.
+- [x] **Commits**: 
+  - `712de755` feat(frontend): add WikiEditDialog with dual-mode editor and audit badges
+  - `24b48bf6` feat(frontend): add edit button to wiki panel for Phase-3 P1
+  - `fa97f301` feat(frontend): integrate WikiEditDialog into knowledge page
+  - `49e1931c` feat(rag): add PATCH endpoint for wiki entry editing (Phase-3 P1)
 
 ## Task 4: P2 切片文本编辑 API + Qdrant 单向量重嵌入 ✅ 计划中（待实施）
 
