@@ -34,6 +34,16 @@ def _make_result_zip() -> bytes:
     return buf.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def _ensure_dashscope_key():
+    """Ensure DASHSCOPE_API_KEY is set for all tests (Task 16 migration).
+    Tests that explicitly monkeypatch.delenv will override this fixture."""
+    import os
+
+    if "DASHSCOPE_API_KEY" not in os.environ:
+        os.environ["DASHSCOPE_API_KEY"] = "test-dash-key"
+
+
 def _mineru_transport(recorded: list[httpx.Request], *, poll_states: list[dict] | None = None) -> httpx.MockTransport:
     """Happy-path MinerU v4 mock: apply upload URL → PUT → poll → zip."""
     states = poll_states or [
@@ -199,7 +209,7 @@ async def test_caption_images_calls_vlm_with_base64(monkeypatch):
 
     assert captions == {"images/p1.jpg": "系统架构示意图"}
     request = recorded[0]
-    assert request.headers["Authorization"] == "Bearer vlm-key"
+    assert request.headers["Authorization"] == "Bearer test-dash-key"
     body = json.loads(request.content)
     assert body["model"] == "Qwen/Qwen3-VL-30B-A3B-Instruct"
     content = body["messages"][0]["content"]
@@ -228,7 +238,7 @@ async def test_vlm_failure_degrades_to_filename_placeholder(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_missing_vlm_key_degrades_all_images(monkeypatch):
-    monkeypatch.delenv("SILICONFLOW_VLM_API_KEY", raising=False)
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
     recorded: list[httpx.Request] = []
 
     captions = await caption_images([_SAMPLE_IMAGE], client=httpx.AsyncClient(transport=_vlm_transport(recorded)), model="m")
@@ -262,6 +272,78 @@ async def test_caption_request_allows_transcription_length(monkeypatch):
 
     body = json.loads(recorded[0].content)
     assert body["max_tokens"] == 1024
+
+
+# ── Task 16: DashScope qwen3.7-flash + concurrency (RED) ──────────────────
+
+
+def test_caption_prompt_no_longer_requests_structure_preservation():
+    """Task 16: remove 'retain original structure' from prompt to cut token
+    output by ~15–20% while still transcribing all text verbatim."""
+    from deerflow.knowledge.captioner import _CAPTION_PROMPT
+
+    assert "保留原有结构" not in _CAPTION_PROMPT  # removed
+    assert "完整转录" in _CAPTION_PROMPT  # kept for full transcription
+
+
+@pytest.mark.asyncio
+async def test_concurrent_captions_maintain_original_order(monkeypatch):
+    """Task 16: concurrent calls must return results in input list order; Markdown
+    image positions are protected by key-value mapping, never mixed up.
+    Simulate: p1 needs 5s, p2 needs 1s → p2 returns first but stays at pos2."""
+    import asyncio
+
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "dash-key")
+    recorded: list[httpx.Request] = []
+
+    # Mock transport that delays p1 more than p2 (simulate different generation times)
+    call_count = [0]  # Mutable list for thread-safe counter
+    lock = asyncio.Lock()
+
+    async def delayed_handler(request: httpx.Request) -> httpx.Response:
+        async with lock:
+            call_count[0] += 1
+            idx = call_count[0]
+        recorded.append(request)
+        if idx == 1:
+            await asyncio.sleep(0.5)  # p1 slow
+            return httpx.Response(200, json={"choices": [{"message": {"content": "caption for p1.jpg"}}]})
+        else:
+            await asyncio.sleep(0.1)  # p2 fast
+            return httpx.Response(200, json={"choices": [{"message": {"content": "caption for p2.png"}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(delayed_handler))
+    images = [
+        ParsedImage(ref="images/p1.jpg", content=b"jpeg-bytes", media_type="image/jpeg"),
+        ParsedImage(ref="images/p2.png", content=b"png-bytes", media_type="image/png"),
+    ]
+
+    captions = await caption_images(images, client=client, model="qwen3.7-flash")
+
+    # Verify order preservation: dict keys match input list order
+    assert list(captions.keys()) == ["images/p1.jpg", "images/p2.png"]
+    assert "p1.jpg" in captions["images/p1.jpg"]
+    assert "p2.png" in captions["images/p2.png"]
+
+
+@pytest.mark.asyncio
+async def test_timeout_parameter_extended_to_180_seconds(monkeypatch):
+    """Task 16: timeout raised from 60s to 180s so long-form transcription fits.
+    Connect timeout remains 15s."""
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "dash-key")
+    recorded: list[httpx.Request] = []
+
+    def transport_handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "steady-state caption"}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(transport_handler), timeout=httpx.Timeout(180.0, connect=15.0))
+
+    await caption_images([_SAMPLE_IMAGE], client=client, model="qwen3.7-flash")
+
+    # Timeout configured correctly
+    assert client.timeout.connect == 15.0
+    assert client.timeout.read == 180.0
 
 
 # ── Task 6: local-read extension (.txt/.csv) + upload allowlist ────────────

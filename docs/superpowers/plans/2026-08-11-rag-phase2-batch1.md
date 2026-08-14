@@ -373,6 +373,31 @@
 - [x] 后端 TDD：RED（prompt 断言 + max_tokens 断言）→ 实现 → GREEN。
 - [x] Commit: `feat(rag): dual-mode image captioning with full transcription for text-dense images`。
 
+## Task 16: VLM 替换为 DashScope qwen3.7-flash + Caption 三件套（2026-08-14 用户拍板） ✅ 已完成（2026-08-14）
+
+**验证结果**：tests/knowledge 258 passed + 2 skipped（较 Task 15 基线 +3：prompt 精简断言/并发结果归并/超时参数断言）；单文件 22 passed 全绿；ruff check/format 干净。实施记录：①captioner.py 重构（配置注入 `VL_BASE_URL`/`VL_API_KEY_ENV`/`get_app_config()` 动态读取/for 循环改 `asyncio.gather`+`Semaphore(4)`/`timeout 60s→180s`/`temperature 0.2→0.15`）；②测试文件 fixture 自动注入 `DASHSCOPE_API_KEY` 保障降级测试可控；③`app_config.py` 新增 `vlm_model`/`vlm_base_url`/`vlm_api_key_env`/`vlm_timeout`/`vlm_connect_timeout` 五个配置字段。
+
+**背景**：当前 SiliconFlow Qwen3-VL-30B-A3B（三方代理，晚间降速严重）导致文字图转录超长输出时频繁超时（60s→静默退化文件名占位），解析链路卡顿；DashScope qwen3.7-flash（原生端点）速度快、稳定性高、价格更低，且和现有 embedding/rerank 同 key。拍板：**VLM 层统一换 DashScope**，配套做 **Caption 三件套**（超时 60s→180s / 串行×并发×4 / Prompt 去结构化删"保留原有结构"）。不做对话模型替换（DeepSeek 稳定，后续若需贴图功能再升级主模型）。
+
+**边界**：仅改离线解析层 caption 环节，不影响 RAG 三路检索架构与对话模型；存量文档需重传才受益新机制。
+
+**Files:**
+- Modify: `config.yaml`（新增 `rag.vlm_model`, `rag.vlm_base_url`, `rag.vlm_api_key_env` 三个字段）
+- Modify: `.env`（新增 `DASHSCOPE_API_KEY`，可选双 key 方便回滚）
+- Modify: `backend/packages/harness/deerflow/config/app_config.py`（新增三个配置字段 + docstring）
+- Modify: `backend/packages/harness/deerflow/knowledge/captioner.py`（重构 URL/key 从 config 注入/for 循环改 asyncio.gather+Semaphore(4)/timeout 60→180/_CAPTION_PROMPT 删"保留原有结构"
+test_parser.py`（captioner 段补充：并发测试用例 + 超时断言 + 新 prompt 精简版断言）
+- Modify: `backend/tests/knowledge/test_parser.py`（captioner 段：并发测试用例 + 超时断言 + 新 prompt 精简版断言）
+
+**接口契约（实现前冻结）：**
+- qwen3.7-flash 替代 Qwen3-VL-30B-A3B；OpenAI 兼容协议不变，代码改动面最小化。
+- `asyncio.Semaphore(4)`限流：最大 4 个并发任务，保证 API 不拥塞；归并按输入列表顺序 zip，Markdown 图片位置绝对不乱。
+- timeout 60s → 180s（connect 15s 不变）；temperature 0.2 可微调至 0.15（OCR 更稳，不强制）。
+- `_CAPTION_PROMPT` 删"保留原有结构"只留"完整转录全部文字"，降低 token 输出量 ~15–20%。
+
+- [x] 后端 TDD：RED（新模型兼容性/并发结果归并/超时参数/Prompt 精简）→ 实现 → GREEN。
+- [x] Commit: `feat(rag): migrate VLM to DashScope qwen3.7-flash and implement concurrency optimizations`。
+
 ## Final verification
 
 - [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。
