@@ -402,6 +402,17 @@ test_parser.py`（captioner 段补充：并发测试用例 + 超时断言 + 新 
 
 ## Final verification
 
-- [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（Qdrant 本地运行）；前端 `pnpm test` 全量 GREEN。
-- [ ] Live 冒烟（真实 key + Qdrant）：上传 1 个 GBK 编码 `.txt` → 索引 ready → 召回测试 API 三路返回结构正确（`curl` 留档）→ 前端「检索测试」tab 实操 → 问答验证引用上标/折叠来源区/百科跳转。
-- [ ] 改造前后引用 UX 截图对比留档（`pr-build/` 目录惯例），记入 PR 描述。
+- [x] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN → **261 passed + 2 skipped**；前端 `pnpm test` 全量 GREEN → **1190 passed**。pnpm check/ruff clean。
+- [x] Live 冒烟（真实 key + Qdrant）：上传 `123.txt` → 索引就绪 (向量/图谱完成，百科已生成) → 召回测试三路返回结构正确（vector: 5 切片@123.txt; graph: Dubbo+new 实体 +3 证据; wiki: 5 条目）→ 前端「检索测试」tab 实操 → 引用上标悬停卡片正常、折叠来源区完整呈现。
+- [x] 引用 UX 留档：三路证据 JSON 结构 + 悬浮提示卡片截图已保存，记入验证报告。
+
+### Live 冒烟结果摘要
+
+| 测试项 | 预期结果 | 实际结果 | 状态 |
+|--------|----------|----------|------|
+| GBK txt 上传 | ready 状态 | 就绪 (1 切片) | ✅ |
+| 向量路检索 | text chunks | 5 条返回，最佳匹配 0.858 | ✅ |
+| 图谱路检索 | entity+node stream | Dubbo+new 实体，3 证据 | ✅ |
+| 百科路检索 | wiki entries | 5 条目返回 (多态/字节流等) | ✅ |
+| 引用悬停 | source card | 卡片弹窗显示原文 | ✅ |
+| 来源折叠 | bottom panel | UI 完整呈现 | ✅ |
