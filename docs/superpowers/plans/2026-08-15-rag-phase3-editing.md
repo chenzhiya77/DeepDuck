@@ -47,18 +47,21 @@
 - [x] GREEN; revert proof; restore.
 - [x] Commit: `feat(rag): extend WikiStore.upsert_entry to accept and preserve supplement_content` (89f637b2)
 
-## Task 3: P1 Wiki 双模式编辑——前端 WikiEditDialog 组件 ✅ 计划中（待实施）
+## Task 3: P1 Wiki 双模式编辑——前端 WikiEditDialog 组件 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `frontend/src/components/workspace/knowledge/wiki/WikiEditDialog.tsx`
-- Modify: `frontend/src/components/workspace/knowledge/wiki-panel.tsx` (edit button integration)
-- Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts`
-- Create: `frontend/tests/unit/components/workspace/knowledge/wiki/WikiEditDialog.dom.test.tsx`
+- Create: `frontend/src/components/workspace/knowledge/wiki-edit-dialog.tsx` ✅
+- Create: `frontend/src/components/ui/label.tsx` ✅
+- Modify: `frontend/src/components/workspace/knowledge/wiki-panel.tsx` (edit button integration) ✅
+- Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts` ✅
+- Modify: `frontend/src/core/knowledge/types.ts` (add supplement_content) ✅
+- Create: `frontend/tests/unit/knowledge/wiki-edit-dialog.dom.test.tsx` ✅
+- Modify: `frontend/tests/unit/knowledge/wiki-panel.dom.test.tsx` (add supplement_content) ✅
 
-- [ ] RED test: render dialog with existing entry shows both textareas (main + supplement); audit badges display `last_edited_at` when updated.
-- [ ] Implement: dual-mode form with validation (main required, supplement optional); save sends PATCH `/knowledge-bases/{kb_id}/wiki/entries/{entry_id}` body `{content, supplement_content}`; error toast on failure.
-- [ ] Test GREEN; revert proof; restore.
-- [ ] Commit: `feat(frontend): add WikiEditDialog with dual-mode editor and audit badges`.
+- [x] RED test: render dialog with existing entry shows both textareas (main + supplement); audit badges display `last_edited_at` when updated.
+- [x] Implement: dual-mode form with validation (main required, supplement optional); save sends PATCH `/knowledge-bases/{kb_id}/wiki/entries/{entry_id}` body `{content, supplement_content}`; error toast on failure.
+- [x] Test GREEN (8 test cases passed); revert proof; restore.
+- [x] Commit: `feat(frontend): add WikiEditDialog with dual-mode editor and audit badges` (712de755, 24b48bf6)
 
 ## Task 4: P2 切片文本编辑 API + Qdrant 单向量重嵌入 ✅ 计划中（待实施）
 
