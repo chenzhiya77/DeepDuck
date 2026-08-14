@@ -120,5 +120,5 @@ POST /api/knowledge-bases/{kb_id}/recall-test
 
 - 邀请制共享知识库（二期后段，主 spec §5.4；一期三钩子已埋）；
 - Excel 表格切片专项策略、网页 URL 正文抽取（主 spec §3.1 延后项）；
-- 切片编辑/禁用（三期）；
+- 切片编辑/禁用（三期；设计已定稿，见 `2026-08-15-rag-phase3-editing-design.md`）；
 - 检索硬编排（三路强制并行 + 统一 rerank，D5 分格预算形态约束）与轻量评测体系（golden set + recall@k）——均以 P1 召回测试积累的数据为决策前置。
