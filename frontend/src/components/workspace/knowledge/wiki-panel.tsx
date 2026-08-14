@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Trash2 } from "lucide-react";
+import { BookOpen, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -30,11 +30,14 @@ export function WikiPanel({
   loading = false,
   onOpenEntry,
   onDeleteEntry,
+  onEditEntry,
 }: {
   entries: WikiEntrySummary[];
   loading?: boolean;
   onOpenEntry: (entry: WikiEntrySummary) => void;
   onDeleteEntry: (entry: WikiEntrySummary) => void;
+  /** Phase-3 Batch-1 P1: edit entry (opens WikiEditDialog) */
+  onEditEntry?: (entry: WikiEntrySummary) => void;
 }) {
   const { t, locale } = useI18n();
   const tw = t.knowledge.wikiPanel;
@@ -71,15 +74,34 @@ export function WikiPanel({
                 {tw.updatedAt} {formatKnowledgeTimestamp(entry.updated_at, locale)}
               </span>
             </button>
-            <Button
-              aria-label={tw.deleteEntry}
-              className="text-muted-foreground hover:text-destructive absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100"
-              size="icon"
-              variant="ghost"
-              onClick={() => setDeleteTarget(entry)}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+            <div className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              {onEditEntry && (
+                <Button
+                  aria-label="编辑条目"
+                  className="text-muted-foreground hover:text-primary"
+                  size="icon"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditEntry(entry);
+                  }}
+                >
+                  <Pencil className="size-4" />
+                </Button>
+              )}
+              <Button
+                aria-label={tw.deleteEntry}
+                className="text-muted-foreground hover:text-destructive"
+                size="icon"
+                variant="ghost"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteTarget(entry);
+                }}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           </li>
         ))}
       </ul>
