@@ -273,6 +273,7 @@ describe("WikiEntryDrawer", () => {
     kb_id: "kb-1",
     title: "DeerFlow",
     content: "完整条目正文。\n\n第二段。",
+    supplement_content: null, // Phase-3 Batch-1 P1: no supplement for this fixture
     status: "ready",
     source_chunk_ids: ["d#0000"],
     updated_at: "2026-08-10T08:00:00Z",

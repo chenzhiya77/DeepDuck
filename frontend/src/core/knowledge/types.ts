@@ -99,6 +99,8 @@ export interface WikiEntryDetail {
   kb_id: string;
   title: string;
   content: string;
+  /** User annotations that survive dirty re-generation (Phase-3 Batch-1 P1). */
+  supplement_content: string | null;
   status: "ready" | "dirty" | string;
   source_chunk_ids: string[];
   updated_at: string;

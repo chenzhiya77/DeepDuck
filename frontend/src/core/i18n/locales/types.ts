@@ -356,6 +356,20 @@ export interface Translations {
       deleteConfirmTitle: string;
       deleteConfirmDescription: string;
     };
+    /** Phase-3 Batch-1 P1: dual-mode wiki entry editor (main content + supplement layer). */
+    wikiEdit: {
+      title: string;
+      description: string;
+      mainContentLabel: string;
+      mainContentPlaceholder: string;
+      mainContentHint: string;
+      supplementLabel: string;
+      supplementPlaceholder: string;
+      supplementHint: string;
+      auditLastEdited: string;
+      save: string;
+      saving: string;
+    };
     wikiDrawer: {
       openInTab: string;
       loading: string;

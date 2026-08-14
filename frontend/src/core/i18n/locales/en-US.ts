@@ -431,6 +431,20 @@ export const enUS: Translations = {
       deleteConfirmDescription:
         "Deletes the entry text and its search vector; the entity itself stays. If the entity is still eligible, the next generation run recreates the entry from current material.",
     },
+    /** Phase-3 Batch-1 P1: dual-mode wiki entry editor (main content + supplement layer). */
+    wikiEdit: {
+      title: "Edit Wiki Entry",
+      description: "Main content can be replaced by regeneration; supplement layer persists",
+      mainContentLabel: "Main Content (Auto-generated)",
+      mainContentPlaceholder: "AI-generated content will be displayed here, you can manually edit",
+      mainContentHint: "⚠️ This content will be replaced on next regeneration; your edits will be incorporated as reference material",
+      supplementLabel: "Supplement Layer (Manual Annotations)",
+      supplementPlaceholder: "Add your annotations, notes, or supplementary information here",
+      supplementHint: "✅ Content in this area persists permanently and won't be overwritten by regeneration",
+      auditLastEdited: "Last edited",
+      save: "Save",
+      saving: "Saving…",
+    },
     wikiDrawer: {
       openInTab: "Open in the Wiki tab",
       loading: "Loading…",
