@@ -27,6 +27,7 @@ export function ChunkCard({
   onReExtract,
   isReExtracting,
   reExtractDisabled,
+  extractStatus,
 }: {
   chunkId?: string;
   text: string;
@@ -43,6 +44,8 @@ export function ChunkCard({
   isReExtracting?: boolean;
   /** Another chunk of the same document is extracting (button disabled, backend mutex is per-document). */
   reExtractDisabled?: boolean;
+  /** Backend pending status (cross-session tracking). */
+  extractStatus?: string;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
@@ -139,8 +142,8 @@ export function ChunkCard({
                     title={tc.reExtractCost}
                     variant="ghost"
                   >
-                    {isReExtracting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
-                    {isReExtracting ? tc.reExtracting : tc.reExtract}
+                    {(isReExtracting || extractStatus === "pending") ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+                    {(isReExtracting || extractStatus === "pending") ? tc.reExtracting : tc.reExtract}
                   </Button>
                 )}
                 {onDelete && (
@@ -150,12 +153,12 @@ export function ChunkCard({
                   </Button>
                 )}
               </div>
-              {isReExtracting && (
+              {isReExtracting || extractStatus === "pending" ? (
                 <p className="text-muted-foreground flex items-center gap-1 text-xs">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   {tc.reExtractHint}
                 </p>
-              )}
+              ) : null}
             </div>
           )}
         </>

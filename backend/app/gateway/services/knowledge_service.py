@@ -389,6 +389,9 @@ class KnowledgeService:
         # Step 1: strip old graph contributions for this chunk only
         orphaned, affected = await self.graph_store.remove_chunk_contributions(kb_id, [chunk_id])
 
+        # Mark extraction as pending (for cross-session progress tracking)
+        await self.store.update_chunk_extract(chunk_id, "pending")
+
         # Step 2: orphaned entities lose their vectors + wiki entries (失格链)
         if orphaned:
             try:

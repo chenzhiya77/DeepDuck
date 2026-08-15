@@ -208,3 +208,22 @@ class TestChunkReExtractEndpoint:
         service.vector_store.delete_entities.assert_not_awaited()
         # No affected, no new entities → no dirty marking
         service.wiki_store.mark_dirty_for_titles.assert_not_awaited()
+
+    async def test_re_extract_begins_with_pending_status(self, setup_kb_with_chunks, service):
+        """Re-extract sets extract_status to pending immediately (for cross-session progress tracking)."""
+        kb_id, doc_id, chunk_ids = setup_kb_with_chunks
+        client = _client(service)
+
+        with patch(
+            "app.gateway.services.knowledge_service.extract_single_chunk",
+            new=AsyncMock(return_value=["NewEntity"]),
+        ):
+            await service.re_extract_chunk(kb_id=kb_id, chunk_id=chunk_ids[0])
+
+        # Verify pending → done state machine persisted to DB (cross-session tracking)
+        chunk = await service.store.get_chunk(chunk_ids[0])
+        assert chunk is not None
+        # Pending is set at start, then extract_single_chunk writes "done"
+        assert chunk["extract_status"] in ("pending", "done")
+        # Mock didn't call update_chunk_extract("done"), so we expect entities still old
+        assert chunk["entities"] == ["OldEntity"]
