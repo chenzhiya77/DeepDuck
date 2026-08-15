@@ -139,6 +139,42 @@ export interface WikiEntryDetail {
   updated_at: string;
 }
 
+// ── Phase-3 Batch-1 P6: manual knowledge cards (spec §8) ──────────────────
+// Fully user-managed entries outside the AI wiki lifecycle: never
+// auto-regenerated, never disqualified. ``include_in_wiki_search`` opts the
+// card into the wiki retrieval path's shared top_k pool (Task 8).
+
+/** Manual card list item: summary-only, no full content (wiki-list pattern). */
+export interface ManualCardSummary {
+  id: string;
+  title: string;
+  summary: string;
+  tags: string[];
+  include_in_wiki_search: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManualCardsPage {
+  items: ManualCardSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** Full manual card, fetched on demand for the editor. */
+export interface ManualCardDetail {
+  id: string;
+  kb_id: string;
+  owner_id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  include_in_wiki_search: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Citation source carried by the retrieval tools' JSON output (spec §4.6). */
 export interface KnowledgeCitation {
   chunk_id: string;

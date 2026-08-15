@@ -240,3 +240,65 @@ export function useRecallTest(kbId: string) {
     mutationFn: (body: { query: string; top_k: number }) => api.recallTest(kbId, body),
   });
 }
+
+// ── Phase-3 Batch-1 P6: manual knowledge cards (spec §8) ──────────────────
+
+export function knowledgeManualCardsKey(kbId: string) {
+  return ["knowledge-bases", kbId, "manual-cards"] as const;
+}
+
+/** Manual card list. Lazy: gated by ``enabled`` (the wiki tab's collapsible
+ * card section only fetches once expanded). */
+export function useManualCards(kbId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: knowledgeManualCardsKey(kbId ?? ""),
+    queryFn: () => api.listManualCards(kbId!),
+    enabled: enabled && kbId !== null,
+  });
+}
+
+/** Full card for the editor dialog; null-gated until an edit opens. */
+export function useManualCard(kbId: string | null, cardId: string | null) {
+  return useQuery({
+    queryKey: [...knowledgeManualCardsKey(kbId ?? ""), cardId ?? ""] as const,
+    queryFn: () => api.getManualCard(kbId!, cardId!),
+    enabled: kbId !== null && cardId !== null,
+  });
+}
+
+export function useCreateManualCard(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title: string; content: string; tags?: string[]; include_in_wiki_search?: boolean }) =>
+      api.createManualCard(kbId, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeManualCardsKey(kbId) });
+    },
+  });
+}
+
+export function useUpdateManualCard(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      cardId,
+      body,
+    }: {
+      cardId: string;
+      body: { title?: string; content?: string; tags?: string[]; include_in_wiki_search?: boolean };
+    }) => api.updateManualCard(kbId, cardId, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeManualCardsKey(kbId) });
+    },
+  });
+}
+
+export function useDeleteManualCard(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (cardId: string) => api.deleteManualCard(kbId, cardId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeManualCardsKey(kbId) });
+    },
+  });
+}

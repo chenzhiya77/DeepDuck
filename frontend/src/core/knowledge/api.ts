@@ -13,6 +13,8 @@ import type {
   KnowledgeChunk,
   KnowledgeChunkPage,
   KnowledgeDocument,
+  ManualCardDetail,
+  ManualCardsPage,
   RecallTestResponse,
   WikiEntriesPage,
   WikiEntryDetail,
@@ -237,4 +239,54 @@ export function recallTest(kbId: string, body: { query: string; top_k: number })
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => readResponse<RecallTestResponse>(r, "Failed to run recall test"));
+}
+
+// ── Phase-3 Batch-1 P6: manual knowledge cards (spec §8) ──────────────────
+
+export function listManualCards(
+  kbId: string,
+  page: { offset: number; limit: number } = { offset: 0, limit: 50 },
+): Promise<ManualCardsPage> {
+  const params = new URLSearchParams({ offset: String(page.offset), limit: String(page.limit) });
+  return fetch(kbUrl(kbId, `/manual-knowledge?${params}`)).then((r) =>
+    readResponse<ManualCardsPage>(r, "Failed to fetch manual cards"),
+  );
+}
+
+export function getManualCard(kbId: string, cardId: string): Promise<ManualCardDetail> {
+  return fetch(kbUrl(kbId, `/manual-knowledge/${encodeURIComponent(cardId)}`)).then((r) =>
+    readResponse<ManualCardDetail>(r, "Failed to fetch manual card"),
+  );
+}
+
+export async function createManualCard(
+  kbId: string,
+  body: { title: string; content: string; tags?: string[]; include_in_wiki_search?: boolean },
+): Promise<ManualCardDetail> {
+  const response = await fetch(kbUrl(kbId, "/manual-knowledge"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readResponse<ManualCardDetail>(response, "Failed to create manual card");
+}
+
+export async function updateManualCard(
+  kbId: string,
+  cardId: string,
+  body: { title?: string; content?: string; tags?: string[]; include_in_wiki_search?: boolean },
+): Promise<ManualCardDetail> {
+  const response = await fetch(kbUrl(kbId, `/manual-knowledge/${encodeURIComponent(cardId)}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readResponse<ManualCardDetail>(response, "Failed to update manual card");
+}
+
+export async function deleteManualCard(kbId: string, cardId: string): Promise<void> {
+  const response = await fetch(kbUrl(kbId, `/manual-knowledge/${encodeURIComponent(cardId)}`), {
+    method: "DELETE",
+  });
+  return readEmptyResponse(response, "Failed to delete manual card");
 }

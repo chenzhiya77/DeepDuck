@@ -11,6 +11,7 @@ import {
   type DuplicateAction,
 } from "@/components/workspace/knowledge/duplicate-upload-dialog";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
+import { ManualCardPanel } from "@/components/workspace/knowledge/manual-card-panel";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
@@ -323,18 +324,23 @@ export default function KnowledgePage() {
                 />
               }
               wiki={
-                <WikiPanel
-                  entries={wikiEntries}
-                  loading={wikiEntriesQuery.isLoading}
-                  updating={wikiUpdating}
-                  onOpenEntry={openWikiEntry}
-                  onEditEntry={handleEditEntry}
-                  onDeleteEntry={(entry) => {
-                    deleteWikiEntry.mutate(entry.id, {
-                      onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
-                    });
-                  }}
-                />
+                <>
+                  <WikiPanel
+                    entries={wikiEntries}
+                    loading={wikiEntriesQuery.isLoading}
+                    updating={wikiUpdating}
+                    onOpenEntry={openWikiEntry}
+                    onEditEntry={handleEditEntry}
+                    onDeleteEntry={(entry) => {
+                      deleteWikiEntry.mutate(entry.id, {
+                        onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
+                      });
+                    }}
+                  />
+                  {/* Phase-3 Batch-1 P6: manual cards sit below the AI wiki
+                      entries (spec §8 双通道) — collapsible, default collapsed. */}
+                  <ManualCardPanel kbId={selectedKb.id} />
+                </>
               }
               recall={
                 <RecallTestPanel

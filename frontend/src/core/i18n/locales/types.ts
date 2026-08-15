@@ -402,6 +402,36 @@ export interface Translations {
       loading: string;
       notFound: string;
     };
+    /** Phase-3 Batch-1 P6: manual knowledge cards (spec §8). */
+    manualCards: {
+      sectionTitle: string;
+      newCard: string;
+      empty: string;
+      loading: string;
+      includeInSearch: string;
+      includeHint: string;
+      editCard: string;
+      deleteCard: string;
+      deleteConfirmTitle: string;
+      deleteConfirmDescription: string;
+      editorCreateTitle: string;
+      editorEditTitle: string;
+      editorDescription: string;
+      titleLabel: string;
+      titlePlaceholder: string;
+      contentLabel: string;
+      contentPlaceholder: string;
+      tagsLabel: string;
+      tagsPlaceholder: string;
+      save: string;
+      saving: string;
+      createSuccess: string;
+      updateSuccess: string;
+      deleteSuccess: string;
+      saveFailed: string;
+      deleteFailed: string;
+      updatedAt: string;
+    };
     recallTest: {
       queryPlaceholder: string;
       run: string;
