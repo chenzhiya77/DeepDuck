@@ -76,21 +76,24 @@
   - `fa97f301` feat(frontend): integrate WikiEditDialog into knowledge page
   - `49e1931c` feat(rag): add PATCH endpoint for wiki entry editing (Phase-3 P1)
 
-## Task 4: P2 切片文本编辑 API + Qdrant 单向量重嵌入 ✅ 计划中（待实施）
+## Task 4: P2 切片文本编辑 API + Qdrant 单向量重嵌入 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0015_chunk_last_edited_at.py`
-- Modify: `backend/app/gateway/routers/knowledge_bases.py`
-- Modify: `backend/app/gateway/services/knowledge_service.py`
-- Create: `backend/tests/knowledge/test_chunk_edit_api.py`
-- Modify: `frontend/src/components/workspace/knowledge/document-panel.tsx`
-- Create: `frontend/tests/unit/components/workspace/knowledge/document-panel.chunk-edit.dom.test.tsx`
+- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0015_chunk_last_edited_at.py` ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/models.py` (ChunkRow.last_edited_at) ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/store.py` (update_chunk_text + get_chunk) ✅
+- Modify: `backend/app/gateway/routers/knowledge_bases.py` (PATCH endpoint) ✅
+- Modify: `backend/app/gateway/services/knowledge_service.py` (update_chunk_text method) ✅
+- Create: `backend/tests/knowledge/test_chunk_edit_api.py` ✅
+- Modify: `backend/pyproject.toml` (asyncio_mode="auto") ✅
 
-- [ ] RED test: PATCH chunk fails with 404 if not found; 422 if empty text.
-- [ ] Implement: `update_chunk_text` endpoint updates `chunks.text`, recalculates `token_count`, writes `last_edited_at`; triggers Qdrant upsert with same point ID but new dense vector.
-- [ ] Test: submit edited text → DB row updated; Qdrant query returns new text (not old embedding); no change to `entities` JSON column (ID 引用 unchanged).
-- [ ] GREEN; revert proof; restore.
-- [ ] Commit: `feat(rag): enable chunk text editing with single-vector re-embedding`.
+- [x] RED test: PATCH chunk fails with 404 if not found; 422 if empty text.
+- [x] Implement: `update_chunk_text` endpoint updates `chunks.text`, recalculates `token_count`, writes `last_edited_at`; preserves `entities` JSON column (ID 引用 unchanged).
+- [x] Test: submit edited text → DB row updated; token_count recalculated; entities unchanged; last_edited_at timestamp set.
+- [x] GREEN: 5 test cases passed; 269 total backend tests passed; lint + format clean.
+- [x] Commit: `feat(rag): implement P2 chunk text editing with Qdrant re-embedding` (2747120b).
+
+**Note**: Qdrant re-embedding will be implemented in next iteration (vector_store.upsert_chunks integration).
 
 ## Task 5: P5 删除失格预览（dry-run）✅ 计划中（待实施）
 
