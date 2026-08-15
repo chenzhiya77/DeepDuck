@@ -169,6 +169,18 @@ describe("MiddleTabs", () => {
     expect(handlers.onGenerateWiki).toHaveBeenCalledWith("full");
   });
 
+  it("disables both wiki generation triggers while a run is in flight (2026-08-14)", async () => {
+    const handlers = renderTabs({ wikiUpdating: true });
+    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+    // The incremental item swaps its label to 更新中; both items go aria-disabled.
+    const updateItem = (await screen.findByText("更新中")).closest("[role='menuitem']");
+    const rebuildItem = (await screen.findByText("全部重建")).closest("[role='menuitem']");
+    expect(updateItem?.getAttribute("aria-disabled")).toBe("true");
+    expect(rebuildItem?.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(updateItem as HTMLElement);
+    expect(handlers.onGenerateWiki).not.toHaveBeenCalled();
+  });
+
   it("uploads via the hidden file input in the library header", () => {
     const handlers = renderTabs();
     const input = screen.getByTestId("document-upload-input");
@@ -231,6 +243,22 @@ describe("WikiPanel", () => {
     // dirty badge only on the dirty entry
     expect(screen.getAllByText("待更新")).toHaveLength(1);
     expect(screen.getAllByText(/更新于/)).toHaveLength(2);
+  });
+
+  it("switches dirty badges to 更新中 and shows the hint while a run is in flight (2026-08-14)", () => {
+    renderWithI18n(
+      <WikiPanel entries={[ENTRY, DIRTY_ENTRY]} updating onOpenEntry={() => undefined} onDeleteEntry={() => undefined} />,
+    );
+    expect(screen.getByTestId("wiki-updating-hint")).toBeTruthy();
+    // only the dirty row flips to 更新中; the ready row stays badgeless
+    expect(screen.getAllByText("更新中")).toHaveLength(1);
+    expect(screen.queryByText("待更新")).toBeNull();
+  });
+
+  it("keeps the 待更新 badge and no hint when no run is active", () => {
+    renderWithI18n(<WikiPanel entries={[DIRTY_ENTRY]} onOpenEntry={() => undefined} onDeleteEntry={() => undefined} />);
+    expect(screen.queryByTestId("wiki-updating-hint")).toBeNull();
+    expect(screen.getByText("待更新")).toBeTruthy();
   });
 
   it("invokes onOpenEntry with the clicked entry", () => {

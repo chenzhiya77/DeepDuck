@@ -14,8 +14,8 @@ import type {
   KnowledgeChunkPage,
   KnowledgeDocument,
   RecallTestResponse,
+  WikiEntriesPage,
   WikiEntryDetail,
-  WikiEntrySummary,
   WikiGenerateAck,
 } from "./types";
 
@@ -155,9 +155,9 @@ export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental
   );
 }
 
-export function listWikiEntries(kbId: string): Promise<WikiEntrySummary[]> {
+export function listWikiEntries(kbId: string): Promise<WikiEntriesPage> {
   return fetch(kbUrl(kbId, "/wiki/entries")).then((r) =>
-    readResponse<WikiEntrySummary[]>(r, "Failed to fetch wiki entries"),
+    readResponse<WikiEntriesPage>(r, "Failed to fetch wiki entries"),
   );
 }
 

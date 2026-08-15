@@ -419,6 +419,23 @@ async def test_wiki_generate_rejects_unknown_mode(service):
     assert client.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate?mode=everything").status_code == 422
 
 
+async def test_wiki_generate_already_running_returns_without_requeue(service, monkeypatch):
+    """P1 (2026-08-14): a trigger while a run is in flight — manual or worker
+    auto, both funnels share the in-flight counter — reports
+    ``already_running`` and does NOT queue a duplicate LLM run."""
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
+    generate = MagicMock(return_value=None)
+    service.wiki_generate_fn = generate
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "already_running"
+    generate.assert_not_called()
+
+
 async def test_manual_wiki_trigger_passes_embedder(service, monkeypatch):
     """Regression: the manual trigger must pass an embedder to generate_wiki.
 
@@ -454,7 +471,15 @@ async def test_wiki_entries_list_and_detail(service):
 
     listing = client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries")
     assert listing.status_code == 200
-    items = {item["title"]: item for item in listing.json()}
+    payload = listing.json()
+    # Wiki 更新状态可见 (2026-08-14): the list payload carries the
+    # library-level generation flag so the wiki tab can render 更新中 and
+    # poll until the run finishes — no cross-correlating the documents query.
+    assert payload["generation"] == "idle"
+    # P1 失败可见性: terminal status of the most recent run (null = never ran
+    # in this process) so a crashed run never masquerades as 已更新.
+    assert payload["last_run"] is None
+    items = {item["title"]: item for item in payload["entries"]}
     assert set(items) == {"DeerFlow", "Gateway"}
     deerflow = items["DeerFlow"]
     assert set(deerflow) == {"id", "title", "summary", "status", "updated_at"}
@@ -480,4 +505,32 @@ async def test_wiki_entry_detail_404_on_missing_or_cross_kb(service):
     assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/missing").status_code == 404
     # an entry that exists but belongs to another kb must not leak
     assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}").status_code == 404
-    assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").json() == []
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").json() == {"entries": [], "generation": "idle", "last_run": None}
+
+
+async def test_wiki_entries_list_reports_last_run_failure(service, monkeypatch):
+    """P1 (2026-08-14): after a failed run the entries payload reports
+    ``last_run == "failed"`` so the frontend can toast 更新失败 instead of
+    the success copy."""
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_last_run_status", lambda _kb_id: "failed")
+    client = _client(service)
+    kb = _create_kb(client)
+
+    payload = client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").json()
+
+    assert payload["last_run"] == "failed"
+
+
+async def test_wiki_entries_list_reports_generation_in_flight(service, monkeypatch):
+    """Wiki 更新状态可见 (2026-08-14): while a generation run is in flight
+    (manual button or worker auto trigger), the entries payload reports
+    ``generation == "generating"`` so the wiki tab switches dirty badges to
+    更新中 and polls until the run drains."""
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    payload = client.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").json()
+
+    assert payload["generation"] == "generating"
+    assert payload["entries"] == []

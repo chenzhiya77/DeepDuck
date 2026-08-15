@@ -43,6 +43,7 @@ import {
 } from "@/core/knowledge/hooks";
 import { FALLBACK_SUPPORTED_SUFFIXES } from "@/core/knowledge/supported-formats";
 import type { KnowledgeDocument, WikiEntrySummary } from "@/core/knowledge/types";
+import { isWikiUpdating } from "@/core/knowledge/wiki-status";
 
 function showMutationError(error: unknown, fallback: string) {
   toast.error(error instanceof Error && error.message ? error.message : fallback);
@@ -63,6 +64,11 @@ export default function KnowledgePage() {
   // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
   const [activeTab, setActiveTab] = useState<KnowledgeMiddleTab>("documents");
   const [drawerEntryId, setDrawerEntryId] = useState<string | null>(null);
+  // Wiki 更新状态可见 (2026-08-14): a manual trigger keeps the entries query
+  // enabled (hence polling) even off the wiki tab — the trigger menu lives in
+  // the library header, visible from every tab. Cleared on the observed
+  // generating→idle transition or on kb switch (code-review finding).
+  const [wikiRunActive, setWikiRunActive] = useState(false);
   // Phase-3 Batch-1 P1: wiki entry editing state
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -86,10 +92,11 @@ export default function KnowledgePage() {
 
   const documentsQuery = useDocuments(selectedKbId);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
-  // Lazy: the wiki list only fetches once its tab is first activated
-  // (keep-alive panes stay mounted, so the gate is what keeps it lazy).
-  const wikiEntriesQuery = useWikiEntries(selectedKbId, activeTab === "wiki");
-  const wikiEntries = wikiEntriesQuery.data ?? [];
+  // Lazy: the wiki list fetches once its tab is first activated or a manual
+  // update run is triggered (keep-alive panes stay mounted — the gate is
+  // what keeps it lazy).
+  const wikiEntriesQuery = useWikiEntries(selectedKbId, activeTab === "wiki" || wikiRunActive);
+  const wikiEntries = wikiEntriesQuery.data?.entries ?? [];
 
   // Task 6 upload allowlist: endpoint is the source of truth, with a local
   // mirror as fallback until the query resolves (spec §6).
@@ -117,6 +124,35 @@ export default function KnowledgePage() {
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
   const deleteWikiEntry = useDeleteWikiEntry(selectedKbId ?? "");
   const updateWikiEntry = useUpdateWikiEntry(selectedKbId ?? "");
+
+  // Wiki 更新状态可见 (2026-08-14): live 更新中 feedback + completion toast.
+  // `isPending` covers the click→first-poll gap; the toast observes the
+  // server-reported generating→idle transition, so a no-op run or a missed
+  // poll never produces a phantom 已更新.
+  const wikiUpdating = isWikiUpdating(wikiEntriesQuery.data, generateWiki.isPending);
+  const wikiManualRunRef = useRef(false);
+  const prevWikiGenerationRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    wikiManualRunRef.current = false;
+    prevWikiGenerationRef.current = undefined;
+    setWikiRunActive(false);
+  }, [selectedKbId]);
+  useEffect(() => {
+    const generation = wikiEntriesQuery.data?.generation;
+    const prev = prevWikiGenerationRef.current;
+    prevWikiGenerationRef.current = generation;
+    if (prev === "generating" && generation === "idle" && wikiManualRunRef.current) {
+      wikiManualRunRef.current = false;
+      setWikiRunActive(false);
+      // P1 失败可见性 (2026-08-14): a crashed run also drains the flag —
+      // toast the truth instead of the success copy.
+      if (wikiEntriesQuery.data?.last_run === "failed") {
+        toast.error(tk.wikiUpdateFailed);
+      } else {
+        toast.success(tk.wikiUpdated);
+      }
+    }
+  }, [wikiEntriesQuery.data, tk.wikiUpdated, tk.wikiUpdateFailed]);
   // Fetch full entry detail when editing
   const editingEntryQuery = useWikiEntry(selectedKbId, editingEntryId);
   const editingEntry = editingEntryQuery.data ?? null;
@@ -231,10 +267,26 @@ export default function KnowledgePage() {
               onUpload={uploadFilesWithCheck}
               onGenerateWiki={(mode) => {
                 generateWiki.mutate(mode, {
-                  onSuccess: () => toast.success(tk.wikiEnqueued),
+                  onSuccess: (ack) => {
+                    // P1 触发幂等 (2026-08-14): a run is already draining the
+                    // dirty set (manual or worker-auto) — inform, but don't
+                    // arm the completion toast for a run we didn't start.
+                    if (ack.status === "already_running") {
+                      toast.info(tk.wikiAlreadyRunning);
+                      return;
+                    }
+                    // Start toast stays (the trigger lives in the library
+                    // menu, visible from every tab); the completion toast
+                    // fires on the generating→idle transition above. The run
+                    // flag keeps the entries query polling from any tab.
+                    wikiManualRunRef.current = true;
+                    setWikiRunActive(true);
+                    toast.success(tk.wikiEnqueued);
+                  },
                   onError: (error) => showMutationError(error, tk.errors.wikiFailed),
                 });
               }}
+              wikiUpdating={wikiUpdating}
               onRenameKb={async (name) => {
                 try {
                   await updateKb.mutateAsync({ kbId: selectedKb.id, patch: { name } });
@@ -274,6 +326,7 @@ export default function KnowledgePage() {
                 <WikiPanel
                   entries={wikiEntries}
                   loading={wikiEntriesQuery.isLoading}
+                  updating={wikiUpdating}
                   onOpenEntry={openWikiEntry}
                   onEditEntry={handleEditEntry}
                   onDeleteEntry={(entry) => {

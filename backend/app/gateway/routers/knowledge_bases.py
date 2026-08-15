@@ -260,8 +260,8 @@ async def generate_wiki_entries(request: Request, kb_id: str, mode: Literal["inc
     dirty entries and backfills missing eligible ones; ``full`` rebuilds every
     eligible entry (rule-upgrade scenario)."""
     service = await _require_kb_access(request, kb_id)
-    service.trigger_wiki_generation(kb_id, only_dirty=mode != "full")
-    return {"status": "enqueued"}
+    enqueued = service.trigger_wiki_generation(kb_id, only_dirty=mode != "full")
+    return {"status": "enqueued" if enqueued else "already_running"}
 
 
 @router.get("/{kb_id}/wiki/entries")

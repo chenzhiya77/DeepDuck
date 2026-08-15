@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
+import { BookOpen, Loader2, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -53,6 +53,7 @@ export function MiddleTabs({
   uploading = false,
   supportedSuffixes,
   onGenerateWiki,
+  wikiUpdating = false,
   onRenameKb,
   onDeleteKb,
   documents,
@@ -67,6 +68,12 @@ export function MiddleTabs({
   /** Upload allowlist (Task 6, spec §6): gates the picker accept + intercept. */
   supportedSuffixes: readonly string[];
   onGenerateWiki: (mode: WikiGenerateMode) => void;
+  /**
+   * Wiki 更新状态可见 (2026-08-14): a generation run is in flight — the
+   * trigger items disable to prevent duplicate queueing and the 更新百科
+   * item shows a spinner.
+   */
+  wikiUpdating?: boolean;
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
   documents: ReactNode;
@@ -102,11 +109,11 @@ export function MiddleTabs({
                 <Upload className="size-4" />
                 {uploading ? tk.uploadingDocuments : tk.uploadDocuments}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onGenerateWiki("incremental")}>
-                <BookOpen className="size-4" />
-                {tk.updateWiki}
+              <DropdownMenuItem disabled={wikiUpdating} onSelect={() => onGenerateWiki("incremental")}>
+                {wikiUpdating ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+                {wikiUpdating ? tk.wikiPanel.updating : tk.updateWiki}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setRebuildOpen(true))}>
+              <DropdownMenuItem disabled={wikiUpdating} onSelect={() => runAfterMenuClose(() => setRebuildOpen(true))}>
                 <RefreshCw className="size-4" />
                 {tk.rebuildWiki}
               </DropdownMenuItem>

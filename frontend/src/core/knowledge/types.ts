@@ -94,7 +94,8 @@ export interface DeletePreviewResponse {
 }
 
 export interface WikiGenerateAck {
-  status: "enqueued" | string;
+  /** "enqueued" | "already_running" (P1 触发幂等, 2026-08-14: a run is in flight). */
+  status: "enqueued" | "already_running" | string;
 }
 
 /** Wiki tab list item (phase-2 batch-1): summary-only, no full content. */
@@ -104,6 +105,25 @@ export interface WikiEntrySummary {
   summary: string;
   status: "ready" | "dirty" | string;
   updated_at: string;
+}
+
+/**
+ * Library-level wiki generation run state (wiki 更新状态可见, 2026-08-14).
+ * Same source as ``path_status.wiki === "generating"``, exposed on the
+ * entries payload so the wiki tab can render 更新中 and poll until done.
+ */
+export type WikiGenerationState = "idle" | "generating" | string;
+
+/** Wiki entries list payload: summaries + the library-level run flag. */
+export interface WikiEntriesPage {
+  entries: WikiEntrySummary[];
+  generation: WikiGenerationState;
+  /**
+   * Terminal status of the most recent run (P1 失败可见性, 2026-08-14) —
+   * the completion toast keys off it so a crashed run never surfaces as
+   * 已更新. ``null`` = never ran in this process.
+   */
+  last_run: "succeeded" | "failed" | null;
 }
 
 /** Full wiki entry, fetched on demand for the entry drawer. */

@@ -28,7 +28,7 @@ from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
 from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
-from deerflow.knowledge.wiki.generator import generate_wiki, wiki_generation_in_progress
+from deerflow.knowledge.wiki.generator import generate_wiki, wiki_generation_in_progress, wiki_last_run_status
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
 from deerflow.tools.builtins.hybrid_search_tool import _hybrid_search_impl
@@ -242,28 +242,49 @@ class KnowledgeService:
 
     # ── wiki ─────────────────────────────────────────────────────────────
 
-    def trigger_wiki_generation(self, kb_id: str, *, only_dirty: bool = True) -> None:
+    def trigger_wiki_generation(self, kb_id: str, *, only_dirty: bool = True) -> bool:
         """Fire-and-forget wiki generation (Task 14: incremental by default;
-        ``only_dirty=False`` rebuilds every eligible entry)."""
-        self.wiki_generate_fn(kb_id, only_dirty)
+        ``only_dirty=False`` rebuilds every eligible entry).
 
-    async def list_wiki_entries(self, kb_id: str) -> list[dict[str, Any]]:
+        Returns False when a run is already in flight — manual or worker
+        auto, both share the in-flight counter — so the router reports
+        ``already_running`` instead of queueing a duplicate LLM run
+        (P1 触发幂等, 2026-08-14).
+        """
+        if wiki_generation_in_progress(kb_id):
+            return False
+        self.wiki_generate_fn(kb_id, only_dirty)
+        return True
+
+    async def list_wiki_entries(self, kb_id: str) -> dict[str, Any]:
         """Summary-only listing for the wiki tab (phase-2 batch-1).
 
         Full content stays out of the list payload — the drawer fetches it via
         the detail endpoint. ``summary`` is a plain content prefix.
+
+        Wiki 更新状态可见 (2026-08-14): the payload also carries the
+        library-level ``generation`` flag (same in-flight source as
+        ``path_status.wiki``) so the wiki tab itself can render 更新中 and
+        poll until the run drains — previously the badge only refreshed on
+        tab re-entry.
         """
         entries = await self.wiki_store.list_entries(kb_id)
-        return [
-            {
-                "id": entry["id"],
-                "title": entry["title"],
-                "summary": entry["content"][:120],
-                "status": entry["status"],
-                "updated_at": entry["updated_at"],
-            }
-            for entry in entries
-        ]
+        return {
+            "entries": [
+                {
+                    "id": entry["id"],
+                    "title": entry["title"],
+                    "summary": entry["content"][:120],
+                    "status": entry["status"],
+                    "updated_at": entry["updated_at"],
+                }
+                for entry in entries
+            ],
+            "generation": "generating" if wiki_generation_in_progress(kb_id) else "idle",
+            # P1 失败可见性: terminal status of the most recent run (None =
+            # never ran in this process) — the completion toast keys off it.
+            "last_run": wiki_last_run_status(kb_id),
+        }
 
     async def get_wiki_entry(self, *, kb_id: str, entry_id: str) -> dict[str, Any] | None:
         """Full entry for the drawer; None when missing or owned by another kb."""

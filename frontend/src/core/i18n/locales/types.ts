@@ -284,6 +284,12 @@ export interface Translations {
     rebuildWikiConfirmDescription: string;
     rebuildWikiConfirmAction: string;
     wikiEnqueued: string;
+        /** Wiki 更新状态可见 (2026-08-14): completion toast after a manually triggered run drains. */
+        wikiUpdated: string;
+        /** P1: trigger while a run is in flight — info toast, no duplicate queue. */
+        wikiAlreadyRunning: string;
+        /** P1 失败可见性: completion toast when the observed run crashed. */
+        wikiUpdateFailed: string;
     settings: string;
     renameKb: string;
     deleteKb: string;
@@ -367,6 +373,8 @@ export interface Translations {
       empty: string;
       loading: string;
       dirty: string;
+      updating: string;
+      updatingHint: string;
       updatedAt: string;
       deleteEntry: string;
       deleteConfirmTitle: string;

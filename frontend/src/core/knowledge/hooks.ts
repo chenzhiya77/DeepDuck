@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as api from "./api";
 import { documentsRefetchInterval } from "./document-stats";
+import { wikiEntriesRefetchInterval } from "./wiki-status";
 
 export function knowledgeBasesKey() {
   return ["knowledge-bases"] as const;
@@ -122,6 +123,11 @@ export function useGenerateWiki(kbId: string) {
     mutationFn: (mode: api.WikiGenerateMode) => api.generateWiki(kbId, mode),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) });
+      // The 202 ack returns before the background asyncio task flips the
+      // in-flight flag, so the immediate refetch can still read idle. One
+      // delayed re-invalidation closes that gap — after it lands on
+      // "generating", the entries query's refetchInterval takes over.
+      setTimeout(() => void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) }), 1000);
     },
   });
 }
@@ -141,6 +147,9 @@ export function useWikiEntries(kbId: string | null, enabled = true) {
     queryKey: knowledgeWikiEntriesKey(kbId ?? ""),
     queryFn: () => api.listWikiEntries(kbId!),
     enabled: enabled && kbId !== null,
+    // Poll only while a generation run is in flight (wiki 更新状态可见,
+    // 2026-08-14) — same 3s cadence as the documents query; idle never polls.
+    refetchInterval: (query) => wikiEntriesRefetchInterval(query.state.data),
   });
 }
 

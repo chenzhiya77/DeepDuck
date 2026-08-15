@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Pencil, Trash2 } from "lucide-react";
+import { BookOpen, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -28,12 +28,19 @@ import type { WikiEntrySummary } from "@/core/knowledge/types";
 export function WikiPanel({
   entries,
   loading = false,
+  updating = false,
   onOpenEntry,
   onDeleteEntry,
   onEditEntry,
 }: {
   entries: WikiEntrySummary[];
   loading?: boolean;
+  /**
+   * Wiki 更新状态可见 (2026-08-14): a generation run is in flight — the
+   * hint line stays up and dirty badges switch to 更新中 until the run
+   * drains (the entries query polls while the backend reports generating).
+   */
+  updating?: boolean;
   onOpenEntry: (entry: WikiEntrySummary) => void;
   onDeleteEntry: (entry: WikiEntrySummary) => void;
   /** Phase-3 Batch-1 P1: edit entry (opens WikiEditDialog) */
@@ -52,6 +59,15 @@ export function WikiPanel({
 
   return (
     <>
+      {updating && (
+        <p
+          className="text-muted-foreground flex items-center gap-1.5 px-4 pt-2 text-xs"
+          data-testid="wiki-updating-hint"
+        >
+          <Loader2 className="size-3 animate-spin" />
+          {tw.updatingHint}
+        </p>
+      )}
       <ul className="min-h-0 flex-1 overflow-y-auto px-2 py-2" data-testid="wiki-entry-list">
         {entries.map((entry) => (
           <li className="group relative" key={entry.id}>
@@ -64,8 +80,9 @@ export function WikiPanel({
                 <BookOpen className="text-muted-foreground size-4 shrink-0" />
                 <span className="min-w-0 truncate text-sm font-medium">{entry.title}</span>
                 {entry.status === "dirty" && (
-                  <Badge className="shrink-0" variant="secondary">
-                    {tw.dirty}
+                  <Badge className="shrink-0 gap-1" variant="secondary">
+                    {updating && <Loader2 className="size-3 animate-spin" />}
+                    {updating ? tw.updating : tw.dirty}
                   </Badge>
                 )}
               </span>
