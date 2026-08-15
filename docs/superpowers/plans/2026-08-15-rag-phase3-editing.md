@@ -148,24 +148,31 @@
 - [x] GREEN: 5 backend tests passed; 279 total backend tests passed; frontend chunk-drawer 6 tests passed; lint + format clean.
 - [x] Commits: `422c50d7` (endpoint skeleton) + `a450a951` (frontend button) + `ef87b6fb` (five-step flow).
 
-## Task 7: P6 人工知识卡片系统——数据库模型与 CRUD API ✅ 计划中（待实施）
+## Task 7: P6 人工知识卡片系统——数据库模型与 CRUD API ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0016_manual_knowledge_table.py`
-- Modify: `backend/packages/harness/deerflow/knowledge/models.py` (add `ManualKnowledgeRow`)
-- Modify: `backend/app/gateway/routers/knowledge_bases.py`
-- Modify: `backend/app/gateway/services/knowledge_service.py`
-- Create: `backend/tests/knowledge/test_manual_knowledge_api.py`
-- Modify: `frontend/src/core/knowledge/api.ts`
-- Create: `frontend/src/components/workspace/knowledge/cards/ManualCardPanel.tsx`
-- Modify: `frontend/src/components/workspace/knowledge/page.tsx` (tab container add second panel)
-- Create: `frontend/tests/unit/components/workspace/knowledge/cards/ManualCardPanel.dom.test.tsx`
+- Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0016_manual_knowledge_table.py` ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/models.py` (add `ManualKnowledgeRow`) ✅
+- Modify: `backend/packages/harness/deerflow/persistence/models/__init__.py`（注册模型）✅
+- Modify: `backend/packages/harness/deerflow/knowledge/store.py`（CRUD + `delete_kb` 级联纳入）✅
+- Modify: `backend/packages/harness/deerflow/knowledge/vector_store.py`（新集合 `kb_manual_cards` + upsert/delete 写路径——见下方决策）✅
+- Modify: `backend/app/gateway/routers/knowledge_bases.py` ✅
+- Modify: `backend/app/gateway/services/knowledge_service.py` ✅
+- Create: `backend/tests/knowledge/test_manual_knowledge_api.py` ✅
+- Create: `backend/tests/test_migration_0016_manual_knowledge_table.py` ✅
+- Modify: `frontend/src/core/knowledge/types.ts` / `api.ts` / `hooks.ts` ✅
+- Create: `frontend/src/components/workspace/knowledge/manual-card-panel.tsx`（实际文件名小写，非 `cards/ManualCardPanel.tsx`）✅
+- Modify: `frontend/src/app/workspace/knowledge/page.tsx`（wiki tab 双通道接入，非 components 下的 page.tsx）✅
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts` ✅
+- Create: `frontend/tests/unit/knowledge/manual-card-panel.dom.test.tsx`（实际放 tests/unit/knowledge/ 约定目录）✅
 
-- [ ] RED test: create card fails without required fields; list paginated correctly.
-- [ ] Implement: `ManualKnowledgeRow` model; CRUD endpoints POST/GET/PATCH/DELETE; default `include_in_wiki_search=false`; frontend CRUD panel with "New Card" button.
-- [ ] Test: create card → stored with metadata; toggle "混入搜索" → database flag updated; list API includes/excludes based on flag.
-- [ ] GREEN; revert proof; restore.
-- [ ] Commit: `feat(rag): implement manual knowledge card CRUD with wiki search integration toggle`.
+- [x] RED test: create card fails without required fields; list paginated correctly.（12 条后端全 RED）
+- [x] Implement: `ManualKnowledgeRow` model; CRUD endpoints POST/GET/PATCH/DELETE; default `include_in_wiki_search=false`; frontend CRUD panel with "New Card" button.
+- [x] Test: create card → stored with metadata; toggle "混入搜索" → database flag updated; list API includes/excludes based on flag.
+- [x] GREEN; revert proof; restore.（stash 实现 → 12 RED → 恢复 → 12 GREEN）
+- [x] **范围补全（embedding 写路径，2026-08-15 依赖链决策）**：开关 on 创建/更新 → embed + upsert `kb_manual_cards`；on→off / 删除卡片 → 删向量点；KB 级联（`delete_kb` + `delete_by_kb`）自动覆盖新集合。无此路径 Task 8 将无向量可查。
+- [x] 回归：knowledge 域 305 passed + 2 skipped；前端 1213 passed；`pnpm check` 净；ruff check/format 净（0014 迁移测试失败为 HEAD 基线已有， stash 对比验证与本改动无关）。
+- [x] Commits: `8b25db42` (backend CRUD + migration 0016 + embedding 写路径） + `9233a997` (frontend panel)
 
 ## Task 8: P6 人工知识卡片系统——Wiki 路混排检索实现 ✅ 计划中（待实施）
 
