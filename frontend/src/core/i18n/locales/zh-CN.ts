@@ -411,6 +411,8 @@ export const zhCN: Translations = {
       relationDeletions: "将删除的关系数",
       deleteWarning: "删除不可恢复",
       confirmDelete: "确认删除",
+      reExtract: "重新抽取",
+      reExtractCost: "将消耗 1 次 LLM 抽取调用",
     },
     tabs: {
       documents: "文档",

@@ -353,6 +353,8 @@ export interface Translations {
       relationDeletions: string;
       deleteWarning: string;
       confirmDelete: string;
+      reExtract: string;
+      reExtractCost: string;
     };
     tabs: {
       documents: string;

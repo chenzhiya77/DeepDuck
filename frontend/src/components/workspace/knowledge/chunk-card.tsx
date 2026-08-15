@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ export function ChunkCard({
   lastEditedAt,
   onEdit,
   onDelete,
+  onReExtract,
 }: {
   chunkId?: string;
   text: string;
@@ -35,6 +36,7 @@ export function ChunkCard({
   lastEditedAt?: string | null;
   onEdit?: (chunkId: string, newText: string) => Promise<void>;
   onDelete?: (chunkId: string) => void;
+  onReExtract?: (chunkId: string) => void;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
@@ -114,12 +116,18 @@ export function ChunkCard({
               </span>
             )}
           </div>
-          {(onEdit ?? onDelete) && chunkId && (
+          {(onEdit ?? onDelete ?? onReExtract) && chunkId && (
             <div className="flex gap-1 pt-1">
               {onEdit && (
                 <Button onClick={() => setIsEditing(true)} size="sm" variant="ghost">
                   <Pencil className="mr-1 h-3 w-3" />
                   {tc.edit}
+                </Button>
+              )}
+              {onReExtract && (
+                <Button onClick={() => onReExtract(chunkId)} size="sm" title={tc.reExtractCost} variant="ghost">
+                  <RefreshCw className="mr-1 h-3 w-3" />
+                  {tc.reExtract}
                 </Button>
               )}
               {onDelete && (

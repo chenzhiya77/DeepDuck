@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDocumentChunks, usePreviewChunkDeletion, useUpdateChunk } from "@/core/knowledge/hooks";
+import { useDocumentChunks, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
 import type { DeletePreviewResponse, KnowledgeChunk, KnowledgeDocument } from "@/core/knowledge/types";
 
 import { ChunkCard } from "./chunk-card";
@@ -38,6 +38,7 @@ export function ChunkDrawer({
   const query = useDocumentChunks(open ? kbId : null, open ? doc.id : null, 0, limit);
   const updateChunk = useUpdateChunk(kbId);
   const previewDeletion = usePreviewChunkDeletion(kbId);
+  const reExtractChunk = useReExtractChunk(kbId);
   const page = query.data;
 
   // Accumulate pages client-side: the endpoint is offset/limit, and a growing
@@ -79,6 +80,22 @@ export function ChunkDrawer({
     }
   };
 
+  const handleReExtractChunk = async (chunkId: string) => {
+    try {
+      await reExtractChunk.mutateAsync(chunkId);
+      toast.success("重抽取已触发");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "重抽取失败";
+      if (message.includes("being processed")) {
+        toast.warning("文档正在处理中，请稍后重试");
+      } else if (message.includes("not implemented")) {
+        toast.info("单切片重抽取功能即将上线");
+      } else {
+        toast.error(message);
+      }
+    }
+  };
+
   const handleConfirmDelete = async () => {
     // TODO: Implement actual deletion endpoint
     toast.info("删除功能将在下一迭代实现");
@@ -109,6 +126,7 @@ export function ChunkDrawer({
                   lastEditedAt={chunk.last_edited_at}
                   onDelete={handleDeleteChunk}
                   onEdit={handleEditChunk}
+                  onReExtract={handleReExtractChunk}
                   page={chunk.page}
                   text={chunk.text}
                   tokenCount={chunk.token_count}

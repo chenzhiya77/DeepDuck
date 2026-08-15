@@ -215,6 +215,14 @@ export async function previewChunkDeletion(
   return readResponse<DeletePreviewResponse>(response, "Failed to preview chunk deletion");
 }
 
+/** Phase-3 Batch-1 P3: re-extract entities for a single chunk. */
+export async function reExtractChunk(kbId: string, chunkId: string): Promise<unknown> {
+  const response = await fetch(kbUrl(kbId, `/chunks/${encodeURIComponent(chunkId)}/re-extract`), {
+    method: "POST",
+  });
+  return readResponse<unknown>(response, "Failed to re-extract chunk");
+}
+
 export function recallTest(kbId: string, body: { query: string; top_k: number }): Promise<RecallTestResponse> {
   return fetch(kbUrl(kbId, "/recall-test"), {
     method: "POST",

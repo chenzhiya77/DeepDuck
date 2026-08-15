@@ -10,13 +10,14 @@ rs.mock("@/core/knowledge/hooks", () => ({
   useDocumentChunks: rs.fn(),
   useUpdateChunk: rs.fn(),
   usePreviewChunkDeletion: rs.fn(),
+  useReExtractChunk: rs.fn(),
 }));
 
 import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { useDocumentChunks, usePreviewChunkDeletion, useUpdateChunk } from "@/core/knowledge/hooks";
+import { useDocumentChunks, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
 import type { KnowledgeChunk, KnowledgeDocument } from "@/core/knowledge/types";
 
 const CHUNK: KnowledgeChunk = {
@@ -100,6 +101,7 @@ describe("ChunkDrawer", () => {
     } as never);
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
@@ -116,6 +118,7 @@ describe("ChunkDrawer", () => {
     } as never);
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
@@ -133,6 +136,7 @@ describe("ChunkDrawer", () => {
     } as never);
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 

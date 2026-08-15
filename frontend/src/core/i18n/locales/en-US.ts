@@ -427,6 +427,8 @@ export const enUS: Translations = {
       relationDeletions: "Relations to be deleted",
       deleteWarning: "Deletion is irreversible",
       confirmDelete: "Confirm Delete",
+      reExtract: "Re-extract",
+      reExtractCost: "Costs 1 LLM extraction call",
     },
     tabs: {
       documents: "Documents",

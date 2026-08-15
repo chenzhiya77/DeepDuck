@@ -199,6 +199,17 @@ export function usePreviewChunkDeletion(kbId: string) {
   });
 }
 
+/** Phase-3 Batch-1 P3: re-extract entities for a single chunk. */
+export function useReExtractChunk(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (chunkId: string) => api.reExtractChunk(kbId, chunkId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["knowledge-bases", kbId, "documents"] });
+    },
+  });
+}
+
 /**
  * P1 recall test (phase-2 batch-1): a mutation, not a query — each run hits
  * the live retrieval chain (embedding + rerank + entity-extraction LLM), so
