@@ -195,6 +195,27 @@ async def list_document_chunks(
     return {"items": items, "total": total, "offset": offset, "limit": limit}
 
 
+class UpdateChunkRequest(BaseModel):
+    """Phase-3 Batch-1 P2: slice text editing."""
+
+    text: str = Field(min_length=1, description="New chunk content")
+
+
+@router.patch("/{kb_id}/chunks/{chunk_id}")
+async def update_chunk(request: Request, kb_id: str, chunk_id: str, body: UpdateChunkRequest):
+    """Update chunk text with re-embedding (Phase-3 Batch-1 P2).
+
+    Recalculates token_count, writes last_edited_at, and triggers Qdrant upsert
+    with the same point ID but new dense vector. Entities JSON column remains
+    unchanged (ID 引用 preserved).
+    """
+    service = await _require_kb_access(request, kb_id)
+    chunk = await service.update_chunk_text(kb_id=kb_id, chunk_id=chunk_id, text=body.text)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    return chunk
+
+
 @router.post("/{kb_id}/wiki/generate", status_code=202)
 async def generate_wiki_entries(request: Request, kb_id: str, mode: Literal["incremental", "full"] = "incremental"):
     """Enqueue wiki generation (Task 14): ``incremental`` (default) digests

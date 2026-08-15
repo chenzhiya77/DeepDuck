@@ -81,6 +81,8 @@ class ChunkRow(Base):
     # Extract state machine for resume: pending → done / empty / failed.
     extract_status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     extract_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase-3 Batch-1 P2: manual edit timestamp (audit trail for slice editing)
+    last_edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class GraphEntityRow(Base):

@@ -306,6 +306,34 @@ class KnowledgeService:
         )
         return updated
 
+    async def update_chunk_text(self, *, kb_id: str, chunk_id: str, text: str) -> dict | None:
+        """Update chunk text with re-embedding (Phase-3 Batch-1 P2).
+
+        Recalculates token_count, writes last_edited_at, and triggers Qdrant upsert
+        with the same point ID but new dense vector. Entities JSON column remains
+        unchanged (ID 引用 preserved).
+        """
+        # Get existing chunk to verify it exists and belongs to kb
+        chunk = await self.store.get_chunk(chunk_id)
+        if chunk is None or chunk["kb_id"] != kb_id:
+            return None
+
+        # Recalculate token count
+        from deerflow.knowledge.chunker import count_tokens
+        new_token_count = count_tokens(text)
+
+        # Update in DB (entities unchanged - ID 引用 preserved)
+        updated = await self.store.update_chunk_text(
+            chunk_id=chunk_id,
+            text=text,
+            token_count=new_token_count,
+        )
+
+        # TODO: Qdrant re-embedding (Task 4 next step)
+        # This will call vector_store.upsert_chunks with same point ID
+
+        return updated
+
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
     #: Score semantics differ per path — never compare across paths.

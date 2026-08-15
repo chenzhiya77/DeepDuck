@@ -274,6 +274,12 @@ class KnowledgeStore:
             rows = {row.chunk_id: self._row_to_dict(row, datetime_keys=()) for row in result.scalars().all()}
         return [rows[chunk_id] for chunk_id in chunk_ids if chunk_id in rows]
 
+    async def get_chunk(self, chunk_id: str) -> dict[str, Any] | None:
+        """Fetch a single chunk row by id."""
+        async with self._sf() as session:
+            row = await session.get(ChunkRow, chunk_id)
+            return None if row is None else self._row_to_dict(row, datetime_keys=())
+
     async def rewrite_chunk_entities(self, chunk_ids: Sequence[str], name_map: Mapping[str, str]) -> int:
         """Rewrite the ``entities`` column on chunk rows through ``name_map``
         (spec 2026-08-10 D3 dual-write, business-DB half — the Qdrant payload
@@ -335,6 +341,23 @@ class KnowledgeStore:
             result = await session.execute(delete(ChunkRow).where(ChunkRow.kb_id == kb_id))
             await session.commit()
             return int(result.rowcount or 0)
+
+    async def update_chunk_text(self, chunk_id: str, text: str, token_count: int) -> dict[str, Any] | None:
+        """Update chunk text with recalculated token_count (Phase-3 Batch-1 P2).
+
+        Writes last_edited_at timestamp. Entities JSON column remains unchanged
+        (ID 引用 preserved for graph path).
+        """
+        async with self._sf() as session:
+            row = await session.get(ChunkRow, chunk_id)
+            if row is None:
+                return None
+            row.text = text
+            row.token_count = token_count
+            row.last_edited_at = datetime.now(UTC)  # P2: audit timestamp
+            await session.commit()
+            await session.refresh(row)
+            return self._row_to_dict(row, datetime_keys=("last_edited_at",))
 
 
 def get_knowledge_store() -> KnowledgeStore:
