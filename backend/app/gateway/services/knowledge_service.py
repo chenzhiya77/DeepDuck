@@ -557,6 +557,157 @@ class KnowledgeService:
 
         return await self.store.get_chunk(chunk_id)
 
+    # ── manual knowledge cards (Phase-3 Batch-1 P6, spec §8) ─────────────
+
+    @staticmethod
+    def _manual_card_embed_text(title: str, content: str) -> str:
+        """Embedding input for a card — same ``name\\ndescription`` shape as entities."""
+        return f"{title}\n{content}"
+
+    async def create_manual_card(
+        self,
+        *,
+        kb_id: str,
+        owner_id: str,
+        title: str,
+        content: str,
+        tags: list[str] | None = None,
+        include_in_wiki_search: bool = False,
+    ) -> dict[str, Any]:
+        """Create a manual knowledge card.
+
+        Cards with the wiki-search toggle on are embedded and upserted into
+        ``kb_manual_cards`` so the Task-8 wiki-path merge can retrieve them.
+        Ordering mirrors ``update_chunk_text``: embed BEFORE the DB write (an
+        embedder outage leaves no row); an upsert failure after the write
+        surfaces as 500 — visible, and re-saving the card converges.
+        """
+        embedding = None
+        if include_in_wiki_search:
+            from deerflow.knowledge.embedder import DashScopeEmbedder
+
+            embedding = (await DashScopeEmbedder().embed([self._manual_card_embed_text(title, content)]))[0]
+
+        card = await self.store.create_manual_card(
+            card_id=uuid.uuid4().hex,
+            kb_id=kb_id,
+            owner_id=owner_id,
+            title=title,
+            content=content,
+            tags=tags,
+            include_in_wiki_search=include_in_wiki_search,
+        )
+        if embedding is not None:
+            from deerflow.knowledge.vector_store import ManualCardUpsert
+
+            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card["id"], kb_id=kb_id, title=title, dense=embedding.dense)])
+        return card
+
+    async def list_manual_cards(
+        self,
+        *,
+        kb_id: str,
+        offset: int = 0,
+        limit: int = 50,
+        include_in_wiki_search: bool | None = None,
+    ) -> dict[str, Any]:
+        """Summary-only listing (wiki-list pattern): full content stays out of
+        the list payload — the panel fetches it via the detail endpoint."""
+        items = await self.store.list_manual_cards(kb_id, offset=offset, limit=limit, include_in_wiki_search=include_in_wiki_search)
+        total = await self.store.count_manual_cards(kb_id, include_in_wiki_search=include_in_wiki_search)
+        return {
+            "items": [
+                {
+                    "id": card["id"],
+                    "title": card["title"],
+                    "summary": card["content"][:120],
+                    "tags": card["tags"],
+                    "include_in_wiki_search": card["include_in_wiki_search"],
+                    "created_at": card["created_at"],
+                    "updated_at": card["updated_at"],
+                }
+                for card in items
+            ],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+
+    async def get_manual_card(self, *, kb_id: str, card_id: str) -> dict[str, Any] | None:
+        """Full card for the editor; None when missing or owned by another kb."""
+        card = await self.store.get_manual_card(card_id)
+        if card is None or card["kb_id"] != kb_id:
+            return None
+        return card
+
+    async def update_manual_card(
+        self,
+        *,
+        kb_id: str,
+        card_id: str,
+        title: str | None = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        include_in_wiki_search: bool | None = None,
+    ) -> dict[str, Any] | None:
+        """PATCH a card; the toggle drives the vector-point lifecycle.
+
+        - toggle on / title+content edit while on → re-embed + upsert
+          (same point id, overwrite in place);
+        - toggle off → the point goes (the card stays management-only);
+        - flag off and no flag change → zero vector work.
+        """
+        card = await self.store.get_manual_card(card_id)
+        if card is None or card["kb_id"] != kb_id:
+            return None
+
+        effective_flag = include_in_wiki_search if include_in_wiki_search is not None else card["include_in_wiki_search"]
+        effective_title = title if title is not None else card["title"]
+        effective_content = content if content is not None else card["content"]
+        turning_on = include_in_wiki_search is True and not card["include_in_wiki_search"]
+        turning_off = include_in_wiki_search is False and card["include_in_wiki_search"]
+        text_changed = (title is not None and title != card["title"]) or (content is not None and content != card["content"])
+
+        # Embed before the DB write (same ordering contract as chunk editing).
+        embedding = None
+        if effective_flag and (turning_on or text_changed):
+            from deerflow.knowledge.embedder import DashScopeEmbedder
+
+            embedding = (await DashScopeEmbedder().embed([self._manual_card_embed_text(effective_title, effective_content)]))[0]
+
+        updated = await self.store.update_manual_card(
+            card_id,
+            title=title,
+            content=content,
+            tags=tags,
+            include_in_wiki_search=include_in_wiki_search,
+        )
+        if updated is None:
+            return None
+
+        if embedding is not None:
+            from deerflow.knowledge.vector_store import ManualCardUpsert
+
+            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=effective_title, dense=embedding.dense)])
+        elif turning_off:
+            try:
+                await self.vector_store.delete_manual_cards([card_id])
+            except Exception:
+                logger.exception("qdrant delete_manual_cards failed for toggle-off of %s", card_id)
+        return updated
+
+    async def delete_manual_card(self, *, kb_id: str, card_id: str) -> bool:
+        """Delete one card: vector point first (failures logged + swallowed,
+        module cascade rule), the business row always goes."""
+        card = await self.store.get_manual_card(card_id)
+        if card is None or card["kb_id"] != kb_id:
+            return False
+        try:
+            await self.vector_store.delete_manual_cards([card_id])
+        except Exception:
+            logger.exception("qdrant delete_manual_cards failed for %s; continuing row cleanup", card_id)
+        return await self.store.delete_manual_card(card_id)
+
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
     #: Score semantics differ per path — never compare across paths.

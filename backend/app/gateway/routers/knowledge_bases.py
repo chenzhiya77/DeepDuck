@@ -330,6 +330,105 @@ async def update_wiki_entry(request: Request, kb_id: str, entry_id: str, body: U
     return entry
 
 
+class CreateManualCardRequest(BaseModel):
+    """Phase-3 Batch-1 P6: manual knowledge card creation (spec §8)."""
+
+    title: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    include_in_wiki_search: bool = False
+
+    @field_validator("title", "content")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+
+class UpdateManualCardRequest(BaseModel):
+    """PATCH semantics: absent fields stay unchanged."""
+
+    title: str | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    include_in_wiki_search: bool | None = None
+
+    @field_validator("title", "content")
+    @classmethod
+    def _not_blank(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("must not be blank")
+        return value
+
+
+@router.post("/{kb_id}/manual-knowledge", status_code=201)
+async def create_manual_card(request: Request, kb_id: str, body: CreateManualCardRequest):
+    """Create a manual knowledge card (Phase-3 Batch-1 P6).
+
+    Cards with ``include_in_wiki_search`` on are embedded into Qdrant for the
+    Task-8 wiki-path merge; off cards are management-only (spec §8).
+    """
+    service = await _require_kb_access(request, kb_id)
+    return await service.create_manual_card(
+        kb_id=kb_id,
+        owner_id=_user_id(request),
+        title=body.title,
+        content=body.content,
+        tags=body.tags,
+        include_in_wiki_search=body.include_in_wiki_search,
+    )
+
+
+@router.get("/{kb_id}/manual-knowledge")
+async def list_manual_cards(
+    request: Request,
+    kb_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    include_in_wiki_search: bool | None = Query(None),
+):
+    service = await _require_kb_access(request, kb_id)
+    return await service.list_manual_cards(kb_id=kb_id, offset=offset, limit=limit, include_in_wiki_search=include_in_wiki_search)
+
+
+@router.get("/{kb_id}/manual-knowledge/{card_id}")
+async def get_manual_card(request: Request, kb_id: str, card_id: str):
+    service = await _require_kb_access(request, kb_id)
+    card = await service.get_manual_card(kb_id=kb_id, card_id=card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Manual knowledge card not found")
+    return card
+
+
+@router.patch("/{kb_id}/manual-knowledge/{card_id}")
+async def update_manual_card(request: Request, kb_id: str, card_id: str, body: UpdateManualCardRequest):
+    service = await _require_kb_access(request, kb_id)
+    card = await service.update_manual_card(
+        kb_id=kb_id,
+        card_id=card_id,
+        title=body.title,
+        content=body.content,
+        tags=body.tags,
+        include_in_wiki_search=body.include_in_wiki_search,
+    )
+    if card is None:
+        raise HTTPException(status_code=404, detail="Manual knowledge card not found")
+    return card
+
+
+@router.delete("/{kb_id}/manual-knowledge/{card_id}", status_code=204)
+async def delete_manual_card(request: Request, kb_id: str, card_id: str):
+    service = await _require_kb_access(request, kb_id)
+    deleted = await service.delete_manual_card(kb_id=kb_id, card_id=card_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Manual knowledge card not found")
+    return Response(status_code=204)
+
+
 @router.post("/{kb_id}/recall-test")
 async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     """P1 召回测试：一个 query 并行扇出到 vector/graph/wiki 三路检索 impl。

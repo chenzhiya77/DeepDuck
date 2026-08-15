@@ -22,6 +22,7 @@ from deerflow.knowledge.models import (
     GraphEntityRow,
     GraphRelationRow,
     KnowledgeBaseRow,
+    ManualKnowledgeRow,
     WikiEntryRow,
 )
 from deerflow.utils.time import coerce_iso
@@ -107,7 +108,7 @@ class KnowledgeStore:
             row = await session.get(KnowledgeBaseRow, kb_id)
             if row is None:
                 return False
-            for model in (ChunkRow, DocumentRow, GraphEntityRow, GraphRelationRow, WikiEntryRow):
+            for model in (ChunkRow, DocumentRow, GraphEntityRow, GraphRelationRow, WikiEntryRow, ManualKnowledgeRow):
                 await session.execute(delete(model).where(model.kb_id == kb_id))
             await session.delete(row)
             await session.commit()
@@ -368,6 +369,104 @@ class KnowledgeStore:
             await session.commit()
             await session.refresh(row)
             return self._row_to_dict(row, datetime_keys=("last_edited_at",))
+
+    # ── manual_knowledge (Phase-3 Batch-1 P6) ────────────────────────────
+
+    async def create_manual_card(
+        self,
+        *,
+        card_id: str,
+        kb_id: str,
+        owner_id: str,
+        title: str,
+        content: str,
+        tags: list[str] | None = None,
+        include_in_wiki_search: bool = False,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        row = ManualKnowledgeRow(
+            id=card_id,
+            kb_id=kb_id,
+            owner_id=owner_id,
+            title=title,
+            content=content,
+            tags=list(tags or []),
+            include_in_wiki_search=include_in_wiki_search,
+            created_at=now,
+            updated_at=now,
+        )
+        async with self._sf() as session:
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._row_to_dict(row)
+
+    async def get_manual_card(self, card_id: str) -> dict[str, Any] | None:
+        async with self._sf() as session:
+            row = await session.get(ManualKnowledgeRow, card_id)
+            return None if row is None else self._row_to_dict(row)
+
+    async def list_manual_cards(
+        self,
+        kb_id: str,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        include_in_wiki_search: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        """Cards of one KB, newest first; ``include_in_wiki_search`` filters
+        by the retrieval-mix toggle when given (spec §8 开关口径)."""
+        stmt = select(ManualKnowledgeRow).where(ManualKnowledgeRow.kb_id == kb_id)
+        if include_in_wiki_search is not None:
+            stmt = stmt.where(ManualKnowledgeRow.include_in_wiki_search == include_in_wiki_search)
+        stmt = stmt.order_by(ManualKnowledgeRow.updated_at.desc(), ManualKnowledgeRow.id.desc()).offset(offset).limit(limit)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return [self._row_to_dict(row) for row in result.scalars().all()]
+
+    async def count_manual_cards(self, kb_id: str, *, include_in_wiki_search: bool | None = None) -> int:
+        from sqlalchemy import func
+
+        stmt = select(func.count()).select_from(ManualKnowledgeRow).where(ManualKnowledgeRow.kb_id == kb_id)
+        if include_in_wiki_search is not None:
+            stmt = stmt.where(ManualKnowledgeRow.include_in_wiki_search == include_in_wiki_search)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return int(result.scalar_one())
+
+    async def update_manual_card(
+        self,
+        card_id: str,
+        *,
+        title: str | None = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        include_in_wiki_search: bool | None = None,
+    ) -> dict[str, Any] | None:
+        """PATCH semantics: ``None`` leaves a field unchanged."""
+        async with self._sf() as session:
+            row = await session.get(ManualKnowledgeRow, card_id)
+            if row is None:
+                return None
+            if title is not None:
+                row.title = title
+            if content is not None:
+                row.content = content
+            if tags is not None:
+                row.tags = list(tags)
+            if include_in_wiki_search is not None:
+                row.include_in_wiki_search = include_in_wiki_search
+            row.updated_at = datetime.now(UTC)
+            await session.commit()
+            await session.refresh(row)
+            return self._row_to_dict(row)
+
+    async def delete_manual_card(self, card_id: str) -> bool:
+        """Idempotent: deleting an absent row returns False."""
+        async with self._sf() as session:
+            result = await session.execute(delete(ManualKnowledgeRow).where(ManualKnowledgeRow.id == card_id))
+            await session.commit()
+            return int(result.rowcount or 0) > 0
 
 
 def get_knowledge_store() -> KnowledgeStore:

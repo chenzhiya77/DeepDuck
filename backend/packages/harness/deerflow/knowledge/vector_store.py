@@ -1,6 +1,6 @@
 """Qdrant vector store for the RAG knowledge base.
 
-Three collections (spec §3.3–§3.5), all with named vectors ``dense``
+Four collections (spec §3.3–§3.5 + Phase-3 P6), all with named vectors ``dense``
 (1024-dim COSINE) + ``sparse`` (Qdrant sparse vectors always score by dot
 product, giving the DOT path):
 
@@ -10,6 +10,9 @@ product, giving the DOT path):
   text — text lives only in the business DB ``chunks`` table.
 - ``kb_entities``     — entity name+description dense vectors (graph path).
 - ``kb_wiki_entries`` — wiki entry vectors (payload: entry pointer + title).
+- ``kb_manual_cards`` — manual knowledge card vectors (Phase-3 P6; payload:
+  card pointer + title). Only cards with ``include_in_wiki_search`` on hold a
+  point here (spec §8 可选混合).
 
 The async client keeps the offline indexing worker and the online retrieval
 tools off the event loop's blocking path.
@@ -90,8 +93,24 @@ class WikiEntryUpsert:
     dense: list[float]
 
 
+@dataclass(slots=True)
+class ManualCardUpsert:
+    """One manual card's dense vector + pointer payload for ``kb_manual_cards``
+    (Phase-3 Batch-1 P6).
+
+    Same pointer-not-text rule as wiki entries: the full card lives in the
+    business DB ``manual_knowledge`` table; only cards whose
+    ``include_in_wiki_search`` toggle is on get a point (spec §8 可选混合).
+    """
+
+    card_id: str
+    kb_id: str
+    title: str
+    dense: list[float]
+
+
 class KnowledgeVectorStore:
-    """Qdrant facade for the three knowledge collections."""
+    """Qdrant facade for the knowledge collections."""
 
     def __init__(
         self,
@@ -122,8 +141,12 @@ class KnowledgeVectorStore:
         return f"{self._prefix}_wiki_entries"
 
     @property
-    def collection_names(self) -> tuple[str, str, str]:
-        return (self.chunks_collection, self.entities_collection, self.wiki_entries_collection)
+    def manual_cards_collection(self) -> str:
+        return f"{self._prefix}_manual_cards"
+
+    @property
+    def collection_names(self) -> tuple[str, ...]:
+        return (self.chunks_collection, self.entities_collection, self.wiki_entries_collection, self.manual_cards_collection)
 
     @staticmethod
     def _point_id(chunk_id: str) -> str:
@@ -140,8 +163,13 @@ class KnowledgeVectorStore:
         """Deterministic UUID per wiki entry so regenerations overwrite in place."""
         return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-wiki:{entry_id}").hex
 
+    @staticmethod
+    def _manual_card_point_id(card_id: str) -> str:
+        """Deterministic UUID per manual card so re-embeds overwrite in place."""
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-manual-card:{card_id}").hex
+
     async def init_collections(self) -> None:
-        """Create the three collections + payload indexes, idempotently."""
+        """Create the collections + payload indexes, idempotently."""
         for name in self.collection_names:
             if await self._client.collection_exists(name):
                 continue
@@ -155,6 +183,7 @@ class KnowledgeVectorStore:
             await self._client.create_payload_index(self.chunks_collection, field_name, PayloadSchemaType.KEYWORD)
         await self._client.create_payload_index(self.entities_collection, "kb_id", PayloadSchemaType.KEYWORD)
         await self._client.create_payload_index(self.wiki_entries_collection, "kb_id", PayloadSchemaType.KEYWORD)
+        await self._client.create_payload_index(self.manual_cards_collection, "kb_id", PayloadSchemaType.KEYWORD)
 
     async def upsert_chunks(self, chunks: Sequence[ChunkUpsert]) -> int:
         points = [
@@ -365,6 +394,30 @@ class KnowledgeVectorStore:
             points_selector=FilterSelector(filter=Filter(must=[FieldCondition(key="chunk_id", match=MatchAny(any=list(chunk_ids)))])),
         )
 
+    async def upsert_manual_cards(self, cards: Sequence[ManualCardUpsert]) -> int:
+        """Upsert manual-card dense vectors into ``kb_manual_cards`` (pointer payload only)."""
+        points = [
+            PointStruct(
+                id=self._manual_card_point_id(card.card_id),
+                vector={"dense": card.dense},
+                payload={"card_id": card.card_id, "kb_id": card.kb_id, "title": card.title},
+            )
+            for card in cards
+        ]
+        if not points:
+            return 0
+        await self._client.upsert(collection_name=self.manual_cards_collection, points=points)
+        return len(points)
+
+    async def delete_manual_cards(self, card_ids: Sequence[str]) -> None:
+        """Delete manual-card points (toggle-off / card delete). Idempotent."""
+        if not card_ids:
+            return
+        await self._client.delete(
+            collection_name=self.manual_cards_collection,
+            points_selector=[self._manual_card_point_id(str(card_id)) for card_id in card_ids],
+        )
+
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""
         await self._client.delete(
@@ -373,7 +426,7 @@ class KnowledgeVectorStore:
         )
 
     async def delete_by_kb(self, kb_id: str) -> None:
-        """Wipe every point of a KB across all three collections (spec §3.7)."""
+        """Wipe every point of a KB across all collections (spec §3.7)."""
         kb_filter = Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
         for name in self.collection_names:
             await self._client.delete(collection_name=name, points_selector=FilterSelector(filter=kb_filter))

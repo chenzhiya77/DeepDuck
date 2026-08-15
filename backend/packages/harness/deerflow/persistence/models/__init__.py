@@ -20,6 +20,7 @@ from deerflow.knowledge.models import (
     GraphEntityRow,
     GraphRelationRow,
     KnowledgeBaseRow,
+    ManualKnowledgeRow,
     WikiEntryRow,
 )
 from deerflow.persistence.agents.model import AgentRow
@@ -50,6 +51,7 @@ __all__ = [
     "GraphEntityRow",
     "GraphRelationRow",
     "KnowledgeBaseRow",
+    "ManualKnowledgeRow",
     "RunEventRow",
     "RunRow",
     "ScheduledTaskRow",

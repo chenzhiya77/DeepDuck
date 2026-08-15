@@ -11,6 +11,8 @@ Six tables (spec §3.2–§3.5):
 - ``graph_entities`` / ``graph_relations`` — the knowledge-graph path, with
   ``source_chunk_ids`` linking back to chunks.
 - ``wiki_entries`` — generated wiki entries (dirty/ready incremental refresh).
+- ``manual_knowledge`` — user-managed knowledge cards (Phase-3 P6): never
+  auto-regenerated, opt-in wiki-search mixing via ``include_in_wiki_search``.
 
 Registered with Alembic via ``deerflow.persistence.models``.
 """
@@ -19,7 +21,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from deerflow.persistence.base import Base
@@ -124,6 +126,32 @@ class WikiEntryRow(Base):
     # ready / dirty (affected by newly indexed docs → regenerate, spec §3.5).
     status: Mapped[str] = mapped_column(String(16), default="ready", index=True)
     source_chunk_ids: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class ManualKnowledgeRow(Base):
+    """User-managed knowledge card (Phase-3 Batch-1 P6, spec §8).
+
+    Lives outside the AI wiki lifecycle: never auto-regenerated, never
+    disqualified. ``include_in_wiki_search`` (default off) opts the card into
+    the wiki retrieval path's shared top_k pool — toggled-on cards hold a
+    dense vector in Qdrant ``kb_manual_cards``; off cards are management-only.
+    """
+
+    __tablename__ = "manual_knowledge"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kb_id: Mapped[str] = mapped_column(String(64), index=True)
+    owner_id: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(512))
+    content: Mapped[str] = mapped_column(Text)
+    include_in_wiki_search: Mapped[bool] = mapped_column(Boolean, default=False)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
