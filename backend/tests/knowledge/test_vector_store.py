@@ -15,7 +15,7 @@ import pytest_asyncio
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PayloadSchemaType, SparseVector
 
-from deerflow.knowledge.vector_store import ChunkUpsert, EntityUpsert, KnowledgeVectorStore
+from deerflow.knowledge.vector_store import ChunkUpsert, EntityUpsert, KnowledgeVectorStore, ManualCardUpsert
 
 from .conftest import QDRANT_TEST_URL, requires_qdrant
 
@@ -215,3 +215,26 @@ async def test_delete_entities(vector_store):
     await store.delete_entities("kb-1", ["不存在"])
     await store.delete_entities("kb-1", [])
     assert (await client.count(store.entities_collection, exact=True)).count == 1
+
+
+async def test_query_manual_cards_filters_by_kb_and_ranks_by_score(vector_store):
+    """``query_manual_cards`` (Phase-3 P6): dense top-k over kb_manual_cards,
+    scoped to one kb, carrying the card pointer payload."""
+    store, client = vector_store
+    await store.upsert_manual_cards(
+        [
+            ManualCardUpsert(card_id="card-near", kb_id="kb-1", title="近", dense=[0.9] + [0.0] * 1023),
+            ManualCardUpsert(card_id="card-far", kb_id="kb-1", title="远", dense=[0.1] + [0.0] * 1023),
+            ManualCardUpsert(card_id="card-other-kb", kb_id="kb-2", title="别库", dense=[1.0] + [0.0] * 1023),
+        ]
+    )
+
+    points = await store.query_manual_cards(dense=[1.0] + [0.0] * 1023, kb_id="kb-1", top_k=5)
+
+    assert [point.payload["card_id"] for point in points] == ["card-near", "card-far"]
+    assert all(point.payload["kb_id"] == "kb-1" for point in points)
+    assert points[0].score >= points[1].score
+
+    # top_k caps the candidate count fed into the shared pool.
+    capped = await store.query_manual_cards(dense=[1.0] + [0.0] * 1023, kb_id="kb-1", top_k=1)
+    assert [point.payload["card_id"] for point in capped] == ["card-near"]

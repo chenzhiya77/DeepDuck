@@ -335,6 +335,22 @@ class KnowledgeVectorStore:
         )
         return response.points
 
+    async def query_manual_cards(self, *, dense: list[float], kb_id: str, top_k: int = 3) -> list[ScoredPoint]:
+        """Dense top-k over ``kb_manual_cards`` (Phase-3 P6, spec §8 可选混合).
+
+        Only toggle-on cards hold a point here, so every hit is a shared-pool
+        candidate for the wiki path; payload carries the ``card_id`` pointer.
+        """
+        response = await self._client.query_points(
+            collection_name=self.manual_cards_collection,
+            query=dense,
+            using="dense",
+            query_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+            limit=top_k,
+            with_payload=True,
+        )
+        return response.points
+
     async def get_chunk_vectors(self, chunk_ids: Sequence[str]) -> dict[str, list[float]]:
         """Retrieve dense chunk vectors by chunk ids (deterministic point ids).
 
