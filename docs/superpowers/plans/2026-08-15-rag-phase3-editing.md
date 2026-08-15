@@ -174,19 +174,27 @@
 - [x] 回归：knowledge 域 305 passed + 2 skipped；前端 1213 passed；`pnpm check` 净；ruff check/format 净（0014 迁移测试失败为 HEAD 基线已有， stash 对比验证与本改动无关）。
 - [x] Commits: `8b25db42` (backend CRUD + migration 0016 + embedding 写路径） + `9233a997` (frontend panel)
 
-## Task 8: P6 人工知识卡片系统——Wiki 路混排检索实现 ✅ 计划中（待实施）
+## Task 8: P6 人工知识卡片系统——Wiki 路混排检索实现 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Modify: `backend/packages/harness/deerflow/tools/builtins/wiki_search_tool.py`
-- Create: `backend/packages/harness/deerflow/knowledge/vector_store.py` method `query_manual_cards`
-- Modify: `frontend/src/components/chat/CitationHoverCard.tsx` (source_type badge)
-- Modify: `frontend/src/core/knowledge/types.ts` (add `source_type: "manual"`)
+- Modify: `backend/packages/harness/deerflow/tools/builtins/wiki_search_tool.py` ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/vector_store.py`（`query_manual_cards`，Plan 写「Create」实为向既有文件追加方法）✅
+- Modify: `frontend/src/components/workspace/knowledge/citation-mark.tsx`（source_type 徽章——Plan 假设的 `CitationHoverCard.tsx` 实际为本文件的 `CitationPreviewCard`）✅
+- Modify: `frontend/src/components/workspace/knowledge/citation-mark.tsx` 同源：`kb-citation-sources.tsx`（分组/计数/徽章/点击原地展开）✅
+- Modify: `frontend/src/core/knowledge/types.ts` (`source_type` 增加 `"manual"`) ✅
+- Modify: `frontend/src/core/knowledge/citations.ts`（payload 自带 source_type 优先于 tool 名推导）✅
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts`（`sourceTypeManual`/`manualSources`）✅
+- Create: `backend/tests/knowledge/tools/test_wiki_search_manual_merge.py`（8 条单元用例）✅
+- Modify: `backend/tests/knowledge/tools/test_wiki_search.py`（+1 集成）/ `test_vector_store.py`（+1 集成）✅
+- Modify: `frontend/tests/unit/knowledge/citations.test.ts`（+1）/ `citation-ux.dom.test.tsx`（+4）✅
 
-- [ ] RED test: manual cards with include flag appear in top_k ranked by score.
-- [ ] Implement: `wiki_search_impl` calls `query_manual_cards(kb_id, include_in_wiki_search=True, limit=top_k - len(ai_hits))`; merge arrays; sort by score desc; attach `source_type` field.
-- [ ] Test: query matching both AI and manual → mixed results returned; manual entries show "My Card" badge in hover card.
-- [ ] GREEN; revert proof; restore.
-- [ ] Commit: `feat(rag): integrate manual cards into wiki retrieval path with shared top_k pool`.
+- [x] RED test: manual cards with include flag appear in top_k ranked by score.（8 failed 捕获：7 单元 + 1 集成）
+- [x] Implement: `_wiki_search_impl` 双路查询（各取 top_k 候选）→ 合并按 score 降序（稳定排序，同分 wiki 优先）→ 水合后截断 top_k；`source_type: "wiki" | "manual"` 逐条标记；引用编号跨来源连续。
+  - 实现口径与 Plan 微调：Plan 写「`limit=top_k - len(ai_hits)`」实为两路各取 top_k 候选再合并截断（纯质量竞争，spec §8 拍板口径）；水合时才跳过陈旧点（开关已关/卡片已删但向量残留），跳过不占名额。
+- [x] Test: query matching both AI and manual → mixed results returned; manual entries show "My Card" badge in hover card.（单元 + Qdrant 集成 + 前端 DOM 全绿）
+- [x] GREEN; revert proof; restore.（stash 后 8 failed → 恢复 24 passed）
+- [x] 回归基线：后端 knowledge 域 315 passed（较 Task 7 +10）；前端 1218 passed（+5）；ruff / pnpm check 双净。
+- [x] Commits: `ec9239e6` (backend 混排检索 + query_manual_cards) + `c859ebc0` (frontend source_type 徽章链)
 
 ## Task 9: P6 人工知识卡片系统——前端展示与引用标识完整流程 ✅ 计划中（待实施）
 
