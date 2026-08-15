@@ -38,6 +38,15 @@ from deerflow.utils.file_io import run_file_io
 logger = logging.getLogger(__name__)
 
 
+class DocumentProcessingError(RuntimeError):
+    """Raised when a per-chunk operation collides with an in-flight document pipeline (Phase-3 Batch-1 P3)."""
+
+    def __init__(self, doc_id: str, status: str) -> None:
+        super().__init__(f"Document {doc_id} is being processed (status={status})")
+        self.doc_id = doc_id
+        self.status = status
+
+
 class KnowledgeService:
     """Coordinates stores + worker for the knowledge-base endpoints."""
 
@@ -320,6 +329,7 @@ class KnowledgeService:
 
         # Recalculate token count
         from deerflow.knowledge.chunker import count_tokens
+
         new_token_count = count_tokens(text)
 
         # Update in DB (entities unchanged - ID 引用 preserved)
@@ -352,6 +362,24 @@ class KnowledgeService:
         # Call graph store's pure calculation
         impact = await self.graph_store.calculate_deletion_impact(kb_id, chunk_ids)
         return impact
+
+    async def re_extract_chunk(self, *, kb_id: str, chunk_id: str) -> dict[str, Any] | None:
+        """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3).
+
+        Concurrency guard (spec §5 A3): reject when the owning document's
+        pipeline is mid-flight — only terminal states (ready/failed) may trigger
+        a re-extraction. The actual LLM extraction is a separate wiring step;
+        this method validates the call and reports 501 until that lands.
+        """
+        chunk = await self.store.get_chunk(chunk_id)
+        if chunk is None or chunk["kb_id"] != kb_id:
+            return None
+
+        document = await self.store.get_document(chunk["doc_id"])
+        if document is not None and document["status"] not in ("ready", "failed"):
+            raise DocumentProcessingError(chunk["doc_id"], document["status"])
+
+        raise NotImplementedError("per-chunk re-extraction is not implemented yet (requires LLM wiring)")
 
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 

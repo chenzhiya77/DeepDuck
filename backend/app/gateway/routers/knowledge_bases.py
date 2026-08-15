@@ -14,7 +14,7 @@ from typing import Literal
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
-from app.gateway.services.knowledge_service import KnowledgeService
+from app.gateway.services.knowledge_service import DocumentProcessingError, KnowledgeService
 from deerflow.knowledge.access import can_access
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
 
@@ -234,6 +234,26 @@ async def preview_chunk_deletion(request: Request, kb_id: str, body: DeletePrevi
     if impact is None:
         raise HTTPException(status_code=404, detail="One or more chunks not found")
     return impact
+
+
+@router.post("/{kb_id}/chunks/{chunk_id}/re-extract")
+async def re_extract_chunk(request: Request, kb_id: str, chunk_id: str):
+    """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3).
+
+    Concurrency guard: only terminal document states (ready/failed) may trigger
+    re-extraction — an in-flight pipeline returns 409. Extraction itself requires
+    LLM wiring and currently reports 501.
+    """
+    service = await _require_kb_access(request, kb_id)
+    try:
+        result = await service.re_extract_chunk(kb_id=kb_id, chunk_id=chunk_id)
+    except DocumentProcessingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    return result
 
 
 @router.post("/{kb_id}/wiki/generate", status_code=202)
