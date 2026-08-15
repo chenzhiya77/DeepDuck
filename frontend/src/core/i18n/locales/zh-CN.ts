@@ -487,6 +487,7 @@ export const zhCN: Translations = {
       saveFailed: "保存卡片失败",
       deleteFailed: "删除卡片失败",
       updatedAt: "更新于",
+      drawerNotFound: "卡片不存在或已删除",
     },
     recallTest: {
       queryPlaceholder: "输入测试问题…",

@@ -503,6 +503,7 @@ export const enUS: Translations = {
       saveFailed: "Failed to save the card",
       deleteFailed: "Failed to delete the card",
       updatedAt: "Updated",
+      drawerNotFound: "Card missing or deleted",
     },
     recallTest: {
       queryPlaceholder: "Enter a test query…",

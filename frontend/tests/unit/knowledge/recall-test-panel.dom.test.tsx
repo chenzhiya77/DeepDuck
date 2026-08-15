@@ -162,6 +162,36 @@ describe("RecallTestPanel results", () => {
     expect(handlers.onOpenWikiEntry).toHaveBeenCalledWith("e1");
   });
 
+  it("badges manual-card hits and opens the CARD drawer, never the wiki drawer (P6 fix)", () => {
+    // 混排命中（spec §8）：卡片 id 走 wiki 条目详情接口必然 404 —— 必须分流。
+    const mixed: RecallTestResponse = {
+      ...RESULT,
+      paths: {
+        ...RESULT.paths,
+        wiki: {
+          hits: [
+            { entry_id: "e1", title: "DeerFlow", summary: "DeerFlow 是超级智能体系统……", score: 0.91, rank: 1 },
+            { entry_id: "card-1", title: "发布禁令", summary: "周五下午不发布……", score: 0.85, rank: 2, source_type: "manual" },
+          ],
+          message: "命中 1 篇百科条目、1 张人工知识卡片。",
+        },
+      },
+    };
+    mockRecallTest({ data: mixed });
+    const onOpenManualCard = rs.fn();
+    const handlers = renderPanel({ onOpenManualCard });
+
+    const cardHit = screen.getByTestId("recall-wiki-hit-card-1");
+    expect(cardHit.textContent).toContain("我的卡片");
+    expect(cardHit.textContent).toContain("发布禁令");
+    // wiki 命中不带卡片徽章
+    expect(screen.getByTestId("recall-wiki-hit-e1").textContent).not.toContain("我的卡片");
+
+    fireEvent.click(cardHit);
+    expect(onOpenManualCard).toHaveBeenCalledWith("card-1");
+    expect(handlers.onOpenWikiEntry).not.toHaveBeenCalled();
+  });
+
   it("renders a single-path failure note without breaking other paths", () => {
     const degraded: RecallTestResponse = {
       ...RESULT,

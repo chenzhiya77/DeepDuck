@@ -431,6 +431,8 @@ export interface Translations {
       saveFailed: string;
       deleteFailed: string;
       updatedAt: string;
+      /** Card detail drawer (fix: recall-test card hits open this, not the wiki drawer). */
+      drawerNotFound: string;
     };
     recallTest: {
       queryPlaceholder: string;

@@ -11,6 +11,7 @@ import {
   type DuplicateAction,
 } from "@/components/workspace/knowledge/duplicate-upload-dialog";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
+import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-drawer";
 import { ManualCardPanel } from "@/components/workspace/knowledge/manual-card-panel";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
@@ -65,6 +66,9 @@ export default function KnowledgePage() {
   // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
   const [activeTab, setActiveTab] = useState<KnowledgeMiddleTab>("documents");
   const [drawerEntryId, setDrawerEntryId] = useState<string | null>(null);
+  // Phase-3 P6 混排修复：检索测试 wiki 路命中人工卡片时开卡片抽屉（卡片
+  // id 走 wiki 详情接口必然 404）。
+  const [drawerCardId, setDrawerCardId] = useState<string | null>(null);
   // Wiki 更新状态可见 (2026-08-14): a manual trigger keeps the entries query
   // enabled (hence polling) even off the wiki tab — the trigger menu lives in
   // the library header, visible from every tab. Cleared on the observed
@@ -346,6 +350,7 @@ export default function KnowledgePage() {
                 <RecallTestPanel
                   kbId={selectedKb.id}
                   onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
+                  onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
                 />
               }
             />
@@ -387,6 +392,19 @@ export default function KnowledgePage() {
             }
           }}
           onRevealInTab={revealWikiEntry}
+        />
+      )}
+
+      {drawerCardId && selectedKbId && (
+        <ManualCardDrawer
+          cardId={drawerCardId}
+          kbId={selectedKbId}
+          open={drawerCardId !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDrawerCardId(null);
+            }
+          }}
         />
       )}
 

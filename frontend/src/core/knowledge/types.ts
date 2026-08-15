@@ -242,6 +242,12 @@ export interface RecallWikiHit {
   summary: string;
   score: number | null;
   rank: number;
+  /**
+   * Phase-3 P6（spec §8 混排）：wiki 路命中可能是人工卡片。前端据此分流
+   * 「条目抽屉 / 卡片抽屉」——卡片 id 走 wiki 详情接口必然 404。缺省回退
+   * "wiki"（旧响应形态）。
+   */
+  source_type?: "wiki" | "manual";
 }
 
 export type RecallPathName = "vector" | "graph" | "wiki";

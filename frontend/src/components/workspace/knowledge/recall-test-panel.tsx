@@ -93,9 +93,12 @@ function ChunkHitRow({
 export function RecallTestPanel({
   kbId,
   onOpenWikiEntry,
+  onOpenManualCard,
 }: {
   kbId: string;
   onOpenWikiEntry: (entryId: string) => void;
+  /** Phase-3 P6（spec §8 混排）：manual 命中开卡片抽屉 —— 卡片 id 走 wiki 详情接口必然 404。 */
+  onOpenManualCard?: (cardId: string) => void;
 }) {
   const { t } = useI18n();
   const tr = t.knowledge.recallTest;
@@ -244,10 +247,17 @@ export function RecallTestPanel({
                   data-testid={`recall-wiki-hit-${hit.entry_id}`}
                   key={hit.entry_id}
                   type="button"
-                  onClick={() => onOpenWikiEntry(hit.entry_id)}
+                  onClick={() =>
+                    hit.source_type === "manual" ? onOpenManualCard?.(hit.entry_id) : onOpenWikiEntry(hit.entry_id)
+                  }
                 >
                   <span className="flex items-center gap-2 text-sm">
                     <span className="text-muted-foreground text-xs">#{hit.rank}</span>
+                    {hit.source_type === "manual" && (
+                      <Badge className="shrink-0 text-[10px]" variant="secondary">
+                        {t.knowledge.chat.sourceTypeManual}
+                      </Badge>
+                    )}
                     <span className="min-w-0 truncate font-medium">{hit.title}</span>
                     <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">{formatScore(hit.score)}</span>
                   </span>
