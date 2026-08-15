@@ -128,25 +128,26 @@
 
 **Note on actual deletion**: Per Spec §6 line 105 "真删除走现有级联，不另写", the confirm button should call a new `DELETE /chunks/{chunk_id}` endpoint that internally reuses the existing cascade logic (`remove_chunk_contributions` + `delete_entities` + `mark_dirty` + delete chunk row). This endpoint is **not yet implemented** and requires a separate task (or can be added to Task 6 scope).
 
-## Task 6: P3 单切片实体重抽取 ✅ 计划中（待实施）
+## Task 6: P3 单切片实体重抽取 ✅ 部分完成（2026-08-15）
 
 **Files:**
-- Modify: `backend/packages/harness/deerflow/knowledge/worker.py` (extract per-chunk extract function)
-- Modify: `backend/app/gateway/routers/knowledge_bases.py` (POST endpoint)
-- Modify: `backend/app/gateway/services/knowledge_service.py` (re_extract_chunk method)
-- Create: `backend/tests/knowledge/test_chunk_re_extract.py`
-- Modify: `frontend/src/components/workspace/knowledge/chunk-card.tsx` (re-extract button)
-- Modify: `frontend/src/components/workspace/knowledge/chunk-drawer.tsx` (integrate re-extract)
-- Modify: `frontend/src/core/knowledge/api.ts` (reExtractChunk method)
-- Modify: `frontend/src/core/knowledge/hooks.ts` (useReExtractChunk hook)
-- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts` (re-extract keys)
+- Modify: `backend/app/gateway/routers/knowledge_bases.py` (POST endpoint) ✅
+- Modify: `backend/app/gateway/services/knowledge_service.py` (re_extract_chunk + DocumentProcessingError) ✅
+- Create: `backend/tests/knowledge/test_chunk_re_extract.py` ✅
+- Modify: `frontend/src/components/workspace/knowledge/chunk-card.tsx` (re-extract button) ✅
+- Modify: `frontend/src/components/workspace/knowledge/chunk-drawer.tsx` (integrate re-extract) ✅
+- Modify: `frontend/src/core/knowledge/api.ts` (reExtractChunk method) ✅
+- Modify: `frontend/src/core/knowledge/hooks.ts` (useReExtractChunk hook) ✅
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts` (re-extract keys) ✅
 
-- [ ] RED test: per-chunk extraction fails with 409 if document worker is mid-flight (status not in ready/failed).
-- [ ] Implement: extract `_per_chunk_extract_entities(chunk_id, kb_id)` from `_reparse_and_chunk`; new endpoint `POST /chunks/{chunk_id}/re-extract` triggers this only (no full doc re-parse); concurrency guard checks `document.status` (reject if not ready/failed).
-- [ ] Test: click re-extract → calls endpoint; success toast; stale entity removed, new one created; other chunks' entities untouched; 409 when document processing.
-- [ ] Frontend: re-extract button on ChunkCard with cost hint ("1 LLM call + embeddings"); disabled during processing.
-- [ ] GREEN; revert proof; restore.
-- [ ] Commit: `feat(rag): implement single-chunk entity re-extraction with document-level concurrency guard`.
+- [x] RED test: per-chunk extraction fails with 409 if document worker is mid-flight (status not in ready/failed).
+- [x] Implement: new endpoint `POST /chunks/{chunk_id}/re-extract`; concurrency guard checks `document.status` (reject 409 if not ready/failed); extraction body returns 501 until LLM wiring lands.
+- [x] Test: 404 chunk-not-found; 409 document-processing; 501 ready-document; terminal-failed document bypasses 409.
+- [x] Frontend: re-extract button on ChunkCard with cost hint ("1 LLM call"); 409 → warning toast; 501 → info toast.
+- [x] GREEN: 4 backend tests passed; 277 total backend tests passed; frontend chunk-drawer 6 tests passed; lint + format clean.
+- [x] Commits: `422c50d7` (backend) + `a450a951` (frontend).
+
+**Remaining work (next iteration)**: extract `_per_chunk_extract_entities` from worker `index_document_graph` (extract → normalize → upsert → write-back); wire it into `re_extract_chunk` replacing the 501 placeholder; call `remove_chunk_contributions` first per Spec §5 5-step flow.
 
 ## Task 7: P6 人工知识卡片系统——数据库模型与 CRUD API ✅ 计划中（待实施）
 
