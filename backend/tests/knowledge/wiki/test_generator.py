@@ -252,6 +252,39 @@ async def test_regeneration_clears_dirty_and_only_touches_dirty(wiki_env):
 
 
 @pytest.mark.asyncio
+async def test_generate_wiki_records_last_run_status(session_factory):
+    """P1 失败可见性 (2026-08-14): the terminal status of the most recent run
+    is observable per KB — ``None`` before the first run, ``succeeded`` after
+    a clean run, ``failed`` after a crash — so the UI never toasts 已更新
+    after a failed run. Uses a dedicated kb id: the registry is module-level.
+    """
+    from deerflow.knowledge.graph.store import GraphStore
+    from deerflow.knowledge.store import KnowledgeStore
+    from deerflow.knowledge.wiki.generator import wiki_last_run_status
+
+    store = KnowledgeStore(session_factory)
+    graph_store = GraphStore(session_factory)
+    kb_id = "kb-lastrun"
+    await store.create_kb(kb_id=kb_id, owner_id="user-1", name="lastrun")
+    wiki_store = WikiStore(session_factory)
+
+    assert wiki_last_run_status(kb_id) is None
+
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
+    assert wiki_last_run_status(kb_id) == "succeeded"
+
+    class _BoomLLM:
+        async def ainvoke(self, messages):
+            raise RuntimeError("boom")
+
+    # An eligible entity forces an LLM call, which now crashes mid-run.
+    await _add_entity(graph_store, kb_id, "DeerFlow", ["c1", "c2"])
+    with pytest.raises(RuntimeError):
+        await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_BoomLLM())
+    assert wiki_last_run_status(kb_id) == "failed"
+
+
+@pytest.mark.asyncio
 async def test_empty_graph_generates_nothing(session_factory):
     from deerflow.knowledge.graph.store import GraphStore
     from deerflow.knowledge.store import KnowledgeStore
@@ -294,6 +327,75 @@ async def test_only_dirty_backfills_newly_eligible_entity(wiki_db_env):
     entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
     assert set(entries) == eligible == {"DeerFlow", "Gateway"}
     assert all(entry["status"] == "ready" for entry in entries.values())
+
+
+@pytest.mark.asyncio
+async def test_only_dirty_prunes_disqualified_or_vanished_dirty_entries(wiki_db_env):
+    """失格即删闭环 (2026-08-14 拍板, 方案 A): a dirty entry whose entity
+    vanished from the graph OR fell below the ≥2-source eligibility bar is
+    DELETED by the incremental run — never silently skipped, otherwise the
+    dirty badge could never drain (live issue: 切片减少 → 待更新永远挂着).
+    Ready entries of ineligible entities stay untouched (see the retained
+    test below)."""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
+    assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow"}
+
+    # 飞书: no graph entity at all (vanished); Gateway: entity present but
+    # freq 1 (disqualified). DeerFlow: eligible dirty → regenerated, not pruned.
+    await wiki_store.upsert_entry(kb_id, title="飞书", content="旧条目", source_chunk_ids=["doc-w-c0"], status="dirty")
+    await wiki_store.upsert_entry(kb_id, title="Gateway", content="旧条目", source_chunk_ids=["doc-w-c0"], status="dirty")
+    await mark_dirty_for_entities(wiki_store, kb_id, ["DeerFlow"])
+
+    llm = _WikiLLM()
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
+
+    assert stats.pruned == 2
+    assert stats.generated == 1
+    assert stats.titles == ["DeerFlow"]
+    entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
+    assert set(entries) == {"DeerFlow"}
+    assert entries["DeerFlow"]["status"] == "ready"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_only_dirty_prune_removes_vector_point(wiki_env):
+    """The prune must also drop the ``kb_wiki_entries`` vector point —
+    otherwise wiki_search keeps citing an entry whose business row is gone
+    (幽灵引用). Covers the exact user path: 切片减少 → dirty → 更新百科 →
+    条目与向量一起消失."""
+    store, graph_store, vector_store, kb_id = (
+        wiki_env["store"],
+        wiki_env["graph_store"],
+        wiki_env["vector_store"],
+        wiki_env["kb_id"],
+    )
+    wiki_store = WikiStore(store._sf)
+    await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder())
+
+    def wiki_points():
+        return wiki_env["client"].scroll(
+            vector_store.wiki_entries_collection,
+            scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+            limit=10,
+        )
+
+    points, _ = await wiki_points()
+    assert len(points) == 1  # DeerFlow only
+
+    # DeerFlow loses its second chunk contribution → freq 1 → disqualified.
+    await graph_store.remove_chunk_contributions(kb_id, ["doc-w-c1"])
+    await mark_dirty_for_entities(wiki_store, kb_id, ["DeerFlow"])
+
+    stats = await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder(), only_dirty=True)
+
+    assert stats.pruned == 1
+    assert stats.generated == 0
+    assert await wiki_store.list_entries(kb_id) == []
+    points, _ = await wiki_points()
+    assert len(points) == 0
 
 
 @pytest.mark.asyncio

@@ -66,6 +66,18 @@ def wiki_generation_in_progress(kb_id: str) -> bool:
     return _IN_FLIGHT.get(kb_id, 0) > 0
 
 
+#: Terminal status of the most recent ``generate_wiki`` run per KB
+#: (single-process, same scope as ``_IN_FLIGHT``). Feeds the entries
+#: payload's ``last_run`` so a crashed run never masquerades as 已更新
+#: (P1 失败可见性, 2026-08-14).
+_LAST_RUN: dict[str, str] = {}
+
+
+def wiki_last_run_status(kb_id: str) -> str | None:
+    """``"succeeded"`` / ``"failed"`` / ``None`` (never ran in this process)."""
+    return _LAST_RUN.get(kb_id)
+
+
 WIKI_SYSTEM_PROMPT = """你是知识库百科撰写者。根据给定的实体信息与来源切片，撰写一篇简明的中文百科条目：
 - 第一行输出 markdown 一级标题（# 实体名）。
 - 正文 2~4 段：先给定义与定位，再展开关键事实、与其他实体的关系，最后补充应用场景或注意事项（若材料支持）。
@@ -93,6 +105,9 @@ class WikiStats:
 
     selected: int = 0
     generated: int = 0
+    #: Dirty entries pruned because their entity vanished or lost eligibility
+    #: (失格即删, 2026-08-14 拍板方案 A).
+    pruned: int = 0
     titles: list[str] = field(default_factory=list)
 
 
@@ -302,28 +317,50 @@ async def generate_wiki(
     try:
         if only_dirty:
             dirty = await wiki_store.list_entries(kb_id, status="dirty")
-            entity_rows = {row["name"]: row for row in await graph_store.list_entities(kb_id)}
-            singles = [entity_rows[entry["title"]] for entry in dirty if entry["title"] in entity_rows]
-            if len(singles) < len(dirty):
-                logger.info("wiki regeneration: %d dirty entries have no graph entity left, skipped", len(dirty) - len(singles))
+            # One eligibility evaluation feeds singles / backfill / prune alike
+            # (精确匹配 title == entity name, 精度保持现状).
+            eligible_rows = await select_eligible_entities(graph_store, kb_id)
+            eligible_by_name = {row["name"]: row for row in eligible_rows}
+            singles = [eligible_by_name[entry["title"]] for entry in dirty if entry["title"] in eligible_by_name]
+            # 失格即删 (2026-08-14 拍板, 方案 A): a dirty entry whose entity
+            # vanished from the graph or fell below the eligibility bar is
+            # pruned here — the same rule the Task 12 / re-extract cascades
+            # already apply — otherwise its dirty badge could never drain.
+            # Ready entries of ineligible entities stay untouched: the
+            # incremental run only owns the dirty set.
+            stale_titles = [entry["title"] for entry in dirty if entry["title"] not in eligible_by_name]
             # 2026-08-12 revision (spec §3.5): backfill = eligible entities
             # without an entry (any status counts — idempotent), paced per run.
-            # Disqualified/vanished entities' entries are deleted by the
-            # Task 12 lifecycle cascade (delete/merge events) — generate_wiki
-            # itself only writes, never deletes.
             entry_titles = {entry["title"] for entry in await wiki_store.list_entries(kb_id)}
-            backfill = [row for row in await select_eligible_entities(graph_store, kb_id) if row["name"] not in entry_titles][:backfill_limit]
+            backfill = [row for row in eligible_rows if row["name"] not in entry_titles][:backfill_limit]
         else:
             singles = []
+            stale_titles = []
             backfill = await select_eligible_entities(graph_store, kb_id)
 
         stats = WikiStats(selected=len(singles) + len(backfill))
+        if stale_titles:
+            # Qdrant first, failures logged and swallowed — mirrors the
+            # service-layer cascade ordering rule: a vector outage must never
+            # strand the business-row delete. ``delete_entries`` is idempotent,
+            # so a mid-run crash simply re-prunes on the next trigger.
+            if vector_store is not None:
+                try:
+                    await vector_store.delete_wiki_entries(kb_id, stale_titles)
+                except Exception:
+                    logger.exception("qdrant delete_wiki_entries failed during wiki prune for kb %s (%d titles)", kb_id, len(stale_titles))
+            stats.pruned = await wiki_store.delete_entries(kb_id, stale_titles)
+            logger.info("wiki regeneration: pruned %d disqualified/vanished dirty entries for kb %s", stats.pruned, kb_id)
         # Dirty refresh runs per-entity: a handful at a time, not worth bundling.
         for row in singles:
             await _write_entry(store, wiki_store, vector_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
         for bundle in plan_entry_batches(backfill):
             await _write_bundle(store, wiki_store, vector_store, kb_id=kb_id, rows=bundle, llm=llm, embedder=embedder, stats=stats)
+        _LAST_RUN[kb_id] = "succeeded"
         return stats
+    except Exception:
+        _LAST_RUN[kb_id] = "failed"
+        raise
     finally:
         remaining = _IN_FLIGHT.get(kb_id, 0) - 1
         if remaining > 0:
