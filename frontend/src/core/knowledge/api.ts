@@ -188,6 +188,14 @@ export async function updateWikiEntry(
   return readResponse<WikiEntryDetail>(response, "Failed to update wiki entry");
 }
 
+/** Task 5 收尾: delete one chunk (full cascade server-side: graph/wiki/vector/row). */
+export async function deleteChunk(kbId: string, chunkId: string): Promise<void> {
+  const response = await fetch(kbUrl(kbId, `/chunks/${encodeURIComponent(chunkId)}`), {
+    method: "DELETE",
+  });
+  return readEmptyResponse(response, "Failed to delete chunk");
+}
+
 /** Phase-3 Batch-1 P2: update chunk text with re-embedding. */
 export async function updateChunk(
   kbId: string,

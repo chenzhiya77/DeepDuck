@@ -5,7 +5,8 @@
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { useQuery } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 
 rs.mock("@tanstack/react-query", () => ({
   useQuery: rs.fn(),
@@ -16,13 +17,18 @@ rs.mock("@/core/knowledge/hooks", () => ({
   useUpdateChunk: rs.fn(),
   usePreviewChunkDeletion: rs.fn(),
   useReExtractChunk: rs.fn(),
+  useDeleteChunk: rs.fn(),
+}));
+
+rs.mock("sonner", () => ({
+  toast: { error: rs.fn(), success: rs.fn(), info: rs.fn(), warning: rs.fn() },
 }));
 
 import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { knowledgeChunksKey, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
+import { knowledgeChunksKey, useDeleteChunk, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
 import type { KnowledgeChunk, KnowledgeDocument } from "@/core/knowledge/types";
 
 const CHUNK: KnowledgeChunk = {
@@ -108,6 +114,7 @@ describe("ChunkDrawer", () => {
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
@@ -126,6 +133,7 @@ describe("ChunkDrawer", () => {
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
@@ -134,6 +142,34 @@ describe("ChunkDrawer", () => {
     // growing-limit pagination: same offset, larger limit on the next request
     expect(calls.at(-1)![2]).toBe(calls[0]![2]);
     expect(calls.at(-1)![3]).toBeGreaterThan(calls[0]![3]);
+  });
+
+  it("confirm delete runs the real cascade delete (Task 5 收尾)", async () => {
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 50 }]);
+    rs.mocked(useQuery).mockReturnValue({
+      data: { items: [CHUNK], total: 1, offset: 0, limit: 50 },
+      isLoading: false,
+    } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    const previewAsync = rs
+      .fn()
+      .mockResolvedValue({ orphaned_entities: ["Qdrant"], affected_entities: ["DeerFlow"], relation_deletions: [] });
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: previewAsync } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    const deleteAsync = rs.fn().mockResolvedValue(undefined);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: deleteAsync, isPending: false } as never);
+
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+
+    // Card delete button → preview dialog with the impact lists.
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    expect(await screen.findByText("删除预览")).toBeTruthy();
+    expect(previewAsync).toHaveBeenCalledWith({ chunk_ids: [CHUNK.chunk_id] });
+
+    // Confirm → the real DELETE mutation fires with the remembered target.
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(deleteAsync).toHaveBeenCalledWith(CHUNK.chunk_id));
+    expect(toast.success).toHaveBeenCalledWith("切片已删除");
   });
 
   it("shows the empty-state copy when the document has no chunks", async () => {
@@ -145,6 +181,7 @@ describe("ChunkDrawer", () => {
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
     rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 

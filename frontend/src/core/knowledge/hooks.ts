@@ -208,6 +208,17 @@ export function usePreviewChunkDeletion(kbId: string) {
   });
 }
 
+/** Task 5 收尾: delete a single chunk (cascade runs server-side). */
+export function useDeleteChunk(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (chunkId: string) => api.deleteChunk(kbId, chunkId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["knowledge-bases", kbId, "documents"] });
+    },
+  });
+}
+
 /** Phase-3 Batch-1 P3: re-extract entities for a single chunk. */
 export function useReExtractChunk(kbId: string) {
   const queryClient = useQueryClient();

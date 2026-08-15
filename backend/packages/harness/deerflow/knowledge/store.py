@@ -342,6 +342,16 @@ class KnowledgeStore:
             await session.commit()
             return int(result.rowcount or 0)
 
+    async def delete_chunk(self, chunk_id: str) -> bool:
+        """Drop a single chunk row (Task 5 收尾 single-chunk delete cascade).
+
+        Idempotent: deleting an absent row returns False.
+        """
+        async with self._sf() as session:
+            result = await session.execute(delete(ChunkRow).where(ChunkRow.chunk_id == chunk_id))
+            await session.commit()
+            return int(result.rowcount or 0) > 0
+
     async def update_chunk_text(self, chunk_id: str, text: str, token_count: int) -> dict[str, Any] | None:
         """Update chunk text with recalculated token_count (Phase-3 Batch-1 P2).
 

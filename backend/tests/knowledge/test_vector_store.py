@@ -125,6 +125,20 @@ async def test_upsert_same_chunk_id_overwrites(vector_store):
     assert count.count == 1
 
 
+async def test_delete_chunks_removes_only_listed_points(vector_store):
+    """Task 5 收尾: single-chunk deletion drops exactly those chunk points
+    (payload filter), leaving siblings intact; idempotent on re-delete."""
+    store, client = vector_store
+    await store.upsert_chunks([_chunk("doc-1#0000", "kb-1", "doc-1"), _chunk("doc-1#0001", "kb-1", "doc-1")])
+
+    await store.delete_chunks(["doc-1#0000"])
+
+    records, _ = await client.scroll(store.chunks_collection, with_payload=True, with_vectors=False, limit=10)
+    assert [r.payload["chunk_id"] for r in records] == ["doc-1#0001"]
+    await store.delete_chunks(["doc-1#0000"])  # no-op, no error
+    await store.delete_chunks([])  # empty list short-circuits
+
+
 async def test_hybrid_query_filters_by_kb(vector_store):
     store, _ = vector_store
     await store.upsert_chunks(

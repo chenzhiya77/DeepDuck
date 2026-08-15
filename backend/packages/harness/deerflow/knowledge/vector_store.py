@@ -352,6 +352,19 @@ class KnowledgeVectorStore:
                 vectors[str(name)] = list(dense)
         return vectors
 
+    async def delete_chunks(self, chunk_ids: Sequence[str]) -> None:
+        """Drop the listed chunk points (Task 5 收尾 single-chunk delete).
+
+        Payload-filter delete (chunk_id in list), mirroring ``delete_by_doc``.
+        Idempotent: deleting an absent point is a no-op.
+        """
+        if not chunk_ids:
+            return
+        await self._client.delete(
+            collection_name=self.chunks_collection,
+            points_selector=FilterSelector(filter=Filter(must=[FieldCondition(key="chunk_id", match=MatchAny(any=list(chunk_ids)))])),
+        )
+
     async def delete_by_doc(self, doc_id: str) -> None:
         """Drop all chunk points of one document (re-upload / delete path)."""
         await self._client.delete(

@@ -340,9 +340,15 @@ class KnowledgeService:
     async def update_chunk_text(self, *, kb_id: str, chunk_id: str, text: str) -> dict | None:
         """Update chunk text with re-embedding (Phase-3 Batch-1 P2).
 
-        Recalculates token_count, writes last_edited_at, and triggers Qdrant upsert
-        with the same point ID but new dense vector. Entities JSON column remains
-        unchanged (ID 引用 preserved).
+        Recalculates token_count, writes last_edited_at, and re-embeds into
+        Qdrant — same chunk_id maps to the same point id, so the upsert
+        overwrites the stale vector in place (Task 4 收尾, 2026-08-14).
+        Entities JSON column remains unchanged (ID 引用 preserved).
+
+        Ordering: embed BEFORE the DB write so an embedder outage leaves the
+        stored text untouched; a Qdrant upsert failure after the write
+        surfaces as 500 — visible, and a retry converges (no silent
+        DB/vector divergence).
         """
         # Get existing chunk to verify it exists and belongs to kb
         chunk = await self.store.get_chunk(chunk_id)
@@ -354,15 +360,38 @@ class KnowledgeService:
 
         new_token_count = count_tokens(text)
 
+        # Re-embed first (see docstring for the ordering rationale).
+        from deerflow.knowledge.embedder import DashScopeEmbedder
+
+        embeddings = await DashScopeEmbedder().embed([text])
+
         # Update in DB (entities unchanged - ID 引用 preserved)
         updated = await self.store.update_chunk_text(
             chunk_id=chunk_id,
             text=text,
             token_count=new_token_count,
         )
+        if updated is None:
+            return None
 
-        # TODO: Qdrant re-embedding (Task 4 next step)
-        # This will call vector_store.upsert_chunks with same point ID
+        from deerflow.knowledge.vector_store import ChunkUpsert
+
+        document = await self.store.get_document(chunk["doc_id"])
+        await self.vector_store.upsert_chunks(
+            [
+                ChunkUpsert(
+                    chunk_id=chunk_id,
+                    kb_id=kb_id,
+                    doc_id=chunk["doc_id"],
+                    dense=embeddings[0].dense,
+                    sparse=embeddings[0].sparse,
+                    doc_name=document["name"] if document else "",
+                    heading_path=list(chunk.get("heading_path") or []),
+                    page=chunk.get("page"),
+                    entities=list(chunk.get("entities") or []),
+                )
+            ]
+        )
 
         return updated
 
@@ -384,6 +413,53 @@ class KnowledgeService:
         # Call graph store's pure calculation
         impact = await self.graph_store.calculate_deletion_impact(kb_id, chunk_ids)
         return impact
+
+    async def delete_chunk_cascade(self, *, kb_id: str, chunk_id: str) -> bool | None:
+        """Delete one chunk across graph/wiki/vector/business stores (Task 5 收尾).
+
+        Reuses the same cascade pieces as ``re_extract_chunk`` /
+        ``delete_document_cascade`` — nothing rewritten: strip graph
+        contributions → orphan entities lose ``kb_entities`` vectors + wiki
+        entries → affected entities re-checked against the ≥2-source bar
+        (dirty vs disqualify) → chunk vector point → business row, then the
+        document's chunk_count is refreshed. Vector failures are logged and
+        swallowed (module cascade ordering rule); the business row always goes.
+
+        Same concurrency guard as re-extraction: only terminal document
+        states (ready/failed) may lose a chunk.
+        """
+        chunk = await self.store.get_chunk(chunk_id)
+        if chunk is None or chunk["kb_id"] != kb_id:
+            return None
+        document = await self.store.get_document(chunk["doc_id"])
+        if document is not None and document["status"] not in ("ready", "failed"):
+            raise DocumentProcessingError(chunk["doc_id"], document["status"])
+
+        orphaned, affected = await self.graph_store.remove_chunk_contributions(kb_id, [chunk_id])
+        if orphaned:
+            try:
+                await self.vector_store.delete_entities(kb_id, orphaned)
+            except Exception:
+                logger.exception("qdrant delete_entities failed for chunk-delete orphans of %s", chunk_id)
+            await self._delete_wiki_entries(kb_id, orphaned)
+        if affected:
+            remaining = {row["name"]: len(row.get("source_chunk_ids") or []) for row in await self.graph_store.list_entities(kb_id)}
+            still_eligible = [name for name in affected if remaining.get(name, 0) >= 2]
+            disqualified = [name for name in affected if remaining.get(name, 0) < 2]
+            if still_eligible:
+                await self.wiki_store.mark_dirty_for_titles(kb_id, still_eligible)
+            if disqualified:
+                await self._delete_wiki_entries(kb_id, disqualified)
+
+        try:
+            await self.vector_store.delete_chunks([chunk_id])
+        except Exception:
+            logger.exception("qdrant delete_chunks failed for %s", chunk_id)
+        deleted = await self.store.delete_chunk(chunk_id)
+        if deleted and document is not None:
+            remaining_chunks = await self.store.list_chunks(chunk["doc_id"], limit=1_000_000)
+            await self.store.update_document_status(chunk["doc_id"], document["status"], chunk_count=len(remaining_chunks))
+        return deleted
 
     async def re_extract_chunk(self, *, kb_id: str, chunk_id: str) -> dict[str, Any] | None:
         """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3, Spec §5).

@@ -6,13 +6,12 @@ Entities JSON column remains unchanged (ID 引用 preserved).
 
 from __future__ import annotations
 
-import asyncio
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
@@ -57,6 +56,18 @@ def _client(service: KnowledgeService, user_factory=_owner) -> TestClient:
     return TestClient(app)
 
 
+def _client_no_raise(service: KnowledgeService, user_factory=_owner) -> TestClient:
+    """Same as ``_client`` but surfaces 5xx as responses instead of raising
+    (``raise_server_exceptions`` is an ASGI-transport init arg — assigning it
+    on an existing client has no effect)."""
+    from _router_auth_helpers import make_authed_test_app
+
+    app = make_authed_test_app(user_factory=user_factory)
+    app.state.knowledge_service = service
+    app.include_router(knowledge_bases.router)
+    return TestClient(app, raise_server_exceptions=False)
+
+
 def _create_kb(client: TestClient, name: str = "产品资料") -> dict:
     response = client.post("/api/knowledge-bases", json={"name": name, "description": "d"})
     assert response.status_code == 201, response.text
@@ -69,21 +80,21 @@ async def setup_chunk(service, session_factory):
     kb_id = f"kb-test-{uuid.uuid4().hex[:8]}"
     doc_id = "doc-test"
     await service.store.create_kb(kb_id=kb_id, owner_id=OWNER_ID, name="Test KB")
-    await service.store.create_document(
-        doc_id=doc_id, kb_id=kb_id, uploader_id=OWNER_ID, name="test.txt", size_bytes=10, storage_path="/test.txt"
+    await service.store.create_document(doc_id=doc_id, kb_id=kb_id, uploader_id=OWNER_ID, name="test.txt", size_bytes=10, storage_path="/test.txt")
+    await service.store.insert_chunks(
+        [
+            {
+                "chunk_id": f"{doc_id}-c0",
+                "doc_id": doc_id,
+                "kb_id": kb_id,
+                "chunk_index": 0,
+                "text": "Original content",
+                "token_count": 5,
+                "extract_status": "done",
+                "entities": ["entity1"],
+            }
+        ]
     )
-    await service.store.insert_chunks([
-        {
-            "chunk_id": f"{doc_id}-c0",
-            "doc_id": doc_id,
-            "kb_id": kb_id,
-            "chunk_index": 0,
-            "text": "Original content",
-            "token_count": 5,
-            "extract_status": "done",
-            "entities": ["entity1"],
-        }
-    ])
     return (kb_id, f"{doc_id}-c0")
 
 
@@ -171,3 +182,77 @@ class TestPatchChunkEndpoint:
         data = response.json()
         # Entities should remain the same (no re-extraction)
         assert data["entities"] == ["entity1"]
+
+    async def test_patch_chunk_reembeds_vector_with_same_point_id(self, service, setup_chunk, monkeypatch):
+        """Task 4 收尾 (2026-08-14): editing chunk text re-embeds and overwrites
+        the SAME Qdrant point (same chunk_id → same point id) so retrieval
+        sees the new text — the TODO previously left the stale vector in
+        place, silently serving the pre-edit content."""
+        from qdrant_client.models import SparseVector
+
+        from deerflow.knowledge.embedder import EmbeddingResult
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(return_value=[EmbeddingResult(dense=[0.25] * 1024, sparse=SparseVector(indices=[3], values=[0.7]))])
+        monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+        kb_id, chunk_id = setup_chunk
+        client = _client(service)
+
+        response = client.patch(
+            f"/api/knowledge-bases/{kb_id}/chunks/{chunk_id}",
+            json={"text": "brand new text"},
+        )
+
+        assert response.status_code == 200
+        embedder.embed.assert_awaited_once_with(["brand new text"])
+        service.vector_store.upsert_chunks.assert_awaited_once()
+        upserted = list(service.vector_store.upsert_chunks.call_args[0][0])
+        assert [c.chunk_id for c in upserted] == [chunk_id]
+        assert upserted[0].dense == [0.25] * 1024
+        assert upserted[0].entities == ["entity1"]  # payload preserved (ID 引用)
+
+    async def test_patch_chunk_embed_failure_surfaces_500_and_leaves_db_untouched(self, service, setup_chunk, monkeypatch):
+        """Embed runs BEFORE the DB write: an embedder outage surfaces as 500
+        with the stored text unchanged, so a retry converges cleanly (no
+        silent DB/vector divergence)."""
+        from deerflow.knowledge.embedder import EmbedderError
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(side_effect=EmbedderError("quota exhausted"))
+        monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+        kb_id, chunk_id = setup_chunk
+        client = _client_no_raise(service)
+
+        response = client.patch(
+            f"/api/knowledge-bases/{kb_id}/chunks/{chunk_id}",
+            json={"text": "brand new text"},
+        )
+
+        assert response.status_code == 500
+        service.vector_store.upsert_chunks.assert_not_called()
+        chunk = await service.store.get_chunk(chunk_id)
+        assert chunk["text"] == "Original content"
+
+    async def test_patch_chunk_upsert_failure_surfaces_500_after_db_write(self, service, setup_chunk, monkeypatch):
+        """The upsert leg runs after the DB write; a Qdrant outage surfaces as
+        500 (visible failure, retry converges) instead of silently leaving a
+        stale vector behind a fresh text."""
+        from qdrant_client.models import SparseVector
+
+        from deerflow.knowledge.embedder import EmbeddingResult
+
+        embedder = MagicMock()
+        embedder.embed = AsyncMock(return_value=[EmbeddingResult(dense=[0.25] * 1024, sparse=SparseVector(indices=[3], values=[0.7]))])
+        monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+        service.vector_store.upsert_chunks = AsyncMock(side_effect=RuntimeError("qdrant down"))
+        kb_id, chunk_id = setup_chunk
+        client = _client_no_raise(service)
+
+        response = client.patch(
+            f"/api/knowledge-bases/{kb_id}/chunks/{chunk_id}",
+            json={"text": "brand new text"},
+        )
+
+        assert response.status_code == 500
+        chunk = await service.store.get_chunk(chunk_id)
+        assert chunk["text"] == "brand new text"

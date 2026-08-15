@@ -359,6 +359,9 @@ export interface Translations {
       relationDeletions: string;
       deleteWarning: string;
       confirmDelete: string;
+      deleteSuccess: string;
+      deleteFailed: string;
+      deleteProcessing: string;
       reExtract: string;
       reExtractCost: string;
       reExtracting: string;

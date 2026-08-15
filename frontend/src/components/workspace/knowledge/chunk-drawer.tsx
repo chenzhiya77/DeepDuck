@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
 import { listDocumentChunks } from "@/core/knowledge/api";
-import { knowledgeChunksKey, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
+import { knowledgeChunksKey, useDeleteChunk, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
 import type { DeletePreviewResponse, KnowledgeDocument } from "@/core/knowledge/types";
 
 import { ChunkCard } from "./chunk-card";
@@ -52,9 +52,13 @@ export function ChunkDrawer({
   const updateChunk = useUpdateChunk(kbId);
   const previewDeletion = usePreviewChunkDeletion(kbId);
   const reExtractChunk = useReExtractChunk(kbId);
+  const deleteChunk = useDeleteChunk(kbId);
 
   const [deletePreviewOpen, setDeletePreviewOpen] = useState(false);
   const [deletePreview, setDeletePreview] = useState<DeletePreviewResponse | null>(null);
+  // Task 5 收尾: the preview response carries no chunk id, so the confirm
+  // handler needs the target remembered at preview time.
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const handleEditChunk = async (chunkId: string, newText: string) => {
     try {
@@ -70,6 +74,7 @@ export function ChunkDrawer({
     try {
       const preview = await previewDeletion.mutateAsync({ chunk_ids: [chunkId] });
       setDeletePreview(preview);
+      setDeleteTargetId(chunkId);
       setDeletePreviewOpen(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "预览失败");
@@ -93,9 +98,24 @@ export function ChunkDrawer({
     }
   };
 
+  // Task 5 收尾: run the real cascade delete (graph/wiki/vector/row all
+  // server-side); 409 mirrors the re-extract guard (pipeline mid-flight).
   const handleConfirmDelete = async () => {
-    // TODO: Implement actual deletion endpoint
-    toast.info("删除功能将在下一迭代实现");
+    if (!deleteTargetId) return;
+    try {
+      await deleteChunk.mutateAsync(deleteTargetId);
+      toast.success(tc.deleteSuccess);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : tc.deleteFailed;
+      if (message.includes("being processed")) {
+        toast.warning(tc.deleteProcessing);
+      } else {
+        toast.error(message);
+      }
+      return; // keep the dialog open so the user can retry
+    } finally {
+      setDeleteTargetId(null);
+    }
     setDeletePreviewOpen(false);
     setDeletePreview(null);
   };
@@ -144,7 +164,7 @@ export function ChunkDrawer({
       </Sheet>
 
       <DeletePreviewDialog
-        isDeleting={false}
+        isDeleting={deleteChunk.isPending}
         onConfirm={handleConfirmDelete}
         onOpenChange={setDeletePreviewOpen}
         open={deletePreviewOpen}

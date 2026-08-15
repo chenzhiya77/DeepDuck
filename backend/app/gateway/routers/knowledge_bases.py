@@ -236,6 +236,22 @@ async def preview_chunk_deletion(request: Request, kb_id: str, body: DeletePrevi
     return impact
 
 
+@router.delete("/{kb_id}/chunks/{chunk_id}", status_code=204)
+async def delete_chunk(request: Request, kb_id: str, chunk_id: str):
+    """Delete one chunk with the full cascade (Task 5 收尾): graph
+    contributions, orphan entity vectors, wiki disqualification chain, chunk
+    vector point, business row. 409 while the document pipeline is mid-flight
+    (same guard as re-extraction)."""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        deleted = await service.delete_chunk_cascade(kb_id=kb_id, chunk_id=chunk_id)
+    except DocumentProcessingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    return Response(status_code=204)
+
+
 @router.post("/{kb_id}/chunks/{chunk_id}/re-extract")
 async def re_extract_chunk(request: Request, kb_id: str, chunk_id: str):
     """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3).
