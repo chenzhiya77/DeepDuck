@@ -96,8 +96,13 @@ def _mock_impls(monkeypatch) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
     )
     wiki = AsyncMock(
         return_value={
-            "entries": [{"entry_id": "e1", "title": "DeerFlow", "content": "长" * 200, "score": 0.91, "updated_at": "2026-08-10T00:00:00"}],
-            "message": "命中 1 篇百科条目。",
+            "entries": [
+                {"entry_id": "e1", "title": "DeerFlow", "content": "长" * 200, "score": 0.91, "updated_at": "2026-08-10T00:00:00"},
+                # Phase-3 P6（spec §8 混排）：wiki 路现在可能命中人工卡片，
+                # impl 逐条带 source_type；旧形态（无该键）回退 "wiki"。
+                {"entry_id": "card-1", "title": "发布禁令", "content": "周五下午不发布", "score": 0.85, "source_type": "manual"},
+            ],
+            "message": "命中 1 篇百科条目、1 张人工知识卡片。",
         }
     )
     monkeypatch.setattr(ks_module, "_hybrid_search_impl", vector)
@@ -135,6 +140,12 @@ async def test_recall_test_assembles_three_paths(service, monkeypatch):
     assert whits[0]["score"] == 0.91
     assert whits[0]["rank"] == 1
     assert "content" not in whits[0], "wiki 命中不返回全文"
+    # Phase-3 P6：source_type 透传（旧形态缺键回退 wiki），前端据此分
+    # 流「百科条目抽屉 / 人工卡片抽屉」——卡片 id 走 wiki 详情接口必然 404。
+    assert whits[0]["source_type"] == "wiki"
+    assert whits[1]["source_type"] == "manual"
+    assert whits[1]["entry_id"] == "card-1"
+    assert whits[1]["rank"] == 2
 
     assert body["score_type"] == {
         "vector": "qwen3-rerank relevance",

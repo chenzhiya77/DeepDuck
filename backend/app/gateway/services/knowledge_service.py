@@ -817,6 +817,10 @@ class KnowledgeService:
                         "summary": (entry.get("content") or "")[:120],
                         "score": entry.get("score"),
                         "rank": rank,
+                        # Phase-3 P6（spec §8 混排）：人工卡片也走 wiki 路，
+                        # 透传 source_type 供前端分流「条目抽屉 / 卡片抽屉」；
+                        # 缺键回退 wiki（旧 impl 形态）。
+                        "source_type": entry.get("source_type") or "wiki",
                     }
                     for rank, entry in enumerate(wiki_raw.get("entries", []), start=1)
                 ],
