@@ -23,6 +23,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
 from deerflow.knowledge.reranker import DashScopeReranker
@@ -364,12 +365,18 @@ class KnowledgeService:
         return impact
 
     async def re_extract_chunk(self, *, kb_id: str, chunk_id: str) -> dict[str, Any] | None:
-        """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3).
+        """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3, Spec §5).
 
-        Concurrency guard (spec §5 A3): reject when the owning document's
-        pipeline is mid-flight — only terminal states (ready/failed) may trigger
-        a re-extraction. The actual LLM extraction is a separate wiring step;
-        this method validates the call and reports 501 until that lands.
+        Five-step flow (reuses existing cascade pieces — nothing rewritten):
+        1. ``remove_chunk_contributions`` strips this chunk's old graph contributions.
+        2. Orphaned entities → delete ``kb_entities`` vectors + wiki disqualification chain.
+        3. Per-chunk extraction on the chunk's CURRENT text (never re-parses the
+           source file — manual edits would be clobbered, spec §1 fact 3).
+        4. Reverse link: normalized names onto the ``kb_chunks`` Qdrant payload.
+        5. Still-eligible affected ∪ new entities → wiki dirty chain (资格制 ≥2 sources).
+
+        Concurrency guard (spec §5 A3): only terminal document states (ready/failed)
+        may trigger a re-extraction.
         """
         chunk = await self.store.get_chunk(chunk_id)
         if chunk is None or chunk["kb_id"] != kb_id:
@@ -379,7 +386,76 @@ class KnowledgeService:
         if document is not None and document["status"] not in ("ready", "failed"):
             raise DocumentProcessingError(chunk["doc_id"], document["status"])
 
-        raise NotImplementedError("per-chunk re-extraction is not implemented yet (requires LLM wiring)")
+        # Step 1: strip old graph contributions for this chunk only
+        orphaned, affected = await self.graph_store.remove_chunk_contributions(kb_id, [chunk_id])
+
+        # Step 2: orphaned entities lose their vectors + wiki entries (失格链)
+        if orphaned:
+            try:
+                await self.vector_store.delete_entities(kb_id, orphaned)
+            except Exception:
+                logger.exception("qdrant delete_entities failed for re-extract orphans of %s", chunk_id)
+            await self._delete_wiki_entries(kb_id, orphaned)
+
+        # Step 3: re-extract on the current (possibly manually edited) text
+        from deerflow.knowledge.embedder import DashScopeEmbedder
+
+        embedder = DashScopeEmbedder()
+        new_names = await extract_single_chunk(
+            self.store,
+            self.graph_store,
+            kb_id=kb_id,
+            chunk_id=chunk_id,
+            text=chunk["text"],
+            embedder=embedder,
+        )
+
+        # Step 4: reverse link — normalized names onto the kb_chunks payload
+        if new_names:
+            try:
+                await self.vector_store.set_chunk_entities({chunk_id: new_names})
+            except Exception:
+                logger.exception("qdrant set_chunk_entities failed for %s", chunk_id)
+            # Re-embed the touched entity name+description into kb_entities so
+            # graph_search keeps matching them (same as the document leg).
+            try:
+                rows = await self.graph_store.list_entities(kb_id)
+                targets = [row for row in rows if row["name"] in set(new_names)]
+                if targets:
+                    from deerflow.knowledge.vector_store import EntityUpsert
+
+                    embeddings = await embedder.embed([f"{row['name']}\n{row.get('description') or ''}" for row in targets])
+                    await self.vector_store.upsert_entities(
+                        [
+                            EntityUpsert(
+                                name=row["name"],
+                                kb_id=kb_id,
+                                type=row.get("type") or "",
+                                description=row.get("description") or "",
+                                dense=embedding.dense,
+                            )
+                            for row, embedding in zip(targets, embeddings, strict=True)
+                        ]
+                    )
+            except Exception:
+                logger.exception("qdrant upsert_entities failed during re-extract of %s", chunk_id)
+
+        # Step 5: wiki dirty chain — affected entities keep eligibility only
+        # with ≥2 remaining sources (资格制, mirrors delete_document_cascade);
+        # new entities join the dirty set so incremental wiki picks them up.
+        if affected:
+            remaining = {row["name"]: len(row.get("source_chunk_ids") or []) for row in await self.graph_store.list_entities(kb_id)}
+            still_eligible = [name for name in affected if remaining.get(name, 0) >= 2]
+            disqualified = [name for name in affected if remaining.get(name, 0) < 2]
+            if disqualified:
+                await self._delete_wiki_entries(kb_id, disqualified)
+        else:
+            still_eligible = []
+        dirty_titles = sorted(set(still_eligible) | set(new_names))
+        if dirty_titles:
+            await self.wiki_store.mark_dirty_for_titles(kb_id, dirty_titles)
+
+        return await self.store.get_chunk(chunk_id)
 
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 

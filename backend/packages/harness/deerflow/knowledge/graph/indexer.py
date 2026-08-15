@@ -56,6 +56,50 @@ class GraphIndexStats:
     touched_entities: set[str] = field(default_factory=set)
 
 
+async def extract_single_chunk(
+    store: KnowledgeStore,
+    graph_store: GraphStore,
+    *,
+    kb_id: str,
+    chunk_id: str,
+    text: str,
+    llm: _LLM | None = None,
+    embedder: _Embedder | None = None,
+    gleaning_rounds: int = 1,
+    name_similarity_threshold: float = 0.92,
+) -> list[str]:
+    """Extract entities/relations from ONE chunk's text and persist them (Phase-3 Batch-1 P3).
+
+    Mirrors the per-chunk body of ``index_document_graph`` but for a single,
+    caller-specified chunk — used by the re-extract endpoint which must NOT
+    re-parse the source file (that would clobber manual text edits).
+
+    Returns the normalized entity names written back to ``chunks.entities``
+    (empty list when the extraction yielded nothing).
+    """
+    try:
+        result = await extract_graph(text, llm=llm, gleaning_rounds=gleaning_rounds)
+    except ExtractionError as exc:
+        logger.warning("graph extraction failed for chunk %s: %s", chunk_id, exc)
+        await store.update_chunk_extract(chunk_id, "failed", error=str(exc))
+        raise
+    if not result.entities and not result.relations:
+        await store.update_chunk_extract(chunk_id, "empty", entities=[])
+        return []
+
+    name_vectors = None
+    if embedder is not None and result.entities:
+        vectors = await embedder.embed([entity.name for entity in result.entities])
+        name_vectors = {entity.name: embedding.dense for entity, embedding in zip(result.entities, vectors, strict=True)}
+    result = normalize_extraction(result, name_vectors=name_vectors, similarity_threshold=name_similarity_threshold)
+
+    await graph_store.upsert_entities(kb_id, result.entities, chunk_id=chunk_id)
+    await graph_store.upsert_relations(kb_id, result.relations, chunk_id=chunk_id)
+    names = [entity.name for entity in result.entities]
+    await store.update_chunk_extract(chunk_id, "done", entities=names)
+    return names
+
+
 async def index_document_graph(
     store: KnowledgeStore,
     graph_store: GraphStore,

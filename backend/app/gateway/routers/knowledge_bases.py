@@ -241,16 +241,14 @@ async def re_extract_chunk(request: Request, kb_id: str, chunk_id: str):
     """Re-extract entities/relations for a single chunk (Phase-3 Batch-1 P3).
 
     Concurrency guard: only terminal document states (ready/failed) may trigger
-    re-extraction — an in-flight pipeline returns 409. Extraction itself requires
-    LLM wiring and currently reports 501.
+    re-extraction — an in-flight pipeline returns 409. Runs the Spec §5 five-step
+    flow on the chunk's current text (never re-parses the source file).
     """
     service = await _require_kb_access(request, kb_id)
     try:
         result = await service.re_extract_chunk(kb_id=kb_id, chunk_id=chunk_id)
     except DocumentProcessingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Chunk not found")
     return result

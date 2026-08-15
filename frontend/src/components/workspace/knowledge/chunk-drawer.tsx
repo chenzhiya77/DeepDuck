@@ -83,13 +83,11 @@ export function ChunkDrawer({
   const handleReExtractChunk = async (chunkId: string) => {
     try {
       await reExtractChunk.mutateAsync(chunkId);
-      toast.success("重抽取已触发");
+      toast.success("重抽取完成，实体已更新");
     } catch (error) {
       const message = error instanceof Error ? error.message : "重抽取失败";
       if (message.includes("being processed")) {
         toast.warning("文档正在处理中，请稍后重试");
-      } else if (message.includes("not implemented")) {
-        toast.info("单切片重抽取功能即将上线");
       } else {
         toast.error(message);
       }
