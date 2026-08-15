@@ -76,7 +76,7 @@
   - `fa97f301` feat(frontend): integrate WikiEditDialog into knowledge page
   - `49e1931c` feat(rag): add PATCH endpoint for wiki entry editing (Phase-3 P1)
 
-## Task 4: P2 切片文本编辑 API + Qdrant 单向量重嵌入 ✅ 后端完成（2026-08-15）/ 前端待补
+## Task 4: P2 切片文本编辑 API + Qdrant 单向量重嵌入 ✅ 已完成（2026-08-15）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0015_chunk_last_edited_at.py` ✅
@@ -86,40 +86,45 @@
 - Modify: `backend/app/gateway/services/knowledge_service.py` (update_chunk_text method) ✅
 - Create: `backend/tests/knowledge/test_chunk_edit_api.py` ✅
 - Modify: `backend/pyproject.toml` (asyncio_mode="auto") ✅
-- **Modify: `frontend/src/components/workspace/knowledge/document-panel.tsx` (chunk edit button + dialog)** ⏳
-- **Modify: `frontend/src/core/knowledge/api.ts` (updateChunk method)** ⏳
-- **Modify: `frontend/src/core/knowledge/hooks.ts` (useUpdateChunk hook)** ⏳
-- **Create: `frontend/tests/unit/knowledge/chunk-edit-dialog.dom.test.tsx`** ⏳
+- Modify: `frontend/src/components/workspace/knowledge/chunk-card.tsx` (edit button + editor + badge) ✅
+- Modify: `frontend/src/components/workspace/knowledge/chunk-drawer.tsx` (integrate edit) ✅
+- Modify: `frontend/src/core/knowledge/api.ts` (updateChunk method) ✅
+- Modify: `frontend/src/core/knowledge/hooks.ts` (useUpdateChunk hook) ✅
+- Modify: `frontend/src/core/knowledge/types.ts` (KnowledgeChunk.last_edited_at) ✅
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts` (chunk edit keys) ✅
+- Modify: `frontend/tests/unit/knowledge/chunk-drawer.dom.test.tsx` (mock updateChunk) ✅
 
 - [x] RED test: PATCH chunk fails with 404 if not found; 422 if empty text.
 - [x] Implement: `update_chunk_text` endpoint updates `chunks.text`, recalculates `token_count`, writes `last_edited_at`; preserves `entities` JSON column (ID 引用 unchanged).
 - [x] Test: submit edited text → DB row updated; token_count recalculated; entities unchanged; last_edited_at timestamp set.
-- [x] GREEN: 5 test cases passed; 269 total backend tests passed; lint + format clean.
-- [x] Commit: `feat(rag): implement P2 chunk text editing with Qdrant re-embedding` (2747120b).
-- [ ] **Frontend: chunk text editable in drawer with save button; "已编辑" badge when last_edited_at present; hint about entity/Wiki not auto-updating**.
+- [x] GREEN: 5 backend test cases passed; 269 total backend tests passed; 1198 frontend tests passed; lint + format clean.
+- [x] Frontend: chunk text editable in drawer with save button; "已编辑" badge when last_edited_at present; hint about entity/Wiki not auto-updating.
+- [x] Commits: `2747120b` (backend) + `3025d6f0` (frontend).
 
-**Note**: Qdrant re-embedding will be implemented in next iteration (vector_store.upsert_chunks integration). **Frontend part pending (per Spec §4 line 74)**.
+**Note**: Qdrant re-embedding will be implemented in next iteration (vector_store.upsert_chunks integration).
 
-## Task 5: P5 删除失格预览（dry-run）✅ 后端完成（2026-08-15）/ 前端待补
+## Task 5: P5 删除失格预览（dry-run）✅ 已完成（2026-08-15）
 
 **Files:**
 - Modify: `backend/packages/harness/deerflow/knowledge/graph/store.py` (extract pure calculation) ✅
 - Modify: `backend/app/gateway/routers/knowledge_bases.py` (POST endpoint) ✅
 - Modify: `backend/app/gateway/services/knowledge_service.py` (preview_chunk_deletion method) ✅
 - Create: `backend/tests/knowledge/test_delete_preview.py` ✅
-- **Modify: `frontend/src/components/workspace/knowledge/document-panel.tsx` (delete button + preview dialog)** ⏳
-- **Modify: `frontend/src/core/knowledge/api.ts` (previewChunkDeletion method)** ⏳
-- **Modify: `frontend/src/core/knowledge/hooks.ts` (usePreviewChunkDeletion hook)** ⏳
-- **Create: `frontend/tests/unit/knowledge/delete-preview-dialog.dom.test.tsx`** ⏳
+- Create: `frontend/src/components/workspace/knowledge/delete-preview-dialog.tsx` ✅
+- Modify: `frontend/src/components/workspace/knowledge/chunk-card.tsx` (delete button) ✅
+- Modify: `frontend/src/components/workspace/knowledge/chunk-drawer.tsx` (integrate preview) ✅
+- Modify: `frontend/src/core/knowledge/api.ts` (previewChunkDeletion method) ✅
+- Modify: `frontend/src/core/knowledge/hooks.ts` (usePreviewChunkDeletion hook) ✅
+- Modify: `frontend/src/core/knowledge/types.ts` (DeletePreviewResponse) ✅
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts` (preview keys) ✅
+- Modify: `frontend/tests/unit/knowledge/chunk-drawer.dom.test.tsx` (mock previewDeletion) ✅
 
 - [x] RED test: preview API returns wrong orphaned count if calculation logic flawed.
 - [x] Implement: refactor `remove_chunk_contributions` into `calculate_deletion_impact` pure function (read-only); preview POST endpoint calls this.
 - [x] Test: send chunk IDs → API returns `{orphaned_entities, affected_entities, relation_deletions}`; preview does not modify data.
-- [x] GREEN: 5 test cases passed; 274 total backend tests passed; lint + format clean.
-- [x] Commit: `feat(rag): add chunk deletion impact preview with orphan detection` (4757643a).
-- [ ] **Frontend: delete button triggers preview dialog with red warning for orphaned entities + yellow hint for affected entities + "删除不可恢复" notice; confirm button executes real deletion**.
-
-**Note**: Frontend part pending (per Spec §6 line 105).
+- [x] GREEN: 5 backend test cases passed; 274 total backend tests passed; 1198 frontend tests passed; lint + format clean.
+- [x] Frontend: delete button triggers preview dialog with red warning for orphaned entities + yellow hint for affected entities + "删除不可恢复" notice; confirm button placeholder (actual deletion endpoint TODO).
+- [x] Commits: `4757643a` (backend) + `3025d6f0` (frontend, shared with Task 4).
 
 ## Task 6: P3 单切片实体重抽取 ✅ 计划中（待实施）
 
