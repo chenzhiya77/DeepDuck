@@ -35,6 +35,7 @@ export function ChunkDrawer({
   const [accumulated, setAccumulated] = useState<KnowledgeChunk[]>([]);
   const [deletePreviewOpen, setDeletePreviewOpen] = useState(false);
   const [deletePreview, setDeletePreview] = useState<DeletePreviewResponse | null>(null);
+  const [reExtractingChunkId, setReExtractingChunkId] = useState<string | null>(null);
   const query = useDocumentChunks(open ? kbId : null, open ? doc.id : null, 0, limit);
   const updateChunk = useUpdateChunk(kbId);
   const previewDeletion = usePreviewChunkDeletion(kbId);
@@ -81,6 +82,7 @@ export function ChunkDrawer({
   };
 
   const handleReExtractChunk = async (chunkId: string) => {
+    setReExtractingChunkId(chunkId);
     try {
       await reExtractChunk.mutateAsync(chunkId);
       toast.success("重抽取完成，实体已更新");
@@ -91,6 +93,8 @@ export function ChunkDrawer({
       } else {
         toast.error(message);
       }
+    } finally {
+      setReExtractingChunkId(null);
     }
   };
 
@@ -120,12 +124,14 @@ export function ChunkDrawer({
                   chunkId={chunk.chunk_id}
                   entities={chunk.entities}
                   headingPath={chunk.heading_path}
+                  isReExtracting={reExtractingChunkId === chunk.chunk_id}
                   key={chunk.chunk_id}
                   lastEditedAt={chunk.last_edited_at}
                   onDelete={handleDeleteChunk}
                   onEdit={handleEditChunk}
                   onReExtract={handleReExtractChunk}
                   page={chunk.page}
+                  reExtractDisabled={reExtractingChunkId !== null && reExtractingChunkId !== chunk.chunk_id}
                   text={chunk.text}
                   tokenCount={chunk.token_count}
                 />

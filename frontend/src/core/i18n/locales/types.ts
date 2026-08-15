@@ -355,6 +355,8 @@ export interface Translations {
       confirmDelete: string;
       reExtract: string;
       reExtractCost: string;
+      reExtracting: string;
+      reExtractHint: string;
     };
     tabs: {
       documents: string;

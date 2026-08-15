@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,8 @@ export function ChunkCard({
   onEdit,
   onDelete,
   onReExtract,
+  isReExtracting,
+  reExtractDisabled,
 }: {
   chunkId?: string;
   text: string;
@@ -37,6 +39,10 @@ export function ChunkCard({
   onEdit?: (chunkId: string, newText: string) => Promise<void>;
   onDelete?: (chunkId: string) => void;
   onReExtract?: (chunkId: string) => void;
+  /** This card's re-extraction is in flight (spinner + hint line). */
+  isReExtracting?: boolean;
+  /** Another chunk of the same document is extracting (button disabled, backend mutex is per-document). */
+  reExtractDisabled?: boolean;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
@@ -117,24 +123,38 @@ export function ChunkCard({
             )}
           </div>
           {(onEdit ?? onDelete ?? onReExtract) && chunkId && (
-            <div className="flex gap-1 pt-1">
-              {onEdit && (
-                <Button onClick={() => setIsEditing(true)} size="sm" variant="ghost">
-                  <Pencil className="mr-1 h-3 w-3" />
-                  {tc.edit}
-                </Button>
-              )}
-              {onReExtract && (
-                <Button onClick={() => onReExtract(chunkId)} size="sm" title={tc.reExtractCost} variant="ghost">
-                  <RefreshCw className="mr-1 h-3 w-3" />
-                  {tc.reExtract}
-                </Button>
-              )}
-              {onDelete && (
-                <Button onClick={() => onDelete(chunkId)} size="sm" variant="ghost">
-                  <Trash2 className="mr-1 h-3 w-3" />
-                  {tc.delete}
-                </Button>
+            <div className="flex flex-col gap-1 pt-1">
+              <div className="flex gap-1">
+                {onEdit && (
+                  <Button disabled={isReExtracting} onClick={() => setIsEditing(true)} size="sm" variant="ghost">
+                    <Pencil className="mr-1 h-3 w-3" />
+                    {tc.edit}
+                  </Button>
+                )}
+                {onReExtract && (
+                  <Button
+                    disabled={isReExtracting ?? reExtractDisabled}
+                    onClick={() => onReExtract(chunkId)}
+                    size="sm"
+                    title={tc.reExtractCost}
+                    variant="ghost"
+                  >
+                    {isReExtracting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+                    {isReExtracting ? tc.reExtracting : tc.reExtract}
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button disabled={isReExtracting} onClick={() => onDelete(chunkId)} size="sm" variant="ghost">
+                    <Trash2 className="mr-1 h-3 w-3" />
+                    {tc.delete}
+                  </Button>
+                )}
+              </div>
+              {isReExtracting && (
+                <p className="text-muted-foreground flex items-center gap-1 text-xs">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {tc.reExtractHint}
+                </p>
               )}
             </div>
           )}

@@ -429,6 +429,8 @@ export const enUS: Translations = {
       confirmDelete: "Confirm Delete",
       reExtract: "Re-extract",
       reExtractCost: "Costs 1 LLM extraction call",
+      reExtracting: "Extracting…",
+      reExtractHint: "Extracting entities, please wait…",
     },
     tabs: {
       documents: "Documents",

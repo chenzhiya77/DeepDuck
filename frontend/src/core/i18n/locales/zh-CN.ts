@@ -413,6 +413,8 @@ export const zhCN: Translations = {
       confirmDelete: "确认删除",
       reExtract: "重新抽取",
       reExtractCost: "将消耗 1 次 LLM 抽取调用",
+      reExtracting: "抽取中…",
+      reExtractHint: "正在抽取实体，请稍候…",
     },
     tabs: {
       documents: "文档",
