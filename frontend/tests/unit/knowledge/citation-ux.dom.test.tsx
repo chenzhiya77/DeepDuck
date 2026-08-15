@@ -14,7 +14,7 @@ rs.mock("@/components/workspace/messages/markdown-content", () => ({
   MarkdownContent: rs.fn(() => null),
 }));
 
-import { CitationMark, createCitationSupRenderer, KB_CITATION_JUMP_EVENT } from "@/components/workspace/knowledge/citation-mark";
+import { CitationMark, CitationPreviewCard, createCitationSupRenderer, KB_CITATION_JUMP_EVENT } from "@/components/workspace/knowledge/citation-mark";
 import { KbAssistantContent } from "@/components/workspace/knowledge/kb-assistant-content";
 import { KbCitationSources } from "@/components/workspace/knowledge/kb-citation-sources";
 import { MarkdownContent } from "@/components/workspace/messages/markdown-content";
@@ -49,6 +49,16 @@ const WIKI_1: KnowledgeCitation = {
   score: 0.7,
   source_type: "wiki",
 };
+// Phase-3 P6 (spec §8): a manual knowledge card cited through wiki_search.
+const MANUAL_1: KnowledgeCitation = {
+  chunk_id: "card-1",
+  doc_name: "发布禁令",
+  page: null,
+  heading_path: [],
+  text: "周五下午不发布，紧急修复走审批。",
+  score: 0.9,
+  source_type: "manual",
+};
 
 function renderWithI18n(node: React.ReactNode) {
   return render(
@@ -77,6 +87,21 @@ describe("CitationMark", () => {
     const { container } = renderWithI18n(<Sup data-citation-index="9">9</Sup>);
     expect(screen.queryByRole("button")).toBeNull();
     expect(container.querySelector("sup")).not.toBeNull();
+  });
+
+  it("shows the 我的卡片 badge in the hover preview for manual cards (phase-3 P6)", () => {
+    renderWithI18n(<CitationPreviewCard citation={MANUAL_1} />);
+    const preview = screen.getByTestId("citation-preview");
+    expect(preview.textContent).toContain("我的卡片");
+    expect(preview.textContent).toContain("发布禁令");
+    expect(preview.textContent).toContain("周五下午不发布");
+  });
+
+  it("keeps the 百科 badge in the hover preview for wiki entries", () => {
+    renderWithI18n(<CitationPreviewCard citation={WIKI_1} />);
+    const preview = screen.getByTestId("citation-preview");
+    expect(preview.textContent).toContain("百科");
+    expect(preview.textContent).not.toContain("我的卡片");
   });
 
   it("dispatches the jump event with messageId + index on click", () => {
@@ -192,6 +217,29 @@ describe("KbCitationSources (collapsed by default)", () => {
     renderWithI18n(<KbCitationSources messageId="m1" sources={[legacy]} />);
     expect(screen.getByText(/文档×1/)).toBeTruthy();
     expect(screen.queryByText(/百科×/)).toBeNull();
+  });
+
+  it("badges manual-card citations as 我的卡片 with its own count (phase-3 P6)", () => {
+    renderWithI18n(<KbCitationSources messageId="m1" sources={[CHUNK_1, WIKI_1, MANUAL_1]} />);
+    expect(screen.getByText(/参考来源 · 3/)).toBeTruthy();
+    expect(screen.getByText(/卡片×1/)).toBeTruthy();
+
+    fireEvent.click(screen.getByText(/参考来源 · 3/));
+    const card = screen.getByTestId("citation-card-manual-card-1");
+    expect(card.textContent).toContain("我的卡片");
+    expect(card.textContent).toContain("发布禁令");
+    expect(card.textContent).toContain("[3]");
+  });
+
+  it("expands a manual card in place on click (no entry drawer for cards)", () => {
+    const onOpenWikiEntry = rs.fn();
+    renderWithI18n(<KbCitationSources messageId="m1" onOpenWikiEntry={onOpenWikiEntry} sources={[MANUAL_1]} />);
+    fireEvent.click(screen.getByText(/参考来源 · 1/));
+
+    fireEvent.click(screen.getByTestId("citation-card-manual-card-1"));
+    expect(onOpenWikiEntry).not.toHaveBeenCalled();
+    // in-place excerpt plus the expanded full card text
+    expect(screen.getAllByText(/紧急修复走审批/).length).toBeGreaterThanOrEqual(2);
   });
 
   it("reacts to a jump event for its own message: expands, highlights, auto-opens the chunk", () => {

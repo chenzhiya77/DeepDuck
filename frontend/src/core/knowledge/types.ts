@@ -184,11 +184,13 @@ export interface KnowledgeCitation {
   text: string;
   score: number;
   /**
-   * Filled by the frontend parse layer from the tool name (phase-2 batch-1):
-   * wiki_search → "wiki", hybrid/graph → "chunk". Undefined on legacy
-   * citations — render those as "chunk".
+   * Phase-2 batch-1: filled by the frontend parse layer from the tool name
+   * (wiki_search → "wiki", hybrid/graph → "chunk"). Phase-3 P6 (spec §8):
+   * wiki_search mixes manual cards into its entries, so a payload-level
+   * ``source_type`` wins when present ("manual" for cards). Undefined on
+   * legacy citations — render those as "chunk".
    */
-  source_type?: "chunk" | "wiki";
+  source_type?: "chunk" | "wiki" | "manual";
   /**
    * Backend-assigned citation numbers (rag citation_counter) — INTERNAL
    * handles, never shown to the user. A chunk recalled by multiple paths

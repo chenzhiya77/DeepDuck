@@ -29,7 +29,7 @@ const HIGHLIGHT_MS = 2000;
 type CitationGroup = {
   key: string;
   docName: string;
-  sourceType: "chunk" | "wiki";
+  sourceType: "chunk" | "wiki" | "manual";
   items: { number: number; citation: KnowledgeCitation }[];
 };
 
@@ -69,7 +69,9 @@ export function KbCitationSources({
 
   const groups = useMemo(() => groupSources(sources), [sources]);
   const chunkCount = useMemo(() => sources.filter((s) => (s.source_type ?? "chunk") === "chunk").length, [sources]);
-  const wikiCount = sources.length - chunkCount;
+  const wikiCount = useMemo(() => sources.filter((s) => s.source_type === "wiki").length, [sources]);
+  // Phase-3 P6 (spec §8): manual cards cited through wiki_search.
+  const manualCount = sources.length - chunkCount - wikiCount;
 
   // Citation-mark clicks in the answer body land here: expand + highlight
   // (+ auto-open the chunk text, so a touch tap reaches the slice directly).
@@ -82,7 +84,8 @@ export function KbCitationSources({
       setExpanded(true);
       setHighlightNumber(detail.index);
       const group = groups.find((candidate) => candidate.items.some((item) => item.number === detail.index));
-      if (group?.sourceType === "chunk") {
+      // Cards expand in place like chunks (no entry drawer for manual cards).
+      if (group?.sourceType === "chunk" || group?.sourceType === "manual") {
         setExpandedChunkId(group.items[0]!.citation.chunk_id);
       }
       window.setTimeout(() => {
@@ -116,6 +119,7 @@ export function KbCitationSources({
         <span>{tc.sourcesTitle(sources.length)}</span>
         {chunkCount > 0 && <span className="text-muted-foreground/80">· {tc.chunkSources(chunkCount)}</span>}
         {wikiCount > 0 && <span className="text-muted-foreground/80">· {tc.wikiSources(wikiCount)}</span>}
+        {manualCount > 0 && <span className="text-muted-foreground/80">· {tc.manualSources(manualCount)}</span>}
         {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
       </button>
 
@@ -124,6 +128,8 @@ export function KbCitationSources({
           {visibleGroups.map((group) => {
             const first = group.items[0]!;
             const isWiki = group.sourceType === "wiki";
+            const typeLabel =
+              group.sourceType === "wiki" ? tc.sourceTypeWiki : group.sourceType === "manual" ? tc.sourceTypeManual : tc.sourceTypeChunk;
             const isHighlighted = group.items.some((item) => item.number === highlightNumber);
             // Display numbers only: each item's number IS its sorted strip
             // position (the raw backend citation_nos are internal handles and
@@ -151,7 +157,7 @@ export function KbCitationSources({
                   <span className="flex w-full items-center gap-2 text-xs">
                     <span className="text-muted-foreground shrink-0 font-mono">{numbers}</span>
                     <Badge className="shrink-0 text-[10px]" variant="secondary">
-                      {isWiki ? tc.sourceTypeWiki : tc.sourceTypeChunk}
+                      {typeLabel}
                     </Badge>
                     <span className="min-w-0 flex-1 truncate font-medium">{group.docName}</span>
                     {first.citation.page != null && (

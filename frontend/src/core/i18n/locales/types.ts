@@ -458,9 +458,13 @@ export interface Translations {
       sourcesTitle: (count: number) => string;
       chunkSources: (count: number) => string;
       wikiSources: (count: number) => string;
+      /** Phase-3 P6 (spec §8): manual cards cited through wiki_search. */
+      manualSources: (count: number) => string;
       viewAllSources: string;
       sourceTypeChunk: string;
       sourceTypeWiki: string;
+      /** Phase-3 P6: badge for manual knowledge card citations. */
+      sourceTypeManual: string;
       sourceMarkAriaLabel: (index: number, name: string) => string;
       expandToFullPage: string;
       pageLabel: (page: number) => string;

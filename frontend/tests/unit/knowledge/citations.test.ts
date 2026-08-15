@@ -50,6 +50,16 @@ const GRAPH = {
   message: "命中 1 个实体。",
 };
 
+// Phase-3 P6 (spec §8): wiki_search now mixes manual cards into its entries —
+// each hit carries its own source_type, overriding the tool-name fallback.
+const WIKI_MIXED = {
+  entries: [
+    { entry_id: "e1", title: "DeerFlow", content: "条目全文", score: 0.7, source_type: "wiki" },
+    { entry_id: "card-1", title: "发布禁令", content: "周五下午不发布", score: 0.9, source_type: "manual" },
+  ],
+  message: "命中 1 篇百科条目、1 张人工知识卡片。",
+};
+
 describe("parseRetrievalToolContent", () => {
   test("parses hybrid_search results into chunk citations", () => {
     const citations = parseRetrievalToolContent("hybrid_search", JSON.stringify(HYBRID));
@@ -61,6 +71,13 @@ describe("parseRetrievalToolContent", () => {
     expect(parseRetrievalToolContent("hybrid_search", JSON.stringify(HYBRID))[0]?.source_type).toBe("chunk");
     expect(parseRetrievalToolContent("graph_search", JSON.stringify(GRAPH))[0]?.source_type).toBe("chunk");
     expect(parseRetrievalToolContent("wiki_search", JSON.stringify(WIKI))[0]?.source_type).toBe("wiki");
+  });
+
+  test("honors the payload's own source_type (phase-3 P6: manual cards mix into wiki_search)", () => {
+    const citations = parseRetrievalToolContent("wiki_search", JSON.stringify(WIKI_MIXED));
+    expect(citations.map((citation) => citation.source_type)).toEqual(["wiki", "manual"]);
+    // Manual card: title becomes the source name, content becomes the text.
+    expect(citations[1]).toMatchObject({ chunk_id: "card-1", doc_name: "发布禁令", text: "周五下午不发布" });
   });
 
   test("parses wiki_search entries into entry citations (title as source name)", () => {

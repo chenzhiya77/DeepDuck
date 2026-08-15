@@ -25,6 +25,11 @@ function toCitation(value: unknown, fallbackName: string | undefined, sourceType
   const text = record.text ?? record.content;
   if (typeof chunkId !== "string" || typeof text !== "string") return null;
   const citationNo = typeof record.citation_no === "number" ? record.citation_no : null;
+  // Phase-3 P6 (spec §8): wiki_search mixes manual cards into its entries and
+  // stamps each hit with its own source_type — a valid payload value wins over
+  // the tool-name fallback.
+  const payloadType = record.source_type;
+  const resolvedType = payloadType === "manual" || payloadType === "wiki" || payloadType === "chunk" ? payloadType : sourceType;
   return {
     chunk_id: chunkId,
     doc_name: typeof record.doc_name === "string" ? record.doc_name : (fallbackName ?? ""),
@@ -32,7 +37,7 @@ function toCitation(value: unknown, fallbackName: string | undefined, sourceType
     heading_path: Array.isArray(record.heading_path) ? (record.heading_path as string[]) : [],
     text,
     score: typeof record.score === "number" ? record.score : 0,
-    source_type: sourceType,
+    source_type: resolvedType,
     ...(citationNo != null ? { citation_nos: [citationNo] } : {}),
   };
 }
@@ -55,8 +60,8 @@ export function parseRetrievalToolContent(toolName: string | null | undefined, c
     return [];
   }
   const key = toolName === "hybrid_search" ? "results" : toolName === "wiki_search" ? "entries" : "evidence";
-  // source_type is derived from the tool the payload came through — zero
-  // backend change (phase-2 batch-1, spec §4).
+  // source_type falls back to the tool the payload came through; phase-3 P6
+  // payloads may override it per item (manual cards ride wiki_search).
   const sourceType = toolName === "wiki_search" ? "wiki" : "chunk";
   const items = Array.isArray(record[key]) ? (record[key] as unknown[]) : [];
   return items
