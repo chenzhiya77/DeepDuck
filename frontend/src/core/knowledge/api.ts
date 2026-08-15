@@ -8,7 +8,9 @@ import { fetch } from "../api/fetcher";
 import { getBackendBaseURL } from "../config";
 
 import type {
+  DeletePreviewResponse,
   KnowledgeBase,
+  KnowledgeChunk,
   KnowledgeChunkPage,
   KnowledgeDocument,
   RecallTestResponse,
@@ -184,6 +186,33 @@ export async function updateWikiEntry(
     body: JSON.stringify(body),
   });
   return readResponse<WikiEntryDetail>(response, "Failed to update wiki entry");
+}
+
+/** Phase-3 Batch-1 P2: update chunk text with re-embedding. */
+export async function updateChunk(
+  kbId: string,
+  chunkId: string,
+  body: { text: string },
+): Promise<KnowledgeChunk> {
+  const response = await fetch(kbUrl(kbId, `/chunks/${encodeURIComponent(chunkId)}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readResponse<KnowledgeChunk>(response, "Failed to update chunk");
+}
+
+/** Phase-3 Batch-1 P5: preview chunk deletion impact (dry-run). */
+export async function previewChunkDeletion(
+  kbId: string,
+  body: { chunk_ids: string[] },
+): Promise<DeletePreviewResponse> {
+  const response = await fetch(kbUrl(kbId, "/chunks/delete-preview"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readResponse<DeletePreviewResponse>(response, "Failed to preview chunk deletion");
 }
 
 export function recallTest(kbId: string, body: { query: string; top_k: number }): Promise<RecallTestResponse> {

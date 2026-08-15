@@ -8,13 +8,15 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 rs.mock("@/core/knowledge/hooks", () => ({
   useDocumentChunks: rs.fn(),
+  useUpdateChunk: rs.fn(),
+  usePreviewChunkDeletion: rs.fn(),
 }));
 
 import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { useDocumentChunks } from "@/core/knowledge/hooks";
+import { useDocumentChunks, usePreviewChunkDeletion, useUpdateChunk } from "@/core/knowledge/hooks";
 import type { KnowledgeChunk, KnowledgeDocument } from "@/core/knowledge/types";
 
 const CHUNK: KnowledgeChunk = {
@@ -28,6 +30,7 @@ const CHUNK: KnowledgeChunk = {
   token_count: 512,
   entities: ["DeerFlow", "Gateway"],
   extract_status: "done",
+  last_edited_at: null,
 };
 
 const DOC: KnowledgeDocument = {
@@ -95,6 +98,8 @@ describe("ChunkDrawer", () => {
       data: { items: [CHUNK], total: 1, offset: 0, limit: 50 },
       isLoading: false,
     } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
@@ -109,6 +114,8 @@ describe("ChunkDrawer", () => {
       data: { items: [CHUNK], total: 2, offset: 0, limit: 1 },
       isLoading: false,
     } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
@@ -124,6 +131,8 @@ describe("ChunkDrawer", () => {
       data: { items: [], total: 0, offset: 0, limit: 50 },
       isLoading: false,
     } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 

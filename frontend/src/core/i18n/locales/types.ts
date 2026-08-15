@@ -341,6 +341,18 @@ export interface Translations {
       empty: string;
       loadMore: string;
       loading: string;
+      edit: string;
+      delete: string;
+      save: string;
+      cancel: string;
+      edited: string;
+      editHint: string;
+      deletePreviewTitle: string;
+      orphanedEntities: string;
+      affectedEntities: string;
+      relationDeletions: string;
+      deleteWarning: string;
+      confirmDelete: string;
     };
     tabs: {
       documents: string;

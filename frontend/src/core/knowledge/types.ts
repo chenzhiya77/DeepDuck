@@ -71,6 +71,8 @@ export interface KnowledgeChunk {
   token_count: number;
   entities: string[];
   extract_status: "pending" | "done" | "empty" | "failed" | string;
+  /** Phase-3 Batch-1 P2: timestamp of last manual text edit (null = never edited). */
+  last_edited_at: string | null;
 }
 
 export interface KnowledgeChunkPage {
@@ -78,6 +80,17 @@ export interface KnowledgeChunkPage {
   total: number;
   offset: number;
   limit: number;
+}
+
+/** Phase-3 Batch-1 P5: delete impact preview response. */
+export interface DeletePreviewResponse {
+  orphaned_entities: string[];
+  affected_entities: string[];
+  relation_deletions: Array<{
+    source: string;
+    target: string;
+    relation: string;
+  }>;
 }
 
 export interface WikiGenerateAck {

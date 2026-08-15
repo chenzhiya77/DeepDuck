@@ -180,6 +180,25 @@ export function useUpdateWikiEntry(kbId: string) {
   });
 }
 
+/** Phase-3 Batch-1 P2: update chunk text with re-embedding. */
+export function useUpdateChunk(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chunkId, body }: { chunkId: string; body: { text: string } }) => api.updateChunk(kbId, chunkId, body),
+    onSuccess: () => {
+      // Invalidate all chunk queries for this KB (any doc might contain this chunk)
+      void queryClient.invalidateQueries({ queryKey: ["knowledge-bases", kbId, "documents"] });
+    },
+  });
+}
+
+/** Phase-3 Batch-1 P5: preview chunk deletion impact (dry-run). */
+export function usePreviewChunkDeletion(kbId: string) {
+  return useMutation({
+    mutationFn: (body: { chunk_ids: string[] }) => api.previewChunkDeletion(kbId, body),
+  });
+}
+
 /**
  * P1 recall test (phase-2 batch-1): a mutation, not a query — each run hits
  * the live retrieval chain (embedding + rerank + entity-extraction LLM), so
