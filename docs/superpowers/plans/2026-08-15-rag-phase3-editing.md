@@ -128,11 +128,12 @@
 
 **Note on actual deletion**: Per Spec §6 line 105 "真删除走现有级联，不另写", the confirm button should call a new `DELETE /chunks/{chunk_id}` endpoint that internally reuses the existing cascade logic (`remove_chunk_contributions` + `delete_entities` + `mark_dirty` + delete chunk row). This endpoint is **not yet implemented** and requires a separate task (or can be added to Task 6 scope).
 
-## Task 6: P3 单切片实体重抽取 ✅ 部分完成（2026-08-15）
+## Task 6: P3 单切片实体重抽取 ✅ 已完成（2026-08-15）
 
 **Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/graph/indexer.py` (extract_single_chunk 可复用函数) ✅
 - Modify: `backend/app/gateway/routers/knowledge_bases.py` (POST endpoint) ✅
-- Modify: `backend/app/gateway/services/knowledge_service.py` (re_extract_chunk + DocumentProcessingError) ✅
+- Modify: `backend/app/gateway/services/knowledge_service.py` (re_extract_chunk 五步流程 + DocumentProcessingError) ✅
 - Create: `backend/tests/knowledge/test_chunk_re_extract.py` ✅
 - Modify: `frontend/src/components/workspace/knowledge/chunk-card.tsx` (re-extract button) ✅
 - Modify: `frontend/src/components/workspace/knowledge/chunk-drawer.tsx` (integrate re-extract) ✅
@@ -141,13 +142,11 @@
 - Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts` (re-extract keys) ✅
 
 - [x] RED test: per-chunk extraction fails with 409 if document worker is mid-flight (status not in ready/failed).
-- [x] Implement: new endpoint `POST /chunks/{chunk_id}/re-extract`; concurrency guard checks `document.status` (reject 409 if not ready/failed); extraction body returns 501 until LLM wiring lands.
-- [x] Test: 404 chunk-not-found; 409 document-processing; 501 ready-document; terminal-failed document bypasses 409.
-- [x] Frontend: re-extract button on ChunkCard with cost hint ("1 LLM call"); 409 → warning toast; 501 → info toast.
-- [x] GREEN: 4 backend tests passed; 277 total backend tests passed; frontend chunk-drawer 6 tests passed; lint + format clean.
-- [x] Commits: `422c50d7` (backend) + `a450a951` (frontend).
-
-**Remaining work (next iteration)**: extract `_per_chunk_extract_entities` from worker `index_document_graph` (extract → normalize → upsert → write-back); wire it into `re_extract_chunk` replacing the 501 placeholder; call `remove_chunk_contributions` first per Spec §5 5-step flow.
+- [x] Implement: extract `extract_single_chunk` from worker's per-chunk body (extract → normalize → upsert → write-back); endpoint `POST /chunks/{chunk_id}/re-extract` runs Spec §5 five-step flow on the chunk's CURRENT text (never re-parses source file); concurrency guard checks `document.status` (409 if not ready/failed).
+- [x] Test: 404 chunk-not-found; 409 document-processing; failed-document bypasses 409; full five-step flow verified (remove_contributions → delete orphans → extract → set_chunk_entities → mark_dirty); empty extraction clears entities.
+- [x] Frontend: re-extract button on ChunkCard with cost hint ("1 LLM call"); 409 → warning toast; success → "重抽取完成，实体已更新".
+- [x] GREEN: 5 backend tests passed; 279 total backend tests passed; frontend chunk-drawer 6 tests passed; lint + format clean.
+- [x] Commits: `422c50d7` (endpoint skeleton) + `a450a951` (frontend button) + `ef87b6fb` (five-step flow).
 
 ## Task 7: P6 人工知识卡片系统——数据库模型与 CRUD API ✅ 计划中（待实施）
 
