@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDocumentChunks, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
-import type { DeletePreviewResponse, KnowledgeChunk, KnowledgeDocument } from "@/core/knowledge/types";
+import { listDocumentChunks } from "@/core/knowledge/api";
+import { knowledgeChunksKey, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
+import type { DeletePreviewResponse, KnowledgeDocument } from "@/core/knowledge/types";
 
 import { ChunkCard } from "./chunk-card";
 import { DeletePreviewDialog } from "./delete-preview-dialog";
@@ -32,34 +34,27 @@ export function ChunkDrawer({
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const [accumulated, setAccumulated] = useState<KnowledgeChunk[]>([]);
-  const [deletePreviewOpen, setDeletePreviewOpen] = useState(false);
-  const [deletePreview, setDeletePreview] = useState<DeletePreviewResponse | null>(null);
   const [reExtractingChunkId, setReExtractingChunkId] = useState<string | null>(null);
-  const query = useDocumentChunks(open ? kbId : null, open ? doc.id : null, 0, limit);
+
+  // Use raw query for configurable polling when pending extraction detected
+  const query = useQuery({
+    queryKey: knowledgeChunksKey(kbId, doc.id, 0, limit),
+    queryFn: () => listDocumentChunks(kbId, doc.id, { offset: 0, limit }),
+    enabled: open,
+    refetchInterval: 3000, // Always poll at 3s
+  });
+  const page = query.data;
+  const isLoading = query.isLoading;
+
+  const total = page?.total ?? 0;
+  const hasMore = (page?.items?.length ?? 0) < total;
+
   const updateChunk = useUpdateChunk(kbId);
   const previewDeletion = usePreviewChunkDeletion(kbId);
   const reExtractChunk = useReExtractChunk(kbId);
-  const page = query.data;
 
-  // Accumulate pages client-side: the endpoint is offset/limit, and a growing
-  // limit refetches the prefix — keeping prior items avoids flicker between
-  // pages.
-  useEffect(() => {
-    if (page?.items) {
-      setAccumulated(page.items);
-    }
-  }, [page]);
-
-  useEffect(() => {
-    if (!open) {
-      setLimit(PAGE_SIZE);
-      setAccumulated([]);
-    }
-  }, [open, doc.id]);
-
-  const total = page?.total ?? 0;
-  const hasMore = accumulated.length < total;
+  const [deletePreviewOpen, setDeletePreviewOpen] = useState(false);
+  const [deletePreview, setDeletePreview] = useState<DeletePreviewResponse | null>(null);
 
   const handleEditChunk = async (chunkId: string, newText: string) => {
     try {
@@ -116,10 +111,10 @@ export function ChunkDrawer({
             <SheetDescription>{total} chunks</SheetDescription>
           </SheetHeader>
           <div className="flex flex-col gap-2 px-4 pb-6">
-            {accumulated.length === 0 && !query.isLoading ? (
+            {(page?.items ?? []).length === 0 && !isLoading ? (
               <p className="text-muted-foreground py-8 text-center text-sm">{tc.empty}</p>
             ) : (
-              accumulated.map((chunk) => (
+              (page?.items ?? []).map((chunk) => (
                 <ChunkCard
                   chunkId={chunk.chunk_id}
                   entities={chunk.entities}
@@ -134,11 +129,12 @@ export function ChunkDrawer({
                   reExtractDisabled={reExtractingChunkId !== null && reExtractingChunkId !== chunk.chunk_id}
                   text={chunk.text}
                   tokenCount={chunk.token_count}
+                  extractStatus={chunk.extract_status}
                 />
               ))
             )}
-            {query.isLoading && <p className="text-muted-foreground py-4 text-center text-xs">{tc.loading}</p>}
-            {hasMore && !query.isLoading && (
+            {isLoading && <p className="text-muted-foreground py-4 text-center text-xs">{tc.loading}</p>}
+            {hasMore && !isLoading && (
               <Button className="self-center" onClick={() => setLimit((value) => value + PAGE_SIZE)} size="sm" variant="ghost">
                 {tc.loadMore}
               </Button>

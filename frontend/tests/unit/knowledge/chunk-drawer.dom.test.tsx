@@ -4,10 +4,15 @@
  * chunks (doc name + text). The drawer paginates through the chunks endpoint.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
+import { useQuery } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
+rs.mock("@tanstack/react-query", () => ({
+  useQuery: rs.fn(),
+}));
+
 rs.mock("@/core/knowledge/hooks", () => ({
-  useDocumentChunks: rs.fn(),
+  knowledgeChunksKey: rs.fn(),
   useUpdateChunk: rs.fn(),
   usePreviewChunkDeletion: rs.fn(),
   useReExtractChunk: rs.fn(),
@@ -17,7 +22,7 @@ import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { useDocumentChunks, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
+import { knowledgeChunksKey, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
 import type { KnowledgeChunk, KnowledgeDocument } from "@/core/knowledge/types";
 
 const CHUNK: KnowledgeChunk = {
@@ -95,7 +100,8 @@ describe("ChunkCard", () => {
 
 describe("ChunkDrawer", () => {
   it("loads and renders the first chunk page when opened", async () => {
-    rs.mocked(useDocumentChunks).mockReturnValue({
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 50 }]);
+    rs.mocked(useQuery).mockReturnValue({
       data: { items: [CHUNK], total: 1, offset: 0, limit: 50 },
       isLoading: false,
     } as never);
@@ -106,13 +112,14 @@ describe("ChunkDrawer", () => {
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
     expect(await screen.findByText(CHUNK.text)).toBeTruthy();
-    expect(rs.mocked(useDocumentChunks).mock.calls[0]?.slice(0, 2)).toEqual(["kb-1", "doc-1"]);
+    expect(rs.mocked(knowledgeChunksKey).mock.calls[0]?.slice(0, 2)).toEqual(["kb-1", "doc-1"]);
     // no second page → no load-more button
     expect(screen.queryByRole("button", { name: "加载更多" })).toBeNull();
   });
 
   it("paginates through 加载更多", async () => {
-    rs.mocked(useDocumentChunks).mockReturnValue({
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 1 }]);
+    rs.mocked(useQuery).mockReturnValue({
       data: { items: [CHUNK], total: 2, offset: 0, limit: 1 },
       isLoading: false,
     } as never);
@@ -123,14 +130,15 @@ describe("ChunkDrawer", () => {
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "加载更多" }));
-    const calls = rs.mocked(useDocumentChunks).mock.calls;
+    const calls = rs.mocked(knowledgeChunksKey).mock.calls;
     // growing-limit pagination: same offset, larger limit on the next request
     expect(calls.at(-1)![2]).toBe(calls[0]![2]);
     expect(calls.at(-1)![3]).toBeGreaterThan(calls[0]![3]);
   });
 
   it("shows the empty-state copy when the document has no chunks", async () => {
-    rs.mocked(useDocumentChunks).mockReturnValue({
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 50 }]);
+    rs.mocked(useQuery).mockReturnValue({
       data: { items: [], total: 0, offset: 0, limit: 50 },
       isLoading: false,
     } as never);
