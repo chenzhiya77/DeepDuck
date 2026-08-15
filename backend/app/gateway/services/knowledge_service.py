@@ -334,6 +334,25 @@ class KnowledgeService:
 
         return updated
 
+    async def preview_chunk_deletion(self, *, kb_id: str, chunk_ids: list[str]) -> dict[str, Any] | None:
+        """Calculate deletion impact without actually deleting (Phase-3 Batch-1 P5).
+
+        Returns orphaned entities, affected entities, and relation deletions
+        for preview in delete confirmation dialog.
+        """
+        if not chunk_ids:
+            return {"orphaned_entities": [], "affected_entities": [], "relation_deletions": []}
+
+        # Verify all chunks exist and belong to this kb
+        for chunk_id in chunk_ids:
+            chunk = await self.store.get_chunk(chunk_id)
+            if chunk is None or chunk["kb_id"] != kb_id:
+                return None  # Any invalid chunk → 404
+
+        # Call graph store's pure calculation
+        impact = await self.graph_store.calculate_deletion_impact(kb_id, chunk_ids)
+        return impact
+
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
     #: Score semantics differ per path — never compare across paths.

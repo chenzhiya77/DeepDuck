@@ -159,6 +159,65 @@ class GraphStore:
             await session.commit()
         return orphaned, affected
 
+    async def calculate_deletion_impact(self, kb_id: str, chunk_ids: Sequence[str]) -> dict[str, Any]:
+        """Calculate deletion impact WITHOUT actually deleting (Phase-3 Batch-1 P5).
+
+        Pure read-only computation: same logic as remove_chunk_contributions but
+        returns impact analysis instead of modifying data.
+
+        Returns:
+            {
+                "orphaned_entities": ["entity1", "entity2"],
+                "affected_entities": ["entity3"],
+                "relation_deletions": [{"source": "e1", "target": "e2", "relation": "关联"}]
+            }
+        """
+        if not chunk_ids:
+            return {"orphaned_entities": [], "affected_entities": [], "relation_deletions": []}
+
+        targets = set(chunk_ids)
+        orphaned: list[str] = []
+        affected: list[str] = []
+        relation_deletions: list[dict[str, str]] = []
+
+        async with self._sf() as session:
+            # Analyze entities
+            entity_rows = (await session.execute(select(GraphEntityRow).where(GraphEntityRow.kb_id == kb_id))).scalars().all()
+            for row in entity_rows:
+                remaining = [cid for cid in (row.source_chunk_ids or []) if cid not in targets]
+                if len(remaining) == len(row.source_chunk_ids or []):
+                    continue  # No impact
+                if not remaining:
+                    orphaned.append(row.name)
+                else:
+                    affected.append(row.name)
+
+            # Analyze relations
+            relation_rows = (await session.execute(select(GraphRelationRow).where(GraphRelationRow.kb_id == kb_id))).scalars().all()
+            for row in relation_rows:
+                # Relation deleted if source or target is orphaned
+                if row.source in orphaned or row.target in orphaned:
+                    relation_deletions.append({
+                        "source": row.source,
+                        "target": row.target,
+                        "relation": row.relation,
+                    })
+                    continue
+                # Relation deleted if all sources removed
+                remaining = [cid for cid in (row.source_chunk_ids or []) if cid not in targets]
+                if len(remaining) != len(row.source_chunk_ids or []) and not remaining:
+                    relation_deletions.append({
+                        "source": row.source,
+                        "target": row.target,
+                        "relation": row.relation,
+                    })
+
+        return {
+            "orphaned_entities": orphaned,
+            "affected_entities": affected,
+            "relation_deletions": relation_deletions,
+        }
+
     async def merge_entities(self, kb_id: str, representative: str, aliases: Sequence[str]) -> dict[str, Any] | None:
         """Merge alias rows into the representative entity (spec 2026-08-10 D3).
 

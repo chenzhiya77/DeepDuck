@@ -216,6 +216,26 @@ async def update_chunk(request: Request, kb_id: str, chunk_id: str, body: Update
     return chunk
 
 
+class DeletePreviewRequest(BaseModel):
+    """Phase-3 Batch-1 P5: delete impact preview."""
+
+    chunk_ids: list[str] = Field(min_length=1, description="Chunk IDs to preview deletion for")
+
+
+@router.post("/{kb_id}/chunks/delete-preview")
+async def preview_chunk_deletion(request: Request, kb_id: str, body: DeletePreviewRequest):
+    """Preview chunk deletion impact without actually deleting (Phase-3 Batch-1 P5).
+
+    Returns orphaned entities, affected entities, and relation deletions for
+    display in delete confirmation dialog. Pure read-only operation.
+    """
+    service = await _require_kb_access(request, kb_id)
+    impact = await service.preview_chunk_deletion(kb_id=kb_id, chunk_ids=body.chunk_ids)
+    if impact is None:
+        raise HTTPException(status_code=404, detail="One or more chunks not found")
+    return impact
+
+
 @router.post("/{kb_id}/wiki/generate", status_code=202)
 async def generate_wiki_entries(request: Request, kb_id: str, mode: Literal["incremental", "full"] = "incremental"):
     """Enqueue wiki generation (Task 14): ``incremental`` (default) digests
