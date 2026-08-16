@@ -66,17 +66,19 @@
 - [x] ruff check/format 双净。
 - [x] Commit: `feat(rag): cache vector projections behind a content fingerprint`（`b56c691f`）
 
-## Task 4: P4 API 契约——投影端点 + query 投影端点
+## Task 4: P4 API 契约——投影端点 + query 投影端点 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Modify: `backend/app/gateway/routers/knowledge_bases.py`（GET `/vector-projection` + POST `/vector-projection/query`）
-- Modify: `backend/app/gateway/services/knowledge_service.py`
-- Create: `backend/tests/knowledge/test_vector_projection_api.py`
+- Modify: `backend/app/gateway/routers/knowledge_bases.py`（GET `/vector-projection` + POST `/vector-projection/query`）✅
+- Modify: `backend/app/gateway/services/knowledge_service.py`（双方法 + 双异常 + 可注入 ProjectionCache + `_projection_response`）✅
+- Modify: `backend/packages/harness/deerflow/knowledge/projection/cache.py`（+`peek` 只读查找，Plan 外小追加）✅
+- Create: `backend/tests/knowledge/test_vector_projection_api.py` ✅
 
-- [ ] RED test（对齐 `test_chunk_edit_api.py` 基建）: GET 200 契约（points schema / `cached` / `sampled` / `fingerprint` / `computed_ms`）；`algo=umap` 未装 → 400 带安装提示；`dims=4` → 400；未知 kb → 404；POST query：先 GET 建缓存 → 200 坐标；无缓存 → 409；非 PCA 模型 → 409。
-- [ ] Implement service + router（SVD 走 `anyio.to_thread`；query embed 复用检索测试的 embedder 解析链；query 端点不触发投影计算）。
-- [ ] GREEN；regression proof；restore。
-- [ ] Commit: `feat(rag): expose vector projection and query-transform endpoints`
+- [x] RED test（对齐 `test_chunk_edit_api.py` 基建）: 11 用例——GET 全契约（points schema / `cached` 二次命中 / `sampled` / `fingerprint` / `computed_ms` / dims=2 无 z）；空 KB 200 空点；`algo=umap` 未装 → 400 带提示；`dims=4` → 422（FastAPI Query 校验，泛 4xx 语义）；未知 kb → 404；未知 collection → 400；`refresh=true` 重算；POST 先 GET 建缓存 → 200 坐标+同指纹；无缓存 → 409；非 PCA 模型 → 409；空文本 → 422。修正过一次 fake 设计（scroll 需按 kb_id 过滤才能表达空 KB）。
+- [x] Implement service + router（SVD 走 `anyio.to_thread`；query embed 复用 `DashScopeEmbedder` 局部 import 链；query 端点不触发投影计算）。
+- [x] GREEN（11 API + 29 projection + 9 chunk_edit + 5 recall = 54 passed）；revert proof（stash 三实现文件 → 10 failed → 恢复 → 11 passed）。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): expose vector projection and query-transform endpoints`（`8bbc9d95`）
 
 ## Task 5: 前端 api client + 第四 tab 挂载
 
