@@ -363,22 +363,23 @@ export function KnowledgeChatPanel({
             }}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <Tooltip content={tc.deepResearchHint}>
-                <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs">
+                <label className="text-muted-foreground flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
                   <Switch
                     checked={deepResearch}
+                    className="shrink-0"
                     disabled={!kb}
                     onCheckedChange={setDeepResearch}
                   />
-                  <span>{tc.deepResearch}</span>
+                  <span className="whitespace-nowrap">{tc.deepResearch}</span>
                 </label>
               </Tooltip>
               <ModelSelector open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
                 <ModelSelectorTrigger asChild>
                   <button
                     aria-label={tc.selectModel}
-                    className="text-muted-foreground hover:text-foreground flex max-w-40 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
+                    className="text-muted-foreground hover:text-foreground flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
                     disabled={!kb || models.length === 0}
                     type="button"
                   >

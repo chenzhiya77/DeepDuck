@@ -24,11 +24,14 @@ export interface KnowledgePanelsControls {
  * react-resizable-panels: both gutters drag to resize with pixel min/max
  * guards, and the left kb list folds push-style (drag past its min width or
  * click the header button → width 0; a floating edge handle restores it).
- * The middle column keeps its 320px minimum; extreme narrow widths fall back
- * to horizontal scrolling on the outer container instead of crushing columns.
- * The Group carries min-w-[50rem] because the library always fits panels into
- * the container width — without it, a viewport narrower than the sum of all
- * panel minimums silently violates every minSize.
+ * The middle column keeps its 320px minimum; the chat column keeps a 320px
+ * floor too so the composer row (deep-research switch + model selector + send
+ * button) never wraps at the panel's narrowest drag position. Extreme narrow
+ * widths fall back to horizontal scrolling on the outer container instead of
+ * crushing columns. The Group carries min-w-[52rem] because the library
+ * always fits panels into the container width — without it, a viewport
+ * narrower than the sum of all panel minimums silently violates every
+ * minSize.
  */
 export function KnowledgePanelsShell({
   left,
@@ -65,7 +68,7 @@ export function KnowledgePanelsShell({
       data-testid="knowledge-panels-shell"
     >
       <ResizablePanelGroup
-        className="size-full min-w-[50rem] min-h-0"
+        className="size-full min-w-[52rem] min-h-0"
         orientation="horizontal"
         onLayoutChanged={handleLayoutChanged}
       >
@@ -105,7 +108,7 @@ export function KnowledgePanelsShell({
           defaultSize={352}
           id="chat"
           maxSize={560}
-          minSize={288}
+          minSize={320}
         >
           <aside className="size-full">{right}</aside>
         </ResizablePanel>
