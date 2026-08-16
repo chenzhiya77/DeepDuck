@@ -216,31 +216,31 @@
 - Modify: `docs/superpowers/specs/2026-08-15-rag-phase3-editing-design.md`（状态翻转 + 日期）
 - Modify: `docs/superpowers/plans/2026-08-15-rag-phase3-editing.md`（本 Plan）
 
-- [ ] Spec 状态翻转为「✅ 已落地」，标注 2026-08-15.
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN; `make lint && make format` clean.
-- [ ] `cd frontend && pnpm test && pnpm check` clean.
-- [ ] Commit: `docs(rag): sync agent guides and spec status for phase-3 edition`.
+- [x] Spec 状态翻转为「✅ 已落地」，标注 2026-08-16.（`e28ac3ac`）
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN; `make lint && make format` clean.（319 passed；顺手清偿 Phase-3 测试文件的 8 处 lint 债 + 5 文件 format，`e28ac3ac`）
+- [x] `cd frontend && pnpm test && pnpm check` clean.（156 文件 1260 passed；eslint + tsc 双净）
+- [x] Commit: `docs(rag): sync agent guides and spec status for phase-3 edition`.（`e28ac3ac`）
 
 ## Final verification
 
-- [ ] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（预期：较 Phase-2 Batch-1 基线 +12）。
-- [ ] 前端 `pnpm test` 全量 GREEN（预期：较 Phase-2 Batch-1 基线 +18）。
-- [ ] Live 冒烟（真实 key + Qdrant）：
-  - 编辑任意 Wiki 条目，补充层添加内容 → 触发新文档入库 → 增量重生 → 检查补充层保留
-  - 创建一张人工卡片，开启「混入搜索」开关 → 问答页提问 → 查看引用卡片显示「My Card」徽章
-  - 截图留档至 `pr-build/issue-xxxx-rag-phase3-validation.png`
-- [ ] 测试覆盖率报告 + 回归证明点提交记录归档。
+- [x] 后端 `uv run pytest tests/knowledge -q` 全量 GREEN（319 passed，较 Phase-2 Batch-1 基线 +14）。
+- [x] 前端 `pnpm test` 全量 GREEN（156 文件 1260 passed，较 Phase-2 Batch-1 基线 +47）。
+- [x] Live 冒烟（真实 key + Qdrant，2026-08-16）：
+  - 编辑任意 Wiki 条目，补充层添加内容 → 触发新文档入库 → 增量重生 → 检查补充层保留 ✅（JVM 条目补充层批注 + smoke-jvm-doc.md 入库 + 「更新百科」增量重生 → 正文重写且融合新材料，补充层原样保留）
+  - 创建一张人工卡片，开启「混入搜索」开关 → 问答页提问 → 查看引用卡片显示「我的卡片」徽章 ✅（「JVM 冒烟速记」命中为引用 1，来源分组含「卡片×1」，悬停弹层显示徽章+预览）
+  - 截图留档至 `pr-build/rag-phase3-*.png` ✅（3 张）
+- [x] 测试覆盖率报告 + 回归证明点提交记录归档。（基线见上；回归与冒烟记录于本 Plan 各 Task 提交号）
 
-### Live 冒烟结果摘要（待填充）
+### Live 冒烟结果摘要（2026-08-16 已填充）
 
 | 测试项 | 预期结果 | 实际结果 | 状态 |
 |--------|----------|----------|------|
-| Wiki 编辑双模式 | 补充层保留不变 | TBD | ⏳ |
-| 切片编辑 + 向量更新 | Qdrant 返回新文本 | TBD | ⏳ |
-| 删除预览弹窗 | 红色失格列表展示 | TBD | ⏳ |
-| 单切片重抽取 | 仅改当前实体 | TBD | ⏳ |
-| 人工卡片 CRUD | 列表/新建/删除正常 | TBD | ⏳ |
-| Wiki 路混排 | source_type="manual"出现 | TBD | ⏳ |
+| Wiki 编辑双模式 | 补充层保留不变 | 增量重生后补充层批注原样保留，正文被重写且融合新文档材料（新生代/老年代回收算法融入新正文） | ✅ |
+| 切片编辑 + 向量更新 | Qdrant 返回新文本 | 集成测试覆盖（test_chunk_edit_api 含 Qdrant upsert 断言），未单独 Live 冒烟 | ✅(测试) |
+| 删除预览弹窗 | 红色失格列表展示 | DOM 测试覆盖（delete-preview.dom 红名单断言），未单独 Live 冒烟 | ✅(测试) |
+| 单切片重抽取 | 仅改当前实体 | 后端服务测试覆盖（test_chunk_re_extract 五步流程断言），未单独 Live 冒烟 | ✅(测试) |
+| 人工卡片 CRUD | 列表/新建/删除正常 | Live 验证新建+混入开关+列表排序；删除由 DOM/后端测试覆盖 | ✅ |
+| Wiki 路混排 | source_type="manual"出现 | 问答引用 1 即卡片，来源分组「文档×10 · 百科×2 · 卡片×1」，悬停弹层「我的卡片」徽章+预览 | ✅ |
 
 
-**End of Plan** — Ready for TDD implementation cycle 🚀
+**End of Plan** — 2026-08-16 全部完成（Task 1-10 关闭，Live 冒烟双项通过）✅
