@@ -37,6 +37,7 @@ from qdrant_client.models import (
     PayloadSchemaType,
     PointStruct,
     Prefetch,
+    Record,
     ScoredPoint,
     SparseVector,
     SparseVectorParams,
@@ -409,6 +410,55 @@ class KnowledgeVectorStore:
             collection_name=self.chunks_collection,
             points_selector=FilterSelector(filter=Filter(must=[FieldCondition(key="chunk_id", match=MatchAny(any=list(chunk_ids)))])),
         )
+
+    async def scroll_collection(
+        self,
+        collection_name: str,
+        kb_id: str,
+        *,
+        with_vectors: bool = False,
+        batch_size: int = 512,
+    ) -> list[Record]:
+        """Page through every point of one KB in a collection (vector-space projection).
+
+        Default is ids + payload only — the projection fetcher's sampling
+        candidate source; dense vectors are fetched afterwards for the chosen
+        subset via ``retrieve_vectors``, so a large KB never puts its full
+        vector payload on the wire twice.
+        """
+        kb_filter = Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
+        records: list[Record] = []
+        offset = None
+        while True:
+            batch, offset = await self._client.scroll(
+                collection_name=collection_name,
+                scroll_filter=kb_filter,
+                limit=batch_size,
+                offset=offset,
+                with_payload=True,
+                with_vectors=with_vectors,
+            )
+            records.extend(batch)
+            if offset is None:
+                return records
+
+    async def retrieve_vectors(self, collection_name: str, point_ids: Sequence[str]) -> dict[str, list[float]]:
+        """Batched dense-vector retrieve by raw point ids (projection fetcher).
+
+        Keys are ``str(point_id)`` so callers can key by the scroll records'
+        ids directly. Missing points (deleted between scroll and retrieve)
+        are skipped silently.
+        """
+        if not point_ids:
+            return {}
+        points = await self._client.retrieve(collection_name=collection_name, ids=list(point_ids), with_vectors=True)
+        vectors: dict[str, list[float]] = {}
+        for point in points:
+            vector = point.vector if isinstance(point.vector, dict) else {}
+            dense = vector.get("dense")
+            if dense:
+                vectors[str(point.id)] = [float(v) for v in dense]
+        return vectors
 
     async def upsert_manual_cards(self, cards: Sequence[ManualCardUpsert]) -> int:
         """Upsert manual-card dense vectors into ``kb_manual_cards`` (pointer payload only)."""

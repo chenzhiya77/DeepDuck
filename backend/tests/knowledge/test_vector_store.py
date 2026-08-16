@@ -240,3 +240,40 @@ async def test_query_manual_cards_filters_by_kb_and_ranks_by_score(vector_store)
     # top_k caps the candidate count fed into the shared pool.
     capped = await store.query_manual_cards(dense=[1.0] + [0.0] * 1023, kb_id="kb-1", top_k=1)
     assert [point.payload["card_id"] for point in capped] == ["card-near"]
+
+
+async def test_scroll_collection_pages_and_filters_by_kb(vector_store):
+    """``scroll_collection`` (vector-space projection P2): paged id+payload
+    listing scoped to one kb — the fetcher's sampling candidate source."""
+    store, client = vector_store
+    await store.upsert_chunks(
+        [
+            _chunk("doc-1#0000", "kb-1", "doc-1"),
+            _chunk("doc-1#0001", "kb-1", "doc-1"),
+            _chunk("doc-1#0002", "kb-1", "doc-1"),
+            _chunk("doc-9#0000", "kb-2", "doc-9"),
+        ]
+    )
+
+    # batch_size=2 forces a second page for the three kb-1 points.
+    records = await store.scroll_collection(store.chunks_collection, "kb-1", batch_size=2)
+
+    assert len(records) == 3
+    assert all(r.payload["kb_id"] == "kb-1" for r in records)
+    # with_vectors=False: ids + payload only, no vector data on the wire.
+    assert all(not r.vector for r in records)
+
+
+async def test_retrieve_vectors_returns_dense_by_point_ids(vector_store):
+    """``retrieve_vectors`` (vector-space projection P2): batched dense fetch
+    keyed by raw point id, matching the scroll output one-to-one."""
+    store, client = vector_store
+    await store.upsert_chunks([_chunk("doc-1#0000", "kb-1", "doc-1"), _chunk("doc-1#0001", "kb-1", "doc-1")])
+    records = await store.scroll_collection(store.chunks_collection, "kb-1")
+
+    vectors = await store.retrieve_vectors(store.chunks_collection, [r.id for r in records])
+
+    assert set(vectors) == {str(r.id) for r in records}
+    assert all(len(v) == 1024 for v in vectors.values())
+    # empty id list short-circuits without a client call.
+    assert await store.retrieve_vectors(store.chunks_collection, []) == {}
