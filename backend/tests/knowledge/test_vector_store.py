@@ -220,11 +220,13 @@ async def test_delete_entities(vector_store):
 async def test_query_manual_cards_filters_by_kb_and_ranks_by_score(vector_store):
     """``query_manual_cards`` (Phase-3 P6): dense top-k over kb_manual_cards,
     scoped to one kb, carrying the card pointer payload."""
+    # 余弦对单维常量向量不敏感（[0.9,0,…] 与 [0.1,0,…] 得分同为 1.0）——
+    # near/far 用方向差异构造，确保分数严格可分。
     store, client = vector_store
     await store.upsert_manual_cards(
         [
-            ManualCardUpsert(card_id="card-near", kb_id="kb-1", title="近", dense=[0.9] + [0.0] * 1023),
-            ManualCardUpsert(card_id="card-far", kb_id="kb-1", title="远", dense=[0.1] + [0.0] * 1023),
+            ManualCardUpsert(card_id="card-near", kb_id="kb-1", title="近", dense=[1.0] + [0.0] * 1023),
+            ManualCardUpsert(card_id="card-far", kb_id="kb-1", title="远", dense=[0.5, 0.5] + [0.0] * 1022),
             ManualCardUpsert(card_id="card-other-kb", kb_id="kb-2", title="别库", dense=[1.0] + [0.0] * 1023),
         ]
     )
@@ -233,7 +235,7 @@ async def test_query_manual_cards_filters_by_kb_and_ranks_by_score(vector_store)
 
     assert [point.payload["card_id"] for point in points] == ["card-near", "card-far"]
     assert all(point.payload["kb_id"] == "kb-1" for point in points)
-    assert points[0].score >= points[1].score
+    assert points[0].score > points[1].score
 
     # top_k caps the candidate count fed into the shared pool.
     capped = await store.query_manual_cards(dense=[1.0] + [0.0] * 1023, kb_id="kb-1", top_k=1)

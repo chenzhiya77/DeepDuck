@@ -415,11 +415,16 @@ class KnowledgeStore:
         include_in_wiki_search: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Cards of one KB, newest first; ``include_in_wiki_search`` filters
-        by the retrieval-mix toggle when given (spec §8 开关口径)."""
+        by the retrieval-mix toggle when given (spec §8 开关口径).
+
+        Ordered by ``created_at`` (not ``updated_at``): a toggle flip or edit
+        must not reshuffle the list — with updated_at ordering the card just
+        touched jumps to the top, which reads as "the row above lit up".
+        """
         stmt = select(ManualKnowledgeRow).where(ManualKnowledgeRow.kb_id == kb_id)
         if include_in_wiki_search is not None:
             stmt = stmt.where(ManualKnowledgeRow.include_in_wiki_search == include_in_wiki_search)
-        stmt = stmt.order_by(ManualKnowledgeRow.updated_at.desc(), ManualKnowledgeRow.id.desc()).offset(offset).limit(limit)
+        stmt = stmt.order_by(ManualKnowledgeRow.created_at.desc(), ManualKnowledgeRow.id.desc()).offset(offset).limit(limit)
         async with self._sf() as session:
             result = await session.execute(stmt)
             return [self._row_to_dict(row) for row in result.scalars().all()]

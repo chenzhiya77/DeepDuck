@@ -177,6 +177,23 @@ async def test_list_cards_filters_by_include_flag(service, monkeypatch):
     assert [item["title"] for item in only_off["items"]] == ["不混入"]
 
 
+async def test_list_cards_stable_order_survives_updates(service):
+    """Updates (incl. toggle flips) must NOT reshuffle the list: ordering is
+    ``created_at``-stable (newest first), not ``updated_at``. With updated_at
+    ordering the card you just toggled jumps to the top — visually reading as
+    "the row above lit up"."""
+    client = _client(service)
+    kb = _create_kb(client)
+    url = _cards_url(kb["id"])
+    ids = [client.post(url, json={"title": f"卡片{i}", "content": "x"}).json()["id"] for i in range(3)]
+
+    before = [item["id"] for item in client.get(url).json()["items"]]
+    assert client.patch(f"{url}/{ids[1]}", json={"title": "改名"}).status_code == 200
+    after = [item["id"] for item in client.get(url).json()["items"]]
+
+    assert after == before
+
+
 async def test_get_card_detail_and_404(service):
     client = _client(service)
     kb = _create_kb(client)
@@ -267,3 +284,69 @@ async def test_delete_kb_cascade_includes_manual_cards(service):
 
     assert client.delete(f"/api/knowledge-bases/{kb['id']}").status_code == 204
     assert await service.store.get_manual_card(card["id"]) is None
+
+
+async def test_update_card_upsert_failure_leaves_flag_off_and_retry_converges(service, monkeypatch):
+    """Ordering contract (2026-08-16 fix): the vector write runs BEFORE the DB
+    write. An upsert failure surfaces as 500 with the flag still off in the DB
+    — retrying the toggle converges. The old order (DB first) stranded cards
+    in a stuck state: flag on, no vector point, and re-PATCHing ``on`` never
+    re-upserted because ``turning_on`` no longer held."""
+    embedder = _mock_embedder(monkeypatch)
+    service.vector_store.upsert_manual_cards = AsyncMock(side_effect=RuntimeError("qdrant down"))
+    client = _client_no_raise(service)
+    kb = _create_kb(client)
+    url = _cards_url(kb["id"])
+    card = client.post(url, json={"title": "发布禁令", "content": "周五不发布"}).json()
+    card_url = f"{url}/{card['id']}"
+
+    failed = client.patch(card_url, json={"include_in_wiki_search": True})
+    assert failed.status_code == 500
+    # Flag stays off in the DB — no stuck "on but vectorless" card.
+    assert (await service.store.get_manual_card(card["id"]))["include_in_wiki_search"] is False
+
+    # Qdrant recovers → the same toggle click converges.
+    service.vector_store.upsert_manual_cards = AsyncMock()
+    retried = client.patch(card_url, json={"include_in_wiki_search": True})
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["include_in_wiki_search"] is True
+    service.vector_store.upsert_manual_cards.assert_awaited_once()
+    # 两次 PATCH 各 embed 一次（失败那次 + 收敛那次），文本均为当前卡片内容。
+    assert embedder.embed.await_count == 2
+    embedder.embed.assert_awaited_with(["发布禁令\n周五不发布"])
+
+
+async def test_update_card_explicit_on_reasserts_missing_vector_point(service, monkeypatch):
+    """Self-heal: an explicit ``include_in_wiki_search: true`` PATCH re-embeds
+    and re-upserts even when the DB flag is already on (same point id — an
+    idempotent overwrite), converging legacy cards stuck without a point."""
+    embedder = _mock_embedder(monkeypatch)
+    client = _client(service)
+    kb = _create_kb(client)
+    url = _cards_url(kb["id"])
+    card = client.post(url, json={"title": "发布禁令", "content": "周五不发布"}).json()
+    # Simulate the legacy stuck state: flag on at the store layer, no vector.
+    await service.store.update_manual_card(card["id"], include_in_wiki_search=True)
+    embedder.embed.reset_mock()
+    service.vector_store.upsert_manual_cards.reset_mock()
+
+    response = client.patch(f"{url}/{card['id']}", json={"include_in_wiki_search": True})
+
+    assert response.status_code == 200, response.text
+    embedder.embed.assert_awaited_once_with(["发布禁令\n周五不发布"])
+    service.vector_store.upsert_manual_cards.assert_awaited_once()
+
+
+async def test_create_card_upsert_failure_leaves_no_row(service, monkeypatch):
+    """create follows the same contract: upsert BEFORE the DB insert — an
+    upsert failure (500) leaves no flag-on vectorless row behind."""
+    _mock_embedder(monkeypatch)
+    service.vector_store.upsert_manual_cards = AsyncMock(side_effect=RuntimeError("qdrant down"))
+    client = _client_no_raise(service)
+    kb = _create_kb(client)
+    url = _cards_url(kb["id"])
+
+    response = client.post(url, json={"title": "t", "content": "x", "include_in_wiki_search": True})
+
+    assert response.status_code == 500
+    assert await service.store.list_manual_cards(kb["id"]) == []

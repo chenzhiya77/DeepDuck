@@ -578,9 +578,11 @@ class KnowledgeService:
 
         Cards with the wiki-search toggle on are embedded and upserted into
         ``kb_manual_cards`` so the Task-8 wiki-path merge can retrieve them.
-        Ordering mirrors ``update_chunk_text``: embed BEFORE the DB write (an
-        embedder outage leaves no row); an upsert failure after the write
-        surfaces as 500 — visible, and re-saving the card converges.
+        Ordering (2026-08-16 fix): embed → upsert → DB insert. An upsert
+        failure surfaces as 500 with NO row left behind (retry = recreate, no
+        stuck flag-on vectorless card); a DB failure after the upsert leaves
+        an orphan point, which the wiki-path hydration simply skips (the row
+        lookup returns None).
         """
         embedding = None
         if include_in_wiki_search:
@@ -588,8 +590,13 @@ class KnowledgeService:
 
             embedding = (await DashScopeEmbedder().embed([self._manual_card_embed_text(title, content)]))[0]
 
-        card = await self.store.create_manual_card(
-            card_id=uuid.uuid4().hex,
+        card_id = uuid.uuid4().hex
+        if embedding is not None:
+            from deerflow.knowledge.vector_store import ManualCardUpsert
+
+            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=title, dense=embedding.dense)])
+        return await self.store.create_manual_card(
+            card_id=card_id,
             kb_id=kb_id,
             owner_id=owner_id,
             title=title,
@@ -597,11 +604,6 @@ class KnowledgeService:
             tags=tags,
             include_in_wiki_search=include_in_wiki_search,
         )
-        if embedding is not None:
-            from deerflow.knowledge.vector_store import ManualCardUpsert
-
-            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card["id"], kb_id=kb_id, title=title, dense=embedding.dense)])
-        return card
 
     async def list_manual_cards(
         self,
@@ -664,16 +666,26 @@ class KnowledgeService:
         effective_flag = include_in_wiki_search if include_in_wiki_search is not None else card["include_in_wiki_search"]
         effective_title = title if title is not None else card["title"]
         effective_content = content if content is not None else card["content"]
-        turning_on = include_in_wiki_search is True and not card["include_in_wiki_search"]
         turning_off = include_in_wiki_search is False and card["include_in_wiki_search"]
         text_changed = (title is not None and title != card["title"]) or (content is not None and content != card["content"])
+        # 显式传 on 时总是重 embed+upsert（同点幂等覆盖）——既覆盖 turning_on
+        # 与文本变更，也让历史「on 但无向量点」的残留卡片在下一次显式 on 时自愈。
+        needs_vector = effective_flag and (include_in_wiki_search is True or text_changed)
 
-        # Embed before the DB write (same ordering contract as chunk editing).
+        # Ordering (2026-08-16 fix): embed → upsert → DB write. An upsert
+        # failure surfaces as 500 with the flag UNCHANGED in the DB — retrying
+        # the same toggle converges. (The old DB-first order stranded cards:
+        # flag on, no point, and re-PATCHing on never re-upserted.)
         embedding = None
-        if effective_flag and (turning_on or text_changed):
+        if needs_vector:
             from deerflow.knowledge.embedder import DashScopeEmbedder
 
             embedding = (await DashScopeEmbedder().embed([self._manual_card_embed_text(effective_title, effective_content)]))[0]
+
+        if embedding is not None:
+            from deerflow.knowledge.vector_store import ManualCardUpsert
+
+            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=effective_title, dense=embedding.dense)])
 
         updated = await self.store.update_manual_card(
             card_id,
@@ -685,11 +697,7 @@ class KnowledgeService:
         if updated is None:
             return None
 
-        if embedding is not None:
-            from deerflow.knowledge.vector_store import ManualCardUpsert
-
-            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=effective_title, dense=embedding.dense)])
-        elif turning_off:
+        if turning_off:
             try:
                 await self.vector_store.delete_manual_cards([card_id])
             except Exception:
