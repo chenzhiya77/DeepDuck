@@ -279,7 +279,9 @@ export function DocumentPanel({
           </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button aria-label={tk.sortDocuments} size="icon-sm" variant="ghost">
+            {/* size-7（28px）与搜索框 h-7 同高——icon-sm（32px）会把工具栏
+                撑得比 wiki tab 搜索栏高 4px。 */}
+            <Button aria-label={tk.sortDocuments} className="size-7" size="icon-sm" variant="ghost">
               <ArrowUpDown className="size-4" />
             </Button>
           </DropdownMenuTrigger>

@@ -72,6 +72,14 @@ describe("DocumentPanel toolbar", () => {
     expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
     expect(screen.queryByText("生成百科")).toBeNull();
   });
+
+  it("matches the wiki tab's toolbar height (sort trigger sized to the h-7 search input)", () => {
+    renderPanel();
+    // icon-sm（size-8/32px）比搜索框 h-7（28px）高，会把工具栏撑高 4px——
+    // 覆盖为 size-7 与 wiki tab 搜索栏行高对齐。
+    const sortTrigger = screen.getByRole("button", { name: "排序方式" });
+    expect(sortTrigger.className).toContain("size-7");
+  });
 });
 
 describe("DocumentPanel table", () => {
