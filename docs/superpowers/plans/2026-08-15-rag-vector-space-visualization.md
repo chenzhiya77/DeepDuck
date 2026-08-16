@@ -25,18 +25,19 @@
   - 前端零图表库；`performance-budgets.json` 需为 echarts 异步 chunk 加预算条目。
   - blockbuster 纪律：PCA 的 SVD 是 CPU 密集计算，必须 `anyio.to_thread`，不得阻塞事件循环。
 
-## Task 1: P1 降维引擎——numpy PCA 纯函数 + transform ✅（RED 先行）
+## Task 1: P1 降维引擎——numpy PCA 纯函数 + transform ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `backend/packages/harness/deerflow/knowledge/projection/__init__.py`
-- Create: `backend/packages/harness/deerflow/knowledge/projection/reducer.py`
-- Create: `backend/tests/knowledge/projection/test_reducer.py`
-- Modify: `backend/packages/harness/pyproject.toml`（numpy 显式声明为 harness 依赖）
+- Create: `backend/packages/harness/deerflow/knowledge/projection/__init__.py` ✅
+- Create: `backend/packages/harness/deerflow/knowledge/projection/reducer.py` ✅
+- Create: `backend/tests/knowledge/projection/__init__.py` + `test_reducer.py` ✅（tests/knowledge 子目录惯例带 __init__.py）
+- Modify: `backend/packages/harness/pyproject.toml`（numpy 显式声明）+ `uv.lock` ✅
 
-- [ ] RED test: 合成 3D 高斯云（已知主方向）→ `pca_reduce(dims=2)` 第一主成分方向余弦 >0.99；`variance_ratio` 单调递减；`PCAModel.transform(v)` 与手算 `(v - mean) @ components_.T` 一致；输入 L2 归一化；`umap_reduce` 未装 extra 时抛 `UmapUnavailableError`。
-- [ ] Implement: 中心化 + `np.linalg.svd`；`PCAModel` dataclass（`components_` / `mean_` / `model_version="pca-v1"`）；`umap_reduce` 延迟 import。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/projection/test_reducer.py -q` GREEN；revert→RED→restore→GREEN。
-- [ ] Commit: `feat(rag): add PCA projection reducer with query transform support`
+- [x] RED test: 11 用例（主方向余弦 >0.99 / variance_ratio 单调递减且主导 / transform 与手算一致 / 尺度不变性 / 未见过 query 投影 / dims 校验 / 空输入 / 点数少于 dims 零填充 / 零向量保护 / l2_normalize / umap 未装报错）。collection error 确认 RED。
+- [x] Implement: 中心化 + `np.linalg.svd`；`PCAModel` frozen dataclass（transform 内重复 fit 期归一化，fit/transform 永不漂移）；`umap_reduce` 延迟 import 抛 `UmapUnavailableError`（带安装提示，供 API 层转 400）。
+- [x] GREEN（11 passed）；revert proof：移走 reducer.py → collection error → 恢复 → 11 passed。
+- [x] ruff check/format 双净；`uv lock` 同步（numpy 提升为直接依赖）。
+- [x] Commit: `feat(rag): add PCA projection reducer with query transform support`（`5db87d50`）
 
 ## Task 2: P2 数据获取与采样层
 
