@@ -196,18 +196,18 @@
 - [x] 回归基线：后端 knowledge 域 315 passed（较 Task 7 +10）；前端 1218 passed（+5）；ruff / pnpm check 双净。
 - [x] Commits: `ec9239e6` (backend 混排检索 + query_manual_cards) + `c859ebc0` (frontend source_type 徽章链)
 
-## Task 9: P6 人工知识卡片系统——前端展示与引用标识完整流程 ✅ 计划中（待实施）
+## Task 9: P6 人工知识卡片系统——前端展示与引用标识完整流程 ✅ 已完成（2026-08-16，核实归档）
 
 **Files:**
-- Modify: `frontend/src/components/workspace/knowledge/page.tsx` (add "我的知识卡片" collapsible section)
-- Modify: `frontend/src/components/chat/MessageList.tsx` (citation rendering logic)
-- Create: `frontend/tests/unit/components/workspace/knowledge/page.manual-cards-section.dom.test.tsx`
+- Modify: `frontend/src/components/workspace/knowledge/page.tsx` (add "我的知识卡片" collapsible section) ✅（Task 7 已落地，后经 `a8f94f57` 演进为 WikiTab 分段布局）
+- Modify: `frontend/src/components/chat/MessageList.tsx` (citation rendering logic) ✅（Task 8 落地：实际路径为 chat-panel.tsx → `sourcesForAssistantMessage` → citations.ts → KbCitationSources/CitationPreviewCard，无需改 MessageList 本体）
+- ~~Create: `frontend/tests/unit/components/workspace/knowledge/page.manual-cards-section.dom.test.tsx`~~（未单建：等价用例分散于 manual-card-panel / manual-card-drawer / citation-ux / citations 四个测试文件）
 
-- [ ] RED test: card toggles visibility; citation badge renders correctly.
-- [ ] Implement: tab container adds third section `<CollapsibleSection title="我的知识卡片">`; MessageList passes `source_type` to CitationHoverCard; badge component selects icon based on source.
-- [ ] Test: open/collapse works; clicked card opens drawer; hover on `[n]` shows correct badge.
-- [ ] GREEN; revert proof; restore.
-- [ ] Commit: `feat(frontend): complete manual cards display and citation badge workflow`.
+- [x] RED test: card toggles visibility; citation badge renders correctly.（已在 Task 7/8 的 TDD 循环中各自完成 RED→GREEN）
+- [x] Implement: tab container adds third section `<CollapsibleSection title="我的知识卡片">`; MessageList passes `source_type` to CitationHoverCard; badge component selects icon based on source.（Task 7 折叠区 + Task 8 source_type 徽章链；后续修复补齐卡片详情抽屉 ManualCardDrawer 与行点击）
+- [x] Test: open/collapse works; clicked card opens drawer; hover on `[n]` shows correct badge.（2026-08-16 核实重跑 6 文件 60 passed：折叠开合、行点击开抽屉、manual 徽章 hover 预览与分组计数）
+- [x] GREEN; revert proof; restore.（RED/GREEN/revert 已在 Task 7/8 各自提交中完成，本任务为跨任务核实归档）
+- [x] Commit: 实质交付随 Task 7（`8b25db42`/`9233a997`）、Task 8（`ec9239e6`/`c859ebc0`/`907e402d`）、抽屉与交互修复（`7618b6b2`/`fb74552a`/`74f6bddb`）完成。
 
 ## Task 10: 文档同步与全量回归
 
