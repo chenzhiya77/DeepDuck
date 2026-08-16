@@ -4,7 +4,6 @@ import type { Message } from "@langchain/langgraph-sdk";
 import {
   ArrowUpIcon,
   ArrowUpRightIcon,
-  BrainIcon,
   CheckIcon,
   ChevronDownIcon,
   HistoryIcon,
@@ -14,14 +13,21 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  ModelSelector,
+  ModelSelectorContent,
+  ModelSelectorInput,
+  ModelSelectorItem,
+  ModelSelectorList,
+  ModelSelectorName,
+  ModelSelectorTrigger,
+} from "@/components/ai-elements/model-selector";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -47,22 +53,6 @@ import { KbCitationSources } from "./kb-citation-sources";
 
 /** Per-kb composer model memory: `rag-chat-model:{kbId}` → model name. */
 const MODEL_STORAGE_PREFIX = "rag-chat-model:";
-/** Per-kb composer reasoning-effort memory: `rag-chat-reasoning:{kbId}`. */
-const REASONING_STORAGE_PREFIX = "rag-chat-reasoning:";
-
-type ReasoningEffort = "minimal" | "low" | "medium" | "high";
-const REASONING_EFFORTS: readonly ReasoningEffort[] = ["minimal", "low", "medium", "high"];
-/** Built-in default effort (matches the main input box): shown with a 默认 mark. */
-const DEFAULT_EFFORT: ReasoningEffort = "medium";
-
-/** 128000 → "128K"；2_000_000 → "2M"（十进制 K/M，与主流模型 UI 一致）。 */
-function formatContextWindow(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    const m = tokens / 1_000_000;
-    return `${Number.isInteger(m) ? m : Number(m.toFixed(1))}M`;
-  }
-  return `${Math.round(tokens / 1000)}K`;
-}
 
 /**
  * Right-column chat panel bound to the selected knowledge base (spec
@@ -91,25 +81,20 @@ export function KnowledgeChatPanel({
   // undefined and the backend resolves request → agent config → global
   // default. A picked model is remembered per kb (localStorage).
   const [selectedModelName, setSelectedModelName] = useState<string | null>(null);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | null>(null);
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const { models } = useModels();
   // The trigger shows the effective model: the remembered pick, else the
   // backend's global default (models[0]).
   const activeModel = models.find((m) => m.name === selectedModelName) ?? models[0];
-  const supportsReasoning = activeModel?.supports_reasoning_effort ?? false;
 
   // Switching knowledge bases always starts a fresh conversation: threads are
   // bound to exactly one kb via metadata.kb_id and must never bleed across.
-  // The composer model + reasoning effort revert to whatever was remembered
-  // for the new kb.
+  // The composer model reverts to whatever was remembered for the new kb.
   useEffect(() => {
     setThreadId(uuid());
     setIsNewThread(true);
     setDraft("");
     setSelectedModelName(kbId ? localStorage.getItem(MODEL_STORAGE_PREFIX + kbId) : null);
-    setReasoningEffort(
-      kbId ? (localStorage.getItem(REASONING_STORAGE_PREFIX + kbId) as ReasoningEffort | null) : null,
-    );
   }, [kbId]);
 
   const handleModelSelect = useCallback(
@@ -118,16 +103,7 @@ export function KnowledgeChatPanel({
       if (kbId) {
         localStorage.setItem(MODEL_STORAGE_PREFIX + kbId, name);
       }
-    },
-    [kbId],
-  );
-  const handleEffortSelect = useCallback(
-    (value: string) => {
-      const effort = value as ReasoningEffort;
-      setReasoningEffort(effort);
-      if (kbId) {
-        localStorage.setItem(REASONING_STORAGE_PREFIX + kbId, effort);
-      }
+      setModelDialogOpen(false);
     },
     [kbId],
   );
@@ -136,12 +112,12 @@ export function KnowledgeChatPanel({
     () => ({
       model_name: selectedModelName ?? undefined,
       mode: undefined,
-      reasoning_effort: reasoningEffort ?? undefined,
+      reasoning_effort: undefined,
       agent_name: "rag",
       ...(kbId ? { kb_id: kbId } : {}),
       deep_research: deepResearch,
     }),
-    [kbId, deepResearch, selectedModelName, reasoningEffort],
+    [kbId, deepResearch, selectedModelName],
   );
 
   const {
@@ -398,8 +374,8 @@ export function KnowledgeChatPanel({
                   <span>{tc.deepResearch}</span>
                 </label>
               </Tooltip>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              <ModelSelector open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
+                <ModelSelectorTrigger asChild>
                   <button
                     aria-label={tc.selectModel}
                     className="text-muted-foreground hover:text-foreground flex max-w-40 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
@@ -409,48 +385,18 @@ export function KnowledgeChatPanel({
                     <span className="truncate">{activeModel?.display_name ?? activeModel?.name ?? tc.selectModel}</span>
                     <ChevronDownIcon className="size-3 shrink-0" />
                   </button>
-                </DropdownMenuTrigger>
-                {/* Qoder 样式复合弹层（向上弹出）：左列固定配置面板（上下文窗口
-                    + 思考模式），右列模型列表（display_name + provider id + 思考
-                    能力图标）。思考模式 radio 选择后菜单保持打开以便连续配置。 */}
-                <DropdownMenuContent align="start" className="flex w-[24rem] gap-0 p-0" side="top">
-                  <div className="w-36 shrink-0 border-r p-2">
-                    <DropdownMenuLabel className="px-1.5 text-xs">{tc.contextWindow}</DropdownMenuLabel>
-                    <div className="px-1.5 py-1 text-sm">
-                      {activeModel?.context_window ? formatContextWindow(activeModel.context_window) : tc.contextWindowUnset}
-                      <span className="text-muted-foreground ml-1 text-xs">{tc.defaultMark}</span>
-                    </div>
-                    <DropdownMenuLabel className="px-1.5 text-xs">{tc.thinkingMode}</DropdownMenuLabel>
-                    {!supportsReasoning && (
-                      <p className="text-muted-foreground px-1.5 py-1 text-xs">{tc.thinkingUnsupported}</p>
-                    )}
-                    <DropdownMenuRadioGroup
-                      value={reasoningEffort ?? DEFAULT_EFFORT}
-                      onValueChange={handleEffortSelect}
-                    >
-                      {REASONING_EFFORTS.map((effort) => (
-                        <DropdownMenuRadioItem
-                          disabled={!supportsReasoning}
-                          key={effort}
-                          value={effort}
-                          onSelect={(event) => event.preventDefault()}
-                        >
-                          {{ minimal: tc.effortMinimal, low: tc.effortLow, medium: tc.effortMedium, high: tc.effortHigh }[effort]}
-                          {effort === DEFAULT_EFFORT && (
-                            <span className="text-muted-foreground ml-1 text-xs">{tc.defaultMark}</span>
-                          )}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </div>
-                  <div className="max-h-72 min-w-0 flex-1 overflow-y-auto p-1">
+                </ModelSelectorTrigger>
+                <ModelSelectorContent title={tc.selectModel}>
+                  <ModelSelectorInput placeholder={tc.searchModels} />
+                  <ModelSelectorList>
                     {models.map((m) => (
-                      <DropdownMenuItem key={m.name} onSelect={() => handleModelSelect(m.name)}>
+                      <ModelSelectorItem
+                        key={m.name}
+                        value={m.name}
+                        onSelect={() => handleModelSelect(m.name)}
+                      >
                         <div className="flex min-w-0 flex-1 flex-col">
-                          <span className="flex items-center gap-1.5 truncate text-xs">
-                            {m.display_name ?? m.name}
-                            {m.supports_thinking && <BrainIcon className="size-3 shrink-0 text-emerald-500" />}
-                          </span>
+                          <ModelSelectorName>{m.display_name ?? m.name}</ModelSelectorName>
                           <span className="text-muted-foreground truncate text-[10px]">{m.model}</span>
                         </div>
                         {m.name === selectedModelName ? (
@@ -458,11 +404,11 @@ export function KnowledgeChatPanel({
                         ) : (
                           <div className="ml-auto size-4" />
                         )}
-                      </DropdownMenuItem>
+                      </ModelSelectorItem>
                     ))}
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  </ModelSelectorList>
+                </ModelSelectorContent>
+              </ModelSelector>
             </div>
             <Tooltip content={tc.send}>
               {/* The span keeps the tooltip reachable while the button is disabled */}

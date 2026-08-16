@@ -359,56 +359,18 @@ describe("KnowledgeChatPanel model selector", () => {
     // 让后端走 request → agent 配置 → 全局默认的解析链。
     expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("DeepSeek V4 Flash");
     expect(latestStreamOptions().context.model_name).toBeUndefined();
-    expect(latestStreamOptions().context.reasoning_effort).toBeUndefined();
-  });
-
-  it("opens a floating menu (not a centered dialog) with the config column: context window + thinking mode", async () => {
-    renderPanel();
-    fireEvent.keyDown(screen.getByRole("button", { name: "选择模型" }), { key: "ArrowDown" });
-    // Qoder 样式：悬浮菜单向上弹出，左侧配置列 = 上下文窗口 + 思考模式
-    expect(await screen.findByRole("menu")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByText("上下文窗口")).toBeTruthy();
-    // 当前模型 deepseek-v4-flash（128000 → 128K），标记为默认档展示
-    expect(screen.getByText(/128K/)).toBeTruthy();
-    expect(screen.getAllByText("默认").length).toBeGreaterThan(0);
-    expect(screen.getByText("思考模式")).toBeTruthy();
-    fireEvent.keyDown(document.body, { key: "Escape" });
   });
 
   it("writes the picked model into the stream context and persists it per kb", async () => {
     renderPanel();
-    fireEvent.keyDown(screen.getByRole("button", { name: "选择模型" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: /Qwen Plus/ }));
+    fireEvent.click(screen.getByRole("button", { name: "选择模型" }));
+    fireEvent.click(await screen.findByText("Qwen Plus"));
 
     expect(latestStreamOptions().context.model_name).toBe("qwen-plus");
     expect(localStorage.getItem("rag-chat-model:kb-1")).toBe("qwen-plus");
-    // 选择后菜单关闭、触发器显示新选择
-    expect(screen.queryByRole("menu")).toBeNull();
+    // 选择后弹层关闭、触发器显示新选择
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("Qwen Plus");
-  });
-
-  it("selects a reasoning effort for a capable model, keeps the menu open, and persists it per kb", async () => {
-    localStorage.setItem("rag-chat-model:kb-1", "qwen-plus");
-    renderPanel();
-    fireEvent.keyDown(screen.getByRole("button", { name: "选择模型" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitemradio", { name: "高" }));
-
-    expect(latestStreamOptions().context.reasoning_effort).toBe("high");
-    expect(localStorage.getItem("rag-chat-reasoning:kb-1")).toBe("high");
-    // radio 选择后菜单保持打开（连续配置）
-    expect(screen.getByRole("menu")).toBeTruthy();
-    fireEvent.keyDown(document.body, { key: "Escape" });
-  });
-
-  it("disables the thinking-mode radios when the active model lacks reasoning support", async () => {
-    renderPanel(); // deepseek-v4-flash: supports_reasoning_effort=false
-    fireEvent.keyDown(screen.getByRole("button", { name: "选择模型" }), { key: "ArrowDown" });
-    expect(await screen.findByText("该模型不支持思考模式")).toBeTruthy();
-    for (const radio of screen.getAllByRole("menuitemradio")) {
-      expect(radio.getAttribute("aria-disabled")).toBe("true");
-    }
-    fireEvent.keyDown(document.body, { key: "Escape" });
   });
 
   it("restores the remembered model per kb and falls back to default when switching to an unremembered kb", () => {
