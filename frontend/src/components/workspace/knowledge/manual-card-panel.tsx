@@ -264,7 +264,7 @@ export function ManualCardPanel({ kbId, onOpenCard }: { kbId: string; onOpenCard
                       {tc.updatedAt} {formatKnowledgeTimestamp(card.updated_at, locale)}
                     </span>
                   </button>
-                  <div className="absolute top-2 right-2 flex items-center gap-1">
+                  <div className="absolute top-1.5 right-2 flex items-center gap-1">
                     <Switch
                       aria-label={`${tc.includeInSearch}: ${card.title}`}
                       checked={card.include_in_wiki_search}
@@ -273,7 +273,7 @@ export function ManualCardPanel({ kbId, onOpenCard }: { kbId: string; onOpenCard
                     <Button
                       aria-label={tc.editCard}
                       className="text-muted-foreground hover:text-primary"
-                      size="icon"
+                      size="icon-sm"
                       variant="ghost"
                       onClick={() => openEdit(card)}
                     >
@@ -282,7 +282,7 @@ export function ManualCardPanel({ kbId, onOpenCard }: { kbId: string; onOpenCard
                     <Button
                       aria-label={tc.deleteCard}
                       className="text-muted-foreground hover:text-destructive"
-                      size="icon"
+                      size="icon-sm"
                       variant="ghost"
                       onClick={() => setDeleteTarget(card)}
                     >

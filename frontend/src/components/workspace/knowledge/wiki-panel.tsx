@@ -72,7 +72,7 @@ export function WikiPanel({
         {entries.map((entry) => (
           <li className="group relative" key={entry.id}>
             <button
-              className="hover:bg-muted/50 flex w-full flex-col gap-1 rounded-md px-2 py-2 pr-9 text-left"
+              className="hover:bg-muted/50 flex w-full flex-col gap-1 rounded-md px-2 py-2 pr-20 text-left"
               type="button"
               onClick={() => onOpenEntry(entry)}
             >
@@ -91,12 +91,15 @@ export function WikiPanel({
                 {tw.updatedAt} {formatKnowledgeTimestamp(entry.updated_at, locale)}
               </span>
             </button>
-            <div className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            {/* 操作区与标题行视觉同行：icon-sm（32px）+ top-1.5 → 按钮中心
+                ≈ 标题行中心；行 button 的 pr-20 预留两个按钮的宽度，文字不再
+                钻到按钮下面。 */}
+            <div className="absolute top-1.5 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               {onEditEntry && (
                 <Button
                   aria-label="编辑条目"
                   className="text-muted-foreground hover:text-primary"
-                  size="icon"
+                  size="icon-sm"
                   variant="ghost"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -109,7 +112,7 @@ export function WikiPanel({
               <Button
                 aria-label={tw.deleteEntry}
                 className="text-muted-foreground hover:text-destructive"
-                size="icon"
+                size="icon-sm"
                 variant="ghost"
                 onClick={(e) => {
                   e.stopPropagation();
