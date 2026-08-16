@@ -49,6 +49,8 @@ skills/custom/*
 logs/
 log/
 debug.log
+# Nginx runtime temp dirs and other local scratch files
+/temp/
 
 # Local git hooks (keep only on this machine, do not push)
 .githooks/
