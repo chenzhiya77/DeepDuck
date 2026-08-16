@@ -264,7 +264,9 @@ export function ManualCardPanel({ kbId, onOpenCard }: { kbId: string; onOpenCard
                       {tc.updatedAt} {formatKnowledgeTimestamp(card.updated_at, locale)}
                     </span>
                   </button>
-                  <div className="absolute top-1.5 right-2 flex items-center gap-1">
+                  {/* top-1 与 wiki 条目行操作区对齐（按钮中心 ≈ 标题行中心）。
+                      pr-28 保留：Switch 常驻显示，右侧空间不可撤。 */}
+                  <div className="absolute top-1 right-2 flex items-center gap-1">
                     <Switch
                       aria-label={`${tc.includeInSearch}: ${card.title}`}
                       checked={card.include_in_wiki_search}
