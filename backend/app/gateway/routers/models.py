@@ -26,6 +26,10 @@ class ModelResponse(BaseModel):
     description: str | None = Field(None, description="Model description")
     supports_thinking: bool = Field(default=False, description="Whether model supports thinking mode")
     supports_reasoning_effort: bool = Field(default=False, description="Whether model supports reasoning effort")
+    context_window: int | None = Field(
+        default=None,
+        description="Total context window size in tokens (prompt + completion); None when unconfigured",
+    )
 
 
 class TokenUsageResponse(BaseModel):
@@ -120,6 +124,7 @@ async def list_models(
             description=model.description,
             supports_thinking=model.supports_thinking,
             supports_reasoning_effort=model.supports_reasoning_effort,
+            context_window=model.context_window,
         )
         for model in visible_models
     ]
@@ -202,4 +207,5 @@ async def get_model(
         description=model.description,
         supports_thinking=model.supports_thinking,
         supports_reasoning_effort=model.supports_reasoning_effort,
+        context_window=model.context_window,
     )

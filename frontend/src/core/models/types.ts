@@ -6,6 +6,8 @@ export interface Model {
   description?: string | null;
   supports_thinking?: boolean;
   supports_reasoning_effort?: boolean;
+  /** Total context window in tokens; null/undefined when unconfigured. */
+  context_window?: number | null;
 }
 
 export interface TokenUsageSettings {

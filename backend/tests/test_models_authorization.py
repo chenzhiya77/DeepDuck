@@ -102,6 +102,55 @@ class _RecordingProvider:
 # ── list_models tests ──────────────────────────────────────────────────
 
 
+def _make_app_config_with_windows() -> AppConfig:
+    """Two models: one with a configured context_window, one without."""
+    return AppConfig(
+        models=[
+            ModelConfig(name="kimi-k3", model="kimi-k3", use="langchain_openai:ChatOpenAI", context_window=262144),
+            ModelConfig(name="qwen-plus", model="qwen-plus", use="langchain_openai:ChatOpenAI"),
+        ],
+        sandbox=SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider"),
+        token_usage=TokenUsageConfig(enabled=False),
+        authorization=AuthorizationConfig(),
+    )
+
+
+def test_list_models_includes_context_window(monkeypatch):
+    """The response carries each model's configured ``context_window`` (None
+    when unset) so the chat UI can display it (RAG composer model selector)."""
+    config = AuthorizationConfig(enabled=False)
+    monkeypatch.setattr("app.gateway.authz._get_route_authorization_config", lambda: config)
+    monkeypatch.setattr("app.gateway.authz._get_cached_route_provider", AsyncMock(side_effect=AssertionError("disabled must not resolve provider")))
+    monkeypatch.setattr(
+        "app.gateway.routers.models.get_optional_user_from_request",
+        AsyncMock(return_value=_user()),
+    )
+
+    with TestClient(_make_models_app(_make_app_config_with_windows())) as client:
+        response = client.get("/api/models")
+
+    assert response.status_code == 200
+    models = {m["name"]: m for m in response.json()["models"]}
+    assert models["kimi-k3"]["context_window"] == 262144
+    assert models["qwen-plus"]["context_window"] is None
+
+
+def test_get_model_includes_context_window(monkeypatch):
+    config = AuthorizationConfig(enabled=False)
+    monkeypatch.setattr("app.gateway.authz._get_route_authorization_config", lambda: config)
+    monkeypatch.setattr("app.gateway.authz._get_cached_route_provider", AsyncMock(side_effect=AssertionError("disabled must not resolve provider")))
+    monkeypatch.setattr(
+        "app.gateway.routers.models.get_optional_user_from_request",
+        AsyncMock(return_value=_user()),
+    )
+
+    with TestClient(_make_models_app(_make_app_config_with_windows())) as client:
+        response = client.get("/api/models/kimi-k3")
+
+    assert response.status_code == 200
+    assert response.json()["context_window"] == 262144
+
+
 def test_list_models_disabled_returns_all(monkeypatch):
     """When authorization is disabled, all models are visible."""
     config = AuthorizationConfig(enabled=False)

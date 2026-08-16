@@ -490,6 +490,17 @@ export interface Translations {
       /** Composer model selector: trigger aria-label + dialog title. */
       selectModel: string;
       searchModels: string;
+      /** Composer model popover: left config column. */
+      contextWindow: string;
+      contextWindowUnset: string;
+      thinkingMode: string;
+      thinkingUnsupported: string;
+      effortMinimal: string;
+      effortLow: string;
+      effortMedium: string;
+      effortHigh: string;
+      /** Suffix marking the built-in default option (e.g. "中 默认"). */
+      defaultMark: string;
       send: string;
     };
     errors: {
