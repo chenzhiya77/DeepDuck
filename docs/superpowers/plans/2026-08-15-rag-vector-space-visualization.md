@@ -80,18 +80,19 @@
 - [x] ruff check/format 双净。
 - [x] Commit: `feat(rag): expose vector projection and query-transform endpoints`（`8bbc9d95`）
 
-## Task 5: 前端 api client + 第四 tab 挂载
+## Task 5: 前端 api client + 第四 tab 挂载 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Modify: `frontend/src/core/knowledge/api.ts` / `types.ts` / `hooks.ts`
-- Modify: `frontend/src/components/workspace/knowledge/middle-tabs.tsx`（`KnowledgeMiddleTab` 扩 `"vectors"` + TabsTrigger/TabsContent）
-- Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts`（`tk.tabs.vectors`）
-- Create: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`
+- Modify: `frontend/src/core/knowledge/api.ts` / `types.ts` / `hooks.ts` ✅（类型对齐 Task 4 实测契约：含 `model_version`/`shown_points`/`heading_path`；`VectorProjectionParams` 放 api 层对齐 WikiGenerateMode 先例）
+- Modify: `frontend/src/components/workspace/knowledge/middle-tabs.tsx`（`KnowledgeMiddleTab` 扩 `"vectors"` + TabsTrigger/TabsContent + 必填 `vectors: ReactNode` prop）✅
+- Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts`（`tk.tabs.vectors` = 向量空间 / Vector space）✅
+- Modify: `frontend/src/app/workspace/knowledge/page.tsx`（占位 pane，Task 6 填本体）+ `frontend/tests/unit/knowledge/wiki-panel.dom.test.tsx`（renderTabs 基建补 vectors prop——必填 prop 的编译强制）✅
+- Create: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx` ✅
 
-- [ ] RED test: 第四个 trigger 渲染「向量空间」；点击切 tab 触发 `onTabChange("vectors")`；pane `forceMount` keep-alive。
-- [ ] Implement client/types/hook + tab 挂载（pane 先放空态占位）。
-- [ ] `pnpm test` GREEN；regression proof；restore。
-- [ ] Commit: `feat(frontend): mount the vector space tab in the knowledge middle column`
+- [x] RED test: 第四个 trigger 渲染「向量空间」；点击切 tab pane active；四 pane `forceMount` keep-alive。（3 用例，初始 3 failed 确认）
+- [x] Implement client/types/hook + tab 挂载（pane 空态占位，`vector-space-placeholder`）。`useVectorProjection` lazy 门控（对齐 wiki 列表先例）；`useProjectVectorQuery` mutation（对齐 recall test 纪律——live embedding 不缓存）。
+- [x] `pnpm test` GREEN（3 新 + 22 MiddleTabs 回归）；revert proof：stash 9 个实现文件 → 3 failed → 恢复 → 25 passed；`pnpm check` 双净。
+- [x] Commit: `feat(frontend): mount the vector space tab in the knowledge middle column`（`41577ef8`）
 
 ## Task 6: P5 2D 散点 + 着色 + hover/详情联动
 
