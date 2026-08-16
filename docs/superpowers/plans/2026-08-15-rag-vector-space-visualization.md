@@ -94,17 +94,19 @@
 - [x] `pnpm test` GREEN（3 新 + 22 MiddleTabs 回归）；revert proof：stash 9 个实现文件 → 3 failed → 恢复 → 25 passed；`pnpm check` 双净。
 - [x] Commit: `feat(frontend): mount the vector space tab in the knowledge middle column`（`41577ef8`）
 
-## Task 6: P5 2D 散点 + 着色 + hover/详情联动
+## Task 6: P5 2D 散点 + 着色 + hover/详情联动 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Modify: `frontend/package.json`（echarts + echarts-gl）与 `frontend/performance-budgets.json`（异步 chunk 预算）
-- Create: `frontend/src/components/workspace/knowledge/vector-tab.tsx`（数据/交互）与 `vector-canvas.tsx`（echarts 适配层，`next/dynamic` 懒加载）
-- Modify: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`
+- Modify: `frontend/package.json` + `pnpm-lock.yaml`（echarts@5.6.0 + echarts-gl@2.1.0；echarts 钉 5.x 保 echarts-gl peer 兼容）✅
+- ~~Modify: `frontend/performance-budgets.json`~~（有意不动：budget 脚本只测 per-route SSR HTML 引用资源，`next/dynamic ssr:false` 异步 chunk 天然不进测量面；新增条目反而触发 route-was-not-measured 失败。已记录于提交消息）
+- Create: `frontend/src/components/workspace/knowledge/vector-tab.tsx`（数据/交互 + `groupPointsIntoSeries` 着色分组：FNV-1a 稳定哈希调色板，wiki/card 固定色）与 `vector-canvas.tsx`（echarts 适配层，`next/dynamic ssr:false`；2D scatter + source_type 形状双编码 + tooltip label+preview + inside dataZoom + 点击分发）✅
+- Modify: `frontend/src/app/workspace/knowledge/page.tsx`（接线：`enabled` 懒门控 + `indexingDocCount` + chunk 点击回查 documents 开抽屉）+ i18n 三处（`tk.vectorSpace.*`）✅
+- Modify: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`（+10 VectorTab 用例；canvas mock 断言 props）✅
 
-- [ ] RED test（`vector-canvas` 整体 mock，断言 props）: 工具栏渲染（collection chips / 2D·3D / 算法 / 重新计算）；着色规则（chunk=doc_id、entity=type、wiki/card=source_type，图例可开关）；hover tooltip 数据（label + ≤120 字符 preview）；点击点 → 复用现有 chunk 抽屉 / wiki 条目 / 卡片抽屉打开链路；空 KB 空态引导；索引中提示。
-- [ ] Implement 双组件 + echarts scatterGL 配置生成。
-- [ ] `pnpm test` GREEN；regression proof；restore。
-- [ ] Commit: `feat(frontend): render the 2D vector scatter with coloring and drill-down`
+- [x] RED test: 工具栏渲染（4 chips / 2D·3D / 算法 / 重新计算——后两者 disabled 待 Task 7）；着色分组（5 组断言：chunk=doc、entity=type、wiki/card 单色）；加载/空/错误三态；chips 开关参数化；算法切换；enabled 透传；点击四型分发（chunk→doc 抽屉、wiki→条目抽屉、card→卡片抽屉、entity 惰性）；索引中提示。
+- [x] Implement 双组件 + echarts scatter 配置生成（含 tooltip escapeHtml）。
+- [x] `pnpm test` GREEN（36 passed：14 新 + 22 回归）；revert proof（stash 4 tracked + 移走 2 新组件 → 文件级 RED → 恢复 → 14 passed）；`pnpm check` 0 error（2 存量 warning 非本次引入）。踩坑记录：Radix ToggleGroup single 的 Item 是 `role=radio`（不是 button）；Radix Select 在 jsdom 用 `keyDown ArrowDown` 打开（对齐 human-input-card 先例）。
+- [x] Commit: `feat(frontend): render the 2D vector scatter with coloring and drill-down`（`3e426052`）
 
 ## Task 7: P5 3D 切换 + 采样徽标 + 重新计算
 
