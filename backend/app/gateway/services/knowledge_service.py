@@ -19,13 +19,20 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable, Collection
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import anyio
+import numpy as np
+
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
+from deerflow.knowledge.projection.cache import CachedProjection, ProjectionCache, content_fingerprint
+from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
+from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
 from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.wiki.generator import generate_wiki, wiki_generation_in_progress, wiki_last_run_status
@@ -48,6 +55,55 @@ class DocumentProcessingError(RuntimeError):
         self.status = status
 
 
+class ProjectionNotComputedError(RuntimeError):
+    """POST vector-projection/query arrived before any projection was cached."""
+
+
+class ProjectionModelUnavailableError(RuntimeError):
+    """The cached projection has no transform-capable model (umap, spec §4)."""
+
+
+def _projection_response(kb_id: str, algo: str, dims: int, entry: CachedProjection) -> dict[str, Any]:
+    """Assemble the GET response: cached entry → JSON-ready point list.
+
+    Coordinate columns are zipped with the fetched point metadata (row i ↔
+    points[i], the fetcher's alignment contract); ``z`` only appears for
+    ``dims=3``; optional fields stay absent rather than null.
+    """
+    coords = np.asarray(entry.coords)
+    points: list[dict[str, Any]] = []
+    for index, point in enumerate(entry.points):
+        item: dict[str, Any] = {
+            "id": point.id,
+            "source_type": point.source_type,
+            "x": float(coords[index][0]),
+            "y": float(coords[index][1]),
+            "label": point.label,
+            "color_key": point.color_key,
+            "preview": point.preview,
+        }
+        if dims == 3:
+            item["z"] = float(coords[index][2])
+        if point.heading_path:
+            item["heading_path"] = list(point.heading_path)
+        if point.entity_type is not None:
+            item["entity_type"] = point.entity_type
+        points.append(item)
+    return {
+        "kb_id": kb_id,
+        "algo": algo,
+        "dims": dims,
+        "model_version": entry.model.model_version if entry.model is not None else ("umap-v1" if algo == "umap" else "pca-v1"),
+        "fingerprint": entry.fingerprint,
+        "cached": entry.cached,
+        "computed_ms": entry.computed_ms,
+        "total_points": entry.total_points,
+        "shown_points": len(entry.points),
+        "sampled": entry.sampled,
+        "points": points,
+    }
+
+
 class KnowledgeService:
     """Coordinates stores + worker for the knowledge-base endpoints."""
 
@@ -61,6 +117,7 @@ class KnowledgeService:
         worker: Any = None,
         data_dir: str | Path,
         wiki_generate_fn: Callable[[str, bool], None] | None = None,
+        projection_cache: ProjectionCache | None = None,
     ) -> None:
         self.store = store
         self.vector_store = vector_store
@@ -69,6 +126,7 @@ class KnowledgeService:
         self.worker = worker
         self.data_dir = Path(data_dir)
         self.wiki_generate_fn = wiki_generate_fn or self._schedule_wiki_generation
+        self.projection_cache = projection_cache or ProjectionCache()
         self._wiki_tasks: set[asyncio.Task[None]] = set()
 
     # ── documents ────────────────────────────────────────────────────────
@@ -841,6 +899,89 @@ class KnowledgeService:
             "score_type": dict(self._RECALL_SCORE_TYPES),
             "elapsed_ms": {"vector": vector_ms, "graph": graph_ms, "wiki": wiki_ms},
         }
+
+    # ── vector-space projection (spec 2026-08-15 §7 P4) ───────────────────
+
+    async def get_vector_projection(
+        self,
+        kb_id: str,
+        *,
+        collections: list[str],
+        algo: str,
+        dims: int,
+        sample_size: int,
+        refresh: bool,
+    ) -> dict[str, Any]:
+        """Cached 2D/3D projection of the KB's four collections (spec §7).
+
+        The fingerprint is recomputed per request (cheap); only a moved
+        fingerprint — or ``refresh=True`` — reruns fetch→reduce. The SVD
+        itself runs off the event loop (``anyio.to_thread``, blockbuster 纪律).
+        """
+        stats = await self.store.get_kb_content_stats(kb_id)
+        fingerprint = content_fingerprint(stats)
+        key = (kb_id, algo, dims, sample_size, tuple(collections))
+
+        async def compute() -> CachedProjection:
+            started = time.perf_counter()
+            fetched = await fetch_projection_vectors(self.vector_store, self.store, kb_id, collections=collections, sample_size=sample_size)
+            if not fetched.points:
+                return CachedProjection(
+                    coords=np.empty((0, dims), dtype=np.float64),
+                    points=(),
+                    total_points=fetched.total_points,
+                    sampled=fetched.sampled,
+                )
+            reduce = partial(umap_reduce, fetched.matrix, dims) if algo == "umap" else partial(pca_reduce, fetched.matrix, dims)
+            coords, model = await anyio.to_thread.run_sync(reduce)
+            return CachedProjection(
+                coords=coords,
+                points=fetched.points,
+                # Query overlay is PCA-only: umap has no stable transform (spec §4).
+                model=model if algo == "pca" else None,
+                total_points=fetched.total_points,
+                sampled=fetched.sampled,
+                computed_ms=int((time.perf_counter() - started) * 1000),
+            )
+
+        entry = await self.projection_cache.get_or_compute(key, fingerprint=fingerprint, refresh=refresh, compute=compute)
+        return _projection_response(kb_id, algo, dims, entry)
+
+    async def project_query_vector(
+        self,
+        kb_id: str,
+        *,
+        text: str,
+        collections: list[str],
+        algo: str,
+        dims: int,
+        sample_size: int,
+    ) -> dict[str, Any]:
+        """Transform query text into the cached projection's coordinate system.
+
+        Never triggers a projection compute (spec §7): the PCA model must
+        already be cached — 409 otherwise — so the retrieval overlay adds
+        nothing beyond one embedding call + a matrix multiply.
+        """
+        key = (kb_id, algo, dims, sample_size, tuple(collections))
+        entry = self.projection_cache.peek(key)
+        if entry is None:
+            raise ProjectionNotComputedError("Projection not computed yet; open the vector space tab first")
+        if entry.model is None:
+            raise ProjectionModelUnavailableError("Query projection requires a PCA model (algo=umap has no stable transform)")
+        from deerflow.knowledge.embedder import DashScopeEmbedder
+
+        vector = (await DashScopeEmbedder().embed([text]))[0]
+        coords = entry.model.transform(np.asarray(vector, dtype=np.float64))
+        result: dict[str, Any] = {
+            "x": float(coords[0]),
+            "y": float(coords[1]),
+            "model_version": entry.model.model_version,
+            "fingerprint": entry.fingerprint,
+        }
+        if dims == 3:
+            result["z"] = float(coords[2])
+        return result
 
     def _schedule_wiki_generation(self, kb_id: str, only_dirty: bool = True) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id, only_dirty=only_dirty), name=f"kb-wiki-{kb_id}")

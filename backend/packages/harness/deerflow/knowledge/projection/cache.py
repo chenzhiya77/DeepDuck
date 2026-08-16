@@ -76,6 +76,10 @@ class ProjectionCache:
         self._locks: dict[tuple, asyncio.Lock] = {}
         self._guard = asyncio.Lock()
 
+    def peek(self, key: tuple) -> CachedProjection | None:
+        """Read-only lookup for the query-transform endpoint — never computes."""
+        return self._entries.get(key)
+
     async def _lock_for(self, key: tuple) -> asyncio.Lock:
         async with self._guard:
             return self._locks.setdefault(key, asyncio.Lock())

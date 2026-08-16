@@ -14,9 +14,15 @@ from typing import Literal
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
-from app.gateway.services.knowledge_service import DocumentProcessingError, KnowledgeService
+from app.gateway.services.knowledge_service import (
+    DocumentProcessingError,
+    KnowledgeService,
+    ProjectionModelUnavailableError,
+    ProjectionNotComputedError,
+)
 from deerflow.knowledge.access import can_access
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
+from deerflow.knowledge.projection.reducer import UmapUnavailableError
 
 router = APIRouter(prefix="/api/knowledge-bases", tags=["knowledge-bases"])
 
@@ -60,6 +66,20 @@ class RecallTestRequest(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("query must not be blank")
+        return value
+
+
+class VectorProjectionQueryRequest(BaseModel):
+    """POST vector-projection/query payload: raw question text (spec §7)."""
+
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def _text_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("text must not be blank")
         return value
 
 
@@ -438,3 +458,50 @@ async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     """
     service = await _require_kb_access(request, kb_id)
     return await service.recall_test(kb_id=kb_id, user_id=_user_id(request), query=body.query, top_k=body.top_k)
+
+
+@router.get("/{kb_id}/vector-projection")
+async def get_vector_projection(
+    request: Request,
+    kb_id: str,
+    collections: str = Query(default="chunks,entities,wiki,cards"),
+    algo: Literal["pca", "umap"] = "pca",
+    dims: int = Query(default=2, ge=2, le=3),
+    sample_size: int = Query(default=5000, ge=100, le=10000),
+    refresh: bool = False,
+):
+    """向量空间投影（spec 2026-08-15 §7）：四 collection 同图 2D/3D 坐标。
+
+    缓存由内容指纹驱动——内容未变直接命中；`refresh=true` 强制重算。
+    计算走后台线程，不阻塞事件循环。
+    """
+    service = await _require_kb_access(request, kb_id)
+    keys = [part.strip() for part in collections.split(",") if part.strip()]
+    try:
+        return await service.get_vector_projection(kb_id, collections=keys, algo=algo, dims=dims, sample_size=sample_size, refresh=refresh)
+    except ValueError as exc:  # unknown collection keys (fetcher contract)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except UmapUnavailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{kb_id}/vector-projection/query")
+async def project_query_vector(
+    request: Request,
+    kb_id: str,
+    body: VectorProjectionQueryRequest,
+    collections: str = Query(default="chunks,entities,wiki,cards"),
+    algo: Literal["pca", "umap"] = "pca",
+    dims: int = Query(default=2, ge=2, le=3),
+    sample_size: int = Query(default=5000, ge=100, le=10000),
+):
+    """query 文本投影（spec §9 检索联动）：复用缓存的 PCA 模型 transform。
+
+    不触发投影计算——缓存不存在（409）或非 PCA 模型（409）直接拒绝。
+    """
+    service = await _require_kb_access(request, kb_id)
+    keys = [part.strip() for part in collections.split(",") if part.strip()]
+    try:
+        return await service.project_query_vector(kb_id, text=body.text, collections=keys, algo=algo, dims=dims, sample_size=sample_size)
+    except (ProjectionNotComputedError, ProjectionModelUnavailableError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
