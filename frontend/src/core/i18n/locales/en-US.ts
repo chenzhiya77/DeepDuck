@@ -443,6 +443,7 @@ export const enUS: Translations = {
       documents: "Documents",
       wiki: "Wiki",
       recall: "Recall test",
+      vectors: "Vector space",
     },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",

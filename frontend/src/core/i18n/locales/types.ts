@@ -373,6 +373,7 @@ export interface Translations {
       documents: string;
       wiki: string;
       recall: string;
+      vectors: string;
     };
     wikiPanel: {
       empty: string;

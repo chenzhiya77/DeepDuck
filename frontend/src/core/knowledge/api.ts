@@ -16,6 +16,9 @@ import type {
   ManualCardDetail,
   ManualCardsPage,
   RecallTestResponse,
+  VectorProjectionAlgo,
+  VectorProjectionQueryResult,
+  VectorProjectionResponse,
   WikiEntriesPage,
   WikiEntryDetail,
   WikiGenerateAck,
@@ -289,4 +292,60 @@ export async function deleteManualCard(kbId: string, cardId: string): Promise<vo
     method: "DELETE",
   });
   return readEmptyResponse(response, "Failed to delete manual card");
+}
+
+// ── 向量空间可视化（2026-08-15 spec §7）────────────────────────────────────
+
+/**
+ * GET /vector-projection query params. Absent keys fall through to the server
+ * defaults (collections=all four, algo=pca, dims=2, sample_size=5000); the
+ * server clamps sample_size to [100, 10000].
+ */
+export interface VectorProjectionParams {
+  collections?: readonly string[];
+  algo?: VectorProjectionAlgo;
+  dims?: 2 | 3;
+  sampleSize?: number;
+  /** Bypass the fingerprint comparison and recompute (spec §6 escape hatch). */
+  refresh?: boolean;
+}
+
+export function getVectorProjection(
+  kbId: string,
+  params: VectorProjectionParams = {},
+): Promise<VectorProjectionResponse> {
+  const search = new URLSearchParams();
+  if (params.collections && params.collections.length > 0) {
+    search.set("collections", params.collections.join(","));
+  }
+  if (params.algo) {
+    search.set("algo", params.algo);
+  }
+  if (params.dims) {
+    search.set("dims", String(params.dims));
+  }
+  if (params.sampleSize !== undefined) {
+    search.set("sample_size", String(params.sampleSize));
+  }
+  if (params.refresh) {
+    search.set("refresh", "true");
+  }
+  const qs = search.toString();
+  return fetch(kbUrl(kbId, qs ? `/vector-projection?${qs}` : "/vector-projection")).then((r) =>
+    readResponse<VectorProjectionResponse>(r, "Failed to fetch vector projection"),
+  );
+}
+
+/**
+ * POST /vector-projection/query: transform raw question text through the
+ * cached PCA model (409 when no projection is cached / the cached one is
+ * umap). Never triggers a projection compute server-side.
+ */
+export async function projectVectorQuery(kbId: string, text: string): Promise<VectorProjectionQueryResult> {
+  const response = await fetch(kbUrl(kbId, "/vector-projection/query"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  return readResponse<VectorProjectionQueryResult>(response, "Failed to project query");
 }

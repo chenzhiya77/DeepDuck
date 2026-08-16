@@ -349,6 +349,10 @@ export default function KnowledgePage() {
                   onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
                 />
               }
+              vectors={
+                // Task 5 挂载占位（Task 6 填散点图面板本体）。
+                <div className="h-full" data-testid="vector-space-placeholder" />
+              }
             />
           ) : (
             <div className="text-muted-foreground flex h-full items-center justify-center text-sm">

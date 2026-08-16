@@ -268,3 +268,57 @@ export interface RecallTestResponse {
   score_type: Record<RecallPathName, string>;
   elapsed_ms: Record<RecallPathName, number>;
 }
+
+// ── 向量空间可视化（2026-08-15 spec §7：四 collection 同图投影）────────────
+
+/** Point provenance — one per Qdrant collection (spec §3 双编码着色的大类维度). */
+export type VectorSourceType = "chunk" | "entity" | "wiki" | "card";
+
+/** Reducer choice; umap requires the optional server-side extra (spec §4). */
+export type VectorProjectionAlgo = "pca" | "umap";
+
+/**
+ * One projected point. ``z`` only appears for dims=3; ``preview`` is the
+ * chunk hover text joined from the business DB (never rides the Qdrant
+ * payload); ``heading_path`` / ``doc_name`` accompany chunk points.
+ */
+export interface VectorProjectionPoint {
+  id: string;
+  source_type: VectorSourceType | string;
+  x: number;
+  y: number;
+  z?: number;
+  label: string;
+  /** Coloring rule: doc_id for chunks, entity type for entities, source_type otherwise. */
+  color_key: string;
+  preview?: string;
+  doc_name?: string;
+  heading_path?: string[];
+}
+
+/** GET /vector-projection — fingerprint-cached projection of the four collections. */
+export interface VectorProjectionResponse {
+  kb_id: string;
+  algo: VectorProjectionAlgo | string;
+  dims: 2 | 3;
+  model_version: string;
+  /** Content digest driving the server-side cache (spec §6). */
+  fingerprint: string;
+  cached: boolean;
+  computed_ms: number;
+  total_points: number;
+  shown_points: number;
+  /** true when chunks were subsampled (only chunks ever are, spec §5). */
+  sampled: boolean;
+  points: VectorProjectionPoint[];
+}
+
+/** POST /vector-projection/query — query text transformed into the cached PCA space. */
+export interface VectorProjectionQueryResult {
+  x: number;
+  y: number;
+  z?: number;
+  model_version: string;
+  /** Matches the projection it was transformed with — staleness check for overlays. */
+  fingerprint: string;
+}

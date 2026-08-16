@@ -30,7 +30,7 @@ import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { runAfterMenuClose } from "./run-after-menu-close";
 
-export type KnowledgeMiddleTab = "documents" | "wiki" | "recall";
+export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors";
 
 /**
  * Middle-column container (phase-2 batch-1, spec §3 三行结构):
@@ -59,6 +59,7 @@ export function MiddleTabs({
   documents,
   wiki,
   recall,
+  vectors,
 }: {
   kb: KnowledgeBase;
   activeTab: KnowledgeMiddleTab;
@@ -79,6 +80,7 @@ export function MiddleTabs({
   documents: ReactNode;
   wiki: ReactNode;
   recall: ReactNode;
+  vectors: ReactNode;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
@@ -167,6 +169,7 @@ export function MiddleTabs({
           <TabsTrigger value="documents">{tk.tabs.documents}</TabsTrigger>
           <TabsTrigger value="wiki">{tk.tabs.wiki}</TabsTrigger>
           <TabsTrigger value="recall">{tk.tabs.recall}</TabsTrigger>
+          <TabsTrigger value="vectors">{tk.tabs.vectors}</TabsTrigger>
         </TabsList>
         <TabsContent
           className="min-h-0 data-[state=inactive]:hidden"
@@ -188,6 +191,13 @@ export function MiddleTabs({
           value="recall"
         >
           <div className="flex h-full min-h-0 flex-col">{recall}</div>
+        </TabsContent>
+        <TabsContent
+          className="min-h-0 data-[state=inactive]:hidden"
+          forceMount
+          value="vectors"
+        >
+          <div className="flex h-full min-h-0 flex-col">{vectors}</div>
         </TabsContent>
       </Tabs>
 

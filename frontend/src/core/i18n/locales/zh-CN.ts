@@ -427,6 +427,7 @@ export const zhCN: Translations = {
       documents: "文档",
       wiki: "百科",
       recall: "检索测试",
+      vectors: "向量空间",
     },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",

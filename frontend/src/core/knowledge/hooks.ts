@@ -302,3 +302,34 @@ export function useDeleteManualCard(kbId: string) {
     },
   });
 }
+
+// ── 向量空间可视化（2026-08-15 spec §7）────────────────────────────────────
+
+export function knowledgeVectorProjectionKey(kbId: string, params: api.VectorProjectionParams = {}) {
+  return ["knowledge-bases", kbId, "vector-projection", params] as const;
+}
+
+/**
+ * Projection query. Lazy like the wiki list: gated by ``enabled`` so the
+ * fetch only fires once the vectors tab is first activated — keep-alive
+ * panes stay mounted, so without the gate it would fetch eagerly. The
+ * server-side fingerprint cache makes repeat activations cheap.
+ */
+export function useVectorProjection(kbId: string | null, params: api.VectorProjectionParams = {}, enabled = true) {
+  return useQuery({
+    queryKey: knowledgeVectorProjectionKey(kbId ?? "", params),
+    queryFn: () => api.getVectorProjection(kbId!, params),
+    enabled: enabled && kbId !== null,
+  });
+}
+
+/**
+ * Query-text overlay projection: a mutation, not a query (same discipline as
+ * the recall test) — each call hits the live embedding model, results are
+ * never cached/refetched implicitly.
+ */
+export function useProjectVectorQuery(kbId: string) {
+  return useMutation({
+    mutationFn: (text: string) => api.projectVectorQuery(kbId, text),
+  });
+}
