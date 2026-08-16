@@ -108,16 +108,18 @@
 - [x] `pnpm test` GREEN（36 passed：14 新 + 22 回归）；revert proof（stash 4 tracked + 移走 2 新组件 → 文件级 RED → 恢复 → 14 passed）；`pnpm check` 0 error（2 存量 warning 非本次引入）。踩坑记录：Radix ToggleGroup single 的 Item 是 `role=radio`（不是 button）；Radix Select 在 jsdom 用 `keyDown ArrowDown` 打开（对齐 human-input-card 先例）。
 - [x] Commit: `feat(frontend): render the 2D vector scatter with coloring and drill-down`（`3e426052`）
 
-## Task 7: P5 3D 切换 + 采样徽标 + 重新计算
+## Task 7: P5 3D 切换 + 采样徽标 + 重新计算 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Modify: `frontend/src/components/workspace/knowledge/vector-tab.tsx` / `vector-canvas.tsx`
-- Modify: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`
+- Modify: `frontend/src/components/workspace/knowledge/vector-tab.tsx`（dims state 驱动 ToggleGroup + 采样徽标 + 重新计算接通）/ `vector-canvas.tsx`（scatter3D 分支：`Scatter3DChart` from `echarts-gl/charts` + `Grid3DComponent` from `echarts-gl/components`——**grid3D 安装器在 echarts-gl 而非 echarts/components**，tsc 实证）✅
+- Modify: `frontend/src/core/knowledge/hooks.ts`（`useRecomputeVectorProjection`：refresh=true 直打 + `setQueryData` 回写主缓存键——单键无副本）+ i18n 三处（`sampledBadge`）✅
+- Modify: `frontend/rstest.config.ts`（`bundleDependencies` +echarts-gl/claygl——两者都是无扩展名 ESM，Node 严格解析拒绝；对齐 streamdown/katex 先例）✅
+- Modify: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`（+4 用例；Task 6 的 3D/重算 disabled 断言翻转为 enabled）✅
 
-- [ ] RED test: 切 3D → 请求 `dims=3` 且生成 scatter3D 配置；`sampled=true` → 徽标「已抽样 5000/12345 点」；「重新计算」→ 请求带 `refresh=true` 并刷新画布。
-- [ ] Implement。
-- [ ] `pnpm test` GREEN；regression proof；restore。
-- [ ] Commit: `feat(frontend): add 3D projection mode and sampling controls`
+- [x] RED test: 切 3D → hook params `dims=3` 且 canvas props `dims=3`（scatter3D 配置属 canvas 内部，mock 下断言到 props 边界）；`sampled=true` → 徽标「已抽样 5000/12345 点」+ 反例隐藏；「重新计算」→ recompute.mutate 带当前视图参数（refresh=true 拼装在 hook 一行内，Live 冒烟兜底）。初始 4 failed 确认。
+- [x] Implement。
+- [x] `pnpm test` GREEN（18 passed）；全量回归 157 文件 1278 passed（rstest.config.ts 改动面广，必须全量）；revert proof（stash 7 文件 → RED → 恢复 → 18 passed）；`pnpm check` 双净。
+- [x] Commit: `feat(frontend): add 3D projection mode and sampling controls`（`1f1de75a`）
 
 ## Task 8: P6 检索联动双通道
 
