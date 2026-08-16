@@ -101,12 +101,15 @@ function ManualCardEditor({
           <DialogTitle>{initial ? tc.editorEditTitle : tc.editorCreateTitle}</DialogTitle>
           <DialogDescription>{tc.editorDescription}</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
+        {/* field-sizing-content 的 textarea 会把内容宽度沿 grid/flex item 链
+            向上传递撑宽对话框——链上每层容器 min-w-0 阻断，宽度固定后
+            长行自然软换行。 */}
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="manual-card-title">{tc.titleLabel}</Label>
             <Input id="manual-card-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tc.titlePlaceholder} />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="manual-card-content">{tc.contentLabel}</Label>
             <Textarea
               id="manual-card-content"
@@ -116,7 +119,7 @@ function ManualCardEditor({
               placeholder={tc.contentPlaceholder}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="manual-card-tags">{tc.tagsLabel}</Label>
             <Input id="manual-card-tags" value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder={tc.tagsPlaceholder} />
           </div>

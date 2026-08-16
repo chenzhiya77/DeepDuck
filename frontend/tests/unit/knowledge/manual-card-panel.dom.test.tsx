@@ -182,6 +182,24 @@ describe("ManualCardPanel", () => {
     });
   });
 
+  it("keeps the editor textarea constrained to the dialog width (min-w-0 chain) so long lines soft-wrap", async () => {
+    setupMocks();
+    renderExpanded();
+    fireEvent.click(screen.getByRole("button", { name: "新建卡片" }));
+
+    // field-sizing-content 的 textarea 把「内容不换行宽度」作为 min-content 贡献
+    // 沿 grid/flex item 链向上传递撑宽对话框（修复前：输入框超出编辑界面）。
+    // 链上每个 flex 容器与 textarea 自身都要 min-w-0。
+    const contentField = await screen.findByLabelText("内容");
+    let node: HTMLElement | null = contentField;
+    while (node && node.getAttribute("data-slot") !== "dialog-content") {
+      if (node.tagName === "TEXTAREA" || node.className.includes("flex")) {
+        expect(node.className).toContain("min-w-0");
+      }
+      node = node.parentElement;
+    }
+  });
+
   it("toggles a row's include switch", async () => {
     const { updateCard } = setupMocks();
     renderExpanded();

@@ -50,6 +50,22 @@ describe("WikiEditDialog", () => {
     expect((supplement as HTMLTextAreaElement).value).toBe("User note: includes overloading and overriding");
   });
 
+  it("keeps textareas constrained to the dialog width (min-w-0 chain) so long lines soft-wrap", () => {
+    renderDialog();
+    // field-sizing-content 的 textarea 把「内容不换行宽度」作为 min-content 贡献
+    // 沿 grid/flex item 链向上传递撑宽对话框（修复前：卡片编辑器溢出 Dialog、
+    // AI 编辑器出现横向滚动）。链上每个 flex 容器与 textarea 自身都要 min-w-0。
+    for (const textarea of [screen.getByLabelText(/主内容区/), screen.getByLabelText(/补充层/)]) {
+      let node: HTMLElement | null = textarea;
+      while (node && node.getAttribute("data-slot") !== "dialog-content") {
+        if (node.tagName === "TEXTAREA" || node.className.includes("flex")) {
+          expect(node.className).toContain("min-w-0");
+        }
+        node = node.parentElement;
+      }
+    }
+  });
+
   it("calls onSave with trimmed content and supplement on submit", async () => {
     const { onSave } = renderDialog();
 

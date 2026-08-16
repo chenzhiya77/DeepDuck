@@ -63,9 +63,12 @@ export function WikiEditDialog({ entry, open, onOpenChange, onSave }: WikiEditDi
           <DialogDescription>{te.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-4">
+        {/* field-sizing-content 的 textarea 会把内容宽度沿 grid/flex item 链
+            向上传递撑宽对话框——链上每层容器 min-w-0 阻断，宽度固定后
+            长行自然软换行（横向滚动条随之消失）。 */}
+        <div className="flex min-w-0 flex-col gap-4 py-4">
           {/* Main content area */}
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <Label htmlFor="wiki-main-content">{te.mainContentLabel}</Label>
             <Textarea
               id="wiki-main-content"
@@ -78,7 +81,7 @@ export function WikiEditDialog({ entry, open, onOpenChange, onSave }: WikiEditDi
           </div>
 
           {/* Supplement layer */}
-          <div className="space-y-2 border-t pt-4">
+          <div className="min-w-0 space-y-2 border-t pt-4">
             <Label htmlFor="wiki-supplement-content">{te.supplementLabel}</Label>
             <Textarea
               id="wiki-supplement-content"
