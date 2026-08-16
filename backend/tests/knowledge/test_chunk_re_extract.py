@@ -212,7 +212,6 @@ class TestChunkReExtractEndpoint:
     async def test_re_extract_begins_with_pending_status(self, setup_kb_with_chunks, service):
         """Re-extract sets extract_status to pending immediately (for cross-session progress tracking)."""
         kb_id, doc_id, chunk_ids = setup_kb_with_chunks
-        client = _client(service)
 
         with patch(
             "app.gateway.services.knowledge_service.extract_single_chunk",

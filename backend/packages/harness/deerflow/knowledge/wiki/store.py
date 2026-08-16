@@ -52,7 +52,7 @@ class WikiStore:
         supplement_content: str | None = _UNSET,
     ) -> dict[str, Any]:
         """Create or fully refresh an entry; regeneration clears ``dirty``.
-        
+
         supplement_content (Phase-3 Batch-1 P1): user annotations that survive
         dirty re-generation cycles. If provided, it overwrites existing value;
         if omitted or None, the column is explicitly set to provided value (allowing
@@ -64,11 +64,7 @@ class WikiStore:
             if row is None:
                 # For new entries, _UNSET means "no supplement provided" → set to None
                 supplement_value = None if supplement_content is self._UNSET else supplement_content
-                row = WikiEntryRow(
-                    id=entry_id, kb_id=kb_id, title=title, content=content, 
-                    status=status, source_chunk_ids=list(source_chunk_ids),
-                    supplement_content=supplement_value
-                )
+                row = WikiEntryRow(id=entry_id, kb_id=kb_id, title=title, content=content, status=status, source_chunk_ids=list(source_chunk_ids), supplement_content=supplement_value)
                 session.add(row)
             else:
                 row.content = content

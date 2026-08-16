@@ -8,17 +8,14 @@ Phase-3 Batch-1 (P1): Verify that:
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.dialects.sqlite import insert
 
 import deerflow.persistence.models  # noqa: F401 -- registers models
-from deerflow.knowledge.models import WikiEntryRow
 from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 
 
@@ -26,7 +23,7 @@ from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 async def test_upsert_entry_accepts_supplement_content(session_factory):
     """GREEN (was RED): verify upsert_entry accepts and saves supplement_content."""
     store = WikiStore(session_factory)
-    
+
     result = await store.upsert_entry(
         kb_id="kb-test",
         title="TestEntry",
@@ -35,7 +32,7 @@ async def test_upsert_entry_accepts_supplement_content(session_factory):
         status="ready",
         supplement_content="User annotation",
     )
-    
+
     # Should save successfully now
     assert result["content"] == "Main content"
     assert result.get("supplement_content") == "User annotation"
@@ -44,13 +41,13 @@ async def test_upsert_entry_accepts_supplement_content(session_factory):
 @pytest.mark.asyncio
 async def test_upsert_entry_preserves_supplement_layer(session_factory):
     """GREEN: insert with supplement → re-generate without it → still exists.
-    
+
     This is the core P1 contract: supplement layer survives dirty re-generation.
     """
     from deerflow.knowledge.wiki.store import WikiStore
-    
+
     store = WikiStore(session_factory)
-    
+
     # Step 1: Insert entry WITH supplement_content
     first_result = await store.upsert_entry(
         kb_id="kb-test",
@@ -60,10 +57,10 @@ async def test_upsert_entry_preserves_supplement_layer(session_factory):
         status="ready",
         supplement_content="User note: includes overloading and overriding",
     )
-    
+
     assert first_result["content"] == "Polymorphism is an OOP feature"
     assert first_result.get("supplement_content") == "User note: includes overloading and overriding"
-    
+
     # Step 2: Re-generate WITHOUT supplement_content (simulate dirty re-gen)
     second_result = await store.upsert_entry(
         kb_id="kb-test",
@@ -73,7 +70,7 @@ async def test_upsert_entry_preserves_supplement_layer(session_factory):
         status="ready",
         # NO supplement_content provided - should preserve existing
     )
-    
+
     # Main content changed
     assert second_result["content"] == "Polymorphism allows different responses to same message"
     # Status unchanged
@@ -82,7 +79,7 @@ async def test_upsert_entry_preserves_supplement_layer(session_factory):
     assert second_result["source_chunk_ids"] == ["chunk-2"]
     # SUPPLEMENT LAYER PRESERVED
     assert second_result.get("supplement_content") == "User note: includes overloading and overriding"
-    
+
     # Step 3: Explicitly set to None (should clear)
     third_result = await store.upsert_entry(
         kb_id="kb-test",
@@ -92,21 +89,20 @@ async def test_upsert_entry_preserves_supplement_layer(session_factory):
         status="ready",
         supplement_content=None,  # Explicitly clear
     )
-    
+
     assert third_result.get("supplement_content") is None
 
 
 @pytest.mark.asyncio
 async def test_legacy_entry_without_supplement_reads_null(session_factory):
     """Legacy entries created before P1 read NULL for supplement_content."""
-    from deerflow.persistence.base import Base
-    from deerflow.persistence.engine import init_engine, close_engine
-    
+    from deerflow.persistence.engine import close_engine, init_engine
+
     # Create a fresh DB and manually insert an entry WITHOUT supplement_content
     with TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "legacy.db"
         url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
-        
+
         await init_engine(backend="sqlite", url=url, sqlite_dir=str(tmp_dir))
         try:
             async with session_factory() as sess:
@@ -114,10 +110,7 @@ async def test_legacy_entry_without_supplement_reads_null(session_factory):
                 # (simulating pre-migration legacy data)
                 entry_id = wiki_entry_id("kb-legacy", "LegacyEntry")
                 await sess.execute(
-                    sa.text(
-                        "INSERT INTO wiki_entries (id, kb_id, title, content, status, source_chunk_ids, updated_at)"
-                        " VALUES (:id, :kb_id, :title, :content, :status, :source_chunk_ids, :updated_at)"
-                    ),
+                    sa.text("INSERT INTO wiki_entries (id, kb_id, title, content, status, source_chunk_ids, updated_at) VALUES (:id, :kb_id, :title, :content, :status, :source_chunk_ids, :updated_at)"),
                     {
                         "id": entry_id,
                         "kb_id": "kb-legacy",
@@ -129,10 +122,10 @@ async def test_legacy_entry_without_supplement_reads_null(session_factory):
                     },
                 )
                 await sess.commit()
-            
+
             # Now read via upsert_entry (should not crash)
             store = WikiStore(session_factory)
-            
+
             # Read existing entry (upsert will find it and update)
             result = await store.upsert_entry(
                 kb_id="kb-legacy",
@@ -141,9 +134,9 @@ async def test_legacy_entry_without_supplement_reads_null(session_factory):
                 source_chunk_ids=["c2"],
                 status="ready",
             )
-            
+
             # Should work fine, supplement_content defaults to NULL
             assert result["supplement_content"] is None
-            
+
         finally:
             await close_engine()

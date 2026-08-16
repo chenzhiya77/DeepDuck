@@ -1,6 +1,6 @@
 # RAG 三期第一批功能设计（切片编辑 / Wiki 双模式编辑 / 人工知识卡片 / 删除失格预览）
 
-> 状态：✅ 已定稿（待实施） · 日期：2026-08-15 · 范围：主 spec 三期预留「切片编辑/禁用（写回三库）」+ Wiki 条目人工编辑 + 人工知识卡片通道 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md` §3.4（切片可视化抽屉）/ §9（三期清单）；二期 Batch-1 spec `2026-08-11-rag-phase2-batch1-design.md` §7 非目标预留项
+> 状态：✅ 已落地（2026-08-16） · 日期：2026-08-15 · 范围：主 spec 三期预留「切片编辑/禁用（写回三库）」+ Wiki 条目人工编辑 + 人工知识卡片通道 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md` §3.4（切片可视化抽屉）/ §9（三期清单）；二期 Batch-1 spec `2026-08-11-rag-phase2-batch1-design.md` §7 非目标预留项 · 实施 Plan：`docs/superpowers/plans/2026-08-15-rag-phase3-editing.md`（Task 1-9 全绿）
 
 ## 1. 背景
 

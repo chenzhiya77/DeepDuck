@@ -197,20 +197,24 @@ class GraphStore:
             for row in relation_rows:
                 # Relation deleted if source or target is orphaned
                 if row.source in orphaned or row.target in orphaned:
-                    relation_deletions.append({
-                        "source": row.source,
-                        "target": row.target,
-                        "relation": row.relation,
-                    })
+                    relation_deletions.append(
+                        {
+                            "source": row.source,
+                            "target": row.target,
+                            "relation": row.relation,
+                        }
+                    )
                     continue
                 # Relation deleted if all sources removed
                 remaining = [cid for cid in (row.source_chunk_ids or []) if cid not in targets]
                 if len(remaining) != len(row.source_chunk_ids or []) and not remaining:
-                    relation_deletions.append({
-                        "source": row.source,
-                        "target": row.target,
-                        "relation": row.relation,
-                    })
+                    relation_deletions.append(
+                        {
+                            "source": row.source,
+                            "target": row.target,
+                            "relation": row.relation,
+                        }
+                    )
 
         return {
             "orphaned_entities": orphaned,

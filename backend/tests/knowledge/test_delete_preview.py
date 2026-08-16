@@ -7,11 +7,11 @@ deletions WITHOUT actually deleting anything. Pure read-only operation.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
@@ -70,33 +70,33 @@ async def setup_graph_with_entities(service, session_factory):
 
     # Create KB and document
     await service.store.create_kb(kb_id=kb_id, owner_id=OWNER_ID, name="Test KB")
-    await service.store.create_document(
-        doc_id=doc_id, kb_id=kb_id, uploader_id=OWNER_ID, name="test.txt", size_bytes=10, storage_path="/test.txt"
-    )
+    await service.store.create_document(doc_id=doc_id, kb_id=kb_id, uploader_id=OWNER_ID, name="test.txt", size_bytes=10, storage_path="/test.txt")
 
     # Insert chunks
-    await service.store.insert_chunks([
-        {
-            "chunk_id": f"{doc_id}-c0",
-            "doc_id": doc_id,
-            "kb_id": kb_id,
-            "chunk_index": 0,
-            "text": "Content 0",
-            "token_count": 5,
-            "extract_status": "done",
-            "entities": [],
-        },
-        {
-            "chunk_id": f"{doc_id}-c1",
-            "doc_id": doc_id,
-            "kb_id": kb_id,
-            "chunk_index": 1,
-            "text": "Content 1",
-            "token_count": 5,
-            "extract_status": "done",
-            "entities": [],
-        },
-    ])
+    await service.store.insert_chunks(
+        [
+            {
+                "chunk_id": f"{doc_id}-c0",
+                "doc_id": doc_id,
+                "kb_id": kb_id,
+                "chunk_index": 0,
+                "text": "Content 0",
+                "token_count": 5,
+                "extract_status": "done",
+                "entities": [],
+            },
+            {
+                "chunk_id": f"{doc_id}-c1",
+                "doc_id": doc_id,
+                "kb_id": kb_id,
+                "chunk_index": 1,
+                "text": "Content 1",
+                "token_count": 5,
+                "extract_status": "done",
+                "entities": [],
+            },
+        ]
+    )
 
     # Seed entities via graph_store
     from deerflow.knowledge.graph.store import GraphStore
@@ -181,8 +181,8 @@ class TestDeletePreviewEndpoint:
         client = _client(service)
 
         # Add a relation between Alpha and Beta
-        from deerflow.knowledge.graph.store import GraphStore
         from deerflow.knowledge.graph.extractor import ExtractedRelation
+        from deerflow.knowledge.graph.store import GraphStore
 
         graph_store = GraphStore(service.store._sf)
         await graph_store.upsert_relations(

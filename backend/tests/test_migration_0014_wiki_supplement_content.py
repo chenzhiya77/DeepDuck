@@ -42,24 +42,13 @@ def _seed_pre_0014(db_path: Path) -> None:
     try:
         Base.metadata.create_all(sync_engine)
         with sync_engine.begin() as conn:
-            cols = {
-                row[1] for row in conn.execute(sa.text("PRAGMA table_info(wiki_entries)"))
-            }
+            cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(wiki_entries)"))}
             if "supplement_content" in cols:
                 conn.execute(sa.text("ALTER TABLE wiki_entries DROP COLUMN supplement_content"))
             conn.execute(sa.text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)"))
             conn.execute(sa.text("DELETE FROM alembic_version"))
-            conn.execute(
-                sa.text(
-                    "INSERT INTO alembic_version (version_num) VALUES ('0013_documents_content_hash')"
-                )
-            )
-            conn.execute(
-                sa.text(
-                    "INSERT INTO wiki_entries (id, kb_id, title, content, status, source_chunk_ids, updated_at)"
-                    " VALUES ('wiki-legacy', 'kb-1', '多态', '面向对象特性之一', 'ready', '{}', '2026-08-15 00:00:00+00:00')"
-                )
-            )
+            conn.execute(sa.text("INSERT INTO alembic_version (version_num) VALUES ('0013_documents_content_hash')"))
+            conn.execute(sa.text("INSERT INTO wiki_entries (id, kb_id, title, content, status, source_chunk_ids, updated_at) VALUES ('wiki-legacy', 'kb-1', '多态', '面向对象特性之一', 'ready', '{}', '2026-08-15 00:00:00+00:00')"))
     finally:
         sync_engine.dispose()
 
@@ -76,9 +65,7 @@ async def test_migration_0014_adds_supplement_column(tmp_path: Path) -> None:
 
         # Legacy row defaults to null
         with sqlite3.connect(db_path) as raw:
-            value = raw.execute(
-                "SELECT supplement_content FROM wiki_entries WHERE id = 'wiki-legacy'"
-            ).fetchone()[0]
+            value = raw.execute("SELECT supplement_content FROM wiki_entries WHERE id = 'wiki-legacy'").fetchone()[0]
             version = raw.execute("SELECT version_num FROM alembic_version").fetchone()[0]
 
         # Spec contract: nullable with no server default - old rows stay NULL
@@ -93,22 +80,19 @@ async def test_migration_0014_downgrade_drops_column(tmp_path: Path) -> None:
     db_path = tmp_path / "fresh.db"
     # Build a versioned DB at 0013 with wiki_entries table but no supplement_content.
     _seed_pre_0014(db_path)
-    
+
     url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
     await init_engine(backend="sqlite", url=url, sqlite_dir=str(tmp_path))
     try:
         # Pre-condition: after init_engine runs migrations from 0013 to head,
         # the column should now exist.
-        assert "supplement_content" in _wiki_entry_columns(db_path), \
-            f"Expected column after upgrade. Found: {_wiki_entry_columns(db_path)}"
+        assert "supplement_content" in _wiki_entry_columns(db_path), f"Expected column after upgrade. Found: {_wiki_entry_columns(db_path)}"
     finally:
         await close_engine()
 
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
-    cfg.set_main_option(
-        "sqlalchemy.url", f"sqlite+aiosqlite:///{db_path.as_posix()}"
-    )
+    cfg.set_main_option("sqlalchemy.url", f"sqlite+aiosqlite:///{db_path.as_posix()}")
     await asyncio.to_thread(alembic_command.downgrade, cfg, "0013_documents_content_hash")
 
     assert "supplement_content" not in _wiki_entry_columns(db_path)
