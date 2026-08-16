@@ -39,16 +39,19 @@
 - [x] ruff check/format 双净；`uv lock` 同步（numpy 提升为直接依赖）。
 - [x] Commit: `feat(rag): add PCA projection reducer with query transform support`（`5db87d50`）
 
-## Task 2: P2 数据获取与采样层
+## Task 2: P2 数据获取与采样层 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `backend/packages/harness/deerflow/knowledge/projection/fetcher.py`
-- Create: `backend/tests/knowledge/projection/test_fetcher.py`
+- Create: `backend/packages/harness/deerflow/knowledge/projection/fetcher.py` ✅
+- Create: `backend/tests/knowledge/projection/test_fetcher.py` ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/vector_store.py` ✅（Plan 外追加但属必然：fetcher 需要公开访问器——新增 `scroll_collection`（分页 id+payload）与 `retrieve_vectors`（按原生 point id 批量取 dense））
+- Modify: `backend/tests/knowledge/test_vector_store.py`（追加 2 个 requires_qdrant 集成用例）✅
 
-- [ ] RED test: 四 collection 合并拉取并标注 `source_type`（mock vector store）；chunks > `sample_size` 时先 scroll ID（`with_vectors=False`）→ numpy 随机子选 → 批量 `retrieve` 子集向量；preview join（chunk_id → text[:120] + heading_path + doc_name）；空 KB 返回 `points: []`。
-- [ ] Implement fetcher（采样上限 10000 硬顶；返回 `total_points/shown_points/sampled`）。
-- [ ] GREEN；regression proof；restore。
-- [ ] Commit: `feat(rag): add projection fetcher with id-subsampling and preview join`
+- [x] RED test: 11 fake 单测（四 collection 合并与 source_type 标注 / 阈值下不采样 / 超阈值 ID 先拉+子采样+确定性种子 / 仅 chunks 采样 / 预览截断 120 / DB 缺失回退 doc_name / 向量缺失静默丢弃且矩阵对齐 / 空 KB / collection 选择限定 / 10000 硬顶 / 未知 collection ValueError）+ 2 集成用例（scroll 分页+kb 过滤 / retrieve 对齐）——ModuleNotFoundError 与 AttributeError 双边 RED 确认。修正过一次测试自身 bug（模拟 scroll 后删除需 fake 支持 drop_on_retrieve）。
+- [x] Implement fetcher（采样上限 10000 硬顶；返回 `total_points/shown_points/sampled`）。
+- [x] GREEN（projection 24 + vector_store 13 = 35 passed，含真实 Qdrant）；revert proof 通过。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): add projection fetcher with id-subsampling and preview join`（`a0b49031`）
 
 ## Task 3: P3 投影缓存与内容指纹
 
