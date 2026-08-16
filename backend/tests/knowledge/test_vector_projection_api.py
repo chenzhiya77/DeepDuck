@@ -151,7 +151,18 @@ async def test_get_projection_empty_kb_returns_empty_points(service) -> None:
     assert body["sampled"] is False
 
 
-async def test_get_projection_umap_without_extra_returns_400(service) -> None:
+async def test_get_projection_umap_without_extra_returns_400(service, monkeypatch) -> None:
+    """环境无关：monkeypatch 拦截 umap 的 import——装了 extra 的开发机也走 400 分支。"""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "umap" or name.startswith("umap."):
+            raise ImportError("No module named 'umap'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
     client = _client(service)
     kb = _create_kb(client)
     await _seed_chunks(service, kb["id"])

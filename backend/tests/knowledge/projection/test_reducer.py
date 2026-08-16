@@ -103,7 +103,29 @@ def test_zero_vector_rows_do_not_explode() -> None:
     assert np.isfinite(coords).all()
 
 
-def test_umap_reduce_raises_without_extra() -> None:
+def test_umap_reduce_raises_without_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    """环境无关：monkeypatch 拦截 umap 的 import——本地真装了 extra（如开发机
+    `uv sync --extra umap`）时本用例也必须绿。"""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "umap" or name.startswith("umap."):
+            raise ImportError("No module named 'umap'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
     x, _ = _cloud()
     with pytest.raises(UmapUnavailableError, match="umap"):
         umap_reduce(x, 2)
+
+
+def test_umap_reduce_with_extra_produces_finite_coords() -> None:
+    """装了 extra 的开发机/环境上的真实冒烟：UMAP 出正确形状的有限坐标。
+    未装环境（CI 默认）自动 skip。"""
+    pytest.importorskip("umap", reason="umap-learn extra not installed")
+    x, _ = _cloud(30)  # 小样本——UMAP 拟合较慢
+    coords, _model = umap_reduce(x, 2)
+    assert coords.shape == (30, 2)
+    assert np.isfinite(coords).all()

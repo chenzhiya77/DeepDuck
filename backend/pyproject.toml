@@ -27,6 +27,8 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["deerflow-harness[postgres]"]
 redis = ["deerflow-harness[redis]"]
+# RAG 向量空间可视化的 UMAP 降维（可选重依赖，PCA 是默认）；转发 harness extra。
+umap = ["deerflow-harness[umap]"]
 discord = ["discord.py>=2.7.0"]
 buzz = ["coincurve>=20.0.0"]
 monocle = ["deerflow-harness[monocle]"]
