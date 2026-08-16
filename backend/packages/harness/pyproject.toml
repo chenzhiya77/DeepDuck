@@ -48,6 +48,9 @@ dependencies = [
     "e2b-code-interpreter>=2.8.0",
     "qdrant-client>=1.19.0",
     "networkx>=3.6.1",
+    # Declared explicitly (previously only pulled in transitively by
+    # qdrant-client): direct dependency of the knowledge projection reducer.
+    "numpy>=1.26",
 ]
 
 [project.scripts]
