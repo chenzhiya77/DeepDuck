@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from deerflow.knowledge.models import (
@@ -258,12 +258,29 @@ class KnowledgeStore:
             return [self._row_to_dict(row, datetime_keys=()) for row in result.scalars().all()]
 
     async def count_chunks(self, doc_id: str) -> int:
-        from sqlalchemy import func
-
         stmt = select(func.count()).select_from(ChunkRow).where(ChunkRow.doc_id == doc_id)
         async with self._sf() as session:
             result = await session.execute(stmt)
             return int(result.scalar_one())
+
+    async def get_kb_content_stats(self, kb_id: str) -> dict[str, Any]:
+        """Cheap invalidation signals for the projection-cache fingerprint (spec §6).
+
+        One session, four aggregate queries: chunks ``count + max(last_edited_at)``
+        (the table has no created_at — count covers insert/delete), wiki/cards
+        ``count + max(updated_at)``, entities ``count`` only.
+        """
+        async with self._sf() as session:
+            chunks_count, chunks_max = (await session.execute(select(func.count(), func.max(ChunkRow.last_edited_at)).where(ChunkRow.kb_id == kb_id))).one()
+            wiki_count, wiki_max = (await session.execute(select(func.count(), func.max(WikiEntryRow.updated_at)).where(WikiEntryRow.kb_id == kb_id))).one()
+            cards_count, cards_max = (await session.execute(select(func.count(), func.max(ManualKnowledgeRow.updated_at)).where(ManualKnowledgeRow.kb_id == kb_id))).one()
+            entities_count = (await session.execute(select(func.count()).select_from(GraphEntityRow).where(GraphEntityRow.kb_id == kb_id))).scalar_one()
+        return {
+            "chunks": (int(chunks_count), chunks_max),
+            "wiki": (int(wiki_count), wiki_max),
+            "cards": (int(cards_count), cards_max),
+            "entities": int(entities_count),
+        }
 
     async def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[dict[str, Any]]:
         """Fetch chunk rows by id (graph/wiki aggregation of source_chunk_ids)."""
