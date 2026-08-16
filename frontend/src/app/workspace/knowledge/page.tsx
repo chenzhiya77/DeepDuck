@@ -12,13 +12,12 @@ import {
 } from "@/components/workspace/knowledge/duplicate-upload-dialog";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
 import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-drawer";
-import { ManualCardPanel } from "@/components/workspace/knowledge/manual-card-panel";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
 import { WikiEditDialog } from "@/components/workspace/knowledge/wiki-edit-dialog";
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
-import { WikiPanel } from "@/components/workspace/knowledge/wiki-panel";
+import { WikiTab } from "@/components/workspace/knowledge/wiki-tab";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   computeSha256,
@@ -328,23 +327,20 @@ export default function KnowledgePage() {
                 />
               }
               wiki={
-                <>
-                  <WikiPanel
-                    entries={wikiEntries}
-                    loading={wikiEntriesQuery.isLoading}
-                    updating={wikiUpdating}
-                    onOpenEntry={openWikiEntry}
-                    onEditEntry={handleEditEntry}
-                    onDeleteEntry={(entry) => {
-                      deleteWikiEntry.mutate(entry.id, {
-                        onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
-                      });
-                    }}
-                  />
-                  {/* Phase-3 Batch-1 P6: manual cards sit below the AI wiki
-                      entries (spec §8 双通道) — collapsible, default collapsed. */}
-                  <ManualCardPanel kbId={selectedKb.id} onOpenCard={(cardId) => setDrawerCardId(cardId)} />
-                </>
+<WikiTab
+                  entries={wikiEntries}
+                  kbId={selectedKb.id}
+                  entriesLoading={wikiEntriesQuery.isLoading}
+                  updating={wikiUpdating}
+                  onDeleteEntry={(entry) => {
+                    deleteWikiEntry.mutate(entry.id, {
+                      onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
+                    });
+                  }}
+                  onEditEntry={handleEditEntry}
+                  onOpenCard={(cardId) => setDrawerCardId(cardId)}
+                  onOpenEntry={openWikiEntry}
+                />
               }
               recall={
                 <RecallTestPanel

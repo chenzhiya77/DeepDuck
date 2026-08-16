@@ -261,6 +261,8 @@ export interface Translations {
       replacedDocument: (name: string) => string;
     };
     searchDocuments: string;
+    /** Unified search box of the wiki tab — filters both the AI entries and the manual cards sections. */
+    searchWiki: string;
     clearSearch: string;
     noMatchingDocuments: string;
     selectAllDocuments: string;
@@ -379,6 +381,13 @@ export interface Translations {
       updating: string;
       updatingHint: string;
       updatedAt: string;
+      /** Collapsible section header title (wiki tab split-section layout). */
+      sectionTitle: string;
+      selectEntry: string;
+      openEntry: string;
+      editEntry: string;
+      noMatches: string;
+      deleteBatchTitle: (count: number) => string;
       deleteEntry: string;
       deleteConfirmTitle: string;
       deleteConfirmDescription: string;
@@ -431,6 +440,13 @@ export interface Translations {
       saveFailed: string;
       deleteFailed: string;
       updatedAt: string;
+      selectCard: string;
+      openCard: string;
+      noMatches: string;
+      /** Context-menu toggle labels for the include-in-search switch. */
+      includeOn: string;
+      includeOff: string;
+      deleteBatchTitle: (count: number) => string;
       /** Card detail drawer (fix: recall-test card hits open this, not the wiki drawer). */
       drawerNotFound: string;
     };

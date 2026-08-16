@@ -1,0 +1,219 @@
+/**
+ * Manual-card panel interactions after the wiki tab redesign: the section
+ * shares the tab's unified search box (title/summary/tags containment;
+ * searching force-fetches and force-expands the collapsed section), the
+ * section header carries the 新建卡片 button (reachable while collapsed), and
+ * rows carry the document-table model — checkbox multi-select + batch bar +
+ * batch delete (irreversibility copy) and a right-click context menu (open /
+ * edit / include-toggle / delete; batch variant inside a multi-selection).
+ */
+import { afterEach, describe, expect, it, rs } from "@rstest/core";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+rs.mock("@/core/knowledge/hooks", () => ({
+  useManualCards: rs.fn(),
+  useManualCard: rs.fn(),
+  useCreateManualCard: rs.fn(),
+  useUpdateManualCard: rs.fn(),
+  useDeleteManualCard: rs.fn(),
+}));
+
+rs.mock("sonner", () => ({
+  toast: { error: rs.fn(), success: rs.fn(), info: rs.fn() },
+}));
+
+import { ManualCardPanel } from "@/components/workspace/knowledge/manual-card-panel";
+import { I18nContext } from "@/core/i18n/context";
+import { zhCN } from "@/core/i18n/locales/zh-CN";
+import {
+  useCreateManualCard,
+  useDeleteManualCard,
+  useManualCard,
+  useManualCards,
+  useUpdateManualCard,
+} from "@/core/knowledge/hooks";
+import type { ManualCardsPage } from "@/core/knowledge/types";
+
+const CARDS_PAGE: ManualCardsPage = {
+  items: [
+    {
+      id: "card-1",
+      title: "发布禁令",
+      summary: "周五下午不发布",
+      tags: ["ops"],
+      include_in_wiki_search: true,
+      created_at: "2026-08-15T10:00:00Z",
+      updated_at: "2026-08-15T10:00:00Z",
+    },
+    {
+      id: "card-2",
+      title: "回滚流程",
+      summary: "先切流量再回滚",
+      tags: [],
+      include_in_wiki_search: false,
+      created_at: "2026-08-15T09:00:00Z",
+      updated_at: "2026-08-15T09:00:00Z",
+    },
+  ],
+  total: 2,
+  offset: 0,
+  limit: 50,
+};
+
+function setupMocks({ cardsPage = CARDS_PAGE } = {}) {
+  const createCard = { mutateAsync: rs.fn().mockResolvedValue({}), isPending: false };
+  const updateCard = { mutateAsync: rs.fn().mockResolvedValue({}), isPending: false };
+  const deleteCard = { mutateAsync: rs.fn().mockResolvedValue(undefined), isPending: false };
+  rs.mocked(useManualCards).mockReturnValue({ data: cardsPage, isLoading: false } as never);
+  rs.mocked(useManualCard).mockReturnValue({ data: null } as never);
+  rs.mocked(useCreateManualCard).mockReturnValue(createCard as never);
+  rs.mocked(useUpdateManualCard).mockReturnValue(updateCard as never);
+  rs.mocked(useDeleteManualCard).mockReturnValue(deleteCard as never);
+  return { createCard, updateCard, deleteCard };
+}
+
+function renderPanel(props?: Partial<Parameters<typeof ManualCardPanel>[0]>) {
+  const onOpenCard = rs.fn();
+  render(
+    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <ManualCardPanel kbId="kb-1" onOpenCard={onOpenCard} {...props} />
+    </I18nContext.Provider>,
+  );
+  return { onOpenCard };
+}
+
+/** Expand through the section header (collapsed by default). */
+function renderExpanded(props?: Partial<Parameters<typeof ManualCardPanel>[0]>) {
+  const utils = renderPanel(props);
+  fireEvent.click(screen.getByTestId("manual-cards-toggle"));
+  return utils;
+}
+
+afterEach(async () => {
+  // happy-dom crashes when cleanup unmounts the tree while a Radix context
+  // menu is still open or animating closed; always settle the menu first.
+  if (document.querySelector('[role="menu"]')) {
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  cleanup();
+  rs.clearAllMocks();
+});
+
+describe("ManualCardPanel search filtering", () => {
+  it("force-fetches and force-expands the collapsed section while searching", () => {
+    setupMocks();
+    renderPanel({ query: "发布" });
+    // 收起状态 + 搜索 → enabled 必须放开（否则收起的区永远搜不到）
+    expect(rs.mocked(useManualCards).mock.calls[0]?.slice(0, 2)).toEqual(["kb-1", true]);
+    expect(screen.getByText("发布禁令")).toBeTruthy();
+    expect(screen.queryByText("回滚流程")).toBeNull();
+  });
+
+  it("matches against tags and summary too", () => {
+    setupMocks();
+    renderPanel({ query: "ops" });
+    expect(screen.getByText("发布禁令")).toBeTruthy();
+    expect(screen.queryByText("回滚流程")).toBeNull();
+  });
+
+  it("shows the no-match empty state when nothing matches", () => {
+    setupMocks();
+    renderPanel({ query: "不存在的词" });
+    expect(screen.getByText("没有匹配的卡片")).toBeTruthy();
+    expect(screen.queryByText("发布禁令")).toBeNull();
+  });
+});
+
+describe("ManualCardPanel selection", () => {
+  it("selects rows via checkboxes and shows the batch bar", () => {
+    setupMocks();
+    renderExpanded();
+    expect(screen.queryByTestId("manual-cards-batch-bar")).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 发布禁令" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 回滚流程" }));
+    expect(screen.getByTestId("manual-cards-batch-bar").textContent).toContain("已选 2 项");
+    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+    expect(screen.queryByTestId("manual-cards-batch-bar")).toBeNull();
+  });
+
+  it("selects all rows via the header checkbox", () => {
+    setupMocks();
+    renderExpanded();
+    fireEvent.click(screen.getByRole("checkbox", { name: "全选" }));
+    expect(screen.getByTestId("manual-cards-batch-bar").textContent).toContain("已选 2 项");
+  });
+
+  it("batch-deletes the selected cards after confirm (irreversibility copy)", async () => {
+    const { deleteCard } = setupMocks();
+    renderExpanded();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 发布禁令" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 回滚流程" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除所选" }));
+    expect(await screen.findByText("删除 2 张知识卡片？")).toBeTruthy();
+    expect(screen.getByText(/删除后不可恢复/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(deleteCard.mutateAsync).toHaveBeenCalledTimes(2));
+    expect(deleteCard.mutateAsync).toHaveBeenCalledWith("card-1");
+    expect(deleteCard.mutateAsync).toHaveBeenCalledWith("card-2");
+  });
+});
+
+describe("ManualCardPanel context menu", () => {
+  // NOTE: under happy-dom a Radix context menu can only complete ONE
+  // open/close cycle per mounted tree — each test below performs exactly one
+  // cycle and fully settles before cleanup.
+  const settleMenu = async () => {
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  };
+
+  it("offers single-row actions on an unselected row", async () => {
+    setupMocks();
+    renderExpanded();
+    fireEvent.contextMenu(screen.getByTestId("manual-card-row-card-1"));
+    expect(await screen.findByRole("menuitem", { name: "打开详情" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "编辑卡片" })).toBeTruthy();
+    // card-1 已开启混入搜索 → 菜单项为关闭
+    expect(screen.getByRole("menuitem", { name: "关闭混入搜索" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "删除卡片" })).toBeTruthy();
+    await settleMenu();
+  });
+
+  it("toggles 混入搜索 from the menu for an opted-out card", async () => {
+    const { updateCard } = setupMocks();
+    renderExpanded();
+    fireEvent.contextMenu(screen.getByTestId("manual-card-row-card-2"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "开启混入搜索" }));
+    await waitFor(() =>
+      expect(updateCard.mutateAsync).toHaveBeenCalledWith({
+        cardId: "card-2",
+        body: { include_in_wiki_search: true },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
+
+  it("offers batch actions when right-clicking inside a multi-selection", async () => {
+    setupMocks();
+    renderExpanded();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 发布禁令" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 回滚流程" }));
+    fireEvent.contextMenu(screen.getByTestId("manual-card-row-card-1"));
+    expect(await screen.findByRole("menuitem", { name: "删除所选" })).toBeTruthy();
+    expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
+    await settleMenu();
+  });
+});
+
+describe("ManualCardPanel header", () => {
+  it("keeps the 新建卡片 button reachable while collapsed", () => {
+    setupMocks();
+    renderPanel();
+    // 收起状态即可见（按钮在 section header，不依赖展开）
+    expect(screen.getByRole("button", { name: "新建卡片" })).toBeTruthy();
+    expect(screen.queryByText("发布禁令")).toBeNull();
+  });
+});
