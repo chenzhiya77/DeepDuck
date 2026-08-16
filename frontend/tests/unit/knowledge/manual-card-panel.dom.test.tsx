@@ -115,6 +115,32 @@ describe("ManualCardPanel", () => {
     expect(screen.getByText("回滚流程")).toBeTruthy();
   });
 
+  it("reveals row actions on hover like the AI rows (no permanent right gutter)", () => {
+    setupMocks();
+    renderExpanded();
+
+    // 行通栏：不再为常驻操作区预留 pr-28
+    const row = screen.getByTestId("manual-card-row-card-1");
+    expect(row.className).not.toContain("pr-28");
+    // Switch + 编辑 + 删除 整体悬停浮现（与 wiki 行一致）
+    const switchEl = screen.getAllByRole("switch")[0]!;
+    const actionBar = switchEl.closest("div.absolute");
+    expect(actionBar?.className).toContain("opacity-0");
+    expect(actionBar?.className).toContain("group-hover:opacity-100");
+  });
+
+  it("places 新建卡片 before the select-all checkbox so the checkbox aligns with the AI section", () => {
+    setupMocks();
+    renderExpanded();
+
+    const newCardButton = screen.getByRole("button", { name: "新建卡片" });
+    const selectAll = screen.getByRole("checkbox", { name: "全选" });
+    // 新建在左、全选贴右边缘（与 AI 条目区 header 中的全选位置对齐）
+    expect(
+      newCardButton.compareDocumentPosition(selectAll) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("shows the 混入搜索 badge only on opted-in cards", () => {
     setupMocks();
     renderExpanded();

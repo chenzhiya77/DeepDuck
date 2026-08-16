@@ -289,9 +289,10 @@ export function ManualCardPanel({
       className={cn("border-t", effectiveExpanded ? "flex min-h-0 flex-1 flex-col" : "flex shrink-0 flex-col")}
       data-testid="manual-cards-section"
     >
-      {/* Section header: collapse toggle + count + select-all + 新建卡片
-          (creation stays reachable while collapsed). */}
-      <div className="flex shrink-0 items-center gap-1 pr-2">
+      {/* Section header: collapse toggle + count + 新建卡片 (creation stays
+          reachable while collapsed) + select-all pinned to the right edge
+          (aligned with the AI entries section header above). */}
+      <div className="flex shrink-0 items-center gap-1 pr-3">
         <button
           aria-expanded={effectiveExpanded}
           className="hover:bg-muted/50 flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-4 py-2 text-left"
@@ -307,6 +308,10 @@ export function ManualCardPanel({
             </Badge>
           )}
         </button>
+        <Button className="h-7" size="sm" variant="outline" onClick={openCreate}>
+          <Plus className="size-4" />
+          {tc.newCard}
+        </Button>
         {effectiveExpanded && visibleCards.length > 0 && (
           <Checkbox
             aria-label={tk.selectAllDocuments}
@@ -314,10 +319,6 @@ export function ManualCardPanel({
             onCheckedChange={toggleSelectAll}
           />
         )}
-        <Button className="h-7" size="sm" variant="outline" onClick={openCreate}>
-          <Plus className="size-4" />
-          {tc.newCard}
-        </Button>
       </div>
 
       {effectiveExpanded && (
@@ -376,7 +377,7 @@ export function ManualCardPanel({
                           {/* 行点击开详情抽屉（与 wiki 条目对齐）；右侧操作区是 row 内
                               sibling（不在行 button 内），编辑/删除/开关不会误触发行点击。 */}
                           <button
-                            className="flex min-w-0 flex-1 flex-col gap-1 px-2 py-2 pr-28 text-left"
+                            className="flex min-w-0 flex-1 flex-col gap-1 px-2 py-2 text-left"
                             data-testid={`manual-card-row-${card.id}`}
                             type="button"
                             onClick={() => onOpenCard?.(card.id)}
@@ -404,9 +405,10 @@ export function ManualCardPanel({
                               {tc.updatedAt} {formatKnowledgeTimestamp(card.updated_at, locale)}
                             </span>
                           </button>
-                          {/* top-1 与 wiki 条目行操作区对齐（按钮中心 ≈ 标题行中心）。
-                              pr-28 保留：Switch 常驻显示，右侧空间不可撤。 */}
-                          <div className="absolute top-1 right-2 flex items-center gap-1">
+                          {/* 操作区与 wiki 行一致：icon-sm + top-1（按钮中心 ≈ 标题行中心），
+                              整体悬停浮现（开启状态已有「混入搜索」徽章表达，Switch 不必常驻），
+                              故右侧不留白、文字通栏。 */}
+                          <div className="absolute top-1 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                             <Switch
                               aria-label={`${tc.includeInSearch}: ${card.title}`}
                               checked={card.include_in_wiki_search}
