@@ -53,16 +53,18 @@
 - [x] ruff check/format 双净。
 - [x] Commit: `feat(rag): add projection fetcher with id-subsampling and preview join`（`a0b49031`）
 
-## Task 3: P3 投影缓存与内容指纹
+## Task 3: P3 投影缓存与内容指纹 ✅ 已完成（2026-08-15）
 
 **Files:**
-- Create: `backend/packages/harness/deerflow/knowledge/projection/cache.py`
-- Create: `backend/tests/knowledge/projection/test_cache.py`
+- Create: `backend/packages/harness/deerflow/knowledge/projection/cache.py` ✅
+- Create: `backend/tests/knowledge/projection/test_cache.py` ✅
+- Modify: `backend/packages/harness/deerflow/knowledge/store.py` ✅（Plan 外必然追加：指纹的 DB 侧信号源 `get_kb_content_stats`，一次 session 四条聚合查询；顺带把 `count_chunks` 的局部 func import 收进顶部）
 
-- [ ] RED test: 指纹 = chunks(`count`, `max(last_edited_at)`) + wiki/cards(`count`, `max(updated_at)`) + entities(`count`)；指纹命中不重算（reducer 调用计数断言）；指纹变化重算并替换；`refresh=True` 跳过比对；`asyncio.Lock` 下并发请求只算一次。
-- [ ] Implement 进程内缓存 `{(kb_id, algo, dims, sample_size): CachedProjection}`（含 PCA 模型与指纹）。
-- [ ] GREEN；regression proof；restore。
-- [ ] Commit: `feat(rag): cache vector projections behind a content fingerprint`
+- [x] RED test: 8 用例——指纹命中不重算（compute 计数断言）/ 指纹变化重算并替换（后续命中拿到新值）/ `refresh=True` 跳过比对 / 10 并发只算一次（1 False + 9 True）/ key 独立 / 指纹函数确定性+五路信号敏感 / store stats 聚合（含 kb 隔离、编辑翻转、空 kb 零值）。
+- [x] Implement 进程内缓存 `{(kb_id, algo, dims, sample_size): CachedProjection}`（per-key 双检锁；fingerprint/created_at 由 cache 统一填，compute 只管算）。
+- [x] GREEN（projection 29 passed）；revert proof 通过。修过一次测试数据 bug（graph_entities.id 是必填 String 主键）。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): cache vector projections behind a content fingerprint`（`b56c691f`）
 
 ## Task 4: P4 API 契约——投影端点 + query 投影端点
 
