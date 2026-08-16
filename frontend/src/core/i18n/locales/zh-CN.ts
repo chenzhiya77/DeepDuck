@@ -429,6 +429,15 @@ export const zhCN: Translations = {
       recall: "检索测试",
       vectors: "向量空间",
     },
+    vectorSpace: {
+      loading: "计算投影中…",
+      empty: "该知识库还没有向量数据——先上传文档",
+      loadFailed: "投影加载失败",
+      indexingHint: (count) => `${count} 个文档索引中，投影可能不完整`,
+      chips: { chunks: "切片", entities: "实体", wiki: "百科", cards: "卡片" },
+      algoLabel: "算法",
+      recompute: "重新计算",
+    },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",
       loading: "加载中…",

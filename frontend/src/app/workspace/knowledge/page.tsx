@@ -15,6 +15,7 @@ import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-d
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
+import { VectorTab } from "@/components/workspace/knowledge/vector-tab";
 import { WikiEditDialog } from "@/components/workspace/knowledge/wiki-edit-dialog";
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
 import { WikiTab } from "@/components/workspace/knowledge/wiki-tab";
@@ -96,6 +97,11 @@ export default function KnowledgePage() {
 
   const documentsQuery = useDocuments(selectedKbId);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
+    // 向量空间索引中提示：仍在管线（未 ready/failed）的文档数。
+    const indexingDocCount = useMemo(
+      () => documents.filter((doc) => doc.status !== "ready" && doc.status !== "failed").length,
+      [documents],
+    );
   // Lazy: the wiki list fetches once its tab is first activated or a manual
   // update run is triggered (keep-alive panes stay mounted — the gate is
   // what keeps it lazy).
@@ -350,8 +356,20 @@ export default function KnowledgePage() {
                 />
               }
               vectors={
-                // Task 5 挂载占位（Task 6 填散点图面板本体）。
-                <div className="h-full" data-testid="vector-space-placeholder" />
+                <VectorTab
+                  kbId={selectedKb.id}
+                  enabled={activeTab === "vectors"}
+                  indexingCount={indexingDocCount}
+                  onOpenChunk={(docId) => {
+                    // 指纹缓存与文档列表同源——正常必命中；防御性忽略。
+                    const doc = documents.find((item) => item.id === docId);
+                    if (doc) {
+                      setDrawerDoc(doc);
+                    }
+                  }}
+                  onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
+                  onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
+                />
               }
             />
           ) : (

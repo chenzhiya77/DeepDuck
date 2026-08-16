@@ -375,6 +375,16 @@ export interface Translations {
       recall: string;
       vectors: string;
     };
+    /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
+    vectorSpace: {
+      loading: string;
+      empty: string;
+      loadFailed: string;
+      indexingHint: (count: number) => string;
+      chips: { chunks: string; entities: string; wiki: string; cards: string };
+      algoLabel: string;
+      recompute: string;
+    };
     wikiPanel: {
       empty: string;
       loading: string;

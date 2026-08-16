@@ -445,6 +445,16 @@ export const enUS: Translations = {
       recall: "Recall test",
       vectors: "Vector space",
     },
+    vectorSpace: {
+      loading: "Computing projection…",
+      empty: "No vectors in this knowledge base yet — upload documents first",
+      loadFailed: "Failed to load projection",
+      indexingHint: (count) =>
+        `${count} document${count === 1 ? "" : "s"} still indexing — the projection may be incomplete`,
+      chips: { chunks: "Chunks", entities: "Entities", wiki: "Wiki", cards: "Cards" },
+      algoLabel: "Algorithm",
+      recompute: "Recompute",
+    },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",
       loading: "Loading…",
