@@ -151,6 +151,17 @@ describe("ManualCardPanel", () => {
     expect((switches[1]!).getAttribute("aria-checked")).toBe("false");
   });
 
+  it("keeps the 混入搜索 badge at row-line height (h-5 py-0) so toggling never shifts row height", () => {
+    setupMocks();
+    renderExpanded();
+
+    // Badge 默认 22px（py-0.5 + text-xs 行高 + border），比标题行 20px 高——
+    // 开关切换徽章动态出现/消失会把行撑高 2px。锁 h-5 py-0 与行高一致。
+    const badge = screen.getByText("混入搜索");
+    expect(badge.className).toContain("h-5");
+    expect(badge.className).toContain("py-0");
+  });
+
   it("renders the empty state when expanded with no cards", () => {
     setupMocks({ cardsPage: { items: [], total: 0, offset: 0, limit: 50 } });
     renderExpanded();

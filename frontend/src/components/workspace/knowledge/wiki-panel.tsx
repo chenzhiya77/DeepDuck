@@ -237,7 +237,7 @@ export function WikiPanel({
                               <BookOpen className="text-muted-foreground size-4 shrink-0" />
                               <span className="min-w-0 truncate text-sm font-medium">{entry.title}</span>
                               {entry.status === "dirty" && (
-                                <Badge className="shrink-0 gap-1" variant="secondary">
+                                <Badge className="h-5 shrink-0 gap-1 py-0" variant="secondary">
                                   {updating && <Loader2 className="size-3 animate-spin" />}
                                   {updating ? tw.updating : tw.dirty}
                                 </Badge>

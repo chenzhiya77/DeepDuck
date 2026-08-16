@@ -389,7 +389,7 @@ export function ManualCardPanel({
                               <StickyNote className="text-muted-foreground size-4 shrink-0" />
                               <span className="min-w-0 truncate text-sm font-medium">{card.title}</span>
                               {card.include_in_wiki_search && (
-                                <Badge className="shrink-0" variant="secondary">
+                                <Badge className="h-5 shrink-0 py-0" variant="secondary">
                                   {tc.includeInSearch}
                                 </Badge>
                               )}

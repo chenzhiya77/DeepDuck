@@ -261,6 +261,14 @@ describe("WikiPanel", () => {
     expect(screen.getByText("待更新")).toBeTruthy();
   });
 
+  it("keeps the dirty badge at row-line height (h-5 py-0) so status flips never shift row height", () => {
+    renderWithI18n(<WikiPanel entries={[DIRTY_ENTRY]} onOpenEntry={() => undefined} onDeleteEntry={() => undefined} />);
+    // Badge 默认 22px，比标题行 20px 高——dirty ⇄ 更新中 切换时会把行撑高 2px。
+    const badge = screen.getByText("待更新");
+    expect(badge.className).toContain("h-5");
+    expect(badge.className).toContain("py-0");
+  });
+
   it("invokes onOpenEntry with the clicked entry", () => {
     const onOpenEntry = rs.fn();
     renderWithI18n(<WikiPanel entries={[ENTRY]} onOpenEntry={onOpenEntry} onDeleteEntry={() => undefined} />);
