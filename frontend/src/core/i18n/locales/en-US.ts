@@ -553,6 +553,8 @@ export const enUS: Translations = {
       expandToFullPage: "Open in full page",
       pageLabel: (page) => `Page ${page}`,
       inputPlaceholder: "Ask this knowledge base…",
+      selectModel: "Select model",
+      searchModels: "Search models…",
       send: "Send",
     },
     errors: {

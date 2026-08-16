@@ -11,11 +11,16 @@ const mockUseThreadStream = rs.fn();
 const mockUseInfiniteThreads = rs.fn();
 const mockSendMessage = rs.fn();
 const mockDeleteThread = rs.fn();
+const mockUseModels = rs.fn();
 
 rs.mock("@/core/threads/hooks", () => ({
   useThreadStream: (options: unknown) => mockUseThreadStream(options),
   useInfiniteThreads: (params?: unknown) => mockUseInfiniteThreads(params),
   useDeleteThread: () => ({ mutate: mockDeleteThread }),
+}));
+
+rs.mock("@/core/models/hooks", () => ({
+  useModels: () => mockUseModels(),
 }));
 
 let capturedMessageListProps: Record<string, unknown> | null = null;
@@ -57,6 +62,25 @@ const KB_THREAD = makeThread("thread-kb1-a", "kb-1", "如何上传文档");
 const OTHER_KB_THREAD = makeThread("thread-kb2-a", "kb-2", "别的库会话");
 const PLAIN_THREAD = makeThread("thread-plain", null, "普通会话");
 
+const MODELS = [
+  {
+    name: "deepseek-v4-flash",
+    model: "deepseek-v4-flash",
+    display_name: "DeepSeek V4 Flash",
+    description: null,
+    supports_thinking: false,
+    supports_reasoning_effort: false,
+  },
+  {
+    name: "qwen-plus",
+    model: "qwen-plus-latest",
+    display_name: "Qwen Plus",
+    description: null,
+    supports_thinking: true,
+    supports_reasoning_effort: true,
+  },
+];
+
 function makeThreadState(messages: unknown[] = []) {
   return {
     messages,
@@ -96,6 +120,8 @@ beforeEach(() => {
   mockUseInfiniteThreads.mockReturnValue({
     data: { pages: [[KB_THREAD, OTHER_KB_THREAD, PLAIN_THREAD]] },
   });
+  mockUseModels.mockReturnValue({ models: MODELS, tokenUsageEnabled: false, isLoading: false, error: null });
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -321,5 +347,47 @@ describe("KnowledgeChatPanel", () => {
     expect(extraContext.agent_name).toBe("rag");
     expect(options.additionalKwargs.hide_from_ui).toBe(true);
     expect(options.additionalKwargs.human_input_response).toEqual(response);
+  });
+});
+
+describe("KnowledgeChatPanel model selector", () => {
+  it("shows the first configured model as the effective default and keeps context.model_name undefined", () => {
+    renderPanel();
+    // 未显式选择时：触发器显示后端默认（models[0]），context 保持 undefined
+    // 让后端走 request → agent 配置 → 全局默认的解析链。
+    expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("DeepSeek V4 Flash");
+    expect(latestStreamOptions().context.model_name).toBeUndefined();
+  });
+
+  it("writes the picked model into the stream context and persists it per kb", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "选择模型" }));
+    fireEvent.click(await screen.findByText("Qwen Plus"));
+
+    expect(latestStreamOptions().context.model_name).toBe("qwen-plus");
+    expect(localStorage.getItem("rag-chat-model:kb-1")).toBe("qwen-plus");
+    // 选择后弹层关闭、触发器显示新选择
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("Qwen Plus");
+  });
+
+  it("restores the remembered model per kb and falls back to default when switching to an unremembered kb", () => {
+    localStorage.setItem("rag-chat-model:kb-1", "qwen-plus");
+    const utils = render(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KnowledgeChatPanel kb={KB} />
+      </I18nContext.Provider>,
+    );
+    expect(latestStreamOptions().context.model_name).toBe("qwen-plus");
+    expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("Qwen Plus");
+
+    utils.rerender(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KnowledgeChatPanel kb={{ ...KB, id: "kb-2", name: "第二库" }} />
+      </I18nContext.Provider>,
+    );
+    // kb-2 没有记忆 → 回落默认显示，context 恢复 undefined
+    expect(latestStreamOptions().context.model_name).toBeUndefined();
+    expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("DeepSeek V4 Flash");
   });
 });

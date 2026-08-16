@@ -537,6 +537,8 @@ export const zhCN: Translations = {
       expandToFullPage: "在完整页面中打开",
       pageLabel: (page) => `第 ${page} 页`,
       inputPlaceholder: "向当前知识库提问…",
+      selectModel: "选择模型",
+      searchModels: "搜索模型…",
       send: "发送",
     },
     errors: {

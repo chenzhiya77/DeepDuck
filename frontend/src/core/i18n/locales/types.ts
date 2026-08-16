@@ -487,6 +487,9 @@ export interface Translations {
       expandToFullPage: string;
       pageLabel: (page: number) => string;
       inputPlaceholder: string;
+      /** Composer model selector: trigger aria-label + dialog title. */
+      selectModel: string;
+      searchModels: string;
       send: string;
     };
     errors: {

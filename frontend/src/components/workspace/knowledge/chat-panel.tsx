@@ -4,6 +4,8 @@ import type { Message } from "@langchain/langgraph-sdk";
 import {
   ArrowUpIcon,
   ArrowUpRightIcon,
+  CheckIcon,
+  ChevronDownIcon,
   HistoryIcon,
   PlusIcon,
   Trash2Icon,
@@ -11,6 +13,15 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  ModelSelector,
+  ModelSelectorContent,
+  ModelSelectorInput,
+  ModelSelectorItem,
+  ModelSelectorList,
+  ModelSelectorName,
+  ModelSelectorTrigger,
+} from "@/components/ai-elements/model-selector";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,12 +43,16 @@ import {
   type HumanInputRequest,
   type HumanInputResponse,
 } from "@/core/messages/human-input";
+import { useModels } from "@/core/models/hooks";
 import { useDeleteThread, useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { cn } from "@/lib/utils";
 
 import { KbAssistantContent } from "./kb-assistant-content";
 import { KbCitationSources } from "./kb-citation-sources";
+
+/** Per-kb composer model memory: `rag-chat-model:{kbId}` → model name. */
+const MODEL_STORAGE_PREFIX = "rag-chat-model:";
 
 /**
  * Right-column chat panel bound to the selected knowledge base (spec
@@ -62,25 +77,47 @@ export function KnowledgeChatPanel({
   const [isNewThread, setIsNewThread] = useState(true);
   const [deepResearch, setDeepResearch] = useState(false);
   const [draft, setDraft] = useState("");
+  // Composer model selector: null = unselected → context.model_name stays
+  // undefined and the backend resolves request → agent config → global
+  // default. A picked model is remembered per kb (localStorage).
+  const [selectedModelName, setSelectedModelName] = useState<string | null>(null);
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  const { models } = useModels();
+  // The trigger shows the effective model: the remembered pick, else the
+  // backend's global default (models[0]).
+  const activeModel = models.find((m) => m.name === selectedModelName) ?? models[0];
 
   // Switching knowledge bases always starts a fresh conversation: threads are
   // bound to exactly one kb via metadata.kb_id and must never bleed across.
+  // The composer model reverts to whatever was remembered for the new kb.
   useEffect(() => {
     setThreadId(uuid());
     setIsNewThread(true);
     setDraft("");
+    setSelectedModelName(kbId ? localStorage.getItem(MODEL_STORAGE_PREFIX + kbId) : null);
   }, [kbId]);
+
+  const handleModelSelect = useCallback(
+    (name: string) => {
+      setSelectedModelName(name);
+      if (kbId) {
+        localStorage.setItem(MODEL_STORAGE_PREFIX + kbId, name);
+      }
+      setModelDialogOpen(false);
+    },
+    [kbId],
+  );
 
   const context = useMemo(
     () => ({
-      model_name: undefined,
+      model_name: selectedModelName ?? undefined,
       mode: undefined,
       reasoning_effort: undefined,
       agent_name: "rag",
       ...(kbId ? { kb_id: kbId } : {}),
       deep_research: deepResearch,
     }),
-    [kbId, deepResearch],
+    [kbId, deepResearch, selectedModelName],
   );
 
   const {
@@ -326,16 +363,53 @@ export function KnowledgeChatPanel({
             }}
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <Tooltip content={tc.deepResearchHint}>
-              <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs">
-                <Switch
-                  checked={deepResearch}
-                  disabled={!kb}
-                  onCheckedChange={setDeepResearch}
-                />
-                <span>{tc.deepResearch}</span>
-              </label>
-            </Tooltip>
+            <div className="flex items-center gap-2">
+              <Tooltip content={tc.deepResearchHint}>
+                <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs">
+                  <Switch
+                    checked={deepResearch}
+                    disabled={!kb}
+                    onCheckedChange={setDeepResearch}
+                  />
+                  <span>{tc.deepResearch}</span>
+                </label>
+              </Tooltip>
+              <ModelSelector open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
+                <ModelSelectorTrigger asChild>
+                  <button
+                    aria-label={tc.selectModel}
+                    className="text-muted-foreground hover:text-foreground flex max-w-40 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
+                    disabled={!kb || models.length === 0}
+                    type="button"
+                  >
+                    <span className="truncate">{activeModel?.display_name ?? activeModel?.name ?? tc.selectModel}</span>
+                    <ChevronDownIcon className="size-3 shrink-0" />
+                  </button>
+                </ModelSelectorTrigger>
+                <ModelSelectorContent title={tc.selectModel}>
+                  <ModelSelectorInput placeholder={tc.searchModels} />
+                  <ModelSelectorList>
+                    {models.map((m) => (
+                      <ModelSelectorItem
+                        key={m.name}
+                        value={m.name}
+                        onSelect={() => handleModelSelect(m.name)}
+                      >
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <ModelSelectorName>{m.display_name ?? m.name}</ModelSelectorName>
+                          <span className="text-muted-foreground truncate text-[10px]">{m.model}</span>
+                        </div>
+                        {m.name === selectedModelName ? (
+                          <CheckIcon className="ml-auto size-4" />
+                        ) : (
+                          <div className="ml-auto size-4" />
+                        )}
+                      </ModelSelectorItem>
+                    ))}
+                  </ModelSelectorList>
+                </ModelSelectorContent>
+              </ModelSelector>
+            </div>
             <Tooltip content={tc.send}>
               {/* The span keeps the tooltip reachable while the button is disabled */}
               <span className="inline-flex">
