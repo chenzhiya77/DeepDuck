@@ -384,6 +384,8 @@ export interface Translations {
       chips: { chunks: string; entities: string; wiki: string; cards: string };
       algoLabel: string;
       recompute: string;
+      /** 采样徽标（Task 7）：已抽样 shown/total 点。 */
+      sampledBadge: (shown: number, total: number) => string;
     };
     wikiPanel: {
       empty: string;

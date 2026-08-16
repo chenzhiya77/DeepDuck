@@ -15,7 +15,10 @@ const shared = {
   output: {
     // Streamdown imports KaTeX CSS as a side effect. Bundle these packages so
     // Rsbuild processes that CSS import instead of Node trying to load it.
-    bundleDependencies: ["streamdown", "katex"],
+    // echarts-gl ships extension-less ESM re-exports (export * from './lib/...')
+    // that Node's strict resolver rejects; bundling lets Rsbuild resolve them.
+    // Same for claygl (echarts-gl's WebGL engine dependency chain).
+    bundleDependencies: ["streamdown", "katex", "echarts-gl", "claygl"],
   },
 };
 

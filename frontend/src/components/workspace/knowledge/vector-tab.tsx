@@ -6,9 +6,11 @@
  * （纯 React 可测）；canvas 适配层经 next/dynamic 懒加载隔离（jsdom 中
  * 整体 mock）。3D 切换与重新计算在 Task 7 接通，本任务渲染禁用态。
  */
+import { Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -19,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
-import { useVectorProjection } from "@/core/knowledge/hooks";
+import { useRecomputeVectorProjection, useVectorProjection } from "@/core/knowledge/hooks";
 import type {
   VectorProjectionAlgo,
   VectorProjectionPoint,
@@ -132,11 +134,11 @@ export function VectorTab({
   const tv = t.knowledge.vectorSpace;
   const [collections, setCollections] = useState<VectorCollectionKey[]>([...ALL_COLLECTIONS]);
   const [algo, setAlgo] = useState<VectorProjectionAlgo>("pca");
-  // Task 7：2D/3D 切换接通（dims 参数化 + scatter3D），本任务固定 2D。
-  const dims = 2 as const;
+  const [dims, setDims] = useState<2 | 3>(2);
 
   const projectionQuery = useVectorProjection(kbId, { collections, algo, dims }, enabled);
   const projection = projectionQuery.data;
+  const recompute = useRecomputeVectorProjection(kbId);
 
   const series = useMemo(
     () => groupPointsIntoSeries(projection?.points ?? [], { wiki: tv.chips.wiki, cards: tv.chips.cards }),
@@ -190,11 +192,26 @@ export function VectorTab({
           );
         })}
         <div className="ml-auto flex items-center gap-2">
-          <ToggleGroup size="sm" type="single" value="2d" variant="outline">
-            <ToggleGroupItem aria-label="2D" className="h-7 px-2 text-xs" value="2d">
+          {projection?.sampled && (
+            <Badge className="shrink-0 text-xs" variant="secondary">
+              {tv.sampledBadge(projection.shown_points, projection.total_points)}
+            </Badge>
+          )}
+          <ToggleGroup
+            size="sm"
+            type="single"
+            value={String(dims)}
+            variant="outline"
+            onValueChange={(value) => {
+              if (value === "2" || value === "3") {
+                setDims(Number(value) as 2 | 3);
+              }
+            }}
+          >
+            <ToggleGroupItem aria-label="2D" className="h-7 px-2 text-xs" value="2">
               2D
             </ToggleGroupItem>
-            <ToggleGroupItem aria-label="3D" className="h-7 px-2 text-xs" disabled value="3d">
+            <ToggleGroupItem aria-label="3D" className="h-7 px-2 text-xs" value="3">
               3D
             </ToggleGroupItem>
           </ToggleGroup>
@@ -208,7 +225,14 @@ export function VectorTab({
               <SelectItem value="umap">UMAP</SelectItem>
             </SelectContent>
           </Select>
-          <Button disabled className="h-7 text-xs" size="sm" variant="outline">
+          <Button
+            className="h-7 text-xs"
+            disabled={recompute.isPending}
+            size="sm"
+            variant="outline"
+            onClick={() => recompute.mutate({ collections, algo, dims })}
+          >
+            {recompute.isPending && <Loader2 className="size-3.5 animate-spin" />}
             {tv.recompute}
           </Button>
         </div>

@@ -14,17 +14,19 @@ import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/know
 import { VectorTab } from "@/components/workspace/knowledge/vector-tab";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { useProjectVectorQuery, useVectorProjection } from "@/core/knowledge/hooks";
+import type { useVectorProjection } from "@/core/knowledge/hooks";
 import type { KnowledgeBase, VectorProjectionResponse } from "@/core/knowledge/types";
 
 const hooksMock = rs.hoisted(() => ({
   useVectorProjection: rs.fn(),
   useProjectVectorQuery: rs.fn(),
+  useRecomputeVectorProjection: rs.fn(),
 }));
 
 rs.mock("@/core/knowledge/hooks", () => ({
   useVectorProjection: hooksMock.useVectorProjection,
   useProjectVectorQuery: hooksMock.useProjectVectorQuery,
+  useRecomputeVectorProjection: hooksMock.useRecomputeVectorProjection,
 }));
 
 /** echarts 画布 mock：记录 props，不渲染（jsdom 无 WebGL/canvas）。 */
@@ -160,6 +162,7 @@ describe("VectorTab 面板", () => {
   beforeEach(() => {
     canvasMock.props = undefined;
     hooksMock.useProjectVectorQuery.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useRecomputeVectorProjection.mockReturnValue({ mutate: rs.fn(), isPending: false });
     mockProjectionQuery({ data: PROJECTION });
   });
 
@@ -191,9 +194,9 @@ describe("VectorTab 面板", () => {
     }
     // Radix ToggleGroup single 模式的 Item 带 role="radio"（button 元素上覆写）。
     expect(screen.getByRole("radio", { name: "2D" })).toBeTruthy();
-    // 3D 与重新计算在 Task 7 接通——本任务只渲染禁用态。
-    expect(screen.getByRole("radio", { name: "3D" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "重新计算" })).toHaveProperty("disabled", true);
+    // 3D 与重新计算在 Task 7 接通——可用态。
+    expect(screen.getByRole("radio", { name: "3D" })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("button", { name: "重新计算" })).toHaveProperty("disabled", false);
     expect(screen.getByText("算法")).toBeTruthy();
   });
 
@@ -272,5 +275,38 @@ describe("VectorTab 面板", () => {
   it("shows the indexing hint while documents are still being indexed", () => {
     renderVectorTab({ indexingCount: 2 });
     expect(screen.getByText(/2 个文档索引中/)).toBeTruthy();
+  });
+
+  // ── Task 7: 3D 切换 + 采样徽标 + 重新计算 ──────────────────────────────
+
+  it("switches to 3D: requests dims=3 and forwards dims=3 to the canvas", async () => {
+    renderVectorTab();
+    fireEvent.click(screen.getByRole("radio", { name: "3D" }));
+    const lastCall = hooksMock.useVectorProjection.mock.calls.at(-1);
+    expect(lastCall?.[1].dims).toBe(3);
+    await waitFor(() => expect(canvasMock.props?.dims).toBe(3));
+  });
+
+  it("shows the sampling badge when the projection was subsampled", () => {
+    mockProjectionQuery({
+      data: { ...PROJECTION, sampled: true, shown_points: 5000, total_points: 12345 },
+    });
+    renderVectorTab();
+    expect(screen.getByText("已抽样 5000/12345 点")).toBeTruthy();
+  });
+
+  it("hides the sampling badge when nothing was subsampled", () => {
+    renderVectorTab();
+    expect(screen.queryByText(/已抽样/)).toBeNull();
+  });
+
+  it("recompute triggers a forced refresh with the current view params", () => {
+    const recomputeMutate = rs.fn();
+    hooksMock.useRecomputeVectorProjection.mockReturnValue({ mutate: recomputeMutate, isPending: false });
+    renderVectorTab();
+    fireEvent.click(screen.getByRole("button", { name: "重新计算" }));
+    expect(recomputeMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ collections: ["chunks", "entities", "wiki", "cards"], algo: "pca", dims: 2 }),
+    );
   });
 });

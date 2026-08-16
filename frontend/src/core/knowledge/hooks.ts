@@ -333,3 +333,20 @@ export function useProjectVectorQuery(kbId: string) {
     mutationFn: (text: string) => api.projectVectorQuery(kbId, text),
   });
 }
+
+/**
+ * 重新计算（Task 7）：直打 `refresh=true` 强制重算，成功后把新数据写回
+ * 主 queryKey 缓存——单一缓存键，不产生 refresh 副本，画布随缓存更新自动
+ * 刷新。refresh 永不进 `useVectorProjection` 的常规参数（否则每次轮询都
+ * 重算）。
+ */
+export function useRecomputeVectorProjection(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: api.VectorProjectionParams) =>
+      api.getVectorProjection(kbId, { ...params, refresh: true }),
+    onSuccess: (data, params) => {
+      void queryClient.setQueryData(knowledgeVectorProjectionKey(kbId, params), data);
+    },
+  });
+}
