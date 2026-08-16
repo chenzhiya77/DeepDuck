@@ -82,17 +82,17 @@ function setupMocks({ cardsPage = CARDS_PAGE, isLoading = false, cardDetail = nu
   return { createCard, updateCard, deleteCard };
 }
 
-function renderPanel() {
+function renderPanel(props?: { onOpenCard?: (cardId: string) => void }) {
   return render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <ManualCardPanel kbId="kb-1" />
+      <ManualCardPanel kbId="kb-1" {...props} />
     </I18nContext.Provider>,
   );
 }
 
 /** Collapsed by default — expand through the section header. */
-function renderExpanded() {
-  const utils = renderPanel();
+function renderExpanded(props?: { onOpenCard?: (cardId: string) => void }) {
+  const utils = renderPanel(props);
   fireEvent.click(screen.getByTestId("manual-cards-toggle"));
   return utils;
 }
@@ -202,5 +202,29 @@ describe("ManualCardPanel", () => {
     await waitFor(() => {
       expect(deleteCard.mutateAsync).toHaveBeenCalledWith("card-1");
     });
+  });
+
+  it("opens the card detail drawer on row click, mirroring wiki entries (P6 fix)", () => {
+    setupMocks();
+    const onOpenCard = rs.fn();
+    renderExpanded({ onOpenCard });
+
+    fireEvent.click(screen.getByTestId("manual-card-row-card-1"));
+    expect(onOpenCard).toHaveBeenCalledWith("card-1");
+    fireEvent.click(screen.getByTestId("manual-card-row-card-2"));
+    expect(onOpenCard).toHaveBeenCalledWith("card-2");
+  });
+
+  it("row actions (edit / delete / include toggle) never trigger the drawer", () => {
+    setupMocks();
+    const onOpenCard = rs.fn();
+    renderExpanded({ onOpenCard });
+
+    // 删除按钮最后点——确认 Dialog 弹出后背景 aria-hidden，switch 会查不到。
+    fireEvent.click(screen.getAllByRole("switch")[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "编辑卡片" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "删除卡片" })[0]!);
+
+    expect(onOpenCard).not.toHaveBeenCalled();
   });
 });

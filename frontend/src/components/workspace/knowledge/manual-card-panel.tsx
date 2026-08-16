@@ -134,7 +134,7 @@ function ManualCardEditor({
  * wiki entries above); each row carries a 混入搜索 toggle driving the card's
  * retrieval vector lifecycle server-side.
  */
-export function ManualCardPanel({ kbId }: { kbId: string }) {
+export function ManualCardPanel({ kbId, onOpenCard }: { kbId: string; onOpenCard?: (cardId: string) => void }) {
   const { t, locale } = useI18n();
   const tc = t.knowledge.manualCards;
   const [expanded, setExpanded] = useState(false);
@@ -233,7 +233,14 @@ export function ManualCardPanel({ kbId }: { kbId: string }) {
             <ul className="flex flex-col" data-testid="manual-card-list">
               {cards.map((card) => (
                 <li className="group relative" key={card.id}>
-                  <div className="flex flex-col gap-1 rounded-md px-2 py-2 pr-28">
+                  {/* 行点击开详情抽屉（与 wiki 条目对齐）；右侧操作区是 li 的
+                      sibling（不在行 button 内），编辑/删除/开关不会误触发行点击。 */}
+                  <button
+                    className="hover:bg-muted/50 flex w-full flex-col gap-1 rounded-md px-2 py-2 pr-28 text-left"
+                    data-testid={`manual-card-row-${card.id}`}
+                    type="button"
+                    onClick={() => onOpenCard?.(card.id)}
+                  >
                     <span className="flex items-center gap-2">
                       <StickyNote className="text-muted-foreground size-4 shrink-0" />
                       <span className="min-w-0 truncate text-sm font-medium">{card.title}</span>
@@ -256,7 +263,7 @@ export function ManualCardPanel({ kbId }: { kbId: string }) {
                     <span className="text-muted-foreground pl-6 text-xs">
                       {tc.updatedAt} {formatKnowledgeTimestamp(card.updated_at, locale)}
                     </span>
-                  </div>
+                  </button>
                   <div className="absolute top-2 right-2 flex items-center gap-1">
                     <Switch
                       aria-label={`${tc.includeInSearch}: ${card.title}`}

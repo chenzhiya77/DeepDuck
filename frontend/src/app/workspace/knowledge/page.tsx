@@ -343,7 +343,7 @@ export default function KnowledgePage() {
                   />
                   {/* Phase-3 Batch-1 P6: manual cards sit below the AI wiki
                       entries (spec §8 双通道) — collapsible, default collapsed. */}
-                  <ManualCardPanel kbId={selectedKb.id} />
+                  <ManualCardPanel kbId={selectedKb.id} onOpenCard={(cardId) => setDrawerCardId(cardId)} />
                 </>
               }
               recall={
