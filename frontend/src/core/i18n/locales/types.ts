@@ -384,8 +384,14 @@ export interface Translations {
       chips: { chunks: string; entities: string; wiki: string; cards: string };
       algoLabel: string;
       recompute: string;
+      /** 窄栏降级（2026-08-17）：⋯ 菜单收纳 2D/3D 与算法切换。 */
+      moreOptions: string;
+      /** ⋯ 菜单内维度分组标签。 */
+      dimsLabel: string;
       /** 采样徽标（Task 7）：已抽样 shown/total 点。 */
       sampledBadge: (shown: number, total: number) => string;
+      /** 文档搜索框（聚焦交互）：按文档名过滤并锁定切片聚焦。 */
+      searchDocs: string;
     };
     wikiPanel: {
       empty: string;

@@ -148,7 +148,14 @@ POST /api/knowledge-bases/{kb_id}/vector-projection/query
 
 - echarts 在 jsdom 不可运行 → **渲染适配层隔离**：`vector-canvas.tsx`（echarts 封装，DOM 测试中整体 mock）+ `vector-tab.tsx`（数据/交互逻辑，纯 React 可测）；`performance-budgets.json` 新增 echarts 异步 chunk 预算条目（`next/dynamic` 懒加载，不进首屏）。
 - **布局**：工具栏（collection 多选 chips / 2D·3D 切换 / 算法选择 / 「重新计算」/ 采样提示徽标「已抽样 5000/12345 点」）+ 画布 + 右侧点击详情卡（复用现有 chunk 抽屉 / wiki 条目视图 / 卡片抽屉的打开链路，不新建详情组件）。
-- **着色**：chunk 按文档、entity 按类型、wiki/card 各一色；图例可点击开关显隐。
+- **着色（2026-08-15 UX 迭代拍板）**：四类 collection 各一色（chunk 蓝/entity 绿/wiki 紫/card 橙，与工具栏 chips 同源），图例恒四项——原「chunk 按文档、entity 按类型」多色方案在文档一多时视觉太花，已否决。文档级区分的诊断需求由聚焦交互承接（下条）。
+- **聚焦交互（2026-08-15 UX 迭代拍板，着色与聚焦分离）**：
+  - hover 切片 → 同文档切片保持，其余文档切片淡出；实体/wiki/卡片是跨文档参照系，不淡出；
+  - hover 实体/wiki/卡片 → 该大类保持，其余所有（含切片）淡出；
+  - 工具栏文档搜索框（wiki-tab 同款 Input）→ 文档名子串匹配的切片锁定高亮，其余切片淡出；清空恢复；搜索锁定优先于 hover；
+  - 淡化 = 低透明度保留原色（opacity≈0.12，保空间参照不隐藏）；点击仍是打开详情抽屉（与聚焦无冲突）。
+  - 实现：echarts 内置 emphasis.focus='series' 粒度不够（区分不了同 series 内不同文档），淡化走自定义数据项级 itemStyle + setOption merge 更新；判定逻辑抽纯函数 `isPointDimmed` 可单测。
+  - 3D 事件坑（2026-08-15 诊断）：echarts-gl 在「散点 → 空白」时**不派发 mouseout**（2D zrender 正常），hover 聚焦会永久卡住。修复：focus 设置由 chart mousemove（hit 时每次都派发，2D/3D 一致）驱动；清除由心跳兑底——zr mousemove（全画布恒派发）武装 150ms 定时器、hit 复位、超时清除（`createHoverFocusHeartbeat` 纯函数可单测）；在点上慢移/停住均不误清。mouseout/globalout 保留为 2D 即时清除与移出画布兑底。
 - **交互三件套**（对齐主流共识）：hover tooltip（label + preview ≤120 字符）→ 点击右侧详情 → 框选缩放（echarts dataZoom 内置）。
 - 空态：KB 无向量时展示引导文案（先上传文档）；索引进行中展示「N 个文档索引中，投影可能不完整」提示（复用文档列表状态）。
 

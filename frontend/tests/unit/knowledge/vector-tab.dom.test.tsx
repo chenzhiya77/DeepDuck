@@ -2,9 +2,12 @@
  * 向量空间 tab（2026-08-15 spec）：
  * - Task 5 挂载骨架：中栏第四 tab trigger/切换/forceMount keep-alive。
  * - Task 6 面板本体（VectorTab）：工具栏（collection chips / 2D·3D / 算法 /
- *   重新计算）+ 加载·空·错误三态 + 索引中提示 + 着色分组（chunk=文档、
- *   entity=类型、wiki/card 单色）+ 点击联动现有抽屉链路。echarts 画布
- *   （vector-canvas）在 jsdom 不可运行，整体 mock 断言 props。
+ *   重新计算）+ 加载·空·错误三态 + 索引中提示 + 四类单色分组（2026-08-15
+ *   UX 迭代拍板）+ 点击联动现有抽屉链路。echarts 画布（vector-canvas）在
+ *   jsdom 不可运行，整体 mock 断言 props。
+ * - 聚焦交互（2026-08-15）：工具栏文档搜索框 → 匹配文档 doc_id 集合作为
+ *   searchedDocIds 传画布（锁定聚焦）；hover 聚焦与淡化判定在 vector-canvas
+ *   （isPointDimmed 纯函数，见 vector-canvas.unit.test.ts）。
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -196,27 +199,30 @@ describe("VectorTab 面板", () => {
     expect(screen.getByRole("radio", { name: "2D" })).toBeTruthy();
     // 3D 与重新计算在 Task 7 接通——可用态。
     expect(screen.getByRole("radio", { name: "3D" })).toHaveProperty("disabled", false);
+    // 重新计算：图标按钮，aria-label 兑底可访问名（窄栏设计迭代 2026-08-15）。
     expect(screen.getByRole("button", { name: "重新计算" })).toHaveProperty("disabled", false);
-    expect(screen.getByText("算法")).toBeTruthy();
+    // 「算法」label 已移除，算法选择器经 aria-label 保留可访问名。
+    expect(screen.getByRole("combobox", { name: "算法" })).toBeTruthy();
   });
 
-  it("groups points into legend series: chunk=doc, entity=type, wiki/card single color", async () => {
+  it("groups points into four single-color series by source_type (2026-08-15 UX 迭代)", async () => {
+    // 用户拍板：文档一多按个体分组太花——四类 collection 各一色，图例四项。
     renderVectorTab();
     await waitFor(() => expect(canvasMock.props).toBeTruthy());
-    const series = canvasMock.props!.series as Array<{ key: string; sourceType: string; label: string; points: unknown[] }>;
-    expect(series).toHaveLength(5);
-    const byKey = new Map(series.map((s) => [s.key, s]));
-    // chunk 按文档分组，图例名为文档名
-    expect(byKey.get("doc-1")?.sourceType).toBe("chunk");
-    expect(byKey.get("doc-1")?.label).toBe("a.pdf");
-    expect(byKey.get("doc-1")?.points).toHaveLength(2);
-    expect(byKey.get("doc-2")?.points).toHaveLength(1);
-    // entity 按类型聚合为一组
-    expect(byKey.get("概念")?.sourceType).toBe("entity");
-    expect(byKey.get("概念")?.points).toHaveLength(2);
-    // wiki / card 各自单色单组
-    expect(byKey.get("wiki")?.points).toHaveLength(1);
-    expect(byKey.get("card")?.points).toHaveLength(1);
+    const series = canvasMock.props!.series as Array<{ key: string; sourceType: string; label: string; color: string; points: unknown[] }>;
+    expect(series).toHaveLength(4);
+    const byType = new Map(series.map((s) => [s.sourceType, s]));
+    // chunk 全部聚为一组（不再按文档细分），图例名为固定文案
+    expect(byType.get("chunk")?.label).toBe("切片");
+    expect(byType.get("chunk")?.points).toHaveLength(3);
+    // entity 同理（不再按类型细分）
+    expect(byType.get("entity")?.label).toBe("实体");
+    expect(byType.get("entity")?.points).toHaveLength(2);
+    expect(byType.get("wiki")?.points).toHaveLength(1);
+    expect(byType.get("card")?.points).toHaveLength(1);
+    // 四类四色且互不相同
+    const colors = series.map((s) => s.color);
+    expect(new Set(colors).size).toBe(4);
   });
 
   it("passes dims=2 and the full collection selection to the projection query", () => {
@@ -308,5 +314,74 @@ describe("VectorTab 面板", () => {
     expect(recomputeMutate).toHaveBeenCalledWith(
       expect.objectContaining({ collections: ["chunks", "entities", "wiki", "cards"], algo: "pca", dims: 2 }),
     );
+  });
+
+  // ── 聚焦交互（2026-08-15）：搜索框锁定文档聚焦 ─────────────────────────
+
+  it("renders a doc search box that locks chunk focus onto matching documents", async () => {
+    renderVectorTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    // 默认无搜索锁定
+    expect(canvasMock.props!.searchedDocIds).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索文档…" }), { target: { value: "a.pdf" } });
+    await waitFor(() => {
+      const ids = canvasMock.props!.searchedDocIds as ReadonlySet<string>;
+      expect([...ids].sort()).toEqual(["doc-1"]);
+    });
+  });
+
+  it("matches multiple documents by case-insensitive substring", async () => {
+    renderVectorTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索文档…" }), { target: { value: ".PDF" } });
+    await waitFor(() => {
+      const ids = canvasMock.props!.searchedDocIds as ReadonlySet<string>;
+      expect([...ids].sort()).toEqual(["doc-1", "doc-2"]);
+    });
+  });
+
+  it("clears the search lock when the query is emptied", async () => {
+    renderVectorTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    const search = screen.getByRole("textbox", { name: "搜索文档…" });
+    fireEvent.change(search, { target: { value: "a" } });
+    await waitFor(() => expect(canvasMock.props!.searchedDocIds).not.toBeNull());
+    fireEvent.change(search, { target: { value: "" } });
+    await waitFor(() => expect(canvasMock.props!.searchedDocIds).toBeNull());
+  });
+
+  // ── 窄栏降级（2026-08-17 二迭代）：溢出检测 → chips 仅色点 + ⋯ 菜单 ─────
+
+  it("collapses chips text and dims/algo into a ⋯ menu when the toolbar overflows", () => {
+    // jsdom 无布局——把工具栏 scrollWidth 钉成大值模拟溢出（clientWidth 恒 0），
+    // 降级应连升两档：chips 仅色点、2D/3D 与算法收进 ⋯ 菜单。
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "vector-toolbar" ? 999 : 0;
+      },
+    });
+    try {
+      renderVectorTab();
+      // 档1+：chips 文字移出 DOM，可访问名由 aria-label 保持
+      expect(screen.getByRole("button", { name: "切片" })).toBeTruthy();
+      expect(screen.queryByText("实体")).toBeNull();
+      // 档2：内联 2D/3D 与算法 Select 消失，⋯ 按钮出现
+      expect(screen.queryByRole("radio", { name: "2D" })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: "算法" })).toBeNull();
+      const more = screen.getByRole("button", { name: "更多选项" });
+      // 菜单内承载维度与算法切换（Radix 键盘开菜单，与上方 Select 测试同款先例）
+      fireEvent.keyDown(more, { key: "ArrowDown" });
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "3D" }));
+      const lastCall = hooksMock.useVectorProjection.mock.calls.at(-1);
+      expect(lastCall?.[1].dims).toBe(3);
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
   });
 });

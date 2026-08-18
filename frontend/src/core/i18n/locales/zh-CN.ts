@@ -437,7 +437,10 @@ export const zhCN: Translations = {
       chips: { chunks: "切片", entities: "实体", wiki: "百科", cards: "卡片" },
       algoLabel: "算法",
       recompute: "重新计算",
+      moreOptions: "更多选项",
+      dimsLabel: "维度",
       sampledBadge: (shown, total) => `已抽样 ${shown}/${total} 点`,
+      searchDocs: "搜索文档…",
     },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",

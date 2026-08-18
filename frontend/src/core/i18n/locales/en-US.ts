@@ -454,7 +454,10 @@ export const enUS: Translations = {
       chips: { chunks: "Chunks", entities: "Entities", wiki: "Wiki", cards: "Cards" },
       algoLabel: "Algorithm",
       recompute: "Recompute",
+      moreOptions: "More options",
+      dimsLabel: "Dimensions",
       sampledBadge: (shown, total) => `Sampled ${shown}/${total} points`,
+      searchDocs: "Search documents…",
     },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",
