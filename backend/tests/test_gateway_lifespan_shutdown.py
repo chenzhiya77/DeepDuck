@@ -57,6 +57,7 @@ async def _run_lifespan_with_hanging_stop() -> float:
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", side_effect=hang_forever),
         patch("deerflow.agents.memory.get_memory_manager", return_value=MagicMock()),
+        patch("deerflow.knowledge.projection.reducer.prewarm_umap", return_value=True),
     ):
         loop = asyncio.get_event_loop()
         start = loop.time()
@@ -104,6 +105,7 @@ async def _run_lifespan_with_upload_staging_cleanup():
         patch("app.gateway.app.auth.close_oidc_service", close_oidc_service),
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", stop_channel_service),
+        patch("deerflow.knowledge.projection.reducer.prewarm_umap", return_value=True),
     ):
         async with lifespan(app):
             pass
@@ -163,6 +165,7 @@ async def _run_lifespan_with_memory_flush(*, enabled: bool, flush_return: bool |
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", stop_channel_service),
         patch("deerflow.agents.memory.get_memory_manager", return_value=manager),
+        patch("deerflow.knowledge.projection.reducer.prewarm_umap", return_value=True),
     ):
         async with lifespan(app):
             pass
@@ -245,6 +248,7 @@ async def _run_lifespan_with_warm_return(warm_return: bool | None) -> MagicMock:
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", stop_channel_service),
         patch("deerflow.agents.memory.get_memory_manager", return_value=manager),
+        patch("deerflow.knowledge.projection.reducer.prewarm_umap", return_value=True),
     ):
         async with lifespan(app):
             pass
@@ -303,6 +307,7 @@ async def _run_lifespan_with_slow_retrieval_warm() -> float:
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", AsyncMock()),
         patch("deerflow.agents.memory.get_memory_manager", return_value=manager),
+        patch("deerflow.knowledge.projection.reducer.prewarm_umap", return_value=True),
     ):
         context = lifespan(app)
         loop = asyncio.get_running_loop()
@@ -359,6 +364,7 @@ async def _run_shutdown_with_blocked_retrieval_warm() -> tuple[float, MagicMock]
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", AsyncMock()),
         patch("deerflow.agents.memory.get_memory_manager", return_value=manager),
+        patch("deerflow.knowledge.projection.reducer.prewarm_umap", return_value=True),
     ):
         context = lifespan(app)
         await context.__aenter__()

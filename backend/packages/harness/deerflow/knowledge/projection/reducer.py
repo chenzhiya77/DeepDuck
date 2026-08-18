@@ -114,3 +114,31 @@ def umap_reduce(
         metric="cosine",
     )
     return reducer.fit_transform(x), reducer
+
+
+def prewarm_umap() -> bool:
+    """Best-effort UMAP warm-up: lazy ``import umap`` plus a tiny fit.
+
+    A cold-started Gateway process otherwise bills the *first* UMAP switch
+    ~20s of fixed overhead before the real fit even starts (measured
+    2026-08-17): the numba/llvmlite/pynndescent import chain (~10s) plus the
+    per-process JIT-artifact load (~10s, disk cache warm). Running this once
+    in a startup background thread moves that cost off the user-visible path.
+
+    Designed for fire-and-forget scheduling from ``app.gateway.app.lifespan``;
+    every failure mode returns ``False`` instead of raising so a failed
+    warm-up merely leaves the lazy status-quo behaviour in place.
+    """
+
+    try:
+        import umap
+
+        # n_epochs is cut to the minimum: the goal is compiling/loading the
+        # jitted code paths, which happens on the first fit regardless of the
+        # epoch count — layout iterations on 64×32 points are pure overhead.
+        umap.UMAP(n_components=2, n_neighbors=15, metric="cosine", n_epochs=5).fit_transform(np.random.rand(64, 32))
+    except ImportError:
+        return False  # optional extra absent; the API layer keeps its 400 install hint
+    except Exception:  # noqa: BLE001 - warm-up must never break startup or the request path
+        return False
+    return True

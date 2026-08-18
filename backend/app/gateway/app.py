@@ -369,6 +369,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("Failed to initialize knowledge base service")
 
+        # UMAP projection pre-warm (background, best-effort): without it the
+        # first UMAP switch after every cold start pays ~20s of fixed overhead
+        # (lazy numba/llvmlite import chain + per-process JIT-artifact load)
+        # before the real fit even starts. Scheduled fire-and-forget like the
+        # retrieval warm-up above; a missing optional extra or any failure
+        # inside prewarm_umap degrades to the lazy status-quo behaviour.
+        try:
+            from deerflow.knowledge.projection.reducer import prewarm_umap
+
+            def _log_umap_prewarm_result(task: "asyncio.Task[bool]") -> None:
+                if task.cancelled():
+                    return
+                if task.exception() is not None:
+                    logger.debug("UMAP pre-warm failed", exc_info=task.exception())
+                elif task.result():
+                    logger.info("UMAP pre-warm finished; first switch skips the JIT load cost")
+                else:
+                    logger.debug("UMAP pre-warm skipped (extra not installed or warm-up failed)")
+
+            # Reference kept on app.state so the task is never GC'd mid-flight.
+            app.state.umap_prewarm_task = asyncio.create_task(
+                asyncio.to_thread(prewarm_umap),
+                name="umap-prewarm",
+            )
+            app.state.umap_prewarm_task.add_done_callback(_log_umap_prewarm_result)
+        except Exception:
+            logger.debug("UMAP pre-warm scheduling skipped", exc_info=True)
+
         yield
 
         try:
@@ -405,6 +433,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.warning("Knowledge worker shutdown exceeded %.1fs; proceeding with worker exit.", _SHUTDOWN_HOOK_TIMEOUT_SECONDS)
             except Exception:
                 logger.exception("Failed to stop knowledge index worker")
+
+        # UMAP pre-warm carries no state worth a shutdown drain: cancelling the
+        # wrapper task is enough (the to_thread worker finishes on its own,
+        # bounded by the ~20s fixed warm-up cost).
+        umap_prewarm_task = getattr(app.state, "umap_prewarm_task", None)
+        if umap_prewarm_task is not None and not umap_prewarm_task.done():
+            umap_prewarm_task.cancel()
 
         try:
             from deerflow.community.browser_automation import get_browser_session_manager
