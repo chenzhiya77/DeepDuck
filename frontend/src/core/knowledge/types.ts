@@ -322,3 +322,26 @@ export interface VectorProjectionQueryResult {
   /** Matches the projection it was transformed with — staleness check for overlays. */
   fingerprint: string;
 }
+
+// ── P6 检索联动叠加（2026-08-15 spec §9 双通道共享）──────────────────────
+
+/**
+ * 一个叠加命中点。pointId 即投影点 id：chunk 切片 = chunk_id，wiki = entry_id，
+ * card = card_id（citations 解析层把后两者的 id 也填在 chunk_id 字段，天然对齐）。
+ */
+export interface VectorOverlayHit {
+  pointId: string;
+  /** null = 该路降级无分（reranker 退化的 RRF 序），色深取中间档。 */
+  score: number | null;
+}
+
+/**
+ * page 层共享的检索叠加请求：recall「在向量空间查看」（显式跳转）与 chat 每轮
+ * 自动跟随共用同一形态。text 经 POST /vector-projection/query 投影为落点；
+ * hits 驱动命中高亮 / 连线 / score 色深。
+ */
+export interface VectorRetrievalOverlay {
+  source: "recall" | "chat";
+  text: string;
+  hits: VectorOverlayHit[];
+}

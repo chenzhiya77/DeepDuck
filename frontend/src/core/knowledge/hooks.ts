@@ -327,10 +327,13 @@ export function useVectorProjection(kbId: string | null, params: api.VectorProje
  * Query-text overlay projection: a mutation, not a query (same discipline as
  * the recall test) — each call hits the live embedding model, results are
  * never cached/refetched implicitly.
+ *
+ * ``params`` 必须镜像当前投影视图（collections/algo/dims）：服务端缓存键含
+ * 这些维度，缺省回落默认值 → peek 落空 409（P6 联动静默不渲染的修复）。
  */
-export function useProjectVectorQuery(kbId: string) {
+export function useProjectVectorQuery(kbId: string, params: api.VectorProjectionParams = {}) {
   return useMutation({
-    mutationFn: (text: string) => api.projectVectorQuery(kbId, text),
+    mutationFn: (text: string) => api.projectVectorQuery(kbId, text, params),
   });
 }
 

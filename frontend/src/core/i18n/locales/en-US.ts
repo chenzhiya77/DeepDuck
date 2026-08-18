@@ -458,6 +458,12 @@ export const enUS: Translations = {
       dimsLabel: "Dimensions",
       sampledBadge: (shown, total) => `Sampled ${shown}/${total} points`,
       searchDocs: "Search documents…",
+      followChat: "Follow chat",
+      overlayPcaOnly: "Retrieval overlay requires the PCA projection — switch back to PCA",
+      overlayStale: "Projection changed — the retrieval overlay was cleared, run the retrieval again",
+      overlayFailed: "Failed to overlay the retrieval — please try again",
+      overlayHits: (matched, total) => `${matched}/${total} hits shown`,
+      clearOverlay: "Clear overlay",
     },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",
@@ -547,6 +553,7 @@ export const enUS: Translations = {
       evidence: "Chunk evidence",
       empty: "Run a query to compare hits and scores across the three paths",
       failed: "Recall test failed",
+      viewInVectorSpace: "View in vector space",
     },
     chat: {
       newChat: "New chat",

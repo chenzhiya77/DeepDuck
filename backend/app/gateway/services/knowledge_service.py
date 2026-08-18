@@ -971,8 +971,11 @@ class KnowledgeService:
             raise ProjectionModelUnavailableError("Query projection requires a PCA model (algo=umap has no stable transform)")
         from deerflow.knowledge.embedder import DashScopeEmbedder
 
-        vector = (await DashScopeEmbedder().embed([text]))[0]
-        coords = entry.model.transform(np.asarray(vector, dtype=np.float64))
+        # embed 返回 EmbeddingResult（dense+sparse 对），query 侧必须 text_type=
+        # "query"（对齐检索链路 hybrid/graph/wiki 的用法）；取 .dense 进 transform。
+        # 2026-08-19 修复：曾直接 np.asarray(EmbeddingResult) → 生产 500。
+        (query_embedding,) = await DashScopeEmbedder().embed([text], text_type="query")
+        coords = entry.model.transform(np.asarray(query_embedding.dense, dtype=np.float64))
         result: dict[str, Any] = {
             "x": float(coords[0]),
             "y": float(coords[1]),

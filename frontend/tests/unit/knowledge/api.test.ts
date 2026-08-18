@@ -25,6 +25,7 @@ import {
   listDocuments,
   listDocumentChunks,
   listKnowledgeBases,
+  projectVectorQuery,
   retryDocument,
   updateKnowledgeBase,
   uploadDocument,
@@ -216,6 +217,33 @@ describe("wiki endpoint", () => {
     expect(mockedFetch).toHaveBeenCalledWith(
       "http://gw/api/knowledge-bases/kb-1/wiki/generate?mode=full",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+});
+
+describe("projectVectorQuery（P6 检索联动 query 投影）", () => {
+  // 缓存键 = (kb, algo, dims, sample_size, collections)——视图参数必须随请求
+  // 携带，否则 peek 落空 409（修复前：从不带参 → 非默认视图下联动静默失败）。
+  test("posts the text and carries the current view params (cache-key alignment)", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, { x: 0.1, y: 0.2, z: 0.3, model_version: "pca-v1", fingerprint: "sha1:x" }),
+    );
+    await projectVectorQuery("kb-1", "Gateway 职责", { collections: ["chunks", "wiki"], algo: "pca", dims: 3 });
+    const [url, init] = mockedFetch.mock.calls.at(-1)! as [string, RequestInit];
+    expect(url).toBe(
+      "http://gw/api/knowledge-bases/kb-1/vector-projection/query?collections=chunks%2Cwiki&algo=pca&dims=3",
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ text: "Gateway 职责" });
+  });
+
+  test("omits the query string when no view overrides are given", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, { x: 0.1, y: 0.2, model_version: "pca-v1", fingerprint: "sha1:x" }),
+    );
+    await projectVectorQuery("kb-1", "x");
+    expect(mockedFetch.mock.calls.at(-1)?.[0]).toBe(
+      "http://gw/api/knowledge-bases/kb-1/vector-projection/query",
     );
   });
 });

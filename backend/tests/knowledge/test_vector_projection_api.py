@@ -15,10 +15,12 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from qdrant_client.models import SparseVector
 
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
 from app.gateway.services.knowledge_service import KnowledgeService
+from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.projection.cache import CachedProjection
 from deerflow.knowledge.store import KnowledgeStore
 
@@ -212,8 +214,10 @@ async def test_get_projection_refresh_recomputes(service) -> None:
 
 async def test_project_query_after_projection_200(service, monkeypatch) -> None:
     class _FakeEmbedder:
-        async def embed(self, texts):
-            return [[0.5, 0.5, 0.0, 0.0] for _ in texts]
+        # 真实契约形态（2026-08-19 修复：embed 返回 EmbeddingResult，非裸向量——
+        # 旧 fake 与实现漂移导致生产 500 而单测全绿）。
+        async def embed(self, texts, *, text_type="document"):
+            return [EmbeddingResult(dense=[0.5, 0.5, 0.0, 0.0], sparse=SparseVector(indices=[0], values=[1.0])) for _ in texts]
 
     # knowledge_service imports DashScopeEmbedder locally — patch at source.
     monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: _FakeEmbedder())
@@ -234,8 +238,10 @@ async def test_project_query_after_projection_200(service, monkeypatch) -> None:
 
 async def test_project_query_without_cached_projection_409(service, monkeypatch) -> None:
     class _FakeEmbedder:
-        async def embed(self, texts):
-            return [[0.5, 0.5, 0.0, 0.0] for _ in texts]
+        # 真实契约形态（2026-08-19 修复：embed 返回 EmbeddingResult，非裸向量——
+        # 旧 fake 与实现漂移导致生产 500 而单测全绿）。
+        async def embed(self, texts, *, text_type="document"):
+            return [EmbeddingResult(dense=[0.5, 0.5, 0.0, 0.0], sparse=SparseVector(indices=[0], values=[1.0])) for _ in texts]
 
     monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: _FakeEmbedder())
     client = _client(service)
@@ -248,8 +254,10 @@ async def test_project_query_without_cached_projection_409(service, monkeypatch)
 
 async def test_project_query_non_pca_model_409(service, monkeypatch) -> None:
     class _FakeEmbedder:
-        async def embed(self, texts):
-            return [[0.5, 0.5, 0.0, 0.0] for _ in texts]
+        # 真实契约形态（2026-08-19 修复：embed 返回 EmbeddingResult，非裸向量——
+        # 旧 fake 与实现漂移导致生产 500 而单测全绿）。
+        async def embed(self, texts, *, text_type="document"):
+            return [EmbeddingResult(dense=[0.5, 0.5, 0.0, 0.0], sparse=SparseVector(indices=[0], values=[1.0])) for _ in texts]
 
     monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: _FakeEmbedder())
     client = _client(service)

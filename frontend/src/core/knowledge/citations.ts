@@ -10,6 +10,8 @@
  */
 import type { Message } from "@langchain/langgraph-sdk";
 
+import { extractTextFromMessage } from "@/core/messages/utils";
+
 import type { KnowledgeCitation } from "./types";
 
 const RETRIEVAL_TOOLS = new Set(["hybrid_search", "wiki_search", "graph_search"]);
@@ -135,4 +137,44 @@ export function sourcesForAssistantMessage(
 
 function minCitationNo(source: KnowledgeCitation): number {
   return source.citation_nos?.length ? Math.min(...source.citation_nos) : Number.POSITIVE_INFINITY;
+}
+
+// ── P6 检索联动（2026-08-15 spec §9 通道二）──────────────────────────────
+
+/** 最新一轮已完成检索对话的叠加上下文（供向量空间投影联动）。 */
+export interface RetrievalTurn {
+  /** 该轮 ai message id——调用方去重句柄（同一轮只上报一次）。 */
+  messageId: string;
+  /** 该轮的可见用户提问文本（跳过 hide_from_ui 的 human_input_response）。 */
+  text: string;
+  /** 该轮合并引用（sourcesForAssistantMessage 已 dedupe / 按展示号排序）。 */
+  citations: KnowledgeCitation[];
+}
+
+/**
+ * 提取最新一轮「有引用」的助手回答。只认最后一条 ai message：它没有引用就
+ * 返回 null（该轮不更新叠加，旧叠加由调用方保留或按指纹规则清理），绝不
+ * 回退到更早的轮次——叠加层的语义是「刚才那轮问答」。
+ */
+export function latestRetrievalTurn(messages: readonly Message[]): RetrievalTurn | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.type !== "ai") {
+      continue;
+    }
+    const citations = sourcesForAssistantMessage(messages, message.id);
+    if (citations.length === 0) {
+      return null;
+    }
+    let text = "";
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = messages[cursor];
+      if (candidate?.type === "human" && candidate.additional_kwargs?.hide_from_ui !== true) {
+        text = extractTextFromMessage(candidate);
+        break;
+      }
+    }
+    return { messageId: message.id ?? "", text, citations };
+  }
+  return null;
 }

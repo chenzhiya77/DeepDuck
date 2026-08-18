@@ -61,12 +61,12 @@ function mockRecallTest(overrides?: { data?: RecallTestResponse | null; isPendin
 
 function renderPanel(props?: Partial<Parameters<typeof RecallTestPanel>[0]>) {
   const handlers = { onOpenWikiEntry: rs.fn() };
-  render(
+  const utils = render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
       <RecallTestPanel kbId="kb-1" {...handlers} {...props} />
     </I18nContext.Provider>,
   );
-  return handlers;
+  return { ...handlers, ...utils };
 }
 
 afterEach(() => {
@@ -204,5 +204,42 @@ describe("RecallTestPanel results", () => {
     renderPanel();
     expect(screen.getByTestId("recall-path-vector").textContent).toContain("该路检索失败");
     expect(screen.getByTestId("recall-wiki-hit-e1")).toBeTruthy();
+  });
+});
+
+// ── P6 检索联动（2026-08-15 spec §9 通道一）：结果区「在向量空间查看」──────
+
+describe("RecallTestPanel 向量空间联动", () => {
+  it("offers 在向量空间查看 on results and emits the vector hits as an overlay", () => {
+    mockRecallTest({ data: RESULT });
+    const onViewInVectorSpace = rs.fn();
+    renderPanel({ onViewInVectorSpace });
+    fireEvent.click(screen.getByRole("button", { name: "在向量空间查看" }));
+    expect(onViewInVectorSpace).toHaveBeenCalledTimes(1);
+    expect(onViewInVectorSpace).toHaveBeenCalledWith({
+      source: "recall",
+      text: "Gateway 职责",
+      hits: [
+        { pointId: "c1", score: 0.97 },
+        { pointId: "c2", score: null },
+      ],
+    });
+  });
+
+  it("hides the entry before the first run and disables it when vector hits are empty", () => {
+    mockRecallTest();
+    const { unmount } = renderPanel({ onViewInVectorSpace: rs.fn() });
+    expect(screen.queryByRole("button", { name: "在向量空间查看" })).toBeNull();
+    unmount();
+
+    // vector 路降级无命中：按钮禁用（query 还在，但没有可高亮的命中点）。
+    mockRecallTest({
+      data: {
+        ...RESULT,
+        paths: { ...RESULT.paths, vector: { hits: [], message: "未命中" } },
+      },
+    });
+    renderPanel({ onViewInVectorSpace: rs.fn() });
+    expect(screen.getByRole("button", { name: "在向量空间查看" })).toHaveProperty("disabled", true);
   });
 });

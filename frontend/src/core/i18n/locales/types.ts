@@ -392,6 +392,16 @@ export interface Translations {
       sampledBadge: (shown: number, total: number) => string;
       /** 文档搜索框（聚焦交互）：按文档名过滤并锁定切片聚焦。 */
       searchDocs: string;
+      /** P6（spec §9）：「跟随对话」开关 + 联动禁用/失效提示。 */
+      followChat: string;
+      overlayPcaOnly: string;
+      overlayStale: string;
+      /** query 投影请求失败（409 缓存键错位 / embedder 故障）的统一提示。 */
+      overlayFailed: string;
+      /** 叠加徽标（2026-08-19 UX 迭代）：命中 m/n（n=上报命中数，m=在当前投影中可见数）。 */
+      overlayHits: (matched: number, total: number) => string;
+      /** 清除当前叠加层（徽标 × 按钮）。 */
+      clearOverlay: string;
     };
     wikiPanel: {
       empty: string;
@@ -483,6 +493,8 @@ export interface Translations {
       evidence: string;
       empty: string;
       failed: string;
+      /** P6 检索联动（spec §9 通道一）：结果区一键跳转向量空间叠加。 */
+      viewInVectorSpace: string;
     };
     chat: {
       newChat: string;

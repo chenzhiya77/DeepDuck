@@ -11,7 +11,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ModelSelector,
@@ -35,9 +35,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import { sourcesForAssistantMessage } from "@/core/knowledge/citations";
+import { latestRetrievalTurn, sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
-import type { KnowledgeBase } from "@/core/knowledge/types";
+import type { KnowledgeBase, VectorRetrievalOverlay } from "@/core/knowledge/types";
 import {
   buildHumanInputResponseText,
   type HumanInputRequest,
@@ -64,10 +64,17 @@ const MODEL_STORAGE_PREFIX = "rag-chat-model:";
 export function KnowledgeChatPanel({
   kb,
   onOpenWikiEntry,
+  onRetrievalOverlay,
 }: {
   kb: KnowledgeBase | null;
   /** Wiki citation cards open the entry drawer (overlay) via this page-held callback. */
   onOpenWikiEntry?: (entryId: string) => void;
+  /**
+   * P6 检索联动（spec §9 通道二）：每完成一轮含引用的对话，把「提问文本 +
+   * 引用 chunk_id 列表」上报 page 层供向量空间叠加。零后端取数——复用
+   * sourcesForAssistantMessage 的既有解析。
+   */
+  onRetrievalOverlay?: (overlay: VectorRetrievalOverlay) => void;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chat;
@@ -136,6 +143,26 @@ export function KnowledgeChatPanel({
   });
 
   const threadsQuery = useInfiniteThreads();
+
+  // P6 检索联动上报（spec §9 通道二）：对话每完成一轮（含引用时）上报一次，
+  // 按 ai message id 去重——流式 token 追加引发的重复渲染不会重复上报；
+  // 流式进行中（isLoading）不上报，等该轮落定。
+  const lastReportedTurnRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onRetrievalOverlay || thread.isLoading) {
+      return;
+    }
+    const turn = latestRetrievalTurn(thread.messages);
+    if (!turn || turn.messageId === lastReportedTurnRef.current) {
+      return;
+    }
+    lastReportedTurnRef.current = turn.messageId;
+    onRetrievalOverlay({
+      source: "chat",
+      text: turn.text,
+      hits: turn.citations.map((citation) => ({ pointId: citation.chunk_id, score: citation.score })),
+    });
+  }, [thread.messages, thread.isLoading, onRetrievalOverlay]);
   const kbThreads = useMemo(() => {
     if (!kbId) {
       return [];

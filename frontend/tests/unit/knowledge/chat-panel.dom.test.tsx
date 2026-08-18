@@ -5,7 +5,7 @@
  * deep-retrieval toggle, citation footers, and an expand-to-full-page entry.
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const mockUseThreadStream = rs.fn();
 const mockUseInfiniteThreads = rs.fn();
@@ -93,10 +93,13 @@ function makeThreadState(messages: unknown[] = []) {
   };
 }
 
-function renderPanel(kb: KnowledgeBase | null = KB) {
+function renderPanel(
+  kb: KnowledgeBase | null = KB,
+  props?: Partial<Parameters<typeof KnowledgeChatPanel>[0]>,
+) {
   return render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <KnowledgeChatPanel kb={kb} />
+      <KnowledgeChatPanel kb={kb} {...props} />
     </I18nContext.Provider>,
   );
 }
@@ -349,6 +352,126 @@ describe("KnowledgeChatPanel", () => {
     expect(extraContext.agent_name).toBe("rag");
     expect(options.additionalKwargs.hide_from_ui).toBe(true);
     expect(options.additionalKwargs.human_input_response).toEqual(response);
+  });
+});
+
+// ── P6 检索联动（2026-08-15 spec §9 通道二）：最新一轮提问+引用上报 page 层 ──
+
+describe("KnowledgeChatPanel 检索联动上报", () => {
+  const TURN_MESSAGES = [
+    { id: "human-1", type: "human", content: "支持哪些格式？" },
+    {
+      id: "tool-1",
+      type: "tool",
+      name: "hybrid_search",
+      content: JSON.stringify({
+        results: [
+          {
+            chunk_id: "doc-1#0000",
+            doc_name: "产品手册.pdf",
+            page: 3,
+            heading_path: [],
+            text: "知识库系统将非结构化文档转化为可检索的知识资产。",
+            score: 0.9,
+          },
+          {
+            chunk_id: "doc-2#0001",
+            doc_name: "白皮书.md",
+            page: null,
+            heading_path: [],
+            text: "切片二",
+            score: 0.8,
+          },
+        ],
+      }),
+    },
+    { id: "ai-1", type: "ai", content: "支持 PDF 与 Markdown [1][2]" },
+  ];
+
+  function renderWithMessages(messages: unknown[], isLoading: boolean) {
+    mockUseThreadStream.mockImplementation(() => ({
+      thread: { ...makeThreadState(messages), isLoading },
+      sendMessage: mockSendMessage,
+    }));
+    const onRetrievalOverlay = rs.fn();
+    const utils = renderPanel(KB, { onRetrievalOverlay });
+    return { onRetrievalOverlay, ...utils };
+  }
+
+  it("reports the latest completed turn (question text + cited chunk hits) once it settles", async () => {
+    const { onRetrievalOverlay } = renderWithMessages(TURN_MESSAGES, false);
+    await waitFor(() => expect(onRetrievalOverlay).toHaveBeenCalledTimes(1));
+    expect(onRetrievalOverlay).toHaveBeenCalledWith({
+      source: "chat",
+      text: "支持哪些格式？",
+      hits: [
+        { pointId: "doc-1#0000", score: 0.9 },
+        { pointId: "doc-2#0001", score: 0.8 },
+      ],
+    });
+  });
+
+  it("stays silent while the answer is still streaming", () => {
+    const { onRetrievalOverlay } = renderWithMessages(TURN_MESSAGES, true);
+    expect(onRetrievalOverlay).not.toHaveBeenCalled();
+  });
+
+  it("stays silent for an answer without retrieval citations", () => {
+    const { onRetrievalOverlay } = renderWithMessages(
+      [
+        { id: "human-1", type: "human", content: "闲聊" },
+        { id: "ai-1", type: "ai", content: "你好" },
+      ],
+      false,
+    );
+    expect(onRetrievalOverlay).not.toHaveBeenCalled();
+  });
+
+  it("reports again only when a NEW turn completes (dedupe by answer id)", async () => {
+    const { onRetrievalOverlay, rerender } = renderWithMessages(TURN_MESSAGES, false);
+    await waitFor(() => expect(onRetrievalOverlay).toHaveBeenCalledTimes(1));
+
+    // 同一份 messages 重渲染（流式 token 追加之外的 re-render）→ 不重复上报。
+    rerender(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KnowledgeChatPanel kb={KB} onRetrievalOverlay={onRetrievalOverlay} />
+      </I18nContext.Provider>,
+    );
+    expect(onRetrievalOverlay).toHaveBeenCalledTimes(1);
+
+    // 新一轮完成 → 再报一次，内容换成最新一轮。
+    const nextMessages = [
+      ...TURN_MESSAGES,
+      { id: "human-2", type: "human", content: "第二个问题" },
+      {
+        id: "tool-2",
+        type: "tool",
+        name: "graph_search",
+        content: JSON.stringify({
+          entities: [],
+          relations: [],
+          evidence: [
+            { chunk_id: "doc-9#0000", doc_name: "架构.md", heading_path: [], page: 1, text: "证据", score: 0.7 },
+          ],
+        }),
+      },
+      { id: "ai-2", type: "ai", content: "第二轮回答 [1]" },
+    ];
+    mockUseThreadStream.mockImplementation(() => ({
+      thread: { ...makeThreadState(nextMessages), isLoading: false },
+      sendMessage: mockSendMessage,
+    }));
+    rerender(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KnowledgeChatPanel kb={KB} onRetrievalOverlay={onRetrievalOverlay} />
+      </I18nContext.Provider>,
+    );
+    await waitFor(() => expect(onRetrievalOverlay).toHaveBeenCalledTimes(2));
+    expect(onRetrievalOverlay).toHaveBeenLastCalledWith({
+      source: "chat",
+      text: "第二个问题",
+      hits: [{ pointId: "doc-9#0000", score: 0.7 }],
+    });
   });
 });
 

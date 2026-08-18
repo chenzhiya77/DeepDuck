@@ -9,6 +9,7 @@ import type { Message } from "@langchain/langgraph-sdk";
 import { describe, expect, test } from "@rstest/core";
 
 import {
+  latestRetrievalTurn,
   parseRetrievalToolContent,
   sourcesForAssistantMessage,
 } from "@/core/knowledge/citations";
@@ -234,5 +235,82 @@ describe("sourcesForAssistantMessage", () => {
   test("returns nothing for an answer without retrieval", () => {
     const messages = [human("h1"), ai("a1")];
     expect(sourcesForAssistantMessage(messages, "a1")).toEqual([]);
+  });
+});
+
+// ── P6 检索联动（2026-08-15 spec §9 通道二）：最新一轮检索上下文提取 ──────
+
+describe("latestRetrievalTurn", () => {
+  test("returns null for an empty transcript or one without any assistant answer", () => {
+    expect(latestRetrievalTurn([])).toBeNull();
+    expect(latestRetrievalTurn([human("h1")])).toBeNull();
+  });
+
+  test("returns null when the latest answer never retrieved (no citations)", () => {
+    // 最后一轮无引用 → 不更新叠加（保留旧 overlay，由调用方决定）。
+    const messages = [
+      human("h1"),
+      toolMessage("hybrid_search", HYBRID, "t1"),
+      ai("a1"),
+      { type: "human", id: "h2", content: "闲聊" } as unknown as Message,
+      ai("a2"),
+    ];
+    expect(latestRetrievalTurn(messages)).toBeNull();
+  });
+
+  test("extracts the latest turn: question text, merged citations, answer id", () => {
+    const messages = [human("h1"), toolMessage("hybrid_search", HYBRID, "t1"), ai("a1")];
+    const turn = latestRetrievalTurn(messages);
+    expect(turn?.messageId).toBe("a1");
+    expect(turn?.text).toBe("问题");
+    expect(turn?.citations.map((citation) => citation.chunk_id)).toEqual(["c1", "c2"]);
+  });
+
+  test("keeps the LAST turn when the transcript has several", () => {
+    const messages = [
+      human("h1"),
+      toolMessage("hybrid_search", HYBRID, "t1"),
+      ai("a1"),
+      { type: "human", id: "h2", content: "第二个问题" } as unknown as Message,
+      toolMessage("graph_search", GRAPH, "t2"),
+      ai("a2"),
+    ];
+    const turn = latestRetrievalTurn(messages);
+    expect(turn?.messageId).toBe("a2");
+    expect(turn?.text).toBe("第二个问题");
+    expect(turn?.citations.map((citation) => citation.chunk_id)).toEqual(["c3"]);
+  });
+
+  test("walks past a hide_from_ui human (human_input_response) to the visible question", () => {
+    // ask_clarification 轮：隐藏 human 的 content 是结构化 JSON，不能作为 query
+    // 文本去投影——该轮的语义提问取更早的可见 human。
+    const messages = [
+      { type: "human", id: "h1", content: "JVM 是什么" } as unknown as Message,
+      ai("a1"), // ask_clarification 中断提问（无引用）
+      {
+        type: "human",
+        id: "h2",
+        content: '{"type":"human_input_response","answer":"展开说说"}',
+        additional_kwargs: { hide_from_ui: true },
+      } as unknown as Message,
+      toolMessage("hybrid_search", HYBRID, "t1"),
+      ai("a2"),
+    ];
+    const turn = latestRetrievalTurn(messages);
+    expect(turn?.messageId).toBe("a2");
+    expect(turn?.text).toBe("JVM 是什么");
+  });
+
+  test("extracts text from complex human content arrays", () => {
+    const messages = [
+      {
+        type: "human",
+        id: "h1",
+        content: [{ type: "text", text: "数组形态提问" }],
+      } as unknown as Message,
+      toolMessage("hybrid_search", HYBRID, "t1"),
+      ai("a1"),
+    ];
+    expect(latestRetrievalTurn(messages)?.text).toBe("数组形态提问");
   });
 });

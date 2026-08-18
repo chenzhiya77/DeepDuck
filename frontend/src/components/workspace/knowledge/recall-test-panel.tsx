@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, FlaskConical } from "lucide-react";
+import { ChevronDown, ChevronRight, FlaskConical, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -15,6 +15,7 @@ import type {
   RecallTestResponse,
   RecallVectorHit,
   RecallWikiHit,
+  VectorRetrievalOverlay,
 } from "@/core/knowledge/types";
 
 import { ChunkCard } from "./chunk-card";
@@ -94,11 +95,17 @@ export function RecallTestPanel({
   kbId,
   onOpenWikiEntry,
   onOpenManualCard,
+  onViewInVectorSpace,
 }: {
   kbId: string;
   onOpenWikiEntry: (entryId: string) => void;
   /** Phase-3 P6（spec §8 混排）：manual 命中开卡片抽屉 —— 卡片 id 走 wiki 详情接口必然 404。 */
   onOpenManualCard?: (cardId: string) => void;
+  /**
+   * P6 检索联动（2026-08-15 spec §9 通道一）：结果区「在向量空间查看」——
+   * page 层切 tab 并完成叠加（query 落点 + vector 路命中高亮）。
+   */
+  onViewInVectorSpace?: (overlay: VectorRetrievalOverlay) => void;
 }) {
   const { t } = useI18n();
   const tr = t.knowledge.recallTest;
@@ -174,6 +181,26 @@ export function RecallTestPanel({
         )}
         {result && (
           <div className="flex flex-col gap-5">
+            {/* P6 检索联动（spec §9 通道一）：一键切向量空间叠加本次检索。
+                vector 路无命中时禁用——query 还在，但没有可高亮的命中点。 */}
+            {onViewInVectorSpace && (
+              <Button
+                className="self-start"
+                disabled={result.paths.vector.hits.length === 0}
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  onViewInVectorSpace({
+                    source: "recall",
+                    text: result.query,
+                    hits: result.paths.vector.hits.map((hit) => ({ pointId: hit.chunk_id, score: hit.score })),
+                  })
+                }
+              >
+                <Waypoints className="size-3.5" />
+                {tr.viewInVectorSpace}
+              </Button>
+            )}
             {/* Vector path */}
             <section className="flex flex-col gap-2" data-testid="recall-path-vector">
               <PathHeader

@@ -44,7 +44,7 @@ import {
   useWikiEntry,
 } from "@/core/knowledge/hooks";
 import { FALLBACK_SUPPORTED_SUFFIXES } from "@/core/knowledge/supported-formats";
-import type { KnowledgeDocument, WikiEntrySummary } from "@/core/knowledge/types";
+import type { KnowledgeDocument, VectorRetrievalOverlay, WikiEntrySummary } from "@/core/knowledge/types";
 import { isWikiUpdating } from "@/core/knowledge/wiki-status";
 
 function showMutationError(error: unknown, fallback: string) {
@@ -77,6 +77,10 @@ export default function KnowledgePage() {
   // Phase-3 Batch-1 P1: wiki entry editing state
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  // P6 检索联动（2026-08-15 spec §9）：recall 一键跳转与 chat 每轮跟随共享的
+  // 叠加请求。recall 通道同时切 tab（显式动作）；chat 通道只更新 state——
+  // 向量 tab 的「跟随对话」开关决定何时应用（冻结语义在 VectorTab 内）。
+  const [vectorOverlay, setVectorOverlay] = useState<VectorRetrievalOverlay | null>(null);
 
   const kbsQuery = useKnowledgeBases();
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
@@ -353,6 +357,10 @@ export default function KnowledgePage() {
                   kbId={selectedKb.id}
                   onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
                   onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
+                  onViewInVectorSpace={(next) => {
+                    setVectorOverlay(next);
+                    setActiveTab("vectors");
+                  }}
                 />
               }
               vectors={
@@ -360,6 +368,7 @@ export default function KnowledgePage() {
                   kbId={selectedKb.id}
                   enabled={activeTab === "vectors"}
                   indexingCount={indexingDocCount}
+                  overlay={vectorOverlay}
                   onOpenChunk={(docId) => {
                     // 指纹缓存与文档列表同源——正常必命中；防御性忽略。
                     const doc = documents.find((item) => item.id === docId);
@@ -382,6 +391,7 @@ export default function KnowledgePage() {
           <KnowledgeChatPanel
             kb={selectedKb}
             onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
+            onRetrievalOverlay={setVectorOverlay}
           />
         }
       />

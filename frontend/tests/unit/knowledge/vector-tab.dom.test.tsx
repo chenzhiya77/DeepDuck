@@ -10,8 +10,9 @@
  *   （isPointDimmed 纯函数，见 vector-canvas.unit.test.ts）。
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { VectorTab } from "@/components/workspace/knowledge/vector-tab";
@@ -30,6 +31,11 @@ rs.mock("@/core/knowledge/hooks", () => ({
   useVectorProjection: hooksMock.useVectorProjection,
   useProjectVectorQuery: hooksMock.useProjectVectorQuery,
   useRecomputeVectorProjection: hooksMock.useRecomputeVectorProjection,
+}));
+
+// P6 联动提示（指纹漂移 / umap 禁用）走 sonner toast。
+rs.mock("sonner", () => ({
+  toast: { info: rs.fn(), success: rs.fn(), warning: rs.fn(), error: rs.fn() },
 }));
 
 /** echarts 画布 mock：记录 props，不渲染（jsdom 无 WebGL/canvas）。 */
@@ -153,12 +159,13 @@ function renderVectorTab(props?: Partial<Parameters<typeof VectorTab>[0]>) {
     onOpenWikiEntry: rs.fn(),
     onOpenManualCard: rs.fn(),
   };
-  render(
+  const renderTab = (nextProps?: Partial<Parameters<typeof VectorTab>[0]>) => (
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <VectorTab kbId="kb-1" enabled indexingCount={0} {...handlers} {...props} />
-    </I18nContext.Provider>,
+      <VectorTab kbId="kb-1" enabled indexingCount={0} {...handlers} {...nextProps} />
+    </I18nContext.Provider>
   );
-  return handlers;
+  const utils = render(renderTab(props));
+  return { ...handlers, ...utils, renderTab };
 }
 
 describe("VectorTab 面板", () => {
@@ -383,5 +390,188 @@ describe("VectorTab 面板", () => {
         delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
       }
     }
+  });
+});
+
+// ── Task 8: P6 检索联动叠加（spec §9 双通道共享同一叠加渲染层）─────────────
+
+describe("VectorTab 检索联动叠加", () => {
+  const RECALL_OVERLAY = {
+    source: "recall" as const,
+    text: "Gateway 职责",
+    hits: [
+      { pointId: "doc-1#0000", score: 0.97 },
+      { pointId: "doc-1#0001", score: null },
+    ],
+  };
+  const CHAT_OVERLAY = {
+    source: "chat" as const,
+    text: "支持哪些格式？",
+    hits: [{ pointId: "doc-2#0000", score: 0.9 }],
+  };
+
+  // 本 describe 独立于「VectorTab 面板」的 beforeEach——投影 mock 必须每用例
+  // 重置（有用例会改 fingerprint，残留会污染后续用例的叠加判定）。
+  beforeEach(() => {
+    canvasMock.props = undefined;
+    mockProjectionQuery({ data: PROJECTION });
+  });
+
+  /** 捕获 useProjectVectorQuery 的 mutate，返回后可手动触发 onSuccess。 */
+  function setupProjectQuery() {
+    const mutate = rs.fn();
+    hooksMock.useProjectVectorQuery.mockReturnValue({ mutate, isPending: false });
+    return mutate;
+  }
+
+  function succeedQuery(mutate: ReturnType<typeof rs.fn>, fingerprint = PROJECTION.fingerprint) {
+    const options = mutate.mock.calls.at(-1)?.[1] as {
+      onSuccess: (result: unknown) => void;
+    };
+    act(() =>
+      options.onSuccess({ x: 0.11, y: 0.22, model_version: "pca-v1", fingerprint }),
+    );
+  }
+
+  it("projects the overlay query text and forwards query point + hits to the canvas", async () => {
+    const mutate = setupProjectQuery();
+    renderVectorTab({ overlay: RECALL_OVERLAY });
+    await waitFor(() =>
+      expect(mutate).toHaveBeenCalledWith(
+        "Gateway 职责",
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      ),
+    );
+    succeedQuery(mutate);
+    await waitFor(() => {
+      const overlay = canvasMock.props?.overlay as {
+        query: { x: number; y: number; label: string };
+        hits: unknown[];
+      } | null;
+      expect(overlay?.query).toEqual({ x: 0.11, y: 0.22, label: "Gateway 职责" });
+      expect(overlay?.hits).toEqual(RECALL_OVERLAY.hits);
+    });
+  });
+
+  it("discards the overlay with a notice when the query result fingerprint drifts", async () => {
+    const mutate = setupProjectQuery();
+    renderVectorTab({ overlay: RECALL_OVERLAY });
+    await waitFor(() => expect(mutate).toHaveBeenCalled());
+    succeedQuery(mutate, "sha1:stale");
+    await waitFor(() => expect(canvasMock.props?.overlay ?? null).toBeNull());
+    expect(toast.info).toHaveBeenCalledWith("投影已更新，检索叠加已失效——请重新触发检索");
+  });
+
+  it("surfaces a notice instead of failing silently when the query projection errors", async () => {
+    // 静默失败曾是用户可感 bug：409（缓存键错位）/500（embedder 故障）都无任何反馈。
+    const mutate = setupProjectQuery();
+    renderVectorTab({ overlay: RECALL_OVERLAY });
+    await waitFor(() => expect(mutate).toHaveBeenCalled());
+    const options = mutate.mock.calls.at(-1)?.[1] as { onError: (error: Error) => void };
+    act(() => options.onError(new Error("boom")));
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith("检索叠加失败——请重试"));
+    expect(canvasMock.props?.overlay ?? null).toBeNull();
+  });
+
+  it("drops the active overlay with a notice when the projection fingerprint changes", async () => {
+    const mutate = setupProjectQuery();
+    const { rerender, renderTab } = renderVectorTab({ overlay: RECALL_OVERLAY });
+    await waitFor(() => expect(mutate).toHaveBeenCalled());
+    succeedQuery(mutate);
+    await waitFor(() => expect(canvasMock.props?.overlay).toBeTruthy());
+
+    // 重新计算 / 内容变更 → 投影指纹翻转 → 旧坐标系的叠加必须丢弃。
+    mockProjectionQuery({ data: { ...PROJECTION, fingerprint: "sha1:def" } });
+    rerender(renderTab({ overlay: RECALL_OVERLAY }));
+    await waitFor(() => expect(canvasMock.props?.overlay ?? null).toBeNull());
+    expect(toast.info).toHaveBeenCalledWith("投影已更新，检索叠加已失效——请重新触发检索");
+  });
+
+  it("disables the overlay with a PCA-only notice under umap (spec §9 公共边界)", async () => {
+    const mutate = setupProjectQuery();
+    const { rerender, renderTab } = renderVectorTab();
+    // jsdom 无 pointerCapture——Radix Select 键盘打开（先例见上方 algo 用例）。
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("option", { name: "UMAP" }));
+    rerender(renderTab({ overlay: RECALL_OVERLAY }));
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith("检索叠加仅支持 PCA 投影——请切回 PCA 后重试"),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("follows chat overlays by default; freezing ignores new chat overlays but not recall ones", async () => {
+    const mutate = setupProjectQuery();
+    const { rerender, renderTab } = renderVectorTab({ overlay: CHAT_OVERLAY });
+    // 开关默认开
+    const followSwitch = screen.getByRole("switch", { name: "跟随对话" });
+    expect(followSwitch.getAttribute("aria-checked")).toBe("true");
+    await waitFor(() => expect(mutate).toHaveBeenCalledWith("支持哪些格式？", expect.anything()));
+    succeedQuery(mutate);
+    await waitFor(() => expect(canvasMock.props?.overlay).toBeTruthy());
+
+    // 关闭「跟随对话」→ 新 chat overlay 冻结（不投影、画面保持）。
+    fireEvent.click(followSwitch);
+    const nextChat = { ...CHAT_OVERLAY, text: "新一轮提问" };
+    rerender(renderTab({ overlay: nextChat }));
+    await waitFor(() => expect(canvasMock.props?.overlay).toBeTruthy());
+    expect(mutate).toHaveBeenCalledTimes(1);
+    const frozen = canvasMock.props?.overlay as { query: { label: string } };
+    expect(frozen.query.label).toBe("支持哪些格式？");
+
+    // recall 显式动作不受开关影响。
+    rerender(renderTab({ overlay: RECALL_OVERLAY }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+    expect(mutate).toHaveBeenLastCalledWith("Gateway 职责", expect.anything());
+  });
+
+  // ── 叠加徽标与清除（2026-08-19 UX 迭代）────────────────────────────────
+
+  it("shows the overlay badge (query text + hit count) and clears the overlay on ×", async () => {
+    const mutate = setupProjectQuery();
+    renderVectorTab({ overlay: RECALL_OVERLAY });
+    await waitFor(() => expect(mutate).toHaveBeenCalled());
+    succeedQuery(mutate);
+    // 徽标：query 文本 + 命中数（两个命中都在 PROJECTION 里）
+    await waitFor(() => expect(screen.getByTestId("vector-overlay-badge")).toBeTruthy());
+    const badge = screen.getByTestId("vector-overlay-badge");
+    expect(badge.textContent).toContain("Gateway 职责");
+    expect(badge.textContent).toContain("命中 2/2");
+    // × 清除 → 画布叠加撤掉 + 徽标消失
+    fireEvent.click(screen.getByRole("button", { name: "清除叠加" }));
+    await waitFor(() => expect(canvasMock.props?.overlay ?? null).toBeNull());
+    expect(screen.queryByTestId("vector-overlay-badge")).toBeNull();
+  });
+
+  it("counts only hits present in the projection (silently-skipped hits become visible)", async () => {
+    const mutate = setupProjectQuery();
+    const sparseOverlay = {
+      ...RECALL_OVERLAY,
+      hits: [
+        { pointId: "doc-1#0000", score: 0.9 },
+        { pointId: "not-in-projection", score: 0.5 },
+      ],
+    };
+    renderVectorTab({ overlay: sparseOverlay });
+    await waitFor(() => expect(mutate).toHaveBeenCalled());
+    succeedQuery(mutate);
+    await waitFor(() =>
+      expect(screen.getByTestId("vector-overlay-badge").textContent).toContain("命中 1/2"),
+    );
+  });
+
+  it("does not re-project the same overlay after clearing (no resurrection on re-render)", async () => {
+    const mutate = setupProjectQuery();
+    const { rerender, renderTab } = renderVectorTab({ overlay: RECALL_OVERLAY });
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    succeedQuery(mutate);
+    await waitFor(() => expect(screen.getByTestId("vector-overlay-badge")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "清除叠加" }));
+    await waitFor(() => expect(screen.queryByTestId("vector-overlay-badge")).toBeNull());
+    // 同一份 overlay 重渲染 → consumed 判定挡住，不复活、不重打 query 投影
+    rerender(renderTab({ overlay: RECALL_OVERLAY }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("vector-overlay-badge")).toBeNull();
   });
 });

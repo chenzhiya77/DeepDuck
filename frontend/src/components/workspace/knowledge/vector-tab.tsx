@@ -16,10 +16,11 @@
  * chips 选中态 = collection 同色浅底（hex alpha），outline 变体常驻边框，
  * 选中/取消切换不改变按钮宽度。
  */
-import { MoreHorizontal, RefreshCw, Search } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,13 +41,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import { useRecomputeVectorProjection, useVectorProjection } from "@/core/knowledge/hooks";
+import {
+  useProjectVectorQuery,
+  useRecomputeVectorProjection,
+  useVectorProjection,
+} from "@/core/knowledge/hooks";
 import type {
   VectorProjectionAlgo,
   VectorProjectionPoint,
+  VectorRetrievalOverlay,
 } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
@@ -173,6 +180,7 @@ export function VectorTab({
   kbId,
   enabled,
   indexingCount = 0,
+  overlay,
   onOpenChunk,
   onOpenWikiEntry,
   onOpenManualCard,
@@ -182,6 +190,11 @@ export function VectorTab({
   enabled: boolean;
   /** 仍在索引管线中的文档数（>0 时提示投影可能不完整）。 */
   indexingCount?: number;
+  /**
+   * P6 检索联动（2026-08-15 spec §9）：page 层共享的叠加请求。recall 一键
+   * 跳转（显式动作，恒应用）与 chat 每轮跟随（受「跟随对话」开关管辖）共用。
+   */
+  overlay?: VectorRetrievalOverlay | null;
   /** chunk 点击：(doc_id, chunk_id) —— page 层回查完整 doc 再开抽屉。 */
   onOpenChunk: (docId: string, chunkId: string) => void;
   onOpenWikiEntry: (entryId: string) => void;
@@ -201,6 +214,75 @@ export function VectorTab({
   const projectionQuery = useVectorProjection(kbId, { collections, algo, dims }, enabled);
   const projection = projectionQuery.data;
   const recompute = useRecomputeVectorProjection(kbId);
+
+  // ── P6 检索联动叠加（spec §9）──────────────────────────────────────────
+  // params 镜像当前视图：服务端缓存键含 collections/algo/dims，错位即 409。
+  const projectQuery = useProjectVectorQuery(kbId, { collections, algo, dims });
+  /** 「跟随对话」开关（默认开）：关闭后 chat 通道叠加冻结，供手动探索。 */
+  const [followChat, setFollowChat] = useState(true);
+  const [activeOverlay, setActiveOverlay] = useState<{
+    query: { x: number; y: number; z?: number; label: string };
+    hits: VectorRetrievalOverlay["hits"];
+    fingerprint: string;
+  } | null>(null);
+  // 当前指纹的穿透 ref：query 投影回调到达时投影可能已换（重算），比对必须读最新值。
+  const fingerprint = projection?.fingerprint;
+  const fingerprintRef = useRef(fingerprint);
+  fingerprintRef.current = fingerprint;
+  const activeOverlayRef = useRef(activeOverlay);
+  activeOverlayRef.current = activeOverlay;
+  // 请求去重句柄：同一 overlay 对象在同一 algo 下只投影一次；algo 切走再切回
+  // 允许重投影（umap 下被禁用的请求回到 pca 后应能生效）。
+  const consumedRef = useRef<{ overlay: VectorRetrievalOverlay; algo: string } | null>(null);
+
+  // 叠加请求 → 投影 query 文本（POST /vector-projection/query 复用缓存模型）。
+  useEffect(() => {
+    if (!overlay || !fingerprint) {
+      return; // 无请求，或投影未就绪（enabled 门 / 加载中）——等 projection 落地后重跑
+    }
+    const consumed = consumedRef.current;
+    if (consumed?.overlay === overlay && consumed.algo === algo) {
+      return;
+    }
+    if (overlay.source === "chat" && !followChat) {
+      return; // 冻结：不写 consumed——解冻后 effect 重跑即应用最新一轮
+    }
+    consumedRef.current = { overlay, algo };
+    if (algo !== "pca") {
+      // spec §9 公共边界：query 投影仅支持 PCA（UMAP transform 不稳定）。
+      toast.info(tv.overlayPcaOnly);
+      return;
+    }
+    projectQuery.mutate(overlay.text, {
+      onSuccess: (result) => {
+        if (result.fingerprint !== fingerprintRef.current) {
+          // 坐标系已换：旧叠加留在图上就是误导（spec §11 坐标漂移风险）。
+          setActiveOverlay(null);
+          toast.info(tv.overlayStale);
+          return;
+        }
+        setActiveOverlay({
+          query: { x: result.x, y: result.y, z: result.z, label: overlay.text },
+          hits: overlay.hits,
+          fingerprint: result.fingerprint,
+        });
+      },
+      onError: () => {
+        // 不再静默（用户可感 bug）：409 = 缓存键错位/缓存被清；500 = embedder
+        // 故障——提示重试，detail 留 console。
+        toast.info(tv.overlayFailed);
+      },
+    });
+  }, [overlay, fingerprint, algo, followChat, projectQuery, tv]);
+
+  // 投影指纹变化（重新计算 / 内容变更）→ 丢弃基于旧坐标系的叠加并提示。
+  useEffect(() => {
+    const current = activeOverlayRef.current;
+    if (current && fingerprint && current.fingerprint !== fingerprint) {
+      setActiveOverlay(null);
+      toast.info(tv.overlayStale);
+    }
+  }, [fingerprint, tv]);
 
   const series = useMemo(
     () =>
@@ -255,6 +337,16 @@ export function VectorTab({
 
   const points = projection?.points ?? [];
   const showCanvas = !projectionQuery.isLoading && !projectionQuery.isError && points.length > 0;
+
+  // 叠加徽标命中数（2026-08-19 UX 迭代）：命中点可能不在当前投影中（采样丢弃 /
+  // collection 被关）——此前静默跳过，现在「命中 m/n」让缺口可见。
+  // 依赖 projection（稳定引用）而非 points（?? [] 兜底每渲染新引用会击穿 useMemo）。
+  const overlayHitCounts = useMemo(() => {
+    if (!activeOverlay) return null;
+    const ids = new Set((projection?.points ?? []).map((point) => point.id));
+    const matched = activeOverlay.hits.filter((hit) => ids.has(hit.pointId)).length;
+    return { matched, total: activeOverlay.hits.length };
+  }, [activeOverlay, projection]);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="vector-tab">
@@ -373,6 +465,22 @@ export function VectorTab({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          {/* P6「跟随对话」开关（spec §9 通道二）：默认开；关闭后 chat 通道
+              叠加冻结，供手动探索。常驻各档（不进 … 菜单）。 */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <label className="text-muted-foreground flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
+                <Switch
+                  aria-label={tv.followChat}
+                  checked={followChat}
+                  className="shrink-0"
+                  onCheckedChange={setFollowChat}
+                />
+                {toolbarTier === 0 && <span className="whitespace-nowrap">{tv.followChat}</span>}
+              </label>
+            </TooltipTrigger>
+            <TooltipContent>{tv.followChat}</TooltipContent>
+          </Tooltip>
           {/* 重新计算：低频操作降级为图标按钮（aria-label/tooltip 兑底可发现性），
               pending 时图标自旋。 */}
           <Tooltip>
@@ -400,8 +508,8 @@ export function VectorTab({
         </div>
       )}
 
-      {/* 主体：三态 + 画布 */}
-      <div className="min-h-0 flex-1">
+      {/* 主体：三态 + 画布（relative 供叠加徽标浮层定位） */}
+      <div className="relative min-h-0 flex-1">
         {projectionQuery.isLoading && (
           <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
             {tv.loading}
@@ -423,7 +531,38 @@ export function VectorTab({
           </div>
         )}
         {showCanvas && (
-          <VectorCanvas dims={dims} searchedDocIds={searchedDocIds} series={series} onPointClick={handlePointClick} />
+          <VectorCanvas
+            dims={dims}
+            overlay={activeOverlay}
+            searchedDocIds={searchedDocIds}
+            series={series}
+            onPointClick={handlePointClick}
+          />
+        )}
+        {/* 叠加徽标（2026-08-19 UX 迭代）：地图式左上浮层——当前叠加的 query 文本
+            + 命中 m/n + × 清除。此前叠加一旦激活无出口（只能等指纹漂移），用户
+            无法主动取消连线。 */}
+        {showCanvas && activeOverlay && overlayHitCounts && (
+          <div
+            className="bg-background/80 absolute top-2 left-2 z-10 flex max-w-[70%] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs shadow-sm backdrop-blur"
+            data-testid="vector-overlay-badge"
+          >
+            <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: "#f5222d" }} />
+            <span className="min-w-0 truncate" title={activeOverlay.query.label}>
+              {activeOverlay.query.label}
+            </span>
+            <span className="text-muted-foreground shrink-0">
+              {tv.overlayHits(overlayHitCounts.matched, overlayHitCounts.total)}
+            </span>
+            <button
+              aria-label={tv.clearOverlay}
+              className="text-muted-foreground hover:text-foreground ml-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full"
+              type="button"
+              onClick={() => setActiveOverlay(null)}
+            >
+              <X className="size-3" />
+            </button>
+          </div>
         )}
       </div>
     </div>

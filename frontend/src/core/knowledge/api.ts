@@ -310,10 +310,8 @@ export interface VectorProjectionParams {
   refresh?: boolean;
 }
 
-export function getVectorProjection(
-  kbId: string,
-  params: VectorProjectionParams = {},
-): Promise<VectorProjectionResponse> {
+/** 视图参数 → query string（GET 投影与 POST query 投影共用——缓存键对齐）。 */
+function projectionSearchParams(params: VectorProjectionParams): string {
   const search = new URLSearchParams();
   if (params.collections && params.collections.length > 0) {
     search.set("collections", params.collections.join(","));
@@ -330,7 +328,14 @@ export function getVectorProjection(
   if (params.refresh) {
     search.set("refresh", "true");
   }
-  const qs = search.toString();
+  return search.toString();
+}
+
+export function getVectorProjection(
+  kbId: string,
+  params: VectorProjectionParams = {},
+): Promise<VectorProjectionResponse> {
+  const qs = projectionSearchParams(params);
   return fetch(kbUrl(kbId, qs ? `/vector-projection?${qs}` : "/vector-projection")).then((r) =>
     readResponse<VectorProjectionResponse>(r, "Failed to fetch vector projection"),
   );
@@ -340,12 +345,23 @@ export function getVectorProjection(
  * POST /vector-projection/query: transform raw question text through the
  * cached PCA model (409 when no projection is cached / the cached one is
  * umap). Never triggers a projection compute server-side.
+ *
+ * ``params`` 必须与当前投影视图一致：服务端缓存键含 collections/algo/dims/
+ * sample_size，缺省回落默认值 → peek 落空 409（联动静默不渲染的修复）。
  */
-export async function projectVectorQuery(kbId: string, text: string): Promise<VectorProjectionQueryResult> {
-  const response = await fetch(kbUrl(kbId, "/vector-projection/query"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
+export async function projectVectorQuery(
+  kbId: string,
+  text: string,
+  params: VectorProjectionParams = {},
+): Promise<VectorProjectionQueryResult> {
+  const qs = projectionSearchParams(params);
+  const response = await fetch(
+    kbUrl(kbId, qs ? `/vector-projection/query?${qs}` : "/vector-projection/query"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    },
+  );
   return readResponse<VectorProjectionQueryResult>(response, "Failed to project query");
 }

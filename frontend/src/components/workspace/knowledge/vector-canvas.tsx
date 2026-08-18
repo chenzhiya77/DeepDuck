@@ -13,7 +13,7 @@
 import { LegendComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { Scatter3DChart } from "echarts-gl/charts";
+import { Line3DChart, Scatter3DChart } from "echarts-gl/charts";
 import { Grid3DComponent } from "echarts-gl/components";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -23,6 +23,7 @@ import type { VectorSeriesGroup } from "./vector-tab";
 
 echarts.use([
   Scatter3DChart,
+  Line3DChart,
   Grid3DComponent,
   TooltipComponent,
   LegendComponent,
@@ -58,13 +59,136 @@ export interface VectorCanvasProps {
   onPointClick?: (point: VectorProjectionPoint) => void;
   /** 搜索锁定：匹配文档的 doc_id 集合；null/undefined = 无锁定（回落 hover 聚焦）。 */
   searchedDocIds?: ReadonlySet<string> | null;
+  /** P6 检索联动叠加（spec §9）：query 菱形落点 + 命中高亮/连线/score 色深。 */
+  overlay?: VectorCanvasOverlay | null;
+}
+
+/**
+ * P6 检索联动叠加（2026-08-15 spec §9 双通道共享）：recall 一键跳转与 chat
+ * 跟随共用同一渲染形态——query 菱形标记 + 命中点高亮 + query→命中连线 +
+ * score 色深（对齐 Embedding Projector 的 k-NN 连线实践）。
+ */
+export interface VectorCanvasOverlay {
+  query: { x: number; y: number; z?: number; label: string };
+  hits: readonly { pointId: string; score: number | null }[];
+}
+
+/** query 落点强调色（亮红）：与四类 collection 色板拉开，一眼可辨。 */
+export const OVERLAY_QUERY_COLOR = "#f5222d";
+/** query 图钉透明度（2026-08-19 UX 拍板）：隐约透出被盖住的点，不再实心遮挡。 */
+export const OVERLAY_QUERY_OPACITY = 0.85;
+/**
+ * query 五角星（自定义 SVG path，2026-08-19 UX 拍板）：内置形状里五角星缺席，
+ * 用 path:// 自绘——辨识度最高，且与四类 collection 的 circle/triangle/rect/diamond
+ * 全不撞形。GL 侧 symbol 经 sdfSprite 光栅化，path:// 同样支持。
+ */
+export const OVERLAY_QUERY_SYMBOL =
+  "path://M50 0 L61.8 35.5 L100 35.5 L69.1 57.3 L80.9 92.7 L50 70.9 L19.1 92.7 L30.9 57.3 L0 35.5 L38.2 35.5 Z";
+const OVERLAY_HIT_RGB = "245, 34, 45";
+
+/**
+ * 命中点色深：score 在本批命中范围内归一化 → alpha 0.45..1（分越高越深）；
+ * null（rerank 降级无分）取中间档；全等分（含单命中）取最深。
+ */
+export function overlayHitColor(score: number | null, min: number, max: number): string {
+  const t = score === null ? 0.5 : max <= min ? 1 : (score - min) / (max - min);
+  const alpha = 0.45 + 0.55 * Math.min(1, Math.max(0, t));
+  return `rgba(${OVERLAY_HIT_RGB}, ${alpha.toFixed(3)})`;
+}
+
+/** 叠加层 query 菱形 series（显式类型：测试与调用方不吃推断联合）。 */
+export interface OverlayQuerySeries {
+  type: "scatter3D";
+  name: string;
+  symbol: string;
+  symbolSize: number;
+  itemStyle: { color: string; opacity: number };
+  emphasis: { focus: "none" };
+  silent: true;
+  data: { value: number[] }[];
+}
+
+/** 叠加层 query→命中单条连线 series（line3D 两点折线）。 */
+export interface OverlayLineSeries {
+  type: "line3D";
+  name: string;
+  /**
+   * line3D 默认即 cartesian3D（dependencies: ['grid3D']），与散点同坐标系。
+   * 勿用 lines3D：它源自地球仪飞线场景，layout 只支持 globe/geo3D/mapbox3D，
+   * cartesian3D 下 layout 静默跳过 → 渲染期炸「reading '0' of undefined」
+   * （2026-08-19 浏览器实测）。
+   */
+  coordinateSystem: "cartesian3D";
+  lineStyle: { color: string; width: number; opacity: number };
+  emphasis: { focus: "none" };
+  silent: true;
+  /** 两点折线：[[queryCoords], [hitCoords]]；空槽位为 []。 */
+  data: number[][];
+}
+
+/**
+ * 连线槽位（恒定数量）：echarts merge 按索引合并 series 数组，叠加层系列数
+ * 恒定才能保证「清除/换批」可靠落图。20 对齐 recall top_k 上限。
+ */
+export const OVERLAY_LINE_SLOTS = 20;
+
+/**
+ * 叠加层 series 构建（纯函数，jsdom 可测）：query 菱形 + query→命中连线。
+ * 命中点不在当前投影中（采样丢弃 / collection 被关）→ 静默跳过。两层均
+ * silent——不吃 hover/点击，聚焦交互不被叠加层劫持；名称带 __overlay 前缀，
+ * 不进图例（legend.data 显式只列主系列）。
+ *
+ * overlay=null 返回空占位系列（恒定结构）：echarts merge 按索引合并 series
+ * 数组，叠加层恒在（data 空）才能让「清除叠加」可靠落图——数组变短时 merge
+ * 不保证删除尾部系列（叠加残留 bug 的修复）。
+ */
+export function buildOverlaySeries(
+  overlay: VectorCanvasOverlay | null,
+  points: readonly VectorProjectionPoint[],
+  dims: 2 | 3,
+): [OverlayQuerySeries, ...OverlayLineSeries[]] {
+  const toCoords = (x: number, y: number, z?: number): number[] =>
+    dims === 3 ? [x, y, z ?? 0] : [x, 0, y];
+  const queryCoords = overlay ? toCoords(overlay.query.x, overlay.query.y, overlay.query.z) : [];
+  const byId = new Map(points.map((point) => [point.id, point]));
+  // 每条命中连线一个固定槽位（结构恒定 → merge 按索引合并，清除/换批可靠）；
+  // 命中点不在当前投影中（采样丢弃 / collection 被关）→ 该槽位置空。
+  const hitCoordsList: number[][][] = [];
+  for (const hit of overlay?.hits ?? []) {
+    const point = byId.get(hit.pointId);
+    if (point && hitCoordsList.length < OVERLAY_LINE_SLOTS) {
+      hitCoordsList.push([queryCoords, toCoords(point.x, point.y, point.z)]);
+    }
+  }
+  const querySeries: OverlayQuerySeries = {
+    type: "scatter3D",
+    name: "__overlay_query",
+    // 五角星（2026-08-19 UX 拍板）：辨识度最高，与四类 collection 形状全不撞；
+    // 透明一档透出被盖住的点。
+    symbol: OVERLAY_QUERY_SYMBOL,
+    symbolSize: 18,
+    itemStyle: { color: OVERLAY_QUERY_COLOR, opacity: OVERLAY_QUERY_OPACITY },
+    emphasis: { focus: "none" },
+    silent: true,
+    data: overlay ? [{ value: queryCoords }] : [],
+  };
+  const lineSeries: OverlayLineSeries[] = Array.from({ length: OVERLAY_LINE_SLOTS }, (_, i) => ({
+    type: "line3D",
+    name: `__overlay_line_${i}`,
+    coordinateSystem: "cartesian3D",
+    lineStyle: { color: `rgba(${OVERLAY_HIT_RGB}, 0.55)`, width: 2, opacity: 0.8 },
+    emphasis: { focus: "none" },
+    silent: true,
+    data: hitCoordsList[i] ?? [],
+  }));
+  return [querySeries, ...lineSeries];
 }
 
 interface ScatterDatum {
   value: [number, number] | [number, number, number];
   point: VectorProjectionPoint;
-  /** 聚焦淡化时的项级覆写（低透明度保轮廓，不隐藏）。 */
-  itemStyle?: { opacity: number };
+  /** 聚焦淡化 / 检索命中的项级覆写（低透明度保轮廓，或命中高亮）。 */
+  itemStyle?: { opacity: number; color?: string };
 }
 
 /**
@@ -216,12 +340,15 @@ function resolveCanvasBgColor(): string {
   return `rgb(${d[0]},${d[1]},${d[2]})`;
 }
 
-export default function VectorCanvas({ series, dims, onPointClick, searchedDocIds }: VectorCanvasProps) {
+export default function VectorCanvas({ series, dims, onPointClick, searchedDocIds, overlay }: VectorCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.EChartsType | null>(null);
   // onPointClick 经 ref 穿透，避免回调 identity 变化触发 setOption。
   const clickRef = useRef(onPointClick);
   clickRef.current = onPointClick;
+  // overlay 同法穿透：叠加变化走轻量 merge（聚焦 effect），主重建路径读最新值。
+  const overlayRef = useRef(overlay);
+  overlayRef.current = overlay;
   // hover 瞬态聚焦（散点 mouseover 驱动；搜索锁定时被覆盖）。
   const [hoverFocus, setHoverFocus] = useState<VectorFocus>(null);
   // 主题切换信号（<html> .dark 变化）→ 主 effect 全量重建（装饰层主题感知）。
@@ -253,7 +380,7 @@ export default function VectorCanvas({ series, dims, onPointClick, searchedDocId
         .map(([name]) => name),
     );
     chart.setOption(
-      { series: buildSeriesOptions(series, dims, focusRef.current, hidden, resolveCanvasBgColor()) },
+      { series: buildSeriesOptions(series, dims, focusRef.current, hidden, resolveCanvasBgColor(), overlayRef.current) },
       { notMerge: false },
     );
   };
@@ -368,7 +495,7 @@ export default function VectorCanvas({ series, dims, onPointClick, searchedDocId
           return `${marker}${buildTooltipHtml(datum.point.label, datum.point.preview)}`;
         },
       },
-      series: buildSeriesOptions(series, dims, focusRef.current, undefined, resolveCanvasBgColor()),
+      series: buildSeriesOptions(series, dims, focusRef.current, undefined, resolveCanvasBgColor(), overlayRef.current),
     };
     // 3D 分支：grid3D + 三轴（viewControl 轨道相机：左键旋转、滚轮缩放；
     // distance/边距按视觉调准，三轴浅色系避免压过散点）；
@@ -447,9 +574,10 @@ export default function VectorCanvas({ series, dims, onPointClick, searchedDocId
   }, [series, dims, themeTick]);
 
   // 聚焦 effect：merge 模式轻量重设 series（淡化是数据项级样式，不碰轴/取景）。
+  // overlay 同路——叠加变化（新检索 / 指纹清除）只需重设 series。
   useEffect(() => {
     refreshRef.current();
-  }, [series, dims, effectiveFocus]);
+  }, [series, dims, effectiveFocus, overlay]);
 
   return <div className="h-full w-full" data-testid="vector-canvas" ref={containerRef} />;
 }
@@ -466,13 +594,19 @@ export default function VectorCanvas({ series, dims, onPointClick, searchedDocId
  * 画两层：底层白色、大一圈、同形状（顶点色 alpha 逐点正常生效，淡化时跟随），
  * 上层彩色填充——露出的白圈即描边，混合行为与 matplotlib 一致。
  */
-function buildSeriesOptions(
+export function buildSeriesOptions(
   series: VectorSeriesGroup[],
   dims: 2 | 3,
   focus: VectorFocus,
   hiddenLabels?: ReadonlySet<string>,
   haloColor = "#ffffff",
+  overlay?: VectorCanvasOverlay | null,
 ) {
+  // P6 检索叠加：命中查找表 + score 范围（色深归一化的分母）。
+  const hitById = new Map(overlay?.hits.map((hit) => [hit.pointId, hit.score]) ?? []);
+  const hitScores = overlay?.hits.map((hit) => hit.score).filter((s): s is number => s !== null) ?? [];
+  const hitMin = hitScores.length ? Math.min(...hitScores) : 0;
+  const hitMax = hitScores.length ? Math.max(...hitScores) : 1;
   // 透明度按数量排名分档：点最多的类别拿最透的档
   const ranked = series
     .filter((group) => group.points.length > 0)
@@ -485,17 +619,30 @@ function buildSeriesOptions(
   // （画不出东西，仅保持图例项完整）。3D 下遮挡由深度测试决定，层序只影响
   // 同深度混合，不丢空间感。
   const ordered = [...ranked, ...series.filter((group) => group.points.length === 0)];
-  return ordered.flatMap((group) => {
+  const built = ordered.flatMap((group) => {
     const opacity = opacityByGroup.get(group) ?? 0.7;
     const hidden = hiddenLabels?.has(group.label) ?? false;
     const symbol = SOURCE_SYMBOLS[group.sourceType] ?? "circle";
-    const makeData = (pts: VectorProjectionPoint[]) =>
-      pts.map((point): ScatterDatum => ({
-        // 2D = 3D 的正视特例：二维坐标铺到 X-Z 立面 [x, 0, y]（Z 轴朝上）。
-        value: dims === 3 ? [point.x, point.y, point.z ?? 0] : [point.x, 0, point.y],
-        point,
-        ...(isPointDimmed(point, focus) ? { itemStyle: { opacity: DIMMED_OPACITY } } : {}),
-      }));
+    const makeData = (pts: VectorProjectionPoint[], isHalo: boolean) =>
+      pts.map((point): ScatterDatum => {
+        // 命中点（P6 叠加）：全不透明 + score 色深，且豁免聚焦淡化——叠加目标
+        // 是用户正在追踪的对象，不能被 hover 聚焦淡掉。衬底层只提亮（保白圈），
+        // 不覆写颜色。
+        let itemStyle: ScatterDatum["itemStyle"];
+        if (overlay && hitById.has(point.id)) {
+          itemStyle = isHalo
+            ? { opacity: 1 }
+            : { opacity: 1, color: overlayHitColor(hitById.get(point.id) ?? null, hitMin, hitMax) };
+        } else if (isPointDimmed(point, focus)) {
+          itemStyle = { opacity: DIMMED_OPACITY };
+        }
+        return {
+          // 2D = 3D 的正视特例：二维坐标铺到 X-Z 立面 [x, 0, y]（Z 轴朝上）。
+          value: dims === 3 ? [point.x, point.y, point.z ?? 0] : [point.x, 0, point.y],
+          point,
+          ...(itemStyle ? { itemStyle } : {}),
+        };
+      });
     // 同色系边界分桶（2026-08-17 用户实测：异色重叠有白圈分界、同色没有）——
     // 根因：整组“先全部衬底、再全部填充”，同组填充把邻居衬底整个盖住。
     // matplotlib 逐点原子绘制（后点白边压前点填充），等效做法 = 切成若干桶、
@@ -517,7 +664,7 @@ function buildSeriesOptions(
         itemStyle: { color: haloColor, opacity: hidden ? 0 : opacity },
         silent: hidden,
         emphasis: { focus: "none" as const },
-        data: makeData(pts),
+        data: makeData(pts, true),
       },
       {
         type: "scatter3D",
@@ -526,10 +673,14 @@ function buildSeriesOptions(
         symbolSize: SOURCE_SIZE[group.sourceType] ?? 8,
         itemStyle: { color: group.color, opacity },
         emphasis: { focus: "none" as const, itemStyle: { opacity: 1 } },
-        data: makeData(pts),
+        data: makeData(pts, false),
       },
     ]);
   });
+  // P6 叠加层恒定追加在最后（顶画）：query 菱形 + query→命中连线；overlay
+  // 为 null 时也是两个空系列——merge 结构恒定，清除叠加才能可靠落图。
+  const base = series.flatMap((group) => group.points);
+  return [...built, ...buildOverlaySeries(overlay ?? null, base, dims)];
 }
 
 function escapeHtml(text: string): string {

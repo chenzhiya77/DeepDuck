@@ -441,6 +441,12 @@ export const zhCN: Translations = {
       dimsLabel: "维度",
       sampledBadge: (shown, total) => `已抽样 ${shown}/${total} 点`,
       searchDocs: "搜索文档…",
+      followChat: "跟随对话",
+      overlayPcaOnly: "检索叠加仅支持 PCA 投影——请切回 PCA 后重试",
+      overlayStale: "投影已更新，检索叠加已失效——请重新触发检索",
+      overlayFailed: "检索叠加失败——请重试",
+      overlayHits: (matched, total) => `命中 ${matched}/${total}`,
+      clearOverlay: "清除叠加",
     },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",
@@ -530,6 +536,7 @@ export const zhCN: Translations = {
       evidence: "切片证据",
       empty: "输入问题后开始检索，对比三路命中与得分",
       failed: "检索测试失败",
+      viewInVectorSpace: "在向量空间查看",
     },
     chat: {
       newChat: "新建会话",
