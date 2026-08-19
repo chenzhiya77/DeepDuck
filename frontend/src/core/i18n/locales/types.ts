@@ -405,6 +405,20 @@ export interface Translations {
       /** 清除当前叠加层（徽标 × 按钮）。 */
       clearOverlay: string;
     };
+    /** 知识图谱 tab（2026-08-19 spec §5）：三态 + 统计 + 实体钻取抽屉。 */
+    graphSpace: {
+      loading: string;
+      loadFailed: string;
+      empty: string;
+      /** 状态栏统计：n 实体 · m 关系 · k 社区。 */
+      stats: (nodes: number, edges: number, communities: number) => string;
+      /** 实体抽屉：提及 n 次（= 关联切片数）。 */
+      mentions: (count: number) => string;
+      /** 实体抽屉的关联切片分组标题。 */
+      relatedChunks: string;
+      /** 切片所属文档已删除（chunk_id 里的 doc_id 不在当前文档列表）。 */
+      unknownDoc: string;
+    };
     wikiPanel: {
       empty: string;
       loading: string;

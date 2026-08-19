@@ -109,6 +109,11 @@ async def test_graph_returns_full_contract_with_communities(service) -> None:
     # mention_count = len(source_chunk_ids)：JVM 被 d#0000/d#0001 两个切片提及。
     assert jvm["mention_count"] == 2
     assert nodes["堆内存"]["mention_count"] == 1
+    # Task 3 扩展：source_chunk_ids 透传——前端实体钻取链路（点击 → 关联切片
+    # → 文档抽屉）的唯一数据来源；chunk_id 内嵌 doc_id（`{doc_id}#%04d`），
+    # 前端无需二次查询即可跳文档。
+    assert jvm["source_chunk_ids"] == ["d#0000", "d#0001"]
+    assert nodes["孤立概念"]["source_chunk_ids"] == ["d#0002"]
     # 社区：连通簇同社区，孤立实体独立社区；大簇拿社区 0（规模降序）。
     assert isinstance(jvm["community"], int)
     assert jvm["community"] == nodes["堆内存"]["community"] == nodes["字节码"]["community"] == 0

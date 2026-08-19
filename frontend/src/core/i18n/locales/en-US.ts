@@ -466,6 +466,15 @@ export const enUS: Translations = {
       overlayHits: (matched, total) => `${matched}/${total} hits shown`,
       clearOverlay: "Clear overlay",
     },
+    graphSpace: {
+      loading: "Loading the knowledge graph…",
+      loadFailed: "Failed to load the knowledge graph — please try again",
+      empty: "Nothing to visualize yet — entities appear after documents are indexed",
+      stats: (nodes, edges, communities) => `${nodes} entities · ${edges} relations · ${communities} communities`,
+      mentions: (count) => `Mentioned by ${count} chunks`,
+      relatedChunks: "Related chunks",
+      unknownDoc: "(document deleted)",
+    },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",
       loading: "Loading…",

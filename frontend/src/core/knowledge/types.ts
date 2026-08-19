@@ -356,6 +356,8 @@ export interface KnowledgeGraphNode {
   mention_count: number;
   /** Louvain 社区 id（0 = 最大社区，规模降序，固定种子保证稳定）。 */
   community: number;
+  /** 提及该实体的切片 id（`{doc_id}#%04d`）——实体钻取链路的跳转数据。 */
+  source_chunk_ids: string[];
 }
 
 /** GET /graph 的边：关系有向（source → target）。 */

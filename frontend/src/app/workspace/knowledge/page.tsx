@@ -10,6 +10,7 @@ import {
   DuplicateUploadDialog,
   type DuplicateAction,
 } from "@/components/workspace/knowledge/duplicate-upload-dialog";
+import { GraphTab } from "@/components/workspace/knowledge/graph-tab";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
 import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-drawer";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
@@ -381,10 +382,18 @@ export default function KnowledgePage() {
                 />
               }
               graph={
-                // Task 2 占位 pane（Task 3 填 GraphTab 本体）
-                <div className="text-muted-foreground flex h-full items-center justify-center text-sm" data-testid="graph-space-placeholder">
-                  {tk.tabs.graph}
-                </div>
+                <GraphTab
+                  documents={documents}
+                  enabled={activeTab === "graph"}
+                  kbId={selectedKb.id}
+                  onOpenChunk={(docId) => {
+                    // 与向量空间同一链路：回查文档对象再开抽屉（防御性忽略缺失）。
+                    const doc = documents.find((item) => item.id === docId);
+                    if (doc) {
+                      setDrawerDoc(doc);
+                    }
+                  }}
+                />
               }
             />
           ) : (

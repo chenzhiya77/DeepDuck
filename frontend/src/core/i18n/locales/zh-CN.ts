@@ -449,6 +449,15 @@ export const zhCN: Translations = {
       overlayHits: (matched, total) => `命中 ${matched}/${total}`,
       clearOverlay: "清除叠加",
     },
+    graphSpace: {
+      loading: "正在加载知识图谱…",
+      loadFailed: "知识图谱加载失败——请稍后重试",
+      empty: "暂无可视化的实体——索引文档后自动构建",
+      stats: (nodes, edges, communities) => `${nodes} 实体 · ${edges} 关系 · ${communities} 社区`,
+      mentions: (count) => `被 ${count} 个切片提及`,
+      relatedChunks: "关联切片",
+      unknownDoc: "（文档已删除）",
+    },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",
       loading: "加载中…",

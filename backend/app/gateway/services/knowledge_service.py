@@ -925,6 +925,9 @@ class KnowledgeService:
                     "description": row.get("description") or "",
                     "mention_count": len(row.get("source_chunk_ids") or []),
                     "community": community_by_name[row["name"]],
+                    # 钻取链路数据源（Task 3）：chunk_id 内嵌 doc_id，前端点击实体
+                    # 列切片并直跳文档抽屉，无需二次查询。
+                    "source_chunk_ids": list(row.get("source_chunk_ids") or []),
                 }
                 for row in entities
             ],
