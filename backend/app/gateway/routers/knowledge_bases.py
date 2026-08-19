@@ -460,6 +460,16 @@ async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     return await service.recall_test(kb_id=kb_id, user_id=_user_id(request), query=body.query, top_k=body.top_k)
 
 
+@router.get("/{kb_id}/graph")
+async def get_knowledge_graph(request: Request, kb_id: str):
+    """知识图谱可视化（graph spec 2026-08-19 §4）：全量实体/关系 + Louvain 社区标注。
+
+    无缓存——百级图现算是毫秒级，内容永远最新。
+    """
+    service = await _require_kb_access(request, kb_id)
+    return await service.get_knowledge_graph(kb_id)
+
+
 @router.get("/{kb_id}/vector-projection")
 async def get_vector_projection(
     request: Request,

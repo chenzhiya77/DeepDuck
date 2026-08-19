@@ -27,6 +27,7 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.graph.communities import assign_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
@@ -901,6 +902,47 @@ class KnowledgeService:
         }
 
     # ── vector-space projection (spec 2026-08-15 §7 P4) ───────────────────
+
+    async def get_knowledge_graph(self, kb_id: str) -> dict[str, Any]:
+        """图可视化端点（graph visualization spec §4）：全量实体/关系 + Louvain 社区标注。
+
+        无缓存——百级图的读取 + 社区检测是毫秒级，现算永远最新（与向量投影
+        的重计算+指纹缓存是不同处境）。mention_count 无专列，取
+        len(source_chunk_ids)（提及切片数即重要度）。
+        """
+        entities = await self.graph_store.list_entities(kb_id)
+        relations = await self.graph_store.list_relations(kb_id)
+        community_by_name = assign_communities(
+            [row["name"] for row in entities],
+            [(row["source"], row["target"]) for row in relations],
+        )
+        return {
+            "kb_id": kb_id,
+            "nodes": [
+                {
+                    "id": row["name"],
+                    "type": row.get("type") or "",
+                    "description": row.get("description") or "",
+                    "mention_count": len(row.get("source_chunk_ids") or []),
+                    "community": community_by_name[row["name"]],
+                }
+                for row in entities
+            ],
+            "edges": [
+                {
+                    "source": row["source"],
+                    "target": row["target"],
+                    "relation": row["relation"],
+                    "description": row.get("description") or "",
+                }
+                for row in relations
+            ],
+            "stats": {
+                "node_count": len(entities),
+                "edge_count": len(relations),
+                "community_count": len(set(community_by_name.values())),
+            },
+        }
 
     async def get_vector_projection(
         self,
