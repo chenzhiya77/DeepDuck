@@ -13,7 +13,7 @@ import { GraphTab } from "@/components/workspace/knowledge/graph-tab";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import type { KnowledgeBase, KnowledgeDocument, KnowledgeGraphResponse } from "@/core/knowledge/types";
+import type { KnowledgeBase, KnowledgeDocument, KnowledgeGraphNode, KnowledgeGraphResponse } from "@/core/knowledge/types";
 
 const hooksMock = rs.hoisted(() => ({
   useKnowledgeGraph: rs.fn(),
@@ -21,6 +21,11 @@ const hooksMock = rs.hoisted(() => ({
 
 rs.mock("@/core/knowledge/hooks", () => ({
   useKnowledgeGraph: hooksMock.useKnowledgeGraph,
+}));
+
+// 搜索无命中提示走 sonner toast。
+rs.mock("sonner", () => ({
+  toast: { info: rs.fn(), success: rs.fn(), warning: rs.fn(), error: rs.fn() },
 }));
 
 /** echarts 画布 mock：记录 props，不渲染（jsdom 无 WebGL/canvas）。 */
@@ -245,5 +250,95 @@ describe("GraphTab 实体钻取（Task 3）", () => {
     await waitFor(() => expect(screen.getByTestId("graph-entity-sheet")).toBeTruthy());
     fireEvent.click(screen.getAllByTestId("graph-entity-chunk")[1]!);
     expect(onOpenChunk).toHaveBeenCalledWith("d", "d#0001");
+  });
+});
+
+// ── Task 4（P3）：搜索定位 / 着色切换 / 局部图模式 ─────────────────────────
+
+/** 链式图：A — B — C — D + 孤立 E（B 的一跳={A,C}，两跳={A,C,D}）。 */
+const CHAIN_GRAPH: KnowledgeGraphResponse = {
+  kb_id: "kb-1",
+  nodes: (["A", "B", "C", "D", "E"] as const).map((id) => ({
+    id,
+    type: id === "A" ? "组件" : "概念",
+    description: `${id} 描述`,
+    mention_count: 1,
+    community: id === "E" ? 1 : 0,
+    source_chunk_ids: ["d#0000"],
+  })),
+  edges: [
+    { source: "A", target: "B", relation: "r", description: "" },
+    { source: "B", target: "C", relation: "r", description: "" },
+    { source: "C", target: "D", relation: "r", description: "" },
+  ],
+  stats: { node_count: 5, edge_count: 3, community_count: 2 },
+};
+
+describe("GraphTab 搜索 / 着色 / 局部图（Task 4）", () => {
+  beforeEach(() => {
+    cleanup();
+    canvasMock.props = undefined;
+    hooksMock.useKnowledgeGraph.mockReset();
+    stubGraphQuery({ data: CHAIN_GRAPH, isLoading: false, isError: false });
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  const canvasNodeIds = () => (canvasMock.props?.nodes as KnowledgeGraphNode[]).map((n) => n.id).sort();
+  const dblClickNode = (nodeId: string) => {
+    const handler = canvasMock.props?.onNodeDblClick as (node: KnowledgeGraphNode) => void;
+    handler(CHAIN_GRAPH.nodes.find((n) => n.id === nodeId)!);
+  };
+
+  it("defaults to community coloring and switches to type coloring via the toggle", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    expect(canvasMock.props?.colorBy).toBe("community"); // spec §6：默认按社区
+    fireEvent.click(screen.getByRole("radio", { name: "按类型" }));
+    await waitFor(() => expect(canvasMock.props?.colorBy).toBe("type"));
+  });
+
+  it("focuses the first fuzzy-matched node on search submit", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("搜索实体"), { target: { value: "b" } });
+    fireEvent.submit(screen.getByLabelText("搜索实体").closest("form")!);
+    await waitFor(() => expect(canvasMock.props?.focusNode).toBe("B"));
+  });
+
+  it("toasts when the search has no match", async () => {
+    const { toast } = await import("sonner");
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("搜索实体"), { target: { value: "不存在" } });
+    fireEvent.submit(screen.getByLabelText("搜索实体").closest("form")!);
+    await waitFor(() => expect(toast.info).toHaveBeenCalled());
+    expect(canvasMock.props?.focusNode).toBeFalsy();
+  });
+
+  it("enters neighborhood mode on node double-click (1 hop) with a breadcrumb back", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    expect(canvasNodeIds()).toEqual(["A", "B", "C", "D", "E"]);
+
+    dblClickNode("B");
+    // 局部图：只剩 B + 一跳邻居 {A,C}；面包屑出现。
+    await waitFor(() => expect(screen.getByTestId("graph-breadcrumb")).toBeTruthy());
+    expect(canvasNodeIds()).toEqual(["A", "B", "C"]);
+    expect(screen.getByTestId("graph-breadcrumb").textContent).toContain("B");
+
+    // 面包屑返回全局图。
+    fireEvent.click(screen.getByTestId("graph-breadcrumb-back"));
+    await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C", "D", "E"]));
+  });
+
+  it("widens the neighborhood to 2 hops via the hop toggle", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    dblClickNode("B");
+    await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C"]));
+    fireEvent.click(screen.getByRole("radio", { name: "2 跳" }));
+    await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C", "D"])); // E 孤立不进
   });
 });

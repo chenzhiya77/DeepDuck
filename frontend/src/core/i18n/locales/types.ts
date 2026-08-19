@@ -418,6 +418,20 @@ export interface Translations {
       relatedChunks: string;
       /** 切片所属文档已删除（chunk_id 里的 doc_id 不在当前文档列表）。 */
       unknownDoc: string;
+      /** P3 搜索框：实体名模糊匹配（spec §6）。 */
+      searchEntities: string;
+      /** 搜索无命中提示（toast）。 */
+      searchNoMatch: string;
+      /** 着色切换 ToggleGroup。 */
+      colorByType: string;
+      colorByCommunity: string;
+      /** 局部图模式面包屑：返回全局图。 */
+      backToGlobal: string;
+      /** 局部图面包屑焦点节点名展示。 */
+      neighborhoodOf: (name: string) => string;
+      /** 跳数切换（1 跳 / 2 跳邻居）。 */
+      hop1: string;
+      hop2: string;
     };
     wikiPanel: {
       empty: string;
