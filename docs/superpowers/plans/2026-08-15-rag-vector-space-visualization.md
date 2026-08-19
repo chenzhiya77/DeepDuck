@@ -121,34 +121,35 @@
 - [x] `pnpm test` GREEN（18 passed）；全量回归 157 文件 1278 passed（rstest.config.ts 改动面广，必须全量）；revert proof（stash 7 文件 → RED → 恢复 → 18 passed）；`pnpm check` 双净。
 - [x] Commit: `feat(frontend): add 3D projection mode and sampling controls`（`1f1de75a`）
 
-## Task 8: P6 检索联动双通道
+## Task 8: P6 检索联动双通道 ✅ 已完成（2026-08-19）
 
 **Files:**
-- Modify: recall 面板组件（结果区「在向量空间查看」按钮）
-- Modify: `frontend/src/components/workspace/knowledge/page.tsx` / `chat-panel.tsx`（recall 结果 + 最新一轮对话引用提升到 page 层共享 state）
-- Modify: `frontend/src/components/workspace/knowledge/vector-tab.tsx`（叠加层：query 菱形标记 + 命中点高亮/连线/score 色深 + 「跟随对话」开关）
-- Modify: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`（+ recall/chat 联动用例）
+- Modify: recall 面板组件（结果区「在向量空间查看」按钮）✅ `recall-test-panel.tsx`
+- Modify: `frontend/src/components/workspace/knowledge/page.tsx` / `chat-panel.tsx`（recall 结果 + 最新一轮对话引用提升到 page 层共享 state）✅
+- Modify: `frontend/src/components/workspace/knowledge/vector-tab.tsx`（叠加层：query 星标 + 命中点高亮/连线/score 色深 + 「跟随对话」开关 + 叠加徽标一键清除）✅
+- Modify: `frontend/tests/unit/knowledge/vector-tab.dom.test.tsx`（+ recall/chat 联动用例）✅
 
-- [ ] RED test: recall 点击「在向量空间查看」→ 切 tab + overlay（query 点 + 命中高亮）；对话完成一轮（含引用）→ overlay 自动更新；`fingerprint` 不一致 → 丢弃旧 overlay 并提示；`algo=umap` → 联动禁用提示；「跟随对话」关闭 → overlay 冻结。
-- [ ] Implement 状态提升 + 叠加渲染 + POST `/vector-projection/query` 调用。
-- [ ] `pnpm test` GREEN；regression proof；restore。
-- [ ] Commit: `feat(frontend): overlay retrieval context on the vector projection`
+- [x] RED test: recall 点击「在向量空间查看」→ 切 tab + overlay（query 点 + 命中高亮）；对话完成一轮（含引用）→ overlay 自动更新；`fingerprint` 不一致 → 丢弃旧 overlay 并提示；`algo=umap` → 联动禁用提示；「跟随对话」关闭 → overlay 冻结。
+- [x] Implement 状态提升 + 叠加渲染 + POST `/vector-projection/query` 调用。
+- [x] `pnpm test` GREEN；regression proof；restore。
+- [x] Commit: `feat(rag): retrieval overlay on vector space with star marker and clear badge (Task 8)`（`c6dbfbc3`）+ 运行时修复两枚：①`lines3D`→`line3D`（lines3D 仅支持 globe/geo3D 坐标系，cartesian3D 下渲染崩）；②`EmbeddingResult` 未解包导致 query 端点生产 500（fake 与真实契约漂移）+ 视图参数透传修 409。UX 迭代：query 菱形→五角星（path://）+ 透明 0.85；叠加徽标（query 文本+命中 m/n+× 清除）。
+- [x] 追加修复 Commit: `fix(rag): restore card-point hover tooltip via adaptive halo bucketing`（`19009f16`）——桶内单点的 GL 系列 hover 拾取静默失效（卡片 3 点分 6 桶全部无 tooltip），桶数自适应：<4×桶数降单桶。
 
-## Task 9: 文档同步 + 全量回归 + Live 冒烟
+## Task 9: 文档同步 + 全量回归 + Live 冒烟 ✅ 已完成（2026-08-19）
 
 **Files:**
 - Modify: `backend/AGENTS.md`（RAG 小节补投影段）
 - Modify: `docs/superpowers/specs/2026-08-15-rag-vector-space-visualization-design.md`（状态翻转「已落地」+ 日期）
 - Create: `pr-build/rag-vector-space-*.png`（冒烟截图）
 
-- [ ] Spec 状态翻转为「✅ 已落地」；AGENTS.md 落档。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`ruff check/format` 双净。
-- [ ] `cd frontend && pnpm test && pnpm check` 双净；echarts chunk 在性能预算内。
-- [ ] Live 冒烟（真实 key + Qdrant）：
+- [x] Spec 状态翻转为「✅ 已落地」；AGENTS.md 落档。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（366 passed, 2 skipped）；`ruff check/format` 双净。
+- [x] `cd frontend && pnpm test && pnpm check` 双净（knowledge 域 34 文件 339 passed；echarts chunk 为 `next/dynamic ssr:false` 异步加载，不进 per-route SSR 预算测量面）。
+- [x] Live 冒烟（真实 key + Qdrant）：
   | 冒烟项 | 步骤 | 预期 | 结果 | 证据 |
   |---|---|---|---|---|
-  | 投影出图 | JVM 知识库 → 向量空间 tab | 四类点同图分色，hover 预览，点击开详情 | | |
-  | 缓存命中 | 二次打开 + 改动文档后「重新计算」 | 命中 <200ms；重算后指纹变化 | | |
-  | 检索联动 | recall 检索 → 「在向量空间查看」 | 一键切 tab + query 落点 + 命中高亮连线 | | |
-  | 对话联动 | 右栏对话一轮（含引用）→ 切向量 tab | 该轮 query 落点与命中叠加可见 | | |
-- [ ] Commit: `docs(rag): sync agent guides and spec status for vector space visualization`
+  | 投影出图 | JVM 知识库 → 向量空间 tab | 四类点同图分色，hover 预览，点击开详情 | ✅ 通过（卡片 hover 修复后全类可拾取） | `pr-build/rag-vector-space-scatter.png` |
+  | 缓存命中 | 二次打开 + 改动文档后「重新计算」 | 命中 <200ms；重算后指纹变化 | ✅ 通过（warm 命中实测 ~78ms） | 响应 `cached:true` + `computed_ms` |
+  | 检索联动 | recall 检索 → 「在向量空间查看」 | 一键切 tab + query 落点 + 命中高亮连线 | ✅ 通过（命中 5/5） | `pr-build/rag-vector-space-recall-overlay.png` |
+  | 对话联动 | 右栏对话一轮（含引用）→ 切向量 tab | 该轮 query 落点与命中叠加可见 | ✅ 通过（「JVM 堆内存和方法区分别存什么」→ 命中 8/8 自动叠加） | `pr-build/rag-vector-space-chat-overlay.png` |
+- [x] Commit: `docs(rag): sync agent guides and spec status for vector space visualization`

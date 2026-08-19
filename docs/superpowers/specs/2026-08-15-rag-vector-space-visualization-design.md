@@ -1,6 +1,6 @@
 # RAG 向量空间可视化设计（知识库向量投影 tab）
 
-> 状态：✅ 已定稿（待实施） · 日期：2026-08-15 · 范围：知识库详情中栏新增「向量空间」tab —— 将 Qdrant 中四个 collection 的 dense 向量降维投影为 2D/3D 交互散点图，并与检索测试联动 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md` §3.3–§3.5（四 collection 结构）；三期 spec `2026-08-15-rag-phase3-editing-design.md`（人工卡片 collection）
+> 状态：✅ 已落地（2026-08-19） · 日期：2026-08-15 · 范围：知识库详情中栏新增「向量空间」tab —— 将 Qdrant 中四个 collection 的 dense 向量降维投影为 2D/3D 交互散点图，并与检索测试联动 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md` §3.3–§3.5（四 collection 结构）；三期 spec `2026-08-15-rag-phase3-editing-design.md`（人工卡片 collection）
 
 ## 1. 背景
 
