@@ -14,9 +14,15 @@ import {
   filterNeighborhood,
   fnv1aHash,
   graphTooltipFormatter,
+  IMPORTANT_MENTION_MIN,
+  LABEL_ZOOM_FULL_ABOVE,
+  LABEL_ZOOM_HIDE_BELOW,
+  labelTextForTier,
+  labelTierForZoom,
   matchEntityNames,
   nodeSymbolSize,
   typeColor,
+  widenRoamPointerChecker,
 } from "@/components/workspace/knowledge/graph-canvas";
 import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
@@ -230,5 +236,68 @@ describe("filterNeighborhood（局部图 N 跳裁剪）", () => {
     const { nodes: kept, edges: keptEdges } = filterNeighborhood(CHAIN_NODES, CHAIN_EDGES, "D", 0);
     expect(kept.map((n) => n.id)).toEqual(["D"]);
     expect(keptEdges).toHaveLength(0);
+  });
+});
+
+describe("缩放分级标签（2026-08-19 标签密集治理，对齐 Neo4j Bloom/Gephi 惯例）", () => {
+  it("classifies zoom into hidden / important / full tiers", () => {
+    expect(labelTierForZoom(0.3)).toBe("hidden");
+    expect(labelTierForZoom(LABEL_ZOOM_HIDE_BELOW - 0.01)).toBe("hidden");
+    expect(labelTierForZoom(LABEL_ZOOM_HIDE_BELOW)).toBe("important"); // 边界归属中档
+    expect(labelTierForZoom(0.75)).toBe("important");
+    expect(labelTierForZoom(LABEL_ZOOM_FULL_ABOVE)).toBe("full"); // 边界归属全显
+    expect(labelTierForZoom(1.6)).toBe("full");
+  });
+
+  it("labelTextForTier: full 档返回名称", () => {
+    expect(labelTextForTier(NODES[0], "full", "JVM")).toBe("JVM");
+    expect(labelTextForTier(NODES[1], "full", "堆内存")).toBe("堆内存");
+  });
+
+  it("labelTextForTier: important 档只返回 mention >= 阈值的节点名", () => {
+    // NODES 里只有 JVM mention_count=9 >= IMPORTANT_MENTION_MIN，其余都是 1。
+    expect(labelTextForTier(NODES[0], "important", "JVM")).toBe("JVM");
+    expect(labelTextForTier(NODES[1], "important", "堆内存")).toBe("");
+    expect(labelTextForTier(NODES[3], "important", "孤立概念")).toBe("");
+    expect(IMPORTANT_MENTION_MIN).toBeGreaterThan(1); // 阈值语义钉住：>1 才算重要
+    // node 缺失（防御）：回退到 mention=0 判定 → 隐藏。
+    expect(labelTextForTier(undefined, "important", "某某")).toBe("");
+  });
+
+  it("labelTextForTier: hidden 档全部返回空串（hover emphasis 仍可见单个）", () => {
+    expect(labelTextForTier(NODES[0], "hidden", "JVM")).toBe("");
+  });
+
+  it("buildGraphSeries 启用 hideOverlap 防重叠 + scaleLimit 防失控 + emphasis 恒显标签", () => {
+    const [series] = buildGraphSeries(NODES, EDGES);
+    expect(series.labelLayout).toEqual({ hideOverlap: true });
+    expect(series.scaleLimit).toEqual({ min: 0.3, max: 3 });
+    // hidden 档系列级 label.show=false 时，hover 单个节点仍要能看到名字。
+    expect(series.emphasis.label?.show).toBe(true);
+  });
+});
+
+describe("widenRoamPointerChecker（2026-08-20 圈外拖拽修复）", () => {
+  it("覆盖 chart._chartsViews 的 controller checker 为恒 true", () => {
+    const setPointerCheckerCalls: Array<() => boolean> = [];
+    const fakeChart = {
+      _chartsViews: [
+        {
+          _controller: {
+            setPointerChecker(checker: () => boolean) {
+              setPointerCheckerCalls.push(checker);
+            },
+          },
+        },
+      ],
+    };
+    widenRoamPointerChecker(fakeChart);
+    expect(setPointerCheckerCalls).toHaveLength(1);
+    expect(setPointerCheckerCalls[0]!()).toBe(true);
+  });
+
+  it("chart 无 _chartsViews 时静默返回不炸", () => {
+    expect(() => widenRoamPointerChecker({})).not.toThrow();
+    expect(() => widenRoamPointerChecker(null)).not.toThrow();
   });
 });

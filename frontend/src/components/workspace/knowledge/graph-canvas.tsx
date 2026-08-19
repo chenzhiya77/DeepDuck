@@ -19,6 +19,9 @@ import {
   type GraphDatum,
   type GraphTooltipParams,
   graphTooltipFormatter,
+  type LabelTier,
+  labelTextForTier,
+  labelTierForZoom,
 } from "./graph-utils";
 
 // 纯函数与类型的单测入口对齐 vector-canvas 先例——从 canvas 模块 re-export，
@@ -30,6 +33,12 @@ export {
   fnv1aHash,
   type GraphColorBy,
   graphTooltipFormatter,
+  IMPORTANT_MENTION_MIN,
+  LABEL_ZOOM_FULL_ABOVE,
+  LABEL_ZOOM_HIDE_BELOW,
+  type LabelTier,
+  labelTextForTier,
+  labelTierForZoom,
   matchEntityNames,
   nodeSymbolSize,
   typeColor,
@@ -60,6 +69,29 @@ export interface GraphCanvasProps {
   onNodeDblClick: (node: KnowledgeGraphNode) => void;
 }
 
+/**
+ * 放宽 graph roam 的手势范围到全画布（2026-08-20 圈外拖拽修复）。
+ *
+ * 根因：echarts GraphView._updateController 把 RoamController.pointerChecker 限定为
+ * 「图内容包围盒内」，空白区域（节点团外）不触发平移/缩放。但节点拖拽已被独立保护
+ * ——_mousedownHandler 会先检查 e.target 是否 draggable（是则提前返回），所以强制
+ * checker 恒 true 只会让空白区域可平移，不会破坏节点拖拽。
+ *
+ * 注意：echarts 每次 render 会重设 checker，必须在 chart.on('rendered') 里重新覆盖。
+ */
+export function widenRoamPointerChecker(chart: unknown): void {
+  if (!chart || typeof chart !== "object") return;
+  const internals = chart as {
+    _chartsViews?: Array<{
+      _controller?: { setPointerChecker(checker: () => boolean): void };
+    }>;
+  };
+  if (!internals._chartsViews?.length) return;
+  for (const view of internals._chartsViews) {
+    view?._controller?.setPointerChecker(() => true);
+  }
+}
+
 export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeClick, onNodeDblClick }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -68,6 +100,8 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
   onNodeClickRef.current = onNodeClick;
   const onNodeDblClickRef = useRef(onNodeDblClick);
   onNodeDblClickRef.current = onNodeDblClick;
+  // 标签档位去重：graphRoam 在平移时也会触发（zoom 不变 → tier 不变 → 短路）。
+  const labelTierRef = useRef<LabelTier>("full");
 
   // 初始化一次：事件绑定与尺寸观察。
   useEffect(() => {
@@ -90,8 +124,46 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
       if (node) onNodeDblClickRef.current(node);
     });
 
-    const observer = new ResizeObserver(() => chart.resize());
+    // 缩放分级标签（2026-08-19 标签密集治理）：zoom 跨档时才 setOption。
+    // chart.on 注册的监听挂在实例上，setOption（含 notMerge）不会清除——
+    // 只需初始化时绑一次。zoom 从 option 读（roam 平移也触发本事件，事件参数
+    // 不可靠，以 option 中的当前 zoom 为准）。
+    // 分级用 label.formatter 实现——绝不能 setOption 部分字段的 series.data
+    // （整体替换语义会丢 itemStyle/symbolSize，全图节点回落默认色板蓝色）。
+    chart.on("graphRoam", () => {
+      const seriesOptions = chart.getOption().series as Array<{ zoom?: number }> | undefined;
+      const zoom = typeof seriesOptions?.[0]?.zoom === "number" ? seriesOptions[0].zoom : 1;
+      const tier = labelTierForZoom(zoom);
+      if (tier === labelTierRef.current) return;
+      labelTierRef.current = tier;
+      chart.setOption({
+        series: [
+          {
+            label: {
+              show: true,
+              formatter: (params: { data?: unknown }) => {
+                const data = params.data as GraphDatum | undefined;
+                return labelTextForTier(data?.node, tier, data?.name ?? "");
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    const observer = new ResizeObserver(() => {
+      chart.resize();
+      // resize 触发渲染 → 重设 checker，补覆盖。
+      widenRoamPointerChecker(chart);
+    });
     observer.observe(container);
+
+    // echarts 每次 render 会重设 checker 为包围盒模式——必须在 rendered 后重新覆盖，
+    // 否则 resize/setOption 后圈外手势又静默失效。
+    chart.on("rendered", () => {
+      widenRoamPointerChecker(chart);
+    });
+
     return () => {
       observer.disconnect();
       chart.dispose();
@@ -106,6 +178,9 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
     if (!chart) return;
     const dark = isDarkTheme();
     const [series] = buildGraphSeries(nodes, edges, colorBy);
+    // 数据重建后标签档位回到 full（notMerge 清掉了 roam 期间的档位覆盖），
+    // 同步重置 ref——否则下次 roam 到同一档会因去重短路而丢失标签状态。
+    labelTierRef.current = "full";
     chart.setOption(
       {
         tooltip: {
@@ -124,13 +199,17 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
             emphasis: {
               ...series.emphasis,
               lineStyle: { width: 2.5 },
-              label: { fontWeight: "bold" },
+              // show:true 必须保留（utils 层设定：hidden 档 hover 仍显示单个标签），
+              // spread 是浅合并，label 整体替换会把它丢掉。
+              label: { ...series.emphasis.label, fontWeight: "bold" },
             },
           },
         ],
       },
       { notMerge: true },
     );
+    // notMerge 重建会重设 checker——立即覆盖（rendered 事件兜底之外的防御）。
+    widenRoamPointerChecker(chart);
   }, [nodes, edges, colorBy]);
 
   // 搜索定位（spec §6 P3）：命中节点 → 视图中心平移到该节点 + 高亮。

@@ -98,6 +98,44 @@ export function nodeSymbolSize(mentionCount: number): number {
   return Math.min(28, 10 + 6 * Math.sqrt(mentionCount));
 }
 
+// ── 缩放分级标签（2026-08-19 标签密集治理）─────────────────────────────────
+// 对齐 Neo4j Bloom / Gephi 惯例：缩略态减标签，避免文字铺满画布遮挡节点，
+// 同时释放空白像素给 roam 平移手势（事件路由：命中标签=拖节点，命中空白=平移）。
+
+/** 低于此缩放级别全部隐藏标签（缩略导航态；hover emphasis 仍显示单个）。 */
+export const LABEL_ZOOM_HIDE_BELOW = 0.6;
+/** 达到此缩放级别全部显示标签（配 labelLayout.hideOverlap 防重叠）。 */
+export const LABEL_ZOOM_FULL_ABOVE = 0.9;
+/** 中档「重要节点」的 mention 阈值：>= 2 才显示标签。 */
+export const IMPORTANT_MENTION_MIN = 2;
+
+export type LabelTier = "hidden" | "important" | "full";
+
+/** 缩放级别 → 标签档位。边界归属：0.6 入中档，0.9 入全显档。 */
+export function labelTierForZoom(zoom: number): LabelTier {
+  if (zoom < LABEL_ZOOM_HIDE_BELOW) return "hidden";
+  if (zoom < LABEL_ZOOM_FULL_ABOVE) return "important";
+  return "full";
+}
+
+/**
+ * tier + 节点 → 标签文本（供 echarts label.formatter 调用）。
+ *
+ * 用 formatter 而非 setOption data 实现分级（2026-08-19 实测踩坑）：series.data
+ * 是整体替换语义，部分字段的 data 会清掉原 datum 的 itemStyle/symbolSize →
+ * 全图节点回落默认色板蓝色。formatter 只决定文本，不触碰 data。
+ * 返回空串 = 不显示该标签（空标签不参与 labelLayout 计算）。
+ */
+export function labelTextForTier(
+  node: KnowledgeGraphNode | undefined,
+  tier: LabelTier,
+  fallbackName: string,
+): string {
+  if (tier === "hidden") return "";
+  if (tier === "important" && (node?.mention_count ?? 0) < IMPORTANT_MENTION_MIN) return "";
+  return fallbackName;
+}
+
 /** series data 里的节点 datum：携带原始 node 供点击钻取回取。 */
 export interface GraphDatum {
   name: string;
@@ -119,6 +157,8 @@ export interface GraphSeriesConfig {
   layout: "force";
   roam: boolean;
   draggable: boolean;
+  /** 缩放上下限：防缩放到失控找不到图（不设限时滚轮可无限缩）。 */
+  scaleLimit: { min: number; max: number };
   edgeSymbol: [string, string];
   edgeSymbolSize: [number, number];
   force: {
@@ -127,8 +167,10 @@ export interface GraphSeriesConfig {
     gravity: number;
     layoutAnimation: boolean;
   };
-  emphasis: { focus: "adjacency" };
+  emphasis: { focus: "adjacency"; label: { show: boolean } };
   label: { show: boolean; position: string; fontSize: number };
+  /** echarts 5.1+ 内建防重叠：重叠标签自动隐藏（密集区只留稀疏可读标签）。 */
+  labelLayout: { hideOverlap: boolean };
   data: GraphDatum[];
   links: GraphLink[];
 }
@@ -157,8 +199,15 @@ export function buildGraphSeries(
         gravity: 0.1,
         layoutAnimation: true,
       },
-      emphasis: { focus: "adjacency" },
+      emphasis: {
+        focus: "adjacency",
+        // hidden/important 档系列级 label.show=false 时，hover 单个节点仍要看到
+        // 名字（emphasis.label.show 优先级高于 normal，canvas 层合并时保留）。
+        label: { show: true },
+      },
       label: { show: true, position: "right", fontSize: 11 },
+      labelLayout: { hideOverlap: true },
+      scaleLimit: { min: 0.3, max: 3 },
       data: nodes.map((node) => ({
         name: node.id,
         symbolSize: nodeSymbolSize(node.mention_count),
