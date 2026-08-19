@@ -374,6 +374,8 @@ export interface Translations {
       wiki: string;
       recall: string;
       vectors: string;
+      /** 知识图谱 tab（2026-08-19 spec）：实体关系力导向图。 */
+      graph: string;
     };
     /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
     vectorSpace: {

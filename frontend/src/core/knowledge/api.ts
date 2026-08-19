@@ -13,6 +13,7 @@ import type {
   KnowledgeChunk,
   KnowledgeChunkPage,
   KnowledgeDocument,
+  KnowledgeGraphResponse,
   ManualCardDetail,
   ManualCardsPage,
   RecallTestResponse,
@@ -108,6 +109,11 @@ export function updateKnowledgeBase(
 export async function deleteKnowledgeBase(kbId: string): Promise<void> {
   const response = await fetch(kbUrl(kbId), { method: "DELETE" });
   return readEmptyResponse(response, "Failed to delete knowledge base");
+}
+
+/** GET /graph — 知识图谱可视化（2026-08-19 spec §4）：全量实体/关系 + 社区标注。 */
+export function getKnowledgeGraph(kbId: string): Promise<KnowledgeGraphResponse> {
+  return fetch(kbUrl(kbId, "/graph")).then((r) => readResponse<KnowledgeGraphResponse>(r, "Failed to fetch knowledge graph"));
 }
 
 export function listDocuments(kbId: string): Promise<KnowledgeDocument[]> {

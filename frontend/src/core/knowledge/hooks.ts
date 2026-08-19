@@ -17,6 +17,11 @@ export function knowledgeDocumentsKey(kbId: string) {
   return ["knowledge-bases", kbId, "documents"] as const;
 }
 
+/** 知识图谱（2026-08-19 spec §4）：端点无参数维度，键即 kb 粒度。 */
+export function knowledgeGraphKey(kbId: string) {
+  return ["knowledge-bases", kbId, "graph"] as const;
+}
+
 export function knowledgeChunksKey(kbId: string, docId: string, offset: number, limit: number) {
   return ["knowledge-bases", kbId, "documents", docId, "chunks", { offset, limit }] as const;
 }
@@ -319,6 +324,19 @@ export function useVectorProjection(kbId: string | null, params: api.VectorProje
   return useQuery({
     queryKey: knowledgeVectorProjectionKey(kbId ?? "", params),
     queryFn: () => api.getVectorProjection(kbId!, params),
+    enabled: enabled && kbId !== null,
+  });
+}
+
+/**
+ * 知识图谱（2026-08-19 spec §4 P2）：tab 激活才拉取（lazy 门控，对齐
+ * useVectorProjection 先例）。无参数维度——端点不做缓存，每次现算，
+ * React Query 的 staleTime 默认即可。
+ */
+export function useKnowledgeGraph(kbId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: knowledgeGraphKey(kbId ?? ""),
+    queryFn: () => api.getKnowledgeGraph(kbId!),
     enabled: enabled && kbId !== null,
   });
 }

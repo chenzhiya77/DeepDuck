@@ -81,6 +81,7 @@ function renderTabs(props?: Partial<Parameters<typeof MiddleTabs>[0]>) {
           wiki={<div data-testid="wiki-pane">百科内容</div>}
           recall={<div data-testid="recall-pane">检索测试内容</div>}
           vectors={<div data-testid="vectors-pane" />}
+          graph={<div data-testid="graph-pane" />}
           {...handlers}
           {...props}
         />

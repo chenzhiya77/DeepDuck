@@ -345,3 +345,30 @@ export interface VectorRetrievalOverlay {
   text: string;
   hits: VectorOverlayHit[];
 }
+
+// ── 知识图谱可视化（2026-08-19 spec §4 P1）─────────────────────────────
+
+/** GET /graph 的节点：实体名即 id；mention_count = len(source_chunk_ids)。 */
+export interface KnowledgeGraphNode {
+  id: string;
+  type: string;
+  description: string;
+  mention_count: number;
+  /** Louvain 社区 id（0 = 最大社区，规模降序，固定种子保证稳定）。 */
+  community: number;
+}
+
+/** GET /graph 的边：关系有向（source → target）。 */
+export interface KnowledgeGraphEdge {
+  source: string;
+  target: string;
+  relation: string;
+  description: string;
+}
+
+export interface KnowledgeGraphResponse {
+  kb_id: string;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  stats: { node_count: number; edge_count: number; community_count: number };
+}

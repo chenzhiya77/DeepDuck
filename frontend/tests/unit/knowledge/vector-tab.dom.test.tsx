@@ -77,6 +77,7 @@ function renderTabs() {
           wiki={<div data-testid="wiki-pane" />}
           recall={<div data-testid="recall-pane" />}
           vectors={<div data-testid="vectors-pane" />}
+          graph={<div data-testid="graph-pane" />}
         />
       </I18nContext.Provider>
     );

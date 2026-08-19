@@ -428,6 +428,7 @@ export const zhCN: Translations = {
       wiki: "百科",
       recall: "检索测试",
       vectors: "向量空间",
+      graph: "知识图谱",
     },
     vectorSpace: {
       loading: "计算投影中…",

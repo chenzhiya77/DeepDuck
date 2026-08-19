@@ -380,6 +380,12 @@ export default function KnowledgePage() {
                   onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
                 />
               }
+              graph={
+                // Task 2 占位 pane（Task 3 填 GraphTab 本体）
+                <div className="text-muted-foreground flex h-full items-center justify-center text-sm" data-testid="graph-space-placeholder">
+                  {tk.tabs.graph}
+                </div>
+              }
             />
           ) : (
             <div className="text-muted-foreground flex h-full items-center justify-center text-sm">

@@ -444,6 +444,7 @@ export const enUS: Translations = {
       wiki: "Wiki",
       recall: "Recall test",
       vectors: "Vector space",
+      graph: "Knowledge graph",
     },
     vectorSpace: {
       loading: "Computing projection…",
