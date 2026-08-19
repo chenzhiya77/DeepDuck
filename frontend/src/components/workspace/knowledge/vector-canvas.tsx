@@ -650,9 +650,16 @@ export function buildSeriesOptions(
     // 同桶点对（占 1/K）仍不可见，但密集区每个点都有跨桶邻居，视觉边界完整。
     // 轮询分配保证确定性（setOption 按位 merge 要求结构稳定）；同名主点桶共用
     // 图例名，图例显隐对全部桶生效。
-    const buckets: VectorProjectionPoint[][] = Array.from({ length: HALO_BUCKETS }, () => []);
-    group.points.forEach((point, idx) => buckets[idx % HALO_BUCKETS]?.push(point));
-    return buckets.flatMap((pts) => [
+    // 桶数自适应（2026-08-19 浏览器实测踩坑）：桶内只有 1 个点的 GL scatter
+    // 系列 hover 拾取静默失效——卡片 3 点分 6 桶（每桶 1 点）→ 全部悬停无
+    // tooltip；单桶 3 点则正常（二分实验实锤：与形状/空桶/层序均无关，唯一
+    // 变量是桶内点数）。实测安全下界为每桶 4 点（切片 24÷6），每桶 2-3 点
+    // 未验证——规则取点数 < 4×桶数时降为单桶，让未验证地带全走单桶路径。
+    const bucketCount = group.points.length < HALO_BUCKETS * 4 ? 1 : HALO_BUCKETS;
+    const buckets: VectorProjectionPoint[][] = Array.from({ length: bucketCount }, () => []);
+    group.points.forEach((point, idx) => buckets[idx % bucketCount]?.push(point));
+    // 防御：空桶不建系列（bucketCount 自适应后理论上不会空，保留以防参数调整）。
+    return buckets.filter((pts) => pts.length > 0).flatMap((pts) => [
       {
         type: "scatter3D",
         name: `${group.label}__halo`, // 后缀名不进图例（legend.data 显式只列主系列）

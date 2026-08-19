@@ -244,4 +244,39 @@ describe("buildSeriesOptions overlay 集成", () => {
     expect(names).toContain("__overlay_line_0");
     expect(names).toContain(`__overlay_line_${OVERLAY_LINE_SLOTS - 1}`);
   });
+
+  it("collapses small groups into a single bucket (single-point series break GL hover picking)", () => {
+    // 回归钉（2026-08-19 浏览器实测）：桶内仅 1 点的 scatter3D 系列悬停拾取静默
+    // 失效——卡片 3 点分 6 桶（每桶 1 点）→ 全部无 tooltip；单桶 3 点正常。
+    // 规则：点数 < 4×桶数（24）→ 单桶（每桶 ≥4 点的已验证安全区）。
+    // 3 点组只应产出 1 桶 × 2 层 = 2 条。
+    const fewPoints: VectorSeriesGroup[] = [
+      { key: "card", sourceType: "card", label: "卡片", color: "#ff7043", points: [chunkPoint("k1", "d1"), chunkPoint("k2", "d2"), chunkPoint("k3", "d3")] },
+    ];
+    const options = buildSeriesOptions(fewPoints, 2, null, undefined, "#ffffff", null);
+    const cardSeries = options.filter((s) => s.name === "卡片" || s.name === "卡片__halo");
+    expect(cardSeries).toHaveLength(2); // 单桶：衬底 + 主点
+    for (const s of cardSeries) {
+      expect((s as { data: unknown[] }).data).toHaveLength(3); // 3 点同桶
+    }
+    // 边界：23 点（< 24）仍单桶（每桶 2-3 点属未验证地带，不走多桶）
+    const twentyThree: VectorSeriesGroup[] = [
+      { key: "card", sourceType: "card", label: "卡片", color: "#ff7043", points: Array.from({ length: 23 }, (_, i) => chunkPoint(`e${i}`, "d1")) },
+    ];
+    expect(
+      buildSeriesOptions(twentyThree, 2, null, undefined, "#ffffff", null).filter((s) => s.name === "卡片"),
+    ).toHaveLength(1);
+    // 对照：点数充足时仍 6 桶 × 2 层 = 12 条（切片 24 点不受影响）
+    const manyPoints: VectorSeriesGroup[] = [
+      {
+        key: "chunk",
+        sourceType: "chunk",
+        label: "切片",
+        color: "#42a5f5",
+        points: Array.from({ length: 24 }, (_, i) => chunkPoint(`c${i}`, "d1")),
+      },
+    ];
+    const manyOptions = buildSeriesOptions(manyPoints, 2, null, undefined, "#ffffff", null);
+    expect(manyOptions.filter((s) => s.name === "切片" || s.name === "切片__halo")).toHaveLength(12);
+  });
 });
