@@ -102,7 +102,7 @@
 - [x] Implement 后端 `_build_trace` 透传（证据实体 = 选中切片的实体/边来源端点并集；种子/证据按名排序、扩展按 (hop,name) 排序保契约稳定）+ 前端全链路（chat-panel 上报 → page `graphOverlay`/共享 followChat → tab 状态机 → canvas 叠加）。叠加单变更走 merge 更新（只换 series data/links 整体数组，保留力导向布局与视口——对齐向量空间槽位教训）；数据变更走全量重建并经 overlayRef 携带最新叠加。
 - [x] `pnpm test` GREEN（161 文件 1396 用例全量）+ `uv run pytest tests/knowledge -q` GREEN（381 passed）；双端 revert proof（stash 实现 → RED → 恢复 → GREEN）；`pnpm check` 双净（optional-chain 修复一处）+ ruff check/format 双净。踩坑：单测 fixture 角色互斥（同节点不可既验 hop 色又验证证据优先）——拆五节点各饰一角。
 - [x] Commit: `feat(rag): overlay graph_search retrieval paths on the knowledge graph`（`6c46a994`）
-- [x] 2026-08-20 发光描边重设计（用户实测反馈三缺陷：红星覆盖类型色 / 非命中灰化丢上下文 / 路径边无高亮）：填充一律保留，层语义改由描边+发光+尺寸承载（种子红发光描边+放大 / 证据金发光描边 / hop 橙黄细边），非命中节点不灰化，命中路径边（两端在 trace 并集）荧光金发光；spec §7 染色表已同步。
+- [x] 2026-08-20 发光描边重设计（用户实测反馈三缺陷：红星覆盖类型色 / 非命中灰化丢上下文 / 路径边无高亮）：填充一律保留，层语义改由描边+发光+尺寸承载，非命中节点不灰化，命中路径边荧光金发光（`2bd7e53b`）；随即两层合并重设计（用户拍板「两层够了」+ 配色拍板「命中红 / 路径金」）：命中（种子∪证据，红发光描边，种子额外放大）/ 路径（hop 合并，金细边，与路径边同色一体化），徽标保留三层数字分解（视觉两层、数字三层）；spec §7 染色表已同步。同日实测修复：证据实体洪泛——`evidence_entities` 原定义为「提及证据切片的全部实体」，稠密图谱一切片被 8–29 实体共提（实测 median 16），命中层洪泛致「全部红边」；修为证据锚点归因（每切片归因最强单一来源：hop 最小 → 实体分最高 → 名字典序），有界于证据条数，后端 `_build_trace` 改动 + 2 个锚点精度测试。
 
 ## Task 6: 文档同步 + 全量回归 + Live 冒烟
 
