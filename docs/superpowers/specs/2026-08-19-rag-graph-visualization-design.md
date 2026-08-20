@@ -134,14 +134,19 @@ GET /api/knowledge-bases/{kb_id}/graph
 
 **数据源**：graph_search 完成一轮后，前端从工具结果取 retrieval trace（`seed_entities`、`expanded_nodes`、`evidence_entities` + hop 信息）。后端需要在 graph_search 工具的响应里**透传 trace**（当前 trace 在 `ExpansionResult` 内部，需在 tool 层序列化输出——这是 P4 唯一的后端改动）。
 
-**三层染色（Overlay 渲染规范）**：
+**三层染色（Overlay 渲染规范，2026-08-20 发光描边重设计）**：
+
+总原则：叠加层是诊断镜头，**不破坏底图编码**——所有节点保留原类型/社区填充色，层语义由描边 + 发光 + 尺寸承载；非命中节点原样保留（不灰化，空间上下文不丢）。
 
 | 层 | 数据 | 视觉 |
 |---|---|---|
-| 种子实体 | trace.seed_entities | 亮红描边 + 放大（对齐向量空间命中强调色 `#f5222d`） |
-| 扩展路径 | trace.expanded_nodes（含 hop） | hop-1 橙、hop-2 黄渐淡（扩张半径可视） |
-| 证据实体 | trace.evidence_entities | 实心红星标（最终被选中的证据来源） |
-| 其余 | — | 淡化至 0.12（复用 `DIMMED_OPACITY`） |
+| 种子实体 | trace.seed_entities | 原填充 + 红色发光描边 `#f5222d`（borderWidth 3 + shadowBlur 12）+ 放大 1.35× |
+| 证据实体 | trace.evidence_entities | 原填充 + 金色发光描边 `#ffd700`（borderWidth 3 + shadowBlur 12） |
+| 扩展路径 | trace.expanded_nodes（含 hop） | 原填充 + hop-1 橙边 `#fa8c16` / hop-2 黄边 `#fadb14`（borderWidth 2，无发光） |
+| 命中路径边 | 两端均在 trace 并集（≡ seen 关系子图） | 荧光金 `#ffd700` + width 2 + shadowBlur 8 |
+| 其余节点/边 | — | 原样（不淡化、不灰化） |
+
+角色优先级：种子 > 证据 > hop（同节点多角色时源头语义最强）。白色发光不采用（浅色主题不可见），金色双主题通用。
 
 - 徽标与清除：复用向量空间的叠加徽标组件模式（query 文本 + 「种子 m / 扩展 n / 证据 k」+ × 清除）；
 - 「跟随对话」开关状态与向量空间共享（同一开关语义，两处生效）；

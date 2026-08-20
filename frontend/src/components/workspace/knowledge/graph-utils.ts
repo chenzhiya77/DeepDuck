@@ -9,7 +9,7 @@
  */
 import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
-import { buildTooltipHtml, DIMMED_OPACITY } from "./vector-canvas";
+import { buildTooltipHtml } from "./vector-canvas";
 
 /**
  * 节点着色色板（Material Design 400 级，与向量空间 SOURCE_COLORS 同色系）。
@@ -136,33 +136,41 @@ export function labelTextForTier(
   return fallbackName;
 }
 
-// ── P4 检索路径叠加（2026-08-19 spec §7）：种子 → 扩展 → 证据三层染色 ──────
+// ── P4 检索路径叠加（2026-08-19 spec §7，2026-08-20 发光描边重设计）─────────
+// 叠加层是诊断镜头，不破坏底图编码：填充色一律保留（类型/社区语义），层语义由
+// 描边 + 发光 + 尺寸承载；非命中节点原样保留（不灰化，空间上下文不丢）；
+// 命中路径边（两端均在 trace 并集）荧光金发光。
 
-/** 种子实体描边色（对齐向量空间命中强调色 #f5222d）。 */
+/** 种子实体描边/发光色（红=路径源头，对齐向量空间命中强调色）。 */
 export const GRAPH_SEED_BORDER_COLOR = "#f5222d";
-/** 扩展路径 hop 层渐淡色板：hop-1 橙、hop-2 黄（扩张半径可视）。 */
-export const GRAPH_HOP_COLORS: Record<number, string> = { 1: "#fa8c16", 2: "#fadb14" };
-/** 证据实体星标填充色（实心红）。 */
-export const GRAPH_EVIDENCE_COLOR = "#f5222d";
+/** 证据实体描边/发光色（荧光金=最终落点；双主题通用，白色发光浅色底不可见故不采用）。 */
+export const GRAPH_EVIDENCE_BORDER_COLOR = "#ffd700";
+/** 扩展路径 hop 层描边色板：hop-1 橙、hop-2 黄（无发光，视觉权重弱于种子/证据）。 */
+export const GRAPH_HOP_BORDER_COLORS: Record<number, string> = { 1: "#fa8c16", 2: "#fadb14" };
 /** 种子节点放大倍率（在 mention 基底尺寸上乘算）。 */
 export const GRAPH_SEED_SIZE_BOOST = 1.35;
-/** 证据实体星标：echarts 内置 symbol 无 star——五芒星 SVG path（24 视窗）。 */
-export const GRAPH_EVIDENCE_SYMBOL =
-  "path://M12 2l2.9 6.26 6.6.56-5 4.4 1.5 6.46L12 16.9 5.99 19.68l1.5-6.46-5-4.4 6.6-.56L12 2z";
+/** 种子/证据描边宽度与发光强度。 */
+export const GRAPH_ROLE_BORDER_WIDTH = 3;
+export const GRAPH_HOP_BORDER_WIDTH = 2;
+export const GRAPH_NODE_GLOW_BLUR = 12;
+/** 命中路径边：荧光金 + 发光。 */
+export const GRAPH_PATH_COLOR = "#ffd700";
+export const GRAPH_PATH_WIDTH = 2;
+export const GRAPH_PATH_GLOW_BLUR = 8;
 
 /** series data 里的节点 datum：携带原始 node 供点击钻取回取。 */
 export interface GraphDatum {
   name: string;
   symbolSize: number;
-  /** 证据实体星标（P4 叠加时覆盖默认圆点）。 */
-  symbol?: string;
   itemStyle: {
+    /** 填充恒为自身色（社区/类型）——叠加层绝不覆盖。 */
     color: string;
-    /** 未命中三层 → 0.12 淡化（P4 叠加时）。 */
-    opacity?: number;
-    /** 种子实体红描边（P4 叠加时）。 */
+    /** P4 叠加角色描边（种子红 / 证据金 / hop 橙黄）。 */
     borderColor?: string;
     borderWidth?: number;
+    /** 发光（种子/证据；hop 层不发光）。 */
+    shadowColor?: string;
+    shadowBlur?: number;
   };
   node: KnowledgeGraphNode;
 }
@@ -172,23 +180,31 @@ interface GraphLink {
   target: string;
   relation: string;
   description: string;
-  lineStyle: { curveness: number; opacity?: number };
+  lineStyle: {
+    curveness: number;
+    /** P4 命中路径边：荧光金 + 发光。 */
+    color?: string;
+    width?: number;
+    shadowColor?: string;
+    shadowBlur?: number;
+  };
 }
 
 /** trace → 三层查询表（Set/Map O(1) 判定；null overlay → null 短路）。 */
 function overlayLookup(overlay: GraphRetrievalTrace | null | undefined) {
   if (!overlay) return null;
-  return {
-    seeds: new Set(overlay.seed_entities),
-    hops: new Map(overlay.expanded_nodes.map((node) => [node.name, node.hop])),
-    evidence: new Set(overlay.evidence_entities),
-  };
+  const seeds = new Set(overlay.seed_entities);
+  const hops = new Map(overlay.expanded_nodes.map((node) => [node.name, node.hop]));
+  const evidence = new Set(overlay.evidence_entities);
+  // 路径边判定用并集：种子 ∪ 扩展 ∪ 证据（等价于 graph_search 的 seen 子图）。
+  const all = new Set<string>([...seeds, ...hops.keys(), ...evidence]);
+  return { seeds, hops, evidence, all };
 }
 
 /**
- * 组装 series data。P4 叠加染色优先级：证据（红星）> hop 层（橙/黄）> 自身色；
- * 种子 = 自身填充 + 红描边 + 放大（可与其他层叠加）；未命中三层 → 0.12 淡化。
- * trace 中已不在图里的实体名自然跳过（陈旧 trace 容错）。
+ * 组装 series data。填充一律保留自身色；角色优先级：种子 > 证据 > hop 层
+ * （同节点多角色时源头语义最强）。trace 中已不在图里的实体名自然跳过
+ * （陈旧 trace 容错）；未命中节点原样返回（不灰化不描边）。
  */
 export function buildGraphData(
   nodes: readonly KnowledgeGraphNode[],
@@ -202,37 +218,62 @@ export function buildGraphData(
     const datum: GraphDatum = { name: node.id, symbolSize: baseSize, itemStyle: { color: ownColor }, node };
     if (!lookup) return datum;
     const isSeed = lookup.seeds.has(node.id);
-    const hop = lookup.hops.get(node.id);
     const isEvidence = lookup.evidence.has(node.id);
-    if (!isSeed && hop === undefined && !isEvidence) {
-      datum.itemStyle = { ...datum.itemStyle, opacity: DIMMED_OPACITY };
-      return datum;
-    }
-    if (isEvidence) {
-      datum.symbol = GRAPH_EVIDENCE_SYMBOL;
-      datum.itemStyle = { ...datum.itemStyle, color: GRAPH_EVIDENCE_COLOR };
-    } else if (hop !== undefined) {
-      // hop 超出 2（未来更深扩展）按最浅档色板回绕。
-      datum.itemStyle = { ...datum.itemStyle, color: GRAPH_HOP_COLORS[hop] ?? GRAPH_HOP_COLORS[2]! };
-    }
+    const hop = lookup.hops.get(node.id);
     if (isSeed) {
       datum.symbolSize = Math.round(baseSize * GRAPH_SEED_SIZE_BOOST);
-      datum.itemStyle = { ...datum.itemStyle, borderColor: GRAPH_SEED_BORDER_COLOR, borderWidth: 3 };
+      datum.itemStyle = {
+        ...datum.itemStyle,
+        borderColor: GRAPH_SEED_BORDER_COLOR,
+        borderWidth: GRAPH_ROLE_BORDER_WIDTH,
+        shadowColor: GRAPH_SEED_BORDER_COLOR,
+        shadowBlur: GRAPH_NODE_GLOW_BLUR,
+      };
+    } else if (isEvidence) {
+      datum.itemStyle = {
+        ...datum.itemStyle,
+        borderColor: GRAPH_EVIDENCE_BORDER_COLOR,
+        borderWidth: GRAPH_ROLE_BORDER_WIDTH,
+        shadowColor: GRAPH_EVIDENCE_BORDER_COLOR,
+        shadowBlur: GRAPH_NODE_GLOW_BLUR,
+      };
+    } else if (hop !== undefined) {
+      // hop 超出 2（未来更深扩展）按最浅档色板回绕。
+      datum.itemStyle = {
+        ...datum.itemStyle,
+        borderColor: GRAPH_HOP_BORDER_COLORS[hop] ?? GRAPH_HOP_BORDER_COLORS[2]!,
+        borderWidth: GRAPH_HOP_BORDER_WIDTH,
+      };
     }
     return datum;
   });
 }
 
-/** 组装 series links。叠加激活时全部边淡化 0.12（对比度让给三层染色节点）。 */
-export function buildGraphLinks(edges: readonly KnowledgeGraphEdge[], overlayActive = false): GraphLink[] {
-  return edges.map((edge) => ({
-    source: edge.source,
-    target: edge.target,
-    relation: edge.relation,
-    description: edge.description,
-    // 双向/多重关系轻微弯曲防重叠（spec §10：并行边不合并，曲率错开）。
-    lineStyle: { curveness: 0.1, ...(overlayActive ? { opacity: DIMMED_OPACITY } : {}) },
-  }));
+/**
+ * 组装 series links。命中路径边（两端均在 trace 并集——等价于 graph_search
+ * 的 seen 关系子图）荧光金发光；其余边原样（不淡化）。
+ */
+export function buildGraphLinks(edges: readonly KnowledgeGraphEdge[], overlay?: GraphRetrievalTrace | null): GraphLink[] {
+  const lookup = overlayLookup(overlay);
+  return edges.map((edge) => {
+    const onPath = lookup != null && lookup.all.has(edge.source) && lookup.all.has(edge.target);
+    return {
+      source: edge.source,
+      target: edge.target,
+      relation: edge.relation,
+      description: edge.description,
+      // 双向/多重关系轻微弯曲防重叠（spec §10：并行边不合并，曲率错开）。
+      lineStyle: onPath
+        ? {
+            curveness: 0.1,
+            color: GRAPH_PATH_COLOR,
+            width: GRAPH_PATH_WIDTH,
+            shadowColor: GRAPH_PATH_COLOR,
+            shadowBlur: GRAPH_PATH_GLOW_BLUR,
+          }
+        : { curveness: 0.1 },
+    };
+  });
 }
 
 export interface GraphSeriesConfig {
@@ -293,7 +334,7 @@ export function buildGraphSeries(
       labelLayout: { hideOverlap: true },
       scaleLimit: { min: 0.3, max: 3 },
       data: buildGraphData(nodes, colorBy, overlay),
-      links: buildGraphLinks(edges, overlay != null),
+      links: buildGraphLinks(edges, overlay),
     },
   ];
 }

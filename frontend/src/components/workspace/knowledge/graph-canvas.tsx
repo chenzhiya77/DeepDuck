@@ -35,9 +35,9 @@ export {
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
-  GRAPH_EVIDENCE_COLOR,
-  GRAPH_EVIDENCE_SYMBOL,
-  GRAPH_HOP_COLORS,
+  GRAPH_EVIDENCE_BORDER_COLOR,
+  GRAPH_HOP_BORDER_COLORS,
+  GRAPH_PATH_COLOR,
   GRAPH_SEED_BORDER_COLOR,
   type GraphColorBy,
   graphTooltipFormatter,
@@ -252,7 +252,7 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     const next = overlay ?? null;
     if (appliedOverlayRef.current === next) return;
     appliedOverlayRef.current = next;
-    chart.setOption({ series: [{ data: buildGraphData(nodes, colorBy, next), links: buildGraphLinks(edges, next != null) }] });
+    chart.setOption({ series: [{ data: buildGraphData(nodes, colorBy, next), links: buildGraphLinks(edges, next) }] });
   }, [overlay, nodes, edges, colorBy]);
 
   // 搜索定位（spec §6 P3）：命中节点 → 视图中心平移到该节点 + 高亮。

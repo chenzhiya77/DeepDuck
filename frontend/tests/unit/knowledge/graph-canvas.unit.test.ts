@@ -13,9 +13,9 @@ import {
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
-  GRAPH_EVIDENCE_COLOR,
-  GRAPH_EVIDENCE_SYMBOL,
-  GRAPH_HOP_COLORS,
+  GRAPH_EVIDENCE_BORDER_COLOR,
+  GRAPH_HOP_BORDER_COLORS,
+  GRAPH_PATH_COLOR,
   GRAPH_SEED_BORDER_COLOR,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
@@ -281,12 +281,21 @@ describe("缩放分级标签（2026-08-19 标签密集治理，对齐 Neo4j Bloo
   });
 });
 
-// ── Task 5（P4，spec §7）：检索路径叠加三层染色 ────────────────────────────
-// 种子红描边放大 / hop-1 橙 hop-2 黄 / 证据红星标 / 其余淡化 0.12。
+// ── Task 5（P4，spec §7 · 2026-08-20 发光描边重设计）：检索路径叠加三层染色 ──
+// 叠加层是诊断镜头，不破坏底图编码：填充色一律保留（类型/社区语义），层语义由
+// 描边+发光+尺寸承载——种子红发光描边+放大 / 证据金发光描边 / hop-1 橙边 hop-2
+// 黄边 / 非命中节点原样（不灰化）/ 命中路径边荧光金发光。
 
 // 叠加专用节点集：五节点覆盖全部角色——JVM 纯种子 / 堆内存纯 hop-1 /
-// 字节码纯 hop-2 / 类加载器 hop-1+证据（验优先级）/ 孤立概念不命中（验淡化）。
+// 字节码纯 hop-2 / 类加载器 hop-1+证据（验优先级）/ 孤立概念不命中（验原样保留）。
 const OVERLAY_NODES: KnowledgeGraphNode[] = [...NODES, node("类加载器", { community: 0 })];
+
+// 叠加专用边集：JVM→堆内存 / JVM→字节码 两端都在 trace 内（路径边）；
+// 堆内存→孤立概念 一端不在 trace（非路径边，验不染色）。
+const OVERLAY_EDGES: KnowledgeGraphEdge[] = [
+  ...EDGES,
+  { source: "堆内存", target: "孤立概念", relation: "提及", description: "" },
+];
 
 const OVERLAY_TRACE: GraphRetrievalTrace = {
   seed_entities: ["JVM"],
@@ -302,65 +311,125 @@ type OverlayDatum = {
   name: string;
   symbol?: string;
   symbolSize: number;
-  itemStyle: { color: string; opacity?: number; borderColor?: string; borderWidth?: number };
+  itemStyle: {
+    color: string;
+    opacity?: number;
+    borderColor?: string;
+    borderWidth?: number;
+    shadowColor?: string;
+    shadowBlur?: number;
+  };
+};
+
+type OverlayLink = {
+  source: string;
+  target: string;
+  lineStyle?: { curveness?: number; color?: string; width?: number; opacity?: number; shadowColor?: string; shadowBlur?: number };
 };
 
 function dataByName(series: { data: unknown }): Map<string, OverlayDatum> {
   return new Map((series.data as OverlayDatum[]).map((datum) => [datum.name, datum]));
 }
 
-describe("buildGraphSeries overlay（P4 三层染色）", () => {
-  it("highlights seed entities with a red border and an enlarged symbol（填充保持社区色）", () => {
-    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
-    const jvm = dataByName(series).get("JVM")!;
-    expect(jvm.itemStyle.borderColor).toBe(GRAPH_SEED_BORDER_COLOR);
-    expect(GRAPH_SEED_BORDER_COLOR).toBe("#f5222d"); // 对齐向量空间命中强调色
-    expect(jvm.itemStyle.borderWidth).toBeGreaterThan(0);
-    expect(jvm.symbolSize).toBeGreaterThan(nodeSymbolSize(9)); // 放大（mention 9 基底）
-    // 种子自身填充色不被覆盖——描边+放大承载种子语义。
-    expect(jvm.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
-    expect(jvm.itemStyle.opacity).toBeUndefined(); // 命中层不淡化
-  });
-
-  it("colors expanded nodes by hop layer（hop-1 橙 / hop-2 黄渐淡）", () => {
-    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
+describe("buildGraphSeries overlay（P4 三层染色 · 发光描边重设计）", () => {
+  it("keeps every node's own fill and shape（底图语义不被叠加覆盖）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", OVERLAY_TRACE);
     const byName = dataByName(series);
-    expect(GRAPH_HOP_COLORS[1]).toBe("#fa8c16");
-    expect(GRAPH_HOP_COLORS[2]).toBe("#fadb14");
-    expect(byName.get("堆内存")!.itemStyle.color).toBe(GRAPH_HOP_COLORS[1]);
-    expect(byName.get("字节码")!.itemStyle.color).toBe(GRAPH_HOP_COLORS[2]);
-  });
-
-  it("marks evidence entities with a solid red star symbol（优先于 hop 层着色）", () => {
-    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
-    const byName = dataByName(series);
-    // 类加载器同时是 hop-1 与证据 → 星标 + 实心红（证据层优先于 hop 层）。
-    const loader = byName.get("类加载器")!;
-    expect(loader.symbol).toBe(GRAPH_EVIDENCE_SYMBOL);
-    expect(loader.symbol?.startsWith("path://")).toBe(true);
-    expect(loader.itemStyle.color).toBe(GRAPH_EVIDENCE_COLOR);
-    expect(GRAPH_EVIDENCE_COLOR).toBe("#f5222d");
-  });
-
-  it("dims every uninvolved node and edge to 0.12", () => {
-    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
-    const byName = dataByName(series);
-    // 孤立概念：不在 trace 任一层 → 淡化（复用向量空间 DIMMED_OPACITY 档位）。
-    expect(byName.get("孤立概念")!.itemStyle.opacity).toBe(0.12);
-    for (const link of series.links as Array<{ lineStyle?: { opacity?: number } }>) {
-      expect(link.lineStyle?.opacity).toBe(0.12);
+    // 命中与非命中的填充色都保持社区色——层语义只允许走描边/发光/尺寸。
+    expect(byName.get("JVM")!.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
+    expect(byName.get("堆内存")!.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
+    expect(byName.get("类加载器")!.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
+    expect(byName.get("孤立概念")!.itemStyle.color).toBe(COMMUNITY_PALETTE[1]);
+    for (const datum of series.data as OverlayDatum[]) {
+      expect(datum.itemStyle.opacity).toBeUndefined(); // 禁止灰化
+      expect(datum.symbol).toBeUndefined(); // 禁止星标等符号覆盖
     }
   });
 
+  it("marks seeds with a red glowing border and an enlarged symbol", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", OVERLAY_TRACE);
+    const jvm = dataByName(series).get("JVM")!;
+    expect(jvm.itemStyle.borderColor).toBe(GRAPH_SEED_BORDER_COLOR);
+    expect(GRAPH_SEED_BORDER_COLOR).toBe("#f5222d"); // 种子=路径源头（红）
+    expect(jvm.itemStyle.borderWidth).toBe(3);
+    expect(jvm.itemStyle.shadowColor).toBe(GRAPH_SEED_BORDER_COLOR);
+    expect(jvm.itemStyle.shadowBlur).toBeGreaterThan(0); // 发光
+    expect(jvm.symbolSize).toBeGreaterThan(nodeSymbolSize(9)); // 放大（mention 9 基底）
+  });
+
+  it("marks evidence with a gold glowing border（落点=金；不再用星标覆盖类型色）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", OVERLAY_TRACE);
+    // 类加载器同时是 hop-1 与证据 → 证据金发光优先于 hop 边。
+    const loader = dataByName(series).get("类加载器")!;
+    expect(loader.itemStyle.borderColor).toBe(GRAPH_EVIDENCE_BORDER_COLOR);
+    expect(GRAPH_EVIDENCE_BORDER_COLOR).toBe("#ffd700"); // 荧光金
+    expect(loader.itemStyle.borderWidth).toBe(3);
+    expect(loader.itemStyle.shadowColor).toBe(GRAPH_EVIDENCE_BORDER_COLOR);
+    expect(loader.itemStyle.shadowBlur).toBeGreaterThan(0);
+    expect(loader.itemStyle.color).toBe(COMMUNITY_PALETTE[0]); // 填充不动
+    expect(loader.symbol).toBeUndefined(); // 无星标
+  });
+
+  it("rings expanded nodes by hop layer（hop-1 橙边 / hop-2 黄边，无发光）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", OVERLAY_TRACE);
+    const byName = dataByName(series);
+    expect(GRAPH_HOP_BORDER_COLORS[1]).toBe("#fa8c16");
+    expect(GRAPH_HOP_BORDER_COLORS[2]).toBe("#fadb14");
+    const heap = byName.get("堆内存")!;
+    expect(heap.itemStyle.borderColor).toBe(GRAPH_HOP_BORDER_COLORS[1]);
+    expect(heap.itemStyle.borderWidth).toBe(2);
+    expect(heap.itemStyle.shadowBlur).toBeUndefined(); // hop 层不发光（弱于种子/证据）
+    const bytecode = byName.get("字节码")!;
+    expect(bytecode.itemStyle.borderColor).toBe(GRAPH_HOP_BORDER_COLORS[2]);
+    expect(bytecode.itemStyle.borderWidth).toBe(2);
+  });
+
+  it("leaves uninvolved nodes completely untouched（非命中不灰化不描边）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", OVERLAY_TRACE);
+    const isolated = dataByName(series).get("孤立概念")!;
+    expect(isolated.itemStyle).toEqual({ color: COMMUNITY_PALETTE[1] }); // 只有原色
+    expect(isolated.symbolSize).toBe(nodeSymbolSize(1));
+  });
+
+  it("highlights in-path edges with fluorescent gold glow, others untouched", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", OVERLAY_TRACE);
+    const links = series.links as OverlayLink[];
+    const path = links.find((link) => link.source === "JVM" && link.target === "堆内存")!;
+    expect(path.lineStyle?.color).toBe(GRAPH_PATH_COLOR);
+    expect(GRAPH_PATH_COLOR).toBe("#ffd700"); // 荧光金
+    expect(path.lineStyle?.width).toBe(2);
+    expect(path.lineStyle?.shadowColor).toBe(GRAPH_PATH_COLOR);
+    expect(path.lineStyle?.shadowBlur).toBeGreaterThan(0);
+    expect(path.lineStyle?.opacity).toBeUndefined(); // 路径边不淡化
+    const offPath = links.find((link) => link.target === "孤立概念")!;
+    expect(offPath.lineStyle?.color).toBeUndefined();
+    expect(offPath.lineStyle?.width).toBeUndefined();
+    expect(offPath.lineStyle?.opacity).toBeUndefined();
+    expect(offPath.lineStyle?.shadowBlur).toBeUndefined();
+  });
+
+  it("prefers the seed role over evidence on the same node（源头语义最强）", () => {
+    const both: GraphRetrievalTrace = {
+      seed_entities: ["JVM"],
+      expanded_nodes: [],
+      evidence_entities: ["JVM"],
+    };
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", both);
+    const jvm = dataByName(series).get("JVM")!;
+    expect(jvm.itemStyle.borderColor).toBe(GRAPH_SEED_BORDER_COLOR);
+    expect(jvm.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
+  });
+
   it("keeps the base encoding untouched without an overlay（回归钉死）", () => {
-    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", null);
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", null);
     const jvm = dataByName(series).get("JVM")!;
     expect(jvm.symbol).toBeUndefined();
-    expect(jvm.itemStyle.opacity).toBeUndefined();
-    expect(jvm.itemStyle.borderColor).toBeUndefined();
+    expect(jvm.itemStyle).toEqual({ color: COMMUNITY_PALETTE[0] });
     expect(jvm.symbolSize).toBe(nodeSymbolSize(9));
-    for (const link of series.links as Array<{ lineStyle?: { opacity?: number } }>) {
+    for (const link of series.links as OverlayLink[]) {
+      expect(link.lineStyle?.color).toBeUndefined();
       expect(link.lineStyle?.opacity).toBeUndefined();
+      expect(link.lineStyle?.shadowBlur).toBeUndefined();
     }
   });
 
@@ -370,10 +439,14 @@ describe("buildGraphSeries overlay（P4 三层染色）", () => {
       expanded_nodes: [{ name: "也没有", hop: 1 }],
       evidence_entities: ["已删除实体"],
     };
-    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", stale);
-    // 叠加激活但全部未命中 → 全图淡化，不炸不抛错。
+    const [series] = buildGraphSeries(OVERLAY_NODES, OVERLAY_EDGES, "community", stale);
+    // 叠加激活但全部未命中 → 全图原样（不灰化不描边），不炸不抛错。
     for (const datum of series.data as OverlayDatum[]) {
-      expect(datum.itemStyle.opacity).toBe(0.12);
+      expect(datum.itemStyle.opacity).toBeUndefined();
+      expect(datum.itemStyle.borderColor).toBeUndefined();
+    }
+    for (const link of series.links as OverlayLink[]) {
+      expect(link.lineStyle?.color).toBeUndefined();
     }
   });
 });
