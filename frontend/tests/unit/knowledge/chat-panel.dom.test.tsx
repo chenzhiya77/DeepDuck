@@ -475,6 +475,83 @@ describe("KnowledgeChatPanel 检索联动上报", () => {
   });
 });
 
+// ── Task 5（P4，spec §7）：graph_search 检索轨迹上报（图谱路径高亮数据源）──
+
+describe("KnowledgeChatPanel 图谱检索轨迹上报", () => {
+  const GRAPH_TURN_MESSAGES = [
+    { id: "human-1", type: "human", content: "Gateway 和哪些组件交互？" },
+    {
+      id: "tool-1",
+      type: "tool",
+      name: "graph_search",
+      content: JSON.stringify({
+        entities: [],
+        relations: [],
+        evidence: [
+          { chunk_id: "doc-1#0000", doc_name: "架构.md", heading_path: [], page: 1, text: "证据", score: 0.9 },
+        ],
+        trace: {
+          seed_entities: ["Gateway"],
+          expanded_nodes: [{ name: "DeerFlow", hop: 1 }],
+          evidence_entities: ["Gateway", "DeerFlow"],
+        },
+      }),
+    },
+    { id: "ai-1", type: "ai", content: "Gateway 与 DeerFlow、MinerU 交互 [1]" },
+  ];
+
+  function renderWithGraphTurn(messages: unknown[], isLoading: boolean) {
+    mockUseThreadStream.mockImplementation(() => ({
+      thread: { ...makeThreadState(messages), isLoading },
+      sendMessage: mockSendMessage,
+    }));
+    const onGraphOverlay = rs.fn();
+    const utils = renderPanel(KB, { onGraphOverlay });
+    return { onGraphOverlay, ...utils };
+  }
+
+  it("reports the latest turn's graph retrieval trace once it settles", async () => {
+    const { onGraphOverlay } = renderWithGraphTurn(GRAPH_TURN_MESSAGES, false);
+    await waitFor(() => expect(onGraphOverlay).toHaveBeenCalledTimes(1));
+    expect(onGraphOverlay).toHaveBeenCalledWith({
+      source: "chat",
+      text: "Gateway 和哪些组件交互？",
+      trace: {
+        seed_entities: ["Gateway"],
+        expanded_nodes: [{ name: "DeerFlow", hop: 1 }],
+        evidence_entities: ["Gateway", "DeerFlow"],
+      },
+    });
+  });
+
+  it("stays silent while streaming or when the turn ran no graph_search", async () => {
+    const streaming = renderWithGraphTurn(GRAPH_TURN_MESSAGES, true);
+    expect(streaming.onGraphOverlay).not.toHaveBeenCalled();
+    cleanup();
+    const noGraph = renderWithGraphTurn(
+      [
+        { id: "human-1", type: "human", content: "闲聊" },
+        { id: "ai-1", type: "ai", content: "你好" },
+      ],
+      false,
+    );
+    // 等一拍 effect 刷新后仍不上报。
+    await waitFor(() => expect(screen.getByTestId("knowledge-chat-panel")).toBeTruthy());
+    expect(noGraph.onGraphOverlay).not.toHaveBeenCalled();
+  });
+
+  it("does not double-report the same turn on re-render（按 answer id 去重）", async () => {
+    const { onGraphOverlay, rerender } = renderWithGraphTurn(GRAPH_TURN_MESSAGES, false);
+    await waitFor(() => expect(onGraphOverlay).toHaveBeenCalledTimes(1));
+    rerender(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KnowledgeChatPanel kb={KB} onGraphOverlay={onGraphOverlay} />
+      </I18nContext.Provider>,
+    );
+    expect(onGraphOverlay).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("KnowledgeChatPanel model selector", () => {
   it("shows the first configured model as the effective default and keeps context.model_name undefined", () => {
     renderPanel();

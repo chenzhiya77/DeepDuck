@@ -374,3 +374,27 @@ export interface KnowledgeGraphResponse {
   edges: KnowledgeGraphEdge[];
   stats: { node_count: number; edge_count: number; community_count: number };
 }
+
+// ── P4 graph_search 路径高亮（2026-08-19 spec §7）───────────────────────────
+
+/** graph_search 工具响应透传的检索轨迹（后端 snake_case 原样镜像，零映射成本）。 */
+export interface GraphRetrievalTrace {
+  /** 种子实体：查询向量命中的 hop-0 实体名。 */
+  seed_entities: string[];
+  /** 扩展节点：hop ≥ 1 的邻域扩展（hop 信息驱动橙/黄分层染色）。 */
+  expanded_nodes: { name: string; hop: number }[];
+  /** 证据实体：被选中切片的实体/边来源端点。 */
+  evidence_entities: string[];
+}
+
+/**
+ * page 层共享的图谱叠加请求（对齐 VectorRetrievalOverlay 先例）：chat 每轮
+ * 完成含 graph_search 轨迹的对话后上报；图谱 tab 的「跟随对话」开关决定何时
+ * 应用（冻结语义在 GraphTab 内）。
+ */
+export interface GraphRetrievalOverlay {
+  source: "chat";
+  /** 该轮的可见用户提问文本（徽标展示用）。 */
+  text: string;
+  trace: GraphRetrievalTrace;
+}

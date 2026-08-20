@@ -7,9 +7,9 @@
  * - filterNeighborhood：局部图 N 跳 BFS 裁剪
  * - buildGraphSeries / graphTooltipFormatter：echarts option 组装与 tooltip
  */
-import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
-import { buildTooltipHtml } from "./vector-canvas";
+import { buildTooltipHtml, DIMMED_OPACITY } from "./vector-canvas";
 
 /**
  * 节点着色色板（Material Design 400 级，与向量空间 SOURCE_COLORS 同色系）。
@@ -136,11 +136,34 @@ export function labelTextForTier(
   return fallbackName;
 }
 
+// ── P4 检索路径叠加（2026-08-19 spec §7）：种子 → 扩展 → 证据三层染色 ──────
+
+/** 种子实体描边色（对齐向量空间命中强调色 #f5222d）。 */
+export const GRAPH_SEED_BORDER_COLOR = "#f5222d";
+/** 扩展路径 hop 层渐淡色板：hop-1 橙、hop-2 黄（扩张半径可视）。 */
+export const GRAPH_HOP_COLORS: Record<number, string> = { 1: "#fa8c16", 2: "#fadb14" };
+/** 证据实体星标填充色（实心红）。 */
+export const GRAPH_EVIDENCE_COLOR = "#f5222d";
+/** 种子节点放大倍率（在 mention 基底尺寸上乘算）。 */
+export const GRAPH_SEED_SIZE_BOOST = 1.35;
+/** 证据实体星标：echarts 内置 symbol 无 star——五芒星 SVG path（24 视窗）。 */
+export const GRAPH_EVIDENCE_SYMBOL =
+  "path://M12 2l2.9 6.26 6.6.56-5 4.4 1.5 6.46L12 16.9 5.99 19.68l1.5-6.46-5-4.4 6.6-.56L12 2z";
+
 /** series data 里的节点 datum：携带原始 node 供点击钻取回取。 */
 export interface GraphDatum {
   name: string;
   symbolSize: number;
-  itemStyle: { color: string };
+  /** 证据实体星标（P4 叠加时覆盖默认圆点）。 */
+  symbol?: string;
+  itemStyle: {
+    color: string;
+    /** 未命中三层 → 0.12 淡化（P4 叠加时）。 */
+    opacity?: number;
+    /** 种子实体红描边（P4 叠加时）。 */
+    borderColor?: string;
+    borderWidth?: number;
+  };
   node: KnowledgeGraphNode;
 }
 
@@ -149,7 +172,67 @@ interface GraphLink {
   target: string;
   relation: string;
   description: string;
-  lineStyle: { curveness: number };
+  lineStyle: { curveness: number; opacity?: number };
+}
+
+/** trace → 三层查询表（Set/Map O(1) 判定；null overlay → null 短路）。 */
+function overlayLookup(overlay: GraphRetrievalTrace | null | undefined) {
+  if (!overlay) return null;
+  return {
+    seeds: new Set(overlay.seed_entities),
+    hops: new Map(overlay.expanded_nodes.map((node) => [node.name, node.hop])),
+    evidence: new Set(overlay.evidence_entities),
+  };
+}
+
+/**
+ * 组装 series data。P4 叠加染色优先级：证据（红星）> hop 层（橙/黄）> 自身色；
+ * 种子 = 自身填充 + 红描边 + 放大（可与其他层叠加）；未命中三层 → 0.12 淡化。
+ * trace 中已不在图里的实体名自然跳过（陈旧 trace 容错）。
+ */
+export function buildGraphData(
+  nodes: readonly KnowledgeGraphNode[],
+  colorBy: GraphColorBy = "community",
+  overlay?: GraphRetrievalTrace | null,
+): GraphDatum[] {
+  const lookup = overlayLookup(overlay);
+  return nodes.map((node) => {
+    const ownColor = colorBy === "community" ? communityColor(node.community) : typeColor(node.type);
+    const baseSize = nodeSymbolSize(node.mention_count);
+    const datum: GraphDatum = { name: node.id, symbolSize: baseSize, itemStyle: { color: ownColor }, node };
+    if (!lookup) return datum;
+    const isSeed = lookup.seeds.has(node.id);
+    const hop = lookup.hops.get(node.id);
+    const isEvidence = lookup.evidence.has(node.id);
+    if (!isSeed && hop === undefined && !isEvidence) {
+      datum.itemStyle = { ...datum.itemStyle, opacity: DIMMED_OPACITY };
+      return datum;
+    }
+    if (isEvidence) {
+      datum.symbol = GRAPH_EVIDENCE_SYMBOL;
+      datum.itemStyle = { ...datum.itemStyle, color: GRAPH_EVIDENCE_COLOR };
+    } else if (hop !== undefined) {
+      // hop 超出 2（未来更深扩展）按最浅档色板回绕。
+      datum.itemStyle = { ...datum.itemStyle, color: GRAPH_HOP_COLORS[hop] ?? GRAPH_HOP_COLORS[2]! };
+    }
+    if (isSeed) {
+      datum.symbolSize = Math.round(baseSize * GRAPH_SEED_SIZE_BOOST);
+      datum.itemStyle = { ...datum.itemStyle, borderColor: GRAPH_SEED_BORDER_COLOR, borderWidth: 3 };
+    }
+    return datum;
+  });
+}
+
+/** 组装 series links。叠加激活时全部边淡化 0.12（对比度让给三层染色节点）。 */
+export function buildGraphLinks(edges: readonly KnowledgeGraphEdge[], overlayActive = false): GraphLink[] {
+  return edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+    relation: edge.relation,
+    description: edge.description,
+    // 双向/多重关系轻微弯曲防重叠（spec §10：并行边不合并，曲率错开）。
+    lineStyle: { curveness: 0.1, ...(overlayActive ? { opacity: DIMMED_OPACITY } : {}) },
+  }));
 }
 
 export interface GraphSeriesConfig {
@@ -184,6 +267,7 @@ export function buildGraphSeries(
   nodes: readonly KnowledgeGraphNode[],
   edges: readonly KnowledgeGraphEdge[],
   colorBy: GraphColorBy = "community",
+  overlay?: GraphRetrievalTrace | null,
 ): [GraphSeriesConfig] {
   return [
     {
@@ -208,20 +292,8 @@ export function buildGraphSeries(
       label: { show: true, position: "right", fontSize: 11 },
       labelLayout: { hideOverlap: true },
       scaleLimit: { min: 0.3, max: 3 },
-      data: nodes.map((node) => ({
-        name: node.id,
-        symbolSize: nodeSymbolSize(node.mention_count),
-        itemStyle: { color: colorBy === "community" ? communityColor(node.community) : typeColor(node.type) },
-        node,
-      })),
-      links: edges.map((edge) => ({
-        source: edge.source,
-        target: edge.target,
-        relation: edge.relation,
-        description: edge.description,
-        // 双向/多重关系轻微弯曲防重叠（spec §10：并行边不合并，曲率错开）。
-        lineStyle: { curveness: 0.1 },
-      })),
+      data: buildGraphData(nodes, colorBy, overlay),
+      links: buildGraphLinks(edges, overlay != null),
     },
   ];
 }

@@ -35,9 +35,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import { latestRetrievalTurn, sourcesForAssistantMessage } from "@/core/knowledge/citations";
+import { latestGraphTraceTurn, latestRetrievalTurn, sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
-import type { KnowledgeBase, VectorRetrievalOverlay } from "@/core/knowledge/types";
+import type { GraphRetrievalOverlay, KnowledgeBase, VectorRetrievalOverlay } from "@/core/knowledge/types";
 import {
   buildHumanInputResponseText,
   type HumanInputRequest,
@@ -65,6 +65,7 @@ export function KnowledgeChatPanel({
   kb,
   onOpenWikiEntry,
   onRetrievalOverlay,
+  onGraphOverlay,
 }: {
   kb: KnowledgeBase | null;
   /** Wiki citation cards open the entry drawer (overlay) via this page-held callback. */
@@ -75,6 +76,12 @@ export function KnowledgeChatPanel({
    * sourcesForAssistantMessage 的既有解析。
    */
   onRetrievalOverlay?: (overlay: VectorRetrievalOverlay) => void;
+  /**
+   * P4 图谱路径高亮（2026-08-19 spec §7）：每完成一轮含 graph_search 轨迹的
+   * 对话，把「提问文本 + 三层检索轨迹」上报 page 层供知识图谱叠加。与向量
+   * 通道同节奏（同按 answer id 去重、流式进行中不上报）。
+   */
+  onGraphOverlay?: (overlay: GraphRetrievalOverlay) => void;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chat;
@@ -163,6 +170,22 @@ export function KnowledgeChatPanel({
       hits: turn.citations.map((citation) => ({ pointId: citation.chunk_id, score: citation.score })),
     });
   }, [thread.messages, thread.isLoading, onRetrievalOverlay]);
+
+  // P4 图谱检索轨迹上报（spec §7）：与向量通道同节奏——每完成一轮含
+  // graph_search 轨迹的对话上报一次，按 ai message id 去重（流式 token 追加
+  // 不重复上报；流式进行中不上报，等该轮落定）。
+  const lastReportedGraphTurnRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onGraphOverlay || thread.isLoading) {
+      return;
+    }
+    const turn = latestGraphTraceTurn(thread.messages);
+    if (!turn || turn.messageId === lastReportedGraphTurnRef.current) {
+      return;
+    }
+    lastReportedGraphTurnRef.current = turn.messageId;
+    onGraphOverlay({ source: "chat", text: turn.text, trace: turn.trace });
+  }, [thread.messages, thread.isLoading, onGraphOverlay]);
   const kbThreads = useMemo(() => {
     if (!kbId) {
       return [];

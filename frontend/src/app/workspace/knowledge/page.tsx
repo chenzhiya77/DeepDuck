@@ -45,7 +45,12 @@ import {
   useWikiEntry,
 } from "@/core/knowledge/hooks";
 import { FALLBACK_SUPPORTED_SUFFIXES } from "@/core/knowledge/supported-formats";
-import type { KnowledgeDocument, VectorRetrievalOverlay, WikiEntrySummary } from "@/core/knowledge/types";
+import type {
+  GraphRetrievalOverlay,
+  KnowledgeDocument,
+  VectorRetrievalOverlay,
+  WikiEntrySummary,
+} from "@/core/knowledge/types";
 import { isWikiUpdating } from "@/core/knowledge/wiki-status";
 
 function showMutationError(error: unknown, fallback: string) {
@@ -82,6 +87,11 @@ export default function KnowledgePage() {
   // 叠加请求。recall 通道同时切 tab（显式动作）；chat 通道只更新 state——
   // 向量 tab 的「跟随对话」开关决定何时应用（冻结语义在 VectorTab 内）。
   const [vectorOverlay, setVectorOverlay] = useState<VectorRetrievalOverlay | null>(null);
+  // P4 图谱路径高亮（2026-08-19 spec §7）：chat 每轮 graph_search 轨迹的
+  // 平行叠加通道——只更新 state，不切 tab（冻结语义在 GraphTab 内）。
+  const [graphOverlay, setGraphOverlay] = useState<GraphRetrievalOverlay | null>(null);
+  // 「跟随对话」开关状态两 tab 共享（spec §7 同一开关语义，两处生效）。
+  const [followChat, setFollowChat] = useState(true);
 
   const kbsQuery = useKnowledgeBases();
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
@@ -370,6 +380,8 @@ export default function KnowledgePage() {
                   enabled={activeTab === "vectors"}
                   indexingCount={indexingDocCount}
                   overlay={vectorOverlay}
+                  followChat={followChat}
+                  onFollowChatChange={setFollowChat}
                   onOpenChunk={(docId) => {
                     // 指纹缓存与文档列表同源——正常必命中；防御性忽略。
                     const doc = documents.find((item) => item.id === docId);
@@ -386,6 +398,9 @@ export default function KnowledgePage() {
                   documents={documents}
                   enabled={activeTab === "graph"}
                   kbId={selectedKb.id}
+                  overlay={graphOverlay}
+                  followChat={followChat}
+                  onFollowChatChange={setFollowChat}
                   onOpenChunk={(docId) => {
                     // 与向量空间同一链路：回查文档对象再开抽屉（防御性忽略缺失）。
                     const doc = documents.find((item) => item.id === docId);
@@ -407,6 +422,7 @@ export default function KnowledgePage() {
             kb={selectedKb}
             onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
             onRetrievalOverlay={setVectorOverlay}
+            onGraphOverlay={setGraphOverlay}
           />
         }
       />

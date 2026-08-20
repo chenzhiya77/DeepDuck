@@ -13,7 +13,13 @@ import { GraphTab } from "@/components/workspace/knowledge/graph-tab";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import type { KnowledgeBase, KnowledgeDocument, KnowledgeGraphNode, KnowledgeGraphResponse } from "@/core/knowledge/types";
+import type {
+  GraphRetrievalOverlay,
+  KnowledgeBase,
+  KnowledgeDocument,
+  KnowledgeGraphNode,
+  KnowledgeGraphResponse,
+} from "@/core/knowledge/types";
 
 const hooksMock = rs.hoisted(() => ({
   useKnowledgeGraph: rs.fn(),
@@ -159,12 +165,13 @@ function stubGraphQuery(result: GraphQueryResult) {
 
 function renderGraphTab(props: Partial<Parameters<typeof GraphTab>[0]> = {}) {
   const onOpenChunk = rs.fn();
-  render(
+  const element = (extra: Partial<Parameters<typeof GraphTab>[0]> = {}) => (
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <GraphTab kbId="kb-1" enabled documents={DOCS} onOpenChunk={onOpenChunk} {...props} />
-    </I18nContext.Provider>,
+      <GraphTab kbId="kb-1" enabled documents={DOCS} onOpenChunk={onOpenChunk} {...props} {...extra} />
+    </I18nContext.Provider>
   );
-  return { onOpenChunk };
+  const utils = render(element());
+  return { onOpenChunk, ...utils, rerenderWith: (extra: Partial<Parameters<typeof GraphTab>[0]>) => utils.rerender(element(extra)) };
 }
 
 describe("GraphTab 三态（Task 3）", () => {
@@ -340,5 +347,101 @@ describe("GraphTab 搜索 / 着色 / 局部图（Task 4）", () => {
     await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C"]));
     fireEvent.click(screen.getByRole("radio", { name: "2 跳" }));
     await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C", "D"])); // E 孤立不进
+  });
+});
+
+// ── Task 5（P4，spec §7）：graph_search 检索路径叠加 ────────────────────────
+
+const GRAPH_CHAT_OVERLAY: GraphRetrievalOverlay = {
+  source: "chat",
+  text: "B 和 D 什么关系？",
+  trace: {
+    seed_entities: ["B"],
+    expanded_nodes: [
+      { name: "A", hop: 1 },
+      { name: "C", hop: 1 },
+    ],
+    evidence_entities: ["B", "C"],
+  },
+};
+
+describe("GraphTab 检索路径叠加（Task 5 P4）", () => {
+  beforeEach(() => {
+    cleanup();
+    canvasMock.props = undefined;
+    hooksMock.useKnowledgeGraph.mockReset();
+    stubGraphQuery({ data: CHAIN_GRAPH, isLoading: false, isError: false });
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("applies the chat overlay to the canvas and shows the three-layer badge", async () => {
+    renderGraphTab({ overlay: GRAPH_CHAT_OVERLAY });
+    await waitFor(() => expect(canvasMock.props?.overlay).toEqual(GRAPH_CHAT_OVERLAY.trace));
+    const badge = screen.getByTestId("graph-overlay-badge");
+    expect(badge.textContent).toContain("B 和 D 什么关系？");
+    // 徽标三层计数：种子 m · 扩展 n · 证据 k。
+    expect(badge.textContent).toContain("种子 1");
+    expect(badge.textContent).toContain("扩展 2");
+    expect(badge.textContent).toContain("证据 2");
+  });
+
+  it("clears the overlay via the badge × button", async () => {
+    renderGraphTab({ overlay: GRAPH_CHAT_OVERLAY });
+    await waitFor(() => expect(screen.getByTestId("graph-overlay-badge")).toBeTruthy());
+    fireEvent.click(screen.getByLabelText("清除路径高亮"));
+    await waitFor(() => expect(canvasMock.props?.overlay ?? null).toBeNull());
+    expect(screen.queryByTestId("graph-overlay-badge")).toBeNull();
+  });
+
+  it("drops the overlay when the graph fingerprint drifts（node/edge 计数变化）", async () => {
+    const { toast } = await import("sonner");
+    const { rerenderWith } = renderGraphTab({ overlay: GRAPH_CHAT_OVERLAY });
+    await waitFor(() => expect(screen.getByTestId("graph-overlay-badge")).toBeTruthy());
+
+    // 图数据变化（新实体加入）→ 指纹漂移 → 叠加清除 + 提示。
+    const grown: KnowledgeGraphResponse = {
+      ...CHAIN_GRAPH,
+      nodes: [
+        ...CHAIN_GRAPH.nodes,
+        { id: "F", type: "概念", description: "新实体", mention_count: 1, community: 0, source_chunk_ids: ["d#0000"] },
+      ],
+      stats: { node_count: 6, edge_count: 3, community_count: 2 },
+    };
+    hooksMock.useKnowledgeGraph.mockReturnValue({ data: grown, isLoading: false, isError: false });
+    rerenderWith({ overlay: GRAPH_CHAT_OVERLAY });
+
+    await waitFor(() => expect(screen.queryByTestId("graph-overlay-badge")).toBeNull());
+    expect(canvasMock.props?.overlay ?? null).toBeNull();
+    expect(toast.info).toHaveBeenCalledWith("图谱内容已更新，检索路径高亮已清除");
+  });
+
+  it("freezes chat overlays while 跟随对话 is off and applies the latest when re-enabled", async () => {
+    const { rerenderWith } = renderGraphTab({ overlay: GRAPH_CHAT_OVERLAY });
+    await waitFor(() => expect(screen.getByTestId("graph-overlay-badge").textContent).toContain("B 和 D"));
+
+    // 关闭「跟随对话」→ 新一轮 chat overlay 冻结（徽标保持旧轮，画布不更新）。
+    fireEvent.click(screen.getByRole("switch", { name: "跟随对话" }));
+    const next: GraphRetrievalOverlay = { ...GRAPH_CHAT_OVERLAY, text: "新一轮提问" };
+    rerenderWith({ overlay: next });
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    expect(screen.getByTestId("graph-overlay-badge").textContent).toContain("B 和 D");
+    expect(screen.getByTestId("graph-overlay-badge").textContent).not.toContain("新一轮");
+
+    // 重新打开 → 应用冻结期间到达的最新一轮。
+    fireEvent.click(screen.getByRole("switch", { name: "跟随对话" }));
+    await waitFor(() => expect(screen.getByTestId("graph-overlay-badge").textContent).toContain("新一轮提问"));
+  });
+
+  it("does not re-apply the same overlay object twice（恒等去重）", async () => {
+    const { rerenderWith } = renderGraphTab({ overlay: GRAPH_CHAT_OVERLAY });
+    await waitFor(() => expect(canvasMock.props?.overlay).toEqual(GRAPH_CHAT_OVERLAY.trace));
+    // 清除后同对象重渲染 → 不复活（consumed 去重）。
+    fireEvent.click(screen.getByLabelText("清除路径高亮"));
+    await waitFor(() => expect(screen.queryByTestId("graph-overlay-badge")).toBeNull());
+    rerenderWith({ overlay: GRAPH_CHAT_OVERLAY });
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    expect(screen.queryByTestId("graph-overlay-badge")).toBeNull();
   });
 });

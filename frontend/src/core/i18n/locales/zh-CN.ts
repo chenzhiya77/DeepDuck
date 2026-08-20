@@ -465,6 +465,10 @@ export const zhCN: Translations = {
       neighborhoodOf: (name) => `${name} 的邻居`,
       hop1: "1 跳",
       hop2: "2 跳",
+      followChat: "跟随对话",
+      overlayLayers: (seeds, expanded, evidence) => `种子 ${seeds} · 扩展 ${expanded} · 证据 ${evidence}`,
+      overlayStale: "图谱内容已更新，检索路径高亮已清除",
+      clearOverlay: "清除路径高亮",
     },
     wikiPanel: {
       empty: "还没有百科条目，从右上角菜单「生成百科」",

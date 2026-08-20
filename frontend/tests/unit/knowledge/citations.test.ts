@@ -9,7 +9,9 @@ import type { Message } from "@langchain/langgraph-sdk";
 import { describe, expect, test } from "@rstest/core";
 
 import {
+  latestGraphTraceTurn,
   latestRetrievalTurn,
+  parseGraphSearchTrace,
   parseRetrievalToolContent,
   sourcesForAssistantMessage,
 } from "@/core/knowledge/citations";
@@ -312,5 +314,148 @@ describe("latestRetrievalTurn", () => {
       ai("a1"),
     ];
     expect(latestRetrievalTurn(messages)?.text).toBe("数组形态提问");
+  });
+});
+
+// ── P4 graph_search 路径高亮（2026-08-19 spec §7）：检索轨迹提取 ─────────────
+
+const GRAPH_TRACE = {
+  entities: [],
+  relations: [],
+  evidence: [{ chunk_id: "c3", text: "证据切片", doc_name: "手册.pdf", heading_path: ["第二章"], page: 5 }],
+  trace: {
+    seed_entities: ["JVM"],
+    expanded_nodes: [
+      { name: "堆内存", hop: 1 },
+      { name: "垃圾回收", hop: 2 },
+    ],
+    evidence_entities: ["JVM", "堆内存"],
+  },
+  message: "命中 1 个实体。",
+};
+
+describe("parseGraphSearchTrace", () => {
+  test("parses the three-layer trace from a graph_search payload", () => {
+    expect(parseGraphSearchTrace(JSON.stringify(GRAPH_TRACE))).toEqual({
+      seed_entities: ["JVM"],
+      expanded_nodes: [
+        { name: "堆内存", hop: 1 },
+        { name: "垃圾回收", hop: 2 },
+      ],
+      evidence_entities: ["JVM", "堆内存"],
+    });
+  });
+
+  test("returns null for malformed payloads or a missing trace (legacy responses)", () => {
+    expect(parseGraphSearchTrace("not-json")).toBeNull();
+    expect(parseGraphSearchTrace(JSON.stringify(GRAPH))).toBeNull(); // 旧响应无 trace 字段
+    expect(parseGraphSearchTrace(JSON.stringify({ trace: "junk" }))).toBeNull();
+  });
+
+  test("drops malformed trace entries defensively", () => {
+    const trace = parseGraphSearchTrace(
+      JSON.stringify({
+        trace: {
+          seed_entities: ["JVM", 42],
+          expanded_nodes: [{ name: "堆内存", hop: 1 }, { name: 7, hop: "x" }, "junk"],
+          evidence_entities: ["JVM", null],
+        },
+      }),
+    );
+    expect(trace).toEqual({
+      seed_entities: ["JVM"],
+      expanded_nodes: [{ name: "堆内存", hop: 1 }],
+      evidence_entities: ["JVM"],
+    });
+  });
+});
+
+describe("latestGraphTraceTurn", () => {
+  test("returns null for an empty transcript or one without an assistant answer", () => {
+    expect(latestGraphTraceTurn([])).toBeNull();
+    expect(latestGraphTraceTurn([human("h1")])).toBeNull();
+  });
+
+  test("returns null when the latest turn ran no graph_search (or the trace is empty)", () => {
+    // 最后一轮只走了 hybrid 路 → 图谱叠加不更新（语义对齐 latestRetrievalTurn）。
+    const hybridOnly = [human("h1"), toolMessage("hybrid_search", HYBRID, "t1"), ai("a1")];
+    expect(latestGraphTraceTurn(hybridOnly)).toBeNull();
+    // graph_search 空命中（trace 三层全空）→ 同样不更新（避免全图无意义淡化）。
+    const emptyTrace = {
+      ...GRAPH_TRACE,
+      trace: { seed_entities: [], expanded_nodes: [], evidence_entities: [] },
+    };
+    const emptyRun = [human("h1"), toolMessage("graph_search", emptyTrace, "t1"), ai("a1")];
+    expect(latestGraphTraceTurn(emptyRun)).toBeNull();
+  });
+
+  test("extracts the latest turn's trace with the visible question text", () => {
+    const messages = [human("h1"), toolMessage("graph_search", GRAPH_TRACE, "t1"), ai("a1")];
+    const turn = latestGraphTraceTurn(messages);
+    expect(turn?.messageId).toBe("a1");
+    expect(turn?.text).toBe("问题");
+    expect(turn?.trace).toEqual({
+      seed_entities: ["JVM"],
+      expanded_nodes: [
+        { name: "堆内存", hop: 1 },
+        { name: "垃圾回收", hop: 2 },
+      ],
+      evidence_entities: ["JVM", "堆内存"],
+    });
+  });
+
+  test("scopes to the LAST turn — an earlier graph turn stays invisible", () => {
+    const messages = [
+      human("h1"),
+      toolMessage("graph_search", GRAPH_TRACE, "t1"),
+      ai("a1"),
+      { type: "human", id: "h2", content: "闲聊" } as unknown as Message,
+      ai("a2"),
+    ];
+    expect(latestGraphTraceTurn(messages)).toBeNull();
+  });
+
+  test("merges several graph_search calls in one turn (union seeds/evidence, min hop)", () => {
+    const second = {
+      ...GRAPH_TRACE,
+      trace: {
+        seed_entities: ["GC"],
+        expanded_nodes: [
+          { name: "堆内存", hop: 2 },
+          { name: "元空间", hop: 1 },
+        ],
+        evidence_entities: ["GC"],
+      },
+    };
+    const messages = [
+      human("h1"),
+      toolMessage("graph_search", GRAPH_TRACE, "t1"),
+      toolMessage("graph_search", second, "t2"),
+      ai("a1"),
+    ];
+    const turn = latestGraphTraceTurn(messages);
+    expect(turn?.trace.seed_entities).toEqual(["JVM", "GC"]);
+    // 堆内存两次调用分别 hop1/hop2 → 取更浅的 hop1（插入序稳定）。
+    expect(turn?.trace.expanded_nodes).toEqual([
+      { name: "堆内存", hop: 1 },
+      { name: "垃圾回收", hop: 2 },
+      { name: "元空间", hop: 1 },
+    ]);
+    expect(turn?.trace.evidence_entities).toEqual(["JVM", "堆内存", "GC"]);
+  });
+
+  test("walks past a hide_from_ui human to the visible question", () => {
+    const messages = [
+      { type: "human", id: "h1", content: "JVM 结构" } as unknown as Message,
+      {
+        type: "human",
+        id: "h2",
+        content: '{"type":"human_input_response","answer":"展开"}',
+        additional_kwargs: { hide_from_ui: true },
+      } as unknown as Message,
+      toolMessage("graph_search", GRAPH_TRACE, "t1"),
+      ai("a1"),
+    ];
+    expect(latestGraphTraceTurn(messages)?.text).toBe("JVM 结构");
   });
 });

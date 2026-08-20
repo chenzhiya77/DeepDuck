@@ -184,6 +184,8 @@ export function VectorTab({
   onOpenChunk,
   onOpenWikiEntry,
   onOpenManualCard,
+  followChat: followChatProp,
+  onFollowChatChange,
 }: {
   kbId: string;
   /** keep-alive pane 的懒加载门：仅 tab 激活后才发起投影请求。 */
@@ -199,6 +201,12 @@ export function VectorTab({
   onOpenChunk: (docId: string, chunkId: string) => void;
   onOpenWikiEntry: (entryId: string) => void;
   onOpenManualCard: (cardId: string) => void;
+  /**
+   * 「跟随对话」开关（2026-08-19 spec §7：与知识图谱 tab 共享状态——page 层
+   * 下发时受控）；缺省 = 内部状态（默认开）。
+   */
+  followChat?: boolean;
+  onFollowChatChange?: (next: boolean) => void;
 }) {
   const { t } = useI18n();
   const tv = t.knowledge.vectorSpace;
@@ -218,8 +226,11 @@ export function VectorTab({
   // ── P6 检索联动叠加（spec §9）──────────────────────────────────────────
   // params 镜像当前视图：服务端缓存键含 collections/algo/dims，错位即 409。
   const projectQuery = useProjectVectorQuery(kbId, { collections, algo, dims });
-  /** 「跟随对话」开关（默认开）：关闭后 chat 通道叠加冻结，供手动探索。 */
-  const [followChat, setFollowChat] = useState(true);
+  /** 「跟随对话」开关（默认开）：关闭后 chat 通道叠加冻结，供手动探索。
+      受控/非受控混合——page 层共享状态（与图谱 tab 同步）时经 props 下发。 */
+  const [internalFollowChat, setInternalFollowChat] = useState(true);
+  const followChat = followChatProp ?? internalFollowChat;
+  const setFollowChat = onFollowChatChange ?? setInternalFollowChat;
   const [activeOverlay, setActiveOverlay] = useState<{
     query: { x: number; y: number; z?: number; label: string };
     hits: VectorRetrievalOverlay["hits"];

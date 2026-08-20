@@ -12,14 +12,16 @@ import json
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE
-from deerflow.knowledge.graph.extractor import ExtractedEntity
+from deerflow.knowledge.graph.extractor import ExtractedEntity, ExtractedRelation
+from deerflow.knowledge.graph.normalizer import cosine_similarity
 from deerflow.knowledge.reranker import RerankerError
 from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
 
 from ..conftest import requires_qdrant
-from .conftest import DOC_ID, KB_ID, OWNER_ID, KeywordEmbedder
+from .conftest import CHUNK_TEXTS, DOC_ID, KB_ID, OWNER_ID, KeywordEmbedder, keyword_vector
 
 
 class _ConfigRecordingLLM:
@@ -361,3 +363,171 @@ async def test_graph_search_semantic_gate_keeps_related_neighbor(tools_env):
     assert ("DeerFlow", "包含", "Gateway") in triples
     assert ("Gateway", "调用", "MinerU") not in triples  # MinerU pruned
     assert [e["chunk_id"] for e in result["evidence"]] == [f"{DOC_ID}-c0"]
+
+
+# ── Task 5（P4，2026-08-19 spec §7）：retrieval trace 透传 ──────────────────
+# 前端知识图谱的「种子 → 扩展 → 证据」三层路径高亮以工具响应里的 trace 为唯一
+# 数据源（只序列化输出，不动检索逻辑）。下列用例走内存 fake vector store，
+# 无需 Qdrant——向量打分用与 KeywordEmbedder 相同的 one-hot 关键词向量，语义门
+# 行为确定。
+
+
+class _FakeVectorStore:
+    """In-memory vector store for trace tests — no Qdrant needed.
+
+    Entity/chunk vectors use the same one-hot keyword layout as
+    ``KeywordEmbedder``, so cosine gating stays deterministic.
+    """
+
+    def __init__(self, entity_names: list[str], chunk_texts: list[tuple[str, str]]) -> None:
+        self._entity_vectors = {name: keyword_vector(name) for name in entity_names}
+        self._chunk_vectors = {chunk_id: keyword_vector(text) for chunk_id, text in chunk_texts}
+
+    async def query_entities(self, *, dense, kb_id, top_k, score_threshold):
+        hits = []
+        for name, vector in self._entity_vectors.items():
+            score = cosine_similarity(list(dense), vector)
+            if score >= score_threshold:
+                hits.append(SimpleNamespace(payload={"name": name}, score=score))
+        hits.sort(key=lambda hit: (-hit.score, hit.payload["name"]))
+        return hits[:top_k]
+
+    async def get_entity_vectors(self, kb_id, names):
+        return {name: self._entity_vectors[name] for name in names if name in self._entity_vectors}
+
+    async def get_chunk_vectors(self, chunk_ids):
+        return {chunk_id: self._chunk_vectors[chunk_id] for chunk_id in chunk_ids if chunk_id in self._chunk_vectors}
+
+
+@pytest_asyncio.fixture
+async def trace_env(session_factory):
+    """SQLite-backed graph/chunk fixture + in-memory vector store (no Qdrant)."""
+    from deerflow.knowledge.graph.store import GraphStore
+    from deerflow.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(session_factory)
+    graph_store = GraphStore(session_factory)
+    await store.create_kb(kb_id=KB_ID, owner_id=OWNER_ID, name="trace 测试库")
+    await store.create_document(doc_id=DOC_ID, kb_id=KB_ID, uploader_id=OWNER_ID, name="架构.md", size_bytes=10, storage_path="/a.md")
+    await store.insert_chunks(
+        [
+            {
+                "chunk_id": f"{DOC_ID}-c{i}",
+                "doc_id": DOC_ID,
+                "kb_id": KB_ID,
+                "chunk_index": i,
+                "text": text,
+                "heading_path": ["架构"],
+                "page": i + 1,
+                "token_count": 40,
+                "extract_status": "done" if entities else "empty",
+                "entities": entities,
+            }
+            for i, (text, entities) in enumerate(CHUNK_TEXTS)
+        ]
+    )
+    await graph_store.upsert_entities(KB_ID, [ExtractedEntity(name="DeerFlow", type="系统", description="超级智能体")], chunk_id=f"{DOC_ID}-c0")
+    await graph_store.upsert_entities(KB_ID, [ExtractedEntity(name="Gateway", type="组件", description="会话管理入口")], chunk_id=f"{DOC_ID}-c0")
+    await graph_store.upsert_entities(KB_ID, [ExtractedEntity(name="MinerU", type="服务", description="文档解析服务")], chunk_id=f"{DOC_ID}-c1")
+    await graph_store.upsert_relations(KB_ID, [ExtractedRelation(source="DeerFlow", target="Gateway", relation="包含", description="系统包含入口组件")], chunk_id=f"{DOC_ID}-c0")
+    await graph_store.upsert_relations(KB_ID, [ExtractedRelation(source="Gateway", target="MinerU", relation="调用", description="解析调用")], chunk_id=f"{DOC_ID}-c1")
+    return {
+        "store": store,
+        "graph_store": graph_store,
+        "vector_store": _FakeVectorStore(
+            ["DeerFlow", "Gateway", "MinerU"],
+            [(f"{DOC_ID}-c{i}", text) for i, (text, _entities) in enumerate(CHUNK_TEXTS)],
+        ),
+        "embedder": KeywordEmbedder(),
+    }
+
+
+def _trace_impl_args(trace_env, llm):
+    return dict(
+        store=trace_env["store"],
+        graph_store=trace_env["graph_store"],
+        vector_store=trace_env["vector_store"],
+        embedder=trace_env["embedder"],
+        llm=llm,
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_search_response_carries_three_layer_trace(trace_env):
+    """P4: the response exposes the seed → expansion → evidence trace — the
+    only data source of the frontend retrieval-path overlay (serialization
+    only; the retrieval logic itself is untouched)."""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        hops=2,
+        neighbor_min_score=0.0,
+    )
+
+    trace = result["trace"]
+    # 种子 = 向量命中的 hop-0 实体（确定性排序）。
+    assert trace["seed_entities"] == ["Gateway"]
+    # 扩展节点带 hop 层级（按 hop、名字排序——契约稳定）。
+    assert trace["expanded_nodes"] == [
+        {"name": "DeerFlow", "hop": 1},
+        {"name": "MinerU", "hop": 1},
+    ]
+    # 证据实体 = 被选中切片（c0 + c1）的全部实体/边来源端点。
+    assert trace["evidence_entities"] == ["DeerFlow", "Gateway", "MinerU"]
+
+
+@pytest.mark.asyncio
+async def test_graph_search_trace_hop_info_complete(trace_env):
+    """hop layering: seeds never appear among expanded nodes; hop ≥ 1."""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        hops=2,
+        neighbor_min_score=0.0,
+    )
+
+    trace = result["trace"]
+    seeds = set(trace["seed_entities"])
+    assert trace["expanded_nodes"], "expansion must reach neighbours with the gate off"
+    assert all(node["hop"] >= 1 for node in trace["expanded_nodes"])
+    assert all(node["hop"] <= 2 for node in trace["expanded_nodes"])
+    assert seeds.isdisjoint(node["name"] for node in trace["expanded_nodes"])
+
+
+@pytest.mark.asyncio
+async def test_graph_search_trace_reflects_pruning(trace_env):
+    """With the semantic gate on, pruned neighbours never enter the trace."""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        neighbor_min_score=0.4,
+    )
+
+    trace = result["trace"]
+    assert trace["seed_entities"] == ["Gateway"]
+    assert trace["expanded_nodes"] == []
+    # 仅 Gateway 留在 seen 子图——证据只可能来自它自己的切片 c0。
+    assert trace["evidence_entities"] == ["Gateway"]
+
+
+@pytest.mark.asyncio
+async def test_graph_search_empty_response_carries_empty_trace(session_factory):
+    """Uniform contract: honest-empty answers still carry an (empty) trace —
+    the frontend parser never special-cases a missing field."""
+    from deerflow.knowledge.graph.store import GraphStore
+    from deerflow.knowledge.store import KnowledgeStore
+
+    result = await _graph_search_impl(
+        "任意",
+        _runtime(user_id=OWNER_ID),
+        store=KnowledgeStore(session_factory),
+        graph_store=GraphStore(session_factory),
+        vector_store=None,
+        embedder=None,
+        llm=_QueryLLM([]),
+    )
+
+    assert result["trace"] == {"seed_entities": [], "expanded_nodes": [], "evidence_entities": []}

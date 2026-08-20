@@ -432,6 +432,14 @@ export interface Translations {
       /** 跳数切换（1 跳 / 2 跳邻居）。 */
       hop1: string;
       hop2: string;
+      /** P4 路径高亮（spec §7）：「跟随对话」开关（与向量空间共享语义）。 */
+      followChat: string;
+      /** 叠加徽标：种子/扩展/证据三层计数。 */
+      overlayLayers: (seeds: number, expanded: number, evidence: number) => string;
+      /** 图数据指纹漂移后叠加被清除的提示。 */
+      overlayStale: string;
+      /** 清除当前路径高亮（徽标 × 按钮）。 */
+      clearOverlay: string;
     };
     wikiPanel: {
       empty: string;

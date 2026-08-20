@@ -11,9 +11,11 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
 
-import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 import {
+  buildGraphData,
+  buildGraphLinks,
   buildGraphSeries,
   type GraphColorBy,
   type GraphDatum,
@@ -27,10 +29,16 @@ import {
 // 纯函数与类型的单测入口对齐 vector-canvas 先例——从 canvas 模块 re-export，
 // 测试 import 路径保持 "@/components/workspace/knowledge/graph-canvas"。
 export {
+  buildGraphData,
+  buildGraphLinks,
   buildGraphSeries,
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
+  GRAPH_EVIDENCE_COLOR,
+  GRAPH_EVIDENCE_SYMBOL,
+  GRAPH_HOP_COLORS,
+  GRAPH_SEED_BORDER_COLOR,
   type GraphColorBy,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
@@ -63,6 +71,8 @@ export interface GraphCanvasProps {
   colorBy: GraphColorBy;
   /** 搜索定位：命中的节点 id（居中 + 高亮）；null = 无定位请求。 */
   focusNode: string | null;
+  /** P4 检索路径叠加（spec §7）：种子/扩展/证据三层染色；null = 无叠加。 */
+  overlay?: GraphRetrievalTrace | null;
   /** 单击节点 → 实体钻取（抽屉由 graph-tab 渲染）。 */
   onNodeClick: (node: KnowledgeGraphNode) => void;
   /** 双击节点 → 进入局部图模式（spec §6，对齐 Obsidian）。 */
@@ -92,7 +102,7 @@ export function widenRoamPointerChecker(chart: unknown): void {
   }
 }
 
-export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeClick, onNodeDblClick }: GraphCanvasProps) {
+export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay, onNodeClick, onNodeDblClick }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   // 回调穿透 ref：数据刷新重建 option 时不需要重绑事件。
@@ -102,6 +112,17 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
   onNodeDblClickRef.current = onNodeDblClick;
   // 标签档位去重：graphRoam 在平移时也会触发（zoom 不变 → tier 不变 → 短路）。
   const labelTierRef = useRef<LabelTier>("full");
+  // overlay 穿透 ref：全量重建 effect 读取最新叠加但不以其为依赖（叠加单变更
+  // 走下方 merge 更新，不重跑力导向布局——对齐向量空间「叠加系列槽位」教训）。
+  const overlayRef = useRef(overlay ?? null);
+  overlayRef.current = overlay ?? null;
+  // 最近一次全量重建的输入指纹（引用对比）：overlay-only 变更才可走 merge 更新。
+  const lastFullRebuildRef = useRef<{
+    nodes: readonly KnowledgeGraphNode[];
+    edges: readonly KnowledgeGraphEdge[];
+    colorBy: GraphColorBy;
+  } | null>(null);
+  const appliedOverlayRef = useRef<GraphRetrievalTrace | null>(null);
 
   // 初始化一次：事件绑定与尺寸观察。
   useEffect(() => {
@@ -173,11 +194,13 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
 
   // 数据 → option。nodes/edges 来自 React Query（引用稳定），变化即整体重建
   // 布局（force 图节点集合变化后位置本就应重排，notMerge 语义对齐）。
+  // 当前叠加经 overlayRef 参与重建——数据变了，叠加染色必须随新数据一起落地。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const dark = isDarkTheme();
-    const [series] = buildGraphSeries(nodes, edges, colorBy);
+    const activeOverlay = overlayRef.current;
+    const [series] = buildGraphSeries(nodes, edges, colorBy, activeOverlay);
     // 数据重建后标签档位回到 full（notMerge 清掉了 roam 期间的档位覆盖），
     // 同步重置 ref——否则下次 roam 到同一档会因去重短路而丢失标签状态。
     labelTierRef.current = "full";
@@ -210,7 +233,27 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, onNodeCl
     );
     // notMerge 重建会重设 checker——立即覆盖（rendered 事件兜底之外的防御）。
     widenRoamPointerChecker(chart);
+    lastFullRebuildRef.current = { nodes, edges, colorBy };
+    appliedOverlayRef.current = activeOverlay;
   }, [nodes, edges, colorBy]);
+
+  // P4 叠加单变更（spec §7）：只替换 series 的 data/links（merge 模式），
+  // 保留力导向布局位置与视口——全量重建会让节点重新模拟、用户视角丢失。
+  // data/links 都是整体替换语义（完整 datum 携带 itemStyle/symbolSize，
+  // 不会重蹈 Task 4 部分字段丢失的坑）。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const last = lastFullRebuildRef.current;
+    // nodes/edges 引用恒非空——last 缺失（未全量重建过）时 ?. 求值为 undefined ≠ nodes，恒走 return。
+    if (last?.nodes !== nodes || last.edges !== edges || last.colorBy !== colorBy) {
+      return; // 数据未就绪或刚变更——等全量重建 effect 处理（它经 overlayRef 读最新值）。
+    }
+    const next = overlay ?? null;
+    if (appliedOverlayRef.current === next) return;
+    appliedOverlayRef.current = next;
+    chart.setOption({ series: [{ data: buildGraphData(nodes, colorBy, next), links: buildGraphLinks(edges, next != null) }] });
+  }, [overlay, nodes, edges, colorBy]);
 
   // 搜索定位（spec §6 P3）：命中节点 → 视图中心平移到该节点 + 高亮。
   // center 语义 = roam 视图中心对应的 layout 坐标（echarts graph 原生支持）；

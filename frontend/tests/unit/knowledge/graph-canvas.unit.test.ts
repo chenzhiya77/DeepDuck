@@ -13,6 +13,10 @@ import {
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
+  GRAPH_EVIDENCE_COLOR,
+  GRAPH_EVIDENCE_SYMBOL,
+  GRAPH_HOP_COLORS,
+  GRAPH_SEED_BORDER_COLOR,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
   LABEL_ZOOM_FULL_ABOVE,
@@ -24,7 +28,7 @@ import {
   typeColor,
   widenRoamPointerChecker,
 } from "@/components/workspace/knowledge/graph-canvas";
-import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 
 function node(id: string, extra: Partial<KnowledgeGraphNode> = {}): KnowledgeGraphNode {
@@ -274,6 +278,103 @@ describe("缩放分级标签（2026-08-19 标签密集治理，对齐 Neo4j Bloo
     expect(series.scaleLimit).toEqual({ min: 0.3, max: 3 });
     // hidden 档系列级 label.show=false 时，hover 单个节点仍要能看到名字。
     expect(series.emphasis.label?.show).toBe(true);
+  });
+});
+
+// ── Task 5（P4，spec §7）：检索路径叠加三层染色 ────────────────────────────
+// 种子红描边放大 / hop-1 橙 hop-2 黄 / 证据红星标 / 其余淡化 0.12。
+
+// 叠加专用节点集：五节点覆盖全部角色——JVM 纯种子 / 堆内存纯 hop-1 /
+// 字节码纯 hop-2 / 类加载器 hop-1+证据（验优先级）/ 孤立概念不命中（验淡化）。
+const OVERLAY_NODES: KnowledgeGraphNode[] = [...NODES, node("类加载器", { community: 0 })];
+
+const OVERLAY_TRACE: GraphRetrievalTrace = {
+  seed_entities: ["JVM"],
+  expanded_nodes: [
+    { name: "堆内存", hop: 1 },
+    { name: "字节码", hop: 2 },
+    { name: "类加载器", hop: 1 },
+  ],
+  evidence_entities: ["类加载器"],
+};
+
+type OverlayDatum = {
+  name: string;
+  symbol?: string;
+  symbolSize: number;
+  itemStyle: { color: string; opacity?: number; borderColor?: string; borderWidth?: number };
+};
+
+function dataByName(series: { data: unknown }): Map<string, OverlayDatum> {
+  return new Map((series.data as OverlayDatum[]).map((datum) => [datum.name, datum]));
+}
+
+describe("buildGraphSeries overlay（P4 三层染色）", () => {
+  it("highlights seed entities with a red border and an enlarged symbol（填充保持社区色）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
+    const jvm = dataByName(series).get("JVM")!;
+    expect(jvm.itemStyle.borderColor).toBe(GRAPH_SEED_BORDER_COLOR);
+    expect(GRAPH_SEED_BORDER_COLOR).toBe("#f5222d"); // 对齐向量空间命中强调色
+    expect(jvm.itemStyle.borderWidth).toBeGreaterThan(0);
+    expect(jvm.symbolSize).toBeGreaterThan(nodeSymbolSize(9)); // 放大（mention 9 基底）
+    // 种子自身填充色不被覆盖——描边+放大承载种子语义。
+    expect(jvm.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
+    expect(jvm.itemStyle.opacity).toBeUndefined(); // 命中层不淡化
+  });
+
+  it("colors expanded nodes by hop layer（hop-1 橙 / hop-2 黄渐淡）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
+    const byName = dataByName(series);
+    expect(GRAPH_HOP_COLORS[1]).toBe("#fa8c16");
+    expect(GRAPH_HOP_COLORS[2]).toBe("#fadb14");
+    expect(byName.get("堆内存")!.itemStyle.color).toBe(GRAPH_HOP_COLORS[1]);
+    expect(byName.get("字节码")!.itemStyle.color).toBe(GRAPH_HOP_COLORS[2]);
+  });
+
+  it("marks evidence entities with a solid red star symbol（优先于 hop 层着色）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
+    const byName = dataByName(series);
+    // 类加载器同时是 hop-1 与证据 → 星标 + 实心红（证据层优先于 hop 层）。
+    const loader = byName.get("类加载器")!;
+    expect(loader.symbol).toBe(GRAPH_EVIDENCE_SYMBOL);
+    expect(loader.symbol?.startsWith("path://")).toBe(true);
+    expect(loader.itemStyle.color).toBe(GRAPH_EVIDENCE_COLOR);
+    expect(GRAPH_EVIDENCE_COLOR).toBe("#f5222d");
+  });
+
+  it("dims every uninvolved node and edge to 0.12", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", OVERLAY_TRACE);
+    const byName = dataByName(series);
+    // 孤立概念：不在 trace 任一层 → 淡化（复用向量空间 DIMMED_OPACITY 档位）。
+    expect(byName.get("孤立概念")!.itemStyle.opacity).toBe(0.12);
+    for (const link of series.links as Array<{ lineStyle?: { opacity?: number } }>) {
+      expect(link.lineStyle?.opacity).toBe(0.12);
+    }
+  });
+
+  it("keeps the base encoding untouched without an overlay（回归钉死）", () => {
+    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", null);
+    const jvm = dataByName(series).get("JVM")!;
+    expect(jvm.symbol).toBeUndefined();
+    expect(jvm.itemStyle.opacity).toBeUndefined();
+    expect(jvm.itemStyle.borderColor).toBeUndefined();
+    expect(jvm.symbolSize).toBe(nodeSymbolSize(9));
+    for (const link of series.links as Array<{ lineStyle?: { opacity?: number } }>) {
+      expect(link.lineStyle?.opacity).toBeUndefined();
+    }
+  });
+
+  it("ignores trace names that no longer exist in the graph（陈旧 trace 容错）", () => {
+    const stale: GraphRetrievalTrace = {
+      seed_entities: ["已删除实体"],
+      expanded_nodes: [{ name: "也没有", hop: 1 }],
+      evidence_entities: ["已删除实体"],
+    };
+    const [series] = buildGraphSeries(OVERLAY_NODES, EDGES, "community", stale);
+    // 叠加激活但全部未命中 → 全图淡化，不炸不抛错。
+    for (const datum of series.data as OverlayDatum[]) {
+      expect(datum.itemStyle.opacity).toBe(0.12);
+    }
   });
 });
 

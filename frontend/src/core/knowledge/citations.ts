@@ -12,7 +12,7 @@ import type { Message } from "@langchain/langgraph-sdk";
 
 import { extractTextFromMessage } from "@/core/messages/utils";
 
-import type { KnowledgeCitation } from "./types";
+import type { GraphRetrievalTrace, KnowledgeCitation } from "./types";
 
 const RETRIEVAL_TOOLS = new Set(["hybrid_search", "wiki_search", "graph_search"]);
 
@@ -175,6 +175,121 @@ export function latestRetrievalTurn(messages: readonly Message[]): RetrievalTurn
       }
     }
     return { messageId: message.id ?? "", text, citations };
+  }
+  return null;
+}
+
+// ── P4 graph_search 路径高亮（2026-08-19 spec §7）：检索轨迹提取 ─────────────
+
+/** 从单条 graph_search 工具消息内容解析检索轨迹（无 trace 字段 / 非法 → null）。 */
+export function parseGraphSearchTrace(content: unknown): GraphRetrievalTrace | null {
+  let payload: unknown = content;
+  if (typeof content === "string") {
+    try {
+      payload = JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+  const trace = asRecord(asRecord(payload)?.trace);
+  if (!trace) {
+    return null;
+  }
+  const names = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const expandedNodes = (Array.isArray(trace.expanded_nodes) ? trace.expanded_nodes : [])
+    .map((item) => asRecord(item))
+    .filter(
+      (item): item is Record<string, unknown> =>
+        item !== null && typeof item.name === "string" && typeof item.hop === "number",
+    )
+    .map((item) => ({ name: item.name as string, hop: item.hop as number }));
+  return {
+    seed_entities: names(trace.seed_entities),
+    expanded_nodes: expandedNodes,
+    evidence_entities: names(trace.evidence_entities),
+  };
+}
+
+/** 最新一轮含图谱检索轨迹的助手回答（供知识图谱路径高亮叠加）。 */
+export interface GraphTraceTurn {
+  /** 该轮 ai message id——调用方去重句柄（同一轮只上报一次）。 */
+  messageId: string;
+  /** 该轮的可见用户提问文本（跳过 hide_from_ui 的 human_input_response）。 */
+  text: string;
+  /** 该轮全部 graph_search 调用合并后的轨迹（种子/证据并集，hop 取最浅）。 */
+  trace: GraphRetrievalTrace;
+}
+
+/**
+ * 提取最新一轮的图谱检索轨迹。语义对齐 latestRetrievalTurn：只认最后一条 ai
+ * message——该轮没有 graph_search 轨迹就返回 null（不更新叠加，旧叠加由调用方
+ * 保留或按指纹规则清理），绝不回退到更早的轮次。空命中（三层全空）同样不更新
+ * ——避免全图无意义淡化。
+ */
+export function latestGraphTraceTurn(messages: readonly Message[]): GraphTraceTurn | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.type !== "ai") {
+      continue;
+    }
+    let turnStart = 0;
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (messages[cursor]?.type === "human") {
+        turnStart = cursor + 1;
+        break;
+      }
+    }
+    // 合并该轮全部 graph_search 调用：种子/证据并集（保序），扩展按名取最浅 hop。
+    const seeds: string[] = [];
+    const evidence: string[] = [];
+    const hopByName = new Map<string, number>();
+    for (let cursor = turnStart; cursor < index; cursor += 1) {
+      const candidate = messages[cursor];
+      if (candidate?.type !== "tool" || (candidate as { name?: string }).name !== "graph_search") {
+        continue;
+      }
+      const trace = parseGraphSearchTrace(candidate.content);
+      if (!trace) {
+        continue;
+      }
+      for (const name of trace.seed_entities) {
+        if (!seeds.includes(name)) {
+          seeds.push(name);
+        }
+      }
+      for (const name of trace.evidence_entities) {
+        if (!evidence.includes(name)) {
+          evidence.push(name);
+        }
+      }
+      for (const node of trace.expanded_nodes) {
+        const previous = hopByName.get(node.name);
+        if (previous === undefined || node.hop < previous) {
+          hopByName.set(node.name, node.hop);
+        }
+      }
+    }
+    if (seeds.length === 0 && hopByName.size === 0 && evidence.length === 0) {
+      return null;
+    }
+    let text = "";
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = messages[cursor];
+      if (candidate?.type === "human" && candidate.additional_kwargs?.hide_from_ui !== true) {
+        text = extractTextFromMessage(candidate);
+        break;
+      }
+    }
+    return {
+      messageId: message.id ?? "",
+      text,
+      trace: {
+        seed_entities: seeds,
+        expanded_nodes: [...hopByName.entries()].map(([name, hop]) => ({ name, hop })),
+        evidence_entities: evidence,
+      },
+    };
   }
   return null;
 }

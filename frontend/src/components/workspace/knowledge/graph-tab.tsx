@@ -9,9 +9,9 @@
  * → onOpenChunk(docId, chunkId) 复用文档抽屉链路（chunk_id 内嵌 doc_id，
  * 前端无需二次查询）。
  */
-import { ChevronLeft, Search } from "lucide-react";
+import { ChevronLeft, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -23,10 +23,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
 import { useKnowledgeGraph } from "@/core/knowledge/hooks";
-import type { KnowledgeDocument, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalOverlay, KnowledgeDocument, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 import type { GraphCanvasProps } from "./graph-canvas";
 import { filterNeighborhood, type GraphColorBy, matchEntityNames } from "./graph-utils";
@@ -45,6 +46,9 @@ export function GraphTab({
   enabled,
   documents,
   onOpenChunk,
+  overlay,
+  followChat: followChatProp,
+  onFollowChatChange,
 }: {
   kbId: string;
   /** keep-alive pane 的懒加载门：仅 tab 激活后才发起图数据请求。 */
@@ -53,6 +57,14 @@ export function GraphTab({
   documents: readonly KnowledgeDocument[];
   /** 切片点击：(doc_id, chunk_id) —— page 层打开文档抽屉。 */
   onOpenChunk: (docId: string, chunkId: string) => void;
+  /**
+   * P4 检索联动（2026-08-19 spec §7）：page 层共享的 graph_search 轨迹叠加
+   * 请求。chat 通道受「跟随对话」开关管辖（冻结语义在本组件内）。
+   */
+  overlay?: GraphRetrievalOverlay | null;
+  /** 「跟随对话」开关（与向量空间共享状态，spec §7）；缺省 = 内部状态。 */
+  followChat?: boolean;
+  onFollowChatChange?: (next: boolean) => void;
 }) {
   const { t } = useI18n();
   const tg = t.knowledge.graphSpace;
@@ -68,6 +80,41 @@ export function GraphTab({
   const [focusNode, setFocusNode] = useState<string | null>(null);
   /** 局部图模式（spec §6：双击节点进入，面包屑返回全局）。 */
   const [neighborhood, setNeighborhood] = useState<{ focusId: string; hops: 1 | 2 } | null>(null);
+
+  // ── P4 检索路径叠加（spec §7）──────────────────────────────────────────
+  // 受控/非受控混合：page 层共享「跟随对话」状态时经 props 下发，独立使用时
+  // 回落内部状态（与 vector-tab 同模式）。
+  const [internalFollowChat, setInternalFollowChat] = useState(true);
+  const followChat = followChatProp ?? internalFollowChat;
+  const setFollowChat = onFollowChatChange ?? setInternalFollowChat;
+
+  /** 已应用的叠加 + 应用时的图指纹（node_count:edge_count，stats 现成廉价）。 */
+  const [activeOverlay, setActiveOverlay] = useState<{ overlay: GraphRetrievalOverlay; fingerprint: string } | null>(null);
+  /** 请求去重句柄：同一 overlay 对象只应用一次（流式重渲染不重复叠加）。 */
+  const consumedOverlayRef = useRef<GraphRetrievalOverlay | null>(null);
+  const fingerprint = graph ? `${graph.stats.node_count}:${graph.stats.edge_count}` : null;
+  const activeOverlayRef = useRef(activeOverlay);
+  activeOverlayRef.current = activeOverlay;
+
+  // 叠加消费：图数据就绪（指纹可用）才应用——keep-alive pane 的查询是懒门控，
+  // 用户未到访过图谱 tab 时等图落地后再应用（effect 随 fingerprint 重跑）。
+  // chat 通道受「跟随对话」管辖：冻结时不写 consumed——解冻后重跑即应用最新一轮。
+  useEffect(() => {
+    if (!overlay || !fingerprint) return;
+    if (consumedOverlayRef.current === overlay) return;
+    if (overlay.source === "chat" && !followChat) return;
+    consumedOverlayRef.current = overlay;
+    setActiveOverlay({ overlay, fingerprint });
+  }, [overlay, fingerprint, followChat]);
+
+  // 指纹漂移（文档增删改 → 图数据变化）→ 旧叠加留在图上就是误导，清除并提示。
+  useEffect(() => {
+    const current = activeOverlayRef.current;
+    if (current && fingerprint && current.fingerprint !== fingerprint) {
+      setActiveOverlay(null);
+      toast.info(tg.overlayStale);
+    }
+  }, [fingerprint, tg]);
 
   /** 可见子图：局部图模式裁剪为焦点 + N 跳邻居，否则全量。 */
   const visible = useMemo(() => {
@@ -122,11 +169,24 @@ export function GraphTab({
             {tg.colorByType}
           </ToggleGroupItem>
         </ToggleGroup>
-        {graph && (
-          <span className="text-muted-foreground ml-auto text-xs" data-testid="graph-stats">
-            {tg.stats(graph.stats.node_count, graph.stats.edge_count, graph.stats.community_count)}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {/* P4「跟随对话」开关（spec §7）：默认开；关闭后 chat 通道叠加冻结。
+              状态与向量空间共享（page 层下发时受控）。 */}
+          <label className="text-muted-foreground flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
+            <Switch
+              aria-label={tg.followChat}
+              checked={followChat}
+              className="shrink-0"
+              onCheckedChange={setFollowChat}
+            />
+            <span className="whitespace-nowrap">{tg.followChat}</span>
+          </label>
+          {graph && (
+            <span className="text-muted-foreground text-xs" data-testid="graph-stats">
+              {tg.stats(graph.stats.node_count, graph.stats.edge_count, graph.stats.community_count)}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 局部图面包屑（邻居模式时替换全局语义） */}
@@ -163,7 +223,8 @@ export function GraphTab({
         </div>
       )}
 
-      <div className="min-h-0 flex-1">
+      {/* relative 供叠加徽标浮层定位（对齐向量空间徽标模式） */}
+      <div className="relative min-h-0 flex-1">
         {graphQuery.isLoading ? (
           <div className="text-muted-foreground flex h-full items-center justify-center text-sm" data-testid="graph-loading">
             {tg.loading}
@@ -182,9 +243,37 @@ export function GraphTab({
             edges={visible.edges}
             focusNode={focusNode}
             nodes={visible.nodes}
+            overlay={activeOverlay?.overlay.trace ?? null}
             onNodeClick={setSelected}
             onNodeDblClick={(node) => setNeighborhood({ focusId: node.id, hops: 1 })}
           />
+        )}
+        {/* 叠加徽标：地图式左上浮层——query 文本 + 种子/扩展/证据三层计数 + × 清除。 */}
+        {activeOverlay && (
+          <div
+            className="bg-background/80 absolute top-2 left-2 z-10 flex max-w-[70%] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs shadow-sm backdrop-blur"
+            data-testid="graph-overlay-badge"
+          >
+            <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: "#f5222d" }} />
+            <span className="min-w-0 truncate" title={activeOverlay.overlay.text}>
+              {activeOverlay.overlay.text}
+            </span>
+            <span className="text-muted-foreground shrink-0">
+              {tg.overlayLayers(
+                activeOverlay.overlay.trace.seed_entities.length,
+                activeOverlay.overlay.trace.expanded_nodes.length,
+                activeOverlay.overlay.trace.evidence_entities.length,
+              )}
+            </span>
+            <button
+              aria-label={tg.clearOverlay}
+              className="text-muted-foreground hover:text-foreground ml-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full"
+              type="button"
+              onClick={() => setActiveOverlay(null)}
+            >
+              <X className="size-3" />
+            </button>
+          </div>
         )}
       </div>
 

@@ -40,7 +40,14 @@ ENTITY_MATCH_MIN_SCORE = 0.3
 
 
 def _empty(message: str) -> dict:
-    return {"entities": [], "relations": [], "evidence": [], "message": message}
+    # trace 恒在（空值）：前端路径高亮解析契约统一，不特判缺失字段。
+    return {
+        "entities": [],
+        "relations": [],
+        "evidence": [],
+        "trace": {"seed_entities": [], "expanded_nodes": [], "evidence_entities": []},
+        "message": message,
+    }
 
 
 async def _extract_query_entities(query: str, llm: Any) -> list[str]:
@@ -262,7 +269,30 @@ async def _graph_search_impl(
         "entities": entities,
         "relations": relations,
         "evidence": evidence,
+        "trace": _build_trace(hop_by_node, candidates, selected),
         "message": f"命中 {len(matched_names)} 个实体，扩展出 {len(seen)} 个节点、{len(relations)} 条关系、{len(evidence)} 条切片证据（引用编号 {span}，标注时照抄 citation_no）。",
+    }
+
+
+def _build_trace(hop_by_node: dict[str, int], candidates: dict[str, Candidate], selected: list[str]) -> dict:
+    """Serialize the retrieval trace for the frontend graph overlay (P4).
+
+    Pure serialization of what the pipeline already computed — three layers:
+    seed entities (hop-0 landings), expanded nodes with their hop layer, and
+    the evidence entities (every entity/edge endpoint that sourced a selected
+    chunk). Deterministic ordering (seeds/evidence sorted by name, expanded by
+    ``(hop, name)``) keeps the response contract stable across runs.
+    """
+    evidence_entities: set[str] = set()
+    for chunk_id in selected:
+        candidate = candidates[chunk_id]
+        evidence_entities |= candidate.entity_sources
+        for edge in candidate.edge_sources:
+            evidence_entities.update(edge)
+    return {
+        "seed_entities": sorted(name for name, hop in hop_by_node.items() if hop == 0),
+        "expanded_nodes": [{"name": name, "hop": hop} for name, hop in sorted(hop_by_node.items(), key=lambda item: (item[1], item[0])) if hop > 0],
+        "evidence_entities": sorted(evidence_entities),
     }
 
 

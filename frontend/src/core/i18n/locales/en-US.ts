@@ -482,6 +482,10 @@ export const enUS: Translations = {
       neighborhoodOf: (name) => `Neighbors of ${name}`,
       hop1: "1 hop",
       hop2: "2 hops",
+      followChat: "Follow chat",
+      overlayLayers: (seeds, expanded, evidence) => `Seeds ${seeds} · Expanded ${expanded} · Evidence ${evidence}`,
+      overlayStale: "The graph changed — the retrieval path highlight was cleared",
+      clearOverlay: "Clear path highlight",
     },
     wikiPanel: {
       empty: "No wiki entries yet — generate them from the menu above",
