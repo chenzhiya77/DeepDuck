@@ -254,6 +254,7 @@ export function GraphTab({
             className="bg-background/80 absolute top-2 left-2 z-10 flex max-w-[70%] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs shadow-sm backdrop-blur"
             data-testid="graph-overlay-badge"
           >
+            {/* 色点与命中节点同色（红）——徽标是叠加层的图例入口。 */}
             <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: "#f5222d" }} />
             <span className="min-w-0 truncate" title={activeOverlay.overlay.text}>
               {activeOverlay.overlay.text}

@@ -136,25 +136,26 @@ export function labelTextForTier(
   return fallbackName;
 }
 
-// ── P4 检索路径叠加（2026-08-19 spec §7，2026-08-20 发光描边重设计）─────────
+// ── P4 检索路径叠加（2026-08-19 spec §7，2026-08-20 两层合并重设计）─────────
 // 叠加层是诊断镜头，不破坏底图编码：填充色一律保留（类型/社区语义），层语义由
-// 描边 + 发光 + 尺寸承载；非命中节点原样保留（不灰化，空间上下文不丢）；
-// 命中路径边（两端均在 trace 并集）荧光金发光。
+// 描边 + 发光 + 尺寸承载。视觉只分两层（种子与证据数据上高度重叠、hop 层数对
+// 调试指导意义低，故合并；徽标仍保留三层数字分解）：
+//   命中（种子∪证据）= 红发光描边，种子额外放大（尺寸通道保留源头信号）；
+//   路径（hop-1∪hop-2 扩展）= 金细边无发光，与命中路径边同色——金色织出
+//   检索路径网络，红色标出路径上的命中要点；非命中节点/边原样（不灰化）。
 
-/** 种子实体描边/发光色（红=路径源头，对齐向量空间命中强调色）。 */
-export const GRAPH_SEED_BORDER_COLOR = "#f5222d";
-/** 证据实体描边/发光色（荧光金=最终落点；双主题通用，白色发光浅色底不可见故不采用）。 */
-export const GRAPH_EVIDENCE_BORDER_COLOR = "#ffd700";
-/** 扩展路径 hop 层描边色板：hop-1 橙、hop-2 黄（无发光，视觉权重弱于种子/证据）。 */
-export const GRAPH_HOP_BORDER_COLORS: Record<number, string> = { 1: "#fa8c16", 2: "#fadb14" };
+/** 命中节点描边/发光色（红=命中要点；双主题通用）。 */
+export const GRAPH_HIT_BORDER_COLOR = "#f5222d";
+/** 路径节点描边色（荧光金，hop-1/hop-2 合并；无发光，视觉权重弱于命中）。 */
+export const GRAPH_EXPANSION_BORDER_COLOR = "#ffd700";
 /** 种子节点放大倍率（在 mention 基底尺寸上乘算）。 */
 export const GRAPH_SEED_SIZE_BOOST = 1.35;
-/** 种子/证据描边宽度与发光强度。 */
-export const GRAPH_ROLE_BORDER_WIDTH = 3;
-export const GRAPH_HOP_BORDER_WIDTH = 2;
+/** 命中/路径描边宽度与发光强度。 */
+export const GRAPH_HIT_BORDER_WIDTH = 3;
+export const GRAPH_EXPANSION_BORDER_WIDTH = 2;
 export const GRAPH_NODE_GLOW_BLUR = 12;
-/** 命中路径边：荧光金 + 发光。 */
-export const GRAPH_PATH_COLOR = "#ffd700";
+/** 命中路径边：荧光金 + 发光（与路径节点描边同色，路径层一体化）。 */
+export const GRAPH_PATH_COLOR = GRAPH_EXPANSION_BORDER_COLOR;
 export const GRAPH_PATH_WIDTH = 2;
 export const GRAPH_PATH_GLOW_BLUR = 8;
 
@@ -202,9 +203,9 @@ function overlayLookup(overlay: GraphRetrievalTrace | null | undefined) {
 }
 
 /**
- * 组装 series data。填充一律保留自身色；角色优先级：种子 > 证据 > hop 层
- * （同节点多角色时源头语义最强）。trace 中已不在图里的实体名自然跳过
- * （陈旧 trace 容错）；未命中节点原样返回（不灰化不描边）。
+ * 组装 series data。填充一律保留自身色；命中（种子∪证据）红发光描边，种子
+ * 额外放大；路径（hop 扩展）金细边；命中优先于路径。trace 中已不在图里的
+ * 实体名自然跳过（陈旧 trace 容错）；未命中节点原样返回（不灰化不描边）。
  */
 export function buildGraphData(
   nodes: readonly KnowledgeGraphNode[],
@@ -218,31 +219,23 @@ export function buildGraphData(
     const datum: GraphDatum = { name: node.id, symbolSize: baseSize, itemStyle: { color: ownColor }, node };
     if (!lookup) return datum;
     const isSeed = lookup.seeds.has(node.id);
-    const isEvidence = lookup.evidence.has(node.id);
-    const hop = lookup.hops.get(node.id);
-    if (isSeed) {
-      datum.symbolSize = Math.round(baseSize * GRAPH_SEED_SIZE_BOOST);
+    const isHit = isSeed || lookup.evidence.has(node.id);
+    if (isHit) {
       datum.itemStyle = {
         ...datum.itemStyle,
-        borderColor: GRAPH_SEED_BORDER_COLOR,
-        borderWidth: GRAPH_ROLE_BORDER_WIDTH,
-        shadowColor: GRAPH_SEED_BORDER_COLOR,
+        borderColor: GRAPH_HIT_BORDER_COLOR,
+        borderWidth: GRAPH_HIT_BORDER_WIDTH,
+        shadowColor: GRAPH_HIT_BORDER_COLOR,
         shadowBlur: GRAPH_NODE_GLOW_BLUR,
       };
-    } else if (isEvidence) {
+      if (isSeed) {
+        datum.symbolSize = Math.round(baseSize * GRAPH_SEED_SIZE_BOOST);
+      }
+    } else if (lookup.hops.has(node.id)) {
       datum.itemStyle = {
         ...datum.itemStyle,
-        borderColor: GRAPH_EVIDENCE_BORDER_COLOR,
-        borderWidth: GRAPH_ROLE_BORDER_WIDTH,
-        shadowColor: GRAPH_EVIDENCE_BORDER_COLOR,
-        shadowBlur: GRAPH_NODE_GLOW_BLUR,
-      };
-    } else if (hop !== undefined) {
-      // hop 超出 2（未来更深扩展）按最浅档色板回绕。
-      datum.itemStyle = {
-        ...datum.itemStyle,
-        borderColor: GRAPH_HOP_BORDER_COLORS[hop] ?? GRAPH_HOP_BORDER_COLORS[2]!,
-        borderWidth: GRAPH_HOP_BORDER_WIDTH,
+        borderColor: GRAPH_EXPANSION_BORDER_COLOR,
+        borderWidth: GRAPH_EXPANSION_BORDER_WIDTH,
       };
     }
     return datum;
