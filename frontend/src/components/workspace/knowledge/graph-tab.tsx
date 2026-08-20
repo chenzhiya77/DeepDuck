@@ -145,11 +145,11 @@ export function GraphTab({
     <div className="flex h-full min-h-0 flex-col" data-testid="graph-tab">
       {/* 工具栏：实体搜索 + 着色切换 + 图规模统计 */}
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-        <form className="relative w-44" onSubmit={handleSearch}>
+        <form className="relative w-40" onSubmit={handleSearch}>
           <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
           <Input
             aria-label={tg.searchEntities}
-            className="h-7 pr-2 pl-7 text-xs"
+            className="h-7 pr-6 pl-7 text-xs"
             placeholder={tg.searchEntities}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -181,11 +181,6 @@ export function GraphTab({
             />
             <span className="whitespace-nowrap">{tg.followChat}</span>
           </label>
-          {graph && (
-            <span className="text-muted-foreground text-xs" data-testid="graph-stats">
-              {tg.stats(graph.stats.node_count, graph.stats.edge_count, graph.stats.community_count)}
-            </span>
-          )}
         </div>
       </div>
 
@@ -275,6 +270,15 @@ export function GraphTab({
               <X className="size-3" />
             </button>
           </div>
+        )}
+        {/* 图规模统计：底部居中低调浮层（不占工具栏行宽，与画布视觉中轴对齐）。 */}
+        {graph && (
+          <span
+            className="bg-background/80 text-muted-foreground absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border px-2 py-0.5 text-xs whitespace-nowrap shadow-sm backdrop-blur"
+            data-testid="graph-stats"
+          >
+            {tg.stats(graph.stats.node_count, graph.stats.edge_count, graph.stats.community_count)}
+          </span>
         )}
       </div>
 
