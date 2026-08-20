@@ -136,6 +136,10 @@ export function labelTextForTier(
   return fallbackName;
 }
 
+/** hover 高亮描边色（交互蓝）：与命中红 #f5222d / 路径金 #ffd700 同语言异色，
+    双主题可读；悬停=临时聚焦，叠加层=持久标记，语义不混。 */
+export const GRAPH_HOVER_BORDER_COLOR = "#1677ff";
+
 // ── P4 检索路径叠加（2026-08-19 spec §7，2026-08-20 两层合并重设计）─────────
 // 叠加层是诊断镜头，不破坏底图编码：填充色一律保留（类型/社区语义），层语义由
 // 描边 + 发光 + 尺寸承载。视觉只分两层（种子与证据数据上高度重叠、hop 层数对
@@ -284,7 +288,21 @@ export interface GraphSeriesConfig {
     gravity: number;
     layoutAnimation: boolean;
   };
-  emphasis: { focus: "adjacency"; label: { show: boolean } };
+  /** hover 高亮（2026-08-20 加法高亮版）：只配当前元素自身的 emphasis 样式。
+      不配 focus/blur——echarts states.js 实证：focus:adjacency 下邻接集合仅
+      「不被压暗」而非主动高亮（原版邻居高亮=压暗全图的减法错觉，压暗即闪烁
+      根因）。邻域提亮由 canvas 层 mouseover 手动 dispatchAction highlight
+      实现（当前节点+1 跳邻居同走本样式）；不配 lineStyle，边一律不动。 */
+  emphasis: {
+    itemStyle: { borderColor: string; borderWidth: number; shadowColor: string; shadowBlur: number };
+    /** 关掉 echarts 默认 hover 放大（位置绝对静止）。 */
+    scale: boolean;
+    focus?: string;
+    label?: { show: boolean };
+    lineStyle?: { width: number };
+  };
+  /** hover 状态即时切换（false = 无过渡渐变，快速划过不闪）。 */
+  stateAnimation: boolean;
   label: { show: boolean; position: string; fontSize: number };
   /** echarts 5.1+ 内建防重叠：重叠标签自动隐藏（密集区只留稀疏可读标签）。 */
   labelLayout: { hideOverlap: boolean };
@@ -317,12 +335,18 @@ export function buildGraphSeries(
         gravity: 0.1,
         layoutAnimation: true,
       },
+      // hover 高亮：交互蓝描边+轻发光（与命中红/路径金同语言异色）。
+      // 仅作用于进 emphasis 的元素（当前 hover 节点 + canvas 手动 highlight 的邻居）。
       emphasis: {
-        focus: "adjacency",
-        // hidden/important 档系列级 label.show=false 时，hover 单个节点仍要看到
-        // 名字（emphasis.label.show 优先级高于 normal，canvas 层合并时保留）。
-        label: { show: true },
+        itemStyle: {
+          borderColor: GRAPH_HOVER_BORDER_COLOR,
+          borderWidth: 3,
+          shadowColor: GRAPH_HOVER_BORDER_COLOR,
+          shadowBlur: 8,
+        },
+        scale: false,
       },
+      stateAnimation: false,
       label: { show: true, position: "right", fontSize: 11 },
       labelLayout: { hideOverlap: true },
       scaleLimit: { min: 0.3, max: 3 },
@@ -330,6 +354,29 @@ export function buildGraphSeries(
       links: buildGraphLinks(edges, overlay),
     },
   ];
+}
+
+/**
+ * 邻接表（hover 邻域提亮的数据源）：实体名 → 1 跳邻居名数组。
+ * 有向边按无向邻接处理（对齐 filterNeighborhood 的邻域语义）；无边的节点
+ * 不产条目。canvas 层在数据重建时刷新 ref，mouseover 时查表 dispatch
+ * highlight（echarts 内置 focus:adjacency 只能「不压暗邻居」，加法高亮必须手动）。
+ */
+export function buildAdjacencyMap(edges: readonly KnowledgeGraphEdge[]): Map<string, string[]> {
+  const sets = new Map<string, Set<string>>();
+  const ensure = (id: string): Set<string> => {
+    let set = sets.get(id);
+    if (!set) {
+      set = new Set();
+      sets.set(id, set);
+    }
+    return set;
+  };
+  for (const edge of edges) {
+    ensure(edge.source).add(edge.target);
+    ensure(edge.target).add(edge.source);
+  }
+  return new Map([...sets].map(([id, set]) => [id, [...set]]));
 }
 
 export interface GraphTooltipParams {

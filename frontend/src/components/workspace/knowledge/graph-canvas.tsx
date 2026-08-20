@@ -14,6 +14,7 @@ import { useEffect, useRef } from "react";
 import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 import {
+  buildAdjacencyMap,
   buildGraphData,
   buildGraphLinks,
   buildGraphSeries,
@@ -29,6 +30,7 @@ import {
 // 纯函数与类型的单测入口对齐 vector-canvas 先例——从 canvas 模块 re-export，
 // 测试 import 路径保持 "@/components/workspace/knowledge/graph-canvas"。
 export {
+  buildAdjacencyMap,
   buildGraphData,
   buildGraphLinks,
   buildGraphSeries,
@@ -37,6 +39,7 @@ export {
   fnv1aHash,
   GRAPH_EXPANSION_BORDER_COLOR,
   GRAPH_HIT_BORDER_COLOR,
+  GRAPH_HOVER_BORDER_COLOR,
   GRAPH_PATH_COLOR,
   type GraphColorBy,
   graphTooltipFormatter,
@@ -122,6 +125,8 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     colorBy: GraphColorBy;
   } | null>(null);
   const appliedOverlayRef = useRef<GraphRetrievalTrace | null>(null);
+  // hover 邻域提亮的邻接表：effect A 数据重建时刷新，事件 handler 经 ref 读最新值。
+  const adjacencyRef = useRef<Map<string, string[]>>(new Map());
 
   // 初始化一次：事件绑定与尺寸观察。
   useEffect(() => {
@@ -142,6 +147,23 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     chart.on("dblclick", (params) => {
       const node = nodeOf(params);
       if (node) onNodeDblClickRef.current(node);
+    });
+
+    // hover 邻域提亮（2026-08-20 加法高亮）：echarts focus:adjacency 只保证邻居
+    // 「不被压暗」而非主动高亮（states.js：只有当前 hover 元素进 emphasis）——
+    // 邻居提亮必须手动 dispatch highlight，让「当前节点+1 跳邻居」同走蓝描边。
+    // 系列不配 focus/blur，其他元素全程 normal：纯加法，零闪烁。
+    const dispatchNeighborhood = (params: unknown, action: "highlight" | "downplay") => {
+      const p = params as { dataType?: string; name?: unknown };
+      if (p.dataType !== "node" || typeof p.name !== "string") return;
+      const names = [p.name, ...(adjacencyRef.current.get(p.name) ?? [])];
+      chart.dispatchAction({ type: action, seriesIndex: 0, name: names });
+    };
+    chart.on("mouseover", (params) => dispatchNeighborhood(params, "highlight"));
+    chart.on("mouseout", (params) => dispatchNeighborhood(params, "downplay"));
+    // 鼠标直接甩出画布时兜底：downplay 无参=清除全部高亮（防滞留）。
+    chart.on("globalout", () => {
+      chart.dispatchAction({ type: "downplay", seriesIndex: 0 });
     });
 
     // 缩放分级标签（2026-08-19 标签密集治理）：zoom 跨档时才 setOption。
@@ -199,6 +221,8 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     if (!chart) return;
     const dark = isDarkTheme();
     const activeOverlay = overlayRef.current;
+    // hover 邻域提亮的邻接表随数据重建刷新（mouseover handler 经 ref 读最新值）。
+    adjacencyRef.current = buildAdjacencyMap(edges);
     const [series] = buildGraphSeries(nodes, edges, colorBy, activeOverlay);
     // 数据重建后标签档位回到 full（notMerge 清掉了 roam 期间的档位覆盖），
     // 同步重置 ref——否则下次 roam 到同一档会因去重短路而丢失标签状态。
@@ -216,15 +240,11 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
         series: [
           {
             ...series,
-            lineStyle: { color: ink(0.35, dark), width: 1 },
+            // opacity 必须显式钉死为 1：echarts graph 默认 lineStyle.opacity 0.5，
+            // 若继承它，blur.lineStyle.opacity=1（零淡化意图）反而把 hover 时的
+            // 非邻接边从 0.5 提亮到 1——「全局边高亮」事故根因（2026-08-20 排查）。
+            lineStyle: { color: ink(0.35, dark), width: 1, opacity: 1 },
             label: { ...series.label, color: ink(0.75, dark) },
-            emphasis: {
-              ...series.emphasis,
-              lineStyle: { width: 2.5 },
-              // show:true 必须保留（utils 层设定：hidden 档 hover 仍显示单个标签），
-              // spread 是浅合并，label 整体替换会把它丢掉。
-              label: { ...series.emphasis.label, fontWeight: "bold" },
-            },
           },
         ],
       },

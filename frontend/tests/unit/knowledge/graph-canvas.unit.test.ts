@@ -9,12 +9,14 @@
 import { describe, expect, it } from "@rstest/core";
 
 import {
+  buildAdjacencyMap,
   buildGraphSeries,
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
   GRAPH_EXPANSION_BORDER_COLOR,
   GRAPH_HIT_BORDER_COLOR,
+  GRAPH_HOVER_BORDER_COLOR,
   GRAPH_PATH_COLOR,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
@@ -139,9 +141,39 @@ describe("buildGraphSeries（force 布局配置）", () => {
     expect((series.edgeSymbolSize as number[])[1]).toBeGreaterThan(0);
   });
 
-  it("dims non-neighbors on hover via adjacency focus", () => {
+  it("exposes only self-emphasis styles——邻域提亮由 canvas 手动 dispatch（加法高亮）", () => {
+    // 2026-08-20 排查实证（echarts states.js/GraphView.js）：focus:adjacency 下
+    // 只有当前 hover 元素进 emphasis，邻接集合的作用仅是「不被 blur」——原版
+    // 「邻居高亮」其实是其他节点被压暗的减法错觉，压暗即闪烁根因。
+    // 加法高亮：系列不配 focus/blur（其他元素全程 normal 零变化），canvas 层
+    // mouseover 时对「当前节点+1 跳邻居」dispatchAction highlight 同走蓝描边。
     const [series] = buildGraphSeries(NODES, EDGES);
-    expect(series.emphasis?.focus).toBe("adjacency");
+    expect(series.emphasis.focus).toBeUndefined(); // 无 focus → 无 blur 分类
+    expect(series.emphasis.scale).toBe(false); // 关掉 echarts 默认 hover 放大
+    expect(series.stateAnimation).toBe(false); // 即时切换，无渐变残留
+    expect(GRAPH_HOVER_BORDER_COLOR).toBe("#1677ff"); // 交互蓝，与命中红/路径金区分
+    expect(series.emphasis.itemStyle).toEqual({
+      borderColor: GRAPH_HOVER_BORDER_COLOR,
+      borderWidth: 3,
+      shadowColor: GRAPH_HOVER_BORDER_COLOR,
+      shadowBlur: 8, // 轻发光（弱于命中的 12，层级区分）
+    });
+    expect(series.emphasis.label).toBeUndefined(); // 名字由 tooltip 承载，避免 hideOverlap 重算闪现
+    expect(series.emphasis.lineStyle).toBeUndefined(); // 边不做任何变化
+  });
+});
+
+describe("buildAdjacencyMap（hover 邻域提亮的邻接表）", () => {
+  it("builds an undirected adjacency map（有向边按无向邻接，对齐邻域语义）", () => {
+    const map = buildAdjacencyMap(EDGES);
+    expect(map.get("JVM")).toEqual(["堆内存", "字节码"]); // 两条出边
+    expect(map.get("堆内存")).toEqual(["JVM"]); // 入边回指
+    expect(map.get("字节码")).toEqual(["JVM"]);
+    expect(map.has("孤立概念")).toBe(false); // 无边的节点不产条目
+  });
+
+  it("returns an empty map for empty edges", () => {
+    expect(buildAdjacencyMap([]).size).toBe(0);
   });
 });
 
@@ -271,12 +303,10 @@ describe("缩放分级标签（2026-08-19 标签密集治理，对齐 Neo4j Bloo
     expect(labelTextForTier(NODES[0], "hidden", "JVM")).toBe("");
   });
 
-  it("buildGraphSeries 启用 hideOverlap 防重叠 + scaleLimit 防失控 + emphasis 恒显标签", () => {
+  it("buildGraphSeries 启用 hideOverlap 防重叠 + scaleLimit 防失控", () => {
     const [series] = buildGraphSeries(NODES, EDGES);
     expect(series.labelLayout).toEqual({ hideOverlap: true });
     expect(series.scaleLimit).toEqual({ min: 0.3, max: 3 });
-    // hidden 档系列级 label.show=false 时，hover 单个节点仍要能看到名字。
-    expect(series.emphasis.label?.show).toBe(true);
   });
 });
 
