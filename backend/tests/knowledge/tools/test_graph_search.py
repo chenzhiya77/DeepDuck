@@ -473,8 +473,35 @@ async def test_graph_search_response_carries_three_layer_trace(trace_env):
         {"name": "DeerFlow", "hop": 1},
         {"name": "MinerU", "hop": 1},
     ]
-    # 证据实体 = 被选中切片（c0 + c1）的全部实体/边来源端点。
-    assert trace["evidence_entities"] == ["DeerFlow", "Gateway", "MinerU"]
+    # 证据实体 = 每条选中切片归因的最强来源锚点（hop 最小 → 实体分最高 → 名字
+    # 典序），有界于证据条数。真实库中一切片可被 8–29 个实体共同提及（2026-08-20
+    # 实测 median 16），若退化为「提及该切片的所有实体」会把命中层洪泛成全图红。
+    # c0 来源 {Gateway(hop0), DeerFlow(hop1)} → 锚点 Gateway；c1 同理锚定 Gateway。
+    assert trace["evidence_entities"] == ["Gateway"]
+    assert len(trace["evidence_entities"]) <= len(result["evidence"])
+
+
+@pytest.mark.asyncio
+async def test_graph_search_trace_evidence_anchors_stay_bounded(trace_env):
+    """证据锚点有界性：每条选中切片最多贡献一个锚点实体（防命中层洪泛）。
+
+    稠密图谱中一切片被大量实体共同提及是常态——锚点归因保证 evidence_entities
+    的规模 ≤ 证据条数，而不是实体的笛卡尔洪泛。
+    """
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        hops=2,
+        neighbor_min_score=0.0,
+    )
+
+    trace = result["trace"]
+    assert result["evidence"], "fixture 必须有证据切片"
+    assert 0 < len(trace["evidence_entities"]) <= len(result["evidence"])
+    # 锚点必须落在 seen 子图内（种子 ∪ 扩展）。
+    seen = set(trace["seed_entities"]) | {node["name"] for node in trace["expanded_nodes"]}
+    assert set(trace["evidence_entities"]) <= seen
 
 
 @pytest.mark.asyncio
