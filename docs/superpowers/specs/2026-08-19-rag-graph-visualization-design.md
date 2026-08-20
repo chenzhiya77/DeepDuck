@@ -1,6 +1,6 @@
 # RAG 知识图谱可视化设计（实体关系图 tab）
 
-> 状态：✅ 已定稿（待实施） · 日期：2026-08-19 · 范围：知识库详情中栏新增「知识图谱」tab —— 将 graph_entities / graph_relations 渲染为交互式力导向图，并与 graph_search 检索路径联动高亮 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md` §3.4（图谱路）；向量空间 spec `2026-08-15-rag-vector-space-visualization-design.md`（姊妹能力，交互范式对齐）
+> 状态：✅ 已落地（2026-08-20） · 日期：2026-08-19 · 范围：知识库详情中栏新增「知识图谱」tab —— 将 graph_entities / graph_relations 渲染为交互式力导向图，并与 graph_search 检索路径联动高亮 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md` §3.4（图谱路）；向量空间 spec `2026-08-15-rag-vector-space-visualization-design.md`（姊妹能力，交互范式对齐）
 
 ## 1. 背景
 
