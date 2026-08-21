@@ -27,7 +27,7 @@ from typing import Any
 import anyio
 import numpy as np
 
-from deerflow.knowledge.graph.communities import assign_communities
+from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
@@ -945,6 +945,9 @@ class KnowledgeService:
                 "edge_count": len(relations),
                 "community_count": len(set(community_by_name.values())),
             },
+            # Task 7b LOD：社区级汇总（SuperNode 聚合/主导类型着色的数据源；
+            # 分层加载契约的 super 层）。
+            "communities": summarize_communities(entities, community_by_name),
         }
 
     async def get_vector_projection(

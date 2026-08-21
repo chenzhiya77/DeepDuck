@@ -463,6 +463,7 @@ export const zhCN: Translations = {
       colorByCommunity: "按社区",
       backToGlobal: "返回全局图",
       neighborhoodOf: (name) => `${name} 的邻居`,
+      guideHint: "实体过多，已隐藏细节——放大或双击节点进入局部图",
       hop1: "1 跳",
       hop2: "2 跳",
       followChat: "跟随对话",

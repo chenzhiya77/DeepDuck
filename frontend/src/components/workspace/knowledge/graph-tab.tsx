@@ -30,7 +30,7 @@ import { useKnowledgeGraph } from "@/core/knowledge/hooks";
 import type { GraphRetrievalOverlay, KnowledgeDocument, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 import type { GraphCanvasProps } from "./graph-canvas";
-import { filterNeighborhood, type GraphColorBy, matchEntityNames } from "./graph-utils";
+import { filterNeighborhood, type GraphColorBy, matchEntityNames, type RenderTier } from "./graph-utils";
 
 // ssr:false —— echarts 依赖 DOM，且不进首屏 chunk（对齐 vector-tab 先例）。
 const GraphCanvas = dynamic<GraphCanvasProps>(() => import("./graph-canvas"), { ssr: false });
@@ -80,6 +80,8 @@ export function GraphTab({
   const [focusNode, setFocusNode] = useState<string | null>(null);
   /** 局部图模式（spec §6：双击节点进入，面包屑返回全局）。 */
   const [neighborhood, setNeighborhood] = useState<{ focusId: string; hops: 1 | 2 } | null>(null);
+  /** 当前 LOD 渲染档位（canvas 上报；guide 档显示引导提示）。 */
+  const [renderTier, setRenderTier] = useState<RenderTier>("full");
 
   // ── P4 检索路径叠加（spec §7）──────────────────────────────────────────
   // 受控/非受控混合：page 层共享「跟随对话」状态时经 props 下发，独立使用时
@@ -116,12 +118,20 @@ export function GraphTab({
     }
   }, [fingerprint, tg]);
 
-  /** 可见子图：局部图模式裁剪为焦点 + N 跳邻居，否则全量。 */
+  /** 可见子图：实体局部图（N 跳邻居）/ 全量。 */
   const visible = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
     if (!neighborhood) return { nodes: graph.nodes, edges: graph.edges };
     return filterNeighborhood(graph.nodes, graph.edges, neighborhood.focusId, neighborhood.hops);
   }, [graph, neighborhood]);
+
+  /** 局部图模式下社区汇总同步裁剪（hub 层枢纽选择只覆盖可见社区；全局模式全量）。 */
+  const visibleCommunities = useMemo(() => {
+    if (!graph) return [];
+    if (!neighborhood) return graph.communities;
+    const visibleCommunityIds = new Set(visible.nodes.map((node) => node.community));
+    return graph.communities.filter((community) => visibleCommunityIds.has(community.id));
+  }, [graph, visible, neighborhood]);
 
   /** 搜索提交：模糊匹配第一个命中 → 画布居中高亮；无命中提示。 */
   const handleSearch = (event: React.FormEvent) => {
@@ -184,7 +194,7 @@ export function GraphTab({
         </div>
       </div>
 
-      {/* 局部图面包屑（邻居模式时替换全局语义） */}
+      {/* 局部图面包屑（实体邻居；返回按钮清模式） */}
       {neighborhood && (
         <div className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5" data-testid="graph-breadcrumb">
           <Button
@@ -192,7 +202,9 @@ export function GraphTab({
             data-testid="graph-breadcrumb-back"
             size="sm"
             variant="ghost"
-            onClick={() => setNeighborhood(null)}
+            onClick={() => {
+              setNeighborhood(null);
+            }}
           >
             <ChevronLeft className="size-3.5" />
             {tg.backToGlobal}
@@ -235,13 +247,26 @@ export function GraphTab({
         ) : (
           <GraphCanvas
             colorBy={colorBy}
+            communities={visibleCommunities}
             edges={visible.edges}
             focusNode={focusNode}
             nodes={visible.nodes}
             overlay={activeOverlay?.overlay.trace ?? null}
             onNodeClick={setSelected}
-            onNodeDblClick={(node) => setNeighborhood({ focusId: node.id, hops: 1 })}
+            onNodeDblClick={(node) => {
+              setNeighborhood({ focusId: node.id, hops: 1 });
+            }}
+            onRenderTierChange={setRenderTier}
           />
+        )}
+        {/* LOD guide 层引导（实体超 2000 熔断）：右上角低调提示。 */}
+        {renderTier === "guide" && !neighborhood && (
+          <div
+            className="bg-background/80 text-muted-foreground absolute top-2 right-2 z-10 max-w-[45%] rounded-full border px-2.5 py-1 text-xs shadow-sm backdrop-blur"
+            data-testid="graph-guide-hint"
+          >
+            {tg.guideHint}
+          </div>
         )}
         {/* 叠加徽标：地图式左上浮层——query 文本 + 种子/扩展/证据三层计数 + × 清除。 */}
         {activeOverlay && (

@@ -429,6 +429,8 @@ export interface Translations {
       backToGlobal: string;
       /** 局部图面包屑焦点节点名展示。 */
       neighborhoodOf: (name: string) => string;
+      /** LOD guide 层引导提示（实体超 2000 硬上限时显示）。 */
+      guideHint: string;
       /** 跳数切换（1 跳 / 2 跳邻居）。 */
       hop1: string;
       hop2: string;

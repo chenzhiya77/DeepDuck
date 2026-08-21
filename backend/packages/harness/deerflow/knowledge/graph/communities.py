@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 
 import networkx as nx
 
@@ -39,3 +39,46 @@ def assign_communities(node_names: Iterable[str], edges: Iterable[tuple[str, str
     # 规模降序（成员数相同按最小名字典序，保证完全确定性）→ 重编号。
     ordered = sorted(communities, key=lambda members: (-len(members), min(members)))
     return {name: cid for cid, members in enumerate(ordered) for name in members}
+
+
+def summarize_communities(
+    entities: Sequence[Mapping[str, object]],
+    community_by_name: Mapping[str, int],
+) -> list[dict[str, object]]:
+    """社区级汇总（Task 7b LOD）：cluster/hub 层 SuperNode 与主导类型着色的数据源。
+
+    每个社区产出一项：memberCount / totalMentions / topMembers（mention 降序 Top 3，
+    同数按名字典序）/ dominantType（社区内 mention 总和最高的类型，同数按类型名
+    字典序）。空社区不产条目（无成员即无意义）；返回按社区 id 升序。
+    """
+    members_by_cid: dict[int, list[Mapping[str, object]]] = {}
+    for row in entities:
+        name = row.get("name")
+        cid = community_by_name.get(str(name))
+        if cid is None:
+            continue
+        members_by_cid.setdefault(cid, []).append(row)
+
+    summaries: list[dict[str, object]] = []
+    for cid in sorted(members_by_cid):
+        members = members_by_cid[cid]
+
+        def mention_count(row: Mapping[str, object]) -> int:
+            return len(row.get("source_chunk_ids") or [])  # type: ignore[arg-type]
+
+        ranked = sorted(members, key=lambda row: (-mention_count(row), str(row.get("name") or "")))
+        type_mentions: dict[str, int] = {}
+        for row in members:
+            entity_type = str(row.get("type") or "")
+            type_mentions[entity_type] = type_mentions.get(entity_type, 0) + mention_count(row)
+        dominant_type = min(type_mentions, key=lambda t: (-type_mentions[t], t)) if type_mentions else ""
+        summaries.append(
+            {
+                "id": cid,
+                "memberCount": len(members),
+                "totalMentions": sum(mention_count(row) for row in members),
+                "topMembers": [{"id": str(row.get("name") or ""), "mention_count": mention_count(row)} for row in ranked[:3]],
+                "dominantType": dominant_type,
+            }
+        )
+    return summaries

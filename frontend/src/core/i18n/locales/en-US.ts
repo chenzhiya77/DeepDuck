@@ -480,6 +480,7 @@ export const enUS: Translations = {
       colorByCommunity: "By community",
       backToGlobal: "Back to full graph",
       neighborhoodOf: (name) => `Neighbors of ${name}`,
+      guideHint: "Too many entities — details hidden; zoom in or double-click a node to drill in",
       hop1: "1 hop",
       hop2: "2 hops",
       followChat: "Follow chat",

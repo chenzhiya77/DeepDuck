@@ -11,21 +11,21 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
 
-import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, KnowledgeGraphCommunity, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 import {
   buildAdjacencyMap,
-  buildCommunityColorMap,
-  buildGraphData,
-  buildGraphLinks,
-  buildGraphSeries,
+  buildTieredSeries,
   type GraphColorBy,
   type GraphDatum,
   type GraphTooltipParams,
   graphTooltipFormatter,
+  initialZoomForGraph,
   type LabelTier,
   labelTextForTier,
   labelTierForZoom,
+  type RenderTier,
+  renderTierForZoom,
 } from "./graph-utils";
 
 // 纯函数与类型的单测入口对齐 vector-canvas 先例——从 canvas 模块 re-export，
@@ -36,6 +36,7 @@ export {
   buildGraphData,
   buildGraphLinks,
   buildGraphSeries,
+  buildTieredSeries,
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
@@ -51,8 +52,14 @@ export {
   type LabelTier,
   labelTextForTier,
   labelTierForZoom,
+  initialZoomForGraph,
+  LOD_FULL_HARD_LIMIT,
+  LOD_HUB_NODE_BUDGET,
+  LOD_MIN_NODES,
   matchEntityNames,
   nodeSymbolSize,
+  type RenderTier,
+  renderTierForZoom,
   typeColor,
 } from "./graph-utils";
 
@@ -71,6 +78,8 @@ function ink(alpha: number, dark: boolean): string {
 export interface GraphCanvasProps {
   nodes: readonly KnowledgeGraphNode[];
   edges: readonly KnowledgeGraphEdge[];
+  /** Task 7b LOD：社区汇总（hub 层 TopN 枢纽数据源）。 */
+  communities: readonly KnowledgeGraphCommunity[];
   /** 着色模式（spec §6）：默认按社区，可切按类型。 */
   colorBy: GraphColorBy;
   /** 搜索定位：命中的节点 id（居中 + 高亮）；null = 无定位请求。 */
@@ -81,6 +90,8 @@ export interface GraphCanvasProps {
   onNodeClick: (node: KnowledgeGraphNode) => void;
   /** 双击节点 → 进入局部图模式（spec §6，对齐 Obsidian）。 */
   onNodeDblClick: (node: KnowledgeGraphNode) => void;
+  /** LOD 渲染档位变化上报（tab 层 guide 引导提示用）。 */
+  onRenderTierChange?: (tier: RenderTier) => void;
 }
 
 /**
@@ -106,7 +117,7 @@ export function widenRoamPointerChecker(chart: unknown): void {
   }
 }
 
-export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay, onNodeClick, onNodeDblClick }: GraphCanvasProps) {
+export default function GraphCanvas({ nodes, edges, communities, colorBy, focusNode, overlay, onNodeClick, onNodeDblClick, onRenderTierChange }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   // 回调穿透 ref：数据刷新重建 option 时不需要重绑事件。
@@ -114,12 +125,20 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
   onNodeClickRef.current = onNodeClick;
   const onNodeDblClickRef = useRef(onNodeDblClick);
   onNodeDblClickRef.current = onNodeDblClick;
+  const onRenderTierChangeRef = useRef(onRenderTierChange);
+  onRenderTierChangeRef.current = onRenderTierChange;
   // 标签档位去重：graphRoam 在平移时也会触发（zoom 不变 → tier 不变 → 短路）。
   const labelTierRef = useRef<LabelTier>("full");
+  // LOD 渲染档位（Task 7b）：初始 zoom 由 initialZoomForGraph 评估（大库 0.3 落 hub，
+  // 小库门控 zoom=1 恒 full）；roam 跨档时 merge 重建 series。
+  const renderTierRef = useRef<RenderTier>(renderTierForZoom(initialZoomForGraph(nodes.length), nodes.length));
   // overlay 穿透 ref：全量重建 effect 读取最新叠加但不以其为依赖（叠加单变更
   // 走下方 merge 更新，不重跑力导向布局——对齐向量空间「叠加系列槽位」教训）。
   const overlayRef = useRef(overlay ?? null);
   overlayRef.current = overlay ?? null;
+  // roam handler（初始化时绑定一次）读最新数据的穿透 ref。
+  const dataRef = useRef({ nodes, edges, communities, colorBy });
+  dataRef.current = { nodes, edges, communities, colorBy };
   // 最近一次全量重建的输入指纹（引用对比）：overlay-only 变更才可走 merge 更新。
   const lastFullRebuildRef = useRef<{
     nodes: readonly KnowledgeGraphNode[];
@@ -137,18 +156,20 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     const chart = echarts.init(container);
     chartRef.current = chart;
 
-    const nodeOf = (params: unknown): KnowledgeGraphNode | null => {
+    const datumOf = (params: unknown): GraphDatum | null => {
       const p = params as { dataType?: string; data?: unknown };
       if (p.dataType !== "node") return null;
-      return (p.data as GraphDatum | undefined)?.node ?? null;
+      return (p.data as GraphDatum | undefined) ?? null;
     };
     chart.on("click", (params) => {
-      const node = nodeOf(params);
-      if (node) onNodeClickRef.current(node);
+      const datum = datumOf(params);
+      if (!datum) return;
+      if (datum.node) onNodeClickRef.current(datum.node);
     });
     chart.on("dblclick", (params) => {
-      const node = nodeOf(params);
-      if (node) onNodeDblClickRef.current(node);
+      const datum = datumOf(params);
+      if (!datum) return;
+      if (datum.node) onNodeDblClickRef.current(datum.node);
     });
 
     // hover 邻域提亮（2026-08-20 加法高亮）：echarts focus:adjacency 只保证邻居
@@ -168,7 +189,7 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
       chart.dispatchAction({ type: "downplay", seriesIndex: 0 });
     });
 
-    // 缩放分级标签（2026-08-19 标签密集治理）：zoom 跨档时才 setOption。
+    // 缩放监听（标签分级 2026-08-19 + LOD 渲染档位 2026-08-21 Task 7b）：
     // chart.on 注册的监听挂在实例上，setOption（含 notMerge）不会清除——
     // 只需初始化时绑一次。zoom 从 option 读（roam 平移也触发本事件，事件参数
     // 不可靠，以 option 中的当前 zoom 为准）。
@@ -177,8 +198,30 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     chart.on("graphRoam", () => {
       const seriesOptions = chart.getOption().series as Array<{ zoom?: number }> | undefined;
       const zoom = typeof seriesOptions?.[0]?.zoom === "number" ? seriesOptions[0].zoom : 1;
+      const current = dataRef.current;
+
+      // LOD 渲染档位切换：跨档时 merge 重建 series（data/links 整体替换语义，
+      // datum 完整携带 itemStyle/symbolSize），300ms 过渡动画；同档零成本短路。
+      const nextRenderTier = renderTierForZoom(zoom, current.nodes.length);
+      const tierChanged = nextRenderTier !== renderTierRef.current;
+      if (tierChanged) {
+        renderTierRef.current = nextRenderTier;
+        onRenderTierChangeRef.current?.(nextRenderTier);
+        const [nextSeries] = buildTieredSeries(current.nodes, current.edges, current.communities, nextRenderTier, current.colorBy, overlayRef.current);
+        chart.setOption({
+          series: [
+            {
+              data: nextSeries.data,
+              links: nextSeries.links,
+              edgeSymbol: nextSeries.edgeSymbol,
+              animationDurationUpdate: 300,
+            },
+          ],
+        });
+      }
+
       const tier = labelTierForZoom(zoom);
-      if (tier === labelTierRef.current) return;
+      if (!tierChanged && tier === labelTierRef.current) return;
       labelTierRef.current = tier;
       chart.setOption({
         series: [
@@ -225,10 +268,17 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     const activeOverlay = overlayRef.current;
     // hover 邻域提亮的邻接表随数据重建刷新（mouseover handler 经 ref 读最新值）。
     adjacencyRef.current = buildAdjacencyMap(edges);
-    const [series] = buildGraphSeries(nodes, edges, colorBy, activeOverlay);
+    // LOD 渲染档位（Task 7b）：初始 zoom=1 评估——小库门控恒 full；大库初始
+    // 落在 all-full/guide（超 2000 熔断）。notMerge 重建后 roam 状态复位 zoom=1，
+    // 与这里的初始评估自洽。
+    const initialZoom = initialZoomForGraph(nodes.length);
+    const tier = renderTierForZoom(initialZoom, nodes.length);
+    renderTierRef.current = tier;
+    onRenderTierChangeRef.current?.(tier);
+    const [series] = buildTieredSeries(nodes, edges, communities, tier, colorBy, activeOverlay);
     // 数据重建后标签档位回到 full（notMerge 清掉了 roam 期间的档位覆盖），
     // 同步重置 ref——否则下次 roam 到同一档会因去重短路而丢失标签状态。
-    labelTierRef.current = "full";
+    labelTierRef.current = labelTierForZoom(initialZoom);
     chart.setOption(
       {
         tooltip: {
@@ -242,11 +292,20 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
         series: [
           {
             ...series,
+            // 初始 zoom：大库最缩略档（0.3），小库默认 1。
+            zoom: initialZoom,
             // opacity 必须显式钉死为 1：echarts graph 默认 lineStyle.opacity 0.5，
             // 若继承它，blur.lineStyle.opacity=1（零淡化意图）反而把 hover 时的
             // 非邻接边从 0.5 提亮到 1——「全局边高亮」事故根因（2026-08-20 排查）。
             lineStyle: { color: ink(0.35, dark), width: 1, opacity: 1 },
-            label: { ...series.label, color: ink(0.75, dark) },
+            label: {
+              ...series.label,
+              color: ink(0.75, dark),
+              formatter: (params: { data?: unknown }) => {
+                const data = params.data as GraphDatum | undefined;
+                return labelTextForTier(data?.node, labelTierRef.current, data?.name ?? "");
+              },
+            },
           },
         ],
       },
@@ -256,7 +315,7 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     widenRoamPointerChecker(chart);
     lastFullRebuildRef.current = { nodes, edges, colorBy };
     appliedOverlayRef.current = activeOverlay;
-  }, [nodes, edges, colorBy]);
+  }, [nodes, edges, communities, colorBy]);
 
   // P4 叠加单变更（spec §7）：只替换 series 的 data/links（merge 模式），
   // 保留力导向布局位置与视口——全量重建会让节点重新模拟、用户视角丢失。
@@ -273,10 +332,11 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     const next = overlay ?? null;
     if (appliedOverlayRef.current === next) return;
     appliedOverlayRef.current = next;
-    // 与全量重建一致的 Welsh-Powell 色号分配（相邻社区异色；type 模式不需要）。
-    const colorMap = colorBy === "community" ? buildCommunityColorMap(nodes, edges) : undefined;
-    chart.setOption({ series: [{ data: buildGraphData(nodes, colorBy, next, colorMap), links: buildGraphLinks(edges, next) }] });
-  }, [overlay, nodes, edges, colorBy]);
+    // LOD：叠加变更按当前渲染档位重建——cluster 层命中社区上卷（红描边），
+    // 实体层照旧红/金描边（buildTieredSeries 内部分流）。
+    const [nextSeries] = buildTieredSeries(nodes, edges, communities, renderTierRef.current, colorBy, next);
+    chart.setOption({ series: [{ data: nextSeries.data, links: nextSeries.links }] });
+  }, [overlay, nodes, edges, communities, colorBy]);
 
   // 搜索定位（spec §6 P3）：命中节点 → 视图中心平移到该节点 + 高亮。
   // center 语义 = roam 视图中心对应的 layout 坐标（echarts graph 原生支持）；

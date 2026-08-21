@@ -151,6 +151,18 @@ const GRAPH: KnowledgeGraphResponse = {
   ],
   edges: [{ source: "JVM", target: "堆内存", relation: "包含", description: "" }],
   stats: { node_count: 2, edge_count: 1, community_count: 1 },
+  communities: [
+    {
+      id: 0,
+      memberCount: 2,
+      totalMentions: 3,
+      topMembers: [
+        { id: "JVM", mention_count: 2 },
+        { id: "堆内存", mention_count: 1 },
+      ],
+      dominantType: "组件",
+    },
+  ],
 };
 
 type GraphQueryResult = {
@@ -198,7 +210,7 @@ describe("GraphTab 三态（Task 3）", () => {
 
   it("shows the empty state when the KB has no entities", () => {
     stubGraphQuery({
-      data: { kb_id: "kb-1", nodes: [], edges: [], stats: { node_count: 0, edge_count: 0, community_count: 0 } },
+      data: { kb_id: "kb-1", nodes: [], edges: [], stats: { node_count: 0, edge_count: 0, community_count: 0 }, communities: [] },
       isLoading: false,
       isError: false,
     });
@@ -279,6 +291,21 @@ const CHAIN_GRAPH: KnowledgeGraphResponse = {
     { source: "C", target: "D", relation: "r", description: "" },
   ],
   stats: { node_count: 5, edge_count: 3, community_count: 2 },
+  communities: [
+    // 社区 0：A(组件 m1) + B/C/D(概念 m1×3) → 概念 mention 总和 3 > 组件 1。
+    {
+      id: 0,
+      memberCount: 4,
+      totalMentions: 4,
+      topMembers: [
+        { id: "A", mention_count: 1 },
+        { id: "B", mention_count: 1 },
+        { id: "C", mention_count: 1 },
+      ],
+      dominantType: "概念",
+    },
+    { id: 1, memberCount: 1, totalMentions: 1, topMembers: [{ id: "E", mention_count: 1 }], dominantType: "概念" },
+  ],
 };
 
 describe("GraphTab 搜索 / 着色 / 局部图（Task 4）", () => {
@@ -443,5 +470,53 @@ describe("GraphTab 检索路径叠加（Task 5 P4）", () => {
     rerenderWith({ overlay: GRAPH_CHAT_OVERLAY });
     await waitFor(() => expect(canvasMock.props).toBeTruthy());
     expect(screen.queryByTestId("graph-overlay-badge")).toBeNull();
+  });
+});
+
+// ── Task 7b（LOD 分层渲染）：communities 透传 + guide 引导 ─────────────────
+// 2026-08-21 裁决：cluster 层（SuperNode 聚合）移除——社区局部图钻取入口随之消失，
+// 仅保留实体邻域局部图。hub 层仍消费 communities（TopN 枢纽数据源）。
+
+describe("GraphTab LOD（Task 7b）", () => {
+  beforeEach(() => {
+    cleanup();
+    canvasMock.props = undefined;
+    hooksMock.useKnowledgeGraph.mockReset();
+    stubGraphQuery({ data: CHAIN_GRAPH, isLoading: false, isError: false });
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("passes the communities summary to the canvas（hub 层枢纽数据源透传）", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    expect(canvasMock.props?.communities).toEqual(CHAIN_GRAPH.communities);
+  });
+
+  it("shows the guide hint only on the guide tier（2000 硬上限引导）", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    expect(screen.queryByTestId("graph-guide-hint")).toBeNull();
+
+    const onRenderTierChange = canvasMock.props?.onRenderTierChange as (tier: string) => void;
+    onRenderTierChange("guide");
+    await waitFor(() => expect(screen.getByTestId("graph-guide-hint")).toBeTruthy());
+
+    onRenderTierChange("hub");
+    await waitFor(() => expect(screen.queryByTestId("graph-guide-hint")).toBeNull());
+  });
+
+  it("hides the guide hint inside a neighborhood（局部图内不显示引导）", async () => {
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    const onRenderTierChange = canvasMock.props?.onRenderTierChange as (tier: string) => void;
+    onRenderTierChange("guide");
+    await waitFor(() => expect(screen.getByTestId("graph-guide-hint")).toBeTruthy());
+
+    const onNodeDblClick = canvasMock.props?.onNodeDblClick as (node: { id: string }) => void;
+    onNodeDblClick({ id: "A" });
+    await waitFor(() => expect(screen.getByText("A 的邻居")).toBeTruthy());
+    expect(screen.queryByTestId("graph-guide-hint")).toBeNull();
   });
 });

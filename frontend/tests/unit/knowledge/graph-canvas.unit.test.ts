@@ -12,6 +12,7 @@ import {
   buildAdjacencyMap,
   buildCommunityColorMap,
   buildGraphSeries,
+  buildTieredSeries,
   COMMUNITY_PALETTE,
   filterNeighborhood,
   fnv1aHash,
@@ -21,16 +22,19 @@ import {
   GRAPH_PATH_COLOR,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
+  initialZoomForGraph,
   LABEL_ZOOM_FULL_ABOVE,
   LABEL_ZOOM_HIDE_BELOW,
   labelTextForTier,
   labelTierForZoom,
+  LOD_HUB_NODE_BUDGET,
   matchEntityNames,
   nodeSymbolSize,
+  renderTierForZoom,
   typeColor,
   widenRoamPointerChecker,
 } from "@/components/workspace/knowledge/graph-canvas";
-import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, KnowledgeGraphCommunity, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 
 function node(id: string, extra: Partial<KnowledgeGraphNode> = {}): KnowledgeGraphNode {
@@ -583,5 +587,164 @@ describe("widenRoamPointerChecker（2026-08-20 圈外拖拽修复）", () => {
   it("chart 无 _chartsViews 时静默返回不炸", () => {
     expect(() => widenRoamPointerChecker({})).not.toThrow();
     expect(() => widenRoamPointerChecker(null)).not.toThrow();
+  });
+});
+
+// ── Task 7b（LOD 分层渲染，2026-08-21）：五层 Zoom 分级 + 激活门控 ────────────
+// 数据层（renderTier）与视觉层（labelTier）解耦；任何层级下检索命中都可见（命中社区上卷）。
+// 小库（≤500 节点）门控恒 full——聚合对小库是丢信息而非优化。
+
+describe("renderTierForZoom（LOD 四层 + 门控 + 熔断）", () => {
+  it("小库门控：totalNodes ≤ 500 任意 zoom 恒 full（LOD 不激活）", () => {
+    expect(renderTierForZoom(0.05, 286)).toBe("full");
+    expect(renderTierForZoom(0.1, 500)).toBe("full");
+    expect(renderTierForZoom(0.5, 500)).toBe("full");
+    expect(renderTierForZoom(1.5, 500)).toBe("full");
+  });
+
+  it("大库三档边界：hub / all-important / all-full（无 cluster 层）", () => {
+    // 2026-08-21 实测裁决：cluster 层（SuperNode 聚合）移除——Louvain 稀疏图产出
+    // 大量微社区（1200 节点→720 社区，减幅仅 ~3x），SuperNode 阵无概览价值。
+    expect(renderTierForZoom(0.1, 1000)).toBe("hub"); // 最小档 = hub
+    expect(renderTierForZoom(0.19, 1000)).toBe("hub");
+    expect(renderTierForZoom(0.59, 1000)).toBe("hub");
+    expect(renderTierForZoom(0.6, 1000)).toBe("all-important"); // 边界归属
+    expect(renderTierForZoom(0.9, 1000)).toBe("all-important"); // > 0.9 才进 all-full
+    expect(renderTierForZoom(0.91, 1000)).toBe("all-full");
+    expect(renderTierForZoom(2, 1000)).toBe("all-full");
+  });
+
+  it("2000 硬上限熔断：超大库放到最大进 guide 而非 all-full", () => {
+    expect(renderTierForZoom(1.5, 2000)).toBe("all-full"); // 边界内
+    expect(renderTierForZoom(1.5, 2001)).toBe("guide");
+    expect(renderTierForZoom(1.5, 10000)).toBe("guide");
+    // guide 只影响最深档，中档不受影响
+    expect(renderTierForZoom(0.5, 10000)).toBe("hub");
+    expect(renderTierForZoom(0.1, 10000)).toBe("hub");
+  });
+
+  it("initialZoomForGraph：大库从最缩略档进入（hub），小库门控 zoom=1 全标签（2026-08-21 首次进入卡顿修正）", () => {
+    // 大库初始 zoom=1 = 全量 1200 节点力导向先跑一遍再降载 → 首次进入卡一下。
+    // 修正：LOD 激活的大库初始落最缩略档（0.3 → hub 层 200 枢纽 + 零标签）；
+    // 门控小库恒 zoom=1（full + 全标签，行为不变）。
+    expect(initialZoomForGraph(1200)).toBe(0.3);
+    expect(initialZoomForGraph(501)).toBe(0.3);
+    expect(initialZoomForGraph(500)).toBe(1); // 门控边界
+    expect(initialZoomForGraph(286)).toBe(1);
+  });
+});
+
+// LOD fixture：复用 NODES/EDGES（社区 0 = {JVM m9, 堆内存 m1, 字节码 m1}，社区 1 = {孤立概念 m1}）。
+const LOD_COMMUNITIES: KnowledgeGraphCommunity[] = [
+  {
+    id: 0,
+    memberCount: 3,
+    totalMentions: 11,
+    topMembers: [
+      { id: "JVM", mention_count: 9 },
+      { id: "堆内存", mention_count: 1 },
+      { id: "字节码", mention_count: 1 },
+    ],
+    dominantType: "组件",
+  },
+  { id: 1, memberCount: 1, totalMentions: 1, topMembers: [{ id: "孤立概念", mention_count: 1 }], dominantType: "概念" },
+];
+
+type TierDatum = {
+  name: string;
+  symbolSize: number;
+  itemStyle: { color: string; borderColor?: string; borderWidth?: number; shadowColor?: string; shadowBlur?: number };
+  node?: KnowledgeGraphNode;
+};
+
+// filterCommunity 随 cluster 层一并移除（2026-08-21 裁决：社区钻取入口消失）。
+
+describe("buildTieredSeries（各 tier 数据子集）", () => {
+  // hub / all-important 区分 fixture：社区 0 五成员（hub1 m10 / hub2 m5 / hub3 m3 /
+  // hub4 m2 / hub5 m1），社区 1 = {other m7}。
+  const HUB_NODES: KnowledgeGraphNode[] = [
+    node("hub1", { community: 0, mention_count: 10 }),
+    node("hub2", { community: 0, mention_count: 5 }),
+    node("hub3", { community: 0, mention_count: 3 }),
+    node("hub4", { community: 0, mention_count: 2 }), // all-important 入选；hub Top3 落选
+    node("hub5", { community: 0, mention_count: 1 }), // 两层都落选
+    node("other", { community: 1, mention_count: 7 }),
+  ];
+  const HUB_EDGES: KnowledgeGraphEdge[] = [
+    { source: "hub1", target: "hub2", relation: "r", description: "" }, // 两层都保留
+    { source: "hub1", target: "hub4", relation: "r", description: "" }, // all-important 保留；hub 出局（hub4 落选）
+    { source: "hub4", target: "hub5", relation: "r", description: "" }, // 两层都出局（hub5 落选）
+  ];
+  const HUB_COMMUNITIES: KnowledgeGraphCommunity[] = [
+    {
+      id: 0,
+      memberCount: 5,
+      totalMentions: 21,
+      topMembers: [
+        { id: "hub1", mention_count: 10 },
+        { id: "hub2", mention_count: 5 },
+        { id: "hub3", mention_count: 3 },
+      ],
+      dominantType: "概念",
+    },
+    { id: 1, memberCount: 1, totalMentions: 7, topMembers: [{ id: "other", mention_count: 7 }], dominantType: "概念" },
+  ];
+
+  it("hub：每社区 Top 3 枢纽 + 枢纽间原始边（落选者连边出局）", () => {
+    const [series] = buildTieredSeries(HUB_NODES, HUB_EDGES, HUB_COMMUNITIES, "hub", "community");
+    const names = (series.data as TierDatum[]).map((d) => d.name).sort();
+    expect(names).toEqual(["hub1", "hub2", "hub3", "other"]);
+    const links = series.links as Array<{ source: string; target: string }>;
+    expect(links.map((l) => `${l.source}->${l.target}`)).toEqual(["hub1->hub2"]);
+  });
+
+  it("hub：节点预算截断——微社区图按社区规模降序收枢纽（2026-08-21 压测修补）", () => {
+    // 1200 节点 Louvain 产出 720 微社区——Top3×社区数会超出中间层意义。
+    // 构造 150 个社区各 2 成员（Top3 全取 → 300 节点超预算）：预算 200 截断。
+    const manyNodes: KnowledgeGraphNode[] = [];
+    const manyCommunities: KnowledgeGraphCommunity[] = [];
+    for (let c = 0; c < 150; c += 1) {
+      manyNodes.push(node(`c${c}-a`, { community: c, mention_count: 5 }));
+      manyNodes.push(node(`c${c}-b`, { community: c, mention_count: 1 }));
+      manyCommunities.push({
+        id: c,
+        memberCount: 2,
+        totalMentions: 6,
+        topMembers: [
+          { id: `c${c}-a`, mention_count: 5 },
+          { id: `c${c}-b`, mention_count: 1 },
+        ],
+        dominantType: "概念",
+      });
+    }
+    const [series] = buildTieredSeries(manyNodes, [], manyCommunities, "hub", "community");
+    const names = (series.data as TierDatum[]).map((d) => d.name);
+    expect(names.length).toBe(LOD_HUB_NODE_BUDGET); // 截断到预算
+    expect(names).toContain("c0-a"); // 大社区优先（id 升序 tiebreak）
+    expect(names).toContain("c0-b");
+    expect(names).not.toContain("c149-b"); // 预算耗尽后落选
+  });
+
+  it("all-important：mention≥2 入选（与 hub 的 Top3 裁剪不同）", () => {
+    const [series] = buildTieredSeries(HUB_NODES, HUB_EDGES, HUB_COMMUNITIES, "all-important", "community");
+    const names = (series.data as TierDatum[]).map((d) => d.name).sort();
+    expect(names).toEqual(["hub1", "hub2", "hub3", "hub4", "other"]); // hub4(2) 入选，hub5(1) 落选
+    const links = series.links as Array<{ source: string; target: string }>;
+    expect(links.map((l) => `${l.source}->${l.target}`).sort()).toEqual(["hub1->hub2", "hub1->hub4"]);
+  });
+
+  it("guide：回落 all-important 子集（不硬渲全量）", () => {
+    const [guide] = buildTieredSeries(HUB_NODES, HUB_EDGES, HUB_COMMUNITIES, "guide", "community");
+    const [important] = buildTieredSeries(HUB_NODES, HUB_EDGES, HUB_COMMUNITIES, "all-important", "community");
+    expect((guide.data as TierDatum[]).map((d) => d.name).sort()).toEqual((important.data as TierDatum[]).map((d) => d.name).sort());
+  });
+
+  it("full / all-full：与 buildGraphSeries 全量等价（回归钉死）", () => {
+    for (const tier of ["full", "all-full"] as const) {
+      const [tierSeries] = buildTieredSeries(NODES, EDGES, LOD_COMMUNITIES, tier, "community");
+      const [ref] = buildGraphSeries(NODES, EDGES, "community");
+      expect(tierSeries.data).toEqual(ref.data);
+      expect(tierSeries.links).toEqual(ref.links);
+    }
   });
 });

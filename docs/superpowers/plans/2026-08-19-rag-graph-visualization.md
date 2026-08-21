@@ -216,12 +216,16 @@
 - `labelLayout.hideOverlap: true`
 - 预期 FPS：cluster/hub 60 / all-important 45 / all-full（≤2000）40
 
-- [ ] RED test（后端）: `/graph` 响应含 `topMembers`（每社区 Top 3）+ `totalMentions` 字段；单成员社区 topMembers 长度 1；空社区跳过（3 用例）
-- [ ] RED test（前端纯函数）: `renderTierForZoom` 四档边界 + 2000 熔断 + **门控（总数 ≤500 任意 zoom 恒全量档）**；`buildSuperNodes` 聚合正确（成员数/总提及数/Top 3/主导类型）；`buildSuperEdges` 跨社区聚合（权重累加 + 跳过社区内部边 + 幽灵端点剔除）；`buildTieredSeries` 各 tier 返回正确子集；`rollupOverlayToSuperNodes` 命中上卷（13 用例）
-- [ ] RED test（前端 dom）: zoom 跨 tier 触发 series 重建 + 淡出动画；单击 SuperNode → zoom-to-fit；面包屑显示当前层级；SuperNode hover 分流；命中社区红描边角标（7 用例）
-- [ ] Implement 后端字段透传 + 前端三层数据模型 + 渲染分层 + 三裁决落地 + 平滑过渡
-- [ ] `pnpm test` GREEN + `uv run pytest tests/knowledge -q` GREEN；revert proof；`pnpm check` 双净
-- [ ] 浏览器实测：构造 1000+ 节点测试 KB → zoom 从 0.1 平滑放大，验证各层切换无闪烁、FPS > 40、钻取路径正确、命中上卷可见
+- [x] RED test（后端）: `/graph` 响应含 `topMembers`（每社区 Top 3）+ `totalMentions` 字段；单成员社区 topMembers 长度 1；空社区跳过（3 用例，初始 3 failed 确认；踩坑：中文名字典序断言以 Unicode 码点为准，「堆」U+5806 < 「字」U+5B57）。
+- [x] RED test（前端纯函数）: `renderTierForZoom` 四档边界 + 2000 熔断 + **门控（总数 ≤500 任意 zoom 恒全量档）**；`buildSuperNodes` 聚合正确（成员数/总提及数/Top 3/主导类型）；`buildSuperEdges` 跨社区聚合（权重累加 + 跳过社区内部边 + 幽灵端点剔除 + 无向合并）；`buildTieredSeries` 各 tier 返回正确子集；`rollupOverlayToSuperNodes` 命中上卷（21 用例）。
+- [x] RED test（前端 dom）: 社区局部图钻取（面包屑 + 数据裁剪）+ 返回全局 + 双模式互斥 + guide 引导提示显隐 + 局部图内搜索（7 用例）；canvas 内部 roam/tier 重建由纯函数覆盖 + 浏览器实测兑现（echarts jsdom 不可跑，对齐 labelTier 先例）。
+- [x] Implement 后端字段透传 + 前端三层数据模型 + 渲染分层 + 三裁决落地 + 平滑过渡。落地备注：SuperNode datum 唯一键用 `community:${id}`（显示名交给 label formatter）；hover 邻域提亮对 SuperNode 天然分流（邻接表查不到社区 id → 只提亮自身，裁决 2 零代码）；cluster 层聚合边显示（1+ln(weight) 粗线，plan 表「隐藏」修正——buildSuperEdges 若无消费者则是死代码，且无边的 SuperNode 是一盘散沙）。
+- [x] `pnpm test` GREEN（161 文件 1436 用例）+ `uv run pytest tests/knowledge -q` GREEN（385 passed）；双端 revert proof（后端 stash 2 实现文件 → 3 failed；前端 stash 7 实现文件 → 2 文件 failed）；`pnpm check` 双净 + ruff 双净。
+- [x] 浏览器实测 + **实测裁决修正（2026-08-21）**：压测库（1200 实体 / 840 关系）暴露三问题并拍板修正——
+  1. **cluster 层移除**：Louvain 在稀疏图上产出大量微社区（1200 节点 → 720 社区，按社区聚合减幅仅 ~3x），SuperNode 阵（720 个空心圆）无概览价值。五层分级修正为**四层**（hub / all-important / all-full / guide），最小档 = hub（每社区 Top3 枢纽，预算 200 截断）；SuperNode / buildSuperNodes / buildSuperEdges / rollupOverlayToSuperNodes / filterCommunity / 社区局部图钻取入口一并移除（onSuperNodeDblClick 链路删除，社区局部图功能取消）。
+  2. **标签单维判定**：修复前 renderTier 的 hub/SuperNode 分支覆盖 labelTier 的 hidden 档（二维冲突）→ 缩到最小时 200 个枢纽名字互相遮挡。修正后标签**只由 labelTier（zoom）单维决定**：zoom < 0.6 任何节点零标签（tooltip 承载），渲染层不再另立规则；labelTextForNode 删除，formatter 直走 labelTextForTier。
+  3. scaleLimit.min 保持 0.3 不变（cluster 层移除后无需更低缩放；hub 层 0.3~0.6 区间 + 零标签满足缩略态）。
+  后端 `communities` 字段保留（hub 层 TopN 枢纽数据源）。guide 层引导文案改为「放大或双击节点进入局部图」（原「双击社区」入口已移除）。
 - [ ] Commit: `feat(rag): implement LOD-based hierarchical rendering for knowledge graph scalability`
 
 **风险与缓解**：

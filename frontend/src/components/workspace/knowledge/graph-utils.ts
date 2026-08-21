@@ -8,7 +8,7 @@
  * - filterNeighborhood：局部图 N 跳 BFS 裁剪
  * - buildGraphSeries / graphTooltipFormatter：echarts option 组装与 tooltip
  */
-import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, KnowledgeGraphCommunity, KnowledgeGraphEdge, KnowledgeGraphNode } from "@/core/knowledge/types";
 
 import { buildTooltipHtml } from "./vector-canvas";
 
@@ -250,15 +250,16 @@ export interface GraphDatum {
   name: string;
   symbolSize: number;
   itemStyle: {
-    /** 填充恒为自身色（社区/类型）——叠加层绝不覆盖。 */
+    /** 填充恒为自身色（社区/类型）——叠加层绝不覆盖。SuperNode 为空心透明。 */
     color: string;
-    /** P4 叠加角色描边（种子红 / 证据金 / hop 橙黄）。 */
+    /** P4 叠加角色描边（种子红 / 证据金 / hop 橙黄）；SuperNode 主导值色描边。 */
     borderColor?: string;
     borderWidth?: number;
     /** 发光（种子/证据；hop 层不发光）。 */
     shadowColor?: string;
     shadowBlur?: number;
   };
+  /** 实体节点载荷（点击钻取链路数据源）。 */
   node: KnowledgeGraphNode;
 }
 
@@ -394,6 +395,39 @@ export interface GraphSeriesConfig {
   links: GraphLink[];
 }
 
+/** graph 系列基础配置（force 参数/交互/emphasis 全系列共用，data/links 各层自填）。 */
+function baseSeriesConfig(): Omit<GraphSeriesConfig, "data" | "links"> {
+  return {
+    type: "graph",
+    layout: "force",
+    roam: true,
+    draggable: true,
+    edgeSymbol: ["none", "arrow"],
+    edgeSymbolSize: [0, 6],
+    force: {
+      repulsion: 120,
+      edgeLength: [40, 120],
+      gravity: 0.1,
+      layoutAnimation: true,
+    },
+    // hover 高亮：交互蓝描边+轻发光（与命中红/路径金同语言异色）。
+    // 仅作用于进 emphasis 的元素（当前 hover 节点 + canvas 手动 highlight 的邻居）。
+    emphasis: {
+      itemStyle: {
+        borderColor: GRAPH_HOVER_BORDER_COLOR,
+        borderWidth: 3,
+        shadowColor: GRAPH_HOVER_BORDER_COLOR,
+        shadowBlur: 8,
+      },
+      scale: false,
+    },
+    stateAnimation: false,
+    label: { show: true, position: "right", fontSize: 11 },
+    labelLayout: { hideOverlap: true },
+    scaleLimit: { min: 0.3, max: 3 },
+  };
+}
+
 /**
  * 组装 graph 系列（spec §6：默认按社区着色）。force 参数为 100~500 节点档
  * 调参钉死值：repulsion 120 + edgeLength 40–120 让社区自然成簇，
@@ -407,33 +441,7 @@ export function buildGraphSeries(
 ): [GraphSeriesConfig] {
   return [
     {
-      type: "graph",
-      layout: "force",
-      roam: true,
-      draggable: true,
-      edgeSymbol: ["none", "arrow"],
-      edgeSymbolSize: [0, 6],
-      force: {
-        repulsion: 120,
-        edgeLength: [40, 120],
-        gravity: 0.1,
-        layoutAnimation: true,
-      },
-      // hover 高亮：交互蓝描边+轻发光（与命中红/路径金同语言异色）。
-      // 仅作用于进 emphasis 的元素（当前 hover 节点 + canvas 手动 highlight 的邻居）。
-      emphasis: {
-        itemStyle: {
-          borderColor: GRAPH_HOVER_BORDER_COLOR,
-          borderWidth: 3,
-          shadowColor: GRAPH_HOVER_BORDER_COLOR,
-          shadowBlur: 8,
-        },
-        scale: false,
-      },
-      stateAnimation: false,
-      label: { show: true, position: "right", fontSize: 11 },
-      labelLayout: { hideOverlap: true },
-      scaleLimit: { min: 0.3, max: 3 },
+      ...baseSeriesConfig(),
       // 社区模式走 Welsh-Powell 色号分配（相邻社区异色）；type 模式 FNV 不需要。
       data: buildGraphData(
         nodes,
@@ -483,4 +491,86 @@ export function graphTooltipFormatter(params: GraphTooltipParams): string {
   }
   const data = params.data as { name: string; node?: KnowledgeGraphNode };
   return buildTooltipHtml(data.name, data.node?.description);
+}
+
+// ── LOD 分层渲染（2026-08-21 Task 7b，对齐 Google Maps 心智模型：缩放 = 地图层级）──
+// 数据层（renderTier）与视觉层（labelTier）解耦。2026-08-21 实测裁决：cluster 层
+//（SuperNode 聚合）移除——Louvain 稀疏图产出大量微社区（1200 节点→720 社区，减幅
+// 仅 ~3x），SuperNode 阵无概览价值；最缩略档直接落 hub。
+
+/** 激活门控：总数 ≤ 500 时 LOD 完全不激活（小库全量渲染零行为变化）。 */
+export const LOD_MIN_NODES = 500;
+/** zoom < 0.6 → hub（每社区 Top 3 枢纽）。 */
+export const LOD_ZOOM_HUB_BELOW = 0.6;
+/** zoom ≤ 0.9 → all-important（mention≥2）；> 0.9 → all-full / guide。 */
+export const LOD_ZOOM_FULL_ABOVE = 0.9;
+/** all-full 硬上限：超出时引导双击进社区局部图（不硬渲全量，防万级节点卡死）。 */
+export const LOD_FULL_HARD_LIMIT = 2000;
+/** hub 层每社区入选的枢纽数（Top N）。 */
+export const LOD_HUB_TOP_PER_COMMUNITY = 3;
+/** hub 层节点预算：微社区图上「每社区 Top3」会超出中间层意义（2026-08-21 压测：
+    1200 节点 Louvain 产出 720 微社区 → Top3×720=2160）。按社区规模降序累计截断。 */
+export const LOD_HUB_NODE_BUDGET = 200;
+
+export type RenderTier = "full" | "hub" | "all-important" | "all-full" | "guide";
+
+/**
+ * 缩放 + 节点总数 → 渲染档位。门控优先：totalNodes ≤ LOD_MIN_NODES 恒 full（小库
+ * 任何 zoom 走现有全量模式，聚合对小库是丢信息而非优化）。边界归属：0.6 入
+ * all-important，> 0.9 才入 all-full；all-full 超 2000 熔断为 guide。
+ */
+export function renderTierForZoom(zoom: number, totalNodes: number): RenderTier {
+  if (totalNodes <= LOD_MIN_NODES) return "full";
+  if (zoom < LOD_ZOOM_HUB_BELOW) return "hub";
+  if (zoom <= LOD_ZOOM_FULL_ABOVE) return "all-important";
+  return totalNodes <= LOD_FULL_HARD_LIMIT ? "all-full" : "guide";
+}
+
+/**
+ * 首次进入的初始 zoom（2026-08-21 实测修正）：LOD 激活的大库从最缩略档进入
+ *（0.3 → hub 层 200 枢纽 + 零标签）——原 zoom=1 会先全量力导向布局 1200 节点
+ * 再降载，首次进入卡一下。门控小库恒 zoom=1（full + 全标签，行为不变）。
+ */
+export function initialZoomForGraph(nodeCount: number): number {
+  return nodeCount > LOD_MIN_NODES ? 0.3 : 1;
+}
+
+/**
+ * 分层渲染 series 组装：按 tier 返回对应数据子集。
+ * - full / all-full：全量实体（= buildGraphSeries）；
+ * - hub：每社区 Top 3 枢纽实体 + 枢纽间原始边；
+ * - all-important / guide：mention≥2 重要节点 + 之间边（guide 层内容由 tab 层加引导提示）。
+ */
+export function buildTieredSeries(
+  nodes: readonly KnowledgeGraphNode[],
+  edges: readonly KnowledgeGraphEdge[],
+  communities: readonly KnowledgeGraphCommunity[],
+  tier: RenderTier,
+  colorBy: GraphColorBy = "community",
+  overlay?: GraphRetrievalTrace | null,
+): [GraphSeriesConfig] {
+  if (tier === "full" || tier === "all-full") {
+    return buildGraphSeries(nodes, edges, colorBy, overlay);
+  }
+
+  // hub：每社区 Top N 枢纽（节点预算内按社区规模降序截断——微社区图防爆）；
+  // all-important / guide：mention≥2 重要节点。
+  const keep = new Set<string>();
+  if (tier === "hub") {
+    const bySize = [...communities].sort((a, b) => b.memberCount - a.memberCount || a.id - b.id);
+    for (const community of bySize) {
+      for (const member of community.topMembers.slice(0, LOD_HUB_TOP_PER_COMMUNITY)) {
+        if (keep.size >= LOD_HUB_NODE_BUDGET) break;
+        keep.add(member.id);
+      }
+      if (keep.size >= LOD_HUB_NODE_BUDGET) break;
+    }
+  } else {
+    for (const node of nodes) {
+      if (node.mention_count >= IMPORTANT_MENTION_MIN) keep.add(node.id);
+    }
+  }
+  const subNodes = nodes.filter((node) => keep.has(node.id));
+  const subEdges = edges.filter((edge) => keep.has(edge.source) && keep.has(edge.target));
+  return buildGraphSeries(subNodes, subEdges, colorBy, overlay);
 }

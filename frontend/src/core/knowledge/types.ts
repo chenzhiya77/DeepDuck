@@ -368,11 +368,24 @@ export interface KnowledgeGraphEdge {
   description: string;
 }
 
+/** GET /graph 响应的社区汇总项（2026-08-21 Task 7b LOD：SuperNode 聚合数据源）。 */
+export interface KnowledgeGraphCommunity {
+  id: number;
+  memberCount: number;
+  totalMentions: number;
+  /** 社区内 mention 降序 Top 3（同数按名字典序）。 */
+  topMembers: Array<{ id: string; mention_count: number }>;
+  /** 主导类型：社区内 mention 总和最高的 type（同数按名字典序）。 */
+  dominantType: string;
+}
+
 export interface KnowledgeGraphResponse {
   kb_id: string;
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
   stats: { node_count: number; edge_count: number; community_count: number };
+  /** Task 7b：社区级汇总（LOD 分层渲染的 cluster/hub 层数据源）。 */
+  communities: KnowledgeGraphCommunity[];
 }
 
 // ── P4 graph_search 路径高亮（2026-08-19 spec §7）───────────────────────────

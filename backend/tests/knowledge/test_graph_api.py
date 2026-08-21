@@ -153,3 +153,56 @@ async def test_graph_unknown_kb_returns_404(service) -> None:
     client = _client(service)
     response = client.get("/api/knowledge-bases/kb-missing/graph")
     assert response.status_code == 404
+
+
+# ── Task 7b（LOD 分层渲染）：社区汇总字段 ─────────────────────────────────
+# cluster/hub 层与 SuperNode 着色（主导类型）需要社区级聚合数据；前端全量 nodes
+# 也能算，但后端预计算为「分层加载（先 super 后 detail）」留出契约空间，且保证
+# 排序规则（mention 降序、同数按名字典序）的单一事实源。
+
+
+async def test_graph_includes_community_summaries(service) -> None:
+    """响应含 communities 汇总：memberCount / totalMentions / topMembers(Top3) / dominantType。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_graph(service, kb["id"])
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/graph").json()
+    communities = {c["id"]: c for c in body["communities"]}
+    assert set(communities) == {0, 1}
+
+    main = communities[0]  # {JVM(mention 2), 堆内存(1), 字节码(1)}
+    assert main["memberCount"] == 3
+    assert main["totalMentions"] == 4
+    # mention 降序，同数按名字典序：JVM(2) > 堆内存(1) / 字节码(1)（「堆」U+5806 < 「字」U+5B57）。
+    assert main["topMembers"] == [
+        {"id": "JVM", "mention_count": 2},
+        {"id": "堆内存", "mention_count": 1},
+        {"id": "字节码", "mention_count": 1},
+    ]
+    # 主导类型：组件(JVM=2) vs 概念(堆+字节码=2) 同数 → type 名字典序「概念」(U+6982 < U+7EC4)。
+    assert main["dominantType"] == "概念"
+
+
+async def test_graph_community_summary_single_member(service) -> None:
+    """单成员社区 topMembers 长度 1（无填充无截断错误）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_graph(service, kb["id"])
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/graph").json()
+    communities = {c["id"]: c for c in body["communities"]}
+    isolated = communities[1]  # {孤立概念(mention 1)}
+    assert isolated["memberCount"] == 1
+    assert isolated["totalMentions"] == 1
+    assert isolated["topMembers"] == [{"id": "孤立概念", "mention_count": 1}]
+    assert isolated["dominantType"] == "概念"
+
+
+async def test_graph_empty_kb_communities_empty(service) -> None:
+    """空 KB → communities 空数组（空社区跳过，不产零成员条目）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/graph").json()
+    assert body["communities"] == []
