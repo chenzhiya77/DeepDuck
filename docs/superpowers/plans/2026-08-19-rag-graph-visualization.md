@@ -144,7 +144,7 @@
 - [x] RED test：相邻社区异色 / 无邻接社区轮转铺开 / 社区数超色板时回绕确定性（同输入恒同输出）/ 空图返回空 / 单社区色号 0 / 类型着色不受影响 / series 级集成（7 用例，初始 6 failed 确认）。
 - [x] Implement + revert proof（stash 双实现文件 → 6 failed RED → 恢复 → GREEN）+ `pnpm test` GREEN（161 文件 1408 用例）+ `pnpm check` 双净。
 - [x] 浏览器实测：JVM 库（80 社区）相邻社区不再同色；首轮实测暴露「最小色号」策略在稀疏图塌缩（孤立社区全蓝），修为「全局使用次数最少的可用色号」后复测通过（20 色均匀铺开）。
-- [ ] Commit: `feat(frontend): assign community colors via Welsh-Powell greedy graph coloring`
+- [x] Commit: `feat(frontend): assign community colors via Welsh-Powell greedy graph coloring`（`a7316bd6`）
 
 ## Task 7b: LOD 分层渲染——规模扩展（1000+ 节点性能保障）
 
@@ -226,7 +226,7 @@
   2. **标签单维判定**：修复前 renderTier 的 hub/SuperNode 分支覆盖 labelTier 的 hidden 档（二维冲突）→ 缩到最小时 200 个枢纽名字互相遮挡。修正后标签**只由 labelTier（zoom）单维决定**：zoom < 0.6 任何节点零标签（tooltip 承载），渲染层不再另立规则；labelTextForNode 删除，formatter 直走 labelTextForTier。
   3. scaleLimit.min 保持 0.3 不变（cluster 层移除后无需更低缩放；hub 层 0.3~0.6 区间 + 零标签满足缩略态）。
   后端 `communities` 字段保留（hub 层 TopN 枢纽数据源）。guide 层引导文案改为「放大或双击节点进入局部图」（原「双击社区」入口已移除）。
-- [ ] Commit: `feat(rag): implement LOD-based hierarchical rendering for knowledge graph scalability`
+- [x] Commit: `feat(rag): implement LOD-based hierarchical rendering for knowledge graph scalability`（`8f9ce4ff`）
 
 **风险与缓解**：
 | 风险 | 缓解措施 |
