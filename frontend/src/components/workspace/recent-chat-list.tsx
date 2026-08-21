@@ -49,6 +49,7 @@ import { getAPIClient } from "@/core/api";
 import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 import { excludeKnowledgeThreads } from "@/core/knowledge/kb-threads";
+import type { KnowledgeBase } from "@/core/knowledge/types";
 import { exportThread, type ThreadExportFormat } from "@/core/threads/export";
 import {
   useDeleteThread,
@@ -56,6 +57,7 @@ import {
   usePinThread,
   useRenameThread,
 } from "@/core/threads/hooks";
+import { importThreadToKnowledgeBase } from "@/core/threads/import-to-knowledge-base";
 import { buildThreadListModel } from "@/core/threads/thread-list-model";
 import type { AgentThread, AgentThreadState } from "@/core/threads/types";
 import {
@@ -67,6 +69,7 @@ import {
 import { env } from "@/env";
 import { isIMEComposing } from "@/lib/ime";
 
+import { KnowledgeBaseImportSubMenu } from "./knowledge-base-import-submenu";
 import { ThreadChannelIcon } from "./thread-channel-source";
 import { VirtualThreadList } from "./thread-list-virtualizer";
 
@@ -278,6 +281,32 @@ export function RecentChatList() {
     [t],
   );
 
+  const handleImportToKnowledgeBase = useCallback(
+    async (thread: AgentThread, kb: KnowledgeBase) => {
+      try {
+        const apiClient = getAPIClient();
+        const state = await apiClient.threads.getState<AgentThreadState>(
+          thread.thread_id,
+        );
+        const messages = state.values?.messages ?? [];
+        if (messages.length === 0) {
+          toast.error(t.conversation.noMessages);
+          return;
+        }
+        await importThreadToKnowledgeBase(thread, messages, kb.id);
+        toast.success(t.common.importToKbSuccess(kb.name), {
+          action: {
+            label: t.common.viewKnowledgeBase,
+            onClick: () => router.push("/workspace/knowledge"),
+          },
+        });
+      } catch {
+        toast.error(t.common.importToKbFailed);
+      }
+    },
+    [t, router],
+  );
+
   if (threads.length === 0) {
     return null;
   }
@@ -404,6 +433,11 @@ export function RecentChatList() {
                                 </DropdownMenuItem>
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
+                            <KnowledgeBaseImportSubMenu
+                              onSelect={(kb) =>
+                                void handleImportToKnowledgeBase(thread, kb)
+                              }
+                            />
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onSelect={() => handleDelete(thread)}

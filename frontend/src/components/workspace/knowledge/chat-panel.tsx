@@ -34,10 +34,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
 import { Tooltip } from "@/components/workspace/tooltip";
+import { useAgentsApiEnabled } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
 import { latestGraphTraceTurn, latestRetrievalTurn, sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
-import type { GraphRetrievalOverlay, KnowledgeBase, VectorRetrievalOverlay } from "@/core/knowledge/types";
+import type { GraphRetrievalOverlay, KnowledgeBase } from "@/core/knowledge/types";
 import {
   buildHumanInputResponseText,
   type HumanInputRequest,
@@ -66,6 +67,7 @@ export function KnowledgeChatPanel({
   onOpenWikiEntry,
   onRetrievalOverlay,
   onGraphOverlay,
+  requestedThreadId,
 }: {
   kb: KnowledgeBase | null;
   /** Wiki citation cards open the entry drawer (overlay) via this page-held callback. */
@@ -75,20 +77,31 @@ export function KnowledgeChatPanel({
    * 引用 chunk_id 列表」上报 page 层供向量空间叠加。零后端取数——复用
    * sourcesForAssistantMessage 的既有解析。
    */
-  onRetrievalOverlay?: (overlay: VectorRetrievalOverlay) => void;
+  onRetrievalOverlay?: (VectorRetrievalOverlay) => void;
   /**
    * P4 图谱路径高亮（2026-08-19 spec §7）：每完成一轮含 graph_search 轨迹的
    * 对话，把「提问文本 + 三层检索轨迹」上报 page 层供知识图谱叠加。与向量
    * 通道同节奏（同按 answer id 去重、流式进行中不上报）。
    */
   onGraphOverlay?: (overlay: GraphRetrievalOverlay) => void;
+  /**
+   * External deep-link target: when supplied, apply it as a history-select
+   * action once (like clicking a thread in the popover), without overriding
+   * user-initiated switches.
+   */
+  requestedThreadId?: string | null;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chat;
+  // The expand link targets /workspace/agents/rag/..., which the agents layout
+  // blocks when the agents API is off — disable the entry instead of landing
+  // the user on the "feature not enabled" wall.
+  const { enabled: agentsApiEnabled } = useAgentsApiEnabled();
   const kbId = kb?.id ?? null;
 
   const [threadId, setThreadId] = useState(() => uuid());
   const [isNewThread, setIsNewThread] = useState(true);
+    const expandDisabled = isNewThread || !agentsApiEnabled;
   const [deepResearch, setDeepResearch] = useState(false);
   const [draft, setDraft] = useState("");
   // Composer model selector: null = unselected → context.model_name stays
@@ -104,12 +117,6 @@ export function KnowledgeChatPanel({
   // Switching knowledge bases always starts a fresh conversation: threads are
   // bound to exactly one kb via metadata.kb_id and must never bleed across.
   // The composer model reverts to whatever was remembered for the new kb.
-  useEffect(() => {
-    setThreadId(uuid());
-    setIsNewThread(true);
-    setDraft("");
-    setSelectedModelName(kbId ? localStorage.getItem(MODEL_STORAGE_PREFIX + kbId) : null);
-  }, [kbId]);
 
   const handleModelSelect = useCallback(
     (name: string) => {
@@ -207,10 +214,18 @@ export function KnowledgeChatPanel({
     setIsNewThread(true);
     setDraft("");
   }, []);
-  const handleSelectThread = useCallback((nextThreadId: string) => {
+const handleSelectThread = useCallback((nextThreadId: string) => {
     setThreadId(nextThreadId);
     setIsNewThread(false);
   }, []);
+
+  // Apply KB-thread deep link from URL query params (applied ONCE like a popover selection; does not override user-initiated new-chat).
+  const appliedThreadRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!requestedThreadId || requestedThreadId === appliedThreadRef.current) return;
+    appliedThreadRef.current = requestedThreadId;
+    handleSelectThread(requestedThreadId);
+  }, [requestedThreadId, handleSelectThread]);
 
   // Same operation logic as the general recent-chat list: useDeleteThread
   // cascades sidecar cleanup + remote delete + local data + query-cache
@@ -309,20 +324,24 @@ export function KnowledgeChatPanel({
         <div className="min-w-0 flex-1 truncate text-sm font-medium">
           {kb?.name ?? ""}
         </div>
-        <Button
-          aria-label={tc.newChat}
-          size="icon-sm"
-          variant="ghost"
-          onClick={handleNewChat}
-        >
-          <PlusIcon className="size-4" />
-        </Button>
+        <Tooltip content={tc.newChat}>
+          <Button
+            aria-label={tc.newChat}
+            size="icon-sm"
+            variant="ghost"
+            onClick={handleNewChat}
+          >
+            <PlusIcon className="size-4" />
+          </Button>
+        </Tooltip>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button aria-label={tc.history} size="icon-sm" variant="ghost">
-              <HistoryIcon className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip content={tc.history}>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label={tc.history} size="icon-sm" variant="ghost">
+                <HistoryIcon className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Tooltip>
           <DropdownMenuContent align="end" className="w-64">
             {threadsByDay.length === 0 ? (
               <DropdownMenuLabel>{tc.noHistory}</DropdownMenuLabel>
@@ -361,17 +380,23 @@ export function KnowledgeChatPanel({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Link
-          aria-disabled={isNewThread}
-          aria-label={tc.expandToFullPage}
-          className={cn(
-            "hover:bg-accent hover:text-accent-foreground inline-flex size-8 items-center justify-center rounded-md",
-            isNewThread && "pointer-events-none opacity-50",
-          )}
-          href={isNewThread ? "#" : `/workspace/agents/rag/chats/${threadId}`}
-        >
-          <ArrowUpRightIcon className="size-4" />
-        </Link>
+        <Tooltip content={agentsApiEnabled ? tc.expandToFullPage : tc.expandDisabledAgentsOff}>
+          {/* The span stays hoverable so the tooltip still shows while the
+              link itself is pointer-events-none (disabled). */}
+          <span className="inline-flex">
+            <Link
+              aria-disabled={expandDisabled}
+              aria-label={tc.expandToFullPage}
+              className={cn(
+                "hover:bg-accent hover:text-accent-foreground inline-flex size-8 items-center justify-center rounded-md",
+                expandDisabled && "pointer-events-none opacity-50",
+              )}
+              href={expandDisabled ? "#" : `/workspace/agents/rag/chats/${threadId}`}
+            >
+              <ArrowUpRightIcon className="size-4" />
+            </Link>
+          </span>
+        </Tooltip>
       </header>
 
       <div className="min-h-0 flex-1">

@@ -68,6 +68,16 @@ test("uses agent chat route when thread metadata has agent_name", () => {
   ).toBe("/workspace/agents/coder/chats/thread-456");
 });
 
+test("opens KB-bound threads in knowledge page with query params (spec §5.2)", () => {
+  const kbThread = makeThread("thread-kb-1", { kb_id: "kb-abc" });
+  expect(pathOfThread(kbThread)).toBe("/workspace/knowledge?kb=kb-abc&thread=thread-kb-1");
+});
+
+test("kb branch takes precedence over agent branch (kb threads carry both)", () => {
+  const kbThread = makeThread("thread-kb-2", { agent_name: "rag", kb_id: "kb-def" });
+  expect(pathOfThread(kbThread)).toBe("/workspace/knowledge?kb=kb-def&thread=thread-kb-2");
+});
+
 test("prefers context.agent_name over metadata.agent_name", () => {
   expect(
     pathOfThread({

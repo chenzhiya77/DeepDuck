@@ -42,6 +42,13 @@ export interface Translations {
     exportAsJSON: string;
     exportSuccess: string;
     exportFailed: string;
+    importToKnowledgeBase: string;
+    noKnowledgeBasesYet: string;
+    createKnowledgeBase: string;
+    importToKbSuccess: (kbName: string) => string;
+    importToKbFailed: string;
+    /** Toast action that navigates to the knowledge page after an import. */
+    viewKnowledgeBase: string;
     regenerate: string;
     editAndRerun: string;
     updateAndRerun: string;
@@ -556,6 +563,8 @@ export interface Translations {
       sourceTypeManual: string;
       sourceMarkAriaLabel: (index: number, name: string) => string;
       expandToFullPage: string;
+      /** Tooltip on the expand link while it is disabled because the agents feature is off. */
+      expandDisabledAgentsOff: string;
       pageLabel: (page: number) => string;
       inputPlaceholder: string;
       /** Composer model selector: trigger aria-label + dialog title. */

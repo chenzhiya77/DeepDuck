@@ -12,6 +12,11 @@ const mockUseInfiniteThreads = rs.fn();
 const mockSendMessage = rs.fn();
 const mockDeleteThread = rs.fn();
 const mockUseModels = rs.fn();
+const mockUseAgentsApiEnabled = rs.fn();
+
+rs.mock("@/core/agents", () => ({
+  useAgentsApiEnabled: () => mockUseAgentsApiEnabled(),
+}));
 
 rs.mock("@/core/threads/hooks", () => ({
   useThreadStream: (options: unknown) => mockUseThreadStream(options),
@@ -126,6 +131,7 @@ beforeEach(() => {
     data: { pages: [[KB_THREAD, OTHER_KB_THREAD, PLAIN_THREAD]] },
   });
   mockUseModels.mockReturnValue({ models: MODELS, tokenUsageEnabled: false, isLoading: false, error: null });
+  mockUseAgentsApiEnabled.mockReturnValue({ enabled: true, isLoading: false });
   localStorage.clear();
 });
 
@@ -262,6 +268,16 @@ describe("KnowledgeChatPanel", () => {
     fireEvent.click(screen.getByText("如何上传文档"));
     const link = screen.getByRole("link", { name: "在完整页面中打开" });
     expect(link.getAttribute("href")).toBe("/workspace/agents/rag/chats/thread-kb1-a");
+  });
+
+  it("keeps the expand link disabled when the agents feature is off, even for a persisted thread", () => {
+    mockUseAgentsApiEnabled.mockReturnValue({ enabled: false, isLoading: false });
+    renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByText("如何上传文档"));
+    const link = screen.getByRole("link", { name: "在完整页面中打开" });
+    expect(link.getAttribute("aria-disabled")).toBe("true");
+    expect(link.getAttribute("href")).toBe("#");
   });
 
   it("renders citation cards below assistant answers via the message footer (spec §4.6)", () => {

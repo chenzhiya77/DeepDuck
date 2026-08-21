@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -57,14 +58,15 @@ function showMutationError(error: unknown, fallback: string) {
   toast.error(error instanceof Error && error.message ? error.message : fallback);
 }
 
-/**
- * Knowledge base workspace (spec §5.2): three columns — kb list, document
- * management for the selected kb, and a chat panel whose threads stay bound
- * to that kb via ``metadata.kb_id`` (ima-style isolation).
- */
+
 export default function KnowledgePage() {
   const { t } = useI18n();
   const tk = t.knowledge;
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const deepLinkKb = searchParams.get("kb");
+  const deepLinkThread = searchParams.get("thread");
+  
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
   const [drawerDoc, setDrawerDoc] = useState<KnowledgeDocument | null>(null);
   // Middle-column tab + entry drawer state (phase-2 batch-1). The drawer is
@@ -109,6 +111,19 @@ export default function KnowledgePage() {
       setSelectedKbId(kbs[0]!.id);
     }
   }, [kbs, selectedKb, selectedKbId]);
+
+  // Deep link effect: apply on mount or when KB param changes.
+  useEffect(() => {
+    if (!deepLinkKb) return;
+    const kb = kbs.find((kb) => kb.id === deepLinkKb);
+    if (kb) {
+      if (selectedKbId !== kb.id) {
+        setSelectedKbId(kb.id);
+      }
+      // After applying, clear the thread param but keep kb param visible.
+      router.replace(`${window.location.pathname}?kb=${encodeURIComponent(deepLinkKb)}`);
+    }
+  }, [deepLinkKb, kbs, selectedKbId, router]);
 
   const documentsQuery = useDocuments(selectedKbId);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
@@ -423,6 +438,7 @@ export default function KnowledgePage() {
             onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
             onRetrievalOverlay={setVectorOverlay}
             onGraphOverlay={setGraphOverlay}
+            requestedThreadId={deepLinkKb ? deepLinkThread : null}
           />
         }
       />

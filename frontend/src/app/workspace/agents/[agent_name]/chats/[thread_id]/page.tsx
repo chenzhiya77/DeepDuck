@@ -33,6 +33,7 @@ import { Tooltip } from "@/components/workspace/tooltip";
 import { useActiveGoal } from "@/components/workspace/use-active-goal";
 import { useAgent } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
+import { kbIdOfThread } from "@/core/knowledge/kb-threads";
 import {
   buildHumanInputResponseText,
   hasOpenHumanInputRequest,
@@ -83,6 +84,12 @@ export default function AgentChatPage() {
     enabled: !isNewThread && !isMock,
     isMock,
   });
+  // Inject kb_id from KB-bound thread metadata into the run context so RAG
+  // retrieval works even when expanded to the full agents page (#2).
+  const kbId = useMemo(() => {
+    if (!threadMetadata.data) return null;
+    return kbIdOfThread(threadMetadata.data);
+  }, [threadMetadata.data]);
   const backendTokenUsage = threadTokenUsageToTokenUsage(threadTokenUsage.data);
   const contextUsage = selectContextUsage(threadTokenUsage.data);
 
@@ -105,7 +112,7 @@ export default function AgentChatPage() {
   } = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     displayThreadId: threadId,
-    context: { ...settings.context, agent_name: agent_name },
+    context: { ...settings.context, agent_name: agent_name, ...(kbId ? { kb_id: kbId } : {}) },
     isMock,
     onSend: () => {
       setIsWelcomeMode(false);

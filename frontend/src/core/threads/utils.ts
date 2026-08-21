@@ -1,5 +1,7 @@
 import type { Message } from "@langchain/langgraph-sdk";
 
+import { kbIdOfThread } from "@/core/knowledge/kb-threads";
+
 import type { AgentThread, AgentThreadContext } from "./types";
 
 // Namespaced to match other internal metadata keys (``deerflow_sidecar``,
@@ -28,6 +30,16 @@ export function pathOfThread(
 ) {
   const threadId = typeof thread === "string" ? thread : thread.thread_id;
   const encodedThreadId = encodeURIComponent(threadId);
+  // KB-bound threads (metadata.kb_id, spec §5.2) open inside the knowledge
+  // page — the agents route would run the same rag agent WITHOUT its kb
+  // binding, so retrieval could never fire there. This branch wins over the
+  // agent route below because kb threads also carry metadata.agent_name.
+  if (typeof thread !== "string") {
+    const kbId = kbIdOfThread(thread);
+    if (kbId) {
+      return `/workspace/knowledge?kb=${encodeURIComponent(kbId)}&thread=${encodedThreadId}`;
+    }
+  }
   let agentName: string | undefined;
   if (typeof thread === "string") {
     agentName = context?.agent_name;

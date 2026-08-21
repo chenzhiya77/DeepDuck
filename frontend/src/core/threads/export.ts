@@ -190,7 +190,7 @@ export function formatThreadAsJSON(
   return JSON.stringify(exportData, null, 2);
 }
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
   return name.replace(/[^\p{L}\p{N}_\- ]/gu, "").trim() || "conversation";
 }
 
