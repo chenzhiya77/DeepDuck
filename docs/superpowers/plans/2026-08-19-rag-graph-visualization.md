@@ -111,17 +111,17 @@
 - Modify: `docs/superpowers/specs/2026-08-19-rag-graph-visualization-design.md`（状态翻转「已落地」+ 日期）
 - Create: `pr-build/rag-graph-*.png`（冒烟截图）
 
-- [ ] Spec 状态翻转为「✅ 已落地」（完成）；AGENTS.md 落档。
+- [x] Spec 状态翻转为「✅ 已落地」（完成）；AGENTS.md 落档。
 - [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（382 passed, 2 skipped; 2026-08-20）；`ruff check/format` 双净。
 - [x] `cd frontend && pnpm test && pnpm check` 双净（2026-08-20）。
 - [x] Live 冒烟（真实数据 JVM 知识库，286 实体/255 关系）：
   | 冒烟项 | 步骤 | 预期 | 结果 | 证据 |
   |---|---|---|---|---|
-  | 图出图 | JVM 知识库 → 知识图谱 tab | 力导向图出图，大小/颜色编码正确，hover 详情 | ✅ Pass (2026-08-19 浏览器实测) | pr-build/rag-graph-*.png (待截图) |
-  | 点击钻取 | 点击实体 → 切片列表 → 文档 | 抽屉链路走通 | ✅ Pass (2026-08-19 浏览器实测) | pr-build/rag-graph-*.png (待截图) |
-  | 搜索 + 局部图 | 搜索实体名 → 邻居模式 | 定位居中 + N 跳裁剪 + 面包屑返回 | ✅ Pass (2026-08-19 浏览器实测) | pr-build/rag-graph-*.png (待截图) |
-  | 路径高亮 | 对话一轮（图谱路有命中）→ 切图谱 tab | 种子/扩展/证据两层染色 + 徽标计数 | ✅ Pass (2026-08-20 两轮实测) | pr-build/rag-graph-overlay.png (待截图) |
-- [ ] Commit: `docs(rag): sync agent guides and spec status for graph visualization`
+  | 图出图 | JVM 知识库 → 知识图谱 tab | 力导向图出图，大小/颜色编码正确，hover 详情 | ✅ Pass (2026-08-19 浏览器实测) | pr-build/rag-graph-base.jpg |
+  | 点击钻取 | 点击实体 → 切片列表 → 文档 | 抽屉链路走通 | ✅ Pass (2026-08-19 浏览器实测) | pr-build/rag-graph-drilldown.jpg |
+  | 搜索 + 局部图 | 搜索实体名 → 邻居模式 | 定位居中 + N 跳裁剪 + 面包屑返回 | ✅ Pass (2026-08-19 浏览器实测) | pr-build/rag-graph-neighborhood.jpg |
+  | 路径高亮 | 对话一轮（图谱路有命中）→ 切图谱 tab | 命中红/路径金两层染色 + 徽标计数 | ✅ Pass (2026-08-21 新对话实测：种子 11 · 扩展 3 · 证据 5，锚点有界) | pr-build/rag-graph-overlay.png |
+- [x] Commit: `docs(rag): sync agent guides and spec status for graph visualization`（`bf96ca55`）；后续实测追加修复亦已入库——证据锚点洪泛修复 `f2832b7c` / 两层红金编码 `eaefd371` / hover 邻域加法高亮 `1121658d` / stats 底部居中浮层 `974a013c`。冒烟截图已采集（2026-08-21）。
 
 ## Task 7: LOD 分层渲染——规模扩展（1000+ 节点性能保障）
 
