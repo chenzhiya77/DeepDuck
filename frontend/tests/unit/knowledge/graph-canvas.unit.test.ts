@@ -10,6 +10,7 @@ import { describe, expect, it } from "@rstest/core";
 
 import {
   buildAdjacencyMap,
+  buildCommunityColorMap,
   buildGraphSeries,
   COMMUNITY_PALETTE,
   filterNeighborhood,
@@ -177,6 +178,84 @@ describe("buildAdjacencyMap（hover 邻域提亮的邻接表）", () => {
   });
 });
 
+// ── Task 7a（2026-08-21）：社区邻接图贪心着色（Welsh-Powell）─────────────────
+// 背景：10 色板取模回绕，80 社区时每色 8 个社区共享，相邻社区大概率同色。
+// 设计：20 色板 + 社区邻接图贪心着色——有跨社区边即相邻，按社区度降序（同度
+// 按社区 id 升序保确定性）逐社区分配「邻居未占用的最小色号」，耗尽取模回绕
+//（撞色也撞在远距离社区，视觉无感）。类型着色保持 FNV 哈希不变。
+describe("buildCommunityColorMap（社区邻接图贪心着色 Welsh-Powell）", () => {
+  const cn = (id: string, community: number) => node(id, { community });
+
+  it("assigns different colors to adjacent communities（相邻社区异色）", () => {
+    const nodes = [cn("甲", 0), cn("乙", 1)];
+    const edges: KnowledgeGraphEdge[] = [
+      { source: "甲", target: "乙", relation: "r", description: "" },
+      { source: "甲", target: "幽灵", relation: "r", description: "" }, // 幽灵端点跳过
+    ];
+    const colorMap = buildCommunityColorMap(nodes, edges);
+    expect(colorMap.size).toBe(2); // 幽灵端点不产社区条目
+    expect(colorMap.get(0)).not.toBe(colorMap.get(1));
+  });
+
+  it("spreads non-adjacent communities across the palette（无邻接社区轮转铺开）", () => {
+    // 三个互不相邻的社区：不占同一色号——分配规则是「邻居未占用色号中全局使用
+    // 次数最少的」（2026-08-21 实测修复：稀疏图上大量孤立社区若复用最小色号，
+    // 会全撞色号 0 蓝色，颜色多样性比取模还差）。
+    const colorMap = buildCommunityColorMap([cn("甲", 0), cn("乙", 1), cn("丙", 2)], []);
+    expect(colorMap.get(0)).toBe(0);
+    expect(colorMap.get(1)).toBe(1);
+    expect(colorMap.get(2)).toBe(2);
+  });
+
+  it("wraps deterministically when communities outnumber the palette（完全图回绕）", () => {
+    // 色板 +1 个社区两两相邻（完全图）：色板用尽后最后一个社区确定性回绕。
+    const total = COMMUNITY_PALETTE.length + 1;
+    const nodes = Array.from({ length: total }, (_, i) => cn(`n${i}`, i));
+    const edges: KnowledgeGraphEdge[] = [];
+    for (let i = 0; i < total; i += 1) {
+      for (let j = i + 1; j < total; j += 1) {
+        edges.push({ source: `n${i}`, target: `n${j}`, relation: "r", description: "" });
+      }
+    }
+    const colorMap = buildCommunityColorMap(nodes, edges);
+    expect(colorMap.size).toBe(total);
+    // 度齐平按 id 升序分配：社区 k 的邻居已占色号 0..k-1 → 社区 k 得色号 k。
+    for (let k = 0; k < COMMUNITY_PALETTE.length; k += 1) {
+      expect(colorMap.get(k)).toBe(k);
+    }
+    // 最后一个社区：邻居占满全色板 → 社区 id 取模回绕（确定性）。
+    expect(colorMap.get(COMMUNITY_PALETTE.length)).toBe(0); // 20 % 20
+    // 同输入恒同输出。
+    expect([...buildCommunityColorMap(nodes, edges)]).toEqual([...colorMap]);
+  });
+
+  it("returns an empty map for an empty graph", () => {
+    expect(buildCommunityColorMap([], []).size).toBe(0);
+  });
+
+  it("assigns color index 0 to a single community（单社区恒得 0 号色）", () => {
+    expect(buildCommunityColorMap([cn("独苗", 5)], []).get(5)).toBe(0);
+  });
+
+  it("keeps type coloring on the FNV path untouched（类型着色不走 colorMap）", () => {
+    // type 模式不经 colorMap：FNV 哈希路径不变，同 type 恒同色。
+    const [series] = buildGraphSeries(NODES, EDGES, "type");
+    const data = series.data as Array<{ name: string; itemStyle: { color: string } }>;
+    const byName = new Map(data.map((d) => [d.name, d]));
+    expect(byName.get("JVM")!.itemStyle.color).toBe(typeColor("组件"));
+    expect(byName.get("堆内存")!.itemStyle.color).toBe(typeColor("概念"));
+  });
+
+  it("colors adjacent communities differently at the series level（集成：series 输出相邻异色）", () => {
+    const nodes = [cn("甲", 0), cn("乙", 1)];
+    const edges: KnowledgeGraphEdge[] = [{ source: "甲", target: "乙", relation: "r", description: "" }];
+    const [series] = buildGraphSeries(nodes, edges, "community");
+    const data = series.data as Array<{ name: string; itemStyle: { color: string } }>;
+    const byName = new Map(data.map((d) => [d.name, d]));
+    expect(byName.get("甲")!.itemStyle.color).not.toBe(byName.get("乙")!.itemStyle.color);
+  });
+});
+
 describe("graphTooltipFormatter", () => {
   it("renders node tooltip as name + truncated description (buildTooltipHtml 复用)", () => {
     const html = graphTooltipFormatter({
@@ -202,11 +281,13 @@ describe("graphTooltipFormatter", () => {
 // ── Task 4（P3）：着色切换 / 搜索匹配 / 局部图裁剪 ─────────────────────────
 
 describe("buildGraphSeries colorBy（着色切换）", () => {
-  it("colors by community when colorBy=community（社区 id → 色板）", () => {
+  it("colors by community when colorBy=community（Welsh-Powell：同社区同色）", () => {
     const [series] = buildGraphSeries(NODES, EDGES, "community");
     const data = series.data as Array<{ name: string; itemStyle: { color: string } }>;
     const byName = new Map(data.map((d) => [d.name, d]));
-    // 同社区同色（社区 0 三人组），异社区异色（社区 1）。
+    // 同社区同色（社区 0 三人组）。孤立概念（社区 1）与社区 0 无跨社区边——
+    // 无邻接硬约束，但分配规则取「全局使用次数最少的可用色号」：色号 0 已被
+    // 社区 0 占用一次 → 社区 1 得色号 1（轮转铺开，保证全图颜色多样性）。
     expect(byName.get("JVM")!.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
     expect(byName.get("堆内存")!.itemStyle.color).toBe(COMMUNITY_PALETTE[0]);
     expect(byName.get("孤立概念")!.itemStyle.color).toBe(COMMUNITY_PALETTE[1]);

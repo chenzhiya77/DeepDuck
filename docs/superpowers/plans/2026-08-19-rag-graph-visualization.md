@@ -123,52 +123,85 @@
   | 路径高亮 | 对话一轮（图谱路有命中）→ 切图谱 tab | 命中红/路径金两层染色 + 徽标计数 | ✅ Pass (2026-08-21 新对话实测：种子 11 · 扩展 3 · 证据 5，锚点有界) | pr-build/rag-graph-overlay.png |
 - [x] Commit: `docs(rag): sync agent guides and spec status for graph visualization`（`bf96ca55`）；后续实测追加修复亦已入库——证据锚点洪泛修复 `f2832b7c` / 两层红金编码 `eaefd371` / hover 邻域加法高亮 `1121658d` / stats 底部居中浮层 `974a013c`。冒烟截图已采集（2026-08-21）。
 
-## Task 7: LOD 分层渲染——规模扩展（1000+ 节点性能保障）
+## Task 7a: 着色治理——20 色板 + 社区邻接图贪心着色（Welsh-Powell）✅ 已完成（2026-08-21）
 
-**背景**：随着文档数增长，实体数指数级上升。当前 286 实体尚可流畅渲染，但 1000+ 节点时 Canvas 2D 帧率骤降、标签密集遮挡、视觉混乱。本任务实现 **Level of Detail (LOD)** 分层渲染策略，参考 Google Maps / Neo4j Bloom 的主流实践。
+**背景**（2026-08-21 设计拍板）：现有 `COMMUNITY_PALETTE` 仅 10 色取模回绕——当前 80 社区已是每色 8 个社区共享；1 万实体预计 500+ 社区，相邻社区大概率同色，「按社区着色」丧失区分意义。类型着色保持 FNV 哈希不变（类型数量少、无邻接概念，不值得上图着色）。
 
-**核心设计**：五层 Zoom 分级渲染，数据层（renderTier）与视觉层（labelTier）解耦，平滑过渡。
+**设计**：色板扩 20 色 + **社区邻接图贪心着色（Welsh-Powell）**——社区间有边即相邻，按社区度降序逐社区分配「邻居未占用的最小色号」，色号耗尽才取模回绕（撞色也撞在远距离社区，视觉无感）。与 LOD 的 cluster 层天然契合（SuperNode 少，Top-N 鲜明色足够）。
+
+**Files:**
+- Modify: `frontend/src/components/workspace/knowledge/graph-utils.ts`（`COMMUNITY_PALETTE` 扩 20 色 + `buildCommunityColorMap` 纯函数；`communityColor` 签名改为走 colorMap）
+- Modify: `frontend/src/components/workspace/knowledge/graph-canvas.tsx`（着色调用改走 colorMap）
+- Modify: `frontend/tests/unit/knowledge/graph-canvas.unit.test.ts`
+
+**核心算法**（`buildCommunityColorMap(nodes, edges) → Map<communityId, colorIndex>`）：
+1. 构建社区邻接图：边两端社区不同 → 两社区相邻
+2. 按社区度降序排序（同度按社区 id 字典序，保确定性）
+3. 顺序分配「邻居未占用色号中**全局使用次数最少的**」（同次数取最小编号）；色号全被邻居占用时取模回绕
+
+> 2026-08-21 实测修正：初版分配「邻居未占用的**最小**色号」，在稀疏图上塌缩——286 节点/255 边/80 社区的 JVM 库中大多数社区无跨社区边（度 0），全部撞色号 0（八成节点蓝色）。改为全局使用次数最少的可用色号后，孤立社区自然轮转铺开，相邻异色硬约束不变。
+
+- [x] RED test：相邻社区异色 / 无邻接社区轮转铺开 / 社区数超色板时回绕确定性（同输入恒同输出）/ 空图返回空 / 单社区色号 0 / 类型着色不受影响 / series 级集成（7 用例，初始 6 failed 确认）。
+- [x] Implement + revert proof（stash 双实现文件 → 6 failed RED → 恢复 → GREEN）+ `pnpm test` GREEN（161 文件 1408 用例）+ `pnpm check` 双净。
+- [x] 浏览器实测：JVM 库（80 社区）相邻社区不再同色；首轮实测暴露「最小色号」策略在稀疏图塌缩（孤立社区全蓝），修为「全局使用次数最少的可用色号」后复测通过（20 色均匀铺开）。
+- [ ] Commit: `feat(frontend): assign community colors via Welsh-Powell greedy graph coloring`
+
+## Task 7b: LOD 分层渲染——规模扩展（1000+ 节点性能保障）
+
+**背景**：随着文档数增长，实体数指数级上升。当前 286 实体尚可流畅渲染，但 1000+ 节点时 Canvas 2D 帧率骤降、标签密集遮挡、视觉混乱；force 布局 O(n²) 在 1 万节点直接卡死主线程。本任务实现 **Level of Detail (LOD)** 分层渲染策略，对齐 Google Maps 心智模型：**缩放 = 地图层级；任何层级下检索命中都可见**。
+
+**与现有设计的冲突裁决（2026-08-21 拍板）**：
+
+| 冲突 | 裁决 |
+|---|---|
+| 聚合层 ×「按类型」着色 | SuperNode 跟随全局 colorBy 取「主导值」：社区模式=社区色；类型模式=社区内 mention 最高的**主导类型色** |
+| hover × 聚合层 | 分流：实体节点=现有邻域加法提亮不变；SuperNode=自身蓝描边+tooltip 概要（成员数/Top 成员/主导类型），**不做邻域提亮**（SuperNode 邻居是其他社区，语义价值低） |
+| 检索叠加 × 聚合层 | **命中社区上卷**：含命中实体的 SuperNode 加红描边+命中数角标（trace 实体名→community→SuperNode 聚合，纯前端）；实体层照现有红/金描边 |
+
+**核心设计**：五层 Zoom 分级渲染，数据层（renderTier）与视觉层（labelTier）解耦，平滑过渡。**detail 层修正为「引导层」**——LOD 的价值是缩略态不面对全量节点；看细节走「双击进社区局部图」的数据裁剪（复用现有 neighborhood 模式），而不是硬渲全图。
+
+**激活门控（2026-08-21 拍板）**：`totalNodes ≤ LOD_MIN_NODES（500）时 LOD 完全不激活**，任何 zoom 都走现有全量模式——小库（如当前 286 实体的 JVM 库）零行为变化，聚合对小库是丢信息而非优化。只有大库才进入五层分级。
 
 | Zoom 区间 | RenderTier | 渲染内容 | 标签策略 | 边显示 | 节点上限 |
 |-----------|-----------|---------|---------|--------|---------|
 | `< 0.2` | `cluster` | 仅超级节点（社区聚合） | 超级节点名 + 成员数 | 隐藏 | ~50 |
 | `0.2~0.6` | `hub` | 超级节点 + 每社区 Top 3 枢纽 | 仅枢纽标签 | 枢纽间粗边 | ~200 |
-| `0.6~0.9` | `all-important` | 全部节点 | 仅重要节点（mention≥2） | 全部边（细线） | ~5000 |
-| `0.9~1.5` | `all-full` | 全部节点 | 全部标签 + hideOverlap | 全部边 | ~5000 |
-| `> 1.5` | `detail` | 全部节点 | 全部标签 + 边标签 | 全部边（带权重） | 无限制 |
+| `0.6~0.9` | `all-important` | 重要节点（mention≥2） | 仅重要节点标签 | 重要节点间边（细线） | ~1000 |
+| `> 0.9` | `all-full`（引导层） | 总数 ≤ 2000 时全量；超出时显示「双击社区进入局部图」引导 | 全部标签 + hideOverlap | 全部边 | **硬上限 2000** |
 
 **Files:**
 - Modify: `backend/app/gateway/services/knowledge_service.py`（`get_knowledge_graph` 响应补 `topMembers` / `totalMentions` 字段，预计算社区 Top 3 枢纽）
 - Modify: `backend/tests/knowledge/test_graph_api.py`（新字段断言）
-- Modify: `frontend/src/components/workspace/knowledge/graph-utils.ts`（`renderTierForZoom` / `buildSuperNodes` / `buildSuperEdges` / `buildTieredSeries` 纯函数）
-- Modify: `frontend/src/components/workspace/knowledge/graph-canvas.tsx`（graphRoam 监听增加 renderTier 判断 + 跨 tier 重建 series + 平滑过渡动画）
+- Modify: `frontend/src/components/workspace/knowledge/graph-utils.ts`（`renderTierForZoom` / `buildSuperNodes` / `buildSuperEdges` / `buildTieredSeries` / `rollupOverlayToSuperNodes` 纯函数）
+- Modify: `frontend/src/components/workspace/knowledge/graph-canvas.tsx`（graphRoam 监听增加 renderTier 判断 + 跨 tier 重建 series + 平滑过渡动画 + hover 分流）
 - Modify: `frontend/src/components/workspace/knowledge/graph-tab.tsx`（面包屑显示当前层级 + 钻取 SuperNode zoom-to-fit）
 - Modify: `frontend/src/core/knowledge/types.ts`（`SuperNode` / `RenderNode` 联合类型）
-- Modify: `frontend/tests/unit/knowledge/graph-canvas.unit.test.ts`（tier 切换 + 聚合算法）
-- Modify: `frontend/tests/unit/knowledge/graph-tab.dom.test.tsx`（跨 tier 过渡动画 + 钻取路径）
+- Modify: `frontend/tests/unit/knowledge/graph-canvas.unit.test.ts` / `graph-tab.dom.test.tsx`
 
 **数据结构（向后兼容）**：
 - `KnowledgeGraphNode` 不变
-- 新增 `SuperNode`：`{ kind: 'super', id, community, name, memberCount, memberIds, totalMentions, topMembers }`
+- 新增 `SuperNode`：`{ kind: 'super', id, community, name, memberCount, memberIds, totalMentions, topMembers, dominantType }`
 - 联合类型 `RenderNode = { kind: 'super', data: SuperNode } | { kind: 'entity', data: KnowledgeGraphNode }`
 
 **核心算法**：
-- `renderTierForZoom(zoom)`：阈值判断（0.2 / 0.6 / 0.9 / 1.5）
-- `buildSuperNodes(nodes, edges)`：按 community 分组 → 按 mention_count 排序 → Top 3 为枢纽
+- `renderTierForZoom(zoom, totalNodes)`：门控（totalNodes ≤ 500 恒返回全量档）→ 阈值判断（0.2 / 0.6 / 0.9）→ 2000 硬上限熔断
+- `buildSuperNodes(nodes, edges)`：按 community 分组 → 按 mention_count 排序 → Top 3 为枢纽 + 主导类型
 - `buildSuperEdges(edges, nodeToCommunity)`：跨社区边聚合（权重 = 原边数）
 - `buildTieredSeries(allNodes, allEdges, tier)`：按 tier 返回对应数据子集
+- `rollupOverlayToSuperNodes(trace, nodeToCommunity)`：命中社区上卷（裁决 3）
 
 **视觉规范**：
-- SuperNode：空心圆（直径 30-80px，= 20+√totalMentions×4）+ 社区色描边 + 成员数角标
+- SuperNode：空心圆（直径 30-80px，= 20+√totalMentions×4）+ 主导值色描边（裁决 1）+ 成员数角标；含命中时红描边+命中数角标（裁决 3）
 - HubNode：实心圆（直径 18-40px）+ 社区色填充 + 光环阴影
 - 普通节点：现有规格（10-28px）
-- 边宽：cluster `1+ln(weight)` / hub 2 / all-important 1 / all-full 1 / detail 1.5
-- 边标签：仅 detail 层显示
+- 边宽：cluster `1+ln(weight)` / hub 2 / all-important 1 / all-full 1
+- 边标签：仅局部图模式显示（原 detail 层职责并入局部图）
 
 **交互行为**：
 - 单击 SuperNode → zoom-to-fit 该社区（zoom 0.7 + 居中）
 - 双击 SuperNode → 进入该社区局部图（复用 neighborhood 模式）
 - 单击/双击实体节点 → 现有行为不变（抽屉/局部图）
+- hover 分流（裁决 2）：实体=邻域加法提亮；SuperNode=自身蓝描边+概要 tooltip
 - 跨 tier 切换 → 淡出/淡入 300ms 平滑过渡
 - 面包屑：`全部 > 社区:AI > 实体:LLM`（清晰位置感知）
 
@@ -181,14 +214,14 @@
 - `large: true`（>1000 节点关闭 hover 动画）
 - `progressive: 500`（每帧渲染 500 个）
 - `labelLayout.hideOverlap: true`
-- 预期 FPS：cluster/hub 60 / all-important/all-full 45 / detail 40
+- 预期 FPS：cluster/hub 60 / all-important 45 / all-full（≤2000）40
 
 - [ ] RED test（后端）: `/graph` 响应含 `topMembers`（每社区 Top 3）+ `totalMentions` 字段；单成员社区 topMembers 长度 1；空社区跳过（3 用例）
-- [ ] RED test（前端纯函数）: `renderTierForZoom` 五档边界（0.19/0.2/0.6/0.9/1.5）；`buildSuperNodes` 聚合正确（成员数/总提及数/Top 3）；`buildSuperEdges` 跨社区聚合（权重累加 + 跳过社区内部边 + 幽灵端点剔除）；`buildTieredSeries` 各 tier 返回正确子集（8 用例）
-- [ ] RED test（前端 dom）: zoom 跨 tier 触发 series 重建 + 淡出动画；单击 SuperNode → zoom-to-fit；面包屑显示当前层级（5 用例）
-- [ ] Implement 后端字段透传 + 前端三层数据模型 + 渲染分层 + 平滑过渡
-- [ ] `pnpm test` GREEN + `uv run pytest tests/knowledge -q` GREEN；revert proof（stash utils 扩展 → RED → 恢复 → GREEN）；`pnpm check` 双净
-- [ ] 浏览器实测：构造 1000+ 节点测试 KB → zoom 从 0.1 平滑放大到 2.0，验证五层切换无闪烁、FPS > 40、钻取路径正确
+- [ ] RED test（前端纯函数）: `renderTierForZoom` 四档边界 + 2000 熔断 + **门控（总数 ≤500 任意 zoom 恒全量档）**；`buildSuperNodes` 聚合正确（成员数/总提及数/Top 3/主导类型）；`buildSuperEdges` 跨社区聚合（权重累加 + 跳过社区内部边 + 幽灵端点剔除）；`buildTieredSeries` 各 tier 返回正确子集；`rollupOverlayToSuperNodes` 命中上卷（13 用例）
+- [ ] RED test（前端 dom）: zoom 跨 tier 触发 series 重建 + 淡出动画；单击 SuperNode → zoom-to-fit；面包屑显示当前层级；SuperNode hover 分流；命中社区红描边角标（7 用例）
+- [ ] Implement 后端字段透传 + 前端三层数据模型 + 渲染分层 + 三裁决落地 + 平滑过渡
+- [ ] `pnpm test` GREEN + `uv run pytest tests/knowledge -q` GREEN；revert proof；`pnpm check` 双净
+- [ ] 浏览器实测：构造 1000+ 节点测试 KB → zoom 从 0.1 平滑放大，验证各层切换无闪烁、FPS > 40、钻取路径正确、命中上卷可见
 - [ ] Commit: `feat(rag): implement LOD-based hierarchical rendering for knowledge graph scalability`
 
 **风险与缓解**：
@@ -198,11 +231,13 @@
 | 超级节点位置漂移 | 使用社区质心 + 固定布局（关闭 force） |
 | 钻取后迷失方向 | 面包屑 + 平滑 zoom 动画 + 「返回全部」按钮 |
 | 大数据首次加载慢 | 分层加载（先 super 后 detail）+ 骨架屏 |
+| 1 万节点 all-full 卡死 | 2000 硬上限熔断 + 引导局部图（五层表修正） |
+| 小库被聚合丢信息/体验回归 | 激活门控：totalNodes ≤ 500 时 LOD 完全不生效（2026-08-21 拍板） |
 
 **实施子任务**（建议按序）：
 1. 后端：`/graph` 响应扩展（topMembers/totalMentions）
-2. 前端 utils：核心算法（renderTierForZoom/buildSuperNodes/buildSuperEdges/buildTieredSeries）
-3. 前端 canvas：graphRoam 跨 tier 监听 + series 重建 + 过渡动画
+2. 前端 utils：核心算法（renderTierForZoom/buildSuperNodes/buildSuperEdges/buildTieredSeries/rollupOverlayToSuperNodes）
+3. 前端 canvas：graphRoam 跨 tier 监听 + series 重建 + 过渡动画 + hover 分流
 4. 前端 tab：面包屑 + SuperNode 钻取
 5. 测试：纯函数 + dom + 浏览器实测
 6. 提交

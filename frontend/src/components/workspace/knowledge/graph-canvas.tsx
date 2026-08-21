@@ -15,6 +15,7 @@ import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from
 
 import {
   buildAdjacencyMap,
+  buildCommunityColorMap,
   buildGraphData,
   buildGraphLinks,
   buildGraphSeries,
@@ -31,6 +32,7 @@ import {
 // 测试 import 路径保持 "@/components/workspace/knowledge/graph-canvas"。
 export {
   buildAdjacencyMap,
+  buildCommunityColorMap,
   buildGraphData,
   buildGraphLinks,
   buildGraphSeries,
@@ -271,7 +273,9 @@ export default function GraphCanvas({ nodes, edges, colorBy, focusNode, overlay,
     const next = overlay ?? null;
     if (appliedOverlayRef.current === next) return;
     appliedOverlayRef.current = next;
-    chart.setOption({ series: [{ data: buildGraphData(nodes, colorBy, next), links: buildGraphLinks(edges, next) }] });
+    // 与全量重建一致的 Welsh-Powell 色号分配（相邻社区异色；type 模式不需要）。
+    const colorMap = colorBy === "community" ? buildCommunityColorMap(nodes, edges) : undefined;
+    chart.setOption({ series: [{ data: buildGraphData(nodes, colorBy, next, colorMap), links: buildGraphLinks(edges, next) }] });
   }, [overlay, nodes, edges, colorBy]);
 
   // 搜索定位（spec §6 P3）：命中节点 → 视图中心平移到该节点 + 高亮。

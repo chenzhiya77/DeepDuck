@@ -2,7 +2,8 @@
  * 知识图谱可视化的编码纯函数（2026-08-19 spec §5/§6）——独立于 echarts 的
  * 纯数据层，jsdom 可直测，graph-tab / graph-canvas 共用：
  * - nodeSymbolSize：mention_count √开方 → 10–28（抑制长尾）
- * - typeColor / communityColor：FNV-1a 稳定哈希 / 社区 id → 调色板
+ * - typeColor / communityColor：FNV-1a 稳定哈希 / 社区邻接图贪心着色（Welsh-Powell）
+ * - buildCommunityColorMap：社区 → 色号分配（相邻社区异色优先，耗尽取模回绕）
  * - matchEntityNames：实体搜索模糊匹配
  * - filterNeighborhood：局部图 N 跳 BFS 裁剪
  * - buildGraphSeries / graphTooltipFormatter：echarts option 组装与 tooltip
@@ -12,10 +13,14 @@ import type { GraphRetrievalTrace, KnowledgeGraphEdge, KnowledgeGraphNode } from
 import { buildTooltipHtml } from "./vector-canvas";
 
 /**
- * 节点着色色板（Material Design 400 级，与向量空间 SOURCE_COLORS 同色系）。
- * type 与社区共用一组——取模映射，数量任意。
+ * 节点着色色板（Material Design 400/300 级，与向量空间 SOURCE_COLORS 同色系）。
+ * 2026-08-21 扩 20 色（Task 7a 着色治理）：10 色在 80 社区时每色 8 个社区共享，
+ * 相邻社区大概率同色。新增 10 色避开命中红 #f5222d / 路径金 #ffd700 / hover 蓝
+ * #1677ff 的正色（描边语义色与填充拉开）；red 取 300 粉珊瑚与命中正红拉开明度。
+ * type 走 FNV 取模；社区走 buildCommunityColorMap（相邻异色优先）。
  */
 export const COMMUNITY_PALETTE: readonly string[] = [
+  // ── 原 10 色（400 级，顺序不变）──
   "#42a5f5", // blue 400
   "#66bb6a", // green 400
   "#ffa726", // orange 400
@@ -26,6 +31,17 @@ export const COMMUNITY_PALETTE: readonly string[] = [
   "#ff7043", // deep orange 400
   "#7e57c2", // deep purple 400
   "#8d6e63", // brown 400
+  // ── 新增 10 色（300/400 级补色相覆盖）──
+  "#e57373", // red 300
+  "#5c6bc0", // indigo 400
+  "#29b6f6", // light blue 400
+  "#26a69a", // teal 400
+  "#d4e157", // lime 400
+  "#78909c", // blue grey 400
+  "#ba68c8", // purple 300
+  "#4db6ac", // teal 300
+  "#aed581", // light green 300
+  "#ffb74d", // orange 300
 ];
 
 /** FNV-1a 32 位哈希：短字符串稳定着色的经典选择（同 key 跨渲染恒同值）。 */
@@ -44,9 +60,75 @@ export function typeColor(type: string): string {
   return COMMUNITY_PALETTE[fnv1aHash(type) % COMMUNITY_PALETTE.length]!;
 }
 
-/** 社区 id → 色板取色（社区按规模降序，主色恒给最大社区；越界取模回绕）。 */
-export function communityColor(community: number): string {
-  return COMMUNITY_PALETTE[community % COMMUNITY_PALETTE.length]!;
+/**
+ * 社区邻接图贪心着色（Welsh-Powell，2026-08-21 Task 7a）：返回 communityId → 色号。
+ * 1. 构建社区邻接图：边两端社区不同 → 两社区相邻（无向；幽灵端点跳过）；
+ * 2. 按社区度降序排序（同度按社区 id 升序，保确定性）；
+ * 3. 顺序分配「邻居未占用的色号中全局使用次数最少的」（同次数取最小编号）——
+ *    相邻异色是硬约束，色号使用均匀是软优化：稀疏图上大量孤立社区（无跨社区
+ *    边）若复用最小色号会全撞色号 0（2026-08-21 实测：286 节点/255 边的 JVM 库
+ *    八成节点蓝色），均匀分配让颜色自然铺开；色号全被邻居占用时才取模回绕
+ *   （撞色也撞在远距离社区，视觉无感）。
+ */
+export function buildCommunityColorMap(
+  nodes: readonly KnowledgeGraphNode[],
+  edges: readonly KnowledgeGraphEdge[],
+): Map<number, number> {
+  const communityOf = new Map<string, number>();
+  for (const node of nodes) communityOf.set(node.id, node.community);
+
+  // 孤立社区也入图（度 0），保证返回值覆盖全部社区。
+  const neighbors = new Map<number, Set<number>>();
+  for (const node of nodes) {
+    if (!neighbors.has(node.community)) neighbors.set(node.community, new Set());
+  }
+  for (const edge of edges) {
+    const a = communityOf.get(edge.source);
+    const b = communityOf.get(edge.target);
+    if (a === undefined || b === undefined || a === b) continue;
+    neighbors.get(a)!.add(b);
+    neighbors.get(b)!.add(a);
+  }
+
+  // Welsh-Powell：度降序，同度按社区 id 升序（同输入恒同输出）。
+  const ordered = [...neighbors.keys()].sort((a, b) => {
+    const degreeDiff = neighbors.get(b)!.size - neighbors.get(a)!.size;
+    return degreeDiff !== 0 ? degreeDiff : a - b;
+  });
+
+  const colorMap = new Map<number, number>();
+  const usage = new Array<number>(COMMUNITY_PALETTE.length).fill(0);
+  for (const community of ordered) {
+    const used = new Set<number>();
+    for (const neighbor of neighbors.get(community)!) {
+      const assigned = colorMap.get(neighbor);
+      if (assigned !== undefined) used.add(assigned);
+    }
+    // 可用色号中取全局使用次数最少的（同次数取最小编号）→ 全图颜色均匀铺开。
+    let colorIndex = -1;
+    let bestUsage = Infinity;
+    for (let i = 0; i < COMMUNITY_PALETTE.length; i += 1) {
+      if (used.has(i)) continue;
+      if (usage[i]! < bestUsage) {
+        bestUsage = usage[i]!;
+        colorIndex = i;
+      }
+    }
+    // 邻居占满全色板 → 社区 id 取模回绕（确定性；撞色只发生在远距离社区）。
+    if (colorIndex === -1) colorIndex = community % COMMUNITY_PALETTE.length;
+    colorMap.set(community, colorIndex);
+    usage[colorIndex]! += 1;
+  }
+  return colorMap;
+}
+
+/**
+ * 社区 id → 色板取色。传 colorMap（buildCommunityColorMap 产物）时走 Welsh-Powell
+ * 分配结果（相邻社区异色）；缺省回退取模（无 colorMap 的兼容路径）。
+ */
+export function communityColor(community: number, colorMap?: ReadonlyMap<number, number>): string {
+  const colorIndex = colorMap?.get(community) ?? community % COMMUNITY_PALETTE.length;
+  return COMMUNITY_PALETTE[colorIndex]!;
 }
 
 /** 着色模式（spec §6）：默认按社区（结构洞察优先），可切按类型。 */
@@ -215,10 +297,12 @@ export function buildGraphData(
   nodes: readonly KnowledgeGraphNode[],
   colorBy: GraphColorBy = "community",
   overlay?: GraphRetrievalTrace | null,
+  /** Welsh-Powell 色号分配（buildCommunityColorMap 产物）；缺省时社区色退化为取模。 */
+  colorMap?: ReadonlyMap<number, number>,
 ): GraphDatum[] {
   const lookup = overlayLookup(overlay);
   return nodes.map((node) => {
-    const ownColor = colorBy === "community" ? communityColor(node.community) : typeColor(node.type);
+    const ownColor = colorBy === "community" ? communityColor(node.community, colorMap) : typeColor(node.type);
     const baseSize = nodeSymbolSize(node.mention_count);
     const datum: GraphDatum = { name: node.id, symbolSize: baseSize, itemStyle: { color: ownColor }, node };
     if (!lookup) return datum;
@@ -350,7 +434,13 @@ export function buildGraphSeries(
       label: { show: true, position: "right", fontSize: 11 },
       labelLayout: { hideOverlap: true },
       scaleLimit: { min: 0.3, max: 3 },
-      data: buildGraphData(nodes, colorBy, overlay),
+      // 社区模式走 Welsh-Powell 色号分配（相邻社区异色）；type 模式 FNV 不需要。
+      data: buildGraphData(
+        nodes,
+        colorBy,
+        overlay,
+        colorBy === "community" ? buildCommunityColorMap(nodes, edges) : undefined,
+      ),
       links: buildGraphLinks(edges, overlay),
     },
   ];
