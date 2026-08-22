@@ -22,7 +22,7 @@ from qdrant_client.models import SparseVector
 
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.store import GraphStore
-from deerflow.knowledge.parser import ParsedDocument
+from deerflow.knowledge.parser import ParsedDocument, ParsedImage
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.knowledge.worker import KnowledgeIndexWorker
@@ -139,6 +139,85 @@ async def test_pipeline_advances_status_machine_to_ready(session_factory):
     # graph store persisted the entity
     graph = await GraphStore(session_factory).load_networkx("kb-1")
     assert "DeerFlow" in graph.nodes
+
+
+@pytest.mark.asyncio
+async def test_parsed_images_are_persisted_next_to_document(session_factory, tmp_path, monkeypatch):
+    """解析出的图片落盘到文档目录 images/ 下（chunk markdown 的 ``images/…``
+    引用由 files 路由服务）；落盘在 require_alive 检查点之后、不影响切片入库。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    doc_dir = tmp_path / "knowledge" / "kb-1" / "doc-1"
+    doc_dir.mkdir(parents=True)
+    storage = doc_dir / "a.pdf"
+    storage.write_bytes(b"pdf")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    images = [ParsedImage(ref="images/p1.jpg", content=b"jpeg-bytes", media_type="image/jpeg")]
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value={"images/p1.jpg": "图注"}))
+
+    async def parse_with_images(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=SAMPLE_MD + "\n\n![图注](images/p1.jpg)\n", images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse_with_images, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    assert (doc_dir / "images" / "p1.jpg").read_bytes() == b"jpeg-bytes"
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert doc["chunk_count"] is not None and doc["chunk_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_reparse_rebuilds_images_dir(session_factory, tmp_path, monkeypatch):
+    """重解析重建 images/ 目录：上一版的残留文件被清掉，只留本次解析结果。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    doc_dir = tmp_path / "knowledge" / "kb-1" / "doc-1"
+    stale_dir = doc_dir / "images"
+    stale_dir.mkdir(parents=True)
+    (stale_dir / "stale.jpg").write_bytes(b"stale")
+    storage = doc_dir / "a.pdf"
+    storage.write_bytes(b"pdf")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    images = [ParsedImage(ref="images/p1.jpg", content=b"fresh", media_type="image/jpeg")]
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value={"images/p1.jpg": "图注"}))
+
+    async def parse_with_images(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=SAMPLE_MD, images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse_with_images, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    assert not (stale_dir / "stale.jpg").exists()
+    assert (stale_dir / "p1.jpg").read_bytes() == b"fresh"
+
+
+@pytest.mark.asyncio
+async def test_image_persist_failure_does_not_fail_document(session_factory, tmp_path, monkeypatch):
+    """图片落盘与图注一样是增强：写盘失败降级为告警，流水线照常到 ready。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    doc_dir = tmp_path / "knowledge" / "kb-1" / "doc-1"
+    doc_dir.mkdir(parents=True)
+    storage = doc_dir / "a.pdf"
+    storage.write_bytes(b"pdf")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    images = [ParsedImage(ref="images/p1.jpg", content=b"jpeg-bytes", media_type="image/jpeg")]
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value={"images/p1.jpg": "图注"}))
+
+    async def boom(fn, *args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("deerflow.knowledge.worker.run_file_io", boom)
+
+    async def parse_with_images(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=SAMPLE_MD, images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse_with_images, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
 
 
 @pytest.mark.asyncio

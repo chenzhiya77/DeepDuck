@@ -361,6 +361,8 @@ export interface Translations {
       save: string;
       cancel: string;
       edited: string;
+      viewRendered: string;
+      viewRaw: string;
       editHint: string;
       deletePreviewTitle: string;
       orphanedEntities: string;
@@ -375,6 +377,8 @@ export interface Translations {
       reExtractCost: string;
       reExtracting: string;
       reExtractHint: string;
+      /** 切片图片加载失败时的占位前缀（alt 图注紧随其后）。 */
+      imageUnavailable: string;
     };
     tabs: {
       documents: string;

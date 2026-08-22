@@ -9,9 +9,11 @@ list.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.gateway.services.knowledge_service import (
@@ -213,6 +215,24 @@ async def list_document_chunks(
     items = await service.store.list_chunks(doc_id, offset=offset, limit=limit)
     total = await service.store.count_chunks(doc_id)
     return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+
+@router.get("/{kb_id}/documents/{doc_id}/files/{file_path:path}")
+async def get_document_file(request: Request, kb_id: str, doc_id: str, file_path: str):
+    """Serve parser-extracted assets (``images/…``) referenced by chunk markdown.
+
+    The path must resolve inside the document's own ``images/`` directory —
+    traversal attempts and the source document itself get a plain 404. The
+    worker persists the images next to ``storage_path`` after each parse.
+    """
+    service = await _require_kb_access(request, kb_id)
+    document = await _get_document_or_404(service, kb_id, doc_id)
+    doc_dir = Path(document["storage_path"]).parent.resolve()
+    images_root = doc_dir / "images"
+    target = (doc_dir / file_path).resolve()
+    if not target.is_relative_to(images_root) or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(target)
 
 
 class UpdateChunkRequest(BaseModel):

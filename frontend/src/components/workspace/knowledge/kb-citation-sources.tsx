@@ -54,10 +54,13 @@ export function KbCitationSources({
   sources,
   messageId,
   onOpenWikiEntry,
+  kbId,
 }: {
   sources: KnowledgeCitation[];
   messageId: string;
   onOpenWikiEntry?: (entryId: string) => void;
+  /** Enables in-place chunk images (`images/…` → document files route). */
+  kbId?: string;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chat;
@@ -171,7 +174,14 @@ export function KbCitationSources({
                 </button>
                 {!isWiki && expandedChunkId === first.citation.chunk_id && expandedSource && (
                   <div className="mt-1 mb-1.5 ml-6">
-                    <ChunkCard docName={expandedSource.doc_name} text={expandedSource.text} page={expandedSource.page} />
+                    {/* chunk_id 形如 `{doc_id}#0001`，前段即 doc_id（manual 卡片无图片引用，重写不生效也无碍） */}
+                    <ChunkCard
+                      docId={expandedSource.chunk_id.split("#")[0]}
+                      docName={expandedSource.doc_name}
+                      kbId={kbId}
+                      page={expandedSource.page}
+                      text={expandedSource.text}
+                    />
                   </div>
                 )}
               </li>

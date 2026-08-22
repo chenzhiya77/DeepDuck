@@ -261,13 +261,14 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
       }
       return (
         <KbCitationSources
+          kbId={kbId ?? undefined}
           messageId={message.id ?? ""}
           onOpenWikiEntry={onOpenWikiEntry}
           sources={sourcesForAssistantMessage(thread.messages, message.id)}
         />
       );
     },
-    [thread.messages, onOpenWikiEntry],
+    [thread.messages, onOpenWikiEntry, kbId],
   );
 
   // P2 citation UX (phase-2 batch-1): the answer's [n] markers become

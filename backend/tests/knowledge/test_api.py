@@ -211,6 +211,52 @@ async def test_document_list_injects_library_level_wiki_status(service):
     assert by_id["doc-legacy"]["path_status"] is None
 
 
+async def test_document_file_serves_persisted_image(service):
+    """切片图片显示链路的服务端半：worker 落盘的 images/ 经 files 路由原样返回。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
+    doc = upload.json()
+    images_dir = Path(doc["storage_path"]).parent / "images"
+    images_dir.mkdir(parents=True)
+    payload = b"\x89PNG\r\n\x1a\nfake"
+    (images_dir / "p1.png").write_bytes(payload)
+
+    response = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc['id']}/files/images/p1.png")
+
+    assert response.status_code == 200
+    assert response.content == payload
+    assert response.headers["content-type"].startswith("image/png")
+
+
+async def test_document_file_rejects_missing_traversal_and_non_image_paths(service):
+    """files 路由只服务文档目录下的 images/ 子树：缺失文件、路径穿越、
+    images/ 之外的路径（含源文档本身）一律 404。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
+    doc = upload.json()
+    base = f"/api/knowledge-bases/{kb['id']}/documents/{doc['id']}/files"
+
+    assert client.get(f"{base}/images/missing.png").status_code == 404
+    # URL 编码的 .. 穿越到文档目录之外（resolve 后落在 images/ 子树外）
+    assert client.get(f"{base}/images/..%2F..%2Fsecret.png").status_code == 404
+    # images/ 之外：源文档本身不暴露
+    assert client.get(f"{base}/{doc['name']}").status_code == 404
+    # 别人的 doc_id
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents/other-doc/files/images/p1.png").status_code == 404
+
+
+async def test_document_file_requires_kb_access(service):
+    owner_client = _client(service, _owner)
+    kb = _create_kb(owner_client)
+    upload = owner_client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")})
+    doc = upload.json()
+    stranger = _client(service, _stranger)
+
+    assert stranger.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc['id']}/files/images/p1.png").status_code == 403
+
+
 async def test_document_list_wiki_generating_only_when_in_flight(service, monkeypatch):
     """generating：存在进行中的生成（手动或自动触发）；流水线中的文档除外——
     它尚未被 wiki 消化，wiki 行恒为 pending（2026-08-13 口径）。"""

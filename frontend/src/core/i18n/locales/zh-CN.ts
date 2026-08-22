@@ -414,6 +414,8 @@ export const zhCN: Translations = {
       save: "保存",
       cancel: "取消",
       edited: "已编辑",
+      viewRendered: "渲染视图",
+      viewRaw: "原始文本",
       editHint: "实体与 Wiki 不会自动更新，如需以新内容重建实体请使用『重新抽取』",
       deletePreviewTitle: "删除预览",
       orphanedEntities: "将失格删除的实体",
@@ -428,6 +430,7 @@ export const zhCN: Translations = {
       reExtractCost: "将消耗 1 次 LLM 抽取调用",
       reExtracting: "抽取中…",
       reExtractHint: "正在抽取实体，请稍候…",
+      imageUnavailable: "图片不可用",
     },
     tabs: {
       documents: "文档",

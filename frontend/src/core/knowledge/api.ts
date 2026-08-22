@@ -158,6 +158,16 @@ export function listDocumentChunks(
   );
 }
 
+/**
+ * URL of a parser-extracted document asset (chunk markdown references
+ * `images/…`; the gateway serves them from the document directory).
+ * Pure URL builder for <img src> — never goes through the CSRF fetcher.
+ */
+export function documentFileUrl(kbId: string, docId: string, ref: string): string {
+  const encodedRef = ref.split("/").map(encodeURIComponent).join("/");
+  return kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/files/${encodedRef}`);
+}
+
 export type WikiGenerateMode = "incremental" | "full";
 
 export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental"): Promise<WikiGenerateAck> {

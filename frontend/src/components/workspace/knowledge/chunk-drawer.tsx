@@ -137,8 +137,10 @@ export function ChunkDrawer({
               (page?.items ?? []).map((chunk) => (
                 <ChunkCard
                   chunkId={chunk.chunk_id}
+                  docId={doc.id}
                   entities={chunk.entities}
                   headingPath={chunk.heading_path}
+                  kbId={kbId}
                   isReExtracting={reExtractingChunkId === chunk.chunk_id}
                   key={chunk.chunk_id}
                   lastEditedAt={chunk.last_edited_at}

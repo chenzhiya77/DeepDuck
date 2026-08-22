@@ -430,6 +430,8 @@ export const enUS: Translations = {
       save: "Save",
       cancel: "Cancel",
       edited: "Edited",
+      viewRendered: "Rendered view",
+      viewRaw: "Raw text",
       editHint: "Entities and Wiki will not auto-update. Use 'Re-extract' to rebuild entities with new content",
       deletePreviewTitle: "Delete Preview",
       orphanedEntities: "Entities to be orphaned",
@@ -444,6 +446,7 @@ export const enUS: Translations = {
       reExtractCost: "Costs 1 LLM extraction call",
       reExtracting: "Extracting…",
       reExtractHint: "Extracting entities, please wait…",
+      imageUnavailable: "Image unavailable",
     },
     tabs: {
       documents: "Documents",

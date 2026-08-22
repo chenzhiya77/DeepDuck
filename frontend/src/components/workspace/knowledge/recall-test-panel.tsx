@@ -54,15 +54,20 @@ function ChunkHitRow({
   hit,
   score,
   testId,
+  kbId,
   expanded,
   onToggle,
 }: {
   hit: { chunk_id: string; doc_name: string; text: string; heading_path: string[]; page: number | null; rank?: number };
   score: number | null;
   testId: string;
+  /** Enables in-place chunk images (`images/…` → document files route). */
+  kbId: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
+  // chunk_id 形如 `{doc_id}#0001`（chunker 生成），前段即 doc_id。
+  const docId = hit.chunk_id.split("#")[0]!;
   return (
     <div className="flex flex-col gap-1.5">
       <button
@@ -78,7 +83,7 @@ function ChunkHitRow({
         <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">{formatScore(score)}</span>
       </button>
       {expanded && (
-        <ChunkCard docName={hit.doc_name} headingPath={hit.heading_path} page={hit.page} text={hit.text} />
+        <ChunkCard docId={docId} docName={hit.doc_name} headingPath={hit.heading_path} kbId={kbId} page={hit.page} text={hit.text} />
       )}
     </div>
   );
@@ -213,6 +218,7 @@ export function RecallTestPanel({
                 <ChunkHitRow
                   expanded={expandedKey === `vector:${hit.chunk_id}`}
                   hit={hit}
+                  kbId={kbId}
                   key={hit.chunk_id}
                   score={hit.score}
                   testId={`recall-vector-hit-${hit.chunk_id}`}
@@ -252,6 +258,7 @@ export function RecallTestPanel({
                 <ChunkHitRow
                   expanded={expandedKey === `graph:${hit.chunk_id}`}
                   hit={hit}
+                  kbId={kbId}
                   key={hit.chunk_id}
                   score={hit.score}
                   testId={`recall-graph-hit-${hit.chunk_id}`}

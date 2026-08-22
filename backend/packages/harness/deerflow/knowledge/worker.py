@@ -26,7 +26,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 from deerflow.knowledge.captioner import apply_captions, caption_images
@@ -36,11 +38,12 @@ from deerflow.knowledge.graph.indexer import index_document_graph
 from deerflow.knowledge.graph.resolver import resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.indexer import index_chunks
-from deerflow.knowledge.parser import ParsedDocument, parse_document
+from deerflow.knowledge.parser import ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
 from deerflow.knowledge.wiki.generator import generate_wiki, mark_dirty_for_entities, wiki_trigger_ready
 from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +300,14 @@ class KnowledgeIndexWorker:
             markdown = apply_captions(markdown, captions)
 
         await self._require_alive(doc_id)  # checkpoint: after the long external parse, before any write
+        if parsed.images:
+            # Persist the images the chunk markdown references (``images/…``)
+            # so the chunk viewer can serve real files instead of the
+            # renderer's broken-image placeholder.
+            try:
+                await self._save_parsed_images(storage_path, parsed.images)
+            except Exception:
+                logger.warning("failed to persist parsed images for document %s; continuing without image files", doc_id, exc_info=True)
         await self._store.update_document_status(doc_id, "chunking")
         chunks = chunk_markdown(markdown, doc_id)
         await self._store.insert_chunks(
@@ -315,6 +326,31 @@ class KnowledgeIndexWorker:
             ]
         )
         await self._store.update_document_status(doc_id, "indexing", chunk_count=len(chunks))
+
+    async def _save_parsed_images(self, storage_path: str, images: list[ParsedImage]) -> None:
+        """Persist parser-extracted images next to the source document.
+
+        Chunk markdown references them as ``images/…``; the gateway serves them
+        from the document directory. Re-parses rebuild the ``images/`` directory
+        from scratch so a changed image set never leaves stale files. Refs come
+        from the MinerU zip and are re-validated against path traversal anyway.
+        """
+        doc_dir = Path(storage_path).parent
+
+        def _write() -> None:
+            root = doc_dir.resolve()
+            images_dir = doc_dir / "images"
+            if images_dir.exists():
+                shutil.rmtree(images_dir, ignore_errors=True)
+            for image in images:
+                target = (doc_dir / image.ref).resolve()
+                if root not in target.parents:
+                    logger.warning("skipping unsafe parsed image ref %r", image.ref)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(image.content)
+
+        await run_file_io(_write)
 
     async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder) -> None:
         """Triggered batch on first completion, dirty incremental afterwards."""
