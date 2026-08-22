@@ -8,6 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { MarkdownContent } from "@/components/workspace/messages/markdown-content";
 import { useI18n } from "@/core/i18n/hooks";
 import { useWikiEntry } from "@/core/knowledge/hooks";
 
@@ -52,7 +53,7 @@ export function WikiEntryDrawer({
           )}
           {entry && (
             <>
-              <p className="text-sm leading-6 whitespace-pre-wrap">{entry.content}</p>
+              <MarkdownContent content={entry.content} isLoading={false} />
               {onRevealInTab && (
                 <Button
                   className="self-start"

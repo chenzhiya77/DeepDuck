@@ -11,7 +11,10 @@ import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 rs.mock("@/components/workspace/messages/markdown-content", () => ({
-  MarkdownContent: rs.fn(() => null),
+  // 渲染 content 而不是 null：ChunkCard 查看态改走 MarkdownContent 后
+  // （2026-08-22 展示增强），展开断言依赖全文真实出现在 DOM 里；
+  // rs.fn 保留调用记录供 KbAssistantContent 断言 props。
+  MarkdownContent: rs.fn(({ content }: { content: string }) => <div data-testid="mock-markdown-content">{content}</div>),
 }));
 
 import { CitationMark, CitationPreviewCard, createCitationSupRenderer, KB_CITATION_JUMP_EVENT } from "@/components/workspace/knowledge/citation-mark";
