@@ -73,6 +73,14 @@ async def test_parse_pdf_full_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_mineru_transport(recorded))
+    # zip 下载走独立 client（支持 MINERU_ZIP_PROXY，不经传入的 mock transport）
+    # —— mock 掉网络层，保留真实 zip 解包路径的验证。
+    from deerflow.knowledge import parser as parser_mod
+
+    async def _fake_download(zip_url: str) -> bytes:
+        return _make_result_zip()
+
+    monkeypatch.setattr(parser_mod, "_download_zip", _fake_download)
     pdf = tmp_path / "手册.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
 
@@ -420,3 +428,115 @@ async def test_parse_local_read_undecodable_raises_value_error(tmp_path):
 
     with pytest.raises(ValueError, match="坏编码.txt"):
         await parse_document(bad, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+
+# ── zip 下载：专用代理逃生通道（2026-08-23 Defender 按进程树拦截直连）────────
+
+
+def test_download_zip_uses_proxy_env(monkeypatch):
+    """MINERU_ZIP_PROXY 设置时，zip 下载走该代理（绕过宿主进程直连被拦）。"""
+    import asyncio
+
+    from deerflow.knowledge import parser as parser_mod
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            class _Resp:
+                status_code = 200
+                content = b"zip-bytes"
+                text = ""
+
+            return _Resp()
+
+    monkeypatch.setenv("MINERU_ZIP_PROXY", "http://127.0.0.1:57519")
+    monkeypatch.setattr(parser_mod.httpx, "AsyncClient", _FakeClient)
+
+    result = asyncio.run(parser_mod._download_zip("https://cdn.example.com/x.zip"))
+
+    assert result == b"zip-bytes"
+    assert captured.get("proxy") == "http://127.0.0.1:57519"
+
+
+def test_download_zip_direct_without_proxy_env(monkeypatch):
+    """未设置 MINERU_ZIP_PROXY 时，zip 下载直连（不传 proxy 参数）。"""
+    import asyncio
+
+    from deerflow.knowledge import parser as parser_mod
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            class _Resp:
+                status_code = 200
+                content = b"zip-bytes"
+                text = ""
+
+            return _Resp()
+
+    monkeypatch.delenv("MINERU_ZIP_PROXY", raising=False)
+    monkeypatch.setattr(parser_mod.httpx, "AsyncClient", _FakeClient)
+
+    result = asyncio.run(parser_mod._download_zip("https://cdn.example.com/x.zip"))
+
+    assert result == b"zip-bytes"
+    assert "proxy" not in captured
+
+
+def test_download_zip_falls_back_to_direct_when_proxy_unreachable(monkeypatch):
+    """代理不可达（ConnectError）时自动降级直连——安全软件关/开两种环境都可用。"""
+    import asyncio
+
+    from deerflow.knowledge import parser as parser_mod
+
+    attempts: list[dict] = []
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            attempts.append(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            if "proxy" in attempts[-1]:
+                raise httpx.ConnectError("proxy refused")
+
+            class _Resp:
+                status_code = 200
+                content = b"zip-via-direct"
+                text = ""
+
+            return _Resp()
+
+    monkeypatch.setenv("MINERU_ZIP_PROXY", "http://127.0.0.1:57519")
+    monkeypatch.setattr(parser_mod.httpx, "AsyncClient", _FakeClient)
+
+    result = asyncio.run(parser_mod._download_zip("https://cdn.example.com/x.zip"))
+
+    assert result == b"zip-via-direct"
+    assert len(attempts) == 2  # 先代理后直连
+    assert "proxy" in attempts[0] and "proxy" not in attempts[1]

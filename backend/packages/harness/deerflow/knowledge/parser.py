@@ -253,9 +253,35 @@ async def parse_document(
             poll_interval_seconds=poll_interval_seconds,
             timeout_seconds=timeout_seconds,
         )
-        zip_response = await http.get(zip_url)
-        _check_http(zip_response)
-        return _unpack_zip(zip_response.content)
+        return _unpack_zip(await _download_zip(zip_url))
     finally:
         if own_client:
             await http.aclose()
+
+
+async def _download_via(zip_url: str, *, proxy: str | None) -> bytes:
+    kwargs: dict = {"timeout": httpx.Timeout(120.0, connect=30.0), "follow_redirects": True}
+    if proxy:
+        kwargs["proxy"] = proxy
+    async with httpx.AsyncClient(**kwargs) as client:
+        response = await client.get(zip_url)
+        _check_http(response)
+        return response.content
+
+
+async def _download_zip(zip_url: str) -> bytes:
+    """下载 MinerU result zip。
+
+    企业安全软件（实测为 Hillstone Secure Connect，2026-08-23 定位）可能在网络层
+    切断本机到 cdn-mineru 的 TLS 流量（握手放行、传输切断），导致 ConnectError。
+    设置 ``MINERU_ZIP_PROXY`` 环境变量（如 ``http://127.0.0.1:57519``）后优先走
+    代理；代理不可达时自动降级直连，两种网络环境（安全软件开/关）都能工作。
+    独立于共享 client：下载对象不同（CDN 而非 MinerU API），且需隔离代理配置。
+    """
+    proxy = os.environ.get("MINERU_ZIP_PROXY")
+    if proxy:
+        try:
+            return await _download_via(zip_url, proxy=proxy)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError):
+            logger.warning("MINERU_ZIP_PROXY %s unreachable, falling back to direct download", proxy)
+    return await _download_via(zip_url, proxy=None)
