@@ -508,3 +508,83 @@ async def test_backfill_limit_paces_new_entries_but_not_dirty(wiki_db_env):
     # The queued remainder is picked up by the next trigger.
     stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True, backfill_limit=1)
     assert stats.titles == ["Beta"]
+
+
+# ── 竞态防护：生成途中文档被删 → 写入前资格重验拦截（2026-08-23）──────────────
+
+
+class _RaceLLM:
+    """LLM fake：首次被调用时模拟「用户删除了文档的贡献」——实体从合格掉到失格。
+
+    复刻生产竞态：generate_wiki 读资格快照（DeerFlow freq=2 合格）→ LLM 生成
+    （耗时几十秒，期间用户删了文档）→ 快照过时 → 若无写入前重验，upsert 会把
+    失格实体的条目写回来（幽灵条目）。
+    """
+
+    def __init__(self, graph_store, kb_id: str) -> None:
+        self._graph_store = graph_store
+        self._kb_id = kb_id
+        self._removed = False
+
+    async def ainvoke(self, messages):
+        if not self._removed:
+            # 生成中途：删除 doc-w-c0 的贡献 → DeerFlow freq 2→1 失格
+            await self._graph_store.remove_chunk_contributions(self._kb_id, ["doc-w-c0"])
+            self._removed = True
+        last = messages[-1] if isinstance(messages, list) else messages
+        text = str(last["content"] if isinstance(last, dict) else getattr(last, "content", last))
+        if "实体清单：" in text:
+            roster = text.split("实体清单：", 1)[1].split("\n", 1)[0]
+            items = [{"title": n.strip(), "content": f"# {n.strip()}\n\n正文"} for n in roster.split("、") if n.strip()]
+            return SimpleNamespace(content=json.dumps(items, ensure_ascii=False))
+        m = re.search(r"实体：([^\n]+)", text)
+        title = m.group(1).strip() if m else "条目"
+        return SimpleNamespace(content=f"# {title}\n\n正文")
+
+
+@pytest.mark.asyncio
+async def test_write_skipped_when_entity_loses_eligibility_mid_run(wiki_db_env):
+    """全量路径：快照合格但写入时已失格 → 拦截，不产生幽灵条目。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    llm = _RaceLLM(graph_store, kb_id)
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm)
+
+    assert stats.generated == 0
+    assert stats.skipped_stale == 1
+    assert await wiki_store.list_entries(kb_id) == []
+
+
+@pytest.mark.asyncio
+async def test_write_skipped_when_entity_vanishes_mid_run(wiki_db_env):
+    """增量路径：dirty 条目生成途中实体彻底消失（两个贡献都被删）→ 拦截。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty")
+
+    class _VanishLLM(_RaceLLM):
+        async def ainvoke(self, messages):
+            if not self._removed:
+                await self._graph_store.remove_chunk_contributions(self._kb_id, ["doc-w-c0", "doc-w-c1"])
+                self._removed = True
+            return await super()._respond(messages) if hasattr(self, "_respond") else await _RaceLLM.ainvoke(self, messages)
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_VanishLLM(graph_store, kb_id), only_dirty=True)
+
+    # 消失实体的 dirty 条目被失格即删清掉，且绝不重新写入
+    assert stats.generated == 0
+    assert await wiki_store.list_entries(kb_id) == []
+
+
+@pytest.mark.asyncio
+async def test_write_proceeds_when_entity_still_eligible(wiki_db_env):
+    """对照组：无删除干扰时正常写入（重验不误伤正常路径）。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
+
+    assert stats.generated == 1
+    assert stats.skipped_stale == 0
+    assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow"}

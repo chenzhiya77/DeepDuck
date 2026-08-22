@@ -108,7 +108,23 @@ class WikiStats:
     #: Dirty entries pruned because their entity vanished or lost eligibility
     #: (失格即删, 2026-08-14 拍板方案 A).
     pruned: int = 0
+    #: Writes blocked by the mid-run eligibility re-check (2026-08-23 竞态防护):
+    #: the entity lost eligibility/vanished between the eligibility snapshot and
+    #: the write (user deleted a source document mid-generation).
+    skipped_stale: int = 0
     titles: list[str] = field(default_factory=list)
+
+
+async def _is_currently_eligible(graph_store: GraphStore, kb_id: str, name: str) -> bool:
+    """写入前资格重验（轻量版）：与 ``select_eligible_entities`` 同源规则
+    （hygiene 门 ∧ 跨切片 freq≥2），但跳过 ``load_networkx``——写入点只问 0/1，
+    不需要 degree 排序。"""
+    if is_low_quality_entity_name(name):
+        return False
+    for row in await graph_store.list_entities(kb_id):
+        if row["name"] == name:
+            return len(row.get("source_chunk_ids") or []) >= 2
+    return False
 
 
 async def select_eligible_entities(graph_store: GraphStore, kb_id: str) -> list[dict[str, Any]]:
@@ -213,6 +229,7 @@ def _parse_batch_response(text: str, expected_titles: set[str]) -> dict[str, str
 async def _persist_entry(
     wiki_store: WikiStore,
     vector_store: KnowledgeVectorStore | None,
+    graph_store: GraphStore,
     *,
     kb_id: str,
     row: dict[str, Any],
@@ -220,7 +237,23 @@ async def _persist_entry(
     embedder: _Embedder | None,
     stats: WikiStats,
 ) -> None:
-    """Store one entry: business row + dense vector, and account for it."""
+    """Store one entry: business row + dense vector, and account for it.
+
+    写入前资格重验（2026-08-23 竞态防护）：LLM 生成耗时数十秒，期间用户删除
+    来源文档可致实体失格/消失——无重验则 upsert 会把幽灵条目写回。拦截时
+    顺带补删残留旧条目（快照合格使它们不在 stale_titles 清理范围），否则
+    dirty 条目永挂。删除顺序与级联规则一致：Qdrant 先行失败吞掉，业务行必删。
+    """
+    if not await _is_currently_eligible(graph_store, kb_id, row["name"]):
+        stats.skipped_stale += 1
+        if vector_store is not None:
+            try:
+                await vector_store.delete_wiki_entries(kb_id, [row["name"]])
+            except Exception:
+                logger.exception("qdrant delete_wiki_entries failed for stale entry %s", row["name"])
+        stats.pruned += await wiki_store.delete_entries(kb_id, [row["name"]])
+        logger.info("wiki entry write skipped: %s lost eligibility mid-run (stale entry pruned)", row["name"])
+        return
     entry = await wiki_store.upsert_entry(kb_id, title=row["name"], content=content, source_chunk_ids=list(row.get("source_chunk_ids") or []), status="ready")
     if vector_store is not None and embedder is not None:
         (embedding,) = await embedder.embed([f"{row['name']}\n{content[:EMBED_CONTENT_CHARS]}"])
@@ -233,6 +266,7 @@ async def _write_entry(
     store: KnowledgeStore,
     wiki_store: WikiStore,
     vector_store: KnowledgeVectorStore | None,
+    graph_store: GraphStore,
     *,
     kb_id: str,
     row: dict[str, Any],
@@ -256,13 +290,14 @@ async def _write_entry(
     if not content:
         logger.warning("wiki generation returned empty content for entity %s, skipped", row["name"])
         return
-    await _persist_entry(wiki_store, vector_store, kb_id=kb_id, row=row, content=content, embedder=embedder, stats=stats)
+    await _persist_entry(wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, content=content, embedder=embedder, stats=stats)
 
 
 async def _write_bundle(
     store: KnowledgeStore,
     wiki_store: WikiStore,
     vector_store: KnowledgeVectorStore | None,
+    graph_store: GraphStore,
     *,
     kb_id: str,
     rows: list[dict[str, Any]],
@@ -285,9 +320,9 @@ async def _write_bundle(
         content = written.get(row["name"])
         if content is None:
             logger.warning("wiki bundle missed entity %s; falling back to single generation", row["name"])
-            await _write_entry(store, wiki_store, vector_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
+            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
         else:
-            await _persist_entry(wiki_store, vector_store, kb_id=kb_id, row=row, content=content, embedder=embedder, stats=stats)
+            await _persist_entry(wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, content=content, embedder=embedder, stats=stats)
 
 
 async def generate_wiki(
@@ -353,9 +388,9 @@ async def generate_wiki(
             logger.info("wiki regeneration: pruned %d disqualified/vanished dirty entries for kb %s", stats.pruned, kb_id)
         # Dirty refresh runs per-entity: a handful at a time, not worth bundling.
         for row in singles:
-            await _write_entry(store, wiki_store, vector_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
+            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
         for bundle in plan_entry_batches(backfill):
-            await _write_bundle(store, wiki_store, vector_store, kb_id=kb_id, rows=bundle, llm=llm, embedder=embedder, stats=stats)
+            await _write_bundle(store, wiki_store, vector_store, graph_store, kb_id=kb_id, rows=bundle, llm=llm, embedder=embedder, stats=stats)
         _LAST_RUN[kb_id] = "succeeded"
         return stats
     except Exception:
