@@ -67,21 +67,21 @@
 - [x] Implement `runner.py`：逐题并行扇出三路 impl；graph 路 config 参数镜像 `recall_test` 读法；产出终端汇总表 + 落盘 `report.md` / `report.json`；回退题目附详情（预期命中 vs 实际命中、各路分数）；global 类题目单独分区。
 - [x] GREEN；revert proof → 恢复 → GREEN。
 - [x] ruff 双净。
-- [ ] Commit: `feat(rag): add batch retrieval evaluation runner with degradation contract`
+- [x] Commit: `feat(rag): add batch retrieval evaluation runner with degradation contract`（`d46bfede`）
 
-## Task 4: CLI 薄壳 + pytest 集成入口
+## Task 4: CLI 薄壳 + pytest 集成入口 ✅ 已完成（2026-08-24）
 
 **Files:**
 - Create: `backend/scripts/run_rag_eval.py`（`--golden --out --baseline --top-k --fail-threshold`；自行构造 store/vector_store/graph_store/wiki_store；按 runner 结果定退出码）
 - Create: `backend/tests/knowledge/eval/test_eval_cli.py`
 
-- [ ] RED test：缺 key 环境显式 skipped（不伪绿）+ 约定退出码；CLI 参数解析与退出码映射。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement CLI 薄壳。
-- [ ] GREEN；revert proof → 恢复 → GREEN。
-- [ ] 本地带 key 对 20 题跑一次全链路，产出首份 baseline `report.json` 归档（后续所有 diff 的基准）。
-- [ ] ruff 双净。
-- [ ] Commit: `feat(rag): add rag eval CLI entrypoint`
+- [x] RED test：缺 key 环境显式 skipped（不伪绿）+ 约定退出码；CLI 参数解析与退出码映射。
+- [x] Run focused test 确认 RED。
+- [x] Implement CLI 薄壳。
+- [x] GREEN；revert proof → 恢复 → GREEN。
+- [x] 本地带 key 对 20 题跑一次全链路，产出首份 baseline `report.json` 归档（后续所有 diff 的基准）。
+- [x] ruff 双净。
+- [x] Commit: `feat(rag): add rag eval CLI entrypoint`
 
 ## Task 5: CI 门禁 workflow `rag-eval.yml`
 
