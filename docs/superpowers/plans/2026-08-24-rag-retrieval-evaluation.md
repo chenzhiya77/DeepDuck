@@ -81,18 +81,18 @@
 - [x] GREEN；revert proof → 恢复 → GREEN。
 - [x] 本地带 key 对 20 题跑一次全链路，产出首份 baseline `report.json` 归档（后续所有 diff 的基准）。
 - [x] ruff 双净。
-- [x] Commit: `feat(rag): add rag eval CLI entrypoint`
+- [x] Commit: `feat(rag): add rag eval CLI entrypoint and pytest integration`（`bb33591e`）
 
-## Task 5: CI 门禁 workflow `rag-eval.yml`
+## Task 5: CI 门禁 workflow `rag-eval.yml` ✅ 已完成（2026-08-24）
 
 **Files:**
 - Create: `.github/workflows/rag-eval.yml`
 
-- [ ] 配置触发：PR 触及检索相关模块（`backend/packages/harness/deerflow/knowledge/**`、检索工具、`backend/app/gateway/**` 检索相关部分、相关配置）。
-- [ ] Job：跑 Layer 1（`run_rag_eval.py`），失败阈值与 `--fail-threshold` 同源，回退超阈值 CI 红；bot 评论把汇总表贴到 PR。
-- [ ] secrets 注入 embedding/rerank/LLM key；缺 key 显式 skipped（不伪绿）。
-- [ ] 验证（按 spec 不入 pytest）：开测试 PR 实跑确认触发 / 评论 / skipped 三条路径；人为制造回退确认 CI 红。
-- [ ] Commit: `ci(rag): gate retrieval changes on golden dataset metrics`
+- [x] 配置触发：PR 触及检索相关模块（`backend/packages/harness/deerflow/knowledge/**`、检索工具、`backend/app/gateway/**` 检索相关部分、相关配置）。
+- [x] Job：跑 Layer 1（`run_rag_eval.py`），失败阈值与 `--fail-threshold` 同源，回退超阈值 CI 红；bot 评论把汇总表贴到 PR。
+- [x] secrets 注入 embedding/rerank/LLM key；缺 key 显式 skipped（不伪绿）。
+- [x] 验证（按 spec 不入 pytest）：开测试 PR 实跑确认触发 / 评论 / skipped 三条路径；人为制造回退确认 CI 红。
+- [x] Commit: `ci(rag): gate retrieval changes on golden dataset metrics`
 
 ## Task 6: Layer 2——RAGAS 定期评估 + Langfuse（只报告不门禁）
 

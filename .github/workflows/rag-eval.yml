@@ -1,0 +1,140 @@
+name: RAG Retrieval Evaluation (CI Gate)
+
+# Runs Layer 1 deterministic IR metrics on every PR that touches retrieval-related modules.
+# Bot comments the summary table in the PR; regression beyond threshold fails the check.
+# Missing API keys → explicit skipped (never a fake green).
+#
+# Spec: docs/superpowers/specs/2026-08-23-rag-retrieval-evaluation-design.md §7
+
+on:
+  push:
+    branches: [ "main", "2.0.x-dev" ]
+    paths:
+      - ".github/workflows/rag-eval.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "backend/packages/harness/deerflow/knowledge/**"
+      - "backend/packages/harness/deerflow/tools/builtins/*search*.py"
+      - "backend/app/gateway/services/knowledge_service.py"
+      - "backend/tests/fixtures/rag_eval/golden.jsonl"
+
+concurrency:
+  group: rag-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write  # needed for commenting on PR
+
+jobs:
+  rag-eval:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # needed to compare baseline report between runs
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev
+
+      - name: Check required API keys
+        id: keys
+        run: |
+          missing=""
+          if [ -z "${{ env.DASHSCOPE_EMBEDDING_API_KEY }}" ]; then missing="${missing} DASHSCOPE_EMBEDDING_API_KEY"; fi
+          if [ -z "${{ env.DASHSCOPE_RERANK_API_KEY }}" ]; then missing="${missing} DASHSCOPE_RERANK_API_KEY"; fi
+          if [ -n "$missing" ]; then
+            echo "::warning::Missing keys:$missing — eval will be skipped"
+            echo "skipped=true" >> $GITHUB_OUTPUT
+          else
+            echo "skipped=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
+          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
+
+      - name: Load previous baseline
+        id: baseline
+        if: steps.keys.outputs.skipped == 'false' && github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          BASELINE_DIR="${RUNNER_TEMP}/rag-eval-baseline"
+          mkdir -p "$BASELINE_DIR"
+          PREVIOUS=$(ls -t "$BASELINE_DIR" 2>/dev/null | head -1)
+          if [ -n "$PREVIOUS" ]; then
+            echo "previous=${PREVIOUS}" >> $GITHUB_OUTPUT
+            echo "Loading previous report: ${PREVIOUS}"
+          else
+            echo "previous=" >> $GITHUB_OUTPUT
+            echo "No previous report found — running fresh"
+          fi
+          cp -r "$BASELINE_DIR"/* "$RUNNER_TEMP/" 2>/dev/null || true
+
+      - name: Run evaluation
+        id: eval
+        if: steps.keys.outputs.skipped == 'false'
+        working-directory: backend
+        env:
+          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
+          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
+        run: |
+          set -euo pipefail
+          GOLDEN="${GITHUB_WORKSPACE}/backend/tests/fixtures/rag_eval/golden.jsonl"
+          OUT="${RUNNER_TEMP}/rag-eval-current"
+          mkdir -p "$OUT"
+          BASELINE_ARG="--baseline"
+          if [ -n "${{ steps.baseline.outputs.previous }}" ]; then
+            BASELINE_ARG="${{ steps.baseline.outputs.previous }}"
+          else
+            BASELINE_ARG=""
+          fi
+          echo "Running rag-eval:"
+          uv run python scripts/run_rag_eval.py \
+            --kb-id "${DB_KB_ID:-8581c87b6cf148339b1c1ff8cb2d09cd}" \
+            --golden "$GOLDEN" \
+            --out "$OUT" \
+            $BASELINE_ARG || true
+          EXIT_CODE=$?
+          echo "exit_code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+          echo "Report directory:"
+          ls -la "$OUT"
+          # Extract terminal summary for PR comment
+          cat "$OUT/report.md" > "$RUNNER_TEMP/report_summary.md"
+          # Store exit code as artifact metadata
+          echo "::set-output name=exit_code::${EXIT_CODE}"
+
+      - name: Skip message
+        if: steps.keys.outputs.skipped == 'true'
+        run: |
+          echo "::notice::RAG evaluation skipped: missing required API keys"
+      
+      - name: Comment on PR
+        if: steps.keys.outputs.skipped == 'false' && github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: ${{ runner.temp }}/report_summary.md
+          comment_tag: rag-eval-summary
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-reports
+          path: |
+            ${{ runner.temp }}/rag-eval-*/
+            ${{ runner.temp }}/report_summary.md

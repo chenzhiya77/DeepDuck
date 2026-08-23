@@ -184,6 +184,74 @@ jobs:
     env:
       OWNER: ${{ github.repository_owner }}
       NIGHTLY: ${{ needs.prepare.outputs.nightly_version }}
+
+  rag-eval-layer-2:
+    if: github.repository == 'bytedance/deer-flow'
+    needs: [prepare, validate-chart, build-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install backend dependencies (optional ragas)
+        working-directory: backend
+        run: uv sync --group dev --extra postgres
+
+      - name: Load secrets for evaluation API keys
+        id: secrets
+        run: |
+          missing=""
+          if [ -z "${{ env.DASHSCOPE_EMBEDDING_API_KEY }}" ]; then missing="${missing} DASHSCOPE_EMBEDDING_API_KEY"; fi
+          if [ -z "${{ env.DASHSCOPE_RERANK_API_KEY }}" ]; then missing="${missing} DASHSCOPE_RERANK_API_KEY"; fi
+          if [ -z "${{ env.LANGFUSE_PUBLIC_KEY }}" ]; then missing="${missing} LANGFUSE_PUBLIC_KEY"; fi
+          if [ -z "${{ env.LANGFUSE_SECRET_KEY }}" ]; then missing="${missing} LANGFUSE_SECRET_KEY"; fi
+          if [ -n "$missing" ]; then
+            echo "::warning::Missing API keys:$missing — RAGAS eval will skip this run"
+            echo "skipped=true" >> $GITHUB_OUTPUT
+          else
+            echo "skipped=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
+          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+
+      - name: Run RAGAS layer-2 evaluation (weekly/monthly baseline)
+        if: steps.secrets.outputs.skipped == 'false'
+        working-directory: backend
+        env:
+          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
+          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          # Placeholder script path — to be implemented in Task 6
+          # echo "Running RAGAS evaluation via: uv run python scripts/run_rag_eval.py --layer-2 ..."
+          # For now, log a placeholder report to confirm nightly triggers correctly
+          echo "Nightly Layer-2 RAGAS eval skipped (placeholder)" 
+          mkdir -p "${RUNNER_TEMP}/rag-eval-layer-2"
+          echo '{"placeholder": true, "generated_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > "${RUNNER_TEMP}/rag-eval-layer-2/report.json"
+          echo "Placeholder report generated at ${RUNNER_TEMP}/rag-eval-layer-2/report.json"
+
+      - name: Upload RAGAS reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-layer-2-reports
+          path: ${{ runner.temp }}/rag-eval-layer-2/
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
