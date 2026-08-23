@@ -73,8 +73,10 @@ def missing_required_keys(environ: Mapping[str, str]) -> list[str]:
 class _DashScopeLangChainEmbeddings:
     """Minimal langchain ``Embeddings`` protocol over the DashScope embedder.
 
-    ragas calls the async methods from its own event loop; the sync methods
-    exist only to satisfy the protocol surface and raise if hit.
+    ragas calls BOTH the async methods (from its own event loop) and the sync
+    ones (via executor threads), so the sync methods must really work: they
+    run the coroutine on a fresh thread with its own event loop when already
+    inside a loop (``asyncio.run`` would explode in-place).
     """
 
     def __init__(self, embedder) -> None:
@@ -88,11 +90,24 @@ class _DashScopeLangChainEmbeddings:
         results = await self._embedder.embed([text], text_type="query")
         return results[0].dense
 
-    def embed_documents(self, texts):  # pragma: no cover - ragas uses the async path
-        raise NotImplementedError("async only")
+    @staticmethod
+    def _run_blocking(coro):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        # Already inside a loop (ragas worker): run on a fresh thread with its own loop.
+        import concurrent.futures
 
-    def embed_query(self, text):  # pragma: no cover - ragas uses the async path
-        raise NotImplementedError("async only")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+
+    def embed_documents(self, texts) -> list[list[float]]:
+        results = self._run_blocking(self._embedder.embed(list(texts), text_type="document"))
+        return [r.dense for r in results]
+
+    def embed_query(self, text) -> list[float]:
+        return self._run_blocking(self._embedder.embed([text], text_type="query"))[0].dense
 
 
 def _build_ragas_evaluator(judge_llm):
@@ -219,6 +234,13 @@ async def _async_main(args: argparse.Namespace) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
+    # The markdown report embeds ✅/❌ marks; Windows consoles default to GBK
+    # and would crash the print with UnicodeEncodeError after the report files
+    # were already written. Force UTF-8 with replacement as a safety net.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
     return asyncio.run(_async_main(args))
 
 

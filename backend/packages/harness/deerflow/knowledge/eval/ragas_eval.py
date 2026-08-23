@@ -448,6 +448,18 @@ def build_ragas_sample(question: GoldenQuestion, outcome: TraceOutcome) -> dict[
     }
 
 
+def _clean_metric_value(value: Any) -> float | None:
+    """Normalize one ragas metric cell: failed jobs come back as NaN, which we
+    surface as ``None`` (report shows '-', aggregates skip) instead of a bogus
+    'nan%'. Booleans and non-numerics also degrade to ``None``."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    import math
+
+    return None if math.isnan(float(value)) else float(value)
+
+
 async def compute_ragas_scores(
     samples: list[dict[str, Any]],
     *,
@@ -468,6 +480,12 @@ async def compute_ragas_scores(
 
     from ragas.dataset_schema import EvaluationDataset, SingleTurnSample
     from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
+    from ragas.run_config import RunConfig
+
+    # ragas' default per-LLM-call timeout (180s) is too tight for slow judges
+    # (qwen-max on long faithfulness prompts) — 600s matches the project model
+    # profile timeout.
+    run_config = RunConfig(timeout=600)
 
     def _evaluate(group: list[dict[str, Any]], metrics: list[Any]) -> list[dict[str, Any]]:
         dataset = EvaluationDataset(
@@ -481,7 +499,7 @@ async def compute_ragas_scores(
                 for s in group
             ]
         )
-        result = _load_ragas().evaluate(dataset=dataset, metrics=metrics, llm=judge_llm, embeddings=embeddings)
+        result = _load_ragas().evaluate(dataset=dataset, metrics=metrics, llm=judge_llm, embeddings=embeddings, run_config=run_config)
         return result.to_pandas().to_dict(orient="records")
 
     with_reference = [s for s in samples if s.get("reference")]
@@ -496,7 +514,7 @@ async def compute_ragas_scores(
         for sample, record in zip(without_reference, records, strict=True):
             rows[sample["question_id"]] = record
 
-    return [{name: (rows.get(s["question_id"], {}).get(name) if isinstance(rows.get(s["question_id"], {}).get(name), (int, float)) else None) for name in RAGAS_METRIC_NAMES} for s in samples]
+    return [{name: _clean_metric_value(rows.get(s["question_id"], {}).get(name)) for name in RAGAS_METRIC_NAMES} for s in samples]
 
 
 # ---------------------------------------------------------------------------

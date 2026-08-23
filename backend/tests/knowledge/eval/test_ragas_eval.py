@@ -287,6 +287,18 @@ class TestRagasUnavailable:
         assert await compute_ragas_scores([{"question": "q"}], judge_llm=None, embeddings=None) is None
 
 
+class TestCleanMetricValue:
+    def test_nan_becomes_none(self):
+        from deerflow.knowledge.eval.ragas_eval import _clean_metric_value
+
+        assert _clean_metric_value(float("nan")) is None
+        assert _clean_metric_value(0.85) == 0.85
+        assert _clean_metric_value(0) == 0.0
+        assert _clean_metric_value(True) is None  # bool is not a metric value
+        assert _clean_metric_value(None) is None
+        assert _clean_metric_value("0.9") is None
+
+
 class _FakeLangfuseClient:
     def __init__(self) -> None:
         self.scores: list[dict] = []
