@@ -54,19 +54,19 @@
 - [x] Implement `metrics.py` 全部纯函数。
 - [x] GREEN；revert proof（stash 实现 → RED → 恢复 → GREEN）。
 - [x] ruff 双净。
-- [ ] Commit: `feat(rag): add deterministic IR metrics for retrieval evaluation`
+- [x] Commit: `feat(rag): add deterministic IR metrics for retrieval evaluation`（`be25e073`）
 
-## Task 3: 批量评估 runner——降级契约 + 双份报告
+## Task 3: 批量评估 runner——降级契约 + 双份报告 ✅ 已完成（2026-08-24）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/eval/runner.py`
 - Create: `backend/tests/knowledge/eval/test_runner.py`
 
-- [ ] RED test（stub 三个检索 impl + 内存 store，参照 test_recall_test_api.py fake 模式）：单路抛异常仍产出完整报告（该路空 hits + failure note）；report.json schema 稳定（逐题明细 + 按 category 聚合 + 汇总）；baseline diff 退出码语义（无 baseline 全量通过 / 回退超阈值失败 / 未超通过）。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement `runner.py`：逐题并行扇出三路 impl；graph 路 config 参数镜像 `recall_test` 读法；产出终端汇总表 + 落盘 `report.md` / `report.json`；回退题目附详情（预期命中 vs 实际命中、各路分数）；global 类题目单独分区。
-- [ ] GREEN；revert proof → 恢复 → GREEN。
-- [ ] ruff 双净。
+- [x] RED test（stub 三个检索 impl + 内存 store，参照 test_recall_test_api.py fake 模式）：单路抛异常仍产出完整报告（该路空 hits + failure note）；report.json schema 稳定（逐题明细 + 按 category 聚合 + 汇总）；baseline diff 退出码语义（无 baseline 全量通过 / 回退超阈值失败 / 未超通过）。
+- [x] Run focused test 确认 RED。
+- [x] Implement `runner.py`：逐题并行扇出三路 impl；graph 路 config 参数镜像 `recall_test` 读法；产出终端汇总表 + 落盘 `report.md` / `report.json`；回退题目附详情（预期命中 vs 实际命中、各路分数）；global 类题目单独分区。
+- [x] GREEN；revert proof → 恢复 → GREEN。
+- [x] ruff 双净。
 - [ ] Commit: `feat(rag): add batch retrieval evaluation runner with degradation contract`
 
 ## Task 4: CLI 薄壳 + pytest 集成入口
