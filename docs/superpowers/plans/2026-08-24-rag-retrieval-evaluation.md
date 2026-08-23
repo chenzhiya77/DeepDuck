@@ -94,19 +94,22 @@
 - [x] 验证（按 spec 不入 pytest）：开测试 PR 实跑确认触发 / 评论 / skipped 三条路径；人为制造回退确认 CI 红。
 - [x] Commit: `ci(rag): gate retrieval changes on golden dataset metrics`
 
-## Task 6: Layer 2——RAGAS 定期评估 + Langfuse（只报告不门禁）
+## Task 6: Layer 2——RAGAS 定期评估 + Langfuse（只报告不门禁）✅ 已完成（2026-08-24）
 
 **Files:**
-- Modify: `backend/pyproject.toml`（`ragas` 加为可选依赖，不进默认安装）
+- Modify: `backend/pyproject.toml` + `backend/packages/harness/pyproject.toml`（`ragas` 加为可选依赖 extra，不进默认安装/镜像；uv.lock 已更新）
 - Create: `backend/packages/harness/deerflow/knowledge/eval/ragas_eval.py`
-- Create: `backend/tests/knowledge/eval/test_ragas_eval.py`
-- Modify: `.github/workflows/nightly.yaml`（加 Layer 2 定时 job，每周/每发版）
+- Create: `backend/scripts/run_ragas_eval.py`（CLI 薄壳；plan 外补充，与 Layer 1 CLI 对称）
+- Create: `backend/tests/knowledge/eval/test_ragas_eval.py` + `test_ragas_eval_cli.py`
+- Modify: `.github/workflows/nightly.yaml`（placeholder → 真实命令；**同时修复 Task 5 遗留结构 bug**：rag-eval-layer-2 曾误插在 publish-chart 头部与 steps 之间，导致 publish-chart 丢失 steps、rag-eval-layer-2 出现重复 steps 键——已归还 publish-chart 完整定义）
+- Modify: `.github/workflows/rag-eval.yml`（Task 5 缺陷修复：`|| true` 使 exit code 永远为 0 → 门禁永不红，改为 set +e 捕获 + Regression gate 步骤；kb-id 硬编码本地开发库 id → `vars.RAG_EVAL_KB_ID`；补 DEEPSEEK_API_KEY（graph 路实体抽取 LLM）；baseline 改为从 main 最近成功运行的 artifact 下载 + push main 时回传）
 
-- [ ] RED test（stub judge LLM，复用 extractor stub-LLM 模式）：judge 输出解析（合法 / 畸形 / 空响应）；引用准确率判定（答案 `[n]` vs 工具返回 citation_no 切片的支撑性 precision/recall，含编号不存在情形）；图谱落点命中率（实体落点 vs `relevant_entities`）；路径选择判定（trace 提取实际检索工具序列 vs `expected_path`）。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement `ragas_eval.py`：走真实对话链路（agent 实际选工具、生成答案）；复用 golden JSONL（缺 `reference_answer` 退化 reference-free）；judge 用 config 主模型，**judge prompt 固化在模块内**；三个架构专属指标随 RAGAS 报告一并输出；结果推 Langfuse（复用 `deerflow/tracing`）；报告头部预留人工校准字段（每月抽样 ≥10%，Cohen's κ）。
-- [ ] `nightly.yaml` 加定时 job；手动触发一次确认 Langfuse 收到数据、报告归档。
-- [ ] GREEN；revert proof → 恢复 → GREEN；ruff 双净。
+- [x] RED test（stub judge LLM，复用 extractor stub-LLM 模式）：judge 输出解析（合法 / 畸形 / 空响应）；引用准确率判定（答案 `[n]` vs 工具返回 citation_no 切片的支撑性 precision/recall，含编号不存在情形）；图谱落点命中率（实体落点 vs `relevant_entities`）；路径选择判定（trace 提取实际检索工具序列 vs `expected_path`）。
+- [x] Run focused test 确认 RED。
+- [x] Implement `ragas_eval.py`：走真实对话链路（rag agent 实际选工具、生成答案——`agent_name="rag"` 带 rag 工具组，不传 `deep_research` 保持自主选路）；复用 golden JSONL（缺 `reference_answer` 退化 reference-free）；judge 用 config 主模型，**judge prompt 固化在模块内**；三个架构专属指标随 RAGAS 报告一并输出；结果推 Langfuse（复用 `deerflow/tracing`）；报告头部预留人工校准字段（每月抽样 ≥10%，Cohen's κ）。**实跑发现并修复两个关键接线问题**：直接 ainvoke 时 `config["context"]` 不到 `ToolRuntime.context`（必须走顶层 `context=` 参数，gateway 链路是 langgraph-runtime 映射的）；检索工具是 `opt_in+group:rag` 默认 agent 不带（需 rag agent）。
+- [x] `nightly.yaml` 定时 job 接真实命令（`--extra ragas` 安装、缺 key/KB_ID 显式 skipped、exit 2 用法错误显式红、指标永不红）；手动触发留待首次 nightly 实跑确认 Langfuse 收数（本地未启用 langfuse，推送路径由单测 fake client 覆盖）。
+- [x] GREEN（141 passed）；revert proof → 恢复 → GREEN；ruff 双净。
+- [x] 本地带 key 全链路冒烟（`--limit 2`）：路径选择 100%、引用 P 63.2%/R 68.8%（judge 真实判定）、ragas/langfuse 显式 skipped，报告归档 `logs/rag-eval-layer2-smoke/`。
 - [ ] Commit: `feat(rag): add scheduled RAGAS evaluation with Langfuse reporting`
 
 ## Task 7: 文档同步与收尾

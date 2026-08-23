@@ -93,6 +93,10 @@ monocle = ["monocle_apptrace>=0.8.8"]
 browser = ["playwright>=1.40"]
 # Optional Chinese tokenization for the FTS5 memory retrieval adapter.
 memory-zh = ["jieba>=0.42.1"]
+# RAGAS end-to-end evaluation (spec 2026-08-23 §8): optional so the gateway
+# image stays free of the judge-metrics stack; only the nightly eval job and
+# local eval runs install it.
+ragas = ["ragas>=0.2.15"]
 
 [build-system]
 requires = ["hatchling"]
