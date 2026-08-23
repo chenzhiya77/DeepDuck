@@ -19,7 +19,16 @@ Usage (from ``backend/``):
 
     uv run python scripts/run_ragas_eval.py \
         --kb-id <KB_ID> --golden tests/fixtures/rag_eval/golden.jsonl --out <dir> \
-        [--limit N] [--model <name>]
+        [--limit N] [--agent-model <name>] [--judge-model <name|dashscope:model>]
+
+Model selection: the agent and the judge are deliberately separable so the
+judge can be an independent model family (self-judging bias is a real failure
+mode). ``--judge-model dashscope:qwen3.8-max`` talks to the DashScope
+OpenAI-compatible endpoint directly, with the key read from
+``DASHSCOPE_JUDGE_API_KEY`` (falling back to ``DASHSCOPE_API_KEY``) — the judge
+never needs a config.yaml model entry. Any other value resolves through the
+config.yaml model allowlist; omitting both flags uses the config primary model
+for both roles.
 """
 
 from __future__ import annotations
@@ -48,7 +57,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Output directory for ragas-report.json / ragas-report.md.")
     parser.add_argument("--kb-id", required=True, help="Knowledge base the golden questions were annotated against.")
     parser.add_argument("--limit", type=int, default=None, help="Evaluate only the first N questions (smoke runs).")
-    parser.add_argument("--model", default=None, help="Override the chat model for the agent and the judge (default: config primary model).")
+    parser.add_argument("--agent-model", default=None, help="Chat model for the answering agent (default: config primary model).")
+    parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Judge model: a config.yaml model name, or 'dashscope:<model>' for the DashScope OpenAI-compatible endpoint (key from DASHSCOPE_JUDGE_API_KEY, fallback DASHSCOPE_API_KEY). Default: config primary model.",
+    )
     return parser.parse_args(argv)
 
 
@@ -107,6 +121,36 @@ def _build_ragas_evaluator(judge_llm):
     return evaluator
 
 
+DASHSCOPE_COMPATIBLE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+class JudgeKeyMissingError(Exception):
+    """A ``dashscope:`` judge model was requested but neither DASHSCOPE_JUDGE_API_KEY nor DASHSCOPE_API_KEY is set."""
+
+
+def _build_judge_llm(judge_model: str | None, *, config):
+    """Build the judge LLM, independently from the answering agent's model.
+
+    ``dashscope:<model>`` constructs a DashScope OpenAI-compatible client
+    directly (key from env — the judge never needs a config.yaml entry);
+    anything else resolves through the config model allowlist; ``None`` uses
+    the config primary model.
+    """
+
+    if judge_model and judge_model.startswith("dashscope:"):
+        model = judge_model.removeprefix("dashscope:")
+        api_key = os.environ.get("DASHSCOPE_JUDGE_API_KEY") or os.environ.get("DASHSCOPE_API_KEY")
+        if not api_key:
+            raise JudgeKeyMissingError(f"judge model {judge_model!r} requires DASHSCOPE_JUDGE_API_KEY (or DASHSCOPE_API_KEY) in the environment")
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(model=model, base_url=DASHSCOPE_COMPATIBLE_BASE_URL, api_key=api_key, timeout=600.0, max_retries=2)
+
+    from deerflow.models.factory import create_chat_model
+
+    return create_chat_model(name=judge_model, app_config=config, attach_tracing=False)
+
+
 async def _async_main(args: argparse.Namespace) -> int:
     try:
         from deerflow.config.app_config import get_app_config
@@ -129,8 +173,17 @@ async def _async_main(args: argparse.Namespace) -> int:
 
     from deerflow.knowledge.eval.ragas_eval import build_lead_agent_runner, render_markdown, run_layer2_evaluation, write_reports
     from deerflow.knowledge.store import get_knowledge_store
-    from deerflow.models.factory import create_chat_model
     from deerflow.persistence.engine import close_engine, init_engine_from_config
+
+    # Judge: independent from the answering agent (spec §8; --judge-model
+    # supports a direct DashScope model so the judge can be a different model
+    # family without a config.yaml entry). Built BEFORE the engine so a
+    # missing judge key fails fast without touching persistence.
+    try:
+        judge_llm = _build_judge_llm(args.judge_model, config=config)
+    except JudgeKeyMissingError as exc:
+        print(f"ragas-eval skipped: {exc}")
+        return EXIT_SKIPPED
 
     await init_engine_from_config(config.database)
     try:
@@ -140,13 +193,11 @@ async def _async_main(args: argparse.Namespace) -> int:
             print(f"ragas-eval error: knowledge base not found: {args.kb_id}", file=sys.stderr)
             return EXIT_ERROR
 
-        # Judge: the config primary model (spec §8), overridable via --model.
-        judge_llm = create_chat_model(name=args.model, app_config=config, attach_tracing=False)
         from datetime import UTC, datetime
         from uuid import uuid4
 
         run_id = f"ragas-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
-        agent_runner = build_lead_agent_runner(kb_id=args.kb_id, user_id=kb["owner_id"], run_id=run_id, model_name=args.model)
+        agent_runner = build_lead_agent_runner(kb_id=args.kb_id, user_id=kb["owner_id"], run_id=run_id, model_name=args.agent_model)
         report = await run_layer2_evaluation(
             questions,
             agent_runner=agent_runner,

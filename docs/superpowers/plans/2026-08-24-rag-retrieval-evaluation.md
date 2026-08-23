@@ -110,7 +110,8 @@
 - [x] `nightly.yaml` 定时 job 接真实命令（`--extra ragas` 安装、缺 key/KB_ID 显式 skipped、exit 2 用法错误显式红、指标永不红）；手动触发留待首次 nightly 实跑确认 Langfuse 收数（本地未启用 langfuse，推送路径由单测 fake client 覆盖）。
 - [x] GREEN（141 passed）；revert proof → 恢复 → GREEN；ruff 双净。
 - [x] 本地带 key 全链路冒烟（`--limit 2`）：路径选择 100%、引用 P 63.2%/R 68.8%（judge 真实判定）、ragas/langfuse 显式 skipped，报告归档 `logs/rag-eval-layer2-smoke/`。
-- [ ] Commit: `feat(rag): add scheduled RAGAS evaluation with Langfuse reporting`
+- [x] 增量（用户要求）：CLI 拆 `--agent-model` / `--judge-model`（judge 独立性可调，避免 agent 自评盲区）；`--judge-model dashscope:<model>` 直连百炼兼容端点（key 走 `DASHSCOPE_JUDGE_API_KEY` env，不落配置、不进 config.yaml models）。已用 `dashscope:qwen3.8-max` 实跑验证（引用 P 65.3%/R 65.0%）。
+- [x] Commit: `feat(rag): add scheduled RAGAS evaluation with Langfuse reporting`（`936b8e0b`；CI 修复另提 `1ebb70be`）
 
 ## Task 7: 文档同步与收尾
 
