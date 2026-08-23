@@ -130,14 +130,28 @@ def _run(args: argparse.Namespace) -> int:
     return asyncio.run(_async_main(args))
 
 
+def _load_env_files() -> None:
+    """Load .env files with repo-root as fallback and backend/.env taking precedence.
+
+    Operators reasonably put keys in either place: the repo-root .env doubles
+    as the docker-compose substitution source, while backend/.env is what the
+    gateway reads. ``find_dotenv`` alone stops at the nearest file, so a key
+    set only in the root .env would silently not reach the CLI.
+    """
+
+    from dotenv import load_dotenv
+
+    repo_root_env = Path(__file__).resolve().parents[2] / ".env"
+    load_dotenv(repo_root_env)  # fallback: fills only unset vars
+    load_dotenv(override=True)  # backend/.env wins over the root file
+
+
 def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = None) -> int:
     args = parse_args(argv)
     if environ is None:
-        # Production path: pick up the same .env the gateway reads (tests
-        # inject ``environ`` explicitly and never touch dotenv).
-        from dotenv import load_dotenv
-
-        load_dotenv()
+        # Production path: pick up .env files (tests inject ``environ``
+        # explicitly and never touch dotenv).
+        _load_env_files()
         environ = os.environ
     missing = missing_required_keys(environ)
     if missing:

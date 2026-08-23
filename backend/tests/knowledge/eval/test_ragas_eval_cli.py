@@ -161,6 +161,24 @@ class TestJudgeModelSelection:
         assert cli._run(args) == 3  # EXIT_SKIPPED，且未触达引擎初始化
 
 
+class TestEnvFileLoading:
+    def test_root_env_fallback_then_backend_override(self, monkeypatch):
+        import dotenv
+
+        calls = []
+        monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **kw: calls.append((a, kw)))
+
+        cli._load_env_files()
+
+        assert len(calls) == 2
+        # First pass: repo-root .env as fallback (no override).
+        assert str(calls[0][0][0]).endswith(".env")
+        assert "backend" not in str(calls[0][0][0])
+        assert calls[0][1].get("override") in (None, False)
+        # Second pass: backend/.env wins.
+        assert calls[1][1].get("override") is True
+
+
 class TestRagasEvaluatorAssembly:
     def test_returns_none_when_ragas_not_installed(self, monkeypatch):
         # sys.modules entry None makes any ``import ragas`` raise ImportError.
