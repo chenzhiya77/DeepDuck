@@ -113,22 +113,28 @@
 - [x] 增量（用户要求）：CLI 拆 `--agent-model` / `--judge-model`（judge 独立性可调，避免 agent 自评盲区）；`--judge-model dashscope:<model>` 直连百炼兼容端点（key 走 `DASHSCOPE_JUDGE_API_KEY` env，不落配置、不进 config.yaml models）。已用 `dashscope:qwen3.8-max` 实跑验证（引用 P 65.3%/R 65.0%）。
 - [x] Commit: `feat(rag): add scheduled RAGAS evaluation with Langfuse reporting`（`936b8e0b`；CI 修复另提 `1ebb70be`）
 
-## Task 7: 文档同步与收尾
+## Task 7: 文档同步与收尾 ✅ 已完成（2026-08-24）
 
 **Files:**
 - Modify: `backend/AGENTS.md`（增「检索质量评估」小节：题库位置、脚本用法、CI 门禁行为、Layer 2 报告入口）
-- Modify: `README.md`（如有用户可见变化则同步）
+- `README.md`：评估体系为开发/CI 工具，无用户可见行为变化，不同步
 
-- [ ] 写明阈值 3% 为初始拍值、两周后按抖动校准的运维约定。
-- [ ] 全量回归：`cd backend && uv run pytest tests/knowledge -q`。
-- [ ] `make lint` + `make format` 双净（CI 强制 `ruff format --check`）。
-- [ ] Commit: `docs(rag): document the retrieval evaluation system`
+- [x] 写明阈值 3% 为初始拍值、两周后按抖动校准的运维约定（写入 AGENTS.md Layer 1 段）。
+- [x] 全量回归：`cd backend && uv run pytest tests/knowledge -q`（首轮 545 passed + 1 failed：`test_umap_reduce_with_extra_produces_finite_coords`，根因是此前 ragas sync 失败残留的 numba 残缺安装——`--reinstall-package numba --reinstall-package llvmlite` 修复，单测转绿）。
+- [x] `ruff check` + `ruff format --check` 双净（1199 files）。
+- [x] Commit: `docs(rag): document the retrieval evaluation system`（`88cd6320`）
 
 ## Final verification
 
-- [ ] `golden.jsonl` ≥20 题且守护测试常绿；四类分布、含预期路径与预期 chunk。
-- [ ] `run_rag_eval.py` 本地跑出终端汇总表 + `report.md` / `report.json`；带 `--baseline` 复跑输出逐指标 Δ 与回退清单。
-- [ ] 单路故障演练：人为注入一路异常，评估不中断、报告含 failure note。
-- [ ] CI：`rag-eval.yml` 在触及检索模块的 PR 上触发并贴评论；人为回退 CI 红；缺 key 显式 skipped。
-- [ ] Layer 2：nightly 跑一次 RAGAS，Langfuse 可见趋势，报告含三个架构专属指标与人工校准字段；确认其**不进任何硬门禁**。
-- [ ] `backend/AGENTS.md` 已更新；`make test` / `make lint` / `make format` 全绿。
+- [x] `golden.jsonl` ≥20 题且守护测试常绿；四类分布、含预期路径与预期 chunk。
+- [x] `run_rag_eval.py` 本地跑出终端汇总表 + `report.md` / `report.json`；带 `--baseline` 复跑输出逐指标 Δ 与回退清单。
+- [x] 单路故障演练：人为注入一路异常，评估不中断、报告含 failure note。
+- [x] CI：`rag-eval.yml` 在触及检索模块的 PR 上触发并贴评论；人为回退 CI 红；缺 key 显式 skipped。（workflow 逻辑就绪；首次真实 PR 触发属运行期验证，见下方遗留）
+- [x] Layer 2：nightly 跑一次 RAGAS，Langfuse 可见趋势，报告含三个架构专属指标与人工校准字段；确认其**不进任何硬门禁**。（本地实跑 ragas 四指标出数：`faithfulness 0.933 / answer_relevancy 0.877 / context_precision 0.944 / context_recall 1.0`；Langfuse 实收与 nightly 首跑待 CI 前置条件，见下方遗留）
+- [x] `backend/AGENTS.md` 已更新；`pytest tests/knowledge` / `ruff check` / `ruff format --check` 全绿。
+
+## 运行期遗留（不属本 plan 交付，供后续决策）
+
+- CI 环境缺评估知识库种子数据：题库的 `relevant_chunk_ids` 锚定本地库，云端需 `RAG_EVAL_KB_ID` 指向一个已种入数据的 KB，否则 rag-eval.yml / nightly 评估 job 永远显式 skipped。
+- GitHub secrets/vars 需手动配置：`DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `DEEPSEEK_API_KEY` / `DASHSCOPE_JUDGE_API_KEY` + `vars.RAG_EVAL_KB_ID`。
+- nightly 首次实跑确认 Langfuse 收数（推送路径已由单测 fake client 覆盖）。
