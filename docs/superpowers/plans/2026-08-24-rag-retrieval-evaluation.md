@@ -41,19 +41,19 @@
 - [x] 人工标注首批 20 题（从已入库真实文档，经召回测试面板操作确认预期路径与预期 chunk），写入 `golden.jsonl`。
 - [x] GREEN（含守护测试）；revert proof：移走 dataset.py → collection RED → 恢复 → GREEN。
 - [x] ruff check/format 双净。
-- [ ] Commit: `feat(rag): add golden dataset schema and seed retrieval eval questions`
+- [x] Commit: `feat(rag): add golden dataset schema and seed retrieval eval questions`（`f9029926`；spec+plan 另提 `b33ceb79`）
 
-## Task 2: 指标纯函数——Hit Rate / Recall@k / MRR / 路径判定 / baseline diff
+## Task 2: 指标纯函数——Hit Rate / Recall@k / MRR / 路径判定 / baseline diff ✅ 已完成（2026-08-24）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/eval/metrics.py`（纯函数，无 IO）
 - Create: `backend/tests/knowledge/eval/test_metrics.py`
 
-- [ ] RED test（对齐 test_retrieval.py 风格，构造输入断言数值）：Hit Rate（标注 chunk 进 top-k）/ Recall@k（标注 chunk 命中比例）/ MRR（首个正确排名倒数）/ 路径选择判定（三路各自 top-1 分数比较 vs `expected_path`）/ 按 category 聚合 / baseline diff（逐指标 Δ + 回退题目清单 + 任一 category Recall@k 下降 >3% 判失败，阈值可配）。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement `metrics.py` 全部纯函数。
-- [ ] GREEN；revert proof（stash 实现 → RED → 恢复 → GREEN）。
-- [ ] ruff 双净。
+- [x] RED test（对齐 test_retrieval.py 风格，构造输入断言数值）：Hit Rate（标注 chunk 进 top-k）/ Recall@k（标注 chunk 命中比例）/ MRR（首个正确排名倒数）/ 路径选择判定（三路各自 top-1 分数比较 vs `expected_path`）/ 按 category 聚合 / baseline diff（逐指标 Δ + 回退题目清单 + 任一 category Recall@k 下降 >3% 判失败，阈值可配）。
+- [x] Run focused test 确认 RED。
+- [x] Implement `metrics.py` 全部纯函数。
+- [x] GREEN；revert proof（stash 实现 → RED → 恢复 → GREEN）。
+- [x] ruff 双净。
 - [ ] Commit: `feat(rag): add deterministic IR metrics for retrieval evaluation`
 
 ## Task 3: 批量评估 runner——降级契约 + 双份报告
