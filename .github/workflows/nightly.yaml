@@ -263,7 +263,7 @@ jobs:
         id: secrets
         run: |
           missing=""
-          for key in DASHSCOPE_EMBEDDING_API_KEY DASHSCOPE_RERANK_API_KEY DEEPSEEK_API_KEY; do
+          for key in DASHSCOPE_EMBEDDING_API_KEY DASHSCOPE_RERANK_API_KEY DEEPSEEK_API_KEY DASHSCOPE_JUDGE_API_KEY; do
             if [ -z "${!key}" ]; then missing="${missing} ${key}"; fi
           done
           if [ -z "${RAG_EVAL_KB_ID}" ]; then missing="${missing} vars.RAG_EVAL_KB_ID"; fi
@@ -277,6 +277,7 @@ jobs:
           DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
           DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DASHSCOPE_JUDGE_API_KEY: ${{ secrets.DASHSCOPE_JUDGE_API_KEY }}
           RAG_EVAL_KB_ID: ${{ vars.RAG_EVAL_KB_ID }}
 
       - name: Run Layer 2 RAGAS evaluation
@@ -286,15 +287,20 @@ jobs:
           DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
           DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DASHSCOPE_JUDGE_API_KEY: ${{ secrets.DASHSCOPE_JUDGE_API_KEY }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           set -uo pipefail
           mkdir -p "${RUNNER_TEMP}/rag-eval-layer-2"
+          # Judge runs on a different model family (DashScope qwen3.8-max) than
+          # the answering agent (config primary = DeepSeek) to avoid
+          # self-judging bias.
           uv run python scripts/run_ragas_eval.py \
             --kb-id "${{ vars.RAG_EVAL_KB_ID }}" \
             --golden tests/fixtures/rag_eval/golden.jsonl \
-            --out "${RUNNER_TEMP}/rag-eval-layer-2"
+            --out "${RUNNER_TEMP}/rag-eval-layer-2" \
+            --judge-model dashscope:qwen3.8-max
           EXIT_CODE=$?
           echo "exit_code=${EXIT_CODE}" >> $GITHUB_OUTPUT
           if [ "$EXIT_CODE" -eq 3 ]; then
