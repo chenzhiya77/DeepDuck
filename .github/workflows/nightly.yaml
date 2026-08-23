@@ -185,73 +185,6 @@ jobs:
       OWNER: ${{ github.repository_owner }}
       NIGHTLY: ${{ needs.prepare.outputs.nightly_version }}
 
-  rag-eval-layer-2:
-    if: github.repository == 'bytedance/deer-flow'
-    needs: [prepare, validate-chart, build-images]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-
-      - name: Install backend dependencies (optional ragas)
-        working-directory: backend
-        run: uv sync --group dev --extra postgres
-
-      - name: Load secrets for evaluation API keys
-        id: secrets
-        run: |
-          missing=""
-          if [ -z "${{ env.DASHSCOPE_EMBEDDING_API_KEY }}" ]; then missing="${missing} DASHSCOPE_EMBEDDING_API_KEY"; fi
-          if [ -z "${{ env.DASHSCOPE_RERANK_API_KEY }}" ]; then missing="${missing} DASHSCOPE_RERANK_API_KEY"; fi
-          if [ -z "${{ env.LANGFUSE_PUBLIC_KEY }}" ]; then missing="${missing} LANGFUSE_PUBLIC_KEY"; fi
-          if [ -z "${{ env.LANGFUSE_SECRET_KEY }}" ]; then missing="${missing} LANGFUSE_SECRET_KEY"; fi
-          if [ -n "$missing" ]; then
-            echo "::warning::Missing API keys:$missing — RAGAS eval will skip this run"
-            echo "skipped=true" >> $GITHUB_OUTPUT
-          else
-            echo "skipped=false" >> $GITHUB_OUTPUT
-          fi
-        env:
-          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
-          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-
-      - name: Run RAGAS layer-2 evaluation (weekly/monthly baseline)
-        if: steps.secrets.outputs.skipped == 'false'
-        working-directory: backend
-        env:
-          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
-          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-        run: |
-          set -euo pipefail
-          # Placeholder script path — to be implemented in Task 6
-          # echo "Running RAGAS evaluation via: uv run python scripts/run_rag_eval.py --layer-2 ..."
-          # For now, log a placeholder report to confirm nightly triggers correctly
-          echo "Nightly Layer-2 RAGAS eval skipped (placeholder)" 
-          mkdir -p "${RUNNER_TEMP}/rag-eval-layer-2"
-          echo '{"placeholder": true, "generated_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > "${RUNNER_TEMP}/rag-eval-layer-2/report.json"
-          echo "Placeholder report generated at ${RUNNER_TEMP}/rag-eval-layer-2/report.json"
-
-      - name: Upload RAGAS reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rag-eval-layer-2-reports
-          path: ${{ runner.temp }}/rag-eval-layer-2/
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
@@ -300,3 +233,84 @@ jobs:
             echo "--- pushing $pkg"
             helm push "$pkg" oci://ghcr.io/${{ github.repository_owner }}/charts
           done
+
+  rag-eval-layer-2:
+    # Layer 2 scheduled RAGAS evaluation (spec 2026-08-23 §8): report-only,
+    # NEVER a gate — quality numbers never fail this job. Missing credentials
+    # or an unconfigured eval KB degrade to an explicit skipped notice.
+    if: github.repository == 'bytedance/deer-flow'
+    needs: [prepare, validate-chart, build-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install backend dependencies (with optional ragas extra)
+        working-directory: backend
+        run: uv sync --group dev --extra ragas
+
+      - name: Check evaluation credentials
+        id: secrets
+        run: |
+          missing=""
+          for key in DASHSCOPE_EMBEDDING_API_KEY DASHSCOPE_RERANK_API_KEY DEEPSEEK_API_KEY; do
+            if [ -z "${!key}" ]; then missing="${missing} ${key}"; fi
+          done
+          if [ -z "${RAG_EVAL_KB_ID}" ]; then missing="${missing} vars.RAG_EVAL_KB_ID"; fi
+          if [ -n "$missing" ]; then
+            echo "::warning::Missing evaluation credentials:${missing} — Layer 2 RAGAS eval skipped (explicit, not a pass)"
+            echo "skipped=true" >> $GITHUB_OUTPUT
+          else
+            echo "skipped=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
+          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          RAG_EVAL_KB_ID: ${{ vars.RAG_EVAL_KB_ID }}
+
+      - name: Run Layer 2 RAGAS evaluation
+        if: steps.secrets.outputs.skipped == 'false'
+        working-directory: backend
+        env:
+          DASHSCOPE_EMBEDDING_API_KEY: ${{ secrets.DASHSCOPE_EMBEDDING_API_KEY }}
+          DASHSCOPE_RERANK_API_KEY: ${{ secrets.DASHSCOPE_RERANK_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          set -uo pipefail
+          mkdir -p "${RUNNER_TEMP}/rag-eval-layer-2"
+          uv run python scripts/run_ragas_eval.py \
+            --kb-id "${{ vars.RAG_EVAL_KB_ID }}" \
+            --golden tests/fixtures/rag_eval/golden.jsonl \
+            --out "${RUNNER_TEMP}/rag-eval-layer-2"
+          EXIT_CODE=$?
+          echo "exit_code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+          if [ "$EXIT_CODE" -eq 3 ]; then
+            echo "::notice::Layer 2 eval skipped by the CLI (missing credentials discovered at runtime)"
+            exit 0
+          fi
+          if [ "$EXIT_CODE" -eq 2 ]; then
+            echo "::error::Layer 2 eval hit a usage/IO error — check the eval KB seeding"
+            exit 1
+          fi
+          exit 0
+        id: eval
+
+      - name: Upload RAGAS reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-layer-2-reports
+          path: ${{ runner.temp }}/rag-eval-layer-2/
