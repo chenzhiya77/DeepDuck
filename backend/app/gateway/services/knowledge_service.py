@@ -19,6 +19,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable, Collection
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,9 +28,12 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
+from deerflow.knowledge.eval.trend import aggregate_trend_points, latest_layer_row
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
+from deerflow.knowledge.models import EvalRunRow
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, is_supported_suffix
 from deerflow.knowledge.projection.cache import CachedProjection, ProjectionCache, content_fingerprint
 from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
@@ -43,6 +47,7 @@ from deerflow.tools.builtins.hybrid_search_tool import _hybrid_search_impl
 from deerflow.tools.builtins.wiki_search_tool import _wiki_search_impl
 from deerflow.uploads.manager import normalize_filename
 from deerflow.utils.file_io import run_file_io
+from deerflow.utils.time import coerce_iso
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +108,45 @@ def _projection_response(kb_id: str, algo: str, dims: int, entry: CachedProjecti
         "sampled": entry.sampled,
         "points": points,
     }
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite 读出的 DateTime(timezone=True) 是 tz-naive——按单一时钟纪律（§3.1.1）视为 UTC。"""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _layer1_overview_payload(row: EvalRunRow | None) -> dict[str, Any] | None:
+    """latest 端点的 Layer 1 块（§3.2）；baseline_diff 仅在该次运行带了 --baseline 时出现。"""
+    if row is None:
+        return None
+    payload: dict[str, Any] = {
+        "run_id": row.id,
+        "created_at": coerce_iso(row.created_at),
+        "metrics": row.layer1_metrics,
+    }
+    if row.baseline_diff is not None:
+        payload["baseline_diff"] = row.baseline_diff
+    return payload
+
+
+def _layer2_overview_payload(row: EvalRunRow | None) -> dict[str, Any] | None:
+    """latest 端点的 Layer 2 块（§3.2）：ragas/arch_specific 等从 layer2_metrics JSON 拆出。"""
+    if row is None:
+        return None
+    metrics = row.layer2_metrics
+    payload: dict[str, Any] = {
+        "run_id": row.id,
+        "created_at": coerce_iso(row.created_at),
+        "ragas_available": bool(metrics.get("ragas_available")),
+        "ragas": metrics.get("ragas") or {},
+        "arch_specific": metrics.get("arch_specific") or {},
+        "has_graph_questions": bool(metrics.get("has_graph_questions")),
+    }
+    if metrics.get("ragas_skip_reason"):
+        payload["ragas_skip_reason"] = metrics["ragas_skip_reason"]
+    if row.langfuse_trace_url:
+        payload["langfuse_trace_url"] = row.langfuse_trace_url
+    return payload
 
 
 class KnowledgeService:
@@ -1033,6 +1077,56 @@ class KnowledgeService:
         if dims == 3:
             result["z"] = float(coords[2])
         return result
+
+    # ── eval runs (spec 2026-08-24 §4.2, plan Task 1) ────────────────────────
+
+    async def get_latest_eval_metrics(self, kb_id: str) -> dict[str, Any]:
+        """MetricsOverview（§3.2）：两层各自最近一次 completed 且 metrics 非空且非 ci 的运行。
+
+        两层时间戳天然错位（Layer 1 每天 CI、Layer 2 每周 nightly），合并视图
+        保留各自来源（run_id + created_at 分开展示）。
+        """
+        rows = await self.store.list_eval_runs(kb_id)
+        return {
+            "kb_id": kb_id,
+            "layer1": _layer1_overview_payload(latest_layer_row(rows, "layer1")),
+            "layer2": _layer2_overview_payload(latest_layer_row(rows, "layer2")),
+        }
+
+    async def get_eval_trend(self, kb_id: str, *, granularity: str, days_back: int, include_ci: bool) -> dict[str, Any]:
+        """TrendResponse（§4.1/§4.2）：统一末次语义聚合 + baseline 块。
+
+        单 KB 历史 <100 条，读全量行内存计算；``days_back`` clamp 到 ≤90 并
+        在响应回显实际值。baseline 块读该 KB 的 ``is_baseline`` 行——与
+        CI ``--fail-threshold`` 默认值同源（DEFAULT_FAIL_THRESHOLD × 100）。
+        """
+        days_back = min(days_back, 90)
+        rows = await self.store.list_eval_runs(kb_id)
+        cutoff = datetime.now(UTC) - timedelta(days=days_back)
+        windowed = [row for row in rows if _as_utc(row.created_at) >= cutoff]
+        points = aggregate_trend_points(windowed, granularity, include_ci=include_ci)
+        baseline: dict[str, Any] | None = None
+        baseline_row = next((row for row in rows if row.is_baseline), None)
+        if baseline_row is not None:
+            recall_at_k = (baseline_row.layer1_metrics.get("summary") or {}).get("recall_at_k")
+            if recall_at_k is not None:
+                baseline = {"recall_at_k": recall_at_k, "threshold_percent": DEFAULT_FAIL_THRESHOLD * 100}
+        return {
+            "points": points,
+            "granularity": granularity,
+            "days_back": days_back,
+            "baseline": baseline,
+            "has_data": bool(points),
+        }
+
+    async def get_eval_run(self, kb_id: str, run_id: str) -> dict[str, Any] | None:
+        """EvalRunDetail（§4.2）：单行完整 JSON，drawer 数据源；跨 kb 访问由 store 层返回 None。"""
+        row = await self.store.get_eval_run_row(kb_id, run_id)
+        if row is None:
+            return None
+        payload = KnowledgeStore._row_to_dict(row, datetime_keys=("created_at", "completed_at"))
+        payload["run_id"] = payload.pop("id")
+        return payload
 
     def _schedule_wiki_generation(self, kb_id: str, only_dirty: bool = True) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id, only_dirty=only_dirty), name=f"kb-wiki-{kb_id}")

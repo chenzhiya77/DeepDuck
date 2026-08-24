@@ -535,3 +535,40 @@ async def project_query_vector(
         return await service.project_query_vector(kb_id, text=body.text, collections=keys, algo=algo, dims=dims, sample_size=sample_size)
     except (ProjectionNotComputedError, ProjectionModelUnavailableError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{kb_id}/eval-runs/latest")
+async def get_latest_eval_metrics(request: Request, kb_id: str):
+    """评测指标总览（spec 2026-08-24 §3.2/§4.2）：两层各自最近一次 completed
+    且对应层 metrics 非空且非 ci 的运行；一层无数据该层为 null。
+    """
+    service = await _require_kb_access(request, kb_id)
+    return await service.get_latest_eval_metrics(kb_id)
+
+
+@router.get("/{kb_id}/eval-runs/trend")
+async def get_eval_trend(
+    request: Request,
+    kb_id: str,
+    granularity: Literal["day", "week", "month"] = "day",
+    days_back: int = Query(default=30, ge=1),
+    include_ci: bool = False,
+):
+    """指标趋势（spec §4.2）：统一末次语义聚合，两层独立取数。
+
+    ``days_back`` 后端 clamp 到 ≤90 并在响应回显实际值；``include_ci=true``
+    时 ci 运行进入取数集合。
+    """
+    service = await _require_kb_access(request, kb_id)
+    return await service.get_eval_trend(kb_id, granularity=granularity, days_back=days_back, include_ci=include_ci)
+
+
+# 注意注册顺序：latest / trend 字面量路由必须先于 {run_id} 参数路由。
+@router.get("/{kb_id}/eval-runs/{run_id}")
+async def get_eval_run(request: Request, kb_id: str, run_id: str):
+    """单次评测运行详情（spec §4.2）：drawer 数据源；跨 kb 访问 404。"""
+    service = await _require_kb_access(request, kb_id)
+    run = await service.get_eval_run(kb_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+    return run

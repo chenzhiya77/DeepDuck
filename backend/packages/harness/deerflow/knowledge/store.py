@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from deerflow.knowledge.models import (
     ChunkRow,
     DocumentRow,
+    EvalRunRow,
     GraphEntityRow,
     GraphRelationRow,
     KnowledgeBaseRow,
@@ -489,6 +490,28 @@ class KnowledgeStore:
             result = await session.execute(delete(ManualKnowledgeRow).where(ManualKnowledgeRow.id == card_id))
             await session.commit()
             return int(result.rowcount or 0) > 0
+
+    # ── eval_runs (spec 2026-08-24 §4.2, plan Task 1) ────────────────────────
+
+    async def list_eval_runs(self, kb_id: str) -> list[EvalRunRow]:
+        """该 KB 的全量 eval_runs 行（``created_at`` 升序），单 KB 历史通常 <100 条。
+
+        返回的 ORM 行在 session 关闭后处于 detached 状态，但全部列已物化，
+        只读访问安全（``persistence.get_baseline_run`` 同一形态）；聚合与
+        序列化在 service 层完成。
+        """
+        stmt = select(EvalRunRow).where(EvalRunRow.kb_id == kb_id).order_by(EvalRunRow.created_at.asc(), EvalRunRow.id.asc())
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_eval_run_row(self, kb_id: str, run_id: str) -> EvalRunRow | None:
+        """单行查询；跨 kb 访问返回 None（路由层映射 404）。detached 只读，同 list_eval_runs。"""
+        async with self._sf() as session:
+            row = await session.get(EvalRunRow, run_id)
+            if row is None or row.kb_id != kb_id:
+                return None
+            return row
 
 
 def get_knowledge_store() -> KnowledgeStore:
