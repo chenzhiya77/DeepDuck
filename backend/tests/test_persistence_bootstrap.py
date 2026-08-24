@@ -48,7 +48,7 @@ from deerflow.persistence.migrations._helpers import _normalize_default
 asyncio_test = pytest.mark.asyncio
 
 
-HEAD = "0012_documents_path_status"
+HEAD = "0018_eval_runs_baseline"
 BASELINE = "0001_baseline"
 
 

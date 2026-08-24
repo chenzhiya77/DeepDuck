@@ -13,7 +13,13 @@ Usage (from ``backend/``):
 
     uv run python scripts/run_rag_eval.py \
         --kb-id <KB_ID> --golden tests/fixtures/rag_eval/golden.jsonl --out <dir> \
-        [--baseline <prev report.json>] [--top-k 5] [--fail-threshold 0.03]
+        [--baseline <prev report.json>|auto] [--top-k 5] [--fail-threshold 0.03] \
+        [--environment local|ci|nightly] [--mark-baseline]
+
+``--baseline auto`` diffs against the KB's marked baseline run (the eval_runs
+``is_baseline`` row); no marked row means a plain no-diff run.
+``--mark-baseline`` marks this run as the KB's baseline, clearing the previous
+marker in the same transaction (spec 2026-08-24 §3.1.3).
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
+from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, resolve_environment
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -43,7 +50,7 @@ def _generate_run_id() -> str:
     return f"rag-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
 
 
-async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None) -> None:
+async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None, environment: str = ENV_LOCAL) -> None:
     """Best-effort eval_runs persistence (spec 2026-08-24 §3.1.1).
 
     Every CLI run writes exactly one row — completed runs carry the mapped
@@ -88,6 +95,8 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
                 completed_at=completed_at,
                 layer1_metrics=layer1_metrics,
                 baseline_diff=baseline_diff,
+                environment=environment,
+                mark_baseline=args.mark_baseline,
             )
         finally:
             if own_engine:
@@ -96,11 +105,11 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
         print(f"rag-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
 
 
-def _persist_quietly(args: argparse.Namespace, *, status: str) -> None:
+def _persist_quietly(args: argparse.Namespace, *, status: str, environment: str = ENV_LOCAL) -> None:
     """Sync wrapper for the missing-keys skip path in ``main()`` (no event loop yet)."""
 
     try:
-        asyncio.run(_persist_eval_run(args, status=status))
+        asyncio.run(_persist_eval_run(args, status=status, environment=environment))
     except Exception as exc:  # noqa: BLE001 — e.g. already inside an event loop
         print(f"rag-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
 
@@ -117,13 +126,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--golden", required=True, help="Path to the golden JSONL dataset.")
     parser.add_argument("--out", required=True, help="Output directory for report.json / report.md.")
     parser.add_argument("--kb-id", required=True, help="Knowledge base the golden questions were annotated against.")
-    parser.add_argument("--baseline", default=None, help="Previous report.json for the regression diff.")
+    parser.add_argument(
+        "--baseline",
+        default=None,
+        help="Previous report.json for the regression diff, or 'auto' to diff against the KB's marked baseline run in eval_runs.",
+    )
     parser.add_argument("--top-k", type=int, default=5, help="Hits per path per question (default 5).")
     parser.add_argument(
         "--fail-threshold",
         type=float,
         default=DEFAULT_FAIL_THRESHOLD,
         help=f"Per-category recall drop that fails the gate (default {DEFAULT_FAIL_THRESHOLD}; initial guess — recalibrate after two weeks).",
+    )
+    parser.add_argument(
+        "--environment",
+        choices=ENVIRONMENTS,
+        default=None,
+        help="Run environment marker for eval_runs (default: infer — CI=true → ci, else local; nightly passes --environment nightly).",
+    )
+    parser.add_argument(
+        "--mark-baseline",
+        action="store_true",
+        help="Mark this run as the KB's baseline in eval_runs (clears the previous marker in the same transaction).",
     )
     return parser.parse_args(argv)
 
@@ -132,7 +156,24 @@ def missing_required_keys(environ: Mapping[str, str]) -> list[str]:
     return [key for key in REQUIRED_ENV_KEYS if not environ.get(key)]
 
 
-async def _async_main(args: argparse.Namespace) -> int:
+async def _load_auto_baseline(kb_id: str) -> dict | None:
+    """Read the KB's marked baseline run (§3.1.3) as a diff-ready report payload.
+
+    No marked row (or a marked row without Layer 1 metrics, e.g. a Layer 2 CLI
+    mark) means a plain no-diff run — exit 0 semantics unchanged.
+    """
+
+    from deerflow.knowledge.eval import persistence as eval_persistence
+
+    row = await eval_persistence.get_baseline_run(kb_id)
+    if row is None or not row.layer1_metrics:
+        print("rag-eval: --baseline auto but no baseline run is marked for this KB; running without diff")
+        return None
+    print(f"rag-eval: diffing against marked baseline run {row.id}")
+    return eval_persistence.baseline_report_from_metrics(row.layer1_metrics)
+
+
+async def _async_main(args: argparse.Namespace, *, environment: str = ENV_LOCAL) -> int:
     try:
         from deerflow.config.app_config import get_app_config
 
@@ -147,14 +188,14 @@ async def _async_main(args: argparse.Namespace) -> int:
     try:
         questions = load_golden(args.golden)
         baseline = None
-        if args.baseline:
+        if args.baseline and args.baseline != "auto":
             baseline_path = Path(args.baseline)
             if not baseline_path.exists():
                 raise GoldenDatasetError(f"baseline report not found: {baseline_path}")
             baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     except (GoldenDatasetError, json.JSONDecodeError) as exc:
         print(f"rag-eval error: {exc}", file=sys.stderr)
-        await _persist_eval_run(args, config=config, status="error")
+        await _persist_eval_run(args, config=config, status="error", environment=environment)
         return EXIT_ERROR
 
     from deerflow.knowledge.eval.runner import build_default_searchers, render_summary, run_evaluation, write_reports
@@ -170,8 +211,12 @@ async def _async_main(args: argparse.Namespace) -> int:
         kb = await store.get_kb(args.kb_id)
         if kb is None:
             print(f"rag-eval error: knowledge base not found: {args.kb_id}", file=sys.stderr)
-            await _persist_eval_run(args, config=config, status="error")
+            await _persist_eval_run(args, config=config, status="error", environment=environment)
             return EXIT_ERROR
+        # The DB-backed baseline resolves only after the engine is up (it reads
+        # the eval_runs is_baseline row); a missing marker is not an error.
+        if args.baseline == "auto":
+            baseline = await _load_auto_baseline(args.kb_id)
         # Owner-only access gate (phase 1): the eval runs as the KB owner,
         # resolved from the store — no separate credential to manage.
         searchers = build_default_searchers(
@@ -192,7 +237,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         )
         # exit 0/1 both map to `completed` — the regression gate signal lives
         # in baseline_diff and the trend chart needs the regression run's point.
-        await _persist_eval_run(args, config=config, status="completed", report=report)
+        await _persist_eval_run(args, config=config, status="completed", report=report, environment=environment)
     finally:
         await close_engine()
 
@@ -202,8 +247,8 @@ async def _async_main(args: argparse.Namespace) -> int:
     return report.exit_code
 
 
-def _run(args: argparse.Namespace) -> int:
-    return asyncio.run(_async_main(args))
+def _run(args: argparse.Namespace, *, environment: str = ENV_LOCAL) -> int:
+    return asyncio.run(_async_main(args, environment=environment))
 
 
 def _load_env_files() -> None:
@@ -229,12 +274,13 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         # explicitly and never touch dotenv).
         _load_env_files()
         environ = os.environ
+    environment = resolve_environment(args.environment, environ)
     missing = missing_required_keys(environ)
     if missing:
         print(f"rag-eval skipped: missing required API keys: {', '.join(missing)} (exit {EXIT_SKIPPED} — explicit skip, not a pass)")
-        _persist_quietly(args, status="skipped")  # 留痕：何时尝试过（best-effort）
+        _persist_quietly(args, status="skipped", environment=environment)  # 留痕：何时尝试过（best-effort）
         return EXIT_SKIPPED
-    return _run(args)
+    return _run(args, environment=environment)
 
 
 if __name__ == "__main__":

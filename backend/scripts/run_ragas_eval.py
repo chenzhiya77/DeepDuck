@@ -19,7 +19,8 @@ Usage (from ``backend/``):
 
     uv run python scripts/run_ragas_eval.py \
         --kb-id <KB_ID> --golden tests/fixtures/rag_eval/golden.jsonl --out <dir> \
-        [--limit N] [--agent-model <name>] [--judge-model <name|dashscope:model>]
+        [--limit N] [--agent-model <name>] [--judge-model <name|dashscope:model>] \
+        [--environment local|ci|nightly] [--mark-baseline]
 
 Model selection: the agent and the judge are deliberately separable so the
 judge can be an independent model family (self-judging bias is a real failure
@@ -41,6 +42,8 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, resolve_environment
+
 EXIT_OK = 0
 EXIT_ERROR = 2
 EXIT_SKIPPED = 3
@@ -54,7 +57,7 @@ def _generate_run_id() -> str:
     return f"ragas-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
 
 
-async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None, questions=()) -> None:
+async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None, questions=(), environment: str = ENV_LOCAL) -> None:
     """Best-effort eval_runs persistence (spec 2026-08-24 §3.1.1).
 
     Every CLI run writes exactly one row — completed runs carry the mapped
@@ -93,6 +96,8 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
                 created_at=created_at,
                 completed_at=completed_at,
                 layer2_metrics=layer2_metrics,
+                environment=environment,
+                mark_baseline=args.mark_baseline,
             )
         finally:
             if own_engine:
@@ -101,11 +106,11 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
         print(f"ragas-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
 
 
-def _persist_quietly(args: argparse.Namespace, *, status: str) -> None:
+def _persist_quietly(args: argparse.Namespace, *, status: str, environment: str = ENV_LOCAL) -> None:
     """Sync wrapper for the missing-keys skip path in ``main()`` (no event loop yet)."""
 
     try:
-        asyncio.run(_persist_eval_run(args, status=status))
+        asyncio.run(_persist_eval_run(args, status=status, environment=environment))
     except Exception as exc:  # noqa: BLE001 — e.g. already inside an event loop
         print(f"ragas-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
 
@@ -128,6 +133,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--judge-model",
         default=None,
         help="Judge model: a config.yaml model name, or 'dashscope:<model>' for the DashScope OpenAI-compatible endpoint (key from DASHSCOPE_JUDGE_API_KEY, fallback DASHSCOPE_API_KEY). Default: config primary model.",
+    )
+    parser.add_argument(
+        "--environment",
+        choices=ENVIRONMENTS,
+        default=None,
+        help="Run environment marker for eval_runs (default: infer — CI=true → ci, else local; nightly passes --environment nightly).",
+    )
+    parser.add_argument(
+        "--mark-baseline",
+        action="store_true",
+        help="Mark this run as the KB's baseline in eval_runs (clears the previous marker in the same transaction).",
     )
     return parser.parse_args(argv)
 
@@ -232,7 +248,7 @@ def _build_judge_llm(judge_model: str | None, *, config):
     return create_chat_model(name=judge_model, app_config=config, attach_tracing=False)
 
 
-async def _async_main(args: argparse.Namespace) -> int:
+async def _async_main(args: argparse.Namespace, *, environment: str = ENV_LOCAL) -> int:
     try:
         from deerflow.config.app_config import get_app_config
 
@@ -248,7 +264,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         questions = load_golden(args.golden)
     except GoldenDatasetError as exc:
         print(f"ragas-eval error: {exc}", file=sys.stderr)
-        await _persist_eval_run(args, config=config, status="error")
+        await _persist_eval_run(args, config=config, status="error", environment=environment)
         return EXIT_ERROR
     if args.limit is not None:
         questions = questions[: args.limit]
@@ -265,7 +281,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         judge_llm = _build_judge_llm(args.judge_model, config=config)
     except JudgeKeyMissingError as exc:
         print(f"ragas-eval skipped: {exc}")
-        await _persist_eval_run(args, config=config, status="skipped")
+        await _persist_eval_run(args, config=config, status="skipped", environment=environment)
         return EXIT_SKIPPED
 
     await init_engine_from_config(config.database)
@@ -274,7 +290,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         kb = await store.get_kb(args.kb_id)
         if kb is None:
             print(f"ragas-eval error: knowledge base not found: {args.kb_id}", file=sys.stderr)
-            await _persist_eval_run(args, config=config, status="error")
+            await _persist_eval_run(args, config=config, status="error", environment=environment)
             return EXIT_ERROR
 
         from uuid import uuid4
@@ -289,7 +305,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             kb_id=args.kb_id,
             run_id=run_id,
         )
-        await _persist_eval_run(args, config=config, status="completed", report=report, questions=questions)
+        await _persist_eval_run(args, config=config, status="completed", report=report, questions=questions, environment=environment)
     finally:
         await close_engine()
 
@@ -302,7 +318,7 @@ async def _async_main(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _run(args: argparse.Namespace) -> int:
+def _run(args: argparse.Namespace, *, environment: str = ENV_LOCAL) -> int:
     # The markdown report embeds ✅/❌ marks; Windows consoles default to GBK
     # and would crash the print with UnicodeEncodeError after the report files
     # were already written. Force UTF-8 with replacement as a safety net.
@@ -310,7 +326,7 @@ def _run(args: argparse.Namespace) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):
         pass
-    return asyncio.run(_async_main(args))
+    return asyncio.run(_async_main(args, environment=environment))
 
 
 def _load_env_files() -> None:
@@ -336,12 +352,13 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
         # explicitly and never touch dotenv).
         _load_env_files()
         environ = os.environ
+    environment = resolve_environment(args.environment, environ)
     missing = missing_required_keys(environ)
     if missing:
         print(f"ragas-eval skipped: missing required API keys: {', '.join(missing)} (exit {EXIT_SKIPPED} — explicit skip, not a pass)")
-        _persist_quietly(args, status="skipped")  # 留痕：何时尝试过（best-effort）
+        _persist_quietly(args, status="skipped", environment=environment)  # 留痕：何时尝试过（best-effort）
         return EXIT_SKIPPED
-    return _run(args)
+    return _run(args, environment=environment)
 
 
 if __name__ == "__main__":

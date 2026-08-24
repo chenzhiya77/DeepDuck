@@ -70,7 +70,7 @@ class TestSkipBehavior:
         # here so the test never touches a real database; the real write is
         # covered in test_eval_persistence.py.
         persisted = []
-        monkeypatch.setattr(cli, "_persist_quietly", lambda args, *, status: persisted.append(status))
+        monkeypatch.setattr(cli, "_persist_quietly", lambda args, *, status, environment: persisted.append(status))
         out = tmp_path / "out"
         code = cli.main(["--golden", "g.jsonl", "--out", str(out), "--kb-id", "kb1"], environ={})
 

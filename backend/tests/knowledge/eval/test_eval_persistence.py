@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from deerflow.knowledge.eval import persistence
 from deerflow.knowledge.eval.dataset import GoldenQuestion
@@ -506,3 +507,231 @@ class TestLayer2CliPersistence:
         rows = _read_runs(tmp_path)
         assert len(rows) == 1
         assert rows[0].status == "skipped"
+
+
+# ── Task 0c: baseline 标记 + environment 列（spec §3.1.3 / §3.1.1 v3）─────────
+
+
+class TestBaselineReportMapping:
+    """Stored ``layer1_metrics`` → runner baseline report payload (``--baseline auto``)."""
+
+    def test_summary_and_categories_reverse_mapped(self):
+        metrics = {
+            "summary": {"hit_rate": 0.9, "recall_at_k": 0.8, "mrr": 0.7, "path_accuracy": 0.95, "question_count": 2},
+            "fact": {"hit_rate": 1.0, "recall_at_k": 1.0, "mrr": 1.0, "path_accuracy": 1.0, "question_count": 1},
+            "relation": {"hit_rate": 0.8, "recall_at_k": 0.6, "mrr": 0.4, "path_accuracy": 0.9, "question_count": 1},
+        }
+
+        baseline = persistence.baseline_report_from_metrics(metrics)
+
+        # runner._baseline_parts 消费报告键名：overall/by_category 内 count + recall
+        # （保存时映射的逆运算：summary→overall、recall_at_k→recall、question_count→count）。
+        assert baseline["overall"] == {"count": 2, "hit_rate": 0.9, "recall": 0.8, "mrr": 0.7, "path_accuracy": 0.95}
+        assert set(baseline["by_category"]) == {"fact", "relation"}
+        assert baseline["by_category"]["relation"]["recall"] == pytest.approx(0.6)
+        assert baseline["by_category"]["relation"]["count"] == 1
+        # 逐题明细不入库 —— diff 门禁按 category 粒度工作，regressed_questions 为空。
+        assert baseline["questions"] == []
+
+    def test_empty_metrics_yield_empty_categories(self):
+        baseline = persistence.baseline_report_from_metrics({})
+
+        assert baseline["by_category"] == {}
+        assert baseline["questions"] == []
+
+
+class TestMarkBaseline:
+    async def test_mark_baseline_sets_flag(self, session_factory):
+        await persistence.save_eval_run(
+            run_id="run-1",
+            kb_id="kb-1",
+            status="completed",
+            created_at=datetime.now(UTC),
+            mark_baseline=True,
+        )
+
+        row = await persistence.get_baseline_run("kb-1")
+        assert row is not None
+        assert row.id == "run-1"
+        assert row.is_baseline is True
+
+    async def test_new_baseline_clears_previous_marker_same_kb(self, session_factory):
+        await persistence.save_eval_run(run_id="run-1", kb_id="kb-1", status="completed", created_at=datetime(2026, 8, 24, 10, 0, 0, tzinfo=UTC), mark_baseline=True)
+        await persistence.save_eval_run(run_id="run-2", kb_id="kb-1", status="completed", created_at=datetime(2026, 8, 24, 11, 0, 0, tzinfo=UTC), mark_baseline=True)
+        # 另一 KB 的标记不受影响
+        await persistence.save_eval_run(run_id="run-3", kb_id="kb-2", status="completed", created_at=datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC), mark_baseline=True)
+
+        baseline_kb1 = await persistence.get_baseline_run("kb-1")
+        assert baseline_kb1 is not None and baseline_kb1.id == "run-2"
+        baseline_kb2 = await persistence.get_baseline_run("kb-2")
+        assert baseline_kb2 is not None and baseline_kb2.id == "run-3"
+
+        async with session_factory() as session:
+            rows = {row.id: row for row in (await session.execute(select(EvalRunRow))).scalars().all()}
+        assert rows["run-1"].is_baseline is False
+        assert rows["run-2"].is_baseline is True
+        assert rows["run-3"].is_baseline is True
+
+    async def test_unmarked_run_is_not_baseline_by_default(self, session_factory):
+        await persistence.save_eval_run(run_id="run-1", kb_id="kb-1", status="completed", created_at=datetime.now(UTC))
+
+        assert await persistence.get_baseline_run("kb-1") is None
+        async with session_factory() as session:
+            row = (await session.execute(select(EvalRunRow))).scalar_one()
+        assert row.is_baseline is False
+
+    async def test_partial_unique_index_backstops_single_baseline(self, session_factory):
+        """绕过清标记逻辑直接插两行 baseline → 部分唯一索引兜底拒绝第二次提交。"""
+        async with session_factory() as session:
+            session.add(EvalRunRow(id="b-1", kb_id="kb-1", status="completed", layer1_metrics={}, layer2_metrics={}, created_at=datetime.now(UTC), is_baseline=True))
+            await session.commit()
+
+        async with session_factory() as session:
+            session.add(EvalRunRow(id="b-2", kb_id="kb-1", status="completed", layer1_metrics={}, layer2_metrics={}, created_at=datetime.now(UTC), is_baseline=True))
+            with pytest.raises(IntegrityError):
+                await session.commit()
+
+    async def test_get_baseline_run_without_engine_returns_none(self, monkeypatch):
+        monkeypatch.setattr(persistence, "get_session_factory", lambda: None)
+
+        assert await persistence.get_baseline_run("kb-1") is None
+
+
+class TestEnvironmentPersistence:
+    async def test_default_environment_is_local(self, session_factory):
+        await persistence.save_eval_run(run_id="run-1", kb_id="kb-1", status="completed", created_at=datetime.now(UTC))
+
+        async with session_factory() as session:
+            row = (await session.execute(select(EvalRunRow))).scalar_one()
+        assert row.environment == "local"
+
+    async def test_explicit_environment_persisted(self, session_factory):
+        await persistence.save_eval_run(run_id="run-1", kb_id="kb-1", status="completed", created_at=datetime.now(UTC), environment="ci")
+
+        async with session_factory() as session:
+            row = (await session.execute(select(EvalRunRow))).scalar_one()
+        assert row.environment == "ci"
+
+
+class TestLayer1CliBaselineAndEnvironment:
+    def test_environment_flag_wins_over_inference(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+
+        code = layer1_cli.main(
+            ["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--environment", "nightly"],
+            environ={**KEYS, "CI": "true"},
+        )
+
+        assert code == 0
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 1
+        assert rows[0].environment == "nightly"
+
+    def test_ci_inferred_from_environ(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1"], environ={**KEYS, "CI": "true"})
+
+        assert code == 0
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 1
+        assert rows[0].environment == "ci"
+
+    def test_default_environment_is_local(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1"], environ=dict(KEYS))
+
+        assert code == 0
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 1
+        assert rows[0].environment == "local"
+
+    def test_skipped_row_carries_inferred_environment(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_common(monkeypatch, tmp_path, kb={"owner_id": "u1"})
+
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1"], environ={"CI": "true"})
+
+        assert code == 3
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 1
+        assert rows[0].environment == "ci"
+
+    def test_mark_baseline_marks_row_and_clears_previous(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+
+        for _ in range(2):
+            code = layer1_cli.main(
+                ["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--mark-baseline"],
+                environ=dict(KEYS),
+            )
+            assert code == 0
+
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 2
+        baselines = [row for row in rows if row.is_baseline]
+        assert len(baselines) == 1
+
+    def test_baseline_auto_diffs_against_marked_row(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"), _golden_entry("q2", "relation"))
+        out = tmp_path / "out"
+
+        # 第一次：满分运行并标记为 baseline
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(out), "--kb-id", "kb-1", "--mark-baseline"], environ=dict(KEYS))
+        assert code == 0
+
+        # 第二次：召回归零 + --baseline auto → 从 eval_runs 读标记行做 diff → 门禁红
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=False)
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(out), "--kb-id", "kb-1", "--baseline", "auto"], environ=dict(KEYS))
+
+        assert code == 1
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 2
+        regression_row = next(row for row in rows if row.baseline_diff is not None)
+        assert regression_row.status == "completed"
+        assert regression_row.baseline_diff["regression_detected"] is True
+        assert regression_row.baseline_diff["recall_at_k_delta"] == pytest.approx(-1.0)
+        assert regression_row.baseline_diff["regressed_categories"] == ["fact", "relation"]
+        assert regression_row.baseline_diff["threshold_percent"] == pytest.approx(3.0)
+
+    def test_baseline_auto_without_marked_row_runs_without_diff(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--baseline", "auto"], environ=dict(KEYS))
+
+        assert code == 0  # 无 baseline 行 → 按无 diff 运行（exit 0 语义不变）
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 1
+        assert rows[0].baseline_diff is None
+
+
+class TestLayer2CliBaselineAndEnvironment:
+    def test_mark_baseline_marks_row_with_environment(self, monkeypatch, tmp_path):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer2(monkeypatch, tmp_path, kb={"owner_id": "u1"})
+
+        code = layer2_cli.main(
+            ["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--mark-baseline", "--environment", "ci"],
+            environ=dict(KEYS),
+        )
+
+        assert code == 0
+        rows = _read_runs(tmp_path)
+        assert len(rows) == 1
+        assert rows[0].is_baseline is True
+        assert rows[0].environment == "ci"

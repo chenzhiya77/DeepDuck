@@ -19,6 +19,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import select, update
+
 from deerflow.knowledge.eval.dataset import GoldenQuestion
 from deerflow.knowledge.eval.metrics import (
     _GATE_EPS,  # same-package: keeps the regressed-category list on the exact gate semantics
@@ -34,9 +36,7 @@ STATUS_COMPLETED = "completed"
 STATUS_ERROR = "error"
 STATUS_SKIPPED = "skipped"
 
-#: eval_runs.environment values (§3.1.1 v3). The column itself lands with
-#: migration 0018 (Task 0c); the inference rule is delivered here so the CLI
-#: flag wiring is a one-liner there.
+#: eval_runs.environment values (§3.1.1 v3), written since migration 0018.
 ENV_LOCAL = "local"
 ENV_CI = "ci"
 ENV_NIGHTLY = "nightly"
@@ -157,6 +157,37 @@ def baseline_diff_from_report(report: Mapping[str, Any], *, fail_threshold: floa
     }
 
 
+def baseline_report_from_metrics(layer1_metrics: Mapping[str, Any]) -> dict[str, Any]:
+    """Stored ``layer1_metrics`` (§3.1.2 shape) → runner baseline report payload.
+
+    Reverses the save-time mapping (``summary`` → ``overall``,
+    ``recall_at_k`` → ``recall``, ``question_count`` → ``count``) so
+    ``--baseline auto`` diffs against the persisted baseline row through the
+    exact same code path as a file baseline. Per-question detail is not
+    persisted in eval_runs, so ``questions`` is empty: the diff's
+    ``regressed_questions`` list comes out empty while the per-category /
+    overall gates work on full data.
+    """
+
+    def _scope(metrics: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "count": metrics.get("question_count"),
+            "hit_rate": metrics.get("hit_rate"),
+            "recall": metrics.get("recall_at_k"),
+            "mrr": metrics.get("mrr"),
+            "path_accuracy": metrics.get("path_accuracy"),
+        }
+
+    return {
+        "schema_version": 1,
+        "meta": {},
+        "overall": _scope(layer1_metrics.get("summary") or {}),
+        "by_category": {key: _scope(value) for key, value in layer1_metrics.items() if key != "summary" and isinstance(value, Mapping)},
+        "questions": [],
+        "diff": None,
+    }
+
+
 async def save_eval_run(
     *,
     run_id: str,
@@ -168,6 +199,8 @@ async def save_eval_run(
     completed_at: datetime | None = None,
     langfuse_trace_url: str | None = None,
     baseline_diff: Mapping[str, Any] | None = None,
+    environment: str = ENV_LOCAL,
+    mark_baseline: bool = False,
 ) -> str | None:
     """Insert one eval_runs row; returns ``run_id``.
 
@@ -175,6 +208,10 @@ async def save_eval_run(
     backend) — the eval CLI output contract never depends on persistence.
     ``created_at`` is always supplied explicitly (the report's
     ``generated_at``; §3.1.1 single-clock rule), never the DB default.
+
+    ``mark_baseline`` clears the KB's previous baseline marker and sets the
+    new one in the same transaction (§3.1.3: code-level guarantee, with the
+    ``uq_eval_runs_kb_baseline`` partial unique index as the DB backstop).
     """
 
     session_factory = get_session_factory()
@@ -191,8 +228,30 @@ async def save_eval_run(
         completed_at=completed_at,
         langfuse_trace_url=langfuse_trace_url,
         baseline_diff=dict(baseline_diff) if baseline_diff is not None else None,
+        environment=environment,
+        is_baseline=mark_baseline,
     )
     async with session_factory() as session:
+        if mark_baseline:
+            # Same transaction: clear the KB's previous marker BEFORE the
+            # insert so the partial unique index never sees two true rows.
+            await session.execute(update(EvalRunRow).where(EvalRunRow.kb_id == kb_id, EvalRunRow.is_baseline.is_(True)).values(is_baseline=False))
         session.add(row)
         await session.commit()
     return run_id
+
+
+async def get_baseline_run(kb_id: str) -> EvalRunRow | None:
+    """Return the KB's marked baseline row (``is_baseline = true``), if any.
+
+    Returns ``None`` when the persistence engine is not initialized (memory
+    backend) — ``--baseline auto`` then falls back to a no-diff run.
+    """
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        logger.warning("baseline lookup for kb %s skipped: persistence engine not initialized", kb_id)
+        return None
+    async with session_factory() as session:
+        result = await session.execute(select(EvalRunRow).where(EvalRunRow.kb_id == kb_id, EvalRunRow.is_baseline.is_(True)))
+        return result.scalar_one_or_none()

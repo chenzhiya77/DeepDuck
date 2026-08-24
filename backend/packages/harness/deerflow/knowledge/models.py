@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint, false, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from deerflow.persistence.base import Base
@@ -190,3 +190,27 @@ class EvalRunRow(Base):
 
     # Baseline comparison (if compared against a baseline run)
     baseline_diff: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Run environment (spec v3): local / ci / nightly. CI runs stay out of the
+    # default latest/trend read sets (``include_ci=true`` opts them back in).
+    environment: Mapped[str] = mapped_column(String(16), default="local", server_default=text("'local'"))
+
+    # Baseline marker (§3.1.3): the trend API's threshold line reads this row,
+    # and ``--baseline auto`` diffs against it.
+    is_baseline: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+    __table_args__ = (
+        # At most one baseline row per KB: ``--mark-baseline`` clears the old
+        # marker and sets the new one in a single transaction; this partial
+        # unique index is the DB-level backstop. Must live in ORM
+        # ``__table_args__`` (not just migration 0018) because the empty-DB
+        # bootstrap path runs ``create_all`` + ``stamp head`` and never
+        # executes the migration.
+        Index(
+            "uq_eval_runs_kb_baseline",
+            "kb_id",
+            unique=True,
+            sqlite_where=text("is_baseline = true"),
+            postgresql_where=text("is_baseline = true"),
+        ),
+    )
