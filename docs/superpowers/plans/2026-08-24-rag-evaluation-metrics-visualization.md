@@ -76,7 +76,7 @@
 - [x] ruff 双净。
 - [x] Commit: `feat(rag): persist layer1/layer2 eval runs to eval_runs table`（`3c20a204`）
 
-### Task 0c: migration 0018——is_baseline + environment 列 + --mark-baseline
+### Task 0c: migration 0018——is_baseline + environment 列 + --mark-baseline ✅ 已完成（2026-08-25）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/persistence/migrations/versions/0018_eval_runs_baseline.py`
@@ -85,11 +85,11 @@
 - Modify: `backend/scripts/run_rag_eval.py` / `run_ragas_eval.py`（+`--mark-baseline`）
 - Modify: `backend/tests/knowledge/eval/test_eval_persistence.py`
 
-- [ ] RED test：标记后该行 `is_baseline=true` 且同 KB 旧 baseline 被清（同事务）；部分唯一索引存在（每 KB 至多一行 true，双方言 where 声明）；`environment` 列存在且存量行回填默认值 `local`；`--baseline auto`：从 eval_runs 读该 KB is_baseline 行做 diff，无 baseline 行按无 diff 运行（自 0b 移入——依赖本任务新增的 `is_baseline` 列）。
-- [ ] Implement migration 0018（`is_baseline` Boolean NOT NULL default false + `environment` String(16) NOT NULL default `"local"` + 双方言部分唯一索引）+ 标记逻辑。
-- [ ] `alembic upgrade head` GREEN；downgrade→upgrade revert proof。
-- [ ] ruff 双净。
-- [ ] Commit: `feat(rag): add is_baseline flag to eval_runs with mark-baseline CLI option`
+- [x] RED test：标记后该行 `is_baseline=true` 且同 KB 旧 baseline 被清（同事务）；部分唯一索引存在（每 KB 至多一行 true，双方言 where 声明）；`environment` 列存在且存量行回填默认值 `local`；`--baseline auto`：从 eval_runs 读该 KB is_baseline 行做 diff，无 baseline 行按无 diff 运行（自 0b 移入——依赖本任务新增的 `is_baseline` 列）。
+- [x] Implement migration 0018（`is_baseline` Boolean NOT NULL default false + `environment` String(16) NOT NULL default `"local"` + 双方言部分唯一索引）+ 标记逻辑。
+- [x] `alembic upgrade head` GREEN；downgrade→upgrade revert proof.
+- [x] ruff 双净。
+- [x] Commit: `feat(rag): add is_baseline flag to eval_runs with mark-baseline CLI option`
 
 ### Task 0d: 前端 table 组件 + 语义色 CSS 变量
 
