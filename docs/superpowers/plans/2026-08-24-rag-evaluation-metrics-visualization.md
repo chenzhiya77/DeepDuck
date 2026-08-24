@@ -133,7 +133,7 @@
 
 ## Phase 3: 前端可视化
 
-## Task 2: 指标总览组件——Layer 1 表格 + Layer 2 卡片（props 驱动）
+## Task 2: 指标总览组件——Layer 1 表格 + Layer 2 卡片（props 驱动） ✅ 已完成（2026-08-25）
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/eval-metrics-overview.tsx`
@@ -143,17 +143,17 @@
 - Create: `frontend/tests/unit/knowledge/eval-metrics-overview.dom.test.tsx`
 - Create: `frontend/tests/unit/knowledge/eval-metrics-overview.unit.test.ts`（纯函数）
 
-- [ ] RED test：
+- [x] RED test：
   - Layer 1 表格：5 行渲染（4 category + 汇总）、单元格三态着色（阈值来自 `baseline_diff.threshold_percent` props，非硬编码）
   - 缺失 category（`by_category` 无此键）整行灰显「本批次无此类题目」；`layer1 === null` 整区空态
   - Layer 2 卡片：RAGAS 四指标 + 架构专属三指标渲染；null 显示 `-`、`ragas_available=false` Badge、`has_graph_questions=false` 禁用态；`layer2 === null` 整区空态
   - 纯函数：`getCellColorClass` 边界（delta=0 / ±threshold / 无 diff）、`getProgressBarColor` 三档 + null
   - 文案断言走 i18n key（zh-CN / en-US 双字典）
-- [ ] Run `cd frontend && pnpm test eval-metrics-overview`，记录 missing-component RED。
-- [ ] Implement：组件 props 驱动（不内置 fetch），着色用 `bg-(--eval-warn-bg)` 等语义变量，中性色用 `text-muted-foreground` 等 token。
-- [ ] GREEN；revert proof：stash 实现 → RED → 恢复 → GREEN。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval metrics overview with Layer 1 table and Layer 2 cards`
+- [x] Run `cd frontend && pnpm test eval-metrics-overview`，记录 missing-component RED。
+- [x] Implement：组件 props 驱动（不内置 fetch），着色用 `bg-(--eval-warn-bg)` 等语义变量，中性色用 `text-muted-foreground` 等 token。
+- [x] GREEN（22 passed）；revert proof：stash 实现 → RED → pop → GREEN。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval metrics overview with Layer 1 table and Layer 2 cards`（`4d3c8818`）
 
 ---
 
