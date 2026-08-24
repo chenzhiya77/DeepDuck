@@ -411,3 +411,69 @@ export interface GraphRetrievalOverlay {
   text: string;
   trace: GraphRetrievalTrace;
 }
+
+// ── Evaluation metrics (spec 2026-08-24 §3.2, plan Task 2) ────────────────
+
+/** Layer 1 per-category metrics（wire format 平铺结构：{summary, fact?, relation?, concept?, global?}）。*/
+export type Layer1CategoryKey = "fact" | "relation" | "concept" | "global";
+
+export interface Layer1CategoryMetrics {
+  hit_rate: number;
+  recall_at_k: number;
+  mrr: number;
+  path_accuracy: number;
+  question_count: number;
+}
+
+/** Layer 1 summary + dynamic category keys from the dataset schema. */
+export interface Layer1Metrics {
+  summary: Layer1CategoryMetrics;
+  fact?: Layer1CategoryMetrics;
+  relation?: Layer1CategoryMetrics;
+  concept?: Layer1CategoryMetrics;
+  global?: Layer1CategoryMetrics;
+}
+
+/** RAGAS standard metrics (RagasReport.aggregate.ragas). */
+export interface RagasMetrics {
+  faithfulness: number | null;
+  answer_relevancy: number | null;
+  context_precision: number | null;
+  context_recall: number | null;
+}
+
+/** Architecture-specific metrics (RagasReport.arch_specific). */
+export interface ArchSpecificMetrics {
+  citation_precision: number | null;
+  citation_recall: number | null;
+  seed_hit_rate: number | null;
+}
+
+/** Baseline comparison diff (wire payload includes per-category gate results). */
+export interface BaselineDiff {
+  recall_at_k_delta: number | null;
+  regression_detected: boolean;
+  threshold_percent: number;
+  regressed_categories?: string[];
+}
+
+/** MetricsOverview payload for GET /eval-runs/latest (spec §3.2). */
+export interface MetricsOverview {
+  kb_id: string;
+  layer1: {
+    run_id: string;
+    created_at: string;
+    metrics: Layer1Metrics;
+    baseline_diff?: BaselineDiff;
+  } | null;
+  layer2: {
+    run_id: string;
+    created_at: string;
+    ragas_available: boolean;
+    ragas_skip_reason?: string;
+    ragas: RagasMetrics;
+    arch_specific: ArchSpecificMetrics;
+    langfuse_trace_url?: string;
+    has_graph_questions: boolean;
+  } | null;
+}

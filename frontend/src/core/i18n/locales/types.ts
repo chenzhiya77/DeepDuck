@@ -388,6 +388,28 @@ export interface Translations {
       /** 知识图谱 tab（2026-08-19 spec）：实体关系力导向图。 */
       graph: string;
     };
+    /** RAG 评测指标总览（spec 2026-08-24 §3.6/§3.7）：Layer 1/2 标题、表格列头、空态提示。*/
+    eval: {
+      layer1Title: string;
+      layer2Title: string;
+      layer2Note: string;
+      regressionBadge: string;
+      ragasMissingBadge: string;
+      citationPrecision: string;
+      citationRecall: string;
+      seedHitRate: string;
+      noGraphQuestions: string;
+      emptyLayer1: string;
+      emptyLayer2: string;
+      viewTrace: string;
+      tableCategory: string;
+      tableHitRate: string;
+      tableRecallAtK: string;
+      tableMrr: string;
+      tablePathAccuracy: string;
+      summaryRow: string;
+      noQuestionsInBatch: string;
+    };
     /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
     vectorSpace: {
       loading: string;
