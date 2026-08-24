@@ -1,6 +1,6 @@
 """ORM models for the RAG knowledge-base subsystem.
 
-Six tables (spec §3.2–§3.5):
+Seven tables (spec §3.2–§3.5 + 2026-08-24 metrics visualization):
 
 - ``knowledge_bases`` — one row per KB; Phase-1 is private-only but carries
   the ``owner_id`` / ``visibility`` hooks for the Phase-2 invite model.
@@ -13,6 +13,8 @@ Six tables (spec §3.2–§3.5):
 - ``wiki_entries`` — generated wiki entries (dirty/ready incremental refresh).
 - ``manual_knowledge`` — user-managed knowledge cards (Phase-3 P6): never
   auto-regenerated, opt-in wiki-search mixing via ``include_in_wiki_search``.
+- ``eval_runs`` — evaluation run results (Layer 1 + Layer 2 metrics) for
+  trend analysis and historical comparison (2026-08-24).
 
 Registered with Alembic via ``deerflow.persistence.models``.
 """
@@ -157,3 +159,34 @@ class ManualKnowledgeRow(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class EvalRunRow(Base):
+    """Evaluation run result (2026-08-24 metrics visualization spec).
+
+    Persists Layer2Report output for trend analysis and historical comparison.
+    Layer 1 metrics (deterministic IR) and Layer 2 metrics (RAGAS + arch-specific)
+    are stored as JSON for flexibility.
+    """
+
+    __tablename__ = "eval_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # run_id
+    kb_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16))  # completed / error / skipped
+
+    # Layer 1 metrics: {category: {hit_rate, recall_at_k, mrr, path_accuracy}, summary: {...}}
+    layer1_metrics: Mapped[dict] = mapped_column(JSON)
+
+    # Layer 2 metrics: {ragas: {faithfulness, ...}, arch_specific: {citation_precision, ...}}
+    layer2_metrics: Mapped[dict] = mapped_column(JSON)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Optional integrations
+    langfuse_trace_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    # Baseline comparison (if compared against a baseline run)
+    baseline_diff: Mapped[dict | None] = mapped_column(JSON, nullable=True)
