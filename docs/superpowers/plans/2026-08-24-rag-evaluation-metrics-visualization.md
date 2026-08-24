@@ -91,16 +91,16 @@
 - [x] ruff 双净。
 - [x] Commit: `feat(rag): add is_baseline flag to eval_runs with mark-baseline CLI option`
 
-### Task 0d: 前端 table 组件 + 语义色 CSS 变量
+### Task 0d: 前端 table 组件 + 语义色 CSS 变量 ✅ 已完成（2026-08-25）
 
 **Files:**
 - Create: `frontend/src/components/ui/table.tsx`（**shadcn CLI 生成**：`cd frontend && pnpm dlx shadcn@latest add table`，不手写）
 - Create: `frontend/src/styles/eval-metrics.css`（spec §3.5 三态语义变量，亮暗双主题）
 - Modify: `frontend/src/styles/globals.css`（**末尾** `@import` 新文件，不改原有变量）
 
-- [ ] shadcn CLI 生成 table 组件；`pnpm check` 通过。
-- [ ] eval-metrics.css 变量定义（`--eval-ok/--eval-warn/--eval-warn-bg/--eval-warn-fg/--eval-danger/--eval-danger-bg/--eval-danger-fg`）。
-- [ ] Commit: `feat(frontend): add table component and eval metric semantic colors`
+- [x] shadcn CLI 生成 table 组件；`pnpm check` 通过。
+- [x] eval-metrics.css 变量定义（`--eval-ok/--eval-warn/--eval-warn-bg/--eval-warn-fg/--eval-danger/--eval-danger-bg/--eval-danger-fg`）。
+- [x] Commit: `feat(frontend): add table component and eval metric semantic colors`（`619478b9`）
 
 ---
 
