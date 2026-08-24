@@ -34,6 +34,77 @@ EXIT_REGRESSION = 1
 EXIT_ERROR = 2
 EXIT_SKIPPED = 3
 
+
+def _generate_run_id() -> str:
+    """run_id for runs that never produced a report (error/skipped rows)."""
+
+    from uuid import uuid4
+
+    return f"rag-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
+
+
+async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None) -> None:
+    """Best-effort eval_runs persistence (spec 2026-08-24 §3.1.1).
+
+    Every CLI run writes exactly one row — completed runs carry the mapped
+    layer1_metrics (+ baseline_diff when --baseline was given), error/skipped
+    runs record the attempt with empty metrics. Persistence never changes the
+    exit code: any failure is reported as a note on stderr.
+
+    The engine lifecycle mirrors the call site: when the evaluation path
+    already initialized the engine the row reuses it; early-exit paths (bad
+    golden file, missing keys) initialize and close it on demand.
+    """
+
+    try:
+        from deerflow.config.app_config import get_app_config
+        from deerflow.knowledge.eval import persistence as eval_persistence
+        from deerflow.knowledge.eval.runner import report_to_dict
+        from deerflow.persistence import engine as persistence_engine
+
+        layer1_metrics: dict = {}
+        baseline_diff = None
+        completed_at = None
+        created_at = datetime.now(UTC)
+        if report is not None:
+            payload = report_to_dict(report)
+            layer1_metrics = eval_persistence.layer1_metrics_from_report(payload)
+            baseline_diff = eval_persistence.baseline_diff_from_report(payload, fail_threshold=args.fail_threshold)
+            generated_at = report.meta.get("generated_at")
+            if generated_at:
+                # Single clock: created_at is the report's generated_at, never the DB default.
+                created_at = datetime.fromisoformat(generated_at)
+            completed_at = datetime.now(UTC)
+
+        own_engine = persistence_engine.get_session_factory() is None
+        if own_engine:
+            await persistence_engine.init_engine_from_config((config or get_app_config()).database)
+        try:
+            await eval_persistence.save_eval_run(
+                run_id=_generate_run_id(),
+                kb_id=args.kb_id,
+                status=status,
+                created_at=created_at,
+                completed_at=completed_at,
+                layer1_metrics=layer1_metrics,
+                baseline_diff=baseline_diff,
+            )
+        finally:
+            if own_engine:
+                await persistence_engine.close_engine()
+    except Exception as exc:  # noqa: BLE001 — persistence must never sink a run
+        print(f"rag-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
+
+
+def _persist_quietly(args: argparse.Namespace, *, status: str) -> None:
+    """Sync wrapper for the missing-keys skip path in ``main()`` (no event loop yet)."""
+
+    try:
+        asyncio.run(_persist_eval_run(args, status=status))
+    except Exception as exc:  # noqa: BLE001 — e.g. already inside an event loop
+        print(f"rag-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
+
+
 #: The vector path needs embedding + rerank credentials. The graph path's
 #: extraction LLM key resolves through config.yaml model profiles — a missing
 #: ``$VAR`` there makes ``AppConfig.from_file`` raise ValueError, which
@@ -83,6 +154,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     except (GoldenDatasetError, json.JSONDecodeError) as exc:
         print(f"rag-eval error: {exc}", file=sys.stderr)
+        await _persist_eval_run(args, config=config, status="error")
         return EXIT_ERROR
 
     from deerflow.knowledge.eval.runner import build_default_searchers, render_summary, run_evaluation, write_reports
@@ -98,6 +170,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         kb = await store.get_kb(args.kb_id)
         if kb is None:
             print(f"rag-eval error: knowledge base not found: {args.kb_id}", file=sys.stderr)
+            await _persist_eval_run(args, config=config, status="error")
             return EXIT_ERROR
         # Owner-only access gate (phase 1): the eval runs as the KB owner,
         # resolved from the store — no separate credential to manage.
@@ -117,6 +190,9 @@ async def _async_main(args: argparse.Namespace) -> int:
             fail_threshold=args.fail_threshold,
             generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
         )
+        # exit 0/1 both map to `completed` — the regression gate signal lives
+        # in baseline_diff and the trend chart needs the regression run's point.
+        await _persist_eval_run(args, config=config, status="completed", report=report)
     finally:
         await close_engine()
 
@@ -156,6 +232,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     missing = missing_required_keys(environ)
     if missing:
         print(f"rag-eval skipped: missing required API keys: {', '.join(missing)} (exit {EXIT_SKIPPED} — explicit skip, not a pass)")
+        _persist_quietly(args, status="skipped")  # 留痕：何时尝试过（best-effort）
         return EXIT_SKIPPED
     return _run(args)
 

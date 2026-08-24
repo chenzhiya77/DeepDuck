@@ -67,7 +67,12 @@ class TestMissingRequiredKeys:
 
 
 class TestSkipBehavior:
-    def test_main_skips_without_keys(self, tmp_path, capsys):
+    def test_main_skips_without_keys(self, tmp_path, capsys, monkeypatch):
+        # Task 0b: the skip path persists a skipped row (spec §3.1.1) — stubbed
+        # here so the test never touches a real database; the real write is
+        # covered in test_eval_persistence.py.
+        persisted = []
+        monkeypatch.setattr(cli, "_persist_quietly", lambda args, *, status: persisted.append(status))
         out = tmp_path / "out"
         code = cli.main(["--golden", "g.jsonl", "--out", str(out), "--kb-id", "kb1"], environ={})
 
@@ -77,6 +82,7 @@ class TestSkipBehavior:
         assert "skipped" in captured.out
         assert "DASHSCOPE_EMBEDDING_API_KEY" in captured.out
         assert not out.exists()  # 无副作用
+        assert persisted == ["skipped"]
 
 
 class TestExitCodeMapping:

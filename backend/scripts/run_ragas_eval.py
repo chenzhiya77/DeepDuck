@@ -38,11 +38,77 @@ import asyncio
 import os
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 EXIT_OK = 0
 EXIT_ERROR = 2
 EXIT_SKIPPED = 3
+
+
+def _generate_run_id() -> str:
+    """run_id for runs that never produced a report (error/skipped rows)."""
+
+    from uuid import uuid4
+
+    return f"ragas-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
+
+
+async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None, questions=()) -> None:
+    """Best-effort eval_runs persistence (spec 2026-08-24 §3.1.1).
+
+    Every CLI run writes exactly one row — completed runs carry the mapped
+    layer2_metrics, error/skipped runs record the attempt with empty metrics.
+    Persistence never changes the exit code: any failure is reported as a note
+    on stderr. The engine lifecycle mirrors the call site (reused when the
+    evaluation path already initialized it, initialized on demand otherwise).
+    """
+
+    try:
+        from deerflow.config.app_config import get_app_config
+        from deerflow.knowledge.eval import persistence as eval_persistence
+        from deerflow.knowledge.eval.ragas_eval import report_to_dict
+        from deerflow.persistence import engine as persistence_engine
+
+        layer2_metrics: dict = {}
+        completed_at = None
+        created_at = datetime.now(UTC)
+        run_id = _generate_run_id()
+        if report is not None:
+            payload = report_to_dict(report)
+            layer2_metrics = eval_persistence.layer2_metrics_from_report(payload, questions=questions)
+            run_id = report.run_id  # the run's own id (ragas-<stamp>-<hex>)
+            # Single clock: created_at is the report's generated_at, never the DB default.
+            created_at = datetime.fromisoformat(payload["generated_at"])
+            completed_at = datetime.now(UTC)
+
+        own_engine = persistence_engine.get_session_factory() is None
+        if own_engine:
+            await persistence_engine.init_engine_from_config((config or get_app_config()).database)
+        try:
+            await eval_persistence.save_eval_run(
+                run_id=run_id,
+                kb_id=args.kb_id,
+                status=status,
+                created_at=created_at,
+                completed_at=completed_at,
+                layer2_metrics=layer2_metrics,
+            )
+        finally:
+            if own_engine:
+                await persistence_engine.close_engine()
+    except Exception as exc:  # noqa: BLE001 — persistence must never sink a run
+        print(f"ragas-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
+
+
+def _persist_quietly(args: argparse.Namespace, *, status: str) -> None:
+    """Sync wrapper for the missing-keys skip path in ``main()`` (no event loop yet)."""
+
+    try:
+        asyncio.run(_persist_eval_run(args, status=status))
+    except Exception as exc:  # noqa: BLE001 — e.g. already inside an event loop
+        print(f"ragas-eval note: eval_runs persistence skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
+
 
 #: Same credential contract as the Layer 1 CLI. The judge/agent LLM key
 #: resolves through config.yaml model profiles — a missing ``$VAR`` there makes
@@ -182,6 +248,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         questions = load_golden(args.golden)
     except GoldenDatasetError as exc:
         print(f"ragas-eval error: {exc}", file=sys.stderr)
+        await _persist_eval_run(args, config=config, status="error")
         return EXIT_ERROR
     if args.limit is not None:
         questions = questions[: args.limit]
@@ -198,6 +265,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         judge_llm = _build_judge_llm(args.judge_model, config=config)
     except JudgeKeyMissingError as exc:
         print(f"ragas-eval skipped: {exc}")
+        await _persist_eval_run(args, config=config, status="skipped")
         return EXIT_SKIPPED
 
     await init_engine_from_config(config.database)
@@ -206,9 +274,9 @@ async def _async_main(args: argparse.Namespace) -> int:
         kb = await store.get_kb(args.kb_id)
         if kb is None:
             print(f"ragas-eval error: knowledge base not found: {args.kb_id}", file=sys.stderr)
+            await _persist_eval_run(args, config=config, status="error")
             return EXIT_ERROR
 
-        from datetime import UTC, datetime
         from uuid import uuid4
 
         run_id = f"ragas-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
@@ -221,6 +289,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             kb_id=args.kb_id,
             run_id=run_id,
         )
+        await _persist_eval_run(args, config=config, status="completed", report=report, questions=questions)
     finally:
         await close_engine()
 
@@ -270,6 +339,7 @@ def main(argv: list[str] | None = None, *, environ: Mapping[str, str] | None = N
     missing = missing_required_keys(environ)
     if missing:
         print(f"ragas-eval skipped: missing required API keys: {', '.join(missing)} (exit {EXIT_SKIPPED} — explicit skip, not a pass)")
+        _persist_quietly(args, status="skipped")  # 留痕：何时尝试过（best-effort）
         return EXIT_SKIPPED
     return _run(args)
 
