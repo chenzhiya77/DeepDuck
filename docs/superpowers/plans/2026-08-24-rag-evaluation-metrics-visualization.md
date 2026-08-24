@@ -106,7 +106,7 @@
 
 ## Phase 2: 后端读取端点
 
-## Task 1: eval-runs 读取 API——latest + trend + run_id 三端点
+## Task 1: eval-runs 读取 API——latest + trend + run_id 三端点 ✅ 已完成（2026-08-25）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/eval/trend.py`（`aggregate_trend_points` 聚合纯函数）
@@ -115,19 +115,19 @@
 - Create: `backend/tests/knowledge/eval/test_trend.py`（聚合纯函数）
 - Create: `backend/tests/knowledge/test_eval_runs_api.py`
 
-- [ ] RED test 聚合纯函数先行（`test_trend.py`）：三粒度统一末次语义、跨周/跨年/空周期边界、两层独立取数、双 run_id 来源、ci 过滤、regression 透传。
-- [ ] RED test API（基建对齐 `test_vector_projection_api.py`）：
+- [x] RED test 聚合纯函数先行（`test_trend.py`）：三粒度统一末次语义、跨周/跨年/空周期边界、两层独立取数、双 run_id 来源、ci 过滤、regression 透传。
+- [x] RED test API（基建对齐 `test_vector_projection_api.py`）：
   - latest：两层各取最近 `status=completed` 且对应层 `*_metrics != {}` 且非 ci 的行；一层无数据该层为 null；未知 kb 404。
   - trend：`include_ci=true` 时 ci 行进入取数集合；该层该周期无数据指标为 null。
   - baseline 块：有 baseline 行时返回 `recall_at_k` + `threshold_percent`（= `DEFAULT_FAIL_THRESHOLD * 100`）；无则 `baseline: null`；`is_baseline_update` 在 baseline 行对应日期为 true。
   - `GET /eval-runs/{run_id}`：单行完整 JSON；跨 kb 访问 404。
   - 非法 granularity → 422；`days_back` clamp ≤90 并在响应回显实际值。
   - 空历史：`has_data: false`。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/eval/test_trend.py tests/knowledge/test_eval_runs_api.py -q`，记录 missing-module/endpoint RED。
-- [ ] Implement：`trend.py` 纯函数聚合（spec §4.2），service 薄壳读 eval_runs 全量行（单 KB <100 条）内存计算，返回 `MetricsOverview` / `TrendResponse` / `EvalRunDetail` schema。
-- [ ] GREEN（全部用例通过）；revert proof：stash 实现 → RED → 恢复 → GREEN。
-- [ ] ruff check/format 双净。
-- [ ] Commit: `feat(rag): add eval-runs latest and trend API endpoints`
+- [x] Run `cd backend && uv run pytest tests/knowledge/eval/test_trend.py tests/knowledge/test_eval_runs_api.py -q`，记录 missing-module/endpoint RED（ImportError + 14 failed）。
+- [x] Implement：`trend.py` 纯函数聚合（spec §4.2），service 薄壳读 eval_runs 全量行（单 KB <100 条）内存计算，返回 `MetricsOverview` / `TrendResponse` / `EvalRunDetail` schema。
+- [x] GREEN（34 passed）；revert proof：stash 实现 → RED → 恢复 → GREEN。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): add eval-runs latest and trend API endpoints`（`efec065e`）
 
 ---
 
