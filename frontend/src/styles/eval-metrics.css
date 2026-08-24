@@ -1,0 +1,16 @@
+/* eval-metrics.css：评测指标三态语义色，亮暗双主题 */
+:root {
+  --eval-ok: var(--chart-2, #10b981);
+  --eval-warn: #d97706;
+  --eval-warn-bg: #fef3c7;
+  --eval-warn-fg: #92400e;
+  --eval-danger: #e11d48;
+  --eval-danger-bg: #ffe4e6;
+  --eval-danger-fg: #9f1239;
+}
+.dark {
+  --eval-warn-bg: rgb(120 53 15 / 0.3);
+  --eval-warn-fg: #fbbf24;
+  --eval-danger-bg: rgb(136 19 55 / 0.3);
+  --eval-danger-fg: #fb7185;
+}
