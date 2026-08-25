@@ -10,10 +10,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/core/i18n/hooks";
 import type { MetricsOverview, BaselineDiff } from "@/core/knowledge/types";
-import { cn } from "@/lib/utils";
 
 import { getCellColorClass, getProgressBarColor } from "./eval-metrics-overview.utils";
 
@@ -96,7 +95,16 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
   const tint = getCellColorClass(diff?.recall_at_k_delta, diff?.threshold_percent);
 
   return (
-            <Table data-testid="eval-layer1-table">
+    <Table data-testid="eval-layer1-table">
+      <TableHeader>
+        <TableRow>
+          <TableHead>{tk.tableCategory}</TableHead>
+          <TableHead>{tk.tableHitRate}</TableHead>
+          <TableHead>{tk.tableRecallAtK}</TableHead>
+          <TableHead>{tk.tableMrr}</TableHead>
+          <TableHead>{tk.tablePathAccuracy}</TableHead>
+        </TableRow>
+      </TableHeader>
       <TableBody>
         {categories.map((category, _) => {
           const metric =
@@ -118,7 +126,7 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
 
           return (
             <TableRow key={category} data-testid={testId} className={summaryRowClassName}>
-            <TableCell>{category === "summary" ? tk.summaryRow : `${category} (n=${metric.question_count})`}</TableCell>
+              <TableCell>{category === "summary" ? tk.summaryRow : `${category} (n=${metric.question_count})`}</TableCell>
             <TableCell data-testid={`eval-cell-hit-${category}`}>{percent(metric.hit_rate)}</TableCell>
               <TableCell data-testid={`eval-cell-recall-${category}`} className={tint}>{percent(metric.recall_at_k)}</TableCell>
               <TableCell data-testid={`eval-cell-mrr-${category}`}>{metric.mrr.toFixed(3)}</TableCell>
@@ -145,7 +153,7 @@ function RagasCard({ title, value, traceUrl, onViewTrace, traceLabel, testId }: 
         </div>
         {!isNull && (
           <>
-            <Progress value={value * 100} className={cn(`[&_[data-slot=progress-indicator]]:${colorClass}`)} />
+            <Progress value={value * 100} className={colorClass} />
             <div className="text-sm text-muted-foreground">{percent(value)}</div>
           </>
         )}
@@ -176,7 +184,7 @@ function ArchCard({ title, value, disabled, disabledReason, testId }: { title: s
         <div className="text-2xl font-bold">{isNull ? "-" : value.toFixed(3)}</div>
         {!isNull && (
           <>
-            <Progress value={value * 100} className={cn(`[&_[data-slot=progress-indicator]]:${colorClass}`)} />
+            <Progress value={value * 100} className={colorClass} />
             <div className="text-sm text-muted-foreground">{percent(value)}</div>
           </>
         )}

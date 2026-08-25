@@ -25,8 +25,13 @@ export function getCellColorClass(
 }
 
 export function getProgressBarColor(value: number | null | undefined): string {
-  if (value == null) return "bg-muted";
-  if (value >= 0.8) return "bg-(--eval-ok)";
-  if (value >= 0.6) return "bg-(--eval-warn)";
-  return "bg-(--eval-danger)";
+  // Each composed candidate must appear verbatim: Tailwind's static scanner
+  // cannot see dynamically interpolated `variant:${utility}` fragments, so a
+  // runtime-composed class silently produces no production CSS rule. The
+  // parent-scoped arbitrary variant targets ui/progress.tsx's indicator
+  // without hand-editing the generated primitive.
+  if (value == null) return "[&_[data-slot=progress-indicator]]:bg-muted";
+  if (value >= 0.8) return "[&_[data-slot=progress-indicator]]:bg-(--eval-ok)";
+  if (value >= 0.6) return "[&_[data-slot=progress-indicator]]:bg-(--eval-warn)";
+  return "[&_[data-slot=progress-indicator]]:bg-(--eval-danger)";
 }

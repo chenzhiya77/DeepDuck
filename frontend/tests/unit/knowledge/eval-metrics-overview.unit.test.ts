@@ -41,22 +41,24 @@ describe("getCellColorClass", () => {
 });
 
 describe("getProgressBarColor", () => {
-  it("returns muted for null values (metric not produced)", () => {
-    expect(getProgressBarColor(null)).toBe("bg-muted");
+  // 完整字面量类：Tailwind 静态扫描只认源码里逐字出现的候选类，
+  // 运行时拼接 `variant:${utility}` 在生产构建不会生成 CSS 规则。
+  it("returns the full muted class for null values (metric not produced)", () => {
+    expect(getProgressBarColor(null)).toBe("[&_[data-slot=progress-indicator]]:bg-muted");
   });
 
-  it("returns ok for values >= 0.8 (boundary inclusive)", () => {
-    expect(getProgressBarColor(0.8)).toBe("bg-(--eval-ok)");
-    expect(getProgressBarColor(0.97)).toBe("bg-(--eval-ok)");
+  it("returns the full ok-tier class for values >= 0.8 (boundary inclusive)", () => {
+    expect(getProgressBarColor(0.8)).toBe("[&_[data-slot=progress-indicator]]:bg-(--eval-ok)");
+    expect(getProgressBarColor(0.97)).toBe("[&_[data-slot=progress-indicator]]:bg-(--eval-ok)");
   });
 
-  it("returns warn for 0.6 <= value < 0.8", () => {
-    expect(getProgressBarColor(0.6)).toBe("bg-(--eval-warn)");
-    expect(getProgressBarColor(0.79)).toBe("bg-(--eval-warn)");
+  it("returns the full warn-tier class for 0.6 <= value < 0.8", () => {
+    expect(getProgressBarColor(0.6)).toBe("[&_[data-slot=progress-indicator]]:bg-(--eval-warn)");
+    expect(getProgressBarColor(0.79)).toBe("[&_[data-slot=progress-indicator]]:bg-(--eval-warn)");
   });
 
-  it("returns danger below 0.6", () => {
-    expect(getProgressBarColor(0.59)).toBe("bg-(--eval-danger)");
-    expect(getProgressBarColor(0)).toBe("bg-(--eval-danger)");
+  it("returns the full danger-tier class below 0.6", () => {
+    expect(getProgressBarColor(0.59)).toBe("[&_[data-slot=progress-indicator]]:bg-(--eval-danger)");
+    expect(getProgressBarColor(0)).toBe("[&_[data-slot=progress-indicator]]:bg-(--eval-danger)");
   });
 });

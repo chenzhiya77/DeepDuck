@@ -77,6 +77,26 @@ describe("Layer 1 表格", () => {
     expect(summaryRow?.className).toContain("font-semibold");
   });
 
+  it("renders a localized five-column header row", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    const headers = Array.from(
+      screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"),
+    );
+    expect(headers.map((h) => h.textContent)).toEqual(["分类", "Hit Rate", "Recall@k", "MRR", "路径准确率"]);
+  });
+
+  it("passes the full variant-prefixed progress class literally so Tailwind can scan it", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    // RagasCard(faithfulness=0.933 → ok 档);ArchCard(seed_hit_rate=0.75 → warn 档)
+    // ——两类卡片都要拿到完整组合类,而不是运行时拼接的半成品。
+    const progressOf = (testId: string) =>
+      screen.getByTestId(testId).querySelector('[data-slot="progress"]')?.className ?? "";
+    expect(progressOf("eval-card-faithfulness")).toContain("[&_[data-slot=progress-indicator]]:bg-(--eval-ok)");
+    expect(progressOf("eval-card-seed_hit_rate")).toContain("[&_[data-slot=progress-indicator]]:bg-(--eval-warn)");
+  });
+
   it("tints the Recall@k cells by baseline_diff delta using the backend threshold", () => {
     const regressed: MetricsOverview = {
       ...FULL_OVERVIEW,
@@ -232,5 +252,14 @@ describe("i18n", () => {
 
     expect(screen.getByText("No Layer 1 runs yet")).toBeTruthy();
     expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("0.933");
+  });
+
+  it("renders the en-US column headers", () => {
+    renderOverview(FULL_OVERVIEW, undefined, "en-US");
+
+    const headers = Array.from(
+      screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"),
+    );
+    expect(headers.map((h) => h.textContent)).toEqual(["Category", "Hit Rate", "Recall@k", "MRR", "Path Accuracy"]);
   });
 });
