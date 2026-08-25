@@ -19,7 +19,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable, Collection
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,7 +29,7 @@ import anyio
 import numpy as np
 
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
-from deerflow.knowledge.eval.trend import aggregate_trend_points, latest_layer_row
+from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
@@ -1093,16 +1093,18 @@ class KnowledgeService:
             "layer2": _layer2_overview_payload(latest_layer_row(rows, "layer2")),
         }
 
-    async def get_eval_trend(self, kb_id: str, *, granularity: str, days_back: int, include_ci: bool) -> dict[str, Any]:
+    async def get_eval_trend(self, kb_id: str, *, granularity: str, days_back: int, weeks_back: int, months_back: int, include_ci: bool) -> dict[str, Any]:
         """TrendResponse（§4.1/§4.2）：统一末次语义聚合 + baseline 块。
 
-        单 KB 历史 <100 条，读全量行内存计算；``days_back`` clamp 到 ≤90 并
-        在响应回显实际值。baseline 块读该 KB 的 ``is_baseline`` 行——与
-        CI ``--fail-threshold`` 默认值同源（DEFAULT_FAIL_THRESHOLD × 100）。
+        单 KB 历史 <100 条，读全量行内存计算。窗口参数按粒度配对（spec §4.2：
+        day→``days_back`` clamp ≤90 / week→``weeks_back`` / month→
+        ``months_back``），响应只回显当前粒度匹配的那个键。baseline 块读该
+        KB 的 ``is_baseline`` 行——与 CI ``--fail-threshold`` 默认值同源
+        （DEFAULT_FAIL_THRESHOLD × 100）。
         """
-        days_back = min(days_back, 90)
+        days_back = min(days_back, MAX_DAYS_BACK)
         rows = await self.store.list_eval_runs(kb_id)
-        cutoff = datetime.now(UTC) - timedelta(days=days_back)
+        cutoff = window_cutoff(datetime.now(UTC), granularity=granularity, days_back=days_back, weeks_back=weeks_back, months_back=months_back)
         windowed = [row for row in rows if _as_utc(row.created_at) >= cutoff]
         points = aggregate_trend_points(windowed, granularity, include_ci=include_ci)
         baseline: dict[str, Any] | None = None
@@ -1111,13 +1113,16 @@ class KnowledgeService:
             recall_at_k = (baseline_row.layer1_metrics.get("summary") or {}).get("recall_at_k")
             if recall_at_k is not None:
                 baseline = {"recall_at_k": recall_at_k, "threshold_percent": DEFAULT_FAIL_THRESHOLD * 100}
-        return {
+        window_key = {"day": "days_back", "week": "weeks_back", "month": "months_back"}[granularity]
+        window_value = {"day": days_back, "week": weeks_back, "month": months_back}[granularity]
+        response: dict[str, Any] = {
             "points": points,
             "granularity": granularity,
-            "days_back": days_back,
             "baseline": baseline,
             "has_data": bool(points),
         }
+        response[window_key] = window_value
+        return response
 
     async def get_eval_run(self, kb_id: str, run_id: str) -> dict[str, Any] | None:
         """EvalRunDetail（§4.2）：单行完整 JSON，drawer 数据源；跨 kb 访问由 store 层返回 None。"""

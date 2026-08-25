@@ -6,12 +6,14 @@ Pure functions, no IO (``metrics.py`` precedent). 统一末次语义：day/week/
 ``layer2_run_id`` 各自记录来源）。均值聚合已废弃（v3）：每个点恒等于一次
 真实运行，下钻语义统一。
 
-窗口过滤（``days_back``）由调用方完成；本模块只负责取数集合过滤
-（completed + 对应层 metrics 非空 + 默认排除 ci）与周期聚合。
+窗口过滤由调用方完成——``window_cutoff`` 提供按粒度配对的 cutoff 计算
+（day→``days_back`` / week→``weeks_back`` / month→``months_back``）；本模块
+只负责取数集合过滤（completed + 对应层 metrics 非空 + 默认排除 ci）与周期聚合。
 """
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, Protocol
@@ -19,6 +21,34 @@ from typing import Any, Literal, Protocol
 from deerflow.knowledge.eval.persistence import ENV_CI, STATUS_COMPLETED
 
 Granularity = Literal["day", "week", "month"]
+
+#: day 粒度窗口上限（spec §4.2 冻结）；week/month 无冻结上限。
+MAX_DAYS_BACK = 90
+
+
+def window_cutoff(
+    now: datetime,
+    *,
+    granularity: Granularity,
+    days_back: int,
+    weeks_back: int,
+    months_back: int,
+) -> datetime:
+    """按粒度选**配对的**窗口参数计算 cutoff（§4.2：day→``days_back`` /
+    week→``weeks_back`` / month→``months_back``）。
+
+    month 用日历月减法并对月末钳制（如 3-31 减 6 个月 → 9-30），week 按
+    7×n 天回退；``days_back`` 的 ≤90 clamp 由调用方完成，本函数不重复做。
+    """
+
+    if granularity == "month":
+        month_index = now.year * 12 + (now.month - 1) - months_back
+        year, zero_based_month = divmod(month_index, 12)
+        month = zero_based_month + 1
+        return now.replace(year=year, month=month, day=min(now.day, calendar.monthrange(year, month)[1]))
+    if granularity == "week":
+        return now - timedelta(weeks=weeks_back)
+    return now - timedelta(days=days_back)
 
 
 class EvalTrendRow(Protocol):

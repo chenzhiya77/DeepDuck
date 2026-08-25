@@ -330,6 +330,61 @@ async def test_trend_days_back_window_filters_older_rows(service) -> None:
     assert [p["layer1_run_id"] for p in body["points"]] == ["run-recent"]
 
 
+async def test_trend_week_granularity_pairs_with_weeks_back(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    old = datetime.now(UTC) - timedelta(weeks=20)
+    recent = datetime.now(UTC) - timedelta(days=10)
+    await _seed_run(kb["id"], "run-old", old, layer1=_l1(recall_at_k=0.7))
+    await _seed_run(kb["id"], "run-recent", recent, layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week").json()
+
+    # 默认窗口 12 周：20 周前的运行出窗；响应只回显 weeks_back（spec §4.2 按粒度配对）
+    assert body["weeks_back"] == 12
+    assert "days_back" not in body and "months_back" not in body
+    assert [p["layer1_run_id"] for p in body["points"]] == ["run-recent"]
+
+
+async def test_trend_explicit_weeks_back_widens_window(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    old = datetime.now(UTC) - timedelta(weeks=20)
+    recent = datetime.now(UTC) - timedelta(days=10)
+    await _seed_run(kb["id"], "run-old", old, layer1=_l1(recall_at_k=0.7))
+    await _seed_run(kb["id"], "run-recent", recent, layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week&weeks_back=24").json()
+
+    assert body["weeks_back"] == 24
+    assert [p["layer1_run_id"] for p in body["points"]] == ["run-old", "run-recent"]
+
+
+async def test_trend_month_granularity_pairs_with_months_back(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-old", datetime(2025, 1, 15, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.7))
+    await _seed_run(kb["id"], "run-recent", datetime.now(UTC) - timedelta(days=10), layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=month&months_back=6").json()
+
+    assert body["months_back"] == 6
+    assert "days_back" not in body and "weeks_back" not in body
+    assert [p["layer1_run_id"] for p in body["points"]] == ["run-recent"]
+
+
+async def test_trend_days_back_is_ignored_for_non_day_granularity(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-40d-ago", datetime.now(UTC) - timedelta(days=40), layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=month&days_back=7").json()
+
+    # month 窗口由 months_back（默认 6 个月）驱动，days_back 不参与
+    assert body["months_back"] == 6
+    assert [p["layer1_run_id"] for p in body["points"]] == ["run-40d-ago"]
+
+
 async def test_trend_empty_history_reports_has_data_false(service) -> None:
     client = _client(service)
     kb = _create_kb(client)

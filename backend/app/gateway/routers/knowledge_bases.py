@@ -552,15 +552,18 @@ async def get_eval_trend(
     kb_id: str,
     granularity: Literal["day", "week", "month"] = "day",
     days_back: int = Query(default=30, ge=1),
+    weeks_back: int = Query(default=12, ge=1),
+    months_back: int = Query(default=6, ge=1),
     include_ci: bool = False,
 ):
     """指标趋势（spec §4.2）：统一末次语义聚合，两层独立取数。
 
-    ``days_back`` 后端 clamp 到 ≤90 并在响应回显实际值；``include_ci=true``
-    时 ci 运行进入取数集合。
+    窗口参数按粒度配对——day 用 ``days_back``（clamp ≤90）、week 用
+    ``weeks_back``、month 用 ``months_back``；响应只回显当前粒度匹配的那个键。
+    ``include_ci=true`` 时 ci 运行进入取数集合。
     """
     service = await _require_kb_access(request, kb_id)
-    return await service.get_eval_trend(kb_id, granularity=granularity, days_back=days_back, include_ci=include_ci)
+    return await service.get_eval_trend(kb_id, granularity=granularity, days_back=days_back, weeks_back=weeks_back, months_back=months_back, include_ci=include_ci)
 
 
 # 注意注册顺序：latest / trend 字面量路由必须先于 {run_id} 参数路由。

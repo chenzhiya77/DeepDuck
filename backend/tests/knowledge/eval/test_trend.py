@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from deerflow.knowledge.eval.trend import aggregate_trend_points
+from deerflow.knowledge.eval.trend import aggregate_trend_points, window_cutoff
 
 
 def _l1(recall_at_k: float = 0.8, hit_rate: float = 0.9, mrr: float = 0.7) -> dict:
@@ -240,3 +240,27 @@ def test_empty_input_returns_empty_points() -> None:
     assert aggregate_trend_points([], "day") == []
     assert aggregate_trend_points([], "week") == []
     assert aggregate_trend_points([], "month") == []
+
+
+# ── window_cutoff：窗口参数按粒度配对（spec §4.2 v3） ─────────────────────
+
+
+def test_window_cutoff_day_pairs_with_days_back() -> None:
+    cutoff = window_cutoff(datetime(2026, 8, 25, 12, 0, tzinfo=UTC), granularity="day", days_back=30, weeks_back=12, months_back=6)
+
+    assert cutoff == datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+
+
+def test_window_cutoff_week_pairs_with_weeks_back() -> None:
+    cutoff = window_cutoff(datetime(2026, 8, 25, 12, 0, tzinfo=UTC), granularity="week", days_back=30, weeks_back=12, months_back=6)
+
+    assert cutoff == datetime(2026, 6, 2, 12, 0, tzinfo=UTC)
+
+
+def test_window_cutoff_month_calendar_subtraction_with_month_end_clamp() -> None:
+    # 3-31 减 6 个月 → 9-30（9 月无 31 日，钳到月末）
+    assert window_cutoff(datetime(2026, 3, 31, 12, 0, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=6) == datetime(2025, 9, 30, 12, 0, tzinfo=UTC)
+    # 闰日钳制：2024-02-29 减 12 个月 → 2023-02-28
+    assert window_cutoff(datetime(2024, 2, 29, 12, 0, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=12) == datetime(2023, 2, 28, 12, 0, tzinfo=UTC)
+    # 普通日期按时分秒原样对齐
+    assert window_cutoff(datetime(2026, 5, 15, 8, 30, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=3) == datetime(2026, 2, 15, 8, 30, tzinfo=UTC)
