@@ -596,6 +596,20 @@ class TestMarkBaseline:
 
         assert await persistence.get_baseline_run("kb-1") is None
 
+    @pytest.mark.parametrize("failed_status", ["error", "skipped"])
+    async def test_mark_baseline_ignored_for_failed_run(self, session_factory, failed_status):
+        """completed 门控（§3.1.3）：失败运行不得成为基线，更不得清掉现有好基线。"""
+        await persistence.save_eval_run(run_id="run-good", kb_id="kb-1", status="completed", created_at=datetime(2026, 8, 24, 10, 0, 0, tzinfo=UTC), mark_baseline=True)
+        await persistence.save_eval_run(run_id="run-bad", kb_id="kb-1", status=failed_status, created_at=datetime.now(UTC), mark_baseline=True)
+
+        baseline = await persistence.get_baseline_run("kb-1")
+        assert baseline is not None and baseline.id == "run-good"
+
+        async with session_factory() as session:
+            bad_row = await session.get(EvalRunRow, "run-bad")
+        assert bad_row is not None
+        assert bad_row.is_baseline is False
+
 
 class TestEnvironmentPersistence:
     async def test_default_environment_is_local(self, session_factory):
@@ -682,6 +696,26 @@ class TestLayer1CliBaselineAndEnvironment:
         baselines = [row for row in rows if row.is_baseline]
         assert len(baselines) == 1
 
+    def test_mark_baseline_on_skipped_run_keeps_previous_baseline_and_notes_stderr(self, monkeypatch, tmp_path, capsys):
+        """缺 key → skipped：--mark-baseline 被忽略，stderr 有提示，既有基线保留。"""
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer1(monkeypatch, tmp_path, kb={"owner_id": "u1"}, hit=True)
+
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--mark-baseline"], environ=dict(KEYS))
+        assert code == 0
+
+        _patch_common(monkeypatch, tmp_path, kb={"owner_id": "u1"})
+        code = layer1_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--mark-baseline"], environ={})
+
+        assert code == 3
+        err = capsys.readouterr().err
+        assert "--mark-baseline" in err and "ignored" in err
+        rows = _read_runs(tmp_path)
+        baselines = [row for row in rows if row.is_baseline]
+        assert len(baselines) == 1
+        assert baselines[0].status == "completed"
+
     def test_baseline_auto_diffs_against_marked_row(self, monkeypatch, tmp_path):
         golden = tmp_path / "golden.jsonl"
         _write_golden(golden, _golden_entry("q1", "fact"), _golden_entry("q2", "relation"))
@@ -735,3 +769,22 @@ class TestLayer2CliBaselineAndEnvironment:
         assert len(rows) == 1
         assert rows[0].is_baseline is True
         assert rows[0].environment == "ci"
+
+    def test_mark_baseline_on_skipped_run_keeps_previous_baseline_and_notes_stderr(self, monkeypatch, tmp_path, capsys):
+        golden = tmp_path / "golden.jsonl"
+        _write_golden(golden, _golden_entry("q1", "fact"))
+        _patch_layer2(monkeypatch, tmp_path, kb={"owner_id": "u1"})
+
+        code = layer2_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--mark-baseline"], environ=dict(KEYS))
+        assert code == 0
+
+        _patch_common(monkeypatch, tmp_path, kb={"owner_id": "u1"})
+        code = layer2_cli.main(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb-1", "--mark-baseline"], environ={})
+
+        assert code == 3
+        err = capsys.readouterr().err
+        assert "--mark-baseline" in err and "ignored" in err
+        rows = _read_runs(tmp_path)
+        baselines = [row for row in rows if row.is_baseline]
+        assert len(baselines) == 1
+        assert baselines[0].status == "completed"

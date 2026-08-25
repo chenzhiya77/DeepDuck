@@ -19,7 +19,9 @@ Usage (from ``backend/``):
 ``--baseline auto`` diffs against the KB's marked baseline run (the eval_runs
 ``is_baseline`` row); no marked row means a plain no-diff run.
 ``--mark-baseline`` marks this run as the KB's baseline, clearing the previous
-marker in the same transaction (spec 2026-08-24 §3.1.3).
+marker in the same transaction (spec 2026-08-24 §3.1.3). Completed runs only
+(exit 0/1): on an error/skipped run the flag is ignored — the previous
+baseline stays untouched — with a note on stderr.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
-from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, resolve_environment
+from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_COMPLETED, resolve_environment
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
@@ -82,6 +84,10 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
                 # Single clock: created_at is the report's generated_at, never the DB default.
                 created_at = datetime.fromisoformat(generated_at)
             completed_at = datetime.now(UTC)
+
+        if args.mark_baseline and status != STATUS_COMPLETED:
+            # §3.1.3 completed 门控：save_eval_run 会忽略该标记，这里给运维可见的提示。
+            print(f"rag-eval note: --mark-baseline ignored for {status} run (only completed runs can become the KB baseline)", file=sys.stderr)
 
         own_engine = persistence_engine.get_session_factory() is None
         if own_engine:
@@ -147,7 +153,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--mark-baseline",
         action="store_true",
-        help="Mark this run as the KB's baseline in eval_runs (clears the previous marker in the same transaction).",
+        help="Mark this completed run as the KB's baseline in eval_runs (clears the previous marker in the same transaction; ignored for error/skipped runs).",
     )
     return parser.parse_args(argv)
 

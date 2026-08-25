@@ -212,12 +212,21 @@ async def save_eval_run(
     ``mark_baseline`` clears the KB's previous baseline marker and sets the
     new one in the same transaction (§3.1.3: code-level guarantee, with the
     ``uq_eval_runs_kb_baseline`` partial unique index as the DB backstop).
+    Completed-only gating: it takes effect for ``status=completed`` runs only
+    (exit 0/1 — a regression-red run is still completed and may be marked,
+    its gate signal lives in ``baseline_diff``); error/skipped runs ignore it
+    with a warning and leave the previous marker untouched.
     """
 
     session_factory = get_session_factory()
     if session_factory is None:
         logger.warning("eval run %s not persisted: persistence engine not initialized", run_id)
         return None
+    if mark_baseline and status != STATUS_COMPLETED:
+        # §3.1.3 completed 门控：失败运行不得成为基线，更不能在同一事务里
+        # 清掉现有的好基线——否则一次失败的评估会静默抹掉 baseline。
+        logger.warning("eval run %s: --mark-baseline ignored (status=%s; only completed runs can become the KB baseline)", run_id, status)
+        mark_baseline = False
     row = EvalRunRow(
         id=run_id,
         kb_id=kb_id,

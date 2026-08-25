@@ -22,6 +22,9 @@ Usage (from ``backend/``):
         [--limit N] [--agent-model <name>] [--judge-model <name|dashscope:model>] \
         [--environment local|ci|nightly] [--mark-baseline]
 
+``--mark-baseline`` marks this run as the KB's baseline (completed runs only —
+ignored for error/skipped runs, previous baseline stays untouched).
+
 Model selection: the agent and the judge are deliberately separable so the
 judge can be an independent model family (self-judging bias is a real failure
 mode). ``--judge-model dashscope:qwen3.8-max`` talks to the DashScope
@@ -42,7 +45,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, resolve_environment
+from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_COMPLETED, resolve_environment
 
 EXIT_OK = 0
 EXIT_ERROR = 2
@@ -84,6 +87,10 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
             # Single clock: created_at is the report's generated_at, never the DB default.
             created_at = datetime.fromisoformat(payload["generated_at"])
             completed_at = datetime.now(UTC)
+
+        if args.mark_baseline and status != STATUS_COMPLETED:
+            # §3.1.3 completed 门控：save_eval_run 会忽略该标记，这里给运维可见的提示。
+            print(f"ragas-eval note: --mark-baseline ignored for {status} run (only completed runs can become the KB baseline)", file=sys.stderr)
 
         own_engine = persistence_engine.get_session_factory() is None
         if own_engine:
@@ -143,7 +150,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--mark-baseline",
         action="store_true",
-        help="Mark this run as the KB's baseline in eval_runs (clears the previous marker in the same transaction).",
+        help="Mark this completed run as the KB's baseline in eval_runs (clears the previous marker in the same transaction; ignored for error/skipped runs).",
     )
     return parser.parse_args(argv)
 
