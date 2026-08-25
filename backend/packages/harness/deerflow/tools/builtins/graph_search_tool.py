@@ -17,6 +17,7 @@ import logging
 from typing import Annotated, Any
 
 from langchain.tools import tool
+from langgraph.config import get_stream_writer
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
 from deerflow.knowledge.citation_counter import claim_citation_range
@@ -29,6 +30,7 @@ from deerflow.knowledge.reranker import DashScopeReranker, RerankerError
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
 from deerflow.tools.types import Runtime
+from deerflow.utils.custom_events import emit_custom_event
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,36 @@ _QUERY_ENTITY_SYSTEM_PROMPT = """从用户问题中抽取需要检索的实体�
 #: Minimum cosine score for a query entity to land on a graph entity — keeps
 #: "nothing found" honest instead of returning far-neighbor noise.
 ENTITY_MATCH_MIN_SCORE = 0.3
+
+#: Live-channel payload carrying the three-layer retrieval trace to the
+#: frontend (spec §7 path highlight). The ToolMessage copy of ``trace`` is
+#: what reload-time parsing relies on, but tool-output budgeting may replace
+#: oversized tool results with a synopsis preview — the live overlay therefore
+#: consumes this event instead of parsing the message.
+GRAPH_RETRIEVAL_TRACE_EVENT_TYPE = "graph_retrieval_trace"
+
+
+def _emit_trace_event(runtime: Any, kb_id: str, trace: dict) -> None:
+    """Best-effort publish of the retrieval trace on the custom stream.
+
+    Silently no-ops outside a runnable context (direct/unit-test invocation)
+    or when no stream writer is attached — the ToolMessage copy stays the
+    source of truth for reload-time parsing either way.
+    """
+    try:
+        emit_custom_event(
+            {
+                "type": GRAPH_RETRIEVAL_TRACE_EVENT_TYPE,
+                "tool_call_id": getattr(runtime, "tool_call_id", None),
+                "kb_id": kb_id,
+                "trace": trace,
+            },
+            writer=get_stream_writer(),
+        )
+    except RuntimeError:
+        # get_stream_writer() raises outside a runnable context — direct calls
+        # and unit tests run the impl without one by design.
+        logger.debug("graph_retrieval_trace event not emitted (no stream context)")
 
 
 def _empty(message: str) -> dict:
@@ -265,11 +297,13 @@ async def _graph_search_impl(
     for i, item in enumerate(evidence):
         item["citation_no"] = start + i + 1
     span = f"[{start + 1}]" if len(evidence) == 1 else f"[{start + 1}]-[{start + len(evidence)}]"
+    trace = _build_trace(hop_by_node, candidates, selected, entity_scores)
+    _emit_trace_event(runtime, kb_id, trace)
     return {
         "entities": entities,
         "relations": relations,
         "evidence": evidence,
-        "trace": _build_trace(hop_by_node, candidates, selected, entity_scores),
+        "trace": trace,
         "message": f"命中 {len(matched_names)} 个实体，扩展出 {len(seen)} 个节点、{len(relations)} 条关系、{len(evidence)} 条切片证据（引用编号 {span}，标注时照抄 citation_no）。",
     }
 

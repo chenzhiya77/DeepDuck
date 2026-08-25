@@ -458,4 +458,60 @@ describe("latestGraphTraceTurn", () => {
     ];
     expect(latestGraphTraceTurn(messages)?.text).toBe("JVM 结构");
   });
+
+  test("falls back to event-collected traces when the message body was externalized", () => {
+    // 工具输出预算把超大 graph_search 结果替换成摘要预览：消息体解析不出 trace。
+    const synopsis = "[Full graph_search output saved to /x/.tool-results/g.txt (20592 chars, ~5148 tokens).]";
+    const messages = [
+      human("h1"),
+      { ...toolMessage("graph_search", synopsis, "t1"), tool_call_id: "call-9" } as unknown as Message,
+      ai("a1"),
+    ];
+    expect(latestGraphTraceTurn(messages)).toBeNull();
+
+    const turn = latestGraphTraceTurn(
+      messages,
+      new Map([
+        [
+          "call-9",
+          {
+            seed_entities: ["JVM"],
+            expanded_nodes: [{ name: "堆内存", hop: 1 }],
+            evidence_entities: ["JVM"],
+          },
+        ],
+      ]),
+    );
+    expect(turn?.messageId).toBe("a1");
+    expect(turn?.text).toBe("问题");
+    expect(turn?.trace).toEqual({
+      seed_entities: ["JVM"],
+      expanded_nodes: [{ name: "堆内存", hop: 1 }],
+      evidence_entities: ["JVM"],
+    });
+  });
+
+  test("event fallback merges with parsed messages in the same turn", () => {
+    const synopsis = "[Full graph_search output saved to /x/.tool-results/g.txt (20592 chars).]";
+    const second = {
+      ...GRAPH_TRACE,
+      trace: {
+        seed_entities: ["GC"],
+        expanded_nodes: [{ name: "元空间", hop: 1 }],
+        evidence_entities: ["GC"],
+      },
+    };
+    const messages = [
+      human("h1"),
+      { ...toolMessage("graph_search", synopsis, "t1"), tool_call_id: "call-9" } as unknown as Message,
+      toolMessage("graph_search", second, "t2"),
+      ai("a1"),
+    ];
+    const turn = latestGraphTraceTurn(
+      messages,
+      new Map([["call-9", { seed_entities: ["JVM"], expanded_nodes: [], evidence_entities: ["JVM"] }]]),
+    );
+    expect(turn?.trace.seed_entities).toEqual(["JVM", "GC"]);
+    expect(turn?.trace.evidence_entities).toEqual(["JVM", "GC"]);
+  });
 });

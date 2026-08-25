@@ -1083,6 +1083,11 @@ tool_output:
   # tool_overrides:
   #   web_search: 8000
   #   bash: 20000
+  # graph_search packs 8 full chunk texts plus entity/relation descriptions and
+  # routinely lands at ~15k-21k chars — above the default threshold, so its
+  # result would be externalized into a synopsis preview on every call. Raise
+  # only this tool's threshold to keep the full JSON (citations + trace) inline.
+  #   graph_search: 30000
 
 # ============================================================================
 # Suggestions Configuration

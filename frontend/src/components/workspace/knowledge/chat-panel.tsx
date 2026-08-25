@@ -36,9 +36,9 @@ import { MessageList } from "@/components/workspace/messages";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useAgentsApiEnabled } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
-import { latestGraphTraceTurn, latestRetrievalTurn, sourcesForAssistantMessage } from "@/core/knowledge/citations";
+import { latestGraphTraceTurn, latestRetrievalTurn, parseGraphSearchTrace, sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
-import type { GraphRetrievalOverlay, KnowledgeBase } from "@/core/knowledge/types";
+import type { GraphRetrievalTrace, GraphRetrievalOverlay, KnowledgeBase } from "@/core/knowledge/types";
 import {
   buildHumanInputResponseText,
   type HumanInputRequest,
@@ -141,6 +141,16 @@ export function KnowledgeChatPanel({
     [kbId, deepResearch, selectedModelName],
   );
 
+  /** 本线程内收到的实时检索轨迹缓存（tool_call_id → trace）；切线程即清空。
+      spec §7 实时旁路：工具输出预算可能把超大 graph_search ToolMessage 替换成
+      摘要预览（消息解析不出 trace），这里按 tool_call_id 缓存 custom 事件
+      （graph_retrieval_trace）送达的轨迹副本，供图谱上报兜底；重载路径走
+      journal 全文解析，不经过本通道。 */
+  const graphTraceEventsRef = useRef(new Map<string, GraphRetrievalTrace>());
+  useEffect(() => {
+    graphTraceEventsRef.current.clear();
+  }, [threadId]);
+
   const {
     thread,
     sendMessage,
@@ -153,6 +163,15 @@ export function KnowledgeChatPanel({
     onStart: (createdThreadId) => {
       setThreadId(createdThreadId);
       setIsNewThread(false);
+    },
+    onStreamCustomEvent: (event) => {
+      if (!event || typeof event !== "object") return;
+      const record = event as { type?: unknown; tool_call_id?: unknown; trace?: unknown };
+      if (record.type !== "graph_retrieval_trace" || typeof record.tool_call_id !== "string") return;
+      const trace = parseGraphSearchTrace({ trace: record.trace });
+      if (trace) {
+        graphTraceEventsRef.current.set(record.tool_call_id, trace);
+      }
     },
   });
 
@@ -186,7 +205,7 @@ export function KnowledgeChatPanel({
     if (!onGraphOverlay || thread.isLoading) {
       return;
     }
-    const turn = latestGraphTraceTurn(thread.messages);
+    const turn = latestGraphTraceTurn(thread.messages, graphTraceEventsRef.current);
     if (!turn || turn.messageId === lastReportedGraphTurnRef.current) {
       return;
     }

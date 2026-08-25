@@ -65,6 +65,12 @@ export type ThreadStreamOptions = {
   onSend?: (threadId: string) => void;
   onStart?: (threadId: string, runId: string) => void;
   onFinish?: (state: AgentThreadState) => void;
+  /**
+   * Raw custom-stream events (spec §7 检索联动等旁路通道)。在内置处理
+   * （task_* / replay-gap / llm_retry）之前原样转发，消费者自行按
+   * ``type`` 过滤——不影响既有事件语义。
+   */
+  onStreamCustomEvent?: (event: unknown) => void;
 };
 
 type SendMessageOptions = {
@@ -1532,6 +1538,7 @@ export function useThreadStream({
   onSend,
   onStart,
   onFinish,
+  onStreamCustomEvent,
 }: ThreadStreamOptions) {
   const { t } = useI18n();
   const currentViewThreadId = displayThreadId ?? threadId ?? null;
@@ -1566,6 +1573,11 @@ export function useThreadStream({
     onStart,
     onFinish,
   });
+  // The SDK captures the useStream options object once per mount, so a raw
+  // option would go stale; route the raw custom-event passthrough through a
+  // ref that is refreshed on every render (same discipline as `listeners`).
+  const streamCustomEventListenerRef = useRef(onStreamCustomEvent);
+  streamCustomEventListenerRef.current = onStreamCustomEvent;
 
   const {
     messages: history,
@@ -1779,6 +1791,11 @@ export function useThreadStream({
       }
     },
     onCustomEvent(event: unknown) {
+      // Raw passthrough for feature-specific bypass channels (spec §7 检索
+      // 联动等) — consumers filter by `type`; built-in handling below is
+      // untouched so existing event semantics are preserved.
+      streamCustomEventListenerRef.current?.(event);
+
       // Narrow `event.type` once; taskEventToSubtaskUpdate already validated the
       // task_* events, so the per-branch re-narrowing below reads this single
       // source of truth instead of re-checking the object shape each time.

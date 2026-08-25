@@ -226,8 +226,13 @@ export interface GraphTraceTurn {
  * message——该轮没有 graph_search 轨迹就返回 null（不更新叠加，旧叠加由调用方
  * 保留或按指纹规则清理），绝不回退到更早的轮次。空命中（三层全空）同样不更新
  * ——避免全图无意义淡化。
+ *
+ * ``fallbackTraces``（按 tool_call_id 索引）是实时通道的兜底：工具输出预算
+ * 中间件可能把超大 graph_search 结果替换成摘要预览，消息体解析不出 trace；
+ * 此时若该调用通过 custom 事件（graph_retrieval_trace）旁路送达过轨迹，则用
+ * 事件副本补齐。重载路径的消息来自 journal 全文，正常解析，不需要回退。
  */
-export function latestGraphTraceTurn(messages: readonly Message[]): GraphTraceTurn | null {
+export function latestGraphTraceTurn(messages: readonly Message[], fallbackTraces?: ReadonlyMap<string, GraphRetrievalTrace>): GraphTraceTurn | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.type !== "ai") {
@@ -249,7 +254,13 @@ export function latestGraphTraceTurn(messages: readonly Message[]): GraphTraceTu
       if (candidate?.type !== "tool" || (candidate as { name?: string }).name !== "graph_search") {
         continue;
       }
-      const trace = parseGraphSearchTrace(candidate.content);
+      let trace = parseGraphSearchTrace(candidate.content);
+      if (!trace && fallbackTraces) {
+        const toolCallId = (candidate as { tool_call_id?: string }).tool_call_id;
+        if (typeof toolCallId === "string") {
+          trace = fallbackTraces.get(toolCallId) ?? null;
+        }
+      }
       if (!trace) {
         continue;
       }

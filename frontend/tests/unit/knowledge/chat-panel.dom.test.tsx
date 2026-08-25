@@ -566,6 +566,61 @@ describe("KnowledgeChatPanel 图谱检索轨迹上报", () => {
     );
     expect(onGraphOverlay).toHaveBeenCalledTimes(1);
   });
+
+  it("reports the trace from the graph_retrieval_trace custom event when the message body was externalized", async () => {
+    // 外置场景：graph_search 消息被替换成摘要预览，消息解析不出 trace；实时
+    // 旁路（onStreamCustomEvent → tool_call_id 缓存）补齐后应照常上报。
+    const synopsisTurn = [
+      { id: "human-1", type: "human", content: "Gateway 和哪些组件交互？" },
+      {
+        id: "tool-1",
+        type: "tool",
+        name: "graph_search",
+        tool_call_id: "call-1",
+        content:
+          "[Full graph_search output saved to /mnt/x/.tool-results/graph_search-abc.txt (20592 chars, ~5148 tokens).]",
+      },
+      { id: "ai-1", type: "ai", content: "Gateway 与 DeerFlow 交互 [1]" },
+    ];
+    mockUseThreadStream.mockImplementation(() => ({
+      // messages 必须每次渲染都是新数组引用（对齐真实流的身份语义），否则
+      // 上报效应的依赖比较会判定未变化而跳过。
+      thread: { ...makeThreadState([...synopsisTurn]), isLoading: false },
+      sendMessage: mockSendMessage,
+    }));
+    const onGraphOverlay = rs.fn();
+    const utils = renderPanel(KB, { onGraphOverlay });
+
+    // 摘要消息解析不出轨迹 → 静默。
+    expect(onGraphOverlay).not.toHaveBeenCalled();
+
+    // 实时事件到达（tool_call_id 对上）→ 下一次渲染周期上报事件副本。
+    const options = latestStreamOptions() as { onStreamCustomEvent?: (event: unknown) => void };
+    options.onStreamCustomEvent?.({
+      type: "graph_retrieval_trace",
+      tool_call_id: "call-1",
+      trace: {
+        seed_entities: ["Gateway"],
+        expanded_nodes: [{ name: "DeerFlow", hop: 1 }],
+        evidence_entities: ["Gateway"],
+      },
+    });
+    utils.rerender(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KnowledgeChatPanel kb={KB} onGraphOverlay={onGraphOverlay} />
+      </I18nContext.Provider>,
+    );
+    await waitFor(() => expect(onGraphOverlay).toHaveBeenCalledTimes(1));
+    expect(onGraphOverlay).toHaveBeenCalledWith({
+      source: "chat",
+      text: "Gateway 和哪些组件交互？",
+      trace: {
+        seed_entities: ["Gateway"],
+        expanded_nodes: [{ name: "DeerFlow", hop: 1 }],
+        evidence_entities: ["Gateway"],
+      },
+    });
+  });
 });
 
 describe("KnowledgeChatPanel model selector", () => {

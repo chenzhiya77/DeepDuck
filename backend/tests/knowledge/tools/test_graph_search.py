@@ -482,6 +482,57 @@ async def test_graph_search_response_carries_three_layer_trace(trace_env):
 
 
 @pytest.mark.asyncio
+async def test_graph_search_emits_retrieval_trace_custom_event(trace_env, monkeypatch):
+    """实时通道契约：三层轨迹同时走 custom stream 事件。工具输出预算中间件可能把
+    超大 ToolMessage 替换成摘要预览（trace 随之不可解析），前端路径高亮改为消费
+    这条事件——它发射于工具内部、任何预算中间件运行之前，不受外置影响。"""
+    import deerflow.tools.builtins.graph_search_tool as gst
+
+    captured: list[dict] = []
+
+    class _Writer:
+        def __call__(self, payload):
+            captured.append(payload)
+
+    monkeypatch.setattr(gst, "get_stream_writer", lambda: _Writer())
+
+    runtime = _runtime(kb_id=KB_ID, user_id=OWNER_ID)
+    runtime.tool_call_id = "call_trace_1"
+
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        runtime,
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        hops=2,
+        neighbor_min_score=0.0,
+    )
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event["type"] == gst.GRAPH_RETRIEVAL_TRACE_EVENT_TYPE
+    assert event["tool_call_id"] == "call_trace_1"
+    assert event["kb_id"] == KB_ID
+    # 事件里的轨迹与消息里的轨迹逐字一致——两条通道同源，重载解析契约不变。
+    assert event["trace"] == result["trace"]
+    assert result["trace"]["seed_entities"] == ["Gateway"]
+
+
+@pytest.mark.asyncio
+async def test_graph_search_without_stream_context_stays_silent(trace_env):
+    """直接调用/单测没有 runnable 上下文，get_stream_writer 会抛 RuntimeError；
+    工具必须静默跳过事件发射，不影响检索结果本身。"""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        hops=2,
+        neighbor_min_score=0.0,
+    )
+
+    assert result["trace"]["seed_entities"] == ["Gateway"]
+
+
+@pytest.mark.asyncio
 async def test_graph_search_trace_evidence_anchors_stay_bounded(trace_env):
     """证据锚点有界性：每条选中切片最多贡献一个锚点实体（防命中层洪泛）。
 
