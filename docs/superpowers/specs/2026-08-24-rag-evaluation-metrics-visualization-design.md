@@ -113,7 +113,7 @@ Layer 2 报告（`Layer2Report.aggregate` + 顶层字段）→ `layer2_metrics`�
 现状只有 CLI `--baseline` 临时传入，trend 图需要的「当前 baseline」必须持久化：
 
 - **migration 0018**：`eval_runs` 加 `is_baseline` Boolean（默认 `false`，NOT NULL）+ 部分唯一索引（`sqlite_where: is_baseline = true`，每 KB 至多一行 baseline，索引兜底）。
-- **CLI**：两个 eval CLI 新增 `--mark-baseline` 标志；保存运行后在**同一事务**内清掉该 KB 旧标记再置新标记（代码层保证 + 索引兜底）。
+- **CLI**：两个 eval CLI 新增 `--mark-baseline` 标志；保存运行后在**同一事务**内清掉该 KB 旧标记再置新标记（代码层保证 + 索引兜底）。仅 `status=completed` 的运行生效（exit 0/1——回归红灯运行也是 completed，仍可作基线，门禁信号在 `baseline_diff`）；error/skipped 运行忽略标记并打 warning 日志 + stderr 提示，既有基线保持不动。
 - **`--baseline auto`（v3）**：`run_rag_eval.py` 的 `--baseline` 接受特殊值 `auto`——从 eval_runs 读该 KB 的 is_baseline 行直接做 diff（文件传入仍保留兼容）；无 baseline 行时按无 diff 运行（exit 0 语义不变）。
 - **索引跨方言（v3）**：部分唯一索引在 Alembic 同时声明 `sqlite_where` 与 `postgresql_where`，避免将来迁 PostgreSQL 时静默丢失。
 - **trend API 的 baseline 块**：
@@ -409,6 +409,10 @@ export interface TrendPoint {
 export interface TrendResponse {
   points: TrendPoint[];
   granularity: "day" | "week" | "month";
+  /** 窗口回显：只含当前粒度匹配的键（day→days_back / week→weeks_back / month→months_back） */
+  days_back?: number;
+  weeks_back?: number;
+  months_back?: number;
   /** 当前 baseline；无 baseline 行时为 null（前端不画阈值线） */
   baseline: {
     recall_at_k: number;           // baseline 行 layer1_metrics.summary.recall_at_k
@@ -443,7 +447,7 @@ export interface TrendResponse {
 - 数据源：`eval_runs` 表（单 KB 历史通常 <100 条）；
 - 聚合逻辑抽纯函数 `aggregate_trend_points(rows, granularity)` 放 harness 层（`deerflow/knowledge/eval/trend.py`）直测，service 只做薄壳（对齐 `metrics.py` 纯函数先例）；读全量行内存计算，全量 <10ms；
 - 服务层方法放 `knowledge_service.py`（`get_latest_eval_metrics` / `get_eval_trend` / `get_eval_run`），对齐既有 service 分层；
-- 参数校验：非法 `granularity` → 422；`days_back` 后端 clamp 到 ≤90 并在响应回显实际值；
+- 参数校验：非法 `granularity` → 422；窗口参数按粒度配对（day→`days_back` 后端 clamp 到 ≤90 / week→`weeks_back` / month→`months_back`），响应只回显当前粒度匹配的那个键；
 - 聚合与展示一律用行 `created_at`（= 报告 `generated_at`，§3.1.1 时钟纪律）。
 
 ### 4.3 视觉规范
@@ -834,7 +838,7 @@ test("趋势图点击打开单次运行详情 drawer", async ({ page }) => {
 | 端点/单元 | 测试点 | 文件 |
 |------|--------|------|
 | 双 CLI 持久化 | Layer 1 CLI 写 layer1_metrics（含 recall→recall_at_k 映射）、layer2 为 `{}`；Layer 2 CLI 反之；skipped/error 行 status 正确；`environment` 推断（`CI=true`→ci）；`created_at` = 报告 generated_at；`--baseline auto` 读 is_baseline 行做 diff | `test_eval_persistence.py` |
-| `--mark-baseline` | 标记后同 KB 旧 baseline 被清；唯一索引兜底（双方言 where 声明）；`environment` 列默认值回填存量行 | 同上 |
+| `--mark-baseline` | 标记后同 KB 旧 baseline 被清；唯一索引兜底（双方言 where 声明）；非 completed 运行忽略标记（旧标记保留）；`environment` 列默认值回填存量行 | 同上 |
 | `aggregate_trend_points` 纯函数 | 三粒度统一末次语义、跨周/跨年/空周期边界、两层独立取数、双 run_id 来源、ci 过滤、regression 透传 | `tests/knowledge/eval/test_trend.py` |
 | `GET /eval-runs/latest` | 两层独立取最近 completed 非 ci 行；无数据层为 null；skipped/error 行被排除；未知 kb 404 | `test_eval_runs_api.py` |
 | `GET /eval-runs/trend` | 三粒度聚合（纯函数薄壳）、include_ci 开关、baseline 块（threshold_percent = 常量×100、无 baseline 为 null）、has_data、days_back clamp 回显、非法 granularity 422 | 同上 |

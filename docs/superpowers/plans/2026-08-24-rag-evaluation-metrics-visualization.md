@@ -112,6 +112,7 @@
 - Create: `backend/packages/harness/deerflow/knowledge/eval/trend.py`（`aggregate_trend_points` 聚合纯函数）
 - Modify: `backend/app/gateway/routers/knowledge_bases.py`（+GET `/{kb_id}/eval-runs/latest`、`/{kb_id}/eval-runs/trend`、`/{kb_id}/eval-runs/{run_id}`）
 - Modify: `backend/app/gateway/services/knowledge_service.py`（+`get_latest_eval_metrics` / `get_eval_trend` / `get_eval_run`）
+- Modify: `backend/packages/harness/deerflow/knowledge/store.py`（+`list_eval_runs` / `get_eval_run_row`——随 `efec065e` 实际落地，此前漏记，补记）
 - Create: `backend/tests/knowledge/eval/test_trend.py`（聚合纯函数）
 - Create: `backend/tests/knowledge/test_eval_runs_api.py`
 
