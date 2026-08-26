@@ -193,3 +193,30 @@ class TestRagasEvaluatorAssembly:
         monkeypatch.setitem(sys.modules, "ragas.embeddings", None)
 
         assert cli._build_ragas_evaluator(judge_llm=object()) is None
+
+    def test_wraps_judge_with_bypass_n(self, monkeypatch):
+        """DashScope judges reject ``n>1`` (answer_relevancy strictness=3 requests
+        3 completions), so the wrapper must set ragas' ``bypass_n`` — ragas then
+        sends n separate single-completion calls instead of one n-completion call."""
+
+        captured: dict = {}
+
+        class FakeWrapper:
+            def __init__(self, llm, **kwargs):
+                captured["bypass_n"] = kwargs.get("bypass_n")
+
+        class FakeEmbeddingsWrapper:
+            def __init__(self, embeddings):
+                pass
+
+        fake_ragas_llms = type(sys)("ragas.llms")
+        fake_ragas_llms.LangchainLLMWrapper = FakeWrapper
+        fake_ragas_embed = type(sys)("ragas.embeddings")
+        fake_ragas_embed.LangchainEmbeddingsWrapper = FakeEmbeddingsWrapper
+        monkeypatch.setitem(sys.modules, "ragas.llms", fake_ragas_llms)
+        monkeypatch.setitem(sys.modules, "ragas.embeddings", fake_ragas_embed)
+        monkeypatch.setattr(cli, "_DashScopeLangChainEmbeddings", lambda *a, **kw: object())
+
+        evaluator = cli._build_ragas_evaluator(judge_llm=object())
+        assert evaluator is not None
+        assert captured["bypass_n"] is True

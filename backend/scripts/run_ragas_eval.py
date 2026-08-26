@@ -216,7 +216,11 @@ def _build_ragas_evaluator(judge_llm):
     from deerflow.knowledge.embedder import DashScopeEmbedder
     from deerflow.knowledge.eval.ragas_eval import compute_ragas_scores
 
-    wrapped_llm = LangchainLLMWrapper(judge_llm)
+    # bypass_n: answer_relevancy's strictness=3 asks the judge for n=3
+    # completions in one request; DashScope (and other OpenAI-compatible
+    # endpoints) reject n>1 with a 400. With bypass_n ragas falls back to n
+    # separate single-completion calls, which every endpoint supports.
+    wrapped_llm = LangchainLLMWrapper(judge_llm, bypass_n=True)
     wrapped_embeddings = LangchainEmbeddingsWrapper(_DashScopeLangChainEmbeddings(DashScopeEmbedder()))
 
     async def evaluator(samples, *, judge_llm, embeddings):  # protocol-aligned; wrappers are bound at build time
