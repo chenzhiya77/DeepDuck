@@ -122,7 +122,11 @@ export function EvalTab({ kbId, enabled }: EvalTabProps) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto px-4 py-3" data-testid="eval-tab">
+    // 与文档 tab 同一滚动模型（document-panel）：面板容器 overflow-auto + 内容自带
+    // min-w 下限（4 张指标卡 × ~6.75rem + 间距与 px-4 = 32rem，卡内容区 ~76px 仍容得下
+    // text-lg 的 "100.0%" 与 3 字标题+ⓘ）；栏宽低于下限时整 tab 横向滚动，而不是裁切卡片。
+    <div className="h-full min-h-0 overflow-auto" data-testid="eval-tab">
+      <div className="flex min-w-[32rem] flex-col gap-4 px-4 py-3">
       {/* 运行配置区：父 spec §9 触发按钮落地前仅渲染一行说明文案，不留空盒 */}
       <p className="text-muted-foreground text-xs">{tk.runConfigNote}</p>
 
@@ -218,7 +222,9 @@ export function EvalTab({ kbId, enabled }: EvalTabProps) {
         ) : null}
       </section>
 
-      {/* 点击趋势图数据点 → drawer 下钻单次运行详情 */}
+      </div>
+
+      {/* 点击趋势图数据点 → drawer 下钻单次运行详情（portal 渲染，保持在 min-w 内包装之外） */}
       <EvalRunDrawer
         kbId={kbId}
         open={drawerRunId !== null}

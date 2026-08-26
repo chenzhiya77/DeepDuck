@@ -166,6 +166,12 @@ describe("EvalTab 数据联通", () => {
     expect(labels.thresholdLabel?.(3)).toBe("回退阈值 -3%");
   });
 
+  it("keeps the tab-level min-width floor so narrow panels scroll instead of clipping", () => {
+    renderEvalTab();
+    // 内包装下限（2026-08-27 三轮）：卡片可压到的最小宽度由这里保护，触底整 tab 横滚。
+    expect(screen.getByTestId("eval-tab").firstElementChild?.className).toContain("min-w-[32rem]");
+  });
+
   it("loading 状态渲染加载提示而非空白", () => {
     hooksMock.useMetricsOverview.mockReturnValue(queryState({ isLoading: true }));
     hooksMock.useEvalTrend.mockReturnValue(queryState({ isLoading: true }));

@@ -84,7 +84,7 @@ describe("Layer 1 表格", () => {
     const headers = Array.from(
       screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"),
     );
-    expect(headers.map((h) => h.textContent)).toEqual(["分类", "Hit Rate", "Recall@k", "MRR", "路径准确率"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["分类", "命中率", "召回率@k", "MRR", "路径准确率"]);
   });
 
   it("renders localized category display names instead of wire keys (zh-CN)", () => {
@@ -199,13 +199,75 @@ describe("Layer 2 卡片", () => {
   it("renders four ragas cards and three arch-specific cards with values", () => {
     renderOverview(FULL_OVERVIEW);
 
-    expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("0.933");
+    // 百分比主显示（2026-08-27 二轮）：同义小数不再渲染。
     expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("93.3%");
-    expect(screen.getByTestId("eval-card-answer_relevancy").textContent).toContain("0.877");
-    expect(screen.getByTestId("eval-card-context_precision").textContent).toContain("0.912");
-    expect(screen.getByTestId("eval-card-context_recall").textContent).toContain("0.864");
+    expect(screen.getByTestId("eval-card-answer_relevancy").textContent).toContain("87.7%");
+    expect(screen.getByTestId("eval-card-context_precision").textContent).toContain("91.2%");
+    expect(screen.getByTestId("eval-card-context_recall").textContent).toContain("86.4%");
     expect(screen.getByTestId("eval-card-citation_precision").textContent).toContain("引用准确率");
-    expect(screen.getByTestId("eval-card-seed_hit_rate").textContent).toContain("种子实体命中率");
+    expect(screen.getByTestId("eval-card-seed_hit_rate").textContent).toContain("实体命中率");
+  });
+
+  it("renders short localized card titles that cannot wrap, with full names only in ⓘ tooltips (2026-08-27 redesign round 2)", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    // 中文短标题单行不换行——窄栏下不再两行挤压、进度条保持同一水平线。
+    for (const [testId, title] of [
+      ["faithfulness", "忠实度"],
+      ["answer_relevancy", "相关性"],
+      ["context_precision", "精确率"],
+      ["context_recall", "召回率"],
+      ["seed_hit_rate", "实体命中率"],
+    ] as const) {
+      const titleEl = screen.getByTestId(`eval-card-${testId}`).querySelector('[data-slot="card-title"]');
+      expect(titleEl?.textContent).toContain(title);
+      expect(titleEl?.className).toContain("whitespace-nowrap");
+    }
+    // ⓘ tooltip 承载「中文全称（English）：解释」；卡片正文不出现英文全名。
+    expect(screen.getByTestId("eval-card-faithfulness").textContent).not.toContain("Faithfulness");
+    expect(screen.getByTestId("eval-card-note-faithfulness").getAttribute("aria-label")).toContain("（Faithfulness）");
+    expect(screen.getByTestId("eval-card-note-context_recall").getAttribute("aria-label")).toContain("（Context Recall）");
+    expect(screen.getByTestId("eval-card-note-seed_hit_rate").getAttribute("aria-label")).toBe(
+      "实体命中率（Seed Entity Hit Rate）：命中预设种子实体的图谱类问题占比",
+    );
+  });
+
+  it("shows the percent as the primary figure (no duplicate decimal) and pins the card grids", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    // 百分比为主显示；同义小数（0.933）不再重复渲染（2026-08-27 二轮）。
+    const card = screen.getByTestId("eval-card-faithfulness");
+    expect(card.textContent).toContain("93.3%");
+    expect(card.textContent).not.toContain("0.933");
+    // 三轮：卡片内容随宽度居中，百分比降档 text-lg + tabular-nums。
+    const percentEl = Array.from(card.querySelectorAll("div")).find((el) => el.className.includes("font-bold"));
+    expect(percentEl?.className).toContain("text-lg");
+    expect(percentEl?.className).toContain("text-center");
+    expect(percentEl?.className).toContain("tabular-nums");
+    expect(card.querySelector('[data-slot="card-title"]')?.className).toContain("justify-center");
+
+    // 固定列数：宽度下限由 eval-tab 的 min-w-[35rem] 内包装保证，触底时整 tab 横滚。
+    const ragasGrid = screen.getByTestId("eval-card-faithfulness").parentElement;
+    expect(ragasGrid?.className).toContain("grid-cols-4");
+    const archGrid = screen.getByTestId("eval-card-citation_precision").parentElement;
+    expect(archGrid?.className).toContain("grid-cols-3");
+  });
+
+  it("labels the two card groups (probabilistic RAGAS vs deterministic citation/graph)", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    expect(screen.getByText("RAGAS 概率性指标")).toBeTruthy();
+    expect(screen.getByText("引用与图谱指标")).toBeTruthy();
+  });
+
+  it("shows a Layer 1 info tooltip explaining all four table metrics (no internal layer jargon)", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    const label = screen.getByTestId("eval-layer1-info").getAttribute("aria-label") ?? "";
+    // 首句总述 + 四指标各占一行（\n 分行，TooltipContent pre-wrap 渲染）。
+    expect(label).toBe(
+      "检索阶段的确定性指标，结果可复现。\n命中率：正确内容进入检索结果的问题占比\n召回率@k：前 k 条结果覆盖正确内容的比例\nMRR：首条正确结果越靠前得分越高\n路径准确率：图谱检索路径选择正确的占比",
+    );
   });
 
   it("renders a dash and muted card for null metric values", () => {
@@ -262,13 +324,16 @@ describe("Layer 2 卡片", () => {
   it("moves the methodology note into an info tooltip and keeps the header non-wrapping", () => {
     renderOverview(FULL_OVERVIEW);
 
-    // 灰色长说明不再常驻行内（窄屏不再竖排挤压）。
-    expect(screen.queryByText("RAGAS 概率性指标（judge 方差），仅供参考")).toBeNull();
+    // 灰色长说明不再常驻行内（窄屏不再竖排挤压）；ⓘ 说明不带内部 Layer 术语（2026-08-27 三轮）。
+    expect(screen.queryByText(/judge 方差/)).toBeNull();
     const title = screen.getByTestId("eval-layer2-title");
+    expect(title.textContent).toBe("生成质量");
     expect(title.className).toContain("whitespace-nowrap");
     expect(title.className).toContain("shrink-0");
     // 说明 ⓘ 的无障碍标签即说明全文。
-    expect(screen.getByTestId("eval-layer2-info").getAttribute("aria-label")).toBe("RAGAS 概率性指标（judge 方差），仅供参考");
+    expect(screen.getByTestId("eval-layer2-info").getAttribute("aria-label")).toBe(
+      "生成阶段指标；RAGAS 为概率性指标（judge 方差），仅供参考",
+    );
   });
 
   it("disables the seed_hit_rate card with a note when the batch has no graph questions", () => {
@@ -291,6 +356,8 @@ describe("Layer 2 卡片", () => {
   });
 
   it("emits onViewTrace with the langfuse url only when the link is clicked", () => {
+    // 回归守护：卡片标题已本地化为「忠实度」，trace 链接必须仍按 testId 哨兵渲染
+    // （2026-08-27 前用 title === "Faithfulness" 判断，本地化后会静默丢失）。
     const onViewTrace = rs.fn();
     renderOverview(FULL_OVERVIEW, { onViewTrace });
     fireEvent.click(screen.getByRole("button", { name: "查看 trace →" }));
@@ -313,7 +380,11 @@ describe("i18n", () => {
     renderOverview({ ...FULL_OVERVIEW, layer1: null }, undefined, "en-US");
 
     expect(screen.getByText("No Layer 1 runs yet")).toBeTruthy();
-    expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("0.933");
+    expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("93.3%");
+    // en-US 下卡片标题与分组标签同为英文。
+    expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("Faithfulness");
+    expect(screen.getByText("RAGAS probabilistic metrics")).toBeTruthy();
+    expect(screen.getByTestId("eval-layer2-title").textContent).toBe("Generation Quality");
   });
 
   it("renders the en-US column headers", () => {

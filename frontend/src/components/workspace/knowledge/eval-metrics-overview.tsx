@@ -38,6 +38,19 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
       <section>
         <div className="flex items-center gap-2 mb-3 text-sm font-semibold">
           <span className="whitespace-nowrap shrink-0">{tk.layer1Title}</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="eval-layer1-info"
+                aria-label={tk.layer1Note}
+                className="inline-flex text-muted-foreground hover:text-foreground"
+              >
+                <Info className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-60 whitespace-pre-wrap text-pretty">{tk.layer1Note}</TooltipContent>
+          </Tooltip>
           {layer1?.baseline_diff?.regression_detected && (
             <Badge variant="destructive">{tk.regressionBadge}</Badge>
           )}
@@ -64,7 +77,7 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
                 <Info className="size-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent className="max-w-xs">{tk.layer2Note}</TooltipContent>
+            <TooltipContent className="max-w-60 text-pretty">{tk.layer2Note}</TooltipContent>
           </Tooltip>
           {layer2 && !layer2.ragas_available && (
             classifyRagasSkipReason(layer2.ragas_skip_reason) === "error" ? (
@@ -81,7 +94,7 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
                       <Info className="size-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs whitespace-pre-wrap">{layer2.ragas_skip_reason}</TooltipContent>
+                  <TooltipContent className="max-w-60 text-pretty whitespace-pre-wrap">{layer2.ragas_skip_reason}</TooltipContent>
                 </Tooltip>
               </span>
             ) : (
@@ -93,17 +106,21 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
         </div>
         {layer2 ? (
           <>
+            <div className="mb-2 text-xs text-muted-foreground">{tk.ragasGroupLabel}</div>
+            {/* 固定列数：卡片宽度下限由 eval-tab 内包装的 min-w-[35rem] 保证，触底时整 tab 横滚。 */}
             <div className="grid grid-cols-4 gap-4">
-              <RagasCard title="Faithfulness" value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} testId="faithfulness" />
-              <RagasCard title="Answer Relevancy" value={layer2.ragas.answer_relevancy} testId="answer_relevancy" />
-              <RagasCard title="Context Precision" value={layer2.ragas.context_precision} testId="context_precision" />
-              <RagasCard title="Context Recall" value={layer2.ragas.context_recall} testId="context_recall" />
+              <RagasCard title={tk.ragasCard.faithfulness} note={tk.cardNote.faithfulness} value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} testId="faithfulness" />
+              <RagasCard title={tk.ragasCard.answerRelevancy} note={tk.cardNote.answerRelevancy} value={layer2.ragas.answer_relevancy} testId="answer_relevancy" />
+              <RagasCard title={tk.ragasCard.contextPrecision} note={tk.cardNote.contextPrecision} value={layer2.ragas.context_precision} testId="context_precision" />
+              <RagasCard title={tk.ragasCard.contextRecall} note={tk.cardNote.contextRecall} value={layer2.ragas.context_recall} testId="context_recall" />
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              <ArchCard title={tk.citationPrecision} value={layer2.arch_specific.citation_precision} testId="citation_precision" />
-              <ArchCard title={tk.citationRecall} value={layer2.arch_specific.citation_recall} testId="citation_recall" />
+            <div className="mb-2 mt-4 text-xs text-muted-foreground">{tk.archGroupLabel}</div>
+            <div className="grid grid-cols-3 gap-4">
+              <ArchCard title={tk.citationPrecision} note={tk.cardNote.citationPrecision} value={layer2.arch_specific.citation_precision} testId="citation_precision" />
+              <ArchCard title={tk.citationRecall} note={tk.cardNote.citationRecall} value={layer2.arch_specific.citation_recall} testId="citation_recall" />
               <ArchCard
                 title={tk.seedHitRate}
+                note={tk.cardNote.seedHitRate}
                 value={layer2.arch_specific.seed_hit_rate}
                 disabled={!layer2.has_graph_questions}
                 disabledReason={tk.noGraphQuestions}
@@ -173,28 +190,47 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
   );
 }
 
-function RagasCard({ title, value, traceUrl, onViewTrace, traceLabel, testId }: { title: string; value: number | null; traceUrl?: string; onViewTrace?: (url: string) => void; traceLabel?: string; testId: string }) {
+/** Per-card ⓘ tooltip: full name + one-line explanation live here, title stays short. */
+function MetricNote({ note, testId }: { note: string; testId: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          data-testid={testId}
+          aria-label={note}
+          className="inline-flex shrink-0 text-muted-foreground hover:text-foreground"
+        >
+          <Info className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      {/* max-w-60 + text-pretty：基类 text-balance 会把每行均衡缩短、盒子却被 max-w 顶满，
+          右侧留出大片空白；pretty 换行让文字填满盒子。 */}
+      <TooltipContent className="max-w-60 text-pretty">{note}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function RagasCard({ title, note, value, traceUrl, onViewTrace, traceLabel, testId }: { title: string; note: string; value: number | null; traceUrl?: string; onViewTrace?: (url: string) => void; traceLabel?: string; testId: string }) {
   const colorClass = getProgressBarColor(value);
   const isNull = value == null;
   return (
-    <Card data-testid={`eval-card-${testId}`} className={isNull ? "bg-muted" : ""}>
-      <CardHeader>
-        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+    <Card data-testid={`eval-card-${testId}`} className={`gap-3 py-4 ${isNull ? "bg-muted" : ""}`}>
+      <CardHeader className="px-4">
+        <CardTitle className="flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
+          <span className="min-w-0 truncate">{title}</span>
+          <MetricNote note={note} testId={`eval-card-note-${testId}`} />
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="text-2xl font-bold">
-          {isNull ? "-" : value.toFixed(3)}
-        </div>
-        {!isNull && (
-          <>
-            <Progress value={value * 100} className={colorClass} />
-            <div className="text-sm text-muted-foreground">{percent(value)}</div>
-          </>
-        )}
+      <CardContent className="space-y-2 px-4">
+        {/* 百分比为主显示（同义小数已去重）；text-lg + tabular-nums：32rem 触底时
+            "100.0%" 仍容得下，数字在各卡间同宽对齐。 */}
+        <div className="text-center text-lg font-bold tabular-nums">{isNull ? "-" : percent(value)}</div>
+        {!isNull && <Progress value={value * 100} className={colorClass} />}
       </CardContent>
-      {/* Langfuse trace link only on first card (faithfulness) — align with spec §3.7示意. */}
-      {title === "Faithfulness" && traceUrl && traceLabel && onViewTrace && (
-        <CardContent>
+      {/* Langfuse trace link only on the faithfulness card — keyed by testId, not the localized title. */}
+      {testId === "faithfulness" && traceUrl && traceLabel && onViewTrace && (
+        <CardContent className="px-4 text-center">
           <button role="button" onClick={() => onViewTrace(traceUrl)}>{traceLabel}</button>
         </CardContent>
       )}
@@ -202,27 +238,25 @@ function RagasCard({ title, value, traceUrl, onViewTrace, traceLabel, testId }: 
   );
 }
 
-function ArchCard({ title, value, disabled, disabledReason, testId }: { title: string; value: number | null; disabled?: boolean; disabledReason?: string; testId: string }) {
+function ArchCard({ title, note, value, disabled, disabledReason, testId }: { title: string; note: string; value: number | null; disabled?: boolean; disabledReason?: string; testId: string }) {
   const colorClass = getProgressBarColor(value);
   const isNull = value == null;
 
   // Disabled state: bg-muted + reason note below progress bar.
-  const baseClassName = disabled || isNull ? "bg-muted" : "";
+  const baseClassName = `gap-3 py-4 ${disabled || isNull ? "bg-muted" : ""}`;
 
   return (
     <Card data-testid={`eval-card-${testId}`} className={baseClassName}>
-      <CardHeader>
-        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+      <CardHeader className="px-4">
+        <CardTitle className="flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
+          <span className="min-w-0 truncate">{title}</span>
+          <MetricNote note={note} testId={`eval-card-note-${testId}`} />
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="text-2xl font-bold">{isNull ? "-" : value.toFixed(3)}</div>
-        {!isNull && (
-          <>
-            <Progress value={value * 100} className={colorClass} />
-            <div className="text-sm text-muted-foreground">{percent(value)}</div>
-          </>
-        )}
-        {disabled && disabledReason && <div className="text-xs text-muted-foreground">{disabledReason}</div>}
+      <CardContent className="space-y-2 px-4">
+        <div className="text-center text-lg font-bold tabular-nums">{isNull ? "-" : percent(value)}</div>
+        {!isNull && <Progress value={value * 100} className={colorClass} />}
+        {disabled && disabledReason && <div className="text-center text-xs text-muted-foreground">{disabledReason}</div>}
       </CardContent>
     </Card>
   );

@@ -394,6 +394,8 @@ export interface Translations {
     eval: {
       layer1Title: string;
       layer2Title: string;
+      /** 区块标题 ⓘ 的纯指标解释（2026-08-27 三轮：不再提内部 Layer 编号；\n 分行的四指标简述）。 */
+      layer1Note: string;
       layer2Note: string;
       regressionBadge: string;
       ragasMissingBadge: string;
@@ -401,6 +403,26 @@ export interface Translations {
       citationPrecision: string;
       citationRecall: string;
       seedHitRate: string;
+      /** RAGAS 卡片中文短标题（单行 nowrap，≤3 字）；全称进 cardNote tooltip。 */
+      ragasCard: {
+        faithfulness: string;
+        answerRelevancy: string;
+        contextPrecision: string;
+        contextRecall: string;
+      };
+      /** 每张卡片 ⓘ tooltip 的一句话解释（中文全称 + English 名与量程）。 */
+      cardNote: {
+        faithfulness: string;
+        answerRelevancy: string;
+        contextPrecision: string;
+        contextRecall: string;
+        citationPrecision: string;
+        citationRecall: string;
+        seedHitRate: string;
+      };
+      /** Layer 2 内两行卡片的分组小标签（概率性 vs 确定性指标）。 */
+      ragasGroupLabel: string;
+      archGroupLabel: string;
       noGraphQuestions: string;
       emptyLayer1: string;
       emptyLayer2: string;
