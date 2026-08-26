@@ -11,6 +11,7 @@ import {
   DuplicateUploadDialog,
   type DuplicateAction,
 } from "@/components/workspace/knowledge/duplicate-upload-dialog";
+import { EvalTab } from "@/components/workspace/knowledge/eval-tab";
 import { GraphTab } from "@/components/workspace/knowledge/graph-tab";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
 import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-drawer";
@@ -73,6 +74,8 @@ export default function KnowledgePage() {
   // an overlay — opening it never switches the tab; only the drawer's
   // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
   const [activeTab, setActiveTab] = useState<KnowledgeMiddleTab>("documents");
+  // 评测 tab 趋势图粒度（2026-08-24 spec §5，plan Task 4；数据接线在 Task 5）。
+  const [evalGranularity, setEvalGranularity] = useState<"day" | "week" | "month">("day");
   const [drawerEntryId, setDrawerEntryId] = useState<string | null>(null);
   // Phase-3 P6 混排修复：检索测试 wiki 路命中人工卡片时开卡片抽屉（卡片
   // id 走 wiki 详情接口必然 404）。
@@ -423,6 +426,16 @@ export default function KnowledgePage() {
                       setDrawerDoc(doc);
                     }
                   }}
+                />
+              }
+              eval={
+                // 数据接线在 Task 5（TanStack Query hooks + enabled 门控），
+                // 先挂 props 驱动的壳（overview/trend 为 null 即空态）。
+                <EvalTab
+                  granularity={evalGranularity}
+                  overview={null}
+                  trend={null}
+                  onGranularityChange={setEvalGranularity}
                 />
               }
             />

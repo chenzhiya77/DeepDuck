@@ -387,6 +387,8 @@ export interface Translations {
       vectors: string;
       /** 知识图谱 tab（2026-08-19 spec）：实体关系力导向图。 */
       graph: string;
+      /** 评测 tab（2026-08-24 spec §5，plan Task 4）。 */
+      eval: string;
     };
     /** RAG 评测指标总览（spec 2026-08-24 §3.6/§3.7）：Layer 1/2 标题、表格列头、空态提示。*/
     eval: {
@@ -407,8 +409,38 @@ export interface Translations {
       tableRecallAtK: string;
       tableMrr: string;
       tablePathAccuracy: string;
-      summaryRow: string;
+      /** category 显示名组（2026-08-26 补遗）：wire 键不外露，含汇总行。 */
+      category: {
+        fact: string;
+        relation: string;
+        concept: string;
+        global: string;
+        summary: string;
+      };
       noQuestionsInBatch: string;
+      /** 评测 tab（plan Task 4）：运行配置区说明文案（§9 触发按钮落地前占位）。 */
+      runConfigNote: string;
+      trendTitle: string;
+      /** 粒度按钮组 aria-label（窄面板降档收进 ⋯ 菜单）。 */
+      granularityLabel: string;
+      granularity: { day: string; week: string; month: string };
+      moreOptions: string;
+      /** 趋势图空态（has_data=false / trend 无数据）。 */
+      emptyTrend: string;
+      /** 趋势图 canvas 文案包（经 props 注入，canvas 不调 useI18n）。 */
+      trend: {
+        recallAtK: string;
+        hitRate: string;
+        mrr: string;
+        faithfulness: string;
+        answerRelevancy: string;
+        contextPrecision: string;
+        thresholdLine: string;
+        thresholdLabel: (percent: number) => string;
+        baselineUpdate: string;
+        clickForDetail: string;
+        regressionPrefix: string;
+      };
     };
     /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
     vectorSpace: {

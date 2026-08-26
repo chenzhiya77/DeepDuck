@@ -30,7 +30,7 @@ import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { runAfterMenuClose } from "./run-after-menu-close";
 
-export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "graph";
+export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "graph" | "eval";
 
 /**
  * Middle-column container (phase-2 batch-1, spec §3 三行结构):
@@ -61,6 +61,7 @@ export function MiddleTabs({
   recall,
   vectors,
   graph,
+  eval: evalPane,
 }: {
   kb: KnowledgeBase;
   activeTab: KnowledgeMiddleTab;
@@ -84,6 +85,8 @@ export function MiddleTabs({
   vectors: ReactNode;
   /** 知识图谱 pane（2026-08-19 spec）：实体关系力导向图。 */
   graph: ReactNode;
+  /** 评测 pane（2026-08-24 spec §5，plan Task 4）：指标总览 + 趋势图。 */
+  eval: ReactNode;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
@@ -174,6 +177,7 @@ export function MiddleTabs({
           <TabsTrigger value="recall">{tk.tabs.recall}</TabsTrigger>
           <TabsTrigger value="vectors">{tk.tabs.vectors}</TabsTrigger>
           <TabsTrigger value="graph">{tk.tabs.graph}</TabsTrigger>
+          <TabsTrigger value="eval">{tk.tabs.eval}</TabsTrigger>
         </TabsList>
         <TabsContent
           className="min-h-0 data-[state=inactive]:hidden"
@@ -209,6 +213,13 @@ export function MiddleTabs({
           value="graph"
         >
           <div className="flex h-full min-h-0 flex-col">{graph}</div>
+        </TabsContent>
+        <TabsContent
+          className="min-h-0 data-[state=inactive]:hidden"
+          forceMount
+          value="eval"
+        >
+          <div className="flex h-full min-h-0 flex-col">{evalPane}</div>
         </TabsContent>
       </Tabs>
 

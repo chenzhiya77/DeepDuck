@@ -116,7 +116,7 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
           if (!hasData) {
             return (
               <TableRow key={category} data-testid={testId} className="text-muted-foreground">
-                <TableCell colSpan={5}>{category} ({tk.noQuestionsInBatch})</TableCell>
+                <TableCell colSpan={5}>{tk.category[category]} ({tk.noQuestionsInBatch})</TableCell>
               </TableRow>
             );
           }
@@ -126,7 +126,7 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
 
           return (
             <TableRow key={category} data-testid={testId} className={summaryRowClassName}>
-              <TableCell>{category === "summary" ? tk.summaryRow : `${category} (n=${metric.question_count})`}</TableCell>
+              <TableCell>{category === "summary" ? tk.category.summary : `${tk.category[category]} (n=${metric.question_count})`}</TableCell>
             <TableCell data-testid={`eval-cell-hit-${category}`}>{percent(metric.hit_rate)}</TableCell>
               <TableCell data-testid={`eval-cell-recall-${category}`} className={tint}>{percent(metric.recall_at_k)}</TableCell>
               <TableCell data-testid={`eval-cell-mrr-${category}`}>{metric.mrr.toFixed(3)}</TableCell>

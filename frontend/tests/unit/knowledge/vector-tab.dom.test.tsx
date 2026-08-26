@@ -78,6 +78,7 @@ function renderTabs() {
           recall={<div data-testid="recall-pane" />}
           vectors={<div data-testid="vectors-pane" />}
           graph={<div data-testid="graph-pane" />}
+          eval={<div data-testid="eval-pane" />}
         />
       </I18nContext.Provider>
     );

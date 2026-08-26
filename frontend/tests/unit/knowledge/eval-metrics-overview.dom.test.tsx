@@ -64,7 +64,8 @@ describe("Layer 1 表格", () => {
     expect(rows).toHaveLength(5);
 
     // category 单元格带题量后缀；指标格式化：百分比 1 位小数，MRR 3 位。
-    expect(rows[0]?.textContent).toContain("fact (n=12)");
+    // 行头渲染本地化显示名（tk.eval.category.*），wire 键不外露（2026-08-26 补遗）。
+    expect(rows[0]?.textContent).toContain("事实 (n=12)");
     expect(rows[0]?.textContent).toContain("95.2%");
     expect(rows[0]?.textContent).toContain("92.3%");
     expect(rows[0]?.textContent).toContain("0.876");
@@ -84,6 +85,32 @@ describe("Layer 1 表格", () => {
       screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"),
     );
     expect(headers.map((h) => h.textContent)).toEqual(["分类", "Hit Rate", "Recall@k", "MRR", "路径准确率"]);
+  });
+
+  it("renders localized category display names instead of wire keys (zh-CN)", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    const table = screen.getByTestId("eval-layer1-table");
+    const rows = table.querySelectorAll("tbody tr");
+    // 显示名：事实/关系/概念/全局/汇总；wire 键 fact/relation/... 不外露
+    expect(rows[0]?.textContent).toContain("事实");
+    expect(rows[1]?.textContent).toContain("关系");
+    expect(rows[2]?.textContent).toContain("概念");
+    expect(rows[3]?.textContent).toContain("全局");
+    expect(rows[4]?.textContent).toContain("汇总");
+    expect(table.textContent).not.toContain("fact (");
+    expect(table.textContent).not.toContain("relation (");
+    expect(table.textContent).not.toContain("concept (");
+    expect(table.textContent).not.toContain("global (");
+  });
+
+  it("renders en-US category display names", () => {
+    renderOverview(FULL_OVERVIEW, undefined, "en-US");
+
+    const rows = screen.getByTestId("eval-layer1-table").querySelectorAll("tbody tr");
+    expect(rows[0]?.textContent).toContain("Fact (n=12)");
+    expect(rows[1]?.textContent).toContain("Relation");
+    expect(rows[4]?.textContent).toContain("Summary");
   });
 
   it("passes the full variant-prefixed progress class literally so Tailwind can scan it", () => {
@@ -153,6 +180,9 @@ describe("Layer 1 表格", () => {
     const missingRow = screen.getByTestId("eval-row-relation");
     expect(missingRow.className).toContain("text-muted-foreground");
     expect(missingRow.textContent).toContain("本批次无此类题目");
+    // 缺失行同样用显示名而非 wire 键（2026-08-26 补遗）
+    expect(missingRow.textContent).toContain("关系");
+    expect(missingRow.textContent).not.toContain("relation");
     // 有数据的行不受影响。
     expect(screen.getByTestId("eval-row-fact").textContent).toContain("95.2%");
   });
