@@ -192,7 +192,7 @@
 
 ---
 
-## Task 4: 评测 Tab 挂载——middle-tabs 扩第六 tab
+## Task 4: 评测 Tab 挂载——middle-tabs 扩第六 tab ✅ 已完成（2026-08-26，`0d549eee`）
 
 > **2026-08-26 布局定案**：维持 spec v3 §5 单列垂直布局（route A）。用户手绘的双栏工作台草图（左：题库+历史边栏）依赖父 spec §9 二期 API（题库 CRUD / 历史列表 / 触发评测），不属本 plan；双栏如需重做随 §9 立项时一并设计。
 
@@ -204,16 +204,18 @@
 - Modify: `frontend/src/components/workspace/knowledge/eval-metrics-overview.tsx`（**2026-08-26 补遗**：Layer1Table category 显示名本地化）
 - Create: `frontend/tests/unit/knowledge/middle-tabs.dom.test.tsx`（**新建**——该文件不存在）
 
-- [ ] RED test：
+- [x] RED test：
   - 第六个 trigger 渲染「评测」
   - 点击切 tab pane active；六 pane forceMount keep-alive
   - `eval-tab.tsx` 组合渲染 overview + trend（canvas mock）+ drawer 占位
   - **2026-08-26 补**：窄面板降档——容器溢出（钉 `scrollWidth` 模拟）时粒度按钮组降档（沿用 vector-tab `useToolbarTier` 溢出检测先例；jsdom 无布局恒 0 档，窄档用例手法对齐 vector-tab 测试）
   - **2026-08-26 补**：Layer1Table 行头用 `tk.eval.category.*` 显示名渲染（wire 键不再直接暴露给用户）
-- [ ] Implement：middle-tabs 扩展、eval-tab 布局（上：运行配置区——父 spec §9 触发按钮落地前**仅渲染一行说明文案**，不留无功能空盒；中：overview；下：trend 卡片壳，粒度按钮组接 `useToolbarTier` 降档）、i18n 三处（含 `tk.eval.category.fact/relation/concept/global/summary` 显示名组）。
-- [ ] `pnpm test` GREEN（含 middle-tabs 回归）；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): mount eval tab in knowledge middle tabs`
+- [x] Implement：middle-tabs 扩展、eval-tab 布局（上：运行配置区——父 spec §9 触发按钮落地前**仅渲染一行说明文案**，不留无功能空盒；中：overview；下：trend 卡片壳，粒度按钮组接 `useToolbarTier` 降档）、i18n 三处（含 `tk.eval.category.fact/relation/concept/global/summary` 显示名组）。
+  - 实现备注：strict mode 下 `eval` 不能作解构绑定名，middle-tabs 用 `eval: evalPane` 重命名（prop 名保持 `eval`）；`useToolbarTier` 两档（0 内联 / 1 ⋯ 菜单）副本内联在 eval-tab.tsx（vector-tab 的为模块私有，未抽共用）；drawer 占位状态（`drawerRunId`）在 eval-tab 内部，Task 6 替换为 EvalRunDrawer；`summaryRow` i18n 键并入 `category.summary`；graph-tab/vector-tab/wiki-panel 三个既有测试的 MiddleTabs harness 补 `eval` prop；`page.tsx` 暂以 `overview={null} trend={null}` 挂壳，Task 5 接通。
+- [x] `pnpm test` GREEN（目标三文件 35 passed；含 graph-tab/vector-tab/wiki-panel 回归共 123 passed）；revert proof：stash 实现 → 4 failed + 收集错误 RED → pop → GREEN。
+  - 既有失败记录：`chat-panel.dom.test.tsx`「restores the remembered model per kb」在 HEAD（无本任务改动）即失败（1/25），属预存问题，与本任务无关。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): mount eval tab in knowledge middle tabs`（`0d549eee`）
 
 ---
 
