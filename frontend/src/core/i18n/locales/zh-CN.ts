@@ -471,6 +471,8 @@ export const zhCN: Translations = {
       granularityLabel: "时间粒度",
       granularity: { day: "日", week: "周", month: "月" },
       moreOptions: "更多选项",
+      loading: "加载中…",
+      loadFailed: "评测数据加载失败",
       emptyTrend: "暂无评测趋势数据",
       trend: {
         recallAtK: "Recall@k",

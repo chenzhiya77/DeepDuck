@@ -487,6 +487,8 @@ export const enUS: Translations = {
       granularityLabel: "Granularity",
       granularity: { day: "Day", week: "Week", month: "Month" },
       moreOptions: "More options",
+      loading: "Loading…",
+      loadFailed: "Failed to load evaluation data",
       emptyTrend: "No evaluation trend data yet",
       trend: {
         recallAtK: "Recall@k",

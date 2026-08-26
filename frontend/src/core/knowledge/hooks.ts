@@ -4,10 +4,14 @@
  * stays trivially testable.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 
 import * as api from "./api";
 import { documentsRefetchInterval } from "./document-stats";
+import type { MetricsOverview, TrendQueryParams, TrendResponse } from "./types";
 import { wikiEntriesRefetchInterval } from "./wiki-status";
+
+type EvalGranularity = TrendQueryParams["granularity"];
 
 export function knowledgeBasesKey() {
   return ["knowledge-bases"] as const;
@@ -139,6 +143,50 @@ export function useGenerateWiki(kbId: string) {
 
 export function knowledgeWikiEntriesKey(kbId: string) {
   return ["knowledge-bases", kbId, "wiki-entries"] as const;
+}
+
+/** 评测数据（2026-08-24 spec §5，plan Task 5）：latest 无参数维度，键即 kb 粒度。 */
+export function knowledgeEvalLatestKey(kbId: string) {
+  return ["knowledge-bases", kbId, "eval-runs", "latest"] as const;
+}
+
+/** 趋势查询键含粒度——切粒度即换键自动重新请求（plan Task 5）。 */
+export function knowledgeEvalTrendKey(kbId: string, granularity: EvalGranularity) {
+  return ["knowledge-bases", kbId, "eval-runs", "trend", { granularity }] as const;
+}
+
+/**
+ * 评测数据分钟级不变：30s 内 keep-alive 来回切 tab 不重复请求（plan Task 5）。
+ */
+const EVAL_STALE_TIME_MS = 30_000;
+
+/**
+ * 指标总览（GET /eval-runs/latest）。Lazy: the caller gates with ``enabled``
+ * so the fetch only fires once the eval tab is first activated — keep-alive
+ * panes stay mounted, so without the gate every kb page load would fetch
+ * eagerly（useWikiEntries / useVectorProjection 先例）.
+ */
+export function useMetricsOverview(kbId: string | null, enabled = true): UseQueryResult<MetricsOverview> {
+  return useQuery({
+    queryKey: knowledgeEvalLatestKey(kbId ?? ""),
+    queryFn: () => api.getLatestEvalMetrics(kbId!),
+    enabled: enabled && kbId !== null,
+    staleTime: EVAL_STALE_TIME_MS,
+  });
+}
+
+/** 指标趋势（GET /eval-runs/trend），粒度进 queryKey。 */
+export function useEvalTrend(
+  kbId: string | null,
+  granularity: EvalGranularity,
+  enabled = true,
+): UseQueryResult<TrendResponse> {
+  return useQuery({
+    queryKey: knowledgeEvalTrendKey(kbId ?? "", granularity),
+    queryFn: () => api.getEvalTrend(kbId!, { granularity }),
+    enabled: enabled && kbId !== null,
+    staleTime: EVAL_STALE_TIME_MS,
+  });
 }
 
 /**

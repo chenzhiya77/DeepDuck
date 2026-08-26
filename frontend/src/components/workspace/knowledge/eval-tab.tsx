@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * 评测 tab（2026-08-24 spec §5，plan Task 4）：单列垂直布局（2026-08-26 布局
- * 定案 route A；双栏工作台依赖父 spec §9 二期 API，另立 plan）——
+ * 评测 tab（2026-08-24 spec §5，plan Task 4/5）：单列垂直布局（2026-08-26
+ * 布局定案 route A；双栏工作台依赖父 spec §9 二期 API，另立 plan）——
  * 上：运行配置区一行说明文案（§9 触发按钮落地前不留无功能空盒）；
- * 中：指标总览（eval-metrics-overview，props 驱动）；
+ * 中：指标总览（eval-metrics-overview）；
  * 下：趋势图卡片壳（eval-trend-chart 经 next/dynamic ssr:false 懒加载，
  *     粒度按钮组接 useToolbarTier 窄面板降档——vector-tab 溢出检测先例）+
  *     drawer 占位（Task 6 落地 EvalRunDrawer）。
- * 数据接线（TanStack Query hooks + enabled 门控）在 Task 5，本组件保持
- * props 驱动、不内置 fetch。
+ * 数据层：useMetricsOverview / useEvalTrend（TanStack Query），``enabled``
+ * 由 page 层按 tab 激活下发（keep-alive 懒门控）；粒度 state 在本组件，
+ * 进 queryKey 自动重新请求。
  */
 import { MoreHorizontal } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -24,12 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/core/i18n/hooks";
-import type {
-  MetricsOverview,
-  TrendChartLabels,
-  TrendQueryParams,
-  TrendResponse,
-} from "@/core/knowledge/types";
+import { useEvalTrend, useMetricsOverview } from "@/core/knowledge/hooks";
+import type { TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types";
 
 import { EvalMetricsOverview } from "./eval-metrics-overview";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
@@ -90,21 +87,23 @@ function useToolbarTier(ref: RefObject<HTMLDivElement | null>): ToolbarTier {
 const GRANULARITIES = ["day", "week", "month"] as const;
 
 export interface EvalTabProps {
-  /** 指标总览数据（Task 5 由 useMetricsOverview 注入；null = 尚未加载）。 */
-  overview: MetricsOverview | null;
-  /** 趋势数据（Task 5 由 useEvalTrend 注入；null = 尚未加载/查询未启用）。 */
-  trend: TrendResponse | null;
-  granularity: Granularity;
-  onGranularityChange: (granularity: Granularity) => void;
+  kbId: string;
+  /** keep-alive pane 的懒加载门：仅评测 tab 激活后才发请求（page 层下发）。 */
+  enabled: boolean;
 }
 
-export function EvalTab({ overview, trend, granularity, onGranularityChange }: EvalTabProps) {
+export function EvalTab({ kbId, enabled }: EvalTabProps) {
   const { t } = useI18n();
   const tk = t.knowledge.eval;
   const toolbarRef = useRef<HTMLDivElement>(null);
   const toolbarTier = useToolbarTier(toolbarRef);
+  // 粒度 state 在组件内（进 queryKey，切换自动重新请求）。
+  const [granularity, setGranularity] = useState<Granularity>("day");
   // drawer 占位状态（Task 6 落地 EvalRunDrawer，此处仅记录点击来源 runId）。
   const [drawerRunId, setDrawerRunId] = useState<string | null>(null);
+
+  const overviewQuery = useMetricsOverview(kbId, enabled);
+  const trendQuery = useEvalTrend(kbId, granularity, enabled);
 
   // canvas 文案包：eval-trend-chart 保持纯渲染不调 useI18n（spec §3.6）。
   const chartLabels: TrendChartLabels = {
@@ -126,8 +125,18 @@ export function EvalTab({ overview, trend, granularity, onGranularityChange }: E
       {/* 运行配置区：父 spec §9 触发按钮落地前仅渲染一行说明文案，不留空盒 */}
       <p className="text-muted-foreground text-xs">{tk.runConfigNote}</p>
 
-      {/* 指标总览（Layer 1 表格 + Layer 2 卡片） */}
-      {overview ? <EvalMetricsOverview overview={overview} /> : null}
+      {/* 指标总览（Layer 1 表格 + Layer 2 卡片）：loading / 错误 / 数据三态 */}
+      {overviewQuery.isLoading ? (
+        <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
+          {tk.loading}
+        </div>
+      ) : overviewQuery.error ? (
+        <div className="text-destructive rounded-lg border border-dashed p-6 text-center text-sm">
+          {tk.loadFailed}
+        </div>
+      ) : overviewQuery.data ? (
+        <EvalMetricsOverview overview={overviewQuery.data} />
+      ) : null}
 
       {/* 趋势图卡片壳：标题 + 粒度切换（窄面板收进 ⋯ 菜单）+ canvas/空态 */}
       <section className="rounded-lg border p-3">
@@ -153,7 +162,7 @@ export function EvalTab({ overview, trend, granularity, onGranularityChange }: E
                     }`}
                     role="radio"
                     type="button"
-                    onClick={() => onGranularityChange(g)}
+                    onClick={() => setGranularity(g)}
                   >
                     {tk.granularity[g]}
                   </button>
@@ -169,7 +178,7 @@ export function EvalTab({ overview, trend, granularity, onGranularityChange }: E
                 <DropdownMenuContent align="end">
                   <DropdownMenuRadioGroup
                     value={granularity}
-                    onValueChange={(value) => onGranularityChange(value as Granularity)}
+                    onValueChange={(value) => setGranularity(value as Granularity)}
                   >
                     {GRANULARITIES.map((g) => (
                       <DropdownMenuRadioItem key={g} value={g}>
@@ -182,19 +191,30 @@ export function EvalTab({ overview, trend, granularity, onGranularityChange }: E
             )}
           </div>
         </div>
-        {trend ? (
-          <EvalTrendChart
-            baseline={trend.baseline}
-            granularity={trend.granularity}
-            labels={chartLabels}
-            points={trend.points}
-            onPointClick={setDrawerRunId}
-          />
-        ) : (
-          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            {tk.emptyTrend}
+        {trendQuery.isLoading ? (
+          <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
+            {tk.loading}
           </div>
-        )}
+        ) : trendQuery.error ? (
+          <div className="text-destructive rounded-lg border border-dashed p-6 text-center text-sm">
+            {tk.loadFailed}
+          </div>
+        ) : trendQuery.data ? (
+          trendQuery.data.has_data ? (
+            <EvalTrendChart
+              baseline={trendQuery.data.baseline}
+              granularity={trendQuery.data.granularity}
+              labels={chartLabels}
+              points={trendQuery.data.points}
+              onPointClick={setDrawerRunId}
+            />
+          ) : (
+            /* 新 KB 无评测历史：空态提示而非空白画布（2026-08-26 补） */
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              {tk.emptyTrend}
+            </div>
+          )
+        ) : null}
       </section>
 
       {/* drawer 占位：Task 6 落地 EvalRunDrawer 后替换 */}

@@ -425,6 +425,9 @@ export interface Translations {
       granularityLabel: string;
       granularity: { day: string; week: string; month: string };
       moreOptions: string;
+      /** 查询三态（plan Task 5）：加载中 / 加载失败。 */
+      loading: string;
+      loadFailed: string;
       /** 趋势图空态（has_data=false / trend 无数据）。 */
       emptyTrend: string;
       /** 趋势图 canvas 文案包（经 props 注入，canvas 不调 useI18n）。 */

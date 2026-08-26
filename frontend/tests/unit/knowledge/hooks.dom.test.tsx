@@ -18,19 +18,25 @@ rs.mock("@/core/knowledge/api", () => ({
   retryDocument: rs.fn(),
   listDocumentChunks: rs.fn(),
   generateWiki: rs.fn(),
+  getLatestEvalMetrics: rs.fn(),
+  getEvalTrend: rs.fn(),
 }));
 
 import * as api from "@/core/knowledge/api";
 import {
   knowledgeDocumentsKey,
+  knowledgeEvalLatestKey,
+  knowledgeEvalTrendKey,
   useCreateKnowledgeBase,
   useDocuments,
+  useEvalTrend,
   useGenerateWiki,
   useKnowledgeBases,
+  useMetricsOverview,
   useRetryDocument,
   useUploadDocument,
 } from "@/core/knowledge/hooks";
-import type { KnowledgeDocument } from "@/core/knowledge/types";
+import type { KnowledgeDocument, MetricsOverview, TrendResponse } from "@/core/knowledge/types";
 
 const KB = {
   id: "kb-1",
@@ -173,5 +179,85 @@ describe("useGenerateWiki", () => {
     });
     await result.current.mutateAsync("full");
     expect(api.generateWiki).toHaveBeenCalledWith("kb-1", "full");
+  });
+});
+
+// ── 评测数据 hooks（2026-08-24 spec §5，plan Task 5）──────────────────────
+
+const EVAL_OVERVIEW: MetricsOverview = {
+  kb_id: "kb-1",
+  layer1: null,
+  layer2: null,
+};
+
+const EVAL_TREND: TrendResponse = {
+  points: [],
+  granularity: "day",
+  baseline: null,
+  has_data: false,
+};
+
+describe("评测数据 hooks", () => {
+  beforeEach(() => {
+    rs.mocked(api.getLatestEvalMetrics).mockResolvedValue(EVAL_OVERVIEW);
+    rs.mocked(api.getEvalTrend).mockResolvedValue(EVAL_TREND);
+  });
+
+  it("useMetricsOverview fetches on enable and caches under the eval-latest key", async () => {
+    const queryClient = freshQueryClient();
+    const { result } = renderHook(() => useMetricsOverview("kb-1", true), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getLatestEvalMetrics).toHaveBeenCalledWith("kb-1");
+    expect(queryClient.getQueryData(knowledgeEvalLatestKey("kb-1"))).toEqual(EVAL_OVERVIEW);
+    // staleTime 30s：刚取回的数据保持 fresh，keep-alive 来回切不重复请求
+    expect(result.current.isStale).toBe(false);
+  });
+
+  it("enabled=false does not send requests (keep-alive 门控)", async () => {
+    renderHook(() => useMetricsOverview("kb-1", false), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    renderHook(() => useEvalTrend("kb-1", "day", false), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.getLatestEvalMetrics).not.toHaveBeenCalled();
+    expect(api.getEvalTrend).not.toHaveBeenCalled();
+  });
+
+  it("granularity goes into the trend queryKey (切换自动重新请求)", async () => {
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const { rerender } = renderHook(({ granularity }) => useEvalTrend("kb-1", granularity, true), {
+      initialProps: { granularity: "day" as "day" | "week" | "month" },
+      wrapper,
+    });
+    await waitFor(() => expect(api.getEvalTrend).toHaveBeenCalledWith("kb-1", { granularity: "day" }));
+
+    rerender({ granularity: "week" });
+    await waitFor(() => expect(api.getEvalTrend).toHaveBeenCalledWith("kb-1", { granularity: "week" }));
+    // 两个粒度各自落缓存（queryKey 含粒度），切回 day 不再发请求
+    expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1", "day"))).toEqual(EVAL_TREND);
+    expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1", "week"))).toEqual(EVAL_TREND);
+    const callsAfterWeek = rs.mocked(api.getEvalTrend).mock.calls.length;
+    rerender({ granularity: "day" });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1", "day"))).toEqual(EVAL_TREND),
+    );
+    expect(rs.mocked(api.getEvalTrend).mock.calls.length).toBe(callsAfterWeek);
+  });
+
+  it("null kbId keeps the queries disabled", async () => {
+    renderHook(() => useMetricsOverview(null, true), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    renderHook(() => useEvalTrend(null, "day", true), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.getLatestEvalMetrics).not.toHaveBeenCalled();
+    expect(api.getEvalTrend).not.toHaveBeenCalled();
   });
 });

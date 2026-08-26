@@ -16,7 +16,10 @@ import type {
   KnowledgeGraphResponse,
   ManualCardDetail,
   ManualCardsPage,
+  MetricsOverview,
   RecallTestResponse,
+  TrendQueryParams,
+  TrendResponse,
   VectorProjectionAlgo,
   VectorProjectionQueryResult,
   VectorProjectionResponse,
@@ -354,6 +357,33 @@ export function getVectorProjection(
   const qs = projectionSearchParams(params);
   return fetch(kbUrl(kbId, qs ? `/vector-projection?${qs}` : "/vector-projection")).then((r) =>
     readResponse<VectorProjectionResponse>(r, "Failed to fetch vector projection"),
+  );
+}
+
+/** GET /eval-runs/latest：两层各取最近一次 completed 非 ci 运行（spec §4.2）。 */
+export function getLatestEvalMetrics(kbId: string): Promise<MetricsOverview> {
+  return fetch(kbUrl(kbId, "/eval-runs/latest")).then((r) =>
+    readResponse<MetricsOverview>(r, "Failed to fetch eval metrics overview"),
+  );
+}
+
+/**
+ * GET /eval-runs/trend：三粒度统一「周期末次」聚合（spec §4.2）。窗口参数
+ * 按粒度配对（day→days_back / week→weeks_back / month→months_back），只回显
+ * 当前粒度匹配的键；缺省走后端默认（30/12/6）。
+ */
+export function getEvalTrend(kbId: string, params: TrendQueryParams = { granularity: "day" }): Promise<TrendResponse> {
+  const search = new URLSearchParams();
+  search.set("granularity", params.granularity);
+  if (params.granularity === "day" && params.days_back != null) {
+    search.set("days_back", String(params.days_back));
+  } else if (params.granularity === "week" && params.weeks_back != null) {
+    search.set("weeks_back", String(params.weeks_back));
+  } else if (params.granularity === "month" && params.months_back != null) {
+    search.set("months_back", String(params.months_back));
+  }
+  return fetch(kbUrl(kbId, `/eval-runs/trend?${search.toString()}`)).then((r) =>
+    readResponse<TrendResponse>(r, "Failed to fetch eval trend"),
   );
 }
 
