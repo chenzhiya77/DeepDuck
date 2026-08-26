@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **2026-08-26 修订**（Task 2 完成后实现复查）：Task 4 补窄面板降级策略与 category 显示名本地化（Task 2 补遗）；Task 5 补趋势图空态用例。详见各任务内「2026-08-26 补」标注。
+
 **Goal:** 为评测 Tab 实现数据可视化层——指标总览组件（Layer 1 表格 + Layer 2 卡片网格）与趋势图组件（ECharts 多线时间序列），含数据供给链路（双 CLI 持久化 + baseline 机制 + latest/trend 端点）；本 plan 仅分解实施任务，所有设计决策见 spec v3。
 
 **Spec:** `docs/superpowers/specs/2026-08-24-rag-evaluation-metrics-visualization-design.md`（v3 已定稿）
@@ -156,6 +158,8 @@
 - [x] `pnpm check` 双净。
 - [x] Commit: `feat(frontend): add eval metrics overview with Layer 1 table and Layer 2 cards`（`4d3c8818`）
 
+> **2026-08-26 补**（实现复查）：Layer1Table 行头当前直接渲染 wire 键（`fact/relation/concept/global`），中文用户会看到英文协议键，与 §3.6 i18n 纪律有出入——category 显示名本地化（`tk.eval.category.*` + Layer1Table 渲染改用显示名）移至 **Task 4** 随 i18n 批次落地，见 Task 4 补遗。
+
 ---
 
 ## Task 3: 趋势图 canvas——手写 echarts 适配层 + 纯函数 option
@@ -190,18 +194,23 @@
 
 ## Task 4: 评测 Tab 挂载——middle-tabs 扩第六 tab
 
+> **2026-08-26 布局定案**：维持 spec v3 §5 单列垂直布局（route A）。用户手绘的双栏工作台草图（左：题库+历史边栏）依赖父 spec §9 二期 API（题库 CRUD / 历史列表 / 触发评测），不属本 plan；双栏如需重做随 §9 立项时一并设计。
+
 **Files:**
 - Modify: `frontend/src/components/workspace/knowledge/middle-tabs.tsx`（`KnowledgeMiddleTab` 扩 `"eval"` + TabsTrigger/TabsContent + `eval: ReactNode` prop）
 - Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts`（`tk.tabs.eval` = 评测 / Evaluation）
 - Modify: `frontend/src/app/workspace/knowledge/page.tsx`（接线 eval pane + drawer state）
-- Create: `frontend/src/components/workspace/knowledge/eval-tab.tsx`（组合 overview + trend + drawer；数据接线在 Task 5）
+- Create: `frontend/src/components/workspace/knowledge/eval-tab.tsx`（组合 overview + trend + drawer 占位；数据接线在 Task 5）
+- Modify: `frontend/src/components/workspace/knowledge/eval-metrics-overview.tsx`（**2026-08-26 补遗**：Layer1Table category 显示名本地化）
 - Create: `frontend/tests/unit/knowledge/middle-tabs.dom.test.tsx`（**新建**——该文件不存在）
 
 - [ ] RED test：
   - 第六个 trigger 渲染「评测」
   - 点击切 tab pane active；六 pane forceMount keep-alive
   - `eval-tab.tsx` 组合渲染 overview + trend（canvas mock）+ drawer 占位
-- [ ] Implement：middle-tabs 扩展、eval-tab 布局（上：运行配置占位；中：overview；下：trend 卡片壳含粒度按钮组）、i18n 三处。
+  - **2026-08-26 补**：窄面板降档——容器溢出（钉 `scrollWidth` 模拟）时粒度按钮组降档（沿用 vector-tab `useToolbarTier` 溢出检测先例；jsdom 无布局恒 0 档，窄档用例手法对齐 vector-tab 测试）
+  - **2026-08-26 补**：Layer1Table 行头用 `tk.eval.category.*` 显示名渲染（wire 键不再直接暴露给用户）
+- [ ] Implement：middle-tabs 扩展、eval-tab 布局（上：运行配置区——父 spec §9 触发按钮落地前**仅渲染一行说明文案**，不留无功能空盒；中：overview；下：trend 卡片壳，粒度按钮组接 `useToolbarTier` 降档）、i18n 三处（含 `tk.eval.category.fact/relation/concept/global/summary` 显示名组）。
 - [ ] `pnpm test` GREEN（含 middle-tabs 回归）；revert proof。
 - [ ] `pnpm check` 双净。
 - [ ] Commit: `feat(frontend): mount eval tab in knowledge middle tabs`
@@ -220,6 +229,7 @@
 - [ ] RED test：
   - `useMetricsOverview` / `useEvalTrend`：queryKey 正确、`enabled=false` 时不发请求（keep-alive 门控）、粒度进 queryKey（切换自动重新请求）
   - eval-tab：loading skeleton、错误提示、数据到达后渲染 overview + trend
+  - **2026-08-26 补**：趋势图空态——`trend.has_data === false`（新 KB 无评测历史）时渲染空态提示而非空白画布（文案走 i18n，与 overview 空态同风格）
 - [ ] Implement hooks + eval-tab 接线（`enabled: activeTab === "eval"` 由 page.tsx 传入；`staleTime: 30_000`——评测数据分钟级不变，keep-alive 来回切不重复请求）。
 - [ ] `pnpm test` GREEN；revert proof。
 - [ ] `pnpm check` 双净。
