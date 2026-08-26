@@ -444,6 +444,24 @@ export interface Translations {
         clickForDetail: string;
         regressionPrefix: string;
       };
+      /** 单次运行详情 drawer（plan Task 6）：元信息 + 两层指标只读摘要。 */
+      drawer: {
+        title: string;
+        runIdLabel: string;
+        createdAtLabel: string;
+        environmentLabel: string;
+        statusLabel: string;
+        statusCompleted: string;
+        statusError: string;
+        statusSkipped: string;
+        baselineBadge: string;
+        layer1Section: string;
+        layer2Section: string;
+        contextRecallLabel: string;
+        pathAccuracyLabel: string;
+        pathAccuracyNote: string;
+        notRun: string;
+      };
     };
     /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
     vectorSpace: {

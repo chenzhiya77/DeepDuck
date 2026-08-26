@@ -6,8 +6,8 @@
  * 上：运行配置区一行说明文案（§9 触发按钮落地前不留无功能空盒）；
  * 中：指标总览（eval-metrics-overview）；
  * 下：趋势图卡片壳（eval-trend-chart 经 next/dynamic ssr:false 懒加载，
- *     粒度按钮组接 useToolbarTier 窄面板降档——vector-tab 溢出检测先例）+
- *     drawer 占位（Task 6 落地 EvalRunDrawer）。
+ *     粒度按钮组接 useToolbarTier 窄面板降档——vector-tab 溢出检测先例）；
+ *     点击数据点开 EvalRunDrawer 下钻（plan Task 6，GET /eval-runs/{run_id}）。
  * 数据层：useMetricsOverview / useEvalTrend（TanStack Query），``enabled``
  * 由 page 层按 tab 激活下发（keep-alive 懒门控）；粒度 state 在本组件，
  * 进 queryKey 自动重新请求。
@@ -29,6 +29,7 @@ import { useEvalTrend, useMetricsOverview } from "@/core/knowledge/hooks";
 import type { TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types";
 
 import { EvalMetricsOverview } from "./eval-metrics-overview";
+import { EvalRunDrawer } from "./eval-run-drawer";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
 
 const EvalTrendChart = dynamic<EvalTrendChartProps>(() => import("./eval-trend-chart"), {
@@ -99,7 +100,7 @@ export function EvalTab({ kbId, enabled }: EvalTabProps) {
   const toolbarTier = useToolbarTier(toolbarRef);
   // 粒度 state 在组件内（进 queryKey，切换自动重新请求）。
   const [granularity, setGranularity] = useState<Granularity>("day");
-  // drawer 占位状态（Task 6 落地 EvalRunDrawer，此处仅记录点击来源 runId）。
+  // 点击下钻：drawer 打开时携带该 runId（EvalRunDrawer 内 useEvalRun 拉详情）。
   const [drawerRunId, setDrawerRunId] = useState<string | null>(null);
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
@@ -217,12 +218,15 @@ export function EvalTab({ kbId, enabled }: EvalTabProps) {
         ) : null}
       </section>
 
-      {/* drawer 占位：Task 6 落地 EvalRunDrawer 后替换 */}
-      {drawerRunId ? (
-        <div className="hidden" data-testid="eval-run-drawer-placeholder">
-          {drawerRunId}
-        </div>
-      ) : null}
+      {/* 点击趋势图数据点 → drawer 下钻单次运行详情 */}
+      <EvalRunDrawer
+        kbId={kbId}
+        open={drawerRunId !== null}
+        runId={drawerRunId}
+        onOpenChange={(next) => {
+          if (!next) setDrawerRunId(null);
+        }}
+      />
     </div>
   );
 }

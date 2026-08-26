@@ -8,7 +8,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 
 import * as api from "./api";
 import { documentsRefetchInterval } from "./document-stats";
-import type { MetricsOverview, TrendQueryParams, TrendResponse } from "./types";
+import type { EvalRunDetail, MetricsOverview, TrendQueryParams, TrendResponse } from "./types";
 import { wikiEntriesRefetchInterval } from "./wiki-status";
 
 type EvalGranularity = TrendQueryParams["granularity"];
@@ -155,6 +155,11 @@ export function knowledgeEvalTrendKey(kbId: string, granularity: EvalGranularity
   return ["knowledge-bases", kbId, "eval-runs", "trend", { granularity }] as const;
 }
 
+/** 单次运行详情键（drawer 下钻，plan Task 6）：runId 定位。 */
+export function knowledgeEvalRunKey(kbId: string, runId: string) {
+  return ["knowledge-bases", kbId, "eval-runs", "detail", runId] as const;
+}
+
 /**
  * 评测数据分钟级不变：30s 内 keep-alive 来回切 tab 不重复请求（plan Task 5）。
  */
@@ -186,6 +191,18 @@ export function useEvalTrend(
     queryFn: () => api.getEvalTrend(kbId!, { granularity }),
     enabled: enabled && kbId !== null,
     staleTime: EVAL_STALE_TIME_MS,
+  });
+}
+
+/**
+ * 单次运行详情（GET /eval-runs/{run_id}）：runId 定位，null 即禁用——
+ * drawer 关闭后不残留请求（plan Task 6）。
+ */
+export function useEvalRun(kbId: string | null, runId: string | null): UseQueryResult<EvalRunDetail> {
+  return useQuery({
+    queryKey: knowledgeEvalRunKey(kbId ?? "", runId ?? ""),
+    queryFn: () => api.getEvalRun(kbId!, runId!),
+    enabled: kbId !== null && runId !== null,
   });
 }
 

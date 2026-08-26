@@ -35,6 +35,18 @@ rs.mock("@/components/workspace/knowledge/eval-trend-chart", () => ({
   },
 }));
 
+/** EvalRunDrawer mock（Task 6）：记录 props，open 时渲染占位。 */
+const drawerMock = rs.hoisted(() => ({
+  props: undefined as Record<string, unknown> | undefined,
+}));
+
+rs.mock("@/components/workspace/knowledge/eval-run-drawer", () => ({
+  EvalRunDrawer: (props: Record<string, unknown>) => {
+    drawerMock.props = props;
+    return props.open ? <div data-testid="eval-run-drawer-mock" /> : null;
+  },
+}));
+
 // jsdom 无 ResizeObserver——组件 resize 监听用空实现顶替（panels-shell 先例）。
 class ResizeObserverStub {
   observe() {
@@ -109,6 +121,7 @@ function renderEvalTab(enabled = true) {
 describe("EvalTab 数据联通", () => {
   beforeEach(() => {
     canvasMock.props = undefined;
+    drawerMock.props = undefined;
     hooksMock.useMetricsOverview.mockReset();
     hooksMock.useEvalTrend.mockReset();
     // 缺省：两查询就绪且有数据
@@ -190,14 +203,23 @@ describe("EvalTab 数据联通", () => {
     expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "week", true);
   });
 
-  it("opens the drawer placeholder with the clicked run id (Task 6 replaces with real drawer)", async () => {
+  it("clicking a trend point opens the run drawer; closing clears the run id", async () => {
     renderEvalTab();
     await screen.findByTestId("eval-trend-chart-mock");
     const onPointClick = canvasMock.props?.onPointClick as ((runId: string) => void) | undefined;
     expect(onPointClick).toBeTypeOf("function");
+    // 点击数据点 → drawer 打开并携带 runId（GET /eval-runs/{run_id} 由 drawer 内的
+    // useEvalRun 发起，见 eval-run-drawer.dom.test.tsx）
     act(() => onPointClick?.("run-l1-1"));
-    const placeholder = screen.getByTestId("eval-run-drawer-placeholder");
-    expect(placeholder.textContent).toContain("run-l1-1");
+    expect(screen.getByTestId("eval-run-drawer-mock")).toBeTruthy();
+    expect(drawerMock.props?.runId).toBe("run-l1-1");
+    expect(drawerMock.props?.open).toBe(true);
+    expect(drawerMock.props?.kbId).toBe("kb-1");
+    // 关闭 → 清空 runId，drawer 卸载
+    act(() => (drawerMock.props?.onOpenChange as (open: boolean) => void)(false));
+    await waitFor(() => {
+      expect(screen.queryByTestId("eval-run-drawer-mock")).toBeNull();
+    });
   });
 
   it("窄面板降档：容器溢出时粒度按钮组收进 ⋯ 菜单", async () => {

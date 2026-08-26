@@ -20,15 +20,18 @@ rs.mock("@/core/knowledge/api", () => ({
   generateWiki: rs.fn(),
   getLatestEvalMetrics: rs.fn(),
   getEvalTrend: rs.fn(),
+  getEvalRun: rs.fn(),
 }));
 
 import * as api from "@/core/knowledge/api";
 import {
   knowledgeDocumentsKey,
   knowledgeEvalLatestKey,
+  knowledgeEvalRunKey,
   knowledgeEvalTrendKey,
   useCreateKnowledgeBase,
   useDocuments,
+  useEvalRun,
   useEvalTrend,
   useGenerateWiki,
   useKnowledgeBases,
@@ -36,7 +39,12 @@ import {
   useRetryDocument,
   useUploadDocument,
 } from "@/core/knowledge/hooks";
-import type { KnowledgeDocument, MetricsOverview, TrendResponse } from "@/core/knowledge/types";
+import type {
+  EvalRunDetail,
+  KnowledgeDocument,
+  MetricsOverview,
+  TrendResponse,
+} from "@/core/knowledge/types";
 
 const KB = {
   id: "kb-1",
@@ -259,5 +267,36 @@ describe("评测数据 hooks", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(api.getLatestEvalMetrics).not.toHaveBeenCalled();
     expect(api.getEvalTrend).not.toHaveBeenCalled();
+  });
+});
+
+describe("useEvalRun（drawer 下钻数据源，plan Task 6）", () => {
+  const RUN_DETAIL: EvalRunDetail = {
+    run_id: "run-1",
+    kb_id: "kb-1",
+    status: "completed",
+    environment: "local",
+    created_at: "2026-08-20T09:00:00+00:00",
+    layer1_metrics: {},
+    layer2_metrics: {},
+    is_baseline: false,
+  };
+
+  beforeEach(() => {
+    rs.mocked(api.getEvalRun).mockResolvedValue(RUN_DETAIL);
+  });
+
+  it("fetches only when both kbId and runId are set, caching under the run key", async () => {
+    const queryClient = freshQueryClient();
+    const { rerender } = renderHook(
+      ({ runId }) => useEvalRun("kb-1", runId),
+      { initialProps: { runId: null as string | null }, wrapper: createWrapper(queryClient) },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.getEvalRun).not.toHaveBeenCalled();
+
+    rerender({ runId: "run-1" });
+    await waitFor(() => expect(api.getEvalRun).toHaveBeenCalledWith("kb-1", "run-1"));
+    expect(queryClient.getQueryData(knowledgeEvalRunKey("kb-1", "run-1"))).toEqual(RUN_DETAIL);
   });
 });

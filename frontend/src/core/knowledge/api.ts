@@ -9,6 +9,7 @@ import { getBackendBaseURL } from "../config";
 
 import type {
   DeletePreviewResponse,
+  EvalRunDetail,
   KnowledgeBase,
   KnowledgeChunk,
   KnowledgeChunkPage,
@@ -384,6 +385,13 @@ export function getEvalTrend(kbId: string, params: TrendQueryParams = { granular
   }
   return fetch(kbUrl(kbId, `/eval-runs/trend?${search.toString()}`)).then((r) =>
     readResponse<TrendResponse>(r, "Failed to fetch eval trend"),
+  );
+}
+
+/** GET /eval-runs/{run_id}：单行完整 JSON，drawer 下钻数据源（spec §4.2）。 */
+export function getEvalRun(kbId: string, runId: string): Promise<EvalRunDetail> {
+  return fetch(kbUrl(kbId, `/eval-runs/${encodeURIComponent(runId)}`)).then((r) =>
+    readResponse<EvalRunDetail>(r, "Failed to fetch eval run detail"),
   );
 }
 
