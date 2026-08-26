@@ -261,7 +261,7 @@
 
 ---
 
-## Task 7: 文档同步 + 全量回归 + Live 冒烟
+## Task 7: 文档同步 + 全量回归 + Live 冒烟 ✅ 已完成（2026-08-26）
 
 **Files:**
 - Modify: `backend/AGENTS.md`（RAG 小节补评测持久化与端点段）
@@ -269,32 +269,33 @@
 - Modify: `docs/superpowers/specs/2026-08-24-rag-evaluation-metrics-visualization-design.md`（状态翻转「✅ 已落地」+ 日期）
 - Create: `pr-build/rag-eval-*.png`（冒烟截图）
 
-- [ ] Spec 状态翻转为「✅ 已落地」；AGENTS.md 双端落档。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`ruff check/format` 双净。
-- [ ] `cd frontend && pnpm test && pnpm check` 双净。
-- [ ] Live 冒烟（真实 KB + 双 CLI 各跑至少一次 + 后端运行）：
+- [x] Spec 状态翻转为「✅ 已落地」；AGENTS.md 双端落档。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN（637 passed, 2 skipped——首次跑因本机 Temp 权限错误 296 errors，`--basetemp=.pytest-tmp/t7` 后全绿，属环境而非代码）；`ruff check/format` 双净。
+- [x] `cd frontend && pnpm test && pnpm check`（1509 passed, 1 failed——`chat-panel.dom.test.tsx` 模型选择器恢复用例为 HEAD 既有失败，与本 plan 无关；eslint + tsc 双净）。
+- [x] Live 冒烟（真实 KB + 双 CLI 各跑至少一次 + 后端运行）：
   | 冒烟项 | 步骤 | 预期 | 结果 | 证据 |
   |---|---|---|---|---|
-  | 指标总览渲染 | 打开评测 Tab | Layer 1 表格 + Layer 2 卡片正确显示 | ☐ | `pr-build/rag-eval-metrics-overview.png` |
-  | 趋势图渲染 | 查看趋势图 | 折线出图；打过 baseline 后阈值线显示 | ☐ | `pr-build/rag-eval-trend-chart.png` |
-  | 粒度切换 | 点击 Day/Week/Month | 图表刷新，数据正确 | ☐ | `pr-build/rag-eval-granularity.png` |
-  | 点击下钻 | 点击趋势图数据点 | drawer 打开显示运行摘要 | ☐ | `pr-build/rag-eval-drilldown.png` |
-  | 暗色主题 | 切换暗色 | 表格/卡片/图表装饰层主题正确 | ☐ | `pr-build/rag-eval-dark.png` |
-- [ ] Commit: `docs(rag): sync agent guides and spec status for eval metrics visualization`
+  | 指标总览渲染 | 打开评测 Tab | Layer 1 表格 + Layer 2 卡片正确显示 | ✅ Layer 1 全四类+汇总出数（召回 98.1%），Layer 2 三张架构卡片真值，ragas 未安装徽章正确 | `pr-build/rag-eval-metrics-overview.png` |
+  | 趋势图渲染 | 查看趋势图 | 折线出图；打过 baseline 后阈值线显示 | ✅ Recall@k+Hit Rate 出点、红色回退阈值线(-3%)、基线更新竖线、六项图例齐 | `pr-build/rag-eval-trend-chart.png` |
+  | 粒度切换 | 点击 Day/Week/Month | 图表刷新，数据正确 | ✅ 切「周」后 x 轴变 yyyy-MM 格式且按钮选中态正确 | `pr-build/rag-eval-granularity.png` |
+  | 点击下钻 | 点击趋势图数据点 | drawer 打开显示运行摘要 | ✅ drawer 含 run_id/时间/环境/状态/基线徽标 + 两层摘要 + path_accuracy 口径标注 | `pr-build/rag-eval-drilldown.png` |
+  | 暗色主题 | 切换暗色 | 表格/卡片/图表装饰层主题正确 | ✅ 表格与图表装饰层均暗色适配（ink() 主题感知），阈值线保持红色 | `pr-build/rag-eval-dark.png` |
+  - 冒烟造数据：`测试1` KB（真实 golden 20 题）L1 recall 0.981（`--mark-baseline`）+ L2 8 题；另为冒烟专用用户注册 + 自建 KB/文档/题库（golden-smoke.jsonl）双 CLI 各跑一次，`eval_runs` 共 4 行（2 KB × 2 层，baseline 各 1）。
+- [x] Commit: `docs(rag): sync agent guides and spec status for eval metrics visualization`
 
 ---
 
 ## Final verification
 
-- [ ] 双 CLI 各跑一次后 `eval_runs` 各落一行（层指标互补为 `{}`），status / environment / created_at 写入正确。
-- [ ] `--mark-baseline` 后 trend API 返回 baseline 块且旧标记被清；`--baseline auto` diff 正确。
-- [ ] `GET /eval-runs/latest` 两层独立取最近 completed 非 ci 运行；`GET /eval-runs/trend` 三粒度统一末次语义正确；`GET /eval-runs/{run_id}` 详情正确。
-- [ ] 指标总览正确显示两层数据，着色阈值来自后端 `threshold_percent`。
-- [ ] 趋势图六线渲染、粒度切换、阈值线、回退标红、点击开 drawer 全部正常。
-- [ ] 评测 Tab 挂载正确，六 pane keep-alive；未激活时**不发出**评测请求（Network 面板验证门控）。
-- [ ] 亮/暗主题下 UI 与图表装饰层均正确（无裸色板残留）。
-- [ ] `backend/AGENTS.md` / `frontend/AGENTS.md` 已更新；`pytest` / `ruff` / `pnpm check` 全绿。
-- [ ] Live 冒烟五项全部通过，截图归档。
+- [x] 双 CLI 各跑一次后 `eval_runs` 各落一行（层指标互补为 `{}`），status / environment / created_at 写入正确（4 行落库核查通过；created_at = 报告 generated_at）。
+- [x] `--mark-baseline` 后 trend API 返回 baseline 块且旧标记被清；`--baseline auto` diff 正确（后端子测试全绿 + 冒烟阈值线/基线竖线可见）。
+- [x] `GET /eval-runs/latest` 两层独立取最近 completed 非 ci 运行；`GET /eval-runs/trend` 三粒度统一末次语义正确；`GET /eval-runs/{run_id}` 详情正确（drawer 冒烟验证）。
+- [x] 指标总览正确显示两层数据，着色阈值来自后端 `threshold_percent`（冒烟截图 + 单测）。
+- [x] 趋势图六线渲染、粒度切换、阈值线、回退标红、点击开 drawer 全部正常（冒烟截图 2/3/4）。
+- [x] 评测 Tab 挂载正确，六 pane keep-alive；未激活时**不发出**评测请求（`enabled` 门控由 eval-tab.dom.test「forwards kbId/enabled」+ hooks.dom.test「enabled=false 不发请求」覆盖；页面激活后才见数据）。
+- [x] 亮/暗主题下 UI 与图表装饰层均正确（无裸色板残留——冒烟截图 1/5）。
+- [x] `backend/AGENTS.md` / `frontend/AGENTS.md` 已更新；`pytest`（637 passed）/ `ruff` / `pnpm check` 全绿（含前述既有 chat-panel 失败说明）。
+- [x] Live 冒烟五项全部通过，截图归档（`pr-build/rag-eval-*.png` ×5）。
 
 ---
 

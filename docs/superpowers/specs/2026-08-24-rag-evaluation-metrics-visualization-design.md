@@ -1,6 +1,6 @@
 # RAG 评估指标总览与趋势图可视化设计（评测 Tab 数据可视化子设计）
 
-> 状态：ready-for-agent（v3 修订，2026-08-24） · 日期：2026-08-24 · 范围：评测 Tab 的数据可视化细化设计——指标总览（Layer 1 表格 + Layer 2 卡片）与趋势图（ECharts 多线时间序列）；冻结指标展示与趋势图的具体视觉/交互/API 契约 · 关联：`2026-08-23-rag-retrieval-evaluation-design.md`（指标体系定义、后端实现与 §9 评测 Tab 契约意图）
+> 状态：✅ 已落地（2026-08-26，plan Task 0a–7 全部完成；布局定案为 §5 单列垂直布局，双栏工作台方案随父 spec §9 二期另议） · 日期：2026-08-24 · 范围：评测 Tab 的数据可视化细化设计——指标总览（Layer 1 表格 + Layer 2 卡片）与趋势图（ECharts 多线时间序列）；冻结指标展示与趋势图的具体视觉/交互/API 契约 · 关联：`2026-08-23-rag-retrieval-evaluation-design.md`（指标体系定义、后端实现与 §9 评测 Tab 契约意图）
 >
 > **v2 修订记录（2026-08-24 代码核查后）**：
 > 1. 修正数据契约归因：Layer 1 指标来自 `runner.py`（Layer 1 报告），Layer 2 指标来自 `ragas_eval.py`（Layer2Report）——v1 误将两者都挂在 Layer2Report 上（§3.1 字段映射表）；
