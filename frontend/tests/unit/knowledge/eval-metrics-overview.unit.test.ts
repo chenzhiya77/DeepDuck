@@ -7,7 +7,24 @@
  */
 import { describe, expect, it } from "@rstest/core";
 
-import { getCellColorClass, getProgressBarColor } from "@/components/workspace/knowledge/eval-metrics-overview.utils";
+import { classifyRagasSkipReason, getCellColorClass, getProgressBarColor } from "@/components/workspace/knowledge/eval-metrics-overview.utils";
+
+describe("classifyRagasSkipReason", () => {
+  // 后端 ragas_unavailable_reason() 的固定常量前缀；分类只认前缀，不整串比对。
+  it("classifies the backend not-installed constant as not-installed", () => {
+    expect(classifyRagasSkipReason("ragas 未安装（可选依赖；`uv sync --extra ragas` 后可用）")).toBe("not-installed");
+  });
+
+  it("treats a missing reason as not-installed (defensive)", () => {
+    expect(classifyRagasSkipReason(null)).toBe("not-installed");
+    expect(classifyRagasSkipReason(undefined)).toBe("not-installed");
+  });
+
+  it("classifies execution failures and empty output as runtime errors", () => {
+    expect(classifyRagasSkipReason("ragas 执行失败: ConnectionError(...)")).toBe("error");
+    expect(classifyRagasSkipReason("ragas 未产出结果")).toBe("error");
+  });
+});
 
 describe("getCellColorClass", () => {
   it("returns no tint when the run carried no baseline diff", () => {

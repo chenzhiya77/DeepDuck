@@ -223,20 +223,52 @@ describe("Layer 2 卡片", () => {
     expect(card.className).toContain("bg-muted");
   });
 
-  it("shows the ragas-missing badge and mutes ragas cards when ragas_available is false", () => {
+  it("shows a short localized missing badge (never the raw backend reason)", () => {
     const missing: MetricsOverview = {
       ...FULL_OVERVIEW,
       layer2: {
         ...FULL_OVERVIEW.layer2!,
         ragas_available: false,
-        ragas_skip_reason: "ragas not installed",
+        ragas_skip_reason: "ragas 未安装（可选依赖；`uv sync --extra ragas` 后可用）",
         ragas: { faithfulness: null, answer_relevancy: null, context_precision: null, context_recall: null },
       },
     };
     renderOverview(missing);
 
-    expect(screen.getByText("ragas not installed")).toBeTruthy();
+    // 徽章只显示固定本地化短文案，后端原始原因（含 shell 命令）不得进产品 UI。
+    expect(screen.getByTestId("eval-ragas-badge").textContent).toBe("ragas 未安装");
+    expect(screen.queryByText(/uv sync/)).toBeNull();
     expect(screen.getByTestId("eval-card-faithfulness").className).toContain("bg-muted");
+  });
+
+  it("shows a runtime-error badge and keeps the raw reason out of the inline header", () => {
+    const failed: MetricsOverview = {
+      ...FULL_OVERVIEW,
+      layer2: {
+        ...FULL_OVERVIEW.layer2!,
+        ragas_available: false,
+        ragas_skip_reason: "ragas 执行失败: judge LLM timeout",
+        ragas: { faithfulness: null, answer_relevancy: null, context_precision: null, context_recall: null },
+      },
+    };
+    renderOverview(failed);
+
+    expect(screen.getByTestId("eval-ragas-badge").textContent).toBe("ragas 运行异常");
+    // 原始错误不直接渲染；仅作为诊断 ⓘ 的无障碍标签（悬停内容交给 Radix）。
+    expect(screen.queryByText(/judge LLM timeout/)).toBeNull();
+    expect(screen.getByTestId("eval-ragas-error-info").getAttribute("aria-label")).toContain("judge LLM timeout");
+  });
+
+  it("moves the methodology note into an info tooltip and keeps the header non-wrapping", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    // 灰色长说明不再常驻行内（窄屏不再竖排挤压）。
+    expect(screen.queryByText("RAGAS 概率性指标（judge 方差），仅供参考")).toBeNull();
+    const title = screen.getByTestId("eval-layer2-title");
+    expect(title.className).toContain("whitespace-nowrap");
+    expect(title.className).toContain("shrink-0");
+    // 说明 ⓘ 的无障碍标签即说明全文。
+    expect(screen.getByTestId("eval-layer2-info").getAttribute("aria-label")).toBe("RAGAS 概率性指标（judge 方差），仅供参考");
   });
 
   it("disables the seed_hit_rate card with a note when the batch has no graph questions", () => {

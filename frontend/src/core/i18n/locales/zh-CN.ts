@@ -446,6 +446,7 @@ export const zhCN: Translations = {
       layer2Note: "RAGAS 概率性指标（judge 方差），仅供参考",
       regressionBadge: "检测到回退",
       ragasMissingBadge: "ragas 未安装",
+      ragasErrorBadge: "ragas 运行异常",
       citationPrecision: "引用准确率",
       citationRecall: "引用召回率",
       seedHitRate: "种子实体命中率",

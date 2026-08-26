@@ -7,14 +7,17 @@
  */
 "use client";
 
+import { Info } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import type { MetricsOverview, BaselineDiff } from "@/core/knowledge/types";
 
-import { getCellColorClass, getProgressBarColor } from "./eval-metrics-overview.utils";
+import { classifyRagasSkipReason, getCellColorClass, getProgressBarColor } from "./eval-metrics-overview.utils";
 
 interface EvalMetricsOverviewProps {
   overview: MetricsOverview;
@@ -34,7 +37,7 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
       {/* Layer 1 表格 */}
       <section>
         <div className="flex items-center gap-2 mb-3 text-sm font-semibold">
-          {tk.layer1Title}
+          <span className="whitespace-nowrap shrink-0">{tk.layer1Title}</span>
           {layer1?.baseline_diff?.regression_detected && (
             <Badge variant="destructive">{tk.regressionBadge}</Badge>
           )}
@@ -49,12 +52,43 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
       {/* Layer 2 卡片 */}
       <section>
         <div className="flex items-center gap-2 mb-3 text-sm font-semibold">
-          {tk.layer2Title}
-          <span className="text-muted-foreground ml-2 text-xs font-normal">{tk.layer2Note}</span>
+          <span data-testid="eval-layer2-title" className="whitespace-nowrap shrink-0">{tk.layer2Title}</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="eval-layer2-info"
+                aria-label={tk.layer2Note}
+                className="inline-flex text-muted-foreground hover:text-foreground"
+              >
+                <Info className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{tk.layer2Note}</TooltipContent>
+          </Tooltip>
           {layer2 && !layer2.ragas_available && (
-            <Badge variant="secondary" className="ml-2">
-              {layer2.ragas_skip_reason ?? tk.ragasMissingBadge}
-            </Badge>
+            classifyRagasSkipReason(layer2.ragas_skip_reason) === "error" ? (
+              <span className="ml-auto flex items-center gap-1 shrink-0">
+                <Badge variant="secondary" data-testid="eval-ragas-badge">{tk.ragasErrorBadge}</Badge>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      data-testid="eval-ragas-error-info"
+                      aria-label={layer2.ragas_skip_reason}
+                      className="inline-flex text-muted-foreground hover:text-foreground"
+                    >
+                      <Info className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs whitespace-pre-wrap">{layer2.ragas_skip_reason}</TooltipContent>
+                </Tooltip>
+              </span>
+            ) : (
+              <Badge variant="secondary" className="ml-auto" data-testid="eval-ragas-badge">
+                {tk.ragasMissingBadge}
+              </Badge>
+            )
           )}
         </div>
         {layer2 ? (

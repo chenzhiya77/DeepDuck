@@ -35,3 +35,14 @@ export function getProgressBarColor(value: number | null | undefined): string {
   if (value >= 0.6) return "[&_[data-slot=progress-indicator]]:bg-(--eval-warn)";
   return "[&_[data-slot=progress-indicator]]:bg-(--eval-danger)";
 }
+
+export type RagasSkipKind = "not-installed" | "error";
+
+/** Classify the backend `ragas_skip_reason` for badge copy selection. The
+ * "未安装" prefix is the stable constant from harness `ragas_unavailable_reason()`;
+ * everything else (execution failure, empty output) is a runtime error whose raw
+ * text belongs in a tooltip, not the product header. */
+export function classifyRagasSkipReason(reason: string | null | undefined): RagasSkipKind {
+  if (!reason || reason.startsWith("ragas 未安装")) return "not-installed";
+  return "error";
+}

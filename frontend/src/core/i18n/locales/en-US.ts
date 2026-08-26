@@ -462,6 +462,7 @@ export const enUS: Translations = {
       layer2Note: "Probabilistic RAGAS metrics (judge variance) — reference only",
       regressionBadge: "Regression detected",
       ragasMissingBadge: "ragas not installed",
+      ragasErrorBadge: "ragas error",
       citationPrecision: "Citation Precision",
       citationRecall: "Citation Recall",
       seedHitRate: "Seed Entity Hit Rate",

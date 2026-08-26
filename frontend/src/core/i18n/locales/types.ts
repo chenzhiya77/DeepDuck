@@ -397,6 +397,7 @@ export interface Translations {
       layer2Note: string;
       regressionBadge: string;
       ragasMissingBadge: string;
+      ragasErrorBadge: string;
       citationPrecision: string;
       citationRecall: string;
       seedHitRate: string;
