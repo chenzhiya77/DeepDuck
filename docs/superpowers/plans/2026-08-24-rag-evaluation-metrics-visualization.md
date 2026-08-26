@@ -162,33 +162,33 @@
 
 ---
 
-## Task 3: 趋势图 canvas——手写 echarts 适配层 + 纯函数 option
+## Task 3: 趋势图 canvas——手写 echarts 适配层 + 纯函数 option ✅ 已完成（2026-08-26，`9bbb69eb`）
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/eval-trend-chart.tsx`（纯渲染 canvas，`export default`）
 - Create: `frontend/src/components/workspace/knowledge/eval-trend-chart.utils.ts`（`buildChartOption` / `buildTrendTooltipHtml` / `escapeHtml` 纯函数）
-- Modify: `frontend/src/core/knowledge/types.ts`（+`TrendPoint` / `TrendResponse` / `TrendQueryParams` / `TrendChartLabels`）
-- Create: `frontend/tests/unit/knowledge/eval-trend-chart.dom.test.tsx`（canvas mock，对齐 `graph-tab.dom.test.tsx`）
+- Modify: `frontend/src/core/knowledge/types.ts`（+`TrendPoint` / `TrendResponse` / `TrendQueryParams` / `TrendChartLabels` / `EvalRunDetail`——后者为 Task 6 drawer 预埋类型）
+- Create: `frontend/tests/unit/knowledge/eval-trend-chart.dom.test.tsx`（mock `echarts/core` 适配层 + ResizeObserver 桩（panels-shell 先例），对齐 `graph-tab.dom.test.tsx` 基建）
 - Create: `frontend/tests/unit/knowledge/eval-trend-chart.unit.test.ts`（纯函数，对齐 `vector-canvas.unit.test.ts`）
 
-- [ ] RED test：
+- [x] RED test：
   - canvas mock 下 props 透传（points/granularity/baseline/labels/onPointClick）
   - `buildChartOption` 纯函数：
     - 6 条 series（颜色/线型/默认显隐：Recall@k+Hit Rate 显示，其余隐藏）
-    - datum 携带 `runId`（Layer 1 线挂 `layer1_run_id`，Layer 2 线挂 `layer2_run_id`）
+    - datum 携带 `runId`（Layer 1 线挂 `layer1_run_id`，Layer 2 线挂 `layer2_run_id`）+ `metricKey`（tooltip 格式化用）
     - 阈值线：`baseline.recall_at_k - threshold_percent/100`；`baseline === null` 时不生成 markLine
     - 回退点项级 `itemStyle` 标红（`regression.detected` 驱动，per-category 口径，与阈值线解耦）
     - y 轴动态下界（数据/阈值线最小值让 0.05、下限 0、上界 1）
-    - 基线更新竖线（`is_baseline_update` 点）
-    - tooltip 输出格式 + `escapeHtml` 转义
-- [ ] Run `pnpm test eval-trend-chart`，记录 missing-component RED。
-- [ ] Implement：
-  - 手写适配层：`echarts/core` 模块化注册（LineChart + Grid/Tooltip/Legend/MarkLine/DataZoom 组件 + CanvasRenderer），init/setOption/ResizeObserver/MutationObserver 主题感知（vector-canvas 先例）
+    - 基线更新竖线（`is_baseline_update` 点；阈值缺位时竖线仍生成）
+    - tooltip 输出格式（率类百分比 / MRR/RAGAS 三位小数 + 环比箭头）+ `escapeHtml` 转义
+- [x] Run `pnpm test eval-trend-chart`，记录 missing-component RED（2 个测试文件均 Cannot find module）。
+- [x] Implement：
+  - 手写适配层：`echarts/core` 模块化注册（LineChart + Grid/Tooltip/Legend/MarkLine/DataZoom 组件 + CanvasRenderer），init/setOption/ResizeObserver/MutationObserver 主题感知（vector-canvas 先例；主题重建经 argsRef 读最新 props，规避一次性闭包过期）
   - click 从 `params.data.runId` 取数（不依赖 dataIndex）
   - 组件不 fetch、不直接调 `useI18n`（labels 经 props 注入）
-- [ ] GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval trend chart canvas with hand-rolled echarts adapter`
+- [x] GREEN（26 passed）；revert proof：stash 两实现文件 → collection-error RED → pop → GREEN。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval trend chart canvas with hand-rolled echarts adapter`（`9bbb69eb`）
 
 ---
 
