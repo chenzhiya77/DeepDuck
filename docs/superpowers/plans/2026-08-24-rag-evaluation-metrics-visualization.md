@@ -219,7 +219,7 @@
 
 ---
 
-## Task 5: 数据联通——TanStack Query hooks + lazy 门控
+## Task 5: 数据联通——TanStack Query hooks + lazy 门控 ✅ 已完成（2026-08-26，`14bbf6ac`）
 
 **Files:**
 - Modify: `frontend/src/core/knowledge/api.ts`（+`getLatestEvalMetrics` / `getEvalTrend`）
@@ -228,14 +228,15 @@
 - Create: `frontend/tests/unit/knowledge/eval-tab.dom.test.tsx`
 - Modify: `frontend/tests/unit/knowledge/hooks.dom.test.tsx`（门控用例）
 
-- [ ] RED test：
+- [x] RED test：
   - `useMetricsOverview` / `useEvalTrend`：queryKey 正确、`enabled=false` 时不发请求（keep-alive 门控）、粒度进 queryKey（切换自动重新请求）
   - eval-tab：loading skeleton、错误提示、数据到达后渲染 overview + trend
   - **2026-08-26 补**：趋势图空态——`trend.has_data === false`（新 KB 无评测历史）时渲染空态提示而非空白画布（文案走 i18n，与 overview 空态同风格）
-- [ ] Implement hooks + eval-tab 接线（`enabled: activeTab === "eval"` 由 page.tsx 传入；`staleTime: 30_000`——评测数据分钟级不变，keep-alive 来回切不重复请求）。
-- [ ] `pnpm test` GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): connect eval tab to backend APIs with lazy-gated hooks`
+- [x] Implement hooks + eval-tab 接线（`enabled: activeTab === "eval"` 由 page.tsx 传入；`staleTime: 30_000`——评测数据分钟级不变，keep-alive 来回切不重复请求）。
+  - 实现备注：粒度 state 从 page.tsx 移入 EvalTab 内部（仅该组件消费）；Task 4 的 EvalTab 组合用例从 middle-tabs.dom.test.tsx 迁出至新建 eval-tab.dom.test.tsx（hooks mock 供数，middle-tabs 文件回归纯挂载用例）；queryKey 工厂 `knowledgeEvalLatestKey` / `knowledgeEvalTrendKey(kbId, {granularity})`；i18n 补 `loading` / `loadFailed` 两键；trend 空态同时覆盖 `has_data=false` 与无 data 分支（未激活时渲染 null 不闪空态文案）。
+- [x] `pnpm test` GREEN（目标三文件 42 passed）；revert proof：stash 实现 → RED → pop → GREEN。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): connect eval tab to backend APIs with lazy-gated hooks`（`14bbf6ac`）
 
 ---
 
