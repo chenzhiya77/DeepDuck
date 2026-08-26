@@ -477,3 +477,104 @@ export interface MetricsOverview {
     has_graph_questions: boolean;
   } | null;
 }
+
+// ── Evaluation trend (spec 2026-08-24 §4.1, plan Task 3) ─────────────────
+
+/**
+ * 趋势图单个数据点：两层指标独立取数，各自可空。
+ * 每个点恒等于一次真实运行（统一「周期末次」聚合语义，spec §4.2）。
+ */
+export interface TrendPoint {
+  /** ISO8601 日期（聚合粒度决定精度）。 */
+  date: string;
+  /** Layer 1（该层该周期无数据则 null）。 */
+  recall_at_k: number | null;
+  hit_rate: number | null;
+  mrr: number | null;
+  /** Layer 2 RAGAS（同粒度，独立取数）。 */
+  faithfulness: number | null;
+  answer_relevancy: number | null;
+  context_precision: number | null;
+  /** 下钻来源行：Layer 1 线挂 layer1_run_id，Layer 2 线挂 layer2_run_id。 */
+  layer1_run_id: string | null;
+  layer2_run_id: string | null;
+  /** 该点 Layer 1 来源运行的门禁判定（透传其 baseline_diff）；无 diff 为 null。 */
+  regression: { detected: boolean; categories: string[] } | null;
+  /** 该点对应 Layer 1 运行是否被 --mark-baseline 标记。 */
+  is_baseline_update: boolean;
+}
+
+/** 趋势图 API 响应（GET /eval-runs/trend）。 */
+export interface TrendResponse {
+  points: TrendPoint[];
+  granularity: "day" | "week" | "month";
+  /** 窗口回显：只含当前粒度匹配的键（day→days_back / week→weeks_back / month→months_back）。 */
+  days_back?: number;
+  weeks_back?: number;
+  months_back?: number;
+  /** 当前 baseline；无 baseline 行时为 null（前端不画阈值线）。 */
+  baseline: {
+    recall_at_k: number;
+    /** DEFAULT_FAIL_THRESHOLD * 100，与 CI 门禁同源。 */
+    threshold_percent: number;
+  } | null;
+  /** 该时间范围内是否有数据（任一层有即为 true）。 */
+  has_data: boolean;
+}
+
+/** 趋势图请求参数（窗口参数按粒度配对，spec §4.2）。 */
+export interface TrendQueryParams {
+  granularity: "day" | "week" | "month";
+  /** day 粒度用，默认 30（后端 clamp ≤90）。 */
+  days_back?: number;
+  /** week 粒度用，默认 12。 */
+  weeks_back?: number;
+  /** month 粒度用，默认 6。 */
+  months_back?: number;
+}
+
+/**
+ * 趋势图 i18n 文案包（canvas 组件纯渲染不调 useI18n——文案经 props 注入，
+ * spec §3.6）。eval-tab 从 tk.eval.* 组装。
+ */
+export interface TrendChartLabels {
+  /** 6 条指标线的显示名（图例 + tooltip）。 */
+  recallAtK: string;
+  hitRate: string;
+  mrr: string;
+  faithfulness: string;
+  answerRelevancy: string;
+  contextPrecision: string;
+  /** 阈值线名（markLine series 名）。 */
+  thresholdLine: string;
+  /** 阈值线标签（markLine formatter，含阈值百分数）。 */
+  thresholdLabel: (thresholdPercent: number) => string;
+  /** 基线更新竖线标签。 */
+  baselineUpdate: string;
+  /** tooltip 底部点击提示。 */
+  clickForDetail: string;
+  /** tooltip 中回退 category 列表前缀。 */
+  regressionPrefix: string;
+}
+
+/** 单次运行详情（GET /eval-runs/{run_id}，drawer 数据源）。 */
+export interface EvalRunDetail {
+  run_id: string;
+  kb_id: string;
+  status: "completed" | "error" | "skipped";
+  environment: "local" | "ci" | "nightly";
+  created_at: string;
+  layer1_metrics: Layer1Metrics | Record<string, never>;
+  layer2_metrics: {
+    ragas_available: boolean;
+    ragas_skip_reason?: string;
+    ragas: RagasMetrics;
+    arch_specific: ArchSpecificMetrics;
+    langfuse_trace_url?: string;
+    has_graph_questions: boolean;
+    /** Layer 2 的 path_accuracy（真实对话链路选路准确率，与 Layer 1 同名指标口径不同）。 */
+    path_accuracy?: number | null;
+  } | Record<string, never>;
+  baseline_diff?: BaselineDiff;
+  is_baseline: boolean;
+}
