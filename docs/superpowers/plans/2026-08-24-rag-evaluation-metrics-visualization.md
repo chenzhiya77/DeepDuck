@@ -240,7 +240,7 @@
 
 ---
 
-## Task 6: 点击下钻——EvalRunDrawer 壳
+## Task 6: 点击下钻——EvalRunDrawer 壳 ✅ 已完成（2026-08-26，`b84176b1`）
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/eval-run-drawer.tsx`（drawer 壳：run 元信息 + 两层指标只读摘要含 Layer 2 path_accuracy 口径标注；对齐 ChunkDrawer 模式）
@@ -249,13 +249,15 @@
 - Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts`（drawer 文案）
 - Create: `frontend/tests/unit/knowledge/eval-run-drawer.dom.test.tsx`
 
-- [ ] RED test：
+- [x] RED test：
   - 点击趋势图数据点（mock canvas 触发 `onPointClick("run-1")`）→ drawer 打开并请求 `GET /eval-runs/run-1`
   - drawer 渲染 run_id / created_at / environment / 两层指标摘要（含 Layer 2 path_accuracy 口径标注）；`onOpenChange(false)` 关闭
-- [ ] Implement drawer 壳 + 接线（不跳路由——drawer 为先例模式，知识库页无 kb 子路由）。
-- [ ] `pnpm test` GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval run drill-down drawer from trend chart`
+  - 层未执行（`*_metrics = {}`）渲染「未执行」提示；loading / 错误文案复用查询三态
+- [x] Implement drawer 壳 + 接线（不跳路由——drawer 为先例模式，知识库页无 kb 子路由）。
+  - 实现备注：`useEvalRun(kbId, runId)` 双非空门控，eval-tab 传 `open ? runId : null` 保证关闭态不残留请求；Layer 摘要取 summary 行（per-category 明细属逐题明细 spec）；i18n 新增 `eval.drawer.*` 组（状态三值本地化徽标 + path_accuracy 口径标注 + contextRecallLabel）。
+- [x] `pnpm test` GREEN（目标四文件 49 passed）；revert proof：stash 实现 → RED → pop → GREEN。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval run drill-down drawer from trend chart`（`b84176b1`）
 
 ---
 
