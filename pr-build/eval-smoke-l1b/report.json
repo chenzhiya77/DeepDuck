@@ -1,0 +1,352 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "top_k": 5,
+    "question_count": 8,
+    "generated_at": "2026-08-26T12:54:20+00:00"
+  },
+  "overall": {
+    "count": 8,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 1.0,
+    "path_accuracy": 0.875
+  },
+  "by_category": {
+    "fact": {
+      "count": 3,
+      "hit_rate": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "path_accuracy": 1.0
+    },
+    "concept": {
+      "count": 2,
+      "hit_rate": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "path_accuracy": 1.0
+    },
+    "relation": {
+      "count": 2,
+      "hit_rate": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "path_accuracy": 1.0
+    },
+    "global": {
+      "count": 1,
+      "hit_rate": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "path_accuracy": 0.0
+    }
+  },
+  "questions": [
+    {
+      "id": "q001",
+      "category": "fact",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.9493467668014722
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.3527111993115152
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.44892293248689913
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q002",
+      "category": "fact",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.9287199580940892
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.3930691014982051
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.5230604311984414
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q003",
+      "category": "concept",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.677984455861399
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.3960321135708443
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.40975383271014265
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q004",
+      "category": "fact",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.9561338908768936
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.36249650113173937
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.553389619548583
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q005",
+      "category": "relation",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.9623267597882585
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.5008559403414515
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.5583265078184554
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q006",
+      "category": "relation",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.951447160109589
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.3798952183405076
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.41797691681464055
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q007",
+      "category": "concept",
+      "expected_path": "vector",
+      "actual_path": "vector",
+      "path_correct": true,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.96312760452746
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.4123577969606552
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.5274906059893875
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    },
+    {
+      "id": "q008",
+      "category": "global",
+      "expected_path": "wiki",
+      "actual_path": "vector",
+      "path_correct": false,
+      "hit": 1.0,
+      "recall": 1.0,
+      "mrr": 1.0,
+      "paths": {
+        "vector": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.9137144322488246
+            },
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0000",
+              "score": 0.6195218198785982
+            }
+          ],
+          "failure": null
+        },
+        "graph": {
+          "hits": [
+            {
+              "chunk_id": "4ebaa19b19f84c1d99037dc99b3c7d46#0001",
+              "score": 0.7550582844192074
+            }
+          ],
+          "failure": null
+        },
+        "wiki": {
+          "hits": [],
+          "failure": null
+        }
+      }
+    }
+  ],
+  "diff": null
+}

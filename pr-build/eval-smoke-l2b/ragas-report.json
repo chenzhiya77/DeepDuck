@@ -1,0 +1,285 @@
+{
+  "run_id": "ragas-20260826T125446Z-41548fe0",
+  "kb_id": "39ffdcaffddb41b2a4f0563f9189feca",
+  "generated_at": "2026-08-26T12:56:29.964186+00:00",
+  "ragas_available": false,
+  "ragas_skip_reason": "ragas 未安装（可选依赖；`uv sync --extra ragas` 后可用）",
+  "langfuse": {
+    "pushed": false,
+    "skip_reason": "langfuse 未启用或未安装",
+    "scores_written": 0,
+    "failures": []
+  },
+  "calibration": {
+    "human_sample_ratio": null,
+    "cohens_kappa": null,
+    "notes": "每月抽样 ≥10% 人工评分后回填 human_sample_ratio 与 cohens_kappa。"
+  },
+  "aggregate": {
+    "questions": 8,
+    "failures": 0,
+    "path_accuracy": 1.0,
+    "citation_precision": 0.8795918367346939,
+    "citation_recall": 0.40327380952380953,
+    "graph_entity_hit_rate": 0.25,
+    "ragas": {
+      "faithfulness": null,
+      "answer_relevancy": null,
+      "context_precision": null,
+      "context_recall": null
+    },
+    "by_category": {
+      "concept": {
+        "questions": 2,
+        "path_accuracy": 1.0
+      },
+      "fact": {
+        "questions": 3,
+        "path_accuracy": 1.0
+      },
+      "global": {
+        "questions": 1,
+        "path_accuracy": 1.0
+      },
+      "relation": {
+        "questions": 2,
+        "path_accuracy": 1.0
+      }
+    }
+  },
+  "results": [
+    {
+      "question_id": "q001",
+      "category": "fact",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "hybrid_search",
+      "retrieval_tools": [
+        "hybrid_search",
+        "graph_search"
+      ],
+      "citation": {
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "claims_judged": 3,
+        "unsupported": [],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 1.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "276f086cd713425db47f40a706e87e2b",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q002",
+      "category": "fact",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "wiki_search",
+      "retrieval_tools": [
+        "wiki_search",
+        "hybrid_search"
+      ],
+      "citation": {
+        "precision": null,
+        "recall": 0.0,
+        "claims_judged": 0,
+        "unsupported": [],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 0.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "e1f4fdd0dae8476196a52776b1756fc2",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q003",
+      "category": "concept",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "wiki_search",
+      "retrieval_tools": [
+        "wiki_search",
+        "hybrid_search"
+      ],
+      "citation": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "claims_judged": 2,
+        "unsupported": [
+          1
+        ],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 0.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "eae48806d8114830bd5c60da7ca783df",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q004",
+      "category": "fact",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "hybrid_search",
+      "retrieval_tools": [
+        "hybrid_search",
+        "hybrid_search",
+        "wiki_search"
+      ],
+      "citation": {
+        "precision": 0.8571428571428571,
+        "recall": 0.5,
+        "claims_judged": 7,
+        "unsupported": [
+          3
+        ],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 0.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "c2ee15eb7711447cacca366c26031517",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q005",
+      "category": "relation",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "hybrid_search",
+      "retrieval_tools": [
+        "hybrid_search",
+        "graph_search"
+      ],
+      "citation": {
+        "precision": 0.8,
+        "recall": 0.6666666666666666,
+        "claims_judged": 5,
+        "unsupported": [
+          1
+        ],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 0.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "37fd4a282c01474db8405cc91ca4ae59",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q006",
+      "category": "relation",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "hybrid_search",
+      "retrieval_tools": [
+        "hybrid_search"
+      ],
+      "citation": {
+        "precision": 1.0,
+        "recall": 0.5,
+        "claims_judged": 2,
+        "unsupported": [],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 0.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "0a724e4e3aea4e1595ff678d1426937f",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q007",
+      "category": "concept",
+      "expected_path": "vector",
+      "path_hit": true,
+      "first_tool": "hybrid_search",
+      "retrieval_tools": [
+        "hybrid_search",
+        "hybrid_search"
+      ],
+      "citation": {
+        "precision": 1.0,
+        "recall": 0.25,
+        "claims_judged": 2,
+        "unsupported": [],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 0.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "5b7ea77b773c40418b0df273cc45a591",
+      "trace_id": null,
+      "failure": null
+    },
+    {
+      "question_id": "q008",
+      "category": "global",
+      "expected_path": "wiki",
+      "path_hit": true,
+      "first_tool": "hybrid_search",
+      "retrieval_tools": [
+        "hybrid_search",
+        "wiki_search",
+        "hybrid_search",
+        "hybrid_search",
+        "graph_search"
+      ],
+      "citation": {
+        "precision": 1.0,
+        "recall": 0.14285714285714285,
+        "claims_judged": 6,
+        "unsupported": [],
+        "missing": []
+      },
+      "graph_entity_hit_rate": 1.0,
+      "ragas": {
+        "faithfulness": null,
+        "answer_relevancy": null,
+        "context_precision": null,
+        "context_recall": null
+      },
+      "thread_id": "2261a684722649f5a809c895bdb89d74",
+      "trace_id": null,
+      "failure": null
+    }
+  ]
+}
