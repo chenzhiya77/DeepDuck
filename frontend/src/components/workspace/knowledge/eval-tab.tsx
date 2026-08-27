@@ -45,6 +45,7 @@ import { formatTimeAgo } from "@/core/utils/datetime";
 import { EvalMetricsOverview } from "./eval-metrics-overview";
 import { EvalQuestionBank } from "./eval-question-bank";
 import { EvalRunDrawer } from "./eval-run-drawer";
+import { EvalRunHistory } from "./eval-run-history";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
 
 const EvalTrendChart = dynamic<EvalTrendChartProps>(() => import("./eval-trend-chart"), {
@@ -335,13 +336,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         )}
 
         {view === "history" && (
-          /* 历史视图占位壳——Task 7 落地运行列表行 + 复用 EvalRunDrawer 下钻 */
-          <div
-            className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
-            data-testid="eval-history-view"
-          >
-            {tk.history.emptyHistory}
-          </div>
+          /* 历史视图（Task 7）：运行列表行，行点击复用既有 EvalRunDrawer 实例下钻 */
+          <EvalRunHistory enabled={enabled} kbId={kbId} onOpenRun={setDrawerRunId} />
         )}
       </div>
 

@@ -62,6 +62,11 @@ rs.mock("@/components/workspace/knowledge/eval-question-bank", () => ({
   EvalQuestionBank: () => <div data-testid="eval-questions-view" />,
 }));
 
+/** 历史视图 mock（Task 7）：同上，history 契约在其专属测试文件。 */
+rs.mock("@/components/workspace/knowledge/eval-run-history", () => ({
+  EvalRunHistory: () => <div data-testid="eval-history-view" />,
+}));
+
 // jsdom 无 ResizeObserver——组件 resize 监听用空实现顶替（panels-shell 先例）。
 class ResizeObserverStub {
   observe() {
