@@ -91,24 +91,24 @@
 - [x] ruff check/format 双净。
 - [x] Commit: `feat(rag): add on-demand Layer 1 eval trigger with in-flight idempotency`
 
-## Task 3: 历史列表 API——`GET /eval-runs`（含 `in_flight`）
+## Task 3: 历史列表 API——`GET /eval-runs`（含 `in_flight`）✅ 已完成（2026-08-27，`f60b05bf`）
 
 **Files:**
 - Modify: `backend/app/gateway/services/knowledge_service.py`（+`list_eval_runs(kb_id, *, limit, include_ci)`——读 `store.list_eval_runs` 全量行，内存过滤 ci/倒序/clamp limit，拼 `in_flight` 标志）
 - Modify: `backend/app/gateway/routers/knowledge_bases.py`（+`GET /{kb_id}/eval-runs?limit=&include_ci=`；注册在 `/{run_id}` 之前）
 - Modify: `backend/tests/knowledge/test_eval_runs_api.py`（+历史端点用例）
 
-- [ ] RED test：
+- [x] RED test：
   - 排序 created_at desc；`limit` 默认 50、>200 clamp 到 200、非法值 422；
   - `include_ci=false` 默认排除 ci 行、`true` 全量；
   - `has_layer1`/`has_layer2` 由 `*_metrics != {}` 推导；`regression_detected` 从 `baseline_diff` 透传（null → false）；`langfuse_trace_url` 透传；
   - `in_flight`：注册表有运行 → true，且 in-flight 运行**不出现**在 `runs` 里（行未落库）；
   - 空历史 → `{in_flight: false, runs: [], total: 0}`；未知 kb 404。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/test_eval_runs_api.py -q`，记录 RED。
-- [ ] Implement：service 内存组装（单 KB <100 行，无需 SQL 分页——`list_eval_runs` docstring 同判断）。
-- [ ] GREEN；revert proof。
-- [ ] ruff check/format 双净。
-- [ ] Commit: `feat(rag): add eval-runs history list API with in-flight flag`
+- [x] Run `cd backend && uv run pytest tests/knowledge/test_eval_runs_api.py -q`，记录 RED。
+- [x] Implement：service 内存组装（单 KB <100 行，无需 SQL 分页——`list_eval_runs` docstring 同判断）。
+- [x] GREEN；revert proof。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): add eval-runs history list API with in-flight flag`
 
 ---
 
