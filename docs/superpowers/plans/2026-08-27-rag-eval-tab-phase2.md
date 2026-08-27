@@ -159,7 +159,7 @@
 
 ## Phase 4: 前端视图
 
-## Task 6: 题库视图——表格 + 详情 drawer + 添加 dialog + 删除确认
+## Task 6: 题库视图——表格 + 详情 drawer + 添加 dialog + 删除确认 ✅ 已完成（2026-08-28，`63b20ea4`）
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/eval-question-bank.tsx`（表格主组件：列=问题/分类 Badge/预期路径 Badge/锚定/操作；行点击开 drawer；尾部「+ 添加考题」虚线行；空态引导文案；三态 loading/失败/数据）
@@ -167,18 +167,18 @@
 - Create: `frontend/src/components/workspace/knowledge/eval-add-question-dialog.tsx`（query textarea + category select + expected_path select + reference_answer textarea + ⓘ 说明 tooltip「未锚定切片的题只参与路径选择与生成质量评测」）
 - Create: `frontend/tests/unit/knowledge/eval-question-bank.dom.test.tsx`
 
-- [ ] RED test：
+- [x] RED test：
   - 表格渲染：行数=题数；锚定列推导（`3 切片` / `3 切片 · 2 实体` / 空数组 → 「未锚定」muted）；
   - 操作列 ↗/🗑 点击 stopPropagation（不开 drawer）；行点击开 drawer 且传入该题；
   - 删除：确认 dialog 展示 query 全文 → 确认调 delete mutation → 成功 toast；取消不调；
   - 添加 dialog：必填校验（空 query/未选 category 禁用提交）；提交体**不含** relevant_chunk_ids/relevant_entities 键（后端补空数组）；成功 toast + invalidate；
   - 空态：无题时显示引导文案（指向召回测试面板）；
   - drawer：字段全量渲染、无 reference_answer 显示「未填写」muted、复现按钮回调携带 query。
-- [ ] Run `cd frontend && pnpm test eval-question-bank`，记录 missing-component RED。
-- [ ] Implement：三组件；eval-tab 的 questions 视图占位替换为 `<EvalQuestionBank kbId={kbId} enabled={...} onReproduce={...} />`。
-- [ ] GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval question bank table with detail drawer and add dialog`
+- [x] Run `cd frontend && pnpm test eval-question-bank`，记录 missing-component RED。
+- [x] Implement：三组件；eval-tab 的 questions 视图占位替换为 `<EvalQuestionBank kbId={kbId} enabled={...} onReproduce={...} />`。
+- [x] GREEN；revert proof。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval question bank table with detail drawer and add dialog`
 
 ## Task 7: 历史视图——运行列表 + 复用 EvalRunDrawer
 
