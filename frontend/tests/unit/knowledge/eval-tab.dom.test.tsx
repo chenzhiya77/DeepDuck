@@ -146,10 +146,8 @@ describe("EvalTab 数据联通", () => {
     expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "day", false);
   });
 
-  it("renders run-config note, overview table and trend chart shell on data", async () => {
+  it("renders overview table and trend chart shell on data", async () => {
     renderEvalTab();
-    // 运行配置区：触发按钮落地前仅一行说明文案
-    expect(screen.getByTestId("eval-tab").textContent).toContain("CLI");
     // 指标总览
     expect(screen.getByTestId("eval-layer1-table")).toBeTruthy();
     // 趋势卡片壳 + 粒度按钮组（内联档）

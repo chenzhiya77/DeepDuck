@@ -8,7 +8,16 @@ import type { UseQueryResult } from "@tanstack/react-query";
 
 import * as api from "./api";
 import { documentsRefetchInterval } from "./document-stats";
-import type { EvalRunDetail, MetricsOverview, TrendQueryParams, TrendResponse } from "./types";
+import { evalRunsRefetchInterval } from "./eval-run-status";
+import type {
+  EvalQuestionCreateInput,
+  EvalQuestionListResponse,
+  EvalRunDetail,
+  EvalRunListResponse,
+  MetricsOverview,
+  TrendQueryParams,
+  TrendResponse,
+} from "./types";
 import { wikiEntriesRefetchInterval } from "./wiki-status";
 
 type EvalGranularity = TrendQueryParams["granularity"];
@@ -160,6 +169,16 @@ export function knowledgeEvalRunKey(kbId: string, runId: string) {
   return ["knowledge-bases", kbId, "eval-runs", "detail", runId] as const;
 }
 
+/** 题库键（2026-08-27 spec §4.2，plan Task 4）：无分页维度，键即 kb 粒度。 */
+export function knowledgeEvalQuestionsKey(kbId: string) {
+  return ["knowledge-bases", kbId, "eval-questions"] as const;
+}
+
+/** 历史列表键（spec §6.1）：含顶层 in_flight，与 detail/latest/trend 键互斥。 */
+export function knowledgeEvalRunsKey(kbId: string) {
+  return ["knowledge-bases", kbId, "eval-runs", "history"] as const;
+}
+
 /**
  * 评测数据分钟级不变：30s 内 keep-alive 来回切 tab 不重复请求（plan Task 5）。
  */
@@ -203,6 +222,64 @@ export function useEvalRun(kbId: string | null, runId: string | null): UseQueryR
     queryKey: knowledgeEvalRunKey(kbId ?? "", runId ?? ""),
     queryFn: () => api.getEvalRun(kbId!, runId!),
     enabled: kbId !== null && runId !== null,
+  });
+}
+
+// ── 评测二期（2026-08-27 spec §4–§6，plan Task 4）────────────────────────
+
+/** 题库列表（GET /eval/questions），enabled 由 eval tab 激活下发。 */
+export function useEvalQuestions(kbId: string | null, enabled = true): UseQueryResult<EvalQuestionListResponse> {
+  return useQuery({
+    queryKey: knowledgeEvalQuestionsKey(kbId ?? ""),
+    queryFn: () => api.listEvalQuestions(kbId!),
+    enabled: enabled && kbId !== null,
+    staleTime: EVAL_STALE_TIME_MS,
+  });
+}
+
+/** 新增考题；成功失效题库缓存（表格即时见新题）。 */
+export function useAddEvalQuestion(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EvalQuestionCreateInput) => api.createEvalQuestion(kbId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });
+    },
+  });
+}
+
+/** 删除考题；成功失效题库缓存。 */
+export function useDeleteEvalQuestion(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (questionId: string) => api.deleteEvalQuestion(kbId, questionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });
+    },
+  });
+}
+
+/**
+ * 历史列表（GET /eval-runs）：轮询由顶层 in_flight 驱动（eval-run-status
+ * 纯函数），drain 后停轮询——运行完成行的刷新走 drain 边 invalidate（§5.2）。
+ */
+export function useEvalRuns(kbId: string | null, enabled = true): UseQueryResult<EvalRunListResponse> {
+  return useQuery({
+    queryKey: knowledgeEvalRunsKey(kbId ?? ""),
+    queryFn: () => api.listEvalRuns(kbId!),
+    enabled: enabled && kbId !== null,
+    refetchInterval: (query) => evalRunsRefetchInterval(query.state.data),
+  });
+}
+
+/**
+ * 触发一次按需 Layer 1 评测：202 响应原样透传（enqueued / already_running
+ * 由调用方消费成不同 toast）；行数据的刷新不在这里 invalidate——统一走
+ * drain 边，避免 POST 与首次轮询双重请求。
+ */
+export function useTriggerEvalRun(kbId: string) {
+  return useMutation({
+    mutationFn: () => api.triggerEvalRun(kbId),
   });
 }
 

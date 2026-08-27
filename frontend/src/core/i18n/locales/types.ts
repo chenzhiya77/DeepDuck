@@ -441,8 +441,59 @@ export interface Translations {
         summary: string;
       };
       noQuestionsInBatch: string;
-      /** 评测 tab（plan Task 4）：运行配置区说明文案（§9 触发按钮落地前占位）。 */
-      runConfigNote: string;
+      /** 二期三视图（spec 2026-08-27 §3，plan Task 4/5）：分段控件标签与 aria。 */
+      views: { overview: string; questions: string; history: string };
+      viewSwitchLabel: string;
+      /** 常驻工具栏（§5）：主动词按钮 + 运行状态短文案（nowrap；长解释进 ⓘ）。 */
+      runButton: string;
+      runningButton: string;
+      /** 上次运行短文案：label + formatTimeAgo 产物拼接。 */
+      lastRunLabel: string;
+      neverRan: string;
+      runStartedToast: string;
+      alreadyRunningToast: string;
+      /** 题库视图（§4.3）：列头、锚定摘要、行操作、空态与两个弹窗。 */
+      questions: {
+        columnQuery: string;
+        columnCategory: string;
+        columnExpectedPath: string;
+        columnAnchors: string;
+        anchorsChunks: (count: number) => string;
+        anchorsEntities: (count: number) => string;
+        unanchored: string;
+        addQuestion: string;
+        emptyBank: string;
+        rowReproduce: string;
+        rowDelete: string;
+        saveFailed: string;
+        deleteFailed: string;
+        addDialog: {
+          title: string;
+          queryLabel: string;
+          categoryLabel: string;
+          expectedPathLabel: string;
+          referenceAnswerLabel: string;
+          unanchoredNote: string;
+          submit: string;
+          cancel: string;
+        };
+        deleteConfirm: {
+          title: string;
+          description: string;
+          confirm: string;
+          cancel: string;
+        };
+      };
+      /** 历史视图（§6.2）：环境 badge、状态短文案与空态；回退复用 regressionBadge。 */
+      history: {
+        envLocal: string;
+        envCi: string;
+        envNightly: string;
+        statusCompleted: string;
+        statusError: string;
+        statusSkipped: string;
+        emptyHistory: string;
+      };
       trendTitle: string;
       /** 粒度按钮组 aria-label（窄面板降档收进 ⋯ 菜单）。 */
       granularityLabel: string;
@@ -644,6 +695,19 @@ export interface Translations {
       failed: string;
       /** P6 检索联动（spec §9 通道一）：结果区一键跳转向量空间叠加。 */
       viewInVectorSpace: string;
+      /** 存为考题（2026-08-27 spec §7.1，plan Task 8）：勾选切片一键入题库。 */
+      saveAsQuestion: {
+        button: string;
+        selectedCount: (count: number) => string;
+        queryLabel: string;
+        categoryLabel: string;
+        expectedPathLabel: string;
+        referenceAnswerLabel: string;
+        submit: string;
+        cancel: string;
+        savedToast: string;
+        saveFailed: string;
+      };
     };
     chat: {
       newChat: string;

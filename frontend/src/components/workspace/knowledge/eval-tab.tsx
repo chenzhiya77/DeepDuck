@@ -2,8 +2,7 @@
 
 /**
  * 评测 tab（2026-08-24 spec §5，plan Task 4/5）：单列垂直布局（2026-08-26
- * 布局定案 route A；双栏工作台依赖父 spec §9 二期 API，另立 plan）——
- * 上：运行配置区一行说明文案（§9 触发按钮落地前不留无功能空盒）；
+ * 布局定案 route A；二期分段三视图 + 常驻工具栏见 2026-08-27 spec，Task 5 落地）——
  * 中：指标总览（eval-metrics-overview）；
  * 下：趋势图卡片壳（eval-trend-chart 经 next/dynamic ssr:false 懒加载，
  *     粒度按钮组接 useToolbarTier 窄面板降档——vector-tab 溢出检测先例）；
@@ -127,8 +126,7 @@ export function EvalTab({ kbId, enabled }: EvalTabProps) {
     // text-lg 的 "100.0%" 与 3 字标题+ⓘ）；栏宽低于下限时整 tab 横向滚动，而不是裁切卡片。
     <div className="h-full min-h-0 overflow-auto" data-testid="eval-tab">
       <div className="flex min-w-[32rem] flex-col gap-4 px-4 py-3">
-      {/* 运行配置区：父 spec §9 触发按钮落地前仅渲染一行说明文案，不留空盒 */}
-      <p className="text-muted-foreground text-xs">{tk.runConfigNote}</p>
+      {/* 运行配置区：二期工具栏（分段三视图 + 运行按钮，plan Task 5）在此落地 */}
 
       {/* 指标总览（Layer 1 表格 + Layer 2 卡片）：loading / 错误 / 数据三态 */}
       {overviewQuery.isLoading ? (

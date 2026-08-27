@@ -9,7 +9,12 @@ import { getBackendBaseURL } from "../config";
 
 import type {
   DeletePreviewResponse,
+  EvalQuestion,
+  EvalQuestionCreateInput,
+  EvalQuestionListResponse,
   EvalRunDetail,
+  EvalRunListResponse,
+  EvalTriggerResponse,
   KnowledgeBase,
   KnowledgeChunk,
   KnowledgeChunkPage,
@@ -418,4 +423,51 @@ export async function projectVectorQuery(
     },
   );
   return readResponse<VectorProjectionQueryResult>(response, "Failed to project query");
+}
+
+// ── Eval question bank & run history (spec 2026-08-27 §4–§6) ─────────────
+
+/** GET /eval/questions：读全量题库；文件不存在由后端回空表（spec §4.2）。 */
+export function listEvalQuestions(kbId: string): Promise<EvalQuestionListResponse> {
+  return fetch(kbUrl(kbId, "/eval/questions")).then((r) =>
+    readResponse<EvalQuestionListResponse>(r, "Failed to fetch eval questions"),
+  );
+}
+
+/** POST /eval/questions：新增一题，id 由服务端生成（201；schema 违例 422）。 */
+export function createEvalQuestion(kbId: string, input: EvalQuestionCreateInput): Promise<EvalQuestion> {
+  return fetch(kbUrl(kbId, "/eval/questions"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).then((r) => readResponse<EvalQuestion>(r, "Failed to create eval question"));
+}
+
+/** DELETE /eval/questions/{id}：删一题（204；id 不存在 404）。 */
+export async function deleteEvalQuestion(kbId: string, questionId: string): Promise<void> {
+  const response = await fetch(kbUrl(kbId, `/eval/questions/${encodeURIComponent(questionId)}`), {
+    method: "DELETE",
+  });
+  await readEmptyResponse(response, "Failed to delete eval question");
+}
+
+/**
+ * GET /eval-runs：历史列表 + 顶层 in_flight（spec §6.1）。默认排除 ci 行；
+ * limit 超上限由后端 clamp，前端不重复限制。
+ */
+export function listEvalRuns(kbId: string, params: { limit?: number; include_ci?: boolean } = {}): Promise<EvalRunListResponse> {
+  const search = new URLSearchParams();
+  if (params.limit != null) search.set("limit", String(params.limit));
+  if (params.include_ci) search.set("include_ci", "true");
+  const qs = search.toString();
+  return fetch(kbUrl(kbId, qs ? `/eval-runs?${qs}` : "/eval-runs")).then((r) =>
+    readResponse<EvalRunListResponse>(r, "Failed to fetch eval runs"),
+  );
+}
+
+/** POST /eval-runs：触发一次按需 Layer 1 评测（202 幂等，spec §5.1）。 */
+export function triggerEvalRun(kbId: string): Promise<EvalTriggerResponse> {
+  return fetch(kbUrl(kbId, "/eval-runs"), { method: "POST" }).then((r) =>
+    readResponse<EvalTriggerResponse>(r, "Failed to trigger eval run"),
+  );
 }

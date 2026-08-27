@@ -21,26 +21,41 @@ rs.mock("@/core/knowledge/api", () => ({
   getLatestEvalMetrics: rs.fn(),
   getEvalTrend: rs.fn(),
   getEvalRun: rs.fn(),
+  listEvalQuestions: rs.fn(),
+  createEvalQuestion: rs.fn(),
+  deleteEvalQuestion: rs.fn(),
+  listEvalRuns: rs.fn(),
+  triggerEvalRun: rs.fn(),
 }));
 
 import * as api from "@/core/knowledge/api";
+import { evalRunsRefetchInterval } from "@/core/knowledge/eval-run-status";
 import {
   knowledgeDocumentsKey,
   knowledgeEvalLatestKey,
+  knowledgeEvalQuestionsKey,
+  knowledgeEvalRunsKey,
   knowledgeEvalRunKey,
   knowledgeEvalTrendKey,
+  useAddEvalQuestion,
   useCreateKnowledgeBase,
+  useDeleteEvalQuestion,
   useDocuments,
+  useEvalQuestions,
   useEvalRun,
+  useEvalRuns,
   useEvalTrend,
   useGenerateWiki,
   useKnowledgeBases,
   useMetricsOverview,
   useRetryDocument,
+  useTriggerEvalRun,
   useUploadDocument,
 } from "@/core/knowledge/hooks";
 import type {
+  EvalQuestionListResponse,
   EvalRunDetail,
+  EvalRunListResponse,
   KnowledgeDocument,
   MetricsOverview,
   TrendResponse,
@@ -298,5 +313,117 @@ describe("useEvalRun（drawer 下钻数据源，plan Task 6）", () => {
     rerender({ runId: "run-1" });
     await waitFor(() => expect(api.getEvalRun).toHaveBeenCalledWith("kb-1", "run-1"));
     expect(queryClient.getQueryData(knowledgeEvalRunKey("kb-1", "run-1"))).toEqual(RUN_DETAIL);
+  });
+});
+
+// ── 评测二期数据 hooks（2026-08-27 spec §4–§6，plan Task 4）──────────────
+
+const EVAL_QUESTIONS_PAGE: EvalQuestionListResponse = {
+  questions: [
+    {
+      id: "q_ab12cd34",
+      query: "什么是退休年龄",
+      category: "fact",
+      expected_path: "vector",
+      relevant_chunk_ids: [],
+      relevant_entities: [],
+      reference_answer: null,
+    },
+  ],
+  total: 1,
+};
+
+const EVAL_RUNS_IDLE: EvalRunListResponse = { in_flight: false, runs: [], total: 0 };
+
+describe("评测二期数据 hooks（plan Task 4）", () => {
+  beforeEach(() => {
+    rs.mocked(api.listEvalQuestions).mockResolvedValue(EVAL_QUESTIONS_PAGE);
+    rs.mocked(api.listEvalRuns).mockResolvedValue(EVAL_RUNS_IDLE);
+    rs.mocked(api.triggerEvalRun).mockResolvedValue({ status: "enqueued" });
+    rs.mocked(api.deleteEvalQuestion).mockResolvedValue(undefined);
+  });
+
+  it("useEvalQuestions fetches when enabled and caches under its kb-scoped key", async () => {
+    const queryClient = freshQueryClient();
+    const { result } = renderHook(() => useEvalQuestions("kb-1", true), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.listEvalQuestions).toHaveBeenCalledWith("kb-1");
+    expect(queryClient.getQueryData(knowledgeEvalQuestionsKey("kb-1"))).toEqual(EVAL_QUESTIONS_PAGE);
+  });
+
+  it("useEvalRuns fetches when enabled and caches under the history key", async () => {
+    const queryClient = freshQueryClient();
+    const { result } = renderHook(() => useEvalRuns("kb-1", true), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.listEvalRuns).toHaveBeenCalledWith("kb-1");
+    expect(queryClient.getQueryData(knowledgeEvalRunsKey("kb-1"))).toEqual(EVAL_RUNS_IDLE);
+  });
+
+  it("enabled=false keeps both new queries silent (keep-alive 门控)", async () => {
+    renderHook(() => useEvalQuestions("kb-1", false), { wrapper: createWrapper(freshQueryClient()) });
+    renderHook(() => useEvalRuns("kb-1", false), { wrapper: createWrapper(freshQueryClient()) });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.listEvalQuestions).not.toHaveBeenCalled();
+    expect(api.listEvalRuns).not.toHaveBeenCalled();
+  });
+
+  it("delete mutation invalidates the questions cache (refetch after success)", async () => {
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const list = renderHook(() => useEvalQuestions("kb-1", true), { wrapper });
+    await waitFor(() => expect(list.result.current.isSuccess).toBe(true));
+
+    const del = renderHook(() => useDeleteEvalQuestion("kb-1"), { wrapper });
+    await del.result.current.mutateAsync("q_ab12cd34");
+
+    expect(api.deleteEvalQuestion).toHaveBeenCalledWith("kb-1", "q_ab12cd34");
+    await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it("add mutation invalidates the questions cache", async () => {
+    rs.mocked(api.createEvalQuestion).mockResolvedValue({
+      id: "q_new00001",
+      query: "新考题",
+      category: "relation",
+      expected_path: "graph",
+      relevant_chunk_ids: [],
+      relevant_entities: [],
+      reference_answer: null,
+    });
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const list = renderHook(() => useEvalQuestions("kb-1", true), { wrapper });
+    await waitFor(() => expect(list.result.current.isSuccess).toBe(true));
+
+    const add = renderHook(() => useAddEvalQuestion("kb-1"), { wrapper });
+    await add.result.current.mutateAsync({
+      query: "新考题",
+      category: "relation",
+      expected_path: "graph",
+    });
+
+    expect(rs.mocked(api.createEvalQuestion).mock.calls[0]?.[0]).toEqual("kb-1");
+    await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it("useTriggerEvalRun passes the trigger response straight through", async () => {
+    const { result } = renderHook(() => useTriggerEvalRun("kb-1"), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    const response = await result.current.mutateAsync();
+    expect(response).toEqual({ status: "enqueued" });
+    expect(api.triggerEvalRun).toHaveBeenCalledWith("kb-1");
+  });
+});
+
+describe("evalRunsRefetchInterval（纯函数，spec §5.3）", () => {
+  it("polls at 3s only while in_flight", () => {
+    expect(evalRunsRefetchInterval(undefined)).toBe(false);
+    expect(evalRunsRefetchInterval({ in_flight: false, runs: [], total: 0 })).toBe(false);
+    expect(evalRunsRefetchInterval({ in_flight: true, runs: [], total: 0 })).toBe(3000);
   });
 });

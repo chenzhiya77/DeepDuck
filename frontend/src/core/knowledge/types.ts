@@ -578,3 +578,61 @@ export interface EvalRunDetail {
   baseline_diff?: BaselineDiff;
   is_baseline: boolean;
 }
+
+// ── Eval question bank & run history (spec 2026-08-27 §4–§6, plan Task 4) ──
+
+/** Golden 考题（GET / POST /eval/questions 的行对象）。 */
+export interface EvalQuestion {
+  /** 服务端生成（q_<hex8>），客户端不可携带。 */
+  id: string;
+  query: string;
+  category: "fact" | "relation" | "concept" | "global";
+  expected_path: "vector" | "graph" | "wiki";
+  /** 空数组 = 无锚定题（Layer 1 仅参与路径判定，spec §1 事实 2）。 */
+  relevant_chunk_ids: string[];
+  relevant_entities: string[];
+  reference_answer: string | null;
+}
+
+/** POST /eval/questions 请求体：锚定字段缺省即空数组。 */
+export interface EvalQuestionCreateInput {
+  query: string;
+  category: "fact" | "relation" | "concept" | "global";
+  expected_path: "vector" | "graph" | "wiki";
+  relevant_chunk_ids?: string[];
+  relevant_entities?: string[];
+  reference_answer?: string | null;
+}
+
+/** GET /eval/questions 响应：全量题库（50–100 题规模，无分页）。 */
+export interface EvalQuestionListResponse {
+  questions: EvalQuestion[];
+  total: number;
+}
+
+/** 历史列表行（轻量摘要，指标本体留在 drawer 详情里）。 */
+export interface EvalRunSummary {
+  run_id: string;
+  created_at: string | null;
+  completed_at: string | null;
+  environment: "local" | "ci" | "nightly";
+  status: "completed" | "error" | "skipped";
+  is_baseline: boolean;
+  has_layer1: boolean;
+  has_layer2: boolean;
+  regression_detected: boolean;
+  langfuse_trace_url: string | null;
+}
+
+/** GET /eval-runs 响应（spec §6.1）：顶层 in_flight 驱动轮询与工具栏状态。 */
+export interface EvalRunListResponse {
+  in_flight: boolean;
+  runs: EvalRunSummary[];
+  /** include_ci 过滤后的全量行数（不是本页行数）。 */
+  total: number;
+}
+
+/** POST /eval-runs 202 响应（wiki generate 幂等同款）。 */
+export interface EvalTriggerResponse {
+  status: "enqueued" | "already_running";
+}
