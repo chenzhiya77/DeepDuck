@@ -202,7 +202,7 @@
 
 ## Phase 5: 召回面板联动
 
-## Task 8: 存为考题 + 复现跳转预填
+## Task 8: 存为考题 + 复现跳转预填 ✅ 已完成（2026-08-28，`c2af5476`）
 
 **Files:**
 - Modify: `frontend/src/components/workspace/knowledge/recall-test-panel.tsx`（+命中行勾选 checkbox（vector hits / graph evidence 的 ChunkHitRow）；勾选 ≥1 时结果区尾部浮出「存为考题」按钮；+`prefillQuery` / `onPrefillConsumed` props：`useEffect` 监听非空 → 写入本地 query state → 调 `onPrefillConsumed`；**不自动触发检索**）
@@ -211,16 +211,16 @@
 - Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx` / `eval-question-bank.tsx` / `eval-question-drawer.tsx`（接 `onReproduce` prop 透传）
 - Modify: `frontend/tests/unit/knowledge/recall-test-panel.dom.test.tsx`（若无则新建）+ `eval-question-bank.dom.test.tsx`（+复现回调用例）
 
-- [ ] RED test：
+- [x] RED test：
   - 勾选行 checkbox → 「存为考题」按钮出现；全不选 → 按钮消失；
   - dialog 提交体：`relevant_chunk_ids` = 勾选 chunk id 集、query 预填值、category/expected_path 必填校验；成功 toast 且**不跳视图**；
   - `prefillQuery` 非空 → query 输入框被写入 → `onPrefillConsumed` 被调；**不自动发检索请求**（mock useRecallTest 断言未调用）；
   - 评测侧 ↗ 按钮 → `onReproduce` 回调携带该题 query。
-- [ ] Run `cd frontend && pnpm test recall-test-panel eval-question-bank`，记录 RED。
-- [ ] Implement。
-- [ ] GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add save-as-question and recall reproduce prefill`
+- [x] Run `cd frontend && pnpm test recall-test-panel eval-question-bank`，记录 RED。
+- [x] Implement。
+- [x] GREEN；revert proof。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add save-as-question and recall reproduce prefill`
 
 ---
 
