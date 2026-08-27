@@ -1,6 +1,6 @@
 # RAG 检索质量评估体系设计（Golden Dataset + IR 指标门禁 + RAGAS）
 
-> 状态：ready-for-agent（plan `../plans/2026-08-24-rag-retrieval-evaluation.md` 已就绪） · 日期：2026-08-23 · 范围：为三路检索（向量 hybrid_search / 图谱 graph_search / 百科 wiki_search）建设系统性质量评估——Golden Dataset + 确定性 IR 指标 CI 门禁 + RAGAS 定期报告，二期前端评测 Tab 仅冻结契约 · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md`（三路检索架构与 §4.7 二期检索质量闭环）
+> 状态：ready-for-agent（plan `../plans/2026-08-24-rag-retrieval-evaluation.md` 已就绪） · 日期：2026-08-23 · 范围：为三路检索（向量 hybrid_search / 图谱 graph_search / 百科 wiki_search）建设系统性质量评估——Golden Dataset + 确定性 IR 指标 CI 门禁 + RAGAS 定期报告，二期前端评测 Tab 仅冻结契约（二期 spec `2026-08-27-rag-eval-tab-phase2-design.md` 已就绪） · 关联：主 spec `2026-08-07-rag-knowledge-base-design.md`（三路检索架构与 §4.7 二期检索质量闭环）
 
 ## 1. 背景
 
@@ -112,6 +112,8 @@ graph LR
 - `ragas` 为可选依赖，不进默认安装，避免污染 gateway 镜像。
 
 ## 9. P5（二期，仅冻结契约）：前端评测 Tab
+
+> **2026-08-27 更新**：本节契约意图已由二期 spec `2026-08-27-rag-eval-tab-phase2-design.md` 展开为正式设计（分段三视图布局、题库 CRUD / 触发 / 历史 API 契约、存为考题与复现联动；双栏工作台方案已明确放弃）。落地细节以二期 spec 为准，本节保留为意图源头。
 
 - 知识库页新增「评测」Tab（在 documents / wiki / recall / vectors / graph 五个既有 Tab 之后）：题库 CRUD、运行评测（202 + 轮询，复用 wiki 生成的 in-flight/轮询模式）、历史运行列表、趋势图、按题下钻、跳转召回测试面板。
 - 召回测试面板新增「存为考题」按钮：把当前 query + 用户勾选的正确 chunk 写入 golden 集（走 API 追加 JSONL 行），造题成本趋近于零、题库随使用自然生长。
