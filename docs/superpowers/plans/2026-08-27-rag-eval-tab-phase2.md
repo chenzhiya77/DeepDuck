@@ -114,7 +114,7 @@
 
 ## Phase 3: 前端骨架（数据层 + 三视图 + 工具栏）
 
-## Task 4: 前端数据层——types + api client + hooks + i18n 键批次
+## Task 4: 前端数据层——types + api client + hooks + i18n 键批次 ✅ 已完成（2026-08-27，`1519104a`）
 
 **Files:**
 - Modify: `frontend/src/core/knowledge/types.ts`（+`EvalQuestion` / `EvalQuestionCreateInput` / `EvalQuestionListResponse` / `EvalRunSummary` / `EvalRunListResponse` / `EvalTriggerResponse`）
@@ -124,17 +124,17 @@
 - Modify: `frontend/src/core/i18n/locales/types.ts` / `zh-CN.ts` / `en-US.ts`（+`eval.views.*` 三视图标签、`eval.runButton/runningButton/lastRun*/neverRan/runStarted/alreadyRunning/runFailed`、`eval.questions.*` 表格列/添加 dialog/删除确认/空态、`eval.history.*` 列/环境 badge/状态文案/空态、`recall.saveAsQuestion.*` dialog 文案；**删除** `eval.runConfigNote`——工具栏落地后无占位文案）
 - Modify: `frontend/tests/unit/knowledge/hooks.dom.test.tsx`（+新 hooks 用例）
 
-- [ ] RED test（hooks.dom.test.tsx 扩充）：
+- [x] RED test（hooks.dom.test.tsx 扩充）：
   - queryKey 形状（`knowledgeEvalQuestionsKey(kbId)` / `knowledgeEvalRunsKey(kbId)` 唯一且含 kbId）；
   - `enabled=false` 不发请求（`useEvalQuestions` / `useEvalRuns`）；
   - `useEvalRuns` 的 refetchInterval：`in_flight=true` → 3000，`false` → false（纯函数直测 `evalRunsRefetchInterval`）；
   - mutation 成功 invalidate 对应 query（mock queryClient 断言）；
   - `useTriggerEvalRun` 返回 `{status}` 透传。
-- [ ] Run `cd frontend && pnpm test hooks`，记录 RED。
-- [ ] Implement：types → api → eval-run-status → hooks → i18n 三文件同步。
-- [ ] GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval phase-2 data layer hooks and i18n keys`
+- [x] Run `cd frontend && pnpm test hooks`，记录 RED。
+- [x] Implement：types → api → eval-run-status → hooks → i18n 三文件同步。
+- [x] GREEN；revert proof。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval phase-2 data layer hooks and i18n keys`
 
 ## Task 5: eval-tab 三视图骨架 + 常驻工具栏（运行按钮状态机）
 
