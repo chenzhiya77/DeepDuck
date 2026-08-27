@@ -136,24 +136,24 @@
 - [x] `pnpm check` 双净。
 - [x] Commit: `feat(frontend): add eval phase-2 data layer hooks and i18n keys`
 
-## Task 5: eval-tab 三视图骨架 + 常驻工具栏（运行按钮状态机）
+## Task 5: eval-tab 三视图骨架 + 常驻工具栏（运行按钮状态机）✅ 已完成（2026-08-28，`7698c420`）
 
 **Files:**
 - Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`（+视图 state `useState<"overview"|"questions"|"history">`；工具栏行替换 `runConfigNote` 占位行：左分段控件（粒度切换同样式族 + `role="radiogroup"`）、右「上次运行 X 前」（`formatTimeAgo`）+ 运行按钮；工具栏溢出降级复用 `useToolbarTier`（溢出时运行按钮收 ⋯ 菜单）；drain 边检测 `useEffect`：`in_flight` true→false 时一次性 invalidate `evalRuns`/`metricsOverview`/`evalTrend`）
 - Modify: `frontend/tests/unit/knowledge/eval-tab.dom.test.tsx`（+视图切换与工具栏用例）
 
-- [ ] RED test：
+- [x] RED test：
   - 默认渲染 overview 视图（指标总览+趋势图现状回归：原有断言不删不改）；
   - 分段控件切到 questions/history 视图（本任务先渲染占位 div + data-testid，Task 6/7 填内容）；
   - 工具栏：有历史行时显示「上次运行 X 前」、无历史显示「尚未运行」、`in_flight=true` 显示 spinner+「运行中…」且按钮禁用；
   - 点击运行按钮 → trigger mutation 被调；mutation 返回 `already_running` → toast（mock sonner 断言）；`enqueued` → toast「评测已开始」；
   - drain 边：in_flight true→false 切换时三个 query 各 invalidate 一次（mock queryClient）；
   - 窄面板：scrollWidth > clientWidth 时运行按钮收进 ⋯ 菜单（钉 scrollWidth 模拟，useToolbarTier 先例）。
-- [ ] Run `cd frontend && pnpm test eval-tab`，记录 RED。
-- [ ] Implement：视图 state + 工具栏 + 状态机接线。
-- [ ] GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval tab segmented views and run trigger toolbar`
+- [x] Run `cd frontend && pnpm test eval-tab`，记录 RED。
+- [x] Implement：视图 state + 工具栏 + 状态机接线。
+- [x] GREEN；revert proof。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval tab segmented views and run trigger toolbar`
 
 ---
 
