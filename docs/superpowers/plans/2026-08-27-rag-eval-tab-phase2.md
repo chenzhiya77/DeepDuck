@@ -40,7 +40,7 @@
 
 ## Phase 1: 题库 CRUD（后端）
 
-## Task 1: 题库文件模块 + CRUD 三端点
+## Task 1: 题库文件模块 + CRUD 三端点 ✅ 已完成（2026-08-27，`55a0c771`）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/eval/question_bank.py`（per-KB golden.jsonl 读写：`_LOCKS` 注册表、`load_questions(path)` / `add_question(path, fields)` / `delete_question(path, question_id)`，tmp+`os.replace` 原子写）
@@ -49,20 +49,20 @@
 - Create: `backend/tests/knowledge/eval/test_question_bank.py`（文件层）
 - Create: `backend/tests/knowledge/test_eval_questions_api.py`（API 层，基建对齐 `test_eval_runs_api.py`）
 
-- [ ] RED test 文件层（tmp_path fixture）：
+- [x] RED test 文件层（tmp_path fixture）：
   - 读不存在的文件 → 空列表（新 KB 不是错误）；
   - add：生成 `q_<hex8>` id、字段经 `validate_question` 守卫（注入 id 后）、文件可被 `load_golden` 回读；
   - add 非法入参（坏 category / 坏 expected_path / 坏 chunk id 格式 / 显式带 id 字段）→ `GoldenDatasetError`；
   - delete 存在的 id → 文件不再含该行；delete 不存在 id → KeyError/None（契约由实现定，测试钉死）；
   - 脏文件（手工写入非法行）→ 读写均抛 `GoldenDatasetError` 且消息含行号；
   - 原子写：写后无 tmp 残留；并发 add（`asyncio.gather` 两写）最终两行都在（per-KB lock 串行）。
-- [ ] RED test API 层：
+- [x] RED test API 层：
   - 空题库 → 200 `{questions: [], total: 0}`；POST 201 返回完整 question（含服务端 id）；POST 带 id → 422；schema 违例 → 422 detail 含字段名；DELETE → 204 / 404；脏文件 → 500 detail 含行号；未知 kb → 404（`_require_kb_access` 先例）。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/eval/test_question_bank.py tests/knowledge/test_eval_questions_api.py -q`，记录 missing-module/endpoint RED。
-- [ ] Implement：question_bank 纯文件层（锁注册表 + 原子写），service 薄壳拼路径，router 三端点（错误映射：`GoldenDatasetError`→422（写入校验）/500（存量脏文件），KeyError→404）。
-- [ ] GREEN；revert proof：stash 实现 → RED → pop → GREEN。
-- [ ] ruff check/format 双净。
-- [ ] Commit: `feat(rag): add per-KB eval question bank CRUD API`
+- [x] Run `cd backend && uv run pytest tests/knowledge/eval/test_question_bank.py tests/knowledge/test_eval_questions_api.py -q`，记录 missing-module/endpoint RED。
+- [x] Implement：question_bank 纯文件层（锁注册表 + 原子写），service 薄壳拼路径，router 三端点（错误映射：`GoldenDatasetError`→422（写入校验）/500（存量脏文件），KeyError→404）。
+- [x] GREEN；revert proof：stash 实现 → RED → pop → GREEN。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): add per-KB eval question bank CRUD API`
 
 ---
 
