@@ -4,8 +4,10 @@
  * 评测 tab（2026-08-24 spec §5 + 2026-08-27 spec §3/§5，plan Task 5）：
  * 分段三视图（总览/题库/历史，2026-08-27 布局定案）+ 常驻工具栏——
  * 左：视图分段控件（粒度切换同款样式族，恒内联）；
- * 右：「上次运行 X 前」短文案 + 「运行评测」主动词按钮（运行中 spinner
- *     禁用；窄面板 useToolbarTier 溢出降档收进 ⋯ 菜单，只收按钮不收分段）。
+ * 右：「运行评测」主动词按钮（h-7 紧凑档，运行中 spinner 禁用；窄面板
+ *     useToolbarTier 溢出降档收进 ⋯ 菜单，只收按钮不收分段）。2026-08-28
+ *     反馈：上次运行文案与状态切换的高度跳动去掉——运行状态由按钮自身
+ *     表达，历史时间在历史视图首行仍可见。
  * 总览视图 = 一期现状（指标总览 + 趋势图），零改动；题库/历史为占位壳
  * （Task 6/7 落地）。数据层：useMetricsOverview / useEvalTrend /
  * useEvalRuns（enabled 门控，keep-alive 懒门控）；触发走 useTriggerEvalRun，
@@ -40,7 +42,6 @@ import {
   useTriggerEvalRun,
 } from "@/core/knowledge/hooks";
 import type { TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types";
-import { formatTimeAgo } from "@/core/utils/datetime";
 
 import { EvalMetricsOverview } from "./eval-metrics-overview";
 import { EvalQuestionBank } from "./eval-question-bank";
@@ -114,7 +115,7 @@ export interface EvalTabProps {
 }
 
 export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const tk = t.knowledge.eval;
   const queryClient = useQueryClient();
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -134,7 +135,6 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const triggerMutation = useTriggerEvalRun(kbId);
   // 点击→首次轮询间隙由 isPending 补位（eval-run-status 纯函数）。
   const running = isEvalRunning(runsQuery.data, triggerMutation.isPending);
-  const lastRun = runsQuery.data?.runs[0];
 
   const handleTrigger = useCallback(() => {
     triggerMutation.mutate(undefined, {
@@ -185,7 +185,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         {/* 常驻工具栏（§5）：三视图共享，主动词恒可达；tier 1 时状态文案让位 */}
         <div
           ref={viewToolbarRef}
-          className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap border-b px-4 py-3"
+          className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap border-b px-4 py-2"
           data-testid="eval-view-toolbar"
         >
           <div aria-label={tk.viewSwitchLabel} className="bg-muted flex shrink-0 rounded-md p-0.5" role="radiogroup">
@@ -203,17 +203,10 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             ))}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            {!running && viewToolbarTier === 0 && (
-              <span className="text-muted-foreground text-xs">
-                {lastRun?.created_at
-                  ? `${tk.lastRunLabel} ${formatTimeAgo(lastRun.created_at, locale)}`
-                  : tk.neverRan}
-              </span>
-            )}
             {viewToolbarTier === 0 ? (
-              // 主动词用默认尺寸（recall「开始检索」同款），spinner size-4（项目惯例）
-              <Button className="shrink-0" disabled={running} onClick={handleTrigger}>
-                {running && <Loader2 aria-hidden className="size-4 animate-spin" />}
+              // 紧凑档（vector-tab 工具栏 h-7 惯例）：锁运行前后按钮高度恒定，工具栏不跳动
+              <Button className="h-7 shrink-0" disabled={running} onClick={handleTrigger}>
+                {running && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
                 {runButtonLabel}
               </Button>
             ) : (

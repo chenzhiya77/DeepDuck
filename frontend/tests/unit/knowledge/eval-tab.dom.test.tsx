@@ -355,18 +355,25 @@ describe("EvalTab 常驻工具栏", () => {
   });
   afterEach(() => cleanup());
 
-  it("无历史行显示「尚未运行」", () => {
+  it("工具栏紧凑档：h-7 运行按钮 + py-2 行，锁运行前后高度恒定不跳动", () => {
     hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    renderEvalTab();
-    expect(screen.getByText("尚未运行")).toBeTruthy();
-  });
+    const { rerender } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
+    const toolbar = screen.getByTestId("eval-view-toolbar");
+    expect(toolbar.className).toContain("py-2");
+    expect(within(toolbar).getByRole("button", { name: "运行评测" }).className).toContain("h-7");
 
-  it("有历史行显示「上次运行 X 前」短文案", () => {
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [RUN_SUMMARY], total: 1 } }));
-    renderEvalTab();
-    // 相对时间随时钟漂移，只钉前缀（formatTimeAgo 产物拼在后面）
-    expect(screen.getByText("上次运行", { exact: false })).toBeTruthy();
-    expect(screen.getByTestId("eval-view-toolbar").textContent).toContain("上次运行");
+    // 锁运行（in_flight=true）：按钮同一 h-7 档，工具栏高度不变
+    act(() => {
+      hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: true, runs: [RUN_SUMMARY], total: 1 } }));
+      rerender(
+        <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+          <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <EvalTab enabled kbId="kb-1" />
+          </QueryClientProvider>
+        </I18nContext.Provider>,
+      );
+    });
+    expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-7");
   });
 
   it("in_flight=true 时按钮转「运行中…」禁用态", () => {
@@ -492,7 +499,7 @@ describe("EvalTab 常驻工具栏", () => {
     });
     try {
       renderEvalTab();
-      // 状态文案（「尚未运行」/「上次运行 X 前」）只在 tier 0 展示
+      // 状态文案已整体移除（2026-08-28 反馈）；tier 1 只保留分段控件 + ⋯
       expect(screen.queryByText("尚未运行")).toBeNull();
       expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
       expect(within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" })).toBeTruthy();
