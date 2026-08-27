@@ -84,15 +84,15 @@ describe("EvalRunDrawer", () => {
 
   it("renders both layer summaries including the Layer 2 path_accuracy caveat", () => {
     renderDrawer();
-    // Layer 1：summary 行四指标 + 题量
-    expect(screen.getByText("Layer 1 · 检索指标")).toBeTruthy();
+    // 检索质量：summary 行四指标 + 题量（区块标题已去 Layer 术语，2026-08-27 方案 A）
+    expect(screen.getByText("检索质量")).toBeTruthy();
     expect(screen.getByText("89.7%")).toBeTruthy(); // recall_at_k 0.897
     expect(screen.getByText("92.8%")).toBeTruthy(); // hit_rate 0.928
     expect(screen.getByText("0.812")).toBeTruthy(); // mrr
-    // Layer 2：RAGAS 四项 + 架构专属三项 + path_accuracy 及口径标注
-    expect(screen.getByText("Layer 2 · 生成质量")).toBeTruthy();
+    // 生成质量：RAGAS 四项 + 架构专属三项 + path_accuracy 及口径标注
+    expect(screen.getByText("生成质量")).toBeTruthy();
     expect(screen.getByText("Faithfulness")).toBeTruthy();
-    expect(screen.getByText("Context Recall")).toBeTruthy();
+    expect(screen.getByText("上下文召回率")).toBeTruthy();
     expect(screen.getByText("引用准确率")).toBeTruthy();
     expect(screen.getByText("路径准确率（对话链路）")).toBeTruthy();
     expect(screen.getByText("87.0%")).toBeTruthy();

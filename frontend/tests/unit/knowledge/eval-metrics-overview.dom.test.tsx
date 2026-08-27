@@ -190,7 +190,7 @@ describe("Layer 1 表格", () => {
   it("renders the whole-section empty state when layer1 is null", () => {
     renderOverview({ ...FULL_OVERVIEW, layer1: null });
 
-    expect(screen.getByText("尚无 Layer 1 运行")).toBeTruthy();
+    expect(screen.getByText("尚无检索质量数据")).toBeTruthy();
     expect(screen.queryByTestId("eval-layer1-table")).toBeNull();
   });
 });
@@ -351,7 +351,7 @@ describe("Layer 2 卡片", () => {
   it("renders the whole-section empty state when layer2 is null", () => {
     renderOverview({ ...FULL_OVERVIEW, layer2: null });
 
-    expect(screen.getByText("尚无 Layer 2 运行")).toBeTruthy();
+    expect(screen.getByText("尚无生成质量数据")).toBeTruthy();
     expect(screen.queryByTestId("eval-card-faithfulness")).toBeNull();
   });
 
@@ -379,7 +379,7 @@ describe("i18n", () => {
   it("renders en-US copy from the dictionary", () => {
     renderOverview({ ...FULL_OVERVIEW, layer1: null }, undefined, "en-US");
 
-    expect(screen.getByText("No Layer 1 runs yet")).toBeTruthy();
+    expect(screen.getByText("No retrieval-quality data yet")).toBeTruthy();
     expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("93.3%");
     // en-US 下卡片标题与分组标签同为英文。
     expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("Faithfulness");
