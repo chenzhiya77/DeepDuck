@@ -180,23 +180,23 @@
 - [x] `pnpm check` 双净。
 - [x] Commit: `feat(frontend): add eval question bank table with detail drawer and add dialog`
 
-## Task 7: 历史视图——运行列表 + 复用 EvalRunDrawer
+## Task 7: 历史视图——运行列表 + 复用 EvalRunDrawer ✅ 已完成（2026-08-28，`35273e69`）
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/eval-run-history.tsx`（行：⭐baseline + 时间 + 环境 Badge（本地/CI/定时）+ 层徽标 L1/L2/L1+L2 + 状态图标短文案 ✅完成/❌失败/⏭跳过 + 回退红 Badge；行点击 → `EvalRunDrawer`；空态「尚无评测运行——点右上角运行评测发起首次评测」；三态）
 - Create: `frontend/tests/unit/knowledge/eval-run-history.dom.test.tsx`
 
-- [ ] RED test：
+- [x] RED test：
   - 行渲染：环境/层/状态/badge 组合正确（含 is_baseline ⭐、regression_detected 回退 Badge）；
   - skipped/error 行可见（历史是唯一曝光面，spec §6.2）；
   - 行点击 → EvalRunDrawer open 且 runId 正确（drawer mock 断言，eval-tab.dom.test 先例）；
   - 空态与 loading/失败三态；
   - `in_flight=true` 时列表顶部无伪行（in-flight 只由工具栏 spinner 表达，spec §6.1）。
-- [ ] Run `cd frontend && pnpm test eval-run-history`，记录 RED。
-- [ ] Implement；eval-tab 的 history 视图占位替换为 `<EvalRunHistory ... />`。
-- [ ] GREEN；revert proof。
-- [ ] `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): add eval run history list with drawer drill-down`
+- [x] Run `cd frontend && pnpm test eval-run-history`，记录 RED。
+- [x] Implement；eval-tab 的 history 视图占位替换为 `<EvalRunHistory ... />`。
+- [x] GREEN；revert proof。
+- [x] `pnpm check` 双净。
+- [x] Commit: `feat(frontend): add eval run history list with drawer drill-down`
 
 ---
 
