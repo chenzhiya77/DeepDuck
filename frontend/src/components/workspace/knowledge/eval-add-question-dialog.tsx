@@ -2,7 +2,8 @@
 
 /**
  * 添加考题 dialog（2026-08-27 spec §4.4，plan Task 6）：简化表单——
- * query + category + expected_path 必填、reference_answer 可选。不暴露
+ * query + category + expected_path 必填、reference_answer 可选；分类/路径
+ * 默认取第一项，无空占位项（2026-08-28 用户反馈）。不暴露
  * relevant_chunk_ids / relevant_entities 输入：手填 chunk id 痛苦且无意义，
  * 锚定的正确来源是召回面板「存为考题」（§7.1）；提交体不含锚定键，后端补
  * 空数组即无锚定题（Layer 1 仅参与路径判定）。编辑不支持（§4.2 规则 5）。
@@ -38,18 +39,20 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
   const dtk = etk.questions.addDialog;
   const addMutation = useAddEvalQuestion(kbId);
 
+  // 分类/预期路径必填，默认取第一项——不设空占位项（2026-08-28 用户反馈：
+  // 下拉框里的空行观感差且易误选）。
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"" | (typeof CATEGORY_OPTIONS)[number]>("");
-  const [expectedPath, setExpectedPath] = useState<"" | (typeof PATH_OPTIONS)[number]>("");
+  const [category, setCategory] = useState<(typeof CATEGORY_OPTIONS)[number]>("fact");
+  const [expectedPath, setExpectedPath] = useState<(typeof PATH_OPTIONS)[number]>("vector");
   const [referenceAnswer, setReferenceAnswer] = useState("");
 
-  const canSubmit = query.trim().length > 0 && category !== "" && expectedPath !== "";
+  const canSubmit = query.trim().length > 0;
 
   const handleClose = (next: boolean) => {
     if (!next) {
       setQuery("");
-      setCategory("");
-      setExpectedPath("");
+      setCategory("fact");
+      setExpectedPath("vector");
       setReferenceAnswer("");
     }
     onOpenChange(next);
@@ -97,7 +100,6 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
                 onChange={(event) => setCategory(event.target.value as typeof category)}
                 value={category}
               >
-                <option value="" />
                 {CATEGORY_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {etk.category[value]}
@@ -113,7 +115,6 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
                 onChange={(event) => setExpectedPath(event.target.value as typeof expectedPath)}
                 value={expectedPath}
               >
-                <option value="" />
                 {PATH_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {value}

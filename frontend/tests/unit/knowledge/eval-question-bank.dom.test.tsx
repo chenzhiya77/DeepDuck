@@ -192,13 +192,15 @@ describe("EvalAddQuestionDialog", () => {
     return mutateAsync;
   }
 
-  it("空 query 或未选分类时提交禁用（必填校验）", () => {
+  it("空 query 时提交禁用；填后可提交（分类/路径默认第一项，无空占位项）", () => {
     renderDialog();
     expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(true);
 
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
-    // 分类未选仍禁用
-    expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(false);
+    // 无空占位项：下拉首项即默认值
+    expect((screen.getByLabelText("分类") as unknown as HTMLSelectElement).value).toBe("fact");
+    expect((screen.getByLabelText("预期路径") as unknown as HTMLSelectElement).value).toBe("vector");
   });
 
   it("提交体不含锚定键（relevant_chunk_ids / relevant_entities）", async () => {
@@ -216,13 +218,14 @@ describe("EvalAddQuestionDialog", () => {
     expect(body).not.toHaveProperty("relevant_entities");
   });
 
-  it("提交成功发 toast 并关闭弹窗", async () => {
-    renderDialog();
+  it("不改选择时按默认值提交并发成功 toast", async () => {
+    const mutateAsync = renderDialog();
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
-    fireEvent.change(screen.getByLabelText("分类"), { target: { value: "fact" } });
-    fireEvent.change(screen.getByLabelText("预期路径"), { target: { value: "vector" } });
     fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body).toMatchObject({ category: "fact", expected_path: "vector" });
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已添加")).toBe(true);
     });
