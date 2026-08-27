@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { useAddEvalQuestion } from "@/core/knowledge/hooks";
@@ -92,36 +93,37 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">{dtk.categoryLabel}</span>
-              <select
-                aria-label={dtk.categoryLabel}
-                className="border-input bg-background rounded-md border px-2 py-1.5 text-sm"
-                onChange={(event) => setCategory(event.target.value as typeof category)}
-                value={category}
-              >
-                {CATEGORY_OPTIONS.map((value) => (
-                  <option key={value} value={value}>
-                    {etk.category[value]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
+              {/* shadcn Select（agent-settings-dialog 先例）——样式与选项悬停态与全站一致；默认首项无空占位（2026-08-28 反馈） */}
+              <Select onValueChange={(value) => setCategory(value as typeof category)} value={category}>
+                <SelectTrigger aria-label={dtk.categoryLabel} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {etk.category[value]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">{dtk.expectedPathLabel}</span>
-              <select
-                aria-label={dtk.expectedPathLabel}
-                className="border-input bg-background rounded-md border px-2 py-1.5 text-sm"
-                onChange={(event) => setExpectedPath(event.target.value as typeof expectedPath)}
-                value={expectedPath}
-              >
-                {PATH_OPTIONS.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Select onValueChange={(value) => setExpectedPath(value as typeof expectedPath)} value={expectedPath}>
+                <SelectTrigger aria-label={dtk.expectedPathLabel} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PATH_OPTIONS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <label className="flex flex-col gap-1">
             <span className="text-sm font-medium">{dtk.referenceAnswerLabel}</span>

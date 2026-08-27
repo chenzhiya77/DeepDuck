@@ -211,8 +211,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
               </span>
             )}
             {viewToolbarTier === 0 ? (
-              <Button disabled={running} size="sm" onClick={handleTrigger}>
-                {running && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
+              // 主动词用默认尺寸（recall「开始检索」同款），spinner size-4（项目惯例）
+              <Button className="shrink-0" disabled={running} onClick={handleTrigger}>
+                {running && <Loader2 aria-hidden className="size-4 animate-spin" />}
                 {runButtonLabel}
               </Button>
             ) : (

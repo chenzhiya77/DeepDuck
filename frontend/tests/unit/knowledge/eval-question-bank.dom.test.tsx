@@ -198,16 +198,19 @@ describe("EvalAddQuestionDialog", () => {
 
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
     expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(false);
-    // 无空占位项：下拉首项即默认值
-    expect((screen.getByLabelText("分类") as unknown as HTMLSelectElement).value).toBe("fact");
-    expect((screen.getByLabelText("预期路径") as unknown as HTMLSelectElement).value).toBe("vector");
+    // 无空占位项：shadcn Select 首项即默认值（SelectValue 直接显示默认项文案）
+    expect(screen.getByRole("combobox", { name: "分类" }).textContent).toBe("事实");
+    expect(screen.getByRole("combobox", { name: "预期路径" }).textContent).toBe("vector");
   });
 
   it("提交体不含锚定键（relevant_chunk_ids / relevant_entities）", async () => {
     const mutateAsync = renderDialog();
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
-    fireEvent.change(screen.getByLabelText("分类"), { target: { value: "relation" } });
-    fireEvent.change(screen.getByLabelText("预期路径"), { target: { value: "graph" } });
+    // Radix Select：jsdom 无 pointerCapture，键盘开菜单（vector-tab 先例）
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "分类" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "关系" }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "预期路径" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "graph" }));
 
     fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
