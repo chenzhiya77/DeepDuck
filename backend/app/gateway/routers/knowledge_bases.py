@@ -14,7 +14,7 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.gateway.services.knowledge_service import (
     DocumentProcessingError,
@@ -23,6 +23,8 @@ from app.gateway.services.knowledge_service import (
     ProjectionNotComputedError,
 )
 from deerflow.knowledge.access import can_access
+from deerflow.knowledge.eval.dataset import GoldenDatasetError
+from deerflow.knowledge.eval.question_bank import QuestionBankInvalidQuestion
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
 from deerflow.knowledge.projection.reducer import UmapUnavailableError
 
@@ -54,6 +56,21 @@ class KbUpdateRequest(BaseModel):
             if not value:
                 raise ValueError("name must not be blank")
         return value
+
+
+class EvalQuestionCreateRequest(BaseModel):
+    """P5 二期题库新增（spec 2026-08-27 §4.2）：id 由服务端生成——请求体携带
+    id 字段直接 422；枚举与 chunk id 格式校验统一委托 ``validate_question``
+    （schema 单一事实源），Pydantic 层不做第二份校验。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    category: str
+    expected_path: str
+    relevant_chunk_ids: list[str] = Field(default_factory=list)
+    relevant_entities: list[str] = Field(default_factory=list)
+    reference_answer: str | None = None
 
 
 class RecallTestRequest(BaseModel):
@@ -535,6 +552,52 @@ async def project_query_vector(
         return await service.project_query_vector(kb_id, text=body.text, collections=keys, algo=algo, dims=dims, sample_size=sample_size)
     except (ProjectionNotComputedError, ProjectionModelUnavailableError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# ── eval question bank（spec 2026-08-27 §4.2）────────────────────────────
+
+
+@router.get("/{kb_id}/eval/questions")
+async def list_eval_questions(request: Request, kb_id: str):
+    """读全量题库；文件不存在 → 空表（新 KB 不是错误）；存量文件脏 → 500 指行号。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        return await service.list_eval_questions(kb_id)
+    except GoldenDatasetError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{kb_id}/eval/questions", status_code=201)
+async def create_eval_question(request: Request, kb_id: str, body: EvalQuestionCreateRequest):
+    """新增一题：id 服务端生成；新入参违例 → 422，存量文件脏 → 500 指行号。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        return await service.create_eval_question(
+            kb_id,
+            query=body.query,
+            category=body.category,
+            expected_path=body.expected_path,
+            relevant_chunk_ids=body.relevant_chunk_ids,
+            relevant_entities=body.relevant_entities,
+            reference_answer=body.reference_answer,
+        )
+    except QuestionBankInvalidQuestion as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except GoldenDatasetError as exc:
+        # 存量 golden.jsonl 非法是运维问题（手工编辑引入脏行），不是调用方
+        # 入参问题——500 显式暴露行号，绝不静默跳过。
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.delete("/{kb_id}/eval/questions/{question_id}", status_code=204)
+async def delete_eval_question(request: Request, kb_id: str, question_id: str):
+    service = await _require_kb_access(request, kb_id)
+    try:
+        await service.delete_eval_question(kb_id, question_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Eval question not found") from exc
+    except GoldenDatasetError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/{kb_id}/eval-runs/latest")

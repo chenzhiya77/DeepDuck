@@ -19,6 +19,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Callable, Collection
+from dataclasses import asdict
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -28,6 +29,7 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.eval import question_bank
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
@@ -1132,6 +1134,41 @@ class KnowledgeService:
         payload = KnowledgeStore._row_to_dict(row, datetime_keys=("created_at", "completed_at"))
         payload["run_id"] = payload.pop("id")
         return payload
+
+    # ── eval question bank (spec 2026-08-27 §4) ──────────────────────────
+
+    def _golden_path(self, kb_id: str) -> Path:
+        """Per-KB golden 文件与上传文档同目录树（§4.1 存储约定）。"""
+        return self.data_dir / "knowledge" / kb_id / "golden.jsonl"
+
+    async def list_eval_questions(self, kb_id: str) -> dict[str, Any]:
+        questions = await question_bank.load_questions(self._golden_path(kb_id))
+        return {"questions": [asdict(question) for question in questions], "total": len(questions)}
+
+    async def create_eval_question(
+        self,
+        kb_id: str,
+        *,
+        query: str,
+        category: str,
+        expected_path: str,
+        relevant_chunk_ids: Collection[str],
+        relevant_entities: Collection[str],
+        reference_answer: str | None,
+    ) -> dict[str, Any]:
+        question = await question_bank.add_question(
+            self._golden_path(kb_id),
+            query=query,
+            category=category,
+            expected_path=expected_path,
+            relevant_chunk_ids=relevant_chunk_ids,
+            relevant_entities=relevant_entities,
+            reference_answer=reference_answer,
+        )
+        return asdict(question)
+
+    async def delete_eval_question(self, kb_id: str, question_id: str) -> None:
+        await question_bank.delete_question(self._golden_path(kb_id), question_id)
 
     def _schedule_wiki_generation(self, kb_id: str, only_dirty: bool = True) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id, only_dirty=only_dirty), name=f"kb-wiki-{kb_id}")
