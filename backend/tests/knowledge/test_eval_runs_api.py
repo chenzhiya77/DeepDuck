@@ -471,3 +471,74 @@ async def test_get_eval_run_unknown_kb_404(service) -> None:
     response = client.get("/api/knowledge-bases/kb-missing/eval-runs/run-1")
 
     assert response.status_code == 404
+
+
+# ── POST /eval-runs trigger（spec 2026-08-27 §5，wiki 幂等同款）──────────
+
+
+def _trigger_service(session_factory, tmp_path, trigger) -> KnowledgeService:
+    vector_store = MagicMock()
+    vector_store.chunks_collection = "kb_chunks"
+    vector_store.entities_collection = "kb_entities"
+    vector_store.wiki_entries_collection = "kb_wiki"
+    vector_store.manual_cards_collection = "kb_cards"
+    return KnowledgeService(
+        store=KnowledgeStore(session_factory),
+        vector_store=vector_store,
+        graph_store=None,
+        wiki_store=None,
+        worker=None,
+        data_dir=tmp_path,
+        eval_trigger_fn=trigger,
+    )
+
+
+async def test_trigger_returns_202_enqueued_and_schedules_once(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+    # 空库会被 409 前置守卫拦下（见 test_trigger_empty_bank_maps_to_409_*），
+    # enqueued 路径需要至少一题——顺带复用 Task 1 的 CRUD API 播种。
+    seeded = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "什么是退休年龄", "category": "fact", "expected_path": "vector"})
+    assert seeded.status_code == 201, seeded.text
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs")
+
+    assert response.status_code == 202, response.text
+    assert response.json() == {"status": "enqueued"}
+    assert trigger.call_count == 1
+    assert trigger.call_args[0][0] == kb["id"]
+
+
+async def test_trigger_in_flight_returns_already_running_without_rescheduling(session_factory, tmp_path) -> None:
+    from deerflow.knowledge.eval import ondemand as eval_ondemand
+
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+    eval_ondemand._IN_FLIGHT[kb["id"]] = 1
+    try:
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs")
+
+        assert response.status_code == 202
+        assert response.json() == {"status": "already_running"}
+        assert trigger.call_count == 0
+    finally:
+        eval_ondemand._IN_FLIGHT.pop(kb["id"], None)
+
+
+async def test_trigger_empty_bank_maps_to_409_and_never_schedules(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs")
+
+    assert response.status_code == 409, response.text
+    assert trigger.call_count == 0
+
+
+async def test_trigger_unknown_kb_404(session_factory, tmp_path) -> None:
+    client = _client(_trigger_service(session_factory, tmp_path, MagicMock()))
+
+    assert client.post("/api/knowledge-bases/kb-missing/eval-runs").status_code == 404

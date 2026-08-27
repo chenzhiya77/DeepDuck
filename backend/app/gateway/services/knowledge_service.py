@@ -31,6 +31,7 @@ import numpy as np
 
 from deerflow.knowledge.eval import question_bank
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
+from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, run_layer1_for_kb
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
@@ -164,6 +165,7 @@ class KnowledgeService:
         worker: Any = None,
         data_dir: str | Path,
         wiki_generate_fn: Callable[[str, bool], None] | None = None,
+        eval_trigger_fn: Callable[[str], None] | None = None,
         projection_cache: ProjectionCache | None = None,
     ) -> None:
         self.store = store
@@ -173,8 +175,10 @@ class KnowledgeService:
         self.worker = worker
         self.data_dir = Path(data_dir)
         self.wiki_generate_fn = wiki_generate_fn or self._schedule_wiki_generation
+        self.eval_trigger_fn = eval_trigger_fn or self._schedule_eval_run
         self.projection_cache = projection_cache or ProjectionCache()
         self._wiki_tasks: set[asyncio.Task[None]] = set()
+        self._eval_tasks: set[asyncio.Task[None]] = set()
 
     # ── documents ────────────────────────────────────────────────────────
 
@@ -1169,6 +1173,29 @@ class KnowledgeService:
 
     async def delete_eval_question(self, kb_id: str, question_id: str) -> None:
         await question_bank.delete_question(self._golden_path(kb_id), question_id)
+
+    async def trigger_eval_run(self, kb_id: str) -> bool:
+        """Fire-and-forget Layer 1 评测（spec 2026-08-27 §5.1，wiki 幂等同款）。
+
+        Returns False when a run is already in flight — the router reports
+        ``already_running`` instead of queueing a duplicate run. An empty
+        question bank raises :class:`EvalQuestionBankEmpty` (router → 409)
+        *before* anything is scheduled — the check runs synchronously so the
+        caller gets a definitive answer rather than a doomed background task.
+        """
+
+        if eval_run_in_progress(kb_id):
+            return False
+        bank = await question_bank.load_questions(self._golden_path(kb_id))
+        if not bank:
+            raise EvalQuestionBankEmpty(f"eval question bank is empty for kb {kb_id}")
+        self.eval_trigger_fn(kb_id)
+        return True
+
+    def _schedule_eval_run(self, kb_id: str) -> None:
+        task = asyncio.create_task(run_layer1_for_kb(kb_id, golden_path=self._golden_path(kb_id)), name=f"kb-eval-{kb_id}")
+        self._eval_tasks.add(task)
+        task.add_done_callback(self._eval_tasks.discard)
 
     def _schedule_wiki_generation(self, kb_id: str, only_dirty: bool = True) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id, only_dirty=only_dirty), name=f"kb-wiki-{kb_id}")

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -41,6 +41,18 @@ ENV_LOCAL = "local"
 ENV_CI = "ci"
 ENV_NIGHTLY = "nightly"
 ENVIRONMENTS: tuple[str, ...] = (ENV_LOCAL, ENV_CI, ENV_NIGHTLY)
+
+
+def generate_run_id() -> str:
+    """run_id ``rag-<UTC 秒>-<hex8>``——CLI 与 gateway 按需运行共用同一格式。
+
+    Originally the CLI's private ``_generate_run_id``; lifted into the eval
+    package so on-demand runs (spec 2026-08-27 §5) cannot drift from it.
+    """
+
+    from uuid import uuid4
+
+    return f"rag-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
 
 
 def status_from_exit_code(exit_code: int) -> str:

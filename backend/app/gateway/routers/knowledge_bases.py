@@ -24,6 +24,7 @@ from app.gateway.services.knowledge_service import (
 )
 from deerflow.knowledge.access import can_access
 from deerflow.knowledge.eval.dataset import GoldenDatasetError
+from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty
 from deerflow.knowledge.eval.question_bank import QuestionBankInvalidQuestion
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
 from deerflow.knowledge.projection.reducer import UmapUnavailableError
@@ -598,6 +599,18 @@ async def delete_eval_question(request: Request, kb_id: str, question_id: str):
         raise HTTPException(status_code=404, detail="Eval question not found") from exc
     except GoldenDatasetError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{kb_id}/eval-runs", status_code=202)
+async def trigger_eval_run(request: Request, kb_id: str):
+    """触发一次按需 Layer 1 评测（spec 2026-08-27 §5）：复刻 wiki generate 的
+    in-flight 幂等语义——enqueued / already_running；题库为空 → 409。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        enqueued = await service.trigger_eval_run(kb_id)
+    except EvalQuestionBankEmpty as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "enqueued" if enqueued else "already_running"}
 
 
 @router.get("/{kb_id}/eval-runs/latest")

@@ -36,20 +36,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
-from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_COMPLETED, resolve_environment
+from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_COMPLETED, generate_run_id, resolve_environment
 
 EXIT_OK = 0
 EXIT_REGRESSION = 1
 EXIT_ERROR = 2
 EXIT_SKIPPED = 3
-
-
-def _generate_run_id() -> str:
-    """run_id for runs that never produced a report (error/skipped rows)."""
-
-    from uuid import uuid4
-
-    return f"rag-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
 
 
 async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: str, report=None, environment: str = ENV_LOCAL) -> None:
@@ -94,7 +86,7 @@ async def _persist_eval_run(args: argparse.Namespace, *, config=None, status: st
             await persistence_engine.init_engine_from_config((config or get_app_config()).database)
         try:
             await eval_persistence.save_eval_run(
-                run_id=_generate_run_id(),
+                run_id=generate_run_id(),
                 kb_id=args.kb_id,
                 status=status,
                 created_at=created_at,
