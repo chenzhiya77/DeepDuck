@@ -542,3 +542,114 @@ async def test_trigger_unknown_kb_404(session_factory, tmp_path) -> None:
     client = _client(_trigger_service(session_factory, tmp_path, MagicMock()))
 
     assert client.post("/api/knowledge-bases/kb-missing/eval-runs").status_code == 404
+
+
+# ── GET /eval-runs history list（spec 2026-08-27 §6.1）───────────────────
+
+
+async def test_history_lists_runs_newest_first_with_derived_flags(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    diff = {"recall_at_k_delta": -0.05, "regression_detected": True, "threshold_percent": 3.0, "regressed_categories": ["fact"]}
+    await _seed_run(kb["id"], "run-old", datetime(2026, 8, 18, 9, 0, tzinfo=UTC), layer1=_l1())
+    await _seed_run(
+        kb["id"],
+        "run-new",
+        datetime(2026, 8, 20, 9, 0, tzinfo=UTC),
+        layer1=_l1(),
+        layer2=_l2(),
+        baseline_diff=diff,
+        langfuse_trace_url="https://langfuse.example/trace/9",
+        environment="nightly",
+    )
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+
+    assert body["in_flight"] is False
+    assert body["total"] == 2
+    newest, oldest = body["runs"]
+    assert newest["run_id"] == "run-new"
+    assert oldest["run_id"] == "run-old"
+    # has_layer1/has_layer2 由 *_metrics 非空推导；指标本体不下发。
+    assert (newest["has_layer1"], newest["has_layer2"]) == (True, True)
+    assert (oldest["has_layer1"], oldest["has_layer2"]) == (True, False)
+    assert "layer1_metrics" not in newest
+    assert newest["status"] == "completed"
+    assert newest["environment"] == "nightly"
+    assert newest["is_baseline"] is False
+    assert newest["regression_detected"] is True
+    assert oldest["regression_detected"] is False
+    assert newest["langfuse_trace_url"] == "https://langfuse.example/trace/9"
+    assert oldest["langfuse_trace_url"] is None
+
+
+async def test_history_excludes_ci_by_default_and_opts_back_in(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-local", datetime(2026, 8, 19, 9, 0, tzinfo=UTC), layer1=_l1())
+    await _seed_run(kb["id"], "run-ci", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2(), environment="ci")
+
+    default_body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+    assert default_body["total"] == 1
+    assert [r["run_id"] for r in default_body["runs"]] == ["run-local"]
+
+    with_ci = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs?include_ci=true").json()
+    assert with_ci["total"] == 2
+    assert [r["run_id"] for r in with_ci["runs"]] == ["run-ci", "run-local"]
+
+
+async def test_history_limit_slices_newest_after_filter_and_clamps_upper_bound(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    for day, run_id in ((16, "run-a"), (17, "run-b"), (18, "run-c")):
+        await _seed_run(kb["id"], run_id, datetime(2026, 8, day, 9, 0, tzinfo=UTC), layer1=_l1())
+
+    sliced = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs?limit=2").json()
+    # 过滤后按新到旧切片，total 反映过滤后全量（不是本页行数）。
+    assert [r["run_id"] for r in sliced["runs"]] == ["run-c", "run-b"]
+    assert sliced["total"] == 3
+
+    clamped = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs?limit=999")
+    assert clamped.status_code == 200
+    assert len(clamped.json()["runs"]) == 3
+    assert clamped.json()["total"] == 3
+
+
+async def test_history_rejects_non_positive_or_malformed_limit(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs?limit=abc").status_code == 422
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs?limit=0").status_code == 422
+
+
+async def test_history_empty_returns_exact_shape(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"in_flight": False, "runs": [], "total": 0}
+
+
+async def test_history_reports_in_flight_flag_without_pseudo_rows(service) -> None:
+    from deerflow.knowledge.eval import ondemand as eval_ondemand
+
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-done", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+    eval_ondemand._IN_FLIGHT[kb["id"]] = 1
+    try:
+        body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+        assert body["in_flight"] is True
+        # 运行中状态只由顶层标志表达，不产生伪行。
+        assert [r["run_id"] for r in body["runs"]] == ["run-done"]
+    finally:
+        eval_ondemand._IN_FLIGHT.pop(kb["id"], None)
+
+
+async def test_history_unknown_kb_404(service) -> None:
+    client = _client(service)
+
+    assert client.get("/api/knowledge-bases/kb-missing/eval-runs").status_code == 404

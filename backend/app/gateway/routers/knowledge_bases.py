@@ -613,6 +613,14 @@ async def trigger_eval_run(request: Request, kb_id: str):
     return {"status": "enqueued" if enqueued else "already_running"}
 
 
+@router.get("/{kb_id}/eval-runs")
+async def list_eval_runs(request: Request, kb_id: str, limit: int = Query(default=50, ge=1), include_ci: bool = False):
+    """评测运行历史列表（spec 2026-08-27 §6.1）：created_at 倒序轻量摘要 +
+    顶层 ``in_flight``；默认排除 ci 行，limit 超上限由 service clamp。"""
+    service = await _require_kb_access(request, kb_id)
+    return await service.list_eval_runs(kb_id, limit=limit, include_ci=include_ci)
+
+
 @router.get("/{kb_id}/eval-runs/latest")
 async def get_latest_eval_metrics(request: Request, kb_id: str):
     """评测指标总览（spec 2026-08-24 §3.2/§4.2）：两层各自最近一次 completed

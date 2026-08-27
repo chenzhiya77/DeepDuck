@@ -32,6 +32,7 @@ import numpy as np
 from deerflow.knowledge.eval import question_bank
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, run_layer1_for_kb
+from deerflow.knowledge.eval.persistence import ENV_CI
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
@@ -51,6 +52,9 @@ from deerflow.tools.builtins.wiki_search_tool import _wiki_search_impl
 from deerflow.uploads.manager import normalize_filename
 from deerflow.utils.file_io import run_file_io
 from deerflow.utils.time import coerce_iso
+
+#: 历史列表单页上限（spec 2026-08-27 §6.1）——超出直接 clamp，不报错。
+MAX_EVAL_RUNS_LIMIT = 200
 
 logger = logging.getLogger(__name__)
 
@@ -1196,6 +1200,43 @@ class KnowledgeService:
         task = asyncio.create_task(run_layer1_for_kb(kb_id, golden_path=self._golden_path(kb_id)), name=f"kb-eval-{kb_id}")
         self._eval_tasks.add(task)
         task.add_done_callback(self._eval_tasks.discard)
+
+    async def list_eval_runs(self, kb_id: str, *, limit: int = 50, include_ci: bool = False) -> dict[str, Any]:
+        """历史列表（spec 2026-08-27 §6.1）：倒序轻量摘要 + 顶层 ``in_flight``。
+
+        默认排除 ci 行（与 trend 同口径）；``limit`` 只做分页切片，``total``
+        反映过滤后的全量行数——in-flight 运行不产生伪行（落库后才有行），
+        运行中状态只由顶层标志表达。
+        """
+
+        rows = await self.store.list_eval_runs(kb_id)
+        if not include_ci:
+            rows = [row for row in rows if row.environment != ENV_CI]
+        rows.reverse()  # created_at asc → desc（最新在前）
+        summaries = [self._eval_run_summary(row) for row in rows]
+        return {
+            "in_flight": eval_run_in_progress(kb_id),
+            "runs": summaries[: min(limit, MAX_EVAL_RUNS_LIMIT)],
+            "total": len(summaries),
+        }
+
+    @staticmethod
+    def _eval_run_summary(row: EvalRunRow) -> dict[str, Any]:
+        layer1_present = bool(row.layer1_metrics)
+        layer2_present = bool(row.layer2_metrics)
+        baseline_diff = row.baseline_diff or {}
+        return {
+            "run_id": row.id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            "environment": row.environment,
+            "status": row.status,
+            "is_baseline": row.is_baseline,
+            "has_layer1": layer1_present,
+            "has_layer2": layer2_present,
+            "regression_detected": bool(baseline_diff.get("regression_detected")),
+            "langfuse_trace_url": row.langfuse_trace_url,
+        }
 
     def _schedule_wiki_generation(self, kb_id: str, only_dirty: bool = True) -> None:
         task = asyncio.create_task(self._run_wiki_generation(kb_id, only_dirty=only_dirty), name=f"kb-wiki-{kb_id}")
