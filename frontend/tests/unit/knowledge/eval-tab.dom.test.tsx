@@ -198,10 +198,15 @@ describe("EvalTab 数据联通", () => {
     expect(labels.thresholdLabel?.(3)).toBe("回退阈值 -3%");
   });
 
-  it("keeps the tab-level min-width floor so narrow panels scroll instead of clipping", () => {
+  it("32rem 下限只在指标总览块：压缩时仅卡片区域横滚，工具栏不进滚动区", () => {
     renderEvalTab();
-    // 内包装下限（2026-08-27 三轮）：卡片可压到的最小宽度由这里保护，触底整 tab 横滚。
-    expect(screen.getByTestId("eval-tab").firstElementChild?.className).toContain("min-w-[32rem]");
+    // 2026-08-28 修订（用户反馈）：下限从整列下沉到指标块——「谁有下限，谁自己滚」。
+    const scrollBlock = screen.getByTestId("eval-overview-scroll");
+    expect(scrollBlock.className).toContain("overflow-x-auto");
+    expect(scrollBlock.firstElementChild?.className).toContain("min-w-[32rem]");
+    // 工具栏固定行，整 tab 无横向滚动
+    expect(screen.getByTestId("eval-view-toolbar").className).toContain("shrink-0");
+    expect(screen.getByTestId("eval-tab").className).not.toContain("overflow-auto");
   });
 
   it("loading 状态渲染加载提示而非空白", () => {
@@ -468,6 +473,29 @@ describe("EvalTab 常驻工具栏", () => {
       expect(mutate).toHaveBeenCalled();
       // 分段控件恒内联：三视图标签足够短
       expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
+
+  it("tier 1 时状态文案让位（次要信息先收缩，分段控件与 ⋯ 恒在）", () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    try {
+      renderEvalTab();
+      // 状态文案（「尚未运行」/「上次运行 X 前」）只在 tier 0 展示
+      expect(screen.queryByText("尚未运行")).toBeNull();
+      expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
+      expect(within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" })).toBeTruthy();
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);

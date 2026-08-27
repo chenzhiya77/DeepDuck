@@ -178,15 +178,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const runButtonLabel = running ? tk.runningButton : tk.runButton;
 
   return (
-    // 与文档 tab 同一滚动模型（document-panel）：面板容器 overflow-auto + 内容自带
-    // min-w 下限（4 张指标卡 × ~6.75rem + 间距与 px-4 = 32rem，卡内容区 ~76px 仍容得下
-    // text-lg 的 "100.0%" 与 3 字标题+ⓘ）；栏宽低于下限时整 tab 横向滚动，而不是裁切卡片。
-    <div className="h-full min-h-0 overflow-auto" data-testid="eval-tab">
-      <div className="flex min-w-[32rem] flex-col gap-4 px-4 py-3">
-        {/* 常驻工具栏（§5）：三视图共享，主动词恒可达 */}
+    // 滚动模型（对齐 document-panel 头部行 + 内容表格 min-w 的同构做法）：工具栏
+    // 固定全宽永不横滚（挤压走 tier 降档）；内容区独立纵向滚动；32rem 下限只属于
+    // 指标总览块（4 卡数学下限）——压缩时仅卡片区域横滚，「谁有下限，谁自己滚」。
+    <div className="flex h-full min-h-0 flex-col" data-testid="eval-tab">
+        {/* 常驻工具栏（§5）：三视图共享，主动词恒可达；tier 1 时状态文案让位 */}
         <div
           ref={viewToolbarRef}
-          className="flex items-center gap-2 overflow-hidden whitespace-nowrap"
+          className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap border-b px-4 py-3"
           data-testid="eval-view-toolbar"
         >
           <div aria-label={tk.viewSwitchLabel} className="bg-muted flex shrink-0 rounded-md p-0.5" role="radiogroup">
@@ -204,7 +203,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             ))}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            {!running && (
+            {!running && viewToolbarTier === 0 && (
               <span className="text-muted-foreground text-xs">
                 {lastRun?.created_at
                   ? `${tk.lastRunLabel} ${formatTimeAgo(lastRun.created_at, locale)}`
@@ -234,8 +233,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           </div>
         </div>
 
+        {/* 内容区：纵向滚动（document-panel 同款）；各视图内容 */}
+        <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+          <div className="flex min-w-0 flex-col gap-4">
         {view === "overview" && (
           <>
+            {/* 指标总览块：32rem 下限只在这里（4 卡数学下限）——压缩时仅此块横滚 */}
+            <div className="overflow-x-auto" data-testid="eval-overview-scroll">
+              <div className="min-w-[32rem]">
             {/* 指标总览（Layer 1 表格 + Layer 2 卡片）：loading / 错误 / 数据三态 */}
             {overviewQuery.isLoading ? (
               <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
@@ -248,6 +253,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             ) : overviewQuery.data ? (
               <EvalMetricsOverview overview={overviewQuery.data} />
             ) : null}
+              </div>
+            </div>
 
             {/* 趋势图卡片壳：标题 + 粒度切换（窄面板收进 ⋯ 菜单）+ canvas/空态 */}
             <section className="rounded-lg border p-3">
@@ -339,9 +346,10 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           /* 历史视图（Task 7）：运行列表行，行点击复用既有 EvalRunDrawer 实例下钻 */
           <EvalRunHistory enabled={enabled} kbId={kbId} onOpenRun={setDrawerRunId} />
         )}
-      </div>
+          </div>
+        </div>
 
-      {/* 点击趋势图数据点 → drawer 下钻单次运行详情（portal 渲染，保持在 min-w 内包装之外） */}
+      {/* 点击趋势图数据点 → drawer 下钻单次运行详情（portal 渲染） */}
       <EvalRunDrawer
         kbId={kbId}
         open={drawerRunId !== null}
