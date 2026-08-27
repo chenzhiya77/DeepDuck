@@ -540,6 +540,10 @@ export const enUS: Translations = {
           confirm: "Delete",
           cancel: "Cancel",
         },
+        drawerTitle: "Question details",
+        noReferenceAnswer: "Not provided",
+        addedToast: "Question added",
+        deletedToast: "Question deleted",
       },
       history: {
         envLocal: "Local",

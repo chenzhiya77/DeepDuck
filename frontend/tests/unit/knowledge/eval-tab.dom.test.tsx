@@ -57,6 +57,11 @@ rs.mock("@/components/workspace/knowledge/eval-run-drawer", () => ({
   },
 }));
 
+/** 题库视图 mock（Task 6）：占位壳保持 testid，bank 自身契约在其专属测试文件。 */
+rs.mock("@/components/workspace/knowledge/eval-question-bank", () => ({
+  EvalQuestionBank: () => <div data-testid="eval-questions-view" />,
+}));
+
 // jsdom 无 ResizeObserver——组件 resize 监听用空实现顶替（panels-shell 先例）。
 class ResizeObserverStub {
   observe() {

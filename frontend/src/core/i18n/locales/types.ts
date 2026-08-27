@@ -484,6 +484,11 @@ export interface Translations {
           confirm: string;
           cancel: string;
         };
+        /** 详情 drawer 标题（§4.5）。 */
+        drawerTitle: string;
+        noReferenceAnswer: string;
+        addedToast: string;
+        deletedToast: string;
       };
       /** 历史视图（§6.2）：环境 badge、状态短文案与空态；回退复用 regressionBadge。 */
       history: {

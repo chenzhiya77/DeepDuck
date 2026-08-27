@@ -43,6 +43,7 @@ import type { TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types"
 import { formatTimeAgo } from "@/core/utils/datetime";
 
 import { EvalMetricsOverview } from "./eval-metrics-overview";
+import { EvalQuestionBank } from "./eval-question-bank";
 import { EvalRunDrawer } from "./eval-run-drawer";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
 
@@ -107,9 +108,11 @@ export interface EvalTabProps {
   kbId: string;
   /** keep-alive pane 的懒加载门：仅评测 tab 激活后才发请求（page 层下发）。 */
   enabled: boolean;
+  /** ↗ 复现通道（§7.2）：题库/详情携带 query 跳召回面板预填（page 层透传）。 */
+  onReproduce?: (query: string) => void;
 }
 
-export function EvalTab({ kbId, enabled }: EvalTabProps) {
+export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const { t, locale } = useI18n();
   const tk = t.knowledge.eval;
   const queryClient = useQueryClient();
@@ -326,13 +329,8 @@ export function EvalTab({ kbId, enabled }: EvalTabProps) {
         )}
 
         {view === "questions" && (
-          /* 题库视图占位壳——Task 6 落地表格 + 详情 drawer + 添加 dialog + 删除确认 */
-          <div
-            className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
-            data-testid="eval-questions-view"
-          >
-            {tk.questions.emptyBank}
-          </div>
+          /* 题库视图（Task 6）：表格 + 详情 drawer + 添加 dialog + 删除确认 */
+          <EvalQuestionBank enabled={enabled} kbId={kbId} onReproduce={onReproduce} />
         )}
 
         {view === "history" && (

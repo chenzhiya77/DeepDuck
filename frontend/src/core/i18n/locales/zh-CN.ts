@@ -524,6 +524,10 @@ export const zhCN: Translations = {
           confirm: "删除",
           cancel: "取消",
         },
+        drawerTitle: "考题详情",
+        noReferenceAnswer: "未填写",
+        addedToast: "考题已添加",
+        deletedToast: "考题已删除",
       },
       history: {
         envLocal: "本地",
