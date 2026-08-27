@@ -68,7 +68,7 @@
 
 ## Phase 2: 运行触发与历史（后端）
 
-## Task 2: 按需运行模块 + `POST /eval-runs` 202 幂等触发
+## Task 2: 按需运行模块 + `POST /eval-runs` 202 幂等触发 ✅ 已完成（2026-08-27，`dc1e7892`）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/eval/ondemand.py`（`_IN_FLIGHT: dict[str, int]` + `eval_run_in_progress(kb_id)` + `async run_layer1_for_kb(kb_id, *, golden_path, top_k=5)`——编排：load_golden → build_default_searchers（owner 身份）→ get_baseline_run/baseline_report_from_metrics → run_evaluation（generated_at 显式）→ save_eval_run（layer1 映射 + baseline_diff，`environment="local"`）；异常兜底落 error 行，复刻 CLI `_persist_eval_run` 的 best-effort 语义）
@@ -78,18 +78,18 @@
 - Create: `backend/tests/knowledge/eval/test_ondemand.py`（编排层，stub 三路 impl + fake store）
 - Modify: `backend/tests/knowledge/test_eval_runs_api.py`（+触发端点用例）
 
-- [ ] RED test 编排层：
+- [x] RED test 编排层：
   - stub searchers 跑通：落库行 `layer1_metrics` 非空、`layer2_metrics == {}`、`environment == "local"`、`created_at` == 传入的 generated_at；
   - 有 is_baseline 行时 `baseline_diff` 非 null（auto diff 生效）；无则 null；
   - 运行期异常（searcher 抛错使 run_evaluation 失败）→ 落 error 行且异常不再上抛（fire-and-forget 安全）；
   - 题库文件不存在/0 题 → `EvalQuestionBankEmpty`；
   - `_generate_run_id` 提升后 CLI 仍 import 得到（回归：`test_eval_cli.py` 不动应全绿）。
-- [ ] RED test 触发端点：首次 POST → 202 enqueued 且任务被调度（fake runner 断言调用）；in-flight 中再 POST → 202 already_running 且不重复调度；空题库 → 409；未知 kb → 404。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/eval/test_ondemand.py tests/knowledge/test_eval_runs_api.py tests/knowledge/eval/test_eval_cli.py -q`，记录 RED。
-- [ ] Implement：ondemand 编排 + service 触发 + 路由；`_IN_FLIGHT` 计数在 finally 中递减（crash 不卡死后续触发）。
-- [ ] GREEN；revert proof。
-- [ ] ruff check/format 双净。
-- [ ] Commit: `feat(rag): add on-demand Layer 1 eval trigger with in-flight idempotency`
+- [x] RED test 触发端点：首次 POST → 202 enqueued 且任务被调度（fake runner 断言调用）；in-flight 中再 POST → 202 already_running 且不重复调度；空题库 → 409；未知 kb → 404。
+- [x] Run `cd backend && uv run pytest tests/knowledge/eval/test_ondemand.py tests/knowledge/test_eval_runs_api.py tests/knowledge/eval/test_eval_cli.py -q`，记录 RED。
+- [x] Implement：ondemand 编排 + service 触发 + 路由；`_IN_FLIGHT` 计数在 finally 中递减（crash 不卡死后续触发）。
+- [x] GREEN；revert proof。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): add on-demand Layer 1 eval trigger with in-flight idempotency`
 
 ## Task 3: 历史列表 API——`GET /eval-runs`（含 `in_flight`）
 
