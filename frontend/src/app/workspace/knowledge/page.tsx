@@ -74,6 +74,9 @@ export default function KnowledgePage() {
   // an overlay — opening it never switches the tab; only the drawer's
   // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
   const [activeTab, setActiveTab] = useState<KnowledgeMiddleTab>("documents");
+  // 复现预填通道（2026-08-27 spec §7.2）：评测侧 ↗ 携带 query 切召回 tab 预填；
+  // RecallTestPanel 消费后回调清空（onViewInVectorSpace/setVectorOverlay 同构先例）。
+  const [recallPrefill, setRecallPrefill] = useState<string | null>(null);
   const [drawerEntryId, setDrawerEntryId] = useState<string | null>(null);
   // Phase-3 P6 混排修复：检索测试 wiki 路命中人工卡片时开卡片抽屉（卡片
   // id 走 wiki 详情接口必然 404）。
@@ -382,12 +385,14 @@ export default function KnowledgePage() {
               recall={
                 <RecallTestPanel
                   kbId={selectedKb.id}
+                  onPrefillConsumed={() => setRecallPrefill(null)}
                   onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
                   onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
                   onViewInVectorSpace={(next) => {
                     setVectorOverlay(next);
                     setActiveTab("vectors");
                   }}
+                  prefillQuery={recallPrefill}
                 />
               }
               vectors={
@@ -429,7 +434,14 @@ export default function KnowledgePage() {
               eval={
                 // keep-alive 懒门控：仅评测 tab 激活后才发请求（useWikiEntries 先例，
                 // plan Task 5）。粒度 state 在 EvalTab 内部（进 queryKey）。
-                <EvalTab enabled={activeTab === "eval"} kbId={selectedKb.id} />
+                <EvalTab
+                  enabled={activeTab === "eval"}
+                  kbId={selectedKb.id}
+                  onReproduce={(query) => {
+                    setRecallPrefill(query);
+                    setActiveTab("recall");
+                  }}
+                />
               }
             />
           ) : (

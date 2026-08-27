@@ -6,21 +6,22 @@
  * Submit is disabled while a run is in flight; failures surface as a toast.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 
 rs.mock("@/core/knowledge/hooks", () => ({
   useRecallTest: rs.fn(),
+  useAddEvalQuestion: rs.fn(),
 }));
 
 rs.mock("sonner", () => ({
-  toast: { error: rs.fn(), success: rs.fn() },
+  toast: { error: rs.fn(), success: rs.fn(), info: rs.fn(), warning: rs.fn() },
 }));
 
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { useRecallTest } from "@/core/knowledge/hooks";
+import { useAddEvalQuestion, useRecallTest } from "@/core/knowledge/hooks";
 import type { RecallTestResponse } from "@/core/knowledge/types";
 
 const RESULT: RecallTestResponse = {
@@ -241,5 +242,110 @@ describe("RecallTestPanel 向量空间联动", () => {
     });
     renderPanel({ onViewInVectorSpace: rs.fn() });
     expect(screen.getByRole("button", { name: "在向量空间查看" })).toHaveProperty("disabled", true);
+  });
+});
+
+// ── 存为考题 + prefill 通道（2026-08-27 spec §7，plan Task 8）─────────────
+
+function mockAddQuestion() {
+  const mutateAsync = rs.fn().mockResolvedValue({
+    id: "q_new00001",
+    query: "Gateway 职责",
+    category: "fact",
+    expected_path: "vector",
+    relevant_chunk_ids: [],
+    relevant_entities: [],
+    reference_answer: null,
+  });
+  (useAddEvalQuestion as unknown as ReturnType<typeof rs.fn>).mockReturnValue({
+    mutateAsync,
+    isPending: false,
+  });
+  return mutateAsync;
+}
+
+describe("RecallTestPanel 存为考题（spec §7.1）", () => {
+  it("勾选命中行出现「存为考题」，全不选消失", () => {
+    mockRecallTest({ data: RESULT });
+    renderPanel();
+    // vector 2 行 + graph evidence 1 行 = 3 个勾选框（wiki 命中不参与）
+    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /存为考题/ })).toBeNull();
+
+    fireEvent.click(screen.getByTestId("recall-select-vector-c1"));
+    expect(screen.getByRole("button", { name: /存为考题/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("recall-select-vector-c1"));
+    expect(screen.queryByRole("button", { name: /存为考题/ })).toBeNull();
+  });
+
+  it("dialog 摘要/预填；提交体携带勾选 chunk 集；成功后清勾选不跳视图", async () => {
+    mockRecallTest({ data: RESULT });
+    const mutateAsync = mockAddQuestion();
+    renderPanel();
+
+    // 真实流：先输入问题（dialog 的 query 预填源是当前输入）
+    fireEvent.change(screen.getByPlaceholderText("输入测试问题…"), { target: { value: "Gateway 职责" } });
+    // 混路勾选（vector c2 + graph evidence c1）→ 默认路径 vector
+    fireEvent.click(screen.getByTestId("recall-select-vector-c2"));
+    fireEvent.click(screen.getByTestId("recall-select-vector-c1"));
+    fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
+
+    expect(screen.getAllByText("已选 2 个切片").length).toBeGreaterThan(0);
+    // query 预填经 dialog open-effect 异步写入
+    await waitFor(() => {
+      const queryBox = screen.getByLabelText("问题") as unknown as HTMLTextAreaElement;
+      expect(queryBox.value).toBe("Gateway 职责");
+    });
+    expect(screen.getByRole("combobox", { name: "预期路径" }).textContent).toBe("vector");
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body).toMatchObject({ query: "Gateway 职责", category: "fact", expected_path: "vector" });
+    expect(body.relevant_chunk_ids).toEqual(["c2", "c1"]);
+    expect(body).not.toHaveProperty("relevant_entities");
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("已存为考题");
+    });
+    // 成功后清勾选：继续标注下一题，不跳视图
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /存为考题/ })).toBeNull();
+    });
+  });
+
+  it("单路勾选时默认路径取来源路径", async () => {
+    mockRecallTest({ data: RESULT });
+    mockAddQuestion();
+    renderPanel();
+
+    fireEvent.click(screen.getByTestId("recall-select-graph-c1"));
+    fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "预期路径" }).textContent).toBe("graph");
+    });
+  });
+});
+
+describe("RecallTestPanel prefill 通道（spec §7.2）", () => {
+  it("prefillQuery 写入输入框并消费；不自动触发检索", () => {
+    const mutate = mockRecallTest();
+    const onPrefillConsumed = rs.fn();
+    renderPanel({ onPrefillConsumed, prefillQuery: "图谱如何检索" });
+
+    const input = screen.getByPlaceholderText("输入测试问题…") as unknown as HTMLInputElement;
+    expect(input.value).toBe("图谱如何检索");
+    expect(onPrefillConsumed).toHaveBeenCalledTimes(1);
+    // 只预填，不替用户发起检索
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("无 prefill 时不消费", () => {
+    mockRecallTest();
+    const onPrefillConsumed = rs.fn();
+    renderPanel({ onPrefillConsumed });
+    expect(onPrefillConsumed).not.toHaveBeenCalled();
   });
 });

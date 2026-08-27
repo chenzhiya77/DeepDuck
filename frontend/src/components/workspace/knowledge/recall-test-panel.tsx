@@ -1,11 +1,12 @@
 "use client";
 
 import { ChevronDown, ChevronRight, FlaskConical, Waypoints } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/core/i18n/hooks";
 import { useRecallTest } from "@/core/knowledge/hooks";
@@ -19,6 +20,7 @@ import type {
 } from "@/core/knowledge/types";
 
 import { ChunkCard } from "./chunk-card";
+import { EvalSaveQuestionDialog } from "./eval-save-question-dialog";
 
 function formatScore(score: number | null): string {
   return score === null ? "—" : score.toFixed(3);
@@ -49,7 +51,10 @@ function PathHeader({
   );
 }
 
-/** Collapsible chunk hit (vector path / graph evidence) → shared ChunkCard. */
+/** Collapsible chunk hit (vector path / graph evidence) → shared ChunkCard.
+ *
+ * checked/onCheckChange 挂「存为考题」勾选（spec §7.1）——checkbox 与展开 button 并列（button 不能嵌套）。
+ */
 function ChunkHitRow({
   hit,
   score,
@@ -57,6 +62,10 @@ function ChunkHitRow({
   kbId,
   expanded,
   onToggle,
+  checked,
+  onCheckChange,
+  selectLabel,
+  selectTestId,
 }: {
   hit: { chunk_id: string; doc_name: string; text: string; heading_path: string[]; page: number | null; rank?: number };
   score: number | null;
@@ -65,11 +74,25 @@ function ChunkHitRow({
   kbId: string;
   expanded: boolean;
   onToggle: () => void;
+  checked: boolean;
+  onCheckChange: () => void;
+  /** 勾选框 aria-label（调用点用 i18n 组装——模块级组件拿不到 tr）。 */
+  selectLabel: string;
+  /** 勾选框 testid：带路径前缀——同一 chunk 可能同时命中两路。 */
+  selectTestId: string;
 }) {
   // chunk_id 形如 `{doc_id}#0001`（chunker 生成），前段即 doc_id。
   const docId = hit.chunk_id.split("#")[0]!;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex items-start gap-1.5">
+      <Checkbox
+        aria-label={selectLabel}
+        checked={checked}
+        className="mt-2 shrink-0"
+        data-testid={selectTestId}
+        onCheckedChange={onCheckChange}
+      />
+      <div className="min-w-0 flex-1">
       <button
         className="hover:bg-muted/50 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-sm"
         data-testid={testId}
@@ -85,6 +108,7 @@ function ChunkHitRow({
       {expanded && (
         <ChunkCard docId={docId} docName={hit.doc_name} headingPath={hit.heading_path} kbId={kbId} page={hit.page} text={hit.text} />
       )}
+      </div>
     </div>
   );
 }
@@ -101,6 +125,8 @@ export function RecallTestPanel({
   onOpenWikiEntry,
   onOpenManualCard,
   onViewInVectorSpace,
+  prefillQuery,
+  onPrefillConsumed,
 }: {
   kbId: string;
   onOpenWikiEntry: (entryId: string) => void;
@@ -111,6 +137,9 @@ export function RecallTestPanel({
    * page 层切 tab 并完成叠加（query 落点 + vector 路命中高亮）。
    */
   onViewInVectorSpace?: (overlay: VectorRetrievalOverlay) => void;
+  /** 复现通道（§7.2）：评测侧跳转携带的预填 query；消费后回调清空。 */
+  prefillQuery?: string | null;
+  onPrefillConsumed?: () => void;
 }) {
   const { t } = useI18n();
   const tr = t.knowledge.recallTest;
@@ -120,12 +149,34 @@ export function RecallTestPanel({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const result: RecallTestResponse | null = recallTest.data ?? null;
 
+  // 复现预填通道（§7.2）：写入输入框即消费——只预填，不替用户发起检索。
+  useEffect(() => {
+    if (prefillQuery) {
+      setQuery(prefillQuery);
+      onPrefillConsumed?.();
+    }
+  }, [prefillQuery, onPrefillConsumed]);
+
+  // 「存为考题」勾选（§7.1）：vector 命中 + graph 证据按 chunk id 去重；
+  // 记录来源路径供 dialog 默认预期路径（混路默认 vector）。
+  const [selectedChunks, setSelectedChunks] = useState<{ id: string; path: "vector" | "graph" }[]>([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const toggleChunk = (chunkId: string, path: "vector" | "graph") =>
+    setSelectedChunks((current) =>
+      current.some((item) => item.id === chunkId)
+        ? current.filter((item) => item.id !== chunkId)
+        : [...current, { id: chunkId, path }],
+    );
+  const selectionPaths = new Set(selectedChunks.map((item) => item.path));
+  const defaultSavePath: "vector" | "graph" | "wiki" = selectionPaths.size === 1 ? selectedChunks[0]!.path : "vector";
+
   const run = () => {
     const trimmed = query.trim();
     if (!trimmed || recallTest.isPending) {
       return;
     }
     setExpandedKey(null);
+    setSelectedChunks([]);
     const clampedTopK = Math.min(20, Math.max(1, Math.trunc(topK) || 5));
     recallTest.mutate(
       { query: trimmed, top_k: clampedTopK },
@@ -221,7 +272,11 @@ export function RecallTestPanel({
                   kbId={kbId}
                   key={hit.chunk_id}
                   score={hit.score}
+                  checked={selectedChunks.some((item) => item.id === hit.chunk_id)}
                   testId={`recall-vector-hit-${hit.chunk_id}`}
+                  onCheckChange={() => toggleChunk(hit.chunk_id, "vector")}
+                  selectLabel={`${tr.saveAsQuestion.button}: ${hit.doc_name}`}
+                  selectTestId={`recall-select-vector-${hit.chunk_id}`}
                   onToggle={() => toggle(`vector:${hit.chunk_id}`)}
                 />
               ))}
@@ -261,7 +316,11 @@ export function RecallTestPanel({
                   kbId={kbId}
                   key={hit.chunk_id}
                   score={hit.score}
+                  checked={selectedChunks.some((item) => item.id === hit.chunk_id)}
                   testId={`recall-graph-hit-${hit.chunk_id}`}
+                  onCheckChange={() => toggleChunk(hit.chunk_id, "graph")}
+                  selectLabel={`${tr.saveAsQuestion.button}: ${hit.doc_name}`}
+                  selectTestId={`recall-select-graph-${hit.chunk_id}`}
                   onToggle={() => toggle(`graph:${hit.chunk_id}`)}
                 />
               ))}
@@ -299,9 +358,33 @@ export function RecallTestPanel({
                 </button>
               ))}
             </section>
+
+            {/* 存为考题栏（§7.1）：勾选 ≥1 浮出——造题主入口，题库随使用自然生长 */}
+            {selectedChunks.length > 0 && (
+              <div className="bg-background sticky bottom-0 flex items-center gap-2 border-t py-2">
+                <span className="text-muted-foreground text-xs">
+                  {tr.saveAsQuestion.selectedCount(selectedChunks.length)}
+                </span>
+                <Button className="ml-auto shrink-0" size="sm" onClick={() => setSaveOpen(true)}>
+                  <FlaskConical className="size-3.5" />
+                  {tr.saveAsQuestion.button}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* 存为考题 dialog：query 预填当前输入，保存成功清勾选继续标注（不跳视图） */}
+      <EvalSaveQuestionDialog
+        defaultPath={defaultSavePath}
+        kbId={kbId}
+        onOpenChange={setSaveOpen}
+        onSaved={() => setSelectedChunks([])}
+        open={saveOpen}
+        prefillQuery={query}
+        selectedChunkIds={selectedChunks.map((item) => item.id)}
+      />
     </div>
   );
 }
