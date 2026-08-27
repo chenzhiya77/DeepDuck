@@ -452,6 +452,7 @@ export interface Translations {
       neverRan: string;
       runStartedToast: string;
       alreadyRunningToast: string;
+      runFailedToast: string;
       /** 题库视图（§4.3）：列头、锚定摘要、行操作、空态与两个弹窗。 */
       questions: {
         columnQuery: string;

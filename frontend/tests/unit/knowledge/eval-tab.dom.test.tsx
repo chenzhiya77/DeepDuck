@@ -11,16 +11,26 @@
  *   （vector-tab useToolbarTier 溢出检测先例）。
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { toast } from "sonner";
 
 const hooksMock = rs.hoisted(() => ({
   useMetricsOverview: rs.fn(),
   useEvalTrend: rs.fn(),
+  useEvalRuns: rs.fn(),
+  useTriggerEvalRun: rs.fn(),
+  // key factories 以真实实现同款内联——组件 drain 边失效要用，测试断言同一字面量。
+  knowledgeEvalLatestKey: (kbId: string) => ["knowledge-bases", kbId, "eval-runs", "latest"],
+  knowledgeEvalTrendKey: (kbId: string, granularity: string) => ["knowledge-bases", kbId, "eval-runs", "trend", { granularity }],
+  knowledgeEvalRunsKey: (kbId: string) => ["knowledge-bases", kbId, "eval-runs", "history"],
 }));
 
-rs.mock("@/core/knowledge/hooks", () => ({
-  useMetricsOverview: hooksMock.useMetricsOverview,
-  useEvalTrend: hooksMock.useEvalTrend,
+rs.mock("@/core/knowledge/hooks", () => hooksMock);
+
+rs.mock("sonner", () => ({
+  toast: { error: rs.fn(), success: rs.fn(), info: rs.fn(), warning: rs.fn() },
 }));
 
 /** echarts 画布 mock：记录 props，渲染占位 div（jsdom 无 canvas）。 */
@@ -111,11 +121,19 @@ function queryState(overrides: {
 }
 
 function renderEvalTab(enabled = true) {
-  render(
+  return renderWithClient(
+    <EvalTab enabled={enabled} kbId="kb-1" />,
+  );
+}
+
+function renderWithClient(ui: ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <EvalTab enabled={enabled} kbId="kb-1" />
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
     </I18nContext.Provider>,
   );
+  return { ...view, queryClient };
 }
 
 describe("EvalTab 数据联通", () => {
@@ -124,26 +142,32 @@ describe("EvalTab 数据联通", () => {
     drawerMock.props = undefined;
     hooksMock.useMetricsOverview.mockReset();
     hooksMock.useEvalTrend.mockReset();
-    // 缺省：两查询就绪且有数据
+    hooksMock.useEvalRuns.mockReset();
+    hooksMock.useTriggerEvalRun.mockReset();
+    // 缺省：查询就绪且有数据；历史空闲、无触发在途
     hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
     hooksMock.useEvalTrend.mockImplementation((_kbId: string, granularity: string) =>
       queryState({ data: granularity === "day" ? TREND : { ...TREND, granularity } }),
     );
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("forwards kbId/enabled to both hooks (keep-alive lazy gating)", () => {
+  it("forwards kbId/enabled to all three data hooks (keep-alive lazy gating)", () => {
     renderEvalTab(true);
     expect(hooksMock.useMetricsOverview).toHaveBeenCalledWith("kb-1", true);
     expect(hooksMock.useEvalTrend).toHaveBeenCalledWith("kb-1", "day", true);
+    expect(hooksMock.useEvalRuns).toHaveBeenCalledWith("kb-1", true);
 
     cleanup();
     renderEvalTab(false);
     expect(hooksMock.useMetricsOverview).toHaveBeenLastCalledWith("kb-1", false);
     expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "day", false);
+    expect(hooksMock.useEvalRuns).toHaveBeenLastCalledWith("kb-1", false);
   });
 
   it("renders overview table and trend chart shell on data", async () => {
@@ -248,6 +272,192 @@ describe("EvalTab 数据联通", () => {
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(await screen.findByRole("menuitemradio", { name: "月" }));
       expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "month", true);
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
+});
+
+// ── 二期工具栏与三视图（2026-08-27 spec §3/§5，plan Task 5）──────────────
+
+const RUN_SUMMARY = {
+  run_id: "run-latest",
+  created_at: "2026-08-20T09:00:00+00:00",
+  completed_at: null,
+  environment: "local",
+  status: "completed",
+  is_baseline: false,
+  has_layer1: true,
+  has_layer2: false,
+  regression_detected: false,
+  langfuse_trace_url: null,
+};
+
+describe("EvalTab 三视图切换", () => {
+  beforeEach(() => {
+    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+  });
+  afterEach(() => cleanup());
+
+  it("默认渲染总览视图（3 秒判断：健康度永远先看到）", () => {
+    renderEvalTab();
+    expect(screen.getByTestId("eval-layer1-table")).toBeTruthy();
+    expect(screen.queryByTestId("eval-questions-view")).toBeNull();
+    expect(screen.queryByTestId("eval-history-view")).toBeNull();
+  });
+
+  it("分段控件切换题库/历史视图（Task 6/7 填充前的占位壳）", () => {
+    renderEvalTab();
+    const group = screen.getByRole("radiogroup", { name: "评测视图切换" });
+    expect(group).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    expect(screen.getByTestId("eval-questions-view")).toBeTruthy();
+    // 管理型内容不与健康度总览抢首屏：切走后总览卸载
+    expect(screen.queryByTestId("eval-layer1-table")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "历史" }));
+    expect(screen.getByTestId("eval-history-view")).toBeTruthy();
+    expect(screen.queryByTestId("eval-questions-view")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "总览" }));
+    expect(screen.getByTestId("eval-layer1-table")).toBeTruthy();
+  });
+});
+
+describe("EvalTab 常驻工具栏", () => {
+  beforeEach(() => {
+    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+  });
+  afterEach(() => cleanup());
+
+  it("无历史行显示「尚未运行」", () => {
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    renderEvalTab();
+    expect(screen.getByText("尚未运行")).toBeTruthy();
+  });
+
+  it("有历史行显示「上次运行 X 前」短文案", () => {
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [RUN_SUMMARY], total: 1 } }));
+    renderEvalTab();
+    // 相对时间随时钟漂移，只钉前缀（formatTimeAgo 产物拼在后面）
+    expect(screen.getByText("上次运行", { exact: false })).toBeTruthy();
+    expect(screen.getByTestId("eval-view-toolbar").textContent).toContain("上次运行");
+  });
+
+  it("in_flight=true 时按钮转「运行中…」禁用态", () => {
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: true, runs: [], total: 0 } }));
+    renderEvalTab();
+    const runButton = screen.getByRole("button", { name: "运行中…" });
+    expect(runButton.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "运行评测" })).toBeNull();
+  });
+
+  it("mutation pending 同样呈现运行中禁用态（点击→首次轮询间隙）", () => {
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: true });
+    renderEvalTab();
+    expect(screen.getByRole("button", { name: "运行中…" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("点击运行 → enqueued 成功 toast", () => {
+    const mutate = rs.fn((_vars: unknown, opts?: { onSuccess?: (r: { status: string }) => void }) => {
+      opts?.onSuccess?.({ status: "enqueued" });
+    });
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+
+    expect(mutate).toHaveBeenCalled();
+    expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "评测已开始")).toBe(true);
+  });
+
+  it("already_running → 提示 toast，不报错", () => {
+    const mutate = rs.fn((_vars: unknown, opts?: { onSuccess?: (r: { status: string }) => void }) => {
+      opts?.onSuccess?.({ status: "already_running" });
+    });
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+
+    expect(rs.mocked(toast.info).mock.calls.some(([m]) => m === "已有评测正在运行")).toBe(true);
+    expect(rs.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  it("触发失败 → 错误 toast", () => {
+    const mutate = rs.fn((_vars: unknown, opts?: { onError?: () => void }) => {
+      opts?.onError?.();
+    });
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+
+    expect(rs.mocked(toast.error).mock.calls.some(([m]) => m === "评测触发失败")).toBe(true);
+  });
+
+  it("drain 边：in_flight true→false 一次性失效三个评测 query", () => {
+    let runsState = queryState({ data: { in_flight: true, runs: [], total: 0 } });
+    hooksMock.useEvalRuns.mockImplementation(() => runsState);
+    const { queryClient, rerender } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
+    const invalidateSpy = rs.fn().mockResolvedValue(undefined);
+    queryClient.invalidateQueries = invalidateSpy as typeof queryClient.invalidateQueries;
+
+    // 初始挂载（含 in_flight=true 首见）不触发失效
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      runsState = queryState({ data: { in_flight: false, runs: [], total: 0 } });
+      rerender(
+        <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+          <QueryClientProvider client={queryClient}>
+            <EvalTab enabled kbId="kb-1" />
+          </QueryClientProvider>
+        </I18nContext.Provider>,
+      );
+    });
+
+    const keys = invalidateSpy.mock.calls.map(([arg]) => (arg as { queryKey: readonly unknown[] }).queryKey);
+    expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "history"]);
+    expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "latest"]);
+    expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "trend", { granularity: "day" }]);
+  });
+
+  it("窄面板降档：视图工具栏溢出时运行按钮收进 ⋯ 菜单", async () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    try {
+      const mutate = rs.fn();
+      hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+      renderEvalTab();
+      await screen.findByTestId("eval-trend-chart-mock");
+      // 内联运行按钮消失，视图工具栏自己的 ⋯ 按钮出现（趋势工具栏不受影响）
+      await waitFor(() => {
+        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "运行评测" })).toBeNull();
+      });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      fireEvent.keyDown(more, { key: "ArrowDown" });
+      fireEvent.click(await screen.findByRole("menuitem", { name: "运行评测" }));
+      expect(mutate).toHaveBeenCalled();
+      // 分段控件恒内联：三视图标签足够短
+      expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);

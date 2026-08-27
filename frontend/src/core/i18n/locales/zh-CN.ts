@@ -493,6 +493,7 @@ export const zhCN: Translations = {
       neverRan: "尚未运行",
       runStartedToast: "评测已开始",
       alreadyRunningToast: "已有评测正在运行",
+      runFailedToast: "评测触发失败",
       questions: {
         columnQuery: "问题",
         columnCategory: "分类",

@@ -509,6 +509,7 @@ export const enUS: Translations = {
       neverRan: "Never run",
       runStartedToast: "Evaluation started",
       alreadyRunningToast: "An evaluation is already running",
+      runFailedToast: "Failed to start the evaluation",
       questions: {
         columnQuery: "Question",
         columnCategory: "Category",
