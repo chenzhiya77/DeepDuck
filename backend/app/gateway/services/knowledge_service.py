@@ -930,21 +930,37 @@ class KnowledgeService:
         if isinstance(wiki_raw, BaseException):
             wiki_path: dict[str, Any] = {"hits": [], "message": _failure_note(wiki_raw)}
         else:
+            entries = wiki_raw.get("entries", [])
+
+            async def _source_chunks(entry: dict) -> list[str] | None:
+                # 百科锚定通道（spec 2026-08-28 §5）：词条带源切片供前端勾选锚定，
+                # 与 runner.wiki_fn 的 get_entry 读取同源；人工卡片无切片映射 → None（不注入）。
+                # wiki_store 由构造器保证非 None（`wiki_store or WikiStore(...)`）。
+                if (entry.get("source_type") or "wiki") != "wiki":
+                    return None
+                stored = await self.wiki_store.get_entry(entry["entry_id"])
+                return list((stored or {}).get("source_chunk_ids") or [])
+
+            chunks_by_entry = await asyncio.gather(*(_source_chunks(entry) for entry in entries))
+
+            wiki_hits: list[dict[str, Any]] = []
+            for rank, (entry, chunks) in enumerate(zip(entries, chunks_by_entry), start=1):
+                hit = {
+                    "entry_id": entry["entry_id"],
+                    "title": entry["title"],
+                    "summary": (entry.get("content") or "")[:120],
+                    "score": entry.get("score"),
+                    "rank": rank,
+                    # Phase-3 P6（spec §8 混排）：人工卡片也走 wiki 路，
+                    # 透传 source_type 供前端分流「条目抽屉 / 卡片抽屉」；
+                    # 缺键回退 wiki（旧 impl 形态）。
+                    "source_type": entry.get("source_type") or "wiki",
+                }
+                if chunks is not None:
+                    hit["source_chunk_ids"] = chunks
+                wiki_hits.append(hit)
             wiki_path = {
-                "hits": [
-                    {
-                        "entry_id": entry["entry_id"],
-                        "title": entry["title"],
-                        "summary": (entry.get("content") or "")[:120],
-                        "score": entry.get("score"),
-                        "rank": rank,
-                        # Phase-3 P6（spec §8 混排）：人工卡片也走 wiki 路，
-                        # 透传 source_type 供前端分流「条目抽屉 / 卡片抽屉」；
-                        # 缺键回退 wiki（旧 impl 形态）。
-                        "source_type": entry.get("source_type") or "wiki",
-                    }
-                    for rank, entry in enumerate(wiki_raw.get("entries", []), start=1)
-                ],
+                "hits": wiki_hits,
                 "message": _user_facing(wiki_raw.get("message", "")),
             }
 

@@ -69,6 +69,25 @@ def _client(service: KnowledgeService, user_factory=_owner) -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture
+def service_with_wiki(session_factory, tmp_path) -> KnowledgeService:
+    """带 wiki_store 的服务——`source_chunk_ids` 注入用例需要 `get_entry`（spec 2026-08-28 §5）。"""
+    vector_store = MagicMock()
+    vector_store.delete_by_doc = AsyncMock()
+    vector_store.delete_by_kb = AsyncMock()
+    vector_store.delete_entities = AsyncMock()
+    wiki_store = MagicMock()
+    wiki_store.get_entry = AsyncMock(return_value={"id": "e1", "source_chunk_ids": ["doc1#0001", "doc1#0003"]})
+    return KnowledgeService(
+        store=KnowledgeStore(session_factory),
+        vector_store=vector_store,
+        graph_store=None,
+        wiki_store=wiki_store,
+        worker=None,
+        data_dir=tmp_path,
+    )
+
+
 def _create_kb(client: TestClient, name: str = "产品资料") -> dict:
     response = client.post("/api/knowledge-bases", json={"name": name, "description": "d"})
     assert response.status_code == 201, response.text
@@ -146,6 +165,10 @@ async def test_recall_test_assembles_three_paths(service, monkeypatch):
     assert whits[1]["source_type"] == "manual"
     assert whits[1]["entry_id"] == "card-1"
     assert whits[1]["rank"] == 2
+    # 构造器保证 wiki_store 非 None（真实 WikiStore）——库中不存在的词条 →
+    # 空数组（锚定不可用但不影响浏览）；人工卡片不注入此键。
+    assert whits[0]["source_chunk_ids"] == []
+    assert "source_chunk_ids" not in whits[1]
 
     assert body["score_type"] == {
         "vector": "qwen3-rerank relevance",
@@ -180,6 +203,48 @@ async def test_recall_test_single_path_failure_degrades(service, monkeypatch):
     assert body["paths"]["graph"]["entities"], "其他路不受影响"
     assert body["paths"]["wiki"]["hits"]
     assert isinstance(body["elapsed_ms"]["vector"], int), "失败路仍计时"
+
+
+# ── wiki 锚定通道（spec 2026-08-28 §5）─────────────────────────────────
+
+
+async def test_wiki_hits_carry_source_chunk_ids_for_anchoring(service_with_wiki, monkeypatch):
+    # 百科词条命中带源切片——前端勾选百科行即可锚定（与 runner.wiki_fn 同源读取）。
+    _mock_impls(monkeypatch)
+    client = _client(service_with_wiki)
+    kb = _create_kb(client)
+
+    body = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "Gateway 职责"}).json()
+
+    whits = body["paths"]["wiki"]["hits"]
+    assert whits[0]["source_chunk_ids"] == ["doc1#0001", "doc1#0003"]
+    # 人工卡片无切片映射——不注入此键（与 runner.wiki_fn 跳过卡片的口径一致），前端据此禁勾。
+    assert "source_chunk_ids" not in whits[1]
+    # 只查词条不查卡片（不为人工卡片白打 get_entry）。
+    service_with_wiki.wiki_store.get_entry.assert_awaited_once_with("e1")
+
+
+async def test_wiki_entry_without_source_chunks_returns_empty_list(service_with_wiki, monkeypatch):
+    # 词条缺源切片（旧词条/生成异常）→ 空数组而非炸响——锚定不可用但不影响浏览。
+    service_with_wiki.wiki_store.get_entry = AsyncMock(return_value={"id": "e1"})
+    _mock_impls(monkeypatch)
+    client = _client(service_with_wiki)
+    kb = _create_kb(client)
+
+    body = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "Gateway 职责"}).json()
+
+    assert body["paths"]["wiki"]["hits"][0]["source_chunk_ids"] == []
+
+
+async def test_wiki_store_missing_entry_degrades_to_empty_list(service_with_wiki, monkeypatch):
+    service_with_wiki.wiki_store.get_entry = AsyncMock(return_value=None)
+    _mock_impls(monkeypatch)
+    client = _client(service_with_wiki)
+    kb = _create_kb(client)
+
+    body = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "Gateway 职责"}).json()
+
+    assert body["paths"]["wiki"]["hits"][0]["source_chunk_ids"] == []
 
 
 async def test_recall_test_rejects_blank_query(service, monkeypatch):
