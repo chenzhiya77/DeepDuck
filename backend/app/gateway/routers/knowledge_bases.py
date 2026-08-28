@@ -26,6 +26,7 @@ from deerflow.knowledge.access import can_access
 from deerflow.knowledge.eval.dataset import GoldenDatasetError
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty
 from deerflow.knowledge.eval.question_bank import QuestionBankInvalidQuestion
+from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
 from deerflow.knowledge.projection.reducer import UmapUnavailableError
 
@@ -601,6 +602,60 @@ async def delete_eval_question(request: Request, kb_id: str, question_id: str):
         raise HTTPException(status_code=404, detail="Eval question not found") from exc
     except GoldenDatasetError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ── question synthesis（spec 2026-08-28 §6）───────────────────────────
+# 路由顺序守卫：/synthesize 固定段端点集中在 {question_id} 通配段之后注册——
+# 两者段数不同（4/5 段 vs 3 段）无吞并风险，但 keep 在一起保可读性。
+
+
+class SynthesisTriggerRequest(BaseModel):
+    """合成触发载荷：单篇文档 + 候选题数（1–10，默认 5）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    doc_id: str
+    count: int = Field(default=5, ge=1, le=10)
+
+
+@router.post("/{kb_id}/eval/questions/synthesize", status_code=202)
+async def trigger_question_synthesis(request: Request, kb_id: str, body: SynthesisTriggerRequest):
+    """自底向上合成候选题（spec §6.1）：复刻评测触发的 in-flight 幂等语义——
+    enqueued / already_running；文档不存在或无切片 → 409（调度前同步检查）。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        enqueued = await service.trigger_question_synthesis(kb_id, doc_id=body.doc_id, count=body.count)
+    except SynthesisDocNotReady as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "enqueued" if enqueued else "already_running"}
+
+
+@router.get("/{kb_id}/eval/questions/synthesize")
+async def get_synthesis_status(request: Request, kb_id: str):
+    """合成状态（前端 3s 轮询至 drain，wiki-status 同款）：in_progress +
+    暂存候选 + 元数据；无暂存文件 → 空列表（新 KB 不是错误）。"""
+    service = await _require_kb_access(request, kb_id)
+    return await service.get_synthesis_status(kb_id)
+
+
+@router.post("/{kb_id}/eval/questions/synthesize/{candidate_id}/accept", status_code=201)
+async def accept_synthesis_candidate(request: Request, kb_id: str, candidate_id: str):
+    """采纳候选：经题库唯一写路径（add_question）入库并从暂存移除。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        return await service.accept_synthesis_candidate(kb_id, candidate_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Synthesis candidate not found") from exc
+
+
+@router.delete("/{kb_id}/eval/questions/synthesize/{candidate_id}", status_code=204)
+async def reject_synthesis_candidate(request: Request, kb_id: str, candidate_id: str):
+    """忽略候选：仅从暂存移除，不碰题库。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        await service.reject_synthesis_candidate(kb_id, candidate_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Synthesis candidate not found") from exc
 
 
 @router.post("/{kb_id}/eval-runs", status_code=202)

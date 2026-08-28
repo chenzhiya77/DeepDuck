@@ -29,10 +29,11 @@ from typing import Any
 import anyio
 import numpy as np
 
-from deerflow.knowledge.eval import question_bank
+from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, run_layer1_for_kb
 from deerflow.knowledge.eval.persistence import ENV_CI
+from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
@@ -170,6 +171,7 @@ class KnowledgeService:
         data_dir: str | Path,
         wiki_generate_fn: Callable[[str, bool], None] | None = None,
         eval_trigger_fn: Callable[[str], None] | None = None,
+        synthesis_trigger_fn: Callable[..., None] | None = None,
         projection_cache: ProjectionCache | None = None,
     ) -> None:
         self.store = store
@@ -180,9 +182,11 @@ class KnowledgeService:
         self.data_dir = Path(data_dir)
         self.wiki_generate_fn = wiki_generate_fn or self._schedule_wiki_generation
         self.eval_trigger_fn = eval_trigger_fn or self._schedule_eval_run
+        self.synthesis_trigger_fn = synthesis_trigger_fn or self._schedule_question_synthesis
         self.projection_cache = projection_cache or ProjectionCache()
         self._wiki_tasks: set[asyncio.Task[None]] = set()
         self._eval_tasks: set[asyncio.Task[None]] = set()
+        self._synthesis_tasks: set[asyncio.Task[None]] = set()
 
     # ── documents ────────────────────────────────────────────────────────
 
@@ -1193,6 +1197,78 @@ class KnowledgeService:
 
     async def delete_eval_question(self, kb_id: str, question_id: str) -> None:
         await question_bank.delete_question(self._golden_path(kb_id), question_id)
+
+    # ── question synthesis（spec 2026-08-28 §6）───────────────────────
+
+    def _synthesis_staging_path(self, kb_id: str) -> Path:
+        """候选暂存与 golden.jsonl 同目录树；单一 JSON 文档（Task 6 偏差①：
+        元数据需在候选全部审核后仍可读）。"""
+        return self.data_dir / "knowledge" / kb_id / "eval_candidates.json"
+
+    async def trigger_question_synthesis(self, kb_id: str, *, doc_id: str, count: int) -> bool:
+        """Fire-and-forget 合成（复刻评测触发幂等模式，spec §6.1）。
+
+        Returns False when a run is already in flight. 文档不存在/不属于该
+        KB/无切片 → :class:`SynthesisDocNotReady`（router → 409），在调度前
+        同步检查——调用方拿到确定答案而非注定失败的后台任务。
+        """
+
+        if synthesis.synthesis_in_progress(kb_id):
+            return False
+        doc = await self.store.get_document(doc_id)
+        if doc is None or doc.get("kb_id") != kb_id:
+            raise SynthesisDocNotReady(f"document {doc_id} not found in kb {kb_id}")
+        if await self.store.count_chunks(doc_id) == 0:
+            raise SynthesisDocNotReady(f"document {doc_id} has no indexed chunks")
+        if not synthesis.begin_synthesis(kb_id):
+            return False
+        self.synthesis_trigger_fn(kb_id, doc_id=doc_id, count=count)
+        return True
+
+    def _schedule_question_synthesis(self, kb_id: str, *, doc_id: str, count: int) -> None:
+        task = asyncio.create_task(self._run_question_synthesis(kb_id, doc_id=doc_id, count=count), name=f"kb-synth-{kb_id}")
+        self._synthesis_tasks.add(task)
+        task.add_done_callback(self._synthesis_tasks.discard)
+
+    async def _run_question_synthesis(self, kb_id: str, *, doc_id: str, count: int) -> None:
+        """后台编排：拉全量切片 → 合成写暂存。异常只记日志并 drain in-flight，
+        不动既有暂存（合成失败不清空上一次成果，spec §6.1）。"""
+        try:
+            chunks = await self._all_chunks(doc_id)
+            await synthesis.synthesize_for_doc(kb_id, doc_id=doc_id, count=count, chunks=chunks, staging_path=self._synthesis_staging_path(kb_id))
+        except Exception:
+            logger.exception("question synthesis failed for kb %s doc %s", kb_id, doc_id)
+        finally:
+            synthesis.end_synthesis(kb_id)
+
+    async def _all_chunks(self, doc_id: str) -> list[dict[str, Any]]:
+        chunks: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            page = await self.store.list_chunks(doc_id, offset=offset)
+            chunks.extend(page)
+            if len(page) < 50:
+                break
+            offset += 50
+        return chunks
+
+    async def get_synthesis_status(self, kb_id: str) -> dict[str, Any]:
+        """状态端点数据源：in_progress 标志 + 暂存候选 + 合成元数据。"""
+        data = await synthesis.load_staging(self._synthesis_staging_path(kb_id))
+        return {
+            "in_progress": synthesis.synthesis_in_progress(kb_id),
+            "candidates": data["candidates"],
+            "generated_at": data.get("generated_at"),
+            "doc_id": data.get("doc_id"),
+            "dropped": data.get("dropped", 0),
+        }
+
+    async def accept_synthesis_candidate(self, kb_id: str, candidate_id: str) -> dict[str, Any]:
+        question = await synthesis.accept_candidate(self._golden_path(kb_id), self._synthesis_staging_path(kb_id), candidate_id)
+        return asdict(question)
+
+    async def reject_synthesis_candidate(self, kb_id: str, candidate_id: str) -> None:
+        await synthesis.reject_candidate(self._synthesis_staging_path(kb_id), candidate_id)
 
     async def trigger_eval_run(self, kb_id: str) -> bool:
         """Fire-and-forget Layer 1 评测（spec 2026-08-27 §5.1，wiki 幂等同款）。

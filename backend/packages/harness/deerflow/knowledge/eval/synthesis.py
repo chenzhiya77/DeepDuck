@@ -55,6 +55,12 @@ _SYNTH_IN_FLIGHT: dict[str, int] = {}
 _LOCKS: dict[str, asyncio.Lock] = {}
 
 
+class SynthesisDocNotReady(RuntimeError):
+    """The source document is missing or has no indexed chunks — nothing to
+    synthesize from. Raised *before* scheduling (router → 409), mirroring
+    :class:`ondemand.EvalQuestionBankEmpty`."""
+
+
 @dataclass(frozen=True)
 class SynthesisCandidate:
     """One staged candidate — a full question payload plus staging metadata."""
