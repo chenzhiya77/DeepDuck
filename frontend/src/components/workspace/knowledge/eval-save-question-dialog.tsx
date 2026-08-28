@@ -2,15 +2,17 @@
 
 /**
  * 存为考题 dialog（2026-08-27 spec §7.1，plan Task 8）：召回面板勾选切片后
- * 的一键入题库——query 预填当前输入（可改），category/expected_path 必填
- * （shadcn Select，默认 fact / 勾选来源路径，混路默认 vector），
- * reference_answer 可选；relevant_chunk_ids = 勾选 chunk 集（造题主入口，
- * 题库随使用自然生长）。保存成功清勾选继续标注下一题——**不跳视图**。
+ * 的一键入题库——query 预填当前输入（可改），category 必填（shadcn Select，
+ * 默认 fact），预期路径多路化（2026-08-28 §3，Task 9）：三项 Checkbox 组，
+ * 默认勾选 = 勾选来源路径集合（混路即多勾，不再降级单路），至少一路才可
+ * 提交；reference_answer 可选；relevant_chunk_ids = 勾选 chunk 集（造题主入
+ * 口，题库随使用自然生长）。保存成功清勾选继续标注下一题——**不跳视图**。
  */
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +24,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/core/i18n/hooks";
 import { useAddEvalQuestion } from "@/core/knowledge/hooks";
+import type { RecallPathName } from "@/core/knowledge/types";
 
 export interface EvalSaveQuestionDialogProps {
   kbId: string;
@@ -29,8 +32,8 @@ export interface EvalSaveQuestionDialogProps {
   onOpenChange: (open: boolean) => void;
   /** 勾选的 chunk id 集（提交体 relevant_chunk_ids）。 */
   selectedChunkIds: string[];
-  /** 默认预期路径：勾选来源路径；混路默认 vector（面板推导）。 */
-  defaultPath: "vector" | "graph" | "wiki";
+  /** 默认勾选路径集合：勾选来源路径；混路即多勾（面板推导，2026-08-28）。 */
+  defaultPaths: RecallPathName[];
   /** query 预填值（当前检索输入）。 */
   prefillQuery: string;
   /** 保存成功回调（面板清勾选）。 */
@@ -38,13 +41,14 @@ export interface EvalSaveQuestionDialogProps {
 }
 
 const CATEGORY_OPTIONS = ["fact", "relation", "concept", "global"] as const;
+const PATH_OPTIONS = ["vector", "graph", "wiki"] as const;
 
 export function EvalSaveQuestionDialog({
   kbId,
   open,
   onOpenChange,
   selectedChunkIds,
-  defaultPath,
+  defaultPaths,
   prefillQuery,
   onSaved,
 }: EvalSaveQuestionDialogProps) {
@@ -55,20 +59,24 @@ export function EvalSaveQuestionDialog({
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<(typeof CATEGORY_OPTIONS)[number]>("fact");
-  const [expectedPath, setExpectedPath] = useState<"vector" | "graph" | "wiki">(defaultPath);
+  const [expectedPaths, setExpectedPaths] = useState<RecallPathName[]>(defaultPaths);
   const [referenceAnswer, setReferenceAnswer] = useState("");
 
-  // 每次打开重置为预填值与默认选择（上一题的选择不残留）
+  // 每次打开重置为预填值与默认勾选（上一题的选择不残留）
   useEffect(() => {
     if (open) {
       setQuery(prefillQuery);
       setCategory("fact");
-      setExpectedPath(defaultPath);
+      setExpectedPaths(defaultPaths);
       setReferenceAnswer("");
     }
-  }, [open, prefillQuery, defaultPath]);
+  }, [open, prefillQuery, defaultPaths]);
 
-  const canSubmit = query.trim().length > 0 && selectedChunkIds.length > 0;
+  const togglePath = (path: RecallPathName) =>
+    setExpectedPaths((current) => (current.includes(path) ? current.filter((item) => item !== path) : [...current, path]));
+
+  // 至少勾一路（后端 min_length=1）+ query 非空 + 有勾选切片。
+  const canSubmit = query.trim().length > 0 && selectedChunkIds.length > 0 && expectedPaths.length > 0;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -76,7 +84,8 @@ export function EvalSaveQuestionDialog({
       await addMutation.mutateAsync({
         query: query.trim(),
         category,
-        expected_path: expectedPath,
+        // 勾选顺序即提交顺序；后端去重保序（§3）。
+        expected_paths: expectedPaths,
         relevant_chunk_ids: selectedChunkIds,
         reference_answer: referenceAnswer.trim() ? referenceAnswer.trim() : null,
       });
@@ -122,21 +131,20 @@ export function EvalSaveQuestionDialog({
               </Select>
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-sm font-medium">{stk.expectedPathLabel}</span>
-              <Select onValueChange={(value) => setExpectedPath(value as typeof expectedPath)} value={expectedPath}>
-                <SelectTrigger aria-label={stk.expectedPathLabel} className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(["vector", "graph", "wiki"] as const).map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <span className="text-sm font-medium">{stk.expectedPathsLabel}</span>
+              {/* 多路 Checkbox 组（2026-08-28 §3）：任一路承担即对，至少勾一路。 */}
+              <div className="flex items-center gap-3 pt-1.5">
+                {PATH_OPTIONS.map((path) => (
+                  <label key={path} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                    <Checkbox checked={expectedPaths.includes(path)} onCheckedChange={() => togglePath(path)} />
+                    {path}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
+          {/* 锚定辅助定位文案（2026-08-28 §5/§7）：勾选集即锚定集。 */}
+          <p className="text-muted-foreground text-xs">{stk.anchorHint}</p>
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium">{stk.referenceAnswerLabel}</span>
             <textarea

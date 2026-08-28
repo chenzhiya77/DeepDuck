@@ -50,7 +50,7 @@ const Q_UNANCHORED: EvalQuestion = {
   id: "q_11111111",
   query: "未锚定的考题",
   category: "global",
-  expected_path: "wiki",
+  expected_paths: ["wiki"],
   relevant_chunk_ids: [],
   relevant_entities: [],
   reference_answer: null,
@@ -60,10 +60,20 @@ const Q_ANCHORED: EvalQuestion = {
   id: "q_22222222",
   query: "锚定了三个切片的考题",
   category: "fact",
-  expected_path: "vector",
+  expected_paths: ["vector"],
   relevant_chunk_ids: [CHUNK_A, CHUNK_B, "c".repeat(32) + "#0003"],
   relevant_entities: ["退休", "养老金"],
   reference_answer: "参考答案全文。",
+};
+
+const Q_MULTI: EvalQuestion = {
+  id: "q_33333333",
+  query: "多路预期的考题",
+  category: "relation",
+  expected_paths: ["vector", "graph"],
+  relevant_chunk_ids: [CHUNK_A],
+  relevant_entities: [],
+  reference_answer: null,
 };
 
 function questionsState(questions: EvalQuestion[]): { data: EvalQuestionListResponse } {
@@ -119,6 +129,16 @@ describe("EvalQuestionBank 表格", () => {
     // 分类显示名走 i18n（wire 键不外露）
     expect(screen.getByText("事实")).toBeTruthy();
     expect(screen.getByText("全局")).toBeTruthy();
+  });
+
+  it("路径列渲染 expected_paths 全量 Badge（多路即多枚）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_MULTI, Q_ANCHORED]) });
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    const row = screen.getByText("多路预期的考题").closest("tr")!;
+    expect(within(row as HTMLElement).getByText("vector")).toBeTruthy();
+    expect(within(row as HTMLElement).getByText("graph")).toBeTruthy();
+    const singleRow = screen.getByText("锚定了三个切片的考题").closest("tr")!;
+    expect(within(singleRow as HTMLElement).getAllByText("vector")).toHaveLength(1);
   });
 
   it("行点击打开详情 drawer 并携带该题", () => {
@@ -192,43 +212,53 @@ describe("EvalAddQuestionDialog", () => {
     return mutateAsync;
   }
 
-  it("空 query 时提交禁用；填后可提交（分类/路径默认第一项，无空占位项）", () => {
+  it("空 query 时提交禁用；填后可提交（默认仅勾 vector，分类默认首项）", () => {
     renderDialog();
     expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(true);
 
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
     expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(false);
-    // 无空占位项：shadcn Select 首项即默认值（SelectValue 直接显示默认项文案）
+    // 分类仍是 Select 默认首项；预期路径改 Checkbox 组，默认仅勾 vector。
     expect(screen.getByRole("combobox", { name: "分类" }).textContent).toBe("事实");
-    expect(screen.getByRole("combobox", { name: "预期路径" }).textContent).toBe("vector");
+    expect(screen.getByRole("checkbox", { name: "vector" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("checkbox", { name: "graph" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("checkbox", { name: "wiki" }).getAttribute("aria-checked")).toBe("false");
   });
 
-  it("提交体不含锚定键（relevant_chunk_ids / relevant_entities）", async () => {
+  it("全不勾路径时提交禁用（至少一路）", () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
+    expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("checkbox", { name: "vector" }));
+    expect(screen.getByRole("button", { name: "添加" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("勾两项提交体为双路集合，且不含旧单数键与锚定键", async () => {
     const mutateAsync = renderDialog();
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
-    // Radix Select：jsdom 无 pointerCapture，键盘开菜单（vector-tab 先例）
     fireEvent.keyDown(screen.getByRole("combobox", { name: "分类" }), { key: "ArrowDown" });
     fireEvent.click(await screen.findByRole("option", { name: "关系" }));
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "预期路径" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("option", { name: "graph" }));
+    // 默认已勾 vector；再勾 graph → 双路
+    fireEvent.click(screen.getByRole("checkbox", { name: "graph" }));
 
     fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(body).toMatchObject({ query: "新考题", category: "relation", expected_path: "graph" });
+    expect(body).toMatchObject({ query: "新考题", category: "relation", expected_paths: ["vector", "graph"] });
+    expect(body).not.toHaveProperty("expected_path");
     expect(body).not.toHaveProperty("relevant_chunk_ids");
     expect(body).not.toHaveProperty("relevant_entities");
   });
 
-  it("不改选择时按默认值提交并发成功 toast", async () => {
+  it("不改选择时按默认值（单路集合）提交并发成功 toast", async () => {
     const mutateAsync = renderDialog();
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
     fireEvent.click(screen.getByRole("button", { name: "添加" }));
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(body).toMatchObject({ category: "fact", expected_path: "vector" });
+    expect(body).toMatchObject({ category: "fact", expected_paths: ["vector"] });
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已添加")).toBe(true);
     });

@@ -168,7 +168,9 @@ export function RecallTestPanel({
         : [...current, { id: chunkId, path }],
     );
   const selectionPaths = new Set(selectedChunks.map((item) => item.path));
-  const defaultSavePath: "vector" | "graph" | "wiki" = selectionPaths.size === 1 ? selectedChunks[0]!.path : "vector";
+  // 默认勾选 = 来源路径集合（2026-08-28 多路化）：混路即多勾，不再降级单路；
+  // Set 迭代序 = 勾选序，与提交顺序一致。空选时按钮不展示，回退保 prop 非空。
+  const defaultSavePaths: RecallPathName[] = selectionPaths.size > 0 ? [...selectionPaths] : ["vector"];
 
   const run = () => {
     const trimmed = query.trim();
@@ -377,7 +379,7 @@ export function RecallTestPanel({
 
       {/* 存为考题 dialog：query 预填当前输入，保存成功清勾选继续标注（不跳视图） */}
       <EvalSaveQuestionDialog
-        defaultPath={defaultSavePath}
+        defaultPaths={defaultSavePaths}
         kbId={kbId}
         onOpenChange={setSaveOpen}
         onSaved={() => setSelectedChunks([])}

@@ -42,7 +42,12 @@ export function EvalQuestionDrawer({ question, open, onOpenChange, onDelete, onR
 
             <div className="flex items-center gap-2">
               <Badge variant="outline">{etk.category[question.category]}</Badge>
-              <Badge variant="secondary">{question.expected_path}</Badge>
+              {/* 多路预期（2026-08-28 §3）：与题库表格同口径全量渲染。 */}
+              {question.expected_paths.map((path) => (
+                <Badge key={path} variant="secondary">
+                  {path}
+                </Badge>
+              ))}
             </div>
 
             <div>

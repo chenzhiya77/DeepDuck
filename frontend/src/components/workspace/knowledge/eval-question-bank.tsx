@@ -119,7 +119,14 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
                   <Badge variant="outline">{etk.category[question.category]}</Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{question.expected_path}</Badge>
+                  {/* 多路预期（2026-08-28 §3）：全量 Badge，单路即一枚。 */}
+                  <span className="inline-flex flex-wrap gap-1">
+                    {question.expected_paths.map((path) => (
+                      <Badge key={path} variant="secondary">
+                        {path}
+                      </Badge>
+                    ))}
+                  </span>
                 </TableCell>
                 <TableCell>{renderAnchors(question)}</TableCell>
                 <TableCell className="text-right">

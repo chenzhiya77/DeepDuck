@@ -252,7 +252,7 @@ function mockAddQuestion() {
     id: "q_new00001",
     query: "Gateway 职责",
     category: "fact",
-    expected_path: "vector",
+    expected_paths: ["vector"],
     relevant_chunk_ids: [],
     relevant_entities: [],
     reference_answer: null,
@@ -286,9 +286,9 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
 
     // 真实流：先输入问题（dialog 的 query 预填源是当前输入）
     fireEvent.change(screen.getByPlaceholderText("输入测试问题…"), { target: { value: "Gateway 职责" } });
-    // 混路勾选（vector c2 + graph evidence c1）→ 默认路径 vector
+    // 混路勾选（vector c2 + graph evidence c1）→ 默认勾选 = 两来源路径集合（多路化，2026-08-28）
     fireEvent.click(screen.getByTestId("recall-select-vector-c2"));
-    fireEvent.click(screen.getByTestId("recall-select-vector-c1"));
+    fireEvent.click(screen.getByTestId("recall-select-graph-c1"));
     fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
 
     expect(screen.getAllByText("已选 2 个切片").length).toBeGreaterThan(0);
@@ -297,13 +297,16 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
       const queryBox = screen.getByLabelText("问题") as unknown as HTMLTextAreaElement;
       expect(queryBox.value).toBe("Gateway 职责");
     });
-    expect(screen.getByRole("combobox", { name: "预期路径" }).textContent).toBe("vector");
+    // 混路即多勾：来源两路均默认选中（不再降级单路）
+    expect(screen.getByRole("checkbox", { name: "vector" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("checkbox", { name: "graph" }).getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(body).toMatchObject({ query: "Gateway 职责", category: "fact", expected_path: "vector" });
+    expect(body).toMatchObject({ query: "Gateway 职责", category: "fact", expected_paths: ["vector", "graph"] });
+    expect(body).not.toHaveProperty("expected_path");
     expect(body.relevant_chunk_ids).toEqual(["c2", "c1"]);
     expect(body).not.toHaveProperty("relevant_entities");
     await waitFor(() => {
@@ -315,7 +318,7 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
     });
   });
 
-  it("单路勾选时默认路径取来源路径", async () => {
+  it("单路勾选时默认仅勾来源路径", async () => {
     mockRecallTest({ data: RESULT });
     mockAddQuestion();
     renderPanel();
@@ -324,8 +327,9 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
     fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "预期路径" }).textContent).toBe("graph");
+      expect(screen.getByRole("checkbox", { name: "graph" }).getAttribute("aria-checked")).toBe("true");
     });
+    expect(screen.getByRole("checkbox", { name: "vector" }).getAttribute("aria-checked")).toBe("false");
   });
 });
 

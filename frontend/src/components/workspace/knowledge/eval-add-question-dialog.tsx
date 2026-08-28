@@ -2,17 +2,19 @@
 
 /**
  * 添加考题 dialog（2026-08-27 spec §4.4，plan Task 6）：简化表单——
- * query + category + expected_path 必填、reference_answer 可选；分类/路径
- * 默认取第一项，无空占位项（2026-08-28 用户反馈）。不暴露
- * relevant_chunk_ids / relevant_entities 输入：手填 chunk id 痛苦且无意义，
- * 锚定的正确来源是召回面板「存为考题」（§7.1）；提交体不含锚定键，后端补
- * 空数组即无锚定题（Layer 1 仅参与路径判定）。编辑不支持（§4.2 规则 5）。
+ * query + category + 至少一路预期路径必填、reference_answer 可选；分类默认取
+ * 第一项无空占位项（2026-08-28 用户反馈），预期路径多路化（2026-08-28 §3，
+ * Task 9）：Checkbox 组，默认仅勾 vector。不暴露 relevant_chunk_ids /
+ * relevant_entities 输入：手填 chunk id 痛苦且无意义，锚定的正确来源是召回面
+ * 板「存为考题」（§7.1）；提交体不含锚定键，后端补空数组即无锚定题（Layer 1 仅参与
+ * 路径判定）。编辑不支持（§4.2 规则 5）。
  */
 import { Info } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { useAddEvalQuestion } from "@/core/knowledge/hooks";
+import type { RecallPathName } from "@/core/knowledge/types";
 
 export interface EvalAddQuestionDialogProps {
   kbId: string;
@@ -40,20 +43,24 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
   const dtk = etk.questions.addDialog;
   const addMutation = useAddEvalQuestion(kbId);
 
-  // 分类/预期路径必填，默认取第一项——不设空占位项（2026-08-28 用户反馈：
-  // 下拉框里的空行观感差且易误选）。
+  // 分类必填，默认取第一项——不设空占位项（2026-08-28 用户反馈：
+  // 下拉框里的空行观感差且易误选）。预期路径 Checkbox 组，默认仅勾 vector。
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<(typeof CATEGORY_OPTIONS)[number]>("fact");
-  const [expectedPath, setExpectedPath] = useState<(typeof PATH_OPTIONS)[number]>("vector");
+  const [expectedPaths, setExpectedPaths] = useState<RecallPathName[]>(["vector"]);
   const [referenceAnswer, setReferenceAnswer] = useState("");
 
-  const canSubmit = query.trim().length > 0;
+  const togglePath = (path: RecallPathName) =>
+    setExpectedPaths((current) => (current.includes(path) ? current.filter((item) => item !== path) : [...current, path]));
+
+  // 至少勾一路（后端 min_length=1）。
+  const canSubmit = query.trim().length > 0 && expectedPaths.length > 0;
 
   const handleClose = (next: boolean) => {
     if (!next) {
       setQuery("");
       setCategory("fact");
-      setExpectedPath("vector");
+      setExpectedPaths(["vector"]);
       setReferenceAnswer("");
     }
     onOpenChange(next);
@@ -65,7 +72,7 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
       await addMutation.mutateAsync({
         query: query.trim(),
         category,
-        expected_path: expectedPath,
+        expected_paths: expectedPaths,
         // 锚定键不出现在提交体（测试钉死）；无参考答案显式 null
         reference_answer: referenceAnswer.trim() ? referenceAnswer.trim() : null,
       });
@@ -111,18 +118,15 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">{dtk.expectedPathLabel}</span>
-              <Select onValueChange={(value) => setExpectedPath(value as typeof expectedPath)} value={expectedPath}>
-                <SelectTrigger aria-label={dtk.expectedPathLabel} className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PATH_OPTIONS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* 多路 Checkbox 组（2026-08-28 §3）：任一路承担即对，至少勾一路。 */}
+              <div className="flex items-center gap-3 pt-1.5">
+                {PATH_OPTIONS.map((path) => (
+                  <label key={path} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                    <Checkbox checked={expectedPaths.includes(path)} onCheckedChange={() => togglePath(path)} />
+                    {path}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
           <label className="flex flex-col gap-1">
