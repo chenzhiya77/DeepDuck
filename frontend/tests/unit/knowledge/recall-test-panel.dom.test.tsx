@@ -353,3 +353,83 @@ describe("RecallTestPanel prefill 通道（spec §7.2）", () => {
     expect(onPrefillConsumed).not.toHaveBeenCalled();
   });
 });
+
+// ── 百科行锚定（2026-08-28 spec §5，plan Task 10）─────────────────────
+
+const WIKI_DOC = "d".repeat(32);
+
+const RESULT_WITH_WIKI: RecallTestResponse = {
+  ...RESULT,
+  paths: {
+    ...RESULT.paths,
+    wiki: {
+      hits: [
+        // 词条：携带源切片（后端 Task 5 注入）→ 可勾选进锚定集。
+        {
+          entry_id: "e1",
+          title: "DeerFlow",
+          summary: "DeerFlow 是超级智能体系统……",
+          score: 0.91,
+          rank: 1,
+          source_type: "wiki",
+          source_chunk_ids: [`${WIKI_DOC}#0001`, `${WIKI_DOC}#0002`],
+        },
+        // 人工卡片：无源切片 → 不可锚定（无 checkbox，tooltip 解释）。
+        { entry_id: "m1", title: "运维备忘", summary: "手工录入的卡片。", score: 0.8, rank: 2, source_type: "manual" },
+      ],
+      message: "命中 2 条百科结果。",
+    },
+  },
+};
+
+describe("RecallTestPanel 百科行锚定（spec §5）", () => {
+  it("勾选词条行 → 源切片进锚定集，默认勾选含 wiki", async () => {
+    mockRecallTest({ data: RESULT_WITH_WIKI });
+    const mutateAsync = mockAddQuestion();
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText("输入测试问题…"), { target: { value: "DeerFlow 是什么" } });
+    fireEvent.click(screen.getByTestId("recall-select-wiki-e1"));
+
+    expect(screen.getByRole("button", { name: /存为考题/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "wiki" }).getAttribute("aria-checked")).toBe("true");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body.expected_paths).toEqual(["wiki"]);
+    expect(body.relevant_chunk_ids).toEqual([`${WIKI_DOC}#0001`, `${WIKI_DOC}#0002`]);
+  });
+
+  it("人工卡片行无 checkbox，携带不可锚定提示", () => {
+    mockRecallTest({ data: RESULT_WITH_WIKI });
+    renderPanel();
+    expect(screen.queryByTestId("recall-select-wiki-m1")).toBeNull();
+    expect(screen.getByTitle("人工卡片无源切片，不可锚定")).toBeTruthy();
+    // 词条行仍带勾选框（对照组）
+    expect(screen.getByTestId("recall-select-wiki-e1")).toBeTruthy();
+  });
+
+  it("混勾（向量切片 + 百科词条）→ 默认双路，两类切片都进提交体", async () => {
+    mockRecallTest({ data: RESULT_WITH_WIKI });
+    const mutateAsync = mockAddQuestion();
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText("输入测试问题…"), { target: { value: "混路题" } });
+    fireEvent.click(screen.getByTestId("recall-select-vector-c1"));
+    fireEvent.click(screen.getByTestId("recall-select-wiki-e1"));
+    fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "vector" }).getAttribute("aria-checked")).toBe("true");
+    });
+    expect(screen.getByRole("checkbox", { name: "wiki" }).getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body.expected_paths).toEqual(["vector", "wiki"]);
+    expect(body.relevant_chunk_ids).toEqual(["c1", `${WIKI_DOC}#0001`, `${WIKI_DOC}#0002`]);
+  });
+});

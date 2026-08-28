@@ -18,9 +18,11 @@ import type {
   RecallWikiHit,
   VectorRetrievalOverlay,
 } from "@/core/knowledge/types";
+import { cn } from "@/lib/utils";
 
 import { ChunkCard } from "./chunk-card";
 import { EvalSaveQuestionDialog } from "./eval-save-question-dialog";
+
 
 function formatScore(score: number | null): string {
   return score === null ? "—" : score.toFixed(3);
@@ -157,9 +159,10 @@ export function RecallTestPanel({
     }
   }, [prefillQuery, onPrefillConsumed]);
 
-  // 「存为考题」勾选（§7.1）：vector 命中 + graph 证据按 chunk id 去重；
-  // 记录来源路径供 dialog 默认预期路径（混路默认 vector）。
-  const [selectedChunks, setSelectedChunks] = useState<{ id: string; path: "vector" | "graph" }[]>([]);
+  // 「存为考题」勾选（§7.1）：vector 命中 + graph 证据按 chunk id 去重，
+  // 百科词条行（2026-08-28 §5）按其源切片整体进/出锚定集；记录来源路径供
+  // dialog 默认预期路径（多路化：混路即多勾）。
+  const [selectedChunks, setSelectedChunks] = useState<{ id: string; path: RecallPathName }[]>([]);
   const [saveOpen, setSaveOpen] = useState(false);
   const toggleChunk = (chunkId: string, path: "vector" | "graph") =>
     setSelectedChunks((current) =>
@@ -167,6 +170,25 @@ export function RecallTestPanel({
         ? current.filter((item) => item.id !== chunkId)
         : [...current, { id: chunkId, path }],
     );
+  const wikiEntryChecked = (hit: RecallWikiHit) => {
+    const sourceIds = hit.source_chunk_ids ?? [];
+    if (sourceIds.length === 0) return false;
+    const selected = new Set(selectedChunks.map((item) => item.id));
+    return sourceIds.every((id) => selected.has(id));
+  };
+  // 词条行勾选 = 源切片整体进锚定集（已选的切片不重复加，保提交体无重）。
+  const toggleWikiEntry = (hit: RecallWikiHit) => {
+    const sourceIds = hit.source_chunk_ids ?? [];
+    if (sourceIds.length === 0) return;
+    setSelectedChunks((current) => {
+      const selected = new Set(current.map((item) => item.id));
+      if (sourceIds.every((id) => selected.has(id))) {
+        return current.filter((item) => !sourceIds.includes(item.id));
+      }
+      const additions = sourceIds.filter((id) => !selected.has(id)).map((id) => ({ id, path: "wiki" as const }));
+      return [...current, ...additions];
+    });
+  };
   const selectionPaths = new Set(selectedChunks.map((item) => item.path));
   // 默认勾选 = 来源路径集合（2026-08-28 多路化）：混路即多勾，不再降级单路；
   // Set 迭代序 = 勾选序，与提交顺序一致。空选时按钮不展示，回退保 prop 非空。
@@ -336,29 +358,51 @@ export function RecallTestPanel({
                 name={pathName.wiki}
                 scoreType={result.score_type.wiki}
               />
-              {result.paths.wiki.hits.map((hit: RecallWikiHit) => (
-                <button
-                  className="hover:bg-muted/50 flex flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-left"
-                  data-testid={`recall-wiki-hit-${hit.entry_id}`}
-                  key={hit.entry_id}
-                  type="button"
-                  onClick={() =>
-                    hit.source_type === "manual" ? onOpenManualCard?.(hit.entry_id) : onOpenWikiEntry(hit.entry_id)
-                  }
-                >
-                  <span className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground text-xs">#{hit.rank}</span>
-                    {hit.source_type === "manual" && (
-                      <Badge className="shrink-0 text-[10px]" variant="secondary">
-                        {t.knowledge.chat.sourceTypeManual}
-                      </Badge>
+              {result.paths.wiki.hits.map((hit: RecallWikiHit) => {
+                // 可锚定 = 词条且携带源切片（后端 Task 5 注入）；人工卡片无源切片，
+                // 不可锚定（2026-08-28 §5：无勾选框 + tooltip 解释）。
+                const anchorable = hit.source_type !== "manual" && (hit.source_chunk_ids?.length ?? 0) > 0;
+                const row = (
+                  <button
+                    className={cn(
+                      "hover:bg-muted/50 flex flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-left",
+                      anchorable && "min-w-0 flex-1",
                     )}
-                    <span className="min-w-0 truncate font-medium">{hit.title}</span>
-                    <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">{formatScore(hit.score)}</span>
-                  </span>
-                  <span className="text-muted-foreground line-clamp-2 text-xs">{hit.summary}</span>
-                </button>
-              ))}
+                    data-testid={`recall-wiki-hit-${hit.entry_id}`}
+                    key={hit.entry_id}
+                    title={hit.source_type === "manual" ? tr.wikiAnchorTooltip : undefined}
+                    type="button"
+                    onClick={() =>
+                      hit.source_type === "manual" ? onOpenManualCard?.(hit.entry_id) : onOpenWikiEntry(hit.entry_id)
+                    }
+                  >
+                    <span className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground text-xs">#{hit.rank}</span>
+                      {hit.source_type === "manual" && (
+                        <Badge className="shrink-0 text-[10px]" variant="secondary">
+                          {t.knowledge.chat.sourceTypeManual}
+                        </Badge>
+                      )}
+                      <span className="min-w-0 truncate font-medium">{hit.title}</span>
+                      <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">{formatScore(hit.score)}</span>
+                    </span>
+                    <span className="text-muted-foreground line-clamp-2 text-xs">{hit.summary}</span>
+                  </button>
+                );
+                if (!anchorable) return row;
+                return (
+                  <div className="flex items-start gap-1.5" key={hit.entry_id}>
+                    <Checkbox
+                      aria-label={`${tr.saveAsQuestion.button}: ${hit.title}`}
+                      checked={wikiEntryChecked(hit)}
+                      className="mt-2 shrink-0"
+                      data-testid={`recall-select-wiki-${hit.entry_id}`}
+                      onCheckedChange={() => toggleWikiEntry(hit)}
+                    />
+                    {row}
+                  </div>
+                );
+              })}
             </section>
 
             {/* 存为考题栏（§7.1）：勾选 ≥1 浮出——造题主入口，题库随使用自然生长 */}
