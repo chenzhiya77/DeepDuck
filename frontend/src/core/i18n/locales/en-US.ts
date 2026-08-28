@@ -520,7 +520,7 @@ export const enUS: Translations = {
         unanchored: "Unanchored",
         addQuestion: "Add question",
         emptyBank: "No questions yet — tick the right chunks in the recall test panel to save one in a click",
-        emptyBankSynthesis: ", or synthesize candidates from a document and accept them after review",
+        emptyBankSynthesis: "Or synthesize candidates from a document and accept them after review",
         rowReproduce: "Reproduce in recall test panel",
         rowDelete: "Delete question",
         saveFailed: "Failed to save the question",
@@ -547,7 +547,7 @@ export const enUS: Translations = {
         deletedToast: "Question deleted",
       },
       synthesize: {
-        entryButton: "Synthesize questions",
+        entryButton: "Generate questions from document",
         dialogTitle: "Synthesize questions",
         docLabel: "Source document",
         docPlaceholder: "Pick an indexed document",

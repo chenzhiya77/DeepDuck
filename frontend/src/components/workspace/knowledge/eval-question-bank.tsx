@@ -7,7 +7,7 @@
  * Layer 1 既有降级语义（仅参与路径判定）。编辑不支持（§4.2 规则 5）：改题
  * = 删了重加。
  */
-import { ArrowUpRight, Trash2 } from "lucide-react";
+import { ArrowUpRight, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -35,6 +35,8 @@ import type { EvalQuestion } from "@/core/knowledge/types";
 
 import { EvalAddQuestionDialog } from "./eval-add-question-dialog";
 import { EvalQuestionDrawer } from "./eval-question-drawer";
+import { EvalSynthesisDialog } from "./eval-synthesis-dialog";
+import { EvalSynthesisReview } from "./eval-synthesis-review";
 
 export interface EvalQuestionBankProps {
   kbId: string;
@@ -54,6 +56,7 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
   const [drawerQuestion, setDrawerQuestion] = useState<EvalQuestion | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<EvalQuestion | null>(null);
+  const [synthesisOpen, setSynthesisOpen] = useState(false);
 
   const handleDeleteConfirm = async () => {
     if (deleteTarget === null) return;
@@ -86,6 +89,17 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
 
   return (
     <div className="flex flex-col gap-2">
+      {/* 工具行：合成造题入口（2026-08-28 §6）——自底向上造题，候选需人工审核 */}
+      <div className="flex items-center justify-end">
+        <Button onClick={() => setSynthesisOpen(true)} size="sm" variant="outline">
+          <Sparkles className="size-3.5" />
+          {etk.synthesize.entryButton}
+        </Button>
+      </div>
+
+      {/* 候选审核区块：暂存非空或运行中时出现（组件内部判定） */}
+      <EvalSynthesisReview enabled={enabled} kbId={kbId} />
+
       {query.isLoading ? (
         <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
           {etk.loading}
@@ -162,7 +176,9 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
         </Table>
       ) : (
         <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
-          {qtk.emptyBank}
+          <p>{qtk.emptyBank}</p>
+          {/* 双入口第二句（2026-08-28 §7）：合成造题引导 */}
+          <p>{qtk.emptyBankSynthesis}</p>
         </div>
       )}
 
@@ -177,6 +193,9 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
       </Button>
 
       <EvalAddQuestionDialog kbId={kbId} onOpenChange={setAddOpen} open={addOpen} />
+
+      {/* 合成触发 dialog：文档 + 数量 → 202 幂等，候选落暂存待审 */}
+      <EvalSynthesisDialog kbId={kbId} onOpenChange={setSynthesisOpen} open={synthesisOpen} />
 
       {/* 详情 drawer：行点击下钻（§4.5）；onDelete 关 drawer 再开确认框 */}
       <EvalQuestionDrawer

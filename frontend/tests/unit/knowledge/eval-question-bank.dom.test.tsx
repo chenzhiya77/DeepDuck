@@ -24,6 +24,11 @@ const hooksMock = rs.hoisted(() => ({
   useEvalQuestions: rs.fn(),
   useAddEvalQuestion: rs.fn(),
   useDeleteEvalQuestion: rs.fn(),
+  useSynthesisStatus: rs.fn(),
+  useTriggerSynthesis: rs.fn(),
+  useAcceptSynthesisCandidate: rs.fn(),
+  useRejectSynthesisCandidate: rs.fn(),
+  useDocuments: rs.fn(),
 }));
 
 rs.mock("@/core/knowledge/hooks", () => hooksMock);
@@ -93,6 +98,13 @@ beforeEach(() => {
   hooksMock.useEvalQuestions.mockReset();
   hooksMock.useDeleteEvalQuestion.mockReset();
   hooksMock.useDeleteEvalQuestion.mockReturnValue({ mutateAsync: rs.fn().mockResolvedValue(undefined), isPending: false });
+  // 合成状态默认空暂存（审核区块不渲染，既有用例不受影响）。
+  hooksMock.useSynthesisStatus.mockReturnValue({
+    data: { in_progress: false, candidates: [], generated_at: null, doc_id: null, dropped: 0 },
+    isLoading: false,
+  });
+  hooksMock.useDocuments.mockReturnValue({ data: [], isLoading: false });
+  hooksMock.useTriggerSynthesis.mockReturnValue({ mutateAsync: rs.fn(), isPending: false });
 });
 
 afterEach(() => {
@@ -112,10 +124,19 @@ describe("EvalQuestionBank 表格", () => {
     expect(screen.getByText("评测数据加载失败")).toBeTruthy();
   });
 
-  it("空题库渲染引导文案（指向召回测试面板）", () => {
+  it("空题库渲染引导文案（双入口：召回面板存题 + 文档合成）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
     renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
     expect(screen.getByText("题库为空——在召回测试面板勾选正确切片可一键存为考题")).toBeTruthy();
+    // 双入口第二句（2026-08-28 §7）：合成造题引导。
+    expect(screen.getByText("或从文档合成候选题，审核后采纳入题库")).toBeTruthy();
+  });
+
+  it("工具行「合成考题」按钮打开合成 dialog", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /从文档生成考题/ }));
+    expect(screen.getByText(zhCN.knowledge.eval.synthesize.dialogTitle)).toBeTruthy();
   });
 
   it("行渲染与锚定列推导（切片 · 实体 / 未锚定 muted）", () => {

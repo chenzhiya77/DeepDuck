@@ -504,7 +504,7 @@ export const zhCN: Translations = {
         unanchored: "未锚定",
         addQuestion: "添加考题",
         emptyBank: "题库为空——在召回测试面板勾选正确切片可一键存为考题",
-        emptyBankSynthesis: "，或从文档合成候选题，审核后采纳入题库",
+        emptyBankSynthesis: "或从文档合成候选题，审核后采纳入题库",
         rowReproduce: "在召回测试面板复现",
         rowDelete: "删除考题",
         saveFailed: "考题保存失败",
@@ -531,7 +531,7 @@ export const zhCN: Translations = {
         deletedToast: "考题已删除",
       },
       synthesize: {
-        entryButton: "合成考题",
+        entryButton: "从文档生成考题",
         dialogTitle: "合成考题",
         docLabel: "来源文档",
         docPlaceholder: "选择一篇已索引的文档",
