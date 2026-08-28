@@ -464,6 +464,8 @@ export interface Translations {
         unanchored: string;
         addQuestion: string;
         emptyBank: string;
+        /** 空态双入口第二句（2026-08-28 spec §7，Task 8）：合成造题引导。 */
+        emptyBankSynthesis: string;
         rowReproduce: string;
         rowDelete: string;
         saveFailed: string;
@@ -489,6 +491,28 @@ export interface Translations {
         noReferenceAnswer: string;
         addedToast: string;
         deletedToast: string;
+      };
+      /** 合成造题（2026-08-28 spec §6，plan Task 8–11）：触发/状态/审核全链路文案。 */
+      synthesize: {
+        entryButton: string;
+        dialogTitle: string;
+        docLabel: string;
+        docPlaceholder: string;
+        countLabel: string;
+        generate: string;
+        generating: string;
+        reviewTitle: string;
+        accept: string;
+        reject: string;
+        rejectAll: string;
+        /** 元信息行：丢弃数（锚定越界/字段违例）。 */
+        metaLine: (dropped: number) => string;
+        empty: string;
+        triggerFailed: string;
+        acceptFailed: string;
+        rejectFailed: string;
+        /** 409 提示：文档不存在或无切片。 */
+        docNotReady: string;
       };
       /** 历史视图（§6.2）：环境 badge、状态短文案与空态；回退复用 regressionBadge。 */
       history: {
@@ -701,6 +725,8 @@ export interface Translations {
       failed: string;
       /** P6 检索联动（spec §9 通道一）：结果区一键跳转向量空间叠加。 */
       viewInVectorSpace: string;
+      /** 百科行人工卡片不可锚定提示（2026-08-28 spec §5，Task 10）。 */
+      wikiAnchorTooltip: string;
       /** 存为考题（2026-08-27 spec §7.1，plan Task 8）：勾选切片一键入题库。 */
       saveAsQuestion: {
         button: string;
@@ -708,6 +734,10 @@ export interface Translations {
         queryLabel: string;
         categoryLabel: string;
         expectedPathLabel: string;
+        /** 多路化后的复数标签（2026-08-28，Task 9 切换；旧单数键过渡期保留）。 */
+        expectedPathsLabel: string;
+        /** 锚定辅助定位文案：勾选的切片/词条源切片进锚定集。 */
+        anchorHint: string;
         referenceAnswerLabel: string;
         submit: string;
         cancel: string;

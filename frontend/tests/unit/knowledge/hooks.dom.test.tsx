@@ -26,6 +26,10 @@ rs.mock("@/core/knowledge/api", () => ({
   deleteEvalQuestion: rs.fn(),
   listEvalRuns: rs.fn(),
   triggerEvalRun: rs.fn(),
+  triggerQuestionSynthesis: rs.fn(),
+  getSynthesisStatus: rs.fn(),
+  acceptSynthesisCandidate: rs.fn(),
+  rejectSynthesisCandidate: rs.fn(),
 }));
 
 import * as api from "@/core/knowledge/api";
@@ -37,6 +41,8 @@ import {
   knowledgeEvalRunsKey,
   knowledgeEvalRunKey,
   knowledgeEvalTrendKey,
+  knowledgeSynthesisKey,
+  useAcceptSynthesisCandidate,
   useAddEvalQuestion,
   useCreateKnowledgeBase,
   useDeleteEvalQuestion,
@@ -48,16 +54,23 @@ import {
   useGenerateWiki,
   useKnowledgeBases,
   useMetricsOverview,
+  useRejectSynthesisCandidate,
   useRetryDocument,
+  useSynthesisStatus,
   useTriggerEvalRun,
+  useTriggerSynthesis,
   useUploadDocument,
 } from "@/core/knowledge/hooks";
+import { synthesisRefetchInterval } from "@/core/knowledge/synthesis-status";
 import type {
+  EvalQuestion,
   EvalQuestionListResponse,
   EvalRunDetail,
   EvalRunListResponse,
   KnowledgeDocument,
   MetricsOverview,
+  SynthesisCandidate,
+  SynthesisStatus,
   TrendResponse,
 } from "@/core/knowledge/types";
 
@@ -324,7 +337,7 @@ const EVAL_QUESTIONS_PAGE: EvalQuestionListResponse = {
       id: "q_ab12cd34",
       query: "什么是退休年龄",
       category: "fact",
-      expected_path: "vector",
+      expected_paths: ["vector"],
       relevant_chunk_ids: [],
       relevant_entities: [],
       reference_answer: null,
@@ -389,7 +402,7 @@ describe("评测二期数据 hooks（plan Task 4）", () => {
       id: "q_new00001",
       query: "新考题",
       category: "relation",
-      expected_path: "graph",
+      expected_paths: ["graph"],
       relevant_chunk_ids: [],
       relevant_entities: [],
       reference_answer: null,
@@ -403,7 +416,7 @@ describe("评测二期数据 hooks（plan Task 4）", () => {
     await add.result.current.mutateAsync({
       query: "新考题",
       category: "relation",
-      expected_path: "graph",
+      expected_paths: ["graph"],
     });
 
     expect(rs.mocked(api.createEvalQuestion).mock.calls[0]?.[0]).toEqual("kb-1");
@@ -425,5 +438,119 @@ describe("evalRunsRefetchInterval（纯函数，spec §5.3）", () => {
     expect(evalRunsRefetchInterval(undefined)).toBe(false);
     expect(evalRunsRefetchInterval({ in_flight: false, runs: [], total: 0 })).toBe(false);
     expect(evalRunsRefetchInterval({ in_flight: true, runs: [], total: 0 })).toBe(3000);
+  });
+});
+
+// ── 合成造题数据层（2026-08-28 spec §6，plan Task 8）──────────────────
+
+const SYNTH_CANDIDATE: SynthesisCandidate = {
+  candidate_id: "c_a1b2c3d4",
+  query: "String 有什么特点？",
+  category: "fact",
+  expected_paths: ["vector"],
+  relevant_chunk_ids: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#0001"],
+  relevant_entities: [],
+  reference_answer: "不可变。",
+  doc_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  generated_at: "2026-08-28T10:00:00+00:00",
+};
+
+const SYNTH_STATUS: SynthesisStatus = {
+  in_progress: false,
+  candidates: [SYNTH_CANDIDATE],
+  generated_at: "2026-08-28T10:00:00+00:00",
+  doc_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  dropped: 0,
+};
+
+const ACCEPTED_QUESTION: EvalQuestion = {
+  id: "q_new12345",
+  query: SYNTH_CANDIDATE.query,
+  category: SYNTH_CANDIDATE.category,
+  expected_paths: SYNTH_CANDIDATE.expected_paths,
+  relevant_chunk_ids: SYNTH_CANDIDATE.relevant_chunk_ids,
+  relevant_entities: [],
+  reference_answer: SYNTH_CANDIDATE.reference_answer,
+};
+
+describe("合成造题数据 hooks（plan Task 8）", () => {
+  beforeEach(() => {
+    rs.mocked(api.getSynthesisStatus).mockResolvedValue(SYNTH_STATUS);
+    rs.mocked(api.listEvalQuestions).mockResolvedValue(EVAL_QUESTIONS_PAGE);
+    rs.mocked(api.triggerQuestionSynthesis).mockResolvedValue({ status: "enqueued" });
+    rs.mocked(api.acceptSynthesisCandidate).mockResolvedValue(ACCEPTED_QUESTION);
+    rs.mocked(api.rejectSynthesisCandidate).mockResolvedValue(undefined);
+  });
+
+  it("knowledgeSynthesisKey is kb-scoped and distinct from the questions key", () => {
+    expect(knowledgeSynthesisKey("kb-1")).toContain("kb-1");
+    expect(knowledgeSynthesisKey("kb-1")).not.toEqual(knowledgeEvalQuestionsKey("kb-1"));
+    expect(knowledgeSynthesisKey("kb-1")).not.toEqual(knowledgeSynthesisKey("kb-2"));
+  });
+
+  it("useSynthesisStatus fetches when enabled and caches under the synthesis key", async () => {
+    const queryClient = freshQueryClient();
+    const { result } = renderHook(() => useSynthesisStatus("kb-1", true), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(api.getSynthesisStatus).toHaveBeenCalledWith("kb-1");
+    expect(queryClient.getQueryData(knowledgeSynthesisKey("kb-1"))).toEqual(SYNTH_STATUS);
+  });
+
+  it("enabled=false keeps the synthesis query silent (keep-alive 门控)", async () => {
+    renderHook(() => useSynthesisStatus("kb-1", false), { wrapper: createWrapper(freshQueryClient()) });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.getSynthesisStatus).not.toHaveBeenCalled();
+  });
+
+  it("useTriggerSynthesis passes the trigger response straight through", async () => {
+    const { result } = renderHook(() => useTriggerSynthesis("kb-1"), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    const response = await result.current.mutateAsync({ doc_id: "doc-1", count: 5 });
+    expect(response).toEqual({ status: "enqueued" });
+    expect(api.triggerQuestionSynthesis).toHaveBeenCalledWith("kb-1", { doc_id: "doc-1", count: 5 });
+  });
+
+  it("accept mutation invalidates both synthesis and evalQuestions caches", async () => {
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const status = renderHook(() => useSynthesisStatus("kb-1", true), { wrapper });
+    const questions = renderHook(() => useEvalQuestions("kb-1", true), { wrapper });
+    await waitFor(() => expect(status.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(questions.result.current.isSuccess).toBe(true));
+
+    const accept = renderHook(() => useAcceptSynthesisCandidate("kb-1"), { wrapper });
+    const question = await accept.result.current.mutateAsync("c_a1b2c3d4");
+
+    expect(question.id).toBe("q_new12345");
+    expect(api.acceptSynthesisCandidate).toHaveBeenCalledWith("kb-1", "c_a1b2c3d4");
+    await waitFor(() => expect(api.getSynthesisStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it("reject mutation invalidates both synthesis and evalQuestions caches", async () => {
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const status = renderHook(() => useSynthesisStatus("kb-1", true), { wrapper });
+    const questions = renderHook(() => useEvalQuestions("kb-1", true), { wrapper });
+    await waitFor(() => expect(status.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(questions.result.current.isSuccess).toBe(true));
+
+    const reject = renderHook(() => useRejectSynthesisCandidate("kb-1"), { wrapper });
+    await reject.result.current.mutateAsync("c_a1b2c3d4");
+
+    expect(api.rejectSynthesisCandidate).toHaveBeenCalledWith("kb-1", "c_a1b2c3d4");
+    await waitFor(() => expect(api.getSynthesisStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("synthesisRefetchInterval（纯函数，与 eval-run-status 同款）", () => {
+  it("polls at 3s only while in_progress", () => {
+    expect(synthesisRefetchInterval(undefined)).toBe(false);
+    expect(synthesisRefetchInterval({ ...SYNTH_STATUS, in_progress: false })).toBe(false);
+    expect(synthesisRefetchInterval({ ...SYNTH_STATUS, in_progress: true })).toBe(3000);
   });
 });

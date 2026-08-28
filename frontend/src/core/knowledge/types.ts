@@ -248,6 +248,11 @@ export interface RecallWikiHit {
    * "wiki"（旧响应形态）。
    */
   source_type?: "wiki" | "manual";
+  /**
+   * 词条的源切片锚定（2026-08-28 spec §5，Task 5 后端）：仅词条携带，人工卡片
+   * （source_type === "manual"）无此键——百科路勾选存题时据此进锚定集。
+   */
+  source_chunk_ids?: string[];
 }
 
 export type RecallPathName = "vector" | "graph" | "wiki";
@@ -587,7 +592,8 @@ export interface EvalQuestion {
   id: string;
   query: string;
   category: "fact" | "relation" | "concept" | "global";
-  expected_path: "vector" | "graph" | "wiki";
+  /** 预期路径集合（2026-08-28 spec §3，Task 4 切换）：1–3 路，任一路承担即对。 */
+  expected_paths: RecallPathName[];
   /** 空数组 = 无锚定题（Layer 1 仅参与路径判定，spec §1 事实 2）。 */
   relevant_chunk_ids: string[];
   relevant_entities: string[];
@@ -598,7 +604,8 @@ export interface EvalQuestion {
 export interface EvalQuestionCreateInput {
   query: string;
   category: "fact" | "relation" | "concept" | "global";
-  expected_path: "vector" | "graph" | "wiki";
+  /** 至少一路（后端 min_length=1），最多三路。 */
+  expected_paths: RecallPathName[];
   relevant_chunk_ids?: string[];
   relevant_entities?: string[];
   reference_answer?: string | null;
@@ -608,6 +615,41 @@ export interface EvalQuestionCreateInput {
 export interface EvalQuestionListResponse {
   questions: EvalQuestion[];
   total: number;
+}
+
+// ── Question synthesis（2026-08-28 spec §6，Task 6–8）─────────────────────
+
+/** 候选题（暂存行）：完整题目载荷 + 暂存元数据；采纳后换服务端 q_ id 入题库。 */
+export interface SynthesisCandidate {
+  candidate_id: string;
+  query: string;
+  category: "fact" | "relation" | "concept" | "global";
+  expected_paths: RecallPathName[];
+  relevant_chunk_ids: string[];
+  relevant_entities: string[];
+  reference_answer: string | null;
+  doc_id: string;
+  generated_at: string;
+}
+
+/** GET /eval/questions/synthesize：in_progress + 暂存候选 + 合成元数据。 */
+export interface SynthesisStatus {
+  in_progress: boolean;
+  candidates: SynthesisCandidate[];
+  generated_at: string | null;
+  doc_id: string | null;
+  dropped: number;
+}
+
+/** POST /eval/questions/synthesize 触发体：单篇文档 + 候选题数（1–10）。 */
+export interface SynthesisTriggerInput {
+  doc_id: string;
+  count: number;
+}
+
+/** 202 应答：与评测触发同形（enqueued / already_running）。 */
+export interface SynthesisTriggerResponse {
+  status: "enqueued" | "already_running";
 }
 
 /** 历史列表行（轻量摘要，指标本体留在 drawer 详情里）。 */

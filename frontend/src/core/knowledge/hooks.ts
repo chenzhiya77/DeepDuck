@@ -9,12 +9,15 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import * as api from "./api";
 import { documentsRefetchInterval } from "./document-stats";
 import { evalRunsRefetchInterval } from "./eval-run-status";
+import { synthesisRefetchInterval } from "./synthesis-status";
 import type {
   EvalQuestionCreateInput,
   EvalQuestionListResponse,
   EvalRunDetail,
   EvalRunListResponse,
   MetricsOverview,
+  SynthesisStatus,
+  SynthesisTriggerInput,
   TrendQueryParams,
   TrendResponse,
 } from "./types";
@@ -179,6 +182,11 @@ export function knowledgeEvalRunsKey(kbId: string) {
   return ["knowledge-bases", kbId, "eval-runs", "history"] as const;
 }
 
+/** 合成状态键（2026-08-28 spec §6，Task 8）：与题库/运行键互斥，kb 粒度。 */
+export function knowledgeSynthesisKey(kbId: string) {
+  return ["knowledge-bases", kbId, "eval-synthesis"] as const;
+}
+
 /**
  * 评测数据分钟级不变：30s 内 keep-alive 来回切 tab 不重复请求（plan Task 5）。
  */
@@ -280,6 +288,52 @@ export function useEvalRuns(kbId: string | null, enabled = true): UseQueryResult
 export function useTriggerEvalRun(kbId: string) {
   return useMutation({
     mutationFn: () => api.triggerEvalRun(kbId),
+  });
+}
+
+// ── 合成造题（2026-08-28 spec §6，plan Task 8）────────────────────────
+
+/**
+ * 合成状态：轮询由 in_progress 驱动（synthesis-status 纯函数），drain 后
+ * 停轮询；无暂存文件时后端回空列表，新 KB 不是错误。
+ */
+export function useSynthesisStatus(kbId: string | null, enabled = true): UseQueryResult<SynthesisStatus> {
+  return useQuery({
+    queryKey: knowledgeSynthesisKey(kbId ?? ""),
+    queryFn: () => api.getSynthesisStatus(kbId!),
+    enabled: enabled && kbId !== null,
+    refetchInterval: (query) => synthesisRefetchInterval(query.state.data),
+  });
+}
+
+/** 触发合成：202 响应原样透传（与 useTriggerEvalRun 同款，刷新走轮询边）。 */
+export function useTriggerSynthesis(kbId: string) {
+  return useMutation({
+    mutationFn: (input: SynthesisTriggerInput) => api.triggerQuestionSynthesis(kbId, input),
+  });
+}
+
+/** 采纳候选：入库后同时失效暂存与题库缓存（新题即时可见）。 */
+export function useAcceptSynthesisCandidate(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (candidateId: string) => api.acceptSynthesisCandidate(kbId, candidateId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeSynthesisKey(kbId) });
+      void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });
+    },
+  });
+}
+
+/** 忽略候选：只动暂存；题库失效一并做（口径统一，代价是一次空刷）。 */
+export function useRejectSynthesisCandidate(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (candidateId: string) => api.rejectSynthesisCandidate(kbId, candidateId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeSynthesisKey(kbId) });
+      void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });
+    },
   });
 }
 

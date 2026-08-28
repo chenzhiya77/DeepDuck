@@ -24,6 +24,9 @@ import type {
   ManualCardsPage,
   MetricsOverview,
   RecallTestResponse,
+  SynthesisStatus,
+  SynthesisTriggerInput,
+  SynthesisTriggerResponse,
   TrendQueryParams,
   TrendResponse,
   VectorProjectionAlgo,
@@ -470,4 +473,37 @@ export function triggerEvalRun(kbId: string): Promise<EvalTriggerResponse> {
   return fetch(kbUrl(kbId, "/eval-runs"), { method: "POST" }).then((r) =>
     readResponse<EvalTriggerResponse>(r, "Failed to trigger eval run"),
   );
+}
+
+// ── Question synthesis（2026-08-28 spec §6，Task 6–8）───────────────────
+
+/** POST /eval/questions/synthesize：自底向上合成候选题（202 幂等；文档未就绪 409）。 */
+export function triggerQuestionSynthesis(kbId: string, input: SynthesisTriggerInput): Promise<SynthesisTriggerResponse> {
+  return fetch(kbUrl(kbId, "/eval/questions/synthesize"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).then((r) => readResponse<SynthesisTriggerResponse>(r, "Failed to trigger question synthesis"));
+}
+
+/** GET /eval/questions/synthesize：合成状态（in_progress + 暂存候选 + 元数据）。 */
+export function getSynthesisStatus(kbId: string): Promise<SynthesisStatus> {
+  return fetch(kbUrl(kbId, "/eval/questions/synthesize")).then((r) =>
+    readResponse<SynthesisStatus>(r, "Failed to fetch synthesis status"),
+  );
+}
+
+/** POST .../synthesize/{candidate_id}/accept：采纳候选入题库（201；未知候选 404）。 */
+export function acceptSynthesisCandidate(kbId: string, candidateId: string): Promise<EvalQuestion> {
+  return fetch(kbUrl(kbId, `/eval/questions/synthesize/${encodeURIComponent(candidateId)}/accept`), {
+    method: "POST",
+  }).then((r) => readResponse<EvalQuestion>(r, "Failed to accept synthesis candidate"));
+}
+
+/** DELETE .../synthesize/{candidate_id}：忽略候选（204；未知候选 404）。 */
+export async function rejectSynthesisCandidate(kbId: string, candidateId: string): Promise<void> {
+  const response = await fetch(kbUrl(kbId, `/eval/questions/synthesize/${encodeURIComponent(candidateId)}`), {
+    method: "DELETE",
+  });
+  await readEmptyResponse(response, "Failed to reject synthesis candidate");
 }
