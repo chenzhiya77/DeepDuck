@@ -153,6 +153,67 @@ class TestEvaluateQuestion:
         assert m.recall == 0.0
         assert m.mrr == 0.0
 
+    # ── expected_paths 多路集合判定（spec 2026-08-28 §4）──────────────
+
+    def test_multi_path_any_expected_winner_counts_correct(self):
+        # 语义：这些路任何一路承担本题都算对（非必须全调）。
+        q = _question(expected_paths=("vector", "graph"))
+        paths = {
+            "vector": PathResult(hits=("c1",), top_score=0.9),
+            "graph": PathResult(hits=("c2",), top_score=0.4),
+            "wiki": PathResult(hits=(), top_score=None),
+        }
+
+        m = evaluate_question(q, paths)
+
+        assert m.expected_paths == ("vector", "graph")
+        assert m.actual_path == "vector"
+        assert m.path_correct is True
+
+    def test_multi_path_second_expected_winner_also_counts_correct(self):
+        # 分数抖动下另一路胜出仍应 ✅——这是多路化的动机场景。
+        q = _question(expected_paths=("vector", "graph"))
+        paths = {
+            "vector": PathResult(hits=("c1",), top_score=0.4),
+            "graph": PathResult(hits=("c2",), top_score=0.9),
+            "wiki": PathResult(hits=(), top_score=None),
+        }
+
+        assert evaluate_question(q, paths).path_correct is True
+
+    def test_multi_path_unexpected_winner_counts_wrong(self):
+        q = _question(expected_paths=("vector", "graph"))
+        paths = {
+            "vector": PathResult(hits=("c1",), top_score=0.2),
+            "graph": PathResult(hits=(), top_score=None),
+            "wiki": PathResult(hits=("c2",), top_score=0.9),
+        }
+
+        m = evaluate_question(q, paths)
+
+        assert m.actual_path == "wiki"
+        assert m.path_correct is False
+
+    def test_multi_path_no_hits_still_counts_wrong(self):
+        q = _question(expected_paths=("vector", "graph"))
+
+        m = evaluate_question(q, {"vector": PathResult(), "graph": PathResult(), "wiki": PathResult()})
+
+        assert m.actual_path is None
+        assert m.path_correct is False
+
+    def test_aggregate_path_accuracy_counts_multi_path_results(self):
+        right = evaluate_question(
+            _question(id="q_ok", expected_paths=("vector", "graph")),
+            {"vector": PathResult(hits=("c1",), top_score=0.9), "graph": PathResult()},
+        )
+        wrong = evaluate_question(
+            _question(id="q_bad", expected_paths=("vector", "graph")),
+            {"vector": PathResult(), "wiki": PathResult(hits=("c2",), top_score=0.8)},
+        )
+
+        assert aggregate([right, wrong]).path_accuracy == pytest.approx(0.5)
+
     def test_empty_relevant_skips_chunk_metrics_but_keeps_path(self):
         q = _question(relevant_chunk_ids=())
         paths = {"vector": PathResult(hits=("c1",), top_score=0.9)}

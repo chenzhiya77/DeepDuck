@@ -180,7 +180,7 @@ def report_to_dict(report: EvalReport) -> dict[str, Any]:
             {
                 "id": qr.question.id,
                 "category": qr.question.category,
-                "expected_path": qr.question.expected_path,
+                "expected_paths": list(qr.question.expected_paths),
                 "actual_path": qr.metrics.actual_path,
                 "path_correct": qr.metrics.path_correct,
                 "hit": qr.metrics.hit,
@@ -212,7 +212,9 @@ def _baseline_parts(data: Mapping[str, Any]) -> tuple[AggregateMetrics | None, d
         QuestionMetrics(
             question_id=str(q["id"]),
             category=str(q.get("category") or ""),
-            expected_path=str(q.get("expected_path") or ""),
+            # 双键兼容（§9）：旧 CLI report.json 存单值 ``expected_path``，
+            # 新报告存 ``expected_paths`` 列表；diff 只消费 recall，路径键仅透传。
+            expected_paths=tuple(q.get("expected_paths") or ([q["expected_path"]] if q.get("expected_path") else [])),
             actual_path=None,
             path_correct=bool(q.get("path_correct")),
             hit=None,
@@ -311,7 +313,8 @@ def render_markdown(report: EvalReport) -> str:
                 if qr is None:
                     continue
                 expected = ", ".join(qr.question.relevant_chunk_ids) or "(无标注)"
-                lines.append(f"- **{qid}**（{qr.question.category}）预期命中: {expected}")
+                expected_paths = ", ".join(qr.question.expected_paths)
+                lines.append(f"- **{qid}**（{qr.question.category}，预期路径: {expected_paths}）预期命中: {expected}")
                 for path in PATH_ORDER:
                     outcome = qr.paths[path]
                     hits = ", ".join(f"{hit.chunk_id}({_fmt(hit.score)})" for hit in outcome.hits) or "(空)"

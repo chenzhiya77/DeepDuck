@@ -26,11 +26,11 @@ from deerflow.knowledge.eval.runner import (
 )
 
 
-def _question(qid: str, *, category: str = "fact", expected_path: str = "vector", chunks=("c1",)) -> GoldenQuestion:
+def _question(qid: str, *, category: str = "fact", expected_path: str = "vector", expected_paths: tuple[str, ...] | None = None, chunks=("c1",)) -> GoldenQuestion:
     return GoldenQuestion(
         id=qid,
         query=f"query-{qid}",
-        expected_paths=(expected_path,),
+        expected_paths=expected_paths or (expected_path,),
         relevant_chunk_ids=tuple(chunks),
         relevant_entities=(),
         category=category,
@@ -148,10 +148,19 @@ class TestReportSchema:
         assert set(data["overall"]) == {"count", "hit_rate", "recall", "mrr", "path_accuracy"}
         assert set(data["by_category"]) == {"fact", "global"}
         q1 = data["questions"][0]
-        assert set(q1) == {"id", "category", "expected_path", "actual_path", "path_correct", "hit", "recall", "mrr", "paths"}
+        assert set(q1) == {"id", "category", "expected_paths", "actual_path", "path_correct", "hit", "recall", "mrr", "paths"}
+        assert q1["expected_paths"] == ["vector"]  # 单路题序列化为单元素列表（新格式）
         assert q1["paths"]["graph"]["failure"] is not None
         assert q1["paths"]["vector"]["hits"] == [{"chunk_id": "c1", "score": 0.9}]
         assert data["diff"] is None
+
+    async def test_report_serializes_multi_path_expectations(self):
+        report = await run_evaluation([_question("q1", expected_paths=("vector", "graph"))], {"vector": _ok((("c1", 0.9),)), "graph": _ok(()), "wiki": _ok(())}, top_k=5)
+
+        q1 = report_to_dict(report)["questions"][0]
+
+        assert q1["expected_paths"] == ["vector", "graph"]
+        assert q1["path_correct"] is True
 
     async def test_report_round_trip_enables_baseline_diff(self):
         report = await self._report()
@@ -208,6 +217,39 @@ class TestRenderSummary:
         assert "q1" in md
         assert "c1" in md  # 预期命中 chunk
         assert "c9" in md  # 实际命中 chunk
+
+    async def test_markdown_regressed_detail_lists_expected_paths(self):
+        # 回退题详情展示多路预期（逗号连接，spec §4 渲染约定）。
+        searchers = {"vector": _ok((("c9", 0.9),)), "graph": _ok(()), "wiki": _ok(())}
+        baseline = _baseline_dict(recall_by_category={"fact": 1.0}, question_recalls={"q1": 1.0})
+        report = await run_evaluation([_question("q1", expected_paths=("vector", "graph"))], searchers, top_k=5, baseline=baseline)
+
+        md = render_markdown(report)
+
+        assert "预期路径: vector, graph" in md
+
+
+class TestBaselineReportCompat:
+    """旧 CLI report.json 用单值 ``expected_path`` 键，新报告用 ``expected_paths``
+    列表——``_baseline_parts`` 两个键都认（§9 兼容纪律）。"""
+
+    async def test_legacy_single_key_baseline_still_diffs(self):
+        baseline = _baseline_dict(recall_by_category={"fact": 1.0}, question_recalls={"q1": 1.0})
+        baseline["questions"] = [{"id": "q1", "recall": 1.0, "expected_path": "vector"}]
+
+        report = await run_evaluation([_question("q1")], {"vector": _ok((("c1", 0.9),)), "graph": _ok(()), "wiki": _ok(())}, top_k=5, baseline=baseline)
+
+        assert report.diff is not None
+        assert report.diff.failed is False
+
+    async def test_new_multi_key_baseline_still_diffs(self):
+        baseline = _baseline_dict(recall_by_category={"fact": 1.0}, question_recalls={"q1": 1.0})
+        baseline["questions"] = [{"id": "q1", "recall": 1.0, "expected_paths": ["vector", "graph"]}]
+
+        report = await run_evaluation([_question("q1", expected_paths=("vector", "graph"))], {"vector": _ok((("c1", 0.9),)), "graph": _ok(()), "wiki": _ok(())}, top_k=5, baseline=baseline)
+
+        assert report.diff is not None
+        assert report.diff.failed is False
 
 
 class TestBuildDefaultSearchers:

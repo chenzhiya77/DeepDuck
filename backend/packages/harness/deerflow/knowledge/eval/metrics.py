@@ -6,6 +6,12 @@ whether *the system* surfaced the annotated chunk — while the per-path
 breakdown stays available for drill-down. Path selection compares each path's
 top-1 score. The baseline diff gates on per-category recall drops only
 (``overall`` is reported but never gates), per the spec's门禁语义.
+
+Path correctness uses set membership (spec 2026-08-28 §4): a question carries
+``expected_paths`` and the run is correct when the actual winning path is any
+member of that set — "any of these paths answering counts", deliberately NOT
+"all of them must fire". Single-path questions are the one-element special
+case, bit-identical to the legacy equality judgement.
 """
 
 from __future__ import annotations
@@ -47,7 +53,7 @@ class PathMetrics:
 class QuestionMetrics:
     question_id: str
     category: str
-    expected_path: str
+    expected_paths: tuple[str, ...]
     actual_path: str | None
     path_correct: bool
     hit: float | None
@@ -153,9 +159,11 @@ def evaluate_question(question: GoldenQuestion, paths: Mapping[str, PathResult])
     return QuestionMetrics(
         question_id=question.id,
         category=question.category,
-        expected_path=question.expected_path,
+        expected_paths=question.expected_paths,
         actual_path=actual,
-        path_correct=actual is not None and actual == question.expected_path,
+        # Set membership, not equality: any expected path winning counts
+        # (spec 2026-08-28 §4). One-element sets keep legacy behaviour.
+        path_correct=actual is not None and actual in question.expected_paths,
         hit=hit(relevant, union_hits) if relevant else None,
         recall=recall_at_k(relevant, union_hits),
         mrr=best_rr if relevant else None,
