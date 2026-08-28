@@ -50,11 +50,11 @@ class _FakeJudgeLLM:
         return SimpleNamespace(content=self.responses[min(len(self.calls) - 1, len(self.responses) - 1)])
 
 
-def _question(qid: str, *, category: str = "fact", expected_path: str = "vector", entities=(), reference: str | None = "参考答案") -> GoldenQuestion:
+def _question(qid: str, *, category: str = "fact", expected_path: str = "vector", expected_paths: tuple[str, ...] | None = None, entities=(), reference: str | None = "参考答案") -> GoldenQuestion:
     return GoldenQuestion(
         id=qid,
         query=f"query-{qid}",
-        expected_paths=(expected_path,),
+        expected_paths=expected_paths or (expected_path,),
         relevant_chunk_ids=(),
         relevant_entities=tuple(entities),
         category=category,
@@ -198,14 +198,26 @@ class TestExtractors:
 
 class TestPathHit:
     def test_expected_tool_in_sequence(self):
-        assert path_hit("vector", ("hybrid_search", "graph_search")) is True
-        assert path_hit("graph", ("hybrid_search", "graph_search")) is True
+        assert path_hit(("vector",), ("hybrid_search", "graph_search")) is True
+        assert path_hit(("graph",), ("hybrid_search", "graph_search")) is True
 
     def test_expected_tool_absent(self):
-        assert path_hit("graph", ("hybrid_search",)) is False
+        assert path_hit(("graph",), ("hybrid_search",)) is False
 
     def test_no_retrieval_calls_is_a_miss(self):
-        assert path_hit("wiki", ()) is False
+        assert path_hit(("wiki",), ()) is False
+
+    # ── 多路集合语义（spec 2026-08-28 §4）：任一期望工具被调用即命中 ──
+
+    def test_multi_path_any_expected_tool_called_hits(self):
+        assert path_hit(("vector", "graph"), ("hybrid_search",)) is True
+        assert path_hit(("vector", "graph"), ("graph_search",)) is True
+
+    def test_multi_path_only_unexpected_tool_called_misses(self):
+        assert path_hit(("vector", "graph"), ("wiki_search",)) is False
+
+    def test_multi_path_no_retrieval_calls_is_a_miss(self):
+        assert path_hit(("vector", "graph"), ()) is False
 
 
 class TestGraphEntityHitRate:
@@ -337,6 +349,25 @@ class TestRunLayer2Evaluation:
         # q2 expects entity JVM but the (fake) graph path never ran -> 0% landing.
         assert by_id["q2"].graph_entity_hit_rate == 0.0
 
+    async def test_multi_path_second_expected_tool_also_hits(self):
+        # 多路题：期望 {vector, graph}，agent 只调了 graph_search → 仍应命中（§4 any 语义）。
+        questions = [_question("q1", expected_paths=("vector", "graph"))]
+
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            return _outcome("q1", answer="答案[1]。", tools=("graph_search",), citation_map={1: "证据一"})
+
+        report = await run_layer2_evaluation(
+            questions,
+            agent_runner=runner,
+            judge_llm=_FakeJudgeLLM(['{"supported": true, "reason": "ok"}']),
+            kb_id="kb-1",
+        )
+
+        r = report.results[0]
+        assert r.expected_paths == ("vector", "graph")
+        assert r.path_hit is True
+        assert report.aggregate["path_accuracy"] == 1.0
+
     async def test_agent_runner_failure_degrades_to_failure_note(self):
         questions = [_question("q1"), _question("q2")]
 
@@ -393,6 +424,60 @@ class TestRunLayer2Evaluation:
         assert restored.results[0].question_id == "q1"
         assert restored.results[0].citation is not None and restored.results[0].citation.precision == 1.0
         assert restored.calibration["human_sample_ratio"] is None  # 人工校准占位字段
+        assert restored.results[0].expected_paths == ("vector",)
+
+    def test_report_dict_uses_expected_paths_list_key(self):
+        async def _build():
+            async def runner(question: GoldenQuestion) -> TraceOutcome:
+                return _outcome(question.id, answer="答案[1]。")
+
+            return await run_layer2_evaluation(
+                [_question("q1", expected_paths=("vector", "graph"))],
+                agent_runner=runner,
+                judge_llm=_FakeJudgeLLM(['{"supported": true, "reason": "ok"}']),
+                kb_id="kb-1",
+                run_id="run-mp",
+            )
+
+        import asyncio
+
+        data = report_to_dict(asyncio.run(_build()))
+
+        assert data["results"][0]["expected_paths"] == ["vector", "graph"]
+        assert "expected_path" not in data["results"][0]
+
+    def test_report_from_dict_accepts_legacy_single_key(self):
+        # 旧 CLI 落盘的 layer 2 报告存单值 ``expected_path``（§9 双键兼容）。
+        legacy = {
+            "run_id": "run-old",
+            "kb_id": "kb-1",
+            "generated_at": None,
+            "ragas_available": False,
+            "ragas_skip_reason": None,
+            "langfuse": {},
+            "calibration": {},
+            "aggregate": {},
+            "results": [
+                {
+                    "question_id": "q1",
+                    "category": "fact",
+                    "expected_path": "graph",
+                    "path_hit": True,
+                    "first_tool": "graph_search",
+                    "retrieval_tools": ["graph_search"],
+                    "citation": None,
+                    "graph_entity_hit_rate": None,
+                    "ragas": {},
+                    "thread_id": None,
+                    "trace_id": None,
+                    "failure": None,
+                }
+            ],
+        }
+
+        restored = report_from_dict(legacy)
+
+        assert restored.results[0].expected_paths == ("graph",)
 
     async def test_langfuse_push_writes_one_score_per_metric(self):
         async def runner(question: GoldenQuestion) -> TraceOutcome:

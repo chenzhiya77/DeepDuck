@@ -44,15 +44,6 @@ class GoldenQuestion:
     category: str
     reference_answer: str | None = None
 
-    @property
-    def expected_path(self) -> str:
-        """Legacy single-path read for consumers not yet on set semantics.
-
-        Transitional shim (spec 2026-08-28 §3): metrics/layer-2 switch to
-        ``expected_paths`` in tasks 2/3 and this property goes away.
-        """
-        return self.expected_paths[0]
-
 
 def _fail(source: str, message: str) -> None:
     raise GoldenDatasetError(f"{source}: {message}")

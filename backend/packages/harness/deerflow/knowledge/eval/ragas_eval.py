@@ -112,7 +112,7 @@ class CitationScore:
 class QuestionEvalResult:
     question_id: str
     category: str
-    expected_path: str
+    expected_paths: tuple[str, ...]
     path_hit: bool | None
     first_tool: str | None
     retrieval_tools: tuple[str, ...]
@@ -296,16 +296,17 @@ def split_answer_claims(answer: str) -> list[tuple[str, list[int]]]:
 # ---------------------------------------------------------------------------
 
 
-def path_hit(expected_path: str, retrieval_tools: Sequence[str]) -> bool:
-    """Whether the agent actually called the tool matching ``expected_path``.
+def path_hit(expected_paths: Sequence[str], retrieval_tools: Sequence[str]) -> bool:
+    """Whether the agent called any tool matching the expected paths.
 
-    The agent calling *no* retrieval tool at all counts as a miss.
+    Set semantics (spec 2026-08-28 §4): a question expected on {vector,
+    graph} counts when either ``hybrid_search`` or ``graph_search`` appears
+    in the call sequence — mirroring layer-1's winner-in-set judgement. The
+    agent calling *no* retrieval tool at all counts as a miss.
     """
 
-    expected_tool = EXPECTED_PATH_TO_TOOL.get(expected_path)
-    if expected_tool is None:
-        return False
-    return expected_tool in retrieval_tools
+    expected_tools = {EXPECTED_PATH_TO_TOOL[path] for path in expected_paths if path in EXPECTED_PATH_TO_TOOL}
+    return any(tool in retrieval_tools for tool in expected_tools)
 
 
 def graph_entity_hit_rate(seed_entities: Sequence[str], relevant_entities: Sequence[str]) -> float | None:
@@ -584,7 +585,7 @@ def _failure_result(question: GoldenQuestion, exc: BaseException) -> QuestionEva
     return QuestionEvalResult(
         question_id=question.id,
         category=question.category,
-        expected_path=question.expected_path,
+        expected_paths=question.expected_paths,
         path_hit=None,
         first_tool=None,
         retrieval_tools=(),
@@ -679,8 +680,8 @@ async def run_layer2_evaluation(
             QuestionEvalResult(
                 question_id=question.id,
                 category=question.category,
-                expected_path=question.expected_path,
-                path_hit=path_hit(question.expected_path, outcome.retrieval_tools),
+                expected_paths=question.expected_paths,
+                path_hit=path_hit(question.expected_paths, outcome.retrieval_tools),
                 first_tool=outcome.retrieval_tools[0] if outcome.retrieval_tools else None,
                 retrieval_tools=outcome.retrieval_tools,
                 citation=citation,
@@ -820,7 +821,7 @@ def report_to_dict(report: Layer2Report) -> dict[str, Any]:
             {
                 "question_id": r.question_id,
                 "category": r.category,
-                "expected_path": r.expected_path,
+                "expected_paths": list(r.expected_paths),
                 "path_hit": r.path_hit,
                 "first_tool": r.first_tool,
                 "retrieval_tools": list(r.retrieval_tools),
@@ -852,7 +853,8 @@ def report_from_dict(data: Mapping[str, Any]) -> Layer2Report:
             QuestionEvalResult(
                 question_id=raw["question_id"],
                 category=raw["category"],
-                expected_path=raw["expected_path"],
+                # 双键兼容（§9）：旧报告存单值 ``expected_path``，新报告存列表。
+                expected_paths=tuple(raw.get("expected_paths") or ([raw["expected_path"]] if raw.get("expected_path") else [])),
                 path_hit=raw.get("path_hit"),
                 first_tool=raw.get("first_tool"),
                 retrieval_tools=tuple(raw.get("retrieval_tools") or ()),
@@ -937,7 +939,7 @@ def render_markdown(report: Layer2Report) -> str:
             if citation and citation.missing:
                 note = (note + " " if note else "") + f"幻觉引用 {list(citation.missing)}"
             tools = ", ".join(r.retrieval_tools) or "（未检索）"
-            lines.append(f"| {r.question_id} | {r.expected_path} | {tools} | {'✅' if r.path_hit else '❌'} | {pr} | {_fmt(r.graph_entity_hit_rate)} | {note} |")
+            lines.append(f"| {r.question_id} | {'/'.join(r.expected_paths)} | {tools} | {'✅' if r.path_hit else '❌'} | {pr} | {_fmt(r.graph_entity_hit_rate)} | {note} |")
 
     regular = [r for r in report.results if r.category != "global"]
     global_rows = [r for r in report.results if r.category == "global"]

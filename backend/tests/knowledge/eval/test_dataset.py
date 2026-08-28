@@ -45,7 +45,6 @@ class TestValidateQuestion:
 
         assert isinstance(q, GoldenQuestion)
         assert q.id == "q001"
-        assert q.expected_path == "vector"
         assert q.expected_paths == ("vector",)
         assert q.relevant_chunk_ids == ("e1b9e365f63747958337431dc755c620#0007",)
         assert q.relevant_entities == ("StringBuffer", "StringBuilder")
@@ -95,8 +94,7 @@ class TestValidateQuestion:
         q = validate_question(raw)
 
         assert q.expected_paths == ("vector", "graph")
-        # 兼容读取属性：存量消费方仍按首路读取（Task 2/3 切换集合语义后移除）。
-        assert q.expected_path == "vector"
+        # 首路读取在 Task 3 后无兼容属性——断言全量集合即可。
 
     def test_normalizes_legacy_single_expected_path(self):
         q = validate_question(VALID_RAW)
