@@ -58,7 +58,7 @@ def _stub_searchers(hit_chunk: str | None = CHUNK_A) -> dict:
 
 
 async def _seed_question(path, query: str = "什么是退休年龄") -> None:
-    await add_question(path, query=query, category="fact", expected_path="vector", relevant_chunk_ids=[CHUNK_A])
+    await add_question(path, query=query, category="fact", expected_paths=["vector"], relevant_chunk_ids=[CHUNK_A])
 
 
 def test_generate_run_id_format_matches_cli_contract() -> None:

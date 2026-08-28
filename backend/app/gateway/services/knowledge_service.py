@@ -1164,11 +1164,13 @@ class KnowledgeService:
         relevant_entities: Collection[str],
         reference_answer: str | None,
     ) -> dict[str, Any]:
+        # API 契约仍是单值（spec 2026-08-28 §3 破坏式切换在 Task 4）；
+        # 文件层一律新格式，这里包成单元素集合。
         question = await question_bank.add_question(
             self._golden_path(kb_id),
             query=query,
             category=category,
-            expected_path=expected_path,
+            expected_paths=[expected_path],
             relevant_chunk_ids=relevant_chunk_ids,
             relevant_entities=relevant_entities,
             reference_answer=reference_answer,

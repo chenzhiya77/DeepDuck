@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -70,12 +71,17 @@ async def add_question(
     *,
     query: str,
     category: str,
-    expected_path: str,
+    expected_paths: Sequence[str],
     relevant_chunk_ids: list[str] | tuple[str, ...] = (),
     relevant_entities: list[str] | tuple[str, ...] = (),
     reference_answer: str | None = None,
 ) -> GoldenQuestion:
-    """Validate + append one question; returns the stored (server-id) question."""
+    """Validate + append one question; returns the stored (server-id) question.
+
+    Writes always use the canonical ``expected_paths`` list format (spec
+    2026-08-28 §3); the validator accepts legacy single-value lines on read,
+    so banks with mixed generations stay loadable until touched.
+    """
 
     path = Path(path)
     async with _lock(path):
@@ -85,7 +91,7 @@ async def add_question(
             "id": new_question_id(),
             "query": query,
             "category": category,
-            "expected_path": expected_path,
+            "expected_paths": list(expected_paths),
             "relevant_chunk_ids": list(relevant_chunk_ids),
             "relevant_entities": list(relevant_entities),
             "reference_answer": reference_answer,

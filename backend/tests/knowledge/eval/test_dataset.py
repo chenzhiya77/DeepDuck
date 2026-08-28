@@ -46,6 +46,7 @@ class TestValidateQuestion:
         assert isinstance(q, GoldenQuestion)
         assert q.id == "q001"
         assert q.expected_path == "vector"
+        assert q.expected_paths == ("vector",)
         assert q.relevant_chunk_ids == ("e1b9e365f63747958337431dc755c620#0007",)
         assert q.relevant_entities == ("StringBuffer", "StringBuilder")
         assert q.category == "fact"
@@ -83,6 +84,56 @@ class TestValidateQuestion:
     def test_rejects_invalid_expected_path(self, path):
         with pytest.raises(GoldenDatasetError, match="expected_path"):
             validate_question(_raw(expected_path=path))
+
+    # ── expected_paths 多路集合（spec 2026-08-28 §3）──────────────────
+
+    def test_accepts_expected_paths_list(self):
+        raw = _raw()
+        del raw["expected_path"]
+        raw["expected_paths"] = ["vector", "graph"]
+
+        q = validate_question(raw)
+
+        assert q.expected_paths == ("vector", "graph")
+        # 兼容读取属性：存量消费方仍按首路读取（Task 2/3 切换集合语义后移除）。
+        assert q.expected_path == "vector"
+
+    def test_normalizes_legacy_single_expected_path(self):
+        q = validate_question(VALID_RAW)
+
+        assert q.expected_paths == ("vector",)
+
+    def test_expected_paths_dedupes_preserving_order(self):
+        raw = _raw()
+        del raw["expected_path"]
+        raw["expected_paths"] = ["graph", "vector", "graph"]
+
+        assert validate_question(raw).expected_paths == ("graph", "vector")
+
+    def test_rejects_both_expected_path_keys(self):
+        raw = _raw(expected_paths=["vector"])
+
+        with pytest.raises(GoldenDatasetError) as exc_info:
+            validate_question(raw)
+
+        message = str(exc_info.value)
+        assert "expected_path" in message and "expected_paths" in message
+
+    def test_rejects_missing_both_expected_path_keys(self):
+        raw = _raw()
+        del raw["expected_path"]
+
+        with pytest.raises(GoldenDatasetError, match="expected_path"):
+            validate_question(raw)
+
+    @pytest.mark.parametrize("paths", [[], ["vectors"], ["vector", 1], "vector", None])
+    def test_rejects_invalid_expected_paths(self, paths):
+        raw = _raw()
+        del raw["expected_path"]
+        raw["expected_paths"] = paths
+
+        with pytest.raises(GoldenDatasetError, match="expected_paths"):
+            validate_question(raw)
 
     @pytest.mark.parametrize(
         "chunk_id",
@@ -178,3 +229,24 @@ class TestGoldenFileGuard:
         questions = load_golden(GOLDEN_PATH)
 
         assert {q.category for q in questions} == {"fact", "relation", "concept", "global"}
+
+    def test_golden_legacy_single_path_normalizes_to_paths_tuple(self):
+        # 存量 fixture 是单值形态（零迁移策略）——加载器必须归一化为集合。
+        questions = load_golden(GOLDEN_PATH)
+
+        assert all(len(q.expected_paths) == 1 for q in questions)
+
+
+class TestMixedFormatFile:
+    """存量单值行与新格式多路行可在同一文件长期共存（§9 兼容纪律）。"""
+
+    def test_loads_legacy_and_new_format_lines_together(self, tmp_path: Path):
+        legacy = json.dumps(VALID_RAW, ensure_ascii=False)
+        modern = json.dumps(_raw(id="q002", query="多路题"), ensure_ascii=False).replace('"expected_path": "vector"', '"expected_paths": ["vector", "graph"]')
+        path = tmp_path / "golden.jsonl"
+        path.write_text(legacy + "\n" + modern + "\n", encoding="utf-8")
+
+        questions = load_golden(path)
+
+        assert questions[0].expected_paths == ("vector",)
+        assert questions[1].expected_paths == ("vector", "graph")

@@ -21,8 +21,13 @@ EXPECTED_PATHS = ("vector", "graph", "wiki")
 # zero-padded 4-digit chunk index (see deerflow.knowledge.indexer).
 _CHUNK_ID_RE = re.compile(r"[0-9a-f]{32}#\d{4}")
 
-_REQUIRED_FIELDS = ("id", "query", "expected_path", "relevant_chunk_ids", "relevant_entities", "category")
-_KNOWN_FIELDS = frozenset({*_REQUIRED_FIELDS, "reference_answer"})
+# Expected-path is the one either/or pair: legacy ``expected_path`` (single
+# value, pre-2026-08-28 files) or ``expected_paths`` (non-empty list, the
+# canonical new format). Exactly one must be present; the loader normalizes
+# both into ``GoldenQuestion.expected_paths`` (spec 2026-08-28 §3/§9 — zero
+# file migration, compatibility lives in the validator alone).
+_REQUIRED_FIELDS = ("id", "query", "relevant_chunk_ids", "relevant_entities", "category")
+_KNOWN_FIELDS = frozenset({*_REQUIRED_FIELDS, "expected_path", "expected_paths", "reference_answer"})
 
 
 class GoldenDatasetError(ValueError):
@@ -33,11 +38,20 @@ class GoldenDatasetError(ValueError):
 class GoldenQuestion:
     id: str
     query: str
-    expected_path: str
+    expected_paths: tuple[str, ...]
     relevant_chunk_ids: tuple[str, ...]
     relevant_entities: tuple[str, ...]
     category: str
     reference_answer: str | None = None
+
+    @property
+    def expected_path(self) -> str:
+        """Legacy single-path read for consumers not yet on set semantics.
+
+        Transitional shim (spec 2026-08-28 §3): metrics/layer-2 switch to
+        ``expected_paths`` in tasks 2/3 and this property goes away.
+        """
+        return self.expected_paths[0]
 
 
 def _fail(source: str, message: str) -> None:
@@ -58,6 +72,28 @@ def _require_str_list(raw: dict, field: str, source: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _require_expected_paths(raw: dict, source: str) -> tuple[str, ...]:
+    """Normalize the either/or expected-path fields into a deduped tuple."""
+    has_single = "expected_path" in raw
+    has_multi = "expected_paths" in raw
+    if has_single and has_multi:
+        _fail(source, "expected_path and expected_paths are mutually exclusive — use exactly one")
+    if not has_single and not has_multi:
+        _fail(source, "missing required field: expected_path or expected_paths")
+
+    if has_single:
+        value = raw["expected_path"]
+        if value not in EXPECTED_PATHS:
+            _fail(source, f"expected_path must be one of {EXPECTED_PATHS}, got {value!r}")
+        return (value,)
+
+    value = raw["expected_paths"]
+    if not isinstance(value, list) or not value or any(item not in EXPECTED_PATHS for item in value):
+        _fail(source, f"expected_paths must be a non-empty list drawn from {EXPECTED_PATHS}, got {value!r}")
+    # Dedupe preserving order: {vector, graph} and {graph, vector, graph} mean the same expectation.
+    return tuple(dict.fromkeys(value))
+
+
 def validate_question(raw: Any, *, source: str = "<question>") -> GoldenQuestion:
     """Validate one raw JSON object and return it as a GoldenQuestion."""
     if not isinstance(raw, dict):
@@ -73,9 +109,7 @@ def validate_question(raw: Any, *, source: str = "<question>") -> GoldenQuestion
     qid = _require_str(raw, "id", source)
     query = _require_str(raw, "query", source)
 
-    expected_path = raw["expected_path"]
-    if expected_path not in EXPECTED_PATHS:
-        _fail(source, f"expected_path must be one of {EXPECTED_PATHS}, got {expected_path!r}")
+    expected_paths = _require_expected_paths(raw, source)
 
     category = raw["category"]
     if category not in CATEGORIES:
@@ -95,7 +129,7 @@ def validate_question(raw: Any, *, source: str = "<question>") -> GoldenQuestion
     return GoldenQuestion(
         id=qid,
         query=query,
-        expected_path=expected_path,
+        expected_paths=expected_paths,
         relevant_chunk_ids=chunk_ids,
         relevant_entities=entities,
         category=category,

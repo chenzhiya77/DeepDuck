@@ -87,7 +87,7 @@ def _question(qid: str, category: str = "fact", *, entities: tuple[str, ...] = (
     return GoldenQuestion(
         id=qid,
         query=f"query-{qid}",
-        expected_path="vector",
+        expected_paths=("vector",),
         relevant_chunk_ids=(CHUNK,),
         relevant_entities=entities,
         category=category,

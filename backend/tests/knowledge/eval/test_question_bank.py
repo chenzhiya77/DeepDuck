@@ -29,7 +29,7 @@ def _valid_fields(query: str = "什么是退休年龄", category: str = "fact") 
     return {
         "query": query,
         "category": category,
-        "expected_path": "vector",
+        "expected_paths": ("vector",),
         "relevant_chunk_ids": [],
         "relevant_entities": [],
         "reference_answer": None,
@@ -67,7 +67,8 @@ async def test_add_ids_are_unique_across_calls(tmp_path) -> None:
     ("override", "bad_key"),
     [
         ({"category": "vibe"}, "category"),
-        ({"expected_path": "teleport"}, "expected_path"),
+        ({"expected_paths": ("teleport",)}, "expected_paths"),
+        ({"expected_paths": ()}, "expected_paths"),
         ({"relevant_chunk_ids": ["not-a-chunk-id"]}, "relevant_chunk_ids"),
         ({"reference_answer": "   "}, "reference_answer"),
     ],
@@ -143,3 +144,35 @@ async def test_concurrent_adds_serialize_per_file(tmp_path) -> None:
     )
 
     assert {q.query for q in await load_questions(path)} == {"并发一", "并发二"}
+
+
+# ── expected_paths 多路写路径（spec 2026-08-28 §3）───────────────────────
+
+
+async def test_add_writes_expected_paths_new_format(tmp_path) -> None:
+    path = tmp_path / "golden.jsonl"
+
+    await add_question(path, **_valid_fields() | {"expected_paths": ("vector", "graph")})
+
+    raw = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert raw["expected_paths"] == ["vector", "graph"]
+    assert "expected_path" not in raw  # 新写入一律新格式，不留 legacy 键
+    assert (await load_questions(path))[0].expected_paths == ("vector", "graph")
+
+
+async def test_add_upgrades_legacy_file_wholesale_to_new_format(tmp_path) -> None:
+    # `asdict` 重写语义：向含单值行的文件追加后，整文件升级为新格式（§9）。
+    path = tmp_path / "golden.jsonl"
+    legacy = json.dumps(
+        {"id": "q_legacy01", "query": "存量题", "expected_path": "wiki", "relevant_chunk_ids": [], "relevant_entities": [], "category": "concept"},
+        ensure_ascii=False,
+    )
+    path.write_text(legacy + "\n", encoding="utf-8")
+
+    await add_question(path, **_valid_fields(query="新题"))
+
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [row.get("expected_paths") for row in rows] == [["wiki"], ["vector"]]
+    assert all("expected_path" not in row for row in rows)
+    questions = await load_questions(path)
+    assert [q.expected_paths for q in questions] == [("wiki",), ("vector",)]

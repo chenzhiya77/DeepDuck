@@ -116,7 +116,7 @@ async def test_get_returns_full_question_fields(service) -> None:
     assert question["id"] == created["id"]
     assert question["query"] == "图检索走哪条路"
     assert question["category"] == "relation"
-    assert question["expected_path"] == "graph"
+    assert question["expected_paths"] == ["graph"]  # 文件层已新格式（请求体切换在 Task 4，spec §3）
     assert question["relevant_chunk_ids"] == ["a" * 32 + "#0001"]
     assert question["relevant_entities"] == ["退休"]
     assert question["reference_answer"] == "图谱路径。"

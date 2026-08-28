@@ -29,7 +29,7 @@ def _question(**overrides) -> GoldenQuestion:
     raw = {
         "id": "q001",
         "query": "q",
-        "expected_path": "vector",
+        "expected_paths": ("vector",),
         "relevant_chunk_ids": ("c1", "c2"),
         "relevant_entities": (),
         "category": "fact",
@@ -132,7 +132,7 @@ class TestEvaluateQuestion:
         assert m.mrr == 1.0  # graph ranks it first, beating vector's 1/3
 
     def test_path_selection_correctness(self):
-        q = _question(expected_path="graph")
+        q = _question(expected_paths=("graph",))
         paths = {
             "vector": PathResult(hits=("c1",), top_score=0.9),
             "graph": PathResult(hits=("c2",), top_score=0.4),
