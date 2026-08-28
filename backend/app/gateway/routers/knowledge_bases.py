@@ -60,15 +60,17 @@ class KbUpdateRequest(BaseModel):
 
 
 class EvalQuestionCreateRequest(BaseModel):
-    """P5 二期题库新增（spec 2026-08-27 §4.2）：id 由服务端生成——请求体携带
-    id 字段直接 422；枚举与 chunk id 格式校验统一委托 ``validate_question``
-    （schema 单一事实源），Pydantic 层不做第二份校验。"""
+    """P5 二期题库新增（spec 2026-08-27 §4.2；2026-08-28 多路切换 §3）：id 由
+    服务端生成——请求体携带 id 字段直接 422；`expected_paths` 为 1–3 路非空列表，
+    旧单数 `expected_path` 被 `extra="forbid"` 拒绝（破坏式切换，前端同批）。
+    枚举与 chunk id 格式校验统一委托 ``validate_question``（schema 单一事实源），
+    Pydantic 层不做第二份校验。"""
 
     model_config = ConfigDict(extra="forbid")
 
     query: str
     category: str
-    expected_path: str
+    expected_paths: list[str] = Field(min_length=1, max_length=3)
     relevant_chunk_ids: list[str] = Field(default_factory=list)
     relevant_entities: list[str] = Field(default_factory=list)
     reference_answer: str | None = None
@@ -577,7 +579,7 @@ async def create_eval_question(request: Request, kb_id: str, body: EvalQuestionC
             kb_id,
             query=body.query,
             category=body.category,
-            expected_path=body.expected_path,
+            expected_paths=body.expected_paths,
             relevant_chunk_ids=body.relevant_chunk_ids,
             relevant_entities=body.relevant_entities,
             reference_answer=body.reference_answer,

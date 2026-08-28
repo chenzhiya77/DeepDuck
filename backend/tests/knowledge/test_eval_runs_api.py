@@ -499,7 +499,7 @@ async def test_trigger_returns_202_enqueued_and_schedules_once(session_factory, 
     kb = _create_kb(client)
     # 空库会被 409 前置守卫拦下（见 test_trigger_empty_bank_maps_to_409_*），
     # enqueued 路径需要至少一题——顺带复用 Task 1 的 CRUD API 播种。
-    seeded = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "什么是退休年龄", "category": "fact", "expected_path": "vector"})
+    seeded = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "什么是退休年龄", "category": "fact", "expected_paths": ["vector"]})
     assert seeded.status_code == 201, seeded.text
 
     response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs")

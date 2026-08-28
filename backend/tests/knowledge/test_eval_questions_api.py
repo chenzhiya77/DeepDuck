@@ -72,7 +72,7 @@ def _valid_body(**overrides) -> dict:
     body = {
         "query": "什么是退休年龄",
         "category": "fact",
-        "expected_path": "vector",
+        "expected_paths": ["vector"],
         "relevant_chunk_ids": [],
         "relevant_entities": [],
         "reference_answer": None,
@@ -103,7 +103,7 @@ async def test_get_returns_full_question_fields(service) -> None:
         json=_valid_body(
             query="图检索走哪条路",
             category="relation",
-            expected_path="graph",
+            expected_paths=["graph"],
             relevant_chunk_ids=["a" * 32 + "#0001"],
             relevant_entities=["退休"],
             reference_answer="图谱路径。",
@@ -116,7 +116,7 @@ async def test_get_returns_full_question_fields(service) -> None:
     assert question["id"] == created["id"]
     assert question["query"] == "图检索走哪条路"
     assert question["category"] == "relation"
-    assert question["expected_paths"] == ["graph"]  # 文件层已新格式（请求体切换在 Task 4，spec §3）
+    assert question["expected_paths"] == ["graph"]  # 请求/响应同批新契约（spec §3 Task 4）
     assert question["relevant_chunk_ids"] == ["a" * 32 + "#0001"]
     assert question["relevant_entities"] == ["退休"]
     assert question["reference_answer"] == "图谱路径。"
@@ -194,6 +194,64 @@ async def test_post_bad_chunk_id_format_422(service) -> None:
     )
 
     assert response.status_code == 422
+
+
+# ── expected_paths 多路契约（spec 2026-08-28 §3，破坏式切换）──────────────
+
+
+async def test_post_multi_path_roundtrips_through_get(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(expected_paths=["vector", "graph"]),
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["expected_paths"] == ["vector", "graph"]
+    assert created.json().get("expected_path") is None  # 响应不留 legacy 键（无此字段）
+    listed = client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["questions"]
+    assert listed[0]["expected_paths"] == ["vector", "graph"]
+
+
+async def test_post_legacy_single_field_is_422(service) -> None:
+    # API 层不做历史兼容（唯一消费者前端同批切换）——旧字段被 extra=forbid 拒绝。
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body() | {"expected_path": "vector"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("paths", [[], ["vector", "graph", "wiki", "vector"]])
+async def test_post_expected_paths_length_bounds_422(service, paths) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(expected_paths=paths),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_post_bad_path_enum_422_names_the_field(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(expected_paths=["teleport"]),
+    )
+
+    assert response.status_code == 422
+    assert "expected_paths" in response.json()["detail"]
 
 
 async def test_unknown_kb_404_on_post(service) -> None:
