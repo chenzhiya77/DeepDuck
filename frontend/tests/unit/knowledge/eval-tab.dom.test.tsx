@@ -57,9 +57,17 @@ rs.mock("@/components/workspace/knowledge/eval-run-drawer", () => ({
   },
 }));
 
-/** 题库视图 mock（Task 6）：占位壳保持 testid，bank 自身契约在其专属测试文件。 */
+/** 题库视图 mock（Task 6）：记录 props（入口受控状态由常驻工具栏驱动），
+ * 占位壳保持 testid，bank 自身契约在其专属测试文件。 */
+const bankMock = rs.hoisted(() => ({
+  props: undefined as Record<string, unknown> | undefined,
+}));
+
 rs.mock("@/components/workspace/knowledge/eval-question-bank", () => ({
-  EvalQuestionBank: () => <div data-testid="eval-questions-view" />,
+  EvalQuestionBank: (props: Record<string, unknown>) => {
+    bankMock.props = props;
+    return <div data-testid="eval-questions-view" />;
+  },
 }));
 
 /** 历史视图 mock（Task 7）：同上，history 契约在其专属测试文件。 */
@@ -355,14 +363,18 @@ describe("EvalTab 常驻工具栏", () => {
   });
   afterEach(() => cleanup());
 
-  it("工具栏紧凑档：h-7 运行按钮 + py-2 行，锁运行前后高度恒定不跳动", () => {
+  it("工具栏紧凑档：按钮锁高不跳动；2026-08-29 轻量化后全栏 h-6", () => {
     hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
     const { rerender } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
     const toolbar = screen.getByTestId("eval-view-toolbar");
     expect(toolbar.className).toContain("py-2");
-    expect(within(toolbar).getByRole("button", { name: "运行评测" }).className).toContain("h-7");
+    expect(within(toolbar).getByRole("button", { name: "运行评测" }).className).toContain("h-6");
+    // 题库视图的造题入口同为 h-6 档
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("h-6");
+    expect(within(toolbar).getByRole("button", { name: /从文档生成考题/ }).className).toContain("h-6");
 
-    // 锁运行（in_flight=true）：按钮同一 h-7 档，工具栏高度不变
+    // 锁运行（in_flight=true）：按钮同一 h-6 档，工具栏高度不变
     act(() => {
       hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: true, runs: [RUN_SUMMARY], total: 1 } }));
       rerender(
@@ -373,7 +385,21 @@ describe("EvalTab 常驻工具栏", () => {
         </I18nContext.Provider>,
       );
     });
-    expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-7");
+    expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-6");
+  });
+
+  it("视图分段控件轻量化：无底色块，选中态下划线（视觉质量对齐其他 tab 工具栏）", () => {
+    renderEvalTab();
+    const group = screen.getByRole("radiogroup", { name: "评测视图切换" });
+    expect(group.className).not.toContain("bg-muted");
+    const selected = within(group).getByRole("radio", { name: "总览" });
+    expect(selected.getAttribute("aria-checked")).toBe("true");
+    expect(selected.className).toContain("border-b-2");
+    expect(selected.className).not.toContain("bg-background");
+    // 未选中态同样占位（透明下划线防高度跳动）
+    const unselected = within(group).getByRole("radio", { name: "题库" });
+    expect(unselected.className).toContain("border-b-2");
+    expect(unselected.className).toContain("border-transparent");
   });
 
   it("in_flight=true 时按钮转「运行中…」禁用态", () => {
@@ -503,6 +529,88 @@ describe("EvalTab 常驻工具栏", () => {
       expect(screen.queryByText("尚未运行")).toBeNull();
       expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
       expect(within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" })).toBeTruthy();
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
+});
+
+// ── 题库造题入口并入常驻工具栏（2026-08-29 UX 修订）────────────────────────
+// 两条工具栏叠加 + 添加入口沉底的双重回退：入口提升到常驻工具栏右侧，
+// 仅题库视图出现；状态提升到 EvalTab，bank 的 dialog 改受控。
+
+describe("EvalTab 题库入口（常驻工具栏）", () => {
+  beforeEach(() => {
+    bankMock.props = undefined;
+    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+  });
+  afterEach(() => cleanup());
+
+  it("造题动作按钮仅题库视图出现在常驻工具栏，运行评测保持最右主位", () => {
+    renderEvalTab();
+    // 总览视图：不出现题库动作（视图相关，不常驻）
+    expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    const toolbar = screen.getByTestId("eval-view-toolbar");
+    expect(within(toolbar).getByRole("button", { name: /添加考题/ })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: /从文档生成考题/ })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: "运行评测" })).toBeTruthy();
+
+    // 切走即消失（历史/总览无造题语义）
+    fireEvent.click(screen.getByRole("radio", { name: "历史" }));
+    expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /添加考题/ })).toBeNull();
+    expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+  });
+
+  it("点击「从文档生成考题」→ bank 受控 synthesisOpen 置真，回调可复位", () => {
+    renderEvalTab();
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    expect(bankMock.props?.synthesisOpen).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /从文档生成考题/ }));
+    expect(bankMock.props?.synthesisOpen).toBe(true);
+    act(() => (bankMock.props?.onSynthesisOpenChange as (open: boolean) => void)(false));
+    expect(bankMock.props?.synthesisOpen).toBe(false);
+  });
+
+  it("点击「添加考题」→ bank 受控 addOpen 置真", () => {
+    renderEvalTab();
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    expect(bankMock.props?.addOpen).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /添加考题/ }));
+    expect(bankMock.props?.addOpen).toBe(true);
+  });
+
+  it("窄面板降档：题库动作与运行评测一并收进 ⋯ 菜单", async () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    try {
+      renderEvalTab();
+      fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+      // 内联按钮消失，⋯ 菜单承载三个动作（两造题入口 + 运行评测）
+      await waitFor(() => {
+        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+      });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      fireEvent.keyDown(more, { key: "ArrowDown" });
+      fireEvent.click(await screen.findByRole("menuitem", { name: /从文档生成考题/ }));
+      expect(bankMock.props?.synthesisOpen).toBe(true);
+      fireEvent.keyDown(more, { key: "ArrowDown" });
+      fireEvent.click(await screen.findByRole("menuitem", { name: /添加考题/ }));
+      expect(bankMock.props?.addOpen).toBe(true);
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);

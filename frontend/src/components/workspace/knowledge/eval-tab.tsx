@@ -3,11 +3,13 @@
 /**
  * 评测 tab（2026-08-24 spec §5 + 2026-08-27 spec §3/§5，plan Task 5）：
  * 分段三视图（总览/题库/历史，2026-08-27 布局定案）+ 常驻工具栏——
- * 左：视图分段控件（粒度切换同款样式族，恒内联）；
- * 右：「运行评测」主动词按钮（h-7 紧凑档，运行中 spinner 禁用；窄面板
+ * 左：视图分段控件（下划线轻量化样式，恒内联）；
+ * 右：「运行评测」主动词按钮（h-6 紧凑档，运行中 spinner 禁用；窄面板
  *     useToolbarTier 溢出降档收进 ⋯ 菜单，只收按钮不收分段）。2026-08-28
  *     反馈：上次运行文案与状态切换的高度跳动去掉——运行状态由按钮自身
- *     表达，历史时间在历史视图首行仍可见。
+ *     表达，历史时间在历史视图首行仍可见。2026-08-29 UX 修订：题库造题入口
+ *     （添加考题/从文档生成）并入本工具栏右侧，仅题库视图出现，状态提升
+ *     到本层驱动 bank 的受控 dialog——避免第二条工具栏叠加与入口沉底。
  * 总览视图 = 一期现状（指标总览 + 趋势图），零改动；题库/历史为占位壳
  * （Task 6/7 落地）。数据层：useMetricsOverview / useEvalTrend /
  * useEvalRuns（enabled 门控，keep-alive 懒门控）；触发走 useTriggerEvalRun，
@@ -16,7 +18,7 @@
  * 首次轮询双请求。点击趋势数据点开 EvalRunDrawer 下钻（plan Task 6）。
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, MoreHorizontal } from "lucide-react";
+import { Loader2, MoreHorizontal, Plus, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
@@ -128,6 +130,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const [granularity, setGranularity] = useState<Granularity>("day");
   // 点击下钻：drawer 打开时携带该 runId（EvalRunDrawer 内 useEvalRun 拉详情）。
   const [drawerRunId, setDrawerRunId] = useState<string | null>(null);
+  // 题库造题入口受控状态（2026-08-29）：按钮在本层工具栏，dialog 在 bank 内。
+  const [bankAddOpen, setBankAddOpen] = useState(false);
+  const [bankSynthesisOpen, setBankSynthesisOpen] = useState(false);
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
   const trendQuery = useEvalTrend(kbId, granularity, enabled);
@@ -188,12 +193,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap border-b px-4 py-2"
           data-testid="eval-view-toolbar"
         >
-          <div aria-label={tk.viewSwitchLabel} className="bg-muted flex shrink-0 rounded-md p-0.5" role="radiogroup">
+          {/* 分段控件轻量化（2026-08-29）：去底色块改下划线选中态，视觉质量对齐其他 tab 工具栏；
+              未选中态透明下划线占位，切换不跳动 */}
+          <div aria-label={tk.viewSwitchLabel} className="flex shrink-0 items-center gap-1" role="radiogroup">
             {EVAL_VIEWS.map((v) => (
               <button
                 key={v}
                 aria-checked={view === v}
-                className={`rounded px-2 py-0.5 text-xs ${view === v ? "bg-background shadow-sm" : "text-muted-foreground"}`}
+                className={`border-b-2 px-2 py-1 text-xs ${view === v ? "border-foreground font-medium" : "border-transparent text-muted-foreground"}`}
                 role="radio"
                 type="button"
                 onClick={() => setView(v)}
@@ -204,11 +211,34 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {viewToolbarTier === 0 ? (
-              // 紧凑档（vector-tab 工具栏 h-7 惯例）：锁运行前后按钮高度恒定，工具栏不跳动
-              <Button className="h-7 shrink-0" disabled={running} onClick={handleTrigger}>
-                {running && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
-                {runButtonLabel}
-              </Button>
+              // 紧凑档：全栏按钮锁 h-6（2026-08-29 轻量化，原 h-7），锁运行前后高度恒定不跳动；
+              // 题库视图时造题入口并入（动作在前，主动词恒最右主位）
+              <>
+                {view === "questions" && (
+                  <>
+                    <Button
+                      className="h-6 shrink-0"
+                      onClick={() => setBankAddOpen(true)}
+                      variant="outline"
+                    >
+                      <Plus className="size-3.5" />
+                      {tk.questions.addQuestion}
+                    </Button>
+                    <Button
+                      className="h-6 shrink-0"
+                      onClick={() => setBankSynthesisOpen(true)}
+                      variant="outline"
+                    >
+                      <Sparkles className="size-3.5" />
+                      {tk.synthesize.entryButton}
+                    </Button>
+                  </>
+                )}
+                <Button className="h-6 shrink-0" disabled={running} onClick={handleTrigger}>
+                  {running && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
+                  {runButtonLabel}
+                </Button>
+              </>
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -217,6 +247,16 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {view === "questions" && (
+                    <>
+                      <DropdownMenuItem onClick={() => setBankAddOpen(true)}>
+                        {tk.questions.addQuestion}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setBankSynthesisOpen(true)}>
+                        {tk.synthesize.entryButton}
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuItem disabled={running} onClick={handleTrigger}>
                     {runButtonLabel}
                   </DropdownMenuItem>
@@ -331,8 +371,17 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         )}
 
         {view === "questions" && (
-          /* 题库视图（Task 6）：表格 + 详情 drawer + 添加 dialog + 删除确认 */
-          <EvalQuestionBank enabled={enabled} kbId={kbId} onReproduce={onReproduce} />
+          /* 题库视图（Task 6）：表格 + 详情 drawer + 受控添加/合成 dialog + 删除确认；
+           * 造题入口按钮在常驻工具栏（2026-08-29），状态由本层下发 */
+          <EvalQuestionBank
+            addOpen={bankAddOpen}
+            enabled={enabled}
+            kbId={kbId}
+            synthesisOpen={bankSynthesisOpen}
+            onAddOpenChange={setBankAddOpen}
+            onReproduce={onReproduce}
+            onSynthesisOpenChange={setBankSynthesisOpen}
+          />
         )}
 
         {view === "history" && (

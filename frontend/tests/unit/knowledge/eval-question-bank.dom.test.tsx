@@ -132,11 +132,17 @@ describe("EvalQuestionBank 表格", () => {
     expect(screen.getByText("或从文档合成候选题，审核后采纳入题库")).toBeTruthy();
   });
 
-  it("工具行「合成考题」按钮打开合成 dialog", () => {
+  it("受控 synthesisOpen 渲染合成 dialog（入口已并入 eval-tab 常驻工具栏）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("button", { name: /从文档生成考题/ }));
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" synthesisOpen />);
     expect(screen.getByText(zhCN.knowledge.eval.synthesize.dialogTitle)).toBeTruthy();
+  });
+
+  it("不自渲染造题入口按钮（工具行与底部虚线按钮均移除）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    expect(screen.queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
   });
 
   it("行渲染与锚定列推导（切片 · 实体 / 未锚定 muted）", () => {
@@ -213,10 +219,9 @@ describe("EvalQuestionBank 表格", () => {
     });
   });
 
-  it("添加考题入口打开添加 dialog", () => {
+  it("受控 addOpen 渲染添加 dialog（入口已并入 eval-tab 常驻工具栏）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("button", { name: /添加考题/ }));
+    renderWithI18n(<EvalQuestionBank addOpen enabled kbId="kb-1" />);
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });

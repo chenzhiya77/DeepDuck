@@ -5,9 +5,11 @@
  * 添加 dialog + 删除二次确认。造题主入口在召回测试面板「存为考题」（§7.1），
  * 这里的「添加考题」是辅助路径——简化表单不收锚定（§4.4），无锚定题走
  * Layer 1 既有降级语义（仅参与路径判定）。编辑不支持（§4.2 规则 5）：改题
- * = 删了重加。
+ * = 删了重加。2026-08-29 UX 修订：造题入口按钮（添加/从文档生成）并入
+ * eval-tab 常驻工具栏，本组件的添加/合成 dialog 改受控（addOpen/
+ * synthesisOpen 由上层下发）；原工具行与表格尾部虚线按钮均移除。
  */
-import { ArrowUpRight, Sparkles, Trash2 } from "lucide-react";
+import { ArrowUpRight, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -44,9 +46,23 @@ export interface EvalQuestionBankProps {
   enabled?: boolean;
   /** ↗ 复现：携带 query 跳召回测试面板预填（page 层通道，§7.2）。 */
   onReproduce?: (query: string) => void;
+  /** 添加考题 dialog 受控开关（2026-08-29：入口按钮在 eval-tab 常驻工具栏）。 */
+  addOpen?: boolean;
+  onAddOpenChange?: (open: boolean) => void;
+  /** 合成触发 dialog 受控开关（同上）。 */
+  synthesisOpen?: boolean;
+  onSynthesisOpenChange?: (open: boolean) => void;
 }
 
-export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQuestionBankProps) {
+export function EvalQuestionBank({
+  kbId,
+  enabled = true,
+  onReproduce,
+  addOpen = false,
+  onAddOpenChange = () => undefined,
+  synthesisOpen = false,
+  onSynthesisOpenChange = () => undefined,
+}: EvalQuestionBankProps) {
   const { t } = useI18n();
   const etk = t.knowledge.eval;
   const qtk = etk.questions;
@@ -54,9 +70,7 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
   const deleteMutation = useDeleteEvalQuestion(kbId);
 
   const [drawerQuestion, setDrawerQuestion] = useState<EvalQuestion | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<EvalQuestion | null>(null);
-  const [synthesisOpen, setSynthesisOpen] = useState(false);
 
   const handleDeleteConfirm = async () => {
     if (deleteTarget === null) return;
@@ -89,14 +103,6 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
 
   return (
     <div className="flex flex-col gap-2">
-      {/* 工具行：合成造题入口（2026-08-28 §6）——自底向上造题，候选需人工审核 */}
-      <div className="flex items-center justify-end">
-        <Button onClick={() => setSynthesisOpen(true)} size="sm" variant="outline">
-          <Sparkles className="size-3.5" />
-          {etk.synthesize.entryButton}
-        </Button>
-      </div>
-
       {/* 候选审核区块：暂存非空或运行中时出现（组件内部判定） */}
       <EvalSynthesisReview enabled={enabled} kbId={kbId} />
 
@@ -182,20 +188,11 @@ export function EvalQuestionBank({ kbId, enabled = true, onReproduce }: EvalQues
         </div>
       )}
 
-      {/* 添加入口：表格尾部虚线行（spec §4.3），手动造题是辅助路径 */}
-      <Button
-        className="w-full border-dashed"
-        onClick={() => setAddOpen(true)}
-        size="sm"
-        variant="outline"
-      >
-        + {qtk.addQuestion}
-      </Button>
-
-      <EvalAddQuestionDialog kbId={kbId} onOpenChange={setAddOpen} open={addOpen} />
+      {/* 添加/合成 dialog 受控（2026-08-29）：入口按钮在 eval-tab 常驻工具栏 */}
+      <EvalAddQuestionDialog kbId={kbId} open={addOpen} onOpenChange={onAddOpenChange} />
 
       {/* 合成触发 dialog：文档 + 数量 → 202 幂等，候选落暂存待审 */}
-      <EvalSynthesisDialog kbId={kbId} onOpenChange={setSynthesisOpen} open={synthesisOpen} />
+      <EvalSynthesisDialog kbId={kbId} open={synthesisOpen} onOpenChange={onSynthesisOpenChange} />
 
       {/* 详情 drawer：行点击下钻（§4.5）；onDelete 关 drawer 再开确认框 */}
       <EvalQuestionDrawer
