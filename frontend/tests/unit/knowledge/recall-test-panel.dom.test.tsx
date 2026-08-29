@@ -76,11 +76,27 @@ afterEach(() => {
 });
 
 describe("RecallTestPanel controls", () => {
-  it("shows the empty guide and cost hint before the first run", () => {
+  it("shows the empty guide before the first run; cost hint lives in the run button tooltip", async () => {
     mockRecallTest();
     renderPanel();
     expect(screen.getByText("输入问题后开始检索，对比三路命中与得分")).toBeTruthy();
-    expect(screen.getByText(/会产生检索调用成本/)).toBeTruthy();
+    // 成本提示不再独占一行（2026-08-30）：文档流中不可见，聚焦/悬停「开始检索」时经 portal 弹出。
+    expect(screen.queryByText(/会产生检索调用成本/)).toBeNull();
+    fireEvent.focus(screen.getByRole("button", { name: "开始检索" }));
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.textContent).toContain("会产生检索调用成本");
+  });
+
+  it("头部容器与栏内控件全部锁 44px 基准（py-2 + 控件 h-7，对齐其他工具栏）", () => {
+    mockRecallTest();
+    renderPanel();
+    const header = screen.getByTestId("recall-test-panel").firstElementChild as HTMLElement;
+    expect(header.className).toContain("py-2");
+    expect(header.className).not.toContain("py-3");
+    // 栏内最高控件决定行高：搜索框/数量框/按钮均须 h-7（默认 h-9 会撑成 52px）。
+    expect(screen.getByPlaceholderText("输入测试问题…").className).toContain("h-7");
+    expect(screen.getByLabelText("每路条数").className).toContain("h-7");
+    expect(screen.getByRole("button", { name: "开始检索" }).className).toContain("h-7");
   });
 
   it("submits the trimmed query with the default top_k=5", () => {

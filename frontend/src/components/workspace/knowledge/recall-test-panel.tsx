@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { useRecallTest } from "@/core/knowledge/hooks";
 import type {
@@ -222,33 +223,34 @@ export function RecallTestPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="recall-test-panel">
-      {/* Controls */}
-      <div className="flex flex-col gap-1.5 border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder={tr.queryPlaceholder}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                run();
-              }
-            }}
-          />
-          <Input
-            aria-label={tr.topK}
-            className="w-20 shrink-0"
-            max={20}
-            min={1}
-            type="number"
-            value={topK}
-            onChange={(event) => setTopK(Number(event.target.value))}
-          />
-          <Button className="shrink-0" disabled={!query.trim() || recallTest.isPending} onClick={run}>
+      {/* Controls：成本提示不再独占一行（2026-08-30），收进「开始检索」按钮 tooltip；
+          py-2 + 栏内控件全锁 h-7 → 44px，对齐全知识库页工具栏基准（默认 h-9 会撑成 52px） */}
+      <div className="flex items-center gap-2 border-b px-4 py-2">
+        <Input
+          className="h-7 text-xs"
+          placeholder={tr.queryPlaceholder}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              run();
+            }
+          }}
+        />
+        <Input
+          aria-label={tr.topK}
+          className="h-7 w-20 shrink-0 text-xs"
+          max={20}
+          min={1}
+          type="number"
+          value={topK}
+          onChange={(event) => setTopK(Number(event.target.value))}
+        />
+        <Tooltip content={tr.costHint}>
+          <Button className="h-7 shrink-0" disabled={!query.trim() || recallTest.isPending} onClick={run}>
             {recallTest.isPending ? tr.running : tr.run}
           </Button>
-        </div>
-        <p className="text-muted-foreground text-xs">{tr.costHint}</p>
+        </Tooltip>
       </div>
 
       {/* Results */}
