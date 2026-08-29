@@ -9,7 +9,7 @@
  * eval-tab 常驻工具栏，本组件的添加/合成 dialog 改受控（addOpen/
  * synthesisOpen 由上层下发）；原工具行与表格尾部虚线按钮均移除。
  */
-import { ArrowUpRight, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -103,26 +103,34 @@ export function EvalQuestionBank({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* 候选审核区块：暂存非空或运行中时出现（组件内部判定） */}
-      <EvalSynthesisReview enabled={enabled} kbId={kbId} />
+      {/* 候选审核区块：暂存非空或运行中时出现（组件内部判定）；
+          隐藏时组件返回 null，:empty 即 hidden——不留 flex 间隙（表头上方不浮出空白）；
+          显示时保持 px-4 内缩对齐工具栏内容边距 */}
+      <div className="px-4 [&:empty]:hidden">
+        <EvalSynthesisReview enabled={enabled} kbId={kbId} />
+      </div>
 
       {query.isLoading ? (
-        <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
+        <div className="text-muted-foreground mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
           {etk.loading}
         </div>
       ) : query.error ? (
-        <div className="text-destructive rounded-lg border border-dashed p-6 text-center text-sm">
+        <div className="text-destructive mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
           {etk.loadFailed}
         </div>
       ) : query.data && query.data.questions.length > 0 ? (
+        /* 表格样式对齐文档列表（2026-08-30）：表头去默认 h-10 降为 text-xs 自然高（32px），
+           数据行同文档列表 px-2 py-2（36px）；松垮根源是 h-10 表头与行尾大图标按钮；
+           表头同文档列表用 muted 色 */
         <Table>
-          <TableHeader>
+          <TableHeader className="[&_tr]:text-muted-foreground">
             <TableRow>
-              <TableHead>{qtk.columnQuery}</TableHead>
-              <TableHead>{qtk.columnCategory}</TableHead>
-              <TableHead>{qtk.columnExpectedPath}</TableHead>
-              <TableHead>{qtk.columnAnchors}</TableHead>
-              <TableHead className="w-20 text-right">{""}</TableHead>
+              {/* 首列 pl-4 / 末列 pr-4：通栏表格的左右缘找齐工具栏内容边距（文档列表同款） */}
+              <TableHead className="h-auto py-2 pr-2 pl-4 text-xs">{qtk.columnQuery}</TableHead>
+              <TableHead className="h-auto px-2 py-2 text-xs">{qtk.columnCategory}</TableHead>
+              <TableHead className="h-auto px-2 py-2 text-xs">{qtk.columnExpectedPath}</TableHead>
+              <TableHead className="h-auto px-2 py-2 text-xs">{qtk.columnAnchors}</TableHead>
+              <TableHead className="h-auto w-8 py-2 pr-4 pl-2 text-right text-xs">{""}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -132,13 +140,13 @@ export function EvalQuestionBank({
                 className="cursor-pointer"
                 onClick={() => setDrawerQuestion(question)}
               >
-                <TableCell className="max-w-52 truncate" title={question.query}>
+                <TableCell className="max-w-52 truncate py-2 pr-2 pl-4" title={question.query}>
                   {question.query}
                 </TableCell>
-                <TableCell>
+                <TableCell className="px-2 py-2">
                   <Badge variant="outline">{etk.category[question.category]}</Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="px-2 py-2">
                   {/* 多路预期（2026-08-28 §3）：全量 Badge，单路即一枚。 */}
                   <span className="inline-flex flex-wrap gap-1">
                     {question.expected_paths.map((path) => (
@@ -148,40 +156,27 @@ export function EvalQuestionBank({
                     ))}
                   </span>
                 </TableCell>
-                <TableCell>{renderAnchors(question)}</TableCell>
-                <TableCell className="text-right">
-                  <span className="inline-flex items-center gap-1">
-                    <Button
-                      aria-label={qtk.rowReproduce}
-                      onClick={(event) => {
-                        // stopPropagation：操作列不触发行点击的 drawer
-                        event.stopPropagation();
-                        onReproduce?.(question.query);
-                      }}
-                      size="icon-sm"
-                      variant="ghost"
-                    >
-                      <ArrowUpRight className="size-4" />
-                    </Button>
-                    <Button
-                      aria-label={qtk.rowDelete}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setDeleteTarget(question);
-                      }}
-                      size="icon-sm"
-                      variant="ghost"
-                    >
-                      <Trash2 className="text-destructive size-4" />
-                    </Button>
-                  </span>
+                <TableCell className="px-2 py-2">{renderAnchors(question)}</TableCell>
+                {/* 操作列：行内 ↗ 复现已移除（2026-08-30 占栏宽，入口留在详情 drawer），仅保留删除 */}
+                <TableCell className="w-8 py-2 pr-4 pl-2 text-right">
+                  <Button
+                    aria-label={qtk.rowDelete}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setDeleteTarget(question);
+                    }}
+                    size="icon-sm"
+                    variant="ghost"
+                  >
+                    <Trash2 className="text-destructive size-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       ) : (
-        <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
+        <div className="text-muted-foreground mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
           <p>{qtk.emptyBank}</p>
           {/* 双入口第二句（2026-08-28 §7）：合成造题引导 */}
           <p>{qtk.emptyBankSynthesis}</p>

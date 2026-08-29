@@ -141,7 +141,7 @@ describe("EvalQuestionBank 表格", () => {
   it("不自渲染造题入口按钮（工具行与底部虚线按钮均移除）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
     renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
-    expect(screen.queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /生成考题/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
   });
 
@@ -177,13 +177,37 @@ describe("EvalQuestionBank 表格", () => {
     expect(drawerMock.props?.open).toBe(true);
   });
 
-  it("↗ 复现按钮回调携带 query 且不触发 drawer（stopPropagation）", () => {
+  it("表格样式对齐文档列表（表头 text-xs 降高 + 行高收窄；行内复现按钮移除）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
-    const onReproduce = rs.fn();
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" onReproduce={onReproduce} />);
-    fireEvent.click(screen.getByRole("button", { name: "在召回测试面板复现" }));
-    expect(onReproduce).toHaveBeenCalledWith(Q_ANCHORED.query);
-    expect(screen.queryByTestId("eval-question-drawer-mock")).toBeNull();
+    const { container } = renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    // 表头：默认 h-10 是松夸根源，降成文档列表同款 text-xs + 自然高。
+    const head = container.querySelector("th")!;
+    expect(head.className).toContain("text-xs");
+    expect(head.className).toContain("h-auto");
+    // 行：单元格与文档列表同节奏（px-2 py-2，表头 32 / 行 36）；原默认 p-2 保留纵向，
+    // 松垮根源是表头 h-10 与行尾大图标按钮，不是单元格内边距。
+    const firstCell = container.querySelector("tbody td")!;
+    expect(firstCell.className).toContain("py-2");
+    // 通栏对齐（文档列表同款）：表格左右拉满，首列左缘/末列右缘 pl/pr-4 找齐工具栏内容边距，
+    // 表头分界线与常驻工具栏下沿左右端点对齐。
+    const heads = container.querySelectorAll("th");
+    expect(heads[0]!.className).toContain("pl-4");
+    expect(heads[heads.length - 1]!.className).toContain("pr-4");
+    const cells = container.querySelectorAll("tbody tr:first-child td");
+    expect(cells[0]!.className).toContain("pl-4");
+    expect(cells[cells.length - 1]!.className).toContain("pr-4");
+    // 行内 ↗ 复现按钮移除（占栏宽），复现入口留在详情 drawer。
+    expect(screen.queryByRole("button", { name: "在召回测试面板复现" })).toBeNull();
+    // 🗑 删除保留。
+    expect(screen.getByRole("button", { name: "删除考题" })).toBeTruthy();
+  });
+
+  it("审核区块隐藏时包裹容器不占位（表头上方不浮出 8px 间隙）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
+    // 缺省 mock 即空暂存：review 组件返回 null，包裹 div 为 :empty。
+    const { container } = renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    const reviewWrap = container.querySelector("div.px-4")!;
+    expect(reviewWrap.className).toContain("[&:empty]:hidden");
   });
 
   it("🗑 删除按钮打开确认框：取消不调 mutation", async () => {
