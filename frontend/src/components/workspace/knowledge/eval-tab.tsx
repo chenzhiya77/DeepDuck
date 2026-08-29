@@ -3,7 +3,8 @@
 /**
  * 评测 tab（2026-08-24 spec §5 + 2026-08-27 spec §3/§5，plan Task 5）：
  * 分段三视图（总览/题库/历史，2026-08-27 布局定案）+ 常驻工具栏——
- * 左：视图分段控件（下划线轻量化样式，恒内联）；
+ * 左：视图分段控件（粒度切换同款样式族，恒内联；底色块样式与顶部知识库大
+ *     tab 的下划线样式做层级区分，2026-08-29 定案保留）；
  * 右：「运行评测」主动词按钮（h-6 紧凑档，运行中 spinner 禁用；窄面板
  *     useToolbarTier 溢出降档收进 ⋯ 菜单，只收按钮不收分段）。2026-08-28
  *     反馈：上次运行文案与状态切换的高度跳动去掉——运行状态由按钮自身
@@ -193,14 +194,12 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap border-b px-4 py-2"
           data-testid="eval-view-toolbar"
         >
-          {/* 分段控件轻量化（2026-08-29）：去底色块改下划线选中态，视觉质量对齐其他 tab 工具栏；
-              未选中态透明下划线占位，切换不跳动 */}
-          <div aria-label={tk.viewSwitchLabel} className="flex shrink-0 items-center gap-1" role="radiogroup">
+          <div aria-label={tk.viewSwitchLabel} className="bg-muted flex shrink-0 rounded-md p-0.5" role="radiogroup">
             {EVAL_VIEWS.map((v) => (
               <button
                 key={v}
                 aria-checked={view === v}
-                className={`border-b-2 px-2 py-1 text-xs ${view === v ? "border-foreground font-medium" : "border-transparent text-muted-foreground"}`}
+                className={`rounded px-2 py-0.5 text-xs ${view === v ? "bg-background shadow-sm" : "text-muted-foreground"}`}
                 role="radio"
                 type="button"
                 onClick={() => setView(v)}

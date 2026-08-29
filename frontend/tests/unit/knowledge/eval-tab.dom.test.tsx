@@ -388,18 +388,13 @@ describe("EvalTab 常驻工具栏", () => {
     expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-6");
   });
 
-  it("视图分段控件轻量化：无底色块，选中态下划线（视觉质量对齐其他 tab 工具栏）", () => {
+  it("视图分段控件保持底色块样式（与顶部知识库大 tab 的下划线样式做层级区分）", () => {
     renderEvalTab();
     const group = screen.getByRole("radiogroup", { name: "评测视图切换" });
-    expect(group.className).not.toContain("bg-muted");
+    expect(group.className).toContain("bg-muted");
     const selected = within(group).getByRole("radio", { name: "总览" });
     expect(selected.getAttribute("aria-checked")).toBe("true");
-    expect(selected.className).toContain("border-b-2");
-    expect(selected.className).not.toContain("bg-background");
-    // 未选中态同样占位（透明下划线防高度跳动）
-    const unselected = within(group).getByRole("radio", { name: "题库" });
-    expect(unselected.className).toContain("border-b-2");
-    expect(unselected.className).toContain("border-transparent");
+    expect(selected.className).toContain("bg-background");
   });
 
   it("in_flight=true 时按钮转「运行中…」禁用态", () => {
