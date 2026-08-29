@@ -531,7 +531,7 @@ export const zhCN: Translations = {
         deletedToast: "考题已删除",
       },
       synthesize: {
-        entryButton: "从文档生成考题",
+        entryButton: "生成考题",
         dialogTitle: "合成考题",
         docLabel: "来源文档",
         docPlaceholder: "选择一篇已索引的文档",

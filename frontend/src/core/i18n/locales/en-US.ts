@@ -547,7 +547,7 @@ export const enUS: Translations = {
         deletedToast: "Question deleted",
       },
       synthesize: {
-        entryButton: "Generate questions from document",
+        entryButton: "Generate questions",
         dialogTitle: "Synthesize questions",
         docLabel: "Source document",
         docPlaceholder: "Pick an indexed document",

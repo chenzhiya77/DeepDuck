@@ -363,18 +363,18 @@ describe("EvalTab 常驻工具栏", () => {
   });
   afterEach(() => cleanup());
 
-  it("工具栏紧凑档：按钮锁高不跳动；2026-08-29 轻量化后全栏 h-6", () => {
+  it("工具栏紧凑档：全栏按钮锁 h-7（44px，对齐文档/百科/向量/图谱工具栏基准），锁运行前后不跳动", () => {
     hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
     const { rerender } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
     const toolbar = screen.getByTestId("eval-view-toolbar");
     expect(toolbar.className).toContain("py-2");
-    expect(within(toolbar).getByRole("button", { name: "运行评测" }).className).toContain("h-6");
-    // 题库视图的造题入口同为 h-6 档
+    expect(within(toolbar).getByRole("button", { name: "运行评测" }).className).toContain("h-7");
+    // 题库视图的造题入口同为 h-7 档（行高 44 = 文档工具栏基准）
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
-    expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("h-6");
-    expect(within(toolbar).getByRole("button", { name: /从文档生成考题/ }).className).toContain("h-6");
+    expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("h-7");
+    expect(within(toolbar).getByRole("button", { name: /生成考题/ }).className).toContain("h-7");
 
-    // 锁运行（in_flight=true）：按钮同一 h-6 档，工具栏高度不变
+    // 锁运行（in_flight=true）：按钮同一 h-7 档，工具栏高度不变
     act(() => {
       hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: true, runs: [RUN_SUMMARY], total: 1 } }));
       rerender(
@@ -385,7 +385,7 @@ describe("EvalTab 常驻工具栏", () => {
         </I18nContext.Provider>,
       );
     });
-    expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-6");
+    expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-7");
   });
 
   it("视图分段控件保持底色块样式（与顶部知识库大 tab 的下划线样式做层级区分）", () => {
@@ -477,6 +477,23 @@ describe("EvalTab 常驻工具栏", () => {
     expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "trend", { granularity: "day" }]);
   });
 
+  it("内容区边距：总览/历史 px-4 py-3，题库视图通栏且顶边无内距（表头贴工具栏下沿，文档列表同款）", () => {
+    renderEvalTab();
+    const content = screen.getByTestId("eval-view-content");
+    expect(content.className).toContain("px-4");
+
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    const questionsContent = screen.getByTestId("eval-view-content");
+    expect(questionsContent.className).toContain("px-0");
+    expect(questionsContent.className).not.toContain("px-4");
+    // 顶边对齐文档列表：无顶部内距，表头紧贴工具栏分界线（原 py-3 顶 12px 空白移除）。
+    expect(questionsContent.className).toContain("pt-0");
+    expect(questionsContent.className).not.toContain("py-3");
+
+    fireEvent.click(screen.getByRole("radio", { name: "历史" }));
+    expect(screen.getByTestId("eval-view-content").className).toContain("px-4");
+  });
+
   it("窄面板降档：视图工具栏溢出时运行按钮收进 ⋯ 菜单", async () => {
     const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
@@ -501,6 +518,34 @@ describe("EvalTab 常驻工具栏", () => {
       expect(mutate).toHaveBeenCalled();
       // 分段控件恒内联：三视图标签足够短
       expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
+
+  it("tier 1 ⋯ 触发器与内联按钮同档（28px），切题库降档时工具栏不跳高", async () => {
+    // 复现路径（2026-08-30 用户报告）：总览无溢出（44px）→ 切题库三按钮溢出升档，
+    // 若 ⋯ 触发器是 size=sm（h-8=32px），栏高 44→48 突跳；锁 size-7 与 h-7 同档。
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    try {
+      renderEvalTab();
+      fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+      await waitFor(() => {
+        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "运行评测" })).toBeNull();
+      });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      expect(more.className).toContain("size-7");
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
@@ -552,25 +597,27 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
     renderEvalTab();
     // 总览视图：不出现题库动作（视图相关，不常驻）
     expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /生成考题/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     const toolbar = screen.getByTestId("eval-view-toolbar");
     expect(within(toolbar).getByRole("button", { name: /添加考题/ })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: /从文档生成考题/ })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: /生成考题/ })).toBeTruthy();
     expect(within(toolbar).getByRole("button", { name: "运行评测" })).toBeTruthy();
+    // 文案定短（2026-08-30）：与「添加考题」「运行评测」同长，四字词。
+    expect(within(toolbar).getByRole("button", { name: /生成考题/ }).textContent).toBe("生成考题");
 
     // 切走即消失（历史/总览无造题语义）
     fireEvent.click(screen.getByRole("radio", { name: "历史" }));
     expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /添加考题/ })).toBeNull();
-    expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+    expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /生成考题/ })).toBeNull();
   });
 
   it("点击「从文档生成考题」→ bank 受控 synthesisOpen 置真，回调可复位", () => {
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     expect(bankMock.props?.synthesisOpen).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: /从文档生成考题/ }));
+    fireEvent.click(screen.getByRole("button", { name: /生成考题/ }));
     expect(bankMock.props?.synthesisOpen).toBe(true);
     act(() => (bankMock.props?.onSynthesisOpenChange as (open: boolean) => void)(false));
     expect(bankMock.props?.synthesisOpen).toBe(false);
@@ -597,11 +644,11 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
       fireEvent.click(screen.getByRole("radio", { name: "题库" }));
       // 内联按钮消失，⋯ 菜单承载三个动作（两造题入口 + 运行评测）
       await waitFor(() => {
-        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /从文档生成考题/ })).toBeNull();
+        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /生成考题/ })).toBeNull();
       });
       const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
       fireEvent.keyDown(more, { key: "ArrowDown" });
-      fireEvent.click(await screen.findByRole("menuitem", { name: /从文档生成考题/ }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: /生成考题/ }));
       expect(bankMock.props?.synthesisOpen).toBe(true);
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(await screen.findByRole("menuitem", { name: /添加考题/ }));

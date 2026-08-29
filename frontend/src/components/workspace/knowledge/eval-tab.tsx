@@ -5,10 +5,10 @@
  * 分段三视图（总览/题库/历史，2026-08-27 布局定案）+ 常驻工具栏——
  * 左：视图分段控件（粒度切换同款样式族，恒内联；底色块样式与顶部知识库大
  *     tab 的下划线样式做层级区分，2026-08-29 定案保留）；
- * 右：「运行评测」主动词按钮（h-6 紧凑档，运行中 spinner 禁用；窄面板
- *     useToolbarTier 溢出降档收进 ⋯ 菜单，只收按钮不收分段）。2026-08-28
- *     反馈：上次运行文案与状态切换的高度跳动去掉——运行状态由按钮自身
- *     表达，历史时间在历史视图首行仍可见。2026-08-29 UX 修订：题库造题入口
+ * 右：「运行评测」主动词按钮（h-7 紧凑档，行高 44 对齐文档/百科/向量/图谱工具栏基准，
+ *     运行中 spinner 禁用；窄面板 useToolbarTier 溢出降档收进 ⋯ 菜单，
+ *     只收按钮不收分段）。2026-08-28 反馈：上次运行文案与状态切换的高度跳动去掉——
+ *     运行状态由按钮自身表达，历史时间在历史视图首行仍可见。2026-08-29 UX 修订：题库造题入口
  *     （添加考题/从文档生成）并入本工具栏右侧，仅题库视图出现，状态提升
  *     到本层驱动 bank 的受控 dialog——避免第二条工具栏叠加与入口沉底。
  * 总览视图 = 一期现状（指标总览 + 趋势图），零改动；题库/历史为占位壳
@@ -45,6 +45,7 @@ import {
   useTriggerEvalRun,
 } from "@/core/knowledge/hooks";
 import type { TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types";
+import { cn } from "@/lib/utils";
 
 import { EvalMetricsOverview } from "./eval-metrics-overview";
 import { EvalQuestionBank } from "./eval-question-bank";
@@ -210,13 +211,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {viewToolbarTier === 0 ? (
-              // 紧凑档：全栏按钮锁 h-6（2026-08-29 轻量化，原 h-7），锁运行前后高度恒定不跳动；
+              // 紧凑档：全栏按钮锁 h-7（2026-08-29 定案：行高 44 = 文档工具栏基准，
+              // 原 h-6 降档已回退）；锁运行前后高度恒定不跳动；
               // 题库视图时造题入口并入（动作在前，主动词恒最右主位）
               <>
                 {view === "questions" && (
                   <>
                     <Button
-                      className="h-6 shrink-0"
+                      className="h-7 shrink-0"
                       onClick={() => setBankAddOpen(true)}
                       variant="outline"
                     >
@@ -224,7 +226,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       {tk.questions.addQuestion}
                     </Button>
                     <Button
-                      className="h-6 shrink-0"
+                      className="h-7 shrink-0"
                       onClick={() => setBankSynthesisOpen(true)}
                       variant="outline"
                     >
@@ -233,7 +235,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     </Button>
                   </>
                 )}
-                <Button className="h-6 shrink-0" disabled={running} onClick={handleTrigger}>
+                <Button className="h-7 shrink-0" disabled={running} onClick={handleTrigger}>
                   {running && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
                   {runButtonLabel}
                 </Button>
@@ -241,7 +243,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button aria-label={tk.moreOptions} size="sm" variant="ghost">
+                  {/* size-7（28px）与内联按钮 h-7 同高——size=sm（h-8=32px）会把降档后的
+                      工具栏撑高 4px（2026-08-30 切题库栏高突跳根因，document-panel 同款先例）。 */}
+                  <Button aria-label={tk.moreOptions} className="size-7" size="icon-sm" variant="ghost">
                     <MoreHorizontal className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -265,8 +269,13 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           </div>
         </div>
 
-        {/* 内容区：纵向滚动（document-panel 同款）；各视图内容 */}
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+        {/* 内容区：纵向滚动（document-panel 同款）；各视图内容。
+            题库视图通栏（文档列表同款）：水平拉满且顶边无内距，表格拉满全宽、
+            表头紧贴常驻工具栏下沿（分界线四边对齐）；总览/历史保持 px-4 py-3。 */}
+        <div
+          className={cn("min-h-0 flex-1 overflow-auto", view === "questions" ? "px-0 pt-0 pb-3" : "px-4 py-3")}
+          data-testid="eval-view-content"
+        >
           <div className="flex min-w-0 flex-col gap-4">
         {view === "overview" && (
           <>
@@ -321,7 +330,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                   ) : (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button aria-label={tk.moreOptions} size="sm" variant="ghost">
+                        {/* size-7 与粒度按钮组内联控件同高（同视图工具栏 ⋯ 先例）。 */}
+                        <Button aria-label={tk.moreOptions} className="size-7" size="icon-sm" variant="ghost">
                           <MoreHorizontal className="size-4" />
                         </Button>
                       </DropdownMenuTrigger>
