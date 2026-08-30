@@ -373,6 +373,13 @@ describe("EvalTab 常驻工具栏", () => {
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("h-7");
     expect(within(toolbar).getByRole("button", { name: /生成考题/ }).className).toContain("h-7");
+    // 三按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款收窄），
+    // 同内边距不跳宽；不降字号，保住主动词视觉权重。
+    const runButton = within(toolbar).getByRole("button", { name: "运行评测" });
+    expect(runButton.className).toContain("px-2.5");
+    expect(runButton.className).toContain("gap-1.5");
+    expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("px-2.5");
+    expect(within(toolbar).getByRole("button", { name: /生成考题/ }).className).toContain("px-2.5");
 
     // 锁运行（in_flight=true）：按钮同一 h-7 档，工具栏高度不变
     act(() => {
@@ -653,6 +660,72 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(await screen.findByRole("menuitem", { name: /添加考题/ }));
       expect(bankMock.props?.addOpen).toBe(true);
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
+});
+
+// ── 题库搜索常驻工具栏（2026-08-30）──────────────────────────────
+// 定案（用户拍板）：不做展开/收起交互，搜索框常驻在分段控件与动作按钮之间，
+// 仅题库视图出现；纯前端过滤，状态在本层，经 searchQuery prop 下发给 bank。
+
+describe("EvalTab 题库搜索（常驻工具栏）", () => {
+  beforeEach(() => {
+    bankMock.props = undefined;
+    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+  });
+  afterEach(() => cleanup());
+
+  it("搜索框仅题库视图出现，与工具栏同档（h-7）", () => {
+    renderEvalTab();
+    expect(screen.queryByPlaceholderText("搜索问题…")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    const input = screen.getByPlaceholderText("搜索问题…");
+    expect(input.className).toContain("h-7");
+    // 搜索最小宽 160px（2026-08-30）：输入型控件的可用底线，窄了宁可让按钮走 ⋯ 降档。
+    expect(input.parentElement!.className).toContain("min-w-40");
+
+    fireEvent.click(screen.getByRole("radio", { name: "历史" }));
+    expect(screen.queryByPlaceholderText("搜索问题…")).toBeNull();
+  });
+
+  it("输入透传 bank 受控 searchQuery；✕ 清除按钮只在有内容时出现", () => {
+    renderEvalTab();
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    expect(bankMock.props?.searchQuery).toBe("");
+    expect(screen.queryByRole("button", { name: "清空搜索" })).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索问题…"), { target: { value: "多态" } });
+    expect(bankMock.props?.searchQuery).toBe("多态");
+    fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
+    expect(bankMock.props?.searchQuery).toBe("");
+    expect(screen.queryByRole("button", { name: "清空搜索" })).toBeNull();
+  });
+
+  it("窄面板降档：按钮收进 ⋯，搜索框保留（只收按钮不收搜索）", async () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    try {
+      renderEvalTab();
+      fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+      await waitFor(() => {
+        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "运行评测" })).toBeNull();
+      });
+      expect(screen.getByPlaceholderText("搜索问题…")).toBeTruthy();
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);

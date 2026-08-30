@@ -52,6 +52,9 @@ export interface EvalQuestionBankProps {
   /** 合成触发 dialog 受控开关（同上）。 */
   synthesisOpen?: boolean;
   onSynthesisOpenChange?: (open: boolean) => void;
+  /** 搜索过滤词（2026-08-30：搜索框在 eval-tab 常驻工具栏，纯前端包含匹配）。 */
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
 }
 
 export function EvalQuestionBank({
@@ -62,6 +65,7 @@ export function EvalQuestionBank({
   onAddOpenChange = () => undefined,
   synthesisOpen = false,
   onSynthesisOpenChange = () => undefined,
+  searchQuery = "",
 }: EvalQuestionBankProps) {
   const { t } = useI18n();
   const etk = t.knowledge.eval;
@@ -71,6 +75,13 @@ export function EvalQuestionBank({
 
   const [drawerQuestion, setDrawerQuestion] = useState<EvalQuestion | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EvalQuestion | null>(null);
+
+  // 搜索过滤（2026-08-30）：题目文本不区分大小写包含匹配；题库数据已全量拉取，纯前端。
+  const trimmedSearch = searchQuery.trim().toLowerCase();
+  const allQuestions = query.data?.questions ?? [];
+  const visibleQuestions = trimmedSearch
+    ? allQuestions.filter((question) => question.query.toLowerCase().includes(trimmedSearch))
+    : allQuestions;
 
   const handleDeleteConfirm = async () => {
     if (deleteTarget === null) return;
@@ -118,7 +129,13 @@ export function EvalQuestionBank({
         <div className="text-destructive mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
           {etk.loadFailed}
         </div>
-      ) : query.data && query.data.questions.length > 0 ? (
+      ) : query.data && allQuestions.length > 0 ? (
+        visibleQuestions.length === 0 ? (
+          /* 无匹配（2026-08-30 搜索）：区别于空库引导——库里有题但过滤词无命中 */
+          <div className="text-muted-foreground mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
+            {qtk.noMatch}
+          </div>
+        ) : (
         /* 表格样式对齐文档列表（2026-08-30）：表头去默认 h-10 降为 text-xs 自然高（32px），
            数据行同文档列表 px-2 py-2（36px）；松垮根源是 h-10 表头与行尾大图标按钮；
            表头同文档列表用 muted 色 */
@@ -134,7 +151,7 @@ export function EvalQuestionBank({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {query.data.questions.map((question) => (
+            {visibleQuestions.map((question) => (
               <TableRow
                 key={question.id}
                 className="cursor-pointer"
@@ -175,6 +192,7 @@ export function EvalQuestionBank({
             ))}
           </TableBody>
         </Table>
+        )
       ) : (
         <div className="text-muted-foreground mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
           <p>{qtk.emptyBank}</p>

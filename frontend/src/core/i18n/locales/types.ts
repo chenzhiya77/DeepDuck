@@ -466,6 +466,10 @@ export interface Translations {
         emptyBank: string;
         /** 空态双入口第二句（2026-08-28 spec §7，Task 8）：合成造题引导。 */
         emptyBankSynthesis: string;
+        /** 题库搜索（2026-08-30：框在 eval-tab 常驻工具栏，纯前端过滤）。 */
+        searchPlaceholder: string;
+        searchClear: string;
+        noMatch: string;
         rowReproduce: string;
         rowDelete: string;
         saveFailed: string;

@@ -19,7 +19,7 @@
  * 首次轮询双请求。点击趋势数据点开 EvalRunDrawer 下钻（plan Task 6）。
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, MoreHorizontal, Plus, Sparkles } from "lucide-react";
+import { Loader2, MoreHorizontal, Play, Plus, Search, Sparkles, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/core/i18n/hooks";
 import { isEvalRunning } from "@/core/knowledge/eval-run-status";
 import {
@@ -135,6 +136,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   // 题库造题入口受控状态（2026-08-29）：按钮在本层工具栏，dialog 在 bank 内。
   const [bankAddOpen, setBankAddOpen] = useState(false);
   const [bankSynthesisOpen, setBankSynthesisOpen] = useState(false);
+  // 题库搜索（2026-08-30）：搜索框常驻本层工具栏，纯前端过滤，经 prop 下发。
+  const [bankSearchQuery, setBankSearchQuery] = useState("");
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
   const trendQuery = useEvalTrend(kbId, granularity, enabled);
@@ -209,7 +212,32 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* 题库搜索（2026-08-30 定案）：常驻不展开/收起，仅题库视图出现；
+              分段控件与动作按钮之间，h-7 与栏内控件同档；✕ 清除同百科先例。
+              窄面板溢出时按钮走 ⋯ 降档，搜索框保留（只收按钮不收搜索）。 */}
+          {view === "questions" && (
+            <div className="relative ml-auto w-full min-w-40 max-w-64 shrink">
+              <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+              <Input
+                aria-label={tk.questions.searchPlaceholder}
+                className="h-7 pr-6 pl-7 text-xs"
+                placeholder={tk.questions.searchPlaceholder}
+                value={bankSearchQuery}
+                onChange={(event) => setBankSearchQuery(event.target.value)}
+              />
+              {bankSearchQuery && (
+                <button
+                  aria-label={tk.questions.searchClear}
+                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2"
+                  type="button"
+                  onClick={() => setBankSearchQuery("")}
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+          <div className={cn("flex shrink-0 items-center gap-2", view !== "questions" && "ml-auto")}>
             {viewToolbarTier === 0 ? (
               // 紧凑档：全栏按钮锁 h-7（2026-08-29 定案：行高 44 = 文档工具栏基准，
               // 原 h-6 降档已回退）；锁运行前后高度恒定不跳动；
@@ -218,7 +246,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 {view === "questions" && (
                   <>
                     <Button
-                      className="h-7 shrink-0"
+                      className="h-7 shrink-0 gap-1.5 px-2.5"
                       onClick={() => setBankAddOpen(true)}
                       variant="outline"
                     >
@@ -226,7 +254,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       {tk.questions.addQuestion}
                     </Button>
                     <Button
-                      className="h-7 shrink-0"
+                      className="h-7 shrink-0 gap-1.5 px-2.5"
                       onClick={() => setBankSynthesisOpen(true)}
                       variant="outline"
                     >
@@ -235,8 +263,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     </Button>
                   </>
                 )}
-                <Button className="h-7 shrink-0" disabled={running} onClick={handleTrigger}>
-                  {running && <Loader2 aria-hidden className="size-3.5 animate-spin" />}
+                {/* 三按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款
+                    收窄，同内边距不跳宽）；不降字号，保住主动词视觉权重。 */}
+                <Button className="h-7 shrink-0 gap-1.5 px-2.5" disabled={running} onClick={handleTrigger}>
+                  {running ? (
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  ) : (
+                    <Play aria-hidden className="size-3.5" />
+                  )}
                   {runButtonLabel}
                 </Button>
               </>
@@ -386,9 +420,11 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             addOpen={bankAddOpen}
             enabled={enabled}
             kbId={kbId}
+            searchQuery={bankSearchQuery}
             synthesisOpen={bankSynthesisOpen}
             onAddOpenChange={setBankAddOpen}
             onReproduce={onReproduce}
+            onSearchQueryChange={setBankSearchQuery}
             onSynthesisOpenChange={setBankSynthesisOpen}
           />
         )}

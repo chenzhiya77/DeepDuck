@@ -250,6 +250,37 @@ describe("EvalQuestionBank 表格", () => {
   });
 });
 
+describe("EvalQuestionBank 搜索过滤（2026-08-30，搜索框在 eval-tab 常驻工具栏）", () => {
+  it("searchQuery 按题目文本不区分大小写包含过滤", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({
+      isLoading: false,
+      error: null,
+      ...questionsState([Q_UNANCHORED, Q_ANCHORED, Q_MULTI]),
+    });
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" searchQuery="多路" />);
+    expect(screen.getByText("多路预期的考题")).toBeTruthy();
+    expect(screen.queryByText("未锚定的考题")).toBeNull();
+    expect(screen.queryByText("锚定了三个切片的考题")).toBeNull();
+  });
+
+  it("无匹配时渲染无匹配态（区别于空库引导）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({
+      isLoading: false,
+      error: null,
+      ...questionsState([Q_ANCHORED]),
+    });
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" searchQuery="不存在的词" />);
+    expect(screen.getByText("无匹配的题目，换个关键词试试")).toBeTruthy();
+    expect(screen.queryByText("锚定了三个切片的考题")).toBeNull();
+  });
+
+  it("空库时即使带过滤词仍渲染空库引导（不进入无匹配态）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
+    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" searchQuery="任意词" />);
+    expect(screen.getByText("题库为空——在召回测试面板勾选正确切片可一键存为考题")).toBeTruthy();
+  });
+});
+
 describe("EvalAddQuestionDialog", () => {
   function renderDialog() {
     const mutateAsync = rs.fn().mockResolvedValue({
