@@ -782,6 +782,16 @@ export const zhCN: Translations = {
       wikiFailed: "百科生成任务提交失败",
       deleteWikiEntryFailed: "删除百科条目失败",
     },
+    // 错误信息产品化（2026-08-30）：原始英文异常不外露，失败合并成右下角瞬时 toast。
+    docErrors: {
+      toastTitle: "文档处理失败",
+      empty: "文件内容为空",
+      unsupported: "不支持的文件类型",
+      retryLimit: "解析服务多次重试仍失败，请检查文件是否损坏或稍后重试",
+      serviceUnconfigured: "文档解析服务未配置，请联系管理员",
+      timeout: "解析超时，请重试",
+      unknown: "处理失败，请重试",
+    },
   },
 
   // 定时任务

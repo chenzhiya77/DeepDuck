@@ -790,6 +790,16 @@ export interface Translations {
       wikiFailed: string;
       deleteWikiEntryFailed: string;
     };
+    /** 错误信息产品化（2026-08-30）：分类器 kind → 本地化友好文案，原始英文不外露。 */
+    docErrors: {
+      toastTitle: string;
+      empty: string;
+      unsupported: string;
+      retryLimit: string;
+      serviceUnconfigured: string;
+      timeout: string;
+      unknown: string;
+    };
   };
 
   // Scheduled tasks

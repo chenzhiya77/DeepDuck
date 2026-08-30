@@ -242,6 +242,11 @@ class KnowledgeService:
             supported = ", ".join(sorted(SUPPORTED_UPLOAD_SUFFIXES))
             raise ValueError(f"unsupported file type '{suffix or '(none)'}'; supported formats: {supported}")
 
+        # 空文件拦截 (2026-08-30): 0 字节文件照收会白送云端解析，
+        # MinerU 重试耗尽后回吐晦涩的 'retry limit reached'——在门口直接拒。
+        if not content:
+            raise ValueError(f"file is empty: {safe_name}")
+
         # Task 11: compute SHA-256 hash for duplicate detection
         content_hash = hashlib.sha256(content).hexdigest()
 

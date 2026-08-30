@@ -1,6 +1,6 @@
 /**
  * Middle column of the knowledge page (spec §5.2/§3.6): kb header actions,
- * the document table (名称/上传者/大小/切片数/状态/时间/操作), the aggregated
+ * the document table (名称/上传者/状态/时间/大小/切片数/操作，2026-08-30 列序重排), the aggregated
  * bottom stats row, drag-drop upload, cascade-warning delete confirms, and
  * failed-doc retry. Presentational — data/mutations arrive via props.
  */
@@ -98,6 +98,20 @@ describe("DocumentPanel table", () => {
     expect(screen.getByText("就绪")).toBeTruthy();
   });
 
+  it("列序：文本列居左组、数值列聚右组；大小/切片数右对齐 + tabular-nums（2026-08-30）", () => {
+    renderPanel();
+    // 主流文件管理器（资源管理器/Drive）：文本列在左，大小/数量聚到右端。
+    const headers = Array.from(screen.getAllByRole("columnheader"));
+    expect(headers.map((h) => h.textContent?.trim())).toEqual(["", "名称", "上传者", "状态", "时间", "大小", "切片数", "操作"]);
+    // 数值列表头右对齐，与数据同轴；单位（KB/MB）右缘成列。
+    expect(headers[5]!.className).toContain("text-right");
+    expect(headers[6]!.className).toContain("text-right");
+    const sizeCell = screen.getByText("2.0 KB").closest("td")!;
+    expect(sizeCell.className).toContain("text-right");
+    expect(sizeCell.className).toContain("tabular-nums");
+    expect(screen.getByText("12").closest("td")!.className).toContain("text-right");
+  });
+
   it("renders the em-dash placeholder while chunk_count is null", () => {
     renderPanel({ documents: [doc({ status: "indexing", progress_percent: 40, chunk_count: null })] });
     expect(screen.getByText("—")).toBeTruthy();
@@ -123,9 +137,11 @@ describe("DocumentPanel table", () => {
     expect(screen.queryByText(/\d+%/)).toBeNull();
   });
 
-  it("surfaces the error text (graph degraded marker rides the error field)", () => {
-    renderPanel({ documents: [doc({ status: "ready", error: "图谱抽取降级：失败率 45%" })] });
-    expect(screen.getByText(/图谱抽取降级/)).toBeTruthy();
+  it("错误信息不常驻表格（产品化：失败只留状态，原因走 toast 通知，2026-08-30）", () => {
+    renderPanel({ documents: [doc({ status: "failed", error: "retry limit reached (5 attempts)" })] });
+    // 原始英文不外露；表格里只剩失败状态本身（红点+文案由状态列承载）
+    expect(screen.queryByText(/retry limit/)).toBeNull();
+    expect(screen.getByText("失败")).toBeTruthy();
   });
 
   it("opens the chunk drawer when a row is clicked", () => {
@@ -313,5 +329,64 @@ describe("DocumentPanel toolbar", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), { key: "ArrowDown" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "升序" }));
     expect(rowNames()).toEqual(["Roadmap.md", "研发规范.docx", "产品手册.pdf"]);
+  });
+});
+
+// ── 状态与文件类型视觉（2026-08-30）────────────────────────
+// 定案：文件名是第一扫描目标——状态改圆点+小字（Linear 风格，就绪退后、
+// 失败唯一抢眼）；文件图标按类型形状+颜色区分（Drive/OneDrive 色系）。
+describe("DocumentPanel 状态与类型图标", () => {
+  function rowOf(name: string) {
+    return screen.getByText(name).closest("tr")!;
+  }
+
+  it("就绪态：绿圆点 + muted 小字，不再是黑底徽章（视觉降级）", () => {
+    renderPanel({ documents: [doc({ name: "手册.pdf" })] });
+    const row = rowOf("手册.pdf");
+    expect(row.querySelector("span.bg-emerald-500")).toBeTruthy();
+    // 文本退为次要色，且不在 Badge 组件内（data-slot=badge）
+    const label = row.querySelectorAll("span");
+    const statusLabel = Array.from(label).find((span) => span.textContent === "就绪" && span.childElementCount === 0)!;
+    expect(statusLabel.className).toContain("text-muted-foreground");
+    expect(statusLabel.closest("[data-slot='badge']")).toBeNull();
+  });
+
+  it("进行中：琥珀圆点；失败：红点+红字（唯一突出的异常态）", () => {
+    renderPanel({
+      documents: [
+        doc({ id: "d-idx", name: "索引中.pdf", status: "indexing", progress_percent: 40 }),
+        doc({ id: "d-fail", name: "失败.pdf", status: "failed", error: "解析出错" }),
+      ],
+    });
+    expect(rowOf("索引中.pdf").querySelector("span.bg-amber-500")).toBeTruthy();
+    const failedRow = rowOf("失败.pdf");
+    expect(failedRow.querySelector("span.bg-destructive")).toBeTruthy();
+    const failedLabel = Array.from(failedRow.querySelectorAll("span")).find(
+      (span) => span.textContent === "失败" && span.childElementCount === 0,
+    )!;
+    expect(failedLabel.className).toContain("text-destructive");
+  });
+
+  it("文件图标按类型形状+颜色区分（主流文件管理器色系），未知后缀回退", () => {
+    renderPanel({
+      documents: [
+        doc({ id: "d1", name: "手册.pdf" }),
+        doc({ id: "d2", name: "笔记.md" }),
+        doc({ id: "d3", name: "截图.jpg" }),
+        doc({ id: "d4", name: "数据.csv" }),
+        doc({ id: "d5", name: "规范.docx" }),
+        doc({ id: "d6", name: "演示.pptx" }),
+        doc({ id: "d7", name: "未知.xyz" }),
+      ],
+    });
+    const iconClassOf = (name: string) => rowOf(name).querySelector("td svg")?.getAttribute("class") ?? "";
+    expect(iconClassOf("手册.pdf")).toContain("text-red-500");
+    expect(iconClassOf("笔记.md")).toContain("text-sky-500");
+    expect(iconClassOf("截图.jpg")).toContain("text-violet-500");
+    expect(iconClassOf("数据.csv")).toContain("text-emerald-500");
+    expect(iconClassOf("规范.docx")).toContain("text-blue-500");
+    expect(iconClassOf("演示.pptx")).toContain("text-orange-500");
+    // 未知后缀：通用图标 + 次要色，不假装有类型信息
+    expect(iconClassOf("未知.xyz")).toContain("text-muted-foreground");
   });
 });

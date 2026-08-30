@@ -24,6 +24,7 @@ import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-dra
 import { WikiTab } from "@/components/workspace/knowledge/wiki-tab";
 import { useI18n } from "@/core/i18n/hooks";
 import type { WikiGenerateMode } from "@/core/knowledge/api";
+import { classifyDocError } from "@/core/knowledge/doc-errors";
 import {
   computeSha256,
   findDuplicateByName,
@@ -54,6 +55,7 @@ import type {
   VectorRetrievalOverlay,
   WikiEntrySummary,
 } from "@/core/knowledge/types";
+import { useDocFailureToasts } from "@/core/knowledge/use-doc-failure-toasts";
 import { isWikiUpdating } from "@/core/knowledge/wiki-status";
 
 function showMutationError(error: unknown, fallback: string) {
@@ -64,6 +66,12 @@ function showMutationError(error: unknown, fallback: string) {
 export default function KnowledgePage() {
   const { t } = useI18n();
   const tk = t.knowledge;
+  // 文档类错误产品化（2026-08-30）：分类器映射友好文案，未识别回落兜底，
+  // 原始英文异常文本不外露（含空文件 400、不支持格式、云端重试耗尽等）。
+  const docErrorText = (error: unknown, fallback: string) => {
+    const kind = classifyDocError(error instanceof Error ? error.message : "");
+    return kind === "unknown" ? fallback : tk.docErrors[kind];
+  };
   const searchParams = useSearchParams();
   const router = useRouter();
   const deepLinkKb = searchParams.get("kb");
@@ -132,6 +140,8 @@ export default function KnowledgePage() {
 
   const documentsQuery = useDocuments(selectedKbId);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
+  // 错误产品化（2026-08-30）：处理失败不再常驻表格，状态转 failed 时弹右下角汇总 toast。
+  useDocFailureToasts(documents);
     // 向量空间索引中提示：仍在管线（未 ready/failed）的文档数。
     const indexingDocCount = useMemo(
       () => documents.filter((doc) => doc.status !== "ready" && doc.status !== "failed").length,
@@ -224,7 +234,7 @@ export default function KnowledgePage() {
     try {
       await uploadDocument.mutateAsync(file);
     } catch (error) {
-      showMutationError(error, tk.errors.uploadFailed);
+      toast.error(docErrorText(error, tk.errors.uploadFailed));
     }
   };
 
@@ -276,7 +286,7 @@ export default function KnowledgePage() {
             toast.success(tk.duplicateUpload.replacedDocument(file.name));
           }
         } catch (error) {
-          showMutationError(error, tk.errors.uploadFailed);
+          toast.error(docErrorText(error, tk.errors.uploadFailed));
         }
       }
     })();
@@ -364,7 +374,7 @@ export default function KnowledgePage() {
                   }}
                   onRetryDocument={(docId) => {
                     retryDocument.mutate(docId, {
-                      onError: (error) => showMutationError(error, tk.errors.retryFailed),
+                      onError: (error) => toast.error(docErrorText(error, tk.errors.retryFailed)),
                     });
                   }}
                   onOpenChunks={setDrawerDoc}

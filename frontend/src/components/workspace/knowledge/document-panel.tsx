@@ -1,10 +1,25 @@
 "use client";
 
-import { ArrowUpDown, Check, FileText, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  ArrowUpDown,
+  Check,
+  File,
+  FileCode2,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileType2,
+  Presentation,
+  RotateCcw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -57,14 +72,40 @@ const SORT_OPTIONS: { key: DocumentSortKey; labelKey: "createdAt" | "name" | "si
   { key: "chunk_count", labelKey: "chunks" },
 ];
 
-const STATUS_BADGE_VARIANT: Record<KnowledgeDocumentStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  uploaded: "outline",
-  parsing: "secondary",
-  chunking: "secondary",
-  indexing: "secondary",
-  ready: "default",
-  failed: "destructive",
+// 状态指示（2026-08-30）：圆点 + 小字（Linear 风格）替代实心徽章——
+// 文件名是第一扫描目标，常态退后、异常突出：就绪绿点退背景，
+// 进行中琥珀，失败红点红字是唯一抢眼态。原黑底 default Badge 已移除。
+const STATUS_DOT_CLASS: Record<KnowledgeDocumentStatus, string> = {
+  uploaded: "bg-muted-foreground/60",
+  parsing: "bg-amber-500",
+  chunking: "bg-amber-500",
+  indexing: "bg-amber-500",
+  ready: "bg-emerald-500",
+  failed: "bg-destructive",
 };
+
+// 文件类型图标（2026-08-30）：形状 + 颜色双区分，色系对齐主流文件管理器
+// （Drive/OneDrive：PDF 红、Word 蓝、PPT 橙、表格绿、图片紫）。
+const FILE_TYPE_STYLE: Record<string, { icon: LucideIcon; className: string }> = {
+  ".pdf": { icon: FileText, className: "text-red-500" },
+  ".doc": { icon: FileType2, className: "text-blue-500" },
+  ".docx": { icon: FileType2, className: "text-blue-500" },
+  ".ppt": { icon: Presentation, className: "text-orange-500" },
+  ".pptx": { icon: Presentation, className: "text-orange-500" },
+  ".csv": { icon: FileSpreadsheet, className: "text-emerald-500" },
+  ".md": { icon: FileCode2, className: "text-sky-500" },
+  ".markdown": { icon: FileCode2, className: "text-sky-500" },
+  ".txt": { icon: FileText, className: "text-muted-foreground" },
+  ".png": { icon: FileImage, className: "text-violet-500" },
+  ".jpg": { icon: FileImage, className: "text-violet-500" },
+  ".jpeg": { icon: FileImage, className: "text-violet-500" },
+};
+
+/** 后缀小写匹配；未知类型回退通用图标 + 次要色（不假装有类型信息）。 */
+function fileTypeStyle(fileName: string): { icon: LucideIcon; className: string } {
+  const suffix = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+  return FILE_TYPE_STYLE[suffix] ?? { icon: File, className: "text-muted-foreground" };
+}
 
 /**
  * Hover breakdown for the status column (P3, spec 2026-08-11 §5): three
@@ -330,10 +371,12 @@ export function DocumentPanel({
                 </th>
                 <th className="px-2 py-2 font-medium">{tk.table.name}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.uploader}</th>
-                <th className="px-2 py-2 font-medium">{tk.table.size}</th>
-                <th className="px-2 py-2 font-medium">{tk.table.chunks}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.status}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.createdAt}</th>
+                {/* 数值列聚右组（2026-08-30）：表头同轴右对齐 + tabular-nums，
+                    文本列居左、大小/数量靠右——主流文件管理器惯例 */}
+                <th className="px-2 py-2 text-right font-medium tabular-nums">{tk.table.size}</th>
+                <th className="px-2 py-2 text-right font-medium tabular-nums">{tk.table.chunks}</th>
                 <th className="px-2 py-2 font-medium">{tk.table.actions}</th>
               </tr>
             </thead>
@@ -365,15 +408,17 @@ export function DocumentPanel({
                         </td>
                         <td className="max-w-48 px-2 py-2">
                           <div className="flex items-center gap-2">
-                            <FileText className="text-muted-foreground size-4 shrink-0" />
+                            {/* 类型图标：形状+颜色双区分，扫描定位更快（2026-08-30） */}
+                            {(() => {
+                              const { icon: TypeIcon, className: typeClass } = fileTypeStyle(doc.name);
+                              return <TypeIcon className={cn("size-4 shrink-0", typeClass)} />;
+                            })()}
                             <span className="truncate">{doc.name}</span>
                           </div>
                         </td>
                   <td className="text-muted-foreground px-2 py-2">
                     {doc.uploader_id === kb.owner_id ? tk.uploaderMe : doc.uploader_id}
                   </td>
-                  <td className="text-muted-foreground px-2 py-2 whitespace-nowrap">{formatBytes(doc.size_bytes)}</td>
-                  <td className="text-muted-foreground px-2 py-2">{doc.chunk_count ?? "—"}</td>
                   <td className="px-2 py-2">
                     <div className="flex flex-col gap-0.5">
                       {(() => {
@@ -382,7 +427,14 @@ export function DocumentPanel({
                             className="flex w-fit items-center gap-1.5"
                             data-testid={doc.path_status ? "path-status-trigger" : undefined}
                           >
-                            <Badge variant={STATUS_BADGE_VARIANT[doc.status] ?? "outline"}>{statusText(doc.status)}</Badge>
+                            {/* 圆点+小字替代实心徽章（2026-08-30）：就绪退背景，失败红字唯一抢眼 */}
+                            <span
+                              aria-hidden
+                              className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT_CLASS[doc.status] ?? "bg-muted-foreground/60")}
+                            />
+                            <span className={cn("text-xs", doc.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+                              {statusText(doc.status)}
+                            </span>
                             {/* 百分比只在 indexing 显示——前置阶段（解析/切片）无可测进度，不挂无信息量的 0% */}
                             {doc.status === "indexing" && (
                               <span className="text-muted-foreground text-xs">{doc.progress_percent}%</span>
@@ -396,15 +448,20 @@ export function DocumentPanel({
                           statusIndicator
                         );
                       })()}
-                      {doc.error && (
-                        <span className="text-destructive max-w-56 truncate text-xs" title={doc.error}>
-                          {doc.error}
-                        </span>
-                      )}
+                      {/* 错误信息不常驻表格（2026-08-30 产品化）：失败只留状态，
+                          原因在状态转 failed 那一刻走右下角汇总 toast（useDocFailureToasts） */}
                     </div>
                   </td>
                   <td className="text-muted-foreground px-2 py-2 whitespace-nowrap">
                     {formatKnowledgeTimestamp(doc.created_at, locale)}
+                  </td>
+                  {/* 数值列右对齐（2026-08-30）：整串右对齐使单位（KB/MB）右缘成列；
+                      tabular-nums 等宽数字避免参差 */}
+                  <td className="text-muted-foreground px-2 py-2 text-right whitespace-nowrap tabular-nums">
+                    {formatBytes(doc.size_bytes)}
+                  </td>
+                  <td className="text-muted-foreground px-2 py-2 text-right tabular-nums">
+                    {doc.chunk_count ?? "—"}
                   </td>
                   <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center gap-1">

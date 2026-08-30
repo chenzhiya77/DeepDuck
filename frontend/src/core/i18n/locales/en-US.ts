@@ -799,6 +799,15 @@ export const enUS: Translations = {
       wikiFailed: "Failed to queue wiki generation",
       deleteWikiEntryFailed: "Failed to delete the wiki entry",
     },
+    docErrors: {
+      toastTitle: "Document processing failed",
+      empty: "The file is empty",
+      unsupported: "Unsupported file type",
+      retryLimit: "The parsing service failed after several retries — check the file for corruption or try again later",
+      serviceUnconfigured: "The document parsing service is not configured — contact your admin",
+      timeout: "Parsing timed out — please retry",
+      unknown: "Processing failed — please retry",
+    },
   },
 
   // Scheduled tasks

@@ -151,6 +151,19 @@ async def test_upload_rejects_unsupported_suffix(service):
     assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
 
 
+async def test_upload_rejects_empty_file(service):
+    """空文件拦截（2026-08-30）：0 字节文件曾照收并送 MinerU，云端重试 5 次后回吐
+    晦涩的 'retry limit reached'——在门口直接拒绝，不留文档行。"""
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("户号.pptx", b"", "application/octet-stream")})
+
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"]
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
+
+
 async def test_supported_formats_endpoint_matches_parser_constant(service):
     """Registered before ``/{kb_id}`` so the literal segment wins; payload is
     exactly the parser allowlist (frontend accept/intercept source)."""
