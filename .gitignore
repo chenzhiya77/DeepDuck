@@ -77,5 +77,8 @@ config.yaml.bak
 # Mimosa security-plugin local hook state (session source snapshots)
 .mimosa/
 
+# WorkBuddy local agent state
+.workbuddy/
+
 # pytest basetemp for local test runs
 .pytest-tmp/
