@@ -46,9 +46,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
+import { classifyDocError } from "@/core/knowledge/doc-errors";
 import { aggregateDocumentStats, formatBytes } from "@/core/knowledge/document-stats";
 import {
   DEFAULT_DOCUMENT_SORT,
@@ -61,8 +63,10 @@ import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
 import { pathStatusLines } from "@/core/knowledge/path-status";
 import { partitionFilesBySuffix } from "@/core/knowledge/supported-formats";
 import type { KnowledgeBase, KnowledgeDocument, KnowledgeDocumentStatus } from "@/core/knowledge/types";
+import type { DocFailureEntry } from "@/core/knowledge/use-doc-failure-notifier";
 import { cn } from "@/lib/utils";
 
+import { DocFailurePanel } from "./doc-failure-panel";
 import { runAfterMenuClose } from "./run-after-menu-close";
 
 const SORT_OPTIONS: { key: DocumentSortKey; labelKey: "createdAt" | "name" | "size" | "chunks" }[] = [
@@ -157,6 +161,9 @@ export function DocumentPanel({
   onRetryDocument,
   onOpenChunks,
   supportedSuffixes,
+  failures = [],
+  onDismissFailure = () => undefined,
+  onDismissAllFailures = () => undefined,
 }: {
   kb: KnowledgeBase;
   documents: KnowledgeDocument[];
@@ -166,6 +173,11 @@ export function DocumentPanel({
   onOpenChunks: (doc: KnowledgeDocument) => void;
   /** Upload allowlist (Task 6, spec §6): drag-drop pre-upload intercept. */
   supportedSuffixes: readonly string[];
+  /** 失败通知面板（2026-08-31）：状态在页面层（useDocFailureNotifier），
+      本层只负责渲染在 tab 内右下角——全局 toast 已退出文档错误链路。 */
+  failures?: DocFailureEntry[];
+  onDismissFailure?: (key: string) => void;
+  onDismissAllFailures?: () => void;
 }) {
   const { t, locale } = useI18n();
   const tk = t.knowledge;
@@ -419,9 +431,10 @@ export function DocumentPanel({
                   <td className="text-muted-foreground px-2 py-2">
                     {doc.uploader_id === kb.owner_id ? tk.uploaderMe : doc.uploader_id}
                   </td>
-                  <td className="px-2 py-2">
-                    <div className="flex flex-col gap-0.5">
-                      {(() => {
+                  {/* 状态单元格单行（2026-08-31）：错误行已删，不再需要 flex-col 叠放，
+                      nowrap 防换行（图 1 反馈失败行被撑高）；失败态重试收进悬停卡片 */}
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {(() => {
                         const statusIndicator = (
                           <span
                             className="flex w-fit items-center gap-1.5"
@@ -441,6 +454,29 @@ export function DocumentPanel({
                             )}
                           </span>
                         );
+                        // 失败态（2026-08-31）：重试不占操作列，悬停失败状态出卡片——
+                        // 友好原因 + 重试按钮（HoverCard 支持交互内容，Tooltip 不支持）；
+                        // 右键菜单仍保留重试兜底（既有）。
+                        if (doc.status === "failed") {
+                          return (
+                            <HoverCard closeDelay={200} openDelay={150}>
+                              <HoverCardTrigger asChild>
+                                <span className="cursor-default" data-testid="doc-retry-trigger">
+                                  {statusIndicator}
+                                </span>
+                              </HoverCardTrigger>
+                              <HoverCardContent align="start" className="w-60 p-3" data-testid="doc-retry-card" side="top">
+                                <p className="text-muted-foreground mb-2 text-xs">
+                                  {tk.docErrors[classifyDocError(doc.error)]}
+                                </p>
+                                <Button className="h-7 gap-1.5 px-2.5" size="sm" onClick={() => onRetryDocument(doc.id)}>
+                                  <RotateCcw className="size-3.5" />
+                                  {tk.retryDocument}
+                                </Button>
+                              </HoverCardContent>
+                            </HoverCard>
+                          );
+                        }
                         // P3：path_status 非 null 才挂悬停（老行/未进索引不展示）
                         return doc.path_status ? (
                           <Tooltip content={<PathStatusBreakdown doc={doc} />}>{statusIndicator}</Tooltip>
@@ -448,9 +484,6 @@ export function DocumentPanel({
                           statusIndicator
                         );
                       })()}
-                      {/* 错误信息不常驻表格（2026-08-30 产品化）：失败只留状态，
-                          原因在状态转 failed 那一刻走右下角汇总 toast（useDocFailureToasts） */}
-                    </div>
                   </td>
                   <td className="text-muted-foreground px-2 py-2 whitespace-nowrap">
                     {formatKnowledgeTimestamp(doc.created_at, locale)}
@@ -465,12 +498,8 @@ export function DocumentPanel({
                   </td>
                   <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center gap-1">
-                      {doc.status === "failed" && (
-                        <Button size="sm" variant="ghost" onClick={() => onRetryDocument(doc.id)}>
-                          <RotateCcw className="size-3.5" />
-                          {tk.retryDocument}
-                        </Button>
-                      )}
+                      {/* 操作列全行统一（2026-08-31）：仅删除；重试不占列宽，
+                          走失败状态悬停卡片与右键菜单，行高形态不再因失败行突变 */}
                       <Button
                         aria-label={tk.deleteDocument}
                         size="icon"
@@ -556,6 +585,15 @@ export function DocumentPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 失败通知面板（2026-08-31）：绝对定位在 tab 内右下角，不跑到文档 tab 外侧；
+          面板内重试复用行级 onRetryDocument（条目 key 即文档 id） */}
+      <DocFailurePanel
+        failures={failures}
+        onDismiss={onDismissFailure}
+        onDismissAll={onDismissAllFailures}
+        onRetry={onRetryDocument}
+      />
     </div>
   );
 }

@@ -5,7 +5,7 @@
  * failed-doc retry. Presentational — data/mutations arrive via props.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { toast } from "sonner";
 
 import { DocumentPanel, PathStatusBreakdown } from "@/components/workspace/knowledge/document-panel";
@@ -158,16 +158,33 @@ describe("DocumentPanel table", () => {
     expect(onDeleteDocument).toHaveBeenCalledWith("doc-1");
   });
 
-  it("offers retry only on failed documents", () => {
-    renderPanel();
-    // ready document: delete is present, retry is not
+  it("操作列全行统一：仅删除，无重试按钮，状态列不换行（2026-08-31）", () => {
+    renderPanel({ documents: [doc({ status: "failed", error: "boom", chunk_count: null })] });
+    // 失败行操作列也只有删除——行高形态与其他行一致；重试不占列宽。
     expect(screen.getByRole("button", { name: "删除" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    // 状态单元格单行不换行（图 1 反馈：失败行被撑高换行）
+    expect(screen.getByText("失败").closest("td")!.className).toContain("whitespace-nowrap");
   });
 
-  it("invokes onRetryDocument for a failed document", () => {
+  it("悬停失败状态出卡片：友好原因 + 重试按钮（错误不常驻，重试不丢）", async () => {
+    const handlers = renderPanel({
+      documents: [doc({ status: "failed", error: "retry limit reached (5 attempts)", chunk_count: null })],
+    });
+    const trigger = screen.getByTestId("doc-retry-trigger");
+    fireEvent.pointerEnter(trigger);
+    fireEvent.pointerMove(trigger);
+    const card = await screen.findByTestId("doc-retry-card");
+    expect(card.textContent).toContain("解析服务多次重试仍失败");
+    expect(card.textContent).not.toContain("retry limit");
+    fireEvent.click(within(card).getByRole("button", { name: "重试" }));
+    expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("右键菜单为失败行提供重试兜底（Drive/OneDrive 主流兜底路径）", async () => {
     const handlers = renderPanel({ documents: [doc({ status: "failed", error: "boom", chunk_count: null })] });
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
     expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
   });
 });
@@ -388,5 +405,51 @@ describe("DocumentPanel 状态与类型图标", () => {
     expect(iconClassOf("演示.pptx")).toContain("text-orange-500");
     // 未知后缀：通用图标 + 次要色，不假装有类型信息
     expect(iconClassOf("未知.xyz")).toContain("text-muted-foreground");
+  });
+});
+
+// ── 失败通知面板接线（2026-08-31）────────────────────────────
+// 定案（用户拍板）：错误通知退出全局 sonner toast（视口级，出 tab），
+// 改为文档 tab 内右下角自绘面板；✕ 右侧、折叠/展开、总关/单关、不自动消失。
+describe("DocumentPanel 失败通知面板接线", () => {
+  it("有失败条目时渲染面板：文件名/原因两行，绝对定位在 tab 内右下角", () => {
+    renderPanel({
+      failures: [{ key: "doc-1", name: "户号.pptx", reason: "文件内容为空", retryable: true }],
+      onDismissFailure: rs.fn(),
+      onDismissAllFailures: rs.fn(),
+    });
+    const panel = screen.getByTestId("doc-failure-panel");
+    expect(panel.className).toContain("absolute");
+    expect(panel.className).toContain("bottom-3");
+    expect(screen.getByText("户号.pptx")).toBeTruthy();
+    expect(screen.getByText("文件内容为空")).toBeTruthy();
+  });
+
+  it("无失败条目时不渲染面板（默认 props 即可）", () => {
+    renderPanel();
+    expect(screen.queryByTestId("doc-failure-panel")).toBeNull();
+  });
+
+  it("面板关闭动作回流到页面层回调", () => {
+    const onDismissFailure = rs.fn();
+    const onDismissAllFailures = rs.fn();
+    renderPanel({
+      failures: [{ key: "doc-1", name: "户号.pptx", reason: "文件内容为空", retryable: true }],
+      onDismissFailure,
+      onDismissAllFailures,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "全部关闭" }));
+    expect(onDismissAllFailures).toHaveBeenCalledTimes(1);
+    expect(onDismissFailure).not.toHaveBeenCalled();
+  });
+
+  it("面板内重试回流到 onRetryDocument（条目 key 即文档 id）", () => {
+    const handlers = renderPanel({
+      failures: [{ key: "doc-1", name: "户号.pptx", reason: "文件内容为空", retryable: true }],
+      onDismissFailure: rs.fn(),
+      onDismissAllFailures: rs.fn(),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
   });
 });

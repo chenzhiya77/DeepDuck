@@ -793,6 +793,9 @@ export interface Translations {
     /** 错误信息产品化（2026-08-30）：分类器 kind → 本地化友好文案，原始英文不外露。 */
     docErrors: {
       toastTitle: string;
+      /** 关闭措辞（2026-08-31）：头部 ✕ = 总关闭，行内 ✕ = 单关闭。 */
+      dismissAll: string;
+      dismiss: string;
       empty: string;
       unsupported: string;
       retryLimit: string;

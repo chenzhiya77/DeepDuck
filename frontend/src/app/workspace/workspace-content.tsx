@@ -41,7 +41,9 @@ export async function WorkspaceContent({
       <CommandPalette />
       <SettingsDialogHost />
       <WorkspaceSettingsDeepLink />
-      <Toaster position="top-center" />
+      {/* 通知（2026-08-31 定案）：右下角 + 可关闭——瞬时反馈不挡视野，
+          主流 toast 惯例（原 top-center 无 × 被用户质疑） */}
+      <Toaster closeButton position="bottom-right" />
     </QueryClientProvider>
   );
 }

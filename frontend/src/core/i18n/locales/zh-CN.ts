@@ -785,6 +785,8 @@ export const zhCN: Translations = {
     // 错误信息产品化（2026-08-30）：原始英文异常不外露，失败合并成右下角瞬时 toast。
     docErrors: {
       toastTitle: "文档处理失败",
+      dismissAll: "全部关闭",
+      dismiss: "关闭",
       empty: "文件内容为空",
       unsupported: "不支持的文件类型",
       retryLimit: "解析服务多次重试仍失败，请检查文件是否损坏或稍后重试",

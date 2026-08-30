@@ -801,6 +801,8 @@ export const enUS: Translations = {
     },
     docErrors: {
       toastTitle: "Document processing failed",
+      dismissAll: "Dismiss all",
+      dismiss: "Dismiss",
       empty: "The file is empty",
       unsupported: "Unsupported file type",
       retryLimit: "The parsing service failed after several retries — check the file for corruption or try again later",

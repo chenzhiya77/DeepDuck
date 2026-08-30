@@ -55,7 +55,7 @@ import type {
   VectorRetrievalOverlay,
   WikiEntrySummary,
 } from "@/core/knowledge/types";
-import { useDocFailureToasts } from "@/core/knowledge/use-doc-failure-toasts";
+import { useDocFailureNotifier } from "@/core/knowledge/use-doc-failure-notifier";
 import { isWikiUpdating } from "@/core/knowledge/wiki-status";
 
 function showMutationError(error: unknown, fallback: string) {
@@ -140,8 +140,9 @@ export default function KnowledgePage() {
 
   const documentsQuery = useDocuments(selectedKbId);
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
-  // 错误产品化（2026-08-30）：处理失败不再常驻表格，状态转 failed 时弹右下角汇总 toast。
-  useDocFailureToasts(documents);
+  // 错误产品化（2026-08-31 定案）：全局 sonner toast 退出文档错误链路（视口级，
+  // 出 tab），失败条目由本层状态承接，渲染在文档 tab 内右下角面板。
+  const docFailures = useDocFailureNotifier(documents);
     // 向量空间索引中提示：仍在管线（未 ready/failed）的文档数。
     const indexingDocCount = useMemo(
       () => documents.filter((doc) => doc.status !== "ready" && doc.status !== "failed").length,
@@ -234,7 +235,7 @@ export default function KnowledgePage() {
     try {
       await uploadDocument.mutateAsync(file);
     } catch (error) {
-      toast.error(docErrorText(error, tk.errors.uploadFailed));
+      docFailures.report(file.name, docErrorText(error, tk.errors.uploadFailed));
     }
   };
 
@@ -286,7 +287,7 @@ export default function KnowledgePage() {
             toast.success(tk.duplicateUpload.replacedDocument(file.name));
           }
         } catch (error) {
-          toast.error(docErrorText(error, tk.errors.uploadFailed));
+          docFailures.report(file.name, docErrorText(error, tk.errors.uploadFailed));
         }
       }
     })();
@@ -374,10 +375,19 @@ export default function KnowledgePage() {
                   }}
                   onRetryDocument={(docId) => {
                     retryDocument.mutate(docId, {
-                      onError: (error) => toast.error(docErrorText(error, tk.errors.retryFailed)),
+                      // 重试请求本身失败（状态仍停在 failed，hook 不会重新提醒）——
+                      // 收编进同一面板，不走全局 toast。
+                      onError: (error) =>
+                        docFailures.report(
+                          documents.find((d) => d.id === docId)?.name ?? "",
+                          docErrorText(error, tk.errors.retryFailed),
+                        ),
                     });
                   }}
                   onOpenChunks={setDrawerDoc}
+                  failures={docFailures.failures}
+                  onDismissFailure={docFailures.dismissOne}
+                  onDismissAllFailures={docFailures.dismissAll}
                 />
               }
               wiki={
