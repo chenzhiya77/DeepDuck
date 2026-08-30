@@ -1,14 +1,24 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { BookOpen, Loader2, MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/core/i18n/hooks";
+import type { WikiGenerateMode } from "@/core/knowledge/api";
 import type { WikiEntrySummary } from "@/core/knowledge/types";
 
 import { ManualCardPanel } from "./manual-card-panel";
+import { runAfterMenuClose } from "./run-after-menu-close";
 import { WikiPanel } from "./wiki-panel";
+import { WikiRebuildDialog } from "./wiki-rebuild-dialog";
 
 /**
  * Wiki tab content (split-section layout): one unified search box above two
@@ -24,6 +34,7 @@ export function WikiTab({
   entries,
   entriesLoading = false,
   updating = false,
+  onGenerateWiki,
   onOpenEntry,
   onEditEntry,
   onDeleteEntry,
@@ -33,6 +44,11 @@ export function WikiTab({
   entries: WikiEntrySummary[];
   entriesLoading?: boolean;
   updating?: boolean;
+  /**
+   * 百科维护动作（2026-08-30）：更新/重建本是百科功能，此前只在全局库菜单；
+   * tab 内 ⋯ 承接同一触发器，与全局双入口。
+   */
+  onGenerateWiki?: (mode: WikiGenerateMode) => void;
   onOpenEntry: (entry: WikiEntrySummary) => void;
   onEditEntry?: (entry: WikiEntrySummary) => void;
   onDeleteEntry: (entry: WikiEntrySummary) => Promise<void> | void;
@@ -41,11 +57,12 @@ export function WikiTab({
   const { t } = useI18n();
   const tk = t.knowledge;
   const [query, setQuery] = useState("");
+  const [rebuildOpen, setRebuildOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col" data-testid="wiki-tab">
-      <div className="shrink-0 border-b px-4 py-2">
-        <div className="relative">
+      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+        <div className="relative flex-1">
           <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
           <Input
             aria-label={tk.searchWiki}
@@ -65,6 +82,26 @@ export function WikiTab({
             </button>
           )}
         </div>
+        {/* 百科操作 ⋯（2026-08-30）：搜索框后承接更新/重建，与全局库菜单双入口；
+            触发器 size-7 保 44px 栏高（⋯ 降档陷阱：默认 sm 是 h-8）；
+            更新中禁用规则与全局菜单一致。 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label={tk.wikiMoreOptions} className="size-7 shrink-0" size="icon-sm" variant="ghost">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem disabled={updating} onSelect={() => onGenerateWiki?.("incremental")}>
+              {updating ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+              {updating ? tk.wikiPanel.updating : tk.updateWiki}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={updating} onSelect={() => runAfterMenuClose(() => setRebuildOpen(true))}>
+              <RefreshCw className="size-4" />
+              {tk.rebuildWiki}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <WikiPanel
         entries={entries}
@@ -76,6 +113,15 @@ export function WikiTab({
         onOpenEntry={onOpenEntry}
       />
       <ManualCardPanel kbId={kbId} query={query} onOpenCard={onOpenCard} />
+      {/* 重建确认弹窗：与全局库菜单共用同一共享组件 */}
+      <WikiRebuildDialog
+        open={rebuildOpen}
+        onOpenChange={setRebuildOpen}
+        onConfirm={() => {
+          onGenerateWiki?.("full");
+          setRebuildOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { WikiEditDialog } from "@/components/workspace/knowledge/wiki-edit-dialo
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
 import { WikiTab } from "@/components/workspace/knowledge/wiki-tab";
 import { useI18n } from "@/core/i18n/hooks";
+import type { WikiGenerateMode } from "@/core/knowledge/api";
 import {
   computeSha256,
   findDuplicateByName,
@@ -281,6 +282,29 @@ export default function KnowledgePage() {
     })();
   };
 
+  // 百科生成触发器（2026-08-30）：全局库菜单与百科 tab 内 ⋯ 双入口共用同一逻辑。
+  const handleGenerateWiki = (mode: WikiGenerateMode) => {
+    generateWiki.mutate(mode, {
+      onSuccess: (ack) => {
+        // P1 触发幂等 (2026-08-14): a run is already draining the
+        // dirty set (manual or worker-auto) — inform, but don't
+        // arm the completion toast for a run we didn't start.
+        if (ack.status === "already_running") {
+          toast.info(tk.wikiAlreadyRunning);
+          return;
+        }
+        // Start toast stays (the trigger lives in the library
+        // menu, visible from every tab); the completion toast
+        // fires on the generating→idle transition above. The run
+        // flag keeps the entries query polling from any tab.
+        wikiManualRunRef.current = true;
+        setWikiRunActive(true);
+        toast.success(tk.wikiEnqueued);
+      },
+      onError: (error) => showMutationError(error, tk.errors.wikiFailed),
+    });
+  };
+
   return (
     <div className="size-full min-h-0" data-testid="knowledge-page">
       <KnowledgePanelsShell
@@ -309,27 +333,7 @@ export default function KnowledgePage() {
               uploading={uploadDocument.isPending}
               supportedSuffixes={supportedSuffixes}
               onUpload={uploadFilesWithCheck}
-              onGenerateWiki={(mode) => {
-                generateWiki.mutate(mode, {
-                  onSuccess: (ack) => {
-                    // P1 触发幂等 (2026-08-14): a run is already draining the
-                    // dirty set (manual or worker-auto) — inform, but don't
-                    // arm the completion toast for a run we didn't start.
-                    if (ack.status === "already_running") {
-                      toast.info(tk.wikiAlreadyRunning);
-                      return;
-                    }
-                    // Start toast stays (the trigger lives in the library
-                    // menu, visible from every tab); the completion toast
-                    // fires on the generating→idle transition above. The run
-                    // flag keeps the entries query polling from any tab.
-                    wikiManualRunRef.current = true;
-                    setWikiRunActive(true);
-                    toast.success(tk.wikiEnqueued);
-                  },
-                  onError: (error) => showMutationError(error, tk.errors.wikiFailed),
-                });
-              }}
+              onGenerateWiki={handleGenerateWiki}
               wikiUpdating={wikiUpdating}
               onRenameKb={async (name) => {
                 try {
@@ -372,6 +376,7 @@ export default function KnowledgePage() {
                   kbId={selectedKb.id}
                   entriesLoading={wikiEntriesQuery.isLoading}
                   updating={wikiUpdating}
+                  onGenerateWiki={handleGenerateWiki}
                   onDeleteEntry={(entry) => {
                     deleteWikiEntry.mutate(entry.id, {
                       onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),

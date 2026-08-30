@@ -289,6 +289,8 @@ export interface Translations {
     };
     updateWiki: string;
     rebuildWiki: string;
+    /** 百科 tab 内 ⋯ 菜单触发器文案（2026-08-30：与全局库菜单双入口）。 */
+    wikiMoreOptions: string;
     rebuildWikiConfirmTitle: string;
     rebuildWikiConfirmDescription: string;
     rebuildWikiConfirmAction: string;

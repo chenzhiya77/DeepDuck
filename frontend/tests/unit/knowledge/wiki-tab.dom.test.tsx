@@ -62,7 +62,7 @@ function setupMocks() {
   rs.mocked(useDeleteManualCard).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
 }
 
-function renderTab() {
+function renderTab(props?: Partial<Parameters<typeof WikiTab>[0]>) {
   render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
       <WikiTab
@@ -71,6 +71,7 @@ function renderTab() {
         onDeleteEntry={rs.fn()}
         onOpenCard={rs.fn()}
         onOpenEntry={rs.fn()}
+        {...props}
       />
     </I18nContext.Provider>,
   );
@@ -113,5 +114,49 @@ describe("WikiTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
     expect(screen.getByText("DeerFlow")).toBeTruthy();
     expect(screen.getByText("Gateway")).toBeTruthy();
+  });
+});
+
+// ── 百科 tab 内造题/维护入口（2026-08-30）──────────────────────
+// 定案（用户拍板）：更新百科/重建百科本是百科功能却只在全局库菜单里；
+// 在百科 tab 搜索框后加 ⋯ 承接，全局与 tab 内双入口。
+describe("WikiTab 百科操作菜单", () => {
+  it("搜索框后的 ⋯ 承接更新百科与重建百科，同栏高（h-7）", async () => {
+    setupMocks();
+    const onGenerateWiki = rs.fn();
+    renderTab({ onGenerateWiki });
+    const trigger = screen.getByRole("button", { name: "百科操作" });
+    expect(trigger.className).toContain("size-7");
+
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByText("更新百科"));
+    expect(onGenerateWiki).toHaveBeenCalledWith("incremental");
+
+    // 重建项带图标（与全局库菜单一致，不能裸文字）
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const rebuildItem = (await screen.findByText("重建百科")).closest("[role='menuitem']")!;
+    expect(rebuildItem.querySelector("svg")).toBeTruthy();
+    fireEvent.click(rebuildItem);
+    expect(await screen.findByText("全部重建百科？")).toBeTruthy();
+    fireEvent.click(screen.getByText("取消"));
+    expect(onGenerateWiki).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByText("重建百科"));
+    fireEvent.click(await screen.findByText("确认重建"));
+    expect(onGenerateWiki).toHaveBeenCalledWith("full");
+  });
+
+  it("更新中两项均禁用（与全局库菜单同规则）", async () => {
+    setupMocks();
+    const onGenerateWiki = rs.fn();
+    renderTab({ onGenerateWiki, updating: true });
+    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), { key: "ArrowDown" });
+    const updateItem = (await screen.findByText("更新中")).closest("[role='menuitem']");
+    const rebuildItem = (await screen.findByText("重建百科")).closest("[role='menuitem']");
+    expect(updateItem?.getAttribute("aria-disabled")).toBe("true");
+    expect(rebuildItem?.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(updateItem as HTMLElement);
+    expect(onGenerateWiki).not.toHaveBeenCalled();
   });
 });

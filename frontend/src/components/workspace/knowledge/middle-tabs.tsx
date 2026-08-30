@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Loader2, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
+import { BookOpen, Loader2, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -29,6 +29,7 @@ import { acceptAttribute, partitionFilesBySuffix } from "@/core/knowledge/suppor
 import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { runAfterMenuClose } from "./run-after-menu-close";
+import { WikiRebuildDialog } from "./wiki-rebuild-dialog";
 
 export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "graph" | "eval";
 
@@ -125,16 +126,23 @@ export function MiddleTabs({
                 <RefreshCw className="size-4" />
                 {tk.rebuildWiki}
               </DropdownMenuItem>
+              {/* 知识库管理段（2026-08-30）：重命名/删除补图标，两项独占一个分界段；
+                  分界上移到重命名之前，段内不再隔断 */}
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => {
                   setRenameValue(kb.name);
                   runAfterMenuClose(() => setRenameOpen(true));
                 }}
               >
+                <Pencil className="size-4" />
                 {tk.renameKb}
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setDeleteKbOpen(true))}>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => runAfterMenuClose(() => setDeleteKbOpen(true))}
+              >
+                <Trash2 className="size-4" />
                 {tk.deleteKb}
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -272,28 +280,16 @@ export function MiddleTabs({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* Wiki full-rebuild confirm (Task 14: full mode is for rule upgrades) */}
-      <Dialog open={rebuildOpen} onOpenChange={setRebuildOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>{tk.rebuildWikiConfirmTitle}</DialogTitle>
-            <DialogDescription>{tk.rebuildWikiConfirmDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRebuildOpen(false)}>
-              {t.common.cancel}
-            </Button>
-            <Button
-              onClick={() => {
-                onGenerateWiki("full");
-                setRebuildOpen(false);
-              }}
-            >
-              {tk.rebuildWikiConfirmAction}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Wiki full-rebuild confirm (Task 14: full mode is for rule upgrades;
+          2026-08-30 抽出共享组件，百科 tab 内 ⋯ 菜单复用同一弹窗) */}
+      <WikiRebuildDialog
+        open={rebuildOpen}
+        onOpenChange={setRebuildOpen}
+        onConfirm={() => {
+          onGenerateWiki("full");
+          setRebuildOpen(false);
+        }}
+      />
     </div>
   );
 }

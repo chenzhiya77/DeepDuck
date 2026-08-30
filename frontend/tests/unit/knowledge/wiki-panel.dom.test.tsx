@@ -158,7 +158,9 @@ describe("MiddleTabs", () => {
   it("asks for confirmation before a full wiki rebuild (Task 14)", async () => {
     const handlers = renderTabs();
     fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByText("全部重建"));
+    // 文案定案（2026-08-30）：「全部重建」范围不明，改「重建百科」
+    fireEvent.click(await screen.findByText("重建百科"));
+    expect(screen.queryByText("全部重建")).toBeNull();
 
     // confirm dialog with the cost warning; cancel does nothing
     expect(await screen.findByText("全部重建百科？")).toBeTruthy();
@@ -167,9 +169,24 @@ describe("MiddleTabs", () => {
 
     // reopen and confirm → full mode
     fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByText("全部重建"));
+    fireEvent.click(await screen.findByText("重建百科"));
     fireEvent.click(await screen.findByText("确认重建"));
     expect(handlers.onGenerateWiki).toHaveBeenCalledWith("full");
+  });
+
+  it("重命名/删除知识库带图标，且独占一个分界段（2026-08-30）", async () => {
+    renderTabs();
+    fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
+    const renameItem = (await screen.findByText("重命名知识库")).closest("[role='menuitem']")!;
+    const deleteItem = (await screen.findByText("删除知识库")).closest("[role='menuitem']")!;
+    // 两项都带图标（此前裸文字）
+    expect(renameItem.querySelector("svg")).toBeTruthy();
+    expect(deleteItem.querySelector("svg")).toBeTruthy();
+    // 分界在重命名之前：重命名+删除同处一个知识库管理段；点击重命名能开弹窗（交互未断）
+    const separator = screen.getByRole("separator");
+    expect(separator.compareDocumentPosition(renameItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(renameItem);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
   it("disables both wiki generation triggers while a run is in flight (2026-08-14)", async () => {
@@ -177,7 +194,7 @@ describe("MiddleTabs", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "设置" }), { key: "ArrowDown" });
     // The incremental item swaps its label to 更新中; both items go aria-disabled.
     const updateItem = (await screen.findByText("更新中")).closest("[role='menuitem']");
-    const rebuildItem = (await screen.findByText("全部重建")).closest("[role='menuitem']");
+    const rebuildItem = (await screen.findByText("重建百科")).closest("[role='menuitem']");
     expect(updateItem?.getAttribute("aria-disabled")).toBe("true");
     expect(rebuildItem?.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(updateItem as HTMLElement);

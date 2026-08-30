@@ -344,7 +344,9 @@ export const zhCN: Translations = {
       desc: "降序",
     },
     updateWiki: "更新百科",
-    rebuildWiki: "全部重建",
+    // 文案定案（2026-08-30）：「全部重建」范围不明，改「重建百科」。
+    rebuildWiki: "重建百科",
+    wikiMoreOptions: "百科操作",
     rebuildWikiConfirmTitle: "全部重建百科？",
     rebuildWikiConfirmDescription: "将按当前图谱重写所有合格条目（包括未变化的），LLM 调用成本较高，仅在生成规则升级后使用。",
     rebuildWikiConfirmAction: "确认重建",
