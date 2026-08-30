@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import type { MetricsOverview, BaselineDiff } from "@/core/knowledge/types";
+import { cn } from "@/lib/utils";
 
 import { classifyRagasSkipReason, getCellColorClass, getProgressBarColor } from "./eval-metrics-overview.utils";
 
@@ -150,10 +151,11 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
       <TableHeader>
         <TableRow>
           <TableHead>{tk.tableCategory}</TableHead>
-          <TableHead>{tk.tableHitRate}</TableHead>
-          <TableHead>{tk.tableRecallAtK}</TableHead>
-          <TableHead>{tk.tableMrr}</TableHead>
-          <TableHead>{tk.tablePathAccuracy}</TableHead>
+          {/* 数值列表头右对齐（2026-08-30）：与数据同轴，主流规范文本左/数值右 */}
+          <TableHead className="text-right">{tk.tableHitRate}</TableHead>
+          <TableHead className="text-right">{tk.tableRecallAtK}</TableHead>
+          <TableHead className="text-right">{tk.tableMrr}</TableHead>
+          <TableHead className="text-right">{tk.tablePathAccuracy}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -178,10 +180,11 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
           return (
             <TableRow key={category} data-testid={testId} className={summaryRowClassName}>
               <TableCell>{category === "summary" ? tk.category.summary : `${tk.category[category]} (n=${metric.question_count})`}</TableCell>
-            <TableCell data-testid={`eval-cell-hit-${category}`}>{percent(metric.hit_rate)}</TableCell>
-              <TableCell data-testid={`eval-cell-recall-${category}`} className={tint}>{percent(metric.recall_at_k)}</TableCell>
-              <TableCell data-testid={`eval-cell-mrr-${category}`}>{metric.mrr.toFixed(3)}</TableCell>
-              <TableCell data-testid={`eval-cell-path-${category}`}>{percent(metric.path_accuracy)}</TableCell>
+            {/* 数值单元格右对齐 + tabular-nums（2026-08-30）：% 与小数位纵向成列 */}
+            <TableCell className="text-right tabular-nums" data-testid={`eval-cell-hit-${category}`}>{percent(metric.hit_rate)}</TableCell>
+              <TableCell className={cn(tint, "text-right tabular-nums")} data-testid={`eval-cell-recall-${category}`}>{percent(metric.recall_at_k)}</TableCell>
+              <TableCell className="text-right tabular-nums" data-testid={`eval-cell-mrr-${category}`}>{metric.mrr.toFixed(3)}</TableCell>
+              <TableCell className="text-right tabular-nums" data-testid={`eval-cell-path-${category}`}>{percent(metric.path_accuracy)}</TableCell>
             </TableRow>
           );
         })}

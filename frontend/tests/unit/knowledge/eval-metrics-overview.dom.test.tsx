@@ -87,6 +87,23 @@ describe("Layer 1 表格", () => {
     expect(headers.map((h) => h.textContent)).toEqual(["分类", "命中率", "召回率@k", "MRR", "路径准确率"]);
   });
 
+  it("数值列表头与单元格右对齐 + tabular-nums，分类列保持左对齐（2026-08-30）", () => {
+    renderOverview(FULL_OVERVIEW);
+    const headers = Array.from(screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"));
+    // 数值列表头右对齐（与数据同轴）；分类表头保持左对齐。
+    // 主流规范：文本左、数值右（Material/Ant Design 数据表）。
+    for (const header of headers.slice(1)) {
+      expect(header.className).toContain("text-right");
+    }
+    expect(headers[0]!.className).not.toContain("text-right");
+    // 数值单元格右对齐 + 等宽数字：% 与小数位纵向成列，不再参差。
+    for (const testId of ["eval-cell-hit-fact", "eval-cell-recall-fact", "eval-cell-mrr-fact", "eval-cell-path-fact"]) {
+      const cell = screen.getByTestId(testId);
+      expect(cell.className).toContain("text-right");
+      expect(cell.className).toContain("tabular-nums");
+    }
+  });
+
   it("renders localized category display names instead of wire keys (zh-CN)", () => {
     renderOverview(FULL_OVERVIEW);
 
