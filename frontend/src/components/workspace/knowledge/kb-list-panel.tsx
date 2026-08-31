@@ -1,6 +1,6 @@
 "use client";
 
-import { LibraryBig, PanelLeftClose, Plus } from "lucide-react";
+import { LibraryBig, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -27,14 +27,11 @@ export function KbListPanel({
   selectedKbId,
   onSelect,
   onCreate,
-  onCollapse,
 }: {
   kbs: KnowledgeBase[];
   selectedKbId: string | null;
   onSelect: (kbId: string) => void;
   onCreate: (name: string, description: string) => Promise<void> | void;
-  /** When set, the group header shows a collapse button (push-style fold). */
-  onCollapse?: () => void;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
@@ -68,28 +65,15 @@ export function KbListPanel({
     <div className="flex h-full flex-col" data-testid="kb-list-panel">
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <span className="text-muted-foreground text-xs font-medium">{tk.personalKBs}</span>
-        <div className="flex items-center gap-0.5">
-          {onCollapse && (
-            <Button
-              aria-label={tk.collapseKbList}
-              className="size-6"
-              size="icon"
-              variant="ghost"
-              onClick={onCollapse}
-            >
-              <PanelLeftClose className="size-4" />
-            </Button>
-          )}
-          <Button
-            aria-label={tk.createKB}
-            className="size-6"
-            size="icon"
-            variant="ghost"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="size-4" />
-          </Button>
-        </div>
+        <Button
+          aria-label={tk.createKB}
+          className="size-6"
+          size="icon"
+          variant="ghost"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="size-4" />
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">

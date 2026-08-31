@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelLeftOpenIcon } from "lucide-react";
+import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import type { Layout, PanelImperativeHandle } from "react-resizable-panels";
 
@@ -16,14 +16,25 @@ import { cn } from "@/lib/utils";
 const LEFT_PANEL_ID = "kb-list";
 
 export interface KnowledgePanelsControls {
-  collapseLeft: () => void;
+  /**
+   * Fold/expand toggle for the list column, built by the shell because that
+   * is where the collapsed state lives. Render it into the middle column's
+   * header row: the header band is the only horizontal space that never
+   * overlaps a document row, and keeping the control mounted (icon + label
+   * flip) means it never moves across the fold.
+   */
+  listToggle: ReactNode;
 }
 
 /**
  * Three-column shell of the knowledge page (spec §5.2) built on
  * react-resizable-panels: both gutters drag to resize with pixel min/max
  * guards, and the left kb list folds push-style (drag past its min width or
- * click the header button → width 0; a floating edge handle restores it).
+ * click the toggle → width 0). The toggle is one persistent control that the
+ * shell renders and `middle` places in its header row — never a floating
+ * overlay, which sat on top of the document table at whatever row happened to
+ * be centred. It must stay visible for the drag-to-edge path too, since that
+ * collapses the column without ever touching the button.
  * The middle column keeps its 320px minimum; the chat column keeps a 320px
  * floor too so the composer row (deep-research switch + model selector + send
  * button) never wraps at the panel's narrowest drag position. Extreme narrow
@@ -38,8 +49,8 @@ export function KnowledgePanelsShell({
   middle,
   right,
 }: {
-  left: (controls: KnowledgePanelsControls) => ReactNode;
-  middle: ReactNode;
+  left: ReactNode;
+  middle: (controls: KnowledgePanelsControls) => ReactNode;
   right: ReactNode;
 }) {
   const { t } = useI18n();
@@ -50,17 +61,35 @@ export function KnowledgePanelsShell({
   // The shell owns the collapsed flag: button clicks set it directly, while
   // onLayoutChanged covers the drag-to-the-edge path (fires on pointer
   // release, so a gesture that reverses before release never flickers).
-  const collapseLeft = useCallback(() => {
-    leftPanelRef.current?.collapse();
-    setLeftCollapsed(true);
-  }, []);
-  const expandLeft = useCallback(() => {
-    leftPanelRef.current?.expand();
-    setLeftCollapsed(false);
-  }, []);
+  const toggleLeft = useCallback(() => {
+    if (leftCollapsed) {
+      leftPanelRef.current?.expand();
+      setLeftCollapsed(false);
+    } else {
+      leftPanelRef.current?.collapse();
+      setLeftCollapsed(true);
+    }
+  }, [leftCollapsed]);
   const handleLayoutChanged = useCallback((layout: Layout) => {
     setLeftCollapsed(layout[LEFT_PANEL_ID] === 0);
   }, []);
+
+  const listToggle = (
+    <Button
+      aria-label={leftCollapsed ? tk.expandKbList : tk.collapseKbList}
+      className="-ml-1 -mr-1 size-5 shrink-0 text-muted-foreground hover:text-foreground"
+      data-testid="kb-list-toggle"
+      size="icon"
+      variant="ghost"
+      onClick={toggleLeft}
+    >
+      {leftCollapsed ? (
+        <PanelLeftOpenIcon className="size-3.5" />
+      ) : (
+        <PanelLeftCloseIcon className="size-3.5" />
+      )}
+    </Button>
+  );
 
   return (
     <div
@@ -89,7 +118,7 @@ export function KnowledgePanelsShell({
               leftCollapsed && "pointer-events-none opacity-0",
             )}
           >
-            {left({ collapseLeft })}
+            {left}
           </aside>
         </ResizablePanel>
         <ResizableHandle
@@ -100,7 +129,7 @@ export function KnowledgePanelsShell({
           disabled={leftCollapsed}
         />
         <ResizablePanel className="min-h-0 min-w-0" id="documents" minSize={320}>
-          <section className="size-full border-r">{middle}</section>
+          <section className="size-full border-r">{middle({ listToggle })}</section>
         </ResizablePanel>
         <ResizableHandle className="hover:bg-accent w-0.5 transition-colors" />
         <ResizablePanel
@@ -113,17 +142,6 @@ export function KnowledgePanelsShell({
           <aside className="size-full">{right}</aside>
         </ResizablePanel>
       </ResizablePanelGroup>
-      {leftCollapsed && (
-        <Button
-          aria-label={tk.expandKbList}
-          className="absolute top-1/2 left-1 z-20 -translate-y-1/2 shadow-md"
-          size="icon-sm"
-          variant="outline"
-          onClick={expandLeft}
-        >
-          <PanelLeftOpenIcon className="size-4" />
-        </Button>
-      )}
     </div>
   );
 }

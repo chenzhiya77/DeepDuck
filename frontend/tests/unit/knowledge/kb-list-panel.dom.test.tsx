@@ -54,16 +54,10 @@ describe("KbListPanel", () => {
     expect(onSelect).toHaveBeenCalledWith("kb-b");
   });
 
-  it("renders the collapse button only when onCollapse is provided", () => {
+  it("owns no fold control — the single toggle lives in the middle header", () => {
     renderPanel();
     expect(screen.queryByRole("button", { name: "收起列表栏" })).toBeNull();
-
-    cleanup();
-    const onCollapse = rs.fn();
-    renderPanel({ onCollapse });
-    const button = screen.getByRole("button", { name: "收起列表栏" });
-    fireEvent.click(button);
-    expect(onCollapse).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "展开列表栏" })).toBeNull();
   });
 
   it("marks the selected kb row as current", () => {

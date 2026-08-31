@@ -35,7 +35,9 @@ export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "
 
 /**
  * Middle-column container (phase-2 batch-1, spec §3 三行结构):
- *   row 1 — library header: kb name + overflow menu (generate wiki / rename /
+ *   row 1 — library header: kb-list fold toggle (a slot the panels shell
+ *           fills, so the control never overlays a document row) + kb name +
+ *           overflow menu (generate wiki / rename /
  *           delete — library-scoped, visible for every tab);
  *   row 2 — the 文档|百科|检索测试 tab strip;
  *   row 3 — tab panes, keep-alive via forceMount so switching never unmounts
@@ -57,6 +59,7 @@ export function MiddleTabs({
   wikiUpdating = false,
   onRenameKb,
   onDeleteKb,
+  listToggle,
   documents,
   wiki,
   recall,
@@ -80,6 +83,12 @@ export function MiddleTabs({
   wikiUpdating?: boolean;
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
+  /**
+   * kb-list fold toggle. The panels shell owns the collapsed state and builds
+   * this; the header row is its home because a floating overlay over the pane
+   * covered whichever document row happened to be centred.
+   */
+  listToggle?: ReactNode;
   documents: ReactNode;
   wiki: ReactNode;
   recall: ReactNode;
@@ -99,8 +108,9 @@ export function MiddleTabs({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="knowledge-middle-tabs">
-      {/* Row 1: library header (name + library-level overflow menu) */}
+      {/* Row 1: library header (fold toggle + name + library-level overflow menu) */}
       <div className="flex items-center gap-2 border-b px-4 py-3">
+        {listToggle}
         <h2 className="min-w-0 truncate text-sm font-semibold">{kb.name}</h2>
         <Badge className="shrink-0" variant="outline">{t.knowledge.personalKBs}</Badge>
         <div className="ml-auto flex shrink-0 items-center">
