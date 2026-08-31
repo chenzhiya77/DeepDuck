@@ -278,6 +278,7 @@ export interface Translations {
     deleteSelected: string;
     cancelSelection: string;
     openChunks: string;
+    moreActions: string;
     sortDocuments: string;
     sort: {
       createdAt: string;
@@ -318,7 +319,6 @@ export interface Translations {
       chunks: string;
       status: string;
       createdAt: string;
-      actions: string;
     };
     status: {
       uploaded: string;

@@ -350,6 +350,7 @@ export const enUS: Translations = {
     deleteSelected: "Delete selected",
     cancelSelection: "Cancel selection",
     openChunks: "View chunks",
+    moreActions: "More actions",
     sortDocuments: "Sort documents",
     sort: {
       createdAt: "Upload time",
@@ -386,7 +387,6 @@ export const enUS: Translations = {
       chunks: "Chunks",
       status: "Status",
       createdAt: "Uploaded",
-      actions: "Actions",
     },
     status: {
       uploaded: "Uploaded",

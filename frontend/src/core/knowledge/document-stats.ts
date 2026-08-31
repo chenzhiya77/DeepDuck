@@ -59,3 +59,15 @@ export function formatBytes(bytes: number): string {
   if (mib < 1024) return `${mib.toFixed(1)} MB`;
   return `${(mib / 1024).toFixed(1)} GB`;
 }
+
+/**
+ * Fixed-unit KB for the size column (2026-08-31): bare thousands-grouped
+ * number (the caller appends the " KB" suffix; the header stays unit-less)
+ * so the right edge aligns. Sub-1KB files round up to 1 (Windows
+ * convention — no misleading 0.2); exact bytes go to the hover tooltip.
+ */
+export function formatKb(bytes: number): string {
+  if (bytes <= 0) return "0";
+  if (bytes < 1024) return "1";
+  return Math.round(bytes / 1024).toLocaleString();
+}

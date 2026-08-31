@@ -334,6 +334,8 @@ export const zhCN: Translations = {
     deleteSelected: "删除所选",
     cancelSelection: "取消选择",
     openChunks: "查看切片",
+    // 悬停三个点浮层的触发器（2026-08-31 去操作列）
+    moreActions: "更多操作",
     sortDocuments: "排序方式",
     sort: {
       createdAt: "上传时间",
@@ -367,11 +369,11 @@ export const zhCN: Translations = {
     table: {
       name: "名称",
       uploader: "上传者",
+      // 大小统一 KB（2026-08-31）：表头不带单位，每个单元格自带 KB 后缀。
       size: "大小",
       chunks: "切片数",
       status: "状态",
       createdAt: "时间",
-      actions: "操作",
     },
     status: {
       uploaded: "待解析",

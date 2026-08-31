@@ -1,14 +1,23 @@
 /**
  * Middle column of the knowledge page (spec §5.2/§3.6): kb header actions,
- * the document table (名称/上传者/状态/时间/大小/切片数/操作，2026-08-30 列序重排), the aggregated
- * bottom stats row, drag-drop upload, cascade-warning delete confirms, and
- * failed-doc retry. Presentational — data/mutations arrive via props.
+ * the document table (名称/上传者/状态/时间/大小/切片数 + 尾部悬停窄列，2026-08-31),
+ * the aggregated bottom stats row, drag-drop upload, cascade-warning delete
+ * confirms, and failed-doc retry. Presentational — data/mutations arrive via props.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { toast } from "sonner";
 
-import { DocumentPanel, PathStatusBreakdown } from "@/components/workspace/knowledge/document-panel";
+import {
+  DocumentPanel,
+  PathStatusBreakdown,
+} from "@/components/workspace/knowledge/document-panel";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { pathStatusLines } from "@/core/knowledge/path-status";
@@ -54,8 +63,16 @@ function renderPanel(props?: Partial<Parameters<typeof DocumentPanel>[0]>) {
     onOpenChunks: rs.fn(),
   };
   render(
-    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <DocumentPanel kb={KB} documents={[doc({})]} supportedSuffixes={[".md", ".pdf", ".txt"]} {...handlers} {...props} />
+    <I18nContext.Provider
+      value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+    >
+      <DocumentPanel
+        kb={KB}
+        documents={[doc({})]}
+        supportedSuffixes={[".md", ".pdf", ".txt"]}
+        {...handlers}
+        {...props}
+      />
     </I18nContext.Provider>,
   );
   return handlers;
@@ -83,7 +100,7 @@ describe("DocumentPanel toolbar", () => {
 });
 
 describe("DocumentPanel table", () => {
-  it("renders the six columns with formatted values", () => {
+  it("renders the six columns with formatted values（大小统一 KB：每格带 KB 后缀，2026-08-31）", () => {
     renderPanel();
     expect(screen.getByText("名称")).toBeTruthy();
     expect(screen.getByText("上传者")).toBeTruthy();
@@ -93,27 +110,84 @@ describe("DocumentPanel table", () => {
     expect(screen.getByText("时间")).toBeTruthy();
     expect(screen.getByText("产品手册.pdf")).toBeTruthy();
     expect(screen.getByText("我")).toBeTruthy();
-    expect(screen.getByText("2.0 KB")).toBeTruthy();
+    // 表头不带单位，单元格自带 KB 后缀（2048B → 2 KB）；统计行总额仍用自适应单位
+    expect(screen.getByTestId("doc-size-value").textContent).toBe("2 KB");
     expect(screen.getByText("12")).toBeTruthy();
     expect(screen.getByText("就绪")).toBeTruthy();
   });
 
-  it("列序：文本列居左组、数值列聚右组；大小/切片数右对齐 + tabular-nums（2026-08-30）", () => {
+  it("行间无横线：分隔靠留白+悬停底色，结构线只留表头与统计行（2026-08-31）", () => {
+    renderPanel();
+    // Drive/Notion 无框表风格：数据行不再带 border-b，悬停底色即行边界。
+    const row = screen.getByText("产品手册.pdf").closest("tr")!;
+    expect(row.className).not.toContain("border-b");
+    // 表头发丝线保留（区分说明与数据）
+    expect(
+      row.closest("table")!.querySelector("thead tr")!.className,
+    ).toContain("border-b");
+  });
+
+  it("时间列等宽数字：tabular-nums 使 1/2 同宽，行间时分对齐（2026-08-31）", () => {
+    renderPanel({
+      documents: [
+        doc({ id: "a", name: "早班.pdf", created_at: "2026-08-31T01:11:00Z" }),
+        doc({ id: "b", name: "晚班.pdf", created_at: "2026-08-23T22:59:00Z" }),
+      ],
+    });
+    // 比例字体下 1 比 2 窄，行间时分错位——主流表格（Gmail/Linear/金融）
+    // 用 font-variant-numeric: tabular-nums 解决，不换 monospace 字体。
+    for (const name of ["早班.pdf", "晚班.pdf"]) {
+      const row = screen.getByText(name).closest("tr")!;
+      const cells = within(row).getAllByRole("cell");
+      const timeCell = cells.find((cell) =>
+        /\d{4}\/\d{2}\/\d{2}/.test(cell.textContent ?? ""),
+      )!;
+      expect(timeCell.className).toContain("tabular-nums");
+    }
+  });
+
+  it("列序：文本列居左组、数值列聚右组；无操作列（2026-08-31 删除收进悬停浮层）", () => {
     renderPanel();
     // 主流文件管理器（资源管理器/Drive）：文本列在左，大小/数量聚到右端。
     const headers = Array.from(screen.getAllByRole("columnheader"));
-    expect(headers.map((h) => h.textContent?.trim())).toEqual(["", "名称", "上传者", "状态", "时间", "大小", "切片数", "操作"]);
-    // 数值列表头右对齐，与数据同轴；单位（KB/MB）右缘成列。
-    expect(headers[5]!.className).toContain("text-right");
-    expect(headers[6]!.className).toContain("text-right");
-    const sizeCell = screen.getByText("2.0 KB").closest("td")!;
+    expect(headers.map((h) => h.textContent?.trim())).toEqual([
+      "",
+      "名称",
+      "上传者",
+      "状态",
+      "时间",
+      "大小",
+      "切片数",
+      "",
+    ]);
+    // 数值列表头左对齐（与文本列一致），数值内容整体靠右——
+    // Notion/Airtable 流派（2026-08-31 用户拍板，推翻表头数据同轴右对齐）。
+    expect(headers[5]!.className).not.toContain("text-right");
+    expect(headers[6]!.className).not.toContain("text-right");
+    // 尾部窄列只承接悬停三个点：无标题、固定窄宽，平时留白不遮数值（Drive 惯例）
+    expect(headers[7]!.className).toContain("w-10");
+    const sizeCell = screen.getByTestId("doc-size-value").closest("td")!;
     expect(sizeCell.className).toContain("text-right");
     expect(sizeCell.className).toContain("tabular-nums");
-    expect(screen.getByText("12").closest("td")!.className).toContain("text-right");
+    expect(screen.getByText("12").closest("td")!.className).toContain(
+      "text-right",
+    );
+  });
+
+  it("上传者列内容内缩一档：光学校正「内容看似超出表头」（2026-08-31）", () => {
+    renderPanel();
+    const cell = screen.getByText("我").closest("td")!;
+    // 表头 12px 浅灰小字、内容 14px 深色——重墨色视觉上会「抢出来」，
+    // 内容比表头多一档缩进（pl-3 vs px-2），看起来收在列内。
+    expect(cell.className).toContain("pl-3");
   });
 
   it("renders the em-dash placeholder while chunk_count is null", () => {
-    renderPanel({ documents: [doc({ status: "indexing", progress_percent: 40, chunk_count: null })] });
+    renderPanel({
+      documents: [
+        doc({ status: "indexing", progress_percent: 40, chunk_count: null }),
+      ],
+    });
     expect(screen.getByText("—")).toBeTruthy();
     // exact match pins the status badge (the stats row reads "索引中 1")
     expect(screen.getByText("索引中")).toBeTruthy();
@@ -138,7 +212,11 @@ describe("DocumentPanel table", () => {
   });
 
   it("错误信息不常驻表格（产品化：失败只留状态，原因走 toast 通知，2026-08-30）", () => {
-    renderPanel({ documents: [doc({ status: "failed", error: "retry limit reached (5 attempts)" })] });
+    renderPanel({
+      documents: [
+        doc({ status: "failed", error: "retry limit reached (5 attempts)" }),
+      ],
+    });
     // 原始英文不外露；表格里只剩失败状态本身（红点+文案由状态列承载）
     expect(screen.queryByText(/retry limit/)).toBeNull();
     expect(screen.getByText("失败")).toBeTruthy();
@@ -147,29 +225,48 @@ describe("DocumentPanel table", () => {
   it("opens the chunk drawer when a row is clicked", () => {
     const { onOpenChunks } = renderPanel();
     fireEvent.click(screen.getByText("产品手册.pdf"));
-    expect(onOpenChunks).toHaveBeenCalledWith(expect.objectContaining({ id: "doc-1" }));
+    expect(onOpenChunks).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "doc-1" }),
+    );
   });
 
   it("deletes a document after the cascade-warning confirm", async () => {
     const { onDeleteDocument } = renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
-    expect(await screen.findByText(/将级联清理该文档的切片、向量与图谱贡献/)).toBeTruthy();
+    // 删除收进尾部窄列的三个点（2026-08-31）：不再有操作列常驻按钮。
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
+    expect(
+      await screen.findByText(/将级联清理该文档的切片、向量与图谱贡献/),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     expect(onDeleteDocument).toHaveBeenCalledWith("doc-1");
   });
 
-  it("操作列全行统一：仅删除，无重试按钮，状态列不换行（2026-08-31）", () => {
-    renderPanel({ documents: [doc({ status: "failed", error: "boom", chunk_count: null })] });
-    // 失败行操作列也只有删除——行高形态与其他行一致；重试不占列宽。
-    expect(screen.getByRole("button", { name: "删除" })).toBeTruthy();
+  it("去操作标题列：尾部窄列无标题不占文案宽，无独立重试按钮，状态列不换行（2026-08-31）", () => {
+    renderPanel({
+      documents: [doc({ status: "failed", error: "boom", chunk_count: null })],
+    });
+    // 表格不再有「操作」标题列——删除收进尾部窄列的三个点与右键菜单兜底。
+    expect(screen.queryByText("操作")).toBeNull();
+    // 失败行也不为重试占宽；重试走窄列菜单/失败悬停卡/右键菜单。
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     // 状态单元格单行不换行（图 1 反馈：失败行被撑高换行）
-    expect(screen.getByText("失败").closest("td")!.className).toContain("whitespace-nowrap");
+    expect(screen.getByText("失败").closest("td")!.className).toContain(
+      "whitespace-nowrap",
+    );
   });
 
   it("悬停失败状态出卡片：友好原因 + 重试按钮（错误不常驻，重试不丢）", async () => {
     const handlers = renderPanel({
-      documents: [doc({ status: "failed", error: "retry limit reached (5 attempts)", chunk_count: null })],
+      documents: [
+        doc({
+          status: "failed",
+          error: "retry limit reached (5 attempts)",
+          chunk_count: null,
+        }),
+      ],
     });
     const trigger = screen.getByTestId("doc-retry-trigger");
     fireEvent.pointerEnter(trigger);
@@ -182,10 +279,99 @@ describe("DocumentPanel table", () => {
   });
 
   it("右键菜单为失败行提供重试兜底（Drive/OneDrive 主流兜底路径）", async () => {
-    const handlers = renderPanel({ documents: [doc({ status: "failed", error: "boom", chunk_count: null })] });
+    const handlers = renderPanel({
+      documents: [doc({ status: "failed", error: "boom", chunk_count: null })],
+    });
     fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
     fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
     expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
+  });
+});
+
+// ── 悬停三个点窄列（2026-08-31）────────────────────────────
+// 定案（用户拍板）：切片数后预留一窄列承接三个点（Drive/SharePoint 惯例，
+// 不遮数值）；菜单镜像右键菜单（查看切片/重试/删除）；右键菜单保留兜底。
+describe("DocumentPanel 悬停三个点窄列", () => {
+  it("三个点住在尾部预留窄列：默认隐藏、悬停淡入，不遮切片数/大小", () => {
+    renderPanel();
+    const pill = screen.getByTestId("doc-row-more");
+    expect(pill.className).toContain("opacity-0");
+    expect(pill.className).toContain("group-hover:opacity-100");
+    // 预留列方案（非覆盖式）：不再需要绝对定位/模糊底纹，列本身就是位置。
+    expect(pill.className).not.toContain("absolute");
+    expect(pill.closest("td")!.className).toContain("w-10");
+  });
+
+  it("三个点菜单镜像右键菜单：查看切片 + 删除；就绪行无重试", async () => {
+    renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), {
+      key: "ArrowDown",
+    });
+    expect(
+      await screen.findByRole("menuitem", { name: /查看切片/ }),
+    ).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /删除/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /重试/ })).toBeNull();
+  });
+
+  it("失败行窄列菜单额外提供重试", async () => {
+    const handlers = renderPanel({
+      documents: [doc({ status: "failed", error: "boom", chunk_count: null })],
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
+    expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("菜单查看切片回流 onOpenChunks；点击三个点本身不触发行级打开", async () => {
+    const handlers = renderPanel();
+    // 窄列内的点击被单元格 stopPropagation，不会冒泡到行级 onClick
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    expect(handlers.onOpenChunks).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /查看切片/ }));
+    expect(handlers.onOpenChunks).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── 大小统一 KB 与批量栏图标（2026-08-31）──────────────────
+// 定案（用户拍板）：表头不带单位，每个单元格自带 KB 后缀、纯数字千分位，
+// <1KB 向上取整为 1（Windows 惯例），精确字节收进悬停 Tooltip。
+describe("DocumentPanel 大小 KB 统一与批量栏", () => {
+  it("大小单元格带 KB 后缀：千分位、<1KB 取整为 1", () => {
+    renderPanel({
+      documents: [
+        doc({ id: "a", name: "大文件.pdf", size_bytes: 5 * 1024 * 1024 }),
+        doc({ id: "b", name: "小文件.txt", size_bytes: 300 }),
+      ],
+    });
+    const sizeValue = (name: string) =>
+      within(screen.getByText(name).closest("tr")!).getByTestId(
+        "doc-size-value",
+      ).textContent;
+    expect(sizeValue("大文件.pdf")).toBe("5,120 KB");
+    expect(sizeValue("小文件.txt")).toBe("1 KB");
+  });
+
+  it("悬停大小出精确字节 Tooltip（不占列宽又保留精确信息）", async () => {
+    renderPanel(); // 默认 doc 2048 bytes
+    const value = screen.getByTestId("doc-size-value");
+    fireEvent.pointerEnter(value);
+    fireEvent.pointerMove(value);
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "2,048 B",
+    );
+  });
+
+  it("取消选择按钮带图标（与删除所选的 Trash2 对称）", () => {
+    renderPanel();
+    fireEvent.click(screen.getByLabelText("选择文档: 产品手册.pdf"));
+    const cancel = screen.getByRole("button", { name: "取消选择" });
+    expect(cancel.querySelector("svg")).toBeTruthy();
   });
 });
 
@@ -194,7 +380,12 @@ describe("DocumentPanel stats row and upload", () => {
     renderPanel({
       documents: [
         doc({ id: "a", status: "ready", size_bytes: 1024, chunk_count: 5 }),
-        doc({ id: "b", status: "indexing", size_bytes: 1024, chunk_count: null }),
+        doc({
+          id: "b",
+          status: "indexing",
+          size_bytes: 1024,
+          chunk_count: null,
+        }),
         doc({ id: "c", status: "failed", size_bytes: 2048, chunk_count: null }),
       ],
     });
@@ -216,8 +407,12 @@ describe("DocumentPanel stats row and upload", () => {
     const { onUpload } = renderPanel();
     const zone = screen.getByTestId("document-dropzone");
     const good = new File(["y"], "拖入.txt");
-    fireEvent.drop(zone, { dataTransfer: { files: [new File(["x"], "evil.exe"), good] } });
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("evil.exe"));
+    fireEvent.drop(zone, {
+      dataTransfer: { files: [new File(["x"], "evil.exe"), good] },
+    });
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("evil.exe"),
+    );
     expect(onUpload).toHaveBeenCalledTimes(1);
     expect(onUpload).toHaveBeenCalledWith([good]);
   });
@@ -261,7 +456,9 @@ describe("DocumentPanel per-path status hover (P3, spec 2026-08-11 §5)", () => 
 
   it("assembles the three-path breakdown, combining the graph-sourced percent", () => {
     render(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <I18nContext.Provider
+        value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+      >
         <PathStatusBreakdown
           doc={doc({
             status: "indexing",
@@ -284,7 +481,9 @@ describe("DocumentPanel per-path status hover (P3, spec 2026-08-11 §5)", () => 
 
   it("renders degraded / failed / wiki-ready states verbatim", () => {
     render(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <I18nContext.Provider
+        value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+      >
         <PathStatusBreakdown
           doc={doc({
             status: "ready",
@@ -308,15 +507,31 @@ describe("DocumentPanel per-path status hover (P3, spec 2026-08-11 §5)", () => 
 
 describe("DocumentPanel toolbar", () => {
   const docs = [
-    doc({ id: "a", name: "产品手册.pdf", size_bytes: 4096, created_at: "2026-08-08T10:00:00Z" }),
-    doc({ id: "b", name: "Roadmap.md", size_bytes: 1024, created_at: "2026-08-09T09:00:00Z" }),
-    doc({ id: "c", name: "研发规范.docx", size_bytes: 2048, created_at: "2026-08-09T10:00:00Z" }),
+    doc({
+      id: "a",
+      name: "产品手册.pdf",
+      size_bytes: 4096,
+      created_at: "2026-08-08T10:00:00Z",
+    }),
+    doc({
+      id: "b",
+      name: "Roadmap.md",
+      size_bytes: 1024,
+      created_at: "2026-08-09T09:00:00Z",
+    }),
+    doc({
+      id: "c",
+      name: "研发规范.docx",
+      size_bytes: 2048,
+      created_at: "2026-08-09T10:00:00Z",
+    }),
   ];
 
   function rowNames(): string[] {
     // First column is the selection checkbox; the name is the second cell.
+    // 只取文件名 span：类型徽章是 aria-hidden 的 SVG，其字形（W/M）不进名称。
     return [...document.querySelectorAll("tbody tr td:nth-child(2)")].map(
-      (cell) => cell.textContent ?? "",
+      (cell) => cell.querySelector("span.truncate")?.textContent ?? "",
     );
   }
 
@@ -331,7 +546,9 @@ describe("DocumentPanel toolbar", () => {
 
   it("shows the no-match hint when the filter matches nothing", () => {
     renderPanel({ documents: docs });
-    fireEvent.change(screen.getByPlaceholderText("搜索文档…"), { target: { value: "不存在" } });
+    fireEvent.change(screen.getByPlaceholderText("搜索文档…"), {
+      target: { value: "不存在" },
+    });
     expect(screen.getByText("没有匹配的文档")).toBeTruthy();
   });
 
@@ -339,31 +556,40 @@ describe("DocumentPanel toolbar", () => {
     renderPanel({ documents: docs });
     expect(rowNames()).toEqual(["研发规范.docx", "Roadmap.md", "产品手册.pdf"]);
 
-    fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), {
+      key: "ArrowDown",
+    });
     fireEvent.click(await screen.findByRole("menuitem", { name: "大小" }));
     expect(rowNames()).toEqual(["产品手册.pdf", "研发规范.docx", "Roadmap.md"]);
 
-    fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("button", { name: "排序方式" }), {
+      key: "ArrowDown",
+    });
     fireEvent.click(await screen.findByRole("menuitem", { name: "升序" }));
     expect(rowNames()).toEqual(["Roadmap.md", "研发规范.docx", "产品手册.pdf"]);
   });
 });
 
-// ── 状态与文件类型视觉（2026-08-30）────────────────────────
+// ── 状态与文件类型徽章视觉 ─────────────────────────
 // 定案：文件名是第一扫描目标——状态改圆点+小字（Linear 风格，就绪退后、
-// 失败唯一抢眼）；文件图标按类型形状+颜色区分（Drive/OneDrive 色系）。
+// 失败唯一抢眼）；文件图标用设计稿导出的 56 网格几何（2026-08-31 定稿）。
 describe("DocumentPanel 状态与类型图标", () => {
   function rowOf(name: string) {
     return screen.getByText(name).closest("tr")!;
   }
 
-  it("就绪态：绿圆点 + muted 小字，不再是黑底徽章（视觉降级）", () => {
+  it("就绪态：降饱和绿点悬挂在文字外 + muted 小字（视觉降级）", () => {
     renderPanel({ documents: [doc({ name: "手册.pdf" })] });
     const row = rowOf("手册.pdf");
-    expect(row.querySelector("span.bg-emerald-500")).toBeTruthy();
+    const dot = row.querySelector("span.rounded-full")!;
+    // /45 而非全饱和：常态退后，让失败成为行内唯一的饱和色
+    expect(dot.className).toContain("bg-emerald-500/45");
+    // 绝对定位挂在文字外，文字左缘才是对齐表头的那条边
+    expect(dot.className).toContain("absolute");
     // 文本退为次要色，且不在 Badge 组件内（data-slot=badge）
-    const label = row.querySelectorAll("span");
-    const statusLabel = Array.from(label).find((span) => span.textContent === "就绪" && span.childElementCount === 0)!;
+    const statusLabel = Array.from(row.querySelectorAll("span")).find(
+      (span) => span.textContent === "就绪" && span.childElementCount === 0,
+    )!;
     expect(statusLabel.className).toContain("text-muted-foreground");
     expect(statusLabel.closest("[data-slot='badge']")).toBeNull();
   });
@@ -371,8 +597,18 @@ describe("DocumentPanel 状态与类型图标", () => {
   it("进行中：琥珀圆点；失败：红点+红字（唯一突出的异常态）", () => {
     renderPanel({
       documents: [
-        doc({ id: "d-idx", name: "索引中.pdf", status: "indexing", progress_percent: 40 }),
-        doc({ id: "d-fail", name: "失败.pdf", status: "failed", error: "解析出错" }),
+        doc({
+          id: "d-idx",
+          name: "索引中.pdf",
+          status: "indexing",
+          progress_percent: 40,
+        }),
+        doc({
+          id: "d-fail",
+          name: "失败.pdf",
+          status: "failed",
+          error: "解析出错",
+        }),
       ],
     });
     expect(rowOf("索引中.pdf").querySelector("span.bg-amber-500")).toBeTruthy();
@@ -384,7 +620,7 @@ describe("DocumentPanel 状态与类型图标", () => {
     expect(failedLabel.className).toContain("text-destructive");
   });
 
-  it("文件图标按类型形状+颜色区分（主流文件管理器色系），未知后缀回退", () => {
+  it("文件图标为设计稿 56 网格图标：形状定类型、颜色定族，未知后缀灰色兜底（2026-08-31 定稿）", () => {
     renderPanel({
       documents: [
         doc({ id: "d1", name: "手册.pdf" }),
@@ -396,15 +632,30 @@ describe("DocumentPanel 状态与类型图标", () => {
         doc({ id: "d7", name: "未知.xyz" }),
       ],
     });
-    const iconClassOf = (name: string) => rowOf(name).querySelector("td svg")?.getAttribute("class") ?? "";
-    expect(iconClassOf("手册.pdf")).toContain("text-red-500");
-    expect(iconClassOf("笔记.md")).toContain("text-sky-500");
-    expect(iconClassOf("截图.jpg")).toContain("text-violet-500");
-    expect(iconClassOf("数据.csv")).toContain("text-emerald-500");
-    expect(iconClassOf("规范.docx")).toContain("text-blue-500");
-    expect(iconClassOf("演示.pptx")).toContain("text-orange-500");
-    // 未知后缀：通用图标 + 次要色，不假装有类型信息
-    expect(iconClassOf("未知.xyz")).toContain("text-muted-foreground");
+    // 图标几何直接内联自 Ardot 主组件，viewBox 仍是 56 网格；行内取 20px，
+    // 再往下 3.5px 的细节条会压成 1px 发丝、折角糊掉。
+    const badgeOf = (name: string) =>
+      rowOf(name).querySelector("svg[data-filetype]")!;
+    expect(badgeOf("手册.pdf").getAttribute("viewBox")).toBe("0 0 56 56");
+    expect(badgeOf("手册.pdf").getAttribute("class")).toContain("size-5");
+    // 纸面族第一块着色 = 设计稿主色
+    const sheetFillOf = (name: string) =>
+      badgeOf(name).querySelector("path")!.getAttribute("fill");
+    expect(sheetFillOf("手册.pdf")).toBe("#DC2626");
+    expect(sheetFillOf("规范.docx")).toBe("#2563EB");
+    expect(sheetFillOf("演示.pptx")).toBe("#F97316");
+    expect(sheetFillOf("数据.csv")).toBe("#16A34A");
+    // 决策①：Markdown 并入「代码与数据」青色，不再与 .docx 同为文档蓝
+    expect(sheetFillOf("笔记.md")).toBe("#0891B2");
+    // 图片是圆角屏体而非纸面，着色落在 rect 上
+    expect(
+      badgeOf("截图.jpg").querySelector("rect")!.getAttribute("fill"),
+    ).toBe("#8B5CF6");
+    // 未知后缀：只剩折角页轮廓的灰色兜底，不假装有类型信息
+    expect(badgeOf("未知.xyz").getAttribute("data-filetype")).toBe("unknown");
+    expect(sheetFillOf("未知.xyz")).toBe("#64748B");
+    // 区分不依赖读文件名，图标内不渲染任何文字
+    expect(badgeOf("手册.pdf").textContent).toBe("");
   });
 });
 
@@ -414,7 +665,14 @@ describe("DocumentPanel 状态与类型图标", () => {
 describe("DocumentPanel 失败通知面板接线", () => {
   it("有失败条目时渲染面板：文件名/原因两行，绝对定位在 tab 内右下角", () => {
     renderPanel({
-      failures: [{ key: "doc-1", name: "户号.pptx", reason: "文件内容为空", retryable: true }],
+      failures: [
+        {
+          key: "doc-1",
+          name: "户号.pptx",
+          reason: "文件内容为空",
+          retryable: true,
+        },
+      ],
       onDismissFailure: rs.fn(),
       onDismissAllFailures: rs.fn(),
     });
@@ -434,7 +692,14 @@ describe("DocumentPanel 失败通知面板接线", () => {
     const onDismissFailure = rs.fn();
     const onDismissAllFailures = rs.fn();
     renderPanel({
-      failures: [{ key: "doc-1", name: "户号.pptx", reason: "文件内容为空", retryable: true }],
+      failures: [
+        {
+          key: "doc-1",
+          name: "户号.pptx",
+          reason: "文件内容为空",
+          retryable: true,
+        },
+      ],
       onDismissFailure,
       onDismissAllFailures,
     });
@@ -445,7 +710,14 @@ describe("DocumentPanel 失败通知面板接线", () => {
 
   it("面板内重试回流到 onRetryDocument（条目 key 即文档 id）", () => {
     const handlers = renderPanel({
-      failures: [{ key: "doc-1", name: "户号.pptx", reason: "文件内容为空", retryable: true }],
+      failures: [
+        {
+          key: "doc-1",
+          name: "户号.pptx",
+          reason: "文件内容为空",
+          retryable: true,
+        },
+      ],
       onDismissFailure: rs.fn(),
       onDismissAllFailures: rs.fn(),
     });
