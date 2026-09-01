@@ -319,11 +319,12 @@ export default function KnowledgePage() {
   return (
     <div className="size-full min-h-0" data-testid="knowledge-page">
       <KnowledgePanelsShell
-        left={
+        left={({ collapseLeft }) => (
           <KbListPanel
             kbs={kbs}
             selectedKbId={selectedKbId}
             onSelect={setSelectedKbId}
+            onCollapse={collapseLeft}
             onCreate={async (name, description) => {
               try {
                 const created = await createKb.mutateAsync({ name, description });
@@ -333,7 +334,7 @@ export default function KnowledgePage() {
               }
             }}
           />
-        }
+        )}
         middle={({ listToggle }) =>
           selectedKb ? (
             <MiddleTabs
@@ -471,10 +472,12 @@ export default function KnowledgePage() {
             />
           ) : (
             <div className="flex h-full min-h-0 flex-col">
-              {/* Same header slot as MiddleTabs: with no library selected there
-                  is no tab strip to carry the toggle, and drag-to-edge still
-                  folds the list — this is the only way back. */}
-              <div className="flex items-center gap-2 border-b px-4 py-3">{listToggle}</div>
+              {/* Only while folded: with no library selected there is no tab
+                  strip to carry the restore button, and drag-to-edge can still
+                  fold the list — this is the only way back. */}
+              {listToggle && (
+                <div className="flex items-center gap-2 border-b px-4 py-3">{listToggle}</div>
+              )}
               <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
                 {tk.selectKbHint}
               </div>

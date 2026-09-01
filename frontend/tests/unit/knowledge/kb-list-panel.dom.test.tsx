@@ -54,10 +54,18 @@ describe("KbListPanel", () => {
     expect(onSelect).toHaveBeenCalledWith("kb-b");
   });
 
-  it("owns no fold control — the single toggle lives in the middle header", () => {
+  it("folds its own column from the rightmost header button", () => {
     renderPanel();
     expect(screen.queryByRole("button", { name: "收起列表栏" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "展开列表栏" })).toBeNull();
+
+    cleanup();
+    const onCollapse = rs.fn();
+    renderPanel({ onCollapse });
+    const collapse = screen.getByRole("button", { name: "收起列表栏" });
+    fireEvent.click(collapse);
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+    // Flush against the divider, opposite the middle header's restore button.
+    expect(collapse.parentElement?.lastElementChild).toBe(collapse);
   });
 
   it("marks the selected kb row as current", () => {

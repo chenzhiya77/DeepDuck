@@ -35,8 +35,9 @@ export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "
 
 /**
  * Middle-column container (phase-2 batch-1, spec §3 三行结构):
- *   row 1 — library header: kb-list fold toggle (a slot the panels shell
- *           fills, so the control never overlays a document row) + kb name +
+ *   row 1 — library header: kb-list restore button (a slot the panels shell
+ *           fills only while the list is folded, so the control never overlays
+ *           a document row) + kb name +
  *           overflow menu (generate wiki / rename /
  *           delete — library-scoped, visible for every tab);
  *   row 2 — the 文档|百科|检索测试 tab strip;
@@ -84,9 +85,10 @@ export function MiddleTabs({
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
   /**
-   * kb-list fold toggle. The panels shell owns the collapsed state and builds
-   * this; the header row is its home because a floating overlay over the pane
-   * covered whichever document row happened to be centred.
+   * kb-list restore button, non-null only while the list column is folded (the
+   * panels shell owns that state). The slot stays empty otherwise so the
+   * library name keeps a single position; the list header's own collapse button
+   * is the other half of the pair, on the far side of the same divider.
    */
   listToggle?: ReactNode;
   documents: ReactNode;

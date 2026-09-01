@@ -1,7 +1,7 @@
 "use client";
 
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { PanelLeftOpenIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Layout, PanelImperativeHandle } from "react-resizable-panels";
 
 import { Button } from "@/components/ui/button";
@@ -15,13 +15,60 @@ import { cn } from "@/lib/utils";
 
 const LEFT_PANEL_ID = "kb-list";
 
+// Mirrors the app sidebar's collapse timing (ui/sidebar.tsx uses
+// transition-[width] duration-200 ease-linear). Panel widths here are inline
+// flex-grow values on the panel's OUTER div — react-resizable-panels renders
+// it as id={panel id} and drops our className onto a child instead, so the
+// transition targets #kb-list through a data attribute on the shell. Armed
+// only for programmatic folds: a live transition would lag gutter drags.
+const FOLD_ANIMATION_MS = 200;
+
+// Fold phases are driven by INTENT plus the transition's own completion
+// event — the app sidebar's design, which runs its collapse as pure CSS with
+// zero per-frame JS. Watching the width with a ResizeObserver instead fired
+// on every frame of every transition and drag, and even with bailouts that
+// per-frame work roughened both; transitionend lands exactly when the motion
+// does, and costs nothing in between.
+
+/**
+ * Width-animated home for the restore button in the middle header. Mounting
+ * the button directly used to hitch: whichever moment it appeared, its layout
+ * advance shoved the library name sideways in a single frame. The slot
+ * instead starts at net-zero advance (w-3 minus its 12px of negative margins)
+ * and grows with the fold, so the name slides over inside the same 200ms
+ * motion and nothing pops at either end.
+ */
+function ListToggleSlot({ open, children }: { open: boolean; children: ReactNode }) {
+  // Mount at the narrow width, then grow on the next frame — mounting
+  // straight at the target would skip the transition entirely.
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <div
+      className={cn(
+        "-ml-1.5 -mr-1.5 shrink-0 overflow-hidden transition-[width] duration-200 ease-linear",
+        open && entered ? "w-6" : "w-3",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export interface KnowledgePanelsControls {
+  /** Fold the list column from inside its own header (expanded state only). */
+  collapseLeft: () => void;
   /**
-   * Fold/expand toggle for the list column, built by the shell because that
-   * is where the collapsed state lives. Render it into the middle column's
-   * header row: the header band is the only horizontal space that never
-   * overlaps a document row, and keeping the control mounted (icon + label
-   * flip) means it never moves across the fold.
+   * Restore button for the middle column's header row, and `null` while the
+   * list is expanded. The two halves of the fold never show at once, so this
+   * is not a second copy of `collapseLeft` — but they do sit on opposite sides
+   * of the same divider at the same height, which is what makes the pair read
+   * as one control that flips sides with the visible column. It lives in a
+   * width-animated slot, so the library name slides with the fold instead of
+   * jumping whenever the control appears or disappears.
    */
   listToggle: ReactNode;
 }
@@ -30,11 +77,16 @@ export interface KnowledgePanelsControls {
  * Three-column shell of the knowledge page (spec §5.2) built on
  * react-resizable-panels: both gutters drag to resize with pixel min/max
  * guards, and the left kb list folds push-style (drag past its min width or
- * click the toggle → width 0). The toggle is one persistent control that the
- * shell renders and `middle` places in its header row — never a floating
- * overlay, which sat on top of the document table at whatever row happened to
- * be centred. It must stay visible for the drag-to-edge path too, since that
- * collapses the column without ever touching the button.
+ * click its header button → width 0; the middle header's restore button brings
+ * it back). Neither control floats over the content column — the old absolute
+ * mid-height handle sat on top of whichever document row happened to be
+ * centred. The restore button must exist independently of the collapse one
+ * because drag-to-edge folds the column without ever touching a button.
+ * Button-triggered folds animate with the app sidebar's 200ms ease-linear
+ * curve (on flex-grow, armed only for that fold); drags stay transition-free.
+ * Every fold phase (hidden content, slot growth, armed transition, pin
+ * release) is derived from the column's MEASURED width through a
+ * ResizeObserver, so all of them land exactly when the transition does.
  * The middle column keeps its 320px minimum; the chat column keeps a 320px
  * floor too so the composer row (deep-research switch + model selector + send
  * button) never wraps at the panel's narrowest drag position. Extreme narrow
@@ -49,53 +101,184 @@ export function KnowledgePanelsShell({
   middle,
   right,
 }: {
-  left: ReactNode;
+  left: (controls: KnowledgePanelsControls) => ReactNode;
   middle: (controls: KnowledgePanelsControls) => ReactNode;
   right: ReactNode;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  // Intent-driven fold phase: "folding" from the click until the CSS
+  // transition itself reports done (or the drag settles), never from
+  // per-frame measurement.
+  const [phase, setPhase] = useState<"expanded" | "folding" | "collapsed">("expanded");
+  // The direction of the current programmatic fold; picks the content fade
+  // curve. Width phases alone cannot tell the two mid-fades apart.
+  const [collapsing, setCollapsing] = useState(false);
+  // Pinning the content to its width at the fold's start keeps it clipped
+  // instead of reflowed while the column resizes (Chinese text otherwise
+  // wraps per character) — like the app sidebar, whose content keeps a
+  // constant width and slides. The pin survives BOTH directions and is
+  // released from the width clock once the panel has grown back to it:
+  // dropping it earlier squeezed the content back into its compressed state.
+  const [frozenWidth, setFrozenWidth] = useState<number | null>(null);
+  // Last measured expanded width — the fallback pin source when a fold came
+  // from drag-to-edge (which never pins) and the list is restored later.
+  const lastWidthRef = useRef(0);
+  // True while a programmatic fold owns the phase; drag layout events are
+  // ignored until the transition settles.
+  const inFlightRef = useRef(false);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // The shell owns the collapsed flag: button clicks set it directly, while
-  // onLayoutChanged covers the drag-to-the-edge path (fires on pointer
-  // release, so a gesture that reverses before release never flickers).
-  const toggleLeft = useCallback(() => {
-    if (leftCollapsed) {
-      leftPanelRef.current?.expand();
-      setLeftCollapsed(false);
-    } else {
-      leftPanelRef.current?.collapse();
-      setLeftCollapsed(true);
+  // Called exactly once per fold, when the CSS transition reports done (or
+  // the safety timer elapses if the event never fires — interrupted
+  // transitions emit nothing). The library's own layout verdict decides the
+  // resting phase — pixels are only the fallback — so a settle that races a
+  // paused/throttled transition cannot misread an in-flight width; for
+  // unfolds that also releases the width pin, since the panel being back at
+  // rest IS the arrival the pin was waiting for.
+  const settleFold = useCallback(() => {
+    // Idempotent: the attribute marks an in-flight fold; whichever settle path
+    // arrives first removes it, later ones bail.
+    if (!shellRef.current?.hasAttribute("data-fold-animating")) return;
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
     }
-  }, [leftCollapsed]);
-  const handleLayoutChanged = useCallback((layout: Layout) => {
-    setLeftCollapsed(layout[LEFT_PANEL_ID] === 0);
+    shellRef.current?.removeAttribute("data-fold-animating");
+    inFlightRef.current = false;
+    // In the real DOM the library's layout verdict is authoritative (pixels
+    // can lag a throttled transition); without a mounted panel (tests) the
+    // resting width decides instead.
+    const panelEl = document.getElementById(LEFT_PANEL_ID);
+    const collapsedNow = panelEl
+      ? !!leftPanelRef.current?.isCollapsed()
+      : (asideRef.current?.offsetWidth ?? 0) <= 0;
+    if (collapsedNow) {
+      setPhase("collapsed");
+    } else {
+      const w = asideRef.current?.offsetWidth ?? 0;
+      if (w > 0) lastWidthRef.current = w;
+      setPhase("expanded");
+      setFrozenWidth(null);
+    }
   }, []);
 
-  const listToggle = (
-    <Button
-      aria-label={leftCollapsed ? tk.expandKbList : tk.collapseKbList}
-      className="-ml-1 -mr-1 size-5 shrink-0 text-muted-foreground hover:text-foreground"
-      data-testid="kb-list-toggle"
-      size="icon"
-      variant="ghost"
-      onClick={toggleLeft}
-    >
-      {leftCollapsed ? (
-        <PanelLeftOpenIcon className="size-3.5" />
-      ) : (
-        <PanelLeftCloseIcon className="size-3.5" />
-      )}
-    </Button>
+  // Arm the flex-grow transition by attribute on the shell div, and wire its
+  // completion: transitionend on the sized element, backed by a timer in case
+  // the event is swallowed. Registration is deferred to a microtask: the
+  // collapse()/expand() state updates commit their render (rule + retarget)
+  // inside the same synchronous block, and listening before that lets the
+  // browser start AND finish committing the transition within one task —
+  // which ate the event (and squeezed the visible motion with it).
+  // The event-driven settle is further deferred one task: transitionend fires
+  // on the animation's very last frame, and settling synchronously there made
+  // the full-page phase re-render contend with that frame — the fold's
+  // end-of-motion hitch. The safety-timer path lands after the motion
+  // anyway, so it settles directly.
+  const armFoldTransition = useCallback(() => {
+    inFlightRef.current = true;
+    shellRef.current?.setAttribute("data-fold-animating", "true");
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = setTimeout(settleFold, FOLD_ANIMATION_MS + 200);
+    queueMicrotask(() => {
+      document
+        .getElementById(LEFT_PANEL_ID)
+        ?.addEventListener("transitionend", () => setTimeout(settleFold, 0), {
+          once: true,
+        });
+    });
+  }, [settleFold]);
+  useEffect(
+    () => () => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    },
+    [],
+  );
+
+  const collapsedEnough = phase === "collapsed";
+  const expandedEnough = phase === "expanded";
+  const foldAnimating = phase === "folding";
+
+  const collapseLeft = useCallback(() => {
+    if (asideRef.current) {
+      setFrozenWidth(asideRef.current.offsetWidth || lastWidthRef.current || null);
+    }
+    setCollapsing(true);
+    setPhase("folding");
+    armFoldTransition();
+    leftPanelRef.current?.collapse();
+  }, [armFoldTransition]);
+  const expandLeft = useCallback(() => {
+    // A fold that came from drag-to-edge never pinned; fall back to the
+    // last measured expanded width. Release happens in settleFold once the
+    // unfold has genuinely arrived.
+    setFrozenWidth((prev) => prev ?? lastWidthRef.current ?? null);
+    setCollapsing(false);
+    setPhase("folding");
+    armFoldTransition();
+    leftPanelRef.current?.expand();
+  }, [armFoldTransition]);
+  // Drag path: fires on pointer release, so it never runs per drag frame.
+  const handleLayoutChanged = useCallback((layout: Layout) => {
+    if (inFlightRef.current) return;
+    setPhase(layout[LEFT_PANEL_ID] === 0 ? "collapsed" : "expanded");
+  }, []);
+
+  // The slot exists for the whole fold round trip (its width carries the
+  // button's layout advance through both animations) and unmounts only once
+  // the width clock reports expanded, where its advance is already zero —
+  // so nothing moves when it goes. Drag-to-edge folds skip the panel
+  // animation but still get the slot's gentle grow.
+  const showRestoreToggle = !expandedEnough;
+  const slotOpen = collapsing || collapsedEnough;
+
+  const listToggleNode = useMemo(
+    () =>
+      showRestoreToggle ? (
+        <ListToggleSlot open={slotOpen}>
+          <Button
+            aria-label={tk.expandKbList}
+            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            data-testid="kb-list-toggle"
+            size="icon"
+            variant="ghost"
+            onClick={expandLeft}
+          >
+            <PanelLeftOpenIcon className="size-4" />
+          </Button>
+        </ListToggleSlot>
+      ) : null,
+    [showRestoreToggle, slotOpen, tk, expandLeft],
+  );
+
+  // The heavy render-prop subtrees are memoized so a fold phase change
+  // (click, settle) re-renders only the shell's own chrome. A traced
+  // full-page re-render at the settle cost ~130ms on the main thread and
+  // landed right on the fold's last frame — the end-of-fold hitch. The
+  // memo inputs stay referentially equal across a collapse settle, so that
+  // settle now patches a few classNames and nothing else.
+  const leftNode = useMemo(
+    () => left({ collapseLeft, listToggle: listToggleNode }),
+    [left, collapseLeft, listToggleNode],
+  );
+  const middleNode = useMemo(
+    () => middle({ collapseLeft, listToggle: listToggleNode }),
+    [middle, collapseLeft, listToggleNode],
   );
 
   return (
     <div
       className="relative size-full min-h-0 overflow-x-auto"
       data-testid="knowledge-panels-shell"
+      ref={shellRef}
     >
+      {/* The sized element is the panel's outer div (id=kb-list, inline
+          flex-grow) — unreachable by className, hence a scoped rule gated by
+          the shell's data-fold-animating attribute. */}
+      <style>{`[data-fold-animating] #${LEFT_PANEL_ID} { transition: flex-grow ${FOLD_ANIMATION_MS}ms linear; }`}</style>
       <ResizablePanelGroup
         className="size-full min-w-[52rem] min-h-0"
         orientation="horizontal"
@@ -112,24 +295,39 @@ export function KnowledgePanelsShell({
           panelRef={leftPanelRef}
         >
           <aside
-            aria-hidden={leftCollapsed}
+            aria-hidden={collapsedEnough}
             className={cn(
-              "size-full border-r",
-              leftCollapsed && "pointer-events-none opacity-0",
+              "size-full overflow-hidden border-r",
+              collapsedEnough && "pointer-events-none opacity-0",
+              // Collapsing: stay legible for most of the fold, then fade out
+              // over its second half; expanding: fade in over the full curve.
+              foldAnimating &&
+                collapsing &&
+                "transition-opacity duration-100 delay-100 ease-[cubic-bezier(0.4,0,1,1)]",
+              foldAnimating && !collapsing && "transition-opacity duration-200 ease-linear",
             )}
+            ref={asideRef}
           >
-            {left}
+            {/* Frozen at the fold's start so the column clips the content
+                instead of squeezing it into per-character wrapping. */}
+            <div
+              className="h-full"
+              style={frozenWidth !== null ? { width: frozenWidth } : undefined}
+            >
+              {leftNode}
+            </div>
           </aside>
         </ResizablePanel>
         <ResizableHandle
           className={cn(
             "hover:bg-accent w-0.5 transition-colors",
-            leftCollapsed && "pointer-events-none opacity-0",
+            collapsedEnough && "pointer-events-none opacity-0",
+            foldAnimating && "transition-[color,opacity] duration-200 ease-linear",
           )}
-          disabled={leftCollapsed}
+          disabled={collapsedEnough}
         />
         <ResizablePanel className="min-h-0 min-w-0" id="documents" minSize={320}>
-          <section className="size-full border-r">{middle({ listToggle })}</section>
+          <section className="size-full border-r">{middleNode}</section>
         </ResizablePanel>
         <ResizableHandle className="hover:bg-accent w-0.5 transition-colors" />
         <ResizablePanel

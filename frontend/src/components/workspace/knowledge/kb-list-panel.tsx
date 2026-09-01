@@ -1,6 +1,6 @@
 "use client";
 
-import { LibraryBig, Plus } from "lucide-react";
+import { LibraryBig, PanelLeftClose, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,17 +21,23 @@ import { cn } from "@/lib/utils";
  * Left column of the knowledge page (spec §5.2): the 个人知识库 group, the
  * header「+」create dialog, and per-kb selection. Presentational — the page
  * owns data fetching and mutations.
+ * The header folds its own column (`onCollapse`); the matching restore button
+ * lives in the middle column's header and only appears once this one is gone,
+ * so the two straddle the divider instead of competing for the same action.
  */
 export function KbListPanel({
   kbs,
   selectedKbId,
   onSelect,
   onCreate,
+  onCollapse,
 }: {
   kbs: KnowledgeBase[];
   selectedKbId: string | null;
   onSelect: (kbId: string) => void;
   onCreate: (name: string, description: string) => Promise<void> | void;
+  /** When set, the group header shows the fold button (push-style collapse). */
+  onCollapse?: () => void;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
@@ -63,17 +69,30 @@ export function KbListPanel({
 
   return (
     <div className="flex h-full flex-col" data-testid="kb-list-panel">
-      <div className="flex items-center justify-between px-3 pt-3 pb-2">
-        <span className="text-muted-foreground text-xs font-medium">{tk.personalKBs}</span>
+      <div className="flex items-center gap-0.5 px-3 pt-3 pb-2">
+        <span className="text-muted-foreground mr-auto text-xs font-medium">
+          {tk.personalKBs}
+        </span>
         <Button
           aria-label={tk.createKB}
-          className="size-6"
+          className="size-6 shrink-0"
           size="icon"
           variant="ghost"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="size-4" />
         </Button>
+        {onCollapse && (
+          <Button
+            aria-label={tk.collapseKbList}
+            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            size="icon"
+            variant="ghost"
+            onClick={onCollapse}
+          >
+            <PanelLeftClose className="size-4" />
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">
