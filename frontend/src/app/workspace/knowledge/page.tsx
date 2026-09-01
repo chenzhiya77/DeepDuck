@@ -48,6 +48,7 @@ import {
   useWikiEntries,
   useWikiEntry,
 } from "@/core/knowledge/hooks";
+import { readLastKbId, useKbLocalOrder, writeLastKbId } from "@/core/knowledge/kb-order";
 import { FALLBACK_SUPPORTED_SUFFIXES } from "@/core/knowledge/supported-formats";
 import type {
   GraphRetrievalOverlay,
@@ -110,20 +111,34 @@ export default function KnowledgePage() {
 
   const kbsQuery = useKnowledgeBases();
   const kbs = useMemo(() => kbsQuery.data ?? [], [kbsQuery.data]);
-  const selectedKb = kbs.find((kb) => kb.id === selectedKbId) ?? null;
+  // User-defined display order (drag reorder, localStorage-persisted) layered
+  // over the server's created_at order; unknown kbs trail in server order.
+  const { ordered: orderedKbs, commitMove } = useKbLocalOrder(kbs);
+  const selectedKb = orderedKbs.find((kb) => kb.id === selectedKbId) ?? null;
 
-  // Default to the first kb; fall back to the remaining first after a delete.
+  // Default selection: remembered last-opened > first in the user's order;
+  // the deep-link effect below outranks both. Falls back to the remaining
+  // first after a delete.
   useEffect(() => {
-    if (kbs.length === 0) {
+    if (orderedKbs.length === 0) {
       if (selectedKbId !== null) {
         setSelectedKbId(null);
       }
       return;
     }
     if (!selectedKb) {
-      setSelectedKbId(kbs[0]!.id);
+      const remembered = readLastKbId();
+      const rememberedKb = remembered
+        ? orderedKbs.find((kb) => kb.id === remembered)
+        : undefined;
+      setSelectedKbId(rememberedKb?.id ?? orderedKbs[0]!.id);
     }
-  }, [kbs, selectedKb, selectedKbId]);
+  }, [orderedKbs, selectedKb, selectedKbId]);
+
+  // Remember the open library for the next visit (best effort).
+  useEffect(() => {
+    if (selectedKbId) writeLastKbId(selectedKbId);
+  }, [selectedKbId]);
 
   // Deep link effect: apply on mount or when KB param changes.
   useEffect(() => {
@@ -321,10 +336,11 @@ export default function KnowledgePage() {
       <KnowledgePanelsShell
         left={({ collapseLeft }) => (
           <KbListPanel
-            kbs={kbs}
+            kbs={orderedKbs}
             selectedKbId={selectedKbId}
             onSelect={setSelectedKbId}
             onCollapse={collapseLeft}
+            onReorder={commitMove}
             onCreate={async (name, description) => {
               try {
                 const created = await createKb.mutateAsync({ name, description });

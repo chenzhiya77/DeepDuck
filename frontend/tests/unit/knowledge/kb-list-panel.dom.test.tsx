@@ -20,6 +20,7 @@ const KB_A: KnowledgeBase = {
   created_at: "2026-08-09T10:00:00Z",
 };
 const KB_B: KnowledgeBase = { ...KB_A, id: "kb-b", name: "研发文档" };
+const KB_C: KnowledgeBase = { ...KB_A, id: "kb-c", name: "市场竞品" };
 
 function renderPanel(props?: Partial<Parameters<typeof KbListPanel>[0]>) {
   const onSelect = rs.fn();
@@ -52,6 +53,58 @@ describe("KbListPanel", () => {
     const { onSelect } = renderPanel();
     fireEvent.click(screen.getByText("研发文档"));
     expect(onSelect).toHaveBeenCalledWith("kb-b");
+  });
+
+  describe("拖拽重排", () => {
+    function renderReorderable() {
+      const onReorder = rs.fn();
+      render(
+        <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+          <KbListPanel
+            kbs={[KB_A, KB_B, KB_C]}
+            selectedKbId={null}
+            onSelect={() => undefined}
+            onCreate={() => undefined}
+            onReorder={onReorder}
+          />
+        </I18nContext.Provider>,
+      );
+      const rowOf = (name: string) => screen.getByText(name).closest("li")!;
+      return { onReorder, rowOf };
+    }
+
+    it("moves the lifted row live when crossing another row", () => {
+      const { onReorder, rowOf } = renderReorderable();
+      fireEvent.dragStart(rowOf("产品资料"));
+      // Sortable-style: the swap is reported on crossing, not on drop.
+      fireEvent.dragOver(rowOf("市场竞品"));
+      expect(onReorder).toHaveBeenCalledWith("kb-a", "kb-c");
+      // Repeated dragover on the same row must not re-commit the move.
+      fireEvent.dragOver(rowOf("市场竞品"));
+      expect(onReorder).toHaveBeenCalledTimes(1);
+      fireEvent.drop(rowOf("市场竞品"));
+      fireEvent.dragEnd(rowOf("产品资料"));
+    });
+
+    it("marks the lifted row and clears the marker on dragEnd", () => {
+      const { rowOf } = renderReorderable();
+      fireEvent.dragStart(rowOf("产品资料"));
+      expect(rowOf("产品资料").getAttribute("data-drag-source")).toBe("true");
+      fireEvent.dragEnd(rowOf("产品资料"));
+      expect(rowOf("产品资料").getAttribute("data-drag-source")).toBeNull();
+    });
+
+    it("ignores a drop without a preceding drag", () => {
+      const { onReorder, rowOf } = renderReorderable();
+      fireEvent.drop(rowOf("市场竞品"));
+      expect(onReorder).not.toHaveBeenCalled();
+    });
+
+    it("keeps rows static when no onReorder is provided", () => {
+      renderPanel();
+      const row = screen.getByText("产品资料").closest("li")!;
+      expect(row.getAttribute("draggable")).toBeNull();
+    });
   });
 
   it("folds its own column from the rightmost header button", () => {

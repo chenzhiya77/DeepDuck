@@ -24,6 +24,11 @@ import { cn } from "@/lib/utils";
  * The header folds its own column (`onCollapse`); the matching restore button
  * lives in the middle column's header and only appears once this one is gone,
  * so the two straddle the divider instead of competing for the same action.
+ * Rows drag-to-reorder through native HTML5 drag when `onReorder` is given,
+ * sortable-style: crossing a row moves the lifted row into its slot live, so
+ * the list rearranges under the cursor (a translateY "make room" preview
+ * instead yanked the hovered row out from under the cursor and flickered).
+ * The panel reports every crossing through onReorder; the owner persists.
  */
 export function KbListPanel({
   kbs,
@@ -31,6 +36,7 @@ export function KbListPanel({
   onSelect,
   onCreate,
   onCollapse,
+  onReorder,
 }: {
   kbs: KnowledgeBase[];
   selectedKbId: string | null;
@@ -38,6 +44,8 @@ export function KbListPanel({
   onCreate: (name: string, description: string) => Promise<void> | void;
   /** When set, the group header shows the fold button (push-style collapse). */
   onCollapse?: () => void;
+  /** When set, rows become drag-reorderable; called with (source, target). */
+  onReorder?: (sourceId: string, targetId: string) => void;
 }) {
   const { t } = useI18n();
   const tk = t.knowledge;
@@ -45,6 +53,9 @@ export function KbListPanel({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Drag-reorder state: which row is lifted, and the last row it crossed.
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const resetAndClose = () => {
     setCreateOpen(false);
@@ -103,11 +114,54 @@ export function KbListPanel({
             {kbs.map((kb) => {
               const isActive = kb.id === selectedKbId;
               return (
-                <li key={kb.id}>
+                <li
+                  data-drag-source={dragId === kb.id ? "true" : undefined}
+                  draggable={onReorder ? true : undefined}
+                  key={kb.id}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  onDragLeave={(event) => {
+                    // Only clear when genuinely leaving the row — child
+                    // elements (button, icon, text) fire dragleave too, and
+                    // reacting to them re-triggered dragover and flickered.
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setOverId((cur) => (cur === kb.id ? null : cur));
+                    }
+                  }}
+                  onDragOver={(event) => {
+                    if (!onReorder || !dragId || dragId === kb.id) return;
+                    event.preventDefault();
+                    // dataTransfer can be absent on synthetic drag events.
+                    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+                    // Sortable-style: cross a row, take its slot — once per
+                    // crossing, so one gesture can walk the whole list.
+                    if (overId !== kb.id) {
+                      setOverId(kb.id);
+                      onReorder(dragId, kb.id);
+                    }
+                  }}
+                  onDragStart={(event) => {
+                    if (!onReorder) return;
+                    setDragId(kb.id);
+                    if (event.dataTransfer) {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", kb.id);
+                    }
+                  }}
+                  onDrop={(event) => {
+                    // The move already happened on crossing; drop just lands.
+                    event.preventDefault();
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                >
                   <button
                     className={cn(
                       "hover:bg-muted/60 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                       isActive && "bg-muted font-medium",
+                      dragId === kb.id && "cursor-grabbing",
                     )}
                     data-active={isActive}
                     type="button"
