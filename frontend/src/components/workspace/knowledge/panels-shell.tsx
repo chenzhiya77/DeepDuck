@@ -36,9 +36,13 @@ const FOLD_ANIMATION_MS = 200;
  * advance shoved the library name sideways in a single frame. The slot
  * instead starts at net-zero advance (w-3 minus its 12px of negative margins)
  * and grows with the fold, so the name slides over inside the same 200ms
- * motion and nothing pops at either end.
+ * motion and nothing pops at either end. The BOX is never unmounted: an
+ * unmount at the expand's end yanked the 12px net advance back in one frame —
+ * the divider jitter at the unfold's last instant. While expanded the box
+ * sits net-zero with no content; the button itself mounts only while the
+ * fold is armed, inside the already-width-animated box.
  */
-function ListToggleSlot({ open, children }: { open: boolean; children: ReactNode }) {
+function ListToggleSlot({ open, visible, children }: { open: boolean; visible: boolean; children: ReactNode }) {
   // Mount at the narrow width, then grow on the next frame — mounting
   // straight at the target would skip the transition entirely.
   const [entered, setEntered] = useState(false);
@@ -53,7 +57,7 @@ function ListToggleSlot({ open, children }: { open: boolean; children: ReactNode
         open && entered ? "w-6" : "w-3",
       )}
     >
-      {children}
+      {visible ? children : null}
     </div>
   );
 }
@@ -199,7 +203,6 @@ export function KnowledgePanelsShell({
   );
 
   const collapsedEnough = phase === "collapsed";
-  const expandedEnough = phase === "expanded";
   const foldAnimating = phase === "folding";
 
   const collapseLeft = useCallback(() => {
@@ -227,18 +230,18 @@ export function KnowledgePanelsShell({
     setPhase(layout[LEFT_PANEL_ID] === 0 ? "collapsed" : "expanded");
   }, []);
 
-  // The slot exists for the whole fold round trip (its width carries the
-  // button's layout advance through both animations) and unmounts only once
-  // the width clock reports expanded, where its advance is already zero —
-  // so nothing moves when it goes. Drag-to-edge folds skip the panel
+  // The slot box persists for the whole fold round trip (its width carries
+  // the button's layout advance through both animations) and is never
+  // unmounted: an unmount at the expand's end would yank its 12px net advance
+  // back in one frame — the divider jumped left at the unfold's last instant.
+  // While expanded the box sits net-zero (w-3 minus its margins) with no
+  // content, then grows with the next fold. Drag-to-edge folds skip the panel
   // animation but still get the slot's gentle grow.
-  const showRestoreToggle = !expandedEnough;
   const slotOpen = collapsing || collapsedEnough;
 
   const listToggleNode = useMemo(
-    () =>
-      showRestoreToggle ? (
-        <ListToggleSlot open={slotOpen}>
+    () => (
+      <ListToggleSlot open={slotOpen} visible={slotOpen}>
           <Button
             aria-label={tk.expandKbList}
             className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
@@ -250,8 +253,8 @@ export function KnowledgePanelsShell({
             <PanelLeftOpenIcon className="size-4" />
           </Button>
         </ListToggleSlot>
-      ) : null,
-    [showRestoreToggle, slotOpen, tk, expandLeft],
+    ),
+    [slotOpen, tk, expandLeft],
   );
 
   // The heavy render-prop subtrees are memoized so a fold phase change

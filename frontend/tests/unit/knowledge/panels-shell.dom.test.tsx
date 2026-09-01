@@ -94,7 +94,9 @@ describe("KnowledgePanelsShell", () => {
   it("keeps the middle header empty while the list is expanded", () => {
     renderShell();
     // The list header owns the fold in this state, so the library name is not
-    // pushed right by a second control.
+    // pushed right by a second control. The slot BOX persists at net-zero
+    // advance (unmounting it yanked 12px back in one frame — divider jitter),
+    // but the button is not in it and it contributes no text.
     expect(headerToggle()).toBeNull();
     expect(screen.getByTestId("middle-header").textContent).toBe("");
   });
@@ -126,9 +128,12 @@ describe("KnowledgePanelsShell", () => {
     // Unfolding shrinks it back in step…
     fireEvent.click(screen.getByRole("button", { name: "展开列表栏" }));
     expect(slotClass()).toContain("w-3");
-    // …and the settle unmounts it at net-zero advance — nothing moves.
+    // …and the settle empties it at net-zero advance — the BOX stays mounted
+    // (unmounting it used to yank its advance back and jump the divider),
+    // only the button leaves.
     settleAt(aside, 224);
-    expect(screen.getByTestId("middle-header").firstElementChild).toBeNull();
+    expect(screen.getByTestId("middle-header").firstElementChild).toBeTruthy();
+    expect(headerToggle()).toBeNull();
   });
 
   it("restores the list and drops the control again", () => {
@@ -139,6 +144,7 @@ describe("KnowledgePanelsShell", () => {
     expect(headerToggle()).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "展开列表栏" }));
     settleAt(aside, 224);
+    // The button leaves the (persisting, net-zero) slot.
     expect(headerToggle()).toBeNull();
   });
 
