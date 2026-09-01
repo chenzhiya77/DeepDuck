@@ -11,7 +11,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -73,7 +73,7 @@ import type { DocFailureEntry } from "@/core/knowledge/use-doc-failure-notifier"
 import { cn } from "@/lib/utils";
 
 import { DocFailurePanel } from "./doc-failure-panel";
-import { FileTypeBadge } from "./file-type-badge";
+import { FileTypeBadge, fileTypeKind, probeDraggedItems, probeSignature, type DragProbe } from "./file-type-badge";
 import { runAfterMenuClose } from "./run-after-menu-close";
 
 const SORT_OPTIONS: {
@@ -143,6 +143,58 @@ export function PathStatusBreakdown({
  * `MiddleTabs` header row — this pane owns document actions only (upload,
  * search/sort, row operations).
  */
+/** One filename per badge kind — the empty state's nine-grid doubles as a
+ * quiet "all these formats are welcome" hint. `readme` (no suffix) lands on
+ * the muted unknown sheet so the grid ends soft instead of loud. */
+const EMPTY_STATE_SAMPLES = [
+  "report.pdf",
+  "notes.docx",
+  "data.xlsx",
+  "deck.pptx",
+  "app.py",
+  "photo.png",
+  "video.mp4",
+  "bundle.zip",
+  "readme",
+];
+
+/**
+ * 空态（2026-09-01）：降调九宫格 + 一句短文案，克制不抢戏（上传入口留在库菜单与整面拖放）。
+ * 九宫格默认半透明垫场，悬停恢复全彩并上浮一格（彩蛋）。
+ * 拖入识别双态（probe）：接受类型对应图标放大点亮；全部被拒时整体降灰，
+ * 放下前就告知结果，不白跑一次上传。
+ */
+function EmptyDocumentsState({ probe }: { probe: DragProbe | null }) {
+  const { t } = useI18n();
+  const tk = t.knowledge;
+  const lit = probe ? new Set(probe.litKinds) : null;
+  const dimAll = probe !== null && !probe.anyAccepted;
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-5 px-4 py-10 text-center">
+      <div className="grid grid-cols-3 gap-3" data-testid="empty-doc-icons">
+        {EMPTY_STATE_SAMPLES.map((name) => {
+          const isLit = lit?.has(fileTypeKind(name)) ?? false;
+          return (
+            <FileTypeBadge
+              key={name}
+              fileName={name}
+              className={cn(
+                "size-8 cursor-default transition-all duration-150",
+                // 静态态：半透明垫场 + 悬停彩蛋。
+                probe === null && "opacity-60 hover:-translate-y-1 hover:opacity-100",
+                // 拖入态：点亮的放大全彩，其余（或全拒时全部）降灰。
+                probe !== null && (dimAll || !isLit) && "opacity-25",
+                probe !== null && !dimAll && isLit && "scale-125 opacity-100",
+              )}
+            />
+          );
+        })}
+      </div>
+      <p className="text-muted-foreground text-sm">{tk.emptyDocuments}</p>
+    </div>
+  );
+}
+
 export function DocumentPanel({
   kb,
   documents,
@@ -172,6 +224,9 @@ export function DocumentPanel({
   const { t, locale } = useI18n();
   const tk = t.knowledge;
   const [dragActive, setDragActive] = useState(false);
+  // Drag-in type probe: which kinds light up / whether the batch is rejected.
+  const [dragProbe, setDragProbe] = useState<DragProbe | null>(null);
+  const probeKeyRef = useRef("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{
     key: DocumentSortKey;
@@ -276,11 +331,31 @@ export function DocumentPanel({
       onDragOver={(event) => {
         event.preventDefault();
         setDragActive(true);
+        // Type probe: dragover exposes item MIME types, so the nine-grid
+        // can light/dim before anything is dropped. dragover fires on every
+        // mouse move — only a changed verdict re-renders. Drags with no file
+        // items (dragged text/links) get no verdict at all.
+        const probe = probeDraggedItems(event.dataTransfer?.items, supportedSuffixes);
+        const verdict = probe.anyAccepted || probe.anyRejected ? probe : null;
+        const key = probeSignature(verdict);
+        if (key !== probeKeyRef.current) {
+          probeKeyRef.current = key;
+          setDragProbe(verdict);
+        }
       }}
-      onDragLeave={() => setDragActive(false)}
+      onDragLeave={(event) => {
+        // 只有真正离开面板才复位——在九宫格图标间穿梭时，子元素/间隙会向根节点
+        // 冒泡 dragleave，若照单全收会与 dragover 逐帧震荡（遮罩与图标闪烁）。
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setDragActive(false);
+        probeKeyRef.current = "";
+        setDragProbe(null);
+      }}
       onDrop={(event) => {
         event.preventDefault();
         setDragActive(false);
+        probeKeyRef.current = "";
+        setDragProbe(null);
         handleFiles(event.dataTransfer?.files ?? null);
       }}
     >
@@ -288,28 +363,17 @@ export function DocumentPanel({
           lives in `MiddleTabs`; this pane starts at its own toolbar.
           Dragging files anywhere onto this pane also uploads. */}
 
-      {/* Drop feedback overlay: makes the drop affordance explicit while a
-          file hovers over the panel (the root bg tint alone is too subtle). */}
-      {dragActive && (
-        <div
-          className="bg-background/70 pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed"
-          data-testid="document-drop-overlay"
-        >
-          <p className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
-            <Upload className="size-4" />
-            {tk.dropToUpload}
-          </p>
-        </div>
-      )}
-
       {/* Toolbar: batch actions while selecting, otherwise the name filter
           and the sort dropdown (client-side view controls; upload lives in
-          the library menu so this row stays lean) */}
-      {selectedIds.size > 0 ? (
-        <div
-          className="flex items-center gap-2 border-b px-4 py-2"
-          data-testid="document-batch-bar"
-        >
+          the library menu so this row stays lean).
+          2026-09-01: 一个稳定容器（固定 44px 整数高），内容切换不换节点——
+          避免工具栏/批量栏两个独立 DOM 切换时的子像素重排（首行 0.3px 上跳）。 */}
+      <div className="flex h-11 items-center gap-2 px-4">
+        {selectedIds.size > 0 ? (
+          <div
+            className="flex w-full items-center gap-2"
+            data-testid="document-batch-bar"
+          >
           <span className="min-w-0 flex-1 text-xs font-medium">
             {tk.selectedCount(selectedIds.size)}
           </span>
@@ -331,9 +395,9 @@ export function DocumentPanel({
             <X className="size-3.5" />
             {tk.cancelSelection}
           </Button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 border-b px-4 py-2">
+          </div>
+        ) : (
+          <div className="flex w-full items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
             <Input
@@ -404,16 +468,48 @@ export function DocumentPanel({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* Document table (horizontal scroll protects the columns on narrow
           widths; 2026-08-31 操作列瘦身为尾部窄列，只承接悬停淡入的三个点) */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      {/* 内容区：遮罩的定位上下文只盖表格区，不包住工具栏；外层不滚动，
+          遮罩不随表格滚动。内层才是滚动容器。 */}
+      <div className="relative min-h-0 flex-1">
+        {/* Drop feedback overlay: makes the drop affordance explicit while a
+            file hovers over the panel (the root bg tint alone is too subtle).
+            Empty kb: border-only overlay so the nine-grid probe stays visible,
+            hint pinned to the bottom; all-rejected drags swap the copy. */}
+        {dragActive &&
+          (documents.length === 0 ? (
+            <div
+              className="pointer-events-none absolute inset-2 z-10 rounded-lg border-2 border-dashed"
+              data-testid="document-drop-overlay"
+            >
+              <p className="text-muted-foreground absolute inset-x-0 bottom-3 flex justify-center">
+                <span className="bg-background flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-sm">
+                  <Upload className="size-3.5" />
+                  {dragProbe && dragProbe.anyRejected && !dragProbe.anyAccepted
+                    ? tk.dropUnsupported
+                    : tk.dropToUpload}
+                </span>
+              </p>
+            </div>
+          ) : (
+            <div
+              className="bg-background/70 pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed"
+              data-testid="document-drop-overlay"
+            >
+              <p className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
+                <Upload className="size-4" />
+                {tk.dropToUpload}
+              </p>
+            </div>
+          ))}
+        <div className="h-full overflow-auto">
         {documents.length === 0 ? (
-          <p className="text-muted-foreground px-4 py-10 text-center text-sm">
-            {tk.emptyDocuments}
-          </p>
+          <EmptyDocumentsState probe={dragProbe} />
         ) : visibleDocuments.length === 0 ? (
           <p className="text-muted-foreground px-4 py-10 text-center text-sm">
             {tk.noMatchingDocuments}
@@ -421,7 +517,7 @@ export function DocumentPanel({
         ) : (
           <table className="w-full min-w-[34rem] text-sm">
             <thead>
-              <tr className="text-muted-foreground border-b text-left text-xs whitespace-nowrap">
+              <tr className="text-muted-foreground border-b h-9 text-left text-xs whitespace-nowrap">
                 <th className="w-8 px-2 py-2">
                   <Checkbox
                     aria-label={tk.selectAllDocuments}
@@ -721,6 +817,7 @@ export function DocumentPanel({
             </tbody>
           </table>
         )}
+        </div>
       </div>
 
       {/* Bottom stats row (spec §3.6, aggregated client-side) */}

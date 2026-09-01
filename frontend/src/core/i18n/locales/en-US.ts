@@ -325,6 +325,7 @@ export const enUS: Translations = {
     uploadDocuments: "Upload documents",
     uploadingDocuments: "Uploading…",
     dropToUpload: "Drop to upload into this knowledge base",
+    dropUnsupported: "This format isn't supported yet",
     unsupportedFilesSkipped: (names: string) => `Skipped unsupported files: ${names}`,
     duplicateUpload: {
       identicalTitle: "Identical content",
@@ -417,7 +418,7 @@ export const enUS: Translations = {
     retryDocument: "Retry",
     uploaderMe: "Me",
     dropzoneHint: "Drop files here to upload",
-    emptyDocuments: "No documents yet — upload or drop files to build the index",
+    emptyDocuments: "Upload or drop files to build the index",
     chunkDrawer: {
       title: "Chunk preview",
       page: "Page",

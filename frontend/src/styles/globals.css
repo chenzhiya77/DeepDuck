@@ -452,4 +452,10 @@ html.dark .shiki span {
   --container-width-lg: calc(var(--spacing) * 256);
 }
 
+/* Knowledge kb-list drag reorder: the lifted row dims while it walks the
+   list (sortable-style live swap; no shift preview — that flickered). */
+li[data-drag-source="true"] {
+  opacity: 0.35;
+}
+
 @import "./eval-metrics.css";

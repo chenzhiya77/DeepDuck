@@ -342,3 +342,150 @@ export function FileTypeBadge({
     </svg>
   );
 }
+
+// ── Drag-in type probe (2026-09-01) ───────────────────────────────────────
+// dragover exposes each dragged item's MIME type (never its contents), which
+// is enough to recognize the file family and match it against the upload
+// allowlist BEFORE the drop — powering the empty-state nine-grid's
+// accept-lights-up / reject-dims feedback.
+
+interface MimeSpec {
+  kind: FileTypeKind;
+  mimes: string[];
+  /** Candidate suffixes for this MIME; accepted if any is in the allowlist. */
+  suffixes: string[];
+}
+
+const MIME_SPECS: MimeSpec[] = [
+  { kind: "pdf", mimes: ["application/pdf"], suffixes: [".pdf"] },
+  {
+    kind: "word",
+    mimes: [
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.apple.pages",
+      "application/rtf",
+      "text/plain",
+    ],
+    suffixes: [".doc", ".docx", ".wps", ".pages", ".rtf", ".txt"],
+  },
+  {
+    kind: "sheet",
+    mimes: [
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+      "application/vnd.apple.numbers",
+    ],
+    suffixes: [".xls", ".xlsx", ".csv", ".numbers", ".et"],
+  },
+  {
+    kind: "ppt",
+    mimes: [
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.apple.keynote",
+    ],
+    suffixes: [".ppt", ".pptx", ".key", ".dps"],
+  },
+  {
+    kind: "code",
+    mimes: [
+      "text/markdown",
+      "text/x-markdown",
+      "application/json",
+      "application/xml",
+      "text/xml",
+      "text/yaml",
+      "text/x-yaml",
+      "text/x-python",
+      "application/javascript",
+      "text/javascript",
+      "application/sql",
+    ],
+    suffixes: [".md", ".markdown", ".json", ".yaml", ".xml", ".py", ".js", ".sql"],
+  },
+  {
+    kind: "archive",
+    mimes: [
+      "application/zip",
+      "application/x-rar-compressed",
+      "application/x-7z-compressed",
+      "application/x-tar",
+      "application/gzip",
+    ],
+    suffixes: [".zip", ".rar", ".7z", ".tar", ".gz"],
+  },
+];
+
+function specForMime(mime: string): MimeSpec | null {
+  if (!mime) return null;
+  const direct = MIME_SPECS.find((spec) => spec.mimes.includes(mime));
+  if (direct) return direct;
+  // Families without a fixed member list: prefix-match.
+  if (mime.startsWith("image/")) {
+    return {
+      kind: "image",
+      mimes: [],
+      suffixes: [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"],
+    };
+  }
+  if (mime.startsWith("audio/") || mime.startsWith("video/")) {
+    return {
+      kind: "media",
+      mimes: [],
+      suffixes: [".mp4", ".mov", ".avi", ".mkv", ".mp3", ".wav"],
+    };
+  }
+  return null;
+}
+
+/** MIME → badge kind; null for empty/unrecognized types. */
+export function kindFromMime(mime: string): FileTypeKind | null {
+  return specForMime(mime)?.kind ?? null;
+}
+
+export interface DragProbe {
+  /** Badge kinds of the accepted dragged files (the ones that light up). */
+  litKinds: FileTypeKind[];
+  anyAccepted: boolean;
+  anyRejected: boolean;
+}
+
+/**
+ * Verdict for the files currently hovering over the panel. ArrayLike covers
+ * both the real `DataTransferItemList` and plain test fixtures; non-file
+ * items (dragged text/links) are ignored rather than counted either way.
+ * Unrecognized MIME types count as rejected — lighting an icon the drop
+ * would then refuse is worse than staying dim.
+ */
+export function probeDraggedItems(
+  items: ArrayLike<{ kind: string; type: string }> | null | undefined,
+  supportedSuffixes: readonly string[],
+): DragProbe {
+  const lit = new Set<FileTypeKind>();
+  let anyAccepted = false;
+  let anyRejected = false;
+  if (items) {
+    for (const item of Array.from(items)) {
+      if (item.kind !== "file") continue;
+      const spec = specForMime(item.type);
+      const accepted =
+        spec?.suffixes.some((suffix) => supportedSuffixes.includes(suffix)) ?? false;
+      if (accepted && spec) {
+        lit.add(spec.kind);
+        anyAccepted = true;
+      } else {
+        anyRejected = true;
+      }
+    }
+  }
+  return { litKinds: [...lit], anyAccepted, anyRejected };
+}
+
+/** Stable key of a probe — dragover fires constantly, only a changed probe
+ * should trigger a re-render. */
+export function probeSignature(probe: DragProbe | null): string {
+  if (!probe) return "";
+  return `${probe.litKinds.join(",")}|${probe.anyAccepted ? 1 : 0}|${probe.anyRejected ? 1 : 0}`;
+}

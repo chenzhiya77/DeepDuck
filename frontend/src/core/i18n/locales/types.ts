@@ -252,6 +252,8 @@ export interface Translations {
     uploadDocuments: string;
     uploadingDocuments: string;
     dropToUpload: string;
+    /** 拖入的文件全部不在允许名单时，拖放遮罩的拦截提示。 */
+    dropUnsupported: string;
     unsupportedFilesSkipped: (names: string) => string;
     duplicateUpload: {
       identicalTitle: string;

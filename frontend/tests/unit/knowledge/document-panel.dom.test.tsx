@@ -99,6 +99,106 @@ describe("DocumentPanel toolbar", () => {
   });
 });
 
+describe("DocumentPanel 空态", () => {
+  it("渲染九宫格文件图标：九种类型齐全、默认降调、悬停彩蛋类就位", () => {
+    renderPanel({ documents: [] });
+    const grid = screen.getByTestId("empty-doc-icons");
+    const icons = [...grid.querySelectorAll("[data-filetype]")];
+    expect(icons).toHaveLength(9);
+    const kinds = icons.map((svg) => svg.getAttribute("data-filetype"));
+    for (const kind of ["pdf", "word", "sheet", "ppt", "code", "image", "media", "archive", "unknown"]) {
+      expect(kinds).toContain(kind);
+    }
+    // 降噪：默认半透明；悬停恢复全彩 + 上浮（彩蛋）。
+    expect(icons[0]!.className).toContain("opacity-60");
+    expect(icons[0]!.className).toContain("hover:opacity-100");
+    expect(icons[0]!.className).toContain("hover:-translate-y-1");
+  });
+
+  it("克制三段式只剩两段：九宫格 + 短文案，不再有上传按钮与隐藏选择器", () => {
+    renderPanel({ documents: [] });
+    expect(screen.getByText("上传或拖拽文件开始构建索引")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "上传文档" })).toBeNull();
+    expect(screen.queryByTestId("empty-state-upload-input")).toBeNull();
+  });
+
+  it("有文档时不渲染空态", () => {
+    renderPanel();
+    expect(screen.queryByTestId("empty-doc-icons")).toBeNull();
+  });
+});
+
+describe("DocumentPanel 拖入类型识别（九宫格双态反馈）", () => {
+  function dragFiles(types: string[]) {
+    const zone = screen.getByTestId("document-dropzone");
+    fireEvent.dragOver(zone, {
+      dataTransfer: { items: types.map((type) => ({ kind: "file", type })) },
+    });
+  }
+
+  function iconsOf(kind: string) {
+    return [
+      ...screen.getByTestId("empty-doc-icons").querySelectorAll(`[data-filetype="${kind}"]`),
+    ];
+  }
+
+  it("拖入接受类型：对应图标放大点亮，其余降灰", () => {
+    renderPanel({ documents: [], supportedSuffixes: [".pdf", ".md"] });
+    dragFiles(["application/pdf"]);
+    const lit = iconsOf("pdf")[0]!;
+    expect(lit.className).toContain("scale-125");
+    expect(lit.className).toContain("opacity-100");
+    expect(iconsOf("image")[0]!.className).toContain("opacity-25");
+  });
+
+  it("拖入全部不支持：九宫格整体降灰，遮罩提示格式不支持", () => {
+    renderPanel({ documents: [], supportedSuffixes: [".pdf"] });
+    dragFiles(["application/x-msdownload"]);
+    for (const kind of ["pdf", "word", "image"]) {
+      expect(iconsOf(kind)[0]!.className).toContain("opacity-25");
+    }
+    expect(screen.getByText("该格式暂不支持")).toBeTruthy();
+  });
+
+  it("混合拖入：接受的点亮，遮罩仍是释放以上传", () => {
+    renderPanel({ documents: [], supportedSuffixes: [".pdf"] });
+    dragFiles(["application/pdf", "application/zip"]);
+    expect(iconsOf("pdf")[0]!.className).toContain("scale-125");
+    expect(screen.getByText("释放以上传到当前知识库")).toBeTruthy();
+  });
+
+  it("离开后反馈复位：图标回到默认降调", () => {
+    renderPanel({ documents: [], supportedSuffixes: [".pdf"] });
+    dragFiles(["application/pdf"]);
+    fireEvent.dragLeave(screen.getByTestId("document-dropzone"));
+    expect(iconsOf("pdf")[0]!.className).toContain("opacity-60");
+    expect(iconsOf("pdf")[0]!.className).not.toContain("scale-125");
+  });
+
+  it("在图标间穿梭不误复位：子元素冒泡的 dragleave 不触发震荡（防闪烁回归）", () => {
+    renderPanel({ documents: [], supportedSuffixes: [".pdf"] });
+    dragFiles(["application/pdf"]);
+    // 模拟从图标 A 移到图标 B：dragleave 从子元素冒泡，relatedTarget 仍在面板内。
+    // happy-dom 不认 eventInit 里的 relatedTarget，需手工注入到事件实例上。
+    const from = iconsOf("pdf")[0]!;
+    const to = iconsOf("word")[0]!;
+    const leaveEvent = new Event("dragleave", { bubbles: true });
+    Object.defineProperty(leaveEvent, "relatedTarget", { value: to });
+    fireEvent(from, leaveEvent);
+    // 反馈必须保持：pdf 仍点亮，遮罩仍在——否则就是逐帧震荡的闪烁。
+    expect(iconsOf("pdf")[0]!.className).toContain("scale-125");
+    expect(screen.getByTestId("document-drop-overlay")).toBeTruthy();
+  });
+
+  it("虚线遮罩只盖内容区：不把搜索工具栏包进框里", () => {
+    renderPanel({ documents: [], supportedSuffixes: [".pdf"] });
+    dragFiles(["application/pdf"]);
+    const overlay = screen.getByTestId("document-drop-overlay");
+    const search = screen.getByLabelText("搜索文档…");
+    expect(overlay.parentElement!.contains(search)).toBe(false);
+  });
+});
+
 describe("DocumentPanel table", () => {
   it("renders the six columns with formatted values（大小统一 KB：每格带 KB 后缀，2026-08-31）", () => {
     renderPanel();
@@ -125,6 +225,14 @@ describe("DocumentPanel table", () => {
     expect(
       row.closest("table")!.querySelector("thead tr")!.className,
     ).toContain("border-b");
+    // 表头行固定高度（2026-09-01）：防止全选框 unchecked↔indeterminate 切换时，
+    // border-collapse 布局重新取整导致表头高度变化、所有行跟着上下抖动。
+    expect(
+      row.closest("table")!.querySelector("thead tr")!.className,
+    ).toContain("h-9");
+    // 表头上方不画线（2026-09-01）：工具栏与表头间靠留白分界，避免表头被两条线夹成条状。
+    const toolbar = screen.getByLabelText("搜索文档…").closest("div[class*='h-11']")!;
+    expect(toolbar.className).not.toContain("border-b");
   });
 
   it("时间列等宽数字：tabular-nums 使 1/2 同宽，行间时分对齐（2026-08-31）", () => {
@@ -430,7 +538,7 @@ describe("DocumentPanel stats row and upload", () => {
 
   it("shows the empty-state copy when the kb has no documents", () => {
     renderPanel({ documents: [] });
-    expect(screen.getByText(/还没有文档/)).toBeTruthy();
+    expect(screen.getByText(/上传或拖拽文件开始构建索引/)).toBeTruthy();
   });
 });
 

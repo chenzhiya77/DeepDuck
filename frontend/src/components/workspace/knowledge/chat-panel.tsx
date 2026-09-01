@@ -443,7 +443,7 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
       {/* Composer styled after the home-page InputBox: one rounded container
           holds the textarea, the deep-retrieval toggle, and the send button. */}
       <div className="shrink-0 border-t p-3">
-        <div className="focus-within:border-ring focus-within:ring-ring/50 rounded-xl border shadow-xs transition-colors focus-within:ring-[3px]">
+        <div className="focus-within:border-ring focus-within:ring-ring/50 rounded-xl border bg-white/80 shadow-xs transition-colors focus-within:ring-[3px] dark:bg-background/80">
           <Textarea
             className="max-h-32 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
             disabled={!kb || thread.isLoading}

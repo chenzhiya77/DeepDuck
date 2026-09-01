@@ -309,6 +309,7 @@ export const zhCN: Translations = {
     uploadDocuments: "上传文档",
     uploadingDocuments: "上传中…",
     dropToUpload: "释放以上传到当前知识库",
+    dropUnsupported: "该格式暂不支持",
     unsupportedFilesSkipped: (names: string) => `已跳过不支持的文件：${names}`,
     duplicateUpload: {
       identicalTitle: "内容完全一致",
@@ -404,7 +405,7 @@ export const zhCN: Translations = {
     retryDocument: "重试",
     uploaderMe: "我",
     dropzoneHint: "拖拽文件到此处上传",
-    emptyDocuments: "还没有文档，上传或拖拽文件开始构建索引",
+    emptyDocuments: "上传或拖拽文件开始构建索引",
     chunkDrawer: {
       title: "切片预览",
       page: "页码",
