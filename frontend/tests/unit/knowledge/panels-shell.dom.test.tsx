@@ -13,8 +13,7 @@ import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-sh
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 
-// The settle fallback is a timer and the toggle slot's mount kick uses rAF;
-// fake timers keep both deterministic.
+// The settle fallback is a timer; fake timers keep it deterministic.
 rs.useFakeTimers();
 
 // react-resizable-panels measures through ResizeObserver, which happy-dom
@@ -58,7 +57,11 @@ function renderShell() {
 }
 
 function headerToggle() {
-  return screen.queryByRole("button", { name: "展开列表栏" });
+  return screen.queryByTestId("kb-list-toggle");
+}
+
+function foldState() {
+  return screen.getByTestId("knowledge-panels-shell").getAttribute("data-kb-fold-state");
 }
 
 /** Simulate the transition landing at a resting width (stand-in for
@@ -67,13 +70,6 @@ function settleAt(aside: HTMLElement, px: number) {
   Object.defineProperty(aside, "offsetWidth", { configurable: true, value: px });
   act(() => {
     rs.advanceTimersByTime(450);
-  });
-}
-
-/** Let the toggle slot's mount kick (rAF) run. */
-function flushFrames(ms = 20) {
-  act(() => {
-    rs.advanceTimersByTime(ms);
   });
 }
 
@@ -91,61 +87,60 @@ describe("KnowledgePanelsShell", () => {
     expect(container.querySelectorAll('[data-slot="resizable-handle"]').length).toBe(2);
   });
 
-  it("keeps the middle header empty while the list is expanded", () => {
-    renderShell();
-    // The list header owns the fold in this state, so the library name is not
-    // pushed right by a second control. The slot BOX persists at net-zero
-    // advance (unmounting it yanked 12px back in one frame — divider jitter),
-    // but the button is not in it and it contributes no text.
-    expect(headerToggle()).toBeNull();
-    expect(screen.getByTestId("middle-header").textContent).toBe("");
-  });
-
-  it("moves the control to the middle header as soon as the fold starts", () => {
-    renderShell();
-    fireEvent.click(screen.getByTestId("left-collapse"));
-    // Intent-driven: the slot mounts at the click, no width watching.
-    const toggle = headerToggle();
-    expect(toggle).toBeTruthy();
-    // Never a floating overlay: it renders inside the header row the consumer
-    // chose, not on top of the content column.
-    expect(screen.getByTestId("middle-header").contains(toggle)).toBe(true);
-  });
-
-  it("grows the toggle slot with the fold and shrinks it with the unfold", () => {
+  it("keeps the restore overlay inert while the list is expanded", () => {
     const { container } = renderShell();
-    const aside = container.querySelector("aside")!;
-    const slotClass = () =>
-      (screen.getByTestId("middle-header").firstElementChild as HTMLElement).className;
-
-    fireEvent.click(screen.getByTestId("left-collapse"));
-    // Mounted at the narrow width; the rAF kick grows it so the width
-    // transition actually runs (mounting at the target would skip it).
-    expect(slotClass()).toContain("w-3");
-    flushFrames();
-    expect(slotClass()).toContain("w-6");
-
-    // Unfolding shrinks it back in step…
-    fireEvent.click(screen.getByRole("button", { name: "展开列表栏" }));
-    expect(slotClass()).toContain("w-3");
-    // …and the settle empties it at net-zero advance — the BOX stays mounted
-    // (unmounting it used to yank its advance back and jump the divider),
-    // only the button leaves.
-    settleAt(aside, 224);
-    expect(screen.getByTestId("middle-header").firstElementChild).toBeTruthy();
-    expect(headerToggle()).toBeNull();
+    // The list header owns the fold in this state. The overlay stays in the
+    // DOM (its node identity is stable across phases, so a fold settle never
+    // re-renders the consumer subtrees — the end-of-collapse jitter); the
+    // shell's fold-state attribute gates it out of sight and reach.
+    expect(foldState()).toBe("expanded");
+    expect(headerToggle()).toBeTruthy();
+    expect(screen.getByTestId("middle-header").textContent).toBe("");
+    const styleText = container.querySelector("style")?.textContent ?? "";
+    expect(styleText).toContain(".kb-restore-overlay { visibility: hidden");
+    expect(styleText).toContain('[data-kb-fold-state="collapsed"] .kb-restore-overlay:hover');
   });
 
-  it("restores the list and drops the control again", () => {
+  it("marks the shell folding while the fold is mid-flight", () => {
+    renderShell();
+    fireEvent.click(screen.getByTestId("left-collapse"));
+    expect(foldState()).toBe("folding");
+  });
+
+  it("arms the hover reveal once the fold settles", () => {
     const { container } = renderShell();
     const aside = container.querySelector("aside")!;
     fireEvent.click(screen.getByTestId("left-collapse"));
     settleAt(aside, 0);
-    expect(headerToggle()).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "展开列表栏" }));
+    // The attribute flips the scoped CSS gate — no mount, no re-render storm
+    // on the fold's last frame.
+    expect(foldState()).toBe("collapsed");
+    const toggle = headerToggle();
+    // Absolute overlay CONTAINER: the control never participates in the
+    // header's layout flow.
+    const overlay = toggle?.parentElement;
+    expect(overlay?.getAttribute("data-testid")).toBe("kb-list-toggle-overlay");
+    expect(overlay?.className).toContain("absolute");
+    expect(overlay?.className).toContain("kb-restore-overlay");
+    expect(overlay?.className).toContain("opacity-0");
+    expect(overlay?.className).toContain("transition-opacity");
+    // Single visible state: an OPAQUE chip (no semi-transparent backdrop over
+    // the name — that read as smudged text under the button).
+    expect(toggle?.className).toContain("bg-background");
+    // Never a floating overlay over content: it renders inside the header row
+    // the consumer chose (over the library name).
+    expect(screen.getByTestId("middle-header").contains(toggle)).toBe(true);
+  });
+
+  it("restores the list and re-gates the overlay", () => {
+    const { container } = renderShell();
+    const aside = container.querySelector("aside")!;
+    fireEvent.click(screen.getByTestId("left-collapse"));
+    settleAt(aside, 0);
+    fireEvent.click(screen.getByTestId("kb-list-toggle"));
     settleAt(aside, 224);
-    // The button leaves the (persisting, net-zero) slot.
-    expect(headerToggle()).toBeNull();
+    // Expanded at rest: the gate closes again; the list header owns the fold.
+    expect(foldState()).toBe("expanded");
   });
 
   it("arms the flex transition on click and disarms once the fold settles", () => {
@@ -193,8 +188,16 @@ describe("KnowledgePanelsShell", () => {
 
     fireEvent.click(screen.getByTestId("left-collapse"));
     // Collapsing: legible for the first half, then a late accelerating fade.
+    // The opacity-0 TARGET is armed mid-flight too, so the curve actually
+    // runs — arming it only at the settle snapped it in one frame (the
+    // collapse's end jitter).
     expect(aside.className).toContain("duration-100");
     expect(aside.className).toContain("delay-100");
+    expect(aside.className).toContain("opacity-0");
+    // The divider fades out IN STEP with the fold for the same reason.
+    const handle = container.querySelectorAll('[data-slot="resizable-handle"]')[0]!;
+    expect(handle.className).toContain("opacity-0");
+    expect(handle.className).toContain("transition-opacity");
     settleAt(aside, 0);
     expect(aside.className).toContain("opacity-0");
 

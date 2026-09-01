@@ -35,9 +35,9 @@ export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "
 
 /**
  * Middle-column container (phase-2 batch-1, spec §3 三行结构):
- *   row 1 — library header: kb-list restore button (a slot the panels shell
- *           fills only while the list is folded, so the control never overlays
- *           a document row) + kb name +
+ *   row 1 — library header: kb-list restore overlay (a hover-revealed control
+ *           the panels shell fills only once the list is folded, so it never
+ *           overlays a document row) + kb name +
  *           overflow menu (generate wiki / rename /
  *           delete — library-scoped, visible for every tab);
  *   row 2 — the 文档|百科|检索测试 tab strip;
@@ -85,10 +85,12 @@ export function MiddleTabs({
   onRenameKb: (name: string) => Promise<void> | void;
   onDeleteKb: () => Promise<void> | void;
   /**
-   * kb-list restore button, non-null only while the list column is folded (the
-   * panels shell owns that state). The slot stays empty otherwise so the
-   * library name keeps a single position; the list header's own collapse button
-   * is the other half of the pair, on the far side of the same divider.
+   * kb-list restore overlay, always provided by the panels shell but CSS-gated
+   * to reveal only once the list column has folded and settled. Rendered over
+   * the library name's start — the workspace header's DF hover-swap pattern —
+   * absolutely positioned, so it never takes layout and the name keeps a
+   * single position. The list header's own collapse button is the other half
+   * of the pair, on the far side of the same divider.
    */
   listToggle?: ReactNode;
   documents: ReactNode;
@@ -111,7 +113,13 @@ export function MiddleTabs({
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="knowledge-middle-tabs">
       {/* Row 1: library header (fold toggle + name + library-level overflow menu) */}
-      <div className="flex items-center gap-2 border-b px-4 py-3">
+      <div className="relative flex items-center gap-2 border-b px-4 py-3">
+        {/* The kb-list restore overlay (2026-09-02): absolutely positioned by
+            the shell relative to this relative row → zero layout advance in
+            every fold phase. It is its own hover target, sized exactly to the
+            chip: a precise hit reveals a single opaque state — a wider zone
+            with a semi-transparent backdrop read as smudged text under the
+            button. */}
         {listToggle}
         <h2 className="min-w-0 truncate text-sm font-semibold">{kb.name}</h2>
         <Badge className="shrink-0" variant="outline">{t.knowledge.personalKBs}</Badge>

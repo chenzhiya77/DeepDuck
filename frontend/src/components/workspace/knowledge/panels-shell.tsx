@@ -30,49 +30,18 @@ const FOLD_ANIMATION_MS = 200;
 // per-frame work roughened both; transitionend lands exactly when the motion
 // does, and costs nothing in between.
 
-/**
- * Width-animated home for the restore button in the middle header. Mounting
- * the button directly used to hitch: whichever moment it appeared, its layout
- * advance shoved the library name sideways in a single frame. The slot
- * instead starts at net-zero advance (w-3 minus its 12px of negative margins)
- * and grows with the fold, so the name slides over inside the same 200ms
- * motion and nothing pops at either end. The BOX is never unmounted: an
- * unmount at the expand's end yanked the 12px net advance back in one frame —
- * the divider jitter at the unfold's last instant. While expanded the box
- * sits net-zero with no content; the button itself mounts only while the
- * fold is armed, inside the already-width-animated box.
- */
-function ListToggleSlot({ open, visible, children }: { open: boolean; visible: boolean; children: ReactNode }) {
-  // Mount at the narrow width, then grow on the next frame — mounting
-  // straight at the target would skip the transition entirely.
-  const [entered, setEntered] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  return (
-    <div
-      className={cn(
-        "-ml-1.5 -mr-1.5 shrink-0 overflow-hidden transition-[width] duration-200 ease-linear",
-        open && entered ? "w-6" : "w-3",
-      )}
-    >
-      {visible ? children : null}
-    </div>
-  );
-}
-
 export interface KnowledgePanelsControls {
   /** Fold the list column from inside its own header (expanded state only). */
   collapseLeft: () => void;
   /**
-   * Restore button for the middle column's header row, and `null` while the
-   * list is expanded. The two halves of the fold never show at once, so this
-   * is not a second copy of `collapseLeft` — but they do sit on opposite sides
-   * of the same divider at the same height, which is what makes the pair read
-   * as one control that flips sides with the visible column. It lives in a
-   * width-animated slot, so the library name slides with the fold instead of
-   * jumping whenever the control appears or disappears.
+   * Restore control for the middle column's header row. Always provided —
+   * it is a hover overlay the consumer lays over the start of the library
+   * name (the workspace header's DF hover-swap pattern) — but its visibility
+   * is gated by scoped CSS on the shell's fold-state attribute: revealed only
+   * once the fold has settled. Gating through the attribute keeps THIS node's
+   * identity stable across every phase change, so a fold settle patches a few
+   * classNames instead of re-rendering both consumer subtrees (a traced ~130ms
+   * re-render riding the fold's last frame was the end-of-collapse jitter).
    */
   listToggle: ReactNode;
 }
@@ -88,9 +57,8 @@ export interface KnowledgePanelsControls {
  * because drag-to-edge folds the column without ever touching a button.
  * Button-triggered folds animate with the app sidebar's 200ms ease-linear
  * curve (on flex-grow, armed only for that fold); drags stay transition-free.
- * Every fold phase (hidden content, slot growth, armed transition, pin
- * release) is derived from the column's MEASURED width through a
- * ResizeObserver, so all of them land exactly when the transition does.
+ * Every fold phase (hidden content, restore overlay, armed transition, pin
+ * release) lands when the transition itself reports done.
  * The middle column keeps its 320px minimum; the chat column keeps a 320px
  * floor too so the composer row (deep-research switch + model selector + send
  * button) never wraps at the panel's narrowest drag position. Extreme narrow
@@ -230,31 +198,33 @@ export function KnowledgePanelsShell({
     setPhase(layout[LEFT_PANEL_ID] === 0 ? "collapsed" : "expanded");
   }, []);
 
-  // The slot box persists for the whole fold round trip (its width carries
-  // the button's layout advance through both animations) and is never
-  // unmounted: an unmount at the expand's end would yank its 12px net advance
-  // back in one frame — the divider jumped left at the unfold's last instant.
-  // While expanded the box sits net-zero (w-3 minus its margins) with no
-  // content, then grows with the next fold. Drag-to-edge folds skip the panel
-  // animation but still get the slot's gentle grow.
-  const slotOpen = collapsing || collapsedEnough;
-
+  // The restore control is a hover overlay over the library name's start —
+  // the workspace header's DF hover-swap pattern. Absolutely positioned (zero
+  // layout advance), and gated by scoped CSS on the shell's fold-state
+  // attribute rather than by mounting/unmounting: a mount at the collapse's
+  // settle changed this memo's inputs, re-rendered both consumer subtrees
+  // (~130ms) right on the fold's last frame — the end-of-collapse jitter.
+  // Single visible state: a precise-hit opaque chip — a semi-transparent
+  // backdrop read as smudged text under the button.
   const listToggleNode = useMemo(
     () => (
-      <ListToggleSlot open={slotOpen} visible={slotOpen}>
-          <Button
-            aria-label={tk.expandKbList}
-            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-            data-testid="kb-list-toggle"
-            size="icon"
-            variant="ghost"
-            onClick={expandLeft}
-          >
-            <PanelLeftOpenIcon className="size-4" />
-          </Button>
-        </ListToggleSlot>
+      <div
+        className="kb-restore-overlay absolute top-1/2 left-2 z-10 -translate-y-1/2 opacity-0 transition-opacity duration-150"
+        data-testid="kb-list-toggle-overlay"
+      >
+        <Button
+          aria-label={tk.expandKbList}
+          className="text-muted-foreground hover:text-foreground border-border bg-background size-6 shrink-0 border shadow-xs"
+          data-testid="kb-list-toggle"
+          size="icon"
+          variant="ghost"
+          onClick={expandLeft}
+        >
+          <PanelLeftOpenIcon className="size-4" />
+        </Button>
+      </div>
     ),
-    [slotOpen, tk, expandLeft],
+    [tk, expandLeft],
   );
 
   // The heavy render-prop subtrees are memoized so a fold phase change
@@ -275,13 +245,23 @@ export function KnowledgePanelsShell({
   return (
     <div
       className="relative size-full min-h-0 overflow-x-auto"
+      data-kb-fold-state={phase}
       data-testid="knowledge-panels-shell"
       ref={shellRef}
     >
       {/* The sized element is the panel's outer div (id=kb-list, inline
           flex-grow) — unreachable by className, hence a scoped rule gated by
-          the shell's data-fold-animating attribute. */}
-      <style>{`[data-fold-animating] #${LEFT_PANEL_ID} { transition: flex-grow ${FOLD_ANIMATION_MS}ms linear; }`}</style>
+          the shell's data-fold-animating attribute. The restore overlay is
+          CSS-gated by the fold state for the same reason its reveal must not
+          ride a re-render: mounting it at the settle re-rendered the consumer
+          subtrees on the fold's last frame — the end-of-collapse jitter. */}
+      <style>{`
+        [data-fold-animating] #${LEFT_PANEL_ID} { transition: flex-grow ${FOLD_ANIMATION_MS}ms linear; }
+        .kb-restore-overlay { visibility: hidden; pointer-events: none; }
+        [data-kb-fold-state="collapsed"] .kb-restore-overlay { visibility: visible; pointer-events: auto; }
+        [data-kb-fold-state="collapsed"] .kb-restore-overlay:hover,
+        [data-kb-fold-state="collapsed"] .kb-restore-overlay:focus-within { opacity: 1; }
+      `}</style>
       <ResizablePanelGroup
         className="size-full min-w-[52rem] min-h-0"
         orientation="horizontal"
@@ -303,10 +283,13 @@ export function KnowledgePanelsShell({
               "size-full overflow-hidden border-r",
               collapsedEnough && "pointer-events-none opacity-0",
               // Collapsing: stay legible for most of the fold, then fade out
-              // over its second half; expanding: fade in over the full curve.
+              // over its second half. The opacity-0 TARGET is armed here too —
+              // arming it only at the settle snapped it in one frame (the
+              // transition class leaves at the same time) — the collapse's
+              // end jitter. Expanding: fade in over the full curve.
               foldAnimating &&
                 collapsing &&
-                "transition-opacity duration-100 delay-100 ease-[cubic-bezier(0.4,0,1,1)]",
+                "transition-opacity duration-100 delay-100 ease-[cubic-bezier(0.4,0,1,1)] opacity-0",
               foldAnimating && !collapsing && "transition-opacity duration-200 ease-linear",
             )}
             ref={asideRef}
@@ -325,7 +308,9 @@ export function KnowledgePanelsShell({
           className={cn(
             "hover:bg-accent w-0.5 transition-colors",
             collapsedEnough && "pointer-events-none opacity-0",
-            foldAnimating && "transition-[color,opacity] duration-200 ease-linear",
+            // Fade out IN STEP with the fold (2026-09-02): the line used to
+            // vanish in one frame at the settle — the collapse's end jitter.
+            foldAnimating && collapsing && "transition-opacity duration-200 ease-linear opacity-0",
           )}
           disabled={collapsedEnough}
         />
