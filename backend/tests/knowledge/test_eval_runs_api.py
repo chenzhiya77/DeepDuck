@@ -544,6 +544,77 @@ async def test_trigger_unknown_kb_404(session_factory, tmp_path) -> None:
     assert client.post("/api/knowledge-bases/kb-missing/eval-runs").status_code == 404
 
 
+# ── POST /eval-runs 分档与选题（spec 2026-09-01 B 方案 Task 3）─────────
+
+
+async def test_trigger_default_body_defaults_to_l1(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+    seeded = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "什么是退休年龄", "category": "fact", "expected_paths": ["vector"]})
+    assert seeded.status_code == 201, seeded.text
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs")
+
+    assert response.status_code == 202, response.text
+    assert trigger.call_args.kwargs["layers"] == "l1"
+    assert trigger.call_args.kwargs["question_ids"] is None
+
+
+async def test_trigger_layers_l1_l2_forwards_to_scheduler(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+    seeded = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "什么是退休年龄", "category": "fact", "expected_paths": ["vector"]})
+    assert seeded.status_code == 201, seeded.text
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs", json={"layers": "l1_l2"})
+
+    assert response.status_code == 202, response.text
+    assert response.json() == {"status": "enqueued"}
+    assert trigger.call_args.kwargs["layers"] == "l1_l2"
+
+
+async def test_trigger_invalid_layers_422(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs", json={"layers": "l3"})
+
+    assert response.status_code == 422, response.text
+    assert trigger.call_count == 0
+
+
+async def test_trigger_question_ids_forwarded_to_scheduler(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+    kept = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "保留题", "category": "fact", "expected_paths": ["vector"]})
+    assert kept.status_code == 201, kept.text
+    dropped = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "排除题", "category": "fact", "expected_paths": ["vector"]})
+    assert dropped.status_code == 201, dropped.text
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs", json={"question_ids": [kept.json()["id"]]})
+
+    assert response.status_code == 202, response.text
+    assert trigger.call_args.kwargs["question_ids"] == [kept.json()["id"]]
+
+
+async def test_trigger_unknown_question_ids_map_to_409(session_factory, tmp_path) -> None:
+    trigger = MagicMock()
+    client = _client(_trigger_service(session_factory, tmp_path, trigger))
+    kb = _create_kb(client)
+    seeded = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={"query": "什么是退休年龄", "category": "fact", "expected_paths": ["vector"]})
+    assert seeded.status_code == 201, seeded.text
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs", json={"question_ids": ["no-such-id"]})
+
+    # 过滤后空集 = 空题库语义：确定性 409，不烧注定失败的后台任务。
+    assert response.status_code == 409, response.text
+    assert trigger.call_count == 0
+
+
 # ── GET /eval-runs history list（spec 2026-08-27 §6.1）───────────────────
 
 

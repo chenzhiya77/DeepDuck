@@ -61,6 +61,28 @@ async def _seed_question(path, query: str = "什么是退休年龄") -> None:
     await add_question(path, query=query, category="fact", expected_paths=["vector"], relevant_chunk_ids=[CHUNK_A])
 
 
+async def _seed_question_returning(path, query: str = "什么是退休年龄"):
+    return await add_question(path, query=query, category="fact", expected_paths=["vector"], relevant_chunk_ids=[CHUNK_A])
+
+
+def _stub_agent_runner(captured: list[str] | None = None):
+    """假 agent_runner：返回一次带检索工具序列的 TraceOutcome（hybrid_search → vector 命中）。"""
+    from deerflow.knowledge.eval.ragas_eval import TraceOutcome
+
+    async def runner(question):
+        if captured is not None:
+            captured.append(question.id)
+        return TraceOutcome(
+            question_id=question.id,
+            answer="答案[1]。",
+            retrieval_tools=("hybrid_search",),
+            citation_map={1: "证据一"},
+            seed_entities=(),
+        )
+
+    return runner
+
+
 def test_generate_run_id_format_matches_cli_contract() -> None:
     # rag-<UTC 秒>-<hex8>，提升到 eval 包后 CLI 与按需运行共用。
     assert re.fullmatch(r"rag-\d{8}T\d{6}Z-[0-9a-f]{8}", generate_run_id())
@@ -157,5 +179,121 @@ async def test_blank_line_only_bank_counts_as_empty(tmp_path, store) -> None:
 
     with pytest.raises(ondemand.EvalQuestionBankEmpty):
         await ondemand.run_layer1_for_kb(KB, golden_path=golden, searchers=_stub_searchers(), generated_at=GENERATED_AT)
+
+    assert await store.list_eval_runs(KB) == []
+
+
+# ── 选题过滤（spec 2026-09-01 B 方案 Task 2）───────────────────────
+
+
+async def test_question_ids_filters_layer1_run(tmp_path, store) -> None:
+    golden = tmp_path / "golden.jsonl"
+    kept = await _seed_question_returning(golden, query="保留题")
+    await _seed_question_returning(golden, query="排除题")
+
+    await ondemand.run_layer1_for_kb(KB, golden_path=golden, searchers=_stub_searchers(), question_ids=[kept.id], generated_at=GENERATED_AT)
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    assert rows[0].layer1_metrics["summary"]["question_count"] == 1
+
+
+async def test_question_ids_all_unknown_raises_and_persists_nothing(tmp_path, store) -> None:
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+
+    with pytest.raises(ondemand.EvalQuestionBankEmpty):
+        await ondemand.run_layer1_for_kb(KB, golden_path=golden, searchers=_stub_searchers(), question_ids=["no-such-id"], generated_at=GENERATED_AT)
+
+    assert await store.list_eval_runs(KB) == []
+
+
+# ── 完整运行（L1+L2 单行，spec 2026-09-01 B 方案 Task 2）──────────────
+
+
+async def test_full_run_persists_single_row_with_both_layers(tmp_path, store) -> None:
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+
+    run_id = await ondemand.run_full_eval_for_kb(
+        KB,
+        golden_path=golden,
+        searchers=_stub_searchers(),
+        agent_runner=_stub_agent_runner(),
+        generated_at=GENERATED_AT,
+    )
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == run_id
+    assert run_id.startswith("rag-")
+    assert row.status == "completed"
+    assert row.environment == "local"
+    # 双层指标同行：L1 静态 + L2 架构专属（judge/ragas 未注入 → ragas 显式跳过）。
+    assert row.layer1_metrics["summary"]["question_count"] == 1
+    assert row.layer2_metrics["path_accuracy"] == 1.0  # hybrid_search ∈ 期望 {vector}
+    assert row.layer2_metrics["ragas_available"] is False
+    assert row.layer2_metrics["ragas_skip_reason"]
+    assert not ondemand.eval_run_in_progress(KB)
+
+
+async def test_full_run_question_ids_filters_both_layers(tmp_path, store) -> None:
+    golden = tmp_path / "golden.jsonl"
+    kept = await _seed_question_returning(golden, query="保留题")
+    await _seed_question_returning(golden, query="排除题")
+    called: list[str] = []
+
+    await ondemand.run_full_eval_for_kb(
+        KB,
+        golden_path=golden,
+        searchers=_stub_searchers(),
+        agent_runner=_stub_agent_runner(called),
+        question_ids=[kept.id],
+        generated_at=GENERATED_AT,
+    )
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    assert rows[0].layer1_metrics["summary"]["question_count"] == 1
+    assert called == [kept.id]
+
+
+async def test_full_run_layer2_exception_degrades_to_layer1_only_row(tmp_path, store, monkeypatch) -> None:
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("layer2 stage blew up")
+
+    monkeypatch.setattr(ondemand, "run_layer2_evaluation", _boom)
+
+    run_id = await ondemand.run_full_eval_for_kb(
+        KB,
+        golden_path=golden,
+        searchers=_stub_searchers(),
+        agent_runner=_stub_agent_runner(),
+        generated_at=GENERATED_AT,
+    )
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == run_id
+    # L2 阶段崩溃不丢 L1 成果：completed + 仅 L1 指标（layer2 回落空）。
+    assert row.status == "completed"
+    assert row.layer1_metrics["summary"]["question_count"] == 1
+    assert row.layer2_metrics == {}
+
+
+async def test_full_run_missing_bank_raises_and_persists_nothing(tmp_path, store) -> None:
+    with pytest.raises(ondemand.EvalQuestionBankEmpty):
+        await ondemand.run_full_eval_for_kb(
+            KB,
+            golden_path=tmp_path / "absent.jsonl",
+            searchers=_stub_searchers(),
+            agent_runner=_stub_agent_runner(),
+            generated_at=GENERATED_AT,
+        )
 
     assert await store.list_eval_runs(KB) == []

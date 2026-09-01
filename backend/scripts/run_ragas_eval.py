@@ -41,10 +41,25 @@ import argparse
 import asyncio
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
+# Judge/ragas 构建提升到 ``deerflow.knowledge.eval.factory``（gateway 按需
+# 完整评测共用）；此处保留旧名绑定——既有测试通过 ``cli._build_judge_llm``
+# 等名字 monkeypatch，``_async_main`` 走模块全局名解析，行为不变。
+from deerflow.knowledge.eval.factory import (
+    DashScopeLangChainEmbeddings as _DashScopeLangChainEmbeddings,  # noqa: F401 — 既有测试 monkeypatch 该名，必须保留模块属性
+)
+from deerflow.knowledge.eval.factory import (
+    JudgeKeyMissingError,
+)
+from deerflow.knowledge.eval.factory import (
+    build_judge_llm as _build_judge_llm,
+)
+from deerflow.knowledge.eval.factory import (
+    build_ragas_evaluator as _factory_build_ragas_evaluator,
+)
 from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_COMPLETED, resolve_environment
 
 EXIT_OK = 0
@@ -159,104 +174,9 @@ def missing_required_keys(environ: Mapping[str, str]) -> list[str]:
     return [key for key in REQUIRED_ENV_KEYS if not environ.get(key)]
 
 
-class _DashScopeLangChainEmbeddings:
-    """Minimal langchain ``Embeddings`` protocol over the DashScope embedder.
-
-    ragas calls BOTH the async methods (from its own event loop) and the sync
-    ones (via executor threads), so the sync methods must really work: they
-    run the coroutine on a fresh thread with its own event loop when already
-    inside a loop (``asyncio.run`` would explode in-place).
-    """
-
-    def __init__(self, embedder) -> None:
-        self._embedder = embedder
-
-    async def aembed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        results = await self._embedder.embed(list(texts), text_type="document")
-        return [r.dense for r in results]
-
-    async def aembed_query(self, text: str) -> list[float]:
-        results = await self._embedder.embed([text], text_type="query")
-        return results[0].dense
-
-    @staticmethod
-    def _run_blocking(coro):
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        # Already inside a loop (ragas worker): run on a fresh thread with its own loop.
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro).result()
-
-    def embed_documents(self, texts) -> list[list[float]]:
-        results = self._run_blocking(self._embedder.embed(list(texts), text_type="document"))
-        return [r.dense for r in results]
-
-    def embed_query(self, text) -> list[float]:
-        return self._run_blocking(self._embedder.embed([text], text_type="query"))[0].dense
-
-
 def _build_ragas_evaluator(judge_llm):
-    """ragas-wrapped evaluator, or ``None`` when ragas is not installed.
-
-    The returned callable matches the ``ragas_evaluator`` protocol of
-    ``run_layer2_evaluation``; ``None`` makes the report mark the standard
-    metrics as explicitly skipped.
-    """
-
-    try:
-        from ragas.embeddings import LangchainEmbeddingsWrapper
-        from ragas.llms import LangchainLLMWrapper
-    except ImportError:
-        return None
-
-    from deerflow.knowledge.embedder import DashScopeEmbedder
-    from deerflow.knowledge.eval.ragas_eval import compute_ragas_scores
-
-    # bypass_n: answer_relevancy's strictness=3 asks the judge for n=3
-    # completions in one request; DashScope (and other OpenAI-compatible
-    # endpoints) reject n>1 with a 400. With bypass_n ragas falls back to n
-    # separate single-completion calls, which every endpoint supports.
-    wrapped_llm = LangchainLLMWrapper(judge_llm, bypass_n=True)
-    wrapped_embeddings = LangchainEmbeddingsWrapper(_DashScopeLangChainEmbeddings(DashScopeEmbedder()))
-
-    async def evaluator(samples, *, judge_llm, embeddings):  # protocol-aligned; wrappers are bound at build time
-        return await compute_ragas_scores(samples, judge_llm=wrapped_llm, embeddings=wrapped_embeddings)
-
-    return evaluator
-
-
-DASHSCOPE_COMPATIBLE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-
-class JudgeKeyMissingError(Exception):
-    """A ``dashscope:`` judge model was requested but neither DASHSCOPE_JUDGE_API_KEY nor DASHSCOPE_API_KEY is set."""
-
-
-def _build_judge_llm(judge_model: str | None, *, config):
-    """Build the judge LLM, independently from the answering agent's model.
-
-    ``dashscope:<model>`` constructs a DashScope OpenAI-compatible client
-    directly (key from env — the judge never needs a config.yaml entry);
-    anything else resolves through the config model allowlist; ``None`` uses
-    the config primary model.
-    """
-
-    if judge_model and judge_model.startswith("dashscope:"):
-        model = judge_model.removeprefix("dashscope:")
-        api_key = os.environ.get("DASHSCOPE_JUDGE_API_KEY") or os.environ.get("DASHSCOPE_API_KEY")
-        if not api_key:
-            raise JudgeKeyMissingError(f"judge model {judge_model!r} requires DASHSCOPE_JUDGE_API_KEY (or DASHSCOPE_API_KEY) in the environment")
-        from langchain_openai import ChatOpenAI
-
-        return ChatOpenAI(model=model, base_url=DASHSCOPE_COMPATIBLE_BASE_URL, api_key=api_key, timeout=600.0, max_retries=2)
-
-    from deerflow.models.factory import create_chat_model
-
-    return create_chat_model(name=judge_model, app_config=config, attach_tracing=False)
+    """工厂薄包装：embeddings 类在调用时从本模块全局名解析——既有测试对 ``cli._DashScopeLangChainEmbeddings`` 的 monkeypatch 保持生效。"""
+    return _factory_build_ragas_evaluator(judge_llm, embeddings_cls=_DashScopeLangChainEmbeddings)
 
 
 async def _async_main(args: argparse.Namespace, *, environment: str = ENV_LOCAL) -> int:

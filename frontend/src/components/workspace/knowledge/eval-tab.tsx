@@ -19,7 +19,7 @@
  * 首次轮询双请求。点击趋势数据点开 EvalRunDrawer 下钻（plan Task 6）。
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, MoreHorizontal, Play, Plus, Search, Sparkles, X } from "lucide-react";
+import { ChevronDown, Loader2, MoreHorizontal, Play, Plus, Search, Sparkles, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
@@ -45,9 +45,10 @@ import {
   useMetricsOverview,
   useTriggerEvalRun,
 } from "@/core/knowledge/hooks";
-import type { TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types";
+import type { EvalTriggerInput, TrendChartLabels, TrendQueryParams } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
+import { EvalFullRunDialog } from "./eval-full-run-dialog";
 import { EvalMetricsOverview } from "./eval-metrics-overview";
 import { EvalQuestionBank } from "./eval-question-bank";
 import { EvalRunDrawer } from "./eval-run-drawer";
@@ -136,6 +137,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   // 题库造题入口受控状态（2026-08-29）：按钮在本层工具栏，dialog 在 bank 内。
   const [bankAddOpen, setBankAddOpen] = useState(false);
   const [bankSynthesisOpen, setBankSynthesisOpen] = useState(false);
+  // 完整评测确认对话框（2026-09-01 B 方案）：箭头菜单/⋯ 菜单打开，确认后触发 l1_l2 档。
+  const [fullRunOpen, setFullRunOpen] = useState(false);
   // 题库搜索（2026-08-30）：搜索框常驻本层工具栏，纯前端过滤，经 prop 下发。
   const [bankSearchQuery, setBankSearchQuery] = useState("");
 
@@ -146,16 +149,19 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   // 点击→首次轮询间隙由 isPending 补位（eval-run-status 纯函数）。
   const running = isEvalRunning(runsQuery.data, triggerMutation.isPending);
 
-  const handleTrigger = useCallback(() => {
-    triggerMutation.mutate(undefined, {
-      onSuccess: (response) => {
-        // 202 语义分流（§5.2）：enqueued 确认；already_running 幂等提示。
-        if (response.status === "enqueued") toast.success(tk.runStartedToast);
-        else toast.info(tk.alreadyRunningToast);
-      },
-      onError: () => toast.error(tk.runFailedToast),
-    });
-  }, [triggerMutation, tk]);
+  const handleTrigger = useCallback(
+    (input: EvalTriggerInput) => {
+      triggerMutation.mutate(input, {
+        onSuccess: (response) => {
+          // 202 语义分流（§5.2）：enqueued 确认；already_running 幂等提示。
+          if (response.status === "enqueued") toast.success(tk.runStartedToast);
+          else toast.info(tk.alreadyRunningToast);
+        },
+        onError: () => toast.error(tk.runFailedToast),
+      });
+    },
+    [triggerMutation, tk],
+  );
 
   // drain 边（§5.2）：轮询见 in_flight true→false 一次性失效三个评测 query，
   // 总览/趋势/历史自动刷新；初始挂载与持续运行不触发（ref 记忆前值）。
@@ -265,14 +271,37 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 )}
                 {/* 三按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款
                     收窄，同内边距不跳宽）；不降字号，保住主动词视觉权重。 */}
-                <Button className="h-7 shrink-0 gap-1.5 px-2.5" disabled={running} onClick={handleTrigger}>
-                  {running ? (
-                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
-                  ) : (
-                    <Play aria-hidden className="size-3.5" />
-                  )}
-                  {runButtonLabel}
-                </Button>
+                {/* 分体按钮（2026-09-01 B 方案）：主键一键 L1 快速档（高频习惯不变），
+                    右侧箭头下拉选完整评测（确认对话框）；两段视觉拼成一枚按钮，
+                    锁 h-7 同档；降档时两段一并收进 ⋯ 菜单。 */}
+                <div className="flex shrink-0 items-stretch">
+                  <Button
+                    className="h-7 shrink-0 gap-1.5 rounded-r-none px-2.5"
+                    disabled={running}
+                    onClick={() => handleTrigger({ layers: "l1" })}
+                  >
+                    {running ? (
+                      <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                    ) : (
+                      <Play aria-hidden className="size-3.5" />
+                    )}
+                    {runButtonLabel}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={tk.fullRun.menuAria}
+                        className="h-7 shrink-0 rounded-l-none border-l border-primary-foreground/25 px-1"
+                        disabled={running}
+                      >
+                        <ChevronDown aria-hidden className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setFullRunOpen(true)}>{tk.fullRun.menuItem}</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </>
             ) : (
               <DropdownMenu>
@@ -294,8 +323,11 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       </DropdownMenuItem>
                     </>
                   )}
-                  <DropdownMenuItem disabled={running} onClick={handleTrigger}>
+                  <DropdownMenuItem disabled={running} onClick={() => handleTrigger({ layers: "l1" })}>
                     {runButtonLabel}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={running} onClick={() => setFullRunOpen(true)}>
+                    {tk.fullRun.menuItem}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -435,6 +467,13 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         )}
           </div>
         </div>
+
+      {/* 完整评测确认对话框（2026-09-01 B 方案）：箭头/⋯ 菜单打开，确认后触发 l1_l2 档 */}
+      <EvalFullRunDialog
+        open={fullRunOpen}
+        onOpenChange={setFullRunOpen}
+        onConfirm={() => handleTrigger({ layers: "l1_l2" })}
+      />
 
       {/* 点击趋势图数据点 → drawer 下钻单次运行详情（portal 渲染） */}
       <EvalRunDrawer

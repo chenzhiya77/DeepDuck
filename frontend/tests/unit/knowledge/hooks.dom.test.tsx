@@ -427,9 +427,18 @@ describe("评测二期数据 hooks（plan Task 4）", () => {
     const { result } = renderHook(() => useTriggerEvalRun("kb-1"), {
       wrapper: createWrapper(freshQueryClient()),
     });
-    const response = await result.current.mutateAsync();
+    const response = await result.current.mutateAsync({});
     expect(response).toEqual({ status: "enqueued" });
-    expect(api.triggerEvalRun).toHaveBeenCalledWith("kb-1");
+    // 无参默认 = 空载荷（后端默认 L1 全量，旧契约兼容）。
+    expect(api.triggerEvalRun).toHaveBeenCalledWith("kb-1", {});
+  });
+
+  it("useTriggerEvalRun forwards tier and selection payload（2026-09-01 B 方案）", async () => {
+    const { result } = renderHook(() => useTriggerEvalRun("kb-1"), {
+      wrapper: createWrapper(freshQueryClient()),
+    });
+    await result.current.mutateAsync({ layers: "l1_l2", question_ids: ["q1", "q2"] });
+    expect(api.triggerEvalRun).toHaveBeenCalledWith("kb-1", { layers: "l1_l2", question_ids: ["q1", "q2"] });
   });
 });
 

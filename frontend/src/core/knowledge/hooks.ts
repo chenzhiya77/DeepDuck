@@ -15,6 +15,7 @@ import type {
   EvalQuestionListResponse,
   EvalRunDetail,
   EvalRunListResponse,
+  EvalTriggerInput,
   MetricsOverview,
   SynthesisStatus,
   SynthesisTriggerInput,
@@ -281,13 +282,14 @@ export function useEvalRuns(kbId: string | null, enabled = true): UseQueryResult
 }
 
 /**
- * 触发一次按需 Layer 1 评测：202 响应原样透传（enqueued / already_running
- * 由调用方消费成不同 toast）；行数据的刷新不在这里 invalidate——统一走
- * drain 边，避免 POST 与首次轮询双重请求。
+ * 触发一次按需评测（2026-09-01 B 方案分档）：缺省 L1 快速档全量；
+ * ``{ layers: "l1_l2" }`` 完整档，``question_ids`` 选题。202 响应原样透传
+ * （enqueued / already_running 由调用方消费成不同 toast）；行数据的刷新
+ * 不在这里 invalidate——统一走 drain 边，避免 POST 与首次轮询双重请求。
  */
 export function useTriggerEvalRun(kbId: string) {
   return useMutation({
-    mutationFn: () => api.triggerEvalRun(kbId),
+    mutationFn: (input: EvalTriggerInput = {}) => api.triggerEvalRun(kbId, input),
   });
 }
 

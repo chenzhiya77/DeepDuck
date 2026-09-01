@@ -498,6 +498,22 @@ export const zhCN: Translations = {
       runStartedToast: "评测已开始",
       alreadyRunningToast: "已有评测正在运行",
       runFailedToast: "评测触发失败",
+      fullRun: {
+        menuAria: "评测档位",
+        menuItem: "完整评测 (L1+L2)",
+        dialogTitle: "运行完整评测",
+        dialogBody: "完整评测会先跑 Layer 1 静态检索指标，再让 Agent 实跑每道题并由独立 Judge 打分（含 RAGAS 指标）。耗时与 token 成本远高于快速评测，运行期间不可重复触发。",
+        confirm: "开始完整评测",
+        cancel: "取消",
+      },
+      selection: {
+        selectAllAria: "全选",
+        rowSelectAria: (query: string) => `选择「${query}」`,
+        selected: (count: number) => `已选 ${count} 题`,
+        runSelected: "快速评测",
+        fullRunSelected: "完整评测 (L1+L2)",
+        clear: "清除选择",
+      },
       questions: {
         columnQuery: "问题",
         columnCategory: "分类",

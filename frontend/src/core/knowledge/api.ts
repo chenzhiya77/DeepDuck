@@ -14,6 +14,7 @@ import type {
   EvalQuestionListResponse,
   EvalRunDetail,
   EvalRunListResponse,
+  EvalTriggerInput,
   EvalTriggerResponse,
   KnowledgeBase,
   KnowledgeChunk,
@@ -468,11 +469,14 @@ export function listEvalRuns(kbId: string, params: { limit?: number; include_ci?
   );
 }
 
-/** POST /eval-runs：触发一次按需 Layer 1 评测（202 幂等，spec §5.1）。 */
-export function triggerEvalRun(kbId: string): Promise<EvalTriggerResponse> {
-  return fetch(kbUrl(kbId, "/eval-runs"), { method: "POST" }).then((r) =>
-    readResponse<EvalTriggerResponse>(r, "Failed to trigger eval run"),
-  );
+/** POST /eval-runs：触发一次按需评测（202 幂等，spec §5.1 + 2026-09-01 B 方案）。
+ *  空载荷 = L1 全量（后端默认，旧契约兼容）；``l1_l2`` / ``question_ids`` 见 EvalTriggerInput。 */
+export function triggerEvalRun(kbId: string, input: EvalTriggerInput = {}): Promise<EvalTriggerResponse> {
+  return fetch(kbUrl(kbId, "/eval-runs"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }).then((r) => readResponse<EvalTriggerResponse>(r, "Failed to trigger eval run"));
 }
 
 // ── Question synthesis（2026-08-28 spec §6，Task 6–8）───────────────────

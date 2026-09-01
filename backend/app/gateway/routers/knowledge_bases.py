@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -75,6 +75,17 @@ class EvalQuestionCreateRequest(BaseModel):
     relevant_chunk_ids: list[str] = Field(default_factory=list)
     relevant_entities: list[str] = Field(default_factory=list)
     reference_answer: str | None = None
+
+
+class EvalRunTriggerRequest(BaseModel):
+    """评测触发分档（2026-09-01 B 方案）：``layers`` 默认 ``l1``（无 body /
+    空 body 向后兼容）；``question_ids`` 选题运行（``None`` = 全量）。
+    非法 layers / 额外字段 422；过滤后空集由 service 映射 409。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    layers: Literal["l1", "l1_l2"] = "l1"
+    question_ids: list[str] | None = None
 
 
 class RecallTestRequest(BaseModel):
@@ -659,12 +670,14 @@ async def reject_synthesis_candidate(request: Request, kb_id: str, candidate_id:
 
 
 @router.post("/{kb_id}/eval-runs", status_code=202)
-async def trigger_eval_run(request: Request, kb_id: str):
-    """触发一次按需 Layer 1 评测（spec 2026-08-27 §5）：复刻 wiki generate 的
-    in-flight 幂等语义——enqueued / already_running；题库为空 → 409。"""
+async def trigger_eval_run(request: Request, kb_id: str, body: EvalRunTriggerRequest | None = Body(default=None)):
+    """触发一次按需评测（spec 2026-08-27 §5 + 2026-09-01 B 方案）：复刻 wiki
+    generate 的 in-flight 幂等语义——enqueued / already_running；题库（或选题
+    过滤后）为空 → 409。无 body 默认 L1 快速档（旧客户端兼容）。"""
     service = await _require_kb_access(request, kb_id)
+    payload = body or EvalRunTriggerRequest()
     try:
-        enqueued = await service.trigger_eval_run(kb_id)
+        enqueued = await service.trigger_eval_run(kb_id, layers=payload.layers, question_ids=payload.question_ids)
     except EvalQuestionBankEmpty as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "enqueued" if enqueued else "already_running"}

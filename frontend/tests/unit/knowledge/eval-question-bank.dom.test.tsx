@@ -29,6 +29,7 @@ const hooksMock = rs.hoisted(() => ({
   useAcceptSynthesisCandidate: rs.fn(),
   useRejectSynthesisCandidate: rs.fn(),
   useDocuments: rs.fn(),
+  useTriggerEvalRun: rs.fn(),
 }));
 
 rs.mock("@/core/knowledge/hooks", () => hooksMock);
@@ -105,6 +106,8 @@ beforeEach(() => {
   });
   hooksMock.useDocuments.mockReturnValue({ data: [], isLoading: false });
   hooksMock.useTriggerSynthesis.mockReturnValue({ mutateAsync: rs.fn(), isPending: false });
+  hooksMock.useTriggerEvalRun.mockReset();
+  hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
 });
 
 afterEach(() => {
@@ -181,7 +184,8 @@ describe("EvalQuestionBank 表格", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
     const { container } = renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
     // 表头：默认 h-10 是松夸根源，降成文档列表同款 text-xs + 自然高。
-    const head = container.querySelector("th")!;
+    // th[0] 是选题复选框列（2026-09-01 B 方案），断言打在首个文本列上。
+    const head = container.querySelectorAll("th")[1]!;
     expect(head.className).toContain("text-xs");
     expect(head.className).toContain("h-auto");
     // 行：单元格与文档列表同节奏（px-2 py-2，表头 32 / 行 36）；原默认 p-2 保留纵向，
@@ -343,5 +347,83 @@ describe("EvalAddQuestionDialog", () => {
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已添加")).toBe(true);
     });
+  });
+});
+
+// ── 题库勾选 + 批量运行（2026-09-01 B 方案 Task 5）────────────────
+// 选题与档位两个正交维度：复选框列选题（行点击开 drawer 的既有行为保留），
+// 批量栏双档触发携 question_ids；触发成功清空选择。
+
+describe("EvalQuestionBank 选题与批量运行（B 方案）", () => {
+  let mutate: ReturnType<typeof rs.fn>;
+
+  beforeEach(() => {
+    // mutate 默认实现调 onSuccess（与组件消费契约对齐）；每个用例重新建防调用累计。
+    mutate = rs.fn((_input: unknown, opts?: { onSuccess?: (response: { status: string }) => void }) => {
+      opts?.onSuccess?.({ status: "enqueued" });
+    });
+    hooksMock.useEvalQuestions.mockReturnValue(questionsState([Q_UNANCHORED, Q_ANCHORED, Q_MULTI]));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+  });
+  afterEach(() => cleanup());
+
+  it("无选中时批量栏不出现；行复选框勾选不触发抽屉", () => {
+    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
+    expect(screen.queryByText(/已选/)).toBeNull();
+
+    const box = screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` });
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(box);
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    // 勾选不开详情 drawer（行点击才开）
+    expect(screen.queryByTestId("eval-question-drawer-mock")).toBeNull();
+  });
+
+  it("表头全选切换全部可见题", () => {
+    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
+    const selectAll = screen.getByRole("checkbox", { name: "全选" });
+    fireEvent.click(selectAll);
+    for (const question of [Q_UNANCHORED, Q_ANCHORED, Q_MULTI]) {
+      expect(screen.getByRole("checkbox", { name: `选择「${question.query}」` }).getAttribute("aria-checked")).toBe("true");
+    }
+    fireEvent.click(selectAll);
+    expect(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("批量栏显示选中数；快速评测携 question_ids 触发并清空选择", () => {
+    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }));
+    expect(screen.getByText("已选 1 题")).toBeTruthy();
+
+    const runButton = screen.getByRole("button", { name: "快速评测" });
+    expect(runButton.className).toContain("h-7");
+    fireEvent.click(runButton);
+    expect(mutate).toHaveBeenCalled();
+    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    expect(payload.layers).toBe("l1");
+    expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
+    // 触发后清空选择（批量栏消失）
+    expect(screen.queryByText(/已选/)).toBeNull();
+  });
+
+  it("批量栏完整评测：确认对话框后携 layers=l1_l2 与 question_ids", async () => {
+    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: `选择「${Q_MULTI.query}」` }));
+    fireEvent.click(screen.getByRole("button", { name: "完整评测 (L1+L2)" }));
+
+    expect(await screen.findByText("运行完整评测")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
+    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    expect(payload.layers).toBe("l1_l2");
+    expect(payload.question_ids).toEqual([Q_MULTI.id]);
+    expect(screen.queryByText(/已选/)).toBeNull();
+  });
+
+  it("清除选择隐藏批量栏", () => {
+    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }));
+    expect(screen.getByText("已选 1 题")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "清除选择" }));
+    expect(screen.queryByText(/已选/)).toBeNull();
   });
 });

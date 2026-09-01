@@ -674,6 +674,13 @@ export interface EvalRunListResponse {
   total: number;
 }
 
+/** POST /eval-runs 请求载荷（2026-09-01 B 方案）：``layers`` 缺省 ``l1``（快速档），
+ * ``l1_l2`` 为完整档（单行双层指标）；``question_ids`` 选题运行，缺省全量。 */
+export interface EvalTriggerInput {
+  layers?: "l1" | "l1_l2";
+  question_ids?: string[];
+}
+
 /** POST /eval-runs 202 响应（wiki generate 幂等同款）。 */
 export interface EvalTriggerResponse {
   status: "enqueued" | "already_running";

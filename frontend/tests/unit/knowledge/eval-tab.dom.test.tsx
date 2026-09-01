@@ -735,3 +735,92 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
     }
   });
 });
+
+// ── 运行评测分档（2026-09-01 B 方案 Task 4）────────────────────
+// 分体按钮：主键一键 L1 全量（高频习惯不变），右侧箭头下拉选「完整评测 (L1+L2)」，
+// 完整档弹确认对话框（成本提示）；窄面板降档时完整评测项并入 ⋯ 菜单。
+
+describe("EvalTab 运行评测分档（B 方案）", () => {
+  beforeEach(() => {
+    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+  });
+  afterEach(() => cleanup());
+
+  it("主按钮一键跑 L1 快速档（payload layers=l1）", () => {
+    const mutate = rs.fn();
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+
+    expect(mutate).toHaveBeenCalled();
+    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1" });
+  });
+
+  it("箭头下拉含完整评测项：确认后以 layers=l1_l2 触发", async () => {
+    const mutate = rs.fn();
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+
+    const chevron = screen.getByRole("button", { name: "评测档位" });
+    fireEvent.keyDown(chevron, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+
+    // 确认对话框：成本说明在场，确认后触发完整档。
+    expect(await screen.findByText("运行完整评测")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
+    expect(mutate).toHaveBeenCalled();
+    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2" });
+  });
+
+  it("确认对话框取消不触发", async () => {
+    const mutate = rs.fn();
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+
+    const chevron = screen.getByRole("button", { name: "评测档位" });
+    fireEvent.keyDown(chevron, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("运行中箭头下拉同主按钮一并禁用", () => {
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: true });
+    renderEvalTab();
+    expect(screen.getByRole("button", { name: "评测档位" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("窄面板降档：箭头收进 ⋯，完整评测项并入菜单", async () => {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    const mutate = rs.fn();
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    try {
+      renderEvalTab();
+      await waitFor(() => {
+        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "评测档位" })).toBeNull();
+      });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      fireEvent.keyDown(more, { key: "ArrowDown" });
+      fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+      expect(await screen.findByText("运行完整评测")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
+      expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2" });
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
+});

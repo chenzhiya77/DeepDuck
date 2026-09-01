@@ -31,7 +31,7 @@ import numpy as np
 
 from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
-from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, run_layer1_for_kb
+from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, run_full_eval_for_kb, run_layer1_for_kb
 from deerflow.knowledge.eval.persistence import ENV_CI
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
@@ -170,7 +170,7 @@ class KnowledgeService:
         worker: Any = None,
         data_dir: str | Path,
         wiki_generate_fn: Callable[[str, bool], None] | None = None,
-        eval_trigger_fn: Callable[[str], None] | None = None,
+        eval_trigger_fn: Callable[..., None] | None = None,
         synthesis_trigger_fn: Callable[..., None] | None = None,
         projection_cache: ProjectionCache | None = None,
     ) -> None:
@@ -1275,26 +1275,33 @@ class KnowledgeService:
     async def reject_synthesis_candidate(self, kb_id: str, candidate_id: str) -> None:
         await synthesis.reject_candidate(self._synthesis_staging_path(kb_id), candidate_id)
 
-    async def trigger_eval_run(self, kb_id: str) -> bool:
-        """Fire-and-forget Layer 1 评测（spec 2026-08-27 §5.1，wiki 幂等同款）。
+    async def trigger_eval_run(self, kb_id: str, *, layers: str = "l1", question_ids: Collection[str] | None = None) -> bool:
+        """Fire-and-forget 评测触发（spec 2026-08-27 §5.1 + 2026-09-01 B 方案，wiki 幂等同款）。
 
-        Returns False when a run is already in flight — the router reports
-        ``already_running`` instead of queueing a duplicate run. An empty
-        question bank raises :class:`EvalQuestionBankEmpty` (router → 409)
-        *before* anything is scheduled — the check runs synchronously so the
-        caller gets a definitive answer rather than a doomed background task.
+        ``layers="l1"`` 快速档（纯检索静态指标）；``layers="l1_l2"`` 完整档（+
+        judge-backed Layer 2，单行双层指标）。``question_ids`` 选题运行，调度前
+        同步校验过滤后非空。Returns False when a run is already in flight —
+        the router reports ``already_running`` instead of queueing a duplicate
+        run. An empty (post-filter) question bank raises
+        :class:`EvalQuestionBankEmpty` (router → 409) *before* anything is
+        scheduled — the check runs synchronously so the caller gets a
+        definitive answer rather than a doomed background task.
         """
 
         if eval_run_in_progress(kb_id):
             return False
         bank = await question_bank.load_questions(self._golden_path(kb_id))
+        if question_ids is not None:
+            wanted = set(question_ids)
+            bank = [question for question in bank if question.id in wanted]
         if not bank:
             raise EvalQuestionBankEmpty(f"eval question bank is empty for kb {kb_id}")
-        self.eval_trigger_fn(kb_id)
+        self.eval_trigger_fn(kb_id, layers=layers, question_ids=question_ids)
         return True
 
-    def _schedule_eval_run(self, kb_id: str) -> None:
-        task = asyncio.create_task(run_layer1_for_kb(kb_id, golden_path=self._golden_path(kb_id)), name=f"kb-eval-{kb_id}")
+    def _schedule_eval_run(self, kb_id: str, *, layers: str = "l1", question_ids: Collection[str] | None = None) -> None:
+        runner = run_full_eval_for_kb if layers == "l1_l2" else run_layer1_for_kb
+        task = asyncio.create_task(runner(kb_id, golden_path=self._golden_path(kb_id), question_ids=question_ids), name=f"kb-eval-{kb_id}")
         self._eval_tasks.add(task)
         task.add_done_callback(self._eval_tasks.discard)
 

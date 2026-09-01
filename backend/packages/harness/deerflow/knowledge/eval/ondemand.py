@@ -1,4 +1,4 @@
-"""On-demand Layer 1 evaluation runner triggered from the gateway (spec 2026-08-27 §5).
+"""On-demand evaluation runner triggered from the gateway (spec 2026-08-27 §5 + 2026-09-01 B 方案).
 
 Mirrors the CLI orchestration in ``scripts/run_rag_eval.py`` (load golden →
 searchers → ``run_evaluation`` → report mapping → ``save_eval_run``) but runs
@@ -7,7 +7,11 @@ singletons, so there is no engine lifecycle here and no CLI subprocess.
 
 Contracts frozen by the spec:
 
-- **Layer 1 only** — judge-backed Layer 2 stays on nightly/CLI paths.
+- **Two tiers** — ``run_layer1_for_kb`` stays Layer 1 only (fast, cheap);
+  ``run_full_eval_for_kb`` adds the judge-backed Layer 2 over the same
+  question set and persists BOTH layers on one row (history badge "L1+L2").
+- **Question selection** — ``question_ids`` filters the bank before either
+  pass; an empty post-filter set raises like an empty bank.
 - **Idempotent trigger** — a per-KB module-level ``_IN_FLIGHT`` counter (same
   single-process pattern as wiki ``generator._IN_FLIGHT``); the decrement sits
   in ``finally`` so a crashed run never wedges future triggers.
@@ -18,20 +22,22 @@ Contracts frozen by the spec:
   ``error`` row instead of propagating out of the fire-and-forget task;
   an empty/missing question bank is different: it raises
   :class:`EvalQuestionBankEmpty` *before* scheduling meaningfully starts and
-  persists nothing.
+  persists nothing. A full run whose Layer 2 stage crashes keeps the Layer 1
+  results (completed row, layer2 empty) — never loses the cheap half.
 
 The default searcher construction resolves the KB owner through the store
-(exactly like the CLI); tests inject ``searchers`` directly to exercise the
-orchestration without real retrieval impls.
+(exactly like the CLI); tests inject ``searchers``/``agent_runner`` directly
+to exercise the orchestration without real retrieval impls or agent runs.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from deerflow.knowledge.eval.dataset import GoldenQuestion
 from deerflow.knowledge.eval.persistence import (
     ENV_LOCAL,
     baseline_diff_from_report,
@@ -39,9 +45,12 @@ from deerflow.knowledge.eval.persistence import (
     generate_run_id,
     get_baseline_run,
     layer1_metrics_from_report,
+    layer2_metrics_from_report,
     save_eval_run,
 )
 from deerflow.knowledge.eval.question_bank import load_questions
+from deerflow.knowledge.eval.ragas_eval import report_to_dict as layer2_report_to_dict
+from deerflow.knowledge.eval.ragas_eval import run_layer2_evaluation
 from deerflow.knowledge.eval.runner import SearchFn, build_default_searchers, report_to_dict, run_evaluation
 
 logger = logging.getLogger(__name__)
@@ -60,12 +69,39 @@ def eval_run_in_progress(kb_id: str) -> bool:
     return _IN_FLIGHT.get(kb_id, 0) > 0
 
 
+def _filter_questions(questions: Sequence[GoldenQuestion], question_ids: Collection[str] | None) -> list[GoldenQuestion]:
+    """选题过滤（``None`` = 全量）；过滤后为空集由调用方按空题库语义处理。"""
+    if question_ids is None:
+        return list(questions)
+    wanted = set(question_ids)
+    return [question for question in questions if question.id in wanted]
+
+
+async def _layer1_report_payload(
+    kb_id: str,
+    *,
+    questions: Sequence[GoldenQuestion],
+    top_k: int,
+    searchers: Mapping[str, SearchFn] | None,
+    generated_at: str,
+) -> dict:
+    """Layer 1 执行链（不写库，两条路径共用）：searcher → baseline → run_evaluation → dict。"""
+    effective_searchers = searchers if searchers is not None else await _build_default_searchers(kb_id)
+    baseline_report = None
+    baseline_row = await get_baseline_run(kb_id)
+    if baseline_row is not None and baseline_row.layer1_metrics:
+        baseline_report = baseline_report_from_metrics(baseline_row.layer1_metrics)
+    report = await run_evaluation(questions, effective_searchers, top_k=top_k, baseline=baseline_report, generated_at=generated_at)
+    return report_to_dict(report)
+
+
 async def run_layer1_for_kb(
     kb_id: str,
     *,
     golden_path: str | Path,
     top_k: int = 5,
     searchers: Mapping[str, SearchFn] | None = None,
+    question_ids: Collection[str] | None = None,
     generated_at: str | None = None,
 ) -> str:
     """Run one deterministic evaluation pass for the KB; returns the run_id.
@@ -78,20 +114,13 @@ async def run_layer1_for_kb(
     if generated_at is None:
         generated_at = datetime.now(UTC).isoformat(timespec="seconds")
 
-    questions = await load_questions(golden_path)
+    questions = _filter_questions(await load_questions(golden_path), question_ids)
     if not questions:
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     try:
-        effective_searchers = searchers if searchers is not None else await _build_default_searchers(kb_id)
-        baseline_report = None
-        baseline_row = await get_baseline_run(kb_id)
-        if baseline_row is not None and baseline_row.layer1_metrics:
-            baseline_report = baseline_report_from_metrics(baseline_row.layer1_metrics)
-
-        report = await run_evaluation(questions, effective_searchers, top_k=top_k, baseline=baseline_report, generated_at=generated_at)
-        payload = report_to_dict(report)
+        payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
         await save_eval_run(
             run_id=run_id,
             kb_id=kb_id,
@@ -113,6 +142,94 @@ async def run_layer1_for_kb(
             _IN_FLIGHT[kb_id] = remaining
         else:
             _IN_FLIGHT.pop(kb_id, None)
+
+
+async def run_full_eval_for_kb(
+    kb_id: str,
+    *,
+    golden_path: str | Path,
+    top_k: int = 5,
+    searchers: Mapping[str, SearchFn] | None = None,
+    question_ids: Collection[str] | None = None,
+    agent_runner=None,
+    judge_llm=None,
+    ragas_evaluator=None,
+    generated_at: str | None = None,
+) -> str:
+    """Layer 1 + Layer 2 完整评测，单行写双层指标（历史徽标 "L1+L2"）。
+
+    Layer 2 依赖（agent runner / judge / ragas）未注入时走生产装配（
+    ``_build_layer2_deps``，与 CLI 口径一致）；测试直接注入假件。L2 阶段
+    整体异常降级为仅 L1 的 completed 行——廉价层的成果永不丢失。
+    """
+
+    run_id = generate_run_id()
+    if generated_at is None:
+        generated_at = datetime.now(UTC).isoformat(timespec="seconds")
+
+    questions = _filter_questions(await load_questions(golden_path), question_ids)
+    if not questions:
+        raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
+
+    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    try:
+        payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
+        layer1_metrics = layer1_metrics_from_report(payload)
+        baseline_diff = baseline_diff_from_report(payload)
+
+        layer2_metrics: Mapping[str, object] = {}
+        try:
+            effective_runner, effective_judge, effective_ragas = (agent_runner, judge_llm, ragas_evaluator) if agent_runner is not None else await _build_layer2_deps(kb_id, run_id)
+            layer2_report = await run_layer2_evaluation(
+                questions,
+                agent_runner=effective_runner,
+                judge_llm=effective_judge,
+                ragas_evaluator=effective_ragas,
+                kb_id=kb_id,
+                run_id=run_id,
+            )
+            layer2_metrics = layer2_metrics_from_report(layer2_report_to_dict(layer2_report), questions=questions)
+        except Exception:
+            logger.exception("on-demand full eval run %s: layer-2 stage failed for kb %s (keeping layer-1 results)", run_id, kb_id)
+
+        await save_eval_run(
+            run_id=run_id,
+            kb_id=kb_id,
+            status="completed",
+            created_at=datetime.fromisoformat(generated_at),
+            completed_at=datetime.now(UTC),
+            layer1_metrics=layer1_metrics,
+            layer2_metrics=layer2_metrics or None,
+            baseline_diff=baseline_diff,
+            environment=ENV_LOCAL,
+        )
+        return run_id
+    except Exception:
+        logger.exception("on-demand full eval run %s failed for kb %s", run_id, kb_id)
+        await _save_error_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at))
+        return run_id
+    finally:
+        remaining = _IN_FLIGHT.get(kb_id, 0) - 1
+        if remaining > 0:
+            _IN_FLIGHT[kb_id] = remaining
+        else:
+            _IN_FLIGHT.pop(kb_id, None)
+
+
+async def _build_layer2_deps(kb_id: str, run_id: str):
+    """生产装配（与 CLI 口径一致）：lead-agent runner + config 主模型 judge + ragas 评估器。"""
+    from deerflow.config.app_config import get_app_config
+    from deerflow.knowledge.eval.factory import build_judge_llm, build_ragas_evaluator
+    from deerflow.knowledge.eval.ragas_eval import build_lead_agent_runner
+    from deerflow.knowledge.store import get_knowledge_store
+
+    store = get_knowledge_store()
+    kb = await store.get_kb(kb_id)
+    if kb is None:
+        raise LookupError(f"knowledge base not found: {kb_id}")
+    judge = build_judge_llm(None, config=get_app_config())
+    runner = build_lead_agent_runner(kb_id=kb_id, user_id=kb["owner_id"], run_id=run_id)
+    return runner, judge, build_ragas_evaluator(judge)
 
 
 async def _save_error_row(*, run_id: str, kb_id: str, created_at: datetime) -> None:

@@ -455,6 +455,24 @@ export interface Translations {
       runStartedToast: string;
       alreadyRunningToast: string;
       runFailedToast: string;
+      /** 完整评测分档（2026-09-01 B 方案）：箭头菜单项 + 成本确认对话框。 */
+      fullRun: {
+        menuAria: string;
+        menuItem: string;
+        dialogTitle: string;
+        dialogBody: string;
+        confirm: string;
+        cancel: string;
+      };
+      /** 题库选题批量运行（2026-09-01 B 方案）：复选框列 + 批量栏。 */
+      selection: {
+        selectAllAria: string;
+        rowSelectAria: (query: string) => string;
+        selected: (count: number) => string;
+        runSelected: string;
+        fullRunSelected: string;
+        clear: string;
+      };
       /** 题库视图（§4.3）：列头、锚定摘要、行操作、空态与两个弹窗。 */
       questions: {
         columnQuery: string;
