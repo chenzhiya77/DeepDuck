@@ -158,11 +158,17 @@ function ManualCardEditor({
 export function ManualCardPanel({
   kbId,
   query = "",
+  createSignal = 0,
   onOpenCard,
 }: {
   kbId: string;
   /** Unified wiki-tab search text (title/summary/tags containment, client-side). */
   query?: string;
+  /**
+   * 新建卡片全局入口（2026-09-02）：百科 tab 的 ⋯ 菜单递增此计数触发创建，
+   * 让「新建卡片」不必依赖卡片区头部按钮（收起时也可达）。
+   */
+  createSignal?: number;
   onOpenCard?: (cardId: string) => void;
 }) {
   const { t, locale } = useI18n();
@@ -180,6 +186,16 @@ export function ManualCardPanel({
   if (lastQuery !== query) {
     setLastQuery(query);
     setSelectedIds(new Set());
+  }
+
+  // 新建卡片全局入口（2026-09-02）：⋯ 菜单递增 createSignal → 同款 render-time
+  // 派生状态监听变化，打开创建框并展开卡片区（保存后新卡即时可见）。
+  const [lastCreateSignal, setLastCreateSignal] = useState(createSignal);
+  if (createSignal !== lastCreateSignal) {
+    setLastCreateSignal(createSignal);
+    setEditingId(null);
+    setEditorOpen(true);
+    setExpanded(true);
   }
 
   const searching = query.trim() !== "";

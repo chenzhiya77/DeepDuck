@@ -154,6 +154,22 @@ export function useGenerateWiki(kbId: string) {
   });
 }
 
+/**
+ * 局部更新/重建（2026-09-02）：重生成手选条目。与 ``useGenerateWiki`` 同一
+ * 失效节奏（含 1s 延迟二次失效弥合 202→in-flight 间隙），因为后端复用同一
+ * 库级 in-flight/轮询/完成信号。
+ */
+export function useRegenerateWikiEntries(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (entryIds: string[]) => api.regenerateWikiEntries(kbId, entryIds),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) });
+      setTimeout(() => void queryClient.invalidateQueries({ queryKey: knowledgeWikiEntriesKey(kbId) }), 1000);
+    },
+  });
+}
+
 export function knowledgeWikiEntriesKey(kbId: string) {
   return ["knowledge-bases", kbId, "wiki-entries"] as const;
 }

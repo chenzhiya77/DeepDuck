@@ -45,7 +45,7 @@ from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
 from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
 from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
-from deerflow.knowledge.wiki.generator import generate_wiki, wiki_generation_in_progress, wiki_last_run_status
+from deerflow.knowledge.wiki.generator import generate_wiki, regenerate_wiki_entries, wiki_generation_in_progress, wiki_last_run_status
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
 from deerflow.tools.builtins.hybrid_search_tool import _hybrid_search_impl
@@ -170,6 +170,7 @@ class KnowledgeService:
         worker: Any = None,
         data_dir: str | Path,
         wiki_generate_fn: Callable[[str, bool], None] | None = None,
+        wiki_regenerate_fn: Callable[[str, list[str]], None] | None = None,
         eval_trigger_fn: Callable[..., None] | None = None,
         synthesis_trigger_fn: Callable[..., None] | None = None,
         projection_cache: ProjectionCache | None = None,
@@ -181,6 +182,7 @@ class KnowledgeService:
         self.worker = worker
         self.data_dir = Path(data_dir)
         self.wiki_generate_fn = wiki_generate_fn or self._schedule_wiki_generation
+        self.wiki_regenerate_fn = wiki_regenerate_fn or self._schedule_wiki_regeneration
         self.eval_trigger_fn = eval_trigger_fn or self._schedule_eval_run
         self.synthesis_trigger_fn = synthesis_trigger_fn or self._schedule_question_synthesis
         self.projection_cache = projection_cache or ProjectionCache()
@@ -376,6 +378,21 @@ class KnowledgeService:
         if wiki_generation_in_progress(kb_id):
             return False
         self.wiki_generate_fn(kb_id, only_dirty)
+        return True
+
+    def trigger_wiki_regeneration(self, kb_id: str, entry_ids: list[str]) -> bool:
+        """Fire-and-forget per-entry regeneration (局部更新/重建).
+
+        Shares the in-flight counter with the library-level runs, so a
+        regeneration is skipped while any generate run is draining (and vice
+        versa) — the router reports ``already_running`` instead of queueing an
+        overlapping LLM run on the same KB.
+        """
+        if not entry_ids:
+            return False
+        if wiki_generation_in_progress(kb_id):
+            return False
+        self.wiki_regenerate_fn(kb_id, entry_ids)
         return True
 
     async def list_wiki_entries(self, kb_id: str) -> dict[str, Any]:
@@ -1362,6 +1379,21 @@ class KnowledgeService:
             await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, embedder=DashScopeEmbedder(), only_dirty=only_dirty)
         except Exception:
             logger.exception("wiki generation failed for kb %s", kb_id)
+
+    def _schedule_wiki_regeneration(self, kb_id: str, entry_ids: list[str]) -> None:
+        task = asyncio.create_task(self._run_wiki_regeneration(kb_id, entry_ids), name=f"kb-wiki-regen-{kb_id}")
+        self._wiki_tasks.add(task)
+        task.add_done_callback(self._wiki_tasks.discard)
+
+    async def _run_wiki_regeneration(self, kb_id: str, entry_ids: list[str]) -> None:
+        try:
+            from deerflow.knowledge.embedder import DashScopeEmbedder
+
+            # Same embedder wiring as the library-level run: without it the
+            # rewritten entry would keep a stale vector in kb_wiki_entries.
+            await regenerate_wiki_entries(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, entry_ids=entry_ids, embedder=DashScopeEmbedder())
+        except Exception:
+            logger.exception("wiki entry regeneration failed for kb %s", kb_id)
 
     # ── internals ────────────────────────────────────────────────────────
 

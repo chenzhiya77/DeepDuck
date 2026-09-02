@@ -743,6 +743,8 @@ export const enUS: Translations = {
       selectEntry: "Select entry",
       openEntry: "Open details",
       editEntry: "Edit entry",
+      updateEntry: "Update entry",
+      updateSelected: "Update selected",
       noMatches: "No matching entries",
       deleteBatchTitle: (count: number) =>
         `Delete ${count} wiki ${count === 1 ? "entry" : "entries"}?`,

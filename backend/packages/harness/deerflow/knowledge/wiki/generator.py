@@ -402,3 +402,74 @@ async def generate_wiki(
             _IN_FLIGHT[kb_id] = remaining
         else:
             _IN_FLIGHT.pop(kb_id, None)
+
+
+async def regenerate_wiki_entries(
+    store: KnowledgeStore,
+    graph_store: GraphStore,
+    wiki_store: WikiStore,
+    vector_store: KnowledgeVectorStore | None = None,
+    *,
+    kb_id: str,
+    entry_ids: Sequence[str],
+    llm: _LLM | None = None,
+    embedder: _Embedder | None = None,
+) -> WikiStats:
+    """Regenerate specific wiki entries by id (per-entry 局部更新/重建).
+
+    The user hand-picks the entries, so entity selection is already done — this
+    is the same atomic rewrite as the dirty refresh (``_write_entry``): map each
+    ``entry_id`` to its title, resolve the entity's *current* source chunks, and
+    re-run the single-entity LLM pass (clears ``dirty``, preserves the
+    supplement layer, re-embeds). Entries whose entity vanished from the graph
+    are pruned here (失格即删, same rule as the incremental stale branch);
+    entities that still exist but lost eligibility are caught by the write-time
+    re-check in ``_persist_entry``.
+
+    Shares the ``_IN_FLIGHT`` / ``_LAST_RUN`` counters with ``generate_wiki``, so
+    a per-entry run is mutually exclusive with a library-level one (no
+    overlapping LLM runs on the same KB) and feeds the same 更新中 / completion
+    signals.
+    """
+    if llm is None:
+        llm = _default_llm()
+
+    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    try:
+        entities_by_name = {row["name"]: row for row in await graph_store.list_entities(kb_id)}
+        rows: list[dict[str, Any]] = []
+        orphan_titles: list[str] = []
+        for entry_id in entry_ids:
+            entry = await wiki_store.get_entry(entry_id)
+            if entry is None or entry["kb_id"] != kb_id:
+                continue
+            row = entities_by_name.get(entry["title"])
+            if row is None:
+                # Entity gone → the entry is an orphan; prune it (vector first,
+                # failures swallowed — mirrors the module cascade ordering).
+                orphan_titles.append(entry["title"])
+            else:
+                rows.append(row)
+
+        stats = WikiStats(selected=len(rows))
+        if orphan_titles:
+            if vector_store is not None:
+                try:
+                    await vector_store.delete_wiki_entries(kb_id, orphan_titles)
+                except Exception:
+                    logger.exception("qdrant delete_wiki_entries failed during regen orphan prune for kb %s (%d titles)", kb_id, len(orphan_titles))
+            stats.pruned = await wiki_store.delete_entries(kb_id, orphan_titles)
+            logger.info("wiki regeneration: pruned %d orphaned entries for kb %s", stats.pruned, kb_id)
+        for row in rows:
+            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
+        _LAST_RUN[kb_id] = "succeeded"
+        return stats
+    except Exception:
+        _LAST_RUN[kb_id] = "failed"
+        raise
+    finally:
+        remaining = _IN_FLIGHT.get(kb_id, 0) - 1
+        if remaining > 0:
+            _IN_FLIGHT[kb_id] = remaining
+        else:
+            _IN_FLIGHT.pop(kb_id, None)

@@ -159,4 +159,18 @@ describe("WikiTab 百科操作菜单", () => {
     fireEvent.click(updateItem as HTMLElement);
     expect(onGenerateWiki).not.toHaveBeenCalled();
   });
+
+  it("⋯ 菜单提供「新建卡片」全局入口，点击弹出创建框（2026-09-02）", async () => {
+    setupMocks();
+    renderTab();
+    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), { key: "ArrowDown" });
+    // 用 menuitem 角色区分：卡片区头部也有同名「新建卡片」按钮（role=button）。
+    const newCardItem = await screen.findByRole("menuitem", { name: "新建卡片" });
+    expect(newCardItem.querySelector("svg")).toBeTruthy();
+    // 新建卡片不受 updating 影响，始终可用。
+    expect(newCardItem.getAttribute("aria-disabled")).not.toBe("true");
+    fireEvent.click(newCardItem);
+    // runAfterMenuClose 延到菜单退场后递增信号 → ManualCardPanel 弹出创建框。
+    expect(await screen.findByText("新建知识卡片", undefined, { timeout: 3000 })).toBeTruthy();
+  });
 });

@@ -688,6 +688,9 @@ export interface Translations {
       selectEntry: string;
       openEntry: string;
       editEntry: string;
+      /** 局部更新（2026-09-02）：右键单条重生成 / 多选批量重生成。 */
+      updateEntry: string;
+      updateSelected: string;
       noMatches: string;
       deleteBatchTitle: (count: number) => string;
       deleteEntry: string;

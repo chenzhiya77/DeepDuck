@@ -189,6 +189,19 @@ export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental
   );
 }
 
+/**
+ * 局部更新/重建（2026-09-02）：重生成手选的百科条目（按各自实体的当前切片
+ * 重跑 LLM）。单条更新与单条重建在后端是同一操作，故共用此端点；返回与
+ * ``generateWiki`` 相同的 202 ack（enqueued / already_running，与库级生成互斥）。
+ */
+export function regenerateWikiEntries(kbId: string, entryIds: string[]): Promise<WikiGenerateAck> {
+  return fetch(kbUrl(kbId, "/wiki/regenerate"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entry_ids: entryIds }),
+  }).then((r) => readResponse<WikiGenerateAck>(r, "Failed to regenerate wiki entries"));
+}
+
 export function listWikiEntries(kbId: string): Promise<WikiEntriesPage> {
   return fetch(kbUrl(kbId, "/wiki/entries")).then((r) =>
     readResponse<WikiEntriesPage>(r, "Failed to fetch wiki entries"),

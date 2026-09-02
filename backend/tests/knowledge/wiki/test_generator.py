@@ -27,10 +27,11 @@ from deerflow.knowledge.wiki.generator import (
     generate_wiki,
     mark_dirty_for_entities,
     plan_entry_batches,
+    regenerate_wiki_entries,
     select_eligible_entities,
     wiki_trigger_ready,
 )
-from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 
 from ..conftest import requires_qdrant
 
@@ -588,3 +589,126 @@ async def test_write_proceeds_when_entity_still_eligible(wiki_db_env):
     assert stats.generated == 1
     assert stats.skipped_stale == 0
     assert {e["title"] for e in await wiki_store.list_entries(kb_id)} == {"DeerFlow"}
+
+
+# ── per-entry regenerate (局部更新/重建, 2026-09-02) ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_regenerate_rewrites_only_selected_entries(wiki_db_env):
+    """局部更新：regenerate 只重写选中的 entry_id，其余 dirty 条目原样保留
+    —— 对应用户诉求『不能所有待更新一起更新，要能选中指定条目更新』。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])  # freq 1→2 → eligible
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
+    # Both entries go dirty (a new doc touched both entities).
+    await mark_dirty_for_entities(wiki_store, kb_id, ["DeerFlow", "Gateway"])
+
+    llm = _WikiLLM()
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, None, kb_id=kb_id, entry_ids=[wiki_entry_id(kb_id, "DeerFlow")], llm=llm)
+
+    # Only DeerFlow regenerated; Gateway stays dirty (never touched).
+    assert stats.selected == 1
+    assert stats.generated == 1
+    assert stats.titles == ["DeerFlow"]
+    assert len(llm.calls) == 1 and "DeerFlow" in llm.calls[0]
+    entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
+    assert entries["DeerFlow"]["status"] == "ready"  # dirty cleared
+    assert entries["Gateway"]["status"] == "dirty"  # untouched
+
+
+@pytest.mark.asyncio
+async def test_regenerate_preserves_supplement_layer(wiki_db_env):
+    """局部更新走 _write_entry → upsert_entry（supplement 默认 _UNSET）：主内容
+    重写、dirty 清除，但人工补充层原样保留（与 dirty 增量刷新同源语义）。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    entry_id = wiki_entry_id(kb_id, "DeerFlow")
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty", supplement_content="人工批注")
+
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, None, kb_id=kb_id, entry_ids=[entry_id], llm=_WikiLLM())
+
+    assert stats.generated == 1
+    entry = await wiki_store.get_entry(entry_id)
+    assert entry["status"] == "ready"
+    assert "百科综述正文" in entry["content"]  # rewritten by the LLM
+    assert entry["supplement_content"] == "人工批注"  # preserved across the rewrite
+
+
+@pytest.mark.asyncio
+async def test_regenerate_prunes_orphan_entry(wiki_db_env):
+    """选中条目的实体已从图谱消失（孤儿）→ 失格即删：条目被 prune，不进 LLM。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await wiki_store.upsert_entry(kb_id, title="飞书", content="旧条目", source_chunk_ids=["doc-w-c0"], status="dirty")
+
+    llm = _WikiLLM()
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, None, kb_id=kb_id, entry_ids=[wiki_entry_id(kb_id, "飞书")], llm=llm)
+
+    assert stats.selected == 0
+    assert stats.pruned == 1
+    assert llm.calls == []  # an orphan never reaches the LLM
+    assert await wiki_store.list_entries(kb_id) == []
+
+
+@pytest.mark.asyncio
+async def test_regenerate_prunes_ineligible_entity_entry(wiki_db_env):
+    """选中条目的实体仍在图谱但已失格（freq<2）→ 写前重验拦截并 prune。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    # LangGraph exists in the graph but spans a single chunk (freq 1 → ineligible).
+    await wiki_store.upsert_entry(kb_id, title="LangGraph", content="旧条目", source_chunk_ids=["doc-w-c0"], status="ready")
+
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, None, kb_id=kb_id, entry_ids=[wiki_entry_id(kb_id, "LangGraph")], llm=_WikiLLM())
+
+    assert stats.selected == 1  # entity found → queued for rewrite
+    assert stats.generated == 0  # blocked at the write-time eligibility re-check
+    assert stats.skipped_stale == 1
+    assert stats.pruned == 1
+    assert await wiki_store.list_entries(kb_id) == []
+
+
+@pytest.mark.asyncio
+async def test_regenerate_ignores_unknown_and_foreign_entry_ids(wiki_db_env):
+    """未知 id 与属于别的库的 id 都被静默跳过（不报错、不误删）。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=_WikiLLM())
+    # A foreign-kb entry id that must never be touched by this kb's run.
+    await wiki_store.upsert_entry("kb-other", title="DeerFlow", content="别的库", source_chunk_ids=["x"], status="ready")
+    foreign_id = wiki_entry_id("kb-other", "DeerFlow")
+
+    llm = _WikiLLM()
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, None, kb_id=kb_id, entry_ids=["does-not-exist", foreign_id], llm=llm)
+
+    assert stats.selected == 0 and stats.generated == 0 and stats.pruned == 0
+    assert llm.calls == []
+    # The foreign entry survives untouched.
+    assert (await wiki_store.get_entry(foreign_id))["content"] == "别的库"
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_regenerate_reembeds_vector_point_in_place(wiki_env):
+    """局部更新也要重嵌：kb_wiki_entries 向量点原地覆盖（无重复），否则
+    wiki_search 命中的仍是旧向量。"""
+    store, graph_store, vector_store, kb_id = wiki_env["store"], wiki_env["graph_store"], wiki_env["vector_store"], wiki_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await generate_wiki(store, graph_store, wiki_store, vector_store, kb_id=kb_id, llm=_WikiLLM(), embedder=_StubEmbedder())
+    await mark_dirty_for_entities(wiki_store, kb_id, ["DeerFlow"])
+
+    embedder = _StubEmbedder()
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, vector_store, kb_id=kb_id, entry_ids=[wiki_entry_id(kb_id, "DeerFlow")], llm=_WikiLLM(), embedder=embedder)
+
+    assert stats.generated == 1
+    assert embedder.calls  # the rewritten entry went back through the embedder
+    points, _ = await wiki_env["client"].scroll(
+        vector_store.wiki_entries_collection,
+        scroll_filter=Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))]),
+        limit=10,
+    )
+    assert len(points) == 1  # in-place overwrite, no duplicate point
+    entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
+    assert entries["DeerFlow"]["status"] == "ready"

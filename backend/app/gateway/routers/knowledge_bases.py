@@ -352,6 +352,24 @@ async def generate_wiki_entries(request: Request, kb_id: str, mode: Literal["inc
     return {"status": "enqueued" if enqueued else "already_running"}
 
 
+class RegenerateWikiEntriesRequest(BaseModel):
+    """Per-entry 局部更新/重建 (2026-09-02): the hand-picked entry ids to rewrite."""
+
+    entry_ids: list[str] = Field(min_length=1, description="Wiki entry ids to regenerate")
+
+
+@router.post("/{kb_id}/wiki/regenerate", status_code=202)
+async def regenerate_wiki_entries(request: Request, kb_id: str, body: RegenerateWikiEntriesRequest):
+    """Enqueue per-entry regeneration: rewrite the selected entries from their
+    entities' current source chunks (the same atomic pass as the dirty
+    refresh). Serves both 局部更新 and 局部重建 — for a hand-picked entry the
+    two are the same rewrite. Mutually exclusive with the library-level runs
+    via the shared in-flight counter (``already_running`` when one is live)."""
+    service = await _require_kb_access(request, kb_id)
+    enqueued = service.trigger_wiki_regeneration(kb_id, body.entry_ids)
+    return {"status": "enqueued" if enqueued else "already_running"}
+
+
 @router.get("/{kb_id}/wiki/entries")
 async def list_wiki_entries(request: Request, kb_id: str):
     service = await _require_kb_access(request, kb_id)

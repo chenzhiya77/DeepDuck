@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, ChevronDown, ChevronRight, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,7 @@ export function WikiPanel({
   onOpenEntry,
   onDeleteEntry,
   onEditEntry,
+  onRegenerateEntries,
 }: {
   entries: WikiEntrySummary[];
   loading?: boolean;
@@ -63,6 +64,13 @@ export function WikiPanel({
   onDeleteEntry: (entry: WikiEntrySummary) => Promise<void> | void;
   /** Phase-3 Batch-1 P1: edit entry (opens WikiEditDialog) */
   onEditEntry?: (entry: WikiEntrySummary) => void;
+  /**
+   * 局部更新/重建 (2026-09-02): regenerate the hand-picked entries from their
+   * entities' current chunks. Single right-click passes ``[entry.id]``; a
+   * multi-selection passes the whole selected set. Disabled while ``updating``
+   * (shares the library-level in-flight guard, so no overlapping LLM run).
+   */
+  onRegenerateEntries?: (entryIds: string[]) => void;
 }) {
   const { t, locale } = useI18n();
   const tk = t.knowledge;
@@ -269,6 +277,17 @@ export function WikiPanel({
                             <ContextMenuLabel>{tk.selectedCount(selectedIds.size)}</ContextMenuLabel>
                             {/* 结构节奏同文档右键菜单（2026-09-02 定稿）：普通动作 →
                                 取消选择（X）→ 分隔线 → 危险操作沉底单独隔离 */}
+                            {/* 局部更新（2026-09-02）：对选中集批量重生成；更新中禁用
+                                （与库级生成共享 in-flight 互斥，防重叠 LLM 跑）。 */}
+                            {onRegenerateEntries && (
+                              <ContextMenuItem
+                                disabled={updating}
+                                onSelect={() => runAfterMenuClose(() => onRegenerateEntries([...selectedIds]))}
+                              >
+                                <RefreshCw className="size-4" />
+                                {tw.updateSelected}
+                              </ContextMenuItem>
+                            )}
                             <ContextMenuItem onSelect={() => setSelectedIds(new Set())}>
                               <X className="size-4" />
                               {tk.cancelSelection}
@@ -292,6 +311,17 @@ export function WikiPanel({
                               <ContextMenuItem onSelect={() => runAfterMenuClose(() => onEditEntry(entry))}>
                                 <Pencil className="size-4" />
                                 {tw.editEntry}
+                              </ContextMenuItem>
+                            )}
+                            {/* 局部更新（2026-09-02）：右键即选中，单条重生成（同一机制
+                                兼局部重建）；更新中禁用。 */}
+                            {onRegenerateEntries && (
+                              <ContextMenuItem
+                                disabled={updating}
+                                onSelect={() => runAfterMenuClose(() => onRegenerateEntries([entry.id]))}
+                              >
+                                <RefreshCw className="size-4" />
+                                {tw.updateEntry}
                               </ContextMenuItem>
                             )}
                             {/* 右键即选中，退出选择态入口两态对称（同文档规范） */}

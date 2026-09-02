@@ -705,6 +705,9 @@ export const zhCN: Translations = {
       selectEntry: "选择条目",
       openEntry: "打开详情",
       editEntry: "编辑条目",
+      // 四字对齐（2026-09-02）：与「编辑条目/打开详情/选择条目」等长，菜单不参差。
+      updateEntry: "更新条目",
+      updateSelected: "更新所选",
       noMatches: "没有匹配的条目",
       deleteBatchTitle: (count: number) => `删除 ${count} 条百科条目？`,
       deleteEntry: "删除条目",

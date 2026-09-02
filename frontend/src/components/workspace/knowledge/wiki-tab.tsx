@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Loader2, MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
+import { BookOpen, Loader2, MoreHorizontal, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ export function WikiTab({
   entriesLoading = false,
   updating = false,
   onGenerateWiki,
+  onRegenerateEntries,
   onOpenEntry,
   onEditEntry,
   onDeleteEntry,
@@ -49,6 +50,8 @@ export function WikiTab({
    * tab 内 ⋯ 承接同一触发器，与全局双入口。
    */
   onGenerateWiki?: (mode: WikiGenerateMode) => void;
+  /** 局部更新/重建（2026-09-02）：透传给 WikiPanel 右键菜单（单条/多选）。 */
+  onRegenerateEntries?: (entryIds: string[]) => void;
   onOpenEntry: (entry: WikiEntrySummary) => void;
   onEditEntry?: (entry: WikiEntrySummary) => void;
   onDeleteEntry: (entry: WikiEntrySummary) => Promise<void> | void;
@@ -58,6 +61,9 @@ export function WikiTab({
   const tk = t.knowledge;
   const [query, setQuery] = useState("");
   const [rebuildOpen, setRebuildOpen] = useState(false);
+  // 新建卡片全局入口（2026-09-02）：⋯ 菜单递增此信号，ManualCardPanel 用
+  // render-time 派生状态监听变化并弹出创建框（同 lastQuery 惯用法）。
+  const [cardCreateSignal, setCardCreateSignal] = useState(0);
 
   return (
     <div className="flex h-full flex-col" data-testid="wiki-tab">
@@ -92,6 +98,12 @@ export function WikiTab({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
+            {/* 新建卡片全局入口（2026-09-02）：创建是 add 动作，置于维护动作之前
+                （对齐全局库菜单「上传文档」在首的次序）；与 wiki 生成无关，始终可用。 */}
+            <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setCardCreateSignal((n) => n + 1))}>
+              <Plus className="size-4" />
+              {tk.manualCards.newCard}
+            </DropdownMenuItem>
             <DropdownMenuItem disabled={updating} onSelect={() => onGenerateWiki?.("incremental")}>
               {updating ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
               {updating ? tk.wikiPanel.updating : tk.updateWiki}
@@ -111,8 +123,9 @@ export function WikiTab({
         onDeleteEntry={onDeleteEntry}
         onEditEntry={onEditEntry}
         onOpenEntry={onOpenEntry}
+        onRegenerateEntries={onRegenerateEntries}
       />
-      <ManualCardPanel kbId={kbId} query={query} onOpenCard={onOpenCard} />
+      <ManualCardPanel kbId={kbId} query={query} createSignal={cardCreateSignal} onOpenCard={onOpenCard} />
       {/* 重建确认弹窗：与全局库菜单共用同一共享组件 */}
       <WikiRebuildDialog
         open={rebuildOpen}

@@ -108,6 +108,7 @@ async def test_non_owner_gets_403_on_every_kb_scoped_route(service):
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/documents").status_code == 403
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# t", "text/markdown")}).status_code == 403
     assert stranger.post(f"/api/knowledge-bases/{kb['id']}/wiki/generate").status_code == 403
+    assert stranger.post(f"/api/knowledge-bases/{kb['id']}/wiki/regenerate", json={"entry_ids": ["e1"]}).status_code == 403
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries").status_code == 403
     assert stranger.get(f"/api/knowledge-bases/{kb['id']}/wiki/entries/whatever").status_code == 403
     assert stranger.delete(f"/api/knowledge-bases/{kb['id']}/wiki/entries/whatever").status_code == 403
@@ -517,6 +518,64 @@ async def test_manual_wiki_trigger_passes_embedder(service, monkeypatch):
     assert captured.get("kb_id") == "kb-1"
     assert captured.get("embedder") is not None, "manual wiki trigger must pass an embedder or entries get no vectors"
     assert captured.get("only_dirty") is True, "Task 14: manual trigger defaults to incremental mode"
+
+
+async def test_wiki_regenerate_enqueues_background_task(service):
+    """局部更新/重建 (2026-09-02): POST /wiki/regenerate 带上手选 entry_ids，
+    经 service 触发后台重生成（与全局 generate 共用调度通道）。"""
+    regenerate = MagicMock(return_value=None)
+    service.wiki_regenerate_fn = regenerate
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/wiki/regenerate", json={"entry_ids": ["e1", "e2"]})
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "enqueued"
+    regenerate.assert_called_once_with(kb["id"], ["e1", "e2"])
+
+
+async def test_wiki_regenerate_already_running_returns_without_requeue(service, monkeypatch):
+    """与库级生成互斥：任何 generate/regenerate 在途时，局部重生成回
+    ``already_running`` 且不重复入队（共享 in-flight 计数器）。"""
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda _kb_id: True)
+    regenerate = MagicMock(return_value=None)
+    service.wiki_regenerate_fn = regenerate
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/wiki/regenerate", json={"entry_ids": ["e1"]})
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "already_running"
+    regenerate.assert_not_called()
+
+
+async def test_wiki_regenerate_rejects_empty_entry_ids(service):
+    """空 entry_ids 无意义 → Pydantic 422（min_length=1），不触发空跑。"""
+    client = _client(service)
+    kb = _create_kb(client)
+
+    assert client.post(f"/api/knowledge-bases/{kb['id']}/wiki/regenerate", json={"entry_ids": []}).status_code == 422
+
+
+async def test_manual_wiki_regenerate_passes_embedder(service, monkeypatch):
+    """Regression (mirrors the generate path): the per-entry trigger must pass
+    an embedder, or the rewritten entry keeps a stale vector wiki_search cites."""
+    captured: dict = {}
+
+    async def _fake_regenerate(*args, **kwargs):
+        captured.update(kwargs)
+        return MagicMock(generated=0, titles=[])
+
+    monkeypatch.setattr("app.gateway.services.knowledge_service.regenerate_wiki_entries", _fake_regenerate)
+
+    service.trigger_wiki_regeneration("kb-1", ["e1", "e2"])
+    await asyncio.gather(*list(service._wiki_tasks))
+
+    assert captured.get("kb_id") == "kb-1"
+    assert captured.get("entry_ids") == ["e1", "e2"]
+    assert captured.get("embedder") is not None, "per-entry regenerate must pass an embedder or the entry keeps a stale vector"
 
 
 async def test_wiki_entries_list_and_detail(service):

@@ -37,6 +37,7 @@ function renderPanel(props?: Partial<Parameters<typeof WikiPanel>[0]>) {
     onOpenEntry: rs.fn(),
     onDeleteEntry: rs.fn(),
     onEditEntry: rs.fn(),
+    onRegenerateEntries: rs.fn(),
   };
   render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
@@ -194,6 +195,45 @@ describe("WikiPanel context menu", () => {
     expect(await screen.findByRole("menuitem", { name: "删除所选" })).toBeTruthy();
     // 批量栏退役后，计数反馈唯一载体是菜单标签。
     expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
+    await settleMenu();
+  });
+
+  // ── 局部更新/重建（2026-09-02）：右键「更新条目」重生成手选条目 ──────────────
+  it("single-row 更新条目 regenerates just that entry (局部更新)", async () => {
+    const handlers = renderPanel();
+    fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-b"));
+    // 普通动作区（编辑条目之后、取消选择之前），带 RefreshCw 图标。
+    const updateItem = await screen.findByRole("menuitem", { name: "更新条目" });
+    expect(updateItem.querySelector("svg")).toBeTruthy();
+    fireEvent.click(updateItem);
+    // runAfterMenuClose 把动作延到菜单退场后（rAF），等一帧窗口。
+    await waitFor(() => expect(handlers.onRegenerateEntries).toHaveBeenCalledWith(["b"]), { timeout: 2000 });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
+
+  it("multi-selection 更新所选 regenerates the whole selected set", async () => {
+    const handlers = renderPanel();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: DeerFlow" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: Gateway" }));
+    fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-a"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "更新所选" }));
+    await waitFor(() => expect(handlers.onRegenerateEntries).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    const ids = handlers.onRegenerateEntries.mock.calls[0]![0] as string[];
+    expect(ids).toContain("a");
+    expect(ids).toContain("b");
+    expect(ids).toHaveLength(2);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  });
+
+  it("更新条目 is disabled while a generation run is in flight", async () => {
+    const handlers = renderPanel({ updating: true });
+    fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-b"));
+    const updateItem = await screen.findByRole("menuitem", { name: "更新条目" });
+    expect(updateItem.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(updateItem);
+    expect(handlers.onRegenerateEntries).not.toHaveBeenCalled();
     await settleMenu();
   });
 });

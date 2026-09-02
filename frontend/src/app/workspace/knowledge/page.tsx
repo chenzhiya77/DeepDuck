@@ -40,6 +40,7 @@ import {
   useDocuments,
   useGenerateWiki,
   useKnowledgeBases,
+  useRegenerateWikiEntries,
   useRetryDocument,
   useSupportedFormats,
   useTriggerSynthesis,
@@ -195,6 +196,7 @@ export default function KnowledgePage() {
   const retryDocument = useRetryDocument(selectedKbId ?? "");
   const triggerSynthesis = useTriggerSynthesis(selectedKbId ?? "");
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
+  const regenerateWikiEntries = useRegenerateWikiEntries(selectedKbId ?? "");
   const deleteWikiEntry = useDeleteWikiEntry(selectedKbId ?? "");
   const updateWikiEntry = useUpdateWikiEntry(selectedKbId ?? "");
 
@@ -202,7 +204,7 @@ export default function KnowledgePage() {
   // `isPending` covers the click→first-poll gap; the toast observes the
   // server-reported generating→idle transition, so a no-op run or a missed
   // poll never produces a phantom 已更新.
-  const wikiUpdating = isWikiUpdating(wikiEntriesQuery.data, generateWiki.isPending);
+  const wikiUpdating = isWikiUpdating(wikiEntriesQuery.data, generateWiki.isPending || regenerateWikiEntries.isPending);
   const wikiManualRunRef = useRef(false);
   const prevWikiGenerationRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -333,6 +335,24 @@ export default function KnowledgePage() {
     });
   };
 
+  // 局部更新/重建触发器（2026-09-02）：百科条目右键菜单（单条/多选）传入
+  // 手选 entry_ids。ack 处理与 handleGenerateWiki 同构：后端复用同一库级
+  // in-flight/轮询/完成信号，故沿用同一套 already_running 提示与完成 toast。
+  const handleRegenerateEntries = (entryIds: string[]) => {
+    regenerateWikiEntries.mutate(entryIds, {
+      onSuccess: (ack) => {
+        if (ack.status === "already_running") {
+          toast.info(tk.wikiAlreadyRunning);
+          return;
+        }
+        wikiManualRunRef.current = true;
+        setWikiRunActive(true);
+        toast.success(tk.wikiEnqueued);
+      },
+      onError: (error) => showMutationError(error, tk.errors.wikiFailed),
+    });
+  };
+
   return (
     <div className="size-full min-h-0" data-testid="knowledge-page">
       <KnowledgePanelsShell
@@ -431,6 +451,7 @@ export default function KnowledgePage() {
                   entriesLoading={wikiEntriesQuery.isLoading}
                   updating={wikiUpdating}
                   onGenerateWiki={handleGenerateWiki}
+                  onRegenerateEntries={handleRegenerateEntries}
                   onDeleteEntry={(entry) => {
                     deleteWikiEntry.mutate(entry.id, {
                       onError: (error) => showMutationError(error, tk.errors.deleteWikiEntryFailed),
