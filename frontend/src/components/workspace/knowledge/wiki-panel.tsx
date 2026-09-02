@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, ChevronDown, ChevronRight, Loader2, Pencil, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Loader2, Pencil, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -176,25 +176,8 @@ export function WikiPanel({
 
       {effectiveExpanded && (
         <>
-          {selectedIds.size > 0 && (
-            <div className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5" data-testid="wiki-batch-bar">
-              <span className="min-w-0 flex-1 text-xs font-medium">
-                {tk.selectedCount(selectedIds.size)}
-              </span>
-              <Button
-                className="h-7"
-                size="sm"
-                variant="destructive"
-                onClick={() => setDeleteTargets(selectedEntries())}
-              >
-                <Trash2 className="size-3.5" />
-                {tk.deleteSelected}
-              </Button>
-              <Button className="h-7" size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
-                {tk.cancelSelection}
-              </Button>
-            </div>
-          )}
+          {/* 批量栏退役（2026-09-02）：插入式条推挤内容产生抖动；
+              删除所选/取消选择全部由右键菜单承接 */}
 
           {loading && entries.length === 0 ? (
             <p className="text-muted-foreground px-4 py-10 text-center text-sm">{tw.loading}</p>
@@ -284,16 +267,19 @@ export function WikiPanel({
                         {isSelected && selectedIds.size > 1 ? (
                           <>
                             <ContextMenuLabel>{tk.selectedCount(selectedIds.size)}</ContextMenuLabel>
+                            {/* 结构节奏同文档右键菜单（2026-09-02 定稿）：普通动作 →
+                                取消选择（X）→ 分隔线 → 危险操作沉底单独隔离 */}
+                            <ContextMenuItem onSelect={() => setSelectedIds(new Set())}>
+                              <X className="size-4" />
+                              {tk.cancelSelection}
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
                             <ContextMenuItem
                               variant="destructive"
                               onSelect={() => runAfterMenuClose(() => setDeleteTargets(selectedEntries()))}
                             >
                               <Trash2 className="size-4" />
                               {tk.deleteSelected}
-                            </ContextMenuItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem onSelect={() => setSelectedIds(new Set())}>
-                              {tk.cancelSelection}
                             </ContextMenuItem>
                           </>
                         ) : (
@@ -308,13 +294,19 @@ export function WikiPanel({
                                 {tw.editEntry}
                               </ContextMenuItem>
                             )}
+                            {/* 右键即选中，退出选择态入口两态对称（同文档规范） */}
+                            <ContextMenuItem onSelect={() => setSelectedIds(new Set())}>
+                              <X className="size-4" />
+                              {tk.cancelSelection}
+                            </ContextMenuItem>
                             <ContextMenuSeparator />
+                            {/* 措辞对齐（同文档规范）：右键即选中，删除目标就是选择集 */}
                             <ContextMenuItem
                               variant="destructive"
                               onSelect={() => runAfterMenuClose(() => setDeleteTargets([entry]))}
                             >
                               <Trash2 className="size-4" />
-                              {tw.deleteEntry}
+                              {tk.deleteSelected}
                             </ContextMenuItem>
                           </>
                         )}

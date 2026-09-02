@@ -15,11 +15,15 @@ export interface DocumentStats {
   totalChunks: number;
 }
 
-export function isDocumentTerminal(doc: Pick<KnowledgeDocument, "status">): boolean {
+export function isDocumentTerminal(
+  doc: Pick<KnowledgeDocument, "status">,
+): boolean {
   return doc.status === "ready" || doc.status === "failed";
 }
 
-export function aggregateDocumentStats(docs: readonly KnowledgeDocument[]): DocumentStats {
+export function aggregateDocumentStats(
+  docs: readonly KnowledgeDocument[],
+): DocumentStats {
   let ready = 0;
   let failed = 0;
   let inProgress = 0;
@@ -32,22 +36,34 @@ export function aggregateDocumentStats(docs: readonly KnowledgeDocument[]): Docu
     totalBytes += doc.size_bytes;
     totalChunks += doc.chunk_count ?? 0;
   }
-  return { total: docs.length, ready, failed, inProgress, totalBytes, totalChunks };
+  return {
+    total: docs.length,
+    ready,
+    failed,
+    inProgress,
+    totalBytes,
+    totalChunks,
+  };
 }
 
 /** Polling cadence for the document list while any doc is mid-pipeline. */
 export const DOCUMENTS_POLL_INTERVAL_MS = 3000;
 
 /** TanStack Query ``refetchInterval`` decision for the documents query. */
-export function documentsRefetchInterval(docs: readonly KnowledgeDocument[] | undefined): number | false {
+export function documentsRefetchInterval(
+  docs: readonly KnowledgeDocument[] | undefined,
+): number | false {
   if (!docs) return false;
-  if (docs.some((doc) => !isDocumentTerminal(doc))) return DOCUMENTS_POLL_INTERVAL_MS;
+  if (docs.some((doc) => !isDocumentTerminal(doc)))
+    return DOCUMENTS_POLL_INTERVAL_MS;
   // The wiki leg is a library-level mirror injected into path_status at read
   // time — it keeps moving after every document reaches a terminal state
   // (generation typically outlasts indexing). Keep polling while it reports
   // "generating", otherwise the badge freezes mid-flight (live bug
   // 2026-08-13: 23 entries ready, hover stuck on 生成中 until manual refresh).
-  return docs.some((doc) => doc.path_status?.wiki === "generating") ? DOCUMENTS_POLL_INTERVAL_MS : false;
+  return docs.some((doc) => doc.path_status?.wiki === "generating")
+    ? DOCUMENTS_POLL_INTERVAL_MS
+    : false;
 }
 
 /** Human-readable byte size (1024-based, one decimal for KB+). */
@@ -70,4 +86,17 @@ export function formatKb(bytes: number): string {
   if (bytes <= 0) return "0";
   if (bytes < 1024) return "1";
   return Math.round(bytes / 1024).toLocaleString();
+}
+
+/**
+ * Fixed-unit MB for the size column (2026-09-02, 方案 Task 2): the caller
+ * appends the " MB" suffix (the header stays unit-less) so the right edge
+ * aligns. >=0.1MB keeps one decimal; below that two decimals to avoid a
+ * misleading "0.0". Two-state KB<->MB is a user choice — tiny files
+ * legitimately show 0.00 MB (exact bytes stay in the hover tooltip).
+ */
+export function formatMb(bytes: number): string {
+  if (bytes <= 0) return "0";
+  const mib = bytes / 1_048_576;
+  return mib >= 0.1 ? mib.toFixed(1) : mib.toFixed(2);
 }

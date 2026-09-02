@@ -1,10 +1,10 @@
 /**
  * Selection and right-click interactions of the document table (spec §5.2):
  * checkbox multi-select (header select-all with indeterminate state), the
- * batch action bar, the Radix context menu (查看切片/重试/删除, batch variant
+ * Radix context menu (查看切片/生成考题/取消选择/删除所选, batch variant
  * when right-clicking a selected row), and batch delete through the shared
- * confirm dialog. Split from document-panel.dom.test.tsx to keep each rstest
- * worker's mount/unmount load moderate.
+ * confirm dialog. 批量操作栏已退役（2026-09-02）：批量动作全由右键菜单
+ * 承接，工具栏搜索/排序常驻不切换。
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -79,42 +79,39 @@ function rows(): HTMLElement[] {
 }
 
 describe("DocumentPanel selection", () => {
-  it("selects rows via checkboxes and shows the batch bar", () => {
+  it("selects rows via checkboxes; the batch bar is retired（2026-09-02）", () => {
     renderPanel({ documents: DOCS });
-    expect(screen.queryByTestId("document-batch-bar")).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: 产品手册.pdf" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: 研发规范.docx" }));
-    expect(screen.getByTestId("document-batch-bar").textContent).toContain("已选 2 项");
-    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+    // 批量栏不再出现；选中态由行复选框自身承载。
     expect(screen.queryByTestId("document-batch-bar")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "选择文档: 产品手册.pdf" }).getAttribute("aria-checked")).toBe("true");
+    // 工具栏不再随选中切换：搜索/排序常驻。
+    expect(screen.getByPlaceholderText("搜索文档…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: 研发规范.docx" }));
+    expect(screen.getByRole("checkbox", { name: "选择文档: 研发规范.docx" }).getAttribute("aria-checked")).toBe("false");
   });
 
   it("selects all rows via the header checkbox and reports an indeterminate state", () => {
     renderPanel({ documents: DOCS });
     const selectAll = screen.getByRole("checkbox", { name: "全选" });
     fireEvent.click(selectAll);
-    expect(screen.getByTestId("document-batch-bar").textContent).toContain("已选 3 项");
+    expect(selectAll.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: Roadmap.md" }));
-    expect(screen.getByTestId("document-batch-bar").textContent).toContain("已选 2 项");
+    expect(selectAll.getAttribute("aria-checked")).toBe("mixed");
     fireEvent.click(screen.getByRole("checkbox", { name: "全选" }));
-    expect(screen.getByTestId("document-batch-bar").textContent).toContain("已选 3 项");
+    expect(selectAll.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("hides the search box behind the batch bar while selecting", () => {
-    renderPanel({ documents: DOCS });
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: 产品手册.pdf" }));
-    expect(screen.queryByPlaceholderText("搜索文档…")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
-    expect(screen.getByPlaceholderText("搜索文档…")).toBeTruthy();
-  });
-
-  it("batch-deletes the selected documents after confirm", async () => {
+  it("batch-deletes the selected documents via the context menu after confirm", async () => {
     const handlers = renderPanel({ documents: DOCS });
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: 产品手册.pdf" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: Roadmap.md" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除所选" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
-    expect(handlers.onDeleteDocument).toHaveBeenCalledTimes(2);
+    // 批量栏退役后，批量删除唯一入口是右键菜单（runAfterMenuClose 延迟到菜单退场）。
+    fireEvent.contextMenu(rows()[0]!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除所选" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }, { timeout: 3000 }));
+    await waitFor(() => expect(handlers.onDeleteDocument).toHaveBeenCalledTimes(2), { timeout: 2000 });
     const deleted = handlers.onDeleteDocument.mock.calls.map((call) => call[0]);
     expect(deleted).toContain("a");
     expect(deleted).toContain("b");
@@ -138,7 +135,8 @@ describe("DocumentPanel context menu", () => {
     const handlers = renderPanel({ documents: DOCS });
     fireEvent.contextMenu(rows()[1]!);
     expect(await screen.findByRole("menuitem", { name: "查看切片" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "删除" })).toBeTruthy();
+    // 措辞对齐（2026-09-02）：右键即选中，单选菜单也用「删除所选」。
+    expect(screen.getByRole("menuitem", { name: "删除所选" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "查看切片" }));
     // onOpenChunks is deferred until the menu's dismissal layer fully tears
     // down (runAfterMenuClose), so it arrives asynchronously.
@@ -153,7 +151,7 @@ describe("DocumentPanel context menu", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文档: Roadmap.md" }));
     fireEvent.contextMenu(rows()[0]!);
     expect(await screen.findByRole("menuitem", { name: "删除所选" })).toBeTruthy();
-    // The batch bar and the menu label both render the count.
+    // 批量栏退役后，计数反馈唯一载体是菜单标签。
     expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
     await settleMenu();
   });

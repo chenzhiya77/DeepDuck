@@ -3,7 +3,10 @@
  * entries). Locale follows the active i18n locale; unparsable values render
  * verbatim.
  */
-export function formatKnowledgeTimestamp(value: string, locale: string): string {
+export function formatKnowledgeTimestamp(
+  value: string,
+  locale: string,
+): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -15,4 +18,43 @@ export function formatKnowledgeTimestamp(value: string, locale: string): string 
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+/** 相对时间单位阈值（从大到小，匹配第一个满足的单位）。 */
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 1000 * 60 * 60 * 24 * 365],
+  ["month", 1000 * 60 * 60 * 24 * 30],
+  ["day", 1000 * 60 * 60 * 24],
+  ["hour", 1000 * 60 * 60],
+  ["minute", 1000 * 60],
+];
+
+/**
+ * 相对时间渲染（2026-09-02，方案 Task 2）：列偏好 timeFormat="relative" 时用。
+ * Intl.RelativeTimeFormat(numeric:"auto") 输出「昨天/3天前/2小时前」等自然表达；
+ * <1 分钟硬编码「刚刚/just now」（Intl 对亚分钟无稳定自然词）。now 可注入便于测试。
+ * 不可解析值原样返回（同 formatKnowledgeTimestamp）。
+ */
+export function formatKnowledgeRelativeTime(
+  value: string,
+  locale: string,
+  now: number = Date.now(),
+): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const lang = locale === "zh-CN" ? "zh-CN" : "en-US";
+  const diffMs = date.getTime() - now; // 负=过去，正=未来
+  if (Math.abs(diffMs) < 60_000) {
+    return lang === "zh-CN" ? "刚刚" : "just now";
+  }
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
+  for (const [unit, ms] of RELATIVE_UNITS) {
+    if (Math.abs(diffMs) >= ms) {
+      return rtf.format(Math.round(diffMs / ms), unit);
+    }
+  }
+  // 兜底（理论上 <1min 已拦截，不会到这）：按分钟。
+  return rtf.format(Math.round(diffMs / 60_000), "minute");
 }

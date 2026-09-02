@@ -3,9 +3,10 @@
  * shares the tab's unified search box (title/summary/tags containment;
  * searching force-fetches and force-expands the collapsed section), the
  * section header carries the 新建卡片 button (reachable while collapsed), and
- * rows carry the document-table model — checkbox multi-select + batch bar +
- * batch delete (irreversibility copy) and a right-click context menu (open /
- * edit / include-toggle / delete; batch variant inside a multi-selection).
+ * rows carry the document-table model — checkbox multi-select + batch delete
+ * (irreversibility copy) and a right-click context menu (open / edit /
+ * include-toggle / 取消选择 / 删除所选; batch variant inside a
+ * multi-selection). 批量操作栏已退役（2026-09-02）：批量动作全由右键菜单承接。
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -126,34 +127,36 @@ describe("ManualCardPanel search filtering", () => {
 });
 
 describe("ManualCardPanel selection", () => {
-  it("selects rows via checkboxes and shows the batch bar", () => {
+  it("selects rows via checkboxes; the batch bar is retired（2026-09-02）", () => {
     setupMocks();
     renderExpanded();
-    expect(screen.queryByTestId("manual-cards-batch-bar")).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 发布禁令" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 回滚流程" }));
-    expect(screen.getByTestId("manual-cards-batch-bar").textContent).toContain("已选 2 项");
-    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
     expect(screen.queryByTestId("manual-cards-batch-bar")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "选择卡片: 发布禁令" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("selects all rows via the header checkbox", () => {
     setupMocks();
     renderExpanded();
     fireEvent.click(screen.getByRole("checkbox", { name: "全选" }));
-    expect(screen.getByTestId("manual-cards-batch-bar").textContent).toContain("已选 2 项");
+    for (const title of ["发布禁令", "回滚流程"]) {
+      expect(screen.getByRole("checkbox", { name: `选择卡片: ${title}` }).getAttribute("aria-checked")).toBe("true");
+    }
   });
 
-  it("batch-deletes the selected cards after confirm (irreversibility copy)", async () => {
+  it("batch-deletes the selected cards via the context menu after confirm (irreversibility copy)", async () => {
     const { deleteCard } = setupMocks();
     renderExpanded();
     fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 发布禁令" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 回滚流程" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除所选" }));
-    expect(await screen.findByText("删除 2 张知识卡片？")).toBeTruthy();
+    // 批量栏退役后，批量删除唯一入口是右键菜单。
+    fireEvent.contextMenu(screen.getByTestId("manual-card-row-card-1"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除所选" }));
+    expect(await screen.findByText("删除 2 张知识卡片？", undefined, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByText(/删除后不可恢复/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    await waitFor(() => expect(deleteCard.mutateAsync).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(deleteCard.mutateAsync).toHaveBeenCalledTimes(2), { timeout: 2000 });
     expect(deleteCard.mutateAsync).toHaveBeenCalledWith("card-1");
     expect(deleteCard.mutateAsync).toHaveBeenCalledWith("card-2");
   });
@@ -177,7 +180,9 @@ describe("ManualCardPanel context menu", () => {
     expect(screen.getByRole("menuitem", { name: "编辑卡片" })).toBeTruthy();
     // card-1 已开启混入搜索 → 菜单项为关闭
     expect(screen.getByRole("menuitem", { name: "关闭混入搜索" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "删除卡片" })).toBeTruthy();
+    // 措辞对齐（2026-09-02）：右键即选中，单选菜单用「删除所选」；退出选择态两态对称。
+    expect(screen.getByRole("menuitem", { name: "删除所选" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "取消选择" })).toBeTruthy();
     await settleMenu();
   });
 
@@ -203,6 +208,7 @@ describe("ManualCardPanel context menu", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "选择卡片: 回滚流程" }));
     fireEvent.contextMenu(screen.getByTestId("manual-card-row-card-1"));
     expect(await screen.findByRole("menuitem", { name: "删除所选" })).toBeTruthy();
+    // 批量栏退役后，计数反馈唯一载体是菜单标签。
     expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
     await settleMenu();
   });

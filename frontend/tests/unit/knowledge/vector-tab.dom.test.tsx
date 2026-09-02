@@ -214,6 +214,30 @@ describe("VectorTab 面板", () => {
     expect(screen.getByRole("combobox", { name: "算法" })).toBeTruthy();
   });
 
+  it("工具栏钉 h-9 对齐表头 36px + 控件 h-6 + 去 border-b 改 inset 阴影（2026-09-02）", () => {
+    renderVectorTab();
+    const toolbar = screen.getByTestId("vector-toolbar");
+    // 高度钉 h-9（36px）与文档/评测表头（thead h-9=36px）对齐；不再用 py-2
+    // （py-2 + 控件 h-7=28 会撑到 44px，比表头高 8px）。
+    expect(toolbar.className).toContain("h-9");
+    expect(toolbar.className).not.toContain("py-2");
+    // 控件缩到 h-6（24px）：24px 在 36px 栏占比 67%≈搜索框(28px)在 44px 栏的 64%，
+    // 视觉协调（原 h-7=28 占 78% 显笨重）。
+    expect(screen.getByRole("button", { name: "切片" }).className).toContain("h-6");
+    // pb-1 光学补偿：控件缩小后纯几何居中(6/6)因下方 inset 发丝线仍显靠下，
+    // pb-1 让控件几何偏上(top4/bottom8)、视觉居中——发丝线视觉重量与控件大小无关。
+    expect(toolbar.className).toContain("pb-1");
+    // 下方发丝线用 inset 阴影而非 border-b：border 参与盒高会击穿 36px 钉高；
+    // 阴影不参与布局，仍保留与下方画布的分隔线。
+    expect(toolbar.className).not.toContain("border-b");
+    expect(toolbar.className).toContain("shadow-[inset_0_-1px_0_var(--border)]");
+    // 搜索栏（工具栏上方那行）去掉 border-b——它就是工具栏的「上边线」，
+    // 去掉后工具栏不再被上下两条线夹住，两栏靠留白分界。
+    const searchRow = toolbar.previousElementSibling!;
+    expect(searchRow.className).not.toContain("border-b");
+    expect(searchRow.querySelector("input")).toBeTruthy();
+  });
+
   it("groups points into four single-color series by source_type (2026-08-15 UX 迭代)", async () => {
     // 用户拍板：文档一多按个体分组太花——四类 collection 各一色，图例四项。
     renderVectorTab();

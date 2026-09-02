@@ -212,8 +212,10 @@ describe("EvalTab 数据联通", () => {
     const scrollBlock = screen.getByTestId("eval-overview-scroll");
     expect(scrollBlock.className).toContain("overflow-x-auto");
     expect(scrollBlock.firstElementChild?.className).toContain("min-w-[32rem]");
-    // 工具栏固定行，整 tab 无横向滚动
+    // 工具栏固定行，整 tab 无横向滚动；表头上方不画线（2026-09-02，与文档 tab 对齐）：
+    // 表头自带吸顶发丝线，两条线夹表头的问题同款修复。
     expect(screen.getByTestId("eval-view-toolbar").className).toContain("shrink-0");
+    expect(screen.getByTestId("eval-view-toolbar").className).not.toContain("border-b");
     expect(screen.getByTestId("eval-tab").className).not.toContain("overflow-auto");
   });
 
@@ -822,5 +824,72 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
         delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
       }
     }
+  });
+});
+
+// ── 选题运行工具栏原位切换（2026-09-02 批量运行栏退役）────────
+// 选题集上提 eval-tab：题库视图有选中时运行主键切「快速评测」、完整档
+// 携 question_ids；触发成功清空选择；选中集不泄漏到总览/历史视图。
+
+describe("EvalTab 选题运行工具栏原位切换", () => {
+  beforeEach(() => {
+    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+  });
+  afterEach(() => cleanup());
+
+  function selectQuestions(ids: string[]) {
+    // bank mock 上报选中集（模拟 bank 内勾选/右键选中）。
+    act(() => {
+      (bankMock.props?.onSelectedIdsChange as (next: ReadonlySet<string>) => void)(new Set(ids));
+    });
+  }
+
+  it("题库视图有选中时运行主键切「快速评测」携 question_ids，成功清空后切回", async () => {
+    const mutate = rs.fn((_input: unknown, opts?: { onSuccess?: (response: { status: string }) => void }) => {
+      opts?.onSuccess?.({ status: "enqueued" });
+    });
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    selectQuestions(["q_1", "q_2"]);
+
+    const toolbar = screen.getByTestId("eval-view-toolbar");
+    expect(within(toolbar).queryByRole("button", { name: "运行评测" })).toBeNull();
+    fireEvent.click(within(toolbar).getByRole("button", { name: "快速评测" }));
+    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1", question_ids: ["q_1", "q_2"] });
+    // 触发成功清空选题集（原批量栏语义承接）：主键切回「运行评测」。
+    await waitFor(() => {
+      expect(within(toolbar).getByRole("button", { name: "运行评测" })).toBeTruthy();
+    });
+  });
+
+  it("选中态完整评测档：确认后携 layers=l1_l2 与 question_ids", async () => {
+    const mutate = rs.fn();
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    selectQuestions(["q_9"]);
+
+    const chevron = screen.getByRole("button", { name: "评测档位" });
+    fireEvent.keyDown(chevron, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    expect(await screen.findByText("运行完整评测")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
+    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2", question_ids: ["q_9"] });
+  });
+
+  it("选题集跨视图不泄漏：总览视图主键仍是全量运行", () => {
+    const mutate = rs.fn((_input: unknown, opts?: { onSuccess?: (response: { status: string }) => void }) => {
+      opts?.onSuccess?.({ status: "enqueued" });
+    });
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    renderEvalTab();
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    selectQuestions(["q_1"]);
+    fireEvent.click(screen.getByRole("radio", { name: "总览" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1" });
   });
 });

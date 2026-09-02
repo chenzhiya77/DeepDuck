@@ -1,9 +1,11 @@
 """File-level tests for bottom-up question synthesis (spec 2026-08-28 §6).
 
 合成造题核心：LLM 读编号切片 → 候选题（JSON）→ 双重守卫（①锚定编号必须
-映射到真实切片，②``validate_question`` 全字段校验）→ 暂存文件整体替换。
+映射到真实切片，②``validate_question`` 全字段校验）→ 合并追加进暂存（2026-09-02 起）。
 候选题不入题库——只有 ``accept_candidate`` 经 ``question_bank.add_question``
 写题库（唯一写路径纪律）。LLM 用 stub 驱动，不碰真实模型。
+2026-09-02 起支持多篇联合出题（路线二）：多篇切片全局统一编号，守卫映射不
+变；暂存元数据 ``doc_id`` → ``doc_ids`` 列表；超预算按篇均额等距采样。
 """
 
 from __future__ import annotations
@@ -20,11 +22,19 @@ pytestmark = pytest.mark.asyncio
 
 KB = "kb-synth"
 DOC = "d" * 32
+DOC_B = "e" * 32
 CHUNKS = [
     {"chunk_id": f"{DOC}#0001", "text": "String 是不可变类型。"},
     {"chunk_id": f"{DOC}#0002", "text": "StringBuffer 是可变且线程安全的。"},
     {"chunk_id": f"{DOC}#0003", "text": "StringBuilder 可变但非线程安全。"},
 ]
+CHUNKS_B = [
+    {"chunk_id": f"{DOC_B}#0001", "text": "HashMap 非线程安全。"},
+    {"chunk_id": f"{DOC_B}#0002", "text": "ConcurrentHashMap 支持并发。"},
+]
+# (doc_id, doc_name, chunks) 三元组——联合出题的入参形态。
+DOCS_SINGLE = [(DOC, "Java 并发.md", CHUNKS)]
+DOCS_MULTI = [(DOC, "Java 并发.md", CHUNKS), (DOC_B, "集合框架.md", CHUNKS_B)]
 
 GOOD_QUESTIONS = [
     {
@@ -59,10 +69,10 @@ def _factory(questions: list[dict]) -> tuple:
     return (lambda: llm), llm
 
 
-async def _synthesize(tmp_path, questions, **kwargs):
+async def _synthesize(tmp_path, questions, docs=None, **kwargs):
     factory, llm = _factory(questions)
     staging = tmp_path / "eval_candidates.json"
-    candidates, dropped = await synthesis.synthesize_for_doc(KB, doc_id=DOC, count=len(questions), chunks=CHUNKS, staging_path=staging, llm_factory=factory, **kwargs)
+    candidates, dropped = await synthesis.synthesize_for_docs(KB, docs=docs or DOCS_SINGLE, count=len(questions), staging_path=staging, llm_factory=factory, **kwargs)
     return staging, candidates, dropped, llm
 
 
@@ -73,7 +83,7 @@ async def test_synthesize_writes_validated_candidates_to_staging(tmp_path) -> No
     assert len(candidates) == 2
     # 暂存是单一 JSON 文档：元数据 + 候选列表（审核期元数据不随候选消费丢失）。
     data = json.loads(staging.read_text(encoding="utf-8"))
-    assert data["doc_id"] == DOC
+    assert data["doc_ids"] == [DOC]
     assert data["kb_id"] == KB
     assert data["dropped"] == 0
     assert data["generated_at"]
@@ -116,25 +126,28 @@ async def test_invalid_llm_json_writes_empty_staging_without_raising(tmp_path) -
     llm = _StubLLM("这不是 JSON")
     staging = tmp_path / "eval_candidates.json"
 
-    candidates, dropped = await synthesis.synthesize_for_doc(KB, doc_id=DOC, count=3, chunks=CHUNKS, staging_path=staging, llm_factory=lambda: llm)
+    candidates, dropped = await synthesis.synthesize_for_docs(KB, docs=DOCS_SINGLE, count=3, staging_path=staging, llm_factory=lambda: llm)
 
     assert candidates == [] and dropped == 0
     data = json.loads(staging.read_text(encoding="utf-8"))
-    assert data["candidates"] == [] and data["doc_id"] == DOC
+    assert data["candidates"] == [] and data["doc_ids"] == [DOC]
 
 
-async def test_resynthesis_replaces_staging_wholesale(tmp_path) -> None:
-    # 整体替换语义：审核面永远是一次合成的产物（不做增量累积）。
+async def test_resynthesis_appends_to_pending_staging(tmp_path) -> None:
+    # 合并语义（2026-09-02 修订，原「整体替换」已作废）：重新合成新批追加、
+    # 旧候选原样保留——快捷入口（右键出一条）不得冲掉用户待审内容。
     staging, first, _, _ = await _synthesize(tmp_path, GOOD_QUESTIONS)
     factory, _ = _factory([GOOD_QUESTIONS[0]])
 
-    second, dropped = await synthesis.synthesize_for_doc(KB, doc_id=DOC, count=1, chunks=CHUNKS, staging_path=staging, llm_factory=factory)
+    second, dropped = await synthesis.synthesize_for_docs(KB, docs=DOCS_SINGLE, count=1, staging_path=staging, llm_factory=factory)
 
-    assert dropped == 0
+    assert dropped == 0 and len(second) == 1
     data = json.loads(staging.read_text(encoding="utf-8"))
-    assert len(data["candidates"]) == 1
+    assert len(data["candidates"]) == len(first) + 1
     old_ids = {c.candidate_id for c in first}
-    assert not old_ids & {row["candidate_id"] for row in data["candidates"]} or len(second) == 1
+    new_ids = {row["candidate_id"] for row in data["candidates"]}
+    assert old_ids < new_ids, "旧候选全量保留"
+    assert new_ids - old_ids == {second[0].candidate_id}, "新批用新 candidate_id"
 
 
 async def test_accept_moves_candidate_into_bank_with_new_server_id(tmp_path) -> None:
@@ -185,7 +198,7 @@ async def test_load_staging_missing_file_is_empty_not_error(tmp_path) -> None:
 
     assert status["candidates"] == []
     assert status["generated_at"] is None
-    assert status["doc_id"] is None
+    assert status["doc_ids"] == []
     assert status["dropped"] == 0
 
 
@@ -199,6 +212,110 @@ async def test_prompt_contract_carries_numbered_chunks_and_constraints(tmp_path)
     assert "single-hop" in prompt_text and "multi-hop" in prompt_text
     assert "照抄" in prompt_text, "禁止照抄切片原文的约束进 prompt"
     assert "chunk_refs" in prompt_text and "expected_paths" in prompt_text
+
+
+# ── 多篇联合出题（2026-09-02 路线二）─────────────────────────────────
+
+
+async def test_multi_doc_global_numbering_maps_anchors_across_docs(tmp_path) -> None:
+    # 多篇切片全局统一编号：第二篇的第 1 片是全局第 4 号，锚定 [4] 映射到 B 的切片。
+    cross = [
+        {
+            "query": "String 与 HashMap 在线程安全上有什么对照？",
+            "category": "concept",
+            "expected_paths": ["vector", "graph"],
+            "chunk_refs": [1, 4],
+            "reference_answer": "前者不可变天然安全，后者需换并发容器。",
+        }
+    ]
+
+    staging, candidates, dropped, _ = await _synthesize(tmp_path, cross, docs=DOCS_MULTI)
+
+    assert dropped == 0
+    assert candidates[0].relevant_chunk_ids == (f"{DOC}#0001", f"{DOC_B}#0001")
+    # 暂存元数据是多篇列表；候选的来源文档由锚定切片推导（跨篇逗号连接）。
+    data = json.loads(staging.read_text(encoding="utf-8"))
+    assert data["doc_ids"] == [DOC, DOC_B]
+    assert candidates[0].doc_id == f"{DOC},{DOC_B}"
+
+
+async def test_multi_doc_prompt_names_documents_and_asks_cross_doc_question(tmp_path) -> None:
+    # 多篇场景：切片行带文档名前缀 + 跨文档出题约束；总编号贯穿两篇。
+    _, _, _, llm = await _synthesize(tmp_path, GOOD_QUESTIONS, docs=DOCS_MULTI)
+
+    prompt_text = "\n".join(str(getattr(m, "content", m)) for m in llm.calls[0])
+    assert "Java 并发.md" in prompt_text and "集合框架.md" in prompt_text
+    assert f"[{len(CHUNKS) + len(CHUNKS_B)}]" in prompt_text, "全局编号贯穿多篇"
+    assert "跨文档" in prompt_text, "多篇时跨文档出题约束进 prompt"
+    # 单篇时不应出现跨文档约束（避免自相矛盾）。
+    _, _, _, single_llm = await _synthesize(tmp_path, GOOD_QUESTIONS, docs=DOCS_SINGLE)
+    single_text = "\n".join(str(getattr(m, "content", m)) for m in single_llm.calls[0])
+    assert "跨文档" not in single_text
+
+
+async def test_oversized_doc_chunks_are_sampled_within_budget(tmp_path) -> None:
+    # 超预算：单篇 200 切片 > MAX，等距采样到预算内，首尾切片必在样本中。
+    big_doc = "f" * 32
+    big_chunks = [{"chunk_id": f"{big_doc}#{index:04d}", "text": f"内容 {index}"} for index in range(1, 201)]
+    question = [dict(GOOD_QUESTIONS[0], chunk_refs=[1])]
+
+    _, _, _, llm = await _synthesize(tmp_path, question, docs=[(big_doc, "大文档.md", big_chunks)])
+
+    prompt_text = "\n".join(str(getattr(m, "content", m)) for m in llm.calls[0])
+    sampled = prompt_text.count("《大文档.md》")
+    assert sampled == synthesis.MAX_SYNTH_CHUNKS
+    assert "内容 1" in prompt_text and "内容 200" in prompt_text, "等距采样保留首尾"
+
+
+async def test_multi_doc_budget_split_keeps_every_document(tmp_path) -> None:
+    # 预算按篇均额：两篇各 100 切片，每篇至少分到配额、都不被饿死。
+    doc_a, doc_b = "f" * 32, "a1" * 16
+    chunks_a = [{"chunk_id": f"{doc_a}#{index:04d}", "text": f"A{index}"} for index in range(1, 101)]
+    chunks_b = [{"chunk_id": f"{doc_b}#{index:04d}", "text": f"B{index}"} for index in range(1, 101)]
+
+    _, _, _, llm = await _synthesize(tmp_path, [GOOD_QUESTIONS[0]], docs=[(doc_a, "A.md", chunks_a), (doc_b, "B.md", chunks_b)])
+
+    prompt_text = "\n".join(str(getattr(m, "content", m)) for m in llm.calls[0])
+    assert prompt_text.count("《A.md》") == synthesis.MAX_SYNTH_CHUNKS // 2
+    assert prompt_text.count("《B.md》") == synthesis.MAX_SYNTH_CHUNKS // 2
+
+
+async def test_load_staging_legacy_single_doc_id_normalizes_to_list(tmp_path) -> None:
+    # 旧版暂存（单值 doc_id）读入时归一为 doc_ids 列表——升级不断层。
+    staging = tmp_path / "eval_candidates.json"
+    staging.write_text(json.dumps({"kb_id": KB, "doc_id": DOC, "generated_at": "t", "dropped": 0, "candidates": []}), encoding="utf-8")
+
+    data = await synthesis.load_staging(staging)
+
+    assert data["doc_ids"] == [DOC]
+
+
+async def test_new_synthesis_merges_into_pending_staging(tmp_path) -> None:
+    # 合并语义（2026-09-02 右键快捷出题）：已有未审候选时新批追加而非覆盖；
+    # doc_ids 保序取并集，dropped 累加，旧候选原样保留。
+    staging, first, _, _ = await _synthesize(tmp_path, GOOD_QUESTIONS)
+    question_b = {
+        "query": "HashMap 线程安全吗？",
+        "category": "fact",
+        "expected_paths": ["vector"],
+        "chunk_refs": [1],
+        "reference_answer": "HashMap 非线程安全。",
+    }
+    second, dropped2 = await synthesis.synthesize_for_docs(
+        KB,
+        docs=DOCS_MULTI[1:],
+        count=1,
+        staging_path=staging,
+        llm_factory=_factory([question_b])[0],
+    )
+
+    assert len(second) == 1 and dropped2 == 0, "返回值只反映本批"
+    data = await synthesis.load_staging(staging)
+    assert len(data["candidates"]) == len(first) + 1, "旧候选保留 + 新批追加"
+    assert data["doc_ids"] == [DOC, DOC_B], "并集保序（旧批在前）"
+    assert data["dropped"] == 0
+    # 新批候选带上自己的来源文档。
+    assert data["candidates"][-1]["doc_id"] == DOC_B
 
 
 def test_in_flight_registry_begin_end_semantics() -> None:

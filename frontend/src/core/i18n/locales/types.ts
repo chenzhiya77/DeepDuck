@@ -280,6 +280,8 @@ export interface Translations {
     deleteSelected: string;
     cancelSelection: string;
     openChunks: string;
+    generateQuestion: string;
+    generateQuestionBatch: string;
     moreActions: string;
     sortDocuments: string;
     sort: {
@@ -298,12 +300,12 @@ export interface Translations {
     rebuildWikiConfirmDescription: string;
     rebuildWikiConfirmAction: string;
     wikiEnqueued: string;
-        /** Wiki 更新状态可见 (2026-08-14): completion toast after a manually triggered run drains. */
-        wikiUpdated: string;
-        /** P1: trigger while a run is in flight — info toast, no duplicate queue. */
-        wikiAlreadyRunning: string;
-        /** P1 失败可见性: completion toast when the observed run crashed. */
-        wikiUpdateFailed: string;
+    /** Wiki 更新状态可见 (2026-08-14): completion toast after a manually triggered run drains. */
+    wikiUpdated: string;
+    /** P1: trigger while a run is in flight — info toast, no duplicate queue. */
+    wikiAlreadyRunning: string;
+    /** P1 失败可见性: completion toast when the observed run crashed. */
+    wikiUpdateFailed: string;
     settings: string;
     renameKb: string;
     deleteKb: string;
@@ -321,6 +323,17 @@ export interface Translations {
       chunks: string;
       status: string;
       createdAt: string;
+      // 列显隐与格式切换（2026-09-02）。
+      columnMenu: string;
+      hideColumn: string;
+      columns: string;
+      showAllColumns: string;
+      timeFormat: string;
+      timeFormatAbsolute: string;
+      timeFormatRelative: string;
+      sizeUnit: string;
+      sizeUnitKb: string;
+      sizeUnitMb: string;
     };
     status: {
       uploaded: string;
@@ -653,7 +666,11 @@ export interface Translations {
       /** P4 路径高亮（spec §7）：「跟随对话」开关（与向量空间共享语义）。 */
       followChat: string;
       /** 叠加徽标：种子/扩展/证据三层计数。 */
-      overlayLayers: (seeds: number, expanded: number, evidence: number) => string;
+      overlayLayers: (
+        seeds: number,
+        expanded: number,
+        evidence: number,
+      ) => string;
       /** 图数据指纹漂移后叠加被清除的提示。 */
       overlayStale: string;
       /** 清除当前路径高亮（徽标 × 按钮）。 */

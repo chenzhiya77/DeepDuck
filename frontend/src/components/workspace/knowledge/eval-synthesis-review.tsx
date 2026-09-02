@@ -82,10 +82,10 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
           </Button>
         )}
       </div>
-      {/* 元信息行：来源文档 · 生成时间 · 剩余候选 · 丢弃数（各自独立文本节点，可定位断言） */}
+      {/* 元信息行：来源文档（多篇顿号连接，2026-09-02）· 生成时间 · 剩余候选 · 丢弃数（各自独立文本节点，可定位断言） */}
       {data.generated_at !== null && (
         <p className="text-muted-foreground text-xs">
-          <span>{data.doc_id}</span>
+          <span>{data.doc_ids.join("、")}</span>
           {" · "}
           <span>{data.generated_at}</span>
           {" · "}

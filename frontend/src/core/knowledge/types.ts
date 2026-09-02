@@ -637,13 +637,14 @@ export interface SynthesisStatus {
   in_progress: boolean;
   candidates: SynthesisCandidate[];
   generated_at: string | null;
-  doc_id: string | null;
+  /** 本轮合成的来源文档（多篇联合出题，2026-09-02）。 */
+  doc_ids: string[];
   dropped: number;
 }
 
-/** POST /eval/questions/synthesize 触发体：单篇文档 + 候选题数（1–10）。 */
+/** POST /eval/questions/synthesize 触发体：一到多篇文档（联合出题）+ 候选题数（1–10）。 */
 export interface SynthesisTriggerInput {
-  doc_id: string;
+  doc_ids: string[];
   count: number;
 }
 

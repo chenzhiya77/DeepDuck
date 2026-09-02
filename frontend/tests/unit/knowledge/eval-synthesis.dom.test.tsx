@@ -1,7 +1,8 @@
 /**
  * 合成造题前端契约测试（2026-08-28 spec §6，plan Task 11）：
- * - 触发 dialog：文档下拉 + 数量选择；未选文档禁用；提交体 {doc_id, count}；
+ * - 触发 dialog：文档多选清单 + 数量选择；未勾选禁用；提交体 {doc_ids, count}；
  *   enqueued → success toast 并关闭，already_running → info toast 不关闭；
+ *   2026-09-02 起支持多篇联合出题（路线二）：清单多选、提交携带全部勾选 id。
  * - 审核面板：暂存空且非运行中不渲染；候选卡片字段全量；采纳/忽略/全部忽略
  *   分别驱动 accept/reject mutation；in_progress 显示「生成中…」。
  *
@@ -51,6 +52,7 @@ const READY_DOC: KnowledgeDocument = {
 };
 
 const INDEXING_DOC: KnowledgeDocument = { ...READY_DOC, id: "b".repeat(32), name: "索引中.pdf", status: "indexing", chunk_count: 0 };
+const READY_DOC_2: KnowledgeDocument = { ...READY_DOC, id: "c".repeat(32), name: "集合框架.md" };
 
 const CAND_1: SynthesisCandidate = {
   candidate_id: "c_aaaa1111",
@@ -80,11 +82,11 @@ const STATUS_WITH_CANDIDATES: SynthesisStatus = {
   in_progress: false,
   candidates: [CAND_1, CAND_2],
   generated_at: "2026-08-28T10:00:00+00:00",
-  doc_id: DOC,
+  doc_ids: [DOC],
   dropped: 2,
 };
 
-const STATUS_EMPTY: SynthesisStatus = { in_progress: false, candidates: [], generated_at: null, doc_id: null, dropped: 0 };
+const STATUS_EMPTY: SynthesisStatus = { in_progress: false, candidates: [], generated_at: null, doc_ids: [], dropped: 0 };
 
 function renderWithI18n(ui: ReactElement) {
   return render(
@@ -110,44 +112,52 @@ afterEach(() => {
 describe("EvalSynthesisDialog（触发）", () => {
   function renderDialog(onOpenChange = rs.fn()) {
     const mutateAsync = rs.fn().mockResolvedValue({ status: "enqueued" });
-    hooksMock.useDocuments.mockReturnValue({ data: [READY_DOC, INDEXING_DOC], isLoading: false });
+    hooksMock.useDocuments.mockReturnValue({ data: [READY_DOC, INDEXING_DOC, READY_DOC_2], isLoading: false });
     hooksMock.useTriggerSynthesis.mockReturnValue({ mutateAsync, isPending: false });
     renderWithI18n(<EvalSynthesisDialog kbId="kb-1" onOpenChange={onOpenChange} open />);
     return { mutateAsync, onOpenChange };
   }
 
-  it("文档未选时提交禁用；下拉只列已索引文档", async () => {
+  it("未勾选时提交禁用；清单只列已索引文档", () => {
     renderDialog();
     expect(screen.getByRole("button", { name: "生成" }).hasAttribute("disabled")).toBe(true);
 
-    // 索引中文档不进选项（后端无切片必 409——前端预过滤减错）
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "来源文档" }), { key: "ArrowDown" });
-    expect(await screen.findByRole("option", { name: "Java 并发.md" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "索引中.pdf" })).toBeNull();
+    // 已索引文档进清单；索引中文档不进（后端无切片必 409——前端预过滤减错）
+    expect(screen.getByText("Java 并发.md")).toBeTruthy();
+    expect(screen.getByText("集合框架.md")).toBeTruthy();
+    expect(screen.queryByText("索引中.pdf")).toBeNull();
   });
 
-  it("提交携带 {doc_id, count}；enqueued → success toast 并关闭", async () => {
+  it("多选勾选后提交携带全部 {doc_ids, count}；enqueued → success toast 并关闭", async () => {
     const { mutateAsync, onOpenChange } = renderDialog();
 
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "来源文档" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("option", { name: "Java 并发.md" }));
+    // 勾选两篇：清单行即复选目标，逐行点击。
+    fireEvent.click(screen.getByText("Java 并发.md"));
+    fireEvent.click(screen.getByText("集合框架.md"));
     expect(screen.getByRole("button", { name: "生成" }).hasAttribute("disabled")).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "生成" }));
 
-    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ doc_id: DOC, count: 5 }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ doc_ids: [DOC, "c".repeat(32)], count: 5 }));
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.length).toBeGreaterThan(0);
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("再点已勾选项可取消勾选；全部取消后提交重新禁用", () => {
+    renderDialog();
+    fireEvent.click(screen.getByText("Java 并发.md"));
+    expect(screen.getByRole("button", { name: "生成" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByText("Java 并发.md"));
+    expect(screen.getByRole("button", { name: "生成" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("already_running → info toast 且不关闭 dialog", async () => {
     const { mutateAsync, onOpenChange } = renderDialog();
     mutateAsync.mockResolvedValue({ status: "already_running" });
 
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "来源文档" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("option", { name: "Java 并发.md" }));
+    fireEvent.click(screen.getByText("Java 并发.md"));
     fireEvent.click(screen.getByRole("button", { name: "生成" }));
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
@@ -188,8 +198,15 @@ describe("EvalSynthesisReview（审核面板）", () => {
     expect(screen.getByText("1 切片")).toBeTruthy();
     expect(screen.getByText("2 切片")).toBeTruthy();
     expect(screen.getByText("String 是不可变类型。")).toBeTruthy();
-    // 元信息行：丢弃数进文案
+    // 元信息行：丢弃数进文案；来源文档多篇时顿号连接（2026-09-02）。
     expect(screen.getByText("锚定越界或字段违例被丢弃 2 条")).toBeTruthy();
+    expect(screen.getByText(DOC)).toBeTruthy();
+  });
+
+  it("多篇来源 → 元信息行顿号连接全部文档 id", () => {
+    const second = "c".repeat(32);
+    renderReview({ ...STATUS_WITH_CANDIDATES, doc_ids: [DOC, second] });
+    expect(screen.getByText(`${DOC}、${second}`)).toBeTruthy();
   });
 
   it("采纳 → accept mutation 携带 candidate_id 并发成功 toast", async () => {

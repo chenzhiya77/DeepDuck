@@ -11,8 +11,10 @@
  * ② 档1——chips 仅色点（aria-label + tooltip 兜底，未激活色点降透明度）；
  * ③ 档2——2D/3D 与算法收进 ⋯ 菜单，重算图标常驻。
  * 升档不走固定像素断点——溢出检测（scrollWidth > clientWidth）自校准；
- * flex-nowrap 保证任何档位不换行、无两行跳高。右侧控件统一 28px
- * （h-7/size-7；SelectTrigger 需 h-7! 压过 data-[size] 高特异性高度）。
+ * flex-nowrap 保证任何档位不换行、无两行跳高。全部控件统一 24px
+ * （h-6/size-6；SelectTrigger 需 h-6! 压过 data-[size] 高特异性高度）——本栏钉
+ * h-9(36px) 对齐表头，控件 24px 占比 67%≈搜索框(28px)在 44px 栏的 64%，视觉协调
+ * （原 h-7=28 占 78% 显笨重）；搜索框 Input 仍 h-7（它在 44px 搜索栏，另一节奏）。
  * chips 选中态 = collection 同色浅底（hex alpha），outline 变体常驻边框，
  * 选中/取消切换不改变按钮宽度。
  */
@@ -361,8 +363,11 @@ export function VectorTab({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="vector-tab">
-      {/* 文档搜索栏（wiki-tab 同款独立一栏，置于工具栏上方）：锁定聚焦匹配文档的切片 */}
-      <div className="shrink-0 border-b px-4 py-2">
+      {/* 文档搜索栏（wiki-tab 同款独立一栏，置于工具栏上方）：锁定聚焦匹配文档的切片。
+          去 border-b（2026-09-02）：这条线正是下方工具栏的「上边线」，用户反馈
+          工具栏被上下两条线夹住；去掉后搜索栏与工具栏靠留白分界，且 border 不再
+          参与盒高，本栏高度从 44.67 落到 44.00，与文档/评测工具栏对齐。 */}
+      <div className="shrink-0 px-4 py-2">
         <div className="relative">
           <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
           <Input
@@ -375,10 +380,19 @@ export function VectorTab({
         </div>
       </div>
 
-      {/* 工具栏：collection chips + 维度/算法/重算（flex-nowrap + 溢出检测降级，任何档位不换行） */}
+      {/* 工具栏：collection chips + 维度/算法/重算（flex-nowrap + 溢出检测降级，任何档位不换行）。
+          高度钉 h-9（36px，2026-09-02）：与文档/评测 tab 的表头（thead h-9=36px）对齐——
+          向量空间顶部两行对应文档「工具栏(44)+表头(36)」节奏，本行是第二行、扮演表头角色。
+          控件统一 h-6/size-6（24px，2026-09-02）：24px 在 36px 栏占比 67%≈搜索框(28px)
+          在 44px 栏的 64%，视觉协调（原 h-7=28 占 78% 显笨重）。
+          pb-1 光学补偿（2026-09-02 恢复）：控件缩到 24px 后纯几何居中(6/6)仍显靠下——
+          下方 inset 发丝线是强视觉锚点，其视觉重量与控件大小无关，只要下方有线就需补偿；
+          pb-1 让控件几何偏上（topGap 4 / bottomGap 8），视觉上才居中。
+          下方发丝线用 inset 阴影而非 border-b：border 参与盒高会击穿 36px 钉高（阴影不参与
+          布局），同时保留工具栏与下方画布的分隔线（画布无表头，需要这条线）。 */}
       <div
         ref={toolbarRef}
-        className="flex flex-nowrap items-center gap-1.5 overflow-hidden border-b px-4 py-2"
+        className="flex h-9 flex-nowrap items-center gap-1.5 overflow-hidden px-4 pb-1 shadow-[inset_0_-1px_0_var(--border)]"
         data-testid="vector-toolbar"
       >
         {ALL_COLLECTIONS.map((key) => {
@@ -391,7 +405,7 @@ export function VectorTab({
                 <Button
                   aria-label={tv.chips[key]}
                   aria-pressed={active}
-                  className={cn("h-7 gap-1.5 px-2 text-xs", !active && "text-muted-foreground")}
+                  className={cn("h-6 gap-1.5 px-2 text-xs", !active && "text-muted-foreground")}
                   size="sm"
                   style={
                     active
@@ -432,18 +446,18 @@ export function VectorTab({
                 variant="outline"
                 onValueChange={handleDimsChange}
               >
-                <ToggleGroupItem aria-label="2D" className="h-7 px-2 text-xs" value="2">
+                <ToggleGroupItem aria-label="2D" className="h-6 px-2 text-xs" value="2">
                   2D
                 </ToggleGroupItem>
-                <ToggleGroupItem aria-label="3D" className="h-7 px-2 text-xs" value="3">
+                <ToggleGroupItem aria-label="3D" className="h-6 px-2 text-xs" value="3">
                   3D
                 </ToggleGroupItem>
               </ToggleGroup>
-              {/* 算法 label 省略（PCA/UMAP 值自解释）；Select 收窄 + h-7!
-                  压过 data-[size] 高特异性高度，与全栏 28px 对齐；px-2/gap-1.5
+              {/* 算法 label 省略（PCA/UMAP 值自解释）；Select 收窄 + h-6!
+                  压过 data-[size] 高特异性高度，与全栏 24px 对齐；px-2/gap-1.5
                   紧凑内距，防下拉箭头遮挡 UMAP 文字。 */}
               <Select value={algo} onValueChange={handleAlgoChange}>
-                <SelectTrigger aria-label={tv.algoLabel} className="h-7! w-20 gap-1.5 px-2 text-xs" size="sm">
+                <SelectTrigger aria-label={tv.algoLabel} className="h-6! w-20 gap-1.5 px-2 text-xs" size="sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -457,7 +471,7 @@ export function VectorTab({
           {toolbarTier === 2 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button aria-label={tv.moreOptions} className="size-7" size="icon" variant="outline">
+                <Button aria-label={tv.moreOptions} className="size-6" size="icon" variant="outline">
                   <MoreHorizontal className="size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
@@ -498,7 +512,7 @@ export function VectorTab({
             <TooltipTrigger asChild>
               <Button
                 aria-label={tv.recompute}
-                className="size-7"
+                className="size-6"
                 disabled={recompute.isPending}
                 size="icon"
                 variant="outline"

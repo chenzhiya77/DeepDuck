@@ -468,7 +468,7 @@ const SYNTH_STATUS: SynthesisStatus = {
   in_progress: false,
   candidates: [SYNTH_CANDIDATE],
   generated_at: "2026-08-28T10:00:00+00:00",
-  doc_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  doc_ids: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
   dropped: 0,
 };
 
@@ -517,9 +517,23 @@ describe("合成造题数据 hooks（plan Task 8）", () => {
     const { result } = renderHook(() => useTriggerSynthesis("kb-1"), {
       wrapper: createWrapper(freshQueryClient()),
     });
-    const response = await result.current.mutateAsync({ doc_id: "doc-1", count: 5 });
+    const response = await result.current.mutateAsync({ doc_ids: ["doc-1"], count: 5 });
     expect(response).toEqual({ status: "enqueued" });
-    expect(api.triggerQuestionSynthesis).toHaveBeenCalledWith("kb-1", { doc_id: "doc-1", count: 5 });
+    expect(api.triggerQuestionSynthesis).toHaveBeenCalledWith("kb-1", { doc_ids: ["doc-1"], count: 5 });
+  });
+
+  it("trigger success invalidates the synthesis cache so polling can start", async () => {
+    // 旧缓存 in_progress=false 会让轮询永不启动；触发后必须重拉一次拿到真值。
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const status = renderHook(() => useSynthesisStatus("kb-1", true), { wrapper });
+    await waitFor(() => expect(status.result.current.isSuccess).toBe(true));
+    expect(api.getSynthesisStatus).toHaveBeenCalledTimes(1);
+
+    const trigger = renderHook(() => useTriggerSynthesis("kb-1"), { wrapper });
+    await trigger.result.current.mutateAsync({ doc_ids: ["doc-1"], count: 5 });
+
+    await waitFor(() => expect(api.getSynthesisStatus).toHaveBeenCalledTimes(2));
   });
 
   it("accept mutation invalidates both synthesis and evalQuestions caches", async () => {

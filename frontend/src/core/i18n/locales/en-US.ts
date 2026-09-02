@@ -56,7 +56,8 @@ export const enUS: Translations = {
     importToKnowledgeBase: "Import to knowledge base",
     noKnowledgeBasesYet: "No knowledge bases yet",
     createKnowledgeBase: "New knowledge base",
-    importToKbSuccess: (kbName: string) => `Imported to "${kbName}" — indexing…`,
+    importToKbSuccess: (kbName: string) =>
+      `Imported to "${kbName}" — indexing…`,
     importToKbFailed: "Failed to import to knowledge base.",
     viewKnowledgeBase: "View",
     regenerate: "Regenerate",
@@ -317,7 +318,7 @@ export const enUS: Translations = {
     createKB: "New knowledge base",
     kbNamePlaceholder: "Knowledge base name",
     kbDescriptionPlaceholder: "Description (optional)",
-    emptyKbList: "No knowledge bases yet — click \"+\" above to create one",
+    emptyKbList: 'No knowledge bases yet — click "+" above to create one',
     selectKbTitle: "No knowledge base selected",
     selectKbHint: "Select a knowledge base on the left to start asking",
     collapseKbList: "Collapse the list panel",
@@ -326,13 +327,17 @@ export const enUS: Translations = {
     uploadingDocuments: "Uploading…",
     dropToUpload: "Drop to upload into this knowledge base",
     dropUnsupported: "This format isn't supported yet",
-    unsupportedFilesSkipped: (names: string) => `Skipped unsupported files: ${names}`,
+    unsupportedFilesSkipped: (names: string) =>
+      `Skipped unsupported files: ${names}`,
     duplicateUpload: {
       identicalTitle: "Identical content",
-      identicalDescription: (name: string) => `"${name}" is byte-identical to an existing document — no need to upload again.`,
+      identicalDescription: (name: string) =>
+        `"${name}" is byte-identical to an existing document — no need to upload again.`,
       conflictTitle: "Same-name file exists",
-      conflictDescription: (name: string) => `"${name}" shares its name with an existing document but the content differs.`,
-      copyNamePreview: (name: string) => `Keeping both uploads it as "${name}".`,
+      conflictDescription: (name: string) =>
+        `"${name}" shares its name with an existing document but the content differs.`,
+      copyNamePreview: (name: string) =>
+        `Keeping both uploads it as "${name}".`,
       skipUpload: "Skip upload",
       keepCopy: "Upload copy anyway",
       keepBoth: "Keep both",
@@ -342,7 +347,7 @@ export const enUS: Translations = {
       replacedDocument: (name: string) => `Replaced old document: ${name}`,
     },
     searchDocuments: "Search documents…",
-      searchWiki: "Search entries and cards…",
+    searchWiki: "Search entries and cards…",
     clearSearch: "Clear search",
     noMatchingDocuments: "No documents match",
     selectAllDocuments: "Select all",
@@ -351,6 +356,8 @@ export const enUS: Translations = {
     deleteSelected: "Delete selected",
     cancelSelection: "Cancel selection",
     openChunks: "View chunks",
+    generateQuestion: "Generate question",
+    generateQuestionBatch: "Generate question (joint)",
     moreActions: "More actions",
     sortDocuments: "Sort documents",
     sort: {
@@ -365,17 +372,21 @@ export const enUS: Translations = {
     rebuildWiki: "Rebuild wiki",
     wikiMoreOptions: "Wiki actions",
     rebuildWikiConfirmTitle: "Rebuild all wiki entries?",
-    rebuildWikiConfirmDescription: "This rewrites every eligible entry from the current graph — including unchanged ones — at full LLM cost. Use only after generation rules change (e.g. prompt or template upgrades).",
+    rebuildWikiConfirmDescription:
+      "This rewrites every eligible entry from the current graph — including unchanged ones — at full LLM cost. Use only after generation rules change (e.g. prompt or template upgrades).",
     rebuildWikiConfirmAction: "Rebuild",
-    wikiEnqueued: "Wiki generation queued — entries become searchable when ready",
-        wikiUpdated: "Wiki updated",
-        wikiAlreadyRunning: "Wiki update already in progress",
-        wikiUpdateFailed: "Wiki update failed — some entries may still be stale; please retry",
+    wikiEnqueued:
+      "Wiki generation queued — entries become searchable when ready",
+    wikiUpdated: "Wiki updated",
+    wikiAlreadyRunning: "Wiki update already in progress",
+    wikiUpdateFailed:
+      "Wiki update failed — some entries may still be stale; please retry",
     settings: "Settings",
     renameKb: "Rename knowledge base",
     deleteKb: "Delete knowledge base",
     deleteKbConfirmTitle: "Delete this knowledge base?",
-    deleteKbConfirmDescription: "All documents, chunks, vectors, graph data and wiki entries will be cascade-deleted. This cannot be undone.",
+    deleteKbConfirmDescription:
+      "All documents, chunks, vectors, graph data and wiki entries will be cascade-deleted. This cannot be undone.",
     statsDocuments: "Documents",
     statsChunks: "Chunks",
     statsReady: "Ready",
@@ -388,6 +399,17 @@ export const enUS: Translations = {
       chunks: "Chunks",
       status: "Status",
       createdAt: "Uploaded",
+      // Column visibility & format toggles (2026-09-02).
+      columnMenu: "column options",
+      hideColumn: "Hide column",
+      columns: "Columns",
+      showAllColumns: "Show all",
+      timeFormat: "Date format",
+      timeFormatAbsolute: "Absolute",
+      timeFormatRelative: "Relative",
+      sizeUnit: "Unit",
+      sizeUnitKb: "KB",
+      sizeUnitMb: "MB",
     },
     status: {
       uploaded: "Uploaded",
@@ -414,7 +436,8 @@ export const enUS: Translations = {
     },
     deleteDocument: "Delete",
     deleteDocumentConfirmTitle: "Delete this document?",
-    deleteDocumentConfirmDescription: "Its chunks, vectors and graph contributions will be cascade-deleted. This cannot be undone.",
+    deleteDocumentConfirmDescription:
+      "Its chunks, vectors and graph contributions will be cascade-deleted. This cannot be undone.",
     retryDocument: "Retry",
     uploaderMe: "Me",
     dropzoneHint: "Drop files here to upload",
@@ -434,7 +457,8 @@ export const enUS: Translations = {
       edited: "Edited",
       viewRendered: "Rendered view",
       viewRaw: "Raw text",
-      editHint: "Entities and Wiki will not auto-update. Use 'Re-extract' to rebuild entities with new content",
+      editHint:
+        "Entities and Wiki will not auto-update. Use 'Re-extract' to rebuild entities with new content",
       deletePreviewTitle: "Delete Preview",
       orphanedEntities: "Entities to be orphaned",
       affectedEntities: "Entities to be affected",
@@ -461,8 +485,10 @@ export const enUS: Translations = {
     eval: {
       layer1Title: "Retrieval Quality",
       layer2Title: "Generation Quality",
-      layer1Note: "Deterministic retrieval-stage metrics, reproducible.\nHit Rate: share of questions where correct content appears in retrieved results\nRecall@k: share of correct content covered by the top-k results\nMRR: higher when the first correct result ranks earlier\nPath Accuracy: share of graph retrieval paths chosen correctly",
-      layer2Note: "Generation-stage metrics; RAGAS scores are probabilistic (judge variance) — reference only",
+      layer1Note:
+        "Deterministic retrieval-stage metrics, reproducible.\nHit Rate: share of questions where correct content appears in retrieved results\nRecall@k: share of correct content covered by the top-k results\nMRR: higher when the first correct result ranks earlier\nPath Accuracy: share of graph retrieval paths chosen correctly",
+      layer2Note:
+        "Generation-stage metrics; RAGAS scores are probabilistic (judge variance) — reference only",
       regressionBadge: "Regression detected",
       ragasMissingBadge: "ragas not installed",
       ragasErrorBadge: "ragas error",
@@ -476,13 +502,20 @@ export const enUS: Translations = {
         contextRecall: "Context Recall",
       },
       cardNote: {
-        faithfulness: "Faithfulness: whether the answer is grounded in retrieved context, without fabrication (0–1, higher is better)",
-        answerRelevancy: "Answer Relevancy: how relevant the answer is to the question (0–1, higher is better)",
-        contextPrecision: "Context Precision: share of relevant chunks ranked near the top of retrieval results (0–1, higher is better)",
-        contextRecall: "Context Recall: how much of the information needed by the answer is covered by retrieved context (0–1, higher is better)",
-        citationPrecision: "Citation Precision: share of cited chunks that actually support the answer",
-        citationRecall: "Citation Recall: share of content that should have been cited that actually was",
-        seedHitRate: "Seed Entity Hit Rate: share of graph questions that hit the preset seed entities",
+        faithfulness:
+          "Faithfulness: whether the answer is grounded in retrieved context, without fabrication (0–1, higher is better)",
+        answerRelevancy:
+          "Answer Relevancy: how relevant the answer is to the question (0–1, higher is better)",
+        contextPrecision:
+          "Context Precision: share of relevant chunks ranked near the top of retrieval results (0–1, higher is better)",
+        contextRecall:
+          "Context Recall: how much of the information needed by the answer is covered by retrieved context (0–1, higher is better)",
+        citationPrecision:
+          "Citation Precision: share of cited chunks that actually support the answer",
+        citationRecall:
+          "Citation Recall: share of content that should have been cited that actually was",
+        seedHitRate:
+          "Seed Entity Hit Rate: share of graph questions that hit the preset seed entities",
       },
       ragasGroupLabel: "RAGAS probabilistic metrics",
       archGroupLabel: "Citation & graph metrics",
@@ -503,7 +536,11 @@ export const enUS: Translations = {
         summary: "Summary",
       },
       noQuestionsInBatch: "No questions of this type in the batch",
-      views: { overview: "Overview", questions: "Questions", history: "History" },
+      views: {
+        overview: "Overview",
+        questions: "Questions",
+        history: "History",
+      },
       viewSwitchLabel: "Switch eval view",
       runButton: "Run evaluation",
       runningButton: "Running…",
@@ -516,7 +553,8 @@ export const enUS: Translations = {
         menuAria: "Evaluation tier",
         menuItem: "Full evaluation (L1+L2)",
         dialogTitle: "Run full evaluation",
-        dialogBody: "A full evaluation first runs the Layer 1 static retrieval metrics, then lets the agent answer every question with an independent judge scoring it (including RAGAS metrics). It takes much longer and costs far more tokens than the quick tier, and cannot be triggered again while running.",
+        dialogBody:
+          "A full evaluation first runs the Layer 1 static retrieval metrics, then lets the agent answer every question with an independent judge scoring it (including RAGAS metrics). It takes much longer and costs far more tokens than the quick tier, and cannot be triggered again while running.",
         confirm: "Start full evaluation",
         cancel: "Cancel",
       },
@@ -537,8 +575,10 @@ export const enUS: Translations = {
         anchorsEntities: (count: number) => `${count} entities`,
         unanchored: "Unanchored",
         addQuestion: "Add question",
-        emptyBank: "No questions yet — tick the right chunks in the recall test panel to save one in a click",
-        emptyBankSynthesis: "Or synthesize candidates from a document and accept them after review",
+        emptyBank:
+          "No questions yet — tick the right chunks in the recall test panel to save one in a click",
+        emptyBankSynthesis:
+          "Or synthesize candidates from a document and accept them after review",
         searchPlaceholder: "Search questions…",
         searchClear: "Clear search",
         noMatch: "No matching questions — try another keyword",
@@ -552,7 +592,8 @@ export const enUS: Translations = {
           categoryLabel: "Category",
           expectedPathLabel: "Expected path",
           referenceAnswerLabel: "Reference answer (optional)",
-          unanchoredNote: "Questions without chunk anchors only contribute path selection and generation quality",
+          unanchoredNote:
+            "Questions without chunk anchors only contribute path selection and generation quality",
           submit: "Add",
           cancel: "Cancel",
         },
@@ -570,8 +611,9 @@ export const enUS: Translations = {
       synthesize: {
         entryButton: "Generate questions",
         dialogTitle: "Synthesize questions",
-        docLabel: "Source document",
-        docPlaceholder: "Pick an indexed document",
+        docLabel: "Source documents (multi-select)",
+        docPlaceholder:
+          "Pick indexed documents to draw from — several can be combined",
         countLabel: "Number of candidates",
         generate: "Generate",
         generating: "Generating…",
@@ -579,7 +621,8 @@ export const enUS: Translations = {
         accept: "Accept",
         reject: "Ignore",
         rejectAll: "Ignore all",
-        metaLine: (dropped: number) => `${dropped} candidate(s) dropped for invalid anchors or fields`,
+        metaLine: (dropped: number) =>
+          `${dropped} candidate(s) dropped for invalid anchors or fields`,
         empty: "No candidates awaiting review",
         triggerFailed: "Failed to trigger synthesis",
         acceptFailed: "Failed to accept candidate",
@@ -593,7 +636,8 @@ export const enUS: Translations = {
         statusCompleted: "Completed",
         statusError: "Failed",
         statusSkipped: "Skipped",
-        emptyHistory: "No runs yet — click Run evaluation to start the first one",
+        emptyHistory:
+          "No runs yet — click Run evaluation to start the first one",
       },
       trendTitle: "Metric Trends",
       granularityLabel: "Granularity",
@@ -640,7 +684,12 @@ export const enUS: Translations = {
       loadFailed: "Failed to load projection",
       indexingHint: (count) =>
         `${count} document${count === 1 ? "" : "s"} still indexing — the projection may be incomplete`,
-      chips: { chunks: "Chunks", entities: "Entities", wiki: "Wiki", cards: "Cards" },
+      chips: {
+        chunks: "Chunks",
+        entities: "Entities",
+        wiki: "Wiki",
+        cards: "Cards",
+      },
       algoLabel: "Algorithm",
       recompute: "Recompute",
       moreOptions: "More options",
@@ -648,8 +697,10 @@ export const enUS: Translations = {
       sampledBadge: (shown, total) => `Sampled ${shown}/${total} points`,
       searchDocs: "Search documents…",
       followChat: "Follow chat",
-      overlayPcaOnly: "Retrieval overlay requires the PCA projection — switch back to PCA",
-      overlayStale: "Projection changed — the retrieval overlay was cleared, run the retrieval again",
+      overlayPcaOnly:
+        "Retrieval overlay requires the PCA projection — switch back to PCA",
+      overlayStale:
+        "Projection changed — the retrieval overlay was cleared, run the retrieval again",
       overlayFailed: "Failed to overlay the retrieval — please try again",
       overlayHits: (matched, total) => `${matched}/${total} hits shown`,
       clearOverlay: "Clear overlay",
@@ -657,8 +708,10 @@ export const enUS: Translations = {
     graphSpace: {
       loading: "Loading the knowledge graph…",
       loadFailed: "Failed to load the knowledge graph — please try again",
-      empty: "Nothing to visualize yet — entities appear after documents are indexed",
-      stats: (nodes, edges, communities) => `${nodes} entities · ${edges} relations · ${communities} communities`,
+      empty:
+        "Nothing to visualize yet — entities appear after documents are indexed",
+      stats: (nodes, edges, communities) =>
+        `${nodes} entities · ${edges} relations · ${communities} communities`,
       mentions: (count) => `Mentioned by ${count} chunks`,
       relatedChunks: "Related chunks",
       unknownDoc: "(document deleted)",
@@ -668,12 +721,15 @@ export const enUS: Translations = {
       colorByCommunity: "By community",
       backToGlobal: "Back to full graph",
       neighborhoodOf: (name) => `Neighbors of ${name}`,
-      guideHint: "Too many entities — details hidden; zoom in or double-click a node to drill in",
+      guideHint:
+        "Too many entities — details hidden; zoom in or double-click a node to drill in",
       hop1: "1 hop",
       hop2: "2 hops",
       followChat: "Follow chat",
-      overlayLayers: (seeds, expanded, evidence) => `Seeds ${seeds} · Expanded ${expanded} · Evidence ${evidence}`,
-      overlayStale: "The graph changed — the retrieval path highlight was cleared",
+      overlayLayers: (seeds, expanded, evidence) =>
+        `Seeds ${seeds} · Expanded ${expanded} · Evidence ${evidence}`,
+      overlayStale:
+        "The graph changed — the retrieval path highlight was cleared",
       clearOverlay: "Clear path highlight",
     },
     wikiPanel: {
@@ -688,7 +744,8 @@ export const enUS: Translations = {
       openEntry: "Open details",
       editEntry: "Edit entry",
       noMatches: "No matching entries",
-      deleteBatchTitle: (count: number) => `Delete ${count} wiki ${count === 1 ? "entry" : "entries"}?`,
+      deleteBatchTitle: (count: number) =>
+        `Delete ${count} wiki ${count === 1 ? "entry" : "entries"}?`,
       deleteEntry: "Delete entry",
       deleteConfirmTitle: "Delete this wiki entry?",
       deleteConfirmDescription:
@@ -697,13 +754,18 @@ export const enUS: Translations = {
     /** Phase-3 Batch-1 P1: dual-mode wiki entry editor (main content + supplement layer). */
     wikiEdit: {
       title: "Edit Wiki Entry",
-      description: "Main content can be replaced by regeneration; supplement layer persists",
+      description:
+        "Main content can be replaced by regeneration; supplement layer persists",
       mainContentLabel: "Main Content (Auto-generated)",
-      mainContentPlaceholder: "AI-generated content will be displayed here, you can manually edit",
-      mainContentHint: "⚠️ This content will be replaced on next regeneration; your edits will be incorporated as reference material",
+      mainContentPlaceholder:
+        "AI-generated content will be displayed here, you can manually edit",
+      mainContentHint:
+        "⚠️ This content will be replaced on next regeneration; your edits will be incorporated as reference material",
       supplementLabel: "Supplement Layer (Manual Annotations)",
-      supplementPlaceholder: "Add your annotations, notes, or supplementary information here",
-      supplementHint: "✅ Content in this area persists permanently and won't be overwritten by regeneration",
+      supplementPlaceholder:
+        "Add your annotations, notes, or supplementary information here",
+      supplementHint:
+        "✅ Content in this area persists permanently and won't be overwritten by regeneration",
       auditLastEdited: "Last edited",
       save: "Save",
       saving: "Saving…",
@@ -720,18 +782,22 @@ export const enUS: Translations = {
       empty: "No cards yet — click 'New Card' to capture what you know",
       loading: "Loading…",
       includeInSearch: "Mixed into search",
-      includeHint: "When on, the card joins wiki retrieval and competes for the shared top-k slots purely by relevance",
+      includeHint:
+        "When on, the card joins wiki retrieval and competes for the shared top-k slots purely by relevance",
       editCard: "Edit card",
       deleteCard: "Delete card",
       deleteConfirmTitle: "Delete this knowledge card?",
-      deleteConfirmDescription: "The card content and its retrieval vector will be removed. This cannot be undone.",
+      deleteConfirmDescription:
+        "The card content and its retrieval vector will be removed. This cannot be undone.",
       editorCreateTitle: "New Knowledge Card",
       editorEditTitle: "Edit Knowledge Card",
-      editorDescription: "Manual cards never auto-update and stay isolated from AI-generated content",
+      editorDescription:
+        "Manual cards never auto-update and stay isolated from AI-generated content",
       titleLabel: "Title",
       titlePlaceholder: "Sum up this piece of knowledge in one line",
       contentLabel: "Content",
-      contentPlaceholder: "Capture your experience, conclusions, or caveats (Markdown supported)",
+      contentPlaceholder:
+        "Capture your experience, conclusions, or caveats (Markdown supported)",
       tagsLabel: "Tags (optional)",
       tagsPlaceholder: "Comma-separated, e.g.: ops, release",
       save: "Save",
@@ -747,7 +813,8 @@ export const enUS: Translations = {
       noMatches: "No matching cards",
       includeOn: "Include in search",
       includeOff: "Exclude from search",
-      deleteBatchTitle: (count: number) => `Delete ${count} knowledge ${count === 1 ? "card" : "cards"}?`,
+      deleteBatchTitle: (count: number) =>
+        `Delete ${count} knowledge ${count === 1 ? "card" : "cards"}?`,
       drawerNotFound: "Card missing or deleted",
     },
     recallTest: {
@@ -765,7 +832,8 @@ export const enUS: Translations = {
       empty: "Run a query to compare hits and scores across the three paths",
       failed: "Recall test failed",
       viewInVectorSpace: "View in vector space",
-      wikiAnchorTooltip: "Manual cards have no source chunks and cannot be anchored",
+      wikiAnchorTooltip:
+        "Manual cards have no source chunks and cannot be anchored",
       saveAsQuestion: {
         button: "Save as question",
         selectedCount: (count: number) => `${count} chunks selected`,
@@ -773,7 +841,8 @@ export const enUS: Translations = {
         categoryLabel: "Category",
         expectedPathLabel: "Expected path",
         expectedPathsLabel: "Expected paths (multi-select)",
-        anchorHint: "Ticked chunks and wiki entry source chunks are recorded as this question's anchors",
+        anchorHint:
+          "Ticked chunks and wiki entry source chunks are recorded as this question's anchors",
         referenceAnswerLabel: "Reference answer (optional)",
         submit: "Save",
         cancel: "Cancel",
@@ -787,7 +856,8 @@ export const enUS: Translations = {
       noHistory: "No conversations for this knowledge base yet",
       deleteChat: "Delete conversation",
       deepResearch: "Deep retrieval",
-      deepResearchHint: "Query vector, graph and wiki paths together (slower but broader)",
+      deepResearchHint:
+        "Query vector, graph and wiki paths together (slower but broader)",
       sources: "Sources",
       sourcesTitle: (count) => `Sources · ${count}`,
       chunkSources: (count) => `${count} doc${count === 1 ? "" : "s"}`,
@@ -822,8 +892,10 @@ export const enUS: Translations = {
       dismiss: "Dismiss",
       empty: "The file is empty",
       unsupported: "Unsupported file type",
-      retryLimit: "The parsing service failed after several retries — check the file for corruption or try again later",
-      serviceUnconfigured: "The document parsing service is not configured — contact your admin",
+      retryLimit:
+        "The parsing service failed after several retries — check the file for corruption or try again later",
+      serviceUnconfigured:
+        "The document parsing service is not configured — contact your admin",
       timeout: "Parsing timed out — please retry",
       unknown: "Processing failed — please retry",
     },

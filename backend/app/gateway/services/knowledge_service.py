@@ -18,7 +18,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from functools import partial
@@ -1210,39 +1210,45 @@ class KnowledgeService:
         元数据需在候选全部审核后仍可读）。"""
         return self.data_dir / "knowledge" / kb_id / "eval_candidates.json"
 
-    async def trigger_question_synthesis(self, kb_id: str, *, doc_id: str, count: int) -> bool:
-        """Fire-and-forget 合成（复刻评测触发幂等模式，spec §6.1）。
+    async def trigger_question_synthesis(self, kb_id: str, *, doc_ids: Sequence[str], count: int) -> bool:
+        """Fire-and-forget 多篇联合合成（复刻评测触发幂等模式，spec §6.1）。
 
-        Returns False when a run is already in flight. 文档不存在/不属于该
+        Returns False when a run is already in flight. 任一篇不存在/不属于该
         KB/无切片 → :class:`SynthesisDocNotReady`（router → 409），在调度前
-        同步检查——调用方拿到确定答案而非注定失败的后台任务。
+        同步检查——宁可明确拒绝，不产出半截合成。
         """
 
         if synthesis.synthesis_in_progress(kb_id):
             return False
-        doc = await self.store.get_document(doc_id)
-        if doc is None or doc.get("kb_id") != kb_id:
-            raise SynthesisDocNotReady(f"document {doc_id} not found in kb {kb_id}")
-        if await self.store.count_chunks(doc_id) == 0:
-            raise SynthesisDocNotReady(f"document {doc_id} has no indexed chunks")
+        ordered = list(dict.fromkeys(doc_ids))
+        for doc_id in ordered:
+            doc = await self.store.get_document(doc_id)
+            if doc is None or doc.get("kb_id") != kb_id:
+                raise SynthesisDocNotReady(f"document {doc_id} not found in kb {kb_id}")
+            if await self.store.count_chunks(doc_id) == 0:
+                raise SynthesisDocNotReady(f"document {doc_id} has no indexed chunks")
         if not synthesis.begin_synthesis(kb_id):
             return False
-        self.synthesis_trigger_fn(kb_id, doc_id=doc_id, count=count)
+        self.synthesis_trigger_fn(kb_id, doc_ids=ordered, count=count)
         return True
 
-    def _schedule_question_synthesis(self, kb_id: str, *, doc_id: str, count: int) -> None:
-        task = asyncio.create_task(self._run_question_synthesis(kb_id, doc_id=doc_id, count=count), name=f"kb-synth-{kb_id}")
+    def _schedule_question_synthesis(self, kb_id: str, *, doc_ids: Sequence[str], count: int) -> None:
+        task = asyncio.create_task(self._run_question_synthesis(kb_id, doc_ids=doc_ids, count=count), name=f"kb-synth-{kb_id}")
         self._synthesis_tasks.add(task)
         task.add_done_callback(self._synthesis_tasks.discard)
 
-    async def _run_question_synthesis(self, kb_id: str, *, doc_id: str, count: int) -> None:
-        """后台编排：拉全量切片 → 合成写暂存。异常只记日志并 drain in-flight，
-        不动既有暂存（合成失败不清空上一次成果，spec §6.1）。"""
+    async def _run_question_synthesis(self, kb_id: str, *, doc_ids: Sequence[str], count: int) -> None:
+        """后台编排：逐篇拉全量切片 → 联合合成写暂存。异常只记日志并 drain
+        in-flight，不动既有暂存（合成失败不清空上一次成果，spec §6.1）。"""
         try:
-            chunks = await self._all_chunks(doc_id)
-            await synthesis.synthesize_for_doc(kb_id, doc_id=doc_id, count=count, chunks=chunks, staging_path=self._synthesis_staging_path(kb_id))
+            docs: list[tuple[str, str, list[dict[str, Any]]]] = []
+            for doc_id in doc_ids:
+                doc = await self.store.get_document(doc_id)
+                name = (doc or {}).get("name") or doc_id
+                docs.append((doc_id, name, await self._all_chunks(doc_id)))
+            await synthesis.synthesize_for_docs(kb_id, docs=docs, count=count, staging_path=self._synthesis_staging_path(kb_id))
         except Exception:
-            logger.exception("question synthesis failed for kb %s doc %s", kb_id, doc_id)
+            logger.exception("question synthesis failed for kb %s docs %s", kb_id, list(doc_ids))
         finally:
             synthesis.end_synthesis(kb_id)
 
@@ -1264,7 +1270,7 @@ class KnowledgeService:
             "in_progress": synthesis.synthesis_in_progress(kb_id),
             "candidates": data["candidates"],
             "generated_at": data.get("generated_at"),
-            "doc_id": data.get("doc_id"),
+            "doc_ids": data.get("doc_ids") or [],
             "dropped": data.get("dropped", 0),
         }
 

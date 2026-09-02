@@ -42,6 +42,7 @@ import {
   useKnowledgeBases,
   useRetryDocument,
   useSupportedFormats,
+  useTriggerSynthesis,
   useUpdateKnowledgeBase,
   useUpdateWikiEntry,
   useUploadDocument,
@@ -192,6 +193,7 @@ export default function KnowledgePage() {
   const uploadDocument = useUploadDocument(selectedKbId ?? "");
   const deleteDocument = useDeleteDocument(selectedKbId ?? "");
   const retryDocument = useRetryDocument(selectedKbId ?? "");
+  const triggerSynthesis = useTriggerSynthesis(selectedKbId ?? "");
   const generateWiki = useGenerateWiki(selectedKbId ?? "");
   const deleteWikiEntry = useDeleteWikiEntry(selectedKbId ?? "");
   const updateWikiEntry = useUpdateWikiEntry(selectedKbId ?? "");
@@ -402,6 +404,21 @@ export default function KnowledgePage() {
                     });
                   }}
                   onOpenChunks={setDrawerDoc}
+                  onGenerateQuestion={async (docIds) => {
+                    // 右键快捷出题（2026-09-02）：出一条，合并进待审候选（后端合并语义）；
+                    // 通知与评测页生成对话框同款（stk.generating），停留文档页。
+                    const stk = tk.eval.synthesize;
+                    try {
+                      const response = await triggerSynthesis.mutateAsync({ doc_ids: docIds, count: 1 });
+                      if (response.status === "enqueued") {
+                        toast.success(stk.generating);
+                      } else {
+                        toast.info(stk.generating);
+                      }
+                    } catch (error) {
+                      toast.error(error instanceof Error && error.message ? error.message : stk.triggerFailed);
+                    }
+                  }}
                   failures={docFailures.failures}
                   onDismissFailure={docFailures.dismissOne}
                   onDismissAllFailures={docFailures.dismissAll}

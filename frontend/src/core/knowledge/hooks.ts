@@ -308,10 +308,16 @@ export function useSynthesisStatus(kbId: string | null, enabled = true): UseQuer
   });
 }
 
-/** 触发合成：202 响应原样透传（与 useTriggerEvalRun 同款，刷新走轮询边）。 */
+/** 触发合成：202 响应原样透传；成功后失效合成缓存——旧缓存的
+ * in_progress=false 会让轮询永不启动（触发后审核面板不现），重拉一次
+ * 拿到 in_progress 真值后轮询接管（2026-09-02 多篇联合出题时实测发现）。 */
 export function useTriggerSynthesis(kbId: string) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: SynthesisTriggerInput) => api.triggerQuestionSynthesis(kbId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeSynthesisKey(kbId) });
+    },
   });
 }
 

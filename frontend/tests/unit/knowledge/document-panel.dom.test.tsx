@@ -1,6 +1,6 @@
 /**
  * Middle column of the knowledge page (spec §5.2/§3.6): kb header actions,
- * the document table (名称/上传者/状态/时间/大小/切片数 + 尾部悬停窄列，2026-08-31),
+ * the document table (名称/状态/上传者/时间/大小/切片数 + 尾部悬停窄列，2026-09-02 状态提前),
  * the aggregated bottom stats row, drag-drop upload, cascade-warning delete
  * confirms, and failed-doc retry. Presentational — data/mutations arrive via props.
  */
@@ -221,14 +221,24 @@ describe("DocumentPanel table", () => {
     // Drive/Notion 无框表风格：数据行不再带 border-b，悬停底色即行边界。
     const row = screen.getByText("产品手册.pdf").closest("tr")!;
     expect(row.className).not.toContain("border-b");
-    // 表头发丝线保留（区分说明与数据）
-    expect(
-      row.closest("table")!.querySelector("thead tr")!.className,
-    ).toContain("border-b");
+    // 吸顶表头（2026-09-02）：border-collapse 下粘性单元格的边框会随滚动丢失，
+    // 故表格改 border-separate，tr 不再背 border-b。发丝线用 inset 阴影而非
+    // th 的 border：border 参与盒高，会使 th 高度随复选框状态在 36.13↔36.00 间
+    // 重取整、击穿 h-9 钉高（勾选行跳动复发）；阴影不参与布局。
+    const table = row.closest("table")!;
+    expect(table.className).toContain("border-separate");
+    expect(table.className).toContain("border-spacing-0");
+    const headCell = table.querySelector("thead th")!;
+    expect(headCell.className).toContain("sticky");
+    expect(headCell.className).toContain("top-0");
+    expect(headCell.className).not.toContain("border-b");
+    expect(headCell.className).toContain("shadow-[inset_0_-1px_0_var(--border)]");
+    expect(headCell.className).toContain("bg-background");
+    expect(table.querySelector("thead tr")!.className).not.toContain("border-b");
     // 表头行固定高度（2026-09-01）：防止全选框 unchecked↔indeterminate 切换时，
-    // border-collapse 布局重新取整导致表头高度变化、所有行跟着上下抖动。
+    // 折叠布局重新取整导致表头高度变化、所有行跟着上下抖动。
     expect(
-      row.closest("table")!.querySelector("thead tr")!.className,
+      table.querySelector("thead tr")!.className,
     ).toContain("h-9");
     // 表头上方不画线（2026-09-01）：工具栏与表头间靠留白分界，避免表头被两条线夹成条状。
     const toolbar = screen.getByLabelText("搜索文档…").closest("div[class*='h-11']")!;
@@ -254,15 +264,16 @@ describe("DocumentPanel table", () => {
     }
   });
 
-  it("列序：文本列居左组、数值列聚右组；无操作列（2026-08-31 删除收进悬停浮层）", () => {
+  it("列序：状态紧随名称（核心元数据提前）、文本列居左、数值列聚右；无操作列", () => {
     renderPanel();
     // 主流文件管理器（资源管理器/Drive）：文本列在左，大小/数量聚到右端。
+    // 状态提到上传者前（2026-09-02）：状态是核心高频元数据，上传者在个人库信息量低。
     const headers = Array.from(screen.getAllByRole("columnheader"));
     expect(headers.map((h) => h.textContent?.trim())).toEqual([
       "",
       "名称",
-      "上传者",
       "状态",
+      "上传者",
       "时间",
       "大小",
       "切片数",
@@ -394,6 +405,100 @@ describe("DocumentPanel table", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
     expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
   });
+
+  it("就绪文档右键提供快捷出题（出一条，2026-09-02）", async () => {
+    const onGenerateQuestion = rs.fn();
+    renderPanel({ onGenerateQuestion });
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "生成考题" }));
+    // runAfterMenuClose 把动作延到菜单退场后（rAF），等一帧窗口。
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(onGenerateQuestion).toHaveBeenCalledWith(["doc-1"]);
+  });
+
+  it("未就绪文档的右键菜单不出现快捷出题（无切片必 409）", () => {
+    renderPanel({
+      documents: [doc({ status: "failed", error: "boom", chunk_count: null })],
+    });
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    expect(screen.queryByRole("menuitem", { name: /生成考题/ })).toBeNull();
+  });
+
+  it("批量右键提供联合出题：全选就绪才亮，传选中集（2026-09-02）", async () => {
+    const onGenerateQuestion = rs.fn();
+    renderPanel({
+      documents: [
+        doc({ id: "doc-1" }),
+        doc({ id: "doc-2", name: "并发笔记.md" }),
+      ],
+      onGenerateQuestion,
+    });
+    fireEvent.click(screen.getByLabelText("选择文档: 产品手册.pdf"));
+    fireEvent.click(screen.getByLabelText("选择文档: 并发笔记.md"));
+    fireEvent.contextMenu(screen.getByText("并发笔记.md"));
+    // 结构（2026-09-02 用户拍板）：非破坏组（生成考题→取消选择）在上，
+    // 分隔线后危险操作沉底单独隔离——全菜单仅一条分隔线。
+    expect(await screen.findAllByRole("separator")).toHaveLength(1);
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "生成考题（联合）" }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(onGenerateQuestion).toHaveBeenCalledWith(["doc-1", "doc-2"]);
+  });
+
+  it("选中集含未就绪文档时批量菜单不出现联合出题", () => {
+    renderPanel({
+      documents: [
+        doc({ id: "doc-1" }),
+        doc({ id: "doc-2", name: "坏文档.md", status: "failed", error: "boom" }),
+      ],
+    });
+    fireEvent.click(screen.getByLabelText("选择文档: 产品手册.pdf"));
+    fireEvent.click(screen.getByLabelText("选择文档: 坏文档.md"));
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    expect(screen.queryByRole("menuitem", { name: /生成考题/ })).toBeNull();
+  });
+
+  it("批量右键的取消选择在生成考题下方、带 X 图标且能清选择（2026-09-02）", () => {
+    renderPanel({
+      documents: [
+        doc({ id: "doc-1" }),
+        doc({ id: "doc-2", name: "并发笔记.md" }),
+      ],
+    });
+    fireEvent.click(screen.getByLabelText("选择文档: 产品手册.pdf"));
+    fireEvent.click(screen.getByLabelText("选择文档: 并发笔记.md"));
+    fireEvent.contextMenu(screen.getByText("并发笔记.md"));
+    const items = screen.getAllByRole("menuitem");
+    const names = items.map((item) => item.textContent);
+    // 顺序：生成考题（联合）在取消选择之上，删除所选沉底。
+    expect(names).toEqual(["生成考题（联合）", "取消选择", "删除所选"]);
+    const cancel = items[1]!;
+    expect(cancel.querySelector("svg")).toBeTruthy();
+    fireEvent.click(cancel);
+    // 选择清空：两行复选框都回到未勾选（批量栏已退役，看行状态）。
+    expect(screen.getByLabelText("选择文档: 产品手册.pdf").getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByLabelText("选择文档: 并发笔记.md").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("单选右键菜单也提供取消选择（两态对称，2026-09-02）", () => {
+    renderPanel();
+    fireEvent.click(screen.getByLabelText("选择文档: 产品手册.pdf"));
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    const cancel = screen.getByRole("menuitem", { name: "取消选择" });
+    expect(cancel.querySelector("svg")).toBeTruthy();
+    fireEvent.click(cancel);
+    expect(screen.getByLabelText("选择文档: 产品手册.pdf").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("单选右键菜单删除项措辞对齐批量栏（删除所选，2026-09-02）", () => {
+    renderPanel();
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    // 右键即选中，删除目标就是选择集——同屏措辞同一词汇；
+    // 精确 name 匹配，「删除所选」不再命中旧文案「删除」。
+    expect(screen.getByRole("menuitem", { name: "删除所选" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "删除" })).toBeNull();
+  });
 });
 
 // ── 悬停三个点窄列（2026-08-31）────────────────────────────
@@ -475,11 +580,12 @@ describe("DocumentPanel 大小 KB 统一与批量栏", () => {
     );
   });
 
-  it("取消选择按钮带图标（与删除所选的 Trash2 对称）", () => {
+  it("批量栏退役：选中后工具栏不再切换，搜索/排序常驻（2026-09-02）", () => {
     renderPanel();
     fireEvent.click(screen.getByLabelText("选择文档: 产品手册.pdf"));
-    const cancel = screen.getByRole("button", { name: "取消选择" });
-    expect(cancel.querySelector("svg")).toBeTruthy();
+    expect(screen.queryByTestId("document-batch-bar")).toBeNull();
+    expect(screen.getByLabelText("搜索文档…")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "排序方式" })).toBeTruthy();
   });
 });
 

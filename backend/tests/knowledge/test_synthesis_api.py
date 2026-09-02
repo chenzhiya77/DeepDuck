@@ -1,13 +1,14 @@
 """Contract tests for the eval question synthesis endpoints (spec 2026-08-28 §6).
 
 POST   ``/api/knowledge-bases/{kb_id}/eval/questions/synthesize`` — 202 幂等
-触发（文档不存在/无切片 → 409；count 1–10 之外 → 422）。
+触发（文档不存在/无切片 → 409；count 1–10 之外 → 422；空 doc_ids → 422）。
+2026-09-02 起触发体为 ``doc_ids: list[str]``（多篇联合出题，路线二）。
 GET    ``.../synthesize`` — 状态（in_progress + 暂存候选 + 元数据）。
 POST   ``.../synthesize/{candidate_id}/accept`` — 201 入库并从暂存移除（404 未知）。
 DELETE ``.../synthesize/{candidate_id}`` — 204 忽略候选（404 未知）。
 
 基建对齐 ``test_eval_runs_api.py``：注入 ``synthesis_trigger_fn`` 假调度器，
-候选题暂存经真实 ``synthesis.synthesize_for_doc``（stub LLM）播种。
+候选题暂存经真实 ``synthesis.synthesize_for_docs``（stub LLM）播种。
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ pytestmark = pytest.mark.asyncio
 
 OWNER_ID = str(UUID(int=1234567890))
 DOC = "a" * 32
+DOC_B = "b" * 32
 
 
 @pytest.fixture(autouse=True)
@@ -105,11 +107,10 @@ _GOOD_PAYLOAD = json.dumps(
 async def _seed_staging(service: KnowledgeService, kb_id: str) -> list[dict]:
     """经真实合成链路播种暂存（stub LLM），返回候选行。"""
     chunks = await service.store.list_chunks(DOC)
-    await synthesis.synthesize_for_doc(
+    await synthesis.synthesize_for_docs(
         kb_id,
-        doc_id=DOC,
+        docs=[(DOC, "Java 并发.md", chunks)],
         count=2,
-        chunks=chunks,
         staging_path=service._synthesis_staging_path(kb_id),
         llm_factory=lambda: _StubLLM(_GOOD_PAYLOAD),
     )
@@ -132,22 +133,38 @@ async def test_trigger_returns_202_enqueued_and_schedules_once(session_factory, 
     kb = _create_kb(client)
     await _seed_indexed_doc(service, kb["id"])
 
-    response = client.post(_url(kb["id"]), json={"doc_id": DOC, "count": 5})
+    response = client.post(_url(kb["id"]), json={"doc_ids": [DOC], "count": 5})
 
     assert response.status_code == 202, response.text
     assert response.json() == {"status": "enqueued"}
-    trigger.assert_called_once_with(kb["id"], doc_id=DOC, count=5)
+    trigger.assert_called_once_with(kb["id"], doc_ids=[DOC], count=5)
     assert synthesis.synthesis_in_progress(kb["id"]) is True
 
-    response = client.post(_url(kb["id"]), json={"doc_id": DOC, "count": 5})
+    response = client.post(_url(kb["id"]), json={"doc_ids": [DOC], "count": 5})
     assert response.json() == {"status": "already_running"}
     trigger.assert_called_once()
 
     # drain 后可重新触发，调度器恰好被打两次。
     synthesis.end_synthesis(kb["id"])
-    third = client.post(_url(kb["id"]), json={"doc_id": DOC, "count": 5})
+    third = client.post(_url(kb["id"]), json={"doc_ids": [DOC], "count": 5})
     assert third.json() == {"status": "enqueued"}
     assert trigger.call_count == 2
+    synthesis.end_synthesis(kb["id"])
+
+
+async def test_trigger_multi_doc_passes_all_ids_to_scheduler(session_factory, tmp_path) -> None:
+    # 多篇联合触发：两篇都已索引 → 调度器收到全部 id（保持入参顺序、去重）。
+    trigger = MagicMock()
+    service = _synth_service(session_factory, tmp_path, trigger)
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_indexed_doc(service, kb["id"], doc_id=DOC)
+    await _seed_indexed_doc(service, kb["id"], doc_id=DOC_B, chunk_count=1)
+
+    response = client.post(_url(kb["id"]), json={"doc_ids": [DOC, DOC_B, DOC], "count": 8})
+
+    assert response.status_code == 202, response.text
+    trigger.assert_called_once_with(kb["id"], doc_ids=[DOC, DOC_B], count=8)
     synthesis.end_synthesis(kb["id"])
 
 
@@ -156,17 +173,29 @@ async def test_trigger_unknown_or_chunkless_doc_maps_to_409(session_factory, tmp
     client = _client(service)
     kb = _create_kb(client)
 
-    assert client.post(_url(kb["id"]), json={"doc_id": "missing-doc"}).status_code == 409
+    assert client.post(_url(kb["id"]), json={"doc_ids": ["missing-doc"]}).status_code == 409
 
-    await _seed_indexed_doc(service, kb["id"], doc_id="b" * 32, chunk_count=0)
-    assert client.post(_url(kb["id"]), json={"doc_id": "b" * 32}).status_code == 409, "无切片文档不可合成"
+    await _seed_indexed_doc(service, kb["id"], doc_id=DOC_B, chunk_count=0)
+    assert client.post(_url(kb["id"]), json={"doc_ids": [DOC_B]}).status_code == 409, "无切片文档不可合成"
+
+    # 多篇中任一篇未就绪 → 整体 409（宁可明确拒绝，不产出半截合成）。
+    await _seed_indexed_doc(service, kb["id"], doc_id=DOC)
+    assert client.post(_url(kb["id"]), json={"doc_ids": [DOC, DOC_B]}).status_code == 409
 
 
 async def test_trigger_unknown_kb_404(session_factory, tmp_path) -> None:
     service = _synth_service(session_factory, tmp_path, MagicMock())
     client = _client(service)
 
-    assert client.post(_url("kb-missing"), json={"doc_id": DOC}).status_code == 404
+    assert client.post(_url("kb-missing"), json={"doc_ids": [DOC]}).status_code == 404
+
+
+async def test_trigger_empty_doc_ids_422(session_factory, tmp_path) -> None:
+    service = _synth_service(session_factory, tmp_path, MagicMock())
+    client = _client(service)
+    kb = _create_kb(client)
+
+    assert client.post(_url(kb["id"]), json={"doc_ids": []}).status_code == 422
 
 
 @pytest.mark.parametrize("count", [0, 11])
@@ -176,7 +205,7 @@ async def test_trigger_count_out_of_bounds_422(session_factory, tmp_path, count:
     kb = _create_kb(client)
     await _seed_indexed_doc(service, kb["id"])
 
-    assert client.post(_url(kb["id"]), json={"doc_id": DOC, "count": count}).status_code == 422
+    assert client.post(_url(kb["id"]), json={"doc_ids": [DOC], "count": count}).status_code == 422
 
 
 # ── 状态 ─────────────────────────────────────────────────────────────────
@@ -190,7 +219,7 @@ async def test_status_without_staging_is_empty_not_error(session_factory, tmp_pa
     response = client.get(_url(kb["id"]))
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"in_progress": False, "candidates": [], "generated_at": None, "doc_id": None, "dropped": 0}
+    assert response.json() == {"in_progress": False, "candidates": [], "generated_at": None, "doc_ids": [], "dropped": 0}
 
 
 async def test_status_returns_staged_candidates_and_metadata(session_factory, tmp_path) -> None:
@@ -203,7 +232,7 @@ async def test_status_returns_staged_candidates_and_metadata(session_factory, tm
     body = client.get(_url(kb["id"])).json()
 
     assert body["in_progress"] is False
-    assert body["doc_id"] == DOC
+    assert body["doc_ids"] == [DOC]
     assert body["dropped"] == 0
     assert body["generated_at"]
     assert [c["candidate_id"] for c in body["candidates"]] == [c["candidate_id"] for c in staged]
@@ -290,10 +319,10 @@ async def test_runtime_failure_drains_in_flight_and_keeps_existing_staging(sessi
     async def _boom(*args, **kwargs):
         raise RuntimeError("llm gateway down")
 
-    monkeypatch.setattr(synthesis, "synthesize_for_doc", _boom)
+    monkeypatch.setattr(synthesis, "synthesize_for_docs", _boom)
     assert synthesis.begin_synthesis(kb_id) is True
 
-    await service._run_question_synthesis(kb_id, doc_id=DOC, count=2)
+    await service._run_question_synthesis(kb_id, doc_ids=[DOC], count=2)
 
     assert synthesis.synthesis_in_progress(kb_id) is False, "finally 必须 drain，否则后续触发永远 already_running"
     data = await synthesis.load_staging(service._synthesis_staging_path(kb_id))

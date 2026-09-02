@@ -313,9 +313,11 @@ export const zhCN: Translations = {
     unsupportedFilesSkipped: (names: string) => `已跳过不支持的文件：${names}`,
     duplicateUpload: {
       identicalTitle: "内容完全一致",
-      identicalDescription: (name: string) => `「${name}」与库中已有文档内容完全相同，无需重复上传。`,
+      identicalDescription: (name: string) =>
+        `「${name}」与库中已有文档内容完全相同，无需重复上传。`,
       conflictTitle: "同名文件已存在",
-      conflictDescription: (name: string) => `「${name}」与库中已有文档同名但内容不同。`,
+      conflictDescription: (name: string) =>
+        `「${name}」与库中已有文档同名但内容不同。`,
       copyNamePreview: (name: string) => `保留两份将以上传为「${name}」。`,
       skipUpload: "跳过上传",
       keepCopy: "仍上传副本",
@@ -326,7 +328,7 @@ export const zhCN: Translations = {
       replacedDocument: (name: string) => `已替换旧文档：${name}`,
     },
     searchDocuments: "搜索文档…",
-          searchWiki: "搜索百科条目与卡片…",
+    searchWiki: "搜索百科条目与卡片…",
     clearSearch: "清空搜索",
     noMatchingDocuments: "没有匹配的文档",
     selectAllDocuments: "全选",
@@ -335,6 +337,10 @@ export const zhCN: Translations = {
     deleteSelected: "删除所选",
     cancelSelection: "取消选择",
     openChunks: "查看切片",
+    // 右键快捷出题（2026-09-02）：出一条，合并进评测页待审候选；
+    // 批量文案不带篇数，避免窄面板下菜单项换行
+    generateQuestion: "生成考题",
+    generateQuestionBatch: "生成考题（联合）",
     // 悬停三个点浮层的触发器（2026-08-31 去操作列）
     moreActions: "更多操作",
     sortDocuments: "排序方式",
@@ -351,17 +357,19 @@ export const zhCN: Translations = {
     rebuildWiki: "重建百科",
     wikiMoreOptions: "百科操作",
     rebuildWikiConfirmTitle: "全部重建百科？",
-    rebuildWikiConfirmDescription: "将按当前图谱重写所有合格条目（包括未变化的），LLM 调用成本较高，仅在生成规则升级后使用。",
+    rebuildWikiConfirmDescription:
+      "将按当前图谱重写所有合格条目（包括未变化的），LLM 调用成本较高，仅在生成规则升级后使用。",
     rebuildWikiConfirmAction: "确认重建",
     wikiEnqueued: "百科生成任务已提交，完成后条目自动可查",
-        wikiUpdated: "百科已更新",
-        wikiAlreadyRunning: "百科正在更新中，无需重复提交",
-        wikiUpdateFailed: "百科更新失败，部分条目可能仍待更新，请重试",
+    wikiUpdated: "百科已更新",
+    wikiAlreadyRunning: "百科正在更新中，无需重复提交",
+    wikiUpdateFailed: "百科更新失败，部分条目可能仍待更新，请重试",
     settings: "设置",
     renameKb: "重命名知识库",
     deleteKb: "删除知识库",
     deleteKbConfirmTitle: "删除知识库？",
-    deleteKbConfirmDescription: "将同时删除全部文档、切片、向量、图谱与百科条目，且不可恢复。",
+    deleteKbConfirmDescription:
+      "将同时删除全部文档、切片、向量、图谱与百科条目，且不可恢复。",
     statsDocuments: "文档",
     statsChunks: "切片",
     statsReady: "就绪",
@@ -370,11 +378,22 @@ export const zhCN: Translations = {
     table: {
       name: "名称",
       uploader: "上传者",
-      // 大小统一 KB（2026-08-31）：表头不带单位，每个单元格自带 KB 后缀。
+      // 大小默认 KB（2026-08-31）：表头不带单位，每个单元格自带单位后缀。
       size: "大小",
       chunks: "切片数",
       status: "状态",
       createdAt: "时间",
+      // 列显隐与格式切换（2026-09-02）：单列表头菜单 + 列总控。
+      columnMenu: "列选项",
+      hideColumn: "隐藏列",
+      columns: "列",
+      showAllColumns: "全部显示",
+      timeFormat: "时间格式",
+      timeFormatAbsolute: "绝对",
+      timeFormatRelative: "相对",
+      sizeUnit: "单位",
+      sizeUnitKb: "KB",
+      sizeUnitMb: "MB",
     },
     status: {
       uploaded: "待解析",
@@ -401,7 +420,8 @@ export const zhCN: Translations = {
     },
     deleteDocument: "删除",
     deleteDocumentConfirmTitle: "删除文档？",
-    deleteDocumentConfirmDescription: "将级联清理该文档的切片、向量与图谱贡献，且不可恢复。",
+    deleteDocumentConfirmDescription:
+      "将级联清理该文档的切片、向量与图谱贡献，且不可恢复。",
     retryDocument: "重试",
     uploaderMe: "我",
     dropzoneHint: "拖拽文件到此处上传",
@@ -421,7 +441,8 @@ export const zhCN: Translations = {
       edited: "已编辑",
       viewRendered: "渲染视图",
       viewRaw: "原始文本",
-      editHint: "实体与 Wiki 不会自动更新，如需以新内容重建实体请使用『重新抽取』",
+      editHint:
+        "实体与 Wiki 不会自动更新，如需以新内容重建实体请使用『重新抽取』",
       deletePreviewTitle: "删除预览",
       orphanedEntities: "将失格删除的实体",
       affectedEntities: "将受影响的实体",
@@ -448,7 +469,8 @@ export const zhCN: Translations = {
     eval: {
       layer1Title: "检索质量",
       layer2Title: "生成质量",
-      layer1Note: "检索阶段的确定性指标，结果可复现。\n命中率：正确内容进入检索结果的问题占比\n召回率@k：前 k 条结果覆盖正确内容的比例\nMRR：首条正确结果越靠前得分越高\n路径准确率：图谱检索路径选择正确的占比",
+      layer1Note:
+        "检索阶段的确定性指标，结果可复现。\n命中率：正确内容进入检索结果的问题占比\n召回率@k：前 k 条结果覆盖正确内容的比例\nMRR：首条正确结果越靠前得分越高\n路径准确率：图谱检索路径选择正确的占比",
       layer2Note: "生成阶段指标；RAGAS 为概率性指标（judge 方差），仅供参考",
       regressionBadge: "检测到回退",
       ragasMissingBadge: "ragas 未安装",
@@ -463,13 +485,20 @@ export const zhCN: Translations = {
         contextRecall: "召回率",
       },
       cardNote: {
-        faithfulness: "忠实度（Faithfulness）：答案是否有检索内容支撑、有无编造，0–1 越高越好",
-        answerRelevancy: "答案相关性（Answer Relevancy）：答案与问题的相关程度，0–1 越高越好",
-        contextPrecision: "上下文精确率（Context Precision）：检索结果中相关内容排在前列的比例，0–1 越高越好",
-        contextRecall: "上下文召回率（Context Recall）：检索内容覆盖答案所需信息的程度，0–1 越高越好",
-        citationPrecision: "引用准确率（Citation Precision）：被引用的切片中真正支撑答案的比例",
-        citationRecall: "引用召回率（Citation Recall）：答案中应当引用的内容被实际引用的比例",
-        seedHitRate: "实体命中率（Seed Entity Hit Rate）：命中预设种子实体的图谱类问题占比",
+        faithfulness:
+          "忠实度（Faithfulness）：答案是否有检索内容支撑、有无编造，0–1 越高越好",
+        answerRelevancy:
+          "答案相关性（Answer Relevancy）：答案与问题的相关程度，0–1 越高越好",
+        contextPrecision:
+          "上下文精确率（Context Precision）：检索结果中相关内容排在前列的比例，0–1 越高越好",
+        contextRecall:
+          "上下文召回率（Context Recall）：检索内容覆盖答案所需信息的程度，0–1 越高越好",
+        citationPrecision:
+          "引用准确率（Citation Precision）：被引用的切片中真正支撑答案的比例",
+        citationRecall:
+          "引用召回率（Citation Recall）：答案中应当引用的内容被实际引用的比例",
+        seedHitRate:
+          "实体命中率（Seed Entity Hit Rate）：命中预设种子实体的图谱类问题占比",
       },
       ragasGroupLabel: "RAGAS 概率性指标",
       archGroupLabel: "引用与图谱指标",
@@ -503,7 +532,8 @@ export const zhCN: Translations = {
         menuAria: "评测档位",
         menuItem: "完整评测 (L1+L2)",
         dialogTitle: "运行完整评测",
-        dialogBody: "完整评测会先跑 Layer 1 静态检索指标，再让 Agent 实跑每道题并由独立 Judge 打分（含 RAGAS 指标）。耗时与 token 成本远高于快速评测，运行期间不可重复触发。",
+        dialogBody:
+          "完整评测会先跑 Layer 1 静态检索指标，再让 Agent 实跑每道题并由独立 Judge 打分（含 RAGAS 指标）。耗时与 token 成本远高于快速评测，运行期间不可重复触发。",
         confirm: "开始完整评测",
         cancel: "取消",
       },
@@ -557,8 +587,8 @@ export const zhCN: Translations = {
       synthesize: {
         entryButton: "生成考题",
         dialogTitle: "合成考题",
-        docLabel: "来源文档",
-        docPlaceholder: "选择一篇已索引的文档",
+        docLabel: "来源文档（可多选）",
+        docPlaceholder: "勾选要出题的已索引文档，多篇可联合出题",
         countLabel: "候选题数量",
         generate: "生成",
         generating: "生成中…",
@@ -616,7 +646,8 @@ export const zhCN: Translations = {
         layer2Section: "生成质量",
         contextRecallLabel: "上下文召回率",
         pathAccuracyLabel: "路径准确率（对话链路）",
-        pathAccuracyNote: "真实对话链路的选路准确率——与 Layer 1 表格中同名指标口径不同",
+        pathAccuracyNote:
+          "真实对话链路的选路准确率——与 Layer 1 表格中同名指标口径不同",
         notRun: "本次运行未执行该层",
       },
     },
@@ -643,7 +674,8 @@ export const zhCN: Translations = {
       loading: "正在加载知识图谱…",
       loadFailed: "知识图谱加载失败——请稍后重试",
       empty: "暂无可视化的实体——索引文档后自动构建",
-      stats: (nodes, edges, communities) => `${nodes} 实体 · ${edges} 关系 · ${communities} 社区`,
+      stats: (nodes, edges, communities) =>
+        `${nodes} 实体 · ${edges} 关系 · ${communities} 社区`,
       mentions: (count) => `被 ${count} 个切片提及`,
       relatedChunks: "关联切片",
       unknownDoc: "（文档已删除）",
@@ -657,7 +689,8 @@ export const zhCN: Translations = {
       hop1: "1 跳",
       hop2: "2 跳",
       followChat: "跟随对话",
-      overlayLayers: (seeds, expanded, evidence) => `种子 ${seeds} · 扩展 ${expanded} · 证据 ${evidence}`,
+      overlayLayers: (seeds, expanded, evidence) =>
+        `种子 ${seeds} · 扩展 ${expanded} · 证据 ${evidence}`,
       overlayStale: "图谱内容已更新，检索路径高亮已清除",
       clearOverlay: "清除路径高亮",
     },
@@ -685,7 +718,8 @@ export const zhCN: Translations = {
       description: "主内容区可被下次生成覆盖，补充层永久保留不被覆盖",
       mainContentLabel: "主内容区（自动生成）",
       mainContentPlaceholder: "AI 生成的内容将在此显示，您可以手动编辑",
-      mainContentHint: "⚠️ 此内容会在下次重新生成时被覆盖，您的编辑将作为参考材料融入新版本",
+      mainContentHint:
+        "⚠️ 此内容会在下次重新生成时被覆盖，您的编辑将作为参考材料融入新版本",
       supplementLabel: "补充层（人工批注）",
       supplementPlaceholder: "在这里添加您的批注、笔记或补充说明",
       supplementHint: "✅ 此区域内容永久保留，不会被重新生成覆盖",

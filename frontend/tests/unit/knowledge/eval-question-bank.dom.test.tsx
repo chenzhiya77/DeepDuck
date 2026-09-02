@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { useState, type ComponentProps, type ReactElement } from "react";
 import { toast } from "sonner";
 
 import { EvalAddQuestionDialog } from "@/components/workspace/knowledge/eval-add-question-dialog";
@@ -94,6 +94,16 @@ function renderWithI18n(ui: ReactElement) {
   );
 }
 
+/** 受控包装（2026-09-02 批量运行栏退役）：选题集上提 eval-tab，
+    测试用有状态包装模拟上游；initialSelected 直接预置选中集。 */
+type BankHarnessProps = Omit<ComponentProps<typeof EvalQuestionBank>, "selectedIds" | "onSelectedIdsChange"> & {
+  initialSelected?: string[];
+};
+function BankHarness({ initialSelected, ...rest }: BankHarnessProps) {
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set(initialSelected ?? []));
+  return <EvalQuestionBank {...rest} selectedIds={selectedIds} onSelectedIdsChange={setSelectedIds} />;
+}
+
 beforeEach(() => {
   drawerMock.props = undefined;
   hooksMock.useEvalQuestions.mockReset();
@@ -101,7 +111,7 @@ beforeEach(() => {
   hooksMock.useDeleteEvalQuestion.mockReturnValue({ mutateAsync: rs.fn().mockResolvedValue(undefined), isPending: false });
   // 合成状态默认空暂存（审核区块不渲染，既有用例不受影响）。
   hooksMock.useSynthesisStatus.mockReturnValue({
-    data: { in_progress: false, candidates: [], generated_at: null, doc_id: null, dropped: 0 },
+    data: { in_progress: false, candidates: [], generated_at: null, doc_ids: [], dropped: 0 },
     isLoading: false,
   });
   hooksMock.useDocuments.mockReturnValue({ data: [], isLoading: false });
@@ -117,19 +127,19 @@ afterEach(() => {
 describe("EvalQuestionBank 表格", () => {
   it("loading 渲染加载提示", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: true, error: null, data: undefined });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.getByText("加载中…")).toBeTruthy();
   });
 
   it("错误渲染加载失败提示", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: new Error("boom"), data: undefined });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.getByText("评测数据加载失败")).toBeTruthy();
   });
 
   it("空题库渲染引导文案（双入口：召回面板存题 + 文档合成）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.getByText("题库为空——在召回测试面板勾选正确切片可一键存为考题")).toBeTruthy();
     // 双入口第二句（2026-08-28 §7）：合成造题引导。
     expect(screen.getByText("或从文档合成候选题，审核后采纳入题库")).toBeTruthy();
@@ -137,20 +147,20 @@ describe("EvalQuestionBank 表格", () => {
 
   it("受控 synthesisOpen 渲染合成 dialog（入口已并入 eval-tab 常驻工具栏）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" synthesisOpen />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" synthesisOpen />);
     expect(screen.getByText(zhCN.knowledge.eval.synthesize.dialogTitle)).toBeTruthy();
   });
 
   it("不自渲染造题入口按钮（工具行与底部虚线按钮均移除）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.queryByRole("button", { name: /生成考题/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
   });
 
   it("行渲染与锚定列推导（切片 · 实体 / 未锚定 muted）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_UNANCHORED, Q_ANCHORED]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.getByText("未锚定的考题")).toBeTruthy();
     expect(screen.getByText("锚定了三个切片的考题")).toBeTruthy();
     expect(screen.getByText("未锚定")).toBeTruthy();
@@ -163,7 +173,7 @@ describe("EvalQuestionBank 表格", () => {
 
   it("路径列渲染 expected_paths 全量 Badge（多路即多枚）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_MULTI, Q_ANCHORED]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     const row = screen.getByText("多路预期的考题").closest("tr")!;
     expect(within(row as HTMLElement).getByText("vector")).toBeTruthy();
     expect(within(row as HTMLElement).getByText("graph")).toBeTruthy();
@@ -173,7 +183,7 @@ describe("EvalQuestionBank 表格", () => {
 
   it("行点击打开详情 drawer 并携带该题", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     fireEvent.click(screen.getByText("锚定了三个切片的考题"));
     expect(screen.getByTestId("eval-question-drawer-mock")).toBeTruthy();
     expect(drawerMock.props?.question).toEqual(Q_ANCHORED);
@@ -182,44 +192,80 @@ describe("EvalQuestionBank 表格", () => {
 
   it("表格样式对齐文档列表（表头 text-xs 降高 + 行高收窄；行内复现按钮移除）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
-    const { container } = renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
-    // 表头：默认 h-10 是松夸根源，降成文档列表同款 text-xs + 自然高。
+    const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    // 表头：默认 h-10 是松夸根源，降成文档列表同款 text-xs；2026-09-02 起单元格
+    // 钉死 h-9（36px）与文档表头对齐——自然高（复选框 + 内边距 ≈ 36.44）会撑破 tr 钉高。
     // th[0] 是选题复选框列（2026-09-01 B 方案），断言打在首个文本列上。
     const head = container.querySelectorAll("th")[1]!;
     expect(head.className).toContain("text-xs");
-    expect(head.className).toContain("h-auto");
-    // 行：单元格与文档列表同节奏（px-2 py-2，表头 32 / 行 36）；原默认 p-2 保留纵向，
-    // 松垮根源是表头 h-10 与行尾大图标按钮，不是单元格内边距。
+    expect(head.className).toContain("h-9");
+    // 表头字色钉 muted（与文档表头对齐，2026-09-02）：ui/table 默认 text-foreground
+    // 会压过 tr 的继承，不钉到单元格层「表头浅灰、内容深色」的层级语言不生效。
+    expect(head.className).toContain("text-muted-foreground");
+    // 行：单元格与文档列表同节奏；行间无分割线（2026-09-02）——ui/table 默认
+    // border-b 与文档表「无框表、结构线只留表头发丝线」决策不一致（文档行早已
+    // 去掉），border-0 收掉题目间那条线，两表数据行同为 px-2 py-2 无框行。
+    const firstRow = container.querySelector("tbody tr")!;
+    expect(firstRow.className).toContain("border-0");
     const firstCell = container.querySelector("tbody td")!;
     expect(firstCell.className).toContain("py-2");
-    // 通栏对齐（文档列表同款）：表格左右拉满，首列左缘/末列右缘 pl/pr-4 找齐工具栏内容边距，
-    // 表头分界线与常驻工具栏下沿左右端点对齐。
+    // 通栏对齐（文档列表同款）：表格左右拉满；首列是复选框瞬态控件，
+    // px-2 与文档表头位置一致（跨 tab 一致性优先于找齐工具栏边距，2026-09-02），
+    // 末列 pr-4 找齐工具栏右缘。
     const heads = container.querySelectorAll("th");
-    expect(heads[0]!.className).toContain("pl-4");
+    expect(heads[0]!.className).toContain("px-2");
+    expect(heads[0]!.className).not.toContain("pl-4");
     expect(heads[heads.length - 1]!.className).toContain("pr-4");
+    // 吸顶表头（2026-09-02）：表头单元格 sticky，发丝线用 inset 阴影随粘性移动（
+    // border-collapse 下 tr 边框会随滚动丢失）；表格外壳不可是独立滚动容器（
+    // overflow-x-auto 会接管纵向滚动、破坏 sticky，横滚交给内容区）。
+    expect(heads[0]!.className).toContain("sticky");
+    expect(heads[0]!.className).toContain("top-0");
+    expect(heads[0]!.className).toContain("bg-background");
+    expect(heads[0]!.className).toContain("shadow-[inset_0_-1px_0_var(--border)]");
+    expect(container.querySelector("thead")!.className).toContain("[&_tr]:border-0");
+    expect(container.querySelector("[data-slot='table-container']")!.className).not.toContain("overflow-x-auto");
+    // 表头行高与文档表头对齐：h-9 钉高 36px（2026-09-02）。
+    expect(container.querySelector("thead tr")!.className).toContain("h-9");
     const cells = container.querySelectorAll("tbody tr:first-child td");
-    expect(cells[0]!.className).toContain("pl-4");
+    expect(cells[0]!.className).toContain("px-2");
+    expect(cells[0]!.className).not.toContain("pl-4");
     expect(cells[cells.length - 1]!.className).toContain("pr-4");
+    // 行复选框悬浮显形（同文档表，2026-09-02）：默认隐形，悬停/勾选/任一选中才显形。
+    const rowCheckbox = cells[0]!.querySelector("[data-slot='checkbox']")!;
+    expect(rowCheckbox.className).toContain("opacity-0");
+    expect(rowCheckbox.className).toContain("group-hover:opacity-100");
+    expect(rowCheckbox.className).toContain("data-[state=checked]:opacity-100");
+    expect(container.querySelector("tbody tr")!.className).toContain("group");
     // 行内 ↗ 复现按钮移除（占栏宽），复现入口留在详情 drawer。
     expect(screen.queryByRole("button", { name: "在召回测试面板复现" })).toBeNull();
-    // 🗑 删除保留。
-    expect(screen.getByRole("button", { name: "删除考题" })).toBeTruthy();
+    // 末列改悬浮三点（2026-09-02）：size-8 删除按钮（32px，撑出 48px 行高）换成
+    // 文档 tab 同款 size-6（24px）三点菜单，行高落到 40px 与文档表对齐；删除进
+    // 三点菜单（行级「删除考题」）。静止态隐形，hover/选中/菜单开才显形。
+    const more = screen.getByRole("button", { name: "更多操作" });
+    expect(more.className).toContain("size-6");
+    const moreWrap = screen.getByTestId("bank-row-more");
+    expect(moreWrap.className).toContain("opacity-0");
+    expect(moreWrap.className).toContain("group-hover:opacity-100");
   });
 
   it("审核区块隐藏时包裹容器不占位（表头上方不浮出 8px 间隙）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
     // 缺省 mock 即空暂存：review 组件返回 null，包裹 div 为 :empty。
-    const { container } = renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
+    const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     const reviewWrap = container.querySelector("div.px-4")!;
     expect(reviewWrap.className).toContain("[&:empty]:hidden");
   });
 
-  it("🗑 删除按钮打开确认框：取消不调 mutation", async () => {
+  it("🗑 三点菜单删除打开确认框：取消不调 mutation", async () => {
     const mutateAsync = rs.fn().mockResolvedValue(undefined);
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
     hooksMock.useDeleteEvalQuestion.mockReturnValue({ mutateAsync, isPending: false });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "删除考题" }));
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    // 删除收进末列三点菜单（2026-09-02）：jsdom 中 Radix DropdownMenu 须用
+    // keyDown ArrowDown 展开（不响应 click），再点菜单里的「删除考题」。
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除考题" }));
 
     const dialog = screen.getByRole("dialog");
     expect(dialog.textContent).toContain(Q_ANCHORED.query);
@@ -235,8 +281,9 @@ describe("EvalQuestionBank 表格", () => {
     const mutateAsync = rs.fn().mockResolvedValue(undefined);
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
     hooksMock.useDeleteEvalQuestion.mockReturnValue({ mutateAsync, isPending: false });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "删除考题" }));
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除考题" }));
 
     const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
@@ -247,9 +294,21 @@ describe("EvalQuestionBank 表格", () => {
     });
   });
 
+  it("末列三点菜单提供快速/完整评测（行级，携该题 id）", async () => {
+    const mutate = rs.fn();
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    expect(payload.layers).toBe("l1_l2");
+    expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
+  });
+
   it("受控 addOpen 渲染添加 dialog（入口已并入 eval-tab 常驻工具栏）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
-    renderWithI18n(<EvalQuestionBank addOpen enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness addOpen enabled kbId="kb-1" />);
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
@@ -261,7 +320,7 @@ describe("EvalQuestionBank 搜索过滤（2026-08-30，搜索框在 eval-tab 常
       error: null,
       ...questionsState([Q_UNANCHORED, Q_ANCHORED, Q_MULTI]),
     });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" searchQuery="多路" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" searchQuery="多路" />);
     expect(screen.getByText("多路预期的考题")).toBeTruthy();
     expect(screen.queryByText("未锚定的考题")).toBeNull();
     expect(screen.queryByText("锚定了三个切片的考题")).toBeNull();
@@ -273,14 +332,14 @@ describe("EvalQuestionBank 搜索过滤（2026-08-30，搜索框在 eval-tab 常
       error: null,
       ...questionsState([Q_ANCHORED]),
     });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" searchQuery="不存在的词" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" searchQuery="不存在的词" />);
     expect(screen.getByText("无匹配的题目，换个关键词试试")).toBeTruthy();
     expect(screen.queryByText("锚定了三个切片的考题")).toBeNull();
   });
 
   it("空库时即使带过滤词仍渲染空库引导（不进入无匹配态）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([]) });
-    renderWithI18n(<EvalQuestionBank enabled kbId="kb-1" searchQuery="任意词" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" searchQuery="任意词" />);
     expect(screen.getByText("题库为空——在召回测试面板勾选正确切片可一键存为考题")).toBeTruthy();
   });
 });
@@ -354,7 +413,7 @@ describe("EvalAddQuestionDialog", () => {
 // 选题与档位两个正交维度：复选框列选题（行点击开 drawer 的既有行为保留），
 // 批量栏双档触发携 question_ids；触发成功清空选择。
 
-describe("EvalQuestionBank 选题与批量运行（B 方案）", () => {
+describe("EvalQuestionBank 选题与右键菜单（2026-09-02 批量运行栏退役）", () => {
   let mutate: ReturnType<typeof rs.fn>;
 
   beforeEach(() => {
@@ -367,20 +426,21 @@ describe("EvalQuestionBank 选题与批量运行（B 方案）", () => {
   });
   afterEach(() => cleanup());
 
-  it("无选中时批量栏不出现；行复选框勾选不触发抽屉", () => {
-    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
-    expect(screen.queryByText(/已选/)).toBeNull();
-
+  it("批量运行栏退役：勾选后不再出现插入式条（抖动源），行复选框勾选不触发抽屉", () => {
+    renderWithI18n(<BankHarness kbId="kb-1" />);
     const box = screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` });
     expect(box.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(box);
     expect(box.getAttribute("aria-checked")).toBe("true");
+    // 旧批量运行栏的任何痕迹都不应出现。
+    expect(screen.queryByTestId("eval-bulk-run-bar")).toBeNull();
+    expect(screen.queryByText(/已选 \d+ 题/)).toBeNull();
     // 勾选不开详情 drawer（行点击才开）
     expect(screen.queryByTestId("eval-question-drawer-mock")).toBeNull();
   });
 
   it("表头全选切换全部可见题", () => {
-    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
+    renderWithI18n(<BankHarness kbId="kb-1" />);
     const selectAll = screen.getByRole("checkbox", { name: "全选" });
     fireEvent.click(selectAll);
     for (const question of [Q_UNANCHORED, Q_ANCHORED, Q_MULTI]) {
@@ -390,40 +450,82 @@ describe("EvalQuestionBank 选题与批量运行（B 方案）", () => {
     expect(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }).getAttribute("aria-checked")).toBe("false");
   });
 
-  it("批量栏显示选中数；快速评测携 question_ids 触发并清空选择", () => {
-    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }));
-    expect(screen.getByText("已选 1 题")).toBeTruthy();
-
-    const runButton = screen.getByRole("button", { name: "快速评测" });
-    expect(runButton.className).toContain("h-7");
-    fireEvent.click(runButton);
-    expect(mutate).toHaveBeenCalled();
+  it("右键未选中行只选中该行，单选菜单提供快速评测（只跑该题）", async () => {
+    renderWithI18n(<BankHarness kbId="kb-1" />);
+    fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
+    // 右键即选中（文件管理器惯例）。菜单打开时背景 aria-hidden，
+    // getByRole 查不到——用 getByLabelText（不受可访问性树过滤）。
+    expect(screen.getByLabelText(`选择「${Q_ANCHORED.query}」`).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitem", { name: "快速评测" }));
     const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1");
     expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
-    // 触发后清空选择（批量栏消失）
-    expect(screen.queryByText(/已选/)).toBeNull();
+    // 触发后清空选择。菜单关闭前背景 aria-hidden，绕过可访问性树直查 DOM。
+    await waitFor(() => {
+      const box = document.querySelector(`[aria-label="选择「${Q_ANCHORED.query}」"]`);
+      expect(box?.getAttribute("aria-checked")).toBe("false");
+    });
   });
 
-  it("批量栏完整评测：确认对话框后携 layers=l1_l2 与 question_ids", async () => {
-    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("checkbox", { name: `选择「${Q_MULTI.query}」` }));
-    fireEvent.click(screen.getByRole("button", { name: "完整评测 (L1+L2)" }));
-
-    expect(await screen.findByText("运行完整评测")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
+  it("单选右键菜单提供完整评测（l1_l2 只跑该题）", async () => {
+    renderWithI18n(<BankHarness kbId="kb-1" />);
+    fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
+    fireEvent.click(screen.getByRole("menuitem", { name: "完整评测 (L1+L2)" }));
     const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1_l2");
-    expect(payload.question_ids).toEqual([Q_MULTI.id]);
-    expect(screen.queryByText(/已选/)).toBeNull();
+    expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
   });
 
-  it("清除选择隐藏批量栏", () => {
-    renderWithI18n(<EvalQuestionBank kbId="kb-1" />);
-    fireEvent.click(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }));
-    expect(screen.getByText("已选 1 题")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "清除选择" }));
-    expect(screen.queryByText(/已选/)).toBeNull();
+  it("多选右键菜单结构：已选标签 → 快速评测 → 完整评测 → 取消选择 → 分隔线 → 删除所选", async () => {
+    renderWithI18n(<BankHarness initialSelected={[Q_ANCHORED.id, Q_MULTI.id]} kbId="kb-1" />);
+    fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
+    expect(screen.getByText("已选 2 项")).toBeTruthy();
+    const names = screen.getAllByRole("menuitem").map((item) => item.textContent);
+    expect(names).toEqual(["快速评测", "完整评测 (L1+L2)", "取消选择", "删除所选"]);
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+    // 快速评测携选中集触发并清空。
+    fireEvent.click(screen.getByRole("menuitem", { name: "快速评测" }));
+    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    expect(payload.layers).toBe("l1");
+    expect([...(payload.question_ids ?? [])].sort()).toEqual([Q_ANCHORED.id, Q_MULTI.id].sort());
+    await waitFor(() => {
+      const box = document.querySelector(`[aria-label="选择「${Q_ANCHORED.query}」"]`);
+      expect(box?.getAttribute("aria-checked")).toBe("false");
+    });
+  });
+
+  it("右键菜单取消选择带 X 图标且能清选择", async () => {
+    renderWithI18n(<BankHarness initialSelected={[Q_ANCHORED.id]} kbId="kb-1" />);
+    fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
+    const cancel = screen.getByRole("menuitem", { name: "取消选择" });
+    expect(cancel.querySelector("svg")).toBeTruthy();
+    fireEvent.click(cancel);
+    await waitFor(() => {
+      const box = document.querySelector(`[aria-label="选择「${Q_ANCHORED.query}」"]`);
+      expect(box?.getAttribute("aria-checked")).toBe("false");
+    });
+  });
+
+  it("右键删除所选：批量确认框展示计数，确认后逐题删除并修选择集", async () => {
+    const mutateAsync = rs.fn().mockResolvedValue(undefined);
+    hooksMock.useDeleteEvalQuestion.mockReturnValue({ mutateAsync, isPending: false });
+    renderWithI18n(<BankHarness initialSelected={[Q_ANCHORED.id, Q_MULTI.id]} kbId="kb-1" />);
+    fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除所选" }));
+
+    const dialog = await screen.findByRole("dialog");
+    // 批量态展示已选计数而非单题 query。
+    expect(dialog.textContent).toContain("已选 2 项");
+    expect(dialog.textContent).not.toContain(Q_ANCHORED.query);
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+    expect(mutateAsync).toHaveBeenCalledWith(Q_ANCHORED.id);
+    expect(mutateAsync).toHaveBeenCalledWith(Q_MULTI.id);
+    await waitFor(() => {
+      expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已删除")).toBe(true);
+    });
+    // 删完后选择集清空。
+    expect(screen.getByRole("checkbox", { name: `选择「${Q_UNANCHORED.query}」` }).getAttribute("aria-checked")).toBe("false");
   });
 });

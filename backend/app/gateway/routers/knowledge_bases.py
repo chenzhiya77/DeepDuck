@@ -621,21 +621,21 @@ async def delete_eval_question(request: Request, kb_id: str, question_id: str):
 
 
 class SynthesisTriggerRequest(BaseModel):
-    """合成触发载荷：单篇文档 + 候选题数（1–10，默认 5）。"""
+    """合成触发载荷：一到多篇文档（联合出题）+ 候选题数（1–10，默认 5）。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    doc_id: str
+    doc_ids: list[str] = Field(min_length=1)
     count: int = Field(default=5, ge=1, le=10)
 
 
 @router.post("/{kb_id}/eval/questions/synthesize", status_code=202)
 async def trigger_question_synthesis(request: Request, kb_id: str, body: SynthesisTriggerRequest):
     """自底向上合成候选题（spec §6.1）：复刻评测触发的 in-flight 幂等语义——
-    enqueued / already_running；文档不存在或无切片 → 409（调度前同步检查）。"""
+    enqueued / already_running；任一篇不存在或无切片 → 409（调度前同步检查）。"""
     service = await _require_kb_access(request, kb_id)
     try:
-        enqueued = await service.trigger_question_synthesis(kb_id, doc_id=body.doc_id, count=body.count)
+        enqueued = await service.trigger_question_synthesis(kb_id, doc_ids=body.doc_ids, count=body.count)
     except SynthesisDocNotReady as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"status": "enqueued" if enqueued else "already_running"}

@@ -141,6 +141,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const [fullRunOpen, setFullRunOpen] = useState(false);
   // 题库搜索（2026-08-30）：搜索框常驻本层工具栏，纯前端过滤，经 prop 下发。
   const [bankSearchQuery, setBankSearchQuery] = useState("");
+  // 选题集上提（2026-09-02 批量运行栏退役）：工具栏原位切换需读选中态，
+  // 右键菜单的快捷运行/清理也在 bank 内——状态居本层，双向经 props。
+  const [bankSelectedIds, setBankSelectedIds] = useState<ReadonlySet<string>>(new Set());
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
   const trendQuery = useEvalTrend(kbId, granularity, enabled);
@@ -156,6 +159,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           // 202 语义分流（§5.2）：enqueued 确认；already_running 幂等提示。
           if (response.status === "enqueued") toast.success(tk.runStartedToast);
           else toast.info(tk.alreadyRunningToast);
+          // 选题运行成功后清空选择集（原批量栏语义，2026-09-02 承接）。
+          if (input.question_ids) setBankSelectedIds(new Set());
         },
         onError: () => toast.error(tk.runFailedToast),
       });
@@ -192,16 +197,27 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   };
 
   const runButtonLabel = running ? tk.runningButton : tk.runButton;
+  // 工具栏原位切换（2026-09-02 B 方案承接）：题库视图且有选中时，运行主键
+  // 与完整评测档都改携 question_ids，标签切「运行所选/完整运行所选」；
+  // 选题集跨视图持久（state 在本层），仅题库视图消费，不泄漏到总览/历史。
+  const bankSelectionActive = view === "questions" && bankSelectedIds.size > 0;
+  const bankQuestionIds = bankSelectionActive ? [...bankSelectedIds] : undefined;
+  const runLabel = bankSelectionActive ? tk.selection.runSelected : runButtonLabel;
+  const fullRunLabel = bankSelectionActive ? tk.selection.fullRunSelected : tk.fullRun.menuItem;
+  const runInput = (layers: "l1" | "l1_l2"): EvalTriggerInput =>
+    bankQuestionIds ? { layers, question_ids: bankQuestionIds } : { layers };
 
   return (
     // 滚动模型（对齐 document-panel 头部行 + 内容表格 min-w 的同构做法）：工具栏
     // 固定全宽永不横滚（挤压走 tier 降档）；内容区独立纵向滚动；32rem 下限只属于
     // 指标总览块（4 卡数学下限）——压缩时仅卡片区域横滚，「谁有下限，谁自己滚」。
     <div className="flex h-full min-h-0 flex-col" data-testid="eval-tab">
-        {/* 常驻工具栏（§5）：三视图共享，主动词恒可达；tier 1 时状态文案让位 */}
+        {/* 常驻工具栏（§5）：三视图共享，主动词恒可达；tier 1 时状态文案让位；
+            底边不画线（2026-09-02，与文档 tab 对齐）：表头自带吸顶发丝线，
+            两条线夹表头的问题同款修复，靠留白分界 */}
         <div
           ref={viewToolbarRef}
-          className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap border-b px-4 py-2"
+          className="flex shrink-0 items-center gap-2 overflow-hidden whitespace-nowrap px-4 py-2"
           data-testid="eval-view-toolbar"
         >
           <div aria-label={tk.viewSwitchLabel} className="bg-muted flex shrink-0 rounded-md p-0.5" role="radiogroup">
@@ -278,14 +294,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                   <Button
                     className="h-7 shrink-0 gap-1.5 rounded-r-none px-2.5"
                     disabled={running}
-                    onClick={() => handleTrigger({ layers: "l1" })}
+                    onClick={() => handleTrigger(runInput("l1"))}
                   >
                     {running ? (
                       <Loader2 aria-hidden className="size-3.5 animate-spin" />
                     ) : (
                       <Play aria-hidden className="size-3.5" />
                     )}
-                    {runButtonLabel}
+                    {runLabel}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -298,7 +314,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setFullRunOpen(true)}>{tk.fullRun.menuItem}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFullRunOpen(true)}>{fullRunLabel}</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -323,11 +339,11 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       </DropdownMenuItem>
                     </>
                   )}
-                  <DropdownMenuItem disabled={running} onClick={() => handleTrigger({ layers: "l1" })}>
-                    {runButtonLabel}
+                  <DropdownMenuItem disabled={running} onClick={() => handleTrigger(runInput("l1"))}>
+                    {runLabel}
                   </DropdownMenuItem>
                   <DropdownMenuItem disabled={running} onClick={() => setFullRunOpen(true)}>
-                    {tk.fullRun.menuItem}
+                    {fullRunLabel}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -453,10 +469,12 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             enabled={enabled}
             kbId={kbId}
             searchQuery={bankSearchQuery}
+            selectedIds={bankSelectedIds}
             synthesisOpen={bankSynthesisOpen}
             onAddOpenChange={setBankAddOpen}
             onReproduce={onReproduce}
             onSearchQueryChange={setBankSearchQuery}
+            onSelectedIdsChange={setBankSelectedIds}
             onSynthesisOpenChange={setBankSynthesisOpen}
           />
         )}
@@ -468,11 +486,12 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           </div>
         </div>
 
-      {/* 完整评测确认对话框（2026-09-01 B 方案）：箭头/⋯ 菜单打开，确认后触发 l1_l2 档 */}
+      {/* 完整评测确认对话框（2026-09-01 B 方案）：箭头/⋯ 菜单打开，确认后触发
+          l1_l2 档；题库视图有选中时携 question_ids（原批量栏的完整运行所选） */}
       <EvalFullRunDialog
         open={fullRunOpen}
         onOpenChange={setFullRunOpen}
-        onConfirm={() => handleTrigger({ layers: "l1_l2" })}
+        onConfirm={() => handleTrigger(runInput("l1_l2"))}
       />
 
       {/* 点击趋势图数据点 → drawer 下钻单次运行详情（portal 渲染） */}

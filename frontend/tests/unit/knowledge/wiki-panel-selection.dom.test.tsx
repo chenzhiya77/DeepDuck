@@ -2,9 +2,10 @@
  * Wiki panel split-section interactions (wiki tab redesign): the AI entries
  * section is collapsible (default expanded, auto-expands when a unified
  * search query matches), filters client-side by the shared query, and carries
- * the document-table interaction model — checkbox multi-select with a batch
- * bar, batch delete through the shared confirm dialog, and a Radix context
- * menu (open / edit / delete; batch variant inside a multi-selection).
+ * the document-table interaction model — checkbox multi-select + batch delete
+ * through the shared confirm dialog, and a Radix context menu (open / edit /
+ * 取消选择 / 删除所选; batch variant inside a multi-selection). 批量操作栏
+ * 已退役（2026-09-02）：批量动作全由右键菜单承接。
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -98,20 +99,20 @@ describe("WikiPanel search filtering", () => {
 });
 
 describe("WikiPanel selection", () => {
-  it("selects rows via checkboxes and shows the batch bar", () => {
+  it("selects rows via checkboxes; the batch bar is retired（2026-09-02）", () => {
     renderPanel();
-    expect(screen.queryByTestId("wiki-batch-bar")).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: DeerFlow" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: 沙箱" }));
-    expect(screen.getByTestId("wiki-batch-bar").textContent).toContain("已选 2 项");
-    fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
     expect(screen.queryByTestId("wiki-batch-bar")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "选择条目: DeerFlow" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("selects all rows via the header checkbox", () => {
     renderPanel();
     fireEvent.click(screen.getByRole("checkbox", { name: "全选" }));
-    expect(screen.getByTestId("wiki-batch-bar").textContent).toContain("已选 3 项");
+    for (const title of ["DeerFlow", "Gateway", "沙箱"]) {
+      expect(screen.getByRole("checkbox", { name: `选择条目: ${title}` }).getAttribute("aria-checked")).toBe("true");
+    }
   });
 
   it("clears the selection when the query changes", () => {
@@ -121,26 +122,29 @@ describe("WikiPanel selection", () => {
       </I18nContext.Provider>,
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: DeerFlow" }));
-    expect(screen.getByTestId("wiki-batch-bar")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "选择条目: DeerFlow" }).getAttribute("aria-checked")).toBe("true");
 
     rerender(
       <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
         <WikiPanel entries={ENTRIES} query="网关" onOpenEntry={rs.fn()} onDeleteEntry={rs.fn()} />
       </I18nContext.Provider>,
     );
-    expect(screen.queryByTestId("wiki-batch-bar")).toBeNull();
+    // 过滤后仍存活的 Gateway 行选择被清空。
+    expect(screen.getByRole("checkbox", { name: "选择条目: Gateway" }).getAttribute("aria-checked")).toBe("false");
   });
 
-  it("batch-deletes the selected entries after confirm", async () => {
+  it("batch-deletes the selected entries via the context menu after confirm", async () => {
     const handlers = renderPanel();
     fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: DeerFlow" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: Gateway" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除所选" }));
-    // 批量确认文案带计数，且保留再生成语义
-    expect(await screen.findByText("删除 2 条百科条目？")).toBeTruthy();
+    // 批量栏退役后，批量删除唯一入口是右键菜单。
+    fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-a"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除所选" }));
+    // 批量确认文案带计数，且保留再生成语义（runAfterMenuClose 延迟到菜单退场）。
+    expect(await screen.findByText("删除 2 条百科条目？", undefined, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByText(/下次生成时会按最新材料重新创建/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    await waitFor(() => expect(handlers.onDeleteEntry).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(handlers.onDeleteEntry).toHaveBeenCalledTimes(2), { timeout: 2000 });
     const deleted = handlers.onDeleteEntry.mock.calls.map((call) => (call[0] as WikiEntrySummary).id);
     expect(deleted).toContain("a");
     expect(deleted).toContain("b");
@@ -163,7 +167,9 @@ describe("WikiPanel context menu", () => {
     fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-b"));
     expect(await screen.findByRole("menuitem", { name: "打开详情" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "编辑条目" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "删除条目" })).toBeTruthy();
+    // 措辞对齐（2026-09-02）：右键即选中，单选菜单也用「删除所选」；退出选择态两态对称。
+    expect(screen.getByRole("menuitem", { name: "删除所选" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "取消选择" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "打开详情" }));
     await waitFor(() => expect(handlers.onOpenEntry).toHaveBeenCalledWith(ENTRIES[1]), { timeout: 2000 });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
@@ -174,8 +180,9 @@ describe("WikiPanel context menu", () => {
     renderPanel();
     fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-b"));
     expect(await screen.findByRole("menuitem", { name: "打开详情" })).toBeTruthy();
-    // 单选该行 → 批量 bar 显示已选 1 项
-    expect(screen.getByTestId("wiki-batch-bar").textContent).toContain("已选 1 项");
+    // 单选该行：菜单打开时背景 aria-hidden，用 getByLabelText 查行复选框。
+    expect(screen.getByLabelText("选择条目: Gateway").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByLabelText("选择条目: DeerFlow").getAttribute("aria-checked")).toBe("false");
     await settleMenu();
   });
 
@@ -185,6 +192,7 @@ describe("WikiPanel context menu", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "选择条目: Gateway" }));
     fireEvent.contextMenu(screen.getByTestId("wiki-entry-row-a"));
     expect(await screen.findByRole("menuitem", { name: "删除所选" })).toBeTruthy();
+    // 批量栏退役后，计数反馈唯一载体是菜单标签。
     expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
     await settleMenu();
   });
