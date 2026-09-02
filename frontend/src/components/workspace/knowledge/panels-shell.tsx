@@ -307,10 +307,19 @@ export function KnowledgePanelsShell({
         <ResizableHandle
           className={cn(
             "hover:bg-accent w-0.5 transition-colors",
-            collapsedEnough && "pointer-events-none opacity-0",
-            // Fade out IN STEP with the fold (2026-09-02): the line used to
-            // vanish in one frame at the settle — the collapse's end jitter.
-            foldAnimating && collapsing && "transition-opacity duration-200 ease-linear opacity-0",
+            // Collapsed: interactivity off, paint ON (2026-09-03). Fading this
+            // gutter out left its 2px layout slot as a strip of bare
+            // bg-background between the app sidebar's border-r and the middle
+            // column, so the document table's left edge — and with it the
+            // header hairline and a selected row's background — began 2px
+            // short of the divider, while the right gutter (section border-r +
+            // a painted handle) sat flush against its own. Painting it also
+            // makes the collapsed divider the same 2.67px bar the expanded
+            // state already drew (aside border-r + handle), so the fold's last
+            // frame has nothing to snap back: the fade this replaced needed a
+            // matching in-flight transition to hide a vanish that no longer
+            // happens.
+            collapsedEnough && "pointer-events-none",
           )}
           disabled={collapsedEnough}
         />

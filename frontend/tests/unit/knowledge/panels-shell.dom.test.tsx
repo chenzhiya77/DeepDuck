@@ -194,10 +194,9 @@ describe("KnowledgePanelsShell", () => {
     expect(aside.className).toContain("duration-100");
     expect(aside.className).toContain("delay-100");
     expect(aside.className).toContain("opacity-0");
-    // The divider fades out IN STEP with the fold for the same reason.
+    // The divider does NOT fade with it — see the gutter test below.
     const handle = container.querySelectorAll('[data-slot="resizable-handle"]')[0]!;
-    expect(handle.className).toContain("opacity-0");
-    expect(handle.className).toContain("transition-opacity");
+    expect(handle.className).not.toContain("opacity-0");
     settleAt(aside, 0);
     expect(aside.className).toContain("opacity-0");
 
@@ -206,5 +205,35 @@ describe("KnowledgePanelsShell", () => {
     expect(aside.className).toContain("duration-200");
     expect(aside.className).not.toContain("delay-100");
     expect(aside.className).not.toContain("opacity-0");
+  });
+
+  it("keeps the collapsed gutter painted so the table stays flush with the divider", () => {
+    const { container } = renderShell();
+    const aside = container.querySelector("aside")!;
+    Object.defineProperty(aside, "offsetWidth", { configurable: true, value: 224 });
+    const handle = container.querySelectorAll('[data-slot="resizable-handle"]')[0]!;
+    // Expanded: painted and draggable.
+    expect(handle.className).toContain("w-0.5");
+    expect(handle.className).not.toContain("opacity-0");
+    expect(handle.className).not.toContain("pointer-events-none");
+
+    fireEvent.click(screen.getByTestId("left-collapse"));
+    // Painted through the whole fold, not merely at rest: a fade needs a
+    // matching in-flight transition and still snaps back at the settle.
+    expect(handle.className).not.toContain("opacity-0");
+    settleAt(aside, 0);
+    // Collapsed: the 2px slot still paints bg-border. Fading it out left that
+    // slot as bare bg-background between the app sidebar's border-r and the
+    // middle column, so the document table's left edge — hence the header
+    // hairline, and a selected row's background — began 2px short of the
+    // divider while the right gutter sat flush against its own. Only
+    // interactivity goes: a zero-width panel has nothing to drag, and the
+    // restore chip owns the unfold.
+    expect(handle.className).not.toContain("opacity-0");
+    expect(handle.className).toContain("pointer-events-none");
+
+    fireEvent.click(screen.getByRole("button", { name: "展开列表栏" }));
+    settleAt(aside, 224);
+    expect(handle.className).not.toContain("pointer-events-none");
   });
 });
