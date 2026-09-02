@@ -657,7 +657,12 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
       });
       const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
       fireEvent.keyDown(more, { key: "ArrowDown" });
-      fireEvent.click(await screen.findByRole("menuitem", { name: /生成考题/ }));
+      // 降档不丢图标（2026-09-02）：⋯ 菜单逐项携图标，与内联按钮/题库行三点
+      // 同一图标语汇（Plus / Sparkles / Play / Layers）。
+      const items = await screen.findAllByRole("menuitem");
+      expect(items.map((item) => item.textContent)).toEqual(["添加考题", "生成考题", "运行评测", "完整评测"]);
+      expect(items.every((item) => item.querySelector("svg") !== null)).toBe(true);
+      fireEvent.click(screen.getByRole("menuitem", { name: /生成考题/ }));
       expect(bankMock.props?.synthesisOpen).toBe(true);
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(await screen.findByRole("menuitem", { name: /添加考题/ }));
@@ -739,8 +744,9 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
 });
 
 // ── 运行评测分档（2026-09-01 B 方案 Task 4）────────────────────
-// 分体按钮：主键一键 L1 全量（高频习惯不变），右侧箭头下拉选「完整评测 (L1+L2)」，
+// 分体按钮：主键一键 L1 全量（高频习惯不变），右侧箭头下拉选「完整评测」，
 // 完整档弹确认对话框（成本提示）；窄面板降档时完整评测项并入 ⋯ 菜单。
+// 档位后缀 (L1+L2) 已从菜单文案移除（2026-09-02），与快速档四字等长对齐。
 
 describe("EvalTab 运行评测分档（B 方案）", () => {
   beforeEach(() => {
@@ -769,7 +775,7 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
 
     const chevron = screen.getByRole("button", { name: "评测档位" });
     fireEvent.keyDown(chevron, { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
 
     // 确认对话框：成本说明在场，确认后触发完整档。
     expect(await screen.findByText("运行完整评测")).toBeTruthy();
@@ -785,7 +791,7 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
 
     const chevron = screen.getByRole("button", { name: "评测档位" });
     fireEvent.keyDown(chevron, { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
     fireEvent.click(await screen.findByRole("button", { name: "取消" }));
     expect(mutate).not.toHaveBeenCalled();
   });
@@ -813,7 +819,7 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
       });
       const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
       fireEvent.keyDown(more, { key: "ArrowDown" });
-      fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
       expect(await screen.findByText("运行完整评测")).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
       expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2" });
@@ -874,7 +880,7 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
 
     const chevron = screen.getByRole("button", { name: "评测档位" });
     fireEvent.keyDown(chevron, { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
     expect(await screen.findByText("运行完整评测")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
     expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2", question_ids: ["q_9"] });

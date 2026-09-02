@@ -551,7 +551,7 @@ export const enUS: Translations = {
       runFailedToast: "Failed to start the evaluation",
       fullRun: {
         menuAria: "Evaluation tier",
-        menuItem: "Full evaluation (L1+L2)",
+        menuItem: "Full evaluation",
         dialogTitle: "Run full evaluation",
         dialogBody:
           "A full evaluation first runs the Layer 1 static retrieval metrics, then lets the agent answer every question with an independent judge scoring it (including RAGAS metrics). It takes much longer and costs far more tokens than the quick tier, and cannot be triggered again while running.",
@@ -563,7 +563,7 @@ export const enUS: Translations = {
         rowSelectAria: (query: string) => `Select "${query}"`,
         selected: (count: number) => `${count} selected`,
         runSelected: "Quick evaluation",
-        fullRunSelected: "Full evaluation (L1+L2)",
+        fullRunSelected: "Full evaluation",
         clear: "Clear selection",
       },
       questions: {

@@ -300,7 +300,7 @@ describe("EvalQuestionBank 表格", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
     renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
     const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1_l2");
     expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
@@ -470,7 +470,7 @@ describe("EvalQuestionBank 选题与右键菜单（2026-09-02 批量运行栏退
   it("单选右键菜单提供完整评测（l1_l2 只跑该题）", async () => {
     renderWithI18n(<BankHarness kbId="kb-1" />);
     fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
-    fireEvent.click(screen.getByRole("menuitem", { name: "完整评测 (L1+L2)" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "完整评测" }));
     const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1_l2");
     expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
@@ -481,7 +481,7 @@ describe("EvalQuestionBank 选题与右键菜单（2026-09-02 批量运行栏退
     fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
     expect(screen.getByText("已选 2 项")).toBeTruthy();
     const names = screen.getAllByRole("menuitem").map((item) => item.textContent);
-    expect(names).toEqual(["快速评测", "完整评测 (L1+L2)", "取消选择", "删除所选"]);
+    expect(names).toEqual(["快速评测", "完整评测", "取消选择", "删除所选"]);
     expect(screen.getAllByRole("separator")).toHaveLength(1);
     // 快速评测携选中集触发并清空。
     fireEvent.click(screen.getByRole("menuitem", { name: "快速评测" }));

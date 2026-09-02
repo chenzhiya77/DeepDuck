@@ -19,7 +19,7 @@
  * 首次轮询双请求。点击趋势数据点开 EvalRunDrawer 下钻（plan Task 6）。
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Loader2, MoreHorizontal, Play, Plus, Search, Sparkles, X } from "lucide-react";
+import { ChevronDown, Layers, Loader2, MoreHorizontal, Play, Plus, Search, Sparkles, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
@@ -314,7 +314,12 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setFullRunOpen(true)}>{fullRunLabel}</DropdownMenuItem>
+                      {/* 图标对齐（2026-09-02）：完整档在任何菜单里都带 Layers，
+                          与题库行三点/右键菜单同一图标语汇。 */}
+                      <DropdownMenuItem onClick={() => setFullRunOpen(true)}>
+                        <Layers className="size-4" />
+                        {fullRunLabel}
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -329,20 +334,26 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {/* 降档不丢图标（2026-09-02）：⋯ 菜单逐项沿用内联按钮/行级菜单
+                      的同一图标（Plus/Sparkles/Play/Layers），两处入口视觉一致。 */}
                   {view === "questions" && (
                     <>
                       <DropdownMenuItem onClick={() => setBankAddOpen(true)}>
+                        <Plus className="size-4" />
                         {tk.questions.addQuestion}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setBankSynthesisOpen(true)}>
+                        <Sparkles className="size-4" />
                         {tk.synthesize.entryButton}
                       </DropdownMenuItem>
                     </>
                   )}
                   <DropdownMenuItem disabled={running} onClick={() => handleTrigger(runInput("l1"))}>
+                    {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
                     {runLabel}
                   </DropdownMenuItem>
                   <DropdownMenuItem disabled={running} onClick={() => setFullRunOpen(true)}>
+                    <Layers className="size-4" />
                     {fullRunLabel}
                   </DropdownMenuItem>
                 </DropdownMenuContent>

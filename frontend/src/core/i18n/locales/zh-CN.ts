@@ -530,7 +530,9 @@ export const zhCN: Translations = {
       runFailedToast: "评测触发失败",
       fullRun: {
         menuAria: "评测档位",
-        menuItem: "完整评测 (L1+L2)",
+        // 档位后缀 (L1+L2) 已从菜单文案移除（2026-09-02）：与「快速评测/运行评测」
+        // 同为四字对齐，成本说明由确认对话框承载（成本提示不进按钮文案）。
+        menuItem: "完整评测",
         dialogTitle: "运行完整评测",
         dialogBody:
           "完整评测会先跑 Layer 1 静态检索指标，再让 Agent 实跑每道题并由独立 Judge 打分（含 RAGAS 指标）。耗时与 token 成本远高于快速评测，运行期间不可重复触发。",
@@ -542,7 +544,7 @@ export const zhCN: Translations = {
         rowSelectAria: (query: string) => `选择「${query}」`,
         selected: (count: number) => `已选 ${count} 题`,
         runSelected: "快速评测",
-        fullRunSelected: "完整评测 (L1+L2)",
+        fullRunSelected: "完整评测",
         clear: "清除选择",
       },
       questions: {
