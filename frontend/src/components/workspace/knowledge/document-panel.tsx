@@ -251,6 +251,93 @@ function HideableColumnHeader({
 }
 
 /**
+ * 状态单元格（2026-09-03 自 tbody 内联 IIFE 提取）：圆点 + 小字单行，失败态
+ * 把「友好原因 + 重试」收进悬停卡片（HoverCard 支持交互内容，Tooltip 不支持），
+ * path_status 非空时悬停出三路分解。提取的直接动因是接上统一的列显隐门控：
+ * 其余各列都是「短块 + 条件渲染」，90 行内联块既压不住行体，也无法跟着 prefs 收缩。
+ */
+function DocumentStatusCell({
+  doc,
+  onRetryDocument,
+}: {
+  doc: KnowledgeDocument;
+  onRetryDocument: (docId: string) => void;
+}) {
+  const { t } = useI18n();
+  const tk = t.knowledge;
+  const indicator = (
+    <span
+      className="relative flex w-fit items-center gap-1"
+      data-testid={doc.path_status ? "path-status-trigger" : undefined}
+    >
+      {/* 悬挂标记：-left-2.5 = 点 6px + 间隙 4px，与 td 的 px-2 配对，
+        文字左缘才压得住表头那条线 */}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute top-1/2 -left-2.5 size-1.5 -translate-y-1/2 rounded-full",
+          STATUS_DOT_CLASS[doc.status] ?? "bg-muted-foreground/60",
+        )}
+      />
+      <span
+        className={cn(
+          "text-xs",
+          doc.status === "failed"
+            ? "text-destructive"
+            : "text-muted-foreground",
+        )}
+      >
+        {tk.status[doc.status] ?? doc.status}
+      </span>
+      {/* 百分比只在 indexing 显示——前置阶段（解析/切片）无可测进度，不挂无信息量的 0% */}
+      {doc.status === "indexing" && (
+        <span className="text-muted-foreground text-xs">
+          {doc.progress_percent}%
+        </span>
+      )}
+    </span>
+  );
+  // 失败态（2026-08-31）：重试不占操作列，悬停失败状态出卡片；行级 ⋯ 与右键
+  // 菜单都保留重试兜底，所以本列被隐藏时重试入口不会跟着消失。
+  // P3：path_status 非 null 才挂悬停（老行/未进索引不展示）。
+  const content =
+    doc.status === "failed" ? (
+      <HoverCard closeDelay={200} openDelay={150}>
+        <HoverCardTrigger asChild>
+          <span className="cursor-default" data-testid="doc-retry-trigger">
+            {indicator}
+          </span>
+        </HoverCardTrigger>
+        <HoverCardContent
+          align="start"
+          className="w-60 p-3"
+          data-testid="doc-retry-card"
+          side="top"
+        >
+          <p className="text-muted-foreground mb-2 text-xs">
+            {tk.docErrors[classifyDocError(doc.error)]}
+          </p>
+          <Button
+            className="h-7 gap-1.5 px-2.5"
+            size="sm"
+            onClick={() => onRetryDocument(doc.id)}
+          >
+            <RotateCcw className="size-3.5" />
+            {tk.retryDocument}
+          </Button>
+        </HoverCardContent>
+      </HoverCard>
+    ) : doc.path_status ? (
+      <Tooltip content={<PathStatusBreakdown doc={doc} />}>{indicator}</Tooltip>
+    ) : (
+      indicator
+    );
+  // 单元格单行（2026-08-31）：错误行已删，不再需要 flex-col 叠放，nowrap
+  // 防换行（图 1 反馈失败行被撑高）。
+  return <td className="px-2 py-2 whitespace-nowrap">{content}</td>;
+}
+
+/**
  * Documents pane of the middle column (spec §5.2/§3.6). Presentational: the
  * page owns data fetching, polling (via `useDocuments`), and mutations.
  * Library-level actions (rename/delete/generate wiki) live in the
@@ -361,8 +448,6 @@ export function DocumentPanel({
   const [deleteTargets, setDeleteTargets] = useState<string[] | null>(null);
 
   const stats = aggregateDocumentStats(documents);
-  const statusText = (status: KnowledgeDocumentStatus) =>
-    tk.status[status] ?? status;
   // The list endpoint returns the full collection, so the toolbar filter and
   // sort stay client-side (spec §5.2); the stats row always aggregates the
   // unfiltered list.
@@ -629,7 +714,7 @@ export function DocumentPanel({
                   Trigger asChild 直接落在 tr 上（thead 的 DOM 子仍是 tr，Content 走 portal）。 */}
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
-                    <tr className="text-muted-foreground h-9 text-left text-xs whitespace-nowrap">
+                    <tr className="group/colhead text-muted-foreground h-9 text-left text-xs whitespace-nowrap">
                       {/* 复选框列用内层 flex 几何居中（2026-09-02）：inline strut 居中受字号/
                     行高环境影响（12/16 strut 偏上 1.7，14/20 才正中），两表口径不同就错位；
                     flex 按盒子几何居中，与字体环境无关。不能给 th 自身挂 flex——
@@ -647,10 +732,19 @@ export function DocumentPanel({
                         {tk.table.name}
                       </th>
                       {/* 状态提到上传者前（2026-09-02）：状态是核心高频元数据（直接决定用户操作），
-                    上传者在个人库信息量低（几乎都是「我」），故状态紧随名称。 */}
-                      <th className="bg-background sticky top-0 z-10 px-2 text-xs font-medium shadow-[inset_0_-1px_0_var(--border)]">
-                        {tk.table.status}
-                      </th>
+                    上传者在个人库信息量低（几乎都是「我」），故状态紧随名称。
+                    09-03 起接入统一列显隐：表头换 HideableColumnHeader，chevron
+                    菜单只有「隐藏列」（状态无格式/单位可切）。 */}
+                      {!prefs.hidden.includes("status") && (
+                        <HideableColumnHeader
+                          columnId="status"
+                          label={tk.table.status}
+                          prefs={prefs}
+                          onToggleColumn={toggleColumn}
+                          onSetTimeFormat={setTimeFormat}
+                          onSetSizeUnit={setSizeUnit}
+                        />
+                      )}
                       {!prefs.hidden.includes("uploader") && (
                         <HideableColumnHeader
                           columnId="uploader"
@@ -696,7 +790,7 @@ export function DocumentPanel({
                       {/* 尾部窄列（2026-08-31）：数据行承接悬停三个点；表头（2026-09-02 Task 6）
                     放 hover 淡入的「列」总控按钮——零新增列、不占工具栏，与数据行三点同列
                     对齐（表头=列级操作，数据行=行级操作）。列出可隐藏列勾选显隐 + 全部显示。 */}
-                      <th className="group/colhead bg-background sticky top-0 z-10 w-10 shadow-[inset_0_-1px_0_var(--border)]">
+                      <th className="bg-background sticky top-0 z-10 w-10 shadow-[inset_0_-1px_0_var(--border)]">
                         <div className="flex h-9 items-center justify-end pr-1">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -804,98 +898,14 @@ export function DocumentPanel({
                               <span className="truncate">{doc.name}</span>
                             </div>
                           </td>
-                          {/* 状态单元格单行（2026-08-31）：错误行已删，不再需要 flex-col 叠放，
-                      nowrap 防换行（图 1 反馈失败行被撑高）；失败态重试收进悬停卡片 */}
-                          <td className="px-2 py-2 whitespace-nowrap">
-                            {(() => {
-                              const statusIndicator = (
-                                <span
-                                  className="relative flex w-fit items-center gap-1"
-                                  data-testid={
-                                    doc.path_status
-                                      ? "path-status-trigger"
-                                      : undefined
-                                  }
-                                >
-                                  {/* 悬挂标记：-left-2.5 = 点 6px + 间隙 4px，与 td 的
-                                    px-2 配对，文字左缘才压得住表头那条线 */}
-                                  <span
-                                    aria-hidden
-                                    className={cn(
-                                      "absolute top-1/2 -left-2.5 size-1.5 -translate-y-1/2 rounded-full",
-                                      STATUS_DOT_CLASS[doc.status] ??
-                                        "bg-muted-foreground/60",
-                                    )}
-                                  />
-                                  <span
-                                    className={cn(
-                                      "text-xs",
-                                      doc.status === "failed"
-                                        ? "text-destructive"
-                                        : "text-muted-foreground",
-                                    )}
-                                  >
-                                    {statusText(doc.status)}
-                                  </span>
-                                  {/* 百分比只在 indexing 显示——前置阶段（解析/切片）无可测进度，不挂无信息量的 0% */}
-                                  {doc.status === "indexing" && (
-                                    <span className="text-muted-foreground text-xs">
-                                      {doc.progress_percent}%
-                                    </span>
-                                  )}
-                                </span>
-                              );
-                              // 失败态（2026-08-31）：重试不占操作列，悬停失败状态出卡片——
-                              // 友好原因 + 重试按钮（HoverCard 支持交互内容，Tooltip 不支持）；
-                              // 右键菜单仍保留重试兜底（既有）。
-                              if (doc.status === "failed") {
-                                return (
-                                  <HoverCard closeDelay={200} openDelay={150}>
-                                    <HoverCardTrigger asChild>
-                                      <span
-                                        className="cursor-default"
-                                        data-testid="doc-retry-trigger"
-                                      >
-                                        {statusIndicator}
-                                      </span>
-                                    </HoverCardTrigger>
-                                    <HoverCardContent
-                                      align="start"
-                                      className="w-60 p-3"
-                                      data-testid="doc-retry-card"
-                                      side="top"
-                                    >
-                                      <p className="text-muted-foreground mb-2 text-xs">
-                                        {
-                                          tk.docErrors[
-                                            classifyDocError(doc.error)
-                                          ]
-                                        }
-                                      </p>
-                                      <Button
-                                        className="h-7 gap-1.5 px-2.5"
-                                        size="sm"
-                                        onClick={() => onRetryDocument(doc.id)}
-                                      >
-                                        <RotateCcw className="size-3.5" />
-                                        {tk.retryDocument}
-                                      </Button>
-                                    </HoverCardContent>
-                                  </HoverCard>
-                                );
-                              }
-                              // P3：path_status 非 null 才挂悬停（老行/未进索引不展示）
-                              return doc.path_status ? (
-                                <Tooltip
-                                  content={<PathStatusBreakdown doc={doc} />}
-                                >
-                                  {statusIndicator}
-                                </Tooltip>
-                              ) : (
-                                statusIndicator
-                              );
-                            })()}
-                          </td>
+                          {/* 状态列（2026-09-03 接入列显隐）：单元格内容已提为
+                      DocumentStatusCell，与其他可隐藏列同构（短块 + 条件渲染）。 */}
+                          {!prefs.hidden.includes("status") && (
+                            <DocumentStatusCell
+                              doc={doc}
+                              onRetryDocument={onRetryDocument}
+                            />
+                          )}
                           {/* 上传者内容内缩一档（2026-08-31）：表头 12px 浅灰、内容 14px 深色，
                             重墨色视觉上会「抢出来」，pl-3 比表头 px-2 多缩 4px 做光学校正。
                             列序：状态提前后，上传者落在状态与时间之间（2026-09-02）。 */}

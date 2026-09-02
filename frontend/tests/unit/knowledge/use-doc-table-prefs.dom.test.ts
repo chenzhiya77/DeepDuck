@@ -123,14 +123,15 @@ describe("useDocTablePrefs", () => {
     window.localStorage.setItem(
       key("kb-1"),
       JSON.stringify({
-        hidden: ["name", "uploader", "bogus"],
+        hidden: ["name", "status", "uploader", "bogus"],
         timeFormat: "weird",
         sizeUnit: "gb",
       }),
     );
     const { result } = renderHook(() => useDocTablePrefs("kb-1"));
-    // name 不可隐藏、bogus 非法 → 都滤掉，只留合法的 uploader。
-    expect(result.current.prefs.hidden).toEqual(["uploader"]);
+    // name 不可隐藏、bogus 非法 → 都滤掉；status 自 2026-09-03 起可隐藏，
+    // 与 uploader 一并保留（filter 保序，不重排）。
+    expect(result.current.prefs.hidden).toEqual(["status", "uploader"]);
     expect(result.current.prefs.timeFormat).toBe("absolute");
     expect(result.current.prefs.sizeUnit).toBe("kb");
   });

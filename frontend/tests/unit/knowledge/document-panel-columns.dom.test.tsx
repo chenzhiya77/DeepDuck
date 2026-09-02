@@ -131,19 +131,37 @@ describe("列显隐：偏好驱动条件渲染", () => {
     expect(headerLabels()).toEqual(["", "名称", "状态", "上传者", ""]);
   });
 
-  it("名称/状态不可隐藏：即使偏好里塞入也被类型守卫滤掉，列仍在", () => {
+  it("名称不可隐藏：即使偏好里塞入也被类型守卫滤掉，列仍在", () => {
     // writeDocTablePrefs 直接写入（绕过 hook 的 sanitize），验证渲染层也不塌。
     window.localStorage.setItem(
       `deerflow.knowledge.doc-table-prefs.${KB.id}.v1`,
       JSON.stringify({
-        hidden: ["name", "status"],
+        hidden: ["name"],
         timeFormat: "absolute",
         sizeUnit: "kb",
       }),
     );
     renderPanel();
     expect(screen.getByText("名称")).toBeTruthy();
-    expect(screen.getByText("状态")).toBeTruthy();
+  });
+
+  // 状态列自 2026-09-03 接入同一套隐藏逻辑（原本与名称一同钉死）。
+  // 本用例同时守住类型守卫：偏好经 writeDocTablePrefs → readDocTablePrefs
+  // 往返，若 status 仍被过滤则列不会隐，测试即红。
+  it("隐藏状态列：th 与状态单元格一起消失，其余列保持", () => {
+    renderPanel({ hidden: ["status"] });
+    expect(screen.queryByText("状态")).toBeNull();
+    expect(headerLabels()).toEqual([
+      "",
+      "名称",
+      "上传者",
+      "时间",
+      "大小",
+      "切片数",
+      "",
+    ]);
+    // td 与 th 同步收缩（否则表头与数据错列）：8 列 → 7 列。
+    expect(screen.getAllByRole("cell")).toHaveLength(7);
   });
 });
 
@@ -192,6 +210,18 @@ describe("单列表头 chevron 菜单（Task 5）", () => {
     expect(screen.queryByText("我")).toBeNull();
   });
 
+  it("状态列菜单：只有隐藏列（无格式/单位可切）", () => {
+    renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "状态 列选项" }), {
+      key: "ArrowDown",
+    });
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["隐藏列"]);
+    fireEvent.click(items[0]!);
+    expect(screen.queryByText("状态")).toBeNull();
+    expect(screen.getAllByRole("cell")).toHaveLength(7);
+  });
+
   it("时间列菜单：切换到相对格式", () => {
     const threeDaysAgo = new Date(Date.now() - 3 * DAY_MS).toISOString();
     renderPanel({}, [doc({ created_at: threeDaysAgo })]);
@@ -218,11 +248,22 @@ describe("表头末尾 Columns 总控（Task 6）", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "列" }), {
       key: "ArrowDown",
     });
+    expect(screen.getByRole("menuitem", { name: "状态" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "上传者" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "时间" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "大小" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "切片数" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "全部显示" })).toBeTruthy();
+  });
+
+  it("「列」按钮 hover 范围覆盖整行表头（group/colhead 挂在 tr 上，2026-09-02）", () => {
+    renderPanel();
+    const columnsButton = screen.getByRole("button", { name: "列" });
+    // 淡入门控仍用 group-hover/colhead；但 group/colhead 已上移到表头 tr，
+    // 故悬停任意表头格（名称/状态/上传者…）都触发，不再局限末尾窄列。
+    expect(columnsButton.className).toContain("group-hover/colhead:opacity-100");
+    const headerRow = columnsButton.closest("tr")!;
+    expect(headerRow.className).toContain("group/colhead");
   });
 
   it("点列项切换显隐：隐藏上传者列", () => {
@@ -253,6 +294,7 @@ describe("表头右键菜单兜底（Task 7）", () => {
     renderPanel();
     const headerRow = screen.getAllByRole("columnheader")[0]!.closest("tr")!;
     fireEvent.contextMenu(headerRow);
+    expect(screen.getByRole("menuitem", { name: "状态" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "上传者" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "切片数" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "全部显示" })).toBeTruthy();
