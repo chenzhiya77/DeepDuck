@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
 import type { WikiEntrySummary } from "@/core/knowledge/types";
@@ -162,6 +163,17 @@ export function WikiPanel({
           <Badge className="ml-1" variant="secondary">
             {entries.length}
           </Badge>
+          {/* 更新中徽章（2026-09-02）：原独立提示行挤占条目空间，收进头行——
+              spinner + 短文案「更新中」，完整说明进 tooltip；与 row 级 dirty/updating
+              徽章同款 h-5 py-0，在 toggle 按钮内故收起态也可见。 */}
+          {updating && (
+            <Tooltip content={tw.updatingHint}>
+              <Badge className="ml-1 h-5 gap-1 py-0" data-testid="wiki-updating-hint" variant="secondary">
+                <Loader2 className="size-3 animate-spin" />
+                {tw.updating}
+              </Badge>
+            </Tooltip>
+          )}
         </button>
         {effectiveExpanded && visibleEntries.length > 0 && (
           <Checkbox
@@ -171,16 +183,6 @@ export function WikiPanel({
           />
         )}
       </div>
-
-      {updating && (
-        <p
-          className="text-muted-foreground flex shrink-0 items-center gap-1.5 px-4 pb-1 text-xs"
-          data-testid="wiki-updating-hint"
-        >
-          <Loader2 className="size-3 animate-spin" />
-          {tw.updatingHint}
-        </p>
-      )}
 
       {effectiveExpanded && (
         <>

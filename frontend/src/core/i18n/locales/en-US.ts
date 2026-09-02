@@ -737,9 +737,9 @@ export const enUS: Translations = {
       loading: "Loading…",
       dirty: "Stale",
       updating: "Updating",
-      updatingHint: "Wiki updating — entries refresh one by one as they finish",
+      updatingHint: "Entries refresh one by one as they finish",
       updatedAt: "Updated",
-      sectionTitle: "AI Entries",
+      sectionTitle: "Generated Entries",
       selectEntry: "Select entry",
       openEntry: "Open details",
       editEntry: "Edit entry",
@@ -779,7 +779,7 @@ export const enUS: Translations = {
     },
     /** Phase-3 Batch-1 P6: manual knowledge cards (spec §8). */
     manualCards: {
-      sectionTitle: "My Knowledge Cards",
+      sectionTitle: "My Entries",
       newCard: "New Card",
       empty: "No cards yet — click 'New Card' to capture what you know",
       loading: "Loading…",

@@ -701,9 +701,9 @@ export const zhCN: Translations = {
       loading: "加载中…",
       dirty: "待更新",
       updating: "更新中",
-      updatingHint: "百科更新中，条目随生成进度逐条刷新",
+      updatingHint: "条目随生成进度逐条刷新",
       updatedAt: "更新于",
-      sectionTitle: "AI 条目",
+      sectionTitle: "生成条目",
       selectEntry: "选择条目",
       openEntry: "打开详情",
       editEntry: "编辑条目",
@@ -739,7 +739,7 @@ export const zhCN: Translations = {
     },
     /** Phase-3 Batch-1 P6: manual knowledge cards (spec §8). */
     manualCards: {
-      sectionTitle: "我的知识卡片",
+      sectionTitle: "我的条目",
       newCard: "新建卡片",
       empty: "还没有知识卡片，点击「新建卡片」沉淀你的经验",
       loading: "加载中…",

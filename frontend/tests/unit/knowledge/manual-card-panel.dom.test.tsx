@@ -82,7 +82,7 @@ function setupMocks({ cardsPage = CARDS_PAGE, isLoading = false, cardDetail = nu
   return { createCard, updateCard, deleteCard };
 }
 
-function renderPanel(props?: { onOpenCard?: (cardId: string) => void }) {
+function renderPanel(props?: { onOpenCard?: (cardId: string) => void; active?: boolean }) {
   return render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
       <ManualCardPanel kbId="kb-1" {...props} />
@@ -97,6 +97,23 @@ function renderExpanded(props?: { onOpenCard?: (cardId: string) => void }) {
   return utils;
 }
 
+/** 头部「新建卡片」按钮已移除（2026-09-02，⋯ 菜单为唯一入口）——创建框改由
+ *  createSignal 触发：先挂载 createSignal=0，再 rerender 到 1，派生状态监听增量
+ *  弹框（并自动展开卡片区）。 */
+function renderWithCreateOpen() {
+  const utils = render(
+    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <ManualCardPanel kbId="kb-1" createSignal={0} />
+    </I18nContext.Provider>,
+  );
+  utils.rerender(
+    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <ManualCardPanel kbId="kb-1" createSignal={1} />
+    </I18nContext.Provider>,
+  );
+  return utils;
+}
+
 afterEach(() => {
   cleanup();
   rs.clearAllMocks();
@@ -107,12 +124,29 @@ describe("ManualCardPanel", () => {
     setupMocks();
     renderPanel();
 
-    expect(screen.getByText("我的知识卡片")).toBeTruthy();
+    expect(screen.getByText("我的条目")).toBeTruthy();
     expect(screen.queryByText("发布禁令")).toBeNull();
 
     fireEvent.click(screen.getByTestId("manual-cards-toggle"));
     expect(screen.getByText("发布禁令")).toBeTruthy();
     expect(screen.getByText("回滚流程")).toBeTruthy();
+  });
+
+  it("取数门控为 tab 激活而非分区展开：收起态即拉取，计数徽章可见（2026-09-02）", () => {
+    setupMocks();
+    // active=true 但分区默认收起——取数仍应触发（与 AI 条目 useWikiEntries 同节奏）。
+    // 修复前门控是 effectiveExpanded（收起=false）→ 收起态 total=0、无计数徽章。
+    renderPanel({ active: true });
+    expect(useManualCards).toHaveBeenCalledWith("kb-1", true);
+    // 收起态：列表行不渲染，但计数徽章「2」已在头行可见（与生成条目一致）。
+    expect(screen.queryByText("发布禁令")).toBeNull();
+    expect(screen.getByTestId("manual-cards-toggle").textContent).toContain("2");
+  });
+
+  it("tab 未激活时不取数（keep-alive 懒门控）", () => {
+    setupMocks();
+    renderPanel(); // active 默认 false
+    expect(useManualCards).toHaveBeenCalledWith("kb-1", false);
   });
 
   it("reveals row actions on hover like the AI rows (no permanent right gutter)", () => {
@@ -127,18 +161,6 @@ describe("ManualCardPanel", () => {
     const actionBar = switchEl.closest("div.absolute");
     expect(actionBar?.className).toContain("opacity-0");
     expect(actionBar?.className).toContain("group-hover:opacity-100");
-  });
-
-  it("places 新建卡片 before the select-all checkbox so the checkbox aligns with the AI section", () => {
-    setupMocks();
-    renderExpanded();
-
-    const newCardButton = screen.getByRole("button", { name: "新建卡片" });
-    const selectAll = screen.getByRole("checkbox", { name: "全选" });
-    // 新建在左、全选贴右边缘（与 AI 条目区 header 中的全选位置对齐）
-    expect(
-      newCardButton.compareDocumentPosition(selectAll) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("shows the 混入搜索 badge only on opted-in cards", () => {
@@ -171,9 +193,8 @@ describe("ManualCardPanel", () => {
 
   it("creates a card from the dialog with validation", async () => {
     const { createCard } = setupMocks();
-    renderExpanded();
+    renderWithCreateOpen();
 
-    fireEvent.click(screen.getByRole("button", { name: "新建卡片" }));
     const saveButton = screen.getByRole("button", { name: "保存" });
     expect((saveButton as HTMLButtonElement).disabled).toBe(true);
 
@@ -195,8 +216,7 @@ describe("ManualCardPanel", () => {
 
   it("keeps the editor textarea constrained to the dialog width (min-w-0 chain) so long lines soft-wrap", async () => {
     setupMocks();
-    renderExpanded();
-    fireEvent.click(screen.getByRole("button", { name: "新建卡片" }));
+    renderWithCreateOpen();
 
     // field-sizing-content 的 textarea 把「内容不换行宽度」作为 min-content 贡献
     // 沿 grid/flex item 链向上传递撑宽对话框（修复前：输入框超出编辑界面）。

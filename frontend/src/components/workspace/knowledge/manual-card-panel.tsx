@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Pencil, Plus, SearchCheck, SearchX, StickyNote, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, SearchCheck, SearchX, StickyNote, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -157,11 +157,18 @@ function ManualCardEditor({
  */
 export function ManualCardPanel({
   kbId,
+  active = false,
   query = "",
   createSignal = 0,
   onOpenCard,
 }: {
   kbId: string;
+  /**
+   * 百科 tab 是否激活（2026-09-02）：卡片列表取数门控从「分区展开」上移到「tab 激活」，
+   * 与 AI 条目（useWikiEntries）同节奏——tab 一打开即取数，故收起态也能显示计数徽章
+   * （此前收起时 total=0、徽章不渲染，与生成条目不一致）。
+   */
+  active?: boolean;
   /** Unified wiki-tab search text (title/summary/tags containment, client-side). */
   query?: string;
   /**
@@ -199,11 +206,12 @@ export function ManualCardPanel({
   }
 
   const searching = query.trim() !== "";
-  // 搜索期间强制展开并放开 lazy fetch——收起的区永远搜不到。
+  // 搜索期间强制展开（收起的区永远搜不到）；取数已由 active 门控，与展开无关。
   const effectiveExpanded = expanded || searching;
 
-  // Lazy: the list fetches once the section is expanded (or a search is on).
-  const cardsQuery = useManualCards(kbId, effectiveExpanded);
+  // 取数门控 = tab 激活（非分区展开）：与 AI 条目同节奏，收起态也有 total 供计数徽章。
+  // 列表「渲染」仍由 effectiveExpanded 门控（下方 JSX）——取数与渲染解耦。
+  const cardsQuery = useManualCards(kbId, active);
   const cards = useMemo(() => cardsQuery.data?.items ?? [], [cardsQuery.data]);
   const total = cardsQuery.data?.total ?? 0;
 
@@ -254,10 +262,6 @@ export function ManualCardPanel({
   };
   const selectedCards = () => cards.filter((card) => selectedIds.has(card.id));
 
-  const openCreate = () => {
-    setEditingId(null);
-    setEditorOpen(true);
-  };
   const openEdit = (card: ManualCardSummary) => {
     setEditingId(card.id);
     setEditorOpen(true);
@@ -308,9 +312,9 @@ export function ManualCardPanel({
       className={cn("border-t", effectiveExpanded ? "flex min-h-0 flex-1 flex-col" : "flex shrink-0 flex-col")}
       data-testid="manual-cards-section"
     >
-      {/* Section header: collapse toggle + count + 新建卡片 (creation stays
-          reachable while collapsed) + select-all pinned to the right edge
-          (aligned with the AI entries section header above). */}
+      {/* Section header: collapse toggle + count badge + select-all pinned to
+          the right edge (aligned with the AI entries section header above).
+          计数徽章取 total（tab 激活即有），收起态也显示，与生成条目一致。 */}
       <div className="flex shrink-0 items-center gap-1 pr-3">
         <button
           aria-expanded={effectiveExpanded}
@@ -327,10 +331,6 @@ export function ManualCardPanel({
             </Badge>
           )}
         </button>
-        <Button className="h-7" size="sm" variant="outline" onClick={openCreate}>
-          <Plus className="size-4" />
-          {tc.newCard}
-        </Button>
         {effectiveExpanded && visibleCards.length > 0 && (
           <Checkbox
             aria-label={tk.selectAllDocuments}

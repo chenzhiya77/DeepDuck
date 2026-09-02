@@ -1,12 +1,13 @@
 /**
  * Manual-card panel interactions after the wiki tab redesign: the section
  * shares the tab's unified search box (title/summary/tags containment;
- * searching force-fetches and force-expands the collapsed section), the
- * section header carries the 新建卡片 button (reachable while collapsed), and
+ * searching force-expands the collapsed section, while the list fetch is
+ * gated on tab-activation so the count badge shows even when collapsed), and
  * rows carry the document-table model — checkbox multi-select + batch delete
  * (irreversibility copy) and a right-click context menu (open / edit /
  * include-toggle / 取消选择 / 删除所选; batch variant inside a
- * multi-selection). 批量操作栏已退役（2026-09-02）：批量动作全由右键菜单承接。
+ * multi-selection). 批量操作栏已退役（2026-09-02）：批量动作全由右键菜单承接；
+ * 卡片区头部「新建卡片」按钮已移除，⋯ 菜单为唯一入口。
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -102,10 +103,11 @@ afterEach(async () => {
 });
 
 describe("ManualCardPanel search filtering", () => {
-  it("force-fetches and force-expands the collapsed section while searching", () => {
+  it("force-expands the collapsed section while searching; fetch gated on tab-active（2026-09-02）", () => {
     setupMocks();
-    renderPanel({ query: "发布" });
-    // 收起状态 + 搜索 → enabled 必须放开（否则收起的区永远搜不到）
+    // 搜索发生在 tab 激活时（active=true）→ 取数已放开（门控从「分区展开/搜索」上移到
+    // 「tab 激活」）；搜索另触发强制展开（渲染门控），故收起的区也能被搜到。
+    renderPanel({ query: "发布", active: true });
     expect(rs.mocked(useManualCards).mock.calls[0]?.slice(0, 2)).toEqual(["kb-1", true]);
     expect(screen.getByText("发布禁令")).toBeTruthy();
     expect(screen.queryByText("回滚流程")).toBeNull();
@@ -211,15 +213,5 @@ describe("ManualCardPanel context menu", () => {
     // 批量栏退役后，计数反馈唯一载体是菜单标签。
     expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
     await settleMenu();
-  });
-});
-
-describe("ManualCardPanel header", () => {
-  it("keeps the 新建卡片 button reachable while collapsed", () => {
-    setupMocks();
-    renderPanel();
-    // 收起状态即可见（按钮在 section header，不依赖展开）
-    expect(screen.getByRole("button", { name: "新建卡片" })).toBeTruthy();
-    expect(screen.queryByText("发布禁令")).toBeNull();
   });
 });

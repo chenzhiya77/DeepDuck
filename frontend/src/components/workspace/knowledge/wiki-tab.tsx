@@ -34,6 +34,7 @@ export function WikiTab({
   entries,
   entriesLoading = false,
   updating = false,
+  active = false,
   onGenerateWiki,
   onRegenerateEntries,
   onOpenEntry,
@@ -45,6 +46,11 @@ export function WikiTab({
   entries: WikiEntrySummary[];
   entriesLoading?: boolean;
   updating?: boolean;
+  /**
+   * 百科 tab 是否激活（2026-09-02）：透传给 ManualCardPanel 作卡片取数门控，
+   * 与 entries（useWikiEntries）同节奏——tab 激活即取数，收起态也显示计数。
+   */
+  active?: boolean;
   /**
    * 百科维护动作（2026-08-30）：更新/重建本是百科功能，此前只在全局库菜单；
    * tab 内 ⋯ 承接同一触发器，与全局双入口。
@@ -125,7 +131,7 @@ export function WikiTab({
         onOpenEntry={onOpenEntry}
         onRegenerateEntries={onRegenerateEntries}
       />
-      <ManualCardPanel kbId={kbId} query={query} createSignal={cardCreateSignal} onOpenCard={onOpenCard} />
+      <ManualCardPanel kbId={kbId} active={active} query={query} createSignal={cardCreateSignal} onOpenCard={onOpenCard} />
       {/* 重建确认弹窗：与全局库菜单共用同一共享组件 */}
       <WikiRebuildDialog
         open={rebuildOpen}

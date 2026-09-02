@@ -270,8 +270,8 @@ describe("WikiPanel", () => {
       <WikiPanel entries={[ENTRY, DIRTY_ENTRY]} updating onOpenEntry={() => undefined} onDeleteEntry={() => undefined} />,
     );
     expect(screen.getByTestId("wiki-updating-hint")).toBeTruthy();
-    // only the dirty row flips to 更新中; the ready row stays badgeless
-    expect(screen.getAllByText("更新中")).toHaveLength(1);
+    // 头行更新中徽章 + dirty 行徽章各一个「更新中」（共 2）；ready 行无徽章
+    expect(screen.getAllByText("更新中")).toHaveLength(2);
     expect(screen.queryByText("待更新")).toBeNull();
   });
 

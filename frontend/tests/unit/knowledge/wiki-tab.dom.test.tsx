@@ -87,8 +87,8 @@ describe("WikiTab", () => {
     setupMocks();
     renderTab();
     expect(screen.getByPlaceholderText("搜索百科条目与卡片…")).toBeTruthy();
-    expect(screen.getByTestId("wiki-entries-toggle").textContent).toContain("AI 条目");
-    expect(screen.getByTestId("manual-cards-toggle").textContent).toContain("我的知识卡片");
+    expect(screen.getByTestId("wiki-entries-toggle").textContent).toContain("生成条目");
+    expect(screen.getByTestId("manual-cards-toggle").textContent).toContain("我的条目");
   });
 
   it("filters both sections with one query (cards force-expand to show matches)", () => {
@@ -152,11 +152,12 @@ describe("WikiTab 百科操作菜单", () => {
     const onGenerateWiki = rs.fn();
     renderTab({ onGenerateWiki, updating: true });
     fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), { key: "ArrowDown" });
-    const updateItem = (await screen.findByText("更新中")).closest("[role='menuitem']");
+    // 头行更新中徽章也含「更新中」文案（2026-09-02），故按 menuitem 角色精确定位菜单项。
+    const updateItem = await screen.findByRole("menuitem", { name: "更新中" });
     const rebuildItem = (await screen.findByText("重建百科")).closest("[role='menuitem']");
     expect(updateItem?.getAttribute("aria-disabled")).toBe("true");
     expect(rebuildItem?.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(updateItem as HTMLElement);
+    fireEvent.click(updateItem);
     expect(onGenerateWiki).not.toHaveBeenCalled();
   });
 
@@ -164,7 +165,7 @@ describe("WikiTab 百科操作菜单", () => {
     setupMocks();
     renderTab();
     fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), { key: "ArrowDown" });
-    // 用 menuitem 角色区分：卡片区头部也有同名「新建卡片」按钮（role=button）。
+    // 用 menuitem 角色定位 ⋯ 菜单项（卡片区头部「新建卡片」按钮已移除，⋯ 菜单为唯一入口）。
     const newCardItem = await screen.findByRole("menuitem", { name: "新建卡片" });
     expect(newCardItem.querySelector("svg")).toBeTruthy();
     // 新建卡片不受 updating 影响，始终可用。

@@ -450,6 +450,7 @@ export default function KnowledgePage() {
                   kbId={selectedKb.id}
                   entriesLoading={wikiEntriesQuery.isLoading}
                   updating={wikiUpdating}
+                  active={activeTab === "wiki"}
                   onGenerateWiki={handleGenerateWiki}
                   onRegenerateEntries={handleRegenerateEntries}
                   onDeleteEntry={(entry) => {
