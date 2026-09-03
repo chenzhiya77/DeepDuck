@@ -1,13 +1,17 @@
 /**
- * 知识面板时间格式化（2026-09-02，方案 Task 2）：绝对（现有）+ 相对（新增）。
- * 相对时间用 Intl.RelativeTimeFormat；测试注入固定 now + 明确时间差，断言单位
- * 关键字（不精确匹配数字格式，规避 ICU 版本差异），"刚刚/just now" 为硬编码精确断言。
+ * 知识面板格式化纯函数（node 环境）。
+ *  - formatKnowledgeTimestamp / formatKnowledgeRelativeTime（2026-09-02，方案 Task 2）：
+ *    绝对 + 相对时间。相对时间用 Intl.RelativeTimeFormat；测试注入固定 now + 明确时间差，
+ *    断言单位关键字（不精确匹配数字格式，规避 ICU 版本差异），"刚刚/just now" 为硬编码精确断言。
+ *  - stripSummaryHeading（2026-09-03）：后端 summary = content[:120]，content 以 markdown
+ *    「# 实体名」H1 开头，故剥掉这行标题、保留正文（正文里的标题按用户口径保留、不去重）。
  */
 import { describe, expect, test } from "@rstest/core";
 
 import {
   formatKnowledgeRelativeTime,
   formatKnowledgeTimestamp,
+  stripSummaryHeading,
 } from "@/core/knowledge/format";
 
 const NOW = Date.UTC(2026, 8, 2, 12, 0, 0); // 2026-09-02T12:00:00Z
@@ -99,5 +103,52 @@ describe("formatKnowledgeRelativeTime（相对，新增）", () => {
     expect(formatKnowledgeRelativeTime("not-a-date", "zh-CN", NOW)).toBe(
       "not-a-date",
     );
+  });
+});
+
+describe("stripSummaryHeading（剥摘要开头 H1 标题行，2026-09-03）", () => {
+  test("剥掉开头的 markdown 一级标题行，保留正文", () => {
+    expect(
+      stripSummaryHeading(
+        "# DeerFlow\n\nDeerFlow 是一个 LangGraph 超级代理系统",
+      ),
+    ).toBe("DeerFlow 是一个 LangGraph 超级代理系统");
+  });
+
+  test("标题与正文间的多个空行一并清掉", () => {
+    expect(stripSummaryHeading("# Gateway\n\n\n网关负责统一鉴权与路由")).toBe(
+      "网关负责统一鉴权与路由",
+    );
+  });
+
+  test("无空格的 #标题 也剥", () => {
+    expect(stripSummaryHeading("#沙箱\n代码在隔离环境中执行")).toBe(
+      "代码在隔离环境中执行",
+    );
+  });
+
+  test("正文里再次出现的标题保留（有语义的定义句，不去重）", () => {
+    expect(stripSummaryHeading("# DeerFlow\n\nDeerFlow 具备沙箱执行能力")).toBe(
+      "DeerFlow 具备沙箱执行能力",
+    );
+  });
+
+  test("只有标题行、无正文时返回空串", () => {
+    expect(stripSummaryHeading("# DeerFlow")).toBe("");
+    expect(stripSummaryHeading("# DeerFlow\n")).toBe("");
+  });
+
+  test("不以 # 开头时原样返回（人工卡片内容通常无 H1）", () => {
+    expect(stripSummaryHeading("周五下午不发布")).toBe("周五下午不发布");
+  });
+
+  test("只剥开头一行标题，正文中的 ## 子标题不动", () => {
+    expect(stripSummaryHeading("# 标题\n\n## 小节\n正文")).toBe(
+      "## 小节\n正文",
+    );
+  });
+
+  test("多级标题（## / ###）也能剥", () => {
+    expect(stripSummaryHeading("## 二级标题\n正文内容")).toBe("正文内容");
   });
 });

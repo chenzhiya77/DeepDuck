@@ -58,3 +58,15 @@ export function formatKnowledgeRelativeTime(
   // 兜底（理论上 <1min 已拦截，不会到这）：按分钟。
   return rtf.format(Math.round(diffMs / 60_000), "minute");
 }
+
+/**
+ * 剥掉摘要开头的 markdown 一级标题行（2026-09-03）。
+ * 后端 summary = content[:120]（knowledge_service.list_wiki_entries），而 content 由提示词
+ * 强制以「# 实体名」H1 开头（wiki/generator.py WIKI_SYSTEM_PROMPT），故列表摘要会以原始
+ * markdown「# 标题」起头。标题已在行内单独渲染，这里只剥掉这行 H1、保留正文；正文首段常
+ * 再含标题（"DeerFlow 是一个…"），那是有语义的定义句，按用户口径保留、不去重。
+ * 非 # 开头原样返回（人工卡片内容通常无 H1）。
+ */
+export function stripSummaryHeading(summary: string): string {
+  return summary.replace(/^#{1,6}[^\n]*\n?/, "").trim();
+}

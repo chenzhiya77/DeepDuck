@@ -277,6 +277,18 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0.0098 87.47);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Wiki tab card-container families (2026-09-03): cool = generated entries,
+     warm = manual cards. fg = icon/count/chevron, bg = header band,
+     ring = count-pill hairline. Used via bg-[var(--wiki-*-bg)] etc. */
+  --wiki-ai: #5b6b7c;
+  --wiki-ai-bg: #edf1f5;
+  --wiki-ai-bg-hover: #e2e8ee;
+  --wiki-ai-ring: #d8e0e8;
+  --wiki-card: #a8762f;
+  --wiki-card-bg: #f6efe2;
+  --wiki-card-bg-hover: #eee3d0;
+  --wiki-card-ring: #eadcc4;
 }
 
 html.dark .shiki span {
@@ -315,6 +327,16 @@ html.dark .shiki span {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* Wiki tab card-container families — dark variants (2026-09-03). */
+  --wiki-ai: #9db0c2;
+  --wiki-ai-bg: #272f38;
+  --wiki-ai-bg-hover: #313b45;
+  --wiki-ai-ring: #46505b;
+  --wiki-card: #cba877;
+  --wiki-card-bg: #332b20;
+  --wiki-card-bg-hover: #3d3428;
+  --wiki-card-ring: #4d4231;
   font-weight: 300;
 }
 

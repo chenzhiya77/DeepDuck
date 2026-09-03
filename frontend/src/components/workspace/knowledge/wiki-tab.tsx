@@ -1,6 +1,15 @@
 "use client";
 
-import { BookOpen, Loader2, MoreHorizontal, Plus, RefreshCw, Search, X } from "lucide-react";
+import {
+  BookOpen,
+  FolderPlus,
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,13 +30,16 @@ import { WikiPanel } from "./wiki-panel";
 import { WikiRebuildDialog } from "./wiki-rebuild-dialog";
 
 /**
- * Wiki tab content (split-section layout): one unified search box above two
- * independently collapsible sections — the AI entries (WikiPanel, default
- * expanded) and the user's manual cards (ManualCardPanel, default
- * collapsed). Each expanded section scrolls on its own; collapsing one
- * yields the whole column to the other, so a growing card list can never
- * squeeze the AI entries section. The query is owned here and passed down,
- * so one box filters both sections and typing clears both selections.
+ * Wiki tab content (split-section layout, 2026-09-03 定高分屏): one unified
+ * search box above two independently collapsible card sections — the AI
+ * entries (WikiPanel, default expanded) and the user's manual cards
+ * (ManualCardPanel, default expanded too — 2026-09-04：切进百科 tab 两区都展开).
+ * Both expanded → each takes half the column and scrolls INSIDE its own card;
+ * collapsing one yields the whole column to the other. So a huge auto-generated
+ * entry list can never bury 我的条目 — users see both drawer boundaries (and
+ * thus that 我的条目 exists) the moment they open the tab. 未来用户自建条目抽屉
+ * 作为「我的条目」内的水平子抽屉生长，顶层恒为这两个容器（故 50/50 定分成立）。
+ * The query is owned here and passed down, so one box filters both sections.
  */
 export function WikiTab({
   kbId,
@@ -70,10 +82,12 @@ export function WikiTab({
   // 新建卡片全局入口（2026-09-02）：⋯ 菜单递增此信号，ManualCardPanel 用
   // render-time 派生状态监听变化并弹出创建框（同 lastQuery 惯用法）。
   const [cardCreateSignal, setCardCreateSignal] = useState(0);
+  // 新建抽屉全局入口（2026-09-04）：⋯ 菜单递增此信号，ManualCardPanel 监听后开 DrawerEditor。
+  const [drawerCreateSignal, setDrawerCreateSignal] = useState(0);
 
   return (
-    <div className="flex h-full flex-col" data-testid="wiki-tab">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+    <div className="bg-background flex h-full flex-col" data-testid="wiki-tab">
+      <div className="flex shrink-0 items-center gap-2 px-4 py-2">
         <div className="relative flex-1">
           <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
           <Input
@@ -99,39 +113,86 @@ export function WikiTab({
             更新中禁用规则与全局菜单一致。 */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button aria-label={tk.wikiMoreOptions} className="size-7 shrink-0" size="icon-sm" variant="ghost">
+            <Button
+              aria-label={tk.wikiMoreOptions}
+              className="size-7 shrink-0"
+              size="icon-sm"
+              variant="ghost"
+            >
               <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            {/* 新建卡片全局入口（2026-09-02）：创建是 add 动作，置于维护动作之前
-                （对齐全局库菜单「上传文档」在首的次序）；与 wiki 生成无关，始终可用。 */}
-            <DropdownMenuItem onSelect={() => runAfterMenuClose(() => setCardCreateSignal((n) => n + 1))}>
-              <Plus className="size-4" />
-              {tk.manualCards.newCard}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={updating} onSelect={() => onGenerateWiki?.("incremental")}>
-              {updating ? <Loader2 className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+            {/* 维护动作在上、用户自建动作沉底（2026-09-04 用户拍板：新建卡片移到最下面，
+                其上方加新建抽屉）。两个新建项都经 runAfterMenuClose 递增信号，由
+                ManualCardPanel 的 render-time 派生状态监听消费（新建抽屉→DrawerEditor，
+                新建卡片→创建框）；与 wiki 生成无关，不受 updating 影响、始终可用。 */}
+            <DropdownMenuItem
+              disabled={updating}
+              onSelect={() => onGenerateWiki?.("incremental")}
+            >
+              {updating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <BookOpen className="size-4" />
+              )}
               {updating ? tk.wikiPanel.updating : tk.updateWiki}
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={updating} onSelect={() => runAfterMenuClose(() => setRebuildOpen(true))}>
+            <DropdownMenuItem
+              disabled={updating}
+              onSelect={() => runAfterMenuClose(() => setRebuildOpen(true))}
+            >
               <RefreshCw className="size-4" />
               {tk.rebuildWiki}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                runAfterMenuClose(() => setDrawerCreateSignal((n) => n + 1))
+              }
+            >
+              <FolderPlus className="size-4" />
+              {tk.manualCards.drawers.new}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                runAfterMenuClose(() => setCardCreateSignal((n) => n + 1))
+              }
+            >
+              <Plus className="size-4" />
+              {tk.manualCards.newCard}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <WikiPanel
-        entries={entries}
-        loading={entriesLoading}
-        query={query}
-        updating={updating}
-        onDeleteEntry={onDeleteEntry}
-        onEditEntry={onEditEntry}
-        onOpenEntry={onOpenEntry}
-        onRegenerateEntries={onRegenerateEntries}
-      />
-      <ManualCardPanel kbId={kbId} active={active} query={query} createSignal={cardCreateSignal} onOpenCard={onOpenCard} />
+      {/* 定高分屏 canvas（2026-09-03）：外层不再滚动（overflow-hidden），两张白卡在
+          flex-col 里分摊高度——都展开各占一半、各自卡内 overflow-y-auto 内滚；收起
+          一个是顶/底细条，另一个 flex-1 吃满。再长的生成条目也不会把「我的条目」顶
+          出视野（用户口径：一进界面就看到两个抽屉的边界、知道有我的条目）。 */}
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3"
+        data-testid="wiki-split-canvas"
+      >
+        <WikiPanel
+          entries={entries}
+          loading={entriesLoading}
+          query={query}
+          updating={updating}
+          onDeleteEntry={onDeleteEntry}
+          onEditEntry={onEditEntry}
+          onGenerateWiki={onGenerateWiki}
+          onOpenEntry={onOpenEntry}
+          onRebuildWiki={() => setRebuildOpen(true)}
+          onRegenerateEntries={onRegenerateEntries}
+        />
+        <ManualCardPanel
+          kbId={kbId}
+          active={active}
+          query={query}
+          createSignal={cardCreateSignal}
+          drawerCreateSignal={drawerCreateSignal}
+          onOpenCard={onOpenCard}
+        />
+      </div>
       {/* 重建确认弹窗：与全局库菜单共用同一共享组件 */}
       <WikiRebuildDialog
         open={rebuildOpen}

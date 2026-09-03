@@ -733,7 +733,7 @@ export const enUS: Translations = {
       clearOverlay: "Clear path highlight",
     },
     wikiPanel: {
-      empty: "No wiki entries yet — generate them from the menu above",
+      empty: "Wiki entries accumulate automatically and appear over time",
       loading: "Loading…",
       dirty: "Stale",
       updating: "Updating",
@@ -781,7 +781,7 @@ export const enUS: Translations = {
     manualCards: {
       sectionTitle: "My Entries",
       newCard: "New Card",
-      empty: "No cards yet — click 'New Card' to capture what you know",
+      empty: "Create a card to capture your own knowledge",
       loading: "Loading…",
       includeInSearch: "Mixed into search",
       includeHint:
@@ -818,6 +818,22 @@ export const enUS: Translations = {
       deleteBatchTitle: (count: number) =>
         `Delete ${count} knowledge ${count === 1 ? "card" : "cards"}?`,
       drawerNotFound: "Card missing or deleted",
+      drawers: {
+        new: "New Drawer",
+        edit: "Edit Drawer",
+        nameLabel: "Name",
+        namePlaceholder: "Enter a name…",
+        iconLabel: "Icon",
+        colorLabel: "Color",
+        create: "Create",
+        save: "Save",
+        delete: "Delete Drawer",
+        close: "Hide",
+        allDrawers: "All drawers",
+        moveTo: "Move to Drawer",
+        unfiled: "Unfiled",
+        newFromMenu: "New Drawer…",
+      },
     },
     recallTest: {
       queryPlaceholder: "Enter a test query…",

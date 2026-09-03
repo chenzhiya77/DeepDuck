@@ -1,6 +1,11 @@
 "use client";
 
-import { ChevronDown, ChevronRight, FlaskConical, Waypoints } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FlaskConical,
+  Waypoints,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
+import { stripSummaryHeading } from "@/core/knowledge/format";
 import { useRecallTest } from "@/core/knowledge/hooks";
 import type {
   RecallGraphEvidence,
@@ -23,7 +29,6 @@ import { cn } from "@/lib/utils";
 
 import { ChunkCard } from "./chunk-card";
 import { EvalSaveQuestionDialog } from "./eval-save-question-dialog";
-
 
 function formatScore(score: number | null): string {
   return score === null ? "—" : score.toFixed(3);
@@ -70,7 +75,14 @@ function ChunkHitRow({
   selectLabel,
   selectTestId,
 }: {
-  hit: { chunk_id: string; doc_name: string; text: string; heading_path: string[]; page: number | null; rank?: number };
+  hit: {
+    chunk_id: string;
+    doc_name: string;
+    text: string;
+    heading_path: string[];
+    page: number | null;
+    rank?: number;
+  };
   score: number | null;
   testId: string;
   /** Enables in-place chunk images (`images/…` → document files route). */
@@ -96,21 +108,42 @@ function ChunkHitRow({
         onCheckedChange={onCheckChange}
       />
       <div className="min-w-0 flex-1">
-      <button
-        className="hover:bg-muted/50 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-sm"
-        data-testid={testId}
-        type="button"
-        onClick={onToggle}
-      >
-        {expanded ? <ChevronDown className="text-muted-foreground size-3.5 shrink-0" /> : <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />}
-        {hit.rank != null && <span className="text-muted-foreground shrink-0 text-xs">#{hit.rank}</span>}
-        <span className="min-w-0 truncate font-medium">{hit.doc_name}</span>
-        {hit.page != null && <span className="text-muted-foreground shrink-0 text-xs">p.{hit.page}</span>}
-        <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">{formatScore(score)}</span>
-      </button>
-      {expanded && (
-        <ChunkCard docId={docId} docName={hit.doc_name} headingPath={hit.heading_path} kbId={kbId} page={hit.page} text={hit.text} />
-      )}
+        <button
+          className="hover:bg-muted/50 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-sm"
+          data-testid={testId}
+          type="button"
+          onClick={onToggle}
+        >
+          {expanded ? (
+            <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
+          ) : (
+            <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
+          )}
+          {hit.rank != null && (
+            <span className="text-muted-foreground shrink-0 text-xs">
+              #{hit.rank}
+            </span>
+          )}
+          <span className="min-w-0 truncate font-medium">{hit.doc_name}</span>
+          {hit.page != null && (
+            <span className="text-muted-foreground shrink-0 text-xs">
+              p.{hit.page}
+            </span>
+          )}
+          <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">
+            {formatScore(score)}
+          </span>
+        </button>
+        {expanded && (
+          <ChunkCard
+            docId={docId}
+            docName={hit.doc_name}
+            headingPath={hit.heading_path}
+            kbId={kbId}
+            page={hit.page}
+            text={hit.text}
+          />
+        )}
       </div>
     </div>
   );
@@ -163,7 +196,9 @@ export function RecallTestPanel({
   // 「存为考题」勾选（§7.1）：vector 命中 + graph 证据按 chunk id 去重，
   // 百科词条行（2026-08-28 §5）按其源切片整体进/出锚定集；记录来源路径供
   // dialog 默认预期路径（多路化：混路即多勾）。
-  const [selectedChunks, setSelectedChunks] = useState<{ id: string; path: RecallPathName }[]>([]);
+  const [selectedChunks, setSelectedChunks] = useState<
+    { id: string; path: RecallPathName }[]
+  >([]);
   const [saveOpen, setSaveOpen] = useState(false);
   const toggleChunk = (chunkId: string, path: "vector" | "graph") =>
     setSelectedChunks((current) =>
@@ -186,14 +221,17 @@ export function RecallTestPanel({
       if (sourceIds.every((id) => selected.has(id))) {
         return current.filter((item) => !sourceIds.includes(item.id));
       }
-      const additions = sourceIds.filter((id) => !selected.has(id)).map((id) => ({ id, path: "wiki" as const }));
+      const additions = sourceIds
+        .filter((id) => !selected.has(id))
+        .map((id) => ({ id, path: "wiki" as const }));
       return [...current, ...additions];
     });
   };
   const selectionPaths = new Set(selectedChunks.map((item) => item.path));
   // 默认勾选 = 来源路径集合（2026-08-28 多路化）：混路即多勾，不再降级单路；
   // Set 迭代序 = 勾选序，与提交顺序一致。空选时按钮不展示，回退保 prop 非空。
-  const defaultSavePaths: RecallPathName[] = selectionPaths.size > 0 ? [...selectionPaths] : ["vector"];
+  const defaultSavePaths: RecallPathName[] =
+    selectionPaths.size > 0 ? [...selectionPaths] : ["vector"];
 
   const run = () => {
     const trimmed = query.trim();
@@ -207,13 +245,16 @@ export function RecallTestPanel({
       { query: trimmed, top_k: clampedTopK },
       {
         onError: (error) => {
-          toast.error(error instanceof Error && error.message ? error.message : tr.failed);
+          toast.error(
+            error instanceof Error && error.message ? error.message : tr.failed,
+          );
         },
       },
     );
   };
 
-  const toggle = (key: string) => setExpandedKey((current) => (current === key ? null : key));
+  const toggle = (key: string) =>
+    setExpandedKey((current) => (current === key ? null : key));
 
   const pathName: Record<RecallPathName, string> = {
     vector: tr.vectorPath,
@@ -222,7 +263,10 @@ export function RecallTestPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="recall-test-panel">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-testid="recall-test-panel"
+    >
       {/* Controls：成本提示不再独占一行（2026-08-30），收进「开始检索」按钮 tooltip；
           py-2 + 栏内控件全锁 h-7 → 44px，对齐全知识库页工具栏基准（默认 h-9 会撑成 52px） */}
       <div className="flex items-center gap-2 border-b px-4 py-2">
@@ -247,7 +291,11 @@ export function RecallTestPanel({
           onChange={(event) => setTopK(Number(event.target.value))}
         />
         <Tooltip content={tr.costHint}>
-          <Button className="h-7 shrink-0" disabled={!query.trim() || recallTest.isPending} onClick={run}>
+          <Button
+            className="h-7 shrink-0"
+            disabled={!query.trim() || recallTest.isPending}
+            onClick={run}
+          >
             {recallTest.isPending ? tr.running : tr.run}
           </Button>
         </Tooltip>
@@ -275,7 +323,10 @@ export function RecallTestPanel({
                   onViewInVectorSpace({
                     source: "recall",
                     text: result.query,
-                    hits: result.paths.vector.hits.map((hit) => ({ pointId: hit.chunk_id, score: hit.score })),
+                    hits: result.paths.vector.hits.map((hit) => ({
+                      pointId: hit.chunk_id,
+                      score: hit.score,
+                    })),
                   })
                 }
               >
@@ -284,7 +335,10 @@ export function RecallTestPanel({
               </Button>
             )}
             {/* Vector path */}
-            <section className="flex flex-col gap-2" data-testid="recall-path-vector">
+            <section
+              className="flex flex-col gap-2"
+              data-testid="recall-path-vector"
+            >
               <PathHeader
                 elapsedMs={result.elapsed_ms.vector}
                 message={result.paths.vector.message}
@@ -298,7 +352,9 @@ export function RecallTestPanel({
                   kbId={kbId}
                   key={hit.chunk_id}
                   score={hit.score}
-                  checked={selectedChunks.some((item) => item.id === hit.chunk_id)}
+                  checked={selectedChunks.some(
+                    (item) => item.id === hit.chunk_id,
+                  )}
                   testId={`recall-vector-hit-${hit.chunk_id}`}
                   onCheckChange={() => toggleChunk(hit.chunk_id, "vector")}
                   selectLabel={`${tr.saveAsQuestion.button}: ${hit.doc_name}`}
@@ -309,7 +365,10 @@ export function RecallTestPanel({
             </section>
 
             {/* Graph path */}
-            <section className="flex flex-col gap-2" data-testid="recall-path-graph">
+            <section
+              className="flex flex-col gap-2"
+              data-testid="recall-path-graph"
+            >
               <PathHeader
                 elapsedMs={result.elapsed_ms.graph}
                 message={result.paths.graph.message}
@@ -318,9 +377,15 @@ export function RecallTestPanel({
               />
               {result.paths.graph.entities.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-muted-foreground text-xs">{tr.entities}:</span>
+                  <span className="text-muted-foreground text-xs">
+                    {tr.entities}:
+                  </span>
                   {result.paths.graph.entities.map((entity) => (
-                    <Badge key={entity.name} title={entity.description} variant="secondary">
+                    <Badge
+                      key={entity.name}
+                      title={entity.description}
+                      variant="secondary"
+                    >
                       {entity.name}
                     </Badge>
                   ))}
@@ -329,7 +394,10 @@ export function RecallTestPanel({
               {result.paths.graph.relations.length > 0 && (
                 <div className="flex flex-col gap-0.5">
                   {result.paths.graph.relations.map((relation, index) => (
-                    <span className="text-muted-foreground text-xs" key={`${relation.source}-${relation.target}-${index}`}>
+                    <span
+                      className="text-muted-foreground text-xs"
+                      key={`${relation.source}-${relation.target}-${index}`}
+                    >
                       {relation.source} —{relation.relation}→ {relation.target}
                     </span>
                   ))}
@@ -342,7 +410,9 @@ export function RecallTestPanel({
                   kbId={kbId}
                   key={hit.chunk_id}
                   score={hit.score}
-                  checked={selectedChunks.some((item) => item.id === hit.chunk_id)}
+                  checked={selectedChunks.some(
+                    (item) => item.id === hit.chunk_id,
+                  )}
                   testId={`recall-graph-hit-${hit.chunk_id}`}
                   onCheckChange={() => toggleChunk(hit.chunk_id, "graph")}
                   selectLabel={`${tr.saveAsQuestion.button}: ${hit.doc_name}`}
@@ -353,7 +423,10 @@ export function RecallTestPanel({
             </section>
 
             {/* Wiki path */}
-            <section className="flex flex-col gap-2" data-testid="recall-path-wiki">
+            <section
+              className="flex flex-col gap-2"
+              data-testid="recall-path-wiki"
+            >
               <PathHeader
                 elapsedMs={result.elapsed_ms.wiki}
                 message={result.paths.wiki.message}
@@ -363,41 +436,59 @@ export function RecallTestPanel({
               {result.paths.wiki.hits.map((hit: RecallWikiHit) => {
                 // 可锚定 = 词条且携带源切片（后端 Task 5 注入）；人工卡片无源切片，
                 // 不可锚定（2026-08-28 §5：无勾选框 + tooltip 解释）。
-                const anchorable = hit.source_type !== "manual" && (hit.source_chunk_ids?.length ?? 0) > 0;
+                const anchorable =
+                  hit.source_type !== "manual" &&
+                  (hit.source_chunk_ids?.length ?? 0) > 0;
                 const row = (
                   <button
                     className={cn(
-                      "hover:bg-muted/50 flex flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-left",
+                      "hover:bg-muted/50 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left",
                       anchorable && "min-w-0 flex-1",
                     )}
                     data-testid={`recall-wiki-hit-${hit.entry_id}`}
                     key={hit.entry_id}
-                    title={hit.source_type === "manual" ? tr.wikiAnchorTooltip : undefined}
+                    title={
+                      hit.source_type === "manual"
+                        ? tr.wikiAnchorTooltip
+                        : undefined
+                    }
                     type="button"
                     onClick={() =>
-                      hit.source_type === "manual" ? onOpenManualCard?.(hit.entry_id) : onOpenWikiEntry(hit.entry_id)
+                      hit.source_type === "manual"
+                        ? onOpenManualCard?.(hit.entry_id)
+                        : onOpenWikiEntry(hit.entry_id)
                     }
                   >
-                    <span className="flex items-center gap-2 text-sm">
-                      <span className="text-muted-foreground text-xs">#{hit.rank}</span>
-                      {hit.source_type === "manual" && (
-                        <Badge className="shrink-0 text-[10px]" variant="secondary">
-                          {t.knowledge.chat.sourceTypeManual}
-                        </Badge>
-                      )}
-                      <span className="min-w-0 truncate font-medium">{hit.title}</span>
-                      <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">{formatScore(hit.score)}</span>
+                    <span className="text-muted-foreground shrink-0 text-xs">
+                      #{hit.rank}
                     </span>
-                    <span className="text-muted-foreground line-clamp-2 text-xs">{hit.summary}</span>
+                    {hit.source_type === "manual" && (
+                      <Badge
+                        className="shrink-0 text-[10px]"
+                        variant="secondary"
+                      >
+                        {t.knowledge.chat.sourceTypeManual}
+                      </Badge>
+                    )}
+                    <span className="max-w-[45%] shrink-0 truncate text-sm font-medium">
+                      {hit.title}
+                    </span>
+                    {/* 摘要剥掉后端 content[:120] 里的「# 标题」H1；标题实/摘要淡、溢出统一 truncate（对齐百科 Tab 单行样式） */}
+                    <span className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs">
+                      {stripSummaryHeading(hit.summary)}
+                    </span>
+                    <span className="text-muted-foreground ml-auto shrink-0 font-mono text-xs">
+                      {formatScore(hit.score)}
+                    </span>
                   </button>
                 );
                 if (!anchorable) return row;
                 return (
-                  <div className="flex items-start gap-1.5" key={hit.entry_id}>
+                  <div className="flex items-center gap-1.5" key={hit.entry_id}>
                     <Checkbox
                       aria-label={`${tr.saveAsQuestion.button}: ${hit.title}`}
                       checked={wikiEntryChecked(hit)}
-                      className="mt-2 shrink-0"
+                      className="shrink-0"
                       data-testid={`recall-select-wiki-${hit.entry_id}`}
                       onCheckedChange={() => toggleWikiEntry(hit)}
                     />
@@ -413,7 +504,11 @@ export function RecallTestPanel({
                 <span className="text-muted-foreground text-xs">
                   {tr.saveAsQuestion.selectedCount(selectedChunks.length)}
                 </span>
-                <Button className="ml-auto shrink-0" size="sm" onClick={() => setSaveOpen(true)}>
+                <Button
+                  className="ml-auto shrink-0"
+                  size="sm"
+                  onClick={() => setSaveOpen(true)}
+                >
                   <FlaskConical className="size-3.5" />
                   {tr.saveAsQuestion.button}
                 </Button>

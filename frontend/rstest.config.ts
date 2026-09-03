@@ -38,6 +38,9 @@ export default defineConfig({
       name: "dom",
       testEnvironment: "happy-dom",
       include: ["tests/unit/**/*.dom.test.ts", "tests/unit/**/*.dom.test.tsx"],
+      // happy-dom 无 ResizeObserver——Radix ScrollArea / react-resizable-panels / echarts
+      // 都靠它测量；一处 stub 供所有 dom 测试（各文件自带的 ??= stub 会幂等跳过）。
+      setupFiles: [resolve(__dirname, "tests/setup-dom.ts")],
     },
   ],
 });

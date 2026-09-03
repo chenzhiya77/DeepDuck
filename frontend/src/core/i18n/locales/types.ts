@@ -754,6 +754,23 @@ export interface Translations {
       deleteBatchTitle: (count: number) => string;
       /** Card detail drawer (fix: recall-test card hits open this, not the wiki drawer). */
       drawerNotFound: string;
+      /** User-defined card drawers (2026-09-04): partition groups inside 我的条目. */
+      drawers: {
+        new: string;
+        edit: string;
+        nameLabel: string;
+        namePlaceholder: string;
+        iconLabel: string;
+        colorLabel: string;
+        create: string;
+        save: string;
+        delete: string;
+        close: string;
+        allDrawers: string;
+        moveTo: string;
+        unfiled: string;
+        newFromMenu: string;
+      };
     };
     recallTest: {
       queryPlaceholder: string;

@@ -32,8 +32,20 @@ import {
 import type { WikiEntrySummary } from "@/core/knowledge/types";
 
 const ENTRIES: WikiEntrySummary[] = [
-  { id: "e1", title: "DeerFlow", summary: "超级代理系统", status: "ready", updated_at: "2026-08-10T08:00:00Z" },
-  { id: "e2", title: "Gateway", summary: "网关负责统一鉴权", status: "ready", updated_at: "2026-08-10T09:00:00Z" },
+  {
+    id: "e1",
+    title: "DeerFlow",
+    summary: "超级代理系统",
+    status: "ready",
+    updated_at: "2026-08-10T08:00:00Z",
+  },
+  {
+    id: "e2",
+    title: "Gateway",
+    summary: "网关负责统一鉴权",
+    status: "ready",
+    updated_at: "2026-08-10T09:00:00Z",
+  },
 ];
 
 function setupMocks() {
@@ -57,14 +69,25 @@ function setupMocks() {
     isLoading: false,
   } as never);
   rs.mocked(useManualCard).mockReturnValue({ data: null } as never);
-  rs.mocked(useCreateManualCard).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
-  rs.mocked(useUpdateManualCard).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
-  rs.mocked(useDeleteManualCard).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
+  rs.mocked(useCreateManualCard).mockReturnValue({
+    mutateAsync: rs.fn(),
+    isPending: false,
+  } as never);
+  rs.mocked(useUpdateManualCard).mockReturnValue({
+    mutateAsync: rs.fn(),
+    isPending: false,
+  } as never);
+  rs.mocked(useDeleteManualCard).mockReturnValue({
+    mutateAsync: rs.fn(),
+    isPending: false,
+  } as never);
 }
 
 function renderTab(props?: Partial<Parameters<typeof WikiTab>[0]>) {
   render(
-    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+    <I18nContext.Provider
+      value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+    >
       <WikiTab
         entries={ENTRIES}
         kbId="kb-1"
@@ -87,18 +110,34 @@ describe("WikiTab", () => {
     setupMocks();
     renderTab();
     expect(screen.getByPlaceholderText("搜索百科条目与卡片…")).toBeTruthy();
-    expect(screen.getByTestId("wiki-entries-toggle").textContent).toContain("生成条目");
-    expect(screen.getByTestId("manual-cards-toggle").textContent).toContain("我的条目");
+    expect(screen.getByTestId("wiki-entries-toggle").textContent).toContain(
+      "生成条目",
+    );
+    expect(screen.getByTestId("manual-cards-toggle").textContent).toContain(
+      "我的条目",
+    );
+  });
+
+  it("lays the two sections out as a fixed-height split canvas that does not scroll itself (2026-09-03)", () => {
+    setupMocks();
+    renderTab();
+    const canvas = screen.getByTestId("wiki-split-canvas");
+    // 外层不再整体滚动（overflow-hidden + flex-col），滚动下放到每个抽屉卡内
+    expect(canvas.className).toContain("overflow-hidden");
+    expect(canvas.className).toContain("flex-col");
+    expect(canvas.className).not.toContain("overflow-y-auto");
   });
 
   it("filters both sections with one query (cards force-expand to show matches)", () => {
     setupMocks();
     renderTab();
-    // 初始：卡片区收起，AI 区展开
-    expect(screen.queryByText("发布禁令")).toBeNull();
+    // 初始：两区都展开（2026-09-04：我的条目不再默认收起）
+    expect(screen.getByText("发布禁令")).toBeTruthy();
     expect(screen.getByText("DeerFlow")).toBeTruthy();
 
-    fireEvent.change(screen.getByPlaceholderText("搜索百科条目与卡片…"), { target: { value: "发布" } });
+    fireEvent.change(screen.getByPlaceholderText("搜索百科条目与卡片…"), {
+      target: { value: "发布" },
+    });
     // AI 区无匹配 → no-match 文案；卡片区强制展开并命中
     expect(screen.queryByText("DeerFlow")).toBeNull();
     expect(screen.getByText("没有匹配的条目")).toBeTruthy();
@@ -108,7 +147,9 @@ describe("WikiTab", () => {
   it("restores both lists via the clear button", () => {
     setupMocks();
     renderTab();
-    fireEvent.change(screen.getByPlaceholderText("搜索百科条目与卡片…"), { target: { value: "网关" } });
+    fireEvent.change(screen.getByPlaceholderText("搜索百科条目与卡片…"), {
+      target: { value: "网关" },
+    });
     expect(screen.queryByText("DeerFlow")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
@@ -134,7 +175,9 @@ describe("WikiTab 百科操作菜单", () => {
 
     // 重建项带图标（与全局库菜单一致，不能裸文字）
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    const rebuildItem = (await screen.findByText("重建百科")).closest("[role='menuitem']")!;
+    const rebuildItem = (await screen.findByText("重建百科")).closest(
+      "[role='menuitem']",
+    )!;
     expect(rebuildItem.querySelector("svg")).toBeTruthy();
     fireEvent.click(rebuildItem);
     expect(await screen.findByText("全部重建百科？")).toBeTruthy();
@@ -151,10 +194,14 @@ describe("WikiTab 百科操作菜单", () => {
     setupMocks();
     const onGenerateWiki = rs.fn();
     renderTab({ onGenerateWiki, updating: true });
-    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), {
+      key: "ArrowDown",
+    });
     // 头行更新中徽章也含「更新中」文案（2026-09-02），故按 menuitem 角色精确定位菜单项。
     const updateItem = await screen.findByRole("menuitem", { name: "更新中" });
-    const rebuildItem = (await screen.findByText("重建百科")).closest("[role='menuitem']");
+    const rebuildItem = (await screen.findByText("重建百科")).closest(
+      "[role='menuitem']",
+    );
     expect(updateItem?.getAttribute("aria-disabled")).toBe("true");
     expect(rebuildItem?.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(updateItem);
@@ -164,14 +211,45 @@ describe("WikiTab 百科操作菜单", () => {
   it("⋯ 菜单提供「新建卡片」全局入口，点击弹出创建框（2026-09-02）", async () => {
     setupMocks();
     renderTab();
-    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), {
+      key: "ArrowDown",
+    });
     // 用 menuitem 角色定位 ⋯ 菜单项（卡片区头部「新建卡片」按钮已移除，⋯ 菜单为唯一入口）。
-    const newCardItem = await screen.findByRole("menuitem", { name: "新建卡片" });
+    const newCardItem = await screen.findByRole("menuitem", {
+      name: "新建卡片",
+    });
     expect(newCardItem.querySelector("svg")).toBeTruthy();
     // 新建卡片不受 updating 影响，始终可用。
     expect(newCardItem.getAttribute("aria-disabled")).not.toBe("true");
     fireEvent.click(newCardItem);
     // runAfterMenuClose 延到菜单退场后递增信号 → ManualCardPanel 弹出创建框。
-    expect(await screen.findByText("新建知识卡片", undefined, { timeout: 3000 })).toBeTruthy();
+    expect(
+      await screen.findByText("新建知识卡片", undefined, { timeout: 3000 }),
+    ).toBeTruthy();
+  });
+
+  it("⋯ 菜单：新建卡片沉底、其上方为新建抽屉；点新建抽屉弹出抽屉创建框（2026-09-04）", async () => {
+    setupMocks();
+    renderTab();
+    fireEvent.keyDown(screen.getByRole("button", { name: "百科操作" }), {
+      key: "ArrowDown",
+    });
+    const newDrawerItem = await screen.findByRole("menuitem", {
+      name: "新建抽屉",
+    });
+    expect(newDrawerItem.querySelector("svg")).toBeTruthy();
+    // 顺序：维护动作在上，新建抽屉 → 新建卡片 沉底（新建卡片在最下面）。
+    const labels = screen
+      .getAllByRole("menuitem")
+      .map((el) => el.textContent ?? "");
+    expect(labels[labels.length - 1]).toContain("新建卡片");
+    expect(labels[labels.length - 2]).toContain("新建抽屉");
+    // 点新建抽屉 → runAfterMenuClose 递增 drawerCreateSignal → ManualCardPanel 弹抽屉创建框。
+    fireEvent.click(newDrawerItem);
+    expect(
+      await screen.findByTestId("drawer-editor-name", undefined, {
+        timeout: 3000,
+      }),
+    ).toBeTruthy();
   });
 });
