@@ -8,6 +8,7 @@
  * offers a secondary "在百科 tab 中查看" reveal action.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -67,12 +68,18 @@ const DIRTY_ENTRY: WikiEntrySummary = {
 };
 
 function renderWithI18n(node: React.ReactNode) {
+  // 抽屉的血缘展开用真实 useQuery（2026-09-05）→ 需要 Provider。
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <I18nContext.Provider
-      value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
-    >
-      {node}
-    </I18nContext.Provider>,
+    <QueryClientProvider client={client}>
+      <I18nContext.Provider
+        value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+      >
+        {node}
+      </I18nContext.Provider>
+    </QueryClientProvider>,
   );
 }
 

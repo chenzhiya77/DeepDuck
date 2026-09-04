@@ -75,6 +75,11 @@ export interface KnowledgeChunk {
   last_edited_at: string | null;
 }
 
+/** Chunk row + source document name (2026-09-05 条目↔切片血缘批量端点)。 */
+export interface KnowledgeChunkWithDoc extends KnowledgeChunk {
+  doc_name: string | null;
+}
+
 export interface KnowledgeChunkPage {
   items: KnowledgeChunk[];
   total: number;

@@ -249,6 +249,31 @@ async def list_document_chunks(
     return {"items": items, "total": total, "offset": offset, "limit": limit}
 
 
+@router.get("/{kb_id}/chunks")
+async def list_chunks_by_ids(
+    request: Request,
+    kb_id: str,
+    ids: list[str] = Query(min_length=1, max_length=200),
+):
+    """Batch-fetch chunks by id (2026-09-05 条目↔切片血缘).
+
+    The wiki entry drawer expands ``source_chunk_ids`` into read-only cards:
+    one batched request returns the rows in the *requested* order, each
+    carrying its source document's name. Unknown ids drop silently (the
+    chunk may have been deleted; the UI reports the count delta).
+    """
+    service = await _require_kb_access(request, kb_id)
+    items = await service.store.get_chunks_by_ids(ids)
+    names: dict[str, str] = {}
+    for doc_id in {item["doc_id"] for item in items}:
+        document = await service.store.get_document(doc_id)
+        if document:
+            names[doc_id] = document["name"]
+    for item in items:
+        item["doc_name"] = names.get(item["doc_id"])
+    return {"items": items}
+
+
 @router.get("/{kb_id}/documents/{doc_id}/files/{file_path:path}")
 async def get_document_file(request: Request, kb_id: str, doc_id: str, file_path: str):
     """Serve parser-extracted assets (``images/…``) referenced by chunk markdown.

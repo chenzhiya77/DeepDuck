@@ -858,6 +858,11 @@ export function ManualCardPanel({
                     {activeCards.map((card) => {
                       const isSelected = selectedIds.has(card.id);
                       const currentDrawerId = membership[card.id];
+                      // 行图标跟随所属抽屉（2026-09-05，与详情抽屉头部同源）：
+                      // 用户自建抽屉带 icon+color；未归档/归属已删回退 StickyNote。
+                      const ownerDrawer = drawers.find(
+                        (d) => d.id === currentDrawerId,
+                      );
                       // 剥掉摘要开头的「# 标题」markdown 行（2026-09-03）
                       const summaryText = stripSummaryHeading(card.summary);
                       return (
@@ -896,7 +901,14 @@ export function ManualCardPanel({
                                   type="button"
                                   onClick={() => onOpenCard?.(card.id)}
                                 >
-                                  <StickyNote className="text-muted-foreground size-4 shrink-0" />
+                                  {ownerDrawer ? (
+                                    <DrawerGlyph
+                                      color={ownerDrawer.color}
+                                      icon={ownerDrawer.icon}
+                                    />
+                                  ) : (
+                                    <StickyNote className="text-muted-foreground size-4 shrink-0" />
+                                  )}
                                   <span className="max-w-[45%] shrink-0 truncate text-sm font-medium">
                                     {card.title}
                                   </span>

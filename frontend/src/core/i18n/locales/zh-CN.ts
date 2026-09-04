@@ -428,6 +428,12 @@ export const zhCN: Translations = {
     emptyDocuments: "上传或拖拽文件开始构建索引",
     chunkDrawer: {
       title: "切片预览",
+      chunkUnit: "个切片",
+      current: "当前",
+      prevChunk: "上一切片",
+      nextChunk: "下一切片",
+      tickAria: "切片",
+      notLoaded: "未加载",
       page: "页码",
       tokens: "tokens",
       entities: "实体",
@@ -736,6 +742,8 @@ export const zhCN: Translations = {
       openInTab: "在百科 tab 中查看",
       loading: "加载中…",
       notFound: "条目不存在或已删除",
+      sourceChunks: "个源切片",
+      deletedSources: "个源切片已删除",
     },
     /** Phase-3 Batch-1 P6: manual knowledge cards (spec §8). */
     manualCards: {

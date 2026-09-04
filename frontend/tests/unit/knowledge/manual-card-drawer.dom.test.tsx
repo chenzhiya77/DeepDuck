@@ -15,6 +15,7 @@ rs.mock("@/core/knowledge/hooks", () => ({
 import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-drawer";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
+import { cardDrawersKey } from "@/core/knowledge/card-drawers";
 import { useManualCard } from "@/core/knowledge/hooks";
 import type { ManualCardDetail } from "@/core/knowledge/types";
 
@@ -79,5 +80,26 @@ describe("ManualCardDrawer", () => {
     mockCard();
     renderDrawer({ open: false });
     expect(useManualCard).toHaveBeenCalledWith(null, null);
+  });
+
+  it("adapts the header glyph + name chip to the card's drawer (2026-09-05)", () => {
+    // 卡片可在抽屉间移动：头部图标/名称跟随 membership 当前归属。
+    localStorage.setItem(
+      cardDrawersKey("kb-1"),
+      JSON.stringify({
+        drawers: [{ id: "dw-1", name: "工作笔记", icon: "star", color: "amber" }],
+        membership: { "card-1": "dw-1" },
+      }),
+    );
+    mockCard({ data: CARD });
+    renderDrawer();
+    expect(screen.getByText("工作笔记")).toBeTruthy();
+    localStorage.removeItem(cardDrawersKey("kb-1"));
+  });
+
+  it("falls back to the neutral note glyph when the card is unfiled", () => {
+    mockCard({ data: CARD });
+    renderDrawer();
+    expect(screen.queryByText("工作笔记")).toBeNull();
   });
 });

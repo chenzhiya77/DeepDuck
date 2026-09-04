@@ -332,6 +332,28 @@ async def test_chunks_endpoint_paginates(service, session_factory):
     assert [c["chunk_index"] for c in page2.json()["items"]] == [2]
 
 
+async def test_chunks_by_ids_endpoint_returns_requested_order_with_doc_name(service, session_factory):
+    """条目↔切片血缘（2026-09-05）：GET /chunks?ids= 批量按请求序返回切片并附
+    doc_name（wiki 条目抽屉展开 source_chunk_ids 用）；未知 id 静默 dropped
+    （切片可能已删，UI 用数量差提示）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")}).json()["id"]
+    store = KnowledgeStore(session_factory)
+    await store.insert_chunks([{"chunk_id": f"{doc_id}#{i:04d}", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": i, "text": f"切片{i}", "heading_path": ["h"], "page": i, "token_count": 10} for i in range(2)])
+
+    resp = client.get(f"/api/knowledge-bases/{kb['id']}/chunks", params={"ids": [f"{doc_id}#0001", f"{doc_id}#0000", "gone#0000"]})
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert [c["chunk_id"] for c in items] == [f"{doc_id}#0001", f"{doc_id}#0000"]
+    assert items[0]["text"] == "切片1"
+    assert items[0]["doc_name"] == "a.md"
+
+    empty = client.get(f"/api/knowledge-bases/{kb['id']}/chunks", params={"ids": ["gone#0000"]})
+    assert empty.status_code == 200
+    assert empty.json()["items"] == []
+
+
 async def test_delete_document_cascades_vectors_graph_wiki_and_rows(service, session_factory):
     client = _client(service)
     kb = _create_kb(client)

@@ -120,14 +120,19 @@ describe("ChunkDrawer", () => {
 
     expect(await screen.findByText(CHUNK.text)).toBeTruthy();
     expect(rs.mocked(knowledgeChunksKey).mock.calls[0]?.slice(0, 2)).toEqual(["kb-1", "doc-1"]);
+    // 切片导航（2026-09-05）：抽屉传入 index 后卡片头部显示 #N 序号
+    expect(screen.getByText("#1")).toBeTruthy();
     // no second page → no load-more button
     expect(screen.queryByRole("button", { name: "加载更多" })).toBeNull();
   });
 
-  it("paginates through 加载更多", async () => {
-    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 1 }]);
+  it("numbers cards by list position so chunk_index gaps never leak into #N (2026-09-05)", async () => {
+    // 复现实习.jpg：单切片但 chunk_index=1（历史删除留下的空洞）——卡片序号
+    // 取列表位置 #1，与头部「当前 #K」、刻度轨同一坐标系，不显 #2。
+    const gapped = { ...CHUNK, chunk_id: "doc-1#0001", chunk_index: 1 };
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 50 }]);
     rs.mocked(useQuery).mockReturnValue({
-      data: { items: [CHUNK], total: 2, offset: 0, limit: 1 },
+      data: { items: [gapped], total: 1, offset: 0, limit: 50 },
       isLoading: false,
     } as never);
     rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
@@ -136,6 +141,44 @@ describe("ChunkDrawer", () => {
     rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+
+    expect(await screen.findByText(CHUNK.text)).toBeTruthy();
+    expect(screen.getByText("#1")).toBeTruthy();
+    expect(screen.queryByText("#2")).toBeNull();
+  });
+
+  it("auto-loads every chunk when total is within the full-load cap", async () => {
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 20 }]);
+    rs.mocked(useQuery).mockReturnValue({
+      data: { items: [CHUNK], total: 50, offset: 0, limit: 20 },
+      isLoading: false,
+    } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
+
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+
+    // 50 ≤ FULL_LOAD_CAP(300) → limit grows to total without user interaction
+    await waitFor(() => expect(rs.mocked(knowledgeChunksKey).mock.calls.at(-1)![3]).toBe(50));
+  });
+
+  it("paginates through 加载更多 when total exceeds the full-load cap", async () => {
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 1 }]);
+    rs.mocked(useQuery).mockReturnValue({
+      data: { items: [CHUNK], total: 350, offset: 0, limit: 1 },
+      isLoading: false,
+    } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
+
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+
+    // 刻度轨（total > 1）渲染窗口化刻度按钮，aria 带序号
+    expect(await screen.findByRole("button", { name: "切片 #1" })).toBeTruthy();
 
     fireEvent.click(await screen.findByRole("button", { name: "加载更多" }));
     const calls = rs.mocked(knowledgeChunksKey).mock.calls;

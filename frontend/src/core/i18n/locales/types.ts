@@ -367,6 +367,16 @@ export interface Translations {
     emptyDocuments: string;
     chunkDrawer: {
       title: string;
+      /** 计数单位（zh “个切片” / en “chunks”）。 */
+      chunkUnit: string;
+      /** sticky 头部的当前切片位置前缀。 */
+      current: string;
+      prevChunk: string;
+      nextChunk: string;
+      /** 刻度轨 aria 前缀（“切片 #N” / “Chunk #N”）。 */
+      tickAria: string;
+      /** 刻度弹窗中尚未加载行的占位文案。 */
+      notLoaded: string;
       page: string;
       tokens: string;
       entities: string;
@@ -715,6 +725,10 @@ export interface Translations {
       openInTab: string;
       loading: string;
       notFound: string;
+      /** 源切片计数单位（元信息行）。 */
+      sourceChunks: string;
+      /** 已删除源切片计数单位（血缘展开的数量差提示）。 */
+      deletedSources: string;
     };
     /** Phase-3 Batch-1 P6: manual knowledge cards (spec §8). */
     manualCards: {

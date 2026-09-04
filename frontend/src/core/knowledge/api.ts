@@ -34,6 +34,7 @@ import type {
   VectorProjectionQueryResult,
   VectorProjectionResponse,
   WikiEntriesPage,
+  KnowledgeChunkWithDoc,
   WikiEntryDetail,
   WikiGenerateAck,
 } from "./types";
@@ -169,6 +170,19 @@ export function listDocumentChunks(
   return fetch(kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/chunks?${params}`)).then((r) =>
     readResponse<KnowledgeChunkPage>(r, "Failed to fetch chunks"),
   );
+}
+
+/**
+ * Entry↔chunk lineage (2026-09-05): batch-fetch chunks by id in the requested
+ * order, each carrying its source document name. Unknown ids drop server-side
+ * (deleted chunks); the caller reports the count delta.
+ */
+export async function listChunksByIds(kbId: string, ids: string[]): Promise<KnowledgeChunkWithDoc[]> {
+  const params = new URLSearchParams(ids.map((id) => ["ids", id]));
+  const body = await fetch(kbUrl(kbId, `/chunks?${params}`)).then((r) =>
+    readResponse<{ items: KnowledgeChunkWithDoc[] }>(r, "Failed to fetch chunks"),
+  );
+  return body.items;
 }
 
 /**

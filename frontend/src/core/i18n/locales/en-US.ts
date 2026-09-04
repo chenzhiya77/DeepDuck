@@ -444,6 +444,12 @@ export const enUS: Translations = {
     emptyDocuments: "Upload or drop files to build the index",
     chunkDrawer: {
       title: "Chunk preview",
+      chunkUnit: "chunks",
+      current: "current",
+      prevChunk: "Previous chunk",
+      nextChunk: "Next chunk",
+      tickAria: "Chunk",
+      notLoaded: "not loaded",
       page: "Page",
       tokens: "tokens",
       entities: "Entities",
@@ -776,6 +782,8 @@ export const enUS: Translations = {
       openInTab: "Open in the Wiki tab",
       loading: "Loading…",
       notFound: "Entry missing or deleted",
+      sourceChunks: "source chunks",
+      deletedSources: "source chunks deleted",
     },
     /** Phase-3 Batch-1 P6: manual knowledge cards (spec §8). */
     manualCards: {
