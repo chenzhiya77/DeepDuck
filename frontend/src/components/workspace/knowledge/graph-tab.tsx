@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -27,13 +28,24 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
 import { useKnowledgeGraph } from "@/core/knowledge/hooks";
-import type { GraphRetrievalOverlay, KnowledgeDocument, KnowledgeGraphNode } from "@/core/knowledge/types";
+import type {
+  GraphRetrievalOverlay,
+  KnowledgeDocument,
+  KnowledgeGraphNode,
+} from "@/core/knowledge/types";
 
 import type { GraphCanvasProps } from "./graph-canvas";
-import { filterNeighborhood, type GraphColorBy, matchEntityNames, type RenderTier } from "./graph-utils";
+import {
+  filterNeighborhood,
+  type GraphColorBy,
+  matchEntityNames,
+  type RenderTier,
+} from "./graph-utils";
 
 // ssr:false —— echarts 依赖 DOM，且不进首屏 chunk（对齐 vector-tab 先例）。
-const GraphCanvas = dynamic<GraphCanvasProps>(() => import("./graph-canvas"), { ssr: false });
+const GraphCanvas = dynamic<GraphCanvasProps>(() => import("./graph-canvas"), {
+  ssr: false,
+});
 
 /** chunk_id（`{doc_id}#%04d`）→ doc_id；格式异常时返回 null（防御）。 */
 function docIdOfChunk(chunkId: string): string | null {
@@ -79,7 +91,10 @@ export function GraphTab({
   const [query, setQuery] = useState("");
   const [focusNode, setFocusNode] = useState<string | null>(null);
   /** 局部图模式（spec §6：双击节点进入，面包屑返回全局）。 */
-  const [neighborhood, setNeighborhood] = useState<{ focusId: string; hops: 1 | 2 } | null>(null);
+  const [neighborhood, setNeighborhood] = useState<{
+    focusId: string;
+    hops: 1 | 2;
+  } | null>(null);
   /** 当前 LOD 渲染档位（canvas 上报；guide 档显示引导提示）。 */
   const [renderTier, setRenderTier] = useState<RenderTier>("full");
 
@@ -91,10 +106,15 @@ export function GraphTab({
   const setFollowChat = onFollowChatChange ?? setInternalFollowChat;
 
   /** 已应用的叠加 + 应用时的图指纹（node_count:edge_count，stats 现成廉价）。 */
-  const [activeOverlay, setActiveOverlay] = useState<{ overlay: GraphRetrievalOverlay; fingerprint: string } | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<{
+    overlay: GraphRetrievalOverlay;
+    fingerprint: string;
+  } | null>(null);
   /** 请求去重句柄：同一 overlay 对象只应用一次（流式重渲染不重复叠加）。 */
   const consumedOverlayRef = useRef<GraphRetrievalOverlay | null>(null);
-  const fingerprint = graph ? `${graph.stats.node_count}:${graph.stats.edge_count}` : null;
+  const fingerprint = graph
+    ? `${graph.stats.node_count}:${graph.stats.edge_count}`
+    : null;
   const activeOverlayRef = useRef(activeOverlay);
   activeOverlayRef.current = activeOverlay;
 
@@ -122,15 +142,24 @@ export function GraphTab({
   const visible = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
     if (!neighborhood) return { nodes: graph.nodes, edges: graph.edges };
-    return filterNeighborhood(graph.nodes, graph.edges, neighborhood.focusId, neighborhood.hops);
+    return filterNeighborhood(
+      graph.nodes,
+      graph.edges,
+      neighborhood.focusId,
+      neighborhood.hops,
+    );
   }, [graph, neighborhood]);
 
   /** 局部图模式下社区汇总同步裁剪（hub 层枢纽选择只覆盖可见社区；全局模式全量）。 */
   const visibleCommunities = useMemo(() => {
     if (!graph) return [];
     if (!neighborhood) return graph.communities;
-    const visibleCommunityIds = new Set(visible.nodes.map((node) => node.community));
-    return graph.communities.filter((community) => visibleCommunityIds.has(community.id));
+    const visibleCommunityIds = new Set(
+      visible.nodes.map((node) => node.community),
+    );
+    return graph.communities.filter((community) =>
+      visibleCommunityIds.has(community.id),
+    );
   }, [graph, visible, neighborhood]);
 
   /** 搜索提交：模糊匹配第一个命中 → 画布居中高亮；无命中提示。 */
@@ -172,10 +201,18 @@ export function GraphTab({
           value={colorBy}
           onValueChange={(value) => value && setColorBy(value as GraphColorBy)}
         >
-          <ToggleGroupItem aria-label={tg.colorByCommunity} className="h-7 px-2 text-xs" value="community">
+          <ToggleGroupItem
+            aria-label={tg.colorByCommunity}
+            className="h-7 px-2 text-xs"
+            value="community"
+          >
             {tg.colorByCommunity}
           </ToggleGroupItem>
-          <ToggleGroupItem aria-label={tg.colorByType} className="h-7 px-2 text-xs" value="type">
+          <ToggleGroupItem
+            aria-label={tg.colorByType}
+            className="h-7 px-2 text-xs"
+            value="type"
+          >
             {tg.colorByType}
           </ToggleGroupItem>
         </ToggleGroup>
@@ -196,7 +233,10 @@ export function GraphTab({
 
       {/* 局部图面包屑（实体邻居；返回按钮清模式） */}
       {neighborhood && (
-        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5" data-testid="graph-breadcrumb">
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5"
+          data-testid="graph-breadcrumb"
+        >
           <Button
             className="h-6 gap-1 px-1.5 text-xs"
             data-testid="graph-breadcrumb-back"
@@ -209,7 +249,9 @@ export function GraphTab({
             <ChevronLeft className="size-3.5" />
             {tg.backToGlobal}
           </Button>
-          <span className="text-xs font-medium">{tg.neighborhoodOf(neighborhood.focusId)}</span>
+          <span className="text-xs font-medium">
+            {tg.neighborhoodOf(neighborhood.focusId)}
+          </span>
           <ToggleGroup
             aria-label={tg.hop1}
             className="ml-auto"
@@ -217,13 +259,22 @@ export function GraphTab({
             type="single"
             value={String(neighborhood.hops)}
             onValueChange={(value) =>
-              (value === "1" || value === "2") && setNeighborhood({ ...neighborhood, hops: Number(value) as 1 | 2 })
+              (value === "1" || value === "2") &&
+              setNeighborhood({ ...neighborhood, hops: Number(value) as 1 | 2 })
             }
           >
-            <ToggleGroupItem aria-label={tg.hop1} className="h-6 px-2 text-xs" value="1">
+            <ToggleGroupItem
+              aria-label={tg.hop1}
+              className="h-6 px-2 text-xs"
+              value="1"
+            >
               {tg.hop1}
             </ToggleGroupItem>
-            <ToggleGroupItem aria-label={tg.hop2} className="h-6 px-2 text-xs" value="2">
+            <ToggleGroupItem
+              aria-label={tg.hop2}
+              className="h-6 px-2 text-xs"
+              value="2"
+            >
               {tg.hop2}
             </ToggleGroupItem>
           </ToggleGroup>
@@ -233,15 +284,24 @@ export function GraphTab({
       {/* relative 供叠加徽标浮层定位（对齐向量空间徽标模式） */}
       <div className="relative min-h-0 flex-1">
         {graphQuery.isLoading ? (
-          <div className="text-muted-foreground flex h-full items-center justify-center text-sm" data-testid="graph-loading">
+          <div
+            className="text-muted-foreground flex h-full items-center justify-center text-sm"
+            data-testid="graph-loading"
+          >
             {tg.loading}
           </div>
         ) : graphQuery.isError ? (
-          <div className="text-muted-foreground flex h-full items-center justify-center text-sm" data-testid="graph-error">
+          <div
+            className="text-muted-foreground flex h-full items-center justify-center text-sm"
+            data-testid="graph-error"
+          >
             {tg.loadFailed}
           </div>
         ) : !graph || graph.nodes.length === 0 ? (
-          <div className="text-muted-foreground flex h-full items-center justify-center text-sm" data-testid="graph-empty">
+          <div
+            className="text-muted-foreground flex h-full items-center justify-center text-sm"
+            data-testid="graph-empty"
+          >
             {tg.empty}
           </div>
         ) : (
@@ -275,8 +335,15 @@ export function GraphTab({
             data-testid="graph-overlay-badge"
           >
             {/* 色点与命中节点同色（红）——徽标是叠加层的图例入口。 */}
-            <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: "#f5222d" }} />
-            <span className="min-w-0 truncate" title={activeOverlay.overlay.text}>
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full"
+              style={{ backgroundColor: "#f5222d" }}
+            />
+            <span
+              className="min-w-0 truncate"
+              title={activeOverlay.overlay.text}
+            >
               {activeOverlay.overlay.text}
             </span>
             <span className="text-muted-foreground shrink-0">
@@ -302,50 +369,79 @@ export function GraphTab({
             className="bg-background/80 text-muted-foreground absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border px-2 py-0.5 text-xs whitespace-nowrap shadow-sm backdrop-blur"
             data-testid="graph-stats"
           >
-            {tg.stats(graph.stats.node_count, graph.stats.edge_count, graph.stats.community_count)}
+            {tg.stats(
+              graph.stats.node_count,
+              graph.stats.edge_count,
+              graph.stats.community_count,
+            )}
           </span>
         )}
       </div>
 
       {/* 实体详情抽屉：详情 + 关联切片列表 → 跳文档抽屉 */}
-      <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="overflow-y-auto" data-testid="graph-entity-sheet" side="right">
-          {selected && (
-            <>
-              <SheetHeader>
-                <SheetTitle>{selected.id}</SheetTitle>
-                <SheetDescription>
-                  {selected.type && <span className="mr-2">{selected.type}</span>}
-                  {tg.mentions(selected.mention_count)}
-                </SheetDescription>
-              </SheetHeader>
-              {selected.description && (
-                <p className="text-muted-foreground px-4 text-sm whitespace-pre-wrap">{selected.description}</p>
-              )}
-              <div className="px-4">
-                <div className="text-muted-foreground mb-2 text-xs font-medium">{tg.relatedChunks}</div>
-                <ul className="space-y-1">
-                  {selected.source_chunk_ids.map((chunkId) => {
-                    const docId = docIdOfChunk(chunkId);
-                    const docName = docId ? (docNameById.get(docId) ?? tg.unknownDoc) : tg.unknownDoc;
-                    return (
-                      <li key={chunkId}>
-                        <button
-                          className="hover:bg-accent w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors"
-                          data-testid="graph-entity-chunk"
-                          type="button"
-                          onClick={() => docId && onOpenChunk(docId, chunkId)}
-                        >
-                          <span className="font-medium">{docName}</span>
-                          <span className="text-muted-foreground ml-1.5">{chunkId}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+      <Sheet
+        open={selected !== null}
+        onOpenChange={(open) => !open && setSelected(null)}
+      >
+        <SheetContent
+          className="overflow-hidden"
+          data-testid="graph-entity-sheet"
+          side="right"
+        >
+          {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：整抽屉经 ScrollArea 滚动；
+              原 SheetContent flex gap-4 改由内层 div 承担。 */}
+          <ScrollArea
+            className="min-h-0 flex-1"
+            scrollHideDelay={2000}
+            type="scroll"
+          >
+            {selected && (
+              <div className="flex flex-col gap-4">
+                <SheetHeader>
+                  <SheetTitle>{selected.id}</SheetTitle>
+                  <SheetDescription>
+                    {selected.type && (
+                      <span className="mr-2">{selected.type}</span>
+                    )}
+                    {tg.mentions(selected.mention_count)}
+                  </SheetDescription>
+                </SheetHeader>
+                {selected.description && (
+                  <p className="text-muted-foreground px-4 text-sm whitespace-pre-wrap">
+                    {selected.description}
+                  </p>
+                )}
+                <div className="px-4">
+                  <div className="text-muted-foreground mb-2 text-xs font-medium">
+                    {tg.relatedChunks}
+                  </div>
+                  <ul className="space-y-1">
+                    {selected.source_chunk_ids.map((chunkId) => {
+                      const docId = docIdOfChunk(chunkId);
+                      const docName = docId
+                        ? (docNameById.get(docId) ?? tg.unknownDoc)
+                        : tg.unknownDoc;
+                      return (
+                        <li key={chunkId}>
+                          <button
+                            className="hover:bg-accent w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors"
+                            data-testid="graph-entity-chunk"
+                            type="button"
+                            onClick={() => docId && onOpenChunk(docId, chunkId)}
+                          >
+                            <span className="font-medium">{docName}</span>
+                            <span className="text-muted-foreground ml-1.5">
+                              {chunkId}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </div>
-            </>
-          )}
+            )}
+          </ScrollArea>
         </SheetContent>
       </Sheet>
     </div>

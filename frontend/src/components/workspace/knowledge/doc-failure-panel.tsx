@@ -3,6 +3,7 @@
 import { CircleAlert, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
 import type { DocFailureEntry } from "@/core/knowledge/use-doc-failure-notifier";
 
@@ -20,7 +21,13 @@ import type { DocFailureEntry } from "@/core/knowledge/use-doc-failure-notifier"
  */
 
 /** 紧凑重试按钮（展开行与单条卡共用）。 */
-function RetryButton({ label, onClick }: { label: string; onClick: () => void }) {
+function RetryButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       className="border-border hover:bg-muted flex h-6 shrink-0 items-center gap-1 rounded border px-2 text-xs transition-colors"
@@ -64,7 +71,7 @@ export function DocFailurePanel({
     "hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 rounded p-1 transition-colors";
   return (
     <div
-      className="border-border/60 bg-white dark:bg-black absolute right-3 bottom-3 z-20 w-80 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-lg border shadow-lg"
+      className="border-border/60 absolute right-3 bottom-3 z-20 w-80 max-w-[calc(100%-1.5rem)] overflow-hidden rounded-lg border bg-white shadow-lg dark:bg-black"
       data-testid="doc-failure-panel"
       onMouseLeave={() => setExpanded(false)}
     >
@@ -87,31 +94,52 @@ export function DocFailurePanel({
         </div>
         {/* 单条且可重试：重试与关闭并排右侧；上传即拒类无行可重试，只有关闭 */}
         {!multiple && first.retryable && onRetry && (
-          <RetryButton label={t.knowledge.retryDocument} onClick={() => onRetry(first.key)} />
+          <RetryButton
+            label={t.knowledge.retryDocument}
+            onClick={() => onRetry(first.key)}
+          />
         )}
-        <button aria-label={tk.dismissAll} className={closeClass} onClick={onDismissAll} type="button">
+        <button
+          aria-label={tk.dismissAll}
+          className={closeClass}
+          onClick={onDismissAll}
+          type="button"
+        >
           <X className="size-3.5" />
         </button>
       </div>
+      {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：失败清单 max-h 内滚改 ScrollArea。 */}
       {multiple && expanded && (
-        <ul className="border-border max-h-40 overflow-auto border-t">
-          {failures.map((entry) => (
-            <li className="flex items-center gap-1.5 py-1.5 pr-2 pl-3" key={entry.key}>
-              <EntryBody entry={entry} />
-              {entry.retryable && onRetry && (
-                <RetryButton label={t.knowledge.retryDocument} onClick={() => onRetry(entry.key)} />
-              )}
-              <button
-                aria-label={tk.dismiss}
-                className={closeClass}
-                onClick={() => onDismiss(entry.key)}
-                type="button"
+        <ScrollArea
+          className="border-border max-h-40 border-t"
+          scrollHideDelay={2000}
+          type="scroll"
+        >
+          <ul>
+            {failures.map((entry) => (
+              <li
+                className="flex items-center gap-1.5 py-1.5 pr-2 pl-3"
+                key={entry.key}
               >
-                <X className="size-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
+                <EntryBody entry={entry} />
+                {entry.retryable && onRetry && (
+                  <RetryButton
+                    label={t.knowledge.retryDocument}
+                    onClick={() => onRetry(entry.key)}
+                  />
+                )}
+                <button
+                  aria-label={tk.dismiss}
+                  className={closeClass}
+                  onClick={() => onDismiss(entry.key)}
+                  type="button"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </ScrollArea>
       )}
     </div>
   );

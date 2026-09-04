@@ -51,6 +51,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { classifyDocError } from "@/core/knowledge/doc-errors";
@@ -694,7 +695,14 @@ export function DocumentPanel({
               </p>
             </div>
           ))}
-        <div className="h-full overflow-auto">
+        {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：文档表纵+横滚改 ScrollArea
+            （horizontal 接管 min-w-[34rem] 横滚；吸顶表头的滚动祖先变为 Viewport，sticky 不变）。 */}
+        <ScrollArea
+          className="h-full"
+          horizontal
+          scrollHideDelay={2000}
+          type="scroll"
+        >
           {documents.length === 0 ? (
             <EmptyDocumentsState probe={dragProbe} />
           ) : visibleDocuments.length === 0 ? (
@@ -1119,7 +1127,7 @@ export function DocumentPanel({
               </tbody>
             </table>
           )}
-        </div>
+        </ScrollArea>
       </div>
 
       {/* Bottom stats row (spec §3.6, aggregated client-side) */}

@@ -11,7 +11,13 @@ import { ArrowUpRight, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
 import type { EvalQuestion } from "@/core/knowledge/types";
 
@@ -25,76 +31,107 @@ export interface EvalQuestionDrawerProps {
   onReproduce?: (query: string) => void;
 }
 
-export function EvalQuestionDrawer({ question, open, onOpenChange, onDelete, onReproduce }: EvalQuestionDrawerProps) {
+export function EvalQuestionDrawer({
+  question,
+  open,
+  onOpenChange,
+  onDelete,
+  onReproduce,
+}: EvalQuestionDrawerProps) {
   const { t } = useI18n();
   const etk = t.knowledge.eval;
   const qtk = etk.questions;
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-xl" side="right">
-        <SheetHeader>
-          <SheetTitle>{qtk.drawerTitle}</SheetTitle>
-        </SheetHeader>
-        {question !== null && (
-          <div className="flex flex-col gap-4">
-            <p className="text-sm whitespace-pre-wrap">{question.query}</p>
+      <SheetContent className="w-full overflow-hidden sm:max-w-xl" side="right">
+        {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04，EvalRunDrawer 同款）：整抽屉经
+            ScrollArea 滚动（type="scroll"、停 2s 淡出），取代原生 overflow-y-auto。 */}
+        <ScrollArea
+          className="min-h-0 flex-1"
+          scrollHideDelay={2000}
+          type="scroll"
+        >
+          <SheetHeader>
+            <SheetTitle>{qtk.drawerTitle}</SheetTitle>
+          </SheetHeader>
+          {question !== null && (
+            <div className="mt-4 flex flex-col gap-4">
+              <p className="text-sm whitespace-pre-wrap">{question.query}</p>
 
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">{etk.category[question.category]}</Badge>
-              {/* 多路预期（2026-08-28 §3）：与题库表格同口径全量渲染。 */}
-              {question.expected_paths.map((path) => (
-                <Badge key={path} variant="secondary">
-                  {path}
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">
+                  {etk.category[question.category]}
                 </Badge>
-              ))}
-            </div>
+                {/* 多路预期（2026-08-28 §3）：与题库表格同口径全量渲染。 */}
+                {question.expected_paths.map((path) => (
+                  <Badge key={path} variant="secondary">
+                    {path}
+                  </Badge>
+                ))}
+              </div>
 
-            <div>
-              <p className="mb-1 text-sm font-medium">{qtk.addDialog.referenceAnswerLabel}</p>
-              {question.reference_answer ? (
-                <p className="text-sm whitespace-pre-wrap">{question.reference_answer}</p>
-              ) : (
-                <p className="text-muted-foreground text-sm">{qtk.noReferenceAnswer}</p>
-              )}
-            </div>
+              <div>
+                <p className="mb-1 text-sm font-medium">
+                  {qtk.addDialog.referenceAnswerLabel}
+                </p>
+                {question.reference_answer ? (
+                  <p className="text-sm whitespace-pre-wrap">
+                    {question.reference_answer}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    {qtk.noReferenceAnswer}
+                  </p>
+                )}
+              </div>
 
-            <div>
-              <p className="mb-1 text-sm font-medium">{qtk.columnAnchors}</p>
-              {question.relevant_chunk_ids.length > 0 ? (
-                <ul className="flex flex-col gap-1">
-                  {question.relevant_chunk_ids.map((chunkId) => (
-                    <li key={chunkId} className="font-mono text-xs break-all select-all">
-                      {chunkId}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-muted-foreground text-sm">{qtk.unanchored}</p>
-              )}
-              {question.relevant_entities.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {question.relevant_entities.map((entity) => (
-                    <Badge key={entity} variant="outline">
-                      {entity}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
+              <div>
+                <p className="mb-1 text-sm font-medium">{qtk.columnAnchors}</p>
+                {question.relevant_chunk_ids.length > 0 ? (
+                  <ul className="flex flex-col gap-1">
+                    {question.relevant_chunk_ids.map((chunkId) => (
+                      <li
+                        key={chunkId}
+                        className="font-mono text-xs break-all select-all"
+                      >
+                        {chunkId}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    {qtk.unanchored}
+                  </p>
+                )}
+                {question.relevant_entities.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {question.relevant_entities.map((entity) => (
+                      <Badge key={entity} variant="outline">
+                        {entity}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-            <div className="mt-2 flex items-center gap-2">
-              <Button onClick={() => onReproduce?.(question.query)} size="sm">
-                <ArrowUpRight className="size-4" />
-                {qtk.rowReproduce}
-              </Button>
-              <Button onClick={() => onDelete(question)} size="sm" variant="outline">
-                <Trash2 className="text-destructive size-4" />
-                {qtk.rowDelete}
-              </Button>
+              <div className="mt-2 flex items-center gap-2">
+                <Button onClick={() => onReproduce?.(question.query)} size="sm">
+                  <ArrowUpRight className="size-4" />
+                  {qtk.rowReproduce}
+                </Button>
+                <Button
+                  onClick={() => onDelete(question)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Trash2 className="text-destructive size-4" />
+                  {qtk.rowDelete}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

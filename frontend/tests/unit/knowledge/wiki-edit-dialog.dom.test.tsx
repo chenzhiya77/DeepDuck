@@ -66,6 +66,18 @@ describe("WikiEditDialog", () => {
     }
   });
 
+  it("caps the ScrollArea root so the viewport stays a bounded scroll container (2026-09-04)", () => {
+    renderDialog();
+    // 对话框高度是 auto 被 max-h-[90vh] 截帽的 indefinite 高度：Viewport 的
+    // height:100% 会回退 auto、被长内容撑到全高而失去滚动能力（滚轮失效、
+    // 滚动条不出现的实测根因）。封顶加在 ScrollArea Root，由原语 Viewport 的
+    // max-h-[inherit] 继承——两个 class 缺一不可，故在此钉住。
+    const scrollRoot = document.querySelector('[data-slot="scroll-area"]');
+    const viewport = document.querySelector('[data-slot="scroll-area-viewport"]');
+    expect(scrollRoot?.className).toContain("max-h-[calc(90vh-3.5rem)]");
+    expect(viewport?.className).toContain("max-h-[inherit]");
+  });
+
   it("calls onSave with trimmed content and supplement on submit", async () => {
     const { onSave } = renderDialog();
 

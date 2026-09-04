@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -39,34 +40,48 @@ export function WikiEntryDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-xl" side="right">
-        <SheetHeader>
-          <SheetTitle>{entry?.title ?? tw.loading}</SheetTitle>
-          {entry?.status === "dirty" && (
-            <SheetDescription>{t.knowledge.wikiPanel.dirty}</SheetDescription>
-          )}
-        </SheetHeader>
-        <div className="flex flex-col gap-4 px-4 pb-6">
-          {query.isLoading && <p className="text-muted-foreground py-4 text-center text-xs">{tw.loading}</p>}
-          {!query.isLoading && !entry && (
-            <p className="text-muted-foreground py-8 text-center text-sm">{tw.notFound}</p>
-          )}
-          {entry && (
-            <>
-              <MarkdownContent content={entry.content} isLoading={false} />
-              {onRevealInTab && (
-                <Button
-                  className="self-start"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onRevealInTab(entry.id)}
-                >
-                  {tw.openInTab}
-                </Button>
-              )}
-            </>
-          )}
-        </div>
+      <SheetContent className="w-full overflow-hidden sm:max-w-xl" side="right">
+        {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04，EvalRunDrawer 同款）：整抽屉经
+            ScrollArea 滚动；mt-4 补原 SheetContent gap-4 的头部间距。 */}
+        <ScrollArea
+          className="min-h-0 flex-1"
+          scrollHideDelay={2000}
+          type="scroll"
+        >
+          <SheetHeader>
+            <SheetTitle>{entry?.title ?? tw.loading}</SheetTitle>
+            {entry?.status === "dirty" && (
+              <SheetDescription>{t.knowledge.wikiPanel.dirty}</SheetDescription>
+            )}
+          </SheetHeader>
+          <div className="mt-4 flex flex-col gap-4 px-4 pb-6">
+            {query.isLoading && (
+              <p className="text-muted-foreground py-4 text-center text-xs">
+                {tw.loading}
+              </p>
+            )}
+            {!query.isLoading && !entry && (
+              <p className="text-muted-foreground py-8 text-center text-sm">
+                {tw.notFound}
+              </p>
+            )}
+            {entry && (
+              <>
+                <MarkdownContent content={entry.content} isLoading={false} />
+                {onRevealInTab && (
+                  <Button
+                    className="self-start"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onRevealInTab(entry.id)}
+                  >
+                    {tw.openInTab}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );

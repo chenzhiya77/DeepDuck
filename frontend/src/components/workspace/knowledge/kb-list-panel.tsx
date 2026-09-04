@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/core/i18n/hooks";
 import type { KnowledgeBase } from "@/core/knowledge/types";
@@ -96,7 +97,7 @@ export function KbListPanel({
         {onCollapse && (
           <Button
             aria-label={tk.collapseKbList}
-            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground size-6 shrink-0"
             size="icon"
             variant="ghost"
             onClick={onCollapse}
@@ -106,9 +107,17 @@ export function KbListPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
+      {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：库列表内滚改 ScrollArea
+          （type="scroll"、停 2s 淡出），取代原生 overflow-y-auto。 */}
+      <ScrollArea
+        className="flex-1 px-2 pb-2"
+        scrollHideDelay={2000}
+        type="scroll"
+      >
         {kbs.length === 0 ? (
-          <p className="text-muted-foreground px-2 py-6 text-center text-xs">{tk.emptyKbList}</p>
+          <p className="text-muted-foreground px-2 py-6 text-center text-xs">
+            {tk.emptyKbList}
+          </p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {kbs.map((kb) => {
@@ -126,7 +135,11 @@ export function KbListPanel({
                     // Only clear when genuinely leaving the row — child
                     // elements (button, icon, text) fire dragleave too, and
                     // reacting to them re-triggered dragover and flickered.
-                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    if (
+                      !event.currentTarget.contains(
+                        event.relatedTarget as Node | null,
+                      )
+                    ) {
                       setOverId((cur) => (cur === kb.id ? null : cur));
                     }
                   }}
@@ -134,7 +147,8 @@ export function KbListPanel({
                     if (!onReorder || !dragId || dragId === kb.id) return;
                     event.preventDefault();
                     // dataTransfer can be absent on synthetic drag events.
-                    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+                    if (event.dataTransfer)
+                      event.dataTransfer.dropEffect = "move";
                     // Sortable-style: cross a row, take its slot — once per
                     // crossing, so one gesture can walk the whole list.
                     if (overId !== kb.id) {
@@ -175,7 +189,7 @@ export function KbListPanel({
             })}
           </ul>
         )}
-      </div>
+      </ScrollArea>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-[425px]">
@@ -200,7 +214,10 @@ export function KbListPanel({
             <Button variant="outline" onClick={resetAndClose}>
               {t.common.cancel}
             </Button>
-            <Button disabled={!name.trim() || submitting} onClick={() => void handleCreate()}>
+            <Button
+              disabled={!name.trim() || submitting}
+              onClick={() => void handleCreate()}
+            >
               {t.common.create}
             </Button>
           </DialogFooter>

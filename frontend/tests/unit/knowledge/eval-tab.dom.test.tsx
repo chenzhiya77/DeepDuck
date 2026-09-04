@@ -12,7 +12,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ReactElement } from "react";
 import { toast } from "sonner";
 
@@ -22,9 +30,25 @@ const hooksMock = rs.hoisted(() => ({
   useEvalRuns: rs.fn(),
   useTriggerEvalRun: rs.fn(),
   // key factories 以真实实现同款内联——组件 drain 边失效要用，测试断言同一字面量。
-  knowledgeEvalLatestKey: (kbId: string) => ["knowledge-bases", kbId, "eval-runs", "latest"],
-  knowledgeEvalTrendKey: (kbId: string, granularity: string) => ["knowledge-bases", kbId, "eval-runs", "trend", { granularity }],
-  knowledgeEvalRunsKey: (kbId: string) => ["knowledge-bases", kbId, "eval-runs", "history"],
+  knowledgeEvalLatestKey: (kbId: string) => [
+    "knowledge-bases",
+    kbId,
+    "eval-runs",
+    "latest",
+  ],
+  knowledgeEvalTrendKey: (kbId: string, granularity: string) => [
+    "knowledge-bases",
+    kbId,
+    "eval-runs",
+    "trend",
+    { granularity },
+  ],
+  knowledgeEvalRunsKey: (kbId: string) => [
+    "knowledge-bases",
+    kbId,
+    "eval-runs",
+    "history",
+  ],
 }));
 
 rs.mock("@/core/knowledge/hooks", () => hooksMock);
@@ -87,7 +111,8 @@ class ResizeObserverStub {
     /* no-op stub */
   }
 }
-(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= ResizeObserverStub;
+(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??=
+  ResizeObserverStub;
 
 import { EvalTab } from "@/components/workspace/knowledge/eval-tab";
 import { I18nContext } from "@/core/i18n/context";
@@ -100,8 +125,20 @@ const OVERVIEW: MetricsOverview = {
     run_id: "run-l1",
     created_at: "2026-08-20T09:00:00+00:00",
     metrics: {
-      summary: { hit_rate: 0.928, recall_at_k: 0.897, mrr: 0.812, path_accuracy: 0.946, question_count: 20 },
-      fact: { hit_rate: 0.952, recall_at_k: 0.923, mrr: 0.876, path_accuracy: 0.985, question_count: 12 },
+      summary: {
+        hit_rate: 0.928,
+        recall_at_k: 0.897,
+        mrr: 0.812,
+        path_accuracy: 0.946,
+        question_count: 20,
+      },
+      fact: {
+        hit_rate: 0.952,
+        recall_at_k: 0.923,
+        mrr: 0.876,
+        path_accuracy: 0.985,
+        question_count: 12,
+      },
     },
   },
   layer2: null,
@@ -135,19 +172,25 @@ function queryState(overrides: {
   isLoading?: boolean;
   error?: Error | null;
 }) {
-  return { data: overrides.data, isLoading: overrides.isLoading ?? false, error: overrides.error ?? null };
+  return {
+    data: overrides.data,
+    isLoading: overrides.isLoading ?? false,
+    error: overrides.error ?? null,
+  };
 }
 
 function renderEvalTab(enabled = true) {
-  return renderWithClient(
-    <EvalTab enabled={enabled} kbId="kb-1" />,
-  );
+  return renderWithClient(<EvalTab enabled={enabled} kbId="kb-1" />);
 }
 
 function renderWithClient(ui: ReactElement) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const view = render(
-    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+    <I18nContext.Provider
+      value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+    >
       <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
     </I18nContext.Provider>,
   );
@@ -163,12 +206,22 @@ describe("EvalTab 数据联通", () => {
     hooksMock.useEvalRuns.mockReset();
     hooksMock.useTriggerEvalRun.mockReset();
     // 缺省：查询就绪且有数据；历史空闲、无触发在途
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
-    hooksMock.useEvalTrend.mockImplementation((_kbId: string, granularity: string) =>
-      queryState({ data: granularity === "day" ? TREND : { ...TREND, granularity } }),
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
     );
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useEvalTrend.mockImplementation(
+      (_kbId: string, granularity: string) =>
+        queryState({
+          data: granularity === "day" ? TREND : { ...TREND, granularity },
+        }),
+    );
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
   });
 
   afterEach(() => {
@@ -183,8 +236,15 @@ describe("EvalTab 数据联通", () => {
 
     cleanup();
     renderEvalTab(false);
-    expect(hooksMock.useMetricsOverview).toHaveBeenLastCalledWith("kb-1", false);
-    expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "day", false);
+    expect(hooksMock.useMetricsOverview).toHaveBeenLastCalledWith(
+      "kb-1",
+      false,
+    );
+    expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith(
+      "kb-1",
+      "day",
+      false,
+    );
     expect(hooksMock.useEvalRuns).toHaveBeenLastCalledWith("kb-1", false);
   });
 
@@ -201,7 +261,10 @@ describe("EvalTab 数据联通", () => {
     expect(canvasMock.props?.points).toEqual(TREND.points);
     expect(canvasMock.props?.baseline).toEqual(TREND.baseline);
     expect(canvasMock.props?.granularity).toBe("day");
-    const labels = canvasMock.props?.labels as { recallAtK?: string; thresholdLabel?: (p: number) => string };
+    const labels = canvasMock.props?.labels as {
+      recallAtK?: string;
+      thresholdLabel?: (p: number) => string;
+    };
     expect(labels.recallAtK).toBe("Recall@k");
     expect(labels.thresholdLabel?.(3)).toBe("回退阈值 -3%");
   });
@@ -210,17 +273,28 @@ describe("EvalTab 数据联通", () => {
     renderEvalTab();
     // 2026-08-28 修订（用户反馈）：下限从整列下沉到指标块——「谁有下限，谁自己滚」。
     const scrollBlock = screen.getByTestId("eval-overview-scroll");
-    expect(scrollBlock.className).toContain("overflow-x-auto");
-    expect(scrollBlock.firstElementChild?.className).toContain("min-w-[32rem]");
+    // 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：Radix ScrollArea（type="scroll"、
+    // 停 2s 淡出），不再原生 overflow-x-auto；min-w 下限隔了 Viewport 测量 div 一层，用选择器找。
+    expect(scrollBlock.getAttribute("data-slot")).toBe("scroll-area");
+    expect(scrollBlock.className).not.toContain("overflow-x-auto");
+    expect(scrollBlock.querySelector("[class*='min-w-[32rem]']")).toBeTruthy();
     // 工具栏固定行，整 tab 无横向滚动；表头上方不画线（2026-09-02，与文档 tab 对齐）：
     // 表头自带吸顶发丝线，两条线夹表头的问题同款修复。
-    expect(screen.getByTestId("eval-view-toolbar").className).toContain("shrink-0");
-    expect(screen.getByTestId("eval-view-toolbar").className).not.toContain("border-b");
-    expect(screen.getByTestId("eval-tab").className).not.toContain("overflow-auto");
+    expect(screen.getByTestId("eval-view-toolbar").className).toContain(
+      "shrink-0",
+    );
+    expect(screen.getByTestId("eval-view-toolbar").className).not.toContain(
+      "border-b",
+    );
+    expect(screen.getByTestId("eval-tab").className).not.toContain(
+      "overflow-auto",
+    );
   });
 
   it("loading 状态渲染加载提示而非空白", () => {
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ isLoading: true }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ isLoading: true }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ isLoading: true }));
     renderEvalTab();
     expect(screen.getAllByText("加载中…").length).toBeGreaterThan(0);
@@ -229,8 +303,12 @@ describe("EvalTab 数据联通", () => {
   });
 
   it("错误状态渲染加载失败提示", () => {
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ error: new Error("boom") }));
-    hooksMock.useEvalTrend.mockReturnValue(queryState({ error: new Error("boom") }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ error: new Error("boom") }),
+    );
+    hooksMock.useEvalTrend.mockReturnValue(
+      queryState({ error: new Error("boom") }),
+    );
     renderEvalTab();
     expect(screen.getAllByText("评测数据加载失败").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("eval-layer1-table")).toBeNull();
@@ -238,7 +316,9 @@ describe("EvalTab 数据联通", () => {
 
   it("trend.has_data=false 渲染空态提示而非空白画布（新 KB 无评测历史）", async () => {
     hooksMock.useEvalTrend.mockReturnValue(
-      queryState({ data: { ...TREND, points: [], has_data: false, baseline: null } }),
+      queryState({
+        data: { ...TREND, points: [], has_data: false, baseline: null },
+      }),
     );
     renderEvalTab();
     expect(screen.getByText("暂无评测趋势数据")).toBeTruthy();
@@ -253,13 +333,19 @@ describe("EvalTab 数据联通", () => {
   it("granularity radio click forwards to useEvalTrend (queryKey 变化自动重查)", () => {
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "周" }));
-    expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "week", true);
+    expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith(
+      "kb-1",
+      "week",
+      true,
+    );
   });
 
   it("clicking a trend point opens the run drawer; closing clears the run id", async () => {
     renderEvalTab();
     await screen.findByTestId("eval-trend-chart-mock");
-    const onPointClick = canvasMock.props?.onPointClick as ((runId: string) => void) | undefined;
+    const onPointClick = canvasMock.props?.onPointClick as
+      | ((runId: string) => void)
+      | undefined;
     expect(onPointClick).toBeTypeOf("function");
     // 点击数据点 → drawer 打开并携带 runId（GET /eval-runs/{run_id} 由 drawer 内的
     // useEvalRun 发起，见 eval-run-drawer.dom.test.tsx）
@@ -269,7 +355,9 @@ describe("EvalTab 数据联通", () => {
     expect(drawerMock.props?.open).toBe(true);
     expect(drawerMock.props?.kbId).toBe("kb-1");
     // 关闭 → 清空 runId，drawer 卸载
-    act(() => (drawerMock.props?.onOpenChange as (open: boolean) => void)(false));
+    act(() =>
+      (drawerMock.props?.onOpenChange as (open: boolean) => void)(false),
+    );
     await waitFor(() => {
       expect(screen.queryByTestId("eval-run-drawer-mock")).toBeNull();
     });
@@ -278,7 +366,10 @@ describe("EvalTab 数据联通", () => {
   it("窄面板降档：容器溢出时粒度按钮组收进 ⋯ 菜单", async () => {
     // jsdom 无布局——把工具栏 scrollWidth 钉成大值模拟溢出（clientWidth 恒 0），
     // 对齐 vector-tab 测试先例。
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -290,13 +381,19 @@ describe("EvalTab 数据联通", () => {
       await screen.findByTestId("eval-trend-chart-mock");
       // 内联粒度按钮组消失，⋯ 按钮出现
       await waitFor(() => {
-        expect(screen.queryByRole("radiogroup", { name: "时间粒度" })).toBeNull();
+        expect(
+          screen.queryByRole("radiogroup", { name: "时间粒度" }),
+        ).toBeNull();
       });
       const more = screen.getByRole("button", { name: "更多选项" });
       // 菜单内承载粒度切换（Radix 键盘开菜单，vector-tab 先例）
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(await screen.findByRole("menuitemradio", { name: "月" }));
-      expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", "month", true);
+      expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith(
+        "kb-1",
+        "month",
+        true,
+      );
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
@@ -324,10 +421,17 @@ const RUN_SUMMARY = {
 
 describe("EvalTab 三视图切换", () => {
   beforeEach(() => {
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
   });
   afterEach(() => cleanup());
 
@@ -359,42 +463,71 @@ describe("EvalTab 三视图切换", () => {
 
 describe("EvalTab 常驻工具栏", () => {
   beforeEach(() => {
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
   });
   afterEach(() => cleanup());
 
   it("工具栏紧凑档：全栏按钮锁 h-7（44px，对齐文档/百科/向量/图谱工具栏基准），锁运行前后不跳动", () => {
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
     const { rerender } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
     const toolbar = screen.getByTestId("eval-view-toolbar");
     expect(toolbar.className).toContain("py-2");
-    expect(within(toolbar).getByRole("button", { name: "运行评测" }).className).toContain("h-7");
+    expect(
+      within(toolbar).getByRole("button", { name: "运行评测" }).className,
+    ).toContain("h-7");
     // 题库视图的造题入口同为 h-7 档（行高 44 = 文档工具栏基准）
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
-    expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("h-7");
-    expect(within(toolbar).getByRole("button", { name: /生成考题/ }).className).toContain("h-7");
+    expect(
+      within(toolbar).getByRole("button", { name: /添加考题/ }).className,
+    ).toContain("h-7");
+    expect(
+      within(toolbar).getByRole("button", { name: /生成考题/ }).className,
+    ).toContain("h-7");
     // 三按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款收窄），
     // 同内边距不跳宽；不降字号，保住主动词视觉权重。
     const runButton = within(toolbar).getByRole("button", { name: "运行评测" });
     expect(runButton.className).toContain("px-2.5");
     expect(runButton.className).toContain("gap-1.5");
-    expect(within(toolbar).getByRole("button", { name: /添加考题/ }).className).toContain("px-2.5");
-    expect(within(toolbar).getByRole("button", { name: /生成考题/ }).className).toContain("px-2.5");
+    expect(
+      within(toolbar).getByRole("button", { name: /添加考题/ }).className,
+    ).toContain("px-2.5");
+    expect(
+      within(toolbar).getByRole("button", { name: /生成考题/ }).className,
+    ).toContain("px-2.5");
 
     // 锁运行（in_flight=true）：按钮同一 h-7 档，工具栏高度不变
     act(() => {
-      hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: true, runs: [RUN_SUMMARY], total: 1 } }));
+      hooksMock.useEvalRuns.mockReturnValue(
+        queryState({
+          data: { in_flight: true, runs: [RUN_SUMMARY], total: 1 },
+        }),
+      );
       rerender(
-        <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-          <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nContext.Provider
+          value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+        >
+          <QueryClientProvider
+            client={
+              new QueryClient({ defaultOptions: { queries: { retry: false } } })
+            }
+          >
             <EvalTab enabled kbId="kb-1" />
           </QueryClientProvider>
         </I18nContext.Provider>,
       );
     });
-    expect(within(toolbar).getByRole("button", { name: "运行中…" }).className).toContain("h-7");
+    expect(
+      within(toolbar).getByRole("button", { name: "运行中…" }).className,
+    ).toContain("h-7");
   });
 
   it("视图分段控件保持底色块样式（与顶部知识库大 tab 的下划线样式做层级区分）", () => {
@@ -407,7 +540,9 @@ describe("EvalTab 常驻工具栏", () => {
   });
 
   it("in_flight=true 时按钮转「运行中…」禁用态", () => {
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: true, runs: [], total: 0 } }));
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: true, runs: [], total: 0 } }),
+    );
     renderEvalTab();
     const runButton = screen.getByRole("button", { name: "运行中…" });
     expect(runButton.hasAttribute("disabled")).toBe(true);
@@ -415,35 +550,56 @@ describe("EvalTab 常驻工具栏", () => {
   });
 
   it("mutation pending 同样呈现运行中禁用态（点击→首次轮询间隙）", () => {
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: true });
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: true,
+    });
     renderEvalTab();
-    expect(screen.getByRole("button", { name: "运行中…" }).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "运行中…" }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 
   it("点击运行 → enqueued 成功 toast", () => {
-    const mutate = rs.fn((_vars: unknown, opts?: { onSuccess?: (r: { status: string }) => void }) => {
-      opts?.onSuccess?.({ status: "enqueued" });
-    });
+    const mutate = rs.fn(
+      (
+        _vars: unknown,
+        opts?: { onSuccess?: (r: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "enqueued" });
+      },
+    );
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
 
     fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
 
     expect(mutate).toHaveBeenCalled();
-    expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "评测已开始")).toBe(true);
+    expect(
+      rs.mocked(toast.success).mock.calls.some(([m]) => m === "评测已开始"),
+    ).toBe(true);
   });
 
   it("already_running → 提示 toast，不报错", () => {
-    const mutate = rs.fn((_vars: unknown, opts?: { onSuccess?: (r: { status: string }) => void }) => {
-      opts?.onSuccess?.({ status: "already_running" });
-    });
+    const mutate = rs.fn(
+      (
+        _vars: unknown,
+        opts?: { onSuccess?: (r: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "already_running" });
+      },
+    );
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
 
     fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
 
-    expect(rs.mocked(toast.info).mock.calls.some(([m]) => m === "已有评测正在运行")).toBe(true);
+    expect(
+      rs.mocked(toast.info).mock.calls.some(([m]) => m === "已有评测正在运行"),
+    ).toBe(true);
     expect(rs.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
@@ -456,23 +612,34 @@ describe("EvalTab 常驻工具栏", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
 
-    expect(rs.mocked(toast.error).mock.calls.some(([m]) => m === "评测触发失败")).toBe(true);
+    expect(
+      rs.mocked(toast.error).mock.calls.some(([m]) => m === "评测触发失败"),
+    ).toBe(true);
   });
 
   it("drain 边：in_flight true→false 一次性失效三个评测 query", () => {
-    let runsState = queryState({ data: { in_flight: true, runs: [], total: 0 } });
+    let runsState = queryState({
+      data: { in_flight: true, runs: [], total: 0 },
+    });
     hooksMock.useEvalRuns.mockImplementation(() => runsState);
-    const { queryClient, rerender } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
+    const { queryClient, rerender } = renderWithClient(
+      <EvalTab enabled kbId="kb-1" />,
+    );
     const invalidateSpy = rs.fn().mockResolvedValue(undefined);
-    queryClient.invalidateQueries = invalidateSpy as typeof queryClient.invalidateQueries;
+    queryClient.invalidateQueries =
+      invalidateSpy as typeof queryClient.invalidateQueries;
 
     // 初始挂载（含 in_flight=true 首见）不触发失效
     expect(invalidateSpy).not.toHaveBeenCalled();
 
     act(() => {
-      runsState = queryState({ data: { in_flight: false, runs: [], total: 0 } });
+      runsState = queryState({
+        data: { in_flight: false, runs: [], total: 0 },
+      });
       rerender(
-        <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <I18nContext.Provider
+          value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+        >
           <QueryClientProvider client={queryClient}>
             <EvalTab enabled kbId="kb-1" />
           </QueryClientProvider>
@@ -480,16 +647,37 @@ describe("EvalTab 常驻工具栏", () => {
       );
     });
 
-    const keys = invalidateSpy.mock.calls.map(([arg]) => (arg as { queryKey: readonly unknown[] }).queryKey);
-    expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "history"]);
-    expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "latest"]);
-    expect(keys).toContainEqual(["knowledge-bases", "kb-1", "eval-runs", "trend", { granularity: "day" }]);
+    const keys = invalidateSpy.mock.calls.map(
+      ([arg]) => (arg as { queryKey: readonly unknown[] }).queryKey,
+    );
+    expect(keys).toContainEqual([
+      "knowledge-bases",
+      "kb-1",
+      "eval-runs",
+      "history",
+    ]);
+    expect(keys).toContainEqual([
+      "knowledge-bases",
+      "kb-1",
+      "eval-runs",
+      "latest",
+    ]);
+    expect(keys).toContainEqual([
+      "knowledge-bases",
+      "kb-1",
+      "eval-runs",
+      "trend",
+      { granularity: "day" },
+    ]);
   });
 
   it("内容区边距：总览/历史 px-4 py-3，题库视图通栏且顶边无内距（表头贴工具栏下沿，文档列表同款）", () => {
     renderEvalTab();
     const content = screen.getByTestId("eval-view-content");
     expect(content.className).toContain("px-4");
+    // 内容区同为百科 Tab 容器同款 overlay 滚动条（2026-09-04），不再原生 overflow-auto。
+    expect(content.getAttribute("data-slot")).toBe("scroll-area");
+    expect(content.className).not.toContain("overflow-auto");
 
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     const questionsContent = screen.getByTestId("eval-view-content");
@@ -504,14 +692,19 @@ describe("EvalTab 常驻工具栏", () => {
   });
 
   it("窄面板降档：视图工具栏溢出时运行按钮收进 ⋯ 菜单", async () => {
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
         return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
       },
     });
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
     try {
       const mutate = rs.fn();
       hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
@@ -519,14 +712,26 @@ describe("EvalTab 常驻工具栏", () => {
       await screen.findByTestId("eval-trend-chart-mock");
       // 内联运行按钮消失，视图工具栏自己的 ⋯ 按钮出现（趋势工具栏不受影响）
       await waitFor(() => {
-        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "运行评测" })).toBeNull();
+        expect(
+          within(screen.getByTestId("eval-view-toolbar")).queryByRole(
+            "button",
+            { name: "运行评测" },
+          ),
+        ).toBeNull();
       });
-      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole(
+        "button",
+        { name: "更多选项" },
+      );
       fireEvent.keyDown(more, { key: "ArrowDown" });
-      fireEvent.click(await screen.findByRole("menuitem", { name: "运行评测" }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "运行评测" }),
+      );
       expect(mutate).toHaveBeenCalled();
       // 分段控件恒内联：三视图标签足够短
-      expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
+      expect(
+        screen.getByRole("radiogroup", { name: "评测视图切换" }),
+      ).toBeTruthy();
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
@@ -539,21 +744,34 @@ describe("EvalTab 常驻工具栏", () => {
   it("tier 1 ⋯ 触发器与内联按钮同档（28px），切题库降档时工具栏不跳高", async () => {
     // 复现路径（2026-08-30 用户报告）：总览无溢出（44px）→ 切题库三按钮溢出升档，
     // 若 ⋯ 触发器是 size=sm（h-8=32px），栏高 44→48 突跳；锁 size-7 与 h-7 同档。
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
         return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
       },
     });
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
     try {
       renderEvalTab();
       fireEvent.click(screen.getByRole("radio", { name: "题库" }));
       await waitFor(() => {
-        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "运行评测" })).toBeNull();
+        expect(
+          within(screen.getByTestId("eval-view-toolbar")).queryByRole(
+            "button",
+            { name: "运行评测" },
+          ),
+        ).toBeNull();
       });
-      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole(
+        "button",
+        { name: "更多选项" },
+      );
       expect(more.className).toContain("size-7");
     } finally {
       if (original) {
@@ -565,7 +783,10 @@ describe("EvalTab 常驻工具栏", () => {
   });
 
   it("tier 1 时状态文案让位（次要信息先收缩，分段控件与 ⋯ 恒在）", () => {
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -576,8 +797,14 @@ describe("EvalTab 常驻工具栏", () => {
       renderEvalTab();
       // 状态文案已整体移除（2026-08-28 反馈）；tier 1 只保留分段控件 + ⋯
       expect(screen.queryByText("尚未运行")).toBeNull();
-      expect(screen.getByRole("radiogroup", { name: "评测视图切换" })).toBeTruthy();
-      expect(within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" })).toBeTruthy();
+      expect(
+        screen.getByRole("radiogroup", { name: "评测视图切换" }),
+      ).toBeTruthy();
+      expect(
+        within(screen.getByTestId("eval-view-toolbar")).getByRole("button", {
+          name: "更多选项",
+        }),
+      ).toBeTruthy();
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
@@ -595,10 +822,17 @@ describe("EvalTab 常驻工具栏", () => {
 describe("EvalTab 题库入口（常驻工具栏）", () => {
   beforeEach(() => {
     bankMock.props = undefined;
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
   });
   afterEach(() => cleanup());
 
@@ -610,16 +844,32 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     const toolbar = screen.getByTestId("eval-view-toolbar");
-    expect(within(toolbar).getByRole("button", { name: /添加考题/ })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: /生成考题/ })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: "运行评测" })).toBeTruthy();
+    expect(
+      within(toolbar).getByRole("button", { name: /添加考题/ }),
+    ).toBeTruthy();
+    expect(
+      within(toolbar).getByRole("button", { name: /生成考题/ }),
+    ).toBeTruthy();
+    expect(
+      within(toolbar).getByRole("button", { name: "运行评测" }),
+    ).toBeTruthy();
     // 文案定短（2026-08-30）：与「添加考题」「运行评测」同长，四字词。
-    expect(within(toolbar).getByRole("button", { name: /生成考题/ }).textContent).toBe("生成考题");
+    expect(
+      within(toolbar).getByRole("button", { name: /生成考题/ }).textContent,
+    ).toBe("生成考题");
 
     // 切走即消失（历史/总览无造题语义）
     fireEvent.click(screen.getByRole("radio", { name: "历史" }));
-    expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /添加考题/ })).toBeNull();
-    expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /生成考题/ })).toBeNull();
+    expect(
+      within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", {
+        name: /添加考题/,
+      }),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", {
+        name: /生成考题/,
+      }),
+    ).toBeNull();
   });
 
   it("点击「从文档生成考题」→ bank 受控 synthesisOpen 置真，回调可复位", () => {
@@ -628,7 +878,9 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
     expect(bankMock.props?.synthesisOpen).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: /生成考题/ }));
     expect(bankMock.props?.synthesisOpen).toBe(true);
-    act(() => (bankMock.props?.onSynthesisOpenChange as (open: boolean) => void)(false));
+    act(() =>
+      (bankMock.props?.onSynthesisOpenChange as (open: boolean) => void)(false),
+    );
     expect(bankMock.props?.synthesisOpen).toBe(false);
   });
 
@@ -641,7 +893,10 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
   });
 
   it("窄面板降档：题库动作与运行评测一并收进 ⋯ 菜单", async () => {
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -653,19 +908,36 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
       fireEvent.click(screen.getByRole("radio", { name: "题库" }));
       // 内联按钮消失，⋯ 菜单承载三个动作（两造题入口 + 运行评测）
       await waitFor(() => {
-        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: /生成考题/ })).toBeNull();
+        expect(
+          within(screen.getByTestId("eval-view-toolbar")).queryByRole(
+            "button",
+            { name: /生成考题/ },
+          ),
+        ).toBeNull();
       });
-      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole(
+        "button",
+        { name: "更多选项" },
+      );
       fireEvent.keyDown(more, { key: "ArrowDown" });
       // 降档不丢图标（2026-09-02）：⋯ 菜单逐项携图标，与内联按钮/题库行三点
       // 同一图标语汇（Plus / Sparkles / Play / Layers）。
       const items = await screen.findAllByRole("menuitem");
-      expect(items.map((item) => item.textContent)).toEqual(["添加考题", "生成考题", "运行评测", "完整评测"]);
-      expect(items.every((item) => item.querySelector("svg") !== null)).toBe(true);
+      expect(items.map((item) => item.textContent)).toEqual([
+        "添加考题",
+        "生成考题",
+        "运行评测",
+        "完整评测",
+      ]);
+      expect(items.every((item) => item.querySelector("svg") !== null)).toBe(
+        true,
+      );
       fireEvent.click(screen.getByRole("menuitem", { name: /生成考题/ }));
       expect(bankMock.props?.synthesisOpen).toBe(true);
       fireEvent.keyDown(more, { key: "ArrowDown" });
-      fireEvent.click(await screen.findByRole("menuitem", { name: /添加考题/ }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: /添加考题/ }),
+      );
       expect(bankMock.props?.addOpen).toBe(true);
     } finally {
       if (original) {
@@ -684,10 +956,17 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
 describe("EvalTab 题库搜索（常驻工具栏）", () => {
   beforeEach(() => {
     bankMock.props = undefined;
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
   });
   afterEach(() => cleanup());
 
@@ -711,7 +990,9 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
     expect(bankMock.props?.searchQuery).toBe("");
     expect(screen.queryByRole("button", { name: "清空搜索" })).toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("搜索问题…"), { target: { value: "多态" } });
+    fireEvent.change(screen.getByPlaceholderText("搜索问题…"), {
+      target: { value: "多态" },
+    });
     expect(bankMock.props?.searchQuery).toBe("多态");
     fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
     expect(bankMock.props?.searchQuery).toBe("");
@@ -719,7 +1000,10 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
   });
 
   it("窄面板降档：按钮收进 ⋯，搜索框保留（只收按钮不收搜索）", async () => {
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -730,7 +1014,12 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
       renderEvalTab();
       fireEvent.click(screen.getByRole("radio", { name: "题库" }));
       await waitFor(() => {
-        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "运行评测" })).toBeNull();
+        expect(
+          within(screen.getByTestId("eval-view-toolbar")).queryByRole(
+            "button",
+            { name: "运行评测" },
+          ),
+        ).toBeNull();
       });
       expect(screen.getByPlaceholderText("搜索问题…")).toBeTruthy();
     } finally {
@@ -750,10 +1039,17 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
 
 describe("EvalTab 运行评测分档（B 方案）", () => {
   beforeEach(() => {
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
   });
   afterEach(() => cleanup());
 
@@ -797,13 +1093,21 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
   });
 
   it("运行中箭头下拉同主按钮一并禁用", () => {
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: true });
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: true,
+    });
     renderEvalTab();
-    expect(screen.getByRole("button", { name: "评测档位" }).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "评测档位" }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 
   it("窄面板降档：箭头收进 ⋯，完整评测项并入菜单", async () => {
-    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -815,11 +1119,21 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
     try {
       renderEvalTab();
       await waitFor(() => {
-        expect(within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", { name: "评测档位" })).toBeNull();
+        expect(
+          within(screen.getByTestId("eval-view-toolbar")).queryByRole(
+            "button",
+            { name: "评测档位" },
+          ),
+        ).toBeNull();
       });
-      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole("button", { name: "更多选项" });
+      const more = within(screen.getByTestId("eval-view-toolbar")).getByRole(
+        "button",
+        { name: "更多选项" },
+      );
       fireEvent.keyDown(more, { key: "ArrowDown" });
-      fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "完整评测" }),
+      );
       expect(await screen.findByText("运行完整评测")).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
       expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2" });
@@ -839,35 +1153,55 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
 
 describe("EvalTab 选题运行工具栏原位切换", () => {
   beforeEach(() => {
-    hooksMock.useMetricsOverview.mockReturnValue(queryState({ data: OVERVIEW }));
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
     hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
-    hooksMock.useEvalRuns.mockReturnValue(queryState({ data: { in_flight: false, runs: [], total: 0 } }));
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
   });
   afterEach(() => cleanup());
 
   function selectQuestions(ids: string[]) {
     // bank mock 上报选中集（模拟 bank 内勾选/右键选中）。
     act(() => {
-      (bankMock.props?.onSelectedIdsChange as (next: ReadonlySet<string>) => void)(new Set(ids));
+      (
+        bankMock.props?.onSelectedIdsChange as (
+          next: ReadonlySet<string>,
+        ) => void
+      )(new Set(ids));
     });
   }
 
   it("题库视图有选中时运行主键切「快速评测」携 question_ids，成功清空后切回", async () => {
-    const mutate = rs.fn((_input: unknown, opts?: { onSuccess?: (response: { status: string }) => void }) => {
-      opts?.onSuccess?.({ status: "enqueued" });
-    });
+    const mutate = rs.fn(
+      (
+        _input: unknown,
+        opts?: { onSuccess?: (response: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "enqueued" });
+      },
+    );
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     selectQuestions(["q_1", "q_2"]);
 
     const toolbar = screen.getByTestId("eval-view-toolbar");
-    expect(within(toolbar).queryByRole("button", { name: "运行评测" })).toBeNull();
+    expect(
+      within(toolbar).queryByRole("button", { name: "运行评测" }),
+    ).toBeNull();
     fireEvent.click(within(toolbar).getByRole("button", { name: "快速评测" }));
-    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1", question_ids: ["q_1", "q_2"] });
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      layers: "l1",
+      question_ids: ["q_1", "q_2"],
+    });
     // 触发成功清空选题集（原批量栏语义承接）：主键切回「运行评测」。
     await waitFor(() => {
-      expect(within(toolbar).getByRole("button", { name: "运行评测" })).toBeTruthy();
+      expect(
+        within(toolbar).getByRole("button", { name: "运行评测" }),
+      ).toBeTruthy();
     });
   });
 
@@ -883,13 +1217,21 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
     expect(await screen.findByText("运行完整评测")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
-    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2", question_ids: ["q_9"] });
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      layers: "l1_l2",
+      question_ids: ["q_9"],
+    });
   });
 
   it("选题集跨视图不泄漏：总览视图主键仍是全量运行", () => {
-    const mutate = rs.fn((_input: unknown, opts?: { onSuccess?: (response: { status: string }) => void }) => {
-      opts?.onSuccess?.({ status: "enqueued" });
-    });
+    const mutate = rs.fn(
+      (
+        _input: unknown,
+        opts?: { onSuccess?: (response: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "enqueued" });
+      },
+    );
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));

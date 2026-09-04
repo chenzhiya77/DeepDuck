@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import { stripSummaryHeading } from "@/core/knowledge/format";
@@ -301,8 +302,13 @@ export function RecallTestPanel({
         </Tooltip>
       </div>
 
-      {/* Results */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      {/* Results：百科 Tab 容器同款 overlay 滚动条（2026-09-04）：结果区内滚改
+          ScrollArea（type="scroll"、停 2s 淡出）；存为考题栏 sticky bottom 的滚动祖先变为 Viewport。 */}
+      <ScrollArea
+        className="min-h-0 flex-1 px-4 py-3"
+        scrollHideDelay={2000}
+        type="scroll"
+      >
         {!result && (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
             <FlaskConical className="size-5" />
@@ -516,7 +522,7 @@ export function RecallTestPanel({
             )}
           </div>
         )}
-      </div>
+      </ScrollArea>
 
       {/* 存为考题 dialog：query 预填当前输入，保存成功清勾选继续标注（不跳视图） */}
       <EvalSaveQuestionDialog

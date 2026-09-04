@@ -21,7 +21,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/core/i18n/hooks";
 import { useDocuments, useTriggerSynthesis } from "@/core/knowledge/hooks";
 
@@ -33,13 +40,19 @@ export interface EvalSynthesisDialogProps {
 
 const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
-export function EvalSynthesisDialog({ kbId, open, onOpenChange }: EvalSynthesisDialogProps) {
+export function EvalSynthesisDialog({
+  kbId,
+  open,
+  onOpenChange,
+}: EvalSynthesisDialogProps) {
   const { t } = useI18n();
   const stk = t.knowledge.eval.synthesize;
   const trigger = useTriggerSynthesis(kbId);
   // dialog 打开才拉文档列表（懒门控）；只列已索引文档（无切片必 409）。
   const documents = useDocuments(open ? kbId : null);
-  const readyDocs = (documents.data ?? []).filter((doc) => doc.status === "ready");
+  const readyDocs = (documents.data ?? []).filter(
+    (doc) => doc.status === "ready",
+  );
 
   // 多选清单：勾选顺序即提交顺序（后端保序去重）。
   const [docIds, setDocIds] = useState<string[]>([]);
@@ -54,7 +67,11 @@ export function EvalSynthesisDialog({ kbId, open, onOpenChange }: EvalSynthesisD
   }, [open]);
 
   const toggle = (docId: string) => {
-    setDocIds((prev) => (prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]));
+    setDocIds((prev) =>
+      prev.includes(docId)
+        ? prev.filter((id) => id !== docId)
+        : [...prev, docId],
+    );
   };
 
   const canSubmit = docIds.length > 0 && !trigger.isPending;
@@ -70,7 +87,11 @@ export function EvalSynthesisDialog({ kbId, open, onOpenChange }: EvalSynthesisD
         toast.info(stk.generating);
       }
     } catch (error) {
-      toast.error(error instanceof Error && error.message ? error.message : stk.triggerFailed);
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : stk.triggerFailed,
+      );
     }
   };
 
@@ -86,29 +107,49 @@ export function EvalSynthesisDialog({ kbId, open, onOpenChange }: EvalSynthesisD
             <span className="text-sm font-medium">{stk.docLabel}</span>
             {/* 多选清单（行即复选目标）：点击行或复选框都能勾选，
                 复选框 stopPropagation 防双触发抵消。 */}
-            <div aria-label={stk.docLabel} className="border-input flex max-h-44 flex-col gap-0.5 overflow-y-auto rounded-md border p-1" role="group">
-              {readyDocs.map((doc) => (
-                <div
-                  className="hover:bg-muted/60 flex cursor-pointer items-center gap-2 rounded px-2 py-1.5"
-                  key={doc.id}
-                  onClick={() => toggle(doc.id)}
-                >
-                  <Checkbox
-                    aria-label={doc.name}
-                    checked={docIds.includes(doc.id)}
-                    onCheckedChange={() => toggle(doc.id)}
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                  <span className="truncate text-sm">{doc.name}</span>
-                </div>
-              ))}
-              {readyDocs.length === 0 && <p className="text-muted-foreground px-2 py-1.5 text-xs">{stk.empty}</p>}
-            </div>
+            {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：多选清单 max-h 内滚改
+                ScrollArea（type="scroll"、停 2s 淡出），取代原生 overflow-y-auto。 */}
+            <ScrollArea
+              aria-label={stk.docLabel}
+              className="border-input max-h-44 rounded-md border"
+              role="group"
+              scrollHideDelay={2000}
+              type="scroll"
+            >
+              <div className="flex flex-col gap-0.5 p-1">
+                {readyDocs.map((doc) => (
+                  <div
+                    className="hover:bg-muted/60 flex cursor-pointer items-center gap-2 rounded px-2 py-1.5"
+                    key={doc.id}
+                    onClick={() => toggle(doc.id)}
+                  >
+                    <Checkbox
+                      aria-label={doc.name}
+                      checked={docIds.includes(doc.id)}
+                      onCheckedChange={() => toggle(doc.id)}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                    <span className="truncate text-sm">{doc.name}</span>
+                  </div>
+                ))}
+                {readyDocs.length === 0 && (
+                  <p className="text-muted-foreground px-2 py-1.5 text-xs">
+                    {stk.empty}
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium">{stk.countLabel}</span>
-            <Select onValueChange={(value) => setCount(Number(value))} value={String(count)}>
-              <SelectTrigger aria-label={stk.countLabel} className="w-full sm:w-40">
+            <Select
+              onValueChange={(value) => setCount(Number(value))}
+              value={String(count)}
+            >
+              <SelectTrigger
+                aria-label={stk.countLabel}
+                className="w-full sm:w-40"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

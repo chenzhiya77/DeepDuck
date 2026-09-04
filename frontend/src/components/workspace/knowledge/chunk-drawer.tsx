@@ -5,11 +5,27 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
 import { listDocumentChunks } from "@/core/knowledge/api";
-import { knowledgeChunksKey, useDeleteChunk, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
-import type { DeletePreviewResponse, KnowledgeDocument } from "@/core/knowledge/types";
+import {
+  knowledgeChunksKey,
+  useDeleteChunk,
+  usePreviewChunkDeletion,
+  useReExtractChunk,
+  useUpdateChunk,
+} from "@/core/knowledge/hooks";
+import type {
+  DeletePreviewResponse,
+  KnowledgeDocument,
+} from "@/core/knowledge/types";
 
 import { ChunkCard } from "./chunk-card";
 import { DeletePreviewDialog } from "./delete-preview-dialog";
@@ -34,7 +50,9 @@ export function ChunkDrawer({
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const [reExtractingChunkId, setReExtractingChunkId] = useState<string | null>(null);
+  const [reExtractingChunkId, setReExtractingChunkId] = useState<string | null>(
+    null,
+  );
 
   // Use raw query for configurable polling when pending extraction detected
   const query = useQuery({
@@ -55,7 +73,8 @@ export function ChunkDrawer({
   const deleteChunk = useDeleteChunk(kbId);
 
   const [deletePreviewOpen, setDeletePreviewOpen] = useState(false);
-  const [deletePreview, setDeletePreview] = useState<DeletePreviewResponse | null>(null);
+  const [deletePreview, setDeletePreview] =
+    useState<DeletePreviewResponse | null>(null);
   // Task 5 收尾: the preview response carries no chunk id, so the confirm
   // handler needs the target remembered at preview time.
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -72,7 +91,9 @@ export function ChunkDrawer({
 
   const handleDeleteChunk = async (chunkId: string) => {
     try {
-      const preview = await previewDeletion.mutateAsync({ chunk_ids: [chunkId] });
+      const preview = await previewDeletion.mutateAsync({
+        chunk_ids: [chunkId],
+      });
       setDeletePreview(preview);
       setDeleteTargetId(chunkId);
       setDeletePreviewOpen(true);
@@ -123,45 +144,70 @@ export function ChunkDrawer({
   return (
     <>
       <Sheet onOpenChange={onOpenChange} open={open}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl" side="right">
-          <SheetHeader>
-            <SheetTitle>
-              {tc.title} · {doc.name}
-            </SheetTitle>
-            <SheetDescription>{total} chunks</SheetDescription>
-          </SheetHeader>
-          <div className="flex flex-col gap-2 px-4 pb-6">
-            {(page?.items ?? []).length === 0 && !isLoading ? (
-              <p className="text-muted-foreground py-8 text-center text-sm">{tc.empty}</p>
-            ) : (
-              (page?.items ?? []).map((chunk) => (
-                <ChunkCard
-                  chunkId={chunk.chunk_id}
-                  docId={doc.id}
-                  entities={chunk.entities}
-                  headingPath={chunk.heading_path}
-                  kbId={kbId}
-                  isReExtracting={reExtractingChunkId === chunk.chunk_id}
-                  key={chunk.chunk_id}
-                  lastEditedAt={chunk.last_edited_at}
-                  onDelete={handleDeleteChunk}
-                  onEdit={handleEditChunk}
-                  onReExtract={handleReExtractChunk}
-                  page={chunk.page}
-                  reExtractDisabled={reExtractingChunkId !== null && reExtractingChunkId !== chunk.chunk_id}
-                  text={chunk.text}
-                  tokenCount={chunk.token_count}
-                  extractStatus={chunk.extract_status}
-                />
-              ))
-            )}
-            {isLoading && <p className="text-muted-foreground py-4 text-center text-xs">{tc.loading}</p>}
-            {hasMore && !isLoading && (
-              <Button className="self-center" onClick={() => setLimit((value) => value + PAGE_SIZE)} size="sm" variant="ghost">
-                {tc.loadMore}
-              </Button>
-            )}
-          </div>
+        <SheetContent
+          className="w-full overflow-hidden sm:max-w-xl"
+          side="right"
+        >
+          {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04，EvalRunDrawer 同款）：整抽屉经
+              ScrollArea 滚动；mt-4 补原 SheetContent gap-4 的头部间距。 */}
+          <ScrollArea
+            className="min-h-0 flex-1"
+            scrollHideDelay={2000}
+            type="scroll"
+          >
+            <SheetHeader>
+              <SheetTitle>
+                {tc.title} · {doc.name}
+              </SheetTitle>
+              <SheetDescription>{total} chunks</SheetDescription>
+            </SheetHeader>
+            <div className="mt-4 flex flex-col gap-2 px-4 pb-6">
+              {(page?.items ?? []).length === 0 && !isLoading ? (
+                <p className="text-muted-foreground py-8 text-center text-sm">
+                  {tc.empty}
+                </p>
+              ) : (
+                (page?.items ?? []).map((chunk) => (
+                  <ChunkCard
+                    chunkId={chunk.chunk_id}
+                    docId={doc.id}
+                    entities={chunk.entities}
+                    headingPath={chunk.heading_path}
+                    kbId={kbId}
+                    isReExtracting={reExtractingChunkId === chunk.chunk_id}
+                    key={chunk.chunk_id}
+                    lastEditedAt={chunk.last_edited_at}
+                    onDelete={handleDeleteChunk}
+                    onEdit={handleEditChunk}
+                    onReExtract={handleReExtractChunk}
+                    page={chunk.page}
+                    reExtractDisabled={
+                      reExtractingChunkId !== null &&
+                      reExtractingChunkId !== chunk.chunk_id
+                    }
+                    text={chunk.text}
+                    tokenCount={chunk.token_count}
+                    extractStatus={chunk.extract_status}
+                  />
+                ))
+              )}
+              {isLoading && (
+                <p className="text-muted-foreground py-4 text-center text-xs">
+                  {tc.loading}
+                </p>
+              )}
+              {hasMore && !isLoading && (
+                <Button
+                  className="self-center"
+                  onClick={() => setLimit((value) => value + PAGE_SIZE)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {tc.loadMore}
+                </Button>
+              )}
+            </div>
+          </ScrollArea>
         </SheetContent>
       </Sheet>
 
