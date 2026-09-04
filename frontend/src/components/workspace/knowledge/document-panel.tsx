@@ -372,7 +372,10 @@ function EmptyDocumentsState({ probe }: { probe: DragProbe | null }) {
   const lit = probe ? new Set(probe.litKinds) : null;
   const dimAll = probe !== null && !probe.anyAccepted;
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-5 px-4 py-10 text-center">
+    // absolute inset-0（2026-09-04 修居中回归）：空态现在是 ScrollArea 的子节点，
+    // 而 Viewport 内层测量 wrapper 是 auto 高，h-full 会回退 auto 塌成内容高→靠上；
+    // 改锚定 ScrollArea Root（relative）精确填满滚动区，恢复水平+垂直居中。
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-4 py-10 text-center">
       <div className="grid grid-cols-3 gap-3" data-testid="empty-doc-icons">
         {EMPTY_STATE_SAMPLES.map((name) => {
           const isLit = lit?.has(fileTypeKind(name)) ?? false;

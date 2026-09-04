@@ -310,7 +310,10 @@ export function RecallTestPanel({
         type="scroll"
       >
         {!result && (
-          <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
+          // absolute inset-0（2026-09-04 修居中回归）：空态是 ScrollArea 子节点，
+          // Viewport 内层测量 wrapper 为 auto 高，h-full 回退 auto 塌成内容高→靠上；
+          // 改锚定 ScrollArea Root（relative）填满滚动区，恢复水平+垂直居中。
+          <div className="text-muted-foreground absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm">
             <FlaskConical className="size-5" />
             <p>{tr.empty}</p>
           </div>

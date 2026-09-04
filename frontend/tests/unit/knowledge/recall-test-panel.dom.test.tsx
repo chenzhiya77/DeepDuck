@@ -139,6 +139,11 @@ describe("RecallTestPanel controls", () => {
     expect(
       screen.getByText("输入问题后开始检索，对比三路命中与得分"),
     ).toBeTruthy();
+    // 居中回归钉桩（2026-09-04）：空态 absolute inset-0 锚定 ScrollArea Root；
+    // h-full 会被 Viewport 内层 auto 高测量 wrapper 回退成 auto → 靠上。
+    expect(
+      screen.getByText("输入问题后开始检索，对比三路命中与得分").parentElement?.className,
+    ).toContain("absolute inset-0");
     // 成本提示不再独占一行（2026-08-30）：文档流中不可见，聚焦/悬停「开始检索」时经 portal 弹出。
     expect(screen.queryByText(/会产生检索调用成本/)).toBeNull();
     fireEvent.focus(screen.getByRole("button", { name: "开始检索" }));

@@ -126,6 +126,14 @@ describe("DocumentPanel 空态", () => {
     renderPanel();
     expect(screen.queryByTestId("empty-doc-icons")).toBeNull();
   });
+
+  it("空态锚定 ScrollArea Root 填满滚动区（absolute inset-0，2026-09-04 修居中回归）", () => {
+    renderPanel({ documents: [] });
+    // h-full 挂在 Viewport 内层 auto 高测量 wrapper 上会回退 auto → 塌成内容高靠上；
+    // absolute inset-0 锚定 ScrollArea Root（relative）才能恢复水平+垂直居中。
+    const grid = screen.getByTestId("empty-doc-icons");
+    expect(grid.parentElement?.className).toContain("absolute inset-0");
+  });
 });
 
 describe("DocumentPanel 拖入类型识别（九宫格双态反馈）", () => {
