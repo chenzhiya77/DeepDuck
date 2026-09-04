@@ -21,6 +21,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import time
 import zipfile
 from dataclasses import dataclass, field
@@ -204,6 +205,49 @@ async def _poll_result(client: httpx.AsyncClient, *, batch_id: str, file_name: s
         await asyncio.sleep(poll_interval_seconds)
 
 
+#: 与 chunker 同口径的标题边界（H1/H2）与代码 fence 起始行，仅用于文末标题归一化。
+_HEADING_LINE_RE = re.compile(r"^(#{1,2})\s+(\S.*)$")
+_FENCE_LINE_RE = re.compile(r"^\s*```")
+
+
+def _relocate_trailing_title(markdown: str) -> str:
+    """把 MinerU 放到文末的唯一 H1/H2 标题行搬回文档开头（2026-09-04 实测）。
+
+    MinerU VLM 偶发把页面标题作为 ``##`` 标题行输出在正文之后（春秋肠.pdf
+    复现）；chunker 会忠实保留该顺序并把尾部「纯标题小块」并入正文块，切片
+    随之变成「正文在前、加粗标题在后」的颠倒形态。仅当同时满足以下保守条件
+    时才搬移，合法结构（多标题文档末尾的悬空小节标题等）不受影响：
+
+    1. 全文最后一个非空行是代码 fence 外的 H1/H2 标题行；
+    2. 该标题是全文唯一标题；
+    3. 标题之前存在非空正文（全文仅一行标题时无可搬移对象）。
+    """
+    lines = markdown.splitlines()
+    last = len(lines) - 1
+    while last >= 0 and not lines[last].strip():
+        last -= 1
+    if last <= 0 or not _HEADING_LINE_RE.match(lines[last]):
+        return markdown
+    in_fence = False
+    headings = 0
+    has_body = False
+    for line in lines[:last]:
+        if _FENCE_LINE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            has_body = has_body or bool(line.strip())
+            continue
+        if _HEADING_LINE_RE.match(line):
+            headings += 1
+        elif line.strip():
+            has_body = True
+    if in_fence or headings or not has_body:
+        return markdown
+    body = "\n".join(lines[:last]).rstrip()
+    return f"{lines[last].rstrip()}\n\n{body}"
+
+
 def _unpack_zip(zip_bytes: bytes) -> ParsedDocument:
     markdown: str | None = None
     images: list[ParsedImage] = []
@@ -253,7 +297,10 @@ async def parse_document(
             poll_interval_seconds=poll_interval_seconds,
             timeout_seconds=timeout_seconds,
         )
-        return _unpack_zip(await _download_zip(zip_url))
+        zip_parsed = _unpack_zip(await _download_zip(zip_url))
+        # MinerU 短文档偶发把页面标题输出到文末（2026-09-04 实测），在此归一化；
+        # 本地直读分支不受影响（用户 authored 内容原样保留）。
+        return ParsedDocument(markdown=_relocate_trailing_title(zip_parsed.markdown), images=zip_parsed.images)
     finally:
         if own_client:
             await http.aclose()

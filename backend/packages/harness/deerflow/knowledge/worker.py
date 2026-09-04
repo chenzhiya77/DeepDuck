@@ -52,6 +52,13 @@ class _DocumentDeletedError(Exception):
     """The document row vanished mid-pipeline (user deleted it) — abort quietly."""
 
 
+class EmptyParseResultError(Exception):
+    """The parser returned no text at all — indexing would otherwise walk to a
+    ``ready`` document with zero chunks (silent data loss, 2026-09-04 实测：
+    MinerU 对纯标题/超短页返回空 full.md), so the pipeline fails loudly with
+    an actionable, retryable error instead."""
+
+
 class _LLM(Protocol):
     async def ainvoke(self, messages: Any) -> Any: ...
 
@@ -294,6 +301,8 @@ class KnowledgeIndexWorker:
 
         await self._store.update_document_status(doc_id, "parsing", path_status={"vector": "pending", "graph": "pending"})
         parsed = await self._parse_fn(storage_path)
+        if not parsed.markdown.strip():
+            raise EmptyParseResultError("解析结果为空：解析服务（MinerU）未从文档中提取到任何文本（常见于纯标题页、扫描页或内容过短），请重试或改传 .md/.txt 文本版本")
         markdown = parsed.markdown
         if parsed.images:
             captions = await caption_images(parsed.images)

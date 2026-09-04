@@ -540,3 +540,81 @@ def test_download_zip_falls_back_to_direct_when_proxy_unreachable(monkeypatch):
     assert result == b"zip-via-direct"
     assert len(attempts) == 2  # 先代理后直连
     assert "proxy" in attempts[0] and "proxy" not in attempts[1]
+
+
+# ── 2026-09-04: MinerU 短文档输出归一化（标题被放到文末）───────────────────
+
+
+def _make_result_zip_with_md(markdown: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("full.md", markdown)
+    return buf.getvalue()
+
+
+def _fake_zip_download(zip_bytes: bytes):
+    async def _download(zip_url: str) -> bytes:
+        return zip_bytes
+
+    return _download
+
+
+async def _parse_pdf_from_zip(tmp_path, monkeypatch, markdown: str) -> str:
+    from deerflow.knowledge import parser as parser_mod
+
+    monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
+    monkeypatch.setattr(parser_mod, "_download_zip", _fake_zip_download(_make_result_zip_with_md(markdown)))
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    doc = await parse_document(pdf, client=httpx.AsyncClient(transport=_mineru_transport([])), poll_interval_seconds=0.01, timeout_seconds=5.0)
+    return doc.markdown
+
+
+@pytest.mark.asyncio
+async def test_mineru_trailing_sole_title_relocated_to_top(tmp_path, monkeypatch):
+    """复现 2026-09-04（春秋肠.pdf）：MinerU 把页面标题作为 ``##`` 标题行放在
+    正文之后，切片随之变成「正文在前、加粗标题在后」。MinerU 路径应把全文唯一
+    且位于文末的标题行搬回文档开头。"""
+    body = "JVM 堆内存分为新生代和老年代：新生代采用复制算法回收，老年代采用标记-整理算法。"
+    markdown = await _parse_pdf_from_zip(tmp_path, monkeypatch, f"{body}\n\n## 你好呀,我是沉只鸭")
+
+    assert markdown == f"## 你好呀,我是沉只鸭\n\n{body}"
+
+
+@pytest.mark.asyncio
+async def test_mineru_trailing_heading_kept_when_other_headings_exist(tmp_path, monkeypatch):
+    """多标题文档末尾的悬空小节标题是合法结构，不得搬移。"""
+    source = "# 章\n\n正文一。\n\n## 尾节\n"
+    markdown = await _parse_pdf_from_zip(tmp_path, monkeypatch, source)
+
+    assert markdown == source
+
+
+@pytest.mark.asyncio
+async def test_mineru_trailing_heading_inside_fence_not_moved(tmp_path, monkeypatch):
+    """未闭合代码 fence 内的 ``#`` 行不是标题（与 chunker 同口径）。"""
+    source = "正文。\n\n```\n## 尾\n"
+    markdown = await _parse_pdf_from_zip(tmp_path, monkeypatch, source)
+
+    assert markdown == source
+
+
+@pytest.mark.asyncio
+async def test_mineru_heading_only_document_not_moved(tmp_path, monkeypatch):
+    """全文只有一行标题（无正文）时没有可搬移的对象，原样返回。"""
+    source = "## 只有标题\n"
+    markdown = await _parse_pdf_from_zip(tmp_path, monkeypatch, source)
+
+    assert markdown == source
+
+
+@pytest.mark.asyncio
+async def test_local_markdown_trailing_heading_not_touched(tmp_path, monkeypatch):
+    """归一化只作用于 MinerU 输出；本地直读的 .md 是用户 authored 内容，原样返回。"""
+    monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
+    md = tmp_path / "笔记.md"
+    md.write_text("正文。\n\n## 尾节", encoding="utf-8")
+
+    doc = await parse_document(md, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+    assert doc.markdown == "正文。\n\n## 尾节"

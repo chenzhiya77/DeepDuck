@@ -237,6 +237,26 @@ async def test_parse_failure_marks_failed_with_error(session_factory):
 
 
 @pytest.mark.asyncio
+async def test_empty_parse_result_fails_document_instead_of_silent_ready(session_factory):
+    """复现 2026-09-04（野生狗奶.pdf）：MinerU 对纯标题/超短页返回空 full.md，
+    流水线此前照走到 ready + 0 切片（三路全绿的静默丢数据）。空解析文本必须
+    把文档标记为 failed 并留下可操作的错误信息，而不是静默就绪。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=10, storage_path="/tmp/a.pdf")
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(md="  \n"), llm=FakeLLM({}))
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "failed"
+    assert "解析结果为空" in (doc["error"] or "")
+    assert doc["chunk_count"] in (None, 0)
+    assert await store.list_chunks("doc-1", limit=10) == []
+    assert doc["path_status"] == {"vector": "failed", "graph": "failed"}
+
+
+@pytest.mark.asyncio
 async def test_path_status_initialized_at_parsing(session_factory):
     """path_status 初始化前移到 parsing 起点（2026-08-12 体验修正）：解析阶段
     悬停即可用，显示「待处理」——不再等到 indexing 才首次写入。"""
