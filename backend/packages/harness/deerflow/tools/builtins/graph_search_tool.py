@@ -71,6 +71,23 @@ def _emit_trace_event(runtime: Any, kb_id: str, trace: dict) -> None:
         logger.debug("graph_retrieval_trace event not emitted (no stream context)")
 
 
+def format_graph_message(
+    *,
+    matched: int,
+    seen: int,
+    relations: int,
+    evidence: int,
+    pool_size: int,
+    evidence_limit: int,
+    span: str,
+) -> str:
+    """图谱路消息（2026-09-05 池耗尽说明）：top_k 是上限而非承诺——证据由
+    命中子图的源切片并集定义，候选池不足 top_k 时补一句「候选池共 N 片，
+    已全量返回」，否则检索测试 UI 里「要 4 给 3」读起来像 bug。"""
+    note = f"（候选池共 {pool_size} 片，已全量返回）" if evidence < evidence_limit else ""
+    return f"命中 {matched} 个实体，扩展出 {seen} 个节点、{relations} 条关系、{evidence} 条切片证据{note}（引用编号 {span}，标注时照抄 citation_no）。"
+
+
 def _empty(message: str) -> dict:
     # trace 恒在（空值）：前端路径高亮解析契约统一，不特判缺失字段。
     return {
@@ -304,7 +321,15 @@ async def _graph_search_impl(
         "relations": relations,
         "evidence": evidence,
         "trace": trace,
-        "message": f"命中 {len(matched_names)} 个实体，扩展出 {len(seen)} 个节点、{len(relations)} 条关系、{len(evidence)} 条切片证据（引用编号 {span}，标注时照抄 citation_no）。",
+        "message": format_graph_message(
+            matched=len(matched_names),
+            seen=len(seen),
+            relations=len(relations),
+            evidence=len(evidence),
+            pool_size=len(candidates),
+            evidence_limit=evidence_limit,
+            span=span,
+        ),
     }
 
 

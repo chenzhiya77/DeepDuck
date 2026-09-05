@@ -53,6 +53,25 @@ async def test_extract_query_entities_isolated_from_messages_stream():
     assert TAG_NOSTREAM in tags, "extractor tokens must stay off the messages stream"
 
 
+def test_graph_message_notes_pool_exhaustion_when_evidence_below_limit():
+    """top_k 是上限而非承诺（2026-09-05）：图谱证据由命中子图的源切片并集
+    定义，候选池不足 top_k 时消息必须说明「候选池共 N 片，已全量返回」，
+    否则检索测试 UI 里「要 4 给 3」看起来像 bug；池子够大时不加噪声。"""
+    from deerflow.tools.builtins.graph_search_tool import format_graph_message
+
+    exhausted = format_graph_message(
+        matched=3, seen=4, relations=1, evidence=3, pool_size=3, evidence_limit=4, span="[1]-[3]",
+    )
+    assert "3 条切片证据" in exhausted
+    assert "候选池共 3 片" in exhausted and "已全量返回" in exhausted
+    assert "引用编号 [1]-[3]" in exhausted
+
+    full = format_graph_message(
+        matched=3, seen=4, relations=1, evidence=4, pool_size=6, evidence_limit=4, span="[1]-[4]",
+    )
+    assert "候选池" not in full
+
+
 class _QueryLLM:
     """Extracts the keyword found in the query as the entity list."""
 
