@@ -629,25 +629,38 @@ async def run_layer2_evaluation(
     langfuse_client: Any = None,
     kb_id: str = "",
     run_id: str | None = None,
+    progress_hook: Callable[[str, int, int, int], None] | None = None,
 ) -> Layer2Report:
     """Evaluate every golden question over the real conversation chain.
 
     One question's agent run failing degrades to a failure note — the run
     always produces a complete report (same contract as recall_test).
+
+    ``progress_hook`` (spec 2026-09-06 run-progress) is optional and fires
+    ``(phase, done, failed, total)``: once per question after its agent run
+    (phase ``"questions"``, determinate) and once before the ragas stage
+    (phase ``"ragas"``, indeterminate — the frontend pulses it). ``None``
+    keeps the legacy behavior untouched (CLI and existing callers).
     """
 
     run_id = run_id or f"ragas-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
 
     outcomes: dict[str, TraceOutcome] = {}
     failures: dict[str, BaseException] = {}
+    total_questions = len(questions)
     for question in questions:
         try:
             outcomes[question.id] = await agent_runner(question)
         except Exception as exc:  # noqa: BLE001 — degradation contract
             logger.warning("agent run failed for %s: %s", question.id, exc)
             failures[question.id] = exc
+        if progress_hook is not None:
+            # 单题失败计入 failed，done 仍计（failed 独立不从 done 扣）。
+            progress_hook("questions", len(outcomes) + len(failures), len(failures), total_questions)
 
     # Standard RAGAS metrics over the questions whose agent run succeeded.
+    if progress_hook is not None:
+        progress_hook("ragas", total_questions, len(failures), total_questions)
     ragas_rows: list[dict[str, float | None]] | None = None
     ragas_skip_reason: str | None = None
     live_questions = [q for q in questions if q.id in outcomes]

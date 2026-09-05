@@ -43,6 +43,7 @@ def store(session_factory):
 def _clean_in_flight():
     yield
     ondemand._IN_FLIGHT.pop(KB, None)
+    ondemand._PROGRESS.pop(KB, None)
 
 
 def _stub_searchers(hit_chunk: str | None = CHUNK_A) -> dict:
@@ -297,3 +298,74 @@ async def test_full_run_missing_bank_raises_and_persists_nothing(tmp_path, store
         )
 
     assert await store.list_eval_runs(KB) == []
+
+
+# ── 运行进度注册表（spec 2026-09-06 run-progress Task 1）──────────────
+
+
+async def test_full_run_progress_observable_then_cleared(tmp_path, store) -> None:
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+    snapshots: list[dict | None] = []
+
+    async def runner(question):
+        # 运行中可观测：冻结契约七键 + run_id 非空（phase 此刻属 layer1/questions 之一）。
+        snapshot = ondemand.get_eval_progress(KB)
+        snapshots.append(snapshot)
+        return await _stub_agent_runner()(question)
+
+    run_id = await ondemand.run_full_eval_for_kb(
+        KB,
+        golden_path=golden,
+        searchers=_stub_searchers(),
+        agent_runner=runner,
+        generated_at=GENERATED_AT,
+    )
+
+    assert snapshots and all(s is not None for s in snapshots)
+    assert set(snapshots[0]) == {"run_id", "phase", "done", "total", "failed", "started_at", "updated_at"}
+    assert snapshots[0]["run_id"] == run_id
+    # finally 必清：落库后注册表归零。
+    assert ondemand.get_eval_progress(KB) is None
+
+
+async def test_layer1_run_progress_observable_then_cleared(tmp_path, store) -> None:
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+    observed: list[dict | None] = []
+
+    searchers = _stub_searchers()
+    original_vector = searchers["vector"]
+
+    async def observing_vector(query: str, top_k: int):
+        observed.append(ondemand.get_eval_progress(KB))
+        return await original_vector(query, top_k)
+
+    searchers["vector"] = observing_vector
+
+    await ondemand.run_layer1_for_kb(KB, golden_path=golden, searchers=searchers, generated_at=GENERATED_AT)
+
+    assert observed and observed[0] is not None
+    assert observed[0]["phase"] == "layer1"
+    assert ondemand.get_eval_progress(KB) is None
+
+
+async def test_full_run_error_path_clears_progress(tmp_path, store, monkeypatch) -> None:
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+
+    def _boom(report):
+        raise RuntimeError("mapping blew up")
+
+    monkeypatch.setattr(ondemand, "layer1_metrics_from_report", _boom)
+
+    await ondemand.run_full_eval_for_kb(
+        KB,
+        golden_path=golden,
+        searchers=_stub_searchers(),
+        agent_runner=_stub_agent_runner(),
+        generated_at=GENERATED_AT,
+    )
+
+    # error 行兜底路径同样走 finally：进度不得残留。
+    assert ondemand.get_eval_progress(KB) is None

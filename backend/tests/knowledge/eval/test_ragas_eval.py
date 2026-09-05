@@ -559,3 +559,55 @@ class TestRunLayer2Evaluation:
 
         assert json_path.exists() and md_path.exists()
         assert json.loads(json_path.read_text(encoding="utf-8"))["run_id"] == report.run_id
+
+
+class TestRunLayer2ProgressHook:
+    """spec 2026-09-06 run-progress Task 1：可选 progress hook 的回调序列契约。"""
+
+    @pytest.mark.asyncio
+    async def test_hook_sequence_counts_questions_then_ragas(self):
+        calls: list[tuple[str, int, int, int]] = []
+
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            return _outcome(question.id, answer="答案[1]。")
+
+        await run_layer2_evaluation(
+            [_question("q1"), _question("q2")],
+            agent_runner=runner,
+            judge_llm=_FakeJudgeLLM(['{"supported": true, "reason": "ok"}']),
+            kb_id="kb-1",
+            run_id="run-hook",
+            progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
+        )
+
+        # 每题（agent 运行）毕回调一次；ragas evaluate 前再回调一次进入不定长段。
+        assert calls == [
+            ("questions", 1, 0, 2),
+            ("questions", 2, 0, 2),
+            ("ragas", 2, 0, 2),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_hook_counts_failed_question_in_failed_not_done(self):
+        calls: list[tuple[str, int, int, int]] = []
+
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            if question.id == "q2":
+                raise RuntimeError("agent blew up")
+            return _outcome(question.id, answer="答案[1]。")
+
+        await run_layer2_evaluation(
+            [_question("q1"), _question("q2")],
+            agent_runner=runner,
+            judge_llm=_FakeJudgeLLM(['{"supported": true, "reason": "ok"}']),
+            kb_id="kb-1",
+            run_id="run-hook-fail",
+            progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
+        )
+
+        # 单题失败：failed++，done 仍计（契约：failed 独立不从 done 扣）。
+        assert calls == [
+            ("questions", 1, 0, 2),
+            ("questions", 2, 1, 2),
+            ("ragas", 2, 1, 2),
+        ]

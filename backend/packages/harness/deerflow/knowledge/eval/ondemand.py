@@ -33,7 +33,7 @@ to exercise the orchestration without real retrieval impls or agent runs.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -59,6 +59,16 @@ logger = logging.getLogger(__name__)
 #: trigger idempotency check and the history endpoint's ``in_flight`` flag.
 _IN_FLIGHT: dict[str, int] = {}
 
+#: Live progress per KB (spec 2026-09-06 run-progress) — mirrors the
+#: ``_IN_FLIGHT`` single-process pattern: set when a run starts, updated via
+#: the Layer 2 progress hook, popped in ``finally`` so a crashed run never
+#: leaves a phantom entry. Contract keys are frozen (spec §3):
+#: ``run_id / phase / done / total / failed / started_at / updated_at``.
+_PROGRESS: dict[str, dict[str, object]] = {}
+
+#: Layer 2 progress hook signature: ``(phase, done, failed, total)``.
+ProgressHook = Callable[[str, int, int, int], None]
+
 
 class EvalQuestionBankEmpty(RuntimeError):
     """The KB's golden bank is missing or has zero questions."""
@@ -67,6 +77,51 @@ class EvalQuestionBankEmpty(RuntimeError):
 def eval_run_in_progress(kb_id: str) -> bool:
     """True while any on-demand run for the KB is active."""
     return _IN_FLIGHT.get(kb_id, 0) > 0
+
+
+def get_eval_progress(kb_id: str) -> dict[str, object] | None:
+    """Snapshot of the KB's live run progress, or ``None`` when idle.
+
+    Returns a copy so API callers can never mutate the registry. All writes
+    happen on the event loop between awaits, so no lock is needed (same
+    consistency model as ``_IN_FLIGHT``).
+    """
+
+    entry = _PROGRESS.get(kb_id)
+    return dict(entry) if entry is not None else None
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _progress_start(kb_id: str, run_id: str, *, phase: str, total: int) -> None:
+    """Register a fresh run at phase start (done=0, failed=0)."""
+    now = _now_iso()
+    _PROGRESS[kb_id] = {"run_id": run_id, "phase": phase, "done": 0, "total": total, "failed": 0, "started_at": now, "updated_at": now}
+
+
+def _progress_update(kb_id: str, *, phase: str, done: int, failed: int, total: int) -> None:
+    """Advance the KB's live progress; a no-op when the entry is already gone."""
+    entry = _PROGRESS.get(kb_id)
+    if entry is None:
+        return
+    entry.update({"phase": phase, "done": done, "failed": failed, "total": total, "updated_at": _now_iso()})
+
+
+def _release_run(kb_id: str) -> None:
+    """Decrement ``_IN_FLIGHT`` and drop ``_PROGRESS`` when the KB goes idle.
+
+    Shared by both runners' ``finally`` blocks: the progress entry only ever
+    belongs to the in-flight run (the trigger is idempotent per KB), so it is
+    popped exactly when the counter hits zero.
+    """
+    remaining = _IN_FLIGHT.get(kb_id, 0) - 1
+    if remaining > 0:
+        _IN_FLIGHT[kb_id] = remaining
+    else:
+        _IN_FLIGHT.pop(kb_id, None)
+        _PROGRESS.pop(kb_id, None)
 
 
 def _filter_questions(questions: Sequence[GoldenQuestion], question_ids: Collection[str] | None) -> list[GoldenQuestion]:
@@ -119,8 +174,10 @@ async def run_layer1_for_kb(
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    _progress_start(kb_id, run_id, phase="layer1", total=1)
     try:
         payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
+        _progress_update(kb_id, phase="layer1", done=1, failed=0, total=1)
         await save_eval_run(
             run_id=run_id,
             kb_id=kb_id,
@@ -137,11 +194,7 @@ async def run_layer1_for_kb(
         await _save_error_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at))
         return run_id
     finally:
-        remaining = _IN_FLIGHT.get(kb_id, 0) - 1
-        if remaining > 0:
-            _IN_FLIGHT[kb_id] = remaining
-        else:
-            _IN_FLIGHT.pop(kb_id, None)
+        _release_run(kb_id)
 
 
 async def run_full_eval_for_kb(
@@ -172,8 +225,15 @@ async def run_full_eval_for_kb(
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    _progress_start(kb_id, run_id, phase="layer1", total=1)
+
+    def _forward_progress(phase: str, done: int, failed: int, total: int) -> None:
+        # Layer 2 hook → 注册表：questions 段定长计数，ragas 段不定长（前端 pulse）。
+        _progress_update(kb_id, phase=phase, done=done, failed=failed, total=total)
+
     try:
         payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
+        _progress_update(kb_id, phase="layer1", done=1, failed=0, total=1)
         layer1_metrics = layer1_metrics_from_report(payload)
         baseline_diff = baseline_diff_from_report(payload)
 
@@ -187,6 +247,7 @@ async def run_full_eval_for_kb(
                 ragas_evaluator=effective_ragas,
                 kb_id=kb_id,
                 run_id=run_id,
+                progress_hook=_forward_progress,
             )
             layer2_metrics = layer2_metrics_from_report(layer2_report_to_dict(layer2_report), questions=questions)
         except Exception:
@@ -209,11 +270,7 @@ async def run_full_eval_for_kb(
         await _save_error_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at))
         return run_id
     finally:
-        remaining = _IN_FLIGHT.get(kb_id, 0) - 1
-        if remaining > 0:
-            _IN_FLIGHT[kb_id] = remaining
-        else:
-            _IN_FLIGHT.pop(kb_id, None)
+        _release_run(kb_id)
 
 
 async def _build_layer2_deps(kb_id: str, run_id: str):
