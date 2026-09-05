@@ -686,9 +686,23 @@ export interface EvalRunSummary {
   langfuse_trace_url: string | null;
 }
 
+/** 运行中评测的活进度快照（spec 2026-09-06 run-progress §3，冻结七键）。
+ *  phase 三段：layer1/questions 定长可百分比，ragas 不定长（前端 pulse）。 */
+export interface EvalRunProgress {
+  run_id: string;
+  phase: "layer1" | "questions" | "ragas";
+  done: number;
+  total: number;
+  failed: number;
+  started_at: string;
+  updated_at: string;
+}
+
 /** GET /eval-runs 响应（spec §6.1）：顶层 in_flight 驱动轮询与工具栏状态。 */
 export interface EvalRunListResponse {
   in_flight: boolean;
+  /** 活进度快照（spec 2026-09-06 run-progress）：非 in_flight 时为 null。 */
+  progress?: EvalRunProgress | null;
   runs: EvalRunSummary[];
   /** include_ci 过滤后的全量行数（不是本页行数）。 */
   total: number;

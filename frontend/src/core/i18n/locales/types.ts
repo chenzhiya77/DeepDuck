@@ -474,6 +474,13 @@ export interface Translations {
       /** 常驻工具栏（§5）：主动词按钮 + 运行状态短文案（nowrap；长解释进 ⓘ）。 */
       runButton: string;
       runningButton: string;
+      /** 运行进度（spec 2026-09-06 run-progress）：questions 段按钮 k/N 文案 +
+       *  三段 phase 词（进度线 aria）+ failed 后缀。 */
+      runningProgress: (done: number, total: number) => string;
+      phaseLayer1: string;
+      phaseQuestions: string;
+      phaseRagas: string;
+      failedCount: (n: number) => string;
       /** 上次运行短文案：label + formatTimeAgo 产物拼接。 */
       lastRunLabel: string;
       neverRan: string;

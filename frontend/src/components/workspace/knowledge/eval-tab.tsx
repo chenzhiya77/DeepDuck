@@ -52,7 +52,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
-import { isEvalRunning } from "@/core/knowledge/eval-run-status";
+import {
+  isEvalRunning,
+  progressAriaLabel,
+  progressFraction,
+  progressLabel,
+  type EvalProgressPhaseLabels,
+} from "@/core/knowledge/eval-run-status";
 import {
   knowledgeEvalLatestKey,
   knowledgeEvalRunsKey,
@@ -249,7 +255,26 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
     regressionPrefix: tk.trend.regressionPrefix,
   };
 
-  const runButtonLabel = running ? tk.runningButton : tk.runButton;
+  // 运行进度（spec 2026-09-06 run-progress）：progress 走 /eval-runs 顶层字段。
+  // questions 段定长——按钮出 k/N、底缘细线按 done/total 走宽；layer1/ragas 段
+  // 不定长——按钮回裸「运行中…」、细线 pulse（绝不假百分比）；progress 为 null
+  // （运行中但首个轮询未到）时按不定长降级，点击瞬间即有 pulse 反馈。
+  const progress = runsQuery.data?.progress ?? null;
+  const progressCount = progressLabel(progress);
+  const progressFill = progressFraction(progress);
+  const phaseLabels: EvalProgressPhaseLabels = {
+    phaseLayer1: tk.phaseLayer1,
+    phaseQuestions: tk.phaseQuestions,
+    phaseRagas: tk.phaseRagas,
+    failedCount: tk.failedCount,
+  };
+  const progressAria = progressAriaLabel(progress, phaseLabels);
+
+  const runButtonLabel = running
+    ? progressCount
+      ? tk.runningProgress(progressCount.done, progressCount.total)
+      : tk.runningButton
+    : tk.runButton;
   // 工具栏原位切换（2026-09-02 B 方案承接）：题库视图且有选中时，运行主键
   // 与完整评测档都改携 question_ids，标签切「运行所选/完整运行所选」；
   // 选题集跨视图持久（state 在本层），仅题库视图消费，不泄漏到总览/历史。
@@ -257,9 +282,12 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const bankQuestionIds = bankSelectionActive
     ? [...bankSelectedIds]
     : undefined;
-  const runLabel = bankSelectionActive
-    ? tk.selection.runSelected
-    : runButtonLabel;
+  // 运行态文案优先于选题态：按钮此刻禁用，展示进度而非「运行所选」。
+  const runLabel = running
+    ? runButtonLabel
+    : bankSelectionActive
+      ? tk.selection.runSelected
+      : tk.runButton;
   const fullRunLabel = bankSelectionActive
     ? tk.selection.fullRunSelected
     : tk.fullRun.menuItem;
@@ -273,10 +301,11 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
     <div className="flex h-full min-h-0 flex-col" data-testid="eval-tab">
       {/* 常驻工具栏（§5）：三视图共享，主动词恒可达；tier 1 时状态文案让位；
             底边不画线（2026-09-02，与文档 tab 对齐）：表头自带吸顶发丝线，
-            两条线夹表头的问题同款修复，靠留白分界 */}
+            两条线夹表头的问题同款修复，靠留白分界。relative（2026-09-06
+            run-progress）：为底缘运行进度细线提供定位上下文，tier0/tier1 共用。 */}
       <div
         ref={viewToolbarRef}
-        className="flex shrink-0 items-center gap-2 overflow-hidden px-4 py-2 whitespace-nowrap"
+        className="relative flex shrink-0 items-center gap-2 overflow-hidden px-4 py-2 whitespace-nowrap"
         data-testid="eval-view-toolbar"
       >
         <div
@@ -360,7 +389,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     锁 h-7 同档；降档时两段一并收进 ⋯ 菜单。 */}
               <div className="flex shrink-0 items-stretch">
                 <Button
-                  className="h-7 shrink-0 gap-1.5 rounded-r-none px-2.5"
+                  className="h-7 shrink-0 gap-1.5 rounded-r-none px-2.5 tabular-nums"
                   disabled={running}
                   onClick={() => handleTrigger(runInput("l1"))}
                 >
@@ -445,6 +474,34 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             </DropdownMenu>
           )}
         </div>
+        {/* 运行进度细线（spec 2026-09-06 run-progress）：工具栏底缘 absolute，
+              h-0.5 不占布局高度（行高 44px 锁定不变）；determinate（questions）
+              按 done/total 走宽 + progressbar aria，indeterminate（layer1/ragas/null）
+              整条 pulse。非运行态不渲染。 */}
+        {running && (
+          <div
+            aria-label={progressAria ?? undefined}
+            aria-valuemax={progressFill !== null ? progress?.total : undefined}
+            aria-valuemin={progressFill !== null ? 0 : undefined}
+            aria-valuenow={progressFill !== null ? progress?.done : undefined}
+            className={cn(
+              "absolute inset-x-0 bottom-0 h-0.5",
+              progressFill !== null
+                ? "bg-muted overflow-hidden"
+                : "bg-primary/40 animate-pulse",
+            )}
+            data-testid="eval-run-progress"
+            role="progressbar"
+          >
+            {progressFill !== null && (
+              <div
+                className="bg-primary h-full transition-[width] duration-300"
+                data-testid="eval-run-progress-fill"
+                style={{ width: `${Math.round(progressFill * 100)}%` }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* 内容区：百科 Tab 容器同款 overlay 滚动条（2026-09-04）：ScrollArea type="scroll"

@@ -636,6 +636,97 @@ describe("EvalTab 常驻工具栏", () => {
     ]);
   });
 
+  it("questions 段进度 → 按钮 k/N + 底缘定长细线（width% 与 aria）", () => {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({
+        data: {
+          in_flight: true,
+          progress: {
+            run_id: "run-live",
+            phase: "questions",
+            done: 3,
+            total: 10,
+            failed: 1,
+            started_at: "2026-09-06T10:00:00+00:00",
+            updated_at: "2026-09-06T10:05:00+00:00",
+          },
+          runs: [],
+          total: 0,
+        },
+      }),
+    );
+    renderEvalTab();
+
+    // 按钮文案携 k/N（tabular-nums）。
+    expect(
+      screen.getByRole("button", { name: "运行中… 3/10" }),
+    ).toBeTruthy();
+
+    // 底缘细线：determinate progressbar，aria-valuenow/max + 宽 30%。
+    const line = screen.getByTestId("eval-run-progress");
+    expect(line.getAttribute("role")).toBe("progressbar");
+    expect(line.getAttribute("aria-valuenow")).toBe("3");
+    expect(line.getAttribute("aria-valuemax")).toBe("10");
+    expect(line.getAttribute("aria-label")).toContain("答题");
+    expect(line.getAttribute("aria-label")).toContain("失败 1");
+    const fill = screen.getByTestId("eval-run-progress-fill");
+    expect(fill.style.width).toBe("30%");
+    // 定长段不 pulse。
+    expect(line.className).not.toContain("animate-pulse");
+  });
+
+  it("layer1 段进度 → 按钮无数字 + 底缘细线 pulse（不定长）", () => {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({
+        data: {
+          in_flight: true,
+          progress: {
+            run_id: "run-live",
+            phase: "layer1",
+            done: 0,
+            total: 1,
+            failed: 0,
+            started_at: "2026-09-06T10:00:00+00:00",
+            updated_at: "2026-09-06T10:00:01+00:00",
+          },
+          runs: [],
+          total: 0,
+        },
+      }),
+    );
+    renderEvalTab();
+
+    // 不定长段：按钮回到裸「运行中…」（无 k/N）。
+    expect(screen.getByRole("button", { name: "运行中…" })).toBeTruthy();
+
+    const line = screen.getByTestId("eval-run-progress");
+    expect(line.className).toContain("animate-pulse");
+    // 不假百分比：无 aria-valuenow、无 fill 宽。
+    expect(line.getAttribute("aria-valuenow")).toBeNull();
+    expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
+  });
+
+  it("运行中但无 progress（首个轮询未到）→ 细线 pulse 降级", () => {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: true, runs: [], total: 0 } }),
+    );
+    renderEvalTab();
+
+    const line = screen.getByTestId("eval-run-progress");
+    expect(line.className).toContain("animate-pulse");
+    expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
+  });
+
+  it("空闲态不渲染进度细线", () => {
+    // 本 describe 的 beforeEach 不重置 useEvalRuns（靠各用例 sticky 设值），
+    // 故本例必须显式置 idle，否则会继承上一例的 in_flight:true。
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    renderEvalTab();
+    expect(screen.queryByTestId("eval-run-progress")).toBeNull();
+  });
+
   it("already_running → 提示 toast，不报错", () => {
     const mutate = rs.fn(
       (
