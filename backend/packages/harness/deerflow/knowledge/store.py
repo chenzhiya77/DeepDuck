@@ -264,6 +264,19 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             return int(result.scalar_one())
 
+    async def chunk_positions(self, doc_id: str, chunk_indexes: set[int]) -> dict[int, int]:
+        """Position (1-based) of each requested chunk_index among the doc's
+        live chunks ordered by chunk_index — the same positional order the
+        chunk drawer's #K badges use; holes (deleted chunks) occupy no
+        position. Requested indexes that are not live are absent from the
+        result. Index-column-only query: cheap even for 300-chunk docs.
+        """
+        stmt = select(ChunkRow.chunk_index).where(ChunkRow.doc_id == doc_id).order_by(ChunkRow.chunk_index)
+        async with self._sf() as session:
+            live = (await session.execute(stmt)).scalars().all()
+        order = {index: position for position, index in enumerate(live, start=1)}
+        return {index: order[index] for index in chunk_indexes if index in order}
+
     async def get_kb_content_stats(self, kb_id: str) -> dict[str, Any]:
         """Cheap invalidation signals for the projection-cache fingerprint (spec §6).
 

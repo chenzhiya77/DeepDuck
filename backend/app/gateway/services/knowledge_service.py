@@ -858,9 +858,12 @@ class KnowledgeService:
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
     #: Score semantics differ per path — never compare across paths.
+    #: graph 与 wiki 同串（2026-09-05 去「（当次可比）」补注）：两路分数确实都
+    #: 由 embedding cosine 产出（图谱证据/百科条目对 query 的余弦），但语料与
+    #: 归一不同，跨路仍不可比。
     _RECALL_SCORE_TYPES = {
         "vector": "qwen3-rerank relevance",
-        "graph": "embedding cosine（当次可比）",
+        "graph": "embedding cosine",
         "wiki": "embedding cosine",
     }
 
@@ -989,6 +992,31 @@ class KnowledgeService:
                 "hits": wiki_hits,
                 "message": _user_facing(wiki_raw.get("message", "")),
             }
+
+        # 切片文档内序号（2026-09-05）：命中行标题名后挂 chunk_position =
+        # 该切片在文档存活切片中的位次（chunk_index 升序，与切片总览抽屉
+        # #K 位置序同源，空洞不占位）——同名文档的不同切片一眼可辨。
+        # 畸形/已删 id 不注入该键；每文档一次索引列轻查询。
+        async def _inject_chunk_positions(hits: list[dict[str, Any]]) -> None:
+            wanted: dict[str, set[int]] = {}
+            for hit in hits:
+                doc_id, _, suffix = str(hit.get("chunk_id") or "").partition("#")
+                if doc_id and suffix.isdigit():
+                    wanted.setdefault(doc_id, set()).add(int(suffix))
+            positions: dict[tuple[str, int], int] = {}
+            for doc_id, indexes in wanted.items():
+                for index, position in (await self.store.chunk_positions(doc_id, indexes)).items():
+                    positions[(doc_id, index)] = position
+            for hit in hits:
+                doc_id, _, suffix = str(hit.get("chunk_id") or "").partition("#")
+                if not doc_id or not suffix.isdigit():
+                    continue
+                position = positions.get((doc_id, int(suffix)))
+                if position is not None:
+                    hit["chunk_position"] = position
+
+        await _inject_chunk_positions(vector_path["hits"])
+        await _inject_chunk_positions(graph_path["evidence"])
 
         return {
             "query": query,

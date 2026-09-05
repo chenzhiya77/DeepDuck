@@ -172,7 +172,8 @@ async def test_recall_test_assembles_three_paths(service, monkeypatch):
 
     assert body["score_type"] == {
         "vector": "qwen3-rerank relevance",
-        "graph": "embedding cosine（当次可比）",
+        # 2026-09-05：图谱路胶囊去掉「（当次可比）」补注——与 wiki 路同串。
+        "graph": "embedding cosine",
         "wiki": "embedding cosine",
     }
     assert set(body["elapsed_ms"]) == {"vector", "graph", "wiki"}
@@ -186,6 +187,41 @@ async def test_recall_test_assembles_three_paths(service, monkeypatch):
     for impl in (vector, graph, wiki):
         runtime = impl.call_args.args[1]
         assert runtime.context == {"kb_id": kb["id"], "user_id": OWNER_ID}
+
+
+async def test_recall_test_injects_chunk_position_in_drawer_order(service, monkeypatch):
+    """切片文档内序号（2026-09-05）：命中带 chunk_position = 文档存活切片中
+    的位次（chunk_index 升序），与切片总览抽屉 #K 位置序同源；空洞（已删
+    切片）不占位。畸形 chunk_id（无 #NNNN 后缀）不注入该键。"""
+    vector, graph, _wiki = _mock_impls(monkeypatch)
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = "d" * 32
+    await service.store.create_document(doc_id=doc_id, kb_id=kb["id"], uploader_id=OWNER_ID, name="hole.md", size_bytes=1, storage_path="p")
+    # 存活 chunk_index = {0, 1, 3}：#0002 已删 → #0003 的位次是 3（不是 4）
+    await service.store.insert_chunks([{"chunk_id": f"{doc_id}#000{i}", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": i, "text": text} for i, text in [(0, "a"), (1, "b"), (3, "d")]])
+    vector.return_value = {
+        "results": [
+            {"chunk_id": f"{doc_id}#0001", "text": "b", "doc_name": "hole.md", "page": None, "heading_path": [], "score": 0.9},
+            {"chunk_id": f"{doc_id}#0003", "text": "d", "doc_name": "hole.md", "page": None, "heading_path": [], "score": 0.8},
+            {"chunk_id": "c1", "text": "畸形 id", "doc_name": "x.md", "page": None, "heading_path": [], "score": 0.7},
+        ],
+        "message": "命中 3 条。",
+    }
+    graph.return_value = {
+        "entities": [],
+        "relations": [],
+        "evidence": [{"chunk_id": f"{doc_id}#0003", "text": "d", "doc_name": "hole.md", "heading_path": [], "page": None, "score": 0.8}],
+        "message": "命中 1 条证据。",
+    }
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "hole"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    vhits = body["paths"]["vector"]["hits"]
+    assert [vhits[0]["chunk_position"], vhits[1]["chunk_position"]] == [2, 3]
+    assert "chunk_position" not in vhits[2]
+    assert body["paths"]["graph"]["evidence"][0]["chunk_position"] == 3
 
 
 async def test_recall_test_single_path_failure_degrades(service, monkeypatch):
