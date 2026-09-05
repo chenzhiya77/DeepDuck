@@ -157,12 +157,12 @@ describe("RecallTestPanel controls", () => {
     mockRecallTest();
     renderPanel();
     expect(
-      screen.getByText("输入问题后开始检索，对比三路命中与得分"),
+      screen.getByText("输入问题后开始检索，对比三通道命中与得分"),
     ).toBeTruthy();
     // 居中回归钉桩（2026-09-04）：空态 absolute inset-0 锚定 ScrollArea Root；
     // h-full 会被 Viewport 内层 auto 高测量 wrapper 回退成 auto → 靠上。
     expect(
-      screen.getByText("输入问题后开始检索，对比三路命中与得分").parentElement?.className,
+      screen.getByText("输入问题后开始检索，对比三通道命中与得分").parentElement?.className,
     ).toContain("absolute inset-0");
     // 成本提示不再独占一行（2026-08-30）：文档流中不可见，聚焦/悬停「开始检索」时经 portal 弹出。
     expect(screen.queryByText(/会产生检索调用成本/)).toBeNull();
@@ -178,11 +178,14 @@ describe("RecallTestPanel controls", () => {
       .firstElementChild as HTMLElement;
     expect(header.className).toContain("py-2");
     expect(header.className).not.toContain("py-3");
+    // 去 border-b（2026-09-05）：三路已容器化（bg-card 带边框/头部），工具栏横线
+    // 冗余（与 document-panel 去线同理，避免与卡片顶边双线夹击）。
+    expect(header.className).not.toContain("border-b");
     // 栏内最高控件决定行高：搜索框/数量框/按钮均须 h-7（默认 h-9 会撑成 52px）。
     expect(screen.getByPlaceholderText("输入测试问题…").className).toContain(
       "h-7",
     );
-    expect(screen.getByLabelText("每路条数").className).toContain("h-7");
+    expect(screen.getByLabelText("每通道条数").className).toContain("h-7");
     expect(
       screen.getByRole("button", { name: "开始检索" }).className,
     ).toContain("h-7");
@@ -204,7 +207,7 @@ describe("RecallTestPanel controls", () => {
   it("honours a custom top_k (clamped to 1–20)", () => {
     const mutate = mockRecallTest();
     renderPanel();
-    fireEvent.change(screen.getByLabelText("每路条数"), {
+    fireEvent.change(screen.getByLabelText("每通道条数"), {
       target: { value: "10" },
     });
     fireEvent.change(screen.getByPlaceholderText("输入测试问题…"), {

@@ -448,8 +448,11 @@ export function RecallTestPanel({
       {/* Controls：成本提示不再独占一行（2026-08-30），收进「开始检索」按钮 tooltip；
           py-2 + 栏内控件全锁 h-7 → 44px，对齐全知识库页工具栏基准（默认 h-9 会撑成 52px）；
           搜索框补左侧 Search 图标（2026-09-05，全知识库搜索框同款配方 pl-7）；
-          「在向量空间查看」收为同行右侧图标按钮（不再独占一行）。 */}
-      <div className="flex items-center gap-2 border-b px-4 py-2">
+          「在向量空间查看」收为同行右侧图标按钮（不再独占一行）。
+          去 border-b（2026-09-05）：下方三路已是各自带边框/头部的 bg-card 容器，
+          分隔交给留白 + 卡片边框，工具栏横线冗余（与 vector/document tab 去线同理，
+          避免与卡片顶边双线夹击）。 */}
+      <div className="flex items-center gap-2 px-4 py-2">
         <div className="relative min-w-0 flex-1">
           <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
           <Input
