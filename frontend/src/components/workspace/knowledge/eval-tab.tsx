@@ -63,6 +63,7 @@ import {
   useTriggerEvalRun,
 } from "@/core/knowledge/hooks";
 import type {
+  EvalRunListResponse,
   EvalTriggerInput,
   TrendChartLabels,
   TrendQueryParams,
@@ -187,15 +188,31 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
       triggerMutation.mutate(input, {
         onSuccess: (response) => {
           // 202 语义分流（§5.2）：enqueued 确认；already_running 幂等提示。
-          if (response.status === "enqueued") toast.success(tk.runStartedToast);
-          else toast.info(tk.alreadyRunningToast);
+          if (response.status === "enqueued") {
+            toast.success(tk.runStartedToast);
+            // 乐观置位（spec 2026-09-06 run-progress）：首查缓存 in_flight=false
+            // 会让 refetchInterval 永不启动（轮询自锁），enqueued 即刻改写缓存
+            // 激活 3s 轮询——无需切历史视图制造第二个 observer。无缓存可改时
+            // 退化为 invalidate 首查（drain 边同款 key）。
+            const runsKey = knowledgeEvalRunsKey(kbId);
+            const applied = queryClient.setQueryData(
+              runsKey,
+              (old: EvalRunListResponse | undefined) =>
+                old ? { ...old, in_flight: true } : old,
+            );
+            if (!applied) {
+              void queryClient.invalidateQueries({ queryKey: runsKey });
+            }
+          } else {
+            toast.info(tk.alreadyRunningToast);
+          }
           // 选题运行成功后清空选择集（原批量栏语义，2026-09-02 承接）。
           if (input.question_ids) setBankSelectedIds(new Set());
         },
         onError: () => toast.error(tk.runFailedToast),
       });
     },
-    [triggerMutation, tk],
+    [triggerMutation, tk, kbId, queryClient],
   );
 
   // drain 边（§5.2）：轮询见 in_flight true→false 一次性失效三个评测 query，

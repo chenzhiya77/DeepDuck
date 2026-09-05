@@ -583,6 +583,59 @@ describe("EvalTab 常驻工具栏", () => {
     ).toBe(true);
   });
 
+  it("enqueued → 乐观置位缓存 in_flight=true（轮询自锁修复，无需切视图）", () => {
+    const mutate = rs.fn(
+      (
+        _vars: unknown,
+        opts?: { onSuccess?: (r: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "enqueued" });
+      },
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    const { queryClient } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
+    // 首查已回空闲 payload：不乐观置位则 refetchInterval 永不启动（自锁根因）。
+    const runsKey = ["knowledge-bases", "kb-1", "eval-runs", "history"];
+    queryClient.setQueryData(runsKey, {
+      in_flight: false,
+      runs: [],
+      total: 0,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+
+    const cached = queryClient.getQueryData<{ in_flight: boolean }>(runsKey);
+    expect(cached?.in_flight).toBe(true);
+  });
+
+  it("enqueued 但无缓存 → 退化 invalidate 首查", () => {
+    const mutate = rs.fn(
+      (
+        _vars: unknown,
+        opts?: { onSuccess?: (r: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "enqueued" });
+      },
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    const { queryClient } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
+    const invalidateSpy = rs.fn().mockResolvedValue(undefined);
+    queryClient.invalidateQueries =
+      invalidateSpy as typeof queryClient.invalidateQueries;
+
+    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+
+    const keys = invalidateSpy.mock.calls.map(
+      ([arg]) => (arg as { queryKey: readonly unknown[] }).queryKey,
+    );
+    expect(keys).toContainEqual([
+      "knowledge-bases",
+      "kb-1",
+      "eval-runs",
+      "history",
+    ]);
+  });
+
   it("already_running → 提示 toast，不报错", () => {
     const mutate = rs.fn(
       (
