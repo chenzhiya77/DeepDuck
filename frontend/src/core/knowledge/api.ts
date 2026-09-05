@@ -8,6 +8,7 @@ import { fetch } from "../api/fetcher";
 import { getBackendBaseURL } from "../config";
 
 import type {
+  ChunkPositionsResponse,
   DeletePreviewResponse,
   EvalQuestion,
   EvalQuestionCreateInput,
@@ -298,6 +299,15 @@ export function recallTest(kbId: string, body: { query: string; top_k: number })
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => readResponse<RecallTestResponse>(r, "Failed to run recall test"));
+}
+
+/** 批量切片位次（2026-09-05）：图谱实体抽屉行内「切片 #K」数据源。 */
+export function fetchChunkPositions(kbId: string, chunkIds: readonly string[]): Promise<ChunkPositionsResponse> {
+  return fetch(kbUrl(kbId, "/chunk-positions"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chunk_ids: chunkIds }),
+  }).then((r) => readResponse<ChunkPositionsResponse>(r, "Failed to fetch chunk positions"));
 }
 
 // ── Phase-3 Batch-1 P6: manual knowledge cards (spec §8) ──────────────────

@@ -497,10 +497,12 @@ export default function KnowledgePage() {
                   overlay={vectorOverlay}
                   followChat={followChat}
                   onFollowChatChange={setFollowChat}
-                  onOpenChunk={(docId) => {
+                  onOpenChunk={(docId, chunkId) => {
                     // 指纹缓存与文档列表同源——正常必命中；防御性忽略。
+                    // 2026-09-05：与检索测试同链路——开抽屉并定位该切片（闪环 + 当前 #K）。
                     const doc = documents.find((item) => item.id === docId);
                     if (doc) {
+                      setChunkFocusId(chunkId);
                       setDrawerDoc(doc);
                     }
                   }}
@@ -516,10 +518,12 @@ export default function KnowledgePage() {
                   overlay={graphOverlay}
                   followChat={followChat}
                   onFollowChatChange={setFollowChat}
-                  onOpenChunk={(docId) => {
-                    // 与向量空间同一链路：回查文档对象再开抽屉（防御性忽略缺失）。
+                  onOpenChunk={(docId, chunkId) => {
+                    // 与向量空间同一链路（2026-09-05 补齐定位）：回查文档对象开抽屉
+                    // 并定位该切片（chunkFocusId 闪环 + 「当前 #K」）。
                     const doc = documents.find((item) => item.id === docId);
                     if (doc) {
+                      setChunkFocusId(chunkId);
                       setDrawerDoc(doc);
                     }
                   }}

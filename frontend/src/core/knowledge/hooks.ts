@@ -561,6 +561,26 @@ export function useKnowledgeGraph(kbId: string | null, enabled = true) {
   });
 }
 
+/** 批量切片位次（2026-09-05）：排序后拼串入键——同一集合不同顺序命中同一缓存。 */
+export function chunkPositionsKey(kbId: string, chunkIds: readonly string[]) {
+  return ["knowledge-bases", kbId, "chunk-positions", [...chunkIds].sort().join("|")] as const;
+}
+
+/**
+ * 批量切片位次查询（2026-09-05）：图谱实体抽屉打开时传选中实体的关联
+ * 切片 id 列表（null/空列表 = 不发请求）。位次是稳定事实（切片不删不变），
+ * 给长 staleTime 免抽屉反复开合重拉。
+ */
+export function useChunkPositions(kbId: string | null, chunkIds: readonly string[] | null) {
+  const ids = chunkIds ?? [];
+  return useQuery({
+    queryKey: chunkPositionsKey(kbId ?? "", ids),
+    queryFn: () => api.fetchChunkPositions(kbId!, ids),
+    enabled: kbId !== null && ids.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 /**
  * Query-text overlay projection: a mutation, not a query (same discipline as
  * the recall test) — each call hits the live embedding model, results are

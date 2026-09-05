@@ -284,6 +284,15 @@ export interface RecallTestResponse {
   elapsed_ms: Record<RecallPathName, number>;
 }
 
+/**
+ * POST /chunk-positions 批量位次响应（2026-09-05）：chunk_id → 文档存活
+ * 切片中的位次（与 recall-test chunk_position / 切片抽屉 #K 同源）；畸形/
+ * 已删 id 缺键，前端诚实缺省不显。
+ */
+export interface ChunkPositionsResponse {
+  positions: Record<string, number>;
+}
+
 // ── 向量空间可视化（2026-08-15 spec §7：四 collection 同图投影）────────────
 
 /** Point provenance — one per Qdrant collection (spec §3 双编码着色的大类维度). */

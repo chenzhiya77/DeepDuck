@@ -23,10 +23,12 @@ import type {
 
 const hooksMock = rs.hoisted(() => ({
   useKnowledgeGraph: rs.fn(),
+  useChunkPositions: rs.fn(),
 }));
 
 rs.mock("@/core/knowledge/hooks", () => ({
   useKnowledgeGraph: hooksMock.useKnowledgeGraph,
+  useChunkPositions: hooksMock.useChunkPositions,
 }));
 
 // 搜索无命中提示走 sonner toast。
@@ -241,6 +243,10 @@ describe("GraphTab 实体钻取（Task 3）", () => {
     canvasMock.props = undefined;
     hooksMock.useKnowledgeGraph.mockReset();
     stubGraphQuery({ data: GRAPH, isLoading: false, isError: false });
+    // 位次故意用非列表序的值（2/5）：证明芯片显示的是后端存活位次而非顺排。
+    hooksMock.useChunkPositions.mockReturnValue({
+      data: { positions: { "d#0000": 2, "d#0001": 5 } },
+    });
   });
   afterEach(() => {
     cleanup();
@@ -251,15 +257,29 @@ describe("GraphTab 实体钻取（Task 3）", () => {
     await waitFor(() => expect(canvasMock.props).toBeTruthy());
     const onNodeClick = canvasMock.props?.onNodeClick as (node: KnowledgeGraphResponse["nodes"][number]) => void;
     onNodeClick(GRAPH.nodes[0]!);
-    // 抽屉：实体名 + 描述 + 提及次数 + 关联切片列表。
+    // 抽屉（2026-09-05 身份卡/分组化）：实体名 + 类型/社区芯片 + 提及徽章 +
+    // 描述分组 + 关联切片行解剖。
     await waitFor(() => expect(screen.getByTestId("graph-entity-sheet")).toBeTruthy());
-    expect(screen.getByTestId("graph-entity-sheet").textContent).toContain("JVM");
-    expect(screen.getByTestId("graph-entity-sheet").textContent).toContain("Java 虚拟机");
-    expect(screen.getByTestId("graph-entity-sheet").textContent).toContain("2");
+    const sheet = screen.getByTestId("graph-entity-sheet");
+    expect(sheet.textContent).toContain("JVM");
+    expect(sheet.textContent).toContain("Java 虚拟机");
+    expect(sheet.textContent).toContain("组件");
+    expect(sheet.textContent).toContain("社区 #0");
+    expect(sheet.textContent).toContain("被 2 个切片提及");
+    expect(sheet.textContent).toContain("描述");
+    expect(sheet.textContent).toContain("关联切片");
+    // 两段均容器化（二迭代）：项目面板配方 bg-card + border + shadow-xs，
+    // 分组头收进卡内（bg-muted/40 浅底在米色底上后退、容器感不足，用户实测）。
+    expect(sheet.querySelectorAll(".bg-card.rounded-lg.border.shadow-xs")).toHaveLength(2);
     const chunks = screen.getAllByTestId("graph-entity-chunk");
     expect(chunks).toHaveLength(2);
     // 切片条目显示所属文档名（doc_id 从 chunk_id 解析）——可辨识的跳转目标。
     expect(chunks[0]!.textContent).toContain("JVM 笔记.md");
+    // 裸 chunkId 退役，行内位次芯片取而代之（2026-09-05）：与切片抽屉
+    // 「当前 #K」同源同词汇（非列表顺排的「提及 i」）。
+    expect(chunks[0]!.textContent).not.toContain("d#0000");
+    expect(chunks[0]!.textContent).toContain("切片 #2");
+    expect(chunks[1]!.textContent).toContain("切片 #5");
   });
 
   it("dispatches onOpenChunk(docId, chunkId) when a related chunk is clicked", async () => {

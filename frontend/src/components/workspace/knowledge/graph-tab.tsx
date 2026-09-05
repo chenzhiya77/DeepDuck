@@ -9,11 +9,12 @@
  * → onOpenChunk(docId, chunkId) 复用文档抽屉链路（chunk_id 内嵌 doc_id，
  * 前端无需二次查询）。
  */
-import { ChevronLeft, Search, X } from "lucide-react";
+import { AlignLeft, ChevronLeft, ChevronRight, FileText, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,19 +28,23 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
-import { useKnowledgeGraph } from "@/core/knowledge/hooks";
+import { useChunkPositions, useKnowledgeGraph } from "@/core/knowledge/hooks";
 import type {
   GraphRetrievalOverlay,
   KnowledgeDocument,
   KnowledgeGraphNode,
 } from "@/core/knowledge/types";
+import { cn } from "@/lib/utils";
 
 import type { GraphCanvasProps } from "./graph-canvas";
 import {
+  buildCommunityColorMap,
+  communityColor,
   filterNeighborhood,
   type GraphColorBy,
   matchEntityNames,
   type RenderTier,
+  typeColor,
 } from "./graph-utils";
 
 // ssr:false —— echarts 依赖 DOM，且不进首屏 chunk（对齐 vector-tab 先例）。
@@ -80,6 +85,8 @@ export function GraphTab({
 }) {
   const { t } = useI18n();
   const tg = t.knowledge.graphSpace;
+  // 行内「切片 #K」文案与检索测试悬浮气泡/切片抽屉徽章单一源。
+  const tr = t.knowledge.recallTest;
   const graphQuery = useKnowledgeGraph(kbId, enabled);
   const graph = graphQuery.data;
 
@@ -179,6 +186,41 @@ export function GraphTab({
     for (const doc of documents) map.set(doc.id, doc.name);
     return map;
   }, [documents]);
+
+  /** 社区色映射（2026-09-05 实体抽屉身份卡）：与画布 colorBy=community
+      同源同输入（visible 子图 Welsh-Powell）——抽屉社区芯片色点与节点色闭环。 */
+  const communityColorMap = useMemo(
+    () => buildCommunityColorMap(visible.nodes, visible.edges),
+    [visible],
+  );
+
+  // 切片位次（2026-09-05）：抽屉打开时拉关联切片的存活位次（与切片抽屉
+  // #K 同源同词汇）；关抽屉传 null 不发请求。位次缺失（已删/在拉）行内不显。
+  const positionsQuery = useChunkPositions(
+    kbId,
+    selected ? selected.source_chunk_ids : null,
+  );
+  const positionByChunkId = positionsQuery?.data?.positions;
+
+  /** 关联切片行排序（2026-09-05）：文档名 → 位次 #K 升序（同文档切片相邻、
+      序内有序）；位次未到位/缺失排末尾并保持原相对序（稳定）。 */
+  const orderedSourceChunkIds = useMemo(() => {
+    if (!selected) return [] as string[];
+    const positions = positionByChunkId ?? {};
+    return selected.source_chunk_ids
+      .map((chunkId, index) => ({ chunkId, index }))
+      .sort((a, b) => {
+        const docA = docIdOfChunk(a.chunkId);
+        const docB = docIdOfChunk(b.chunkId);
+        const nameA = docA ? (docNameById.get(docA) ?? "") : "";
+        const nameB = docB ? (docNameById.get(docB) ?? "") : "";
+        if (nameA !== nameB) return nameA.localeCompare(nameB);
+        const posA = positions[a.chunkId] ?? Number.MAX_SAFE_INTEGER;
+        const posB = positions[b.chunkId] ?? Number.MAX_SAFE_INTEGER;
+        return posA - posB || a.index - b.index;
+      })
+      .map((entry) => entry.chunkId);
+  }, [selected, positionByChunkId, docNameById]);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="graph-tab">
@@ -399,45 +441,119 @@ export function GraphTab({
               <div className="flex flex-col gap-4">
                 <SheetHeader>
                   <SheetTitle>{selected.id}</SheetTitle>
-                  <SheetDescription>
-                    {selected.type && (
-                      <span className="mr-2">{selected.type}</span>
-                    )}
+                  {/* sr-only 元数据（项目 Sheet 配方：描述不重复标题，供读屏；
+                      视觉信息由下方芯片行承载）。 */}
+                  <SheetDescription className="sr-only">
+                    {selected.type ? `${selected.type} · ` : ""}
                     {tg.mentions(selected.mention_count)}
                   </SheetDescription>
-                </SheetHeader>
-                {selected.description && (
-                  <p className="text-muted-foreground px-4 text-sm whitespace-pre-wrap">
-                    {selected.description}
-                  </p>
-                )}
-                <div className="px-4">
-                  <div className="text-muted-foreground mb-2 text-xs font-medium">
-                    {tg.relatedChunks}
+                  {/* 身份卡芯片行（2026-09-05 裸奔退役）：类型色点与画布节点
+                      typeColor 同源，社区色点走画布同一 Welsh-Powell 映射——
+                      点什么颜色的节点，抽屉见什么颜色的芯片。 */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selected.type && (
+                      <Badge className="gap-1.5 text-[10px]" variant="outline">
+                        <span
+                          aria-hidden
+                          className="size-2 rounded-full"
+                          style={{ backgroundColor: typeColor(selected.type) }}
+                        />
+                        {selected.type}
+                      </Badge>
+                    )}
+                    <Badge className="text-[10px] tabular-nums" variant="secondary">
+                      {tg.mentions(selected.mention_count)}
+                    </Badge>
+                    <Badge className="gap-1.5 text-[10px]" variant="outline">
+                      <span
+                        aria-hidden
+                        className="size-2 rounded-full"
+                        style={{
+                          backgroundColor: communityColor(
+                            selected.community,
+                            communityColorMap,
+                          ),
+                        }}
+                      />
+                      {tg.entityCommunity(selected.community)}
+                    </Badge>
                   </div>
-                  <ul className="space-y-1">
-                    {selected.source_chunk_ids.map((chunkId) => {
-                      const docId = docIdOfChunk(chunkId);
-                      const docName = docId
-                        ? (docNameById.get(docId) ?? tg.unknownDoc)
-                        : tg.unknownDoc;
-                      return (
-                        <li key={chunkId}>
-                          <button
-                            className="hover:bg-accent w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors"
-                            data-testid="graph-entity-chunk"
-                            type="button"
-                            onClick={() => docId && onOpenChunk(docId, chunkId)}
-                          >
-                            <span className="font-medium">{docName}</span>
-                            <span className="text-muted-foreground ml-1.5">
-                              {chunkId}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                </SheetHeader>
+                {/* 描述 = 阅读容器（2026-09-05 二迭代）：项目面板配方 bg-card +
+                    border + shadow-xs（bg-muted/40 浅底在米色底上后退、容器感不足，
+                    用户实测）；分组头收进卡内（border-b），与检索测试路容器同词汇。 */}
+                <div className="px-4">
+                  <div className="bg-card text-card-foreground overflow-hidden rounded-lg border shadow-xs">
+                    <div className="text-muted-foreground flex items-center gap-1.5 border-b px-3 py-2 text-xs font-medium">
+                      <AlignLeft className="size-3.5" />
+                      {tg.entityDescription}
+                    </div>
+                    <p
+                      className={cn(
+                        "px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                        !selected.description && "text-muted-foreground",
+                      )}
+                    >
+                      {selected.description || tg.entityNoDescription}
+                    </p>
+                  </div>
+                </div>
+                {/* 关联切片 = 同款容器 + 行解剖（2026-09-05）：计数徽章右对齐
+                    （检索测试容器头同款）；行 = 文档名 truncate + 提及序 + chevron，
+                    hover 浅底在卡片边界内。裸 chunkId 退役（仅作 key 与跳转参数）。
+                    不显 chunk_index：索引时原始序号与切片抽屉的存活位次 #K 在删除
+                    空洞时会打架，诚实序号 = 列表内提及序，点击后抽屉自会显示
+                    准确 #K。 */}
+                <div className="px-4">
+                  <div className="bg-card text-card-foreground overflow-hidden rounded-lg border shadow-xs">
+                    <div className="text-muted-foreground flex items-center gap-1.5 border-b px-3 py-2 text-xs font-medium">
+                      <FileText className="size-3.5" />
+                      {tg.relatedChunks}
+                      <Badge
+                        className="ml-auto text-[10px] tabular-nums"
+                        variant="secondary"
+                      >
+                        {selected.source_chunk_ids.length}
+                      </Badge>
+                    </div>
+                    {selected.source_chunk_ids.length === 0 ? (
+                      <p className="text-muted-foreground px-3 py-2.5 text-xs">
+                        {tg.entityNoChunks}
+                      </p>
+                    ) : (
+                      <ul className="space-y-0.5 p-1.5">
+                        {orderedSourceChunkIds.map((chunkId) => {
+                          const docId = docIdOfChunk(chunkId);
+                          const docName = docId
+                            ? (docNameById.get(docId) ?? tg.unknownDoc)
+                            : tg.unknownDoc;
+                          const position = positionByChunkId?.[chunkId];
+                          return (
+                            <li key={chunkId}>
+                              <button
+                                className="hover:bg-muted/50 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors"
+                                data-testid="graph-entity-chunk"
+                                type="button"
+                                onClick={() => docId && onOpenChunk(docId, chunkId)}
+                              >
+                                <span className="min-w-0 flex-1 truncate font-medium">
+                                  {docName}
+                                </span>
+                                {/* 位次芯片（2026-09-05）：「提及 i」列表序退役——同文档多行
+                                    靠真实位次区分；缺失（已删/在拉）诚实不显。 */}
+                                {position != null && (
+                                  <span className="text-muted-foreground shrink-0 tabular-nums">
+                                    {tr.slicePosition(position)}
+                                  </span>
+                                )}
+                                <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
