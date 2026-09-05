@@ -68,6 +68,7 @@ export function WikiPanel({
   entries,
   loading = false,
   updating = false,
+  updatingEntryIds = [],
   query = "",
   onOpenEntry,
   onDeleteEntry,
@@ -84,6 +85,11 @@ export function WikiPanel({
    * drains (the entries query polls while the backend reports generating).
    */
   updating?: boolean;
+  /**
+   * 局部更新在飞目标（2026-09-05）：非空时仅这些 entry 行显示「更新中」，
+   * 其余 dirty 行保持「待更新」；空 + updating = 整库 run（全部 dirty 更新中）。
+   */
+  updatingEntryIds?: readonly string[];
   /** Unified wiki-tab search text (title + summary containment, client-side). */
   query?: string;
   onOpenEntry: (entry: WikiEntrySummary) => void;
@@ -303,6 +309,13 @@ export function WikiPanel({
                   const isSelected = selectedIds.has(entry.id);
                   // 剥掉摘要开头的「# 标题」markdown 行（2026-09-03）：标题已单独渲染，正文保留
                   const summaryText = stripSummaryHeading(entry.summary);
+                  // 行级更新中（2026-09-05）：目标行只要 ids 置位就显示「更新中」
+                  // （不依赖库级 updating——202 ack→in-flight 间隙 updating 会短暂为假，
+                  // 若与 updating 相与目标行会在间隙闪回「待更新」）；非目标 dirty 行
+                  // 仅在整库 run（ids 空）时随 updating 显示更新中，局部 run 保持待更新。
+                  const rowUpdating =
+                    updatingEntryIds.includes(entry.id) ||
+                    (updating && updatingEntryIds.length === 0);
                   return (
                     <li key={entry.id}>
                       <ContextMenu>
@@ -344,19 +357,26 @@ export function WikiPanel({
                             </button>
                             {entry.status === "dirty" && (
                               <Badge
-                                className="h-5 shrink-0 gap-1 py-0"
+                                className="h-5 shrink-0 gap-1.5 bg-[var(--wiki-dirty-bg)] py-0 text-[var(--wiki-dirty)]"
                                 variant="secondary"
                               >
-                                {updating && (
+                                {rowUpdating ? (
                                   <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  /* 待更新琥珀胶囊（spec ⑤）：圆点沿用文档 tab
+                                     「圆点+文字」配方（size-1.5 rounded-full）。 */
+                                  <span
+                                    aria-hidden
+                                    className="bg-[var(--wiki-dirty-dot)] size-1.5 shrink-0 rounded-full"
+                                  />
                                 )}
-                                {updating ? tw.updating : tw.dirty}
+                                {rowUpdating ? tw.updating : tw.dirty}
                               </Badge>
                             )}
                             <Tooltip
                               content={`${tw.updatedAt} ${formatKnowledgeTimestamp(entry.updated_at, locale)}`}
                             >
-                              <span className="text-muted-foreground w-[72px] shrink-0 truncate text-right text-xs tabular-nums">
+                              <span className="text-muted-foreground shrink-0 truncate text-right text-xs tabular-nums">
                                 {formatKnowledgeRelativeTime(
                                   entry.updated_at,
                                   locale,

@@ -207,18 +207,29 @@ export default function KnowledgePage() {
   // server-reported generating→idle transition, so a no-op run or a missed
   // poll never produces a phantom 已更新.
   const wikiUpdating = isWikiUpdating(wikiEntriesQuery.data, generateWiki.isPending || regenerateWikiEntries.isPending);
+  // 局部更新在飞目标（2026-09-05）：库级 wikiUpdating 只表示「有 run 在飞」，不表示
+  // 「哪些行在更新」。单条/多选重生成记录目标 ids，仅这些行显示更新中；整库 run
+  // 清空 ids → 全部 dirty 行显示更新中（原语义）。
+  // 清空时机 = 排空边(generating→idle)/onError/already_running/切库/整库 run；
+  // 绝不能用 !wikiUpdating 清——202 ack→in-flight 间隙 wikiUpdating 会短暂为假，
+  // 在那一刻清 ids 会退化成整库语义（全部 dirty 一起闪更新中）。
+  const [regeneratingIds, setRegeneratingIds] = useState<string[]>([]);
   const wikiManualRunRef = useRef(false);
   const prevWikiGenerationRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     wikiManualRunRef.current = false;
     prevWikiGenerationRef.current = undefined;
     setWikiRunActive(false);
+    setRegeneratingIds([]);
   }, [selectedKbId]);
   useEffect(() => {
     const generation = wikiEntriesQuery.data?.generation;
     const prev = prevWikiGenerationRef.current;
     prevWikiGenerationRef.current = generation;
-    if (prev === "generating" && generation === "idle" && wikiManualRunRef.current) {
+    const drained = prev === "generating" && generation === "idle";
+    // run 排空 → 局部目标已无意义，清空（不论是否手动触发）。
+    if (drained) setRegeneratingIds([]);
+    if (drained && wikiManualRunRef.current) {
       wikiManualRunRef.current = false;
       setWikiRunActive(false);
       // P1 失败可见性 (2026-08-14): a crashed run also drains the flag —
@@ -316,6 +327,8 @@ export default function KnowledgePage() {
 
   // 百科生成触发器（2026-08-30）：全局库菜单与百科 tab 内 ⋯ 双入口共用同一逻辑。
   const handleGenerateWiki = (mode: WikiGenerateMode) => {
+    // 整库 run：清空局部目标 → 全部 dirty 行显示「更新中」（原语义）。
+    setRegeneratingIds([]);
     generateWiki.mutate(mode, {
       onSuccess: (ack) => {
         // P1 触发幂等 (2026-08-14): a run is already draining the
@@ -341,9 +354,13 @@ export default function KnowledgePage() {
   // 手选 entry_ids。ack 处理与 handleGenerateWiki 同构：后端复用同一库级
   // in-flight/轮询/完成信号，故沿用同一套 already_running 提示与完成 toast。
   const handleRegenerateEntries = (entryIds: string[]) => {
+    // 局部 run：仅目标行显示「更新中」，其余 dirty 行保持「待更新」。
+    setRegeneratingIds(entryIds);
     regenerateWikiEntries.mutate(entryIds, {
       onSuccess: (ack) => {
         if (ack.status === "already_running") {
+          // 在飞的是别人的 run（目标未知）→ 回退整库语义。
+          setRegeneratingIds([]);
           toast.info(tk.wikiAlreadyRunning);
           return;
         }
@@ -351,7 +368,10 @@ export default function KnowledgePage() {
         setWikiRunActive(true);
         toast.success(tk.wikiEnqueued);
       },
-      onError: (error) => showMutationError(error, tk.errors.wikiFailed),
+      onError: (error) => {
+        setRegeneratingIds([]);
+        showMutationError(error, tk.errors.wikiFailed);
+      },
     });
   };
 
@@ -452,6 +472,7 @@ export default function KnowledgePage() {
                   kbId={selectedKb.id}
                   entriesLoading={wikiEntriesQuery.isLoading}
                   updating={wikiUpdating}
+                  updatingEntryIds={regeneratingIds}
                   active={activeTab === "wiki"}
                   onGenerateWiki={handleGenerateWiki}
                   onRegenerateEntries={handleRegenerateEntries}

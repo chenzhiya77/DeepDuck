@@ -430,6 +430,51 @@ describe("WikiPanel", () => {
     expect(screen.queryByText("待更新")).toBeNull();
   });
 
+  it("局部 run：仅目标行显示更新中，其余 dirty 行保持待更新（2026-09-05）", () => {
+    const otherDirty: WikiEntrySummary = {
+      id: "entry-3",
+      title: "Sandbox",
+      summary: "沙箱隔离执行。",
+      status: "dirty",
+      updated_at: "2026-08-10T09:30:00Z",
+    };
+    renderWithI18n(
+      <WikiPanel
+        entries={[DIRTY_ENTRY, otherDirty]}
+        updating
+        updatingEntryIds={[DIRTY_ENTRY.id]}
+        onOpenEntry={() => undefined}
+        onDeleteEntry={() => undefined}
+      />,
+    );
+    // 头行更新中徽章 + 目标行 = 2 个「更新中」；非目标 dirty 行仍是「待更新」。
+    expect(screen.getAllByText("更新中")).toHaveLength(2);
+    expect(screen.getAllByText("待更新")).toHaveLength(1);
+  });
+
+  it("202→in-flight 间隙：updating 假但 ids 置位时目标行仍显示更新中（2026-09-05）", () => {
+    const otherDirty: WikiEntrySummary = {
+      id: "entry-3",
+      title: "Sandbox",
+      summary: "沙箱隔离执行。",
+      status: "dirty",
+      updated_at: "2026-08-10T09:30:00Z",
+    };
+    renderWithI18n(
+      <WikiPanel
+        entries={[DIRTY_ENTRY, otherDirty]}
+        updating={false}
+        updatingEntryIds={[DIRTY_ENTRY.id]}
+        onOpenEntry={() => undefined}
+        onDeleteEntry={() => undefined}
+      />,
+    );
+    // 间隙无库级 run 标志 → 无头部徽章；目标行仍更新中（1），非目标待更新（1）。
+    expect(screen.queryByTestId("wiki-updating-hint")).toBeNull();
+    expect(screen.getAllByText("更新中")).toHaveLength(1);
+    expect(screen.getAllByText("待更新")).toHaveLength(1);
+  });
+
   it("keeps the 待更新 badge and no hint when no run is active", () => {
     renderWithI18n(
       <WikiPanel
@@ -454,6 +499,22 @@ describe("WikiPanel", () => {
     const badge = screen.getByText("待更新");
     expect(badge.className).toContain("h-5");
     expect(badge.className).toContain("py-0");
+  });
+
+  it("renders the dirty badge as the warm amber capsule (dot + tokens), not gray secondary (spec ⑤)", () => {
+    renderWithI18n(
+      <WikiPanel
+        entries={[DIRTY_ENTRY]}
+        onOpenEntry={() => undefined}
+        onDeleteEntry={() => undefined}
+      />,
+    );
+    const badge = screen.getByText("待更新");
+    // 胶囊底色/文字走待更新琥珀 token（不再是 secondary 灰）。
+    expect(badge.className).toContain("bg-[var(--wiki-dirty-bg)]");
+    expect(badge.className).toContain("text-[var(--wiki-dirty)]");
+    // 圆点（文档 tab 同款 size-1.5 rounded-full）存在。
+    expect(badge.querySelector('[class*="rounded-full"]')).toBeTruthy();
   });
 
   it("invokes onOpenEntry with the clicked entry", () => {

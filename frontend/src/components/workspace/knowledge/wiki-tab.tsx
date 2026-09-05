@@ -46,6 +46,7 @@ export function WikiTab({
   entries,
   entriesLoading = false,
   updating = false,
+  updatingEntryIds = [],
   active = false,
   onGenerateWiki,
   onRegenerateEntries,
@@ -58,6 +59,11 @@ export function WikiTab({
   entries: WikiEntrySummary[];
   entriesLoading?: boolean;
   updating?: boolean;
+  /**
+   * 局部更新在飞目标（2026-09-05）：非空时仅这些 entry 行显示「更新中」，
+   * 其余 dirty 行保持「待更新」；空 + updating = 整库 run（全部 dirty 更新中）。
+   */
+  updatingEntryIds?: readonly string[];
   /**
    * 百科 tab 是否激活（2026-09-02）：透传给 ManualCardPanel 作卡片取数门控，
    * 与 entries（useWikiEntries）同节奏——tab 激活即取数，收起态也显示计数。
@@ -177,6 +183,7 @@ export function WikiTab({
           loading={entriesLoading}
           query={query}
           updating={updating}
+          updatingEntryIds={updatingEntryIds}
           onDeleteEntry={onDeleteEntry}
           onEditEntry={onEditEntry}
           onGenerateWiki={onGenerateWiki}

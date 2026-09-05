@@ -289,6 +289,11 @@
   --wiki-card-bg: #f6efe2;
   --wiki-card-bg-hover: #eee3d0;
   --wiki-card-ring: #eadcc4;
+  /* 状态徽章·待更新 语义琥珀胶囊（spec ⑤，冷暖家族之外的状态色）：dot/文字/底。
+     就绪绿胶囊已弃用（ready 不渲染徽章），仅保留待更新。 */
+  --wiki-dirty-dot: #d97706;
+  --wiki-dirty: #8a5a12;
+  --wiki-dirty-bg: #faf0dc;
 }
 
 html.dark .shiki span {
@@ -337,6 +342,11 @@ html.dark .shiki span {
   --wiki-card-bg: #332b20;
   --wiki-card-bg-hover: #3d3428;
   --wiki-card-ring: #4d4231;
+  /* 状态徽章·待更新 — dark variants：半透明琥珀底 + 提亮文字/圆点
+     （同 eval-metrics 暗色「半透明语义底 + 提亮 fg」惯例）。 */
+  --wiki-dirty-dot: #f59e0b;
+  --wiki-dirty: #e6b26a;
+  --wiki-dirty-bg: rgb(120 53 15 / 0.35);
   font-weight: 300;
 }
 
