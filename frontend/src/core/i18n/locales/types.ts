@@ -631,8 +631,17 @@ export interface Translations {
       dimsLabel: string;
       /** 采样徽标（Task 7）：已抽样 shown/total 点。 */
       sampledBadge: (shown: number, total: number) => string;
-      /** 文档搜索框（聚焦交互）：按文档名过滤并锁定切片聚焦。 */
-      searchDocs: string;
+      /** 全量搜索框（2026-09-05 泛化）：四类点 label 子串匹配 → 命中聚焦。 */
+      searchAll: string;
+      /** 搜索范围下拉（客户端过滤，不重拉投影）。 */
+      searchScopeLabel: string;
+      searchScopes: {
+        all: string;
+        chunks: string;
+        entities: string;
+        wiki: string;
+        cards: string;
+      };
       /** P6（spec §9）：「跟随对话」开关 + 联动禁用/失效提示。 */
       followChat: string;
       overlayPcaOnly: string;
@@ -655,6 +664,12 @@ export interface Translations {
       mentions: (count: number) => string;
       /** 实体抽屉的关联切片分组标题。 */
       relatedChunks: string;
+      /** 实体抽屉（2026-09-05 身份卡/分组化）：描述分组头、社区胶囊、两类
+          空态占位。行内位次复用 recallTest.slicePosition（单一词汇源）。 */
+      entityDescription: string;
+      entityCommunity: (community: number) => string;
+      entityNoDescription: string;
+      entityNoChunks: string;
       /** 切片所属文档已删除（chunk_id 里的 doc_id 不在当前文档列表）。 */
       unknownDoc: string;
       /** P3 搜索框：实体名模糊匹配（spec §6）。 */

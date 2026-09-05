@@ -5,9 +5,10 @@
  *   重新计算）+ 加载·空·错误三态 + 索引中提示 + 四类单色分组（2026-08-15
  *   UX 迭代拍板）+ 点击联动现有抽屉链路。echarts 画布（vector-canvas）在
  *   jsdom 不可运行，整体 mock 断言 props。
- * - 聚焦交互（2026-08-15）：工具栏文档搜索框 → 匹配文档 doc_id 集合作为
- *   searchedDocIds 传画布（锁定聚焦）；hover 聚焦与淡化判定在 vector-canvas
- *   （isPointDimmed 纯函数，见 vector-canvas.unit.test.ts）。
+ * - 聚焦交互（2026-09-05 全量搜索泛化）：搜索框匹配四类点 label → 命中点
+ *   id 集合作为 searchedPointIds 传画布（锁定聚焦）；范围下拉限定匹配类别；
+ *   命中芯片按类计数；hover 聚焦与淡化判定在 vector-canvas（isPointDimmed
+ *   纯函数，见 vector-canvas.unit.test.ts）。
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -201,7 +202,7 @@ describe("VectorTab 面板", () => {
 
   it("renders the toolbar: 4 collection chips, 2D/3D toggle, algo select, recompute", () => {
     renderVectorTab();
-    for (const name of ["切片", "实体", "百科", "卡片"]) {
+    for (const name of ["切片", "实体", "百科", "条目"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
     // Radix ToggleGroup single 模式的 Item 带 role="radio"（button 元素上覆写）。
@@ -277,7 +278,7 @@ describe("VectorTab 面板", () => {
   it("switches the algo param when the algorithm select changes to umap", () => {
     renderVectorTab();
     // jsdom 无 pointerCapture——对齐 human-input-card 先例用键盘打开 Radix Select。
-    fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "算法" }), { key: "ArrowDown" });
     fireEvent.click(screen.getByRole("option", { name: "UMAP" }));
     const lastCall = hooksMock.useVectorProjection.mock.calls.at(-1);
     expect(lastCall?.[1].algo).toBe("umap");
@@ -349,38 +350,67 @@ describe("VectorTab 面板", () => {
     );
   });
 
-  // ── 聚焦交互（2026-08-15）：搜索框锁定文档聚焦 ─────────────────────────
+  // ── 聚焦交互（2026-09-05 全量搜索泛化）：搜索框锁定命中点聚焦 ─────────────────────────
 
-  it("renders a doc search box that locks chunk focus onto matching documents", async () => {
+  it("renders a search box that locks focus onto matching points of any type", async () => {
     renderVectorTab();
     await waitFor(() => expect(canvasMock.props).toBeTruthy());
     // 默认无搜索锁定
-    expect(canvasMock.props!.searchedDocIds).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索文档…" }), { target: { value: "a.pdf" } });
+    expect(canvasMock.props!.searchedPointIds).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索…" }), { target: { value: "a.pdf" } });
     await waitFor(() => {
-      const ids = canvasMock.props!.searchedDocIds as ReadonlySet<string>;
-      expect([...ids].sort()).toEqual(["doc-1"]);
+      const ids = canvasMock.props!.searchedPointIds as ReadonlySet<string>;
+      expect([...ids].sort()).toEqual(["doc-1#0000", "doc-1#0001"]);
     });
   });
 
   it("matches multiple documents by case-insensitive substring", async () => {
     renderVectorTab();
     await waitFor(() => expect(canvasMock.props).toBeTruthy());
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索文档…" }), { target: { value: ".PDF" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索…" }), { target: { value: ".PDF" } });
     await waitFor(() => {
-      const ids = canvasMock.props!.searchedDocIds as ReadonlySet<string>;
-      expect([...ids].sort()).toEqual(["doc-1", "doc-2"]);
+      const ids = canvasMock.props!.searchedPointIds as ReadonlySet<string>;
+      expect([...ids].sort()).toEqual(["doc-1#0000", "doc-1#0001", "doc-2#0000"]);
     });
   });
 
   it("clears the search lock when the query is emptied", async () => {
     renderVectorTab();
     await waitFor(() => expect(canvasMock.props).toBeTruthy());
-    const search = screen.getByRole("textbox", { name: "搜索文档…" });
+    const search = screen.getByRole("textbox", { name: "搜索…" });
     fireEvent.change(search, { target: { value: "a" } });
-    await waitFor(() => expect(canvasMock.props!.searchedDocIds).not.toBeNull());
+    await waitFor(() => expect(canvasMock.props!.searchedPointIds).not.toBeNull());
     fireEvent.change(search, { target: { value: "" } });
-    await waitFor(() => expect(canvasMock.props!.searchedDocIds).toBeNull());
+    await waitFor(() => expect(canvasMock.props!.searchedPointIds).toBeNull());
+  });
+
+  it("全量搜索命中跨类点：实体/百科同词一起进入命中集（2026-09-05）", async () => {
+    renderVectorTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索…" }), { target: { value: "JVM" } });
+    await waitFor(() => {
+      const ids = canvasMock.props!.searchedPointIds as ReadonlySet<string>;
+      expect([...ids].sort()).toEqual(["JVM", "entry-1"]);
+    });
+  });
+
+  it("范围筛选只匹配所选类：选「文档」后实体命中不参与（2026-09-05）", async () => {
+    renderVectorTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "搜索范围" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("option", { name: "文档" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索…" }), { target: { value: "JVM" } });
+    await waitFor(() => {
+      const ids = canvasMock.props!.searchedPointIds as ReadonlySet<string>;
+      expect(ids.size).toBe(0);
+    });
+    // 切回全部 → 命中恢复
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "搜索范围" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("option", { name: "全部" }));
+    await waitFor(() => {
+      const ids = canvasMock.props!.searchedPointIds as ReadonlySet<string>;
+      expect(ids.size).toBe(2);
+    });
   });
 
   // ── 窄栏降级（2026-08-17 二迭代）：溢出检测 → chips 仅色点 + ⋯ 菜单 ─────
@@ -517,7 +547,7 @@ describe("VectorTab 检索联动叠加", () => {
     const mutate = setupProjectQuery();
     const { rerender, renderTab } = renderVectorTab();
     // jsdom 无 pointerCapture——Radix Select 键盘打开（先例见上方 algo 用例）。
-    fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "算法" }), { key: "ArrowDown" });
     fireEvent.click(screen.getByRole("option", { name: "UMAP" }));
     rerender(renderTab({ overlay: RECALL_OVERLAY }));
     await waitFor(() =>

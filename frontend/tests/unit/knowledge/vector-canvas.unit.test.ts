@@ -3,7 +3,9 @@
  * - hover 切片 → 同文档切片保持，其余文档切片淡出；实体/wiki/卡片
  *   （跨文档参照系）不淡出；
  * - hover 实体/wiki/卡片 → 该大类保持，其余所有（含切片）淡出；
- * - 搜索锁定（docSearch）→ 匹配文档切片保持，其余切片淡出；
+ * - 搜索锁定（search，2026-09-05 全量泛化）→ 命中点（任意类）提满不透明
+ *   + 微放大（穿透 RANK_OPACITIES 大类基底），未命中全类淡出 0.2（两档，
+ *   浅于 hover 隔离的 0.12）；
  * - 淡化 = 低透明度保留原色（保空间参照，不隐藏）。
  */
 import { describe, expect, it } from "@rstest/core";
@@ -13,10 +15,13 @@ import {
   buildSeriesOptions,
   buildTooltipHtml,
   DIMMED_OPACITY,
+  dimOpacityForFocus,
   isPointDimmed,
   OVERLAY_LINE_SLOTS,
   OVERLAY_QUERY_COLOR,
   overlayHitColor,
+  SEARCH_DIMMED_OPACITY,
+  SEARCH_HIT_SIZE_BOOST,
   TOOLTIP_LABEL_MAX,
   TOOLTIP_PREVIEW_MAX,
 } from "@/components/workspace/knowledge/vector-canvas";
@@ -58,17 +63,69 @@ describe("isPointDimmed 聚焦淡化判定", () => {
     expect(isPointDimmed(point("card", "card"), focus)).toBe(true);
   });
 
-  it("docSearch focus: chunks of non-matching documents dim; other types stay", () => {
-    const focus = { kind: "docSearch", docIds: new Set(["doc-1", "doc-3"]) } as const;
+  it("search focus: unmatched points of every type dim; matched stay (2026-09-05)", () => {
+    const focus = { kind: "search", pointIds: new Set(["doc-1#0", "概念#0"]) } as const;
     expect(isPointDimmed(point("chunk", "doc-1"), focus)).toBe(false);
-    expect(isPointDimmed(point("chunk", "doc-3"), focus)).toBe(false);
-    expect(isPointDimmed(point("chunk", "doc-2"), focus)).toBe(true);
     expect(isPointDimmed(point("entity", "概念"), focus)).toBe(false);
+    // 未命中不分类别一律淡出（旧 docSearch 只淡切片，实体/百科恒亮稀释聚焦）
+    expect(isPointDimmed(point("chunk", "doc-2"), focus)).toBe(true);
+    expect(isPointDimmed(point("wiki", "wiki"), focus)).toBe(true);
+    expect(isPointDimmed(point("card", "card"), focus)).toBe(true);
   });
 
   it("exposes a subtle dimming opacity (fade, not hide)", () => {
     expect(DIMMED_OPACITY).toBeGreaterThan(0);
     expect(DIMMED_OPACITY).toBeLessThanOrEqual(0.2);
+  });
+
+  it("search dimming sits one notch above hover dimming (两档恢复，2026-09-05)", () => {
+    // 命中强调到位后，未命中浅一档保邻居上下文（看命中周围有什么）。
+    expect(SEARCH_DIMMED_OPACITY).toBeGreaterThan(DIMMED_OPACITY);
+    expect(SEARCH_DIMMED_OPACITY).toBeLessThanOrEqual(0.25);
+    expect(dimOpacityForFocus({ kind: "search", pointIds: new Set() })).toBe(SEARCH_DIMMED_OPACITY);
+    expect(dimOpacityForFocus({ kind: "document", docId: "d" })).toBe(DIMMED_OPACITY);
+    expect(dimOpacityForFocus(null)).toBe(DIMMED_OPACITY);
+  });
+
+  it("search hits break the rank-opacity ceiling: full opacity + size boost (2026-09-05)", () => {
+    // 实体大类基础透明度被 RANK_OPACITIES 按点数排名压到最低档——命中若
+    // 不覆写就「沉在大类里看不出来」（用户实测）。命中 = 提满 + 放大；
+    // 未命中 = 统一深淡出 DIMMED_OPACITY（两档制已退役）。
+    const groups: VectorSeriesGroup[] = [
+      {
+        key: "entity",
+        sourceType: "entity",
+        label: "实体",
+        color: "#66bb6a",
+        points: [point("entity", "概念"), point("entity", "其他")],
+      },
+    ];
+    const focus = { kind: "search", pointIds: new Set(["概念#0"]) } as const;
+    const options = buildSeriesOptions(groups, 2, focus, undefined, "#ffffff", null);
+    const main = options
+      .filter((s) => s.name === "实体")
+      .flatMap(
+        (s) =>
+          (s as {
+            data: Array<{
+              point: VectorProjectionPoint;
+              itemStyle?: Record<string, unknown>;
+              symbolSize?: number;
+            }>;
+          }).data,
+      );
+    const hit = main.find((d) => d.point.id === "概念#0");
+    const miss = main.find((d) => d.point.id === "其他#0");
+    expect(hit?.itemStyle?.opacity).toBe(1);
+    expect(miss?.itemStyle?.opacity).toBe(SEARCH_DIMMED_OPACITY);
+    // 放大 = 系列级基础尺寸 × 倍率（用户实测 1.6 略大 → 1.4 微放大）；
+    // 未命中不带项级尺寸覆写（仍用系列级）。
+    const seriesBase = (options.find((s) => s.name === "实体") as { symbolSize: number })
+      .symbolSize;
+    expect(hit?.symbolSize).toBeCloseTo(seriesBase * SEARCH_HIT_SIZE_BOOST);
+    expect(miss?.symbolSize).toBeUndefined();
+    expect(SEARCH_HIT_SIZE_BOOST).toBeGreaterThan(1);
+    expect(SEARCH_HIT_SIZE_BOOST).toBeLessThanOrEqual(1.5);
   });
 });
 

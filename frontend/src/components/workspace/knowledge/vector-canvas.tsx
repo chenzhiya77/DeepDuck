@@ -7,7 +7,8 @@
  * X-Z 立面 [x,0,y] + 正交正视锁定，缩放/平移/resize 行为与 3D 完全一致；
  * 旧 2D dataZoom 方案（视窗保持/归位 bug/遮挡区）整体退役。
  * 聚焦交互（2026-08-15 用户拍板）：hover 散点 → 同文档切片/同大类瞬态聚焦；
- * 搜索框（searchedDocIds prop）→ 文档锁定聚焦（优先于 hover）。淡化走自定义
+ * 搜索框（searchedPointIds prop，2026-09-05 全量泛化）→ 命中点锁定聚焦（优先于
+ * hover：命中提满不透明+放大，未命中深淡出）。淡化走自定义
  * setOption（内置 emphasis.focus='series' 粒度不够：区分不了同 series 内不同文档）。
  */
 import { LegendComponent, TooltipComponent } from "echarts/components";
@@ -57,8 +58,8 @@ export interface VectorCanvasProps {
   series: VectorSeriesGroup[];
   dims: 2 | 3;
   onPointClick?: (point: VectorProjectionPoint) => void;
-  /** 搜索锁定：匹配文档的 doc_id 集合；null/undefined = 无锁定（回落 hover 聚焦）。 */
-  searchedDocIds?: ReadonlySet<string> | null;
+  /** 搜索锁定（2026-09-05 全量搜索泛化）：命中点 id 集合；null/undefined = 无锁定（回落 hover 聚焦）。 */
+  searchedPointIds?: ReadonlySet<string> | null;
   /** P6 检索联动叠加（spec §9）：query 菱形落点 + 命中高亮/连线/score 色深。 */
   overlay?: VectorCanvasOverlay | null;
 }
@@ -189,6 +190,8 @@ interface ScatterDatum {
   point: VectorProjectionPoint;
   /** 聚焦淡化 / 检索命中的项级覆写（低透明度保轮廓，或命中高亮）。 */
   itemStyle?: { opacity: number; color?: string };
+  /** 搜索命中放大（2026-09-05）：项级尺寸覆写，衬底/填充两层同步。 */
+  symbolSize?: number;
 }
 
 /**
@@ -196,16 +199,41 @@ interface ScatterDatum {
  * - document：hover 某切片 → 该文档切片保持，其余文档切片淡出；实体/wiki/
  *   卡片是跨文档参照系，不淡出；
  * - collection：hover 实体/wiki/卡片 → 该大类保持，其余所有（含切片）淡出；
- * - docSearch：搜索框锁定 → 匹配文档切片保持，其余切片淡出。
+ * - search：搜索锁定（2026-09-05 全量搜索）→ 命中点（任意类）提到全不透明
+ *   + 放大（穿透 RANK_OPACITIES 大类基底），未命中点全类淡出 0.2——两档
+ *   （浅于 hover 隔离的 0.12）：命中强调到位后，浅一档兼顾对比与邻居上下文。
  */
 export type VectorFocus =
   | { kind: "document"; docId: string }
   | { kind: "collection"; sourceType: string }
-  | { kind: "docSearch"; docIds: ReadonlySet<string> }
+  | { kind: "search"; pointIds: ReadonlySet<string> }
   | null;
 
 /** 淡化透明度：淡出保空间参照，不隐藏（用户审美基线：不能深到压过聚焦项）。 */
 export const DIMMED_OPACITY = 0.12;
+
+/**
+ * 搜索淡化透明度（2026-09-05 用户实测定案：两档恢复）：命中提满+放大
+ * 到位后，未命中不再需要 0.12 深淡拉开对比——0.2 浅一档保留邻居的
+ * 形状与颜色可辨（搜索意图含「看命中点周围有什么」）。hover 聚焦维持
+ * 0.12（隔离语义，无上下文诉求）。早先无命中强调时 0.3 浅档实测失败
+ * （命中沉在大类基底里看不出），强调到位后 0.2 成立。
+ */
+export const SEARCH_DIMMED_OPACITY = 0.2;
+
+/** 聚焦类型 → 淡化透明度（search 浅一档，见 SEARCH_DIMMED_OPACITY）。 */
+export function dimOpacityForFocus(focus: VectorFocus): number {
+  return focus?.kind === "search" ? SEARCH_DIMMED_OPACITY : DIMMED_OPACITY;
+}
+
+/**
+ * 搜索命中点放大倍率（2026-09-05，用户实测 1.6 略大 → 1.4）：命中可见性
+ * 的主杠杆不是淡化深度，而是正向强调——实体/百科大类的基础透明度被
+ * RANK_OPACITIES 按点数排名压到 0.45，命中点若不覆写就沉在自己的大类里
+ * （用户实测「根本看不出来」）；提满不透明 + 微放大后，命中点在淡出海面
+ * 上一眼跳出。
+ */
+export const SEARCH_HIT_SIZE_BOOST = 1.4;
 
 /** 聚焦淡化判定（纯函数，jsdom 可测）。 */
 export function isPointDimmed(point: VectorProjectionPoint, focus: VectorFocus): boolean {
@@ -213,8 +241,9 @@ export function isPointDimmed(point: VectorProjectionPoint, focus: VectorFocus):
   switch (focus.kind) {
     case "document":
       return point.source_type === "chunk" && point.color_key !== focus.docId;
-    case "docSearch":
-      return point.source_type === "chunk" && !focus.docIds.has(point.color_key);
+    case "search":
+      // 全量搜索：命中集外的点不分类别一律淡出（浅档，保邻居上下文）。
+      return !focus.pointIds.has(point.id);
     case "collection":
       return point.source_type !== focus.sourceType;
   }
@@ -340,7 +369,7 @@ function resolveCanvasBgColor(): string {
   return `rgb(${d[0]},${d[1]},${d[2]})`;
 }
 
-export default function VectorCanvas({ series, dims, onPointClick, searchedDocIds, overlay }: VectorCanvasProps) {
+export default function VectorCanvas({ series, dims, onPointClick, searchedPointIds, overlay }: VectorCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.EChartsType | null>(null);
   // onPointClick 经 ref 穿透，避免回调 identity 变化触发 setOption。
@@ -355,8 +384,8 @@ export default function VectorCanvas({ series, dims, onPointClick, searchedDocId
   const [themeTick, setThemeTick] = useState(0);
   // 搜索锁定优先于 hover 聚焦（有搜索词时 hover 不再改动画面，避免打架）。
   const effectiveFocus = useMemo<VectorFocus>(
-    () => (searchedDocIds ? { kind: "docSearch", docIds: searchedDocIds } : hoverFocus),
-    [searchedDocIds, hoverFocus],
+    () => (searchedPointIds ? { kind: "search", pointIds: searchedPointIds } : hoverFocus),
+    [searchedPointIds, hoverFocus],
   );
   // 主 effect（series/dims 驱动全量重建）读取当前聚焦值的穿透 ref。
   const focusRef = useRef<VectorFocus>(null);
@@ -629,18 +658,27 @@ export function buildSeriesOptions(
         // 是用户正在追踪的对象，不能被 hover 聚焦淡掉。衬底层只提亮（保白圈），
         // 不覆写颜色。
         let itemStyle: ScatterDatum["itemStyle"];
+        let symbolSize: number | undefined;
         if (overlay && hitById.has(point.id)) {
           itemStyle = isHalo
             ? { opacity: 1 }
             : { opacity: 1, color: overlayHitColor(hitById.get(point.id) ?? null, hitMin, hitMax) };
+        } else if (focus?.kind === "search" && focus.pointIds.has(point.id)) {
+          // 搜索命中（2026-09-05）：提满不透明穿透 RANK_OPACITIES 大类基底 +
+          // 放大（衬底层同步，白圈等比例），在深淡出海面上正向跳出。
+          itemStyle = { opacity: 1 };
+          symbolSize =
+            ((SOURCE_SIZE[group.sourceType] ?? 8) + (isHalo ? HALO_SIZE_BOOST : 0)) *
+            SEARCH_HIT_SIZE_BOOST;
         } else if (isPointDimmed(point, focus)) {
-          itemStyle = { opacity: DIMMED_OPACITY };
+          itemStyle = { opacity: dimOpacityForFocus(focus) };
         }
         return {
           // 2D = 3D 的正视特例：二维坐标铺到 X-Z 立面 [x, 0, y]（Z 轴朝上）。
           value: dims === 3 ? [point.x, point.y, point.z ?? 0] : [point.x, 0, point.y],
           point,
           ...(itemStyle ? { itemStyle } : {}),
+          ...(symbolSize !== undefined ? { symbolSize } : {}),
         };
       });
     // 同色系边界分桶（2026-08-17 用户实测：异色重叠有白圈分界、同色没有）——

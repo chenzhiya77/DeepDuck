@@ -68,11 +68,22 @@ const VectorCanvas = dynamic<VectorCanvasProps>(() => import("./vector-canvas"),
 export type VectorCollectionKey = "chunks" | "entities" | "wiki" | "cards";
 const ALL_COLLECTIONS: readonly VectorCollectionKey[] = ["chunks", "entities", "wiki", "cards"];
 
+/** 搜索范围（2026-09-05）：全部 / 单类——客户端过滤，不重拉投影、不丢空间上下文。 */
+type SearchScope = "all" | VectorCollectionKey;
+
+/** source_type → collection key（全量搜索的范围过滤与命中分组计数共用）。 */
+const COLLECTION_OF_SOURCE: Record<string, VectorCollectionKey> = {
+  chunk: "chunks",
+  entity: "entities",
+  wiki: "wiki",
+  card: "cards",
+};
+
 /** One legend series: points sharing one collection color (spec §8 2026-08-15 UX 迭代). */
 export interface VectorSeriesGroup {
   key: string;
   sourceType: string;
-  /** 图例显示名：四类固定文案（切片/实体/百科/卡片）。 */
+  /** 图例显示名：四类固定文案（切片/实体/百科/条目，均两字对齐）。 */
   label: string;
   color: string;
   points: VectorProjectionPoint[];
@@ -217,9 +228,12 @@ export function VectorTab({
   const [dims, setDims] = useState<2 | 3>(2);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const toolbarTier = useToolbarTier(toolbarRef);
-  // 聚焦交互（2026-08-15 用户拍板）：文档搜索框——输入关键词即锁定匹配文档的
-  // 切片高亮，其余切片淡出；清空恢复。搜索锁定优先于 hover 聚焦（canvas 内合成）。
-  const [docQuery, setDocQuery] = useState("");
+  // 聚焦交互（2026-09-05 全量搜索泛化）：搜索框匹配四类点 label（文档名/
+  // 实体名/条目标题）→ 命中点全亮、未命中全类浅淡出（看命中邻居，
+  // canvas 侧 SEARCH_DIMMED_OPACITY）；范围下拉限定匹配类别；清空恢复。
+  // 搜索锁定优先于 hover 聚焦（canvas 内合成）。
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchScope, setSearchScope] = useState<SearchScope>("all");
 
   const projectionQuery = useVectorProjection(kbId, { collections, algo, dims }, enabled);
   const projection = projectionQuery.data;
@@ -308,18 +322,26 @@ export function VectorTab({
     [projection, tv],
   );
 
-  /** 搜索锁定：文档名大小写不敏感子串匹配 → 匹配文档的 doc_id 集合（空词=null）。 */
-  const searchedDocIds = useMemo(() => {
-    const needle = docQuery.trim().toLowerCase();
+  /**
+   * 全量搜索（2026-09-05）：四类点 label 大小写不敏感子串匹配（范围下拉
+   * 过滤参与类别）→ 命中点 id 集合。搜文档名时该文档全部切片同 label
+   * 自然全命中，旧语义无损保留。命中反馈不走芯片（按类计数已退役，
+   * 用户实测效果不佳），由画布侧命中强调承载（提满不透明+放大）。
+   */
+  const searchedPointIds = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
     if (!needle) return null;
     const ids = new Set<string>();
     for (const point of projection?.points ?? []) {
-      if (point.source_type === "chunk" && point.label.toLowerCase().includes(needle)) {
-        ids.add(point.color_key);
+      const collection = COLLECTION_OF_SOURCE[point.source_type];
+      if (!collection) continue;
+      if (searchScope !== "all" && collection !== searchScope) continue;
+      if (point.label.toLowerCase().includes(needle)) {
+        ids.add(point.id);
       }
     }
     return ids;
-  }, [docQuery, projection]);
+  }, [searchQuery, searchScope, projection]);
 
   const handleDimsChange = (value: string) => {
     if (value === "2" || value === "3") {
@@ -363,20 +385,44 @@ export function VectorTab({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="vector-tab">
-      {/* 文档搜索栏（wiki-tab 同款独立一栏，置于工具栏上方）：锁定聚焦匹配文档的切片。
+      {/* 搜索栏（wiki-tab 同款独立一栏，置于工具栏上方；2026-09-05 全量搜索）：
+          匹配四类点 label → 命中强调（提满不透明+放大），未命中深淡出；右侧
+          范围下拉限定匹配类别（客户端过滤）。命中计数芯片已退役（用户实测
+          效果不佳，反馈由画布命中强调承载）。
           去 border-b（2026-09-02）：这条线正是下方工具栏的「上边线」，用户反馈
           工具栏被上下两条线夹住；去掉后搜索栏与工具栏靠留白分界，且 border 不再
           参与盒高，本栏高度从 44.67 落到 44.00，与文档/评测工具栏对齐。 */}
       <div className="shrink-0 px-4 py-2">
-        <div className="relative">
-          <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-          <Input
-            aria-label={tv.searchDocs}
-            className="h-7 pr-2 pl-7 text-xs"
-            placeholder={tv.searchDocs}
-            value={docQuery}
-            onChange={(event) => setDocQuery(event.target.value)}
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="text-muted-foreground absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+            <Input
+              aria-label={tv.searchAll}
+              className="h-7 pr-2 pl-7 text-xs"
+              placeholder={tv.searchAll}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </div>
+          <Select
+            value={searchScope}
+            onValueChange={(value) => setSearchScope(value as SearchScope)}
+          >
+            <SelectTrigger
+              aria-label={tv.searchScopeLabel}
+              className="h-7! w-auto shrink-0 gap-1 px-2 text-xs"
+              size="sm"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{tv.searchScopes.all}</SelectItem>
+              <SelectItem value="chunks">{tv.searchScopes.chunks}</SelectItem>
+              <SelectItem value="entities">{tv.searchScopes.entities}</SelectItem>
+              <SelectItem value="wiki">{tv.searchScopes.wiki}</SelectItem>
+              <SelectItem value="cards">{tv.searchScopes.cards}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -559,7 +605,7 @@ export function VectorTab({
           <VectorCanvas
             dims={dims}
             overlay={activeOverlay}
-            searchedDocIds={searchedDocIds}
+            searchedPointIds={searchedPointIds}
             series={series}
             onPointClick={handlePointClick}
           />
