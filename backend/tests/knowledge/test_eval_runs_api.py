@@ -701,7 +701,7 @@ async def test_history_empty_returns_exact_shape(service) -> None:
     response = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs")
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"in_flight": False, "runs": [], "total": 0}
+    assert response.json() == {"in_flight": False, "progress": None, "runs": [], "total": 0}
 
 
 async def test_history_reports_in_flight_flag_without_pseudo_rows(service) -> None:
@@ -718,6 +718,39 @@ async def test_history_reports_in_flight_flag_without_pseudo_rows(service) -> No
         assert [r["run_id"] for r in body["runs"]] == ["run-done"]
     finally:
         eval_ondemand._IN_FLIGHT.pop(kb["id"], None)
+
+
+# ── GET /eval-runs 顶层 progress（spec 2026-09-06 run-progress Task 2）──
+
+
+async def test_history_exposes_live_progress_from_registry(service) -> None:
+    from deerflow.knowledge.eval import ondemand as eval_ondemand
+
+    client = _client(service)
+    kb = _create_kb(client)
+    progress = {"run_id": "run-live", "phase": "questions", "done": 3, "total": 10, "failed": 1, "started_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:05:00+00:00"}
+    eval_ondemand._IN_FLIGHT[kb["id"]] = 1
+    eval_ondemand._PROGRESS[kb["id"]] = dict(progress)
+    try:
+        body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+
+        assert body["in_flight"] is True
+        # 冻结契约七键原样透出（复用 3s 轮询，不另开端点）。
+        assert body["progress"] == progress
+    finally:
+        eval_ondemand._IN_FLIGHT.pop(kb["id"], None)
+        eval_ondemand._PROGRESS.pop(kb["id"], None)
+
+
+async def test_history_progress_is_null_when_idle(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-done", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+
+    assert body["in_flight"] is False
+    assert body["progress"] is None
 
 
 async def test_history_unknown_kb_404(service) -> None:

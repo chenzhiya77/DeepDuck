@@ -31,7 +31,7 @@ import numpy as np
 
 from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
-from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, run_full_eval_for_kb, run_layer1_for_kb
+from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
 from deerflow.knowledge.eval.persistence import ENV_CI
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
@@ -1378,7 +1378,8 @@ class KnowledgeService:
 
         默认排除 ci 行（与 trend 同口径）；``limit`` 只做分页切片，``total``
         反映过滤后的全量行数——in-flight 运行不产生伪行（落库后才有行），
-        运行中状态只由顶层标志表达。
+        运行中状态只由顶层标志表达。顶层 ``progress``（spec 2026-09-06
+        run-progress）透出内存注册表的活进度快照，空闲时为 null。
         """
 
         rows = await self.store.list_eval_runs(kb_id)
@@ -1388,6 +1389,7 @@ class KnowledgeService:
         summaries = [self._eval_run_summary(row) for row in rows]
         return {
             "in_flight": eval_run_in_progress(kb_id),
+            "progress": get_eval_progress(kb_id),
             "runs": summaries[: min(limit, MAX_EVAL_RUNS_LIMIT)],
             "total": len(summaries),
         }
