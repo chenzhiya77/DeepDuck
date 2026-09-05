@@ -859,10 +859,13 @@ export const enUS: Translations = {
       failed: "Recall test failed",
       viewInVectorSpace: "View in vector space",
       wikiAnchorTooltip:
-        "Manual cards have no source chunks and cannot be anchored",
+        "Manual cards have no source chunks: ticking records the expected path only, without chunk anchors",
+      slicePosition: (position: number) => `Chunk #${position}`,
+      evidenceView: (count: number) => `Evidence ${count}`,
+      entitiesView: (count: number) => `Entities ${count}`,
       saveAsQuestion: {
         button: "Save as question",
-        selectedCount: (count: number) => `${count} chunks selected`,
+        selectedCount: (count: number) => `${count} selected`,
         queryLabel: "Question",
         categoryLabel: "Category",
         expectedPathLabel: "Expected path",

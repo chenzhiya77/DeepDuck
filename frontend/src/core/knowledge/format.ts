@@ -70,3 +70,44 @@ export function formatKnowledgeRelativeTime(
 export function stripSummaryHeading(summary: string): string {
   return summary.replace(/^#{1,6}[^\n]*\n?/, "").trim();
 }
+
+/**
+ * 切片单行预览文本（2026-09-05，刻度轨弹窗与检索测试行共用）：
+ * 取切片最深层标题，否则首非空行并剥掉 markdown 标记。
+ */
+export function chunkPreview(chunk: {
+  heading_path?: string[];
+  text: string;
+}): string {
+  const heading = chunk.heading_path?.at(-1)?.trim();
+  if (heading) return heading;
+  const line =
+    chunk.text
+      .split("\n")
+      .map((value) => value.trim())
+      .find(Boolean) ?? "";
+  return line.replace(/^[#>*+-]+\s*/, "");
+}
+
+/**
+ * 正文前 N 非空行（2026-09-05）：剥 markdown 行首标记、内联 html 标签与
+ * 星号/反引号后空格连接。检索测试行预览用 maxLines=1——正文首行够长
+ * 能填满行宽（标题做预览会因标题过短留大片空白，2026-09-05 回退定案）。
+ */
+export function textLead(text: string, maxLines = 2): string {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, maxLines)
+    .map((line) =>
+      line
+        .replace(/<[^>]+>/g, " ")
+        .replace(/^[#>*+-]+\s*/, "")
+        .replace(/[*`]/g, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join(" ");
+}

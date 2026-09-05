@@ -1,8 +1,7 @@
 /**
- * Recall-test tab (phase-2 batch-1, P1): query input + top_k + cost hint,
- * three per-path sections each annotated with its score_type and elapsed_ms.
- * Vector/graph hits expand into the shared ChunkCard; wiki hits open the
- * entry drawer via onOpenWikiEntry (overlay — never switches the middle tab).
+ * Recall-test tab (phase-2 batch-1, P1): query input + top_k + cost hint.
+ * 三路并列（2026-09-05）：各占 1/3 高容器、容器内 ScrollArea 内滚；
+ * 切片行点击开切片总览抽屉（内联展开退役），wiki 行开条目/卡片抽屉。
  * Submit is disabled while a run is in flight; failures surface as a toast.
  */
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
@@ -24,9 +23,24 @@ rs.mock("sonner", () => ({
   toast: { error: rs.fn(), success: rs.fn(), info: rs.fn(), warning: rs.fn() },
 }));
 
+// echarts 无 canvas 不可跑 jsdom：关系图组件 mock 为实体名清单，
+// 面板侧只测视图切换语义（渲染语义由浏览器验收）。
+rs.mock("@/components/workspace/knowledge/recall-graph-mini", () => ({
+  RecallGraphMini: ({
+    entities,
+  }: {
+    entities: readonly { name: string }[];
+  }) => (
+    <div data-testid="recall-graph-mini">
+      {entities.map((entity) => entity.name).join("|")}
+    </div>
+  ),
+}));
+
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
+import { cardDrawersKey } from "@/core/knowledge/card-drawers";
 import { useAddEvalQuestion, useRecallTest } from "@/core/knowledge/hooks";
 import type { RecallTestResponse } from "@/core/knowledge/types";
 
@@ -43,6 +57,7 @@ const RESULT: RecallTestResponse = {
           page: 1,
           score: 0.97,
           rank: 1,
+          chunk_position: 1,
         },
         // rerank 降级形态：score 为 null
         {
@@ -53,6 +68,7 @@ const RESULT: RecallTestResponse = {
           page: 2,
           score: null,
           rank: 2,
+          chunk_position: 2,
         },
       ],
       message: "检索到 2 条相关切片。",
@@ -77,6 +93,7 @@ const RESULT: RecallTestResponse = {
           heading_path: ["架构"],
           page: 1,
           score: 0.88,
+          chunk_position: 1,
         },
       ],
       message: "命中 1 个实体。",
@@ -96,7 +113,8 @@ const RESULT: RecallTestResponse = {
   },
   score_type: {
     vector: "qwen3-rerank relevance",
-    graph: "embedding cosine（当次可比）",
+    // 2026-09-05：图谱路胶囊去「（当次可比）」补注，与 wiki 路同串。
+    graph: "embedding cosine",
     wiki: "embedding cosine",
   },
   elapsed_ms: { vector: 123, graph: 456, wiki: 78 },
@@ -116,7 +134,7 @@ function mockRecallTest(overrides?: {
 }
 
 function renderPanel(props?: Partial<Parameters<typeof RecallTestPanel>[0]>) {
-  const handlers = { onOpenWikiEntry: rs.fn() };
+  const handlers = { onOpenWikiEntry: rs.fn(), onOpenChunkHit: rs.fn() };
   const utils = render(
     <I18nContext.Provider
       value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
@@ -130,6 +148,8 @@ function renderPanel(props?: Partial<Parameters<typeof RecallTestPanel>[0]>) {
 afterEach(() => {
   cleanup();
   rs.clearAllMocks();
+  // 抽屉种子（localStorage）不跨用例泄漏（2026-09-05 归属芯片用例引入）。
+  localStorage.clear();
 });
 
 describe("RecallTestPanel controls", () => {
@@ -223,9 +243,10 @@ describe("RecallTestPanel controls", () => {
 });
 
 describe("RecallTestPanel results", () => {
-  it("renders the three path sections with score_type and elapsed_ms", () => {
+  it("三路容器并列：统计单行头 + 各路行同屏可见（2026-09-05 三路并列）", () => {
     mockRecallTest({ data: RESULT });
     renderPanel();
+    // 各路容器单行头：score 类型 + ms + 命中数
     expect(screen.getByTestId("recall-path-vector").textContent).toContain(
       "qwen3-rerank relevance",
     );
@@ -233,31 +254,42 @@ describe("RecallTestPanel results", () => {
       "123",
     );
     expect(screen.getByTestId("recall-path-graph").textContent).toContain(
-      "embedding cosine（当次可比）",
+      "embedding cosine",
+    );
+    // 「（当次可比）」补注退役（2026-09-05）
+    expect(screen.getByTestId("recall-path-graph").textContent).not.toContain(
+      "当次可比",
     );
     expect(screen.getByTestId("recall-path-wiki").textContent).toContain("78");
 
-    // vector hits: rank + score; the degraded hit renders a dash
+    // 三路行同屏渲染（无需切换）：vector rank + score + 首行摘要
     const first = screen.getByTestId("recall-vector-hit-c1");
     expect(first.textContent).toContain("#1");
     expect(first.textContent).toContain("0.970");
     expect(first.textContent).toContain("架构.md");
+    // 图谱路证据序排名（2026-09-05）：与向量/百科路解剖统一
+    expect(screen.getByTestId("recall-graph-hit-c1").textContent).toContain(
+      "#1",
+    );
+    // 切片序号不挂行内（2026-09-05 改悬浮气泡）：行内无「切片 #」字样
+    expect(first.textContent).not.toContain("切片 #");
+    // 首行摘要入行：无标题的切片取首非空行（c2）
+    expect(screen.getByTestId("recall-vector-hit-c2").textContent).toContain(
+      "切片二原文。",
+    );
     expect(screen.getByTestId("recall-vector-hit-c2").textContent).toContain(
       "—",
     );
-
-    // graph: entity chips, relation line, evidence score
-    expect(screen.getByTestId("recall-path-graph").textContent).toContain(
+    // graph：默认证据视图（实体/关系 2026-09-05 移入实体视图段控）
+    const graph = screen.getByTestId("recall-path-graph");
+    expect(graph.textContent).toContain("Gateway");
+    expect(graph.textContent).toContain("0.880");
+    fireEvent.click(screen.getByTestId("recall-graph-view-entities"));
+    expect(screen.getByTestId("recall-graph-mini").textContent).toContain(
       "Gateway",
     );
-    expect(screen.getByTestId("recall-path-graph").textContent).toContain(
-      "包含",
-    );
-    expect(screen.getByTestId("recall-path-graph").textContent).toContain(
-      "0.880",
-    );
-
-    // wiki hit: title + summary + score
+    fireEvent.click(screen.getByTestId("recall-graph-view-evidence"));
+    // wiki：条目行 title + summary + score
     const wikiHit = screen.getByTestId("recall-wiki-hit-e1");
     expect(wikiHit.textContent).toContain("DeerFlow");
     expect(wikiHit.textContent).toContain("超级智能体系统");
@@ -297,14 +329,94 @@ describe("RecallTestPanel results", () => {
     expect(wikiHit.textContent).not.toContain("# DeerFlow");
   });
 
-  it("expands a vector hit into the shared ChunkCard with the original text", () => {
+  it("切片行点击统一开右抽（切片总览抽屉定位），内联展开退役（2026-09-05）", () => {
+    mockRecallTest({ data: RESULT });
+    const handlers = renderPanel();
+    fireEvent.click(screen.getByTestId("recall-vector-hit-c2"));
+    expect(handlers.onOpenChunkHit).toHaveBeenCalledWith("c2");
+    // 再点不 toggle（非展开语义）：重复调用抽屉回调
+    fireEvent.click(screen.getByTestId("recall-vector-hit-c2"));
+    expect(handlers.onOpenChunkHit).toHaveBeenCalledTimes(2);
+    // 图谱证据行同链路
+    fireEvent.click(screen.getByTestId("recall-graph-hit-c1"));
+    expect(handlers.onOpenChunkHit).toHaveBeenCalledWith("c1");
+  });
+
+  it("图谱路视图切换：默认证据行，一键切实体/关系视图（2026-09-05）", () => {
     mockRecallTest({ data: RESULT });
     renderPanel();
-    expect(screen.queryByText("切片二原文。")).toBeNull();
-    fireEvent.click(screen.getByTestId("recall-vector-hit-c2"));
-    expect(screen.getByText("切片二原文。")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("recall-vector-hit-c2"));
-    expect(screen.queryByText("切片二原文。")).toBeNull();
+    // 默认证据视图：行在同屏，实体徽章不占容器
+    expect(screen.getByTestId("recall-graph-hit-c1")).toBeTruthy();
+    expect(screen.queryByText("Gateway")).toBeNull();
+    fireEvent.click(screen.getByTestId("recall-graph-view-entities"));
+    // 实体视图：关系图独占容器（mock 组件），证据行卸载
+    expect(screen.queryByTestId("recall-graph-hit-c1")).toBeNull();
+    expect(screen.getByTestId("recall-graph-mini").textContent).toContain(
+      "Gateway",
+    );
+    fireEvent.click(screen.getByTestId("recall-graph-view-evidence"));
+    expect(screen.getByTestId("recall-graph-hit-c1")).toBeTruthy();
+  });
+
+  it("容器标题栏点击收起：收起只留单行头、下方容器顶上来（百科 Tab 同款，2026-09-05）", () => {
+    mockRecallTest({ data: RESULT });
+    renderPanel();
+    const vectorSection = screen.getByTestId("recall-path-vector");
+    const toggle = screen.getByTestId("recall-path-toggle-vector");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(toggle);
+    // 收起：行体卸载、容器释放 flex-1（其余路吸收高度顶上来）
+    expect(screen.queryByTestId("recall-vector-hit-c1")).toBeNull();
+    expect(vectorSection.className).not.toContain("flex-1");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    // 其余两路同屏不受影响
+    expect(screen.getByTestId("recall-graph-hit-c1")).toBeTruthy();
+    expect(screen.getByTestId("recall-wiki-hit-e1")).toBeTruthy();
+    // 再点展开复原
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("recall-vector-hit-c1")).toBeTruthy();
+    expect(vectorSection.className).toContain("flex-1");
+  });
+
+  it("切片序号悬浮气泡展示：切片 #K 与抽屉徽章同词汇（2026-09-05）", async () => {
+    mockRecallTest({ data: RESULT });
+    renderPanel();
+    fireEvent.pointerMove(screen.getByTestId("recall-vector-hit-c1"));
+    const bubble = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(bubble.textContent).toContain("切片 #1");
+  });
+
+  it("切片行预览取正文首非空行：标题不优先、html 标签剥除（2026-09-05 回退定案）", () => {
+    const chain: RecallTestResponse = {
+      ...RESULT,
+      paths: {
+        ...RESULT.paths,
+        vector: {
+          hits: [
+            {
+              chunk_id: "c9",
+              doc_name: "jvm.docx",
+              text: "<strong><u>第一行正文。</u></strong>\n第二行正文。",
+              heading_path: ["安装", "内存结构"],
+              page: 3,
+              score: 0.5,
+              rank: 1,
+            },
+          ],
+          message: "检索到 1 条相关切片。",
+        },
+      },
+    };
+    mockRecallTest({ data: chain });
+    renderPanel();
+    const row = screen.getByTestId("recall-vector-hit-c9");
+    // 预览 = 正文首行（填满行宽）；标题链不入行（短标题留空白回退定案）
+    expect(row.textContent).toContain("第一行正文。");
+    expect(row.textContent).not.toContain("安装 › 内存结构");
+    // html 标签/星号剥除，裸标签不入行
+    expect(row.textContent).not.toContain("<strong>");
+    // 缺 chunk_position → 行内无序号（也不挂气泡）
+    expect(row.textContent).not.toContain("切片 #");
   });
 
   it("opens the wiki entry drawer (overlay) instead of switching tabs", () => {
@@ -372,6 +484,7 @@ describe("RecallTestPanel results", () => {
     };
     mockRecallTest({ data: degraded });
     renderPanel();
+    // 失败路默认选中（vector）：message 在详情容器内居中呈现
     expect(screen.getByTestId("recall-path-vector").textContent).toContain(
       "该路检索失败",
     );
@@ -379,7 +492,7 @@ describe("RecallTestPanel results", () => {
   });
 });
 
-// ── P6 检索联动（2026-08-15 spec §9 通道一）：结果区「在向量空间查看」──────
+// ── P6 检索联动（2026-08-15 spec §9 通道一）：工具栏「在向量空间查看」图标按钮──
 
 describe("RecallTestPanel 向量空间联动", () => {
   it("offers 在向量空间查看 on results and emits the vector hits as an overlay", () => {
@@ -441,8 +554,12 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
   it("勾选命中行出现「存为考题」，全不选消失", () => {
     mockRecallTest({ data: RESULT });
     renderPanel();
-    // vector 2 行 + graph evidence 1 行 = 3 个勾选框（wiki 命中不参与）
-    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    // 三路并列同屏：vector 2 + graph 1 + wiki 1 = 4 个勾选框；
+    // e1 无源切片 → 禁用态（2026-09-05）
+    expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+    expect(
+      screen.getByTestId("recall-select-wiki-e1").getAttribute("disabled"),
+    ).not.toBeNull();
     expect(screen.queryByRole("button", { name: /存为考题/ })).toBeNull();
 
     fireEvent.click(screen.getByTestId("recall-select-vector-c1"));
@@ -466,7 +583,7 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
     fireEvent.click(screen.getByTestId("recall-select-graph-c1"));
     fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
 
-    expect(screen.getAllByText("已选 2 个切片").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("已选 2 项").length).toBeGreaterThan(0);
     // query 预填经 dialog open-effect 异步写入
     await waitFor(() => {
       const queryBox = screen.getByLabelText(
@@ -573,7 +690,7 @@ const RESULT_WITH_WIKI: RecallTestResponse = {
           source_type: "wiki",
           source_chunk_ids: [`${WIKI_DOC}#0001`, `${WIKI_DOC}#0002`],
         },
-        // 人工卡片：无源切片 → 不可锚定（无 checkbox，tooltip 解释）。
+        // 人工卡片：无源切片 → 勾选仅记录预期路径（wiki），不产生锚定（2026-09-05）。
         {
           entry_id: "m1",
           title: "运维备忘",
@@ -618,13 +735,52 @@ describe("RecallTestPanel 百科行锚定（spec §5）", () => {
     ]);
   });
 
-  it("人工卡片行无 checkbox，携带不可锚定提示", () => {
+  it("人工卡片行可勾选：仅记录预期路径，提交体锚定为空（2026-09-05）", async () => {
+    mockRecallTest({ data: RESULT_WITH_WIKI });
+    const mutateAsync = mockAddQuestion();
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText("输入测试问题…"), {
+      target: { value: "卡片题" },
+    });
+    fireEvent.click(screen.getByTestId("recall-select-wiki-m1"));
+    expect(screen.getByRole("button", { name: /存为考题/ })).toBeTruthy();
+    // tooltip 解释人工卡片与词条的勾选语义差异
+    expect(
+      screen.getByTitle("人工卡片无源切片：勾选仅记录预期路径，不产生切片锚定"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /存为考题/ }));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("checkbox", { name: "wiki" })
+          .getAttribute("aria-checked"),
+      ).toBe("true");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const body = mutateAsync.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body.expected_paths).toEqual(["wiki"]);
+    // 无锚定题降级语义：锚定集为空，仅参与路径判定
+    expect(body.relevant_chunk_ids).toEqual([]);
+  });
+
+  it("人工卡片命中芯片展示所属抽屉名称，置于条目名称之后（2026-09-05）", () => {
+    localStorage.setItem(
+      cardDrawersKey("kb-1"),
+      JSON.stringify({
+        drawers: [{ id: "d1", name: "运维抽屉", icon: "folder", color: "emerald" }],
+        membership: { m1: "d1" },
+      }),
+    );
     mockRecallTest({ data: RESULT_WITH_WIKI });
     renderPanel();
-    expect(screen.queryByTestId("recall-select-wiki-m1")).toBeNull();
-    expect(screen.getByTitle("人工卡片无源切片，不可锚定")).toBeTruthy();
-    // 词条行仍带勾选框（对照组）
-    expect(screen.getByTestId("recall-select-wiki-e1")).toBeTruthy();
+    const row = screen.getByTestId("recall-wiki-hit-m1");
+    expect(row.textContent).toContain("运维抽屉");
+    expect(row.textContent).not.toContain("我的卡片");
+    // 位置：芯片紧跟条目名称 span 之后（不再前置）
+    const title = screen.getByText("运维备忘");
+    expect(title.nextElementSibling?.textContent).toBe("运维抽屉");
   });
 
   it("混勾（向量切片 + 百科词条）→ 默认双路，两类切片都进提交体", async () => {
@@ -660,5 +816,100 @@ describe("RecallTestPanel 百科行锚定（spec §5）", () => {
       `${WIKI_DOC}#0001`,
       `${WIKI_DOC}#0002`,
     ]);
+  });
+});
+
+// ── 行右键选中 + 复选框悬浮显现（2026-09-05）─────────────────────
+
+describe("RecallTestPanel 行右键选中与复选框显现（2026-09-05）", () => {
+  it("行右键 = 勾选/取消勾选；词条行右键源切片整体进锚定集", () => {
+    mockRecallTest({ data: RESULT_WITH_WIKI });
+    renderPanel();
+    const vectorBox = screen.getByTestId("recall-select-vector-c1");
+    expect(vectorBox.getAttribute("data-state")).toBe("unchecked");
+    fireEvent.contextMenu(screen.getByTestId("recall-vector-hit-c1"));
+    expect(vectorBox.getAttribute("data-state")).toBe("checked");
+    expect(screen.getByRole("button", { name: /存为考题/ })).toBeTruthy();
+    // 再右键取消
+    fireEvent.contextMenu(screen.getByTestId("recall-vector-hit-c1"));
+    expect(vectorBox.getAttribute("data-state")).toBe("unchecked");
+    // 词条行右键：源切片整体进锚定集
+    fireEvent.contextMenu(screen.getByTestId("recall-wiki-hit-e1"));
+    expect(
+      screen.getByTestId("recall-select-wiki-e1").getAttribute("data-state"),
+    ).toBe("checked");
+    // 人工卡片行右键：仅记录预期路径（wiki）
+    fireEvent.contextMenu(screen.getByTestId("recall-wiki-hit-m1"));
+    expect(
+      screen.getByTestId("recall-select-wiki-m1").getAttribute("data-state"),
+    ).toBe("checked");
+  });
+
+  it("无源切片词条右键：拦截浏览器菜单但不切换勾选", () => {
+    mockRecallTest({ data: RESULT });
+    renderPanel();
+    // fireEvent 返回 dispatchEvent 结果：preventDefault 生效时为 false
+    expect(
+      fireEvent.contextMenu(screen.getByTestId("recall-wiki-hit-e1")),
+    ).toBe(false);
+    expect(
+      screen.getByTestId("recall-select-wiki-e1").getAttribute("data-state"),
+    ).toBe("unchecked");
+  });
+
+  it("复选框默认隐藏，任一勾选存在时全量显现（百科 Tab 同款配方）", () => {
+    mockRecallTest({ data: RESULT_WITH_WIKI });
+    renderPanel();
+    const tokens = () =>
+      screen.getByTestId("recall-select-vector-c1").className.split(/\s+/);
+    expect(tokens()).toContain("opacity-0");
+    expect(tokens()).not.toContain("opacity-100");
+    fireEvent.contextMenu(screen.getByTestId("recall-vector-hit-c1"));
+    // 任一勾选存在 → 所有行复选框同时显现（不必逐行悬浮）
+    expect(tokens()).toContain("opacity-100");
+    expect(
+      screen
+        .getByTestId("recall-select-wiki-m1")
+        .className.split(/\s+/)
+        .includes("opacity-100"),
+    ).toBe(true);
+  });
+});
+
+// ── 耗时排名色（2026-09-05 定案：固定三色按跨路排名取色）──────────
+
+describe("RecallTestPanel 耗时排名色（2026-09-05）", () => {
+  it("固定三色按跨路排名：最快=绿、中间=橙绿、最慢=橙", () => {
+    // RESULT elapsed：vector 123 / graph 456 / wiki 78
+    mockRecallTest({ data: RESULT });
+    renderPanel();
+    expect(screen.getByTestId("recall-elapsed-wiki").className).toContain(
+      "bg-emerald-500/10",
+    );
+    expect(screen.getByTestId("recall-elapsed-vector").className).toContain(
+      "bg-lime-500/10",
+    );
+    expect(screen.getByTestId("recall-elapsed-graph").className).toContain(
+      "bg-orange-500/10",
+    );
+  });
+
+  it("同值耗时共享较快档色，不对持平局产生误导色", () => {
+    mockRecallTest({
+      data: {
+        ...RESULT,
+        elapsed_ms: { vector: 100, graph: 100, wiki: 300 },
+      },
+    });
+    renderPanel();
+    expect(screen.getByTestId("recall-elapsed-vector").className).toContain(
+      "bg-emerald-500/10",
+    );
+    expect(screen.getByTestId("recall-elapsed-graph").className).toContain(
+      "bg-emerald-500/10",
+    );
+    expect(screen.getByTestId("recall-elapsed-wiki").className).toContain(
+      "bg-lime-500/10",
+    );
   });
 });

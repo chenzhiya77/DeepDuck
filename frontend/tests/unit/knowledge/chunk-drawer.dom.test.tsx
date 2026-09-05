@@ -230,4 +230,31 @@ describe("ChunkDrawer", () => {
 
     expect(await screen.findByText("该文档还没有切片")).toBeTruthy();
   });
+
+  it("focusChunkId 定位目标切片并同步 active 徽章（2026-09-05 检索测试跳转）", async () => {
+    const second: KnowledgeChunk = {
+      ...CHUNK,
+      chunk_id: "doc-1#0001",
+      chunk_index: 1,
+      text: "第二章的切片正文。",
+      heading_path: ["第二章"],
+    };
+    rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 50 }]);
+    rs.mocked(useQuery).mockReturnValue({
+      data: { items: [CHUNK, second], total: 2, offset: 0, limit: 50 },
+      isLoading: false,
+    } as never);
+    rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+    rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
+
+    renderWithI18n(
+      <ChunkDrawer kbId="kb-1" doc={DOC} open focusChunkId="doc-1#0001" onOpenChange={() => undefined} />,
+    );
+
+    expect(await screen.findByText("第二章的切片正文。")).toBeTruthy();
+    // 位置同步：头部「当前」徽章直接置到 #2（不等 smooth 滚动落定）
+    expect(screen.getByText("当前 #2")).toBeTruthy();
+  });
 });

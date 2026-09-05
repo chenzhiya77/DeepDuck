@@ -802,8 +802,13 @@ export interface Translations {
       failed: string;
       /** P6 检索联动（spec §9 通道一）：结果区一键跳转向量空间叠加。 */
       viewInVectorSpace: string;
-      /** 百科行人工卡片不可锚定提示（2026-08-28 spec §5，Task 10）。 */
+      /** 百科行人工卡片勾选语义提示（2026-09-05：仅记录预期路径，不产生锚定）。 */
       wikiAnchorTooltip: string;
+      /** 切片文档内序号悬浮气泡（2026-09-05）：「切片 #K」与切片总览抽屉徽章同词汇；行内不挂数字。 */
+      slicePosition: (position: number) => string;
+      /** 图谱路容器视图切换段控（2026-09-05）：证据行 ↔ 实体/关系。 */
+      evidenceView: (count: number) => string;
+      entitiesView: (count: number) => string;
       /** 存为考题（2026-08-27 spec §7.1，plan Task 8）：勾选切片一键入题库。 */
       saveAsQuestion: {
         button: string;

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
 import { listDocumentChunks } from "@/core/knowledge/api";
+import { chunkPreview } from "@/core/knowledge/format";
 import {
   knowledgeChunksKey,
   useDeleteChunk,
@@ -41,14 +42,6 @@ const PAGE_SIZE = 20;
     真实预览、跳转纯前端；超过才退回「加载更多」+ 弹窗灰显未加载行。 */
 const FULL_LOAD_CAP = 300;
 
-/** 弹窗行文本：取切片最深层标题，否则首非空行并剥掉 markdown 标记。 */
-function chunkPreview(chunk: KnowledgeChunk): string {
-  const heading = chunk.heading_path?.at(-1)?.trim();
-  if (heading) return heading;
-  const line = chunk.text.split("\n").map((value) => value.trim()).find(Boolean) ?? "";
-  return line.replace(/^[#>*+-]+\s*/, "");
-}
-
 /**
  * Chunk preview drawer (spec §3.6): opens from a document row click and
  * paginates through the chunks endpoint. Phase-3 Batch-1 adds edit/delete actions.
@@ -58,11 +51,14 @@ export function ChunkDrawer({
   doc,
   open,
   onOpenChange,
+  focusChunkId = null,
 }: {
   kbId: string;
   doc: KnowledgeDocument;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 检索测试跳转入口（2026-09-05 两层重设计）：打开后定位到该切片并闪环。 */
+  focusChunkId?: string | null;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
@@ -152,6 +148,28 @@ export function ChunkDrawer({
     pendingJumpRef.current = null;
     requestAnimationFrame(() => scrollToIndex(pending));
   }, [items, scrollToIndex]);
+
+  // 检索测试跳转（2026-09-05）：按 chunk_id 找位置复用 scrollToIndex 闪环；
+  // 目标未加载时逐页扩 limit 直到命中。active 徽章同步置位（smooth 滚动
+  // 落定前头部即显示正确位置）；关抽屉重置，同 id 再开仍会重跳。
+  const focusedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) {
+      focusedIdRef.current = null;
+      return;
+    }
+    if (!focusChunkId || focusedIdRef.current === focusChunkId) return;
+    const position = items.findIndex(
+      (chunk) => chunk.chunk_id === focusChunkId,
+    );
+    if (position >= 0) {
+      focusedIdRef.current = focusChunkId;
+      setActiveIndex(position);
+      requestAnimationFrame(() => scrollToIndex(position));
+    } else if (items.length < total) {
+      setLimit((value) => value + PAGE_SIZE);
+    }
+  }, [open, focusChunkId, items, total, scrollToIndex]);
 
   // active = 顶部越过视口上 1/3 带的最后一张卡；rAF 节流的 scroll 监听挂在
   // Radix viewport 元素上（ScrollArea 经 viewportRef 外露）。

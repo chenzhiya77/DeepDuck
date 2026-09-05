@@ -32,6 +32,8 @@ export interface EvalSaveQuestionDialogProps {
   onOpenChange: (open: boolean) => void;
   /** 勾选的 chunk id 集（提交体 relevant_chunk_ids）。 */
   selectedChunkIds: string[];
+  /** 勾选总数含人工卡片（2026-09-05：描述行计数；缺省回退 chunk 数）。 */
+  selectionCount?: number;
   /** 默认勾选路径集合：勾选来源路径；混路即多勾（面板推导，2026-08-28）。 */
   defaultPaths: RecallPathName[];
   /** query 预填值（当前检索输入）。 */
@@ -48,6 +50,7 @@ export function EvalSaveQuestionDialog({
   open,
   onOpenChange,
   selectedChunkIds,
+  selectionCount,
   defaultPaths,
   prefillQuery,
   onSaved,
@@ -75,8 +78,9 @@ export function EvalSaveQuestionDialog({
   const togglePath = (path: RecallPathName) =>
     setExpectedPaths((current) => (current.includes(path) ? current.filter((item) => item !== path) : [...current, path]));
 
-  // 至少勾一路（后端 min_length=1）+ query 非空 + 有勾选切片。
-  const canSubmit = query.trim().length > 0 && selectedChunkIds.length > 0 && expectedPaths.length > 0;
+  // 至少勾一路（后端 min_length=1）+ query 非空。锚定集可为空（2026-09-05）：
+  // 纯人工卡片勾选产出无锚定题——题库既有降级语义（仅参与路径判定）。
+  const canSubmit = query.trim().length > 0 && expectedPaths.length > 0;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -102,7 +106,7 @@ export function EvalSaveQuestionDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{stk.button}</DialogTitle>
-          <DialogDescription>{stk.selectedCount(selectedChunkIds.length)}</DialogDescription>
+          <DialogDescription>{stk.selectedCount(selectionCount ?? selectedChunkIds.length)}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">

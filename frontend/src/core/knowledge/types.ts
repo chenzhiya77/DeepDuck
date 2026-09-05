@@ -217,6 +217,9 @@ export interface RecallVectorHit {
   /** null when the reranker degraded to RRF order (schema deliberately nullable). */
   score: number | null;
   rank: number;
+  /** 切片在文档存活切片中的位次（2026-09-05，与切片总览抽屉 #K 同源）；
+      畸形/已删 chunk_id 缺键。 */
+  chunk_position?: number;
 }
 
 export interface RecallGraphEntity {
@@ -239,6 +242,8 @@ export interface RecallGraphEvidence {
   heading_path: string[];
   page: number | null;
   score: number;
+  /** 同 RecallVectorHit.chunk_position（2026-09-05）。 */
+  chunk_position?: number;
 }
 
 export interface RecallWikiHit {

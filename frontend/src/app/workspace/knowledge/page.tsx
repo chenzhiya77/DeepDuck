@@ -82,6 +82,8 @@ export default function KnowledgePage() {
   
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
   const [drawerDoc, setDrawerDoc] = useState<KnowledgeDocument | null>(null);
+  // 检索测试切片行跳转（2026-09-05 两层重设计）：切片总览抽屉打开后定位该切片。
+  const [chunkFocusId, setChunkFocusId] = useState<string | null>(null);
   // Middle-column tab + entry drawer state (phase-2 batch-1). The drawer is
   // an overlay — opening it never switches the tab; only the drawer's
   // explicit 在百科 tab 中查看 action navigates (revealWikiEntry).
@@ -469,6 +471,17 @@ export default function KnowledgePage() {
                   onPrefillConsumed={() => setRecallPrefill(null)}
                   onOpenWikiEntry={(entryId) => setDrawerEntryId(entryId)}
                   onOpenManualCard={(cardId) => setDrawerCardId(cardId)}
+                  onOpenChunkHit={(chunkId) => {
+                    // chunk_id 形如 `{doc_id}#NNNN`：回查文档对象开切片总览抽屉并定位。
+                    const docId = chunkId.split("#")[0]!;
+                    const doc = documents.find((item) => item.id === docId);
+                    if (doc) {
+                      setChunkFocusId(chunkId);
+                      setDrawerDoc(doc);
+                    }
+                  }}
+                  /* 2026-09-05：「在向量空间查看」收为检索工具栏右侧图标按钮
+                     （不再独占一行），接线恢复。 */
                   onViewInVectorSpace={(next) => {
                     setVectorOverlay(next);
                     setActiveTab("vectors");
@@ -555,9 +568,11 @@ export default function KnowledgePage() {
           kbId={selectedKbId}
           doc={drawerDoc}
           open={drawerDoc !== null}
+          focusChunkId={chunkFocusId}
           onOpenChange={(open) => {
             if (!open) {
               setDrawerDoc(null);
+              setChunkFocusId(null);
             }
           }}
         />
