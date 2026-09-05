@@ -18,7 +18,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from functools import partial
@@ -994,24 +994,13 @@ class KnowledgeService:
             }
 
         # 切片文档内序号（2026-09-05）：命中行标题名后挂 chunk_position =
-        # 该切片在文档存活切片中的位次（chunk_index 升序，与切片总览抽屉
-        # #K 位置序同源，空洞不占位）——同名文档的不同切片一眼可辨。
-        # 畸形/已删 id 不注入该键；每文档一次索引列轻查询。
+        # 该切片在文档存活切片中的位次（与切片总览抽屉 #K 同源）——同名
+        # 文档的不同切片一眼可辨。解析/查询逻辑已提至 _chunk_position_map
+        # （与 POST /chunk-positions 端点共用单一源）。
         async def _inject_chunk_positions(hits: list[dict[str, Any]]) -> None:
-            wanted: dict[str, set[int]] = {}
+            positions = await self._chunk_position_map(str(hit.get("chunk_id") or "") for hit in hits)
             for hit in hits:
-                doc_id, _, suffix = str(hit.get("chunk_id") or "").partition("#")
-                if doc_id and suffix.isdigit():
-                    wanted.setdefault(doc_id, set()).add(int(suffix))
-            positions: dict[tuple[str, int], int] = {}
-            for doc_id, indexes in wanted.items():
-                for index, position in (await self.store.chunk_positions(doc_id, indexes)).items():
-                    positions[(doc_id, index)] = position
-            for hit in hits:
-                doc_id, _, suffix = str(hit.get("chunk_id") or "").partition("#")
-                if not doc_id or not suffix.isdigit():
-                    continue
-                position = positions.get((doc_id, int(suffix)))
+                position = positions.get(str(hit.get("chunk_id") or ""))
                 if position is not None:
                     hit["chunk_position"] = position
 
@@ -1024,6 +1013,34 @@ class KnowledgeService:
             "score_type": dict(self._RECALL_SCORE_TYPES),
             "elapsed_ms": {"vector": vector_ms, "graph": graph_ms, "wiki": wiki_ms},
         }
+
+    async def _chunk_position_map(self, chunk_ids: Iterable[str]) -> dict[str, int]:
+        """chunk_id → 文档存活切片中的位次（1-based，chunk_index 升序，空洞不占位）。
+
+        畸形 id（无 #NNNN 后缀）与已删除的切片缺键——调用方诚实缺省不显。
+        每文档一次索引列轻查询（store.chunk_positions，与切片抽屉 #K 同源）。
+        """
+        by_doc: dict[str, list[tuple[str, int]]] = {}
+        for chunk_id in chunk_ids:
+            doc_id, _, suffix = str(chunk_id or "").partition("#")
+            if doc_id and suffix.isdigit():
+                by_doc.setdefault(doc_id, []).append((chunk_id, int(suffix)))
+        positions: dict[str, int] = {}
+        for doc_id, entries in by_doc.items():
+            doc_positions = await self.store.chunk_positions(doc_id, {index for _, index in entries})
+            for chunk_id, index in entries:
+                position = doc_positions.get(index)
+                if position is not None:
+                    positions[chunk_id] = position
+        return positions
+
+    async def chunk_positions(self, *, chunk_ids: list[str]) -> dict[str, Any]:
+        """POST /chunk-positions：批量切片位次查询（图谱实体抽屉行内「切片 #K」数据源）。
+
+        与 recall-test 的 chunk_position 注入同源同词汇（_chunk_position_map）；
+        空列表返回空映射。
+        """
+        return {"positions": await self._chunk_position_map(chunk_ids)}
 
     # ── vector-space projection (spec 2026-08-15 §7 P4) ───────────────────
 

@@ -555,6 +555,23 @@ async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     return await service.recall_test(kb_id=kb_id, user_id=_user_id(request), query=body.query, top_k=body.top_k)
 
 
+class ChunkPositionsRequest(BaseModel):
+    """批量切片位次查询（2026-09-05）：图谱实体抽屉行内「切片 #K」数据源。"""
+
+    chunk_ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+@router.post("/{kb_id}/chunk-positions")
+async def chunk_positions(request: Request, kb_id: str, body: ChunkPositionsRequest):
+    """批量 chunk_id → 文档存活切片中的位次（chunk_index 升序，空洞不占位）。
+
+    与 recall-test 的 chunk_position / 切片抽屉 #K 同源同词汇；畸形/已删 id
+    缺键（前端诚实缺省不显）。只读轻查询，每文档一次索引列。
+    """
+    service = await _require_kb_access(request, kb_id)
+    return await service.chunk_positions(chunk_ids=body.chunk_ids)
+
+
 @router.get("/{kb_id}/graph")
 async def get_knowledge_graph(request: Request, kb_id: str):
     """知识图谱可视化（graph spec 2026-08-19 §4）：全量实体/关系 + Louvain 社区标注。
