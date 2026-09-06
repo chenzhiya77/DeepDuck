@@ -148,6 +148,16 @@ describe("adaptiveWeights", () => {
     expect(weights.questions).toBeCloseTo(270 / 465, 2);
     expect(weights.ragas).toBeCloseTo(165 / 465, 2);
   });
+
+  it("ignores the current phase's elapsed time until the scale is calibrated", () => {
+    // 冷启动（零实测）时先验是无量纲占比，不能与已跑秒数比大小——
+    // 否则条一开跑就被拉宽，先验几何全失。
+    const weights = adaptiveWeights(progress({ phase: "questions", done: 0, total: 4, phase_started_at: iso(T0), phase_durations: {} }), "l1_l2", T0 + 60_000);
+
+    expect(weights.layer1).toBeCloseTo(0.1);
+    expect(weights.questions).toBeCloseTo(0.35);
+    expect(weights.ragas).toBeCloseTo(0.55);
+  });
 });
 
 describe("overallFraction", () => {

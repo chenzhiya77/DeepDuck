@@ -486,6 +486,15 @@ export interface Translations {
       phaseQuestions: string;
       phaseRagas: string;
       failedCount: (n: number) => string;
+      /** 运行进度容器（spec 2026-09-06 §9）：右侧仅 ETA（warmup 不足时不给假数字），
+       *  第二行单行日志由后端结构化 tail 事件驱动、文案在此按 locale 渲染。 */
+      etaRemaining: (minutes: number) => string;
+      etaEstimating: string;
+      logPhase: (phase: string) => string;
+      logItem: (phase: string, done: number, total: number) => string;
+      logFail: (phase: string, done: number, total: number, failed: number) => string;
+      logWaiting: string;
+      bannerAria: (phase: string, percent: number) => string;
       /** 上次运行短文案：label + formatTimeAgo 产物拼接。 */
       lastRunLabel: string;
       neverRan: string;

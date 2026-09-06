@@ -202,14 +202,14 @@
 
 **Files:**
 - Create: `frontend/src/components/workspace/knowledge/eval-run-banner.tsx`(单轨加权条:phase 边界 1px 刻线/当前段跨度提亮/填充连续;右侧**仅 ETA**取整分钟;第二行单行日志 tail→i18n 句、truncate、新事件淡入替换、failed 徽标、aria-live=polite)
-- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts`(etaRemaining/etaEstimating + logPhase/logItem/logFail)
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts`(etaRemaining/etaEstimating + logPhase/logItem/logFail + **logWaiting/bannerAria**)
 - Create: `frontend/tests/unit/knowledge/eval-run-banner.dom.test.tsx`
 
-- [ ] RED test:条填充=f、刻线位置=累积权重、ETA warmup 前后文案、日志单行与失败徽标。
-- [ ] Run `python scripts/pnpm.py test eval-run-banner` 记录 RED。
-- [ ] Implement。
-- [ ] GREEN;revert proof。
-- [ ] Commit。
+- [x] RED test:条填充=f、刻线位置=累积权重、ETA warmup 前后文案、日志单行与失败徽标。(RED:Cannot find module '@/components/workspace/knowledge/eval-run-banner'，file failed)
+- [x] Run `python scripts/pnpm.py test eval-run-banner` 记录 RED。
+- [x] Implement。(**量纲修正**：`adaptiveWeights` 的"当前段取 max(期望, 已跑时长)"仅在 scale 已校准(至少一段有实测)时生效——冷启动下先验是无量纲占比，与秒数比大小会让条一开跑就被拉宽，已补单测)
+- [x] GREEN;revert proof。(eval-run* 4 files/47 passed；stash i18n×3 + eval-run-status 后 banner file failed、恢复后复绿；knowledge **904 passed | 1 failed** 预存 chat-panel；`pnpm check` exit 0)
+- [x] Commit: `feat(rag): add eval run progress banner with weighted bar and live log`(本提交)。
 
 ## Task 12: 总览挂载 + 退役底缘细线
 

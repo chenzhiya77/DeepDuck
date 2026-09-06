@@ -140,6 +140,9 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   长段宽),phase 边界 1px 刻线,当前段跨度提亮,填充连续。权重=先验(完整档 10/35/55,
   快速档 100)+ 本 run 实测自适应(段完成后用实测时长替换先验并按先验比例重归一剩余段);
   无需历史字段/迁移。整体分数 f = 已完成段权重和 + 当前段权重×(段内 done/total)。
+  自适应带**校准门控**(实施修正):仅当至少一段有实测——scale 具备「秒/先验占比」量纲——
+  当前段才取 max(期望时长, 已跑时长)以应对超时;冷启动下先验是无量纲占比,与秒数比
+  大小会让条一开跑就被拉宽、先验几何全失。
 - ETA(主流速率外推共识):`ETA = elapsed×(1−f)/f`;warmup 门控(f>6% 且 elapsed>20s,
   否则"估算中…");取整到分钟防跳变;右侧文案仅 ETA(用户定案)。
 - 第二行=**单行实时日志**:后端 progress 新增结构化 `tail` 事件({kind:phase|item|fail,
@@ -157,6 +160,7 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
     `scoring_total = ragas_jobs + judge_jobs`;ragas 失败/跳过也按预期 job 数结算,保证单调。
   - evaluator 协议增可选 `on_progress`,仅在 `progress_hook` 存在时传入(CLI 与既有假件协议不变)。
 - 退役:底缘细线 JSX 与 progressFraction/isIndeterminatePhase 的细线用途;按钮阶段文案保留。
-- i18n 增量:etaRemaining/etaEstimating + 日志句模板(logPhase/logItem/logFail);三处同步。
+- i18n 增量:etaRemaining/etaEstimating + 日志句模板(logPhase/logItem/logFail)+
+  **logWaiting**(tail 未到的乐观窗口)/ **bannerAria**(progressbar 可读名);三处同步。
 - 测试:eval-run-status 增 f/ETA 纯函数单测;eval-tab 删细线断言、增容器断言(总览运行态);
   后端增 ragas 逐样本 hook 与 tail/durations 单测。

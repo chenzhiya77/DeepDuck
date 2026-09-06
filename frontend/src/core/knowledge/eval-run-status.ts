@@ -163,6 +163,9 @@ export function adaptiveWeights(progress: EvalRunProgress | null | undefined, ti
     }
   }
   const scale = priorCompletedSum > 0 && measuredSum > 0 ? measuredSum / priorCompletedSum : 1;
+  // 仅当至少一段已有实测时，scale 才具备「秒 / 先验占比」的量纲；冷启动下
+  // 先验仍是无量纲占比，不能与已跑秒数比大小（否则条一开跑就被拉宽）。
+  const calibrated = priorCompletedSum > 0 && measuredSum > 0;
 
   const startedMs = parseMs(progress?.phase_started_at);
   const currentElapsed = startedMs === null ? null : Math.max((nowMs - startedMs) / 1000, 0);
@@ -175,7 +178,7 @@ export function adaptiveWeights(progress: EvalRunProgress | null | undefined, ti
       continue;
     }
     const expected = (prior[phase] ?? 0) * scale;
-    durations[phase] = index === currentIndex && currentElapsed !== null ? Math.max(expected, currentElapsed) : expected;
+    durations[phase] = index === currentIndex && calibrated && currentElapsed !== null ? Math.max(expected, currentElapsed) : expected;
   }
 
   const total = phases.reduce((sum, phase) => sum + (durations[phase] ?? 0), 0);
