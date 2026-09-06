@@ -65,8 +65,10 @@
 **Files:**
 - Modify: `frontend/src/core/knowledge/types.ts`(TrendPoint +4 可空键;TrendResponse +`sparks: Record<SparkMetricKey, number[]>`,7 键联合类型导出)
 
-- [ ] 扩型并跑 `python scripts/pnpm.py check` GREEN(类型层无独立 RED,编译即证)。
-- [ ] Commit: `feat(rag): type eval trend payload picker keys and sparks`
+- [x] 扩型并跑 `python scripts/pnpm.py check` GREEN(类型层无独立 RED,编译即证)。
+- [x] Commit: `feat(rag): type eval trend payload picker keys and sparks`
+
+> **Task 2 实施注记(2026-09-06,commit `483cc53f`)**:新增 4 键与 `sparks` 按冻结契约设为**必填**(后端恒返回),故 4 个测试文件的 TrendPoint/TrendResponse mock 必须同步补键——`eval-tab.dom.test.tsx`(TREND)、`eval-trend-chart.unit.test.ts`(point() 助手)、`eval-trend-chart.dom.test.tsx`(POINTS)、`hooks.dom.test.tsx`(EVAL_TREND)。其中第 4 处由 `pnpm check`(tsc)捕获(grep 25 条上限漏掉),印证"扩共享型后必跑 tsc 兜底枚举构造点"。`SparkMetricKey` 7 键联合型已导出,与后端 `SPARK_KEYS` 一一对应。check 双净 + 受影响套件全绿(trend-chart 27 / eval-tab / hooks)。
 
 ## Task 3: sparkline SVG 组件 + 7 个 L2 瓦片接入
 
