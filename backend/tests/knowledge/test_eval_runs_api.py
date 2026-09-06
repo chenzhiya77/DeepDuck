@@ -397,7 +397,48 @@ async def test_trend_empty_history_reports_has_data_false(service) -> None:
         "days_back": 30,
         "baseline": None,
         "has_data": False,
+        "sparks": {
+            "faithfulness": [],
+            "answer_relevancy": [],
+            "context_precision": [],
+            "context_recall": [],
+            "citation_precision": [],
+            "citation_recall": [],
+            "seed_hit_rate": [],
+        },
     }
+
+
+async def test_trend_exposes_sparks_identical_across_granularity(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    now = datetime.now(UTC)
+    await _seed_run(kb["id"], "run-1", now - timedelta(days=40), layer2=_l2(faithfulness=0.70))
+    await _seed_run(kb["id"], "run-2", now - timedelta(days=20), layer2=_l2(faithfulness=0.80))
+    await _seed_run(kb["id"], "run-3", now - timedelta(days=2), layer2=_l2(faithfulness=0.90))
+
+    day = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=day&days_back=90").json()
+    week = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week&weeks_back=24").json()
+    month = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=month&months_back=6").json()
+
+    # sparks 与 granularity/窗口解耦：三次调用恒等，取 run 级升序非空值
+    assert day["sparks"]["faithfulness"] == [0.70, 0.80, 0.90]
+    assert day["sparks"] == week["sparks"] == month["sparks"]
+
+
+async def test_trend_sparks_include_runs_outside_points_window(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    old = datetime.now(UTC) - timedelta(days=200)  # 远超 day 窗口上限（≤90 天）
+    recent = datetime.now(UTC) - timedelta(days=2)
+    await _seed_run(kb["id"], "run-old", old, layer2=_l2(faithfulness=0.60))
+    await _seed_run(kb["id"], "run-recent", recent, layer2=_l2(faithfulness=0.90))
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=day&days_back=30").json()
+
+    # points 仅含窗口内运行；sparks 取全量近 10 → old + recent 均在（升序）
+    assert [p["layer2_run_id"] for p in body["points"]] == ["run-recent"]
+    assert body["sparks"]["faithfulness"] == [0.60, 0.90]
 
 
 async def test_trend_unknown_kb_404(service) -> None:

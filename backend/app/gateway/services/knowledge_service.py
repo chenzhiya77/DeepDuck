@@ -34,7 +34,7 @@ from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, cancel_eval_run, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
 from deerflow.knowledge.eval.persistence import ENV_CI
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
-from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
+from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, build_sparks, latest_layer_row, window_cutoff
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
@@ -1191,19 +1191,22 @@ class KnowledgeService:
         }
 
     async def get_eval_trend(self, kb_id: str, *, granularity: str, days_back: int, weeks_back: int, months_back: int, include_ci: bool) -> dict[str, Any]:
-        """TrendResponse（§4.1/§4.2）：统一末次语义聚合 + baseline 块。
+        """TrendResponse（§4.1/§4.2）：统一末次语义聚合 + baseline 块 + 顶层 ``sparks``。
 
         单 KB 历史 <100 条，读全量行内存计算。窗口参数按粒度配对（spec §4.2：
         day→``days_back`` clamp ≤90 / week→``weeks_back`` / month→
         ``months_back``），响应只回显当前粒度匹配的那个键。baseline 块读该
         KB 的 ``is_baseline`` 行——与 CI ``--fail-threshold`` 默认值同源
-        （DEFAULT_FAIL_THRESHOLD × 100）。
+        （DEFAULT_FAIL_THRESHOLD × 100）。``sparks``（spec §6.2，服务瓦片
+        sparkline）取**全量** ``rows`` 而非 ``windowed``——run 级近 10 非空值与
+        granularity/窗口解耦，故 day/week/month 三次调用恒等。
         """
         days_back = min(days_back, MAX_DAYS_BACK)
         rows = await self.store.list_eval_runs(kb_id)
         cutoff = window_cutoff(datetime.now(UTC), granularity=granularity, days_back=days_back, weeks_back=weeks_back, months_back=months_back)
         windowed = [row for row in rows if _as_utc(row.created_at) >= cutoff]
         points = aggregate_trend_points(windowed, granularity, include_ci=include_ci)
+        sparks = build_sparks(rows, include_ci=include_ci)
         baseline: dict[str, Any] | None = None
         baseline_row = next((row for row in rows if row.is_baseline), None)
         if baseline_row is not None:
@@ -1217,6 +1220,7 @@ class KnowledgeService:
             "granularity": granularity,
             "baseline": baseline,
             "has_data": bool(points),
+            "sparks": sparks,
         }
         response[window_key] = window_value
         return response

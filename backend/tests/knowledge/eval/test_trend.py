@@ -8,10 +8,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from deerflow.knowledge.eval.trend import aggregate_trend_points, window_cutoff
+from deerflow.knowledge.eval.trend import aggregate_trend_points, build_sparks, window_cutoff
 
 
 def _l1(recall_at_k: float = 0.8, hit_rate: float = 0.9, mrr: float = 0.7) -> dict:
@@ -160,6 +160,53 @@ def test_layer_without_data_in_period_is_null() -> None:
     assert point["layer1_run_id"] == "run-l1"
 
 
+# ── 周期点 10 键（spec §6.1：补 path_accuracy + 引用三，服务 picker） ──────
+
+_TREND_METRIC_KEYS = {
+    "recall_at_k",
+    "hit_rate",
+    "mrr",
+    "path_accuracy",
+    "faithfulness",
+    "answer_relevancy",
+    "context_precision",
+    "citation_precision",
+    "citation_recall",
+    "seed_hit_rate",
+}
+
+
+def test_period_point_exposes_ten_metric_keys() -> None:
+    layer1_run = _row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+    layer2_run = _row("run-l2", datetime(2026, 8, 20, 21, 0, tzinfo=UTC), layer2=_l2())
+
+    point = aggregate_trend_points([layer1_run, layer2_run], "day")[0]
+
+    assert len(_TREND_METRIC_KEYS) == 10
+    assert _TREND_METRIC_KEYS <= set(point)
+    # 取值口径：path_accuracy 来自 L1 summary；引用三来自 L2 arch_specific
+    assert point["path_accuracy"] == 1.0
+    assert point["citation_precision"] == 0.9
+    assert point["citation_recall"] == 0.85
+    assert point["seed_hit_rate"] is None
+
+
+def test_new_picker_keys_null_when_source_layer_absent() -> None:
+    # 仅 L1：path_accuracy 有值，引用三 null（缺层仍 null）
+    l1_point = aggregate_trend_points([_row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())], "day")[0]
+    assert l1_point["path_accuracy"] == 1.0
+    assert l1_point["citation_precision"] is None
+    assert l1_point["citation_recall"] is None
+    assert l1_point["seed_hit_rate"] is None
+
+    # 仅 L2：path_accuracy null，引用三有值
+    l2_point = aggregate_trend_points([_row("run-l2", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer2=_l2())], "day")[0]
+    assert l2_point["path_accuracy"] is None
+    assert l2_point["citation_precision"] == 0.9
+    assert l2_point["citation_recall"] == 0.85
+    assert l2_point["seed_hit_rate"] is None
+
+
 # ── 取数集合过滤 ────────────────────────────────────────────────────────
 
 
@@ -264,3 +311,121 @@ def test_window_cutoff_month_calendar_subtraction_with_month_end_clamp() -> None
     assert window_cutoff(datetime(2024, 2, 29, 12, 0, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=12) == datetime(2023, 2, 28, 12, 0, tzinfo=UTC)
     # 普通日期按时分秒原样对齐
     assert window_cutoff(datetime(2026, 5, 15, 8, 30, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=3) == datetime(2026, 2, 15, 8, 30, tzinfo=UTC)
+
+
+# ── build_sparks：run 级近 10 非空值（spec §6.2，粒度无关，服务瓦片 sparkline） ──
+
+_SPARK_KEYS = {
+    "faithfulness",
+    "answer_relevancy",
+    "context_precision",
+    "context_recall",
+    "citation_precision",
+    "citation_recall",
+    "seed_hit_rate",
+}
+
+
+def test_sparks_returns_all_seven_l2_keys() -> None:
+    sparks = build_sparks([_row("run-l2", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2())])
+
+    assert set(sparks) == _SPARK_KEYS
+
+
+def test_sparks_empty_input_returns_seven_empty_arrays() -> None:
+    sparks = build_sparks([])
+
+    assert set(sparks) == _SPARK_KEYS
+    assert all(values == [] for values in sparks.values())
+
+
+def test_sparks_maps_ragas_and_arch_specific_sources() -> None:
+    layer2 = {
+        "ragas": {"faithfulness": 0.9, "answer_relevancy": 0.8, "context_precision": 0.7, "context_recall": 0.6},
+        "arch_specific": {"citation_precision": 0.5, "citation_recall": 0.4, "seed_hit_rate": 0.3},
+    }
+
+    sparks = build_sparks([_row("run-full", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=layer2)])
+
+    assert sparks["faithfulness"] == [0.9]
+    assert sparks["answer_relevancy"] == [0.8]
+    assert sparks["context_precision"] == [0.7]
+    assert sparks["context_recall"] == [0.6]
+    assert sparks["citation_precision"] == [0.5]
+    assert sparks["citation_recall"] == [0.4]
+    assert sparks["seed_hit_rate"] == [0.3]
+
+
+def test_sparks_all_null_key_yields_empty_array() -> None:
+    # 默认 _l2：context_recall（ragas 未装）与 seed_hit_rate（无实体标注）恒 null → 空数组
+    sparks = build_sparks([_row("run-l2", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2())])
+
+    assert sparks["context_recall"] == []
+    assert sparks["seed_hit_rate"] == []
+    assert sparks["faithfulness"] == [0.95]
+
+
+def test_sparks_sorts_by_created_at_ascending_regardless_of_input_order() -> None:
+    early = _row("run-1", datetime(2026, 8, 18, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.80))
+    late = _row("run-2", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.90))
+
+    sparks = build_sparks([late, early])
+
+    assert sparks["faithfulness"] == [0.80, 0.90]
+
+
+def test_sparks_skips_null_runs_without_placeholder() -> None:
+    r1 = _row("run-1", datetime(2026, 8, 18, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.70))
+    r2 = _row("run-2", datetime(2026, 8, 19, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=None))
+    r3 = _row("run-3", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.90))
+
+    sparks = build_sparks([r1, r2, r3])
+
+    # run-2 的 null 被跳过（非占位），数组长度 = 非空 run 数 = 2
+    assert sparks["faithfulness"] == [0.70, 0.90]
+
+
+def test_sparks_length_matches_available_runs_when_under_ten() -> None:
+    runs = [_row(f"run-{i}", datetime(2026, 8, 10 + i, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.50 + i * 0.01)) for i in range(5)]
+
+    sparks = build_sparks(runs)
+
+    assert len(sparks["faithfulness"]) == 5
+
+
+def test_sparks_caps_at_ten_most_recent_non_null_values() -> None:
+    runs = [_row(f"run-{i:02d}", datetime(2026, 7, 1, 9, 0, tzinfo=UTC) + timedelta(days=i), layer2=_l2(faithfulness=float(i))) for i in range(15)]
+
+    sparks = build_sparks(runs)
+
+    # 15 个非空 run → 仅保留近 10（升序，丢弃最旧 5 个）
+    assert sparks["faithfulness"] == [float(i) for i in range(5, 15)]
+
+
+def test_sparks_ignores_period_boundaries_single_series_across_months() -> None:
+    # 跨 3 个月的 run 进同一条序列（不按周期分桶 → 与 granularity 解耦）
+    runs = [
+        _row("run-jul", datetime(2026, 7, 15, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.70)),
+        _row("run-aug", datetime(2026, 8, 15, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.80)),
+        _row("run-sep", datetime(2026, 9, 15, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.90)),
+    ]
+
+    sparks = build_sparks(runs)
+
+    assert sparks["faithfulness"] == [0.70, 0.80, 0.90]
+
+
+def test_sparks_ignores_rows_without_layer2_data() -> None:
+    l1_only = _row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+
+    sparks = build_sparks([l1_only])
+
+    assert sparks["faithfulness"] == []
+
+
+def test_sparks_excludes_ci_by_default_and_includes_on_demand() -> None:
+    local = _row("run-local", datetime(2026, 8, 19, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.70))
+    ci = _row("run-ci", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.99), environment="ci")
+
+    assert build_sparks([local, ci])["faithfulness"] == [0.70]
+    assert build_sparks([local, ci], include_ci=True)["faithfulness"] == [0.70, 0.99]

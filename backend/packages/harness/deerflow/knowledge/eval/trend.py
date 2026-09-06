@@ -25,6 +25,15 @@ Granularity = Literal["day", "week", "month"]
 #: day 粒度窗口上限（spec §4.2 冻结）；week/month 无冻结上限。
 MAX_DAYS_BACK = 90
 
+#: sparkline 每指标保留的 run 级近端非空值上限（spec §6.2 冻结）。
+MAX_SPARKS = 10
+
+#: 顶层 ``sparks`` 的 7 个 Layer 2 键（RAGAS 4 + 引用 3，含退役的 context_recall）。
+#: ragas 四键取 ``layer2_metrics["ragas"]``，引用三键取 ``layer2_metrics["arch_specific"]``。
+_SPARK_RAGAS_KEYS = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
+_SPARK_ARCH_KEYS = ("citation_precision", "citation_recall", "seed_hit_rate")
+SPARK_KEYS = (*_SPARK_RAGAS_KEYS, *_SPARK_ARCH_KEYS)
+
 
 def window_cutoff(
     now: datetime,
@@ -107,6 +116,12 @@ def aggregate_trend_points(
     ``regression`` 透传 Layer 1 来源运行的 per-category 门禁判定（无 diff
     的运行该键为 ``None``）；``is_baseline_update`` 标记 Layer 1 来源行是
     否为 ``--mark-baseline`` 打点。
+
+    周期点含 10 个指标键（spec §6.1，服务主图 picker）：L1 四取 ``layer1_metrics
+    ["summary"]``（recall_at_k/hit_rate/mrr/path_accuracy）；L2 六中 ragas 三取
+    ``layer2_metrics["ragas"]``（faithfulness/answer_relevancy/context_precision），
+    引用三取 ``layer2_metrics["arch_specific"]``（citation_precision/citation_recall/
+    seed_hit_rate）。退役的 ``context_recall`` 不进周期点（仅存于 ``sparks``）。
     """
 
     layer1_by_period: dict[date, EvalTrendRow] = {}
@@ -126,6 +141,7 @@ def aggregate_trend_points(
         layer2 = layer2_by_period.get(period)
         summary = (layer1.layer1_metrics.get("summary") or {}) if layer1 is not None else {}
         ragas = (layer2.layer2_metrics.get("ragas") or {}) if layer2 is not None else {}
+        arch = (layer2.layer2_metrics.get("arch_specific") or {}) if layer2 is not None else {}
         diff = layer1.baseline_diff if layer1 is not None else None
         points.append(
             {
@@ -133,9 +149,13 @@ def aggregate_trend_points(
                 "recall_at_k": summary.get("recall_at_k"),
                 "hit_rate": summary.get("hit_rate"),
                 "mrr": summary.get("mrr"),
+                "path_accuracy": summary.get("path_accuracy"),
                 "faithfulness": ragas.get("faithfulness"),
                 "answer_relevancy": ragas.get("answer_relevancy"),
                 "context_precision": ragas.get("context_precision"),
+                "citation_precision": arch.get("citation_precision"),
+                "citation_recall": arch.get("citation_recall"),
+                "seed_hit_rate": arch.get("seed_hit_rate"),
                 "layer1_run_id": layer1.id if layer1 is not None else None,
                 "layer2_run_id": layer2.id if layer2 is not None else None,
                 "regression": (
@@ -150,3 +170,38 @@ def aggregate_trend_points(
             }
         )
     return points
+
+
+def build_sparks(
+    rows: Sequence[EvalTrendRow],
+    *,
+    include_ci: bool = False,
+) -> dict[str, list[float]]:
+    """eval_runs 行 → 顶层 ``sparks``（spec §6.2）：7 个 Layer 2 键各一条 run 级
+    近 ``MAX_SPARKS`` 个非空值序列（``created_at`` 升序）。
+
+    与 ``aggregate_trend_points`` 的周期分桶不同，本函数**不做周期聚合、不受
+    granularity/时间窗口影响**——每个数据点恒等于一次真实运行的该指标值，服务
+    瓦片 sparkline 的“近 10 次运行走势”语义（调用方应传入**全量**行而非窗口
+    过滤后的子集）。null 值（该档未跑该指标）被跳过而非占位；某键全 null（如
+    ragas 未装时的 ``context_recall``）→ 空数组。取数集合规则与 trend 同源
+    （completed + layer2 metrics 非空 + 默认排除 ci）。
+    """
+
+    l2_rows = sorted(
+        (row for row in rows if _in_read_set(row, "layer2", include_ci=include_ci)),
+        key=lambda row: (row.created_at, row.id),
+    )
+    series: dict[str, list[float]] = {key: [] for key in SPARK_KEYS}
+    for row in l2_rows:
+        ragas = row.layer2_metrics.get("ragas") or {}
+        arch = row.layer2_metrics.get("arch_specific") or {}
+        for key in _SPARK_RAGAS_KEYS:
+            value = ragas.get(key)
+            if value is not None:
+                series[key].append(value)
+        for key in _SPARK_ARCH_KEYS:
+            value = arch.get(key)
+            if value is not None:
+                series[key].append(value)
+    return {key: values[-MAX_SPARKS:] for key, values in series.items()}
