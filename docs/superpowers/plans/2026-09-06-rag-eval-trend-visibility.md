@@ -78,11 +78,13 @@
 - Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(把 trend query 的 sparks 透传 overview)
 - Modify: `frontend/tests/unit/knowledge/eval-metrics-overview.dom.test.tsx`(sparks 注入 → 7 瓦片各含 svg 且**与数值同行**(value-row 容器内兄弟节点);缺键/空数组 → 无 svg;context_recall 瓦片有 sparkline;L1 表格区零 svg)
 
-- [ ] RED test(上述 dom 断言)。
-- [ ] Run `python scripts/pnpm.py test eval-metrics-overview`,记录 RED。
-- [ ] Implement(sparkline 组件 + 瓦片接线 + 透传)。
-- [ ] GREEN;revert proof。
-- [ ] Commit: `feat(rag): add L2 tile sparklines from trend sparks`
+- [x] RED test(上述 dom 断言)。
+- [x] Run `python scripts/pnpm.py test eval-metrics-overview`,记录 RED。
+- [x] Implement(sparkline 组件 + 瓦片接线 + 透传)。
+- [x] GREEN;revert proof。
+- [x] Commit: `feat(rag): add L2 tile sparklines from trend sparks`
+
+> **Task 3 实施注记(2026-09-07,commit `74597ce4`)**:新建 `eval-sparkline.tsx`——纯 SVG(viewBox 28×12、`w-7 h-3 shrink-0`、`text-muted-foreground` + `stroke=currentColor`),min–max 归一化 polyline + 末点实心 circle;span=0 时走中线防除零;`values.length < 2`(含 undefined/空)→ 返 null。MetricTile 数值行改 `flex items-center justify-between gap-1` 并加 `data-testid=eval-card-value-${testId}`(供“数字与 svg 同为 value-row 直接子节点”的兄弟断言);数字保留为内层 `div.font-semibold`(而非 span)——否则会破坏现有“percentEl = querySelectorAll('div').find(font-semibold)”用例。EvalMetricsOverview +`sparks?: TrendResponse["sparks"]` prop,7 瓦片按键接线;eval-tab 透传 `trendQuery.data?.sparks`(复用已有 query,零新请求)。revert proof 仅 stash 两个已跟踪接线文件(新组件无接线时惰性)。新增 5 条 dom 用例;`pnpm check` 双净。
 
 ---
 
