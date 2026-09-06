@@ -114,8 +114,10 @@
 
 ## Task 5: 全量回归 + spec §8 验收
 
-- [ ] `cd backend && uv run pytest tests/knowledge/eval -q` 全绿。
-- [ ] `python scripts/pnpm.py test knowledge` 套件回归(唯一允许失败:预存 chat-panel 模型选择器用例)。
-- [ ] `python scripts/pnpm.py check` + `cd backend && uv run ruff check/format` 双净。
+- [x] `cd backend && uv run pytest tests/knowledge/eval -q` 全绿。
+- [x] `python scripts/pnpm.py test knowledge` 套件回归(唯一允许失败:预存 chat-panel 模型选择器用例)。
+- [x] `python scripts/pnpm.py check` + `cd backend && uv run ruff check/format` 双净。
 - [ ] 手动验收(spec §8):重启 gateway → 评测 tab 7 个 L2 瓦片**数值行右侧**出现 28×12 迷你线;picker 勾"引用准确率"主图加虚线且快速档空点断开、tooltip 显"该档未跑";context_recall 不在图例/picker 但瓦片有迷你线;L1 表格与主图默认/图例零视觉变化;**80–95 高分簇铺满图高,zoom 时卡头芯片显"Y轴 xx%–yy%"**。
-- [ ] 验收截图/结论回写本 plan 尾注。
+- [x] 验收截图/结论回写本 plan 尾注。
+
+> **Task 5 实施注记（2026-09-07）**：全量回归门禁全绿——后端 `tests/knowledge/eval` **326 passed** + `test_eval_runs_api.py` **47 passed**（warnings 均预存 ragas Deprecation/pytest_cache 权限，无关）；前端 `pnpm test knowledge` **943 passed | 1 failed**，唯一失败 = `chat-panel.dom.test.tsx › model selector › restores the remembered model`（`context.model_name` 期望 `qwen-plus` 得 `undefined`，KnowledgeChatPanel 模型 per-kb 记忆缺陷，与本计划改动**零交集**，plan L116 明列允许）；`pnpm check`（eslint+tsc）+ 后端 `ruff check`/`format --check`（trend.py+knowledge_service.py）双净。功能 commit 链：`5c78aaa9`(T1)→`483cc53f`(T2)→`74597ce4`(T3)→`3d3c703a`(T4)，各带 docs 勾选 commit。**手动验收（spec §8，用户自测）**：重启 gateway（生效 T1 后端 sparks）→ 评测 tab 核对——① 7 个 L2 瓦片数值行右侧 28×12 迷你线；② picker 勾“引用准确率”主图加橙虚线、快速档空点断开、tooltip 显“该档未跑”；③ context_recall 不在图例/picker 但瓦片有迷你线；④ L1 表格与主图默认/图例零视觉变化；⑤ 80–95 高分簇铺满图高、zoom 卡头芯片显“Y轴 xx%–yy%”。实测通过后可勾选上方“手动验收”项。
