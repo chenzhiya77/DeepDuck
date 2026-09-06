@@ -686,8 +686,17 @@ export interface EvalRunSummary {
   langfuse_trace_url: string | null;
 }
 
-/** 运行中评测的活进度快照（spec 2026-09-06 run-progress §3，冻结七键）。
- *  phase 三段：layer1/questions 定长可百分比，ragas 不定长（前端 pulse）。 */
+/** 进度事件（spec 2026-09-06 §9）：后端只出结构化事件，单行日志的文案由 i18n 渲染。 */
+export interface EvalProgressTail {
+  kind: "phase" | "item" | "fail";
+  phase: "layer1" | "questions" | "ragas";
+  done: number;
+  total: number;
+  failed: number;
+}
+
+/** 运行中评测的活进度快照（spec 2026-09-06 run-progress §3 七键 + §9 扩三键，后端恒透出十键）。
+ *  phase 三段均定长：questions 按题推进，ragas 段按 (样本×指标) job + 逐题 citation judge。 */
 export interface EvalRunProgress {
   run_id: string;
   phase: "layer1" | "questions" | "ragas";
@@ -696,6 +705,12 @@ export interface EvalRunProgress {
   failed: number;
   started_at: string;
   updated_at: string;
+  /** 本阶段起点（毫秒级 ISO）；ETA 速率外推的分母。旧形状条目由后端回退为 started_at。 */
+  phase_started_at?: string | null;
+  /** 已完成阶段的实测耗时（秒）——加权进度条自适应跨度的数据源。 */
+  phase_durations?: Partial<Record<"layer1" | "questions" | "ragas", number>>;
+  /** 最新一条进度事件（单行实时日志的源）。 */
+  tail?: EvalProgressTail | null;
 }
 
 /** GET /eval-runs 响应（spec §6.1）：顶层 in_flight 驱动轮询与工具栏状态。 */

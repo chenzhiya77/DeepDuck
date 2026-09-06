@@ -192,11 +192,11 @@
 - Modify: `frontend/src/core/knowledge/eval-run-status.ts`(`PHASE_WEIGHT_PRIOR` 完整档 10/35/55、快速档 100;`adaptiveWeights` 段完成用实测替换先验并按先验比例重归一剩余;`overallFraction` f=已完成段权重和+当前段权重×(段内 done/total);`etaSeconds` warmup 门控 f>6% 且 elapsed>20s 否则 null,`elapsed×(1−f)/f`)
 - Modify: `frontend/tests/unit/knowledge/eval-run-status.unit.test.ts`(冷启动先验/段完成自适应/f 单调/ETA warmup 与取整)
 
-- [ ] RED test(上述四案)。
-- [ ] Run `python scripts/pnpm.py test eval-run-status` 记录 RED。
-- [ ] Implement。
-- [ ] GREEN;revert proof。
-- [ ] Commit。
+- [x] RED test(上述四案 + 零时长下限/当前段超时变宽/total≤0 不产生 NaN/快速档单段)。(RED:13 failed | 10 passed——缺导出成员 + EvalRunProgress 未扩字段)
+- [x] Run `python scripts/pnpm.py test eval-run-status` 记录 RED。
+- [x] Implement。(types 三新字段取**可选**以兼容既有 7 键 mock 与旧形状响应;新增导出 `EvalTier`/`EVAL_PHASE_ORDER`/`EvalPhaseWeights`/`MIN_PHASE_SECONDS`/`ETA_WARMUP_*`/`etaMinutes`;`adaptiveWeights` 采比例重标(scale=实测和/已完成段先验和)而非全量归一,当前段取 max(期望, 已跑时长);无先验无实测时等分防御)
+- [x] GREEN;revert proof。(23/23 passed;stash 两个实现文件后 file failed、恢复后复绿;`pnpm check` exit 0)
+- [x] Commit: `feat(rag): add weighted progress fraction and eta derivations`(本提交)。
 
 ## Task 11: EvalRunBanner 组件 + i18n
 

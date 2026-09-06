@@ -10,7 +10,12 @@
 import { describe, expect, it } from "@rstest/core";
 
 import {
+  EVAL_PHASE_ORDER,
+  adaptiveWeights,
+  etaMinutes,
+  etaSeconds,
   isIndeterminatePhase,
+  overallFraction,
   phaseStep,
   progressAriaLabel,
   progressFraction,
@@ -95,5 +100,113 @@ describe("progressAriaLabel", () => {
 
   it("returns null when there is no live progress", () => {
     expect(progressAriaLabel(null, LABELS)).toBeNull();
+  });
+});
+
+// ── 加权整体进度条（spec 2026-09-06 §9 Task 10）─────────────────────
+
+const T0 = Date.parse("2026-09-06T10:00:00+00:00");
+const iso = (ms: number) => new Date(ms).toISOString();
+
+describe("adaptiveWeights", () => {
+  it("falls back to the prior split when nothing has been measured yet", () => {
+    const weights = adaptiveWeights(progress({ phase: "layer1", done: 0, total: 1 }), "l1_l2", T0 + 1000);
+
+    expect(weights.layer1).toBeCloseTo(0.1);
+    expect(weights.questions).toBeCloseTo(0.35);
+    expect(weights.ragas).toBeCloseTo(0.55);
+    expect((weights.layer1 ?? 0) + (weights.questions ?? 0) + (weights.ragas ?? 0)).toBeCloseTo(1);
+    expect(EVAL_PHASE_ORDER).toEqual(["layer1", "questions", "ragas"]);
+  });
+
+  it("collapses the quick tier to its single phase", () => {
+    expect(adaptiveWeights(progress({ phase: "layer1" }), "l1", T0)).toEqual({ layer1: 1 });
+  });
+
+  it("replaces measured phases and rescales the remaining spans by the prior ratio", () => {
+    // layer1 30s + questions 20s 实测，先验占比 0.45 → scale 111.1s，ragas 期望 61.1s。
+    const weights = adaptiveWeights(progress({ phase: "ragas", done: 0, total: 4, phase_started_at: iso(T0 + 50_000), phase_durations: { layer1: 30, questions: 20 } }), "l1_l2", T0 + 60_000);
+
+    expect(weights.layer1).toBeCloseTo(0.27, 2);
+    expect(weights.questions).toBeCloseTo(0.18, 2);
+    expect(weights.ragas).toBeCloseTo(0.55, 2);
+  });
+
+  it("clamps a zero measured duration so the span cannot collapse", () => {
+    // layer1 亚秒完成（实测 0s）不得让权重归零或污染总量。
+    const weights = adaptiveWeights(progress({ phase: "questions", done: 0, total: 4, phase_started_at: iso(T0), phase_durations: { layer1: 0 } }), "l1_l2", T0 + 500);
+
+    expect(weights.layer1).toBeGreaterThan(0);
+    expect(Number.isFinite(weights.questions)).toBe(true);
+    expect(Number.isFinite(weights.ragas)).toBe(true);
+  });
+
+  it("grows the current span once the phase overruns its expectation", () => {
+    // scale = 30/0.1 = 300 → questions 期望 105s，但已跑 270s → 取大者。
+    const weights = adaptiveWeights(progress({ phase: "questions", done: 1, total: 4, phase_started_at: iso(T0 + 30_000), phase_durations: { layer1: 30 } }), "l1_l2", T0 + 300_000);
+
+    expect(weights.questions).toBeCloseTo(270 / 465, 2);
+    expect(weights.ragas).toBeCloseTo(165 / 465, 2);
+  });
+});
+
+describe("overallFraction", () => {
+  it("adds the completed spans plus the current span's within-phase share", () => {
+    expect(overallFraction(progress({ phase: "layer1", done: 0, total: 1 }), "l1_l2", T0 + 1000)).toBeCloseTo(0);
+    expect(overallFraction(progress({ phase: "questions", done: 3, total: 10 }), "l1_l2", T0 + 1000)).toBeCloseTo(0.205);
+    expect(overallFraction(progress({ phase: "ragas", done: 2, total: 4 }), "l1_l2", T0 + 1000)).toBeCloseTo(0.725);
+  });
+
+  it("is monotonic across phases and reaches 1 at the end", () => {
+    const early = overallFraction(progress({ phase: "questions", done: 3, total: 10 }), "l1_l2", T0 + 1000);
+    const later = overallFraction(progress({ phase: "questions", done: 7, total: 10 }), "l1_l2", T0 + 1000);
+    const scoring = overallFraction(progress({ phase: "ragas", done: 0, total: 4 }), "l1_l2", T0 + 1000);
+    const end = overallFraction(progress({ phase: "ragas", done: 4, total: 4 }), "l1_l2", T0 + 1000);
+
+    expect(early).toBeLessThan(later);
+    expect(later).toBeLessThan(scoring);
+    expect(end).toBeCloseTo(1);
+  });
+
+  it("guards a non-positive total and a missing progress", () => {
+    const stalled = overallFraction(progress({ phase: "ragas", done: 0, total: 0 }), "l1_l2", T0 + 1000);
+
+    expect(Number.isNaN(stalled)).toBe(false);
+    expect(stalled).toBeCloseTo(0.45);
+    expect(overallFraction(null, "l1_l2", T0)).toBe(0);
+    expect(overallFraction(undefined, "l1_l2", T0)).toBe(0);
+  });
+
+  it("clamps an over-count done to the span end", () => {
+    expect(overallFraction(progress({ phase: "questions", done: 99, total: 10 }), "l1_l2", T0 + 1000)).toBeCloseTo(0.45);
+  });
+});
+
+describe("etaSeconds", () => {
+  it("withholds the estimate during warmup (too little elapsed or progress)", () => {
+    // elapsed 10s < 20s 门控；以及 f=0 时无论跑多久都不外推。
+    expect(etaSeconds(progress({ phase: "questions", done: 3, total: 10 }), "l1_l2", T0 + 10_000)).toBeNull();
+    expect(etaSeconds(progress({ phase: "layer1", done: 0, total: 1 }), "l1_l2", T0 + 600_000)).toBeNull();
+    expect(etaSeconds(null, "l1_l2", T0 + 60_000)).toBeNull();
+  });
+
+  it("extrapolates from the weighted fraction once warmed up", () => {
+    // f = 0.1 + 0.35×0.5 = 0.275，elapsed 60s → 60×(1−f)/f。
+    const eta = etaSeconds(progress({ phase: "questions", done: 5, total: 10 }), "l1_l2", T0 + 60_000);
+
+    expect(eta).toBeCloseTo((60 * (1 - 0.275)) / 0.275, 1);
+  });
+
+  it("never goes negative at the end of the run", () => {
+    expect(etaSeconds(progress({ phase: "ragas", done: 4, total: 4 }), "l1_l2", T0 + 60_000)).toBe(0);
+  });
+});
+
+describe("etaMinutes", () => {
+  it("rounds to whole minutes with a 1-minute floor and passes null through", () => {
+    expect(etaMinutes(null)).toBeNull();
+    expect(etaMinutes(90)).toBe(2);
+    expect(etaMinutes(10)).toBe(1);
+    expect(etaMinutes(0)).toBe(1);
   });
 });
