@@ -99,12 +99,14 @@
 - Modify: `frontend/tests/unit/knowledge/eval-trend-chart.unit.test.ts`(picker 系列并入/移除、线型实/虚、tooltip 哑行;**y 轴:隐藏低值指标不撑轴/最小轴程/阈值入 seeds/范围标签文案**)
 - Modify: `frontend/tests/unit/knowledge/eval-tab.dom.test.tsx`(picker 开合、勾选透传、项尾注文案、会话级不持久化;**legendselectchanged 回流后 y 轴重建;zoom 芯片显隐**)
 
-- [ ] RED test(utils unit + eval-tab dom 上述断言)。
-- [ ] Run `python scripts/pnpm.py test eval-trend-chart; python scripts/pnpm.py test eval-tab`,记录 RED。
-- [ ] Implement(utils 扩展 + picker UI + i18n 三处)。
-- [ ] GREEN;revert proof。
-- [ ] `python scripts/pnpm.py check` 净。
-- [ ] Commit: `feat(rag): add trend metric picker for sparse full-tier metrics`
+- [x] RED test（utils unit + eval-tab dom 上述断言）。
+- [x] Run `python scripts/pnpm.py test eval-trend-chart; python scripts/pnpm.py test eval-tab`，记录 RED。
+- [x] Implement（utils 扩展 + picker UI + i18n 三处）。
+- [x] GREEN；revert proof。
+- [x] `python scripts/pnpm.py check` 净。
+- [x] Commit: `feat(rag): add trend metric picker for sparse full-tier metrics`
+
+> **Task 4 实施注记（2026-09-07，commit `3d3c703a`）**：`eval-trend-chart.utils.ts` 新增 `PICKER_METRICS`（4 候选，颜色/层冻结：path_accuracy `#84CC16`·L1、citation_precision `#F97316`、citation_recall `#14B8A6`、seed_hit_rate `#A855F7`·L2）+ `resolveVisibleKeys`（图例开启项 ∪ picker 选中项）+ `computeYAxisRange`（seeds=可见值∪阈值线值，±0.05 padding、10pp 取整、封顶 [0,1]、最小轴程守卫）+ `buildYAxisRangeLabel`（yMin>0 才出芯片，否则 null）。`buildChartOption` +`pickerSelected`/`legendSelected` 入参：pickerSeries **条件并入**（`series: [...metricSeries, ...pickerSeries, ...markerSeries]`，**不进 legend.data**——picker 与图例六线显隐语义分离）+ y 轴 `min/max` 改 `yMin/yMax` 自适应 + `legend.selected` 接回流态；`buildTrendTooltipHtml` +`pickerSelected` → null 点补“该档未跑”哑行（echarts 只为非空点生成 axis param，故须显式补）。`eval-trend-chart.tsx` +`pickerSelected`/`legendSelected`/`onLegendChange` props，`legendselectchanged` 事件经 ref 穿透上抛（仿 clickRef），数据更新 effect 带新参重建 option。`eval-tab.tsx` 会话级 `useState`（pickerSelected/legendSelected，不持久化）；卡头 picker DropdownMenu（`SlidersHorizontal` 触发器 h-7 同粒度档、`DropdownMenuCheckboxItem`×4、`onSelect` preventDefault 保持多选开启、L2 项尾注“仅完整档”）；yMin>0 时 `eval-yaxis-chip` 芯片；chartLabels +5 字段（picker 标签**复用** `tk.tablePathAccuracy`/`citationPrecision`/`citationRecall`/`seedHitRate` 避免同指标两名，spec §3 词汇闭环）；`onLegendChange=setLegendSelected` 回流驱动 y 轴重建。i18n `trend` 区块 +5 键（pickerTrigger/pickerAria/fullTierOnly/notRunInTier/yAxisRange 格式化函数）三处同步。验证：revert proof（stash 7 实现文件 → unit 9 failed + dom 3 failed → pop → 38+62 GREEN）；`pnpm check` 双净。
 
 ---
 
