@@ -810,7 +810,39 @@ describe("EvalTab 常驻工具栏", () => {
     expect(screen.getByTestId("eval-run-banner")).toBeTruthy();
   });
 
-  it("空闲态不渲染进度容器与细线", () => {
+  it("空闲有历史 → 常驻槽显上次评测摘要（spec §10）", () => {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({
+        data: {
+          in_flight: false,
+          progress: null,
+          runs: [
+            {
+              run_id: "run-last",
+              created_at: new Date(Date.now() - 60_000).toISOString(),
+              completed_at: new Date(Date.now() - 30_000).toISOString(),
+              environment: "local",
+              status: "completed",
+              is_baseline: false,
+              has_layer1: true,
+              has_layer2: true,
+              regression_detected: false,
+              langfuse_trace_url: null,
+            },
+          ],
+          total: 1,
+        },
+      }),
+    );
+    renderEvalTab();
+
+    // has_layer2 → 完整档；30s 耗时 → 「30 秒」。
+    expect(screen.getByTestId("eval-run-banner").textContent).toContain(
+      "上次评测 · 完整评测 · 耗时 30 秒",
+    );
+  });
+
+  it("空闲无历史 → 常驻槽显尚未评测行", () => {
     // 本 describe 的 beforeEach 不重置 useEvalRuns（靠各用例 sticky 设值），故本例
     // 必须显式置 idle；也因为它排在末位，后续用例才不会继承 in_flight:true。
     hooksMock.useEvalRuns.mockReturnValue(
@@ -818,7 +850,10 @@ describe("EvalTab 常驻工具栏", () => {
     );
     renderEvalTab();
 
-    expect(screen.queryByTestId("eval-run-banner")).toBeNull();
+    // 槽常驻（spec §10）：空闲态容器也在，只是内容换成 muted 单行；细线已退役。
+    const slot = screen.getByTestId("eval-run-banner");
+    expect(slot.textContent).toContain("尚未评测");
+    expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.queryByTestId("eval-run-progress")).toBeNull();
   });
 

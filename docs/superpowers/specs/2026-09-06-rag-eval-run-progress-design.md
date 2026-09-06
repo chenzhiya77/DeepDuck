@@ -211,7 +211,9 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   slotViewHistory(跳转按钮 aria+title)+ dur 三键(durSeconds/durMinutes/
   durMinutesSeconds);空历史文案**复用既有死键 `neverRan`**(改词「尚未评测」/
   「Not yet evaluated」),`lastRunLabel` 退役(无消费者,语义由 slotSummary 模板承载);
-  三处同步。
+  三处同步。`slotSummary` 的 duration 参可空(Task 16 校正):缺戳时省耗时段
+  (`上次评测 · 完整评测`)而非显假数字;摘要行相对时间传 `useI18n().locale`
+  (跟 UI locale,不走 formatTimeAgo 的 cookie 兜底)。
 - 测试:纯函数单测(durationParts 三档/tierOfRun/runDurationSeconds 含缺戳与倒序
   防御;相对时间由既有 formatTimeAgo 覆盖,不新增);slot dom 三态断言 +
   跳转按钮 + error 色调;eval-tab 断言容器常驻(空闲态也在、不再 `running &&`)。

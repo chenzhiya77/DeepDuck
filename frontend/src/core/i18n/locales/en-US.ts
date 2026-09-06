@@ -562,7 +562,7 @@ export const enUS: Translations = {
       logFail: (phase, done, total, failed) => `${phase} ${done}/${total}, ${failed} failed so far`,
       logWaiting: "Run started, waiting for the first progress event…",
       bannerAria: (phase, percent) => `${phase}, ${percent}% complete overall`,
-      slotSummary: (tier, duration) => `Last eval · ${tier} · took ${duration}`,
+      slotSummary: (tier, duration) => (duration ? `Last eval · ${tier} · took ${duration}` : `Last eval · ${tier}`),
       slotSummaryFailed: "Last eval failed",
       slotViewHistory: "View history",
       durSeconds: (seconds) => `${seconds}s`,

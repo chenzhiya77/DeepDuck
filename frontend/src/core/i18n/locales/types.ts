@@ -498,7 +498,7 @@ export interface Translations {
       bannerAria: (phase: string, percent: number) => string;
       /** 常驻状态槽（spec 2026-09-06 §10）：空闲态单行摘要（不放题数，检索质量卡
        *  已有 n=K）；时长结构件（durationParts）→ dur* 键文案。 */
-      slotSummary: (tier: string, duration: string) => string;
+      slotSummary: (tier: string, duration: string | null) => string;
       slotSummaryFailed: string;
       slotViewHistory: string;
       durSeconds: (seconds: number) => string;

@@ -284,6 +284,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const progress = runsQuery.data?.progress ?? null;
   // 在飞那次的档位：触发时记录（runTier），刷新后按 phase 兜底推断，最后回退单选。
   const bannerTier = runningTier(progress, runTier, tier);
+  // 常驻状态槽（spec §10）：空闲态摘要数据源 = 历史首行（含 error/skipped）。
+  const lastRun = runsQuery.data?.runs[0] ?? null;
 
   // 运行态按钮文案（用户定案）：4 字阶段名 + n/3，与「运行评测/完整评测」等 4 字
   // 按钮对齐。快速档（L1 单阶段）不显计数——避免"1/3 却到不了 3/3"的新假状态；
@@ -527,9 +529,16 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         <div className="flex min-w-0 flex-col gap-4">
           {view === "overview" && (
             <>
-              {/* 运行进度容器（spec 2026-09-06 §9）：仅总览、仅运行中，检索质量卡上方。
+              {/* 常驻评测状态槽（spec 2026-09-06 §9/§10）：仅总览，检索质量卡上方；
+                  运行中 = 两行进度 UI，空闲 = 上次评测摘要/尚未评测（自动 morph）。
                   题库/历史视图不渲染——那里由工具栏按钮的 4 字阶段名承载紧凑表面。 */}
-              {running && <EvalRunBanner progress={progress} tier={bannerTier} />}
+              <EvalRunBanner
+                lastRun={lastRun}
+                onViewHistory={() => setView("history")}
+                progress={progress}
+                running={running}
+                tier={bannerTier}
+              />
 
               {/* 指标总览块（2026-09-05 三迭代）：横向滑块与 min-w 下限沉进
                   overview 两张卡各自内部——每卡独立横滚，不再共用总览块一个

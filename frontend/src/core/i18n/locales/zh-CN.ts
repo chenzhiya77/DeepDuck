@@ -541,7 +541,7 @@ export const zhCN: Translations = {
       logFail: (phase, done, total, failed) => `${phase} ${done}/${total}，累计失败 ${failed}`,
       logWaiting: "评测已启动，等待首个进度事件…",
       bannerAria: (phase, percent) => `${phase}，整体完成 ${percent}%`,
-      slotSummary: (tier, duration) => `上次评测 · ${tier} · 耗时 ${duration}`,
+      slotSummary: (tier, duration) => (duration ? `上次评测 · ${tier} · 耗时 ${duration}` : `上次评测 · ${tier}`),
       slotSummaryFailed: "上次评测失败",
       slotViewHistory: "查看历史",
       durSeconds: (seconds) => `${seconds} 秒`,

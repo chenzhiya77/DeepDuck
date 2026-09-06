@@ -268,9 +268,14 @@
 - Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(去掉 `running &&`,槽常驻总览;传 runs 首行)
 - Modify: `frontend/tests/unit/knowledge/{eval-run-banner.dom,eval-tab.dom}.test.tsx`
 
-- [ ] RED:dom 三态断言 + 跳转按钮 + error 色调 + eval-tab 空闲态容器在。
-- [ ] Implement;GREEN;revert proof;knowledge 全量 + `pnpm check`。
-- [ ] Commit: `feat(rag): persist eval status slot with last-run summary`。
+- [x] RED:dom 三态断言 + 跳转按钮 + error 色调 + eval-tab 空闲态容器在（banner 1 file failed、eval-tab 1 file failed）。
+- [x] Implement;GREEN;revert proof(stash banner+eval-tab → 两文件均 failed、恢复复绿);knowledge **63 files passed|1 预存**;`pnpm check` exit 0。
+- [x] Commit: `feat(rag): persist eval status slot with last-run summary`(本提交)。
+- 实施校正:`slotSummary(tier, duration|null)`——缺戳时省耗时段而非显假数字;相对时间
+  传 `useI18n().locale`(跟 UI locale,不走 cookie 兜底)。
+- 陷阱记录:①秒级 ETA 用例夹具落在 Math.round 取整边界(elapsed 6s → remaining 恰 2.5)
+  致组件渲染与断言两次采样跨档 flaky——夹具移离边界(7s);②rstest stdout 带 ANSI 色码,
+  Select-String 模式会漏配彩色行造成「假失败」误读——验证以落盘日志为准。
 
 ### Task 17: 回归收官与验收
 

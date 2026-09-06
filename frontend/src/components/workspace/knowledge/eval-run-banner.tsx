@@ -13,18 +13,30 @@
  *
  * 挂载点在总览视图检索质量卡上方（Task 12），仅运行中渲染；题库/历史仍由工具栏
  * 按钮的 4 字阶段名承载紧凑表面。
+ *
+ * 常驻状态槽（spec 2026-09-06 §10，Task 16）：容器三态自动 morph——running 即上述
+ * 两行进度 UI；idle 且有历史 → 单行摘要（上次评测 · 档位 · 耗时 + 相对时间 + 历史
+ * 跳转，error/skipped 行 destructive 色调）；idle 且无历史 → muted「尚未评测」。
+ * 不加手动切换按钮：drain 后进度注册表已清空，完成后的「进度页」无数据可画。
  */
+import { History } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   EVAL_PHASE_ORDER,
   adaptiveWeights,
+  durationParts,
   etaMinutes,
   etaSeconds,
   overallFraction,
+  runDurationSeconds,
+  tierOfRun,
   type EvalPhaseWeights,
   type EvalTier,
 } from "@/core/knowledge/eval-run-status";
-import type { EvalRunProgress } from "@/core/knowledge/types";
+import type { EvalRunProgress, EvalRunSummary } from "@/core/knowledge/types";
+import { formatTimeAgo } from "@/core/utils/datetime";
 import { cn } from "@/lib/utils";
 
 export interface EvalRunBannerProps {
@@ -32,6 +44,12 @@ export interface EvalRunBannerProps {
   progress: EvalRunProgress | null;
   /** 档位决定流水线段数：快速档只有检索一段（无刻线）。 */
   tier: EvalTier;
+  /** 运行态开关：false → 槽切空闲态（上次评测摘要 / 尚未评测）。 */
+  running?: boolean;
+  /** 历史首行（含 error/skipped）：空闲态摘要数据源；null = 从未评测。 */
+  lastRun?: EvalRunSummary | null;
+  /** 空闲态历史跳转：桥接历史视图/run 抽屉的逐题详情。 */
+  onViewHistory?: () => void;
   className?: string;
 }
 
@@ -39,9 +57,59 @@ type EvalPhase = EvalRunProgress["phase"];
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
-export function EvalRunBanner({ progress, tier, className }: EvalRunBannerProps) {
-  const { t } = useI18n();
+export function EvalRunBanner({ progress, tier, running = true, lastRun = null, onViewHistory, className }: EvalRunBannerProps) {
+  const { t, locale } = useI18n();
   const tk = t.knowledge.eval;
+
+  // 空闲态（spec §10）：单行摘要 / 尚未评测；drain 瞬间靠 key 变化淡入替换。
+  if (!running) {
+    if (lastRun === null) {
+      return (
+        <div className={cn("bg-card rounded-lg border px-3 py-2", className)} data-testid="eval-run-banner">
+          <span className="text-muted-foreground text-xs">{tk.neverRan}</span>
+        </div>
+      );
+    }
+    const failed = lastRun.status !== "completed";
+    const secs = runDurationSeconds(lastRun);
+    const parts = secs === null ? null : durationParts(secs);
+    const durationText =
+      parts === null
+        ? null
+        : parts.kind === "seconds"
+          ? tk.durSeconds(parts.value)
+          : parts.kind === "minutes"
+            ? tk.durMinutes(parts.value)
+            : tk.durMinutesSeconds(parts.minutes, parts.seconds);
+    return (
+      <div className={cn("bg-card flex items-center justify-between gap-2 rounded-lg border px-3 py-2", className)} data-testid="eval-run-banner">
+        <span
+          className={cn("animate-in fade-in-0 truncate text-xs", failed ? "text-destructive" : "text-muted-foreground")}
+          data-testid="eval-slot-text"
+          key={`${lastRun.run_id}:${failed ? "failed" : "summary"}`}
+        >
+          {failed ? tk.slotSummaryFailed : tk.slotSummary(tierOfRun(lastRun) === "l1_l2" ? tk.tierFull : tk.tierQuick, durationText)}
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          {lastRun.created_at !== null && (
+            <span className="text-muted-foreground text-xs tabular-nums">{formatTimeAgo(lastRun.created_at, locale)}</span>
+          )}
+          <Button
+            aria-label={tk.slotViewHistory}
+            className="text-muted-foreground h-6 w-6"
+            data-testid="eval-slot-history"
+            onClick={onViewHistory}
+            size="icon"
+            title={tk.slotViewHistory}
+            type="button"
+            variant="ghost"
+          >
+            <History className="h-3.5 w-3.5" />
+          </Button>
+        </span>
+      </div>
+    );
+  }
 
   const phases: EvalPhase[] = tier === "l1" ? EVAL_PHASE_ORDER.slice(0, 1) : EVAL_PHASE_ORDER;
   const weights: EvalPhaseWeights = adaptiveWeights(progress, tier);
