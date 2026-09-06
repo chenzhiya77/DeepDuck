@@ -467,7 +467,6 @@ export interface Translations {
         global: string;
         summary: string;
       };
-      noQuestionsInBatch: string;
       /** 二期三视图（spec 2026-08-27 §3，plan Task 4/5）：分段控件标签与 aria。 */
       views: { overview: string; questions: string; history: string };
       viewSwitchLabel: string;

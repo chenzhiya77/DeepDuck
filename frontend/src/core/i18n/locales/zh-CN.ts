@@ -524,7 +524,6 @@ export const zhCN: Translations = {
         global: "全局",
         summary: "汇总",
       },
-      noQuestionsInBatch: "本批次无此类题目",
       views: { overview: "总览", questions: "题库", history: "历史" },
       viewSwitchLabel: "评测视图切换",
       tierQuick: "快速评测",

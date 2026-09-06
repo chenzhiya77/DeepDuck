@@ -300,7 +300,9 @@ describe("Layer 1 表格", () => {
 
     const missingRow = screen.getByTestId("eval-row-relation");
     expect(missingRow.className).toContain("text-muted-foreground");
-    expect(missingRow.textContent).toContain("本批次无此类题目");
+    // 缺失行题量后缀与数据行同词汇（n=0），不再用长解释句（2026-09-06 对齐）。
+    expect(missingRow.textContent).toContain("(n=0)");
+    expect(missingRow.textContent).not.toContain("本批次无此类题目");
     // 缺失行同样用显示名而非 wire 键（2026-08-26 补遗）
     expect(missingRow.textContent).toContain("关系");
     expect(missingRow.textContent).not.toContain("relation");

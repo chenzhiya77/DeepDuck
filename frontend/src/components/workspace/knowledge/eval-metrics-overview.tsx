@@ -236,7 +236,12 @@ function Layer1Table({ metrics }: { metrics: NonNullable<MetricsOverview["layer1
           if (!hasData) {
             return (
               <TableRow key={category} data-testid={testId} className="text-muted-foreground">
-                <TableCell className="py-1.5" colSpan={5}>{tk.category[category]} ({tk.noQuestionsInBatch})</TableCell>
+                {/* 题量后缀与数据行同词汇（2026-09-06 对齐）：缺失类显 (n=0) 而非
+                    长解释句——注释列全表统一「名称 (n=K)」，纵向一眼可比。 */}
+                <TableCell className="py-1.5" colSpan={5}>
+                  {tk.category[category]}{" "}
+                  <span className="font-normal">(n=0)</span>
+                </TableCell>
               </TableRow>
             );
           }

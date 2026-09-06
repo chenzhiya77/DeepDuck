@@ -541,7 +541,6 @@ export const enUS: Translations = {
         global: "Global",
         summary: "Summary",
       },
-      noQuestionsInBatch: "No questions of this type in the batch",
       views: {
         overview: "Overview",
         questions: "Questions",
