@@ -803,3 +803,44 @@ async def test_history_unknown_kb_404(service) -> None:
     client = _client(service)
 
     assert client.get("/api/knowledge-bases/kb-missing/eval-runs").status_code == 404
+
+
+# ── POST /eval-runs/cancel（spec 2026-09-06 §11 Task 19）───────────
+
+
+class _FakeTask:
+    """duck-type asyncio.Task：端点测试避跨事件环取消真任务（portal 环 ≠ 测试环）。"""
+
+    def __init__(self) -> None:
+        self.cancel_called = False
+
+    def done(self) -> bool:
+        return False
+
+    def cancel(self, msg: object = None) -> bool:
+        self.cancel_called = True
+        return True
+
+
+async def test_cancel_endpoint_409_when_idle(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    assert client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs/cancel").status_code == 409
+
+
+async def test_cancel_endpoint_cancels_registered_task(service) -> None:
+    from deerflow.knowledge.eval import ondemand as eval_ondemand
+
+    client = _client(service)
+    kb = _create_kb(client)
+    fake = _FakeTask()
+    eval_ondemand._TASKS[kb["id"]] = fake  # type: ignore[assignment]
+    try:
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/eval-runs/cancel")
+
+        assert response.status_code == 202
+        assert response.json() == {"status": "cancelled"}
+        assert fake.cancel_called is True
+    finally:
+        eval_ondemand._TASKS.pop(kb["id"], None)

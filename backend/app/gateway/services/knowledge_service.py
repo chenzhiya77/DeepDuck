@@ -31,7 +31,7 @@ import numpy as np
 
 from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
-from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
+from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, cancel_eval_run, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
 from deerflow.knowledge.eval.persistence import ENV_CI
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.eval.trend import MAX_DAYS_BACK, aggregate_trend_points, latest_layer_row, window_cutoff
@@ -1366,6 +1366,14 @@ class KnowledgeService:
             raise EvalQuestionBankEmpty(f"eval question bank is empty for kb {kb_id}")
         self.eval_trigger_fn(kb_id, layers=layers, question_ids=question_ids)
         return True
+
+    async def cancel_eval_run(self, kb_id: str) -> bool:
+        """终止在飞按需评测（spec 2026-09-06 §11）；False = 无在飞 run（router → 409）。
+
+        取消注入 CancelledError 后 runner 自落 cancelled 行并弹注册表 →
+        already_running 锁立即释放，可立即再触发。
+        """
+        return cancel_eval_run(kb_id)
 
     def _schedule_eval_run(self, kb_id: str, *, layers: str = "l1", question_ids: Collection[str] | None = None) -> None:
         runner = run_full_eval_for_kb if layers == "l1_l2" else run_layer1_for_kb

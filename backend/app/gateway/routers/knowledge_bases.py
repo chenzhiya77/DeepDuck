@@ -743,6 +743,16 @@ async def trigger_eval_run(request: Request, kb_id: str, body: EvalRunTriggerReq
     return {"status": "enqueued" if enqueued else "already_running"}
 
 
+@router.post("/{kb_id}/eval-runs/cancel", status_code=202)
+async def cancel_eval_run(request: Request, kb_id: str):
+    """终止在飞按需评测（spec 2026-09-06 §11）：非在飞 409；在飞 202，runner
+    自落 cancelled 行并释放 already_running 锁。"""
+    service = await _require_kb_access(request, kb_id)
+    if not await service.cancel_eval_run(kb_id):
+        raise HTTPException(status_code=409, detail="No eval run in flight")
+    return {"status": "cancelled"}
+
+
 @router.get("/{kb_id}/eval-runs")
 async def list_eval_runs(request: Request, kb_id: str, limit: int = Query(default=50, ge=1), include_ci: bool = False):
     """评测运行历史列表（spec 2026-08-27 §6.1）：created_at 倒序轻量摘要 +

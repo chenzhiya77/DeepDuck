@@ -704,6 +704,11 @@ async def run_layer2_evaluation(
     outcomes: dict[str, TraceOutcome] = {}
     failures: dict[str, BaseException] = {}
     total_questions = len(questions)
+    if progress_hook is not None:
+        # 段入口事件（spec §11 实施校正，与 ragas 段入口同词汇）：旧实现只在每题
+        # 毕才回调 → 首题在飞期间（agent 多轮可达分钟级）phase 停 layer1，UI 一直
+        # 显「检索评测」——与用户批评过的假进度同族缺陷。
+        progress_hook("questions", 0, 0, total_questions)
     for question in questions:
         try:
             outcomes[question.id] = await agent_runner(question)

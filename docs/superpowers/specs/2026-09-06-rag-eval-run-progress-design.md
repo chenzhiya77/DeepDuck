@@ -254,3 +254,7 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   statusCancelled;三处同步。Types:`EvalRunSummary.status` 联合加 `"cancelled"`。
 - 不做:CLI 进程 run 的终止(异进程,出范围);undo(终止不可逆,toast 不带撤销);
   progress 契约变更。
+- 实施校正(Task 19 发现):**questions 段入口 hook**——旧实现只在每题毕才回调,
+  首题在飞期间(agent 多轮可达分钟级)phase 停 layer1、UI 一直显「检索评测」
+  (与假进度同族缺陷);现补段入口事件 `("questions", 0, 0, N)`(与 ragas 段入口
+  同词汇),hook 序列单测同步更新。

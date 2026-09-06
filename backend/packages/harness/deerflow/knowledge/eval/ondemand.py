@@ -32,6 +32,7 @@ to exercise the orchestration without real retrieval impls or agent runs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
@@ -68,6 +69,12 @@ _IN_FLIGHT: dict[str, int] = {}
 #: duration source and the single-line UI log event).
 _PROGRESS: dict[str, dict[str, object]] = {}
 
+#: In-flight run tasks per KB (spec 2026-09-06 §11) — the cancellation handle
+#: registry: runners self-register ``asyncio.current_task()`` on their first
+#: line (same vocabulary as the ``_IN_FLIGHT`` synchronous increment) and pop
+#: in ``finally``; ``cancel_eval_run`` cancels the parked task from anywhere.
+_TASKS: dict[str, asyncio.Task] = {}
+
 #: Layer 2 progress hook signature: ``(phase, done, failed, total)``.
 ProgressHook = Callable[[str, int, int, int], None]
 
@@ -79,6 +86,21 @@ class EvalQuestionBankEmpty(RuntimeError):
 def eval_run_in_progress(kb_id: str) -> bool:
     """True while any on-demand run for the KB is active."""
     return _IN_FLIGHT.get(kb_id, 0) > 0
+
+
+def cancel_eval_run(kb_id: str) -> bool:
+    """Cancel the KB's in-flight on-demand run; ``False`` when none (spec §11).
+
+    ``task.cancel()`` injects ``CancelledError`` at the runner's nearest await
+    point — the whole chain is await points (search fanout / agent turns /
+    judge HTTP / ragas executor), so in-flight calls abort immediately; the
+    runner's ``except asyncio.CancelledError`` persists the cancelled row.
+    """
+    task = _TASKS.get(kb_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
 
 
 def get_eval_progress(kb_id: str) -> dict[str, object] | None:
@@ -237,8 +259,14 @@ async def run_layer1_for_kb(
     # 同步自增在途计数（runner 第一行、先于任何 await）：create_task 调度后即生效，
     # 关闭"触发后早期 poll 读到 in_flight=false → 覆盖前端乐观值、杀死轮询"的竞态。
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    # 终止句柄自注册（spec §11）：与计数同词汇同位置；直接 await（非 task）调用时
+    # current_task 为 None，跳过注册（取消仅对在飞 task 有意义）。
+    _current = asyncio.current_task()
+    if _current is not None:
+        _TASKS[kb_id] = _current
     questions = _filter_questions(await load_questions(golden_path), question_ids)
     if not questions:
+        _TASKS.pop(kb_id, None)
         _release_run(kb_id)
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
@@ -261,11 +289,16 @@ async def run_layer1_for_kb(
             environment=ENV_LOCAL,
         )
         return run_id
+    except asyncio.CancelledError:
+        # 终止（spec §11）：落 cancelled 行（layer1 未跑完 → 无指标）后重抛。
+        await _save_cancelled_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at))
+        raise
     except Exception:
         logger.exception("on-demand eval run %s failed for kb %s", run_id, kb_id)
         await _save_error_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at))
         return run_id
     finally:
+        _TASKS.pop(kb_id, None)
         _release_run(kb_id)
 
 
@@ -295,8 +328,13 @@ async def run_full_eval_for_kb(
     # 同步自增在途计数（runner 第一行、先于任何 await）：同 run_layer1_for_kb，
     # 关闭触发后早期 poll 读到 in_flight=false 的竞态窗口。
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
+    # 终止句柄自注册（spec §11）：同 run_layer1_for_kb。
+    _current = asyncio.current_task()
+    if _current is not None:
+        _TASKS[kb_id] = _current
     questions = _filter_questions(await load_questions(golden_path), question_ids)
     if not questions:
+        _TASKS.pop(kb_id, None)
         _release_run(kb_id)
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
@@ -308,6 +346,8 @@ async def run_full_eval_for_kb(
         # ragas 逐 job + 逐题 judge）。
         _progress_update(kb_id, phase=phase, done=done, failed=failed, total=total)
 
+    # layer1 指标在 try 外初始化：CancelledError 分支要带已跑完的廉价层成果。
+    layer1_metrics: Mapping[str, object] | None = None
     try:
         payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at, progress_hook=_forward_progress)
         layer1_metrics = layer1_metrics_from_report(payload)
@@ -341,11 +381,16 @@ async def run_full_eval_for_kb(
             environment=ENV_LOCAL,
         )
         return run_id
+    except asyncio.CancelledError:
+        # 终止（spec §11）：layer1 已跑完则带其指标（廉价层成果永不丢）后重抛。
+        await _save_cancelled_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at), layer1_metrics=layer1_metrics)
+        raise
     except Exception:
         logger.exception("on-demand full eval run %s failed for kb %s", run_id, kb_id)
         await _save_error_row(run_id=run_id, kb_id=kb_id, created_at=datetime.fromisoformat(generated_at))
         return run_id
     finally:
+        _TASKS.pop(kb_id, None)
         _release_run(kb_id)
 
 
@@ -379,6 +424,27 @@ async def _save_error_row(*, run_id: str, kb_id: str, created_at: datetime) -> N
         )
     except Exception:
         logger.exception("failed to persist error row %s for kb %s", run_id, kb_id)
+
+
+async def _save_cancelled_row(*, run_id: str, kb_id: str, created_at: datetime, layer1_metrics: Mapping[str, object] | None = None) -> None:
+    """Best-effort cancelled-row persistence (spec §11) — never raises.
+
+    status 为自由字符串列（零迁移）；读集只认 completed → cancelled 行自动
+    排除出 latest/trend，历史行是其唯一曝光面。
+    """
+
+    try:
+        await save_eval_run(
+            run_id=run_id,
+            kb_id=kb_id,
+            status="cancelled",
+            created_at=created_at,
+            completed_at=datetime.now(UTC),
+            layer1_metrics=layer1_metrics,
+            environment=ENV_LOCAL,
+        )
+    except Exception:
+        logger.exception("failed to persist cancelled row %s for kb %s", run_id, kb_id)
 
 
 async def _build_default_searchers(kb_id: str) -> dict[str, SearchFn]:

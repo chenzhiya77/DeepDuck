@@ -581,9 +581,10 @@ class TestRunLayer2ProgressHook:
             progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
         )
 
-        # 每题（agent 运行）毕回调一次；第三段（质量评估）= ragas jobs + citation judge 逐题，
-        # 无 evaluator 时 ragas jobs=0，judge 2 题 → total=2（spec 2026-09-06 §9）。
+        # 段入口事件 + 每题（agent 运行）毕回调一次；第三段（质量评估）= ragas jobs + citation judge 逐题，
+        # 无 evaluator 时 ragas jobs=0，judge 2 题 → total=2（spec 2026-09-06 §9/§11）。
         assert calls == [
+            ("questions", 0, 0, 2),
             ("questions", 1, 0, 2),
             ("questions", 2, 0, 2),
             ("ragas", 0, 0, 2),
@@ -609,9 +610,10 @@ class TestRunLayer2ProgressHook:
             progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
         )
 
-        # 单题失败：failed++，done 仍计（契约：failed 独立不从 done 扣）；
+        # 段入口事件；单题失败：failed++，done 仍计（契约：failed 独立不从 done 扣）；
         # 第三段 total = 存活题的 judge job 数（1）。
         assert calls == [
+            ("questions", 0, 0, 2),
             ("questions", 1, 0, 2),
             ("questions", 2, 1, 2),
             ("ragas", 0, 1, 1),

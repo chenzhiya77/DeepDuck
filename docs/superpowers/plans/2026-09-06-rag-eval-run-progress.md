@@ -307,9 +307,12 @@
 - Modify: `backend/app/gateway/services/knowledge_service.py` + 路由(`POST /eval-runs/cancel`:非在飞 409、在飞 202)
 - Modify: `backend/tests/knowledge/eval/test_ondemand.py`、`backend/tests/knowledge/test_eval_runs_api.py`
 
-- [ ] RED:idle cancel 409;运行中 cancel → 行 status=cancelled + `_IN_FLIGHT/_PROGRESS/_TASKS` 清空 + 可立即再触发;layer2 段 cancel 保留 layer1 指标;`_TASKS` 注册/清理。
-- [ ] Implement;GREEN;revert proof;ruff 双净。
-- [ ] Commit: `feat(rag): add on-demand eval run cancellation`。
+- [x] RED:idle cancel 409;运行中 cancel → 行 status=cancelled + `_IN_FLIGHT/_PROGRESS/_TASKS` 清空 + 可立即再触发;layer2 段 cancel 保留 layer1 指标;`_TASKS` 注册/清理(5 failed)。
+- [x] Implement;GREEN(**358 passed**);revert proof(stash 四实现文件 → 5 failed、恢复复绿);ruff 双净。
+- [x] Commit: `feat(rag): add on-demand eval run cancellation`(本提交)。
+- 实施校正:①端点测试用 duck-type 假任务避跨事件环取消(portal 环≠测试环);
+  ②layer2 cancel 用例轮询等 phase 切换而非固定 sleep;③揪出并修复 questions 段
+  入口 hook 缺失(首题在飞期间 phase 停 layer1 的同族假进度缺陷,spec §11 已记)。
 
 ### Task 20: 前端终止表面(槽两步确认 + mutation + 历史徽章)
 

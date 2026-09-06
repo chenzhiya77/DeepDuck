@@ -17,6 +17,7 @@ searchers → run_evaluation → 报告映射 → save_eval_run），但复用�
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import UTC, datetime
 
@@ -445,3 +446,80 @@ async def test_progress_tail_and_phase_durations() -> None:
     failed_tail = ondemand.get_eval_progress(KB)
     assert failed_tail["tail"]["kind"] == "fail"
     assert failed_tail["tail"]["failed"] == 1
+
+
+# ── 运行终止（spec 2026-09-06 §11 Task 19）──────────────────
+
+
+async def test_cancel_in_flight_layer1_run_writes_cancelled_row_and_releases_lock(tmp_path, store) -> None:
+    """cancel 注入 CancelledError → cancelled 行 + 锁/注册表清理 → 可立即再触发。"""
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+    parked = asyncio.Event()
+
+    searchers = _stub_searchers()
+
+    async def parking_vector(query: str, top_k: int):
+        await parked.wait()  # 永停，等 cancel 把 CancelledError 注进来
+
+    searchers["vector"] = parking_vector
+
+    task = asyncio.create_task(ondemand.run_layer1_for_kb(KB, golden_path=golden, searchers=searchers, generated_at=GENERATED_AT))
+    await asyncio.sleep(0.05)  # 让 runner 停进 searcher
+    assert ondemand.eval_run_in_progress(KB)
+    assert KB in ondemand._TASKS
+
+    assert ondemand.cancel_eval_run(KB) is True
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    assert rows[0].status == "cancelled"
+    assert rows[0].layer1_metrics == {}
+    # 锁与注册表一并清理：cancel 再调 no-op，进度条目已弹。
+    assert not ondemand.eval_run_in_progress(KB)
+    assert ondemand.get_eval_progress(KB) is None
+    assert ondemand.cancel_eval_run(KB) is False
+
+
+async def test_cancel_during_layer2_keeps_layer1_metrics(tmp_path, store) -> None:
+    """layer2 段 cancel：廉价层成果不丢——cancelled 行带 layer1 指标。"""
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+    parked = asyncio.Event()
+
+    async def parking_runner(*_args, **_kwargs):
+        await parked.wait()
+
+    task = asyncio.create_task(
+        ondemand.run_full_eval_for_kb(
+            KB,
+            golden_path=golden,
+            searchers=_stub_searchers(),
+            agent_runner=parking_runner,
+            judge_llm=None,
+            ragas_evaluator=None,
+            generated_at=GENERATED_AT,
+        )
+    )
+    await asyncio.sleep(0.05)
+    # layer1 已跑完、停在答题段（轮询等 phase 切换，不用固定 sleep 赌调度）。
+    for _ in range(100):
+        if (ondemand.get_eval_progress(KB) or {}).get("phase") == "questions":
+            break
+        await asyncio.sleep(0.01)
+    assert ondemand.get_eval_progress(KB)["phase"] == "questions"
+
+    assert ondemand.cancel_eval_run(KB) is True
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    assert rows[0].status == "cancelled"
+    assert rows[0].layer1_metrics["summary"]["question_count"] == 1
+
+
+async def test_cancel_without_in_flight_run_is_noop() -> None:
+    assert ondemand.cancel_eval_run(KB) is False
