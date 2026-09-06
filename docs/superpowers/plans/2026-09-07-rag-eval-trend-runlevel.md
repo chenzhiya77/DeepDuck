@@ -78,5 +78,5 @@
 - [x] 后端定向 65 passed + `tests/knowledge/eval` 全目录绿 + ruff 双净。
 - [x] 前端定向 133 passed + `pnpm check` clean；knowledge 全目录 943 passed |
   1 预存（chat-panel 模型选择器，基线同款）。
-- [ ] 手动验收：重启 gateway → 滚轮放大逐次测试出点 / 缩小看趋势线且 hover
-  仍出该次运行数据；日/周/月切换瞬时移窗不闪加载态。
+- [x] 手动验收：重启 gateway → 滚轮放大逐次测试出点 / 缩小看趋势线且 hover
+  仍出该次运行数据；日/周/月切换瞬时移窗不闪加载态。（用户 2026-09-07 自测通过）
