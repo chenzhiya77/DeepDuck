@@ -228,7 +228,7 @@
 ## Task 13: 回归 + 手动验收 + 回写
 
 - [x] knowledge 套件 + `pnpm check` + ruff 双净(预存 chat-panel 失败除外)。(knowledge **900 passed | 1 failed** 预存 chat-panel model-selector；check exit 0；ruff 于 Task 9 双净、Phase 5 未再改后端)
-- [ ] 手动验收(spec §9):完整档 → 总览容器出现、条随三段推进且刻度自适应、ETA warmup 后显分钟级剩余、日志单行滚动;drain 后容器卸载;快速档单段条满格即消;题库/历史按钮阶段名不变。
+- [ ] 手动验收(spec §9/§10):完整档 → 总览槽出现、条随三段推进且刻度自适应、ETA warmup 后显秒/分钟级剩余、日志单行滚动;drain 后槽**自动 morph 为单行摘要**(档位/耗时/相对时间/历史跳转)而不再卸载;快速档条逐题扫过;空闲态摘要行与「尚未评测」muted 行;error run 红色调 + 跳转;运行开始不再顶下卡片;题库/历史视图无槽、按钮阶段名不变。
 - [ ] 文档回写确认(spec §9 冻结、plan 本 Phase 勾选)。
 
 ## Task 14: 快速档空条 + ETA 按段外推(用户实测反馈,2026-09-06)
@@ -279,6 +279,6 @@
 
 ### Task 17: 回归收官与验收
 
-- [ ] 全量回归(backend eval 套件 + frontend knowledge + check)与 revert proof 复查。
-- [ ] 手动验收并入 Task 13 清单:空闲态摘要行(档位/耗时/相对时间/跳转)、error 行红色调、从未评测 muted 行、运行开始不再顶下卡片、drain 交叉淡入。
-- [ ] 文档回写确认(spec §10、plan 本 Phase 勾选)。
+- [x] 全量回归:backend eval 套件 **352 passed** + ruff 双净;frontend knowledge **63 files passed|1 预存**(chat-panel model-selector,零交集) + `pnpm check` exit 0。revert proof 复查:Task 14/15/16 各自的 stash 证明均成立(实现撤掉 → 对应用例 failed、恢复复绿)。
+- [x] 手动验收并入 Task 13 清单(上条已扩 §10 槽项并修正「drain 后卸载」过时表述;实测仍待用户)。
+- [x] 文档回写确认(spec §10 冻结含 Task 15/16 实施校正;plan Phase 6 全勾选)。
