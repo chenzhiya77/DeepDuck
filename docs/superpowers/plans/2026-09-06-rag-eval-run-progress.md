@@ -297,3 +297,34 @@
 - [x] GREEN;revert proof(stash service+banner+zh-CN → 两案均 failed、恢复复绿);eval API **43 passed**;banner/eval-tab passed;`pnpm check` exit 0。
 - [x] Commit: `fix(rag): align slot summary wording, compact duration units and utc offsets`(本提交)。
 - 根因记录:①「8 小时前」= naive ISO 被前端当本地时间(UTC+8);②文案/单位为用户观感定案,非缺陷。
+
+## Phase 7: 评测运行终止(spec §11,立项 2026-09-06)
+
+### Task 19: 后端终止机制(注册表 + cancelled 行 + cancel 端点)
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/eval/ondemand.py`(`_TASKS` 首行自注册/finally pop;两 runner `except asyncio.CancelledError` 落 cancelled 行(layer1 已跑完带其指标)→ re-raise;`cancel_eval_run(kb_id)` 助手)
+- Modify: `backend/app/gateway/services/knowledge_service.py` + 路由(`POST /eval-runs/cancel`:非在飞 409、在飞 202)
+- Modify: `backend/tests/knowledge/eval/test_ondemand.py`、`backend/tests/knowledge/test_eval_runs_api.py`
+
+- [ ] RED:idle cancel 409;运行中 cancel → 行 status=cancelled + `_IN_FLIGHT/_PROGRESS/_TASKS` 清空 + 可立即再触发;layer2 段 cancel 保留 layer1 指标;`_TASKS` 注册/清理。
+- [ ] Implement;GREEN;revert proof;ruff 双净。
+- [ ] Commit: `feat(rag): add on-demand eval run cancellation`。
+
+### Task 20: 前端终止表面(槽两步确认 + mutation + 历史徽章)
+
+**Files:**
+- Modify: `frontend/src/components/workspace/knowledge/eval-run-banner.tsx`(running 态 ETA 右侧 X 按钮;两步 inline 确认 3s 回退)
+- Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(onCancel 接线 + toast)、knowledge hooks(`useCancelEvalRun`)、`eval-run-history.tsx`(cancelled 分支 Ban+muted)
+- Modify: `frontend/src/core/knowledge/types.ts`(status 联合加 `"cancelled"`)、i18n×3(cancelRun/cancelConfirm/cancelToast/slotSummaryCancelled/statusCancelled)
+- Modify: `frontend/tests/unit/knowledge/{eval-run-banner.dom,eval-tab.dom,eval-run-history.dom}.test.*`
+
+- [ ] RED:running 态显 X;首击变「确认终止?」、再击发 onCancel、超时回退;eval-tab 接线;历史 cancelled 徽章;槽摘要 cancelled 文案。
+- [ ] Implement;GREEN;revert proof;knowledge 全量 + `pnpm check`。
+- [ ] Commit: `feat(rag): surface eval run cancel in status slot and history`。
+
+### Task 21: 回归收官与验收
+
+- [ ] 全量回归(backend eval 套件 + frontend knowledge + check/ruff)与 revert proof 复查。
+- [ ] 手动验收并入 Task 13 清单:运行中槽显 X + 两步确认;cancel 后历史行「已终止」、槽摘要「评测已终止」、锁释放可立即再触发;layer2 段 cancel 保留 layer1 指标。
+- [ ] 文档回写确认(spec §11、plan 本 Phase 勾选)。

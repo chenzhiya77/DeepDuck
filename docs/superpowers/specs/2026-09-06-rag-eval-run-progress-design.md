@@ -222,3 +222,35 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
 - 测试:纯函数单测(durationParts 三档/tierOfRun/runDurationSeconds 含缺戳与倒序
   防御;相对时间由既有 formatTimeAgo 覆盖,不新增);slot dom 三态断言 +
   跳转按钮 + error 色调;eval-tab 断言容器常驻(空闲态也在、不再 `running &&`)。
+
+## 11. 评测运行终止(2026-09-06 四轮设计,立项 Task 19-21)
+
+用户提问:「评测一旦点击就不能停止了,终止功能有必要做吗,现有逻辑能实现吗」。
+定案:**必要且可行**。
+
+- 现状缺口:触发是 fire-and-forget `asyncio.create_task`,**任务句柄未留存** → 无取消
+  抓手;`already_running` 幂等锁使误触发(错档/错范围)后整个 KB 锁到跑完(完整档
+  10-20 分钟)——终止是唯一逃生舱。
+- 机制(**零并发结构改动**):
+  - `_TASKS[kb_id] = asyncio.current_task()` runner 首行自注册(与 `_IN_FLIGHT` 同步
+    自增同词汇,先于任何 await);finally pop。
+  - `POST /eval-runs/cancel`:非在飞 409;在飞 `task.cancel()` → 202。CancelledError
+    注入最近 await 点——全链皆 await(三路检索 gather / agent 多轮 / judge HTTP /
+    ragas executor gather),在飞 HTTP 随即中断。
+  - 落行:`except asyncio.CancelledError` → `save_eval_run(status="cancelled")`,
+    **layer1 已跑完则带其指标**(与「廉价层成果永不丢」同词汇)→ re-raise。status
+    为自由字符串列**零迁移**;读集只认 completed → cancelled 自动排除出
+    latest/trend;历史行是其唯一曝光面。
+  - 清理复用 finally `_release_run`(弹 `_PROGRESS/_IN_FLIGHT`)+ `_TASKS.pop` →
+    **cancel 后 already_running 锁立即释放,可再触发**。
+- 前端表面:
+  - 槽 running 态 ETA 右侧加 X 按钮(控件≠文案,不破坏 §9「右侧只放 ETA」冻结);
+    **两步 inline 确认**:首击按钮变「确认终止?」(3s 超时回退),再击才发——长跑
+    误触代价高,不开 dialog(running 槽上 dialog 过重)。
+  - 成功 toast;轮询见 in_flight false → 走 drain 边自动刷新(既有机制,零新增)。
+  - 历史新增 cancelled 分支:`Ban` 图标 + muted + 「已终止」/「Cancelled」;槽空闲
+    摘要 cancelled 行用非 completed 色调但文案「评测已终止」(区别 failed「评测失败」)。
+- i18n 增量:cancelRun/cancelConfirm/cancelToast/slotSummaryCancelled + 历史
+  statusCancelled;三处同步。Types:`EvalRunSummary.status` 联合加 `"cancelled"`。
+- 不做:CLI 进程 run 的终止(异进程,出范围);undo(终止不可逆,toast 不带撤销);
+  progress 契约变更。
