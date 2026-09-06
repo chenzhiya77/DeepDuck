@@ -14,7 +14,7 @@ import { EvalMetricsOverview } from "@/components/workspace/knowledge/eval-metri
 import { I18nContext } from "@/core/i18n/context";
 import { enUS } from "@/core/i18n/locales/en-US";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import type { MetricsOverview } from "@/core/knowledge/types";
+import type { MetricsOverview, SparkMetricKey } from "@/core/knowledge/types";
 
 const LAYER1_METRICS: NonNullable<MetricsOverview["layer1"]>["metrics"] = {
   summary: { hit_rate: 0.928, recall_at_k: 0.897, mrr: 0.812, path_accuracy: 0.946, question_count: 20 },
@@ -42,7 +42,22 @@ const FULL_OVERVIEW: MetricsOverview = {
   },
 };
 
-function renderOverview(overview: MetricsOverview, props?: { onViewTrace?: (url: string) => void }, locale: "zh-CN" | "en-US" = "zh-CN") {
+/** 7 个 L2 键的 run 级 sparkline 序列（每键 ≥2 点才成线；spec §6.2）。 */
+const SPARKS: Record<SparkMetricKey, number[]> = {
+  faithfulness: [0.9, 0.92, 0.933],
+  answer_relevancy: [0.85, 0.877],
+  context_precision: [0.88, 0.9, 0.912],
+  context_recall: [0.8, 0.864],
+  citation_precision: [0.89, 0.91],
+  citation_recall: [0.82, 0.85],
+  seed_hit_rate: [0.7, 0.75],
+};
+
+function renderOverview(
+  overview: MetricsOverview,
+  props?: { onViewTrace?: (url: string) => void; sparks?: Record<SparkMetricKey, number[]> },
+  locale: "zh-CN" | "en-US" = "zh-CN",
+) {
   return render(
     <I18nContext.Provider value={{ locale, setLocale: () => undefined, t: locale === "zh-CN" ? zhCN : enUS }}>
       <EvalMetricsOverview overview={overview} {...props} />
@@ -496,6 +511,81 @@ describe("Layer 2 卡片", () => {
     renderOverview(noTrace, { onViewTrace: rs.fn() });
 
     expect(screen.queryByRole("button", { name: "查看 trace →" })).toBeNull();
+  });
+});
+
+describe("Layer 2 sparkline（spec 2026-09-06 §5，plan Task 3）", () => {
+  const L2_TILE_IDS = [
+    "faithfulness",
+    "answer_relevancy",
+    "context_precision",
+    "context_recall",
+    "citation_precision",
+    "citation_recall",
+    "seed_hit_rate",
+  ] as const;
+
+  it("embeds a fixed 28×12 sparkline in each of the 7 L2 tiles, on the value row", () => {
+    renderOverview(FULL_OVERVIEW, { sparks: SPARKS });
+
+    for (const id of L2_TILE_IDS) {
+      const valueRow = screen.getByTestId(`eval-card-value-${id}`);
+      const svg = valueRow.querySelector("svg");
+      expect(svg, `tile ${id} 应含 sparkline svg`).toBeTruthy();
+      // 折线（polyline）——与 ⓘ 图标（path）区分；端点实心圆（circle）。
+      expect(svg!.querySelector("polyline")).toBeTruthy();
+      expect(svg!.querySelector("circle")).toBeTruthy();
+      // 缩档 28×12（w-7 h-3）+ 中性 muted-foreground（不引入第 11 套颜色词汇）。
+      const cls = svg!.getAttribute("class") ?? "";
+      expect(cls).toContain("w-7");
+      expect(cls).toContain("h-3");
+      expect(cls).toContain("text-muted-foreground");
+      // 与数值同行：数字与 svg 都是 value-row 容器的直接子节点（兄弟）。
+      const number = valueRow.querySelector(".font-semibold");
+      expect(number).toBeTruthy();
+      expect(number!.parentElement).toBe(valueRow);
+      expect(svg!.parentElement).toBe(valueRow);
+    }
+  });
+
+  it("gives the retired context_recall tile a sparkline (its only scan surface)", () => {
+    renderOverview(FULL_OVERVIEW, { sparks: SPARKS });
+
+    // context_recall 不在主图图例/picker，但瓦片 sparkline 是它唯一的走势扫描入口。
+    const svg = screen.getByTestId("eval-card-value-context_recall").querySelector("svg");
+    expect(svg).toBeTruthy();
+    expect(svg!.querySelector("polyline")).toBeTruthy();
+  });
+
+  it("draws no sparkline when a series is empty or has a single point", () => {
+    const partial: Record<SparkMetricKey, number[]> = {
+      ...SPARKS,
+      faithfulness: [], // 空数组 → 无线
+      context_recall: [0.86], // 单点（<2）→ 无线
+    };
+    renderOverview(FULL_OVERVIEW, { sparks: partial });
+
+    expect(screen.getByTestId("eval-card-value-faithfulness").querySelector("svg")).toBeNull();
+    expect(screen.getByTestId("eval-card-value-context_recall").querySelector("svg")).toBeNull();
+    // 其余瓦片照常出线。
+    expect(screen.getByTestId("eval-card-value-answer_relevancy").querySelector("svg")).toBeTruthy();
+    // 数值行仍在（无 sparkline 时保持原样：数字照显）。
+    expect(screen.getByTestId("eval-card-faithfulness").textContent).toContain("93.3%");
+  });
+
+  it("draws no sparkline when the sparks prop is absent (trend query not resolved)", () => {
+    renderOverview(FULL_OVERVIEW);
+
+    for (const id of L2_TILE_IDS) {
+      expect(screen.getByTestId(`eval-card-value-${id}`).querySelector("svg")).toBeNull();
+    }
+  });
+
+  it("keeps the Layer 1 retrieval table free of sparklines (L1 无瓦片表面)", () => {
+    renderOverview(FULL_OVERVIEW, { sparks: SPARKS });
+
+    // 检索质量是表格而非瓦片：sparkline 只落 7 个 L2 瓦片，L1 表格区零 svg。
+    expect(screen.getByTestId("eval-layer1-table").querySelectorAll("svg")).toHaveLength(0);
   });
 });
 

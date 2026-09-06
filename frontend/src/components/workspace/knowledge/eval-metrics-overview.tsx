@@ -16,20 +16,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import type { MetricsOverview } from "@/core/knowledge/types";
+import type { MetricsOverview, TrendResponse } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
 import { classifyRagasSkipReason, getProgressBarColor, getSummaryBandClass } from "./eval-metrics-overview.utils";
+import { EvalSparkline } from "./eval-sparkline";
 
 interface EvalMetricsOverviewProps {
   overview: MetricsOverview;
   onViewTrace?: (url: string) => void;
+  /** 7 个 L2 瓦片的 sparkline 数据源（useEvalTrend 的 sparks，与粒度解耦）；
+   *  trend query 未就绪时为 undefined，瓦片数值行保持原样（无迷你线）。 */
+  sparks?: TrendResponse["sparks"];
 }
 
 /** Format value to percentage (1 decimal place) or return empty if null. */
 const percent = (v: number | null): string => (v == null ? "" : `${(v * 100).toFixed(1)}%`);
 
-export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOverviewProps) {
+export function EvalMetricsOverview({ overview, onViewTrace, sparks }: EvalMetricsOverviewProps) {
   const { t } = useI18n();
   const tk = t.knowledge.eval;
   const { layer1, layer2 } = overview;
@@ -163,10 +167,10 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
               </div>
               {/* 固定列数：宽度下限为本卡自有 min-w-[24rem]（触底时仅本卡横滚）。 */}
               <div className="grid grid-cols-4 gap-3">
-                <MetricTile title={tk.ragasCard.faithfulness} note={tk.cardNote.faithfulness} value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} testId="faithfulness" />
-                <MetricTile title={tk.ragasCard.answerRelevancy} note={tk.cardNote.answerRelevancy} value={layer2.ragas.answer_relevancy} testId="answer_relevancy" />
-                <MetricTile title={tk.ragasCard.contextPrecision} note={tk.cardNote.contextPrecision} value={layer2.ragas.context_precision} testId="context_precision" />
-                <MetricTile title={tk.ragasCard.contextRecall} note={tk.cardNote.contextRecall} value={layer2.ragas.context_recall} testId="context_recall" />
+                <MetricTile title={tk.ragasCard.faithfulness} note={tk.cardNote.faithfulness} value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} spark={sparks?.faithfulness} testId="faithfulness" />
+                <MetricTile title={tk.ragasCard.answerRelevancy} note={tk.cardNote.answerRelevancy} value={layer2.ragas.answer_relevancy} spark={sparks?.answer_relevancy} testId="answer_relevancy" />
+                <MetricTile title={tk.ragasCard.contextPrecision} note={tk.cardNote.contextPrecision} value={layer2.ragas.context_precision} spark={sparks?.context_precision} testId="context_precision" />
+                <MetricTile title={tk.ragasCard.contextRecall} note={tk.cardNote.contextRecall} value={layer2.ragas.context_recall} spark={sparks?.context_recall} testId="context_recall" />
               </div>
             </div>
             <div>
@@ -177,14 +181,15 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
               {/* 统一 grid-cols-4（2026-09-05）：引用组 3 瓦片留一空槽——
                   纵向列轴与 RAGAS 组对齐，不再 4/3 两行错列。 */}
               <div className="grid grid-cols-4 gap-3">
-                <MetricTile title={tk.citationPrecision} note={tk.cardNote.citationPrecision} value={layer2.arch_specific.citation_precision} testId="citation_precision" />
-                <MetricTile title={tk.citationRecall} note={tk.cardNote.citationRecall} value={layer2.arch_specific.citation_recall} testId="citation_recall" />
+                <MetricTile title={tk.citationPrecision} note={tk.cardNote.citationPrecision} value={layer2.arch_specific.citation_precision} spark={sparks?.citation_precision} testId="citation_precision" />
+                <MetricTile title={tk.citationRecall} note={tk.cardNote.citationRecall} value={layer2.arch_specific.citation_recall} spark={sparks?.citation_recall} testId="citation_recall" />
                 <MetricTile
                   title={tk.seedHitRate}
                   note={tk.cardNote.seedHitRate}
                   value={layer2.arch_specific.seed_hit_rate}
                   disabled={!layer2.has_graph_questions}
                   disabledReason={tk.noGraphQuestions}
+                  spark={sparks?.seed_hit_rate}
                   testId="seed_hit_rate"
                 />
               </div>
@@ -315,7 +320,7 @@ function MetricNote({ note, testId }: { note: string; testId: string }) {
     层级——外层已抬升，内层用后退色分组）；内容 = 名称+ⓘ / 大数字 / h-1
     进度条。trace 链接挂名称行右端（faithfulness 专属，testId 哨兵不变）。
     null 显破折号且无进度条；disabled 加透明度 + 原因行。 */
-function MetricTile({ title, note, value, disabled, disabledReason, traceUrl, onViewTrace, traceLabel, testId }: { title: string; note: string; value: number | null; disabled?: boolean; disabledReason?: string; traceUrl?: string; onViewTrace?: (url: string) => void; traceLabel?: string; testId: string }) {
+function MetricTile({ title, note, value, disabled, disabledReason, traceUrl, onViewTrace, traceLabel, spark, testId }: { title: string; note: string; value: number | null; disabled?: boolean; disabledReason?: string; traceUrl?: string; onViewTrace?: (url: string) => void; traceLabel?: string; spark?: number[]; testId: string }) {
   const colorClass = getProgressBarColor(value);
   const isNull = value == null;
   return (
@@ -336,9 +341,14 @@ function MetricTile({ title, note, value, disabled, disabledReason, traceUrl, on
           </button>
         )}
       </div>
-      {/* 百分比为主显示（同义小数已去重）；text-lg + tabular-nums：26rem 触底时
-          "100.0%" 仍容得下，数字在各瓦片间同宽对齐。 */}
-      <div className="mt-1 text-lg font-semibold tabular-nums">{isNull ? "-" : percent(value)}</div>
+      {/* 数值行（2026-09-07 sparkline 接入）：数字左、迷你线右同行（B 案缩档
+          28×12 = w-7 h-3），justify-between + gap-1；无 spark（缺键/空/单点）时
+          EvalSparkline 返 null，数值行保持原样。text-lg + tabular-nums：26rem
+          触底时 "100.0%" 仍容得下（值≈52 + gap 4 + 28 = 84 ≤ 87）。 */}
+      <div className="mt-1 flex items-center justify-between gap-1" data-testid={`eval-card-value-${testId}`}>
+        <div className="text-lg font-semibold tabular-nums">{isNull ? "-" : percent(value)}</div>
+        <EvalSparkline values={spark} />
+      </div>
       {!isNull && <Progress value={value * 100} className={cn("mt-1.5 h-1", colorClass)} />}
       {disabled && disabledReason && <div className="text-muted-foreground mt-1 text-xs">{disabledReason}</div>}
     </div>

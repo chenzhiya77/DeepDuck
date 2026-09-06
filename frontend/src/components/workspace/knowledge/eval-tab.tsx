@@ -635,7 +635,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       {tk.loadFailed}
                     </div>
                   ) : overviewQuery.data ? (
-                    <EvalMetricsOverview overview={overviewQuery.data} />
+                    <EvalMetricsOverview overview={overviewQuery.data} sparks={trendQuery.data?.sparks} />
                   ) : null}
                 </div>
               </ScrollArea>
