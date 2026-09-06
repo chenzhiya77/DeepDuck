@@ -2,8 +2,8 @@
 
 GET ``/api/knowledge-bases/{kb_id}/eval-runs/latest`` — 两层各自最近一次
 completed 且对应层 metrics 非空且非 ci 的运行（可来自不同运行）。
-GET ``/api/knowledge-bases/{kb_id}/eval-runs/trend`` — 统一末次语义的周期
-聚合 + baseline 块 + ``days_back`` clamp 回显。
+GET ``/api/knowledge-bases/{kb_id}/eval-runs/trend`` — run 级点（contract v4）
++ baseline 块 + 顶层 ``sparks``；固定近 90 天窗口，无服务端聚合粒度。
 GET ``/api/knowledge-bases/{kb_id}/eval-runs/{run_id}`` — 单行完整 JSON，
 drawer 数据源。
 
@@ -228,34 +228,42 @@ async def test_latest_surfaces_baseline_diff_when_present(service) -> None:
 # ── trend ────────────────────────────────────────────────────────────────
 
 
-async def test_trend_aggregates_with_last_of_period_semantics(service) -> None:
+async def test_trend_returns_run_level_points_in_time_order(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
-    await _seed_run(kb["id"], "run-early", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.7))
-    await _seed_run(kb["id"], "run-late", datetime(2026, 8, 20, 18, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
-    await _seed_run(kb["id"], "run-l2", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer2=_l2())
+    now = datetime.now(UTC).replace(microsecond=0)
+    early_ts = now - timedelta(hours=30)
+    late_ts = now - timedelta(hours=20)
+    l2_ts = now - timedelta(hours=5)
+    await _seed_run(kb["id"], "run-early", early_ts, layer1=_l1(recall_at_k=0.7))
+    await _seed_run(kb["id"], "run-late", late_ts, layer1=_l1(recall_at_k=0.85))
+    await _seed_run(kb["id"], "run-l2", l2_ts, layer2=_l2())
 
-    response = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=day&days_back=30")
+    response = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend")
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["granularity"] == "day"
-    assert body["days_back"] == 30
     assert body["has_data"] is True
-    assert [p["date"] for p in body["points"]] == ["2026-08-20", "2026-08-21"]
-    first, second = body["points"]
-    assert first["recall_at_k"] == 0.85
-    assert first["layer1_run_id"] == "run-late"
-    assert first["faithfulness"] is None
-    assert second["recall_at_k"] is None
-    assert second["faithfulness"] == 0.95
-    assert second["layer2_run_id"] == "run-l2"
+    # contract v4：一 run 一点，同日多次运行各自出点（周期末次聚合退役），升序。
+    assert [p["run_id"] for p in body["points"]] == ["run-early", "run-late", "run-l2"]
+    first, second, third = body["points"]
+    # ts = 带 UTC 偏移的完整时间戳（时区标准），非周期起点日期。
+    assert first["ts"] == early_ts.isoformat()
+    assert second["ts"] == late_ts.isoformat()
+    assert first["ts"].endswith("+00:00")
+    assert first["recall_at_k"] == 0.7
+    assert second["recall_at_k"] == 0.85
+    assert second["faithfulness"] is None
+    assert third["recall_at_k"] is None
+    assert third["faithfulness"] == 0.95
+    # layer1_run_id/layer2_run_id 退役 → 单 run_id 键。
+    assert "layer1_run_id" not in first and "layer2_run_id" not in third
 
 
 async def test_trend_include_ci_opts_ci_rows_back_in(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
-    await _seed_run(kb["id"], "run-ci", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(), environment="ci")
+    await _seed_run(kb["id"], "run-ci", datetime.now(UTC) - timedelta(days=2), layer1=_l1(), environment="ci")
 
     default_body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend").json()
     assert default_body["points"] == []
@@ -263,126 +271,67 @@ async def test_trend_include_ci_opts_ci_rows_back_in(service) -> None:
 
     with_ci = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?include_ci=true").json()
     assert with_ci["has_data"] is True
-    assert with_ci["points"][0]["layer1_run_id"] == "run-ci"
+    assert with_ci["points"][0]["run_id"] == "run-ci"
 
 
 async def test_trend_baseline_block_reads_the_marked_row(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
+    now = datetime.now(UTC)
     await _seed_run(
         kb["id"],
         "run-base",
-        datetime(2026, 8, 15, 9, 0, tzinfo=UTC),
+        now - timedelta(days=10),
         layer1=_l1(recall_at_k=0.88),
         mark_baseline=True,
     )
-    await _seed_run(kb["id"], "run-new", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+    await _seed_run(kb["id"], "run-new", now - timedelta(days=2), layer1=_l1())
 
     body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend").json()
 
     assert body["baseline"]["recall_at_k"] == 0.88
     assert body["baseline"]["threshold_percent"] == pytest.approx(3.0)
-    baseline_point = next(p for p in body["points"] if p["date"] == "2026-08-15")
+    baseline_point = next(p for p in body["points"] if p["run_id"] == "run-base")
     assert baseline_point["is_baseline_update"] is True
-    other_point = next(p for p in body["points"] if p["date"] == "2026-08-20")
+    other_point = next(p for p in body["points"] if p["run_id"] == "run-new")
     assert other_point["is_baseline_update"] is False
 
 
 async def test_trend_baseline_block_is_null_without_marked_row(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
-    await _seed_run(kb["id"], "run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+    await _seed_run(kb["id"], "run-l1", datetime.now(UTC) - timedelta(days=2), layer1=_l1())
 
     body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend").json()
 
     assert body["baseline"] is None
 
 
-async def test_trend_invalid_granularity_422(service) -> None:
+async def test_trend_legacy_granularity_params_are_ignored(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-1", datetime.now(UTC) - timedelta(days=2), layer1=_l1())
 
-    response = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=hourly")
+    # contract v4：granularity/窗口参数退役——传入被忽略（不再 422、不再回显）。
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week&days_back=7").json()
 
-    assert response.status_code == 422
+    assert "granularity" not in body
+    assert "days_back" not in body and "weeks_back" not in body and "months_back" not in body
+    assert [p["run_id"] for p in body["points"]] == ["run-1"]
 
 
-async def test_trend_days_back_clamped_to_90_and_echoed(service) -> None:
+async def test_trend_fixed_90d_window_filters_older_rows(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
-
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?days_back=300").json()
-
-    assert body["days_back"] == 90
-
-
-async def test_trend_days_back_window_filters_older_rows(service) -> None:
-    client = _client(service)
-    kb = _create_kb(client)
-    # 落在 7 天窗口外的运行不进 points（窗口右边界是「今天」）。
-    old = datetime.now(UTC) - timedelta(days=20)
+    # 固定近 90 天窗口（滚轮缩小上限）：120 天前的运行出窗，无需任何参数。
+    old = datetime.now(UTC) - timedelta(days=120)
     recent = datetime.now(UTC) - timedelta(days=2)
     await _seed_run(kb["id"], "run-old", old, layer1=_l1(recall_at_k=0.7))
     await _seed_run(kb["id"], "run-recent", recent, layer1=_l1())
 
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?days_back=7").json()
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend").json()
 
-    assert [p["layer1_run_id"] for p in body["points"]] == ["run-recent"]
-
-
-async def test_trend_week_granularity_pairs_with_weeks_back(service) -> None:
-    client = _client(service)
-    kb = _create_kb(client)
-    old = datetime.now(UTC) - timedelta(weeks=20)
-    recent = datetime.now(UTC) - timedelta(days=10)
-    await _seed_run(kb["id"], "run-old", old, layer1=_l1(recall_at_k=0.7))
-    await _seed_run(kb["id"], "run-recent", recent, layer1=_l1())
-
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week").json()
-
-    # 默认窗口 12 周：20 周前的运行出窗；响应只回显 weeks_back（spec §4.2 按粒度配对）
-    assert body["weeks_back"] == 12
-    assert "days_back" not in body and "months_back" not in body
-    assert [p["layer1_run_id"] for p in body["points"]] == ["run-recent"]
-
-
-async def test_trend_explicit_weeks_back_widens_window(service) -> None:
-    client = _client(service)
-    kb = _create_kb(client)
-    old = datetime.now(UTC) - timedelta(weeks=20)
-    recent = datetime.now(UTC) - timedelta(days=10)
-    await _seed_run(kb["id"], "run-old", old, layer1=_l1(recall_at_k=0.7))
-    await _seed_run(kb["id"], "run-recent", recent, layer1=_l1())
-
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week&weeks_back=24").json()
-
-    assert body["weeks_back"] == 24
-    assert [p["layer1_run_id"] for p in body["points"]] == ["run-old", "run-recent"]
-
-
-async def test_trend_month_granularity_pairs_with_months_back(service) -> None:
-    client = _client(service)
-    kb = _create_kb(client)
-    await _seed_run(kb["id"], "run-old", datetime(2025, 1, 15, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.7))
-    await _seed_run(kb["id"], "run-recent", datetime.now(UTC) - timedelta(days=10), layer1=_l1())
-
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=month&months_back=6").json()
-
-    assert body["months_back"] == 6
-    assert "days_back" not in body and "weeks_back" not in body
-    assert [p["layer1_run_id"] for p in body["points"]] == ["run-recent"]
-
-
-async def test_trend_days_back_is_ignored_for_non_day_granularity(service) -> None:
-    client = _client(service)
-    kb = _create_kb(client)
-    await _seed_run(kb["id"], "run-40d-ago", datetime.now(UTC) - timedelta(days=40), layer1=_l1())
-
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=month&days_back=7").json()
-
-    # month 窗口由 months_back（默认 6 个月）驱动，days_back 不参与
-    assert body["months_back"] == 6
-    assert [p["layer1_run_id"] for p in body["points"]] == ["run-40d-ago"]
+    assert [p["run_id"] for p in body["points"]] == ["run-recent"]
 
 
 async def test_trend_empty_history_reports_has_data_false(service) -> None:
@@ -393,8 +342,6 @@ async def test_trend_empty_history_reports_has_data_false(service) -> None:
 
     assert body == {
         "points": [],
-        "granularity": "day",
-        "days_back": 30,
         "baseline": None,
         "has_data": False,
         "sparks": {
@@ -409,35 +356,18 @@ async def test_trend_empty_history_reports_has_data_false(service) -> None:
     }
 
 
-async def test_trend_exposes_sparks_identical_across_granularity(service) -> None:
-    client = _client(service)
-    kb = _create_kb(client)
-    now = datetime.now(UTC)
-    await _seed_run(kb["id"], "run-1", now - timedelta(days=40), layer2=_l2(faithfulness=0.70))
-    await _seed_run(kb["id"], "run-2", now - timedelta(days=20), layer2=_l2(faithfulness=0.80))
-    await _seed_run(kb["id"], "run-3", now - timedelta(days=2), layer2=_l2(faithfulness=0.90))
-
-    day = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=day&days_back=90").json()
-    week = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=week&weeks_back=24").json()
-    month = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=month&months_back=6").json()
-
-    # sparks 与 granularity/窗口解耦：三次调用恒等，取 run 级升序非空值
-    assert day["sparks"]["faithfulness"] == [0.70, 0.80, 0.90]
-    assert day["sparks"] == week["sparks"] == month["sparks"]
-
-
 async def test_trend_sparks_include_runs_outside_points_window(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
-    old = datetime.now(UTC) - timedelta(days=200)  # 远超 day 窗口上限（≤90 天）
+    old = datetime.now(UTC) - timedelta(days=200)  # 远超固定 90 天窗口
     recent = datetime.now(UTC) - timedelta(days=2)
     await _seed_run(kb["id"], "run-old", old, layer2=_l2(faithfulness=0.60))
     await _seed_run(kb["id"], "run-recent", recent, layer2=_l2(faithfulness=0.90))
 
-    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend?granularity=day&days_back=30").json()
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend").json()
 
     # points 仅含窗口内运行；sparks 取全量近 10 → old + recent 均在（升序）
-    assert [p["layer2_run_id"] for p in body["points"]] == ["run-recent"]
+    assert [p["run_id"] for p in body["points"]] == ["run-recent"]
     assert body["sparks"]["faithfulness"] == [0.60, 0.90]
 
 

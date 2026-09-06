@@ -1,9 +1,8 @@
-"""``aggregate_trend_points`` pure-function tests (spec 2026-08-24 §4.2 v3, plan Task 1).
+"""``build_run_points`` pure-function tests (contract v4, spec 2026-09-07 §2).
 
-统一末次语义：day/week/month 均按自然周期分组，取该周期**最后一次**含该
-层数据的 completed 运行（两层独立，可来自不同运行）；skipped/error 行与
-``environment='ci'`` 行（默认）不进取数集合；``regression`` 透传来源运行
-的 per-category 门禁判定。
+run 级点语义：一个点 = 一次真实运行（x = ``coerce_iso`` 完整时间戳），不做
+周期分桶——同日多次运行各自出点；skipped/error 行与 ``environment='ci'``
+行（默认）不进取数集合；``regression`` 透传本 run 的 per-category 门禁判定。
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from deerflow.knowledge.eval.trend import aggregate_trend_points, build_sparks, window_cutoff
+from deerflow.knowledge.eval.trend import build_run_points, build_sparks
 
 
 def _l1(recall_at_k: float = 0.8, hit_rate: float = 0.9, mrr: float = 0.7) -> dict:
@@ -63,104 +62,40 @@ def _row(
     )
 
 
-# ── 末次语义（三粒度统一） ──────────────────────────────────────────────
+# ── run 级点：一 run 一点，无周期分桶 ────────────────────────────────────
 
 
-def test_day_granularity_takes_last_run_of_the_day() -> None:
+def test_same_day_runs_each_get_their_own_point() -> None:
     early = _row("run-early", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.70))
     late = _row("run-late", datetime(2026, 8, 20, 18, 30, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
 
-    points = aggregate_trend_points([early, late], "day")
+    points = build_run_points([early, late])
 
-    assert len(points) == 1
-    assert points[0]["date"] == "2026-08-20"
-    assert points[0]["recall_at_k"] == 0.85
-    assert points[0]["layer1_run_id"] == "run-late"
+    # 周期末次聚合退役：同日两次运行都出现，升序，各自携带自己的指标值。
+    assert [p["run_id"] for p in points] == ["run-early", "run-late"]
+    assert [p["recall_at_k"] for p in points] == [0.70, 0.85]
 
 
-def test_last_run_wins_regardless_of_input_order() -> None:
+def test_points_sorted_by_created_at_regardless_of_input_order() -> None:
     late = _row("run-late", datetime(2026, 8, 20, 18, 30, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
     early = _row("run-early", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.70))
 
-    points = aggregate_trend_points([late, early], "day")
+    points = build_run_points([late, early])
 
-    assert len(points) == 1
-    assert points[0]["layer1_run_id"] == "run-late"
-
-
-def test_week_granularity_groups_by_iso_week_starting_monday() -> None:
-    # 2026-08-17 是周一；08-19（周三）与 08-21（周五）同周，取周五末次。
-    wednesday = _row("run-wed", datetime(2026, 8, 19, 10, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.70))
-    friday = _row("run-fri", datetime(2026, 8, 21, 10, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
-    previous_week = _row("run-prev", datetime(2026, 8, 12, 10, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.60))
-
-    points = aggregate_trend_points([wednesday, friday, previous_week], "week")
-
-    assert [p["date"] for p in points] == ["2026-08-10", "2026-08-17"]
-    assert points[1]["recall_at_k"] == 0.85
-    assert points[1]["layer1_run_id"] == "run-fri"
+    assert [p["run_id"] for p in points] == ["run-early", "run-late"]
 
 
-def test_week_groups_across_year_boundary() -> None:
-    # 2026-12-31（周四）与 2027-01-01（周五）同属 ISO 周（周一 = 2026-12-28）。
-    new_years_eve = _row("run-1231", datetime(2026, 12, 31, 10, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.70))
-    new_years_day = _row("run-0101", datetime(2027, 1, 1, 10, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
+def test_ts_is_full_timestamp_with_utc_offset() -> None:
+    aware = _row("run-aware", datetime(2026, 8, 20, 9, 30, tzinfo=UTC), layer1=_l1())
+    # SQLite 读回剥掉时区：naive 假定 UTC 补偏移（时区标准，禁裸 isoformat）。
+    # 两次独立调用：同一存储内行时区形态一致，naive/aware 不混排（同旧代码约束）。
+    naive = _row("run-naive", datetime(2026, 8, 20, 9, 30), layer1=_l1())
 
-    points = aggregate_trend_points([new_years_eve, new_years_day], "week")
-
-    assert len(points) == 1
-    assert points[0]["date"] == "2026-12-28"
-    assert points[0]["layer1_run_id"] == "run-0101"
+    assert build_run_points([aware])[0]["ts"] == "2026-08-20T09:30:00+00:00"
+    assert build_run_points([naive])[0]["ts"] == "2026-08-20T09:30:00+00:00"
 
 
-def test_month_granularity_groups_by_calendar_month() -> None:
-    august = _row("run-aug", datetime(2026, 8, 31, 23, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.70))
-    september = _row("run-sep", datetime(2026, 9, 1, 1, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
-
-    points = aggregate_trend_points([august, september], "month")
-
-    assert [p["date"] for p in points] == ["2026-08-01", "2026-09-01"]
-    assert points[0]["layer1_run_id"] == "run-aug"
-    assert points[1]["layer1_run_id"] == "run-sep"
-
-
-# ── 两层独立取数 ────────────────────────────────────────────────────────
-
-
-def test_layers_pick_from_independent_runs_in_same_period() -> None:
-    layer1_run = _row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.80))
-    layer2_run = _row("run-l2", datetime(2026, 8, 20, 21, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.97))
-
-    points = aggregate_trend_points([layer1_run, layer2_run], "day")
-
-    assert len(points) == 1
-    point = points[0]
-    assert point["recall_at_k"] == 0.80
-    assert point["hit_rate"] == 0.9
-    assert point["mrr"] == 0.7
-    assert point["faithfulness"] == 0.97
-    assert point["answer_relevancy"] == 0.88
-    assert point["context_precision"] == 0.91
-    assert point["layer1_run_id"] == "run-l1"
-    assert point["layer2_run_id"] == "run-l2"
-
-
-def test_layer_without_data_in_period_is_null() -> None:
-    layer1_only = _row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
-
-    points = aggregate_trend_points([layer1_only], "day")
-
-    assert len(points) == 1
-    point = points[0]
-    assert point["recall_at_k"] is not None
-    assert point["faithfulness"] is None
-    assert point["answer_relevancy"] is None
-    assert point["context_precision"] is None
-    assert point["layer2_run_id"] is None
-    assert point["layer1_run_id"] == "run-l1"
-
-
-# ── 周期点 10 键（spec §6.1：补 path_accuracy + 引用三，服务 picker） ──────
+# ── 指标键取本 run；缺层 null ───────────────────────────────────────────
 
 _TREND_METRIC_KEYS = {
     "recall_at_k",
@@ -176,35 +111,36 @@ _TREND_METRIC_KEYS = {
 }
 
 
-def test_period_point_exposes_ten_metric_keys() -> None:
-    layer1_run = _row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
-    layer2_run = _row("run-l2", datetime(2026, 8, 20, 21, 0, tzinfo=UTC), layer2=_l2())
+def test_run_point_exposes_ten_metric_keys_from_its_own_run() -> None:
+    row = _row("run-full", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(), layer2=_l2())
 
-    point = aggregate_trend_points([layer1_run, layer2_run], "day")[0]
+    point = build_run_points([row])[0]
 
     assert len(_TREND_METRIC_KEYS) == 10
     assert _TREND_METRIC_KEYS <= set(point)
-    # 取值口径：path_accuracy 来自 L1 summary；引用三来自 L2 arch_specific
+    # 取值口径：path_accuracy 来自本 run L1 summary；引用三来自本 run arch_specific
     assert point["path_accuracy"] == 1.0
     assert point["citation_precision"] == 0.9
     assert point["citation_recall"] == 0.85
     assert point["seed_hit_rate"] is None
+    assert point["run_id"] == "run-full"
 
 
-def test_new_picker_keys_null_when_source_layer_absent() -> None:
-    # 仅 L1：path_accuracy 有值，引用三 null（缺层仍 null）
-    l1_point = aggregate_trend_points([_row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())], "day")[0]
-    assert l1_point["path_accuracy"] == 1.0
+def test_missing_layer_keys_are_null() -> None:
+    # 仅 L1（快速档无 layer2）：ragas/引用键 null，L1 键有值
+    l1_point = build_run_points([_row("run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())])[0]
+    assert l1_point["recall_at_k"] == 0.8
+    assert l1_point["faithfulness"] is None
+    assert l1_point["answer_relevancy"] is None
+    assert l1_point["context_precision"] is None
     assert l1_point["citation_precision"] is None
-    assert l1_point["citation_recall"] is None
-    assert l1_point["seed_hit_rate"] is None
 
-    # 仅 L2：path_accuracy null，引用三有值
-    l2_point = aggregate_trend_points([_row("run-l2", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer2=_l2())], "day")[0]
+    # 仅 L2：L1 键 null，L2 键有值
+    l2_point = build_run_points([_row("run-l2", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer2=_l2())])[0]
+    assert l2_point["recall_at_k"] is None
     assert l2_point["path_accuracy"] is None
+    assert l2_point["faithfulness"] == 0.95
     assert l2_point["citation_precision"] == 0.9
-    assert l2_point["citation_recall"] == 0.85
-    assert l2_point["seed_hit_rate"] is None
 
 
 # ── 取数集合过滤 ────────────────────────────────────────────────────────
@@ -214,37 +150,28 @@ def test_ci_rows_excluded_by_default_and_included_on_demand() -> None:
     local_run = _row("run-local", datetime(2026, 8, 19, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.70))
     ci_run = _row("run-ci", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.99), environment="ci")
 
-    default_points = aggregate_trend_points([local_run, ci_run], "day")
-    assert [p["date"] for p in default_points] == ["2026-08-19"]
-
-    with_ci = aggregate_trend_points([local_run, ci_run], "day", include_ci=True)
-    assert [p["date"] for p in with_ci] == ["2026-08-19", "2026-08-20"]
-    assert with_ci[1]["layer1_run_id"] == "run-ci"
+    assert [p["run_id"] for p in build_run_points([local_run, ci_run])] == ["run-local"]
+    assert [p["run_id"] for p in build_run_points([local_run, ci_run], include_ci=True)] == ["run-local", "run-ci"]
 
 
 def test_skipped_and_error_rows_never_enter_the_read_set() -> None:
     skipped = _row("run-skip", datetime(2026, 8, 19, 9, 0, tzinfo=UTC), layer1=_l1(), status="skipped")
     error = _row("run-err", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2(), status="error")
 
-    assert aggregate_trend_points([skipped, error], "day") == []
+    assert build_run_points([skipped, error]) == []
 
 
-def test_empty_metrics_layer_does_not_count_as_data() -> None:
-    # status=completed 但该层 metrics == {}（另一层 CLI 写入的行）不算该层数据。
-    layer2_run = _row("run-l2", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2())
+def test_row_with_empty_metrics_on_both_layers_does_not_enter() -> None:
+    # status=completed 但两层 metrics 均 == {} 的行不进取数集合。
+    hollow = _row("run-hollow", datetime(2026, 8, 20, 9, 0, tzinfo=UTC))
 
-    points = aggregate_trend_points([layer2_run], "day")
-
-    assert len(points) == 1
-    assert points[0]["recall_at_k"] is None
-    assert points[0]["layer1_run_id"] is None
-    assert points[0]["faithfulness"] == 0.95
+    assert build_run_points([hollow]) == []
 
 
 # ── regression / baseline 透传 ──────────────────────────────────────────
 
 
-def test_regression_passthrough_from_source_run_baseline_diff() -> None:
+def test_regression_passthrough_from_own_run_baseline_diff() -> None:
     diff = {
         "recall_at_k_delta": -0.05,
         "regression_detected": True,
@@ -253,67 +180,41 @@ def test_regression_passthrough_from_source_run_baseline_diff() -> None:
     }
     run = _row("run-reg", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(), baseline_diff=diff)
 
-    points = aggregate_trend_points([run], "day")
+    points = build_run_points([run])
 
     assert points[0]["regression"] == {"detected": True, "categories": ["fact"]}
 
 
-def test_regression_is_null_when_source_run_has_no_diff() -> None:
+def test_regression_is_null_when_run_has_no_diff() -> None:
     run = _row("run-plain", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
 
-    points = aggregate_trend_points([run], "day")
+    points = build_run_points([run])
 
     assert points[0]["regression"] is None
 
 
-def test_is_baseline_update_flag_follows_the_layer1_source_row() -> None:
+def test_is_baseline_update_flag_follows_the_row() -> None:
     marked = _row("run-base", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(), is_baseline=True)
     plain = _row("run-plain", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer1=_l1())
 
-    points = aggregate_trend_points([marked, plain], "day")
+    points = build_run_points([marked, plain])
 
     assert [p["is_baseline_update"] for p in points] == [True, False]
 
 
-def test_is_baseline_update_false_when_period_has_no_layer1() -> None:
+def test_is_baseline_update_false_for_layer2_only_run() -> None:
     layer2_only = _row("run-l2", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2())
 
-    points = aggregate_trend_points([layer2_only], "day")
+    points = build_run_points([layer2_only])
 
     assert points[0]["is_baseline_update"] is False
 
 
 def test_empty_input_returns_empty_points() -> None:
-    assert aggregate_trend_points([], "day") == []
-    assert aggregate_trend_points([], "week") == []
-    assert aggregate_trend_points([], "month") == []
+    assert build_run_points([]) == []
 
 
-# ── window_cutoff：窗口参数按粒度配对（spec §4.2 v3） ─────────────────────
-
-
-def test_window_cutoff_day_pairs_with_days_back() -> None:
-    cutoff = window_cutoff(datetime(2026, 8, 25, 12, 0, tzinfo=UTC), granularity="day", days_back=30, weeks_back=12, months_back=6)
-
-    assert cutoff == datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
-
-
-def test_window_cutoff_week_pairs_with_weeks_back() -> None:
-    cutoff = window_cutoff(datetime(2026, 8, 25, 12, 0, tzinfo=UTC), granularity="week", days_back=30, weeks_back=12, months_back=6)
-
-    assert cutoff == datetime(2026, 6, 2, 12, 0, tzinfo=UTC)
-
-
-def test_window_cutoff_month_calendar_subtraction_with_month_end_clamp() -> None:
-    # 3-31 减 6 个月 → 9-30（9 月无 31 日，钳到月末）
-    assert window_cutoff(datetime(2026, 3, 31, 12, 0, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=6) == datetime(2025, 9, 30, 12, 0, tzinfo=UTC)
-    # 闰日钳制：2024-02-29 减 12 个月 → 2023-02-28
-    assert window_cutoff(datetime(2024, 2, 29, 12, 0, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=12) == datetime(2023, 2, 28, 12, 0, tzinfo=UTC)
-    # 普通日期按时分秒原样对齐
-    assert window_cutoff(datetime(2026, 5, 15, 8, 30, tzinfo=UTC), granularity="month", days_back=30, weeks_back=12, months_back=3) == datetime(2026, 2, 15, 8, 30, tzinfo=UTC)
-
-
-# ── build_sparks：run 级近 10 非空值（spec §6.2，粒度无关，服务瓦片 sparkline） ──
+# ── build_sparks：run 级近 10 非空值（spec §6.2，窗口无关，服务瓦片 sparkline） ──
 
 _SPARK_KEYS = {
     "faithfulness",
@@ -403,7 +304,7 @@ def test_sparks_caps_at_ten_most_recent_non_null_values() -> None:
 
 
 def test_sparks_ignores_period_boundaries_single_series_across_months() -> None:
-    # 跨 3 个月的 run 进同一条序列（不按周期分桶 → 与 granularity 解耦）
+    # 跨 3 个月的 run 进同一条序列（run 级取数，与趋势固定窗口解耦）
     runs = [
         _row("run-jul", datetime(2026, 7, 15, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.70)),
         _row("run-aug", datetime(2026, 8, 15, 9, 0, tzinfo=UTC), layer2=_l2(faithfulness=0.80)),

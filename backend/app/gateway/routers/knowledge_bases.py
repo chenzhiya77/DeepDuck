@@ -774,20 +774,16 @@ async def get_latest_eval_metrics(request: Request, kb_id: str):
 async def get_eval_trend(
     request: Request,
     kb_id: str,
-    granularity: Literal["day", "week", "month"] = "day",
-    days_back: int = Query(default=30, ge=1),
-    weeks_back: int = Query(default=12, ge=1),
-    months_back: int = Query(default=6, ge=1),
     include_ci: bool = False,
 ):
-    """指标趋势（spec §4.2）：统一末次语义聚合，两层独立取数。
+    """指标趋势（contract v4，spec 2026-09-07 §2）：run 级点，固定近 90 天窗口。
 
-    窗口参数按粒度配对——day 用 ``days_back``（clamp ≤90）、week 用
-    ``weeks_back``、month 用 ``months_back``；响应只回显当前粒度匹配的那个键。
+    一个点 = 一次真实运行（x = 完整时间戳），时间连续性与密度由前端 time
+    轴 + 滚轮缩放承载；日/周/月是客户端视窗预设，无服务端聚合粒度。
     ``include_ci=true`` 时 ci 运行进入取数集合。
     """
     service = await _require_kb_access(request, kb_id)
-    return await service.get_eval_trend(kb_id, granularity=granularity, days_back=days_back, weeks_back=weeks_back, months_back=months_back, include_ci=include_ci)
+    return await service.get_eval_trend(kb_id, include_ci=include_ci)
 
 
 # 注意注册顺序：latest / trend 字面量路由必须先于 {run_id} 参数路由。
