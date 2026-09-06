@@ -237,6 +237,17 @@ describe("EvalRunBanner 空闲态槽", () => {
     expect(within(slot).getByTestId("eval-slot-text").className).toContain("text-destructive");
   });
 
+  it("cancelled 行专属文案「评测已终止」（区别 failed，spec §11）", () => {
+    renderBanner({ running: false, lastRun: summaryRun({ status: "cancelled" }) });
+
+    const slot = screen.getByTestId("eval-run-banner");
+    expect(slot.textContent).toContain("评测已终止");
+    expect(slot.textContent).not.toContain("评测失败");
+    expect(slot.textContent).not.toContain("耗时");
+    // 色调同非 completed（destructive），文案区分终止与失败。
+    expect(within(slot).getByTestId("eval-slot-text").className).toContain("text-destructive");
+  });
+
   it("jumps to the history view via the slot button", () => {
     const onViewHistory = rs.fn(() => undefined);
     renderBanner({ running: false, lastRun: summaryRun(), onViewHistory });

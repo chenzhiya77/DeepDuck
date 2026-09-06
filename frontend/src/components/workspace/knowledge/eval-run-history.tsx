@@ -8,7 +8,7 @@
  * 它们的唯一曝光面；in-flight 运行不产生伪行（运行中状态只由工具栏 spinner
  * 表达，行在落库后才出现）。
  */
-import { CheckCircle2, SkipForward, Star, XCircle } from "lucide-react";
+import { Ban, CheckCircle2, SkipForward, Star, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/core/i18n/hooks";
@@ -57,6 +57,15 @@ export function EvalRunHistory({ kbId, enabled = true, onOpenRun }: EvalRunHisto
         <>
           <SkipForward aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
           {htk.statusSkipped}
+        </>
+      );
+    }
+    // 终止行（spec 2026-09-06 §11）：用户主动行为，muted 色调区别 error 的红。
+    if (run.status === "cancelled") {
+      return (
+        <>
+          <Ban aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+          {htk.statusCancelled}
         </>
       );
     }

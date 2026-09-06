@@ -89,10 +89,17 @@ export function EvalRunBanner({ progress, tier, running = true, lastRun = null, 
         <span
           className={cn("animate-in fade-in-0 flex min-w-0 items-center gap-1.5 text-sm", failed ? "text-destructive" : "text-muted-foreground")}
           data-testid="eval-slot-text"
-          key={`${lastRun.run_id}:${failed ? "failed" : "summary"}`}
+          key={`${lastRun.run_id}:${lastRun.status}`}
         >
           {!failed && <TierIcon className="size-3.5 shrink-0" data-testid="eval-slot-tier-icon" />}
-          <span className="truncate">{failed ? tk.slotSummaryFailed : tk.slotSummary(tierOfRun(lastRun) === "l1_l2" ? tk.tierFull : tk.tierQuick, durationText)}</span>
+          {/* cancelled 专属文案区别 failed（spec §11）；色调同非 completed（destructive）。 */}
+          <span className="truncate">
+            {failed
+              ? lastRun.status === "cancelled"
+                ? tk.slotSummaryCancelled
+                : tk.slotSummaryFailed
+              : tk.slotSummary(tierOfRun(lastRun) === "l1_l2" ? tk.tierFull : tk.tierQuick, durationText)}
+          </span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
           {lastRun.created_at !== null && (

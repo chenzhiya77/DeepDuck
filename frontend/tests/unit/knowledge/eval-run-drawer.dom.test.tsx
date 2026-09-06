@@ -129,6 +129,17 @@ describe("EvalRunDrawer", () => {
     expect(screen.getByText("评测数据加载失败")).toBeTruthy();
   });
 
+  it("cancelled 行状态徽标显「已终止」（spec §11，不再落入 skipped 兑底）", () => {
+    hooksMock.useEvalRun.mockReturnValue({
+      data: { ...EVAL_RUN, status: "cancelled" },
+      isLoading: false,
+      error: null,
+    });
+    renderDrawer();
+    expect(screen.getByText("已终止")).toBeTruthy();
+    expect(screen.queryByText("已跳过")).toBeNull();
+  });
+
   it("closes via onOpenChange(false)", () => {
     const { onOpenChange } = renderDrawer();
     // shadcn SheetContent 自带关闭按钮（sr-only 文本 Close）

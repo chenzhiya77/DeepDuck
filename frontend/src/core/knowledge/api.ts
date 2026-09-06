@@ -10,6 +10,7 @@ import { getBackendBaseURL } from "../config";
 import type {
   ChunkPositionsResponse,
   DeletePreviewResponse,
+  EvalCancelResponse,
   EvalQuestion,
   EvalQuestionCreateInput,
   EvalQuestionListResponse,
@@ -514,6 +515,14 @@ export function triggerEvalRun(kbId: string, input: EvalTriggerInput = {}): Prom
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   }).then((r) => readResponse<EvalTriggerResponse>(r, "Failed to trigger eval run"));
+}
+
+/** POST /eval-runs/cancel：终止在飞按需评测（spec 2026-09-06 §11）。
+ *  202 = 已发取消（runner 自落 cancelled 行并释放 already_running 锁）；409 = 无在飞 run。 */
+export function cancelEvalRun(kbId: string): Promise<EvalCancelResponse> {
+  return fetch(kbUrl(kbId, "/eval-runs/cancel"), { method: "POST" }).then((r) =>
+    readResponse<EvalCancelResponse>(r, "Failed to cancel eval run"),
+  );
 }
 
 // ── Question synthesis（2026-08-28 spec §6，Task 6–8）───────────────────

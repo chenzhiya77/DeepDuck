@@ -254,8 +254,12 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   - 成功 toast;轮询见 in_flight false → 走 drain 边自动刷新(既有机制,零新增)。
   - 历史新增 cancelled 分支:`Ban` 图标 + muted + 「已终止」/「Cancelled」;槽空闲
     摘要 cancelled 行用非 completed 色调但文案「评测已终止」(区别 failed「评测失败」)。
-- i18n 增量:cancelRun/cancelConfirm/cancelToast/slotSummaryCancelled + 历史
-  statusCancelled;三处同步。Types:`EvalRunSummary.status` 联合加 `"cancelled"`。
+    drawer 状态徽标同步补 cancelled 分支(Task 20 实施校正:原落入 skipped 兑底)。
+- i18n 增量(Task 20 实施定稿):cancelRun/cancelConfirm/cancelToast/
+  cancelFailedToast/slotSummaryCancelled + 历史与 drawer 各自的 statusCancelled;
+  三处同步。Types:`EvalRunSummary.status` 与 `EvalRunDetail.status` 联合均加
+  `"cancelled"`;新增 `EvalCancelResponse`。窄档(⋯ 菜单)运行态加「终止评测」项
+  (onSelect preventDefault 保菜单不关,两步确认同款),可达性与次槽对齐。
 - 不做:CLI 进程 run 的终止(异进程,出范围);undo(终止不可逆,toast 不带撤销);
   progress 契约变更。
 - 实施校正(Task 19 发现):**questions 段入口 hook**——旧实现只在每题毕才回调,

@@ -29,6 +29,7 @@ const hooksMock = rs.hoisted(() => ({
   useEvalTrend: rs.fn(),
   useEvalRuns: rs.fn(),
   useTriggerEvalRun: rs.fn(),
+  useCancelEvalRun: rs.fn(),
   // key factories 以真实实现同款内联——组件 drain 边失效要用，测试断言同一字面量。
   knowledgeEvalLatestKey: (kbId: string) => [
     "knowledge-bases",
@@ -224,6 +225,11 @@ describe("EvalTab 数据联通", () => {
       queryState({ data: { in_flight: false, runs: [], total: 0 } }),
     );
     hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
+    hooksMock.useCancelEvalRun.mockReset();
+    hooksMock.useCancelEvalRun.mockReturnValue({
       mutate: rs.fn(),
       isPending: false,
     });
@@ -1423,15 +1429,16 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it("运行中箭头下拉同主按钮一并禁用", () => {
+  it("运行中箭头下拉让位给终止按钮（spec §11 次槽 morph，2026-09-06）", () => {
     hooksMock.useTriggerEvalRun.mockReturnValue({
       mutate: rs.fn(),
       isPending: true,
     });
     renderEvalTab();
-    expect(
-      screen.getByRole("button", { name: "评测档位" }).hasAttribute("disabled"),
-    ).toBe(true);
+    // 旧契约是 chevron 与主按钮一并禁用；新契约：运行态次槽 morph 为终止按钮，
+    // 档位下拉（只对下一次运行有意义）不在。
+    expect(screen.queryByRole("button", { name: "评测档位" })).toBeNull();
+    expect(screen.getByTestId("eval-cancel-button")).toBeTruthy();
   });
 
   it("窄面板降档：箭头收进 ⋯，完整评测项并入菜单", async () => {
@@ -1576,5 +1583,171 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
     fireEvent.click(screen.getByRole("radio", { name: "总览" }));
     fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
     expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1" });
+  });
+});
+
+// ── 终止评测（spec 2026-09-06 §11 Task 20）──────────────────────
+// 运行态分体按钮次槽 morph 为终止按钮（chevron 档位下拉运行中本就 disabled
+// 且无意义）；两步 inline 确认：首击变「确认终止?」（3s 回退），再击才发；
+// 窄档（⋯ 菜单）同样可达；槽 running 态不加控件（§9 冻结保持绝对）。
+
+describe("EvalTab 终止评测（spec §11）", () => {
+  beforeEach(() => {
+    hooksMock.useMetricsOverview.mockReturnValue(
+      queryState({ data: OVERVIEW }),
+    );
+    hooksMock.useEvalTrend.mockReturnValue(queryState({ data: TREND }));
+    hooksMock.useTriggerEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
+    hooksMock.useCancelEvalRun.mockReturnValue({
+      mutate: rs.fn(),
+      isPending: false,
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    rs.useRealTimers();
+  });
+
+  function mockRunning() {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: true, runs: [], total: 0 } }),
+    );
+  }
+
+  it("运行态次槽 morph 为终止按钮（chevron 档位下拉不在）", () => {
+    mockRunning();
+    renderEvalTab();
+    const toolbar = screen.getByTestId("eval-view-toolbar");
+    expect(within(toolbar).getByTestId("eval-cancel-button")).toBeTruthy();
+    expect(
+      within(toolbar).queryByRole("button", { name: "评测档位" }),
+    ).toBeNull();
+  });
+
+  it("两步 inline 确认：首击变「确认终止?」不发，再击才发 + 成功 toast", () => {
+    const mutate = rs.fn(
+      (_input: unknown, opts?: { onSuccess?: () => void }) => {
+        opts?.onSuccess?.();
+      },
+    );
+    hooksMock.useCancelEvalRun.mockReturnValue({ mutate, isPending: false });
+    mockRunning();
+    renderEvalTab();
+
+    fireEvent.click(screen.getByTestId("eval-cancel-button"));
+    expect(
+      screen.getByRole("button", { name: "确认终止?" }),
+    ).toBeTruthy();
+    expect(mutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认终止?" }));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith("评测已终止");
+  });
+
+  it("终止失败走错误 toast", () => {
+    const mutate = rs.fn(
+      (_input: unknown, opts?: { onError?: (e: Error) => void }) => {
+        opts?.onError?.(new Error("boom"));
+      },
+    );
+    hooksMock.useCancelEvalRun.mockReturnValue({ mutate, isPending: false });
+    mockRunning();
+    renderEvalTab();
+
+    fireEvent.click(screen.getByTestId("eval-cancel-button"));
+    fireEvent.click(screen.getByRole("button", { name: "确认终止?" }));
+    expect(toast.error).toHaveBeenCalledWith("终止评测失败");
+  });
+
+  it("确认态 3s 超时自动回退首态", () => {
+    rs.useFakeTimers();
+    mockRunning();
+    renderEvalTab();
+
+    fireEvent.click(screen.getByTestId("eval-cancel-button"));
+    expect(
+      screen.getByRole("button", { name: "确认终止?" }),
+    ).toBeTruthy();
+    act(() => {
+      rs.advanceTimersByTime(2999);
+    });
+    expect(
+      screen.getByRole("button", { name: "确认终止?" }),
+    ).toBeTruthy();
+    act(() => {
+      rs.advanceTimersByTime(1);
+    });
+    expect(
+      screen.queryByRole("button", { name: "确认终止?" }),
+    ).toBeNull();
+    expect(screen.getByTestId("eval-cancel-button")).toBeTruthy();
+  });
+
+  it("空闲态次槽还原 chevron 档位下拉", () => {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
+    renderEvalTab();
+    const toolbar = screen.getByTestId("eval-view-toolbar");
+    expect(
+      within(toolbar).getByRole("button", { name: "评测档位" }),
+    ).toBeTruthy();
+    expect(within(toolbar).queryByTestId("eval-cancel-button")).toBeNull();
+  });
+
+  it("窄档（⋯ 菜单）运行态含「终止评测」项，两步确认菜单不关", async () => {
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-view-toolbar" ? 999 : 0;
+      },
+    });
+    const mutate = rs.fn(
+      (_input: unknown, opts?: { onSuccess?: () => void }) => {
+        opts?.onSuccess?.();
+      },
+    );
+    hooksMock.useCancelEvalRun.mockReturnValue({ mutate, isPending: false });
+    mockRunning();
+    try {
+      renderEvalTab();
+      // 降档是异步的（溢出检测走 effect）：先等 ⋯ 触发器就位，再 keyDown 开菜单
+      //（Radix 在 jsdom 下 click 不开菜单，既有窄档用例同款手法）。
+      await screen.findByTestId("eval-trend-chart-mock");
+      const more = await waitFor(() =>
+        within(screen.getByTestId("eval-view-toolbar")).getByRole("button", {
+          name: "更多选项",
+        }),
+      );
+      fireEvent.keyDown(more, { key: "ArrowDown" });
+      const item = await screen.findByRole("menuitem", {
+        name: "终止评测",
+      });
+      fireEvent.click(item);
+      // 两步确认：菜单不关，项文案变「确认终止?」。
+      expect(
+        await screen.findByRole("menuitem", { name: "确认终止?" }),
+      ).toBeTruthy();
+      expect(mutate).not.toHaveBeenCalled();
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: "确认终止?" }),
+      );
+      expect(mutate).toHaveBeenCalledTimes(1);
+      expect(toast.success).toHaveBeenCalledWith("评测已终止");
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
   });
 });

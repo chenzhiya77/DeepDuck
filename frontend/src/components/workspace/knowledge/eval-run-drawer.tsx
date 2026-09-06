@@ -109,7 +109,9 @@ export function EvalRunDrawer({
                         ? td.statusCompleted
                         : run.status === "error"
                           ? td.statusError
-                          : td.statusSkipped}
+                          : run.status === "cancelled"
+                            ? td.statusCancelled
+                            : td.statusSkipped}
                     </Badge>
                     {run.is_baseline && (
                       <Badge variant="outline">{td.baselineBadge}</Badge>

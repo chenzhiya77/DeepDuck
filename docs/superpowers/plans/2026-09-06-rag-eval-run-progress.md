@@ -322,9 +322,14 @@
 - Modify: `frontend/src/core/knowledge/types.ts`(status 联合加 `"cancelled"`)、i18n×3(cancelRun/cancelConfirm/cancelToast/slotSummaryCancelled/statusCancelled)
 - Modify: `frontend/tests/unit/knowledge/{eval-tab.dom,eval-run-history.dom}.test.*`
 
-- [ ] RED:运行态次槽显 X(chevron 下拉不在);首击变「确认终止?」、再击发 cancel mutation、超时回退;空闲态次槽还原 chevron;历史 cancelled 徽章;槽摘要 cancelled 文案。
-- [ ] Implement;GREEN;revert proof;knowledge 全量 + `pnpm check`。
-- [ ] Commit: `feat(rag): surface eval run cancel in status slot and history`。
+- [x] RED:运行态次槽显 X(chevron 下拉不在);首击变「确认终止?」、再击发 cancel mutation、超时回退;空闲态次槽还原 chevron;历史 cancelled 徽章;槽摘要 cancelled 文案(8 failed + 1 预存 chat-panel)。
+- [x] Implement;GREEN(knowledge **923 passed**|1 预存 chat-panel;`pnpm check` exit 0);revert proof(stash 十实现文件 → 4 files failed、恢复复绿)。
+- [x] Commit: `feat(rag): surface eval run cancel in toolbar secondary slot`(本提交)。
+- 实施校正:①既有「运行中箭头下拉一并禁用」用例改写为新契约(次槽 morph、chevron
+  不在);②窄档用例需异步等降档 + keyDown 开菜单(Radix jsdom 下 click 不开);
+  ③drawer 状态徽标补 cancelled 分支(原落入 skipped 兑底);④窄档 ⋯ 菜单运行态
+  加「终止评测」项(onSelect preventDefault 保菜单不关,可达性与 tier-0 对齐);
+  ⑤新增 cancelFailedToast 键(冻结清单外自然补齐)。
 
 ### Task 21: 回归收官与验收
 

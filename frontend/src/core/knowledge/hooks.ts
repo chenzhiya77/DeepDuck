@@ -309,6 +309,17 @@ export function useTriggerEvalRun(kbId: string) {
   });
 }
 
+/**
+ * 终止在飞按需评测（spec 2026-09-06 §11）。与触发同款不在此 invalidate——
+ * 轮询见 in_flight false 时走 drain 边一次性失效三个评测 query，cancelled 行
+ * 随历史/总览一并刷新。
+ */
+export function useCancelEvalRun(kbId: string) {
+  return useMutation({
+    mutationFn: () => api.cancelEvalRun(kbId),
+  });
+}
+
 // ── 合成造题（2026-08-28 spec §6，plan Task 8）────────────────────────
 
 /**

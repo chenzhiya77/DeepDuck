@@ -71,6 +71,20 @@ const RUN_REGRESSED: EvalRunSummary = {
   langfuse_trace_url: "https://langfuse.example/trace/7",
 };
 
+// 终止行（spec 2026-09-06 §11）：status 自由字符串列零迁移，历史行是唯一曝光面。
+const RUN_CANCELLED: EvalRunSummary = {
+  run_id: "run-cancelled",
+  created_at: "2026-09-06T06:00:00+00:00",
+  completed_at: "2026-09-06T06:03:00+00:00",
+  environment: "local",
+  status: "cancelled",
+  is_baseline: false,
+  has_layer1: true,
+  has_layer2: true,
+  regression_detected: false,
+  langfuse_trace_url: null,
+};
+
 function runsState(runs: EvalRunSummary[], inFlight = false) {
   return { data: { in_flight: inFlight, runs, total: runs.length }, error: null, isLoading: false };
 }
@@ -130,6 +144,13 @@ describe("EvalRunHistory 行渲染", () => {
     const onOpenRun = renderHistory([RUN_CI_ERROR]);
     fireEvent.click(screen.getByRole("button", { name: /CI/ }));
     expect(onOpenRun).toHaveBeenCalledWith("run-ci");
+  });
+
+  it("cancelled 行渲染「已终止」状态短文案（spec §11）", () => {
+    renderHistory([RUN_CANCELLED]);
+    expect(screen.getByText("已终止")).toBeTruthy();
+    expect(screen.queryByText("失败")).toBeNull();
+    expect(screen.queryByText("跳过")).toBeNull();
   });
 
   it("空历史渲染空态引导", () => {

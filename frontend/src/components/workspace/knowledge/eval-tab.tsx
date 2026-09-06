@@ -67,6 +67,7 @@ import {
   knowledgeEvalLatestKey,
   knowledgeEvalRunsKey,
   knowledgeEvalTrendKey,
+  useCancelEvalRun,
   useEvalRuns,
   useEvalTrend,
   useMetricsOverview,
@@ -100,6 +101,9 @@ type EvalView = "overview" | "questions" | "history";
 
 const GRANULARITIES = ["day", "week", "month"] as const;
 const EVAL_VIEWS = ["overview", "questions", "history"] as const;
+
+/** 终止评测两步 inline 确认的回退窗口（spec 2026-09-06 §11）。 */
+export const CANCEL_CONFIRM_MS = 3000;
 
 /** 档级：0=控件内联 1=收进 ⋯ 菜单（单工具栏只有一组可收控件，两档够用）。 */
 type ToolbarTier = 0 | 1;
@@ -207,6 +211,40 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const triggerMutation = useTriggerEvalRun(kbId);
   // 点击→首次轮询间隙由 isPending 补位（eval-run-status 纯函数）。
   const running = isEvalRunning(runsQuery.data, triggerMutation.isPending);
+
+  // 终止评测（spec §11）：两步 inline 确认——首击 arm（CANCEL_CONFIRM_MS 后自动
+  // 回退），再击才发 cancel；长跑误触代价高，不开 dialog。不在此 invalidate，
+  // 轮询见 in_flight false 走 drain 边统一失效（与触发同款）。
+  const cancelMutation = useCancelEvalRun(kbId);
+  const [cancelArmed, setCancelArmed] = useState(false);
+  const cancelTimerRef = useRef<number | null>(null);
+  const disarmCancel = useCallback(() => {
+    if (cancelTimerRef.current !== null) {
+      window.clearTimeout(cancelTimerRef.current);
+      cancelTimerRef.current = null;
+    }
+    setCancelArmed(false);
+  }, []);
+  const handleCancelClick = useCallback(() => {
+    if (!cancelArmed) {
+      setCancelArmed(true);
+      cancelTimerRef.current = window.setTimeout(() => {
+        cancelTimerRef.current = null;
+        setCancelArmed(false);
+      }, CANCEL_CONFIRM_MS);
+      return;
+    }
+    disarmCancel();
+    cancelMutation.mutate(undefined, {
+      onSuccess: () => toast.success(tk.cancelToast),
+      onError: () => toast.error(tk.cancelFailedToast),
+    });
+  }, [cancelArmed, cancelMutation, disarmCancel, tk]);
+  // 运行结束（drain 边/轮询回填 false）自动解除确认态；卸载时清悬挂 timer。
+  useEffect(() => {
+    if (!running) disarmCancel();
+  }, [disarmCancel, running]);
+  useEffect(() => disarmCancel, [disarmCancel]);
 
   const handleTrigger = useCallback(
     (input: EvalTriggerInput) => {
@@ -410,51 +448,75 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                   )}
                   {runButtonLabel}
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label={tk.fullRun.menuAria}
-                      className="border-primary-foreground/25 h-7 shrink-0 rounded-l-none border-l px-1 has-[>svg]:px-1"
-                      disabled={running}
-                    >
-                      <ChevronDown aria-hidden className="size-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  {/* min-w-0（2026-09-06）：覆盖 ui 默认 min-w-[8rem]，菜单宽度贴合
-                      内容（4 字档位名/造题入口），不再比窄触发按钮宽出一截。 */}
-                  <DropdownMenuContent align="end" className="min-w-0">
-                    {/* 档位互斥单选（2026-09-06）：点选只勾选不运行，主按钮执行勾中
-                          档；图标语汇与题库行三点/右键菜单一致（Play/Layers），勾中
-                          项尾置 Check 表征单选态。 */}
-                    <DropdownMenuItem onClick={() => setTier("l1")}>
-                      <Play className="size-4" />
-                      {tk.tierQuick}
-                      {tier === "l1" && <Check className="ml-auto size-4" />}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setTier("l1_l2")}>
-                      <Layers className="size-4" />
-                      {tk.tierFull}
-                      {tier === "l1_l2" && <Check className="ml-auto size-4" />}
-                    </DropdownMenuItem>
-                    {/* 造题入口收进下拉（2026-09-06）：分割线与档位单选隔离；仅题库
-                          视图出现（总览/历史无造题语义）。 */}
-                    {view === "questions" && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => setBankAddOpen(true)}>
-                          <Plus className="size-4" />
-                          {tk.questions.addQuestion}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setBankSynthesisOpen(true)}
-                        >
-                          <Sparkles className="size-4" />
-                          {tk.synthesize.entryButton}
-                        </DropdownMenuItem>
-                      </>
+                {/* 运行态次槽 morph 为终止按钮（spec §11，2026-09-06 用户定案）：
+                    chevron 档位下拉运行中本就 disabled 且无意义（档位只对下一次
+                    运行生效），次槽让位给终止；两步 inline 确认（handleCancelClick），
+                    保持 h-7 分体视觉；空闲态还原 chevron 下拉。 */}
+                {running ? (
+                  <Button
+                    aria-label={cancelArmed ? undefined : tk.cancelRun}
+                    className={cn(
+                      "border-primary-foreground/25 h-7 shrink-0 rounded-l-none border-l",
+                      cancelArmed
+                        ? "text-destructive hover:text-destructive px-2 text-xs"
+                        : "px-1 has-[>svg]:px-1",
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    data-testid="eval-cancel-button"
+                    onClick={handleCancelClick}
+                    variant="ghost"
+                  >
+                    {cancelArmed ? (
+                      tk.cancelConfirm
+                    ) : (
+                      <X aria-hidden className="size-3.5" />
+                    )}
+                  </Button>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-label={tk.fullRun.menuAria}
+                        className="border-primary-foreground/25 h-7 shrink-0 rounded-l-none border-l px-1 has-[>svg]:px-1"
+                      >
+                        <ChevronDown aria-hidden className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    {/* min-w-0（2026-09-06）：覆盖 ui 默认 min-w-[8rem]，菜单宽度贴合
+                        内容（4 字档位名/造题入口），不再比窄触发按钮宽出一截。 */}
+                    <DropdownMenuContent align="end" className="min-w-0">
+                      {/* 档位互斥单选（2026-09-06）：点选只勾选不运行，主按钮执行勾中
+                            档；图标语汇与题库行三点/右键菜单一致（Play/Layers），勾中
+                            项尾置 Check 表征单选态。 */}
+                      <DropdownMenuItem onClick={() => setTier("l1")}>
+                        <Play className="size-4" />
+                        {tk.tierQuick}
+                        {tier === "l1" && <Check className="ml-auto size-4" />}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setTier("l1_l2")}>
+                        <Layers className="size-4" />
+                        {tk.tierFull}
+                        {tier === "l1_l2" && <Check className="ml-auto size-4" />}
+                      </DropdownMenuItem>
+                      {/* 造题入口收进下拉（2026-09-06）：分割线与档位单选隔离；仅题库
+                            视图出现（总览/历史无造题语义）。 */}
+                      {view === "questions" && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setBankAddOpen(true)}>
+                            <Plus className="size-4" />
+                            {tk.questions.addQuestion}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setBankSynthesisOpen(true)}
+                          >
+                            <Sparkles className="size-4" />
+                            {tk.synthesize.entryButton}
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </>
           ) : (
@@ -472,6 +534,18 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {/* 窄档运行态的终止入口（spec §11）：同款两步 inline 确认，
+                    onSelect preventDefault 让菜单在确认期间不关。 */}
+                {running && (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={(event) => event.preventDefault()}
+                    onClick={handleCancelClick}
+                  >
+                    <X className="size-4" />
+                    {cancelArmed ? tk.cancelConfirm : tk.cancelRun}
+                  </DropdownMenuItem>
+                )}
                 {/* 降档不丢图标（2026-09-02）：⋯ 菜单逐项沿用内联按钮/行级菜单
                       的同一图标（Plus/Sparkles/Play/Layers），两处入口视觉一致。 */}
                 {view === "questions" && (

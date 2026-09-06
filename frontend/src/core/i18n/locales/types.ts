@@ -500,6 +500,8 @@ export interface Translations {
        *  已有 n=K）；时长结构件（durationParts）→ dur* 键文案。 */
       slotSummary: (tier: string, duration: string | null) => string;
       slotSummaryFailed: string;
+      /** cancelled 行专属摘要文案（区别 failed，spec 2026-09-06 §11）。 */
+      slotSummaryCancelled: string;
       slotViewHistory: string;
       durSeconds: (seconds: number) => string;
       durMinutes: (minutes: number) => string;
@@ -508,6 +510,11 @@ export interface Translations {
       runStartedToast: string;
       alreadyRunningToast: string;
       runFailedToast: string;
+      /** 终止评测（spec 2026-09-06 §11）：工具栏次槽两步 inline 确认 + toast。 */
+      cancelRun: string;
+      cancelConfirm: string;
+      cancelToast: string;
+      cancelFailedToast: string;
       /** 完整评测分档（2026-09-01 B 方案）：箭头菜单项 + 成本确认对话框。 */
       fullRun: {
         menuAria: string;
@@ -599,6 +606,7 @@ export interface Translations {
         statusCompleted: string;
         statusError: string;
         statusSkipped: string;
+        statusCancelled: string;
         emptyHistory: string;
       };
       trendTitle: string;
@@ -635,6 +643,7 @@ export interface Translations {
         statusCompleted: string;
         statusError: string;
         statusSkipped: string;
+        statusCancelled: string;
         baselineBadge: string;
         layer1Section: string;
         layer2Section: string;

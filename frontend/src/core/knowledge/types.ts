@@ -585,7 +585,7 @@ export interface TrendChartLabels {
 export interface EvalRunDetail {
   run_id: string;
   kb_id: string;
-  status: "completed" | "error" | "skipped";
+  status: "completed" | "error" | "skipped" | "cancelled";
   environment: "local" | "ci" | "nightly";
   created_at: string;
   layer1_metrics: Layer1Metrics | Record<string, never>;
@@ -678,7 +678,8 @@ export interface EvalRunSummary {
   created_at: string | null;
   completed_at: string | null;
   environment: "local" | "ci" | "nightly";
-  status: "completed" | "error" | "skipped";
+  /** cancelled = 用户终止（spec 2026-09-06 §11）；读集只认 completed，历史行是唯一曝光面。 */
+  status: "completed" | "error" | "skipped" | "cancelled";
   is_baseline: boolean;
   has_layer1: boolean;
   has_layer2: boolean;
@@ -733,4 +734,9 @@ export interface EvalTriggerInput {
 /** POST /eval-runs 202 响应（wiki generate 幂等同款）。 */
 export interface EvalTriggerResponse {
   status: "enqueued" | "already_running";
+}
+
+/** POST /eval-runs/cancel 202 响应（spec 2026-09-06 §11；409 = 无在飞 run）。 */
+export interface EvalCancelResponse {
+  status: "cancelled";
 }
