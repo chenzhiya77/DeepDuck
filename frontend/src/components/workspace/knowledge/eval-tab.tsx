@@ -60,9 +60,8 @@ import {
   EVAL_PHASE_COUNT,
   isEvalRunning,
   phaseStep,
-  progressAriaLabel,
-  progressFraction,
-  type EvalProgressPhaseLabels,
+  runningTier,
+  type EvalTier,
 } from "@/core/knowledge/eval-run-status";
 import {
   knowledgeEvalLatestKey,
@@ -84,6 +83,7 @@ import { cn } from "@/lib/utils";
 import { EvalFullRunDialog } from "./eval-full-run-dialog";
 import { EvalMetricsOverview } from "./eval-metrics-overview";
 import { EvalQuestionBank } from "./eval-question-bank";
+import { EvalRunBanner } from "./eval-run-banner";
 import { EvalRunDrawer } from "./eval-run-drawer";
 import { EvalRunHistory } from "./eval-run-history";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
@@ -193,7 +193,10 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   // 主按钮恒显勾中档位名并执行该档；chevron 下拉为互斥单选。取代旧"主键=L1 硬
   // 编码 + 下拉=完整"的不对称结构，也取代 pendingFullRun 的触发瞬间推断（完整档
   // 计数改由 tier 直接判定）。
-  const [tier, setTier] = useState<"l1" | "l1_l2">("l1");
+  const [tier, setTier] = useState<EvalTier>("l1");
+  // 在飞/最近一次触发所用的档位（与“下一次运行”的单选分开，spec 2026-09-06 §9）：
+  // 从题库右键/行⋮ 触发的完整档不应被单选（快速档）覆盖进度条几何。
+  const [runTier, setRunTier] = useState<EvalTier | null>(null);
   // 完整档确认弹窗的运行范围（所选题 id）；缺省=全库。头部/⋯/题库右键·行⋮ 的
   // 完整档入口统一收口到该弹窗（成本+范围提醒器）。
   const [fullRunScope, setFullRunScope] = useState<string[] | undefined>(undefined);
@@ -212,6 +215,8 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           // 202 语义分流（§5.2）：enqueued 确认；already_running 幂等提示。
           if (response.status === "enqueued") {
             toast.success(tk.runStartedToast);
+            // 记录在飞那次的档位（spec §9）：档位单选表达的是“下一次运行”。
+            setRunTier(input.layers ?? "l1");
             // 无条件乐观置位（spec 2026-09-06 run-progress 修订）：缓存存在则并入
             // in_flight=true，缓存为空则**创建**最小条目。旧写法（old ? … : old，
             // 空缓存退化 invalidate）在空缓存时撞上后端 create_task 延迟自增
@@ -273,24 +278,17 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
     regressionPrefix: tk.trend.regressionPrefix,
   };
 
-  // 运行进度（spec 2026-09-06 run-progress）：progress 走 /eval-runs 顶层字段。
-  // 底缘细线——questions 段定长（按 done/total 走宽 + progressbar aria 承载 k/N），
-  // layer1/ragas 段不定长 pulse（绝不假百分比）；progress 为 null（运行中但首个
-  // 轮询未到）时按不定长降级，点击瞬间即有 pulse 反馈。
+  // 运行进度（spec 2026-09-06 run-progress / §9）：progress 走 /eval-runs 顶层字段。
+  // 底缘细线已退役——它只表征 questions 段（用户口中的“假进度条”）；富进度改由
+  // 总览的 EvalRunBanner 承载（时长加权条 + ETA + 单行日志），按钮只留 4 字阶段名 + n/3。
   const progress = runsQuery.data?.progress ?? null;
-  const progressFill = progressFraction(progress);
-  const phaseLabels: EvalProgressPhaseLabels = {
-    phaseLayer1: tk.phaseLayer1,
-    phaseQuestions: tk.phaseQuestions,
-    phaseRagas: tk.phaseRagas,
-    failedCount: tk.failedCount,
-  };
-  const progressAria = progressAriaLabel(progress, phaseLabels);
+  // 在飞那次的档位：触发时记录（runTier），刷新后按 phase 兜底推断，最后回退单选。
+  const bannerTier = runningTier(progress, runTier, tier);
 
   // 运行态按钮文案（用户定案）：4 字阶段名 + n/3，与「运行评测/完整评测」等 4 字
   // 按钮对齐。快速档（L1 单阶段）不显计数——避免"1/3 却到不了 3/3"的新假状态；
   // 完整档 layer1 显 1/3，questions/ragas 恒显 2/3、3/3（step>1 与档位无关）。
-  // k/N 不进按钮（破坏对齐），改由底缘定长细线填充 + aria-valuenow 承载。
+  // k/N 不进按钮（破坏对齐），改由总览容器的加权条 + aria-valuenow 承载。
   const step = phaseStep(progress);
   const phaseName =
     progress?.phase === "questions"
@@ -298,7 +296,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
       : progress?.phase === "ragas"
         ? tk.phaseRagas
         : tk.phaseLayer1;
-  const showCounter = tier === "l1_l2" || step > 1;
+  const showCounter = bannerTier === "l1_l2" || step > 1;
   // 主按钮文案（2026-09-06 档位单选）：运行态=阶段名+n/3；空闲态=勾中档位名
   // （恒 4 字、不随选中题目变脸；"只跑所选"的范围改由确认弹窗承载）。
   const tierName = tier === "l1_l2" ? tk.tierFull : tk.tierQuick;
@@ -510,34 +508,6 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             </DropdownMenu>
           )}
         </div>
-        {/* 运行进度细线（spec 2026-09-06 run-progress）：工具栏底缘 absolute，
-              h-0.5 不占布局高度（行高 44px 锁定不变）；determinate（questions）
-              按 done/total 走宽 + progressbar aria，indeterminate（layer1/ragas/null）
-              整条 pulse。非运行态不渲染。 */}
-        {running && (
-          <div
-            aria-label={progressAria ?? undefined}
-            aria-valuemax={progressFill !== null ? progress?.total : undefined}
-            aria-valuemin={progressFill !== null ? 0 : undefined}
-            aria-valuenow={progressFill !== null ? progress?.done : undefined}
-            className={cn(
-              "absolute inset-x-0 bottom-0 h-0.5",
-              progressFill !== null
-                ? "bg-muted overflow-hidden"
-                : "bg-primary/40 animate-pulse",
-            )}
-            data-testid="eval-run-progress"
-            role="progressbar"
-          >
-            {progressFill !== null && (
-              <div
-                className="bg-primary h-full transition-[width] duration-300"
-                data-testid="eval-run-progress-fill"
-                style={{ width: `${Math.round(progressFill * 100)}%` }}
-              />
-            )}
-          </div>
-        )}
       </div>
 
       {/* 内容区：百科 Tab 容器同款 overlay 滚动条（2026-09-04）：ScrollArea type="scroll"
@@ -557,6 +527,10 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         <div className="flex min-w-0 flex-col gap-4">
           {view === "overview" && (
             <>
+              {/* 运行进度容器（spec 2026-09-06 §9）：仅总览、仅运行中，检索质量卡上方。
+                  题库/历史视图不渲染——那里由工具栏按钮的 4 字阶段名承载紧凑表面。 */}
+              {running && <EvalRunBanner progress={progress} tier={bannerTier} />}
+
               {/* 指标总览块（2026-09-05 三迭代）：横向滑块与 min-w 下限沉进
                   overview 两张卡各自内部——每卡独立横滚，不再共用总览块一个
                   滑块；本层 ScrollArea 只承纵向与题库/历史的横滚。 */}

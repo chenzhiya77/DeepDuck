@@ -215,16 +215,18 @@
 
 **Files:**
 - Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(总览视图检索质量卡上方挂载 banner,仅 in_flight、drain 卸载;删除底缘细线 JSX 与 progressFraction/isIndeterminatePhase 细线用途;按钮阶段文案保留;题库/历史不动)
-- Modify: `frontend/tests/unit/knowledge/eval-tab.dom.test.tsx`(删细线断言、增容器断言:总览运行态条/ETA/日志行)
+- Modify: `frontend/src/core/knowledge/eval-run-status.ts`(**实施新增** `runningTier` 纯函数;退役 `progressFraction`/`isIndeterminatePhase`/`progressAriaLabel`/`EvalProgressPhaseLabels`——细线退役后无生产消费者)
+- Modify: `frontend/tests/unit/knowledge/{eval-tab.dom,eval-run-status.unit}.test.tsx`(删细线断言与退役函数用例、增容器断言:总览运行态条/刻线/跨度/ETA/日志行 + runningTier 三案)
 
-- [ ] RED test(容器断言)。
-- [ ] Run `python scripts/pnpm.py test eval-tab` 记录 RED。
-- [ ] Implement。
-- [ ] GREEN;revert proof。
-- [ ] Commit。
+- [x] RED test(容器断言 + runningTier)。(RED:eval-tab 1 file failed、eval-run-status 1 file failed——缺 runningTier 导出)
+- [x] Run `python scripts/pnpm.py test eval-tab` 记录 RED。
+- [x] Implement。(**在飞档位推断**：新增 `runTier` state（onSuccess enqueued 写入）+ `runningTier(progress, runTier, tier)`——单选表达的是“下一次运行”，不能画当前这次的条几何；`showCounter` 同步改用推断值)
+- [x] GREEN;revert proof。(eval-tab 2 files/51 passed、eval-run* 4 files passed；stash eval-tab + eval-run-status 后两文件均 failed、恢复后复绿；`pnpm check` exit 0)
+- [x] Commit: `feat(rag): mount eval run banner in overview and retire edge progress line`(本提交)。
+- 陷阱记录:本 describe 的 `beforeEach` 不重置 `useEvalRuns`（sticky mock），新增的“容器只在总览”用例若排在末位会遗留 `in_flight:true`，让后续 toast 用例的按钮处于 disabled 而失败——**置 idle 的用例必须排末位**。
 
 ## Task 13: 回归 + 手动验收 + 回写
 
-- [ ] knowledge 套件 + `pnpm check` + ruff 双净(预存 chat-panel 失败除外)。
+- [x] knowledge 套件 + `pnpm check` + ruff 双净(预存 chat-panel 失败除外)。(knowledge **900 passed | 1 failed** 预存 chat-panel model-selector；check exit 0；ruff 于 Task 9 双净、Phase 5 未再改后端)
 - [ ] 手动验收(spec §9):完整档 → 总览容器出现、条随三段推进且刻度自适应、ETA warmup 后显分钟级剩余、日志单行滚动;drain 后容器卸载;快速档单段条满格即消;题库/历史按钮阶段名不变。
 - [ ] 文档回写确认(spec §9 冻结、plan 本 Phase 勾选)。

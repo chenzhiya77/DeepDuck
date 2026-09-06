@@ -159,7 +159,14 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   - 第三段同时并入**逐题 citation judge**(此前完全静默,会让条在 ragas 结束后提前满格):
     `scoring_total = ragas_jobs + judge_jobs`;ragas 失败/跳过也按预期 job 数结算,保证单调。
   - evaluator 协议增可选 `on_progress`,仅在 `progress_hook` 存在时传入(CLI 与既有假件协议不变)。
-- 退役:底缘细线 JSX 与 progressFraction/isIndeterminatePhase 的细线用途;按钮阶段文案保留。
+- 退役:底缘细线 JSX 与 `progressFraction/isIndeterminatePhase/progressAriaLabel`
+  (含 `EvalProgressPhaseLabels`)——细线退役后三者无生产消费者,连同其单测一并删除;
+  按钮阶段文案保留。
+- **在飞档位推断**(实施新增,纯函数 `runningTier`):档位单选表达的是「下一次运行」,
+  不能拿来画当前这次运行的条几何——从题库右键/行⋮ 触发的完整档、以及刷新后接上的
+  在飞 run,都可能与单选不一致。优先级:phase 已离开 layer1 → 必属完整档(快速档没有
+  后两段);仍在 layer1 → 用触发时记录的 `runTier`(onSuccess enqueued 分支写入);
+  两者都无从得知 → 回退当前单选。按钮计数 `showCounter` 同步改用该推断值。
 - i18n 增量:etaRemaining/etaEstimating + 日志句模板(logPhase/logItem/logFail)+
   **logWaiting**(tail 未到的乐观窗口)/ **bannerAria**(progressbar 可读名);三处同步。
 - 测试:eval-run-status 增 f/ETA 纯函数单测;eval-tab 删细线断言、增容器断言(总览运行态);

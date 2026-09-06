@@ -117,7 +117,12 @@ class ResizeObserverStub {
 import { EvalTab } from "@/components/workspace/knowledge/eval-tab";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import type { MetricsOverview, TrendResponse } from "@/core/knowledge/types";
+import { overallFraction } from "@/core/knowledge/eval-run-status";
+import type {
+  EvalRunProgress,
+  MetricsOverview,
+  TrendResponse,
+} from "@/core/knowledge/types";
 
 const OVERVIEW: MetricsOverview = {
   kb_id: "kb-1",
@@ -660,125 +665,160 @@ describe("EvalTab 常驻工具栏", () => {
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
-  it("questions 段进度 → 按钮「答题评测 2/3」+ 底缘定长细线承载 k/N（width% 与 aria）", () => {
+  /** 进度快照夹具：冷启动（无实测、无 phase_started_at）→ 条几何落在先验 10/35/55。 */
+  function liveProgress(
+    overrides: Partial<EvalRunProgress> = {},
+  ): EvalRunProgress {
+    return {
+      run_id: "run-live",
+      phase: "questions",
+      done: 3,
+      total: 10,
+      failed: 0,
+      started_at: "2026-09-06T10:00:00+00:00",
+      updated_at: "2026-09-06T10:05:00+00:00",
+      phase_durations: {},
+      tail: { kind: "item", phase: "questions", done: 3, total: 10, failed: 0 },
+      ...overrides,
+    };
+  }
+
+  function mockRunning(snapshot?: EvalRunProgress | null) {
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({
         data: {
           in_flight: true,
-          progress: {
-            run_id: "run-live",
-            phase: "questions",
-            done: 3,
-            total: 10,
-            failed: 1,
-            started_at: "2026-09-06T10:00:00+00:00",
-            updated_at: "2026-09-06T10:05:00+00:00",
-          },
+          progress: snapshot ?? undefined,
           runs: [],
           total: 0,
         },
       }),
     );
+  }
+
+  const barPercent = (
+    snapshot: EvalRunProgress | null,
+    tier: "l1" | "l1_l2" = "l1_l2",
+  ) => `${Math.round(overallFraction(snapshot, tier) * 100)}%`;
+
+  it("questions 段进度 → 按钮「答题评测 2/3」+ 总览容器承载加权条与单行日志", () => {
+    const snapshot = liveProgress({
+      failed: 1,
+      tail: { kind: "item", phase: "questions", done: 3, total: 10, failed: 1 },
+    });
+    mockRunning(snapshot);
     renderEvalTab();
 
-    // 按钮文案携阶段名 + n/3（questions 段恒 step=2；k/N 移到底缘细线 + aria）。
+    // 按钮仍是紧凑表面：4 字阶段名 + n/3。
     expect(
       screen.getByRole("button", { name: "答题评测 2/3" }),
     ).toBeTruthy();
 
-    // 底缘细线：determinate progressbar，aria-valuenow/max + 宽 30%。
-    const line = screen.getByTestId("eval-run-progress");
-    expect(line.getAttribute("role")).toBe("progressbar");
-    expect(line.getAttribute("aria-valuenow")).toBe("3");
-    expect(line.getAttribute("aria-valuemax")).toBe("10");
-    expect(line.getAttribute("aria-label")).toContain("答题");
-    expect(line.getAttribute("aria-label")).toContain("失败 1");
-    const fill = screen.getByTestId("eval-run-progress-fill");
-    expect(fill.style.width).toBe("30%");
-    // 定长段不 pulse。
-    expect(line.className).not.toContain("animate-pulse");
+    // 容器（总览检索质量卡上方）：加权条 + 刻线 + 当前段跨度 + 日志 + 失败徽标。
+    const banner = screen.getByTestId("eval-run-banner");
+    const bar = within(banner).getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuemax")).toBe("100");
+    expect(bar.getAttribute("aria-valuenow")).toBe(
+      String(Math.round(overallFraction(snapshot, "l1_l2") * 100)),
+    );
+    expect(screen.getByTestId("eval-banner-fill").style.width).toBe(
+      barPercent(snapshot),
+    );
+    expect(
+      screen.getAllByTestId("eval-banner-tick").map((tick) => tick.style.left),
+    ).toEqual(["10%", "45%"]);
+    expect(screen.getByTestId("eval-banner-span").style.left).toBe("10%");
+    const log = screen.getByTestId("eval-banner-log");
+    expect(log.textContent).toContain("答题评测 3/10");
+    expect(log.textContent).toContain("失败 1");
+    // 底缘细线已退役（只表征 questions 段的"假进度条"，用户定案直接删）。
+    expect(screen.queryByTestId("eval-run-progress")).toBeNull();
   });
 
-  it("layer1 段进度 → 按钮「检索评测」(未触发完整档不显计数) + 底缘细线 pulse（不定长）", () => {
-    hooksMock.useEvalRuns.mockReturnValue(
-      queryState({
-        data: {
-          in_flight: true,
-          progress: {
-            run_id: "run-live",
-            phase: "layer1",
-            done: 0,
-            total: 1,
-            failed: 0,
-            started_at: "2026-09-06T10:00:00+00:00",
-            updated_at: "2026-09-06T10:00:01+00:00",
-          },
-          runs: [],
-          total: 0,
-        },
+  it("layer1 段（快速档）→ 按钮「检索评测」不显计数 + 容器单段无刻线", () => {
+    mockRunning(
+      liveProgress({
+        phase: "layer1",
+        done: 0,
+        total: 1,
+        tail: { kind: "phase", phase: "layer1", done: 0, total: 1, failed: 0 },
       }),
     );
     renderEvalTab();
 
-    // layer1 段（tier 默认快速档 → 不显计数）：按钮显阶段名，不显 n/3。
     expect(screen.getByRole("button", { name: "检索评测" })).toBeTruthy();
-
-    const line = screen.getByTestId("eval-run-progress");
-    expect(line.className).toContain("animate-pulse");
-    // 不假百分比：无 aria-valuenow、无 fill 宽。
-    expect(line.getAttribute("aria-valuenow")).toBeNull();
-    expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
+    expect(screen.queryAllByTestId("eval-banner-tick")).toHaveLength(0);
+    expect(screen.getByTestId("eval-banner-span").style.width).toBe("100%");
+    expect(screen.getByTestId("eval-banner-fill").style.width).toBe(
+      barPercent(liveProgress({ phase: "layer1", done: 0, total: 1 }), "l1"),
+    );
+    expect(screen.getByTestId("eval-banner-log").textContent).toContain(
+      "进入检索评测",
+    );
   });
 
-  it("ragas 段进度 → 按钮「质量评估 3/3」+ 底缘细线 pulse（不定长，不假百分比）", () => {
-    hooksMock.useEvalRuns.mockReturnValue(
-      queryState({
-        data: {
-          in_flight: true,
-          progress: {
-            run_id: "run-live",
-            phase: "ragas",
-            done: 10,
-            total: 10,
-            failed: 0,
-            started_at: "2026-09-06T10:00:00+00:00",
-            updated_at: "2026-09-06T10:09:00+00:00",
-          },
-          runs: [],
-          total: 0,
-        },
-      }),
-    );
+  it("ragas 段进度 → 按钮「质量评估 3/3」+ 容器条已跨过前两段", () => {
+    const snapshot = liveProgress({
+      phase: "ragas",
+      done: 12,
+      total: 20,
+      tail: { kind: "item", phase: "ragas", done: 12, total: 20, failed: 0 },
+    });
+    mockRunning(snapshot);
     renderEvalTab();
 
-    // ragas 段恒 step=3（与档位无关）→ 按钮显「质量评估 3/3」，消除旧裸「运行中…」歧义。
     expect(screen.getByRole("button", { name: "质量评估 3/3" })).toBeTruthy();
-
-    // 不定长：细线 pulse，绝不假百分比（无 aria-valuenow、无 fill 宽）。
-    const line = screen.getByTestId("eval-run-progress");
-    expect(line.className).toContain("animate-pulse");
-    expect(line.getAttribute("aria-valuenow")).toBeNull();
-    expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
+    // 在飞的 run 已离开 layer1 → 必属完整档（即使单选停在快速档）：三段几何。
+    expect(screen.getAllByTestId("eval-banner-tick")).toHaveLength(2);
+    // 第三段起点 = 前两段先验权重和（45%）。
+    expect(screen.getByTestId("eval-banner-span").style.left).toBe("45%");
+    expect(screen.getByTestId("eval-banner-fill").style.width).toBe(
+      barPercent(snapshot),
+    );
+    expect(screen.getByTestId("eval-banner-log").textContent).toContain(
+      "质量评估 12/20",
+    );
   });
 
-  it("运行中但无 progress（首个轮询未到）→ 细线 pulse 降级", () => {
-    hooksMock.useEvalRuns.mockReturnValue(
-      queryState({ data: { in_flight: true, runs: [], total: 0 } }),
-    );
+  it("运行中但无 progress（首个轮询未到）→ 容器渲染空条与等待行", () => {
+    mockRunning(null);
     renderEvalTab();
 
-    const line = screen.getByTestId("eval-run-progress");
-    expect(line.className).toContain("animate-pulse");
-    expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
+    expect(screen.getByTestId("eval-run-banner")).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
+      "0",
+    );
+    expect(screen.getByTestId("eval-banner-fill").style.width).toBe("0%");
+    expect(screen.getByTestId("eval-banner-eta").textContent).toBe("估算中…");
+    expect(screen.getByTestId("eval-banner-log").textContent).toContain(
+      "等待首个进度事件",
+    );
   });
 
-  it("空闲态不渲染进度细线", () => {
-    // 本 describe 的 beforeEach 不重置 useEvalRuns（靠各用例 sticky 设值），
-    // 故本例必须显式置 idle，否则会继承上一例的 in_flight:true。
+  it("容器只在总览：题库/历史视图靠按钮阶段名承载", () => {
+    mockRunning(liveProgress());
+    renderEvalTab();
+    expect(screen.getByTestId("eval-run-banner")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "题库" }));
+    expect(screen.queryByTestId("eval-run-banner")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "答题评测 2/3" }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "总览" }));
+    expect(screen.getByTestId("eval-run-banner")).toBeTruthy();
+  });
+
+  it("空闲态不渲染进度容器与细线", () => {
+    // 本 describe 的 beforeEach 不重置 useEvalRuns（靠各用例 sticky 设值），故本例
+    // 必须显式置 idle；也因为它排在末位，后续用例才不会继承 in_flight:true。
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({ data: { in_flight: false, runs: [], total: 0 } }),
     );
     renderEvalTab();
+
+    expect(screen.queryByTestId("eval-run-banner")).toBeNull();
     expect(screen.queryByTestId("eval-run-progress")).toBeNull();
   });
 

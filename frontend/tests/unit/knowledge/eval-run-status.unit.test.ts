@@ -1,11 +1,11 @@
 /**
- * eval-run-status pure-function tests (spec 2026-09-06 run-progress §4/§5，
- * 2026-09-06 修订：按钮改阶段名 + n/3).
+ * eval-run-status pure-function tests (spec 2026-09-06 run-progress §4/§5 + §9).
  *
- * 覆盖运行进度纯函数：phaseStep 把三段映射到 1/2/3（null/undefined 降级为 1，
- * 让触发瞬间即读「检索评测 1/3」）；progressFraction 只在 questions 段出定长
- * 百分比宽，layer1·ragas 段返回 null（isIndeterminatePhase=true，前端走 pulse
- * 而非假百分比）；以及 aria 文案组装（4 字 phase 词 + failed>0 后缀）。
+ * 覆盖运行进度纯函数：phaseStep 把三段映射到 1/2/3（null/undefined 降级为 1，让
+ * 触发瞬间即读「检索评测 1/3」）；§9 加权进度条三件套 adaptiveWeights /
+ * overallFraction / etaSeconds + etaMinutes（先验与实测自适应、warmup 门控、分钟取整）；
+ * 以及 runningTier（在飞那次运行的档位推断）。底缘细线退役后
+ * progressFraction / isIndeterminatePhase / progressAriaLabel 一并删除（无生产消费者）。
  */
 import { describe, expect, it } from "@rstest/core";
 
@@ -14,11 +14,9 @@ import {
   adaptiveWeights,
   etaMinutes,
   etaSeconds,
-  isIndeterminatePhase,
   overallFraction,
   phaseStep,
-  progressAriaLabel,
-  progressFraction,
+  runningTier,
 } from "@/core/knowledge/eval-run-status";
 import type { EvalRunProgress } from "@/core/knowledge/types";
 
@@ -35,13 +33,6 @@ function progress(overrides: Partial<EvalRunProgress> = {}): EvalRunProgress {
   };
 }
 
-const LABELS = {
-  phaseLayer1: "检索评测",
-  phaseQuestions: "答题评测",
-  phaseRagas: "质量评估",
-  failedCount: (n: number) => `失败 ${n}`,
-};
-
 describe("phaseStep", () => {
   it("maps each phase to its 1-based step in the 3-phase pipeline", () => {
     expect(phaseStep(progress({ phase: "layer1" }))).toBe(1);
@@ -53,53 +44,6 @@ describe("phaseStep", () => {
     // 触发瞬间乐观置位但首个轮询未到 → 按钮即读「检索评测 1/3」。
     expect(phaseStep(null)).toBe(1);
     expect(phaseStep(undefined)).toBe(1);
-  });
-});
-
-describe("isIndeterminatePhase", () => {
-  it("is determinate only for the questions phase", () => {
-    expect(isIndeterminatePhase(progress())).toBe(false);
-  });
-
-  it("is indeterminate for layer1 / ragas / null (pulse, never a faked %)", () => {
-    expect(isIndeterminatePhase(progress({ phase: "layer1" }))).toBe(true);
-    expect(isIndeterminatePhase(progress({ phase: "ragas" }))).toBe(true);
-    expect(isIndeterminatePhase(null)).toBe(true);
-  });
-});
-
-describe("progressFraction", () => {
-  it("computes done/total clamped to 0..1 for the questions phase", () => {
-    expect(progressFraction(progress({ done: 3, total: 10 }))).toBeCloseTo(0.3);
-    expect(progressFraction(progress({ done: 0, total: 10 }))).toBe(0);
-    expect(progressFraction(progress({ done: 10, total: 10 }))).toBe(1);
-  });
-
-  it("clamps an over-count done to 1 (defensive)", () => {
-    expect(progressFraction(progress({ done: 12, total: 10 }))).toBe(1);
-  });
-
-  it("returns null for indeterminate phases or a non-positive total", () => {
-    expect(progressFraction(progress({ phase: "ragas" }))).toBeNull();
-    expect(progressFraction(progress({ total: 0 }))).toBeNull();
-    expect(progressFraction(null)).toBeNull();
-  });
-});
-
-describe("progressAriaLabel", () => {
-  it("maps each phase to its word", () => {
-    expect(progressAriaLabel(progress({ phase: "layer1" }), LABELS)).toBe("检索评测");
-    expect(progressAriaLabel(progress({ phase: "questions" }), LABELS)).toBe("答题评测");
-    expect(progressAriaLabel(progress({ phase: "ragas" }), LABELS)).toBe("质量评估");
-  });
-
-  it("appends the failed suffix only when failed > 0", () => {
-    expect(progressAriaLabel(progress({ failed: 0 }), LABELS)).toBe("答题评测");
-    expect(progressAriaLabel(progress({ failed: 2 }), LABELS)).toBe("答题评测，失败 2");
-  });
-
-  it("returns null when there is no live progress", () => {
-    expect(progressAriaLabel(null, LABELS)).toBeNull();
   });
 });
 
@@ -218,5 +162,23 @@ describe("etaMinutes", () => {
     expect(etaMinutes(90)).toBe(2);
     expect(etaMinutes(10)).toBe(1);
     expect(etaMinutes(0)).toBe(1);
+  });
+});
+
+describe("runningTier", () => {
+  it("infers the full tier once the run has left layer1", () => {
+    // 页面刷新后接上在飞的 run：phase 已离开 layer1 就必属完整档。
+    expect(runningTier(progress({ phase: "questions" }), null, "l1")).toBe("l1_l2");
+    expect(runningTier(progress({ phase: "ragas" }), null, "l1")).toBe("l1_l2");
+  });
+
+  it("uses the tier recorded at trigger time while still in layer1", () => {
+    // 从题库右键触发的完整档不得被当前单选（快速档）覆盖。
+    expect(runningTier(progress({ phase: "layer1" }), "l1_l2", "l1")).toBe("l1_l2");
+  });
+
+  it("falls back to the selected tier when nothing is known yet", () => {
+    expect(runningTier(null, null, "l1_l2")).toBe("l1_l2");
+    expect(runningTier(progress({ phase: "layer1" }), null, "l1")).toBe("l1");
   });
 });

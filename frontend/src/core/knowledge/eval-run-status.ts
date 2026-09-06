@@ -52,46 +52,6 @@ export function phaseStep(progress: EvalRunProgress | null | undefined): number 
   return 1;
 }
 
-/**
- * The bottom-edge line is determinate only for the questions phase; layer1 and
- * ragas pulse instead — never fake a percentage (spec § semantic discipline).
- * A running-without-progress state (null) also reads indeterminate so the line
- * still pulses until the first poll lands.
- */
-export function isIndeterminatePhase(progress: EvalRunProgress | null | undefined): boolean {
-  return progress?.phase !== "questions";
-}
-
-/**
- * Determinate fill fraction 0..1 for the questions phase; null when
- * indeterminate (the caller renders the pulse bar instead of a width) or when
- * total is non-positive (defensive divide-by-zero guard).
- */
-export function progressFraction(progress: EvalRunProgress | null | undefined): number | null {
-  if (progress?.phase !== "questions" || progress.total <= 0) return null;
-  return Math.min(1, Math.max(0, progress.done / progress.total));
-}
-
-/** Phase words + failed suffix the progressbar aria-label is assembled from. */
-export interface EvalProgressPhaseLabels {
-  phaseLayer1: string;
-  phaseQuestions: string;
-  phaseRagas: string;
-  failedCount: (n: number) => string;
-}
-
-/**
- * aria-label for the progress line: the phase word, plus a failed suffix when
- * any question failed. The numeric k/N is conveyed by the progressbar's
- * aria-valuenow/max (screen readers announce "k of N"), so it is not repeated
- * here. Returns null when there is no live progress.
- */
-export function progressAriaLabel(progress: EvalRunProgress | null | undefined, labels: EvalProgressPhaseLabels): string | null {
-  if (!progress) return null;
-  const phaseWord = progress.phase === "layer1" ? labels.phaseLayer1 : progress.phase === "ragas" ? labels.phaseRagas : labels.phaseQuestions;
-  return progress.failed > 0 ? `${phaseWord}，${labels.failedCount(progress.failed)}` : phaseWord;
-}
-
 // ── 加权整体进度条（spec 2026-09-06 §9）─────────────────────────
 
 /** 档位（run 的 layers）——决定流水线有几段：快速档只有 layer1。 */
@@ -227,4 +187,15 @@ export function etaSeconds(progress: EvalRunProgress | null | undefined, tier: E
 export function etaMinutes(eta: number | null): number | null {
   if (eta === null) return null;
   return Math.max(1, Math.round(eta / 60));
+}
+
+/**
+ * 在飞那次运行的档位（spec 2026-09-06 §9）：档位单选表达的是「下一次运行」的
+ * 选择，不能拿来画当前这次运行的条几何（从题库右键触发的完整档、或刷新后接上
+ * 的在飞 run 都会与单选不一致）。phase 已离开 layer1 就必属完整档（快速档没有后
+ * 两段）；仍在 layer1 时用触发时记录的档位，两者都无从得知才回退到当前单选。
+ */
+export function runningTier(progress: EvalRunProgress | null | undefined, triggeredTier: EvalTier | null, selectedTier: EvalTier): EvalTier {
+  if (progress && progress.phase !== "layer1") return "l1_l2";
+  return triggeredTier ?? selectedTier;
 }
