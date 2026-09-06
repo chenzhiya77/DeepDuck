@@ -228,8 +228,8 @@
 ## Task 13: 回归 + 手动验收 + 回写
 
 - [x] knowledge 套件 + `pnpm check` + ruff 双净(预存 chat-panel 失败除外)。(knowledge **900 passed | 1 failed** 预存 chat-panel model-selector；check exit 0；ruff 于 Task 9 双净、Phase 5 未再改后端)
-- [ ] 手动验收(spec §9/§10):完整档 → 总览槽出现、条随三段推进且刻度自适应、ETA warmup 后显秒/分钟级剩余、日志单行滚动;drain 后槽**自动 morph 为单行摘要**(档位/耗时/相对时间/历史跳转)而不再卸载;快速档条逐题扫过;空闲态摘要行与「尚未评测」muted 行;error run 红色调 + 跳转;运行开始不再顶下卡片;题库/历史视图无槽、按钮阶段名不变。
-- [ ] 文档回写确认(spec §9 冻结、plan 本 Phase 勾选)。
+- [ ] 手动验收(spec §9/§10):完整档 → 总览槽出现、条随三段推进且刻度自适应、ETA warmup 后显秒/分钟级剩余、日志单行滚动;drain 后槽**自动 morph 为单行摘要**(档位/耗时/相对时间/历史跳转)而不再卸载;快速档条逐题扫过;空闲态摘要行与「尚未评测」muted 行;error run 红色调 + 跳转;运行开始不再顶下卡片;题库/历史视图无槽、按钮阶段名不变。**取消项(Task 21 并入,spec §11)**:运行态分体按钮次槽显 X、首击变「确认终止?」(3s 回退)、再击 → toast「评测已终止」;空闲态 chevron 还原;窄档 ⋯ 菜单运行态含「终止评测」项(确认期间菜单不关);cancel 后历史现「已终止」行、槽摘要「评测已终止」、锁释放可立即再触发;layer2 段 cancel 保留 layer1 指标(drawer「已终止」徽标 + L1 数据);进答题段瞬间 UI 即显「答题评测」(questions 入口 hook 修复)。
+- [x] 文档回写确认(spec §9 冻结、plan 本 Phase 勾选)。(§9 含 Task 14 二次修订;Phase 5-7 全勾选,Task 21 复查)
 
 ## Task 14: 快速档空条 + ETA 按段外推(用户实测反馈,2026-09-06)
 
@@ -333,6 +333,6 @@
 
 ### Task 21: 回归收官与验收
 
-- [ ] 全量回归(backend eval 套件 + frontend knowledge + check/ruff)与 revert proof 复查。
-- [ ] 手动验收并入 Task 13 清单:运行中槽显 X + 两步确认;cancel 后历史行「已终止」、槽摘要「评测已终止」、锁释放可立即再触发;layer2 段 cancel 保留 layer1 指标。
-- [ ] 文档回写确认(spec §11、plan 本 Phase 勾选)。
+- [x] 全量回归:backend eval 套件 **358 passed** + ruff 双净;frontend knowledge **923 passed|1 预存**(chat-panel model-selector,零交集) + `pnpm check` exit 0。revert proof 复查:Task 19(stash 四后端实现文件 → 5 failed)、Task 20(stash 十前端实现文件 → 4 files failed)证明均成立、恢复复绿。
+- [x] 手动验收并入 Task 13 清单(上条已扩取消项;实测仍待用户,需重启 gateway + 刷新前端)。
+- [x] 文档回写确认(spec §11 冻结含 Task 19/20 实施校正;plan Phase 7 全勾选)。
