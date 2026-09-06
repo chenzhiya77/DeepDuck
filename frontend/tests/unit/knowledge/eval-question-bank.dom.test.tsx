@@ -96,12 +96,20 @@ function renderWithI18n(ui: ReactElement) {
 
 /** 受控包装（2026-09-02 批量运行栏退役）：选题集上提 eval-tab，
     测试用有状态包装模拟上游；initialSelected 直接预置选中集。 */
-type BankHarnessProps = Omit<ComponentProps<typeof EvalQuestionBank>, "selectedIds" | "onSelectedIdsChange"> & {
+type BankHarnessProps = Omit<ComponentProps<typeof EvalQuestionBank>, "selectedIds" | "onSelectedIdsChange" | "onTrigger"> & {
   initialSelected?: string[];
+  onTrigger?: ComponentProps<typeof EvalQuestionBank>["onTrigger"];
 };
-function BankHarness({ initialSelected, ...rest }: BankHarnessProps) {
+function BankHarness({ initialSelected, onTrigger, ...rest }: BankHarnessProps) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set(initialSelected ?? []));
-  return <EvalQuestionBank {...rest} selectedIds={selectedIds} onSelectedIdsChange={setSelectedIds} />;
+  return (
+    <EvalQuestionBank
+      {...rest}
+      selectedIds={selectedIds}
+      onSelectedIdsChange={setSelectedIds}
+      onTrigger={onTrigger ?? (() => undefined)}
+    />
+  );
 }
 
 beforeEach(() => {
@@ -295,13 +303,12 @@ describe("EvalQuestionBank 表格", () => {
   });
 
   it("末列三点菜单提供快速/完整评测（行级，携该题 id）", async () => {
-    const mutate = rs.fn();
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    const onTrigger = rs.fn();
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
-    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    renderWithI18n(<BankHarness enabled kbId="kb-1" onTrigger={onTrigger} />);
     fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), { key: "ArrowDown" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
-    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    const payload = onTrigger.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1_l2");
     expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
   });
@@ -414,15 +421,13 @@ describe("EvalAddQuestionDialog", () => {
 // 批量栏双档触发携 question_ids；触发成功清空选择。
 
 describe("EvalQuestionBank 选题与右键菜单（2026-09-02 批量运行栏退役）", () => {
-  let mutate: ReturnType<typeof rs.fn>;
+  // 触发已上收 eval-tab（2026-09-06 验收缺口修复）：bank 只委托 onTrigger，不再自持
+  // mutation；选择清空也由上层 handleTrigger 负责，本层断言仅到"委托携正确 payload"。
+  let onTrigger: ReturnType<typeof rs.fn>;
 
   beforeEach(() => {
-    // mutate 默认实现调 onSuccess（与组件消费契约对齐）；每个用例重新建防调用累计。
-    mutate = rs.fn((_input: unknown, opts?: { onSuccess?: (response: { status: string }) => void }) => {
-      opts?.onSuccess?.({ status: "enqueued" });
-    });
+    onTrigger = rs.fn();
     hooksMock.useEvalQuestions.mockReturnValue(questionsState([Q_UNANCHORED, Q_ANCHORED, Q_MULTI]));
-    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
   });
   afterEach(() => cleanup());
 
@@ -450,48 +455,39 @@ describe("EvalQuestionBank 选题与右键菜单（2026-09-02 批量运行栏退
     expect(screen.getByRole("checkbox", { name: `选择「${Q_ANCHORED.query}」` }).getAttribute("aria-checked")).toBe("false");
   });
 
-  it("右键未选中行只选中该行，单选菜单提供快速评测（只跑该题）", async () => {
-    renderWithI18n(<BankHarness kbId="kb-1" />);
+  it("右键未选中行只选中该行，单选菜单提供快速评测（只跑该题）", () => {
+    renderWithI18n(<BankHarness kbId="kb-1" onTrigger={onTrigger} />);
     fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
     // 右键即选中（文件管理器惯例）。菜单打开时背景 aria-hidden，
     // getByRole 查不到——用 getByLabelText（不受可访问性树过滤）。
     expect(screen.getByLabelText(`选择「${Q_ANCHORED.query}」`).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("menuitem", { name: "快速评测" }));
-    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    const payload = onTrigger.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1");
     expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
-    // 触发后清空选择。菜单关闭前背景 aria-hidden，绕过可访问性树直查 DOM。
-    await waitFor(() => {
-      const box = document.querySelector(`[aria-label="选择「${Q_ANCHORED.query}」"]`);
-      expect(box?.getAttribute("aria-checked")).toBe("false");
-    });
   });
 
-  it("单选右键菜单提供完整评测（l1_l2 只跑该题）", async () => {
-    renderWithI18n(<BankHarness kbId="kb-1" />);
+  it("单选右键菜单提供完整评测（l1_l2 只跑该题）", () => {
+    renderWithI18n(<BankHarness kbId="kb-1" onTrigger={onTrigger} />);
     fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
     fireEvent.click(screen.getByRole("menuitem", { name: "完整评测" }));
-    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    const payload = onTrigger.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1_l2");
     expect(payload.question_ids).toEqual([Q_ANCHORED.id]);
   });
 
-  it("多选右键菜单结构：已选标签 → 快速评测 → 完整评测 → 取消选择 → 分隔线 → 删除所选", async () => {
-    renderWithI18n(<BankHarness initialSelected={[Q_ANCHORED.id, Q_MULTI.id]} kbId="kb-1" />);
+  it("多选右键菜单结构：已选标签 → 快速评测 → 完整评测 → 取消选择 → 分隔线 → 删除所选", () => {
+    renderWithI18n(<BankHarness initialSelected={[Q_ANCHORED.id, Q_MULTI.id]} kbId="kb-1" onTrigger={onTrigger} />);
     fireEvent.contextMenu(screen.getByText(Q_ANCHORED.query));
     expect(screen.getByText("已选 2 项")).toBeTruthy();
     const names = screen.getAllByRole("menuitem").map((item) => item.textContent);
     expect(names).toEqual(["快速评测", "完整评测", "取消选择", "删除所选"]);
     expect(screen.getAllByRole("separator")).toHaveLength(1);
-    // 快速评测携选中集触发并清空。
+    // 快速评测携选中集委托上层触发（清空选择由 eval-tab 负责）。
     fireEvent.click(screen.getByRole("menuitem", { name: "快速评测" }));
-    const payload = mutate.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
+    const payload = onTrigger.mock.calls[0]?.[0] as { layers?: string; question_ids?: string[] };
     expect(payload.layers).toBe("l1");
     expect([...(payload.question_ids ?? [])].sort()).toEqual([Q_ANCHORED.id, Q_MULTI.id].sort());
-    await waitFor(() => {
-      const box = document.querySelector(`[aria-label="选择「${Q_ANCHORED.query}」"]`);
-      expect(box?.getAttribute("aria-checked")).toBe("false");
-    });
   });
 
   it("右键菜单取消选择带 X 图标且能清选择", async () => {

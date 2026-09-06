@@ -20,6 +20,7 @@
  */
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
   ChevronDown,
   Layers,
   Loader2,
@@ -28,6 +29,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  TrendingUp,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -40,6 +42,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -47,16 +50,18 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
 import {
+  EVAL_PHASE_COUNT,
   isEvalRunning,
+  phaseStep,
   progressAriaLabel,
   progressFraction,
-  progressLabel,
   type EvalProgressPhaseLabels,
 } from "@/core/knowledge/eval-run-status";
 import {
@@ -176,11 +181,22 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const [fullRunOpen, setFullRunOpen] = useState(false);
   // 题库搜索（2026-08-30）：搜索框常驻本层工具栏，纯前端过滤，经 prop 下发。
   const [bankSearchQuery, setBankSearchQuery] = useState("");
+  // 趋势卡收起态（2026-09-05）：头部左簇 toggle 整块点击，与总览两卡/
+  // 检索测试路容器同词汇（chevron 退役）。
+  const [trendCollapsed, setTrendCollapsed] = useState(false);
   // 选题集上提（2026-09-02 批量运行栏退役）：工具栏原位切换需读选中态，
   // 右键菜单的快捷运行/清理也在 bank 内——状态居本层，双向经 props。
   const [bankSelectedIds, setBankSelectedIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  // 评测档位（2026-09-06 档位单选重设计）：会话内记忆的单选状态（默认快速档）。
+  // 主按钮恒显勾中档位名并执行该档；chevron 下拉为互斥单选。取代旧"主键=L1 硬
+  // 编码 + 下拉=完整"的不对称结构，也取代 pendingFullRun 的触发瞬间推断（完整档
+  // 计数改由 tier 直接判定）。
+  const [tier, setTier] = useState<"l1" | "l1_l2">("l1");
+  // 完整档确认弹窗的运行范围（所选题 id）；缺省=全库。头部/⋯/题库右键·行⋮ 的
+  // 完整档入口统一收口到该弹窗（成本+范围提醒器）。
+  const [fullRunScope, setFullRunScope] = useState<string[] | undefined>(undefined);
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
   const trendQuery = useEvalTrend(kbId, granularity, enabled);
@@ -196,19 +212,21 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           // 202 语义分流（§5.2）：enqueued 确认；already_running 幂等提示。
           if (response.status === "enqueued") {
             toast.success(tk.runStartedToast);
-            // 乐观置位（spec 2026-09-06 run-progress）：首查缓存 in_flight=false
-            // 会让 refetchInterval 永不启动（轮询自锁），enqueued 即刻改写缓存
-            // 激活 3s 轮询——无需切历史视图制造第二个 observer。无缓存可改时
-            // 退化为 invalidate 首查（drain 边同款 key）。
-            const runsKey = knowledgeEvalRunsKey(kbId);
-            const applied = queryClient.setQueryData(
-              runsKey,
-              (old: EvalRunListResponse | undefined) =>
-                old ? { ...old, in_flight: true } : old,
+            // 无条件乐观置位（spec 2026-09-06 run-progress 修订）：缓存存在则并入
+            // in_flight=true，缓存为空则**创建**最小条目。旧写法（old ? … : old，
+            // 空缓存退化 invalidate）在空缓存时撞上后端 create_task 延迟自增
+            // _IN_FLIGHT 的竞态——即时 refetch 拿回 in_flight=false → 按钮不亮、
+            // refetchInterval 不启动，非切历史（挂第二个 observer 再 refetch）不
+            // 复活。创建条目让按钮立即转运行态、3s 轮询立即接管，绕开竞态。
+            queryClient.setQueryData<EvalRunListResponse>(
+              knowledgeEvalRunsKey(kbId),
+              (old) => ({
+                runs: old?.runs ?? [],
+                total: old?.total ?? 0,
+                progress: old?.progress ?? null,
+                in_flight: true,
+              }),
             );
-            if (!applied) {
-              void queryClient.invalidateQueries({ queryKey: runsKey });
-            }
           } else {
             toast.info(tk.alreadyRunningToast);
           }
@@ -256,11 +274,10 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   };
 
   // 运行进度（spec 2026-09-06 run-progress）：progress 走 /eval-runs 顶层字段。
-  // questions 段定长——按钮出 k/N、底缘细线按 done/total 走宽；layer1/ragas 段
-  // 不定长——按钮回裸「运行中…」、细线 pulse（绝不假百分比）；progress 为 null
-  // （运行中但首个轮询未到）时按不定长降级，点击瞬间即有 pulse 反馈。
+  // 底缘细线——questions 段定长（按 done/total 走宽 + progressbar aria 承载 k/N），
+  // layer1/ragas 段不定长 pulse（绝不假百分比）；progress 为 null（运行中但首个
+  // 轮询未到）时按不定长降级，点击瞬间即有 pulse 反馈。
   const progress = runsQuery.data?.progress ?? null;
-  const progressCount = progressLabel(progress);
   const progressFill = progressFraction(progress);
   const phaseLabels: EvalProgressPhaseLabels = {
     phaseLayer1: tk.phaseLayer1,
@@ -270,34 +287,47 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   };
   const progressAria = progressAriaLabel(progress, phaseLabels);
 
+  // 运行态按钮文案（用户定案）：4 字阶段名 + n/3，与「运行评测/完整评测」等 4 字
+  // 按钮对齐。快速档（L1 单阶段）不显计数——避免"1/3 却到不了 3/3"的新假状态；
+  // 完整档 layer1 显 1/3，questions/ragas 恒显 2/3、3/3（step>1 与档位无关）。
+  // k/N 不进按钮（破坏对齐），改由底缘定长细线填充 + aria-valuenow 承载。
+  const step = phaseStep(progress);
+  const phaseName =
+    progress?.phase === "questions"
+      ? tk.phaseQuestions
+      : progress?.phase === "ragas"
+        ? tk.phaseRagas
+        : tk.phaseLayer1;
+  const showCounter = tier === "l1_l2" || step > 1;
+  // 主按钮文案（2026-09-06 档位单选）：运行态=阶段名+n/3；空闲态=勾中档位名
+  // （恒 4 字、不随选中题目变脸；"只跑所选"的范围改由确认弹窗承载）。
+  const tierName = tier === "l1_l2" ? tk.tierFull : tk.tierQuick;
   const runButtonLabel = running
-    ? progressCount
-      ? tk.runningProgress(progressCount.done, progressCount.total)
-      : tk.runningButton
-    : tk.runButton;
-  // 工具栏原位切换（2026-09-02 B 方案承接）：题库视图且有选中时，运行主键
-  // 与完整评测档都改携 question_ids，标签切「运行所选/完整运行所选」；
+    ? showCounter
+      ? tk.runningPhase(phaseName, step, EVAL_PHASE_COUNT)
+      : phaseName
+    : tierName;
   // 选题集跨视图持久（state 在本层），仅题库视图消费，不泄漏到总览/历史。
   const bankSelectionActive = view === "questions" && bankSelectedIds.size > 0;
   const bankQuestionIds = bankSelectionActive
     ? [...bankSelectedIds]
     : undefined;
-  // 运行态文案优先于选题态：按钮此刻禁用，展示进度而非「运行所选」。
-  const runLabel = running
-    ? runButtonLabel
-    : bankSelectionActive
-      ? tk.selection.runSelected
-      : tk.runButton;
-  const fullRunLabel = bankSelectionActive
-    ? tk.selection.fullRunSelected
-    : tk.fullRun.menuItem;
-  const runInput = (layers: "l1" | "l1_l2"): EvalTriggerInput =>
-    bankQuestionIds ? { layers, question_ids: bankQuestionIds } : { layers };
+  // 统一触发入口（2026-09-06 档位单选）：完整档一律收口到确认弹窗（携范围），
+  // 快速档直接触发；头部主按钮/chevron 单选/⋯ 菜单/题库右键·行⋮ 全部走这里。
+  const requestRun = (layers: "l1" | "l1_l2", questionIds?: string[]) => {
+    const scope = questionIds ?? bankQuestionIds;
+    if (layers === "l1_l2") {
+      setFullRunScope(scope);
+      setFullRunOpen(true);
+      return;
+    }
+    handleTrigger(scope ? { layers, question_ids: scope } : { layers });
+  };
 
   return (
     // 滚动模型（对齐 document-panel 头部行 + 内容表格 min-w 的同构做法）：工具栏
-    // 固定全宽永不横滚（挤压走 tier 降档）；内容区独立纵向滚动；32rem 下限只属于
-    // 指标总览块（4 卡数学下限）——压缩时仅卡片区域横滚，「谁有下限，谁自己滚」。
+    // 固定全宽永不横滚（挤压走 tier 降档）；内容区独立纵向滚动；横向下限沉进
+    // 总览两卡各自内部（2026-09-05 每卡独立滑块）——「谁有下限，谁自己滚」。
     <div className="flex h-full min-h-0 flex-col" data-testid="eval-tab">
       {/* 常驻工具栏（§5）：三视图共享，主动词恒可达；tier 1 时状态文案让位；
             底边不画线（2026-09-02，与文档 tab 对齐）：表头自带吸顶发丝线，
@@ -359,29 +389,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         >
           {viewToolbarTier === 0 ? (
             // 紧凑档：全栏按钮锁 h-7（2026-08-29 定案：行高 44 = 文档工具栏基准，
-            // 原 h-6 降档已回退）；锁运行前后高度恒定不跳动；
-            // 题库视图时造题入口并入（动作在前，主动词恒最右主位）
+            // 原 h-6 降档已回退）；锁运行前后高度恒定不跳动；造题入口已收进档位
+            // 下拉（2026-09-06），工具栏仅余分体按钮，主动词恒最右主位。
             <>
-              {view === "questions" && (
-                <>
-                  <Button
-                    className="h-7 shrink-0 gap-1.5 px-2.5"
-                    onClick={() => setBankAddOpen(true)}
-                    variant="outline"
-                  >
-                    <Plus className="size-3.5" />
-                    {tk.questions.addQuestion}
-                  </Button>
-                  <Button
-                    className="h-7 shrink-0 gap-1.5 px-2.5"
-                    onClick={() => setBankSynthesisOpen(true)}
-                    variant="outline"
-                  >
-                    <Sparkles className="size-3.5" />
-                    {tk.synthesize.entryButton}
-                  </Button>
-                </>
-              )}
               {/* 三按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款
                     收窄，同内边距不跳宽）；不降字号，保住主动词视觉权重。 */}
               {/* 分体按钮（2026-09-01 B 方案）：主键一键 L1 快速档（高频习惯不变），
@@ -389,34 +399,60 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     锁 h-7 同档；降档时两段一并收进 ⋯ 菜单。 */}
               <div className="flex shrink-0 items-stretch">
                 <Button
-                  className="h-7 shrink-0 gap-1.5 rounded-r-none px-2.5 tabular-nums"
+                  className="h-7 shrink-0 gap-1.5 rounded-r-none px-2.5 tabular-nums has-[>svg]:px-2.5"
                   disabled={running}
-                  onClick={() => handleTrigger(runInput("l1"))}
+                  onClick={() => requestRun(tier)}
                 >
                   {running ? (
                     <Loader2 aria-hidden className="size-3.5 animate-spin" />
                   ) : (
                     <Play aria-hidden className="size-3.5" />
                   )}
-                  {runLabel}
+                  {runButtonLabel}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       aria-label={tk.fullRun.menuAria}
-                      className="border-primary-foreground/25 h-7 shrink-0 rounded-l-none border-l px-1"
+                      className="border-primary-foreground/25 h-7 shrink-0 rounded-l-none border-l px-1 has-[>svg]:px-1"
                       disabled={running}
                     >
                       <ChevronDown aria-hidden className="size-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {/* 图标对齐（2026-09-02）：完整档在任何菜单里都带 Layers，
-                          与题库行三点/右键菜单同一图标语汇。 */}
-                    <DropdownMenuItem onClick={() => setFullRunOpen(true)}>
-                      <Layers className="size-4" />
-                      {fullRunLabel}
+                  {/* min-w-0（2026-09-06）：覆盖 ui 默认 min-w-[8rem]，菜单宽度贴合
+                      内容（4 字档位名/造题入口），不再比窄触发按钮宽出一截。 */}
+                  <DropdownMenuContent align="end" className="min-w-0">
+                    {/* 档位互斥单选（2026-09-06）：点选只勾选不运行，主按钮执行勾中
+                          档；图标语汇与题库行三点/右键菜单一致（Play/Layers），勾中
+                          项尾置 Check 表征单选态。 */}
+                    <DropdownMenuItem onClick={() => setTier("l1")}>
+                      <Play className="size-4" />
+                      {tk.tierQuick}
+                      {tier === "l1" && <Check className="ml-auto size-4" />}
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTier("l1_l2")}>
+                      <Layers className="size-4" />
+                      {tk.tierFull}
+                      {tier === "l1_l2" && <Check className="ml-auto size-4" />}
+                    </DropdownMenuItem>
+                    {/* 造题入口收进下拉（2026-09-06）：分割线与档位单选隔离；仅题库
+                          视图出现（总览/历史无造题语义）。 */}
+                    {view === "questions" && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setBankAddOpen(true)}>
+                          <Plus className="size-4" />
+                          {tk.questions.addQuestion}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setBankSynthesisOpen(true)}
+                        >
+                          <Sparkles className="size-4" />
+                          {tk.synthesize.entryButton}
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -454,21 +490,21 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 )}
                 <DropdownMenuItem
                   disabled={running}
-                  onClick={() => handleTrigger(runInput("l1"))}
+                  onClick={() => requestRun("l1")}
                 >
                   {running ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <Play className="size-4" />
                   )}
-                  {runLabel}
+                  {tk.tierQuick}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={running}
-                  onClick={() => setFullRunOpen(true)}
+                  onClick={() => requestRun("l1_l2")}
                 >
                   <Layers className="size-4" />
-                  {fullRunLabel}
+                  {tk.tierFull}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -521,7 +557,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
         <div className="flex min-w-0 flex-col gap-4">
           {view === "overview" && (
             <>
-              {/* 指标总览块：32rem 下限只在这里（4 卡数学下限）——压缩时仅此块横滚（overlay 滚动条） */}
+              {/* 指标总览块（2026-09-05 三迭代）：横向滑块与 min-w 下限沉进
+                  overview 两张卡各自内部——每卡独立横滚，不再共用总览块一个
+                  滑块；本层 ScrollArea 只承纵向与题库/历史的横滚。 */}
               <ScrollArea
                 className="min-w-0"
                 data-testid="eval-overview-scroll"
@@ -529,7 +567,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 scrollHideDelay={2000}
                 type="scroll"
               >
-                <div className="min-w-[32rem]">
+                <div className="min-w-0">
                   {/* 指标总览（Layer 1 表格 + Layer 2 卡片）：loading / 错误 / 数据三态 */}
                   {overviewQuery.isLoading ? (
                     <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
@@ -545,14 +583,37 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 </div>
               </ScrollArea>
 
-              {/* 趋势图卡片壳：标题 + 粒度切换（窄面板收进 ⋯ 菜单）+ canvas/空态 */}
-              <section className="rounded-lg border p-3">
+              {/* 趋势图卡片壳（2026-09-05 容器化）：项目面板配方 bg-card + border +
+                  shadow-xs + 卡内头部行（border-b）——与总览两卡/检索测试容器同词汇；
+                  粒度切换 + 阈值红芯片都在头部行（阈值标注从线上文字退役——压数据线）。 */}
+              <section className="bg-card text-card-foreground overflow-hidden rounded-lg border shadow-xs">
                 <div
                   ref={toolbarRef}
-                  className="mb-2 flex items-center gap-2 overflow-hidden whitespace-nowrap"
+                  className={cn(
+                    "flex items-center gap-2 overflow-hidden px-4 py-2.5 whitespace-nowrap",
+                    !trendCollapsed && "border-b",
+                  )}
                   data-testid="eval-trend-toolbar"
                 >
-                  <span className="text-sm font-semibold">{tk.trendTitle}</span>
+                  <button
+                    aria-expanded={!trendCollapsed}
+                    className="hover:bg-muted/50 flex min-w-0 items-center gap-2 rounded-md px-2 py-0.5 text-left text-sm font-semibold transition-colors"
+                    data-testid="eval-trend-toggle"
+                    type="button"
+                    onClick={() => setTrendCollapsed((v) => !v)}
+                  >
+                    <TrendingUp className="text-muted-foreground size-3.5 shrink-0" />
+                    <span className="whitespace-nowrap shrink-0">{tk.trendTitle}</span>
+                  </button>
+                  {trendQuery.data?.baseline && (
+                    <Badge
+                      className="shrink-0 tabular-nums"
+                      data-testid="eval-threshold-chip"
+                      variant="destructive"
+                    >
+                      {tk.trend.thresholdLabel(trendQuery.data.baseline.threshold_percent)}
+                    </Badge>
+                  )}
                   <div className="ml-auto flex shrink-0 items-center">
                     {toolbarTier === 0 ? (
                       <div
@@ -608,30 +669,34 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     )}
                   </div>
                 </div>
-                {trendQuery.isLoading ? (
-                  <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
-                    {tk.loading}
-                  </div>
-                ) : trendQuery.error ? (
-                  <div className="text-destructive rounded-lg border border-dashed p-6 text-center text-sm">
-                    {tk.loadFailed}
-                  </div>
-                ) : trendQuery.data ? (
-                  trendQuery.data.has_data ? (
-                    <EvalTrendChart
-                      baseline={trendQuery.data.baseline}
-                      granularity={trendQuery.data.granularity}
-                      labels={chartLabels}
-                      points={trendQuery.data.points}
-                      onPointClick={setDrawerRunId}
-                    />
-                  ) : (
-                    /* 新 KB 无评测历史：空态提示而非空白画布（2026-08-26 补） */
+                {!trendCollapsed && (
+                  <div className="p-4">
+                  {trendQuery.isLoading ? (
                     <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
-                      {tk.emptyTrend}
+                      {tk.loading}
                     </div>
-                  )
-                ) : null}
+                  ) : trendQuery.error ? (
+                    <div className="text-destructive rounded-lg border border-dashed p-6 text-center text-sm">
+                      {tk.loadFailed}
+                    </div>
+                  ) : trendQuery.data ? (
+                    trendQuery.data.has_data ? (
+                      <EvalTrendChart
+                        baseline={trendQuery.data.baseline}
+                        granularity={trendQuery.data.granularity}
+                        labels={chartLabels}
+                        points={trendQuery.data.points}
+                        onPointClick={setDrawerRunId}
+                      />
+                    ) : (
+                      /* 新 KB 无评测历史：空态提示而非空白画布（2026-08-26 补） */
+                      <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
+                        {tk.emptyTrend}
+                      </div>
+                    )
+                  ) : null}
+                  </div>
+                )}
               </section>
             </>
           )}
@@ -651,6 +716,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
               onSearchQueryChange={setBankSearchQuery}
               onSelectedIdsChange={setBankSelectedIds}
               onSynthesisOpenChange={setBankSynthesisOpen}
+              onTrigger={(input) =>
+                requestRun(input.layers ?? "l1", input.question_ids)
+              }
             />
           )}
 
@@ -670,7 +738,15 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
       <EvalFullRunDialog
         open={fullRunOpen}
         onOpenChange={setFullRunOpen}
-        onConfirm={() => handleTrigger(runInput("l1_l2"))}
+        scopeCount={fullRunScope?.length}
+        onConfirm={() => {
+          handleTrigger(
+            fullRunScope
+              ? { layers: "l1_l2", question_ids: fullRunScope }
+              : { layers: "l1_l2" },
+          );
+          setFullRunScope(undefined);
+        }}
       />
 
       {/* 点击趋势图数据点 → drawer 下钻单次运行详情（portal 渲染） */}

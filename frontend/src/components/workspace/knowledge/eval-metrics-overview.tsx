@@ -7,18 +7,19 @@
  */
 "use client";
 
-import { Info } from "lucide-react";
+import { Dices, Info, Quote, Search, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import type { MetricsOverview, BaselineDiff } from "@/core/knowledge/types";
+import type { MetricsOverview } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
-import { classifyRagasSkipReason, getCellColorClass, getProgressBarColor } from "./eval-metrics-overview.utils";
+import { classifyRagasSkipReason, getProgressBarColor, getSummaryBandClass } from "./eval-metrics-overview.utils";
 
 interface EvalMetricsOverviewProps {
   overview: MetricsOverview;
@@ -32,13 +33,29 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
   const { t } = useI18n();
   const tk = t.knowledge.eval;
   const { layer1, layer2 } = overview;
+  // 容器收起态（2026-09-05）：头部左簇 toggle 按钮整块点击收起/展开，
+  // 与检索测试路容器同词汇（chevron 退役——整栏点击即收起，箭头视觉噪声）。
+  const [layer1Collapsed, setLayer1Collapsed] = useState(false);
+  const [layer2Collapsed, setLayer2Collapsed] = useState(false);
 
   return (
-    <div className="space-y-6">
+    // 两张等权 bg-card 容器卡（2026-09-05 容器化）：项目面板配方 bg-card +
+    // border + shadow-xs + 卡内头部行（border-b）——与检索测试路容器/实体
+    // 抽屉卡同词汇；Layer 2 两子组用实体抽屉同款分组头（小图标 + caption）。
+    <div className="space-y-4">
       {/* Layer 1 表格 */}
-      <section>
-        <div className="flex items-center gap-2 mb-3 text-sm font-semibold">
-          <span className="whitespace-nowrap shrink-0">{tk.layer1Title}</span>
+      <section className="bg-card text-card-foreground overflow-hidden rounded-lg border shadow-xs">
+        <div className={cn("flex items-center gap-2 px-4 py-2.5", !layer1Collapsed && "border-b")}>
+          <button
+            aria-expanded={!layer1Collapsed}
+            className="hover:bg-muted/50 flex min-w-0 items-center gap-2 rounded-md px-2 py-0.5 text-left text-sm font-semibold transition-colors"
+            data-testid="eval-layer1-toggle"
+            type="button"
+            onClick={() => setLayer1Collapsed((v) => !v)}
+          >
+            <Search className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="whitespace-nowrap shrink-0">{tk.layer1Title}</span>
+          </button>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -53,20 +70,44 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
             <TooltipContent className="max-w-60 whitespace-pre-wrap text-pretty">{tk.layer1Note}</TooltipContent>
           </Tooltip>
           {layer1?.baseline_diff?.regression_detected && (
-            <Badge variant="destructive">{tk.regressionBadge}</Badge>
+            <Badge className="ml-auto shrink-0" variant="destructive">{tk.regressionBadge}</Badge>
           )}
         </div>
-        {layer1 ? (
-          <Layer1Table metrics={layer1.metrics} diff={layer1.baseline_diff! as BaselineDiff | undefined} />
-        ) : (
-          <EmptyHint text={tk.emptyLayer1} />
+        {!layer1Collapsed && (
+          /* 每卡独立横向滑块（2026-09-05）：min-w 下限沉进卡内——窄栏时表格
+             自己横滚，不拖生成质量卡同滚（旧设计两卡共用总览块一个滑块）；
+             顶边距 pt-2 + 表头 h-8：表头行与上下分割线不再疏离。 */
+          <ScrollArea
+            className="min-w-0"
+            data-testid="eval-layer1-scroll"
+            horizontal
+            scrollHideDelay={2000}
+            type="scroll"
+          >
+            <div className="min-w-[25rem] px-4 pt-2 pb-4">
+              {layer1 ? (
+                <Layer1Table metrics={layer1.metrics} />
+              ) : (
+                <EmptyHint text={tk.emptyLayer1} />
+              )}
+            </div>
+          </ScrollArea>
         )}
       </section>
 
-      {/* Layer 2 卡片 */}
-      <section>
-        <div className="flex items-center gap-2 mb-3 text-sm font-semibold">
-          <span data-testid="eval-layer2-title" className="whitespace-nowrap shrink-0">{tk.layer2Title}</span>
+      {/* Layer 2 瓦片 */}
+      <section className="bg-card text-card-foreground overflow-hidden rounded-lg border shadow-xs">
+        <div className={cn("flex items-center gap-2 px-4 py-2.5", !layer2Collapsed && "border-b")}>
+          <button
+            aria-expanded={!layer2Collapsed}
+            className="hover:bg-muted/50 flex min-w-0 items-center gap-2 rounded-md px-2 py-0.5 text-left text-sm font-semibold transition-colors"
+            data-testid="eval-layer2-toggle"
+            type="button"
+            onClick={() => setLayer2Collapsed((v) => !v)}
+          >
+            <Sparkles className="text-muted-foreground size-3.5 shrink-0" />
+            <span data-testid="eval-layer2-title" className="whitespace-nowrap shrink-0">{tk.layer2Title}</span>
+          </button>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -105,57 +146,82 @@ export function EvalMetricsOverview({ overview, onViewTrace }: EvalMetricsOvervi
             )
           )}
         </div>
-        {layer2 ? (
-          <>
-            <div className="mb-2 text-xs text-muted-foreground">{tk.ragasGroupLabel}</div>
-            {/* 固定列数：卡片宽度下限由 eval-tab 内包装的 min-w-[35rem] 保证，触底时整 tab 横滚。 */}
-            <div className="grid grid-cols-4 gap-4">
-              <RagasCard title={tk.ragasCard.faithfulness} note={tk.cardNote.faithfulness} value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} testId="faithfulness" />
-              <RagasCard title={tk.ragasCard.answerRelevancy} note={tk.cardNote.answerRelevancy} value={layer2.ragas.answer_relevancy} testId="answer_relevancy" />
-              <RagasCard title={tk.ragasCard.contextPrecision} note={tk.cardNote.contextPrecision} value={layer2.ragas.context_precision} testId="context_precision" />
-              <RagasCard title={tk.ragasCard.contextRecall} note={tk.cardNote.contextRecall} value={layer2.ragas.context_recall} testId="context_recall" />
+        {!layer2Collapsed &&
+          (layer2 ? (
+            <ScrollArea
+              className="min-w-0"
+              data-testid="eval-layer2-scroll"
+              horizontal
+              scrollHideDelay={2000}
+              type="scroll"
+            >
+              <div className="min-w-[24rem] p-4 space-y-4">
+              <div>
+              <div className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
+                <Dices className="size-3.5" />
+                {tk.ragasGroupLabel}
+              </div>
+              {/* 固定列数：宽度下限为本卡自有 min-w-[24rem]（触底时仅本卡横滚）。 */}
+              <div className="grid grid-cols-4 gap-3">
+                <MetricTile title={tk.ragasCard.faithfulness} note={tk.cardNote.faithfulness} value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} testId="faithfulness" />
+                <MetricTile title={tk.ragasCard.answerRelevancy} note={tk.cardNote.answerRelevancy} value={layer2.ragas.answer_relevancy} testId="answer_relevancy" />
+                <MetricTile title={tk.ragasCard.contextPrecision} note={tk.cardNote.contextPrecision} value={layer2.ragas.context_precision} testId="context_precision" />
+                <MetricTile title={tk.ragasCard.contextRecall} note={tk.cardNote.contextRecall} value={layer2.ragas.context_recall} testId="context_recall" />
+              </div>
             </div>
-            <div className="mb-2 mt-4 text-xs text-muted-foreground">{tk.archGroupLabel}</div>
-            <div className="grid grid-cols-3 gap-4">
-              <ArchCard title={tk.citationPrecision} note={tk.cardNote.citationPrecision} value={layer2.arch_specific.citation_precision} testId="citation_precision" />
-              <ArchCard title={tk.citationRecall} note={tk.cardNote.citationRecall} value={layer2.arch_specific.citation_recall} testId="citation_recall" />
-              <ArchCard
-                title={tk.seedHitRate}
-                note={tk.cardNote.seedHitRate}
-                value={layer2.arch_specific.seed_hit_rate}
-                disabled={!layer2.has_graph_questions}
-                disabledReason={tk.noGraphQuestions}
-                testId="seed_hit_rate"
-              />
+            <div>
+              <div className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
+                <Quote className="size-3.5" />
+                {tk.archGroupLabel}
+              </div>
+              {/* 统一 grid-cols-4（2026-09-05）：引用组 3 瓦片留一空槽——
+                  纵向列轴与 RAGAS 组对齐，不再 4/3 两行错列。 */}
+              <div className="grid grid-cols-4 gap-3">
+                <MetricTile title={tk.citationPrecision} note={tk.cardNote.citationPrecision} value={layer2.arch_specific.citation_precision} testId="citation_precision" />
+                <MetricTile title={tk.citationRecall} note={tk.cardNote.citationRecall} value={layer2.arch_specific.citation_recall} testId="citation_recall" />
+                <MetricTile
+                  title={tk.seedHitRate}
+                  note={tk.cardNote.seedHitRate}
+                  value={layer2.arch_specific.seed_hit_rate}
+                  disabled={!layer2.has_graph_questions}
+                  disabledReason={tk.noGraphQuestions}
+                  testId="seed_hit_rate"
+                />
+              </div>
+              </div>
+              </div>
+            </ScrollArea>
+          ) : (
+            <div className="p-4">
+              <EmptyHint text={tk.emptyLayer2} />
             </div>
-          </>
-        ) : (
-          <EmptyHint text={tk.emptyLayer2} />
-        )}
+          ))}
       </section>
     </div>
   );
 }
 
-function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["layer1"]>["metrics"]; diff?: NonNullable<NonNullable<MetricsOverview["layer1"]>>["baseline_diff"] }) {
+function Layer1Table({ metrics }: { metrics: NonNullable<MetricsOverview["layer1"]>["metrics"] }) {
   const { t } = useI18n();
   const tk = t.knowledge.eval;
   // Category order matches wire keys; categories missing from by_category are skipped.
   const categories: Array<keyof typeof metrics | "summary"> = ["fact", "relation", "concept", "global", "summary"];
 
-  /** Tint Recall@k cells per §3.3: delta >= 0 → default；warning band；danger at threshold. */
-  const tint = getCellColorClass(diff?.recall_at_k_delta, diff?.threshold_percent);
-
   return (
-    <Table data-testid="eval-layer1-table">
+    /* 表格外壳不走默认 overflow-x-auto（老原生滑块）：横滚由卡内 ScrollArea
+       的 overlay 细滑块承担（2026-09-04 统一设计，题库表同款 containerClassName）。 */
+    <Table containerClassName="relative w-full" data-testid="eval-layer1-table">
       <TableHeader>
         <TableRow>
-          <TableHead>{tk.tableCategory}</TableHead>
+          {/* 列宽平摊（2026-09-05 二轮纠正）：表格 w-full 自然平摊——列距随栏宽
+              伸缩（窄栏自然聚拢），固定列宽等于给每列设下限、退役；行高紧凑档
+              （head h-8 / cell py-1.5）+ 卡体顶边距 pt-2：表头行与分割线贴齐。 */}
+          <TableHead className="h-8 px-2">{tk.tableCategory}</TableHead>
           {/* 数值列表头右对齐（2026-08-30）：与数据同轴，主流规范文本左/数值右 */}
-          <TableHead className="text-right">{tk.tableHitRate}</TableHead>
-          <TableHead className="text-right">{tk.tableRecallAtK}</TableHead>
-          <TableHead className="text-right">{tk.tableMrr}</TableHead>
-          <TableHead className="text-right">{tk.tablePathAccuracy}</TableHead>
+          <TableHead className="h-8 px-2 text-right">{tk.tableHitRate}</TableHead>
+          <TableHead className="h-8 px-2 text-right">{tk.tableRecallAtK}</TableHead>
+          <TableHead className="h-8 px-2 text-right">{tk.tableMrr}</TableHead>
+          <TableHead className="h-8 px-2 text-right">{tk.tablePathAccuracy}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -163,33 +229,59 @@ function Layer1Table({ metrics, diff }: { metrics: NonNullable<MetricsOverview["
           const metric =
             category === "summary" ? metrics.summary : metrics[category] ?? null;
           const hasData = !!metric;
-          const testId = category === "summary" ? "eval-row-summary" : `eval-row-${category}`;
+          const isSummary = category === "summary";
+          const testId = isSummary ? "eval-row-summary" : `eval-row-${category}`;
 
           // Muted row for missing category (category not present in this batch).
           if (!hasData) {
             return (
               <TableRow key={category} data-testid={testId} className="text-muted-foreground">
-                <TableCell colSpan={5}>{tk.category[category]} ({tk.noQuestionsInBatch})</TableCell>
+                <TableCell className="py-1.5" colSpan={5}>{tk.category[category]} ({tk.noQuestionsInBatch})</TableCell>
               </TableRow>
             );
           }
 
-          // Summary row styled with border-top.
-          const summaryRowClassName = category === "summary" ? "border-t-2 font-semibold" : undefined;
+          // Summary row styled with border-top + 底色区分（2026-09-05 容器化：
+          // 卡内 muted 是正确的前进层级，汇总行一眼可辨）。
+          const summaryRowClassName = isSummary ? "border-t-2 bg-muted/40 font-semibold" : undefined;
 
           return (
             <TableRow key={category} data-testid={testId} className={summaryRowClassName}>
-              <TableCell>{category === "summary" ? tk.category.summary : `${tk.category[category]} (n=${metric.question_count})`}</TableCell>
-            {/* 数值单元格右对齐 + tabular-nums（2026-08-30）：% 与小数位纵向成列 */}
-            <TableCell className="text-right tabular-nums" data-testid={`eval-cell-hit-${category}`}>{percent(metric.hit_rate)}</TableCell>
-              <TableCell className={cn(tint, "text-right tabular-nums")} data-testid={`eval-cell-recall-${category}`}>{percent(metric.recall_at_k)}</TableCell>
-              <TableCell className="text-right tabular-nums" data-testid={`eval-cell-mrr-${category}`}>{metric.mrr.toFixed(3)}</TableCell>
-              <TableCell className="text-right tabular-nums" data-testid={`eval-cell-path-${category}`}>{percent(metric.path_accuracy)}</TableCell>
+              <TableCell className="py-1.5">
+                {/* 题量后缀全行统一（2026-09-05）：summary 的 question_count 即 wire
+                    给的全题口径（n=总题数），与分类行同词汇同 muted 样式。 */}
+                {tk.category[category]}{" "}
+                <span className="text-muted-foreground font-normal">(n={metric.question_count})</span>
+              </TableCell>
+            {/* 数值单元格右对齐 + tabular-nums（2026-08-30）：% 纵向成列。
+                汇总行（2026-09-05）：数值改胶囊（90/80 三档），颜色收进胶囊；
+                分类行全中性（2026-09-06）：delta/绝对裸色退役，回归信号归卡头
+                徽章 + 趋势图——全表仅汇总胶囊带色，焦点唯一。 */}
+              <TableCell className={cn(isSummary ? "py-1" : "py-1.5", "text-right tabular-nums")} data-testid={`eval-cell-hit-${category}`}>{isSummary ? <SummaryCapsule value={metric.hit_rate} /> : percent(metric.hit_rate)}</TableCell>
+              <TableCell className={cn(isSummary ? "py-1" : "py-1.5", "text-right tabular-nums")} data-testid={`eval-cell-recall-${category}`}>{isSummary ? <SummaryCapsule value={metric.recall_at_k} /> : percent(metric.recall_at_k)}</TableCell>
+              {/* 数值语言统一（2026-09-05）：MRR 同走百分数——产品重心（瓦片/阈值
+                  芯片/趋势轴）全在 %，IR 味三位小数退役。 */}
+              <TableCell className={cn(isSummary ? "py-1" : "py-1.5", "text-right tabular-nums")} data-testid={`eval-cell-mrr-${category}`}>{isSummary ? <SummaryCapsule value={metric.mrr} /> : percent(metric.mrr)}</TableCell>
+              <TableCell className={cn(isSummary ? "py-1" : "py-1.5", "text-right tabular-nums")} data-testid={`eval-cell-path-${category}`}>{isSummary ? <SummaryCapsule value={metric.path_accuracy} /> : percent(metric.path_accuracy)}</TableCell>
             </TableRow>
           );
         })}
       </TableBody>
     </Table>
+  );
+}
+
+/** 汇总行数值胶囊（2026-09-05）：检索测试延时芯片同款胶囊/同色 trio，按绝对值
+    三档（≥0.9 emerald / ≥0.8 lime / <0.8 orange）。汇总行颜色收进胶囊、行文字
+    不着裸色；数字保持表格字号（头牌不缩成芯片 10px）。null 显破折号无胶囊。 */
+function SummaryCapsule({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-muted-foreground">-</span>;
+  return (
+    /* -mr-1.5 抵消胶囊右内边距（2026-09-06 对齐）：数字右缘与分类行/表头同列，
+       否则 px-1.5 会把汇总数字往左推 6px 造成纵列错位。 */
+    <span className={cn("-mr-1.5 inline-flex items-center rounded-md px-1.5 py-0.5 tabular-nums", getSummaryBandClass(value))}>
+      {percent(value)}
+    </span>
   );
 }
 
@@ -214,54 +306,37 @@ function MetricNote({ note, testId }: { note: string; testId: string }) {
   );
 }
 
-function RagasCard({ title, note, value, traceUrl, onViewTrace, traceLabel, testId }: { title: string; note: string; value: number | null; traceUrl?: string; onViewTrace?: (url: string) => void; traceLabel?: string; testId: string }) {
+/** 指标瓦片（2026-09-05 容器化）：白卡内 bg-muted/40 内凹小卡（正确嵌套
+    层级——外层已抬升，内层用后退色分组）；内容 = 名称+ⓘ / 大数字 / h-1
+    进度条。trace 链接挂名称行右端（faithfulness 专属，testId 哨兵不变）。
+    null 显破折号且无进度条；disabled 加透明度 + 原因行。 */
+function MetricTile({ title, note, value, disabled, disabledReason, traceUrl, onViewTrace, traceLabel, testId }: { title: string; note: string; value: number | null; disabled?: boolean; disabledReason?: string; traceUrl?: string; onViewTrace?: (url: string) => void; traceLabel?: string; testId: string }) {
   const colorClass = getProgressBarColor(value);
   const isNull = value == null;
   return (
-    <Card data-testid={`eval-card-${testId}`} className={`gap-3 py-4 ${isNull ? "bg-muted" : ""}`}>
-      <CardHeader className="px-4">
-        <CardTitle className="flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
-          <span className="min-w-0 truncate">{title}</span>
-          <MetricNote note={note} testId={`eval-card-note-${testId}`} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 px-4">
-        {/* 百分比为主显示（同义小数已去重）；text-lg + tabular-nums：32rem 触底时
-            "100.0%" 仍容得下，数字在各卡间同宽对齐。 */}
-        <div className="text-center text-lg font-bold tabular-nums">{isNull ? "-" : percent(value)}</div>
-        {!isNull && <Progress value={value * 100} className={colorClass} />}
-      </CardContent>
-      {/* Langfuse trace link only on the faithfulness card — keyed by testId, not the localized title. */}
-      {testId === "faithfulness" && traceUrl && traceLabel && onViewTrace && (
-        <CardContent className="px-4 text-center">
-          <button role="button" onClick={() => onViewTrace(traceUrl)}>{traceLabel}</button>
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
-function ArchCard({ title, note, value, disabled, disabledReason, testId }: { title: string; note: string; value: number | null; disabled?: boolean; disabledReason?: string; testId: string }) {
-  const colorClass = getProgressBarColor(value);
-  const isNull = value == null;
-
-  // Disabled state: bg-muted + reason note below progress bar.
-  const baseClassName = `gap-3 py-4 ${disabled || isNull ? "bg-muted" : ""}`;
-
-  return (
-    <Card data-testid={`eval-card-${testId}`} className={baseClassName}>
-      <CardHeader className="px-4">
-        <CardTitle className="flex items-center justify-center gap-1 overflow-hidden whitespace-nowrap text-sm text-muted-foreground">
-          <span className="min-w-0 truncate">{title}</span>
-          <MetricNote note={note} testId={`eval-card-note-${testId}`} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 px-4">
-        <div className="text-center text-lg font-bold tabular-nums">{isNull ? "-" : percent(value)}</div>
-        {!isNull && <Progress value={value * 100} className={colorClass} />}
-        {disabled && disabledReason && <div className="text-center text-xs text-muted-foreground">{disabledReason}</div>}
-      </CardContent>
-    </Card>
+    <div
+      className={cn("bg-muted/40 rounded-lg px-3 py-2.5", (disabled === true || isNull) && "opacity-60")}
+      data-testid={`eval-card-${testId}`}
+    >
+      <div className="text-muted-foreground flex items-center gap-1 text-xs">
+        <span className="min-w-0 truncate" data-testid={`eval-card-title-${testId}`}>{title}</span>
+        <MetricNote note={note} testId={`eval-card-note-${testId}`} />
+        {testId === "faithfulness" && traceUrl && traceLabel && onViewTrace && (
+          <button
+            className="ml-auto shrink-0 underline-offset-2 hover:underline"
+            type="button"
+            onClick={() => onViewTrace(traceUrl)}
+          >
+            {traceLabel}
+          </button>
+        )}
+      </div>
+      {/* 百分比为主显示（同义小数已去重）；text-lg + tabular-nums：26rem 触底时
+          "100.0%" 仍容得下，数字在各瓦片间同宽对齐。 */}
+      <div className="mt-1 text-lg font-semibold tabular-nums">{isNull ? "-" : percent(value)}</div>
+      {!isNull && <Progress value={value * 100} className={cn("mt-1.5 h-1", colorClass)} />}
+      {disabled && disabledReason && <div className="text-muted-foreground mt-1 text-xs">{disabledReason}</div>}
+    </div>
   );
 }
 

@@ -63,19 +63,26 @@ describe("Layer 1 表格", () => {
     const rows = table.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(5);
 
-    // category 单元格带题量后缀；指标格式化：百分比 1 位小数，MRR 3 位。
+    // category 单元格带题量后缀；数值语言统一（2026-09-05）：全列百分数 1 位小数。
     // 行头渲染本地化显示名（tk.eval.category.*），wire 键不外露（2026-08-26 补遗）。
     expect(rows[0]?.textContent).toContain("事实 (n=12)");
     expect(rows[0]?.textContent).toContain("95.2%");
     expect(rows[0]?.textContent).toContain("92.3%");
-    expect(rows[0]?.textContent).toContain("0.876");
+    expect(rows[0]?.textContent).toContain("87.6%");
 
-    // 汇总行加粗并与 category 行区分。
+    // 汇总行加粗并与 category 行区分；容器化后加底色（卡内 muted 前进层级）；
+    // 题量后缀全行统一（2026-09-05）：summary 的 n 即全题口径。
     const summaryRow = rows[4];
     expect(summaryRow?.textContent).toContain("汇总");
+    expect(summaryRow?.textContent).toContain("(n=20)");
     expect(summaryRow?.textContent).toContain("89.7%");
     expect(summaryRow?.className).toContain("border-t-2");
+    expect(summaryRow?.className).toContain("bg-muted/40");
     expect(summaryRow?.className).toContain("font-semibold");
+    // 两块均容器化（2026-09-05）：项目面板配方 bg-card + border + shadow-xs，
+    // 与趋势卡/检索测试路容器同词汇——三块信息边界统一。
+    expect(table.closest("section")?.className).toContain("bg-card");
+    expect(screen.getByTestId("eval-card-faithfulness").closest("section")?.className).toContain("bg-card");
   });
 
   it("renders a localized five-column header row", () => {
@@ -102,6 +109,41 @@ describe("Layer 1 表格", () => {
       expect(cell.className).toContain("text-right");
       expect(cell.className).toContain("tabular-nums");
     }
+    // 紧凑档（2026-09-05）：行高降一档（py-1.5），文字与分割线不再疏离；
+    // 列宽保持 w-full 自然平摊——列距随栏宽伸缩（二轮纠正：固定列宽退役）。
+    for (const header of headers.slice(1)) {
+      expect(header.className).not.toContain("w-24");
+    }
+    expect(screen.getByTestId("eval-cell-hit-fact").className).toContain("py-1.5");
+    // 表头行高再降一档（h-8）+ 卡体顶边距 pt-2：表头与分割线贴齐（2026-09-05 三迭代）。
+    expect(headers[1]!.className).toContain("h-8");
+  });
+
+  it("each layer card owns its own horizontal scroller (2026-09-05): min-w floor sinks into the card", () => {
+    renderOverview(FULL_OVERVIEW);
+    // 每卡独立横向滑块：窄栏时表格/瓦片各自横滚，不拖另一卡同滚（旧设计共用总览块一个）。
+    const l1 = screen.getByTestId("eval-layer1-scroll");
+    const l2 = screen.getByTestId("eval-layer2-scroll");
+    expect(l1.querySelector("[class*='min-w-[25rem]']")).toBeTruthy();
+    expect(l2.querySelector("[class*='min-w-[24rem]']")).toBeTruthy();
+    // 两滑块分属不同卡片——互不联动。
+    expect(l1.closest("section")).not.toBe(l2.closest("section"));
+    // 表格外壳退役老原生滑块（overflow-x-auto）：横滚权归卡内 overlay 滑块（题库表同款）。
+    const tableContainer = screen.getByTestId("eval-layer1-table").parentElement;
+    expect(tableContainer?.className).not.toContain("overflow-x-auto");
+  });
+
+  it("collapses both layer sections from their header toggles (recall container vocabulary, 2026-09-05)", () => {
+    renderOverview(FULL_OVERVIEW);
+    // 整栏点击收起：主体卸载、头部 meta（ⓘ/徽章）保留；aria-expanded 同步。
+    fireEvent.click(screen.getByTestId("eval-layer1-toggle"));
+    expect(screen.queryByTestId("eval-layer1-table")).toBeNull();
+    expect(screen.getByTestId("eval-layer1-toggle").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByTestId("eval-layer1-toggle"));
+    expect(screen.getByTestId("eval-layer1-table")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("eval-layer2-toggle"));
+    expect(screen.queryByTestId("eval-card-faithfulness")).toBeNull();
+    expect(screen.getByTestId("eval-layer2-toggle").getAttribute("aria-expanded")).toBe("false");
   });
 
   it("renders localized category display names instead of wire keys (zh-CN)", () => {
@@ -151,12 +193,19 @@ describe("Layer 1 表格", () => {
     };
     renderOverview(regressed);
 
-    const dangerCells = screen.getAllByTestId(/eval-cell-recall-/);
-    // 三态着色来自 props 阈值（-5% <= -3% → danger），汇总行与 category 行同口径。
-    for (const cell of dangerCells) {
-      expect(cell.className).toContain("bg-(--eval-danger-bg)");
-      expect(cell.className).toContain("text-(--eval-danger-fg)");
+    // 分类行全中性（2026-09-06）：delta/绝对裸色退役，回归信号归卡头徽章 + 趋势；
+    // 汇总行改胶囊（2026-09-05），全表仅胶囊带色。
+    const categoryRecallCells = ["fact", "relation", "concept", "global"].map((c) =>
+      screen.getByTestId(`eval-cell-recall-${c}`),
+    );
+    for (const cell of categoryRecallCells) {
+      expect(cell.className).not.toContain("eval-danger");
+      expect(cell.className).not.toContain("eval-warn");
     }
+    // 汇总 recall 0.897 → ≥0.8 中档 lime 胶囊；颜色在胶囊、单元格无裸红字。
+    const summaryRecall = screen.getByTestId("eval-cell-recall-summary");
+    expect(summaryRecall.querySelector('[class*="bg-lime-500/10"]')).toBeTruthy();
+    expect(summaryRecall.className).not.toContain("eval-danger");
     // 回退徽章出现在 Layer 1 标题旁。
     expect(screen.getByText("检测到回退")).toBeTruthy();
   });
@@ -171,13 +220,68 @@ describe("Layer 1 表格", () => {
     };
     renderOverview(mild);
 
+    // 汇总行改胶囊（2026-09-05）：recall 0.897 → lime 胶囊、hit 0.928 → emerald 胶囊；
+    // 单元格不再走 delta/绝对文字着色（颜色收进胶囊）。
     const recallCell = screen.getByTestId("eval-cell-recall-summary");
-    expect(recallCell.className).toContain("bg-(--eval-warn-bg)");
-    expect(recallCell.className).toContain("text-(--eval-warn-fg)");
-    // 非 Recall 列不着色。
-    expect(screen.getByTestId("eval-cell-hit-summary").className).not.toContain("eval-warn");
+    expect(recallCell.querySelector('[class*="bg-lime-500/10"]')).toBeTruthy();
+    expect(recallCell.className).not.toContain("eval-warn");
+    expect(screen.getByTestId("eval-cell-hit-summary").querySelector('[class*="bg-emerald-500/10"]')).toBeTruthy();
+    // 分类行全中性（2026-09-06）：relation mrr 0.654 不再着琥珀字。
+    expect(screen.getByTestId("eval-cell-mrr-relation").className).not.toContain("eval-warn");
+    // 对齐（2026-09-06）：分类行 py-1.5、汇总行 py-1（抵消胶囊 py-0.5）行高一致。
+    expect(screen.getByTestId("eval-cell-recall-fact").className.split(/\s+/)).toContain("py-1.5");
     // 未触发门禁 → 无回退徽章。
     expect(screen.queryByText("检测到回退")).toBeNull();
+  });
+
+  it("汇总行数值按 90/80 三档渲染胶囊；分类行无基线时走绝对文字档（2026-09-05）", () => {
+    const low: MetricsOverview = {
+      ...FULL_OVERVIEW,
+      layer1: {
+        ...FULL_OVERVIEW.layer1!,
+        metrics: {
+          summary: { hit_rate: 0.55, recall_at_k: 0.9, mrr: 0.65, path_accuracy: 0.4, question_count: 20 },
+        },
+      },
+    };
+    renderOverview(low);
+
+    // 汇总行胶囊三档（2026-09-05，90/80 分档）：path 0.4 / mrr 0.65 → <0.8 orange
+    // 胶囊；recall 0.9 → ≥0.9 emerald 胶囊；颜色在胶囊、单元格无裸红/琥珀字。
+    const path = screen.getByTestId("eval-cell-path-summary");
+    expect(path.querySelector('[class*="bg-orange-500/10"]')).toBeTruthy();
+    expect(path.className).not.toContain("eval-danger");
+    const mrr = screen.getByTestId("eval-cell-mrr-summary");
+    expect(mrr.querySelector('[class*="bg-orange-500/10"]')).toBeTruthy();
+    expect(mrr.className).not.toContain("eval-warn");
+    const recall = screen.getByTestId("eval-cell-recall-summary");
+    expect(recall.querySelector('[class*="bg-emerald-500/10"]')).toBeTruthy();
+    expect(recall.className).not.toContain("eval-warn");
+    expect(recall.className).not.toContain("eval-danger");
+    // 对齐（2026-09-06）：胶囊 -mr-1.5 抵消右内边距使数字右缘与分类行同列；
+    // 汇总格 py-1 抵消胶囊 py-0.5 使行高与分类行（py-1.5）一致。
+    expect(recall.querySelector('[class*="-mr-1.5"]')).toBeTruthy();
+    expect(recall.className.split(/\s+/)).toContain("py-1");
+  });
+
+  it("汇总行胶囊不受 baseline delta 影响（2026-09-05）", () => {
+    const withDiff: MetricsOverview = {
+      ...FULL_OVERVIEW,
+      layer1: {
+        ...FULL_OVERVIEW.layer1!,
+        metrics: {
+          summary: { hit_rate: 0.5, recall_at_k: 0.5, mrr: 0.5, path_accuracy: 0.5, question_count: 20 },
+        },
+        baseline_diff: { recall_at_k_delta: 0.02, regression_detected: false, threshold_percent: 3.0 },
+      },
+    };
+    renderOverview(withDiff);
+
+    // 汇总行改胶囊后不受 delta/绝对文字着色影响（2026-09-05）：0.5 → orange 胶囊；
+    // delta 信号只作用于 category 行 recall 列。
+    expect(screen.getByTestId("eval-cell-recall-summary").querySelector('[class*="bg-orange-500/10"]')).toBeTruthy();
+    expect(screen.getByTestId("eval-cell-hit-summary").querySelector('[class*="bg-orange-500/10"]')).toBeTruthy();
+    expect(screen.getByTestId("eval-cell-hit-summary").className).not.toContain("eval-danger");
   });
 
   it("greys out categories missing from by_category with a no-questions note", () => {
@@ -236,9 +340,9 @@ describe("Layer 2 卡片", () => {
       ["context_recall", "召回率"],
       ["seed_hit_rate", "实体命中率"],
     ] as const) {
-      const titleEl = screen.getByTestId(`eval-card-${testId}`).querySelector('[data-slot="card-title"]');
+      const titleEl = screen.getByTestId(`eval-card-title-${testId}`);
       expect(titleEl?.textContent).toContain(title);
-      expect(titleEl?.className).toContain("whitespace-nowrap");
+      expect(titleEl?.className).toContain("truncate");
     }
     // ⓘ tooltip 承载「中文全称（English）：解释」；卡片正文不出现英文全名。
     expect(screen.getByTestId("eval-card-faithfulness").textContent).not.toContain("Faithfulness");
@@ -256,18 +360,17 @@ describe("Layer 2 卡片", () => {
     const card = screen.getByTestId("eval-card-faithfulness");
     expect(card.textContent).toContain("93.3%");
     expect(card.textContent).not.toContain("0.933");
-    // 三轮：卡片内容随宽度居中，百分比降档 text-lg + tabular-nums。
-    const percentEl = Array.from(card.querySelectorAll("div")).find((el) => el.className.includes("font-bold"));
+    // 三轮：百分比降档 text-lg + tabular-nums；容器化后瓦片内左对齐（2026-09-05）。
+    const percentEl = Array.from(card.querySelectorAll("div")).find((el) => el.className.includes("font-semibold"));
     expect(percentEl?.className).toContain("text-lg");
-    expect(percentEl?.className).toContain("text-center");
     expect(percentEl?.className).toContain("tabular-nums");
-    expect(card.querySelector('[data-slot="card-title"]')?.className).toContain("justify-center");
 
-    // 固定列数：宽度下限由 eval-tab 的 min-w-[35rem] 内包装保证，触底时整 tab 横滚。
+    // 固定列数：宽度下限由 eval-tab 的 min-w-[26rem] 内包装保证，触底时仅总览块横滚。
+    // 两组统一 grid-cols-4（2026-09-05）：引用组留一空槽，纵向列轴对齐。
     const ragasGrid = screen.getByTestId("eval-card-faithfulness").parentElement;
     expect(ragasGrid?.className).toContain("grid-cols-4");
     const archGrid = screen.getByTestId("eval-card-citation_precision").parentElement;
-    expect(archGrid?.className).toContain("grid-cols-3");
+    expect(archGrid?.className).toContain("grid-cols-4");
   });
 
   it("labels the two card groups (probabilistic RAGAS vs deterministic citation/graph)", () => {
@@ -299,7 +402,9 @@ describe("Layer 2 卡片", () => {
 
     const card = screen.getByTestId("eval-card-faithfulness");
     expect(card.textContent).toContain("-");
-    expect(card.className).toContain("bg-muted");
+    // 容器化后 null 态 = 透明度降档 + 无进度条（瓦片基底恒 bg-muted/40）。
+    expect(card.className).toContain("opacity-60");
+    expect(card.querySelector('[data-slot="progress"]')).toBeNull();
   });
 
   it("shows a short localized missing badge (never the raw backend reason)", () => {
@@ -317,7 +422,7 @@ describe("Layer 2 卡片", () => {
     // 徽章只显示固定本地化短文案，后端原始原因（含 shell 命令）不得进产品 UI。
     expect(screen.getByTestId("eval-ragas-badge").textContent).toBe("ragas 未安装");
     expect(screen.queryByText(/uv sync/)).toBeNull();
-    expect(screen.getByTestId("eval-card-faithfulness").className).toContain("bg-muted");
+    expect(screen.getByTestId("eval-card-faithfulness").className).toContain("opacity-60");
   });
 
   it("shows a runtime-error badge and keeps the raw reason out of the inline header", () => {
@@ -361,7 +466,7 @@ describe("Layer 2 卡片", () => {
     renderOverview(noGraph);
 
     const card = screen.getByTestId("eval-card-seed_hit_rate");
-    expect(card.className).toContain("bg-muted");
+    expect(card.className).toContain("opacity-60");
     expect(card.textContent).toContain("本批次无 graph 类题目");
   });
 

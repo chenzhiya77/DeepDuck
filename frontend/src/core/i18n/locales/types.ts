@@ -472,11 +472,16 @@ export interface Translations {
       views: { overview: string; questions: string; history: string };
       viewSwitchLabel: string;
       /** 常驻工具栏（§5）：主动词按钮 + 运行状态短文案（nowrap；长解释进 ⓘ）。 */
-      runButton: string;
-      runningButton: string;
-      /** 运行进度（spec 2026-09-06 run-progress）：questions 段按钮 k/N 文案 +
-       *  三段 phase 词（进度线 aria）+ failed 后缀。 */
-      runningProgress: (done: number, total: number) => string;
+      /** 评测档位（2026-09-06 档位单选重设计）：主按钮恒显勾中档位名并执行该档；
+       *  下拉为互斥单选（快速/完整）；选中题目不再改变主按钮动词（范围由确认
+       *  弹窗承载）。 */
+      tierQuick: string;
+      tierFull: string;
+      /** 运行进度（spec 2026-09-06 run-progress 修订）：按钮阶段文案（4 字阶段名
+       *  + n/总段数，与「运行评测/完整评测」等 4 字按钮对齐）+ 三段 phase 词
+       *  （按钮 + 进度线 aria）+ failed 后缀。k/N 不再进按钮，改由底缘定长细线
+       *  填充 + progressbar aria-valuenow/max 承载。 */
+      runningPhase: (phase: string, step: number, total: number) => string;
       phaseLayer1: string;
       phaseQuestions: string;
       phaseRagas: string;
@@ -490,9 +495,11 @@ export interface Translations {
       /** 完整评测分档（2026-09-01 B 方案）：箭头菜单项 + 成本确认对话框。 */
       fullRun: {
         menuAria: string;
-        menuItem: string;
         dialogTitle: string;
         dialogBody: string;
+        /** 范围提醒（2026-09-06）：确认弹窗标明本次完整档跑全库还是所选 N 题。 */
+        dialogScopeAll: string;
+        dialogScopeSelected: (count: number) => string;
         confirm: string;
         cancel: string;
       };
@@ -501,8 +508,6 @@ export interface Translations {
         selectAllAria: string;
         rowSelectAria: (query: string) => string;
         selected: (count: number) => string;
-        runSelected: string;
-        fullRunSelected: string;
         clear: string;
       };
       /** 题库视图（§4.3）：列头、锚定摘要、行操作、空态与两个弹窗。 */

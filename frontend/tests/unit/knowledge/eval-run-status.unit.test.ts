@@ -1,19 +1,19 @@
 /**
- * eval-run-status pure-function tests (spec 2026-09-06 run-progress §4/§5).
+ * eval-run-status pure-function tests (spec 2026-09-06 run-progress §4/§5，
+ * 2026-09-06 修订：按钮改阶段名 + n/3).
  *
- * 覆盖运行进度纯函数：questions 段定长（progressLabel / progressFraction 出 k/N
- * 与百分比宽），layer1·ragas 段不定长（isIndeterminatePhase=true，progressLabel/
- * progressFraction 返回 null，前端走 pulse 而非假百分比），以及 aria 文案组装
- * （phase 词 + failed>0 后缀）。progress 为 null（运行中但首个轮询未到）时全部
- * 安全降级为不定长。
+ * 覆盖运行进度纯函数：phaseStep 把三段映射到 1/2/3（null/undefined 降级为 1，
+ * 让触发瞬间即读「检索评测 1/3」）；progressFraction 只在 questions 段出定长
+ * 百分比宽，layer1·ragas 段返回 null（isIndeterminatePhase=true，前端走 pulse
+ * 而非假百分比）；以及 aria 文案组装（4 字 phase 词 + failed>0 后缀）。
  */
 import { describe, expect, it } from "@rstest/core";
 
 import {
   isIndeterminatePhase,
+  phaseStep,
   progressAriaLabel,
   progressFraction,
-  progressLabel,
 } from "@/core/knowledge/eval-run-status";
 import type { EvalRunProgress } from "@/core/knowledge/types";
 
@@ -32,24 +32,22 @@ function progress(overrides: Partial<EvalRunProgress> = {}): EvalRunProgress {
 
 const LABELS = {
   phaseLayer1: "检索评测",
-  phaseQuestions: "答题",
-  phaseRagas: "生成质量评估",
+  phaseQuestions: "答题评测",
+  phaseRagas: "质量评估",
   failedCount: (n: number) => `失败 ${n}`,
 };
 
-describe("progressLabel", () => {
-  it("returns done/total only for the determinate questions phase", () => {
-    expect(progressLabel(progress())).toEqual({ done: 3, total: 10 });
+describe("phaseStep", () => {
+  it("maps each phase to its 1-based step in the 3-phase pipeline", () => {
+    expect(phaseStep(progress({ phase: "layer1" }))).toBe(1);
+    expect(phaseStep(progress({ phase: "questions" }))).toBe(2);
+    expect(phaseStep(progress({ phase: "ragas" }))).toBe(3);
   });
 
-  it("returns null for indeterminate phases (layer1 / ragas)", () => {
-    expect(progressLabel(progress({ phase: "layer1" }))).toBeNull();
-    expect(progressLabel(progress({ phase: "ragas" }))).toBeNull();
-  });
-
-  it("returns null when there is no live progress", () => {
-    expect(progressLabel(null)).toBeNull();
-    expect(progressLabel(undefined)).toBeNull();
+  it("defaults to step 1 (layer1) when there is no live progress", () => {
+    // 触发瞬间乐观置位但首个轮询未到 → 按钮即读「检索评测 1/3」。
+    expect(phaseStep(null)).toBe(1);
+    expect(phaseStep(undefined)).toBe(1);
   });
 });
 
@@ -86,13 +84,13 @@ describe("progressFraction", () => {
 describe("progressAriaLabel", () => {
   it("maps each phase to its word", () => {
     expect(progressAriaLabel(progress({ phase: "layer1" }), LABELS)).toBe("检索评测");
-    expect(progressAriaLabel(progress({ phase: "questions" }), LABELS)).toBe("答题");
-    expect(progressAriaLabel(progress({ phase: "ragas" }), LABELS)).toBe("生成质量评估");
+    expect(progressAriaLabel(progress({ phase: "questions" }), LABELS)).toBe("答题评测");
+    expect(progressAriaLabel(progress({ phase: "ragas" }), LABELS)).toBe("质量评估");
   });
 
   it("appends the failed suffix only when failed > 0", () => {
-    expect(progressAriaLabel(progress({ failed: 0 }), LABELS)).toBe("答题");
-    expect(progressAriaLabel(progress({ failed: 2 }), LABELS)).toBe("答题，失败 2");
+    expect(progressAriaLabel(progress({ failed: 0 }), LABELS)).toBe("答题评测");
+    expect(progressAriaLabel(progress({ failed: 2 }), LABELS)).toBe("答题评测，失败 2");
   });
 
   it("returns null when there is no live progress", () => {

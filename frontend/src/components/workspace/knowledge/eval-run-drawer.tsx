@@ -24,9 +24,9 @@ import type {
   RagasMetrics,
 } from "@/core/knowledge/types";
 
-/** 率类指标百分比（1 位小数）；MRR/RAGAS 原始三位小数（对齐总览/趋势口径）。 */
-const percent = (v: number): string => `${(v * 100).toFixed(1)}%`;
-const raw3 = (v: number | null): string => (v == null ? "-" : v.toFixed(3));
+/** 数值语言统一（2026-09-05）：全指标百分数 1 位小数，与总览表/瓦片/趋势轴
+ *  同口径；MRR/RAGAS 三位小数口径退役。null 显破折号。 */
+const percent = (v: number | null): string => (v == null ? "-" : `${(v * 100).toFixed(1)}%`);
 
 function isLayer1Metrics(
   m: EvalRunDetail["layer1_metrics"],
@@ -133,7 +133,7 @@ export function EvalRunDrawer({
                           te.tableRecallAtK,
                           percent(run.layer1_metrics.summary.recall_at_k),
                         ],
-                        [te.tableMrr, raw3(run.layer1_metrics.summary.mrr)],
+                        [te.tableMrr, percent(run.layer1_metrics.summary.mrr)],
                         [
                           te.tablePathAccuracy,
                           percent(run.layer1_metrics.summary.path_accuracy),
@@ -159,36 +159,36 @@ export function EvalRunDrawer({
                         rows={[
                           [
                             te.trend.faithfulness,
-                            raw3(run.layer2_metrics.ragas.faithfulness),
+                            percent(run.layer2_metrics.ragas.faithfulness),
                           ],
                           [
                             te.trend.answerRelevancy,
-                            raw3(run.layer2_metrics.ragas.answer_relevancy),
+                            percent(run.layer2_metrics.ragas.answer_relevancy),
                           ],
                           [
                             te.trend.contextPrecision,
-                            raw3(run.layer2_metrics.ragas.context_precision),
+                            percent(run.layer2_metrics.ragas.context_precision),
                           ],
                           [
                             td.contextRecallLabel,
-                            raw3(run.layer2_metrics.ragas.context_recall),
+                            percent(run.layer2_metrics.ragas.context_recall),
                           ],
                           [
                             te.citationPrecision,
-                            raw3(
+                            percent(
                               run.layer2_metrics.arch_specific
                                 .citation_precision,
                             ),
                           ],
                           [
                             te.citationRecall,
-                            raw3(
+                            percent(
                               run.layer2_metrics.arch_specific.citation_recall,
                             ),
                           ],
                           [
                             te.seedHitRate,
-                            raw3(
+                            percent(
                               run.layer2_metrics.arch_specific.seed_hit_rate,
                             ),
                           ],

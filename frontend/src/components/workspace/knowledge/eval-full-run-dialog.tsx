@@ -21,9 +21,12 @@ export interface EvalFullRunDialogProps {
   onOpenChange: (open: boolean) => void;
   /** 确认后触发完整档（调用方携带 layers="l1_l2" 与可选 question_ids）。 */
   onConfirm: () => void;
+  /** 运行范围（2026-09-06）：所选题数；缺省=全库。弹窗据此标明范围，
+      作为"只跑所选"的唯一提醒器（主按钮恒为档位名不附加后缀）。 */
+  scopeCount?: number;
 }
 
-export function EvalFullRunDialog({ open, onOpenChange, onConfirm }: EvalFullRunDialogProps) {
+export function EvalFullRunDialog({ open, onOpenChange, onConfirm, scopeCount }: EvalFullRunDialogProps) {
   const { t } = useI18n();
   const tk = t.knowledge.eval.fullRun;
 
@@ -32,7 +35,11 @@ export function EvalFullRunDialog({ open, onOpenChange, onConfirm }: EvalFullRun
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{tk.dialogTitle}</DialogTitle>
-          <DialogDescription>{tk.dialogBody}</DialogDescription>
+          <DialogDescription>
+            {tk.dialogBody}
+            {" "}
+            {scopeCount !== undefined ? tk.dialogScopeSelected(scopeCount) : tk.dialogScopeAll}
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>

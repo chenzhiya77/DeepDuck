@@ -265,19 +265,40 @@ describe("EvalTab 数据联通", () => {
       recallAtK?: string;
       thresholdLabel?: (p: number) => string;
     };
-    expect(labels.recallAtK).toBe("Recall@k");
+    expect(labels.recallAtK).toBe("召回率@k");
     expect(labels.thresholdLabel?.(3)).toBe("回退阈值 -3%");
+    // 阈值标注从线上文字退役（压数据线）→ 头部行红芯片（2026-09-05）。
+    expect(screen.getByTestId("eval-threshold-chip").textContent).toBe("回退阈值 -3%");
   });
 
-  it("32rem 下限只在指标总览块：压缩时仅卡片区域横滚，工具栏不进滚动区", () => {
+  it("collapses the trend card from its header toggle (recall container vocabulary, 2026-09-05)", async () => {
+    renderEvalTab();
+    await screen.findByTestId("eval-trend-chart-mock");
+    fireEvent.click(screen.getByTestId("eval-trend-toggle"));
+    expect(screen.queryByTestId("eval-trend-chart-mock")).toBeNull();
+    expect(screen.getByTestId("eval-trend-toggle").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(screen.getByTestId("eval-trend-toggle"));
+    expect(await screen.findByTestId("eval-trend-chart-mock")).toBeTruthy();
+  });
+
+  it("横向下限沉进总览两卡：每卡独立横向滑块，总览块不再共用一个", () => {
     renderEvalTab();
     // 2026-08-28 修订（用户反馈）：下限从整列下沉到指标块——「谁有下限，谁自己滚」。
+    // 2026-09-05 三迭代：下限与滑块再下沉一层——两张卡各自内部独立横滚。
     const scrollBlock = screen.getByTestId("eval-overview-scroll");
     // 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：Radix ScrollArea（type="scroll"、
     // 停 2s 淡出），不再原生 overflow-x-auto；min-w 下限隔了 Viewport 测量 div 一层，用选择器找。
     expect(scrollBlock.getAttribute("data-slot")).toBe("scroll-area");
     expect(scrollBlock.className).not.toContain("overflow-x-auto");
-    expect(scrollBlock.querySelector("[class*='min-w-[32rem]']")).toBeTruthy();
+    // 每卡独立滑块：卡内 scroller 落地（本 fixture layer2=null 走空态分支，
+    // 第二卡滑块归属/独立断言由 overview 专属测试覆盖）；总览块自身包装
+    // 不再挂 min-w 下限（下限沉进卡内）。
+    expect(screen.getByTestId("eval-layer1-scroll")).toBeTruthy();
+    const outerWrapper = scrollBlock
+      .querySelector("[data-slot='scroll-area-viewport']")
+      ?.firstElementChild?.firstElementChild;
+    expect(outerWrapper?.className).toContain("min-w-0");
+    expect(outerWrapper?.className).not.toContain("min-w-[2");
     // 工具栏固定行，整 tab 无横向滚动；表头上方不画线（2026-09-02，与文档 tab 对齐）：
     // 表头自带吸顶发丝线，两条线夹表头的问题同款修复。
     expect(screen.getByTestId("eval-view-toolbar").className).toContain(
@@ -482,27 +503,21 @@ describe("EvalTab 常驻工具栏", () => {
     const toolbar = screen.getByTestId("eval-view-toolbar");
     expect(toolbar.className).toContain("py-2");
     expect(
-      within(toolbar).getByRole("button", { name: "运行评测" }).className,
+      within(toolbar).getByRole("button", { name: "快速评测" }).className,
     ).toContain("h-7");
-    // 题库视图的造题入口同为 h-7 档（行高 44 = 文档工具栏基准）
+    // 造题入口已收进档位下拉（2026-09-06）：工具栏内联不再出现。
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     expect(
-      within(toolbar).getByRole("button", { name: /添加考题/ }).className,
-    ).toContain("h-7");
+      within(toolbar).queryByRole("button", { name: /添加考题/ }),
+    ).toBeNull();
     expect(
-      within(toolbar).getByRole("button", { name: /生成考题/ }).className,
-    ).toContain("h-7");
-    // 三按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款收窄），
+      within(toolbar).queryByRole("button", { name: /生成考题/ }),
+    ).toBeNull();
+    // 主按钮统一紧凑档（2026-08-30）：gap-1.5 + px-2.5（vector-tab chips 同款收窄），
     // 同内边距不跳宽；不降字号，保住主动词视觉权重。
-    const runButton = within(toolbar).getByRole("button", { name: "运行评测" });
+    const runButton = within(toolbar).getByRole("button", { name: "快速评测" });
     expect(runButton.className).toContain("px-2.5");
     expect(runButton.className).toContain("gap-1.5");
-    expect(
-      within(toolbar).getByRole("button", { name: /添加考题/ }).className,
-    ).toContain("px-2.5");
-    expect(
-      within(toolbar).getByRole("button", { name: /生成考题/ }).className,
-    ).toContain("px-2.5");
 
     // 锁运行（in_flight=true）：按钮同一 h-7 档，工具栏高度不变
     act(() => {
@@ -526,7 +541,7 @@ describe("EvalTab 常驻工具栏", () => {
       );
     });
     expect(
-      within(toolbar).getByRole("button", { name: "运行中…" }).className,
+      within(toolbar).getByRole("button", { name: "检索评测" }).className,
     ).toContain("h-7");
   });
 
@@ -539,17 +554,17 @@ describe("EvalTab 常驻工具栏", () => {
     expect(selected.className).toContain("bg-background");
   });
 
-  it("in_flight=true 时按钮转「运行中…」禁用态", () => {
+  it("in_flight=true 时按钮转运行态禁用（无 progress → 降级「检索评测」）", () => {
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({ data: { in_flight: true, runs: [], total: 0 } }),
     );
     renderEvalTab();
-    const runButton = screen.getByRole("button", { name: "运行中…" });
+    const runButton = screen.getByRole("button", { name: "检索评测" });
     expect(runButton.hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByRole("button", { name: "运行评测" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "快速评测" })).toBeNull();
   });
 
-  it("mutation pending 同样呈现运行中禁用态（点击→首次轮询间隙）", () => {
+  it("mutation pending 同样呈现运行态禁用（点击→首次轮询间隙）", () => {
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({ data: { in_flight: false, runs: [], total: 0 } }),
     );
@@ -559,7 +574,7 @@ describe("EvalTab 常驻工具栏", () => {
     });
     renderEvalTab();
     expect(
-      screen.getByRole("button", { name: "运行中…" }).hasAttribute("disabled"),
+      screen.getByRole("button", { name: "检索评测" }).hasAttribute("disabled"),
     ).toBe(true);
   });
 
@@ -575,7 +590,7 @@ describe("EvalTab 常驻工具栏", () => {
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
 
     expect(mutate).toHaveBeenCalled();
     expect(
@@ -602,13 +617,13 @@ describe("EvalTab 常驻工具栏", () => {
       total: 0,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
 
     const cached = queryClient.getQueryData<{ in_flight: boolean }>(runsKey);
     expect(cached?.in_flight).toBe(true);
   });
 
-  it("enqueued 但无缓存 → 退化 invalidate 首查", () => {
+  it("enqueued 但无缓存 → 乐观创建 in_flight 条目（不退化 invalidate，绕开后端竞态）", () => {
     const mutate = rs.fn(
       (
         _vars: unknown,
@@ -618,25 +633,34 @@ describe("EvalTab 常驻工具栏", () => {
       },
     );
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    // 显式置 idle，保证「运行评测」按钮可点（本 describe 的 useEvalRuns 为 sticky）。
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({ data: { in_flight: false, runs: [], total: 0 } }),
+    );
     const { queryClient } = renderWithClient(<EvalTab enabled kbId="kb-1" />);
     const invalidateSpy = rs.fn().mockResolvedValue(undefined);
     queryClient.invalidateQueries =
       invalidateSpy as typeof queryClient.invalidateQueries;
+    const runsKey = ["knowledge-bases", "kb-1", "eval-runs", "history"];
+    // 前置：useEvalRuns 被 mock，真实 queryClient 里该 key 尚无缓存（空缓存路径）。
+    expect(queryClient.getQueryData(runsKey)).toBeUndefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
 
-    const keys = invalidateSpy.mock.calls.map(
-      ([arg]) => (arg as { queryKey: readonly unknown[] }).queryKey,
-    );
-    expect(keys).toContainEqual([
-      "knowledge-bases",
-      "kb-1",
-      "eval-runs",
-      "history",
-    ]);
+    // 乐观**创建**最小条目：in_flight=true、3s 轮询立即接管；不退化 invalidate
+    // （旧写法空缓存时 refetch 会撞后端 create_task 延迟自增 _IN_FLIGHT 的竞态）。
+    const cached = queryClient.getQueryData<{
+      in_flight: boolean;
+      runs: unknown[];
+      total: number;
+    }>(runsKey);
+    expect(cached?.in_flight).toBe(true);
+    expect(cached?.runs).toEqual([]);
+    expect(cached?.total).toBe(0);
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
-  it("questions 段进度 → 按钮 k/N + 底缘定长细线（width% 与 aria）", () => {
+  it("questions 段进度 → 按钮「答题评测 2/3」+ 底缘定长细线承载 k/N（width% 与 aria）", () => {
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({
         data: {
@@ -657,9 +681,9 @@ describe("EvalTab 常驻工具栏", () => {
     );
     renderEvalTab();
 
-    // 按钮文案携 k/N（tabular-nums）。
+    // 按钮文案携阶段名 + n/3（questions 段恒 step=2；k/N 移到底缘细线 + aria）。
     expect(
-      screen.getByRole("button", { name: "运行中… 3/10" }),
+      screen.getByRole("button", { name: "答题评测 2/3" }),
     ).toBeTruthy();
 
     // 底缘细线：determinate progressbar，aria-valuenow/max + 宽 30%。
@@ -675,7 +699,7 @@ describe("EvalTab 常驻工具栏", () => {
     expect(line.className).not.toContain("animate-pulse");
   });
 
-  it("layer1 段进度 → 按钮无数字 + 底缘细线 pulse（不定长）", () => {
+  it("layer1 段进度 → 按钮「检索评测」(未触发完整档不显计数) + 底缘细线 pulse（不定长）", () => {
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({
         data: {
@@ -696,12 +720,43 @@ describe("EvalTab 常驻工具栏", () => {
     );
     renderEvalTab();
 
-    // 不定长段：按钮回到裸「运行中…」（无 k/N）。
-    expect(screen.getByRole("button", { name: "运行中…" })).toBeTruthy();
+    // layer1 段（tier 默认快速档 → 不显计数）：按钮显阶段名，不显 n/3。
+    expect(screen.getByRole("button", { name: "检索评测" })).toBeTruthy();
 
     const line = screen.getByTestId("eval-run-progress");
     expect(line.className).toContain("animate-pulse");
     // 不假百分比：无 aria-valuenow、无 fill 宽。
+    expect(line.getAttribute("aria-valuenow")).toBeNull();
+    expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
+  });
+
+  it("ragas 段进度 → 按钮「质量评估 3/3」+ 底缘细线 pulse（不定长，不假百分比）", () => {
+    hooksMock.useEvalRuns.mockReturnValue(
+      queryState({
+        data: {
+          in_flight: true,
+          progress: {
+            run_id: "run-live",
+            phase: "ragas",
+            done: 10,
+            total: 10,
+            failed: 0,
+            started_at: "2026-09-06T10:00:00+00:00",
+            updated_at: "2026-09-06T10:09:00+00:00",
+          },
+          runs: [],
+          total: 0,
+        },
+      }),
+    );
+    renderEvalTab();
+
+    // ragas 段恒 step=3（与档位无关）→ 按钮显「质量评估 3/3」，消除旧裸「运行中…」歧义。
+    expect(screen.getByRole("button", { name: "质量评估 3/3" })).toBeTruthy();
+
+    // 不定长：细线 pulse，绝不假百分比（无 aria-valuenow、无 fill 宽）。
+    const line = screen.getByTestId("eval-run-progress");
+    expect(line.className).toContain("animate-pulse");
     expect(line.getAttribute("aria-valuenow")).toBeNull();
     expect(screen.queryByTestId("eval-run-progress-fill")).toBeNull();
   });
@@ -739,7 +794,7 @@ describe("EvalTab 常驻工具栏", () => {
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
 
     expect(
       rs.mocked(toast.info).mock.calls.some(([m]) => m === "已有评测正在运行"),
@@ -754,7 +809,7 @@ describe("EvalTab 常驻工具栏", () => {
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
 
     expect(
       rs.mocked(toast.error).mock.calls.some(([m]) => m === "评测触发失败"),
@@ -859,7 +914,7 @@ describe("EvalTab 常驻工具栏", () => {
         expect(
           within(screen.getByTestId("eval-view-toolbar")).queryByRole(
             "button",
-            { name: "运行评测" },
+            { name: "快速评测" },
           ),
         ).toBeNull();
       });
@@ -869,7 +924,7 @@ describe("EvalTab 常驻工具栏", () => {
       );
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(
-        await screen.findByRole("menuitem", { name: "运行评测" }),
+        await screen.findByRole("menuitem", { name: "快速评测" }),
       );
       expect(mutate).toHaveBeenCalled();
       // 分段控件恒内联：三视图标签足够短
@@ -908,7 +963,7 @@ describe("EvalTab 常驻工具栏", () => {
         expect(
           within(screen.getByTestId("eval-view-toolbar")).queryByRole(
             "button",
-            { name: "运行评测" },
+            { name: "快速评测" },
           ),
         ).toBeNull();
       });
@@ -980,47 +1035,48 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
   });
   afterEach(() => cleanup());
 
-  it("造题动作按钮仅题库视图出现在常驻工具栏，运行评测保持最右主位", () => {
+  it("造题入口仅题库视图出现在档位下拉，主按钮保持最右主位", async () => {
     renderEvalTab();
-    // 总览视图：不出现题库动作（视图相关，不常驻）
-    expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /生成考题/ })).toBeNull();
+    const openTierMenu = () =>
+      fireEvent.keyDown(screen.getByRole("button", { name: "评测档位" }), {
+        key: "ArrowDown",
+      });
+    // 总览视图：下拉内不出现造题入口（视图相关，不常驻）。
+    openTierMenu();
+    expect(screen.queryByRole("menuitem", { name: /添加考题/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /生成考题/ })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
 
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
-    const toolbar = screen.getByTestId("eval-view-toolbar");
+    openTierMenu();
+    expect(screen.getByRole("menuitem", { name: /添加考题/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /生成考题/ })).toBeTruthy();
+    // 分割线隔离档位单选与造题入口。
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+    // 菜单打开时 Radix 将背景 aria-hidden，需先关闭再查内联主按钮。
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    // 主按钮仍在工具栏内联最右主位。
     expect(
-      within(toolbar).getByRole("button", { name: /添加考题/ }),
+      within(screen.getByTestId("eval-view-toolbar")).getByRole("button", {
+        name: "快速评测",
+      }),
     ).toBeTruthy();
-    expect(
-      within(toolbar).getByRole("button", { name: /生成考题/ }),
-    ).toBeTruthy();
-    expect(
-      within(toolbar).getByRole("button", { name: "运行评测" }),
-    ).toBeTruthy();
-    // 文案定短（2026-08-30）：与「添加考题」「运行评测」同长，四字词。
-    expect(
-      within(toolbar).getByRole("button", { name: /生成考题/ }).textContent,
-    ).toBe("生成考题");
 
-    // 切走即消失（历史/总览无造题语义）
+    // 切走即消失（历史无造题语义）。
     fireEvent.click(screen.getByRole("radio", { name: "历史" }));
-    expect(
-      within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", {
-        name: /添加考题/,
-      }),
-    ).toBeNull();
-    expect(
-      within(screen.getByTestId("eval-view-toolbar")).queryByRole("button", {
-        name: /生成考题/,
-      }),
-    ).toBeNull();
+    openTierMenu();
+    expect(screen.queryByRole("menuitem", { name: /添加考题/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /生成考题/ })).toBeNull();
   });
 
-  it("点击「从文档生成考题」→ bank 受控 synthesisOpen 置真，回调可复位", () => {
+  it("下拉「从文档生成考题」→ bank 受控 synthesisOpen 置真，回调可复位", async () => {
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     expect(bankMock.props?.synthesisOpen).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: /生成考题/ }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "评测档位" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /生成考题/ }));
     expect(bankMock.props?.synthesisOpen).toBe(true);
     act(() =>
       (bankMock.props?.onSynthesisOpenChange as (open: boolean) => void)(false),
@@ -1028,11 +1084,14 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
     expect(bankMock.props?.synthesisOpen).toBe(false);
   });
 
-  it("点击「添加考题」→ bank 受控 addOpen 置真", () => {
+  it("下拉「添加考题」→ bank 受控 addOpen 置真", async () => {
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     expect(bankMock.props?.addOpen).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: /添加考题/ }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "评测档位" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /添加考题/ }));
     expect(bankMock.props?.addOpen).toBe(true);
   });
 
@@ -1070,7 +1129,7 @@ describe("EvalTab 题库入口（常驻工具栏）", () => {
       expect(items.map((item) => item.textContent)).toEqual([
         "添加考题",
         "生成考题",
-        "运行评测",
+        "快速评测",
         "完整评测",
       ]);
       expect(items.every((item) => item.querySelector("svg") !== null)).toBe(
@@ -1161,7 +1220,7 @@ describe("EvalTab 题库搜索（常驻工具栏）", () => {
         expect(
           within(screen.getByTestId("eval-view-toolbar")).queryByRole(
             "button",
-            { name: "运行评测" },
+            { name: "快速评测" },
           ),
         ).toBeNull();
       });
@@ -1202,7 +1261,7 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
 
     expect(mutate).toHaveBeenCalled();
     expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1" });
@@ -1215,13 +1274,65 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
 
     const chevron = screen.getByRole("button", { name: "评测档位" });
     fireEvent.keyDown(chevron, { key: "ArrowDown" });
+    // 下拉为互斥单选（2026-09-06）：点「完整评测」只勾选不运行，主按钮随即改显该档名。
     fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
+    expect(screen.getByRole("button", { name: "完整评测" })).toBeTruthy();
 
-    // 确认对话框：成本说明在场，确认后触发完整档。
+    // 主按钮执行勾中档 → 确认对话框（成本+范围说明在场）→ 确认后触发完整档。
+    fireEvent.click(screen.getByRole("button", { name: "完整评测" }));
     expect(await screen.findByText("运行完整评测")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
     expect(mutate).toHaveBeenCalled();
     expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2" });
+  });
+
+  it("完整档触发后 layer1 段 → 按钮「检索评测 1/3」（tier 单选驱动计数）", async () => {
+    let runsState = queryState({
+      data: { in_flight: false, runs: [], total: 0 },
+    });
+    hooksMock.useEvalRuns.mockImplementation(() => runsState);
+    const mutate = rs.fn(
+      (
+        _vars: unknown,
+        opts?: { onSuccess?: (r: { status: string }) => void },
+      ) => {
+        opts?.onSuccess?.({ status: "enqueued" });
+      },
+    );
+    hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
+    const { queryClient, rerender } = renderEvalTab();
+
+    // 驱动完整评测：chevron 勾选「完整评测」→ 主按钮（改显完整评测）→ 对话框
+    // 「开始完整评测」→ l1_l2 触发；tier=l1_l2 驱动 layer1 显 n/3 计数。
+    const chevron = screen.getByRole("button", { name: "评测档位" });
+    fireEvent.keyDown(chevron, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "完整评测" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "开始完整评测" }),
+    );
+    expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1_l2" });
+
+    // 模拟轮询回填 in_flight（layer1 段，progress 尚未到）：完整档显 n/3 计数，
+    // 与快速档 layer1 只显「检索评测」区分开。
+    act(() => {
+      runsState = queryState({
+        data: { in_flight: true, runs: [], total: 0 },
+      });
+      rerender(
+        <I18nContext.Provider
+          value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+        >
+          <QueryClientProvider client={queryClient}>
+            <EvalTab enabled kbId="kb-1" />
+          </QueryClientProvider>
+        </I18nContext.Provider>,
+      );
+    });
+
+    expect(
+      screen.getByRole("button", { name: "检索评测 1/3" }),
+    ).toBeTruthy();
   });
 
   it("确认对话框取消不触发", async () => {
@@ -1232,6 +1343,7 @@ describe("EvalTab 运行评测分档（B 方案）", () => {
     const chevron = screen.getByRole("button", { name: "评测档位" });
     fireEvent.keyDown(chevron, { key: "ArrowDown" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "完整评测" }));
     fireEvent.click(await screen.findByRole("button", { name: "取消" }));
     expect(mutate).not.toHaveBeenCalled();
   });
@@ -1318,7 +1430,7 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
     });
   }
 
-  it("题库视图有选中时运行主键切「快速评测」携 question_ids，成功清空后切回", async () => {
+  it("题库视图选中题目不改变主按钮档位名，触发携 question_ids 并清空选择", async () => {
     const mutate = rs.fn(
       (
         _input: unknown,
@@ -1330,22 +1442,25 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
     hooksMock.useTriggerEvalRun.mockReturnValue({ mutate, isPending: false });
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
-    selectQuestions(["q_1", "q_2"]);
-
     const toolbar = screen.getByTestId("eval-view-toolbar");
+    // 档位单选重设计（2026-09-06）：主按钮恒显勾中档位名，选中题目不变脸。
     expect(
-      within(toolbar).queryByRole("button", { name: "运行评测" }),
-    ).toBeNull();
+      within(toolbar).getByRole("button", { name: "快速评测" }),
+    ).toBeTruthy();
+    selectQuestions(["q_1", "q_2"]);
+    expect(
+      within(toolbar).getByRole("button", { name: "快速评测" }),
+    ).toBeTruthy();
+
     fireEvent.click(within(toolbar).getByRole("button", { name: "快速评测" }));
+    // 范围静默携入 payload（按钮不附加后缀）。
     expect(mutate.mock.calls[0]?.[0]).toEqual({
       layers: "l1",
       question_ids: ["q_1", "q_2"],
     });
-    // 触发成功清空选题集（原批量栏语义承接）：主键切回「运行评测」。
+    // 触发成功清空选题集（原批量栏语义承接）。
     await waitFor(() => {
-      expect(
-        within(toolbar).getByRole("button", { name: "运行评测" }),
-      ).toBeTruthy();
+      expect((bankMock.props?.selectedIds as ReadonlySet<string>).size).toBe(0);
     });
   });
 
@@ -1359,7 +1474,10 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
     const chevron = screen.getByRole("button", { name: "评测档位" });
     fireEvent.keyDown(chevron, { key: "ArrowDown" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "完整评测" }));
-    expect(await screen.findByText("运行完整评测")).toBeTruthy();
+    // 主按钮执行勾中档 → 确认弹窗标明范围（所选 1 题）→ 确认携 question_ids。
+    fireEvent.click(screen.getByRole("button", { name: "完整评测" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("运行范围：所选 1 题。");
     fireEvent.click(screen.getByRole("button", { name: "开始完整评测" }));
     expect(mutate.mock.calls[0]?.[0]).toEqual({
       layers: "l1_l2",
@@ -1381,7 +1499,7 @@ describe("EvalTab 选题运行工具栏原位切换", () => {
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
     selectQuestions(["q_1"]);
     fireEvent.click(screen.getByRole("radio", { name: "总览" }));
-    fireEvent.click(screen.getByRole("button", { name: "运行评测" }));
+    fireEvent.click(screen.getByRole("button", { name: "快速评测" }));
     expect(mutate.mock.calls[0]?.[0]).toEqual({ layers: "l1" });
   });
 });

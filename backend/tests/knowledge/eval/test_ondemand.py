@@ -260,6 +260,32 @@ async def test_full_run_question_ids_filters_both_layers(tmp_path, store) -> Non
     assert called == [kept.id]
 
 
+async def test_in_flight_incremented_before_load_questions(tmp_path, store, monkeypatch) -> None:
+    """竞态修复(2026-09-06)：_IN_FLIGHT 自增前移到 runner 第一行(任何 await 之前)。
+
+    旧实现把自增放在 ``await load_questions`` 之后，create_task 调度到 load 完成
+    之间存在窗口：触发后早期 poll 读到 in_flight=false → 覆盖前端乐观值、杀死
+    轮询（按钮不亮/不推进）。本例在 load_questions 内部断言在途计数已为真。
+    """
+    question = await _seed_question_returning(tmp_path / "golden.jsonl", query="在途题")
+    seen: dict[str, bool] = {}
+
+    async def slow_load(_path, *_args, **_kwargs):
+        seen["during_load"] = ondemand.eval_run_in_progress(KB)
+        return [question]
+
+    monkeypatch.setattr(ondemand, "load_questions", slow_load)
+    await ondemand.run_layer1_for_kb(
+        KB,
+        golden_path=tmp_path / "golden.jsonl",
+        searchers=_stub_searchers(),
+        generated_at=GENERATED_AT,
+    )
+
+    assert seen["during_load"] is True
+    assert not ondemand.eval_run_in_progress(KB)
+
+
 async def test_full_run_layer2_exception_degrades_to_layer1_only_row(tmp_path, store, monkeypatch) -> None:
     golden = tmp_path / "golden.jsonl"
     await _seed_question(golden)

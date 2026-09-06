@@ -169,11 +169,14 @@ async def run_layer1_for_kb(
     if generated_at is None:
         generated_at = datetime.now(UTC).isoformat(timespec="seconds")
 
+    # 同步自增在途计数（runner 第一行、先于任何 await）：create_task 调度后即生效，
+    # 关闭"触发后早期 poll 读到 in_flight=false → 覆盖前端乐观值、杀死轮询"的竞态。
+    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     questions = _filter_questions(await load_questions(golden_path), question_ids)
     if not questions:
+        _release_run(kb_id)
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
-    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     _progress_start(kb_id, run_id, phase="layer1", total=1)
     try:
         payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
@@ -220,11 +223,14 @@ async def run_full_eval_for_kb(
     if generated_at is None:
         generated_at = datetime.now(UTC).isoformat(timespec="seconds")
 
+    # 同步自增在途计数（runner 第一行、先于任何 await）：同 run_layer1_for_kb，
+    # 关闭触发后早期 poll 读到 in_flight=false 的竞态窗口。
+    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     questions = _filter_questions(await load_questions(golden_path), question_ids)
     if not questions:
+        _release_run(kb_id)
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
-    _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     _progress_start(kb_id, run_id, phase="layer1", total=1)
 
     def _forward_progress(phase: str, done: int, failed: int, total: int) -> None:

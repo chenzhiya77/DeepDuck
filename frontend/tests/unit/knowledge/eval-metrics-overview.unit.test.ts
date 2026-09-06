@@ -1,13 +1,12 @@
 /**
  * eval-metrics-overview.utils pure-function tests (spec 2026-08-24 §3.3/§3.4, plan Task 2).
  *
- * getCellColorClass: Layer 1 Recall@k 单元格三态着色——阈值来自后端
- * `baseline_diff.threshold_percent`（CI 门禁同源），绝不硬编码。
  * getProgressBarColor: Layer 2 卡片进度条三档着色（语义 CSS 变量）。
+ * 单元格 delta/绝对裸色着色已退役（2026-09-06 分类行全中性），相应用例移除。
  */
 import { describe, expect, it } from "@rstest/core";
 
-import { classifyRagasSkipReason, getCellColorClass, getProgressBarColor } from "@/components/workspace/knowledge/eval-metrics-overview.utils";
+import { classifyRagasSkipReason, getProgressBarColor } from "@/components/workspace/knowledge/eval-metrics-overview.utils";
 
 describe("classifyRagasSkipReason", () => {
   // 后端 ragas_unavailable_reason() 的固定常量前缀；分类只认前缀，不整串比对。
@@ -23,37 +22,6 @@ describe("classifyRagasSkipReason", () => {
   it("classifies execution failures and empty output as runtime errors", () => {
     expect(classifyRagasSkipReason("ragas 执行失败: ConnectionError(...)")).toBe("error");
     expect(classifyRagasSkipReason("ragas 未产出结果")).toBe("error");
-  });
-});
-
-describe("getCellColorClass", () => {
-  it("returns no tint when the run carried no baseline diff", () => {
-    expect(getCellColorClass(null, 3.0)).toBe("");
-    expect(getCellColorClass(undefined, 3.0)).toBe("");
-    expect(getCellColorClass(-0.05, null)).toBe("");
-    expect(getCellColorClass(-0.05, undefined)).toBe("");
-  });
-
-  it("returns no tint for improvements or zero delta", () => {
-    expect(getCellColorClass(0.05, 3.0)).toBe("");
-    expect(getCellColorClass(0, 3.0)).toBe("");
-  });
-
-  it("warns on a sub-threshold drop (boundary: -threshold < delta < 0)", () => {
-    expect(getCellColorClass(-0.029, 3.0)).toBe("bg-(--eval-warn-bg) text-(--eval-warn-fg)");
-    // 紧贴阈值内侧仍是警告（delta > -threshold）。
-    expect(getCellColorClass(-0.0299, 3.0)).toBe("bg-(--eval-warn-bg) text-(--eval-warn-fg)");
-  });
-
-  it("marks danger at or beyond the threshold (boundary: delta <= -threshold)", () => {
-    expect(getCellColorClass(-0.03, 3.0)).toBe("bg-(--eval-danger-bg) text-(--eval-danger-fg) font-semibold");
-    expect(getCellColorClass(-0.08, 3.0)).toBe("bg-(--eval-danger-bg) text-(--eval-danger-fg) font-semibold");
-  });
-
-  it("honours a non-default threshold coming from the backend payload", () => {
-    // 阈值不写死 3%：thresholdPercent=5 时 -4% 只是警告。
-    expect(getCellColorClass(-0.04, 5.0)).toBe("bg-(--eval-warn-bg) text-(--eval-warn-fg)");
-    expect(getCellColorClass(-0.05, 5.0)).toBe("bg-(--eval-danger-bg) text-(--eval-danger-fg) font-semibold");
   });
 });
 

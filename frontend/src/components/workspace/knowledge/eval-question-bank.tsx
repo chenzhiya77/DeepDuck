@@ -52,7 +52,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDeleteEvalQuestion, useEvalQuestions, useTriggerEvalRun } from "@/core/knowledge/hooks";
+import { useDeleteEvalQuestion, useEvalQuestions } from "@/core/knowledge/hooks";
 import type { EvalQuestion, EvalTriggerInput } from "@/core/knowledge/types";
 
 import { EvalAddQuestionDialog } from "./eval-add-question-dialog";
@@ -88,6 +88,10 @@ export interface EvalQuestionBankProps {
       工具栏原位切换要读选中态，本层右键菜单消费/清理。 */
   selectedIds: ReadonlySet<string>;
   onSelectedIdsChange: (next: ReadonlySet<string>) => void;
+  /** 评测触发统一上收（2026-09-06 验收缺口修复）：右键/行菜单的评测入口委托
+      eval-tab 的 handleTrigger——后者 onSuccess 里有乐观置位 in_flight 与
+      pendingFullRun 记档，本层自持 mutation 会绕过它们导致头部按钮不转运行态。 */
+  onTrigger: (input: EvalTriggerInput) => void;
 }
 
 export function EvalQuestionBank({
@@ -101,6 +105,7 @@ export function EvalQuestionBank({
   searchQuery = "",
   selectedIds,
   onSelectedIdsChange,
+  onTrigger,
 }: EvalQuestionBankProps) {
   const { t } = useI18n();
   const rtk = t.knowledge;
@@ -109,7 +114,6 @@ export function EvalQuestionBank({
   const stk = etk.selection;
   const query = useEvalQuestions(kbId, enabled);
   const deleteMutation = useDeleteEvalQuestion(kbId);
-  const triggerMutation = useTriggerEvalRun(kbId);
 
   const [drawerQuestion, setDrawerQuestion] = useState<EvalQuestion | null>(null);
   // 删除目标改数组（2026-09-02）：行内删除/drawer 删除 = 单元素，
@@ -147,16 +151,10 @@ export function EvalQuestionBank({
     onSelectedIdsChange(next);
   };
 
+  // 评测触发委托 eval-tab（onTrigger → handleTrigger）：乐观置位/档位记档/清选择
+  // 均由上层 onSuccess 统一处理，本层不再自持 trigger mutation。
   const handleBulkTrigger = (input: EvalTriggerInput) => {
-    triggerMutation.mutate(input, {
-      onSuccess: (response) => {
-        // 202 语义分流与常驻工具栏同款；触发后清空选择（原批量栏语义）。
-        if (response.status === "enqueued") toast.success(etk.runStartedToast);
-        else toast.info(etk.alreadyRunningToast);
-        onSelectedIdsChange(new Set());
-      },
-      onError: () => toast.error(etk.runFailedToast),
-    });
+    onTrigger(input);
   };
 
   // 文件管理器惯例：右键未选中行只选中该行；右键已选中行保持批量上下文。
@@ -316,11 +314,11 @@ export function EvalQuestionBank({
                       <DropdownMenuContent align="end" className="w-44">
                         <DropdownMenuItem onSelect={() => handleBulkTrigger({ layers: "l1", question_ids: [question.id] })}>
                           <Play className="size-4" />
-                          {stk.runSelected}
+                          {etk.tierQuick}
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => handleBulkTrigger({ layers: "l1_l2", question_ids: [question.id] })}>
                           <Layers className="size-4" />
-                          {stk.fullRunSelected}
+                          {etk.tierFull}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onSelect={() => setDeleteTargets([question])}>
@@ -342,11 +340,11 @@ export function EvalQuestionBank({
                           快速评测 = L1 档携选中集 question_ids */}
                       <ContextMenuItem onSelect={() => handleBulkTrigger({ layers: "l1", question_ids: [...selectedIds] })}>
                         <Play className="size-4" />
-                        {stk.runSelected}
+                        {etk.tierQuick}
                       </ContextMenuItem>
                       <ContextMenuItem onSelect={() => handleBulkTrigger({ layers: "l1_l2", question_ids: [...selectedIds] })}>
                         <Layers className="size-4" />
-                        {stk.fullRunSelected}
+                        {etk.tierFull}
                       </ContextMenuItem>
                       <ContextMenuItem onSelect={() => onSelectedIdsChange(new Set())}>
                         <X className="size-4" />
@@ -366,11 +364,11 @@ export function EvalQuestionBank({
                       {/* 单选：快速/完整评测只跑该题；右键即选中，退出/删除措辞两态对称 */}
                       <ContextMenuItem onSelect={() => handleBulkTrigger({ layers: "l1", question_ids: [question.id] })}>
                         <Play className="size-4" />
-                        {stk.runSelected}
+                        {etk.tierQuick}
                       </ContextMenuItem>
                       <ContextMenuItem onSelect={() => handleBulkTrigger({ layers: "l1_l2", question_ids: [question.id] })}>
                         <Layers className="size-4" />
-                        {stk.fullRunSelected}
+                        {etk.tierFull}
                       </ContextMenuItem>
                       <ContextMenuItem onSelect={() => onSelectedIdsChange(new Set())}>
                         <X className="size-4" />

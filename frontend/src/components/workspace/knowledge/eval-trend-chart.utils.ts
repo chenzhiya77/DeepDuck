@@ -12,6 +12,9 @@ import type { EChartsCoreOption } from "echarts/core";
 import type { TrendChartLabels, TrendPoint, TrendResponse } from "@/core/knowledge/types";
 
 /** 指标线定义表（颜色/线型/默认显隐按 spec §4.3.2 冻结，实施时不得变更）。 */
+
+/** 滑条缩放的最少点数（2026-09-05）：点数稀疏时常驻滑条纯噪声，退役。 */
+const DATA_ZOOM_MIN_POINTS = 8;
 interface MetricDef {
   key:
     | "recall_at_k"
@@ -46,9 +49,6 @@ const METRICS: readonly MetricDef[] = [
 /** 回退点标红色（regression.detected 驱动，per-category 门禁口径，§4.3.4）。 */
 const REGRESSION_COLOR = "#EF4444";
 
-/** 率类指标用百分比显示；MRR/RAGAS 用原始三位小数（spec §4.4 tooltip 模板）。 */
-const PERCENT_KEYS: ReadonlySet<MetricDef["key"]> = new Set(["recall_at_k", "hit_rate"]);
-
 /** datum 携带 runId 与 metricKey——click/tooltip 从 data 取数，不依赖 dataIndex。 */
 export interface TrendDatum {
   value: [string, number | null];
@@ -77,8 +77,10 @@ export function escapeHtml(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function formatValue(key: MetricDef["key"], value: number): string {
-  return PERCENT_KEYS.has(key) ? `${(value * 100).toFixed(1)}%` : value.toFixed(3);
+/** 数值语言统一（2026-09-05）：全指标百分数 1 位小数——与总览表/瓦片/阈值
+ *  芯片同口径；MRR/RAGAS 三位小数退役（PERCENT_KEYS 白名单随之退役）。 */
+function formatValue(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 /**
@@ -109,9 +111,7 @@ export function buildTrendTooltipHtml(
       if (prev != null) {
         const delta = value - prev;
         const arrow = delta >= 0 ? "↑" : "↓";
-        const magnitude = PERCENT_KEYS.has(key)
-          ? `${(Math.abs(delta) * 100).toFixed(1)}%`
-          : Math.abs(delta).toFixed(3);
+        const magnitude = `${(Math.abs(delta) * 100).toFixed(1)}%`;
         deltaHtml = ` <span style="opacity:.6">${arrow}${magnitude}</span>`;
         break;
       }
@@ -121,7 +121,7 @@ export function buildTrendTooltipHtml(
       `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;` +
       `background:${color};margin-right:4px"></span>`;
     return [
-      `${marker}${escapeHtml(param.seriesName)}&nbsp;&nbsp;<b>${formatValue(key, value)}</b>${deltaHtml}`,
+      `${marker}${escapeHtml(param.seriesName)}&nbsp;&nbsp;<b>${formatValue(value)}</b>${deltaHtml}`,
     ];
   });
 
@@ -186,15 +186,11 @@ export function buildChartOption(input: {
   const baselineDates = points.filter((p) => p.is_baseline_update).map((p) => p.date);
   const markLineData: Record<string, unknown>[] = [];
   if (thresholdValue !== null && baseline) {
+    // 阈值红虚线保留，但线上文字标注退役（2026-09-05）：insideEndTop 贴右端
+    // 与贴顶的数据线重叠压线——文案改由 eval-tab 头部行红芯片承载。
     markLineData.push({
       yAxis: thresholdValue,
       lineStyle: { color: REGRESSION_COLOR, type: "dashed", width: 1 },
-      label: {
-        position: "insideEndTop",
-        formatter: labels.thresholdLabel(baseline.threshold_percent),
-        color: REGRESSION_COLOR,
-        fontSize: 11,
-      },
     });
   }
   for (const date of baselineDates) {
@@ -223,7 +219,8 @@ export function buildChartOption(input: {
       : [];
 
   return {
-    grid: { left: 60, right: 40, top: 40, bottom: 60 },
+    // 滑条退役时底部只留图例高度（2026-09-05），不留滑条空槽。
+    grid: { left: 60, right: 40, top: 40, bottom: points.length > DATA_ZOOM_MIN_POINTS ? 60 : 40 },
     legend: {
       data: METRICS.map((m) => labels[m.labelKey]),
       bottom: 0,
@@ -260,7 +257,9 @@ export function buildChartOption(input: {
     },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, filterMode: "none" },
-      { type: "slider", xAxisIndex: 0, height: 20, bottom: 30 },
+      ...(points.length > DATA_ZOOM_MIN_POINTS
+        ? [{ type: "slider" as const, xAxisIndex: 0, height: 20, bottom: 30 }]
+        : []),
     ],
   };
 }

@@ -22,12 +22,12 @@ import {
 import type { TrendChartLabels, TrendPoint, TrendResponse } from "@/core/knowledge/types";
 
 const LABELS: TrendChartLabels = {
-  recallAtK: "Recall@k",
+  recallAtK: "召回率@k",
   hitRate: "命中率",
   mrr: "MRR",
   faithfulness: "忠实度",
-  answerRelevancy: "答案相关性",
-  contextPrecision: "上下文精度",
+  answerRelevancy: "相关性",
+  contextPrecision: "精确率",
   thresholdLine: "回退阈值线",
   thresholdLabel: (p) => `回退阈值 -${p}%`,
   baselineUpdate: "基线更新",
@@ -87,36 +87,57 @@ describe("buildChartOption 指标线配置", () => {
 
     const byName = new Map(metric.map((s) => [s.name, s]));
     // Layer 1：实线 + 实心圆
-    expect(byName.get("Recall@k")?.lineStyle).toMatchObject({ color: "#3B82F6", width: 2 });
-    expect(byName.get("Recall@k")?.lineStyle?.type).toBeUndefined();
-    expect(byName.get("Recall@k")?.symbol).toBe("circle");
+    expect(byName.get("召回率@k")?.lineStyle).toMatchObject({ color: "#3B82F6", width: 2 });
+    expect(byName.get("召回率@k")?.lineStyle?.type).toBeUndefined();
+    expect(byName.get("召回率@k")?.symbol).toBe("circle");
     expect(byName.get("命中率")?.lineStyle).toMatchObject({ color: "#10B981" });
     expect(byName.get("MRR")?.lineStyle).toMatchObject({ color: "#8B5CF6" });
     // Layer 2：虚线 + 空心圆
     expect(byName.get("忠实度")?.lineStyle).toMatchObject({ color: "#F59E0B", type: "dashed" });
     expect(byName.get("忠实度")?.symbol).toBe("emptyCircle");
-    expect(byName.get("答案相关性")?.lineStyle).toMatchObject({ color: "#EC4899", type: "dashed" });
-    expect(byName.get("上下文精度")?.lineStyle).toMatchObject({ color: "#06B6D4", type: "dashed" });
+    expect(byName.get("相关性")?.lineStyle).toMatchObject({ color: "#EC4899", type: "dashed" });
+    expect(byName.get("精确率")?.lineStyle).toMatchObject({ color: "#06B6D4", type: "dashed" });
   });
 
   it("legend defaults: only Recall@k + Hit Rate visible", () => {
     const option = buildOption([point()]);
     expect(option.legend.data).toEqual([
-      "Recall@k",
+      "召回率@k",
       "命中率",
       "MRR",
       "忠实度",
-      "答案相关性",
-      "上下文精度",
+      "相关性",
+      "精确率",
     ]);
     expect(option.legend.selected).toEqual({
-      "Recall@k": true,
+      "召回率@k": true,
       命中率: true,
       MRR: false,
       忠实度: false,
-      答案相关性: false,
-      上下文精度: false,
+      相关性: false,
+      精确率: false,
     });
+  });
+
+  it("hides the slider dataZoom when points are sparse (2026-09-05)", () => {
+    // 点数稀疏（≤8）时常驻滑条纯噪声：只留 inside 缩放，grid 底部不留滑条空槽。
+    const sparse = buildChartOption({
+      points: [point()],
+      granularity: "day",
+      baseline: BASELINE,
+      labels: LABELS,
+    }) as { dataZoom: { type: string }[]; grid: { bottom: number } };
+    expect(sparse.dataZoom.map((d) => d.type)).toEqual(["inside"]);
+    expect(sparse.grid.bottom).toBe(40);
+    // 点数充足时滑条回归。
+    const dense = buildChartOption({
+      points: Array.from({ length: 9 }, (_, i) => point({ date: `2026-08-${10 + i}` })),
+      granularity: "day",
+      baseline: BASELINE,
+      labels: LABELS,
+    }) as { dataZoom: { type: string }[]; grid: { bottom: number } };
+    expect(dense.dataZoom.map((d) => d.type)).toContain("slider");
+    expect(dense.grid.bottom).toBe(60);
   });
 
   it("attaches layer1_run_id to Layer 1 series and layer2_run_id to Layer 2 series", () => {
@@ -125,7 +146,7 @@ describe("buildChartOption 指标线配置", () => {
       point({ date: "2026-08-21", layer1_run_id: "l1-b", layer2_run_id: null }),
     ]);
     const byName = new Map(option.series.filter((s) => !s.markLine).map((s) => [s.name, s]));
-    expect(byName.get("Recall@k")?.data?.map((d) => d.runId)).toEqual(["l1-a", "l1-b"]);
+    expect(byName.get("召回率@k")?.data?.map((d) => d.runId)).toEqual(["l1-a", "l1-b"]);
     expect(byName.get("MRR")?.data?.map((d) => d.runId)).toEqual(["l1-a", "l1-b"]);
     expect(byName.get("忠实度")?.data?.map((d) => d.runId)).toEqual(["l2-a", null]);
   });
@@ -133,9 +154,9 @@ describe("buildChartOption 指标线配置", () => {
   it("keeps null metric values as gaps (no connectNulls)", () => {
     const option = buildOption([point({ recall_at_k: null, faithfulness: null })]);
     const byName = new Map(option.series.filter((s) => !s.markLine).map((s) => [s.name, s]));
-    expect(byName.get("Recall@k")?.data?.[0]?.value[1]).toBeNull();
+    expect(byName.get("召回率@k")?.data?.[0]?.value[1]).toBeNull();
     expect(byName.get("忠实度")?.data?.[0]?.value[1]).toBeNull();
-    expect((byName.get("Recall@k") as Record<string, unknown> | undefined)?.connectNulls).toBeUndefined();
+    expect((byName.get("召回率@k") as Record<string, unknown> | undefined)?.connectNulls).toBeUndefined();
   });
 });
 
@@ -147,7 +168,9 @@ describe("buildChartOption 阈值线与异常标记", () => {
     expect(marker?.markLine?.silent).toBe(true);
     const horizontal = marker?.markLine?.data.find((d) => "yAxis" in d);
     expect(horizontal?.yAxis).toBeCloseTo(0.87, 5);
-    expect(JSON.stringify(horizontal)).toContain("回退阈值 -3%");
+    // 线上文字标注退役（2026-09-05）：insideEndTop 贴右端与贴顶数据线重叠
+    // 压线——文案改由 eval-tab 头部行红芯片承载（eval-threshold-chip）。
+    expect(horizontal?.label).toBeUndefined();
   });
 
   it("omits the markLine series entirely when baseline is null", () => {
@@ -161,8 +184,8 @@ describe("buildChartOption 阈值线与异常标记", () => {
       point({ date: "2026-08-21", regression: { detected: false, categories: [] } }),
     ]);
     const byName = new Map(option.series.filter((s) => !s.markLine).map((s) => [s.name, s]));
-    expect(byName.get("Recall@k")?.data?.[0]?.itemStyle?.color).toBe("#EF4444");
-    expect(byName.get("Recall@k")?.data?.[1]?.itemStyle).toBeUndefined();
+    expect(byName.get("召回率@k")?.data?.[0]?.itemStyle?.color).toBe("#EF4444");
+    expect(byName.get("召回率@k")?.data?.[1]?.itemStyle).toBeUndefined();
     // 回退标红只挂 Recall@k（门禁指标），Hit Rate 等其他线不染红
     expect(byName.get("命中率")?.data?.[0]?.itemStyle).toBeUndefined();
   });
@@ -231,12 +254,12 @@ describe("buildChartOption 坐标轴", () => {
 describe("buildTrendTooltipHtml", () => {
   function paramsFor(points: TrendPoint[], date: string, seriesNames: string[]): TrendTooltipParam[] {
     const byLabel: Record<string, keyof TrendPoint> = {
-      "Recall@k": "recall_at_k",
+      "召回率@k": "recall_at_k",
       命中率: "hit_rate",
       MRR: "mrr",
       忠实度: "faithfulness",
-      答案相关性: "answer_relevancy",
-      上下文精度: "context_precision",
+      相关性: "answer_relevancy",
+      精确率: "context_precision",
     };
     const p = points.find((pt) => pt.date === date);
     if (!p) throw new Error(`no point at ${date}`);
@@ -254,13 +277,13 @@ describe("buildTrendTooltipHtml", () => {
     });
   }
 
-  it("renders date header, percent for rate metrics and raw for mrr/ragas", () => {
+  it("renders date header and percent for every metric (unified numeric language, 2026-09-05)", () => {
     const points = [point()];
-    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["Recall@k", "MRR", "忠实度"]), points, LABELS);
+    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["召回率@k", "MRR", "忠实度"]), points, LABELS);
     expect(html).toContain("2026-08-20");
-    expect(html).toContain("90.0%"); // recall_at_k 0.9 → 百分比
-    expect(html).toContain("0.810"); // mrr → 原始三位小数
-    expect(html).toContain("0.930"); // faithfulness → 原始三位小数
+    expect(html).toContain("90.0%"); // recall_at_k 0.9
+    expect(html).toContain("81.0%"); // mrr 0.81 → 百分数（三位小数退役）
+    expect(html).toContain("93.0%"); // faithfulness 0.93 → 百分数
     expect(html).toContain("点击查看详情");
   });
 
@@ -269,23 +292,23 @@ describe("buildTrendTooltipHtml", () => {
       point({ date: "2026-08-19", recall_at_k: 0.923 }),
       point({ date: "2026-08-20", recall_at_k: 0.9 }), // ↓2.3%
     ];
-    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["Recall@k"]), points, LABELS);
+    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["召回率@k"]), points, LABELS);
     expect(html).toContain("↓2.3%");
-    const prev = buildTrendTooltipHtml(paramsFor(points, "2026-08-19", ["Recall@k"]), points, LABELS);
+    const prev = buildTrendTooltipHtml(paramsFor(points, "2026-08-19", ["召回率@k"]), points, LABELS);
     expect(prev).not.toContain("↑");
     expect(prev).not.toContain("↓");
   });
 
   it("skips series whose value is null at this date", () => {
     const points = [point({ faithfulness: null })];
-    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["Recall@k", "忠实度"]), points, LABELS);
-    expect(html).toContain("Recall@k");
+    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["召回率@k", "忠实度"]), points, LABELS);
+    expect(html).toContain("召回率@k");
     expect(html).not.toContain("忠实度");
   });
 
   it("lists regressed categories when regression.detected", () => {
     const points = [point({ regression: { detected: true, categories: ["global", "relation"] } })];
-    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["Recall@k"]), points, LABELS);
+    const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["召回率@k"]), points, LABELS);
     expect(html).toContain("回退题型");
     expect(html).toContain("global");
     expect(html).toContain("relation");

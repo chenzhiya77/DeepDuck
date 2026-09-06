@@ -32,13 +32,24 @@ export function isEvalRunning(data: EvalRunListResponse | undefined, mutationPen
 }
 
 /**
- * Button-visible count for the determinate questions phase only. layer1 is a
- * single transient step and ragas has an unpredictable duration, so neither
- * carries a meaningful per-item count — they render the bare 运行中… (null).
+ * Total phases in the full-run pipeline (layer1 → questions → ragas). The
+ * toolbar button renders the live phase as「阶段名 n/EVAL_PHASE_COUNT」so the
+ * user always knows where in the pipeline the run is — the spec 2026-09-06
+ * revision replaces the two indeterminate phases that both used to read a
+ * bare, indistinguishable 运行中….
  */
-export function progressLabel(progress: EvalRunProgress | null | undefined): { done: number; total: number } | null {
-  if (progress?.phase !== "questions") return null;
-  return { done: progress.done, total: progress.total };
+export const EVAL_PHASE_COUNT = 3;
+
+/**
+ * 1-based position of the phase in the 3-phase pipeline. A running-without-
+ * progress state (null / undefined — the optimistic window before the first
+ * poll lands) defaults to step 1 so the button reads「检索评测 1/3」the instant
+ * a full run is triggered.
+ */
+export function phaseStep(progress: EvalRunProgress | null | undefined): number {
+  if (progress?.phase === "questions") return 2;
+  if (progress?.phase === "ragas") return 3;
+  return 1;
 }
 
 /**

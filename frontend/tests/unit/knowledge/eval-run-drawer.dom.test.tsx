@@ -88,16 +88,17 @@ describe("EvalRunDrawer", () => {
     expect(screen.getByText("检索质量")).toBeTruthy();
     expect(screen.getByText("89.7%")).toBeTruthy(); // recall_at_k 0.897
     expect(screen.getByText("92.8%")).toBeTruthy(); // hit_rate 0.928
-    expect(screen.getByText("0.812")).toBeTruthy(); // mrr
+    expect(screen.getByText("81.2%")).toBeTruthy(); // mrr（数值语言统一后同走百分数）
     // 生成质量：RAGAS 四项 + 架构专属三项 + path_accuracy 及口径标注
+    // （RAGAS 行名与总览卡/趋势图例同词汇，2026-09-05 闭环后为中文）。
     expect(screen.getByText("生成质量")).toBeTruthy();
-    expect(screen.getByText("Faithfulness")).toBeTruthy();
+    expect(screen.getByText("忠实度")).toBeTruthy();
     expect(screen.getByText("上下文召回率")).toBeTruthy();
     expect(screen.getByText("引用准确率")).toBeTruthy();
     expect(screen.getByText("路径准确率（对话链路）")).toBeTruthy();
     expect(screen.getByText("87.0%")).toBeTruthy();
     expect(
-      screen.getByText(/与 Layer 1 表格中同名指标口径不同/),
+      screen.getByText(/与检索质量表格中同名指标口径不同/),
     ).toBeTruthy();
   });
 
