@@ -515,10 +515,16 @@ export interface TrendPoint {
   recall_at_k: number | null;
   hit_rate: number | null;
   mrr: number | null;
+  /** Layer 1 路径命中率（picker 候选；确定性，取 summary.path_accuracy）。 */
+  path_accuracy: number | null;
   /** Layer 2 RAGAS（同粒度，独立取数）。 */
   faithfulness: number | null;
   answer_relevancy: number | null;
   context_precision: number | null;
+  /** Layer 2 引用与图谱（arch_specific；稀疏——仅完整档产出，picker 候选）。 */
+  citation_precision: number | null;
+  citation_recall: number | null;
+  seed_hit_rate: number | null;
   /** 下钻来源行：Layer 1 线挂 layer1_run_id，Layer 2 线挂 layer2_run_id。 */
   layer1_run_id: string | null;
   layer2_run_id: string | null;
@@ -527,6 +533,19 @@ export interface TrendPoint {
   /** 该点对应 Layer 1 运行是否被 --mark-baseline 标记。 */
   is_baseline_update: boolean;
 }
+
+/**
+ * sparkline 的 7 个 Layer 2 指标键（RAGAS 4 + 引用 3，含退役的 context_recall）。
+ * 与后端 trend.py::SPARK_KEYS 一一对应（spec §6.2 冻结）。
+ */
+export type SparkMetricKey =
+  | "faithfulness"
+  | "answer_relevancy"
+  | "context_precision"
+  | "context_recall"
+  | "citation_precision"
+  | "citation_recall"
+  | "seed_hit_rate";
 
 /** 趋势图 API 响应（GET /eval-runs/trend）。 */
 export interface TrendResponse {
@@ -544,6 +563,11 @@ export interface TrendResponse {
   } | null;
   /** 该时间范围内是否有数据（任一层有即为 true）。 */
   has_data: boolean;
+  /**
+   * 7 个 Layer 2 瓦片的 sparkline 数据源：每键一条 run 级近 10 非空值升序数组。
+   * 与 granularity/时间窗口解耦（spec §6.2）；某键全 null（如 ragas 未装）→ 空数组。
+   */
+  sparks: Record<SparkMetricKey, number[]>;
 }
 
 /** 趋势图请求参数（窗口参数按粒度配对，spec §4.2）。 */

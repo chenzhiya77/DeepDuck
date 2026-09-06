@@ -157,9 +157,13 @@ const TREND: TrendResponse = {
       recall_at_k: 0.9,
       hit_rate: 0.92,
       mrr: 0.81,
+      path_accuracy: 0.95,
       faithfulness: 0.93,
       answer_relevancy: 0.87,
       context_precision: 0.85,
+      citation_precision: 0.9,
+      citation_recall: 0.85,
+      seed_hit_rate: 0.8,
       layer1_run_id: "run-l1-1",
       layer2_run_id: "run-l2-1",
       regression: null,
@@ -170,6 +174,15 @@ const TREND: TrendResponse = {
   days_back: 30,
   baseline: { recall_at_k: 0.9, threshold_percent: 3 },
   has_data: true,
+  sparks: {
+    faithfulness: [0.93],
+    answer_relevancy: [0.87],
+    context_precision: [0.85],
+    context_recall: [],
+    citation_precision: [0.9],
+    citation_recall: [0.85],
+    seed_hit_rate: [0.8],
+  },
 };
 
 /** hook 返回形状的最小模拟：eval-tab 只消费 data/isLoading/error。 */

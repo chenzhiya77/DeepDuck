@@ -231,6 +231,15 @@ const EVAL_TREND: TrendResponse = {
   granularity: "day",
   baseline: null,
   has_data: false,
+  sparks: {
+    faithfulness: [],
+    answer_relevancy: [],
+    context_precision: [],
+    context_recall: [],
+    citation_precision: [],
+    citation_recall: [],
+    seed_hit_rate: [],
+  },
 };
 
 describe("评测数据 hooks", () => {
