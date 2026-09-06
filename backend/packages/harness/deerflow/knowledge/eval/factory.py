@@ -93,7 +93,8 @@ def build_ragas_evaluator(judge_llm, *, embeddings_cls=None):
     ``run_layer2_evaluation``; ``None`` makes the report mark the standard
     metrics as explicitly skipped. ``embeddings_cls`` 是可注入口（默认
     :class:`DashScopeLangChainEmbeddings`）——CLI 壳层传入自己的模块全局名，
-    让既有测试的 monkeypatch 保持生效。
+    让既有测试的 monkeypatch 保持生效。``on_progress``（spec 2026-09-06 §9）
+    透传给 ``compute_ragas_scores``，把 ragas 逐 job 进度变成可上报的回调。
     """
 
     try:
@@ -113,7 +114,7 @@ def build_ragas_evaluator(judge_llm, *, embeddings_cls=None):
     effective_cls = embeddings_cls or DashScopeLangChainEmbeddings
     wrapped_embeddings = LangchainEmbeddingsWrapper(effective_cls(DashScopeEmbedder()))
 
-    async def evaluator(samples, *, judge_llm, embeddings):  # protocol-aligned; wrappers are bound at build time
-        return await compute_ragas_scores(samples, judge_llm=wrapped_llm, embeddings=wrapped_embeddings)
+    async def evaluator(samples, *, judge_llm, embeddings, on_progress=None):  # protocol-aligned; wrappers are bound at build time
+        return await compute_ragas_scores(samples, judge_llm=wrapped_llm, embeddings=wrapped_embeddings, on_progress=on_progress)
 
     return evaluator

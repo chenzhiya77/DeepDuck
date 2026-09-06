@@ -145,8 +145,17 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
 - 第二行=**单行实时日志**:后端 progress 新增结构化 `tail` 事件({kind:phase|item|fail,
   phase,done,total,failed}),前端按 i18n 渲染单行 truncate、新事件淡入替换;failed>0 挂
   失败徽标;aria-live=polite。选结构化事件而非后端拼中文,保住 en locale。
-- 后端契约增量:progress 增 `phase_started_at`/`phase_durations`/`tail`;ragas_eval 补
-  **逐样本** progress_hook(现仅进入时报一次,第三段拿不到真实 k/N)。
+- 后端契约增量(实施校正,Task 9 已落):
+  - progress 由**七键扩为十键**(+`phase_started_at` 毫秒级 / `phase_durations` / 结构化 `tail`);
+    阶段切换时结算上段实测耗时(前端加权自适应的数据源);`get_eval_progress` 对旧形状
+    条目补默认值,恒透出十键(前端不必做存在性分支);§3 冻结契约由本节正式扩展。
+  - ragas **无逐样本循环**(单次批量 `ragas.evaluate`,ragas Executor 按 (样本×指标) 提交 job)
+    → 原计划"循环内补 hook"不成立;改为向 `evaluate(_pbar=...)` 传自定义鸭子对象接住
+    每 job 的 `update(1)`:零并发/批量改动、零性能回归,顺带静默 ragas 控制台进度条。
+    `expected_ragas_jobs(samples)` = 有参考×4 + 无参考×2,作为第三段诚实分母。
+  - 第三段同时并入**逐题 citation judge**(此前完全静默,会让条在 ragas 结束后提前满格):
+    `scoring_total = ragas_jobs + judge_jobs`;ragas 失败/跳过也按预期 job 数结算,保证单调。
+  - evaluator 协议增可选 `on_progress`,仅在 `progress_hook` 存在时传入(CLI 与既有假件协议不变)。
 - 退役:底缘细线 JSX 与 progressFraction/isIndeterminatePhase 的细线用途;按钮阶段文案保留。
 - i18n 增量:etaRemaining/etaEstimating + 日志句模板(logPhase/logItem/logFail);三处同步。
 - 测试:eval-run-status 增 f/ETA 纯函数单测;eval-tab 删细线断言、增容器断言(总览运行态);

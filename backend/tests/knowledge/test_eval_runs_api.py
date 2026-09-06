@@ -728,15 +728,49 @@ async def test_history_exposes_live_progress_from_registry(service) -> None:
 
     client = _client(service)
     kb = _create_kb(client)
-    progress = {"run_id": "run-live", "phase": "questions", "done": 3, "total": 10, "failed": 1, "started_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:05:00+00:00"}
+    progress = {
+        "run_id": "run-live",
+        "phase": "questions",
+        "done": 3,
+        "total": 10,
+        "failed": 1,
+        "started_at": "2026-09-06T10:00:00+00:00",
+        "updated_at": "2026-09-06T10:05:00+00:00",
+        "phase_started_at": "2026-09-06T10:04:30.000+00:00",
+        "phase_durations": {"layer1": 30.5},
+        "tail": {"kind": "item", "phase": "questions", "done": 3, "total": 10, "failed": 1},
+    }
     eval_ondemand._IN_FLIGHT[kb["id"]] = 1
     eval_ondemand._PROGRESS[kb["id"]] = dict(progress)
     try:
         body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
 
         assert body["in_flight"] is True
-        # 冻结契约七键原样透出（复用 3s 轮询，不另开端点）。
+        # 契约十键原样透出（spec §3 + §9；复用 3s 轮询，不另开端点）。
         assert body["progress"] == progress
+    finally:
+        eval_ondemand._IN_FLIGHT.pop(kb["id"], None)
+        eval_ondemand._PROGRESS.pop(kb["id"], None)
+
+
+async def test_history_progress_backfills_section9_keys(service) -> None:
+    """旧形状条目也恒透出十键（§9 三键补默认值）——前端不必做存在性分支。"""
+
+    from deerflow.knowledge.eval import ondemand as eval_ondemand
+
+    client = _client(service)
+    kb = _create_kb(client)
+    eval_ondemand._IN_FLIGHT[kb["id"]] = 1
+    eval_ondemand._PROGRESS[kb["id"]] = {"run_id": "run-legacy", "phase": "layer1", "done": 0, "total": 1, "failed": 0, "started_at": "2026-09-06T10:00:00+00:00", "updated_at": "2026-09-06T10:00:00+00:00"}
+    try:
+        body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+
+        assert body["progress"]["phase_durations"] == {}
+        assert body["progress"]["tail"] == {}
+        assert body["progress"]["run_id"] == "run-legacy"
+        # phase_started_at 回退到 started_at；总键数恒为十。
+        assert body["progress"]["phase_started_at"] == "2026-09-06T10:00:00+00:00"
+        assert len(body["progress"]) == 10
     finally:
         eval_ondemand._IN_FLIGHT.pop(kb["id"], None)
         eval_ondemand._PROGRESS.pop(kb["id"], None)

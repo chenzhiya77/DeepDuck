@@ -335,7 +335,7 @@ async def test_full_run_progress_observable_then_cleared(tmp_path, store) -> Non
     snapshots: list[dict | None] = []
 
     async def runner(question):
-        # 运行中可观测：冻结契约七键 + run_id 非空（phase 此刻属 layer1/questions 之一）。
+        # 运行中可观测：契约十键（spec 2026-09-06 §9 扩 phase_started_at/phase_durations/tail）+ run_id 非空。
         snapshot = ondemand.get_eval_progress(KB)
         snapshots.append(snapshot)
         return await _stub_agent_runner()(question)
@@ -349,7 +349,7 @@ async def test_full_run_progress_observable_then_cleared(tmp_path, store) -> Non
     )
 
     assert snapshots and all(s is not None for s in snapshots)
-    assert set(snapshots[0]) == {"run_id", "phase", "done", "total", "failed", "started_at", "updated_at"}
+    assert set(snapshots[0]) == {"run_id", "phase", "done", "total", "failed", "started_at", "updated_at", "phase_started_at", "phase_durations", "tail"}
     assert snapshots[0]["run_id"] == run_id
     # finally 必清：落库后注册表归零。
     assert ondemand.get_eval_progress(KB) is None
@@ -395,3 +395,28 @@ async def test_full_run_error_path_clears_progress(tmp_path, store, monkeypatch)
 
     # error 行兜底路径同样走 finally：进度不得残留。
     assert ondemand.get_eval_progress(KB) is None
+
+
+async def test_progress_tail_and_phase_durations() -> None:
+    """spec 2026-09-06 §9：进度条目新增 phase_started_at / phase_durations / tail（结构化事件）。"""
+    ondemand._progress_start(KB, "run-tail", phase="layer1", total=1)
+
+    started = ondemand.get_eval_progress(KB)
+    assert started["phase_started_at"]
+    assert started["phase_durations"] == {}
+    assert started["tail"] == {"kind": "phase", "phase": "layer1", "done": 0, "total": 1, "failed": 0}
+
+    ondemand._progress_update(KB, phase="layer1", done=1, failed=0, total=1)
+    assert ondemand.get_eval_progress(KB)["tail"]["kind"] == "item"
+
+    ondemand._progress_update(KB, phase="questions", done=0, failed=0, total=2)
+    switched = ondemand.get_eval_progress(KB)
+    assert switched["tail"] == {"kind": "phase", "phase": "questions", "done": 0, "total": 2, "failed": 0}
+    # 阶段切换时结算上一段实测耗时（前端加权自适应的数据源）。
+    assert list(switched["phase_durations"]) == ["layer1"]
+    assert switched["phase_durations"]["layer1"] >= 0.0
+
+    ondemand._progress_update(KB, phase="questions", done=1, failed=1, total=2)
+    failed_tail = ondemand.get_eval_progress(KB)
+    assert failed_tail["tail"]["kind"] == "fail"
+    assert failed_tail["tail"]["failed"] == 1

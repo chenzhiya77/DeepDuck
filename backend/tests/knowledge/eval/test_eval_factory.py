@@ -96,3 +96,39 @@ class TestBuildRagasEvaluator:
         evaluator = factory.build_ragas_evaluator(judge_llm=object())
         assert evaluator is not None
         assert captured["bypass_n"] is True
+
+    @pytest.mark.asyncio
+    async def test_evaluator_forwards_on_progress(self, monkeypatch):
+        """spec 2026-09-06 §9：evaluator 协议新增 ``on_progress``，必须透传给 compute_ragas_scores。"""
+
+        import deerflow.knowledge.eval.ragas_eval as ragas_module
+
+        captured: dict = {}
+
+        class FakeWrapper:
+            def __init__(self, llm, **kwargs):
+                pass
+
+        fake_ragas_llms = type(sys)("ragas.llms")
+        fake_ragas_llms.LangchainLLMWrapper = FakeWrapper
+        fake_ragas_embed = type(sys)("ragas.embeddings")
+        fake_ragas_embed.LangchainEmbeddingsWrapper = FakeWrapper
+        monkeypatch.setitem(sys.modules, "ragas.llms", fake_ragas_llms)
+        monkeypatch.setitem(sys.modules, "ragas.embeddings", fake_ragas_embed)
+        monkeypatch.setattr(factory, "DashScopeLangChainEmbeddings", lambda *a, **kw: object())
+
+        async def fake_compute(samples, *, judge_llm, embeddings, on_progress=None):
+            captured["on_progress"] = on_progress
+            return []
+
+        monkeypatch.setattr(ragas_module, "compute_ragas_scores", fake_compute)
+
+        def callback(done: int, total: int) -> None:
+            return None
+
+        evaluator = factory.build_ragas_evaluator(judge_llm=object())
+        assert evaluator is not None
+
+        await evaluator([{"question_id": "q1"}], judge_llm=None, embeddings=None, on_progress=callback)
+
+        assert captured["on_progress"] is callback

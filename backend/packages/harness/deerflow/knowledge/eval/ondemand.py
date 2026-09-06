@@ -62,8 +62,10 @@ _IN_FLIGHT: dict[str, int] = {}
 #: Live progress per KB (spec 2026-09-06 run-progress) — mirrors the
 #: ``_IN_FLIGHT`` single-process pattern: set when a run starts, updated via
 #: the Layer 2 progress hook, popped in ``finally`` so a crashed run never
-#: leaves a phantom entry. Contract keys are frozen (spec §3):
-#: ``run_id / phase / done / total / failed / started_at / updated_at``.
+#: leaves a phantom entry. Contract keys (spec §3, extended by §9):
+#: ``run_id / phase / done / total / failed / started_at / updated_at`` plus
+#: ``phase_started_at / phase_durations / tail`` (the weighted progress bar's
+#: duration source and the single-line UI log event).
 _PROGRESS: dict[str, dict[str, object]] = {}
 
 #: Layer 2 progress hook signature: ``(phase, done, failed, total)``.
@@ -82,31 +84,93 @@ def eval_run_in_progress(kb_id: str) -> bool:
 def get_eval_progress(kb_id: str) -> dict[str, object] | None:
     """Snapshot of the KB's live run progress, or ``None`` when idle.
 
-    Returns a copy so API callers can never mutate the registry. All writes
-    happen on the event loop between awaits, so no lock is needed (same
+    Returns a copy (nested ``phase_durations`` / ``tail`` included) so API
+    callers can never mutate the registry. All writes happen on the event loop
+    between awaits, except the ragas job callback which fires from the worker
+    thread — either way a plain dict write is atomic under the GIL (same
     consistency model as ``_IN_FLIGHT``).
     """
 
     entry = _PROGRESS.get(kb_id)
-    return dict(entry) if entry is not None else None
+    if entry is None:
+        return None
+    snapshot = dict(entry)
+    snapshot["phase_durations"] = dict(entry.get("phase_durations") or {})
+    snapshot["tail"] = dict(entry.get("tail") or {})
+    # 旧形状条目兼容：phase_started_at 缺失时回退到 started_at，保证前端恒拿到十键。
+    snapshot.setdefault("phase_started_at", entry.get("started_at"))
+    return snapshot
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _now_iso_ms() -> str:
+    """Millisecond clock for phase timing — second resolution is too coarse for the fast layer1 phase."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
+def _elapsed_seconds(start_iso: str, end_iso: str) -> float:
+    """Seconds between two registry timestamps; never negative, 0.0 on malformed input."""
+    try:
+        delta = datetime.fromisoformat(end_iso) - datetime.fromisoformat(start_iso)
+    except ValueError:
+        return 0.0
+    return max(delta.total_seconds(), 0.0)
+
+
 def _progress_start(kb_id: str, run_id: str, *, phase: str, total: int) -> None:
     """Register a fresh run at phase start (done=0, failed=0)."""
     now = _now_iso()
-    _PROGRESS[kb_id] = {"run_id": run_id, "phase": phase, "done": 0, "total": total, "failed": 0, "started_at": now, "updated_at": now}
+    started_ms = _now_iso_ms()
+    _PROGRESS[kb_id] = {
+        "run_id": run_id,
+        "phase": phase,
+        "done": 0,
+        "total": total,
+        "failed": 0,
+        "started_at": now,
+        "updated_at": now,
+        "phase_started_at": started_ms,
+        "phase_durations": {},
+        "tail": {"kind": "phase", "phase": phase, "done": 0, "total": total, "failed": 0},
+    }
 
 
 def _progress_update(kb_id: str, *, phase: str, done: int, failed: int, total: int) -> None:
-    """Advance the KB's live progress; a no-op when the entry is already gone."""
+    """Advance the KB's live progress; a no-op when the entry is already gone.
+
+    A phase transition settles the outgoing phase's measured duration (the
+    frontend's weight-adaptation source) and stamps a structured ``tail`` event
+    — the UI renders the sentence per locale, so the backend never ships copy.
+    """
     entry = _PROGRESS.get(kb_id)
     if entry is None:
         return
-    entry.update({"phase": phase, "done": done, "failed": failed, "total": total, "updated_at": _now_iso()})
+    now = _now_iso()
+    previous = entry.get("phase")
+    durations = dict(entry.get("phase_durations") or {})
+    switched = previous != phase
+    if switched:
+        durations[str(previous)] = _elapsed_seconds(str(entry.get("phase_started_at") or now), _now_iso_ms())
+        kind = "phase"
+    elif failed > int(entry.get("failed") or 0):
+        kind = "fail"
+    else:
+        kind = "item"
+    entry.update(
+        {
+            "phase": phase,
+            "done": done,
+            "failed": failed,
+            "total": total,
+            "updated_at": now,
+            "phase_started_at": _now_iso_ms() if switched else entry.get("phase_started_at"),
+            "phase_durations": durations,
+            "tail": {"kind": kind, "phase": phase, "done": done, "total": total, "failed": failed},
+        }
+    )
 
 
 def _release_run(kb_id: str) -> None:

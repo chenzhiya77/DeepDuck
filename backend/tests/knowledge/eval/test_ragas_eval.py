@@ -21,6 +21,7 @@ from deerflow.knowledge.eval.ragas_eval import (
     TraceOutcome,
     citation_precision_recall,
     compute_ragas_scores,
+    expected_ragas_jobs,
     extract_answer,
     extract_citation_map,
     extract_cited_numbers,
@@ -580,10 +581,13 @@ class TestRunLayer2ProgressHook:
             progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
         )
 
-        # 每题（agent 运行）毕回调一次；ragas evaluate 前再回调一次进入不定长段。
+        # 每题（agent 运行）毕回调一次；第三段（质量评估）= ragas jobs + citation judge 逐题，
+        # 无 evaluator 时 ragas jobs=0，judge 2 题 → total=2（spec 2026-09-06 §9）。
         assert calls == [
             ("questions", 1, 0, 2),
             ("questions", 2, 0, 2),
+            ("ragas", 0, 0, 2),
+            ("ragas", 1, 0, 2),
             ("ragas", 2, 0, 2),
         ]
 
@@ -605,9 +609,115 @@ class TestRunLayer2ProgressHook:
             progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
         )
 
-        # 单题失败：failed++，done 仍计（契约：failed 独立不从 done 扣）。
+        # 单题失败：failed++，done 仍计（契约：failed 独立不从 done 扣）；
+        # 第三段 total = 存活题的 judge job 数（1）。
         assert calls == [
             ("questions", 1, 0, 2),
             ("questions", 2, 1, 2),
-            ("ragas", 2, 1, 2),
+            ("ragas", 0, 1, 1),
+            ("ragas", 1, 1, 1),
         ]
+
+
+class _FakeRagasResult:
+    """ragas ``EvaluationResult`` 的最小形状：``to_pandas().to_dict(orient=...)``。"""
+
+    def __init__(self, records: list[dict]) -> None:
+        self._records = records
+
+    def to_pandas(self) -> _FakeRagasResult:
+        return self
+
+    def to_dict(self, orient: str = "records") -> list[dict]:
+        return self._records
+
+
+class _FakeRagas:
+    """假 ragas 模块：复刻 Executor 对外部 ``_pbar`` 的用法（每 job ``update(1)``）。"""
+
+    metric_names = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
+
+    def __init__(self) -> None:
+        self.pbars: list[object] = []
+
+    def evaluate(self, *, dataset, metrics, llm=None, embeddings=None, run_config=None, _pbar=None, **kwargs):
+        assert _pbar is not None, "compute_ragas_scores must pass its own _pbar for per-job progress"
+        self.pbars.append(_pbar)
+        records = [dict.fromkeys(self.metric_names, 0.5) for _ in dataset.samples]
+        for _ in range(len(dataset.samples) * len(metrics)):
+            _pbar.update(1)
+        return _FakeRagasResult(records)
+
+
+class TestRagasJobProgress:
+    """spec 2026-09-06 §9：ragas 段按 (样本 × 指标) job 上报 → 第三段定长。"""
+
+    def test_expected_ragas_jobs_splits_reference_and_reference_free(self):
+        samples = [
+            {"question_id": "q1", "reference": "参考答案"},
+            {"question_id": "q2", "reference": "参考答案"},
+            {"question_id": "q3", "reference": None},
+        ]
+
+        # 有参考 4 指标、无参考 2 指标（context_* 需 reference）。
+        assert expected_ragas_jobs(samples) == 2 * 4 + 1 * 2
+
+    @pytest.mark.asyncio
+    async def test_compute_ragas_scores_reports_every_job(self, monkeypatch):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        fake = _FakeRagas()
+        monkeypatch.setattr(mod, "_load_ragas", lambda: fake)
+        calls: list[tuple[int, int]] = []
+        samples = [
+            {"question_id": "q1", "user_input": "u1", "response": "r1", "retrieved_contexts": ["c1"], "reference": "参考答案"},
+            {"question_id": "q2", "user_input": "u2", "response": "r2", "retrieved_contexts": ["c2"], "reference": "参考答案"},
+        ]
+
+        rows = await compute_ragas_scores(samples, judge_llm=object(), embeddings=None, on_progress=lambda done, total: calls.append((done, total)))
+
+        assert rows is not None and len(rows) == 2
+        assert fake.pbars, "ragas evaluate must receive our _pbar"
+        # 2 样本 × 4 指标 = 8 job：逐 job 递增、total 恒定。
+        assert calls == [(i, 8) for i in range(1, 9)]
+
+    @pytest.mark.asyncio
+    async def test_compute_ragas_scores_without_hook_keeps_legacy_shape(self, monkeypatch):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        fake = _FakeRagas()
+        monkeypatch.setattr(mod, "_load_ragas", lambda: fake)
+        samples = [{"question_id": "q1", "user_input": "u1", "response": "r1", "retrieved_contexts": ["c1"], "reference": None}]
+
+        rows = await compute_ragas_scores(samples, judge_llm=object(), embeddings=None)
+
+        assert rows is not None and len(rows) == 1
+
+    @pytest.mark.asyncio
+    async def test_run_layer2_third_phase_covers_ragas_jobs_then_judge(self):
+        calls: list[tuple[str, int, int, int]] = []
+
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            return _outcome(question.id, answer="答案[1]。")
+
+        async def evaluator(samples, *, judge_llm, embeddings, on_progress=None):
+            assert on_progress is not None, "progress_hook 存在时必须把逐 job 回调传进 evaluator"
+            total = expected_ragas_jobs(samples)
+            for done in range(1, total + 1):
+                on_progress(done, total)
+            return [{"faithfulness": 0.9, "answer_relevancy": 0.8, "context_precision": None, "context_recall": 0.7} for _ in samples]
+
+        await run_layer2_evaluation(
+            [_question("q1")],
+            agent_runner=runner,
+            judge_llm=_FakeJudgeLLM(['{"supported": true, "reason": "ok"}']),
+            ragas_evaluator=evaluator,
+            kb_id="kb-1",
+            run_id="run-ragas-jobs",
+            progress_hook=lambda phase, done, failed, total: calls.append((phase, done, failed, total)),
+        )
+
+        # 1 样本 × 4 指标 = 4 ragas job + 1 题 citation judge = 第三段 total 5，单调推进到满。
+        ragas_calls = [call for call in calls if call[0] == "ragas"]
+        assert [call[1] for call in ragas_calls] == [0, 1, 2, 3, 4, 5]
+        assert {call[3] for call in ragas_calls} == {5}

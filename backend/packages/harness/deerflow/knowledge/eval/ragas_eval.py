@@ -461,23 +461,77 @@ def _clean_metric_value(value: Any) -> float | None:
     return None if math.isnan(float(value)) else float(value)
 
 
+#: ragas submits one job per (sample, metric): reference samples get the four
+#: standard metrics, reference-free samples only the two that need no reference.
+RAGAS_REFERENCE_METRICS = 4
+RAGAS_REFERENCE_FREE_METRICS = 2
+
+
+def expected_ragas_jobs(samples: Sequence[dict[str, Any]]) -> int:
+    """How many ragas jobs a sample list will submit (spec 2026-09-06 §9).
+
+    ragas' ``Executor`` submits one job per (sample, metric) pair, so the job
+    count is the honest denominator for the quality-scoring progress segment.
+    """
+
+    with_reference = sum(1 for sample in samples if sample.get("reference"))
+    return with_reference * RAGAS_REFERENCE_METRICS + (len(samples) - with_reference) * RAGAS_REFERENCE_FREE_METRICS
+
+
+class _RagasJobBar:
+    """Duck-typed ``tqdm`` stand-in handed to ragas as ``evaluate(_pbar=...)``.
+
+    ragas' Executor calls ``update(1)`` per completed job and uses an external
+    bar as-is when supplied — so this yields per-job progress without touching
+    ragas' batching/parallelism, and silences its own console bar.
+    """
+
+    def __init__(self, total: int, on_progress: Callable[[int, int], None] | None) -> None:
+        self.total = total
+        self.n = 0
+        self._on_progress = on_progress
+
+    def update(self, n: int = 1) -> None:
+        self.n += n
+        if self._on_progress is not None:
+            self._on_progress(self.n, self.total)
+
+    def close(self) -> None:
+        return None
+
+    def set_description(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    def __enter__(self) -> _RagasJobBar:
+        return self
+
+    def __exit__(self, *_exc: Any) -> bool:
+        return False
+
+
 async def compute_ragas_scores(
     samples: list[dict[str, Any]],
     *,
     judge_llm: Any,
     embeddings: Any,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> list[dict[str, float | None]] | None:
     """Run the four standard RAGAS metrics; ``None`` when ragas is not installed.
 
     Samples with a ``reference`` get all four metrics; reference-free samples
     only faithfulness / answer_relevancy (the two context_* metrics need a
     reference). ragas' ``evaluate`` is synchronous, so it runs in a thread.
+
+    ``on_progress(done, total)`` (spec 2026-09-06 §9) fires once per ragas job
+    across both sample groups; ``None`` keeps the legacy behavior untouched.
     """
 
     if not samples:
         return []
     if _load_ragas() is None:
         return None
+
+    bar = _RagasJobBar(expected_ragas_jobs(samples), on_progress)
 
     from ragas.dataset_schema import EvaluationDataset, SingleTurnSample
     from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
@@ -500,7 +554,7 @@ async def compute_ragas_scores(
                 for s in group
             ]
         )
-        result = _load_ragas().evaluate(dataset=dataset, metrics=metrics, llm=judge_llm, embeddings=embeddings, run_config=run_config)
+        result = _load_ragas().evaluate(dataset=dataset, metrics=metrics, llm=judge_llm, embeddings=embeddings, run_config=run_config, _pbar=bar, show_progress=False)
         return result.to_pandas().to_dict(orient="records")
 
     with_reference = [s for s in samples if s.get("reference")]
@@ -636,11 +690,13 @@ async def run_layer2_evaluation(
     One question's agent run failing degrades to a failure note — the run
     always produces a complete report (same contract as recall_test).
 
-    ``progress_hook`` (spec 2026-09-06 run-progress) is optional and fires
+    ``progress_hook`` (spec 2026-09-06 run-progress / §9) is optional and fires
     ``(phase, done, failed, total)``: once per question after its agent run
-    (phase ``"questions"``, determinate) and once before the ragas stage
-    (phase ``"ragas"``, indeterminate — the frontend pulses it). ``None``
-    keeps the legacy behavior untouched (CLI and existing callers).
+    (phase ``"questions"``, determinate), then through the quality-scoring phase
+    (phase ``"ragas"``, determinate too — ``total`` = ragas jobs (sample ×
+    metric) + one citation-judge job per live question, ``done`` advancing per
+    ragas job and per judged question). ``None`` keeps the legacy behavior
+    untouched (CLI and existing callers).
     """
 
     run_id = run_id or f"ragas-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
@@ -659,15 +715,22 @@ async def run_layer2_evaluation(
             progress_hook("questions", len(outcomes) + len(failures), len(failures), total_questions)
 
     # Standard RAGAS metrics over the questions whose agent run succeeded.
-    if progress_hook is not None:
-        progress_hook("ragas", total_questions, len(failures), total_questions)
     ragas_rows: list[dict[str, float | None]] | None = None
     ragas_skip_reason: str | None = None
     live_questions = [q for q in questions if q.id in outcomes]
+    samples = [build_ragas_sample(q, outcomes[q.id]) for q in live_questions]
+    # 第三段（质量评估）总量 = ragas jobs + 逐题 citation judge；judge 循环此前
+    # 完全静默，会让进度条在 ragas 结束后提前满格（spec 2026-09-06 §9）。
+    ragas_jobs = expected_ragas_jobs(samples) if ragas_evaluator is not None else 0
+    judge_jobs = len(live_questions) if judge_llm is not None else 0
+    scoring_total = ragas_jobs + judge_jobs
+    if progress_hook is not None:
+        progress_hook("ragas", 0, len(failures), scoring_total)
     if ragas_evaluator is not None:
-        samples = [build_ragas_sample(q, outcomes[q.id]) for q in live_questions]
+        # on_progress 仅在有 hook 时传入：既有假 evaluator（CLI/测试）协议不变。
+        scoring_kwargs: dict[str, Any] = {} if progress_hook is None else {"on_progress": lambda done, _total: progress_hook("ragas", done, len(failures), scoring_total)}
         try:
-            ragas_rows = await ragas_evaluator(samples, judge_llm=judge_llm, embeddings=None)
+            ragas_rows = await ragas_evaluator(samples, judge_llm=judge_llm, embeddings=None, **scoring_kwargs)
         except Exception as exc:  # noqa: BLE001 — report-only path
             logger.warning("ragas evaluation failed: %s", exc)
             ragas_skip_reason = f"ragas 执行失败: {exc}"
@@ -681,6 +744,7 @@ async def run_layer2_evaluation(
             ragas_by_question[question.id] = row
 
     results: list[QuestionEvalResult] = []
+    judged = 0
     for question in questions:
         if question.id in failures:
             results.append(_failure_result(question, failures[question.id]))
@@ -689,6 +753,10 @@ async def run_layer2_evaluation(
         citation = None
         if judge_llm is not None:
             citation = await citation_precision_recall(outcome.answer, outcome.citation_map, judge_llm=judge_llm)
+            judged += 1
+            if progress_hook is not None:
+                # ragas 失败/跳过也按预期 job 数结算，保证第三段单调推进到满。
+                progress_hook("ragas", ragas_jobs + judged, len(failures), scoring_total)
         results.append(
             QuestionEvalResult(
                 question_id=question.id,

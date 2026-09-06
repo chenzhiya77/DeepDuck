@@ -171,18 +171,19 @@
 
 ## Phase 5: 进度容器重设计(spec §9;取代底缘细线,不修直接删)
 
-## Task 9: 后端 ragas 逐样本 hook + progress 三字段
+## Task 9: 后端 ragas 逐 job 进度 + progress 十键契约
 
 **Files:**
-- Modify: `backend/packages/harness/deerflow/knowledge/eval/ragas_eval.py`(ragas 循环内补**逐样本** `progress_hook("ragas", i+1, failed, total)`;现仅进入时报一次,第三段拿不到真实 k/N)
-- Modify: `backend/packages/harness/deerflow/knowledge/eval/ondemand.py`(_PROGRESS entry 增 `phase_started_at`/`phase_durations`/`tail`;_progress_start 初始化;_progress_update phase 变化记 `phase_durations[old]=now-phase_started_at` 并重置起点、写 `tail={kind:"phase",...}`;done 增写 `{kind:"item",...}`;failed 增写 `{kind:"fail",...}`——结构化事件,前端按 i18n 渲染保 en locale)
-- Modify: `backend/tests/knowledge/eval/test_ondemand.py`(逐样本推进/tail 结构/phase_durations 记录用例)
+- Modify: `backend/packages/harness/deerflow/knowledge/eval/ragas_eval.py`(**实施校正**:ragas 无逐样本循环——单次批量 `evaluate`,其 Executor 按 (样本×指标) 提交 job;改为 `expected_ragas_jobs()` + `_RagasJobBar` 鸭子对象经 `evaluate(_pbar=...)` 接住每 job `update(1)`,`compute_ragas_scores` 增可选 `on_progress`;第三段 total = ragas_jobs + 逐题 citation judge,judge 循环补 hook)
+- Modify: `backend/packages/harness/deerflow/knowledge/eval/factory.py`(evaluator 协议增可选 `on_progress` 透传)
+- Modify: `backend/packages/harness/deerflow/knowledge/eval/ondemand.py`(entry 增 `phase_started_at`(ms)/`phase_durations`/结构化 `tail`;phase 切换结算上段耗时+重置起点;done 增→item、failed 增→fail;`get_eval_progress` 嵌套拷贝并对旧形状补默认 → 恒十键)
+- Modify: `backend/tests/knowledge/eval/{test_ragas_eval,test_ondemand,test_eval_factory}.py` + `backend/tests/knowledge/test_eval_runs_api.py`(逐 job 推进/expected_ragas_jobs/协议转发/tail 与 durations/十键透出与补默认)
 
-- [ ] RED test:ragas 段 done 逐样本递增(非进入时一次到 total);phase 切换记 duration 且 tail.kind=phase;done 增 tail.kind=item;failed 增 tail.kind=fail。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/eval/test_ondemand.py -q --basetemp=.pytest-tmp` 记录 RED。
-- [ ] Implement。
-- [ ] GREEN;revert proof;ruff check/format 双净。
-- [ ] Commit: `feat(rag): ...`(English subject only)。
+- [x] RED test:ragas 段 done 逐 job 递增(非进入时一次到 total);第三段含 judge 尾段单调到满;phase 切换记 duration 且 tail.kind=phase;done 增 item、failed 增 fail;evaluator 转发 on_progress。(RED:test_ragas_eval ImportError 阻断收集 + ondemand/factory 2 failed)
+- [x] Run `cd backend && uv run pytest tests/knowledge/eval -q --basetemp=.pytest-tmp` 记录 RED。
+- [x] Implement。(含 §3 冻结契约七键→十键的正式扩展与两处实施校正,已回写 spec §9)
+- [x] GREEN;revert proof;ruff check/format 双净。(351 passed;stash 三个实现文件后 3 failed、恢复后复绿;All checks passed + 25 files already formatted)
+- [x] Commit: `feat(rag): report per-job ragas progress and richer eval run registry`(本提交)。
 
 ## Task 10: 前端纯函数 加权整体分数 + ETA
 
