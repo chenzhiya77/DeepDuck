@@ -19,7 +19,7 @@
  * 跳转，error/skipped 行 destructive 色调）；idle 且无历史 → muted「尚未评测」。
  * 不加手动切换按钮：drain 后进度注册表已清空，完成后的「进度页」无数据可画。
  */
-import { History } from "lucide-react";
+import { History, Layers, Play } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
@@ -81,14 +81,18 @@ export function EvalRunBanner({ progress, tier, running = true, lastRun = null, 
           : parts.kind === "minutes"
             ? tk.durMinutes(parts.value)
             : tk.durMinutesSeconds(parts.minutes, parts.seconds);
+    // 档位图标沿用仓库既有语汇（下拉/⋯/右键均 Play=快速、Layers=完整）；
+    // 字号升档 text-sm（用户定案：摘要行比日志行略大一点更鲜活）。
+    const TierIcon = tierOfRun(lastRun) === "l1_l2" ? Layers : Play;
     return (
       <div className={cn("bg-card flex items-center justify-between gap-2 rounded-lg border px-3 py-2", className)} data-testid="eval-run-banner">
         <span
-          className={cn("animate-in fade-in-0 truncate text-xs", failed ? "text-destructive" : "text-muted-foreground")}
+          className={cn("animate-in fade-in-0 flex min-w-0 items-center gap-1.5 text-sm", failed ? "text-destructive" : "text-muted-foreground")}
           data-testid="eval-slot-text"
           key={`${lastRun.run_id}:${failed ? "failed" : "summary"}`}
         >
-          {failed ? tk.slotSummaryFailed : tk.slotSummary(tierOfRun(lastRun) === "l1_l2" ? tk.tierFull : tk.tierQuick, durationText)}
+          {!failed && <TierIcon className="size-3.5 shrink-0" data-testid="eval-slot-tier-icon" />}
+          <span className="truncate">{failed ? tk.slotSummaryFailed : tk.slotSummary(tierOfRun(lastRun) === "l1_l2" ? tk.tierFull : tk.tierQuick, durationText)}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
           {lastRun.created_at !== null && (

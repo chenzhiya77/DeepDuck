@@ -654,6 +654,18 @@ async def test_history_lists_runs_newest_first_with_derived_flags(service) -> No
     assert oldest["langfuse_trace_url"] is None
 
 
+async def test_history_timestamps_carry_utc_offset(service) -> None:
+    """SQLite 读回剥 tz：序列化不经 coerce_iso 补偏移的话，前端把 naive ISO
+    当本地时间解析（UTC+8 环境历史行与槽相对时间偏 8 小时，用户实测投诉）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-tz", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+
+    assert body["runs"][0]["created_at"].endswith("+00:00")
+
+
 async def test_history_excludes_ci_by_default_and_opts_back_in(service) -> None:
     client = _client(service)
     kb = _create_kb(client)

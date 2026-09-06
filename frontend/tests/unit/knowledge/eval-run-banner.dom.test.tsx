@@ -155,7 +155,7 @@ describe("EvalRunBanner ETA", () => {
     const eta = etaSeconds(snapshot, "l1");
     expect(eta).not.toBeNull();
     expect(screen.getByTestId("eval-banner-eta").textContent).toBe(
-      `预计剩余 ~${Math.max(1, Math.round(eta ?? 0))} 秒`,
+      `预计剩余 ~${Math.max(1, Math.round(eta ?? 0))}s`,
     );
   });
 });
@@ -207,8 +207,12 @@ describe("EvalRunBanner 空闲态槽", () => {
     renderBanner({ running: false, lastRun: summaryRun() });
 
     const slot = screen.getByTestId("eval-run-banner");
-    // 252s → 4 分 12 秒；has_layer2=false → 快速档；相对时间跟 UI locale（zh）。
-    expect(slot.textContent).toContain("上次评测 · 快速评测 · 耗时 4 分 12 秒");
+    // 252s → 4m 12s（单位 s/m，2026-09-06 用户定案）；has_layer2=false → 快速档；
+    // 无前缀「上次评测」；档位带图标；字号升档 text-sm；相对时间跟 UI locale（zh）。
+    expect(slot.textContent).toContain("快速评测 · 耗时 4m 12s");
+    expect(slot.textContent).not.toContain("上次评测");
+    expect(within(slot).getByTestId("eval-slot-tier-icon")).toBeTruthy();
+    expect(within(slot).getByTestId("eval-slot-text").className).toContain("text-sm");
     expect(slot.textContent).toContain("5 分钟前");
     // 空闲态不残留进度条语义。
     expect(screen.queryByRole("progressbar")).toBeNull();
@@ -218,15 +222,17 @@ describe("EvalRunBanner 空闲态槽", () => {
     renderBanner({ running: false, lastRun: summaryRun({ completed_at: null }) });
 
     const text = screen.getByTestId("eval-run-banner").textContent;
-    expect(text).toContain("上次评测 · 快速评测");
+    expect(text).toContain("快速评测");
     expect(text).not.toContain("耗时");
+    expect(text).not.toContain("上次评测");
   });
 
   it("tints failed runs destructive and drops the duration", () => {
     renderBanner({ running: false, lastRun: summaryRun({ status: "error" }) });
 
     const slot = screen.getByTestId("eval-run-banner");
-    expect(slot.textContent).toContain("上次评测失败");
+    expect(slot.textContent).toContain("评测失败");
+    expect(slot.textContent).not.toContain("上次评测");
     expect(slot.textContent).not.toContain("耗时");
     expect(within(slot).getByTestId("eval-slot-text").className).toContain("text-destructive");
   });

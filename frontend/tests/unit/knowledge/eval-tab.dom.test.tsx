@@ -836,9 +836,9 @@ describe("EvalTab 常驻工具栏", () => {
     );
     renderEvalTab();
 
-    // has_layer2 → 完整档；30s 耗时 → 「30 秒」。
+    // has_layer2 → 完整档；30s 耗时 → 「30s」（单位 s，无前缀）。
     expect(screen.getByTestId("eval-run-banner").textContent).toContain(
-      "上次评测 · 完整评测 · 耗时 30 秒",
+      "完整评测 · 耗时 30s",
     );
   });
 

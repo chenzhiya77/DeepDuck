@@ -1401,8 +1401,10 @@ class KnowledgeService:
         baseline_diff = row.baseline_diff or {}
         return {
             "run_id": row.id,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
-            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            # SQLite 读回剥 tz → naive；必须经 coerce_iso 补 UTC 偏移，否则前端把
+            # naive ISO 当本地时间解析（UTC+8 环境偏 8 小时，2026-09-06 用户实测）。
+            "created_at": coerce_iso(row.created_at) if row.created_at else None,
+            "completed_at": coerce_iso(row.completed_at) if row.completed_at else None,
             "environment": row.environment,
             "status": row.status,
             "is_baseline": row.is_baseline,

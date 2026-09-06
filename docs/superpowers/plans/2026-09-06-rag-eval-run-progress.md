@@ -282,3 +282,18 @@
 - [x] 全量回归:backend eval 套件 **352 passed** + ruff 双净;frontend knowledge **63 files passed|1 预存**(chat-panel model-selector,零交集) + `pnpm check` exit 0。revert proof 复查:Task 14/15/16 各自的 stash 证明均成立(实现撤掉 → 对应用例 failed、恢复复绿)。
 - [x] 手动验收并入 Task 13 清单(上条已扩 §10 槽项并修正「drain 后卸载」过时表述;实测仍待用户)。
 - [x] 文档回写确认(spec §10 冻结含 Task 15/16 实施校正;plan Phase 6 全勾选)。
+
+## Task 18: 槽摘要文案/单位/时区三修(用户实测反馈,2026-09-06 四轮)
+
+**Files:**
+- Modify: `backend/app/gateway/services/knowledge_service.py`(`_eval_run_summary` 两戳改经 `coerce_iso`)
+- Modify: `backend/tests/knowledge/test_eval_runs_api.py`(`test_history_timestamps_carry_utc_offset`)
+- Modify: `frontend/src/components/workspace/knowledge/eval-run-banner.tsx`(档位图标 Play/Layers + text-sm)
+- Modify: `frontend/src/core/i18n/locales/{zh-CN,en-US}.ts`(slotSummary 去前缀、slotSummaryFailed「评测失败」、dur*/etaRemainingSeconds 单位 s/m)
+- Modify: `frontend/tests/unit/knowledge/{eval-run-banner.dom,eval-tab.dom}.test.tsx`
+
+- [x] RED。(backend tz 用例 1 failed——证实 SQLite 读回确实剥 tz;banner 1 file failed)
+- [x] Implement。
+- [x] GREEN;revert proof(stash service+banner+zh-CN → 两案均 failed、恢复复绿);eval API **43 passed**;banner/eval-tab passed;`pnpm check` exit 0。
+- [x] Commit: `fix(rag): align slot summary wording, compact duration units and utc offsets`(本提交)。
+- 根因记录:①「8 小时前」= naive ISO 被前端当本地时间(UTC+8);②文案/单位为用户观感定案,非缺陷。
