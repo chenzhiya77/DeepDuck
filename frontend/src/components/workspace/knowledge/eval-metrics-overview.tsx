@@ -159,13 +159,15 @@ export function EvalMetricsOverview({ overview, onViewTrace, sparks }: EvalMetri
               scrollHideDelay={2000}
               type="scroll"
             >
-              <div className="min-w-[24rem] p-4 space-y-4">
+              <div className="@container min-w-[27rem] space-y-4 p-4">
               <div>
               <div className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-medium">
                 <Dices className="size-3.5" />
                 {tk.ragasGroupLabel}
               </div>
-              {/* 固定列数：宽度下限为本卡自有 min-w-[24rem]（触底时仅本卡横滚）。 */}
+              {/* 固定列数：宽度下限为本卡自有 min-w-[27rem]（触底时仅本卡横滚；
+                  下限按数值固有宽重算——触底瓦片内宽 ≈67 ≥ 最坏 "100.0%" ≈65，
+                  2026-09-07 溢出治理）。窄档隐线走本卡体 @container 容器查询降档。 */}
               <div className="grid grid-cols-4 gap-3">
                 <MetricTile title={tk.ragasCard.faithfulness} note={tk.cardNote.faithfulness} value={layer2.ragas.faithfulness} traceUrl={layer2.langfuse_trace_url} onViewTrace={onViewTrace} traceLabel={tk.viewTrace} spark={sparks?.faithfulness} testId="faithfulness" />
                 <MetricTile title={tk.ragasCard.answerRelevancy} note={tk.cardNote.answerRelevancy} value={layer2.ragas.answer_relevancy} spark={sparks?.answer_relevancy} testId="answer_relevancy" />
@@ -341,13 +343,16 @@ function MetricTile({ title, note, value, disabled, disabledReason, traceUrl, on
           </button>
         )}
       </div>
-      {/* 数值行（2026-09-07 sparkline 接入）：数字左、迷你线右同行（B 案缩档
-          28×12 = w-7 h-3），justify-between + gap-1；无 spark（缺键/空/单点）时
-          EvalSparkline 返 null，数值行保持原样。text-lg + tabular-nums：26rem
-          触底时 "100.0%" 仍容得下（值≈52 + gap 4 + 28 = 84 ≤ 87）。 */}
+      {/* 数值行（2026-09-07 sparkline 接入）：数字左、迷你线右同行（28×12 =
+          w-7 h-3），justify-between + gap-1；无 spark（缺键/空/单点）时
+          EvalSparkline 返 null，数值行保持原样。窄栏溢出治理（2026-09-07）：
+          数值行固有最小宽（值 ≈52–65 + gap 4 + 线 28）超窄档瓦片内宽，按信息
+          优先级降档——sparkline 是扫描层装饰先隐：hidden + @min-[35rem]
+          容器查询（卡体为 @container），仅容器 ≥35rem（瓦片内宽 ≥ 值+gap+28）
+          时同行出现，以下档数值行只留数值。text-lg 恒原字号：主信息不缩不换。 */}
       <div className="mt-1 flex items-center justify-between gap-1" data-testid={`eval-card-value-${testId}`}>
         <div className="text-lg font-semibold tabular-nums">{isNull ? "-" : percent(value)}</div>
-        <EvalSparkline values={spark} />
+        <EvalSparkline values={spark} className="hidden @min-[35rem]:block" />
       </div>
       {!isNull && <Progress value={value * 100} className={cn("mt-1.5 h-1", colorClass)} />}
       {disabled && disabledReason && <div className="text-muted-foreground mt-1 text-xs">{disabledReason}</div>}

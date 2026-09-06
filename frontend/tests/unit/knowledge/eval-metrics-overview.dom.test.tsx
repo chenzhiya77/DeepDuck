@@ -140,7 +140,9 @@ describe("Layer 1 表格", () => {
     const l1 = screen.getByTestId("eval-layer1-scroll");
     const l2 = screen.getByTestId("eval-layer2-scroll");
     expect(l1.querySelector("[class*='min-w-[25rem]']")).toBeTruthy();
-    expect(l2.querySelector("[class*='min-w-[24rem]']")).toBeTruthy();
+    expect(l2.querySelector("[class*='min-w-[27rem]']")).toBeTruthy();
+    // 瓦片卡体同时是容器查询面（2026-09-07 窄栏溢出治理）：sparkline 按档隐线的 @container。
+    expect(l2.querySelector("[class*='@container']")).toBeTruthy();
     // 两滑块分属不同卡片——互不联动。
     expect(l1.closest("section")).not.toBe(l2.closest("section"));
     // 表格外壳退役老原生滑块（overflow-x-auto）：横滚权归卡内 overlay 滑块（题库表同款）。
@@ -382,7 +384,7 @@ describe("Layer 2 卡片", () => {
     expect(percentEl?.className).toContain("text-lg");
     expect(percentEl?.className).toContain("tabular-nums");
 
-    // 固定列数：宽度下限由 eval-tab 的 min-w-[26rem] 内包装保证，触底时仅总览块横滚。
+    // 固定列数：宽度下限沉进本卡 min-w-[27rem]（触底时仅本卡横滚）；窄档隐线走卡体 @container 降档。
     // 两组统一 grid-cols-4（2026-09-05）：引用组留一空槽，纵向列轴对齐。
     const ragasGrid = screen.getByTestId("eval-card-faithfulness").parentElement;
     expect(ragasGrid?.className).toContain("grid-cols-4");
@@ -540,11 +542,31 @@ describe("Layer 2 sparkline（spec 2026-09-06 §5，plan Task 3）", () => {
       expect(cls).toContain("w-7");
       expect(cls).toContain("h-3");
       expect(cls).toContain("text-muted-foreground");
+      // 窄栏溢出治理（2026-09-07）：容器查询降档类——默认 hidden，卡体 ≥35rem 才同行出现。
+      expect(cls).toContain("hidden");
+      expect(cls).toContain("@min-[35rem]:block");
       // 与数值同行：数字与 svg 都是 value-row 容器的直接子节点（兄弟）。
       const number = valueRow.querySelector(".font-semibold");
       expect(number).toBeTruthy();
       expect(number!.parentElement).toBe(valueRow);
       expect(svg!.parentElement).toBe(valueRow);
+    }
+  });
+
+  it("tier-hides sparklines below the 35rem container (2026-09-07 narrow-column overflow fix)", () => {
+    renderOverview(FULL_OVERVIEW, { sparks: SPARKS });
+
+    // 卡体 = 容器查询面：@container + 下限按数值固有宽重算的 min-w-[27rem]
+    // （触底瓦片内宽 ≈67 ≥ 最坏 "100.0%" ≈65，数值独享一行不溢出）。
+    const body = screen.getByTestId("eval-layer2-scroll").querySelector("[class*='@container']");
+    expect(body).toBeTruthy();
+    expect(body!.className).toContain("min-w-[27rem]");
+    // 7 瓦片迷你线全带降档类：窄档（容器 <35rem，瓦片内宽容不下 值+gap+线）
+    // 隐线只留数值，宽档恢复同行——扫描层装饰先降，主信息恒 text-lg 不缩不换。
+    for (const id of L2_TILE_IDS) {
+      const cls = screen.getByTestId(`eval-card-value-${id}`).querySelector("svg")!.getAttribute("class") ?? "";
+      expect(cls).toContain("hidden");
+      expect(cls).toContain("@min-[35rem]:block");
     }
   });
 
