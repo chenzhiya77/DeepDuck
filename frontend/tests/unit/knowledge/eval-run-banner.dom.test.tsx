@@ -10,7 +10,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { EvalRunBanner } from "@/components/workspace/knowledge/eval-run-banner";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { overallFraction } from "@/core/knowledge/eval-run-status";
+import { etaSeconds, overallFraction } from "@/core/knowledge/eval-run-status";
 import type { EvalRunProgress } from "@/core/knowledge/types";
 
 const iso = (msOffset: number) => new Date(Date.now() + msOffset).toISOString();
@@ -87,15 +87,15 @@ describe("EvalRunBanner 加权条", () => {
 
 describe("EvalRunBanner ETA", () => {
   it("withholds the estimate during warmup", () => {
-    // elapsed 5s < 20s 门控 → 不给数字。
-    renderBanner({ progress: progress({ started_at: iso(-5_000) }) });
+    // 本段已跑 3s < 5s 门控 → 不给数字。
+    renderBanner({ progress: progress({ started_at: iso(-3_000), phase_started_at: iso(-3_000) }) });
 
     expect(screen.getByTestId("eval-banner-eta").textContent).toBe("估算中…");
   });
 
   it("extrapolates the remaining minutes once warmed up", () => {
-    // layer1 实测 20s（先验占比 0.1 → scale 200s）：质量段期望 110s、答题段 70s，
-    // 几何回到先验 10/35/55；f = 0.1 + 0.35×0.5 = 0.275，elapsed 60s → 158s ≈ 3 分钟。
+    // layer1 实测 20s（先验占比 0.1 → 本段速率定价）：questions 半程用 40s →
+    // 本段全程 80s、剩 40s；质量段 0.55/0.35 × 80s ≈ 125.7s → ETA ≈ 165.7s ≈ 3 分钟。
     renderBanner({
       progress: progress({
         phase: "questions",
@@ -108,6 +108,25 @@ describe("EvalRunBanner ETA", () => {
     });
 
     expect(screen.getByTestId("eval-banner-eta").textContent).toBe("预计剩余 ~3 分钟");
+  });
+
+  it("shows seconds for sub-minute estimates (quick tier)", () => {
+    const snapshot = progress({
+      phase: "layer1",
+      done: 12,
+      total: 17,
+      started_at: iso(-6_000),
+      phase_started_at: iso(-6_000),
+      tail: { kind: "item", phase: "layer1", done: 12, total: 17, failed: 0 },
+    });
+    renderBanner({ progress: snapshot, tier: "l1" });
+
+    // 快速档全程只有几秒：分钟粒度会说"~1 分钟"而撒谎，故用秒。
+    const eta = etaSeconds(snapshot, "l1");
+    expect(eta).not.toBeNull();
+    expect(screen.getByTestId("eval-banner-eta").textContent).toBe(
+      `预计剩余 ~${Math.max(1, Math.round(eta ?? 0))} 秒`,
+    );
   });
 });
 

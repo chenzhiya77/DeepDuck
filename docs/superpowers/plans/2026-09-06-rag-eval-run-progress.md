@@ -230,3 +230,19 @@
 - [x] knowledge 套件 + `pnpm check` + ruff 双净(预存 chat-panel 失败除外)。(knowledge **900 passed | 1 failed** 预存 chat-panel model-selector；check exit 0；ruff 于 Task 9 双净、Phase 5 未再改后端)
 - [ ] 手动验收(spec §9):完整档 → 总览容器出现、条随三段推进且刻度自适应、ETA warmup 后显分钟级剩余、日志单行滚动;drain 后容器卸载;快速档单段条满格即消;题库/历史按钮阶段名不变。
 - [ ] 文档回写确认(spec §9 冻结、plan 本 Phase 勾选)。
+
+## Task 14: 快速档空条 + ETA 按段外推(用户实测反馈,2026-09-06)
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/eval/runner.py`(`run_evaluation` 增可选 `progress_hook`,每题毕回调 `("layer1", done, 0, N)`)
+- Modify: `backend/packages/harness/deerflow/knowledge/eval/ondemand.py`(两 runner `_progress_start(total=len(questions))` + 传 hook;删事后补的 done=1 事件)
+- Modify: `backend/tests/knowledge/eval/test_ondemand.py`(`test_layer1_progress_advances_per_question`)
+- Modify: `frontend/src/core/knowledge/eval-run-status.ts`(etaSeconds 改**按段**速率外推;`ETA_WARMUP_SECONDS` 20→5、退役 `ETA_WARMUP_FRACTION`)
+- Modify: `frontend/src/components/workspace/knowledge/eval-run-banner.tsx` + i18n×3(不足一分钟显秒 `etaRemainingSeconds`)
+- Modify: `frontend/tests/unit/knowledge/{eval-run-status.unit,eval-run-banner.dom}.test.tsx`
+
+- [x] RED。(backend 新用例 1 failed;frontend eta 用例对旧公式 failed)
+- [x] Implement。
+- [x] GREEN;revert proof。(backend **352 passed**;eval-run* 4 files、eval-tab 2 files passed;stash runner+ondemand+eval-run-status 后两案均 failed、恢复复绿;knowledge 63 files passed|1 预存 chat-panel;`pnpm check` exit 0、ruff 双净)
+- [x] Commit: `fix(rag): make layer1 progress determinate and price eta per phase`(本提交)。
+- 根因记录:layer1 旧 `total=1` 且零中间事件 → 快速档条全程 0%、完成即消失;ETA 旧门控(f>6% 且 20s)在快速档永不过 → 恒「估算中…」;在 f 上外推把廉价段速率当全程速率 → 早期 ETA 乐观撒谎。

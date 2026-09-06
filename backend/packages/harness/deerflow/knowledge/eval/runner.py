@@ -105,17 +105,25 @@ async def run_evaluation(
     baseline: Mapping[str, Any] | None = None,
     fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
     generated_at: str | None = None,
+    progress_hook: Callable[[str, int, int, int], None] | None = None,
 ) -> EvalReport:
     """Run every question through the three paths and build the report.
 
     ``baseline`` is a previous ``report_to_dict`` payload; when provided the
     report carries a diff whose gate result drives ``exit_code``.
+
+    ``progress_hook`` (spec 2026-09-06 §9) fires ``(phase, done, failed, total)``
+    once per question (phase ``"layer1"``) so the quick tier's progress bar is
+    determinate instead of an all-or-nothing segment; ``None`` keeps the CLI
+    behavior untouched.
     """
     question_reports: list[QuestionReport] = []
     for question in questions:
         outcomes = await _fanout(question, searchers, top_k)
         path_results = {path: MetricsPathResult(hits=tuple(hit.chunk_id for hit in outcome.hits), top_score=_top_score(outcome), failure=outcome.failure) for path, outcome in outcomes.items()}
         question_reports.append(QuestionReport(question=question, metrics=evaluate_question(question, path_results), paths=outcomes))
+        if progress_hook is not None:
+            progress_hook("layer1", len(question_reports), 0, len(questions))
 
     metrics = [report.metrics for report in question_reports]
     overall = aggregate(metrics)

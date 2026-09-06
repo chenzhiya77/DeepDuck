@@ -397,6 +397,31 @@ async def test_full_run_error_path_clears_progress(tmp_path, store, monkeypatch)
     assert ondemand.get_eval_progress(KB) is None
 
 
+async def test_layer1_progress_advances_per_question(tmp_path, store) -> None:
+    """spec 2026-09-06 §9 补：layer1 段逐题上报——快速档的条不再是全程空条。"""
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+    await _seed_question(golden, query="第二题")
+    snapshots: list[dict] = []
+
+    searchers = _stub_searchers()
+    original_vector = searchers["vector"]
+
+    async def observing_vector(query: str, top_k: int):
+        snapshot = ondemand.get_eval_progress(KB)
+        if snapshot is not None:
+            snapshots.append(snapshot)
+        return await original_vector(query, top_k)
+
+    searchers["vector"] = observing_vector
+
+    await ondemand.run_layer1_for_kb(KB, golden_path=golden, searchers=searchers, generated_at=GENERATED_AT)
+
+    # 第二题开跑时第一题已结算：done=1/total=2（旧实现 layer1 恒 0/1，条全程空）。
+    assert any(s["phase"] == "layer1" and s["done"] == 1 and s["total"] == 2 for s in snapshots)
+    assert ondemand.get_eval_progress(KB) is None
+
+
 async def test_progress_tail_and_phase_durations() -> None:
     """spec 2026-09-06 §9：进度条目新增 phase_started_at / phase_durations / tail（结构化事件）。"""
     ondemand._progress_start(KB, "run-tail", phase="layer1", total=1)

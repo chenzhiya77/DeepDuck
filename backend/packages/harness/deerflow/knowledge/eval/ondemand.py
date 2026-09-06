@@ -203,6 +203,7 @@ async def _layer1_report_payload(
     top_k: int,
     searchers: Mapping[str, SearchFn] | None,
     generated_at: str,
+    progress_hook: ProgressHook | None = None,
 ) -> dict:
     """Layer 1 执行链（不写库，两条路径共用）：searcher → baseline → run_evaluation → dict。"""
     effective_searchers = searchers if searchers is not None else await _build_default_searchers(kb_id)
@@ -210,7 +211,7 @@ async def _layer1_report_payload(
     baseline_row = await get_baseline_run(kb_id)
     if baseline_row is not None and baseline_row.layer1_metrics:
         baseline_report = baseline_report_from_metrics(baseline_row.layer1_metrics)
-    report = await run_evaluation(questions, effective_searchers, top_k=top_k, baseline=baseline_report, generated_at=generated_at)
+    report = await run_evaluation(questions, effective_searchers, top_k=top_k, baseline=baseline_report, generated_at=generated_at, progress_hook=progress_hook)
     return report_to_dict(report)
 
 
@@ -241,10 +242,14 @@ async def run_layer1_for_kb(
         _release_run(kb_id)
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
-    _progress_start(kb_id, run_id, phase="layer1", total=1)
+    # layer1 段逐题上报（spec §9）：total = 题数，快速档的条才是定长的。
+    _progress_start(kb_id, run_id, phase="layer1", total=len(questions))
+
+    def _forward_layer1(phase: str, done: int, failed: int, total: int) -> None:
+        _progress_update(kb_id, phase=phase, done=done, failed=failed, total=total)
+
     try:
-        payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
-        _progress_update(kb_id, phase="layer1", done=1, failed=0, total=1)
+        payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at, progress_hook=_forward_layer1)
         await save_eval_run(
             run_id=run_id,
             kb_id=kb_id,
@@ -295,15 +300,16 @@ async def run_full_eval_for_kb(
         _release_run(kb_id)
         raise EvalQuestionBankEmpty(f"eval question bank is empty: {golden_path}")
 
-    _progress_start(kb_id, run_id, phase="layer1", total=1)
+    # layer1 段逐题上报（spec §9）：与快速档同款，total = 题数。
+    _progress_start(kb_id, run_id, phase="layer1", total=len(questions))
 
     def _forward_progress(phase: str, done: int, failed: int, total: int) -> None:
-        # Layer 2 hook → 注册表：questions 段定长计数，ragas 段不定长（前端 pulse）。
+        # Layer 1/2 hook → 注册表：三段均定长计数（layer1 逐题、questions 逐题、
+        # ragas 逐 job + 逐题 judge）。
         _progress_update(kb_id, phase=phase, done=done, failed=failed, total=total)
 
     try:
-        payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at)
-        _progress_update(kb_id, phase="layer1", done=1, failed=0, total=1)
+        payload = await _layer1_report_payload(kb_id, questions=questions, top_k=top_k, searchers=searchers, generated_at=generated_at, progress_hook=_forward_progress)
         layer1_metrics = layer1_metrics_from_report(payload)
         baseline_diff = baseline_diff_from_report(payload)
 

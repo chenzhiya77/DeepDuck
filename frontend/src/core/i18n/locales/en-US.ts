@@ -556,6 +556,7 @@ export const enUS: Translations = {
       phaseRagas: "RAGAS",
       failedCount: (n) => `${n} failed`,
       etaRemaining: (minutes) => `~${minutes} min left`,
+      etaRemainingSeconds: (seconds) => `~${seconds} s left`,
       etaEstimating: "Estimating…",
       logPhase: (phase) => `Starting ${phase}`,
       logItem: (phase, done, total) => `${phase} ${done}/${total}`,

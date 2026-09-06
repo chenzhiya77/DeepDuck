@@ -535,6 +535,7 @@ export const zhCN: Translations = {
       phaseRagas: "质量评估",
       failedCount: (n) => `失败 ${n}`,
       etaRemaining: (minutes) => `预计剩余 ~${minutes} 分钟`,
+      etaRemainingSeconds: (seconds) => `预计剩余 ~${seconds} 秒`,
       etaEstimating: "估算中…",
       logPhase: (phase) => `进入${phase}`,
       logItem: (phase, done, total) => `${phase} ${done}/${total}`,

@@ -78,9 +78,8 @@ export const PHASE_WEIGHT_PRIOR: Record<EvalTier, EvalPhaseWeights> = {
 /** 亚秒完成的段实测为 0s；下限避免它的跨度塌陷并污染 scale。 */
 export const MIN_PHASE_SECONDS = 1;
 
-/** 速率外推的 warmup 门控：进度/时长不足时宁可不给 ETA，也不给假数字。 */
-export const ETA_WARMUP_FRACTION = 0.06;
-export const ETA_WARMUP_SECONDS = 20;
+/** 速率外推的 warmup 门控：本段至少跑满该秒数且已有完成量，速率才有意义。 */
+export const ETA_WARMUP_SECONDS = 5;
 
 function phasesFor(tier: EvalTier): EvalPhase[] {
   return tier === "l1" ? ["layer1"] : EVAL_PHASE_ORDER;
@@ -170,20 +169,34 @@ export function overallFraction(progress: EvalRunProgress | null | undefined, ti
 }
 
 /**
- * 预计剩余秒数（主流速率外推口径）：`elapsed × (1−f) / f`。warmup 不足
- * （f 或 elapsed 太小）时返回 null 而不是撒谎；收尾时钳到 0，永不负。
+ * 预计剩余秒数（spec 2026-09-06 §9，2026-09-06 二次修订）：**按段**速率外推，而不是在
+ * 整体分数 f 上外推——f 外推会把廉价段（layer1 / 答题前几题）的速率当成全程速率，
+ * 早期 ETA 乐观到撒谎（用户实测投诉点）。改为：本段按自身速率推全程时长
+ * （phaseFull = elapsed / within），剩余 = phaseFull×(1−within)；其后各段按
+ * 「后续段先验占比 / 本段先验占比 × phaseFull」定价，即假设后续段与本段同比例地
+ * 贵/便宜。warmup：本段 done>0 且 elapsed ≥ ETA_WARMUP_SECONDS，否则 null
+ * （UI 显「估算中…」）；收尾钳到 0，永不负。
  */
 export function etaSeconds(progress: EvalRunProgress | null | undefined, tier: EvalTier, nowMs: number = Date.now()): number | null {
-  const fraction = overallFraction(progress, tier, nowMs);
-  if (fraction <= ETA_WARMUP_FRACTION) return null;
-  const startedMs = parseMs(progress?.started_at);
-  if (startedMs === null) return null;
-  const elapsed = (nowMs - startedMs) / 1000;
-  if (elapsed < ETA_WARMUP_SECONDS) return null;
-  return Math.max(0, (elapsed * (1 - fraction)) / fraction);
+  if (!progress) return null;
+  const phases = phasesFor(tier);
+  const current = currentPhase(progress, phases);
+  const within = progress.total > 0 ? Math.min(1, Math.max(0, progress.done / progress.total)) : 0;
+  const startedMs = parseMs(progress.phase_started_at);
+  const elapsed = startedMs === null ? null : Math.max((nowMs - startedMs) / 1000, 0);
+  if (within <= 0 || elapsed === null || elapsed < ETA_WARMUP_SECONDS) return null;
+
+  const phaseFull = elapsed / within;
+  const prior = PHASE_WEIGHT_PRIOR[tier];
+  const currentPrior = prior[current] ?? 0;
+  let future = 0;
+  if (currentPrior > 0) {
+    for (const phase of phases.slice(phases.indexOf(current) + 1)) future += ((prior[phase] ?? 0) / currentPrior) * phaseFull;
+  }
+  return Math.max(0, phaseFull * (1 - within) + future);
 }
 
-/** ETA 取整到分钟（下限 1）——防抽风跳变，也是 UI 唯一的展示粒度。 */
+/** ETA 取整到分钟（下限 1）——防抽风跳变；不足一分钟的 ETA 由调用方改用秒粒度。 */
 export function etaMinutes(eta: number | null): number | null {
   if (eta === null) return null;
   return Math.max(1, Math.round(eta / 60));

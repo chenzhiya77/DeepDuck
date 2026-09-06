@@ -137,22 +137,30 @@ describe("overallFraction", () => {
 });
 
 describe("etaSeconds", () => {
-  it("withholds the estimate during warmup (too little elapsed or progress)", () => {
-    // elapsed 10s < 20s 门控；以及 f=0 时无论跑多久都不外推。
-    expect(etaSeconds(progress({ phase: "questions", done: 3, total: 10 }), "l1_l2", T0 + 10_000)).toBeNull();
+  it("withholds the estimate until the current phase has a rate", () => {
+    // 本段零完成（无速率）或本段已跑不足 5s → 不给数字，也不拿廉价段速率冒充全程。
     expect(etaSeconds(progress({ phase: "layer1", done: 0, total: 1 }), "l1_l2", T0 + 600_000)).toBeNull();
+    expect(etaSeconds(progress({ phase: "questions", done: 3, total: 10, phase_started_at: iso(T0 + 57_000) }), "l1_l2", T0 + 60_000)).toBeNull();
     expect(etaSeconds(null, "l1_l2", T0 + 60_000)).toBeNull();
   });
 
-  it("extrapolates from the weighted fraction once warmed up", () => {
-    // f = 0.1 + 0.35×0.5 = 0.275，elapsed 60s → 60×(1−f)/f。
-    const eta = etaSeconds(progress({ phase: "questions", done: 5, total: 10 }), "l1_l2", T0 + 60_000);
+  it("extrapolates the current phase rate and prices future phases by the prior ratio", () => {
+    // questions 半程用 60s → 本段全程 120s、剩 60s；质量段按先验占比定价
+    // 0.55/0.35 × 120s ≈ 188.6s → ETA ≈ 248.6s（而非 f 外推的 ~158s 乐观值）。
+    const eta = etaSeconds(progress({ phase: "questions", done: 5, total: 10, phase_started_at: iso(T0) }), "l1_l2", T0 + 60_000);
 
-    expect(eta).toBeCloseTo((60 * (1 - 0.275)) / 0.275, 1);
+    expect(eta).toBeCloseTo(60 + (0.55 / 0.35) * 120, 0);
+  });
+
+  it("has no future phases to price in the quick tier", () => {
+    // layer1 12/17 用 6s → 全程 8.5s、剩 2.5s。
+    const eta = etaSeconds(progress({ phase: "layer1", done: 12, total: 17, phase_started_at: iso(T0) }), "l1", T0 + 6_000);
+
+    expect(eta).toBeCloseTo(2.5, 1);
   });
 
   it("never goes negative at the end of the run", () => {
-    expect(etaSeconds(progress({ phase: "ragas", done: 4, total: 4 }), "l1_l2", T0 + 60_000)).toBe(0);
+    expect(etaSeconds(progress({ phase: "ragas", done: 4, total: 4, phase_started_at: iso(T0) }), "l1_l2", T0 + 60_000)).toBe(0);
   });
 });
 

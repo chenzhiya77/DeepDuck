@@ -489,6 +489,8 @@ export interface Translations {
       /** 运行进度容器（spec 2026-09-06 §9）：右侧仅 ETA（warmup 不足时不给假数字），
        *  第二行单行日志由后端结构化 tail 事件驱动、文案在此按 locale 渲染。 */
       etaRemaining: (minutes: number) => string;
+      /** 不足一分钟的 ETA 用秒——分钟粒度会说"~1 分钟"而撒谎。 */
+      etaRemainingSeconds: (seconds: number) => string;
       etaEstimating: string;
       logPhase: (phase: string) => string;
       logItem: (phase: string, done: number, total: number) => string;

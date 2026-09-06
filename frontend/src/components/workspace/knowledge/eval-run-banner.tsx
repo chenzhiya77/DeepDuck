@@ -46,7 +46,14 @@ export function EvalRunBanner({ progress, tier, className }: EvalRunBannerProps)
   const phases: EvalPhase[] = tier === "l1" ? EVAL_PHASE_ORDER.slice(0, 1) : EVAL_PHASE_ORDER;
   const weights: EvalPhaseWeights = adaptiveWeights(progress, tier);
   const fraction = overallFraction(progress, tier);
-  const eta = etaMinutes(etaSeconds(progress, tier));
+  const etaSecs = etaSeconds(progress, tier);
+  // 不足一分钟用秒：分钟粒度（下限 1）会把几秒的剩余说成"~1 分钟"而撒谎。
+  const etaText =
+    etaSecs === null
+      ? tk.etaEstimating
+      : etaSecs < 60
+        ? tk.etaRemainingSeconds(Math.max(1, Math.round(etaSecs)))
+        : tk.etaRemaining(etaMinutes(etaSecs) ?? 1);
   const current: EvalPhase = progress && phases.includes(progress.phase) ? progress.phase : (phases[0] ?? "layer1");
 
   const phaseWord = (phase: EvalPhase) => (phase === "layer1" ? tk.phaseLayer1 : phase === "ragas" ? tk.phaseRagas : tk.phaseQuestions);
@@ -104,7 +111,7 @@ export function EvalRunBanner({ progress, tier, className }: EvalRunBannerProps)
           ))}
         </div>
         <span className="text-muted-foreground shrink-0 text-xs tabular-nums" data-testid="eval-banner-eta">
-          {eta === null ? tk.etaEstimating : tk.etaRemaining(eta)}
+          {etaText}
         </span>
       </div>
       <div
