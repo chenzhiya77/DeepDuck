@@ -142,7 +142,7 @@
 - [x] 复现+根因:集成测试证明前端链路正确 → 定位后端 `_IN_FLIGHT` 晚自增窗口(trigger create_task 到 load 完成),早期 poll 读 false 覆盖乐观值、杀轮询;切历史挂第二 observer 才复活。
 - [x] Implement(前端无条件乐观 + 后端自增前移)。
 - [x] GREEN:后端 **344 passed**、eval-tab **50/50**、knowledge **880 passed|1** 预存无关、check/ruff 双净。
-- [ ] Commit(与 Task 7/8 同批,待用户确认后提交)。
+- [x] Commit:与 Task 7/8 及档位单选/工具栏收敛/去代号/趋势重设计合并为单提交 `36e16620`(eval-tab/i18n 跨功能 hunk 交织,无法原子拆分;2 个无关 research 文档保持未跟踪)。
 
 ## Task 7: 缺口2 — 运行态假状态 → 三段阶段名 + n/3
 
@@ -154,7 +154,7 @@
 
 - [x] Implement(用户定案:4 字阶段名+n/3 与 4 字按钮对齐;快速档 L1 不显计数避免"1/3 到不了 3/3";k/N 归底缘细线+aria)。
 - [x] GREEN:eval-run-status **10/10**、eval-tab **50/50**。
-- [ ] Commit。
+- [x] Commit:`36e16620`(合并提交,见 Task 6 注)。
 
 ## Task 8: 缺口3 — 右键/行⋮/批量评测绕过头部按钮
 
@@ -165,7 +165,7 @@
 
 - [x] Implement(触发权上收,禁止子组件自持 trigger mutation)。
 - [x] GREEN:bank **28/28**、eval-tab **50/50**、knowledge **880 passed|1**、check 双净。
-- [ ] Commit。
+- [x] Commit:`36e16620`(合并提交,见 Task 6 注)。
 
 **Phase 4 回归**:后端 **344 passed**(含 `test_in_flight_incremented_before_load_questions`)、前端 eval-tab **50/50**(含 `eval-tab-trigger-live.dom`)+ eval-run-status 10/10 + bank 28/28、knowledge **880 passed | 1 failed**(预存 chat-panel)、`pnpm check` 与 ruff 双净。验收项 1–3 现由自动化覆盖;仍需用户 UI 复核真实 LLM 链路观感(验收项 4–6)。
 
