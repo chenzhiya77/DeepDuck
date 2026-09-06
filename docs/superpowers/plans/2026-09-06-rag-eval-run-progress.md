@@ -317,12 +317,12 @@
 ### Task 20: 前端终止表面(槽两步确认 + mutation + 历史徽章)
 
 **Files:**
-- Modify: `frontend/src/components/workspace/knowledge/eval-run-banner.tsx`(running 态 ETA 右侧 X 按钮;两步 inline 确认 3s 回退)
-- Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(onCancel 接线 + toast)、knowledge hooks(`useCancelEvalRun`)、`eval-run-history.tsx`(cancelled 分支 Ban+muted)
+- Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(运行态分体按钮次槽 morph 为终止按钮:首态 X 幽灵、两步 inline 确认 3s 回退;onCancel 接线 + toast;槽 running 态不加控件)
+- Modify: knowledge hooks(`useCancelEvalRun`)、`eval-run-history.tsx`(cancelled 分支 Ban+muted)
 - Modify: `frontend/src/core/knowledge/types.ts`(status 联合加 `"cancelled"`)、i18n×3(cancelRun/cancelConfirm/cancelToast/slotSummaryCancelled/statusCancelled)
-- Modify: `frontend/tests/unit/knowledge/{eval-run-banner.dom,eval-tab.dom,eval-run-history.dom}.test.*`
+- Modify: `frontend/tests/unit/knowledge/{eval-tab.dom,eval-run-history.dom}.test.*`
 
-- [ ] RED:running 态显 X;首击变「确认终止?」、再击发 onCancel、超时回退;eval-tab 接线;历史 cancelled 徽章;槽摘要 cancelled 文案。
+- [ ] RED:运行态次槽显 X(chevron 下拉不在);首击变「确认终止?」、再击发 cancel mutation、超时回退;空闲态次槽还原 chevron;历史 cancelled 徽章;槽摘要 cancelled 文案。
 - [ ] Implement;GREEN;revert proof;knowledge 全量 + `pnpm check`。
 - [ ] Commit: `feat(rag): surface eval run cancel in status slot and history`。
 

@@ -244,9 +244,13 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   - 清理复用 finally `_release_run`(弹 `_PROGRESS/_IN_FLIGHT`)+ `_TASKS.pop` →
     **cancel 后 already_running 锁立即释放,可再触发**。
 - 前端表面:
-  - 槽 running 态 ETA 右侧加 X 按钮(控件≠文案,不破坏 §9「右侧只放 ETA」冻结);
-    **两步 inline 确认**:首击按钮变「确认终止?」(3s 超时回退),再击才发——长跑
-    误触代价高,不开 dialog(running 槽上 dialog 过重)。
+  - **工具栏分体按钮次槽 morph**(2026-09-06 用户定案):运行态下 chevron 档位下拉
+    本就 disabled 且无意义(档位只对下一次运行生效、触发被 already_running 锁) →
+    次槽morph 为终止按钮:首态 X 幽灵按钮(同 h-7 分体视觉),**两步 inline 确认**:
+    首击变 destructive 文本按钮「确认终止?」(3s 超时回退),再击才发——长跑误触
+    代价高,不开 dialog。空闲态次槽还原为 chevron 下拉。
+    选此位而非槽 running 态:工具栏三视图都在,**任何视图下终止可达**(槽仅总览);
+    槽 running 态保持纯进度 + ETA,§9「右侧只放 ETA」冻结保持绝对。
   - 成功 toast;轮询见 in_flight false → 走 drain 边自动刷新(既有机制,零新增)。
   - 历史新增 cancelled 分支:`Ban` 图标 + muted + 「已终止」/「Cancelled」;槽空闲
     摘要 cancelled 行用非 completed 色调但文案「评测已终止」(区别 failed「评测失败」)。
