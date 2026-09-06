@@ -295,6 +295,74 @@ describe("EvalTab 数据联通", () => {
     expect(screen.getByTestId("eval-threshold-chip").textContent).toBe("回退阈值 -3%");
   });
 
+  it("趋势卡头 picker：默认空、开合出 4 个多选项、L2 项带‘仅完整档’尾注", async () => {
+    renderEvalTab();
+    await screen.findByTestId("eval-trend-chart-mock");
+    // 会话级默认空选中透传给 chart
+    expect(canvasMock.props?.pickerSelected).toEqual([]);
+
+    fireEvent.keyDown(screen.getByTestId("eval-trend-picker"), { key: "ArrowDown" });
+    const items = await screen.findAllByRole("menuitemcheckbox");
+    expect(items).toHaveLength(4);
+    // path_accuracy（L1）无尾注；引用三（L2）带‘仅完整档’
+    expect(screen.getByRole("menuitemcheckbox", { name: /路径准确率/ }).textContent).not.toContain("仅完整档");
+    expect(screen.getByRole("menuitemcheckbox", { name: /引用准确率/ }).textContent).toContain("仅完整档");
+    expect(screen.getByRole("menuitemcheckbox", { name: /实体命中率/ }).textContent).toContain("仅完整档");
+  });
+
+  it("picker 勾选透传给 chart（pickerSelected），且会话级不跨挂载持久化", async () => {
+    renderEvalTab();
+    await screen.findByTestId("eval-trend-chart-mock");
+
+    fireEvent.keyDown(screen.getByTestId("eval-trend-picker"), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: /引用准确率/ }));
+    expect(canvasMock.props?.pickerSelected).toContain("citation_precision");
+
+    // 重新挂载 → 回到空（useState 会话级，无 localStorage 持久化）
+    cleanup();
+    renderEvalTab();
+    await screen.findByTestId("eval-trend-chart-mock");
+    expect(canvasMock.props?.pickerSelected).toEqual([]);
+  });
+
+  it("yMin>0 时卡头显 y 轴范围芯片；legendselectchanged 回流后随可见集重建", async () => {
+    renderEvalTab();
+    await screen.findByTestId("eval-trend-chart-mock");
+    // 默认可见 recall 0.9 + hit 0.92 + 阈值 0.87 → yMin 0.8 / yMax 1.0
+    expect(screen.getByTestId("eval-yaxis-chip").textContent).toBe("Y轴 80%–100%");
+
+    // 模拟 echarts legendselectchanged：开启 MRR（0.81）→ 可见集下探 → yMin 0.7
+    act(() => {
+      (canvasMock.props?.onLegendChange as (s: Record<string, boolean>) => void)({
+        "召回率@k": true,
+        命中率: true,
+        MRR: true,
+        忠实度: false,
+        相关性: false,
+        精确率: false,
+      });
+    });
+    expect(canvasMock.props?.legendSelected).toMatchObject({ MRR: true });
+    await waitFor(() =>
+      expect(screen.getByTestId("eval-yaxis-chip").textContent).toBe("Y轴 70%–100%"),
+    );
+  });
+
+  it("yMin=0（低分/轴从 0 起）时不显 y 轴芯片", async () => {
+    hooksMock.useEvalTrend.mockReturnValue(
+      queryState({
+        data: {
+          ...TREND,
+          baseline: null,
+          points: [{ ...TREND.points[0]!, recall_at_k: 0.03, hit_rate: 0.04 }],
+        },
+      }),
+    );
+    renderEvalTab();
+    await screen.findByTestId("eval-trend-chart-mock");
+    expect(screen.queryByTestId("eval-yaxis-chip")).toBeNull();
+  });
+
   it("collapses the trend card from its header toggle (recall container vocabulary, 2026-09-05)", async () => {
     renderEvalTab();
     await screen.findByTestId("eval-trend-chart-mock");

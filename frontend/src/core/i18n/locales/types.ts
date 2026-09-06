@@ -632,6 +632,16 @@ export interface Translations {
         baselineUpdate: string;
         clickForDetail: string;
         regressionPrefix: string;
+        /** picker 下拉触发器文案（趋势卡头，与粒度段控同档）。 */
+        pickerTrigger: string;
+        /** picker 触发器 aria-label。 */
+        pickerAria: string;
+        /** picker 中 L2 稀疏指标项尾注：仅完整档产出。 */
+        fullTierOnly: string;
+        /** tooltip 哑行：所选 picker 指标在该档未跑（null）。 */
+        notRunInTier: string;
+        /** y 轴范围芯片（yMin>0 时）：Y轴 xx%–yy%。 */
+        yAxisRange: (minPercent: number, maxPercent: number) => string;
       };
       /** 单次运行详情 drawer（plan Task 6）：元信息 + 两层指标只读摘要。 */
       drawer: {

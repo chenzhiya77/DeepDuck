@@ -660,6 +660,13 @@ export const zhCN: Translations = {
         baselineUpdate: "基线更新",
         clickForDetail: "点击查看详情",
         regressionPrefix: "回退题型",
+        // picker 下拉多选（spec 2026-09-06 §4.3，plan Task 4）：稀疏完整档指标加线入口。
+        pickerTrigger: "指标",
+        pickerAria: "选择趋势指标",
+        fullTierOnly: "仅完整档",
+        notRunInTier: "该档未跑",
+        // y 轴自适应范围芯片（yMin>0 时诚实提示轴不从 0 起，spec §4.6）。
+        yAxisRange: (min, max) => `Y轴 ${min}%–${max}%`,
       },
       drawer: {
         title: "评测运行详情",

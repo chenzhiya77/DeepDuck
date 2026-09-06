@@ -46,6 +46,36 @@ const METRICS: readonly MetricDef[] = [
   { key: "context_precision", labelKey: "contextPrecision", color: "#06B6D4", layer: 2, defaultOn: false },
 ];
 
+/** 趋势图可画的 10 个数值指标键（6 图例 + 4 picker），均为 TrendPoint 的可空数值键。 */
+export type TrendMetricKey =
+  | "recall_at_k"
+  | "hit_rate"
+  | "mrr"
+  | "path_accuracy"
+  | "faithfulness"
+  | "answer_relevancy"
+  | "context_precision"
+  | "citation_precision"
+  | "citation_recall"
+  | "seed_hit_rate";
+
+/** picker 稀疏指标线定义（spec §4.3）：4 个仅完整档产出的候选，线型沿用 layer 语义。 */
+export interface PickerMetricDef {
+  key: "path_accuracy" | "citation_precision" | "citation_recall" | "seed_hit_rate";
+  labelKey: "pathAccuracy" | "citationPrecision" | "citationRecall" | "seedHitRate";
+  color: string;
+  /** Layer 1 = 实线实心圆；Layer 2 = 虚线空心圆（与图例六线同语义）。 */
+  layer: 1 | 2;
+}
+
+/** picker 4 候选（颜色冻结，与图例六色不撞；spec §4.3 + plan Global Constraints）。 */
+export const PICKER_METRICS: readonly PickerMetricDef[] = [
+  { key: "path_accuracy", labelKey: "pathAccuracy", color: "#84CC16", layer: 1 },
+  { key: "citation_precision", labelKey: "citationPrecision", color: "#F97316", layer: 2 },
+  { key: "citation_recall", labelKey: "citationRecall", color: "#14B8A6", layer: 2 },
+  { key: "seed_hit_rate", labelKey: "seedHitRate", color: "#A855F7", layer: 2 },
+];
+
 /** 回退点标红色（regression.detected 驱动，per-category 门禁口径，§4.3.4）。 */
 const REGRESSION_COLOR = "#EF4444";
 
@@ -53,7 +83,7 @@ const REGRESSION_COLOR = "#EF4444";
 export interface TrendDatum {
   value: [string, number | null];
   runId: string | null;
-  metricKey: MetricDef["key"];
+  metricKey: TrendMetricKey;
   /** 回退点项级覆写（仅 Recall@k 线）。 */
   itemStyle?: { color: string };
 }
@@ -92,6 +122,7 @@ export function buildTrendTooltipHtml(
   params: TrendTooltipParam[],
   points: readonly TrendPoint[],
   labels: TrendChartLabels,
+  pickerSelected?: readonly string[],
 ): string {
   const first = params.find((param) => param.data)?.data;
   if (!first) return "";
@@ -125,6 +156,23 @@ export function buildTrendTooltipHtml(
     ];
   });
 
+  // 稀疏语义（spec §4.4）：选中的 picker 指标在该日期为 null（该档未跑）时不进
+  // axis params（echarts 只为非空点生成 param）→ 显式补哑行，避免“勾了却无此行”。
+  if (point && pickerSelected) {
+    for (const key of pickerSelected) {
+      const metric = PICKER_METRICS.find((m) => m.key === key);
+      if (!metric || point[metric.key] != null) continue;
+      const color = escapeHtml(metric.color);
+      const marker =
+        `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;` +
+        `background:${color};margin-right:4px"></span>`;
+      rows.push(
+        `${marker}${escapeHtml(labels[metric.labelKey])}&nbsp;&nbsp;` +
+          `<span style="opacity:.6">${escapeHtml(labels.notRunInTier)}</span>`,
+      );
+    }
+  }
+
   const lines = [`<div style="font-weight:600;margin-bottom:2px">${escapeHtml(date)}</div>`, ...rows];
   if (point?.regression?.detected && point.regression.categories.length > 0) {
     lines.push(
@@ -137,23 +185,81 @@ export function buildTrendTooltipHtml(
   return lines.join("<br/>");
 }
 
+/** 当前可见数值指标键（y 轴 seeds 与卡头芯片口径）：图例开启项 ∪ picker 选中项。 */
+export function resolveVisibleKeys(
+  labels: TrendChartLabels,
+  legendSelected: Record<string, boolean> | undefined,
+  pickerSelected: readonly string[] | undefined,
+): TrendMetricKey[] {
+  const fromLegend: TrendMetricKey[] = METRICS.filter((m) => legendSelected?.[labels[m.labelKey]] ?? m.defaultOn).map(
+    (m) => m.key,
+  );
+  const fromPicker: TrendMetricKey[] = PICKER_METRICS.filter((m) => pickerSelected?.includes(m.key)).map((m) => m.key);
+  return [...fromLegend, ...fromPicker];
+}
+
+const MIN_Y_SPAN = 0.1;
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** y 轴自适应（spec §4.6）：seeds = 可见序列值 ∪ 阈值线值；±0.05 padding、10pp
+ *  取整、封顶 [0,1]、最小轴程 10pp（不足时以中点对称扩，防高分簇塌成直线）。 */
+export function computeYAxisRange(
+  points: readonly TrendPoint[],
+  baseline: TrendResponse["baseline"],
+  visibleKeys: readonly TrendMetricKey[],
+): { yMin: number; yMax: number } {
+  const thresholdValue = baseline ? baseline.recall_at_k - baseline.threshold_percent / 100 : null;
+  const values = points.flatMap((p) => visibleKeys.map((k) => p[k])).filter((v): v is number => v != null);
+  const seeds = thresholdValue !== null ? [...values, thresholdValue] : values;
+  if (seeds.length === 0) return { yMin: 0, yMax: 1 };
+  let yMin = Math.max(0, Math.floor((Math.min(...seeds) - 0.05) * 10) / 10);
+  let yMax = Math.min(1, Math.ceil((Math.max(...seeds) + 0.05) * 10) / 10);
+  // 守卫：padding+取整已数学上保证 ≥10pp，此处兜底防夹逼/未来公式变更。
+  if (yMax - yMin < MIN_Y_SPAN) {
+    const mid = (yMax + yMin) / 2;
+    yMin = mid - MIN_Y_SPAN / 2;
+    yMax = mid + MIN_Y_SPAN / 2;
+    if (yMin < 0) {
+      yMin = 0;
+      yMax = MIN_Y_SPAN;
+    } else if (yMax > 1) {
+      yMax = 1;
+      yMin = 1 - MIN_Y_SPAN;
+    }
+  }
+  return { yMin: round2(yMin), yMax: round2(yMax) };
+}
+
+/** 卡头 y 轴范围芯片文案（spec §4.6）：yMin>0（轴不从 0 起）时经 format 出
+ *  "Y轴 xx%–yy%"；yMin<=0 返回 null（不显芯片，避免被误读成从 0 起）。 */
+export function buildYAxisRangeLabel(
+  points: readonly TrendPoint[],
+  baseline: TrendResponse["baseline"],
+  visibleKeys: readonly TrendMetricKey[],
+  format: (minPercent: number, maxPercent: number) => string,
+): string | null {
+  const { yMin, yMax } = computeYAxisRange(points, baseline, visibleKeys);
+  if (yMin <= 0) return null;
+  return format(Math.round(yMin * 100), Math.round(yMax * 100));
+}
+
 export function buildChartOption(input: {
   points: TrendPoint[];
   granularity: TrendResponse["granularity"];
   baseline: TrendResponse["baseline"];
   labels: TrendChartLabels;
   dark?: boolean;
+  /** picker 选中的稀疏指标键（会话级）——条件并入 series，不进图例。 */
+  pickerSelected?: readonly string[];
+  /** 图例开关回流态（echarts legendselectchanged）——驱动 y 轴按可见集自适应。 */
+  legendSelected?: Record<string, boolean>;
 }): EChartsCoreOption {
-  const { points, granularity, baseline, labels, dark = false } = input;
+  const { points, granularity, baseline, labels, dark = false, pickerSelected, legendSelected } = input;
   const thresholdValue = baseline ? baseline.recall_at_k - baseline.threshold_percent / 100 : null;
 
-  // y 轴下界动态：取数据与阈值线的较低者再让 0.05，下限 0；上界恒 1（§4.6）。
-  const allValues = points
-    .flatMap((p) => METRICS.map((m) => p[m.key]))
-    .filter((v): v is number => v !== null);
-  const seeds = thresholdValue !== null ? [...allValues, thresholdValue] : allValues;
-  const yMin =
-    seeds.length === 0 ? 0 : Math.max(0, Math.floor((Math.min(...seeds) - 0.05) * 10) / 10);
+  // y 轴随可见序列自适应（spec §4.6）：可见集 = 图例开启项 ∪ picker 选中项。
+  const visibleKeys = resolveVisibleKeys(labels, legendSelected, pickerSelected);
+  const { yMin, yMax } = computeYAxisRange(points, baseline, visibleKeys);
 
   const metricSeries: LineSeriesOption[] = METRICS.map((metric) => ({
     name: labels[metric.labelKey],
@@ -180,6 +286,29 @@ export function buildChartOption(input: {
     symbolSize: 6,
     emphasis: { scale: 1.5 },
   }));
+
+  // picker 稀疏系列（spec §4.3）：仅选中的候选并入，线型沿用 layer 语义（L1 实线
+  // 实心圆 / L2 虚线空心圆）。不进 legend.data——picker 是独立多选入口，与图例六线
+  // 的 defaultOn 开关语义分离，避免两处控制同一系列显隐。
+  const pickerSeries: LineSeriesOption[] = PICKER_METRICS.filter((m) => pickerSelected?.includes(m.key)).map(
+    (metric) => ({
+      name: labels[metric.labelKey],
+      type: "line",
+      data: points.map((p): TrendDatum => ({
+        value: [p.date, p[metric.key]],
+        runId: metric.layer === 1 ? p.layer1_run_id : p.layer2_run_id,
+        metricKey: metric.key,
+      })),
+      lineStyle:
+        metric.layer === 1
+          ? { color: metric.color, width: 2 }
+          : { color: metric.color, width: 2, type: "dashed" },
+      itemStyle: { color: metric.color },
+      symbol: metric.layer === 1 ? "circle" : "emptyCircle",
+      symbolSize: 6,
+      emphasis: { scale: 1.5 },
+    }),
+  );
 
   // 标记系列：阈值横线（silent 不吃点击，避免 dataIndex 歧义）+ 基线更新竖线。
   // 系列名不进 legend.data，不出现在图例。baseline=null 且无基线更新点时不生成。
@@ -224,7 +353,9 @@ export function buildChartOption(input: {
     legend: {
       data: METRICS.map((m) => labels[m.labelKey]),
       bottom: 0,
-      selected: Object.fromEntries(METRICS.map((m) => [labels[m.labelKey], m.defaultOn])),
+      selected: Object.fromEntries(
+        METRICS.map((m) => [labels[m.labelKey], legendSelected?.[labels[m.labelKey]] ?? m.defaultOn]),
+      ),
       textStyle: { color: ink(0.75, dark) },
     },
     xAxis: {
@@ -238,14 +369,14 @@ export function buildChartOption(input: {
     yAxis: {
       type: "value",
       min: yMin,
-      max: 1,
+      max: yMax,
       axisLabel: {
         formatter: (v: number) => `${(v * 100).toFixed(0)}%`,
         color: ink(0.55, dark),
       },
       splitLine: { lineStyle: { type: "dashed", color: ink(dark ? 0.1 : 0.06, dark) } },
     },
-    series: [...metricSeries, ...markerSeries],
+    series: [...metricSeries, ...pickerSeries, ...markerSeries],
     tooltip: {
       trigger: "axis",
       confine: true,
@@ -253,7 +384,7 @@ export function buildChartOption(input: {
       borderColor: dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
       textStyle: { fontSize: 11, color: ink(0.85, dark) },
       formatter: (params: unknown) =>
-        buildTrendTooltipHtml(params as TrendTooltipParam[], points, labels),
+        buildTrendTooltipHtml(params as TrendTooltipParam[], points, labels, pickerSelected),
     },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, filterMode: "none" },

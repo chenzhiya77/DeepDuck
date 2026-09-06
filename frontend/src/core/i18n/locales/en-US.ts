@@ -686,6 +686,11 @@ export const enUS: Translations = {
         baselineUpdate: "Baseline updated",
         clickForDetail: "Click for details",
         regressionPrefix: "Regressed categories",
+        pickerTrigger: "Metrics",
+        pickerAria: "Select trend metrics",
+        fullTierOnly: "Full tier only",
+        notRunInTier: "Not run in this tier",
+        yAxisRange: (min, max) => `Y-axis ${min}%–${max}%`,
       },
       drawer: {
         title: "Eval Run Details",

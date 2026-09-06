@@ -56,11 +56,16 @@ const LABELS: TrendChartLabels = {
   faithfulness: "忠实度",
   answerRelevancy: "答案相关性",
   contextPrecision: "上下文精度",
+  pathAccuracy: "路径准确率",
+  citationPrecision: "引用准确率",
+  citationRecall: "引用召回率",
+  seedHitRate: "实体命中率",
   thresholdLine: "回退阈值线",
   thresholdLabel: (p) => `回退阈值 -${p}%`,
   baselineUpdate: "基线更新",
   clickForDetail: "点击查看详情",
   regressionPrefix: "回退题型",
+  notRunInTier: "该档未跑",
 };
 
 const POINTS: TrendPoint[] = [

@@ -1,13 +1,13 @@
 /**
  * 评测趋势图 option 纯函数（spec 2026-08-24 §4.3/§4.6，plan Task 3）：
- * - 6 条 series：Layer 1 实线实心圆 / Layer 2 虚线空心圆，默认只显示
- *   Recall@k + Hit Rate（图例 selected），其余隐藏防拥挤；
+ * - 6 条图例 series（Layer 1 实线实心圆 / Layer 2 虚线空心圆，默认只显示
+ *   Recall@k + Hit Rate）+ 经 picker 条件并入的 4 条稀疏指标线（不进图例）；
  * - datum 携带 runId（Layer 1 线挂 layer1_run_id，Layer 2 线挂 layer2_run_id），
  *   click 从 params.data 取数、不依赖 dataIndex；
  * - 阈值线 = baseline.recall_at_k - threshold_percent/100；baseline=null 不生成；
  * - 回退点项级 itemStyle 标红由 regression.detected 驱动（per-category 门禁
  *   口径），与阈值线解耦；
- * - y 轴动态下界（数据/阈值线最小值让 0.05、下限 0、上界恒 1）；
+ * - y 轴随可见序列自适应（seeds = 可见值 ∪ 阈值线，±0.05、最小轴程 10pp、封顶 1）；
  * - 基线更新点（is_baseline_update）画竖线；
  * - tooltip 一律 escapeHtml。
  */
@@ -16,7 +16,9 @@ import { describe, expect, it } from "@rstest/core";
 import {
   buildChartOption,
   buildTrendTooltipHtml,
+  buildYAxisRangeLabel,
   escapeHtml,
+  PICKER_METRICS,
   type TrendTooltipParam,
 } from "@/components/workspace/knowledge/eval-trend-chart.utils";
 import type { TrendChartLabels, TrendPoint, TrendResponse } from "@/core/knowledge/types";
@@ -28,11 +30,16 @@ const LABELS: TrendChartLabels = {
   faithfulness: "忠实度",
   answerRelevancy: "相关性",
   contextPrecision: "精确率",
+  pathAccuracy: "路径准确率",
+  citationPrecision: "引用准确率",
+  citationRecall: "引用召回率",
+  seedHitRate: "实体命中率",
   thresholdLine: "回退阈值线",
   thresholdLabel: (p) => `回退阈值 -${p}%`,
   baselineUpdate: "基线更新",
   clickForDetail: "点击查看详情",
   regressionPrefix: "回退题型",
+  notRunInTier: "该档未跑",
 };
 
 function point(overrides: Partial<TrendPoint> = {}): TrendPoint {
@@ -74,8 +81,9 @@ function buildOption(
   points: TrendPoint[],
   baseline: TrendResponse["baseline"] = BASELINE,
   granularity: "day" | "week" | "month" = "day",
+  extra: { pickerSelected?: string[]; legendSelected?: Record<string, boolean> } = {},
 ) {
-  return buildChartOption({ points, granularity, baseline, labels: LABELS, dark: false }) as {
+  return buildChartOption({ points, granularity, baseline, labels: LABELS, dark: false, ...extra }) as {
     legend: { data: string[]; selected: Record<string, boolean> };
     yAxis: { min: number; max: number };
     xAxis: { axisLabel: { formatter: string } };
@@ -164,6 +172,58 @@ describe("buildChartOption 指标线配置", () => {
   });
 });
 
+describe("buildChartOption picker 稀疏指标线（spec §4.3，plan Task 4）", () => {
+  it("PICKER_METRICS 冻结 4 个稀疏候选与 spec 色/层", () => {
+    expect(PICKER_METRICS.map((m) => m.key)).toEqual([
+      "path_accuracy",
+      "citation_precision",
+      "citation_recall",
+      "seed_hit_rate",
+    ]);
+    const byKey = new Map(PICKER_METRICS.map((m) => [m.key, m]));
+    expect(byKey.get("path_accuracy")).toMatchObject({ color: "#84CC16", layer: 1 });
+    expect(byKey.get("citation_precision")).toMatchObject({ color: "#F97316", layer: 2 });
+    expect(byKey.get("citation_recall")).toMatchObject({ color: "#14B8A6", layer: 2 });
+    expect(byKey.get("seed_hit_rate")).toMatchObject({ color: "#A855F7", layer: 2 });
+  });
+
+  it("仅在选中时并入 picker 系列，且不进 legend.data（不脏图例）", () => {
+    const without = buildOption([point()]);
+    expect(without.series.filter((s) => !s.markLine).map((s) => s.name)).not.toContain("引用准确率");
+    expect(without.legend.data).toHaveLength(6);
+
+    const withPicker = buildOption([point()], BASELINE, "day", { pickerSelected: ["citation_precision"] });
+    const names = withPicker.series.filter((s) => !s.markLine).map((s) => s.name);
+    expect(names).toContain("引用准确率");
+    // picker 系列不进 legend.data / legend.selected
+    expect(withPicker.legend.data).not.toContain("引用准确率");
+    expect(withPicker.legend.data).toHaveLength(6);
+  });
+
+  it("picker 线型沿用 layer 语义（L1 实线实心 / L2 虚线空心）", () => {
+    const option = buildOption([point()], BASELINE, "day", {
+      pickerSelected: ["path_accuracy", "citation_precision", "citation_recall", "seed_hit_rate"],
+    });
+    const byName = new Map(option.series.filter((s) => !s.markLine).map((s) => [s.name, s]));
+    expect(byName.get("路径准确率")?.lineStyle).toMatchObject({ color: "#84CC16", width: 2 });
+    expect(byName.get("路径准确率")?.lineStyle?.type).toBeUndefined();
+    expect(byName.get("路径准确率")?.symbol).toBe("circle");
+    expect(byName.get("引用准确率")?.lineStyle).toMatchObject({ color: "#F97316", type: "dashed" });
+    expect(byName.get("引用准确率")?.symbol).toBe("emptyCircle");
+    expect(byName.get("引用召回率")?.lineStyle).toMatchObject({ color: "#14B8A6", type: "dashed" });
+    expect(byName.get("实体命中率")?.lineStyle).toMatchObject({ color: "#A855F7", type: "dashed" });
+  });
+
+  it("picker 系列 runId 按 layer 取源（path_accuracy→L1，引用三→L2）", () => {
+    const option = buildOption([point({ layer1_run_id: "l1", layer2_run_id: "l2" })], BASELINE, "day", {
+      pickerSelected: ["path_accuracy", "citation_precision"],
+    });
+    const byName = new Map(option.series.filter((s) => !s.markLine).map((s) => [s.name, s]));
+    expect(byName.get("路径准确率")?.data?.[0]?.runId).toBe("l1");
+    expect(byName.get("引用准确率")?.data?.[0]?.runId).toBe("l2");
+  });
+});
+
 describe("buildChartOption 阈值线与异常标记", () => {
   it("draws threshold line at baseline.recall_at_k - threshold_percent/100", () => {
     const option = buildOption([point()], { recall_at_k: 0.9, threshold_percent: 3 });
@@ -211,11 +271,33 @@ describe("buildChartOption 阈值线与异常标记", () => {
 });
 
 describe("buildChartOption 坐标轴", () => {
-  it("y axis: dynamic lower bound (min of data/threshold minus 0.05), max fixed at 1", () => {
-    // 数据最小 0.81（mrr），阈值 0.87 → 0.81-0.05=0.76 → 取整 0.7
+  it("y 轴只按可见序列取 seeds：默认隐藏的 mrr 不再把下界拉低", () => {
+    // point(): recall 0.9 / hit 0.92 / mrr 0.81（默认隐藏）；阈值 0.87。
+    // 可见 = recall + hit + 阈值 → seeds [0.9,0.92,0.87] → yMin 0.8（旧全指标口径会得 0.7）。
     const option = buildOption([point()], { recall_at_k: 0.9, threshold_percent: 3 });
+    expect(option.yAxis.min).toBeCloseTo(0.8, 5);
+    // 上界自适应：max 0.92 → ceil((0.92+0.05)*10)/10 = 1.0
+    expect(option.yAxis.max).toBeCloseTo(1, 5);
+  });
+
+  it("开启低值图例项后下界随可见集下探（legendSelected 回流）", () => {
+    // mrr 0.81 进可见集 → seeds 加 0.81 → yMin = floor((0.81-0.05)*10)/10 = 0.7
+    const option = buildOption([point()], BASELINE, "day", {
+      legendSelected: { "召回率@k": true, 命中率: true, MRR: true, 忠实度: false, 相关性: false, 精确率: false },
+    });
     expect(option.yAxis.min).toBeCloseTo(0.7, 5);
-    expect(option.yAxis.max).toBe(1);
+  });
+
+  it("上界随高分簇自适应下压（不再恒 1）", () => {
+    // 可见 recall 0.82 / hit 0.85（无 baseline）→ yMax = ceil((0.85+0.05)*10)/10 = 0.9 < 1
+    const option = buildOption([point({ recall_at_k: 0.82, hit_rate: 0.85 })], null);
+    expect(option.yAxis.max).toBeCloseTo(0.9, 5);
+    expect(option.yAxis.min).toBeCloseTo(0.7, 5);
+  });
+
+  it("最小轴程 10pp：全等高分簇不塌成直线（padding+取整保证，守卫兜底）", () => {
+    const option = buildOption([point({ recall_at_k: 0.9, hit_rate: 0.9 })], null);
+    expect(option.yAxis.max - option.yAxis.min).toBeGreaterThanOrEqual(0.1 - 1e-9);
   });
 
   it("y axis lower bound considers the threshold line below all data", () => {
@@ -310,6 +392,29 @@ describe("buildTrendTooltipHtml", () => {
     expect(html).not.toContain("忠实度");
   });
 
+  it("为选中但 null 的 picker 指标补‘该档未跑’哑行（spec §4.4）", () => {
+    const points = [point({ citation_precision: null })];
+    const html = buildTrendTooltipHtml(
+      paramsFor(points, "2026-08-20", ["召回率@k"]),
+      points,
+      LABELS,
+      ["citation_precision"],
+    );
+    expect(html).toContain("引用准确率");
+    expect(html).toContain("该档未跑");
+  });
+
+  it("选中 picker 指标有值时不补哑行（由 echarts 正常入 params）", () => {
+    const points = [point({ citation_precision: 0.9 })];
+    const html = buildTrendTooltipHtml(
+      paramsFor(points, "2026-08-20", ["召回率@k"]),
+      points,
+      LABELS,
+      ["citation_precision"],
+    );
+    expect(html).not.toContain("该档未跑");
+  });
+
   it("lists regressed categories when regression.detected", () => {
     const points = [point({ regression: { detected: true, categories: ["global", "relation"] } })];
     const html = buildTrendTooltipHtml(paramsFor(points, "2026-08-20", ["召回率@k"]), points, LABELS);
@@ -338,6 +443,21 @@ describe("buildTrendTooltipHtml", () => {
     expect(html).not.toContain("<b>global</b>");
     expect(html).toContain("&lt;b&gt;global&lt;/b&gt;");
     expect(html).toContain("&lt;img");
+  });
+});
+
+describe("buildYAxisRangeLabel（卡头 y 轴芯片，spec §4.6）", () => {
+  const fmt = (min: number, max: number) => `Y轴 ${min}%–${max}%`;
+
+  it("yMin>0 时返回范围文案（诚实提示轴不从 0 起）", () => {
+    // 可见 recall 0.9 + hit 0.92 + 阈值 0.87 → yMin 0.8 / yMax 1.0
+    expect(buildYAxisRangeLabel([point()], BASELINE, ["recall_at_k", "hit_rate"], fmt)).toBe("Y轴 80%–100%");
+  });
+
+  it("yMin=0（轴从 0 起）时返回 null——不显芯片", () => {
+    expect(
+      buildYAxisRangeLabel([point({ recall_at_k: 0.03, hit_rate: 0.04 })], null, ["recall_at_k", "hit_rate"], fmt),
+    ).toBeNull();
   });
 });
 

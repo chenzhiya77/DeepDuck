@@ -28,6 +28,7 @@ import {
   Play,
   Plus,
   Search,
+  SlidersHorizontal,
   Sparkles,
   TrendingUp,
   X,
@@ -46,6 +47,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
@@ -88,6 +90,11 @@ import { EvalRunBanner } from "./eval-run-banner";
 import { EvalRunDrawer } from "./eval-run-drawer";
 import { EvalRunHistory } from "./eval-run-history";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
+import {
+  PICKER_METRICS,
+  buildYAxisRangeLabel,
+  resolveVisibleKeys,
+} from "./eval-trend-chart.utils";
 
 const EvalTrendChart = dynamic<EvalTrendChartProps>(
   () => import("./eval-trend-chart"),
@@ -204,6 +211,13 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   // 完整档确认弹窗的运行范围（所选题 id）；缺省=全库。头部/⋯/题库右键·行⋮ 的
   // 完整档入口统一收口到该弹窗（成本+范围提醒器）。
   const [fullRunScope, setFullRunScope] = useState<string[] | undefined>(undefined);
+  // picker 选中的稀疏指标键（spec §4.3，会话级不持久化）：4 个仅完整档产出的候选，
+  // 勾选后条件并入趋势 series（不进 legend.data）。legendSelected 为图例开关回流态
+  // （echarts legendselectchanged 上抛）——驱动 y 轴按可见序列自适应（spec §4.6）。
+  const [pickerSelected, setPickerSelected] = useState<string[]>([]);
+  const [legendSelected, setLegendSelected] = useState<
+    Record<string, boolean> | undefined
+  >(undefined);
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
   const trendQuery = useEvalTrend(kbId, granularity, enabled);
@@ -314,7 +328,25 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
     baselineUpdate: tk.trend.baselineUpdate,
     clickForDetail: tk.trend.clickForDetail,
     regressionPrefix: tk.trend.regressionPrefix,
+    // picker 4 候选标签复用现有指标名（同一指标不在两处起两名，spec §3 词汇闭环）；
+    // notRunInTier 为 tooltip 哑行文案（所选指标在该档 null）。
+    pathAccuracy: tk.tablePathAccuracy,
+    citationPrecision: tk.citationPrecision,
+    citationRecall: tk.citationRecall,
+    seedHitRate: tk.seedHitRate,
+    notRunInTier: tk.trend.notRunInTier,
   };
+
+  // y 轴范围芯片（spec §4.6）：可见集 = 图例开启项 ∪ picker 选中项；yMin>0（轴不从
+  // 0 起）时诚实提示当前 y 轴范围。数据未加载时 points 为空 → computeYAxisRange 回
+  // [0,1] → buildYAxisRangeLabel 返 null（不出芯片）。
+  const visibleKeys = resolveVisibleKeys(chartLabels, legendSelected, pickerSelected);
+  const yRangeLabel = buildYAxisRangeLabel(
+    trendQuery.data?.points ?? [],
+    trendQuery.data?.baseline ?? null,
+    visibleKeys,
+    tk.trend.yAxisRange,
+  );
 
   // 运行进度（spec 2026-09-06 run-progress / §9）：progress 走 /eval-runs 顶层字段。
   // 底缘细线已退役——它只表征 questions 段（用户口中的“假进度条”）；富进度改由
@@ -671,7 +703,59 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       {tk.trend.thresholdLabel(trendQuery.data.baseline.threshold_percent)}
                     </Badge>
                   )}
-                  <div className="ml-auto flex shrink-0 items-center">
+                  {/* y 轴范围芯片（spec §4.6）：yMin>0（轴不从 0 起）时诚实提示当前
+                      y 轴范围，避免高分簇被误读成从 0 起。yRangeLabel 为 null 时不显。 */}
+                  {yRangeLabel && (
+                    <Badge
+                      className="shrink-0 tabular-nums"
+                      data-testid="eval-yaxis-chip"
+                      variant="secondary"
+                    >
+                      {yRangeLabel}
+                    </Badge>
+                  )}
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {/* picker 下拉多选（spec §4.3）：4 个仅完整档产出的稀疏指标，勾选
+                        条件并入 series（不进 legend.data）；L2 项尾注“仅完整档”。触发
+                        器与粒度段控同档（h-7）；会话级不持久化。onSelect preventDefault
+                        保持菜单开启以支持连续多选。 */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={tk.trend.pickerAria}
+                          className="h-7"
+                          data-testid="eval-trend-picker"
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <SlidersHorizontal className="size-4" />
+                          {tk.trend.pickerTrigger}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-0">
+                        {PICKER_METRICS.map((metric) => (
+                          <DropdownMenuCheckboxItem
+                            key={metric.key}
+                            checked={pickerSelected.includes(metric.key)}
+                            onCheckedChange={(checked) =>
+                              setPickerSelected((prev) =>
+                                checked
+                                  ? [...prev, metric.key]
+                                  : prev.filter((key) => key !== metric.key),
+                              )
+                            }
+                            onSelect={(event) => event.preventDefault()}
+                          >
+                            {chartLabels[metric.labelKey]}
+                            {metric.layer === 2 && (
+                              <span className="text-muted-foreground ml-auto pl-2 text-xs">
+                                {tk.trend.fullTierOnly}
+                              </span>
+                            )}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     {toolbarTier === 0 ? (
                       <div
                         aria-label={tk.granularityLabel}
@@ -742,7 +826,10 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                         baseline={trendQuery.data.baseline}
                         granularity={trendQuery.data.granularity}
                         labels={chartLabels}
+                        legendSelected={legendSelected}
+                        pickerSelected={pickerSelected}
                         points={trendQuery.data.points}
+                        onLegendChange={setLegendSelected}
                         onPointClick={setDrawerRunId}
                       />
                     ) : (

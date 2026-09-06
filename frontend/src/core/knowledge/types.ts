@@ -593,6 +593,11 @@ export interface TrendChartLabels {
   faithfulness: string;
   answerRelevancy: string;
   contextPrecision: string;
+  /** 4 条 picker 稀疏指标线显示名（复用总览卡/表格同名，词汇闭环；仅 tooltip，不进图例）。 */
+  pathAccuracy: string;
+  citationPrecision: string;
+  citationRecall: string;
+  seedHitRate: string;
   /** 阈值线名（markLine series 名）。 */
   thresholdLine: string;
   /** 阈值线标签（markLine formatter，含阈值百分数）。 */
@@ -603,6 +608,8 @@ export interface TrendChartLabels {
   clickForDetail: string;
   /** tooltip 中回退 category 列表前缀。 */
   regressionPrefix: string;
+  /** tooltip 哑行：所选 picker 指标在该档未跑（null）。 */
+  notRunInTier: string;
 }
 
 /** 单次运行详情（GET /eval-runs/{run_id}，drawer 数据源）。 */

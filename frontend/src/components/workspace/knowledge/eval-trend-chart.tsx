@@ -41,6 +41,12 @@ export interface EvalTrendChartProps {
   /** i18n 文案包（eval-tab 注入；保持本组件纯渲染）。 */
   labels: TrendChartLabels;
   onPointClick?: (runId: string) => void;
+  /** picker 选中的稀疏指标键（会话级，eval-tab 持有）——条件并入 series。 */
+  pickerSelected?: readonly string[];
+  /** 图例开关回流态（echarts legendselectchanged 经 onLegendChange 上抛后回注）。 */
+  legendSelected?: Record<string, boolean>;
+  /** 图例开关变化回调——驱动 eval-tab 更新 legendSelected → y 轴按可见集自适应。 */
+  onLegendChange?: (selected: Record<string, boolean>) => void;
 }
 
 /** 当前是否暗色主题（next-themes 在 <html> 上挂 .dark class）。 */
@@ -54,15 +60,20 @@ export default function EvalTrendChart({
   baseline,
   labels,
   onPointClick,
+  pickerSelected,
+  legendSelected,
+  onLegendChange,
 }: EvalTrendChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.EChartsType | null>(null);
   // 回调经 ref 穿透，避免 identity 变化触发 setOption（vector-canvas 先例）。
   const clickRef = useRef(onPointClick);
   clickRef.current = onPointClick;
+  const legendChangeRef = useRef(onLegendChange);
+  legendChangeRef.current = onLegendChange;
   // 主题重建读取最新 props：init effect 只跑一次，闭包捕获会过期。
-  const argsRef = useRef({ points, granularity, baseline, labels });
-  argsRef.current = { points, granularity, baseline, labels };
+  const argsRef = useRef({ points, granularity, baseline, labels, pickerSelected, legendSelected });
+  argsRef.current = { points, granularity, baseline, labels, pickerSelected, legendSelected };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -73,6 +84,11 @@ export default function EvalTrendChart({
       // 从 datum 取 runId——不依赖 dataIndex（多 series / markLine 下索引不对齐）。
       const runId = (params as { data?: { runId?: string } }).data?.runId;
       if (runId) clickRef.current?.(runId);
+    });
+    // 图例开关回流：上抛最新 selected，eval-tab 更新 state → legendSelected prop 回注
+    // → 数据更新 effect 重建 option（y 轴按可见集自适应，spec §4.6）。
+    chart.on("legendselectchanged", (params) => {
+      legendChangeRef.current?.((params as { selected: Record<string, boolean> }).selected);
     });
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(container);
@@ -95,10 +111,18 @@ export default function EvalTrendChart({
 
   useEffect(() => {
     chartRef.current?.setOption(
-      buildChartOption({ points, granularity, baseline, labels, dark: isDarkTheme() }),
+      buildChartOption({
+        points,
+        granularity,
+        baseline,
+        labels,
+        dark: isDarkTheme(),
+        pickerSelected,
+        legendSelected,
+      }),
       { notMerge: false },
     );
-  }, [points, granularity, baseline, labels]);
+  }, [points, granularity, baseline, labels, pickerSelected, legendSelected]);
 
   return <div className="h-[280px] w-full" data-testid="eval-trend-chart" ref={containerRef} />;
 }
