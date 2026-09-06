@@ -98,7 +98,7 @@
 - [x] `cd backend && uv run pytest tests/knowledge/eval tests/knowledge/test_eval_runs_api.py -q` 全绿。(**343 passed**；`.pytest_cache` 权限 warning 无害，需 `--basetemp=.pytest-tmp`)
 - [x] `python scripts/pnpm.py test knowledge` 套件回归(唯一允许失败:预存 chat-panel 用例)。(**61 files passed | 1 failed**；唯一失败 = `chat-panel.dom.test.tsx` model selector “restores the remembered model per kb”，断言 `context.model_name` 期望 'qwen-plus' 得 undefined——属 KnowledgeChatPanel 模型 per-kb 记忆逻辑，与本期 eval-tab/eval-run-status/types/i18n 零交集，**非本期引入**)
 - [x] `python scripts/pnpm.py check` + ruff 双净。(eslint + tsc 无错；ruff check/format 6 个改动文件双净)
-- [ ] 手动验收(spec §7，**待用户 UI 实测**):点击完整评测 → 工具栏立即"运行中…" + pulse 细线(**无需切历史**);答题段变"运行中… k/N" + 定长细线随 3s 轮询推进;ragas 段回 pulse;落库瞬间按钮复原、细线消失;L1 快速档 pulse 一下即消。
+- [x] 手动验收(spec §7)。**已被 Task 13 现行清单取代**(2026-09-06 标注):细线于 Task 12 退役、进度容器/状态槽由 Task 11/16 接管,本条描述的旧形态不再可验;验收结论以 Task 13 清单为准。
 - [x] 验收结论回写本 plan 尾注。
 
 ---
@@ -228,7 +228,7 @@
 ## Task 13: 回归 + 手动验收 + 回写
 
 - [x] knowledge 套件 + `pnpm check` + ruff 双净(预存 chat-panel 失败除外)。(knowledge **900 passed | 1 failed** 预存 chat-panel model-selector；check exit 0；ruff 于 Task 9 双净、Phase 5 未再改后端)
-- [ ] 手动验收(spec §9/§10):完整档 → 总览槽出现、条随三段推进且刻度自适应、ETA warmup 后显秒/分钟级剩余、日志单行滚动;drain 后槽**自动 morph 为单行摘要**(档位/耗时/相对时间/历史跳转)而不再卸载;快速档条逐题扫过;空闲态摘要行与「尚未评测」muted 行;error run 红色调 + 跳转;运行开始不再顶下卡片;题库/历史视图无槽、按钮阶段名不变。**取消项(Task 21 并入,spec §11)**:运行态分体按钮次槽显 X、首击变「确认终止?」(3s 回退)、再击 → toast「评测已终止」;空闲态 chevron 还原;窄档 ⋯ 菜单运行态含「终止评测」项(确认期间菜单不关);cancel 后历史现「已终止」行、槽摘要「评测已终止」、锁释放可立即再触发;layer2 段 cancel 保留 layer1 指标(drawer「已终止」徽标 + L1 数据);进答题段瞬间 UI 即显「答题评测」(questions 入口 hook 修复)。
+- [x] 手动验收(spec §9/§10):**2026-09-06 用户 UI 实测全部通过**(含取消项)。原清单存档:完整档 → 总览槽出现、条随三段推进且刻度自适应、ETA warmup 后显秒/分钟级剩余、日志单行滚动;drain 后槽**自动 morph 为单行摘要**(档位/耗时/相对时间/历史跳转)而不再卸载;快速档条逐题扫过;空闲态摘要行与「尚未评测」muted 行;error run 红色调 + 跳转;运行开始不再顶下卡片;题库/历史视图无槽、按钮阶段名不变。**取消项(Task 21 并入,spec §11)**:运行态分体按钮次槽显 X、首击变「确认终止?」(3s 回退)、再击 → toast「评测已终止」;空闲态 chevron 还原;窄档 ⋯ 菜单运行态含「终止评测」项(确认期间菜单不关);cancel 后历史现「已终止」行、槽摘要「评测已终止」、锁释放可立即再触发;layer2 段 cancel 保留 layer1 指标(drawer「已终止」徽标 + L1 数据);进答题段瞬间 UI 即显「答题评测」(questions 入口 hook 修复)。
 - [x] 文档回写确认(spec §9 冻结、plan 本 Phase 勾选)。(§9 含 Task 14 二次修订;Phase 5-7 全勾选,Task 21 复查)
 
 ## Task 14: 快速档空条 + ETA 按段外推(用户实测反馈,2026-09-06)
