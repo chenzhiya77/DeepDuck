@@ -44,15 +44,17 @@
 - Modify: trend 响应装配处(service/router,实施时定位;+`sparks` 字段透出)
 - Modify: `backend/tests/knowledge/eval/test_trend.py`(+键集合与 sparks 语义用例)
 
-- [ ] RED test:周期点键集合 == 10(6 现状 + path_accuracy + citation_precision/recall + seed_hit_rate),缺层仍 null;
+- [x] RED test:周期点键集合 == 10(6 现状 + path_accuracy + citation_precision/recall + seed_hit_rate),缺层仍 null;
   - sparks:7 键齐;run 数 <10 → 数组等长于可用非空 run;全 null 键(ragas 未装)→ 空数组;
   - granularity 无关:day/week/month 三次调用 sparks 恒等;
   - 升序与"非空过滤"语义:含 null 的 run 被跳过而非占位。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/eval/test_trend.py -q`,记录 RED。
-- [ ] Implement(trend.py 扩键 + sparks 装配 + 响应透出)。
-- [ ] GREEN;revert proof:stash 实现 → RED → pop → GREEN。
-- [ ] ruff check/format 双净。
-- [ ] Commit: `feat(rag): extend eval trend payload with picker keys and tile sparks`
+- [x] Run `cd backend && uv run pytest tests/knowledge/eval/test_trend.py -q`,记录 RED。
+- [x] Implement(trend.py 扩键 + sparks 装配 + 响应透出)。
+- [x] GREEN;revert proof:stash 实现 → RED → pop → GREEN。
+- [x] ruff check/format 双净。
+- [x] Commit: `feat(rag): extend eval trend payload with picker keys and tile sparks`
+
+> **Task 1 实施注记(2026-09-06,commit `5c78aaa9`)**:除 plan 列出的 3 个文件外,`backend/tests/knowledge/test_eval_runs_api.py` 也必须同步——空历史用例做精确 dict 相等断言,响应新增 `sparks` 键后补 7 条空数组;另加两条服务级用例(跨 day/week/month `sparks` 恒等 + `sparks` 含窗口外 run),坐实"`sparks` 取**全量** rows、与 granularity/时间窗口解耦"。设计落点:`build_sparks` 为 trend.py 新增纯函数(无 granularity 形参 → 构造上即粒度无关,`MAX_SPARKS=10` 近端截断);周期点 `path_accuracy` 取 L1 `summary`、引用三取 L2 `arch_specific`;退役的 `context_recall` 只进 `sparks` 不进周期点。`get_eval_trend` 端点无 `response_model`,`sparks` 直接透出。验证:`tests/knowledge/eval` 326 passed。
 
 ---
 
