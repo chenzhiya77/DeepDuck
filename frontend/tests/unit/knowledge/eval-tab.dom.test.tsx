@@ -4,8 +4,8 @@
  *   loading / 错误 / 数据三态渲染与 props 透传；
  * - 趋势空态：has_data=false（新 KB 无评测历史）渲染空态提示而非空白画布
  *   （2026-08-26 补）；
- * - 粒度切换转发给 useEvalTrend（queryKey 变化自动重新请求由 TanStack Query
- *   保证，这里断言调用参数）；
+ * - 视窗预设切换不 refetch（contract v4：服务端一次给 90d）——点击转发
+ *   spanRequest 给 canvas，按钮高亮为密度指示器；
  * - drawer 占位（Task 6 替换为 EvalRunDrawer）；
  * - 窄面板降档：容器溢出（钉 scrollWidth 模拟）时粒度按钮组收进 ⋯ 菜单
  *   （vector-tab useToolbarTier 溢出检测先例）。
@@ -37,12 +37,11 @@ const hooksMock = rs.hoisted(() => ({
     "eval-runs",
     "latest",
   ],
-  knowledgeEvalTrendKey: (kbId: string, granularity: string) => [
+  knowledgeEvalTrendKey: (kbId: string) => [
     "knowledge-bases",
     kbId,
     "eval-runs",
     "trend",
-    { granularity },
   ],
   knowledgeEvalRunsKey: (kbId: string) => [
     "knowledge-bases",
@@ -153,7 +152,7 @@ const OVERVIEW: MetricsOverview = {
 const TREND: TrendResponse = {
   points: [
     {
-      date: "2026-08-20",
+      ts: "2026-08-20T09:00:00+00:00",
       recall_at_k: 0.9,
       hit_rate: 0.92,
       mrr: 0.81,
@@ -164,14 +163,11 @@ const TREND: TrendResponse = {
       citation_precision: 0.9,
       citation_recall: 0.85,
       seed_hit_rate: 0.8,
-      layer1_run_id: "run-l1-1",
-      layer2_run_id: "run-l2-1",
+      run_id: "run-1",
       regression: null,
       is_baseline_update: false,
     },
   ],
-  granularity: "day",
-  days_back: 30,
   baseline: { recall_at_k: 0.9, threshold_percent: 3 },
   has_data: true,
   sparks: {
@@ -228,11 +224,8 @@ describe("EvalTab 数据联通", () => {
     hooksMock.useMetricsOverview.mockReturnValue(
       queryState({ data: OVERVIEW }),
     );
-    hooksMock.useEvalTrend.mockImplementation(
-      (_kbId: string, granularity: string) =>
-        queryState({
-          data: granularity === "day" ? TREND : { ...TREND, granularity },
-        }),
+    hooksMock.useEvalTrend.mockImplementation(() =>
+      queryState({ data: TREND }),
     );
     hooksMock.useEvalRuns.mockReturnValue(
       queryState({ data: { in_flight: false, runs: [], total: 0 } }),
@@ -255,7 +248,7 @@ describe("EvalTab 数据联通", () => {
   it("forwards kbId/enabled to all three data hooks (keep-alive lazy gating)", () => {
     renderEvalTab(true);
     expect(hooksMock.useMetricsOverview).toHaveBeenCalledWith("kb-1", true);
-    expect(hooksMock.useEvalTrend).toHaveBeenCalledWith("kb-1", "day", true);
+    expect(hooksMock.useEvalTrend).toHaveBeenCalledWith("kb-1", true);
     expect(hooksMock.useEvalRuns).toHaveBeenCalledWith("kb-1", true);
 
     cleanup();
@@ -266,7 +259,6 @@ describe("EvalTab 数据联通", () => {
     );
     expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith(
       "kb-1",
-      "day",
       false,
     );
     expect(hooksMock.useEvalRuns).toHaveBeenLastCalledWith("kb-1", false);
@@ -276,15 +268,17 @@ describe("EvalTab 数据联通", () => {
     renderEvalTab();
     // 指标总览
     expect(screen.getByTestId("eval-layer1-table")).toBeTruthy();
-    // 趋势卡片壳 + 粒度按钮组（内联档）
+    // 趋势卡片壳 + 视窗预设按钮组（内联档）
     expect(screen.getByText("指标趋势")).toBeTruthy();
-    expect(screen.getByRole("radiogroup", { name: "时间粒度" })).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "时间窗口" })).toBeTruthy();
     // 趋势 canvas（dynamic 懒加载，mock 后异步落地）
     await screen.findByTestId("eval-trend-chart-mock");
-    // props 透传：points/baseline/granularity + i18n labels 包
+    // props 透传：points/baseline/spanRequest + i18n labels 包
     expect(canvasMock.props?.points).toEqual(TREND.points);
     expect(canvasMock.props?.baseline).toEqual(TREND.baseline);
-    expect(canvasMock.props?.granularity).toBe("day");
+    // 默认预设 month（与旧 days_back=30 初始视野等价）+ 密度指示回调
+    expect(canvasMock.props?.spanRequest).toEqual({ preset: "month", nonce: 0 });
+    expect(typeof canvasMock.props?.onSpanChange).toBe("function");
     const labels = canvasMock.props?.labels as {
       recallAtK?: string;
       thresholdLabel?: (p: number) => string;
@@ -325,13 +319,12 @@ describe("EvalTab 数据联通", () => {
     expect(canvasMock.props?.pickerSelected).toEqual([]);
   });
 
-  it("yMin>0 时卡头显 y 轴范围芯片；legendselectchanged 回流后随可见集重建", async () => {
+  it("legendselectchanged 回流：onLegendChange 更新 legendSelected 并回传 chart", async () => {
     renderEvalTab();
     await screen.findByTestId("eval-trend-chart-mock");
-    // 默认可见 recall 0.9 + hit 0.92 + 阈值 0.87 → yMin 0.8 / yMax 1.0
-    expect(screen.getByTestId("eval-yaxis-chip").textContent).toBe("Y轴 80%–100%");
 
-    // 模拟 echarts legendselectchanged：开启 MRR（0.81）→ 可见集下探 → yMin 0.7
+    // 模拟 echarts legendselectchanged：开启 MRR → 可见集变化经 state 回传给 chart
+    // （y 轴自适应效果由 eval-trend-chart.unit.test.ts 的 buildChartOption 断言覆盖）。
     act(() => {
       (canvasMock.props?.onLegendChange as (s: Record<string, boolean>) => void)({
         "召回率@k": true,
@@ -343,24 +336,6 @@ describe("EvalTab 数据联通", () => {
       });
     });
     expect(canvasMock.props?.legendSelected).toMatchObject({ MRR: true });
-    await waitFor(() =>
-      expect(screen.getByTestId("eval-yaxis-chip").textContent).toBe("Y轴 70%–100%"),
-    );
-  });
-
-  it("yMin=0（低分/轴从 0 起）时不显 y 轴芯片", async () => {
-    hooksMock.useEvalTrend.mockReturnValue(
-      queryState({
-        data: {
-          ...TREND,
-          baseline: null,
-          points: [{ ...TREND.points[0]!, recall_at_k: 0.03, hit_rate: 0.04 }],
-        },
-      }),
-    );
-    renderEvalTab();
-    await screen.findByTestId("eval-trend-chart-mock");
-    expect(screen.queryByTestId("eval-yaxis-chip")).toBeNull();
   });
 
   it("collapses the trend card from its header toggle (recall container vocabulary, 2026-09-05)", async () => {
@@ -443,14 +418,13 @@ describe("EvalTab 数据联通", () => {
     expect(canvasMock.props).toBeUndefined();
   });
 
-  it("granularity radio click forwards to useEvalTrend (queryKey 变化自动重查)", () => {
+  it("span preset click does not refetch; forwards spanRequest to the chart (contract v4)", () => {
     renderEvalTab();
     fireEvent.click(screen.getByRole("radio", { name: "周" }));
-    expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith(
-      "kb-1",
-      "week",
-      true,
-    );
+    // 服务端一次给 90d：useEvalTrend 无粒度维度（kbId, enabled）
+    expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith("kb-1", true);
+    // 点击请求经 spanRequest（nonce 递增）转发给 canvas 移视窗
+    expect(canvasMock.props?.spanRequest).toEqual({ preset: "week", nonce: 1 });
   });
 
   it("clicking a trend point opens the run drawer; closing clears the run id", async () => {
@@ -492,21 +466,17 @@ describe("EvalTab 数据联通", () => {
     try {
       renderEvalTab();
       await screen.findByTestId("eval-trend-chart-mock");
-      // 内联粒度按钮组消失，⋯ 按钮出现
+      // 内联视窗预设按钮组消失，⋯ 按钮出现
       await waitFor(() => {
         expect(
-          screen.queryByRole("radiogroup", { name: "时间粒度" }),
+          screen.queryByRole("radiogroup", { name: "时间窗口" }),
         ).toBeNull();
       });
       const more = screen.getByRole("button", { name: "更多选项" });
-      // 菜单内承载粒度切换（Radix 键盘开菜单，vector-tab 先例）
+      // 菜单内承载视窗预设切换（Radix 键盘开菜单，vector-tab 先例）
       fireEvent.keyDown(more, { key: "ArrowDown" });
       fireEvent.click(await screen.findByRole("menuitemradio", { name: "月" }));
-      expect(hooksMock.useEvalTrend).toHaveBeenLastCalledWith(
-        "kb-1",
-        "month",
-        true,
-      );
+      expect(canvasMock.props?.spanRequest).toEqual({ preset: "month", nonce: 1 });
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
@@ -1028,7 +998,6 @@ describe("EvalTab 常驻工具栏", () => {
       "kb-1",
       "eval-runs",
       "trend",
-      { granularity: "day" },
     ]);
   });
 

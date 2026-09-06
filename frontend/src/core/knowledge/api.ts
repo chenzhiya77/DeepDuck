@@ -30,7 +30,6 @@ import type {
   SynthesisStatus,
   SynthesisTriggerInput,
   SynthesisTriggerResponse,
-  TrendQueryParams,
   TrendResponse,
   VectorProjectionAlgo,
   VectorProjectionQueryResult,
@@ -416,21 +415,11 @@ export function getLatestEvalMetrics(kbId: string): Promise<MetricsOverview> {
 }
 
 /**
- * GET /eval-runs/trend：三粒度统一「周期末次」聚合（spec §4.2）。窗口参数
- * 按粒度配对（day→days_back / week→weeks_back / month→months_back），只回显
- * 当前粒度匹配的键；缺省走后端默认（30/12/6）。
+ * GET /eval-runs/trend：run 级点（contract v4，spec 2026-09-07 §2）——固定
+ * 近 90 天窗口一次取全，无服务端聚合粒度；日/周/月是客户端视窗预设。
  */
-export function getEvalTrend(kbId: string, params: TrendQueryParams = { granularity: "day" }): Promise<TrendResponse> {
-  const search = new URLSearchParams();
-  search.set("granularity", params.granularity);
-  if (params.granularity === "day" && params.days_back != null) {
-    search.set("days_back", String(params.days_back));
-  } else if (params.granularity === "week" && params.weeks_back != null) {
-    search.set("weeks_back", String(params.weeks_back));
-  } else if (params.granularity === "month" && params.months_back != null) {
-    search.set("months_back", String(params.months_back));
-  }
-  return fetch(kbUrl(kbId, `/eval-runs/trend?${search.toString()}`)).then((r) =>
+export function getEvalTrend(kbId: string): Promise<TrendResponse> {
+  return fetch(kbUrl(kbId, "/eval-runs/trend")).then((r) =>
     readResponse<TrendResponse>(r, "Failed to fetch eval trend"),
   );
 }

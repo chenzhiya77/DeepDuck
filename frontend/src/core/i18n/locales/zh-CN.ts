@@ -641,7 +641,7 @@ export const zhCN: Translations = {
         emptyHistory: "尚无评测运行——点右上角运行评测发起首次评测",
       },
       trendTitle: "指标趋势",
-      granularityLabel: "时间粒度",
+      granularityLabel: "时间窗口",
       granularity: { day: "日", week: "周", month: "月" },
       moreOptions: "更多选项",
       loading: "加载中…",
@@ -665,8 +665,6 @@ export const zhCN: Translations = {
         pickerAria: "选择趋势指标",
         fullTierOnly: "仅完整档",
         notRunInTier: "该档未跑",
-        // y 轴自适应范围芯片（yMin>0 时诚实提示轴不从 0 起，spec §4.6）。
-        yAxisRange: (min, max) => `Y轴 ${min}%–${max}%`,
       },
       drawer: {
         title: "评测运行详情",

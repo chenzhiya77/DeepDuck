@@ -81,7 +81,10 @@ const REGRESSION_COLOR = "#EF4444";
 
 /** datum 携带 runId 与 metricKey——click/tooltip 从 data 取数，不依赖 dataIndex。 */
 export interface TrendDatum {
-  value: [string, number | null];
+  /** [run 序号索引, warp 后图高]——序号轴坐标（contract v5）。 */
+  value: [number, number];
+  /** 指标真值（0–1）：tooltip/环比一律报真值，不报 warp 值。 */
+  raw: number;
   runId: string | null;
   metricKey: TrendMetricKey;
   /** 回退点项级覆写（仅 Recall@k 线）。 */
@@ -113,6 +116,124 @@ function formatValue(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+/** 视窗预设（contract v4，spec 2026-09-07 §3）：日/周/月 = 客户端视窗
+ *  24h/7d/30d——切档只移 dataZoom 窗口，不触发请求（服务端一次给 90d）。 */
+export type SpanPreset = "day" | "week" | "month";
+
+/** 预设点击请求（nonce 区分同档重复点击；eval-tab 持有，identity 变化才apply）。 */
+export interface SpanRequest {
+  preset: SpanPreset;
+  nonce: number;
+}
+
+const SPAN_PRESET_MS: Record<SpanPreset, number> = {
+  day: 24 * 3_600_000,
+  week: 7 * 24 * 3_600_000,
+  month: 30 * 24 * 3_600_000,
+};
+
+export function presetToSpanMs(preset: SpanPreset): number {
+  return SPAN_PRESET_MS[preset];
+}
+
+/** 滚轮缩放可见跨度回算档位（按钮密度指示器）：≤36h=day / ≤14d=week / 其余=month。 */
+export function spanToPreset(spanMs: number): SpanPreset {
+  if (spanMs <= 36 * 3_600_000) return "day";
+  if (spanMs <= 14 * 24 * 3_600_000) return "week";
+  return "month";
+}
+
+/** 缩放密度档（contract v4）：可见 run ≤80 出符号点（放大看每次测试点），
+ *  >80 隐符号只留线（缩小看总体趋势）——隐符号不降采样，hover 的 axis
+ *  snap 仍命中真实 run。 */
+export const SYMBOL_DENSITY_MAX = 80;
+
+export function resolveShowSymbol(visibleCount: number): boolean {
+  return visibleCount <= SYMBOL_DENSITY_MAX;
+}
+
+/** tooltip 头：命中 run 的本地 MM-DD HH:mm（contract v4：run 级点带时刻）。 */
+export function formatPointTime(ts: string): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 分段加权纵轴（contract v5）冻结折点表（真值 → 图高）：权重 0–40 → 20%、
+ *  40–80 → 20%、80–100 → 60%（其中 90–95 / 95–100 再各占 20% 二次放大）——
+ *  默认六等分刻度恰落六个整值真值。 */
+const WARP_STOPS: readonly (readonly [number, number])[] = [
+  [0, 0],
+  [0.4, 0.2],
+  [0.8, 0.4],
+  [0.9, 0.6],
+  [0.95, 0.8],
+  [1, 1],
+];
+
+/** 正向分段线性映射（真值比例 → 图高）；入参 clamp [0,1]。 */
+export function warpValue(value: number): number {
+  const v = Math.min(1, Math.max(0, value));
+  for (let i = 1; i < WARP_STOPS.length; i += 1) {
+    const [x0, y0] = WARP_STOPS[i - 1]!;
+    const [x1, y1] = WARP_STOPS[i]!;
+    if (v <= x1) return y0 + ((v - x0) / (x1 - x0)) * (y1 - y0);
+  }
+  return 1;
+}
+
+/** 逆向映射（图高 → 真值比例）：刻度标签缺键兜底取整用。 */
+export function unwarpValue(plot: number): number {
+  const p = Math.min(1, Math.max(0, plot));
+  for (let i = 1; i < WARP_STOPS.length; i += 1) {
+    const [x0, y0] = WARP_STOPS[i - 1]!;
+    const [x1, y1] = WARP_STOPS[i]!;
+    if (p <= y1) return x0 + ((p - y0) / (y1 - y0)) * (x1 - x0);
+  }
+  return 1;
+}
+
+/** 刻度标签表（contract v5）：六等分图高刻度对应六个整值真值——刻度间距
+ *  不等本身即非线性披露（log 轴惯例）。缺键回退 unwarp 取整百分数。 */
+const WARP_TICK_LABELS: Record<number, string> = {
+  0: "0%",
+  0.2: "40%",
+  0.4: "80%",
+  0.6: "90%",
+  0.8: "95%",
+  1: "100%",
+};
+
+export function formatWarpTick(plot: number): string {
+  return WARP_TICK_LABELS[Math.round(plot * 100) / 100] ?? `${(unwarpValue(plot) * 100).toFixed(0)}%`;
+}
+
+/** 横轴标签（contract v5）：day 档出 HH:mm、week/month 档出 MM-DD——
+ *  序号轴下时间可读性由轴标签 + tooltip 承载。formatPointTime 切片。 */
+export function formatAxisTime(ts: string, preset: SpanPreset): string {
+  const [datePart, timePart] = formatPointTime(ts).split(" ");
+  return preset === "day" ? (timePart ?? "") : (datePart ?? "");
+}
+
+/** 视窗预设 → 索引窗（contract v5）：start = 首个 ts ≥ 末点 − span 的索引；
+ *  end 在索引域留右缘边距（孤点至少半槽，防贴死右缘）。 */
+export function presetToIndexWindow(
+  tsMsList: readonly number[],
+  preset: SpanPreset,
+): { start: number; end: number } {
+  const last = tsMsList.length - 1;
+  if (last < 0) return { start: 0, end: 0 };
+  const cutoff = tsMsList[last]! - presetToSpanMs(preset);
+  let start = last;
+  for (let i = 0; i <= last; i += 1) {
+    if (tsMsList[i]! >= cutoff) {
+      start = i;
+      break;
+    }
+  }
+  return { start, end: last + Math.max(0.5, (last - start) * 0.02) };
+}
+
 /**
  * tooltip HTML（axis trigger，自定义模板 §4.4）：日期头 + 各指标值与环比箭头
  * （delta 对比同指标上一个非空点）+ 回退题型列表 + 点击提示。插值一律
@@ -126,13 +247,15 @@ export function buildTrendTooltipHtml(
 ): string {
   const first = params.find((param) => param.data)?.data;
   if (!first) return "";
-  const date = first.value[0];
-  const pointIndex = points.findIndex((p) => p.date === date);
-  const point = pointIndex >= 0 ? points[pointIndex] : undefined;
+  // 序号轴（contract v5）：datum.value[0] 即 run 序号索引，raw 即真值。
+  const pointIndex = first.value[0];
+  const point = points[pointIndex];
+  if (!point) return "";
+  const ts = point.ts;
 
   const rows = params.flatMap((param) => {
     const datum = param.data;
-    const value = datum?.value[1];
+    const value = datum?.raw;
     if (!datum || value == null || !param.seriesName) return [];
     const key = datum.metricKey;
     // 环比：同指标上一个非空点（缺口不参与差值，保持「真实运行」语义）。
@@ -173,7 +296,7 @@ export function buildTrendTooltipHtml(
     }
   }
 
-  const lines = [`<div style="font-weight:600;margin-bottom:2px">${escapeHtml(date)}</div>`, ...rows];
+  const lines = [`<div style="font-weight:600;margin-bottom:2px">${escapeHtml(formatPointTime(ts))}</div>`, ...rows];
   if (point?.regression?.detected && point.regression.categories.length > 0) {
     lines.push(
       `<div style="margin-top:2px;color:${REGRESSION_COLOR}">` +
@@ -181,93 +304,42 @@ export function buildTrendTooltipHtml(
         `${point.regression.categories.map(escapeHtml).join(", ")}</div>`,
     );
   }
+  // 基线更新语义（contract v5 修订）：竖线上文字退役后改由 tooltip 行承载。
+  if (point?.is_baseline_update) {
+    lines.push(`<div style="opacity:.75;margin-top:2px">${escapeHtml(labels.baselineUpdate)}</div>`);
+  }
   lines.push(`<div style="opacity:.6;margin-top:2px">${escapeHtml(labels.clickForDetail)} →</div>`);
   return lines.join("<br/>");
 }
 
-/** 当前可见数值指标键（y 轴 seeds 与卡头芯片口径）：图例开启项 ∪ picker 选中项。 */
-export function resolveVisibleKeys(
-  labels: TrendChartLabels,
-  legendSelected: Record<string, boolean> | undefined,
-  pickerSelected: readonly string[] | undefined,
-): TrendMetricKey[] {
-  const fromLegend: TrendMetricKey[] = METRICS.filter((m) => legendSelected?.[labels[m.labelKey]] ?? m.defaultOn).map(
-    (m) => m.key,
-  );
-  const fromPicker: TrendMetricKey[] = PICKER_METRICS.filter((m) => pickerSelected?.includes(m.key)).map((m) => m.key);
-  return [...fromLegend, ...fromPicker];
-}
-
-const MIN_Y_SPAN = 0.1;
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
-/** y 轴自适应（spec §4.6）：seeds = 可见序列值 ∪ 阈值线值；±0.05 padding、10pp
- *  取整、封顶 [0,1]、最小轴程 10pp（不足时以中点对称扩，防高分簇塌成直线）。 */
-export function computeYAxisRange(
-  points: readonly TrendPoint[],
-  baseline: TrendResponse["baseline"],
-  visibleKeys: readonly TrendMetricKey[],
-): { yMin: number; yMax: number } {
-  const thresholdValue = baseline ? baseline.recall_at_k - baseline.threshold_percent / 100 : null;
-  const values = points.flatMap((p) => visibleKeys.map((k) => p[k])).filter((v): v is number => v != null);
-  const seeds = thresholdValue !== null ? [...values, thresholdValue] : values;
-  if (seeds.length === 0) return { yMin: 0, yMax: 1 };
-  let yMin = Math.max(0, Math.floor((Math.min(...seeds) - 0.05) * 10) / 10);
-  let yMax = Math.min(1, Math.ceil((Math.max(...seeds) + 0.05) * 10) / 10);
-  // 守卫：padding+取整已数学上保证 ≥10pp，此处兜底防夹逼/未来公式变更。
-  if (yMax - yMin < MIN_Y_SPAN) {
-    const mid = (yMax + yMin) / 2;
-    yMin = mid - MIN_Y_SPAN / 2;
-    yMax = mid + MIN_Y_SPAN / 2;
-    if (yMin < 0) {
-      yMin = 0;
-      yMax = MIN_Y_SPAN;
-    } else if (yMax > 1) {
-      yMax = 1;
-      yMin = 1 - MIN_Y_SPAN;
-    }
-  }
-  return { yMin: round2(yMin), yMax: round2(yMax) };
-}
-
-/** 卡头 y 轴范围芯片文案（spec §4.6）：yMin>0（轴不从 0 起）时经 format 出
- *  "Y轴 xx%–yy%"；yMin<=0 返回 null（不显芯片，避免被误读成从 0 起）。 */
-export function buildYAxisRangeLabel(
-  points: readonly TrendPoint[],
-  baseline: TrendResponse["baseline"],
-  visibleKeys: readonly TrendMetricKey[],
-  format: (minPercent: number, maxPercent: number) => string,
-): string | null {
-  const { yMin, yMax } = computeYAxisRange(points, baseline, visibleKeys);
-  if (yMin <= 0) return null;
-  return format(Math.round(yMin * 100), Math.round(yMax * 100));
-}
-
 export function buildChartOption(input: {
   points: TrendPoint[];
-  granularity: TrendResponse["granularity"];
   baseline: TrendResponse["baseline"];
   labels: TrendChartLabels;
   dark?: boolean;
   /** picker 选中的稀疏指标键（会话级）——条件并入 series，不进图例。 */
   pickerSelected?: readonly string[];
-  /** 图例开关回流态（echarts legendselectchanged）——驱动 y 轴按可见集自适应。 */
+  /** 图例开关回流态（echarts legendselectchanged）——仅服务 legend.selected
+   *  回显（防 refetch 重建重置图例开关）；y 轴已固定全量程（contract v5）。 */
   legendSelected?: Record<string, boolean>;
+  /** 横轴标签格式化（活读密度档：day 出 HH:mm、其余 MM-DD）；缺省月档。 */
+  formatAxisTime?: (ts: string) => string;
 }): EChartsCoreOption {
-  const { points, granularity, baseline, labels, dark = false, pickerSelected, legendSelected } = input;
+  const { points, baseline, labels, dark = false, pickerSelected, legendSelected, formatAxisTime: formatAxisTimeOverride } = input;
   const thresholdValue = baseline ? baseline.recall_at_k - baseline.threshold_percent / 100 : null;
-
-  // y 轴随可见序列自适应（spec §4.6）：可见集 = 图例开启项 ∪ picker 选中项。
-  const visibleKeys = resolveVisibleKeys(labels, legendSelected, pickerSelected);
-  const { yMin, yMax } = computeYAxisRange(points, baseline, visibleKeys);
 
   const metricSeries: LineSeriesOption[] = METRICS.map((metric) => ({
     name: labels[metric.labelKey],
     type: "line",
-    data: points.map((p): TrendDatum => {
+    // 逐序列点集（contract v4）：只取「该指标非空的 run」——快速档缺 layer2
+    // 不打假缺口；线连接相邻实跑 run。序号轴（contract v5）：x = run 索引。
+    data: points.flatMap((p, idx): TrendDatum[] => {
+      const value = p[metric.key];
+      if (value == null) return [];
       const datum: TrendDatum = {
-        value: [p.date, p[metric.key]],
-        runId: metric.layer === 1 ? p.layer1_run_id : p.layer2_run_id,
+        value: [idx, warpValue(value)],
+        raw: value,
+        runId: p.run_id,
         metricKey: metric.key,
       };
       // 回退标红只挂 Recall@k（CI 门禁指标）——由 regression.detected 驱动，
@@ -275,15 +347,18 @@ export function buildChartOption(input: {
       if (metric.key === "recall_at_k" && p.regression?.detected) {
         datum.itemStyle = { color: REGRESSION_COLOR };
       }
-      return datum;
+      return [datum];
     }),
+    // 平滑（contract v5）：贝塞尔消硬拐点；极值过冲由 series 默认 clip 兜底。
+    smooth: true,
     lineStyle:
       metric.layer === 1
         ? { color: metric.color, width: 2 }
         : { color: metric.color, width: 2, type: "dashed" },
     itemStyle: { color: metric.color },
     symbol: metric.layer === 1 ? "circle" : "emptyCircle",
-    symbolSize: 6,
+    // 符号降档（contract v5 修订）：6 → 4，密集序号轴下减视觉噪声。
+    symbolSize: 4,
     emphasis: { scale: 1.5 },
   }));
 
@@ -294,43 +369,54 @@ export function buildChartOption(input: {
     (metric) => ({
       name: labels[metric.labelKey],
       type: "line",
-      data: points.map((p): TrendDatum => ({
-        value: [p.date, p[metric.key]],
-        runId: metric.layer === 1 ? p.layer1_run_id : p.layer2_run_id,
-        metricKey: metric.key,
-      })),
+      data: points.flatMap((p, idx): TrendDatum[] => {
+        const value = p[metric.key];
+        if (value == null) return [];
+        return [{ value: [idx, warpValue(value)], raw: value, runId: p.run_id, metricKey: metric.key }];
+      }),
+      smooth: true,
       lineStyle:
         metric.layer === 1
           ? { color: metric.color, width: 2 }
           : { color: metric.color, width: 2, type: "dashed" },
       itemStyle: { color: metric.color },
       symbol: metric.layer === 1 ? "circle" : "emptyCircle",
-      symbolSize: 6,
+      symbolSize: 4,
       emphasis: { scale: 1.5 },
     }),
   );
 
   // 标记系列：阈值横线（silent 不吃点击，避免 dataIndex 歧义）+ 基线更新竖线。
   // 系列名不进 legend.data，不出现在图例。baseline=null 且无基线更新点时不生成。
-  const baselineDates = points.filter((p) => p.is_baseline_update).map((p) => p.date);
+  const baselineDates = points.filter((p) => p.is_baseline_update).map((p) => p.ts);
   const markLineData: Record<string, unknown>[] = [];
   if (thresholdValue !== null && baseline) {
     // 阈值红虚线保留，但线上文字标注退役（2026-09-05）：insideEndTop 贴右端
     // 与贴顶的数据线重叠压线——文案改由 eval-tab 头部行红芯片承载。
     markLineData.push({
-      yAxis: thresholdValue,
+      // 阈值线纵坐标过 warp（contract v5）：与数据点同映射才贴合。
+      yAxis: warpValue(thresholdValue),
       lineStyle: { color: REGRESSION_COLOR, type: "dashed", width: 1 },
     });
   }
   for (const date of baselineDates) {
+    // 水平小字旗标（contract v5 修订三终态）：保留四字文案但改顶部留白带水平
+    // 小字——position end + rotate 0 + distance 6，文字居中线顶上方（grid.top
+    // 40 空带），不再随竖线旋转 90° 压 y 轴刻度（insideEndTop 旧弊）；
+    // fontSize 11 → 10。四字小字半宽 ≈20px，左右 margin 60/40 容得下，边缘
+    // run 无需额外对齐；tooltip 行保留作 hover 双载体。
     markLineData.push({
       xAxis: date,
       lineStyle: { color: ink(0.45, dark), type: "dashed", width: 1 },
       label: {
-        position: "insideEndTop",
+        position: "end",
+        rotate: 0,
+        distance: 6,
+        align: "center",
+        verticalAlign: "bottom",
         formatter: labels.baselineUpdate,
         color: ink(0.55, dark),
-        fontSize: 11,
+        fontSize: 10,
       },
     });
   }
@@ -348,30 +434,49 @@ export function buildChartOption(input: {
       : [];
 
   return {
-    // 滑条退役时底部只留图例高度（2026-09-05），不留滑条空槽。
-    grid: { left: 60, right: 40, top: 40, bottom: points.length > DATA_ZOOM_MIN_POINTS ? 60 : 40 },
+    // 滑条退役时底部只留图例高度（2026-09-05）；滑条在场时 74 档为轴标签
+    // 与滑条各留独立带（contract v5 修订：60 档下标签带与滑条带重叠遮字）：
+    // 轴线 74 → 标签 ≈52–66 → 滑条 28–42 → 图例 0–≈20。
+    grid: { left: 60, right: 40, top: 40, bottom: points.length > DATA_ZOOM_MIN_POINTS ? 74 : 40 },
     legend: {
+      // 窄栏溢出治理（2026-09-07）：plain 图例窄栏换行第二行时整行自 bottom:0
+      // 锚点向上长，遮盖主图与滑条；改 scroll 单行翻页（echarts 窄容器降档）——
+      // 容不下时出翻页箭头，行高恒定 ⇒ grid.bottom 的 40/60 两档恒成立。
+      // 翻页控件随墨色，不引入新颜色词汇。
+      type: "scroll",
       data: METRICS.map((m) => labels[m.labelKey]),
       bottom: 0,
       selected: Object.fromEntries(
         METRICS.map((m) => [labels[m.labelKey], legendSelected?.[labels[m.labelKey]] ?? m.defaultOn]),
       ),
       textStyle: { color: ink(0.75, dark) },
+      pageIconColor: ink(0.75, dark),
+      pageIconInactiveColor: ink(0.25, dark),
+      pageTextStyle: { color: ink(0.75, dark) },
     },
     xAxis: {
-      type: "time",
+      // 序号轴（contract v5）：每 run 一等距槽——不规则采样下时间等比间距
+      // 是纯噪声（稀疏段拉空白、密集段挤右缘）；时间可读性改由轴标签
+      // （密度档切 MM-DD ↔ HH:mm）+ tooltip（MM-DD HH:mm）承载。
+      type: "category",
+      data: points.map((p) => p.ts),
+      boundaryGap: false,
       axisLabel: {
-        formatter: granularity === "day" ? "{MM}-{dd}" : "{yyyy}-{MM}",
         color: ink(0.55, dark),
+        formatter: formatAxisTimeOverride ?? ((ts: string) => formatAxisTime(ts, "month")),
       },
       axisLine: { lineStyle: { color: ink(0.3, dark) } },
     },
     yAxis: {
+      // 固定全量程 + 分段加权（contract v5）：六等分刻度落冻结标签表
+      // （0/40/80/90/95/100%）；y 轴自适应退役（spec 2026-08-24 §4.6）——
+      // 0–100 恒全现，勾图例不再轴程跳变。
       type: "value",
-      min: yMin,
-      max: yMax,
+      min: 0,
+      max: 1,
+      interval: 0.2,
       axisLabel: {
-        formatter: (v: number) => `${(v * 100).toFixed(0)}%`,
+        formatter: formatWarpTick,
         color: ink(0.55, dark),
       },
       splitLine: { lineStyle: { type: "dashed", color: ink(dark ? 0.1 : 0.06, dark) } },
@@ -388,8 +493,11 @@ export function buildChartOption(input: {
     },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, filterMode: "none" },
+      // 滑条细带化（contract v5 二段修订）：20 → 14 细带（与 sparkline 28×12、
+      // 进度条 h-1 同细带词汇，降视觉权重）；bottom 30 → 28，与标签带留
+      // 10px、与图例带留 8px。
       ...(points.length > DATA_ZOOM_MIN_POINTS
-        ? [{ type: "slider" as const, xAxisIndex: 0, height: 20, bottom: 30 }]
+        ? [{ type: "slider" as const, xAxisIndex: 0, height: 14, bottom: 28 }]
         : []),
     ],
   };

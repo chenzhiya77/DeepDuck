@@ -19,12 +19,9 @@ import type {
   MetricsOverview,
   SynthesisStatus,
   SynthesisTriggerInput,
-  TrendQueryParams,
   TrendResponse,
 } from "./types";
 import { wikiEntriesRefetchInterval } from "./wiki-status";
-
-type EvalGranularity = TrendQueryParams["granularity"];
 
 export function knowledgeBasesKey() {
   return ["knowledge-bases"] as const;
@@ -179,9 +176,9 @@ export function knowledgeEvalLatestKey(kbId: string) {
   return ["knowledge-bases", kbId, "eval-runs", "latest"] as const;
 }
 
-/** 趋势查询键含粒度——切粒度即换键自动重新请求（plan Task 5）。 */
-export function knowledgeEvalTrendKey(kbId: string, granularity: EvalGranularity) {
-  return ["knowledge-bases", kbId, "eval-runs", "trend", { granularity }] as const;
+/** 趋势查询键（contract v4）：固定 90d 一次取全，无粒度维度——切视窗预设不 refetch。 */
+export function knowledgeEvalTrendKey(kbId: string) {
+  return ["knowledge-bases", kbId, "eval-runs", "trend"] as const;
 }
 
 /** 单次运行详情键（drawer 下钻，plan Task 6）：runId 定位。 */
@@ -224,15 +221,14 @@ export function useMetricsOverview(kbId: string | null, enabled = true): UseQuer
   });
 }
 
-/** 指标趋势（GET /eval-runs/trend），粒度进 queryKey。 */
+/** 指标趋势（GET /eval-runs/trend）：run 级点一次取全（contract v4）。 */
 export function useEvalTrend(
   kbId: string | null,
-  granularity: EvalGranularity,
   enabled = true,
 ): UseQueryResult<TrendResponse> {
   return useQuery({
-    queryKey: knowledgeEvalTrendKey(kbId ?? "", granularity),
-    queryFn: () => api.getEvalTrend(kbId!, { granularity }),
+    queryKey: knowledgeEvalTrendKey(kbId ?? ""),
+    queryFn: () => api.getEvalTrend(kbId!),
     enabled: enabled && kbId !== null,
     staleTime: EVAL_STALE_TIME_MS,
   });

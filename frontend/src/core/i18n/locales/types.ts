@@ -640,8 +640,6 @@ export interface Translations {
         fullTierOnly: string;
         /** tooltip 哑行：所选 picker 指标在该档未跑（null）。 */
         notRunInTier: string;
-        /** y 轴范围芯片（yMin>0 时）：Y轴 xx%–yy%。 */
-        yAxisRange: (minPercent: number, maxPercent: number) => string;
       };
       /** 单次运行详情 drawer（plan Task 6）：元信息 + 两层指标只读摘要。 */
       drawer: {

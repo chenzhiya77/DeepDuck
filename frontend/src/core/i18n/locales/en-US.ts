@@ -668,7 +668,7 @@ export const enUS: Translations = {
           "No runs yet — click Run evaluation to start the first one",
       },
       trendTitle: "Metric Trends",
-      granularityLabel: "Granularity",
+      granularityLabel: "Time window",
       granularity: { day: "Day", week: "Week", month: "Month" },
       moreOptions: "More options",
       loading: "Loading…",
@@ -690,7 +690,6 @@ export const enUS: Translations = {
         pickerAria: "Select trend metrics",
         fullTierOnly: "Full tier only",
         notRunInTier: "Not run in this tier",
-        yAxisRange: (min, max) => `Y-axis ${min}%–${max}%`,
       },
       drawer: {
         title: "Eval Run Details",

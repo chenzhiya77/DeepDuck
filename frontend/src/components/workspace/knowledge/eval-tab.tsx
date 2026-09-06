@@ -79,7 +79,6 @@ import type {
   EvalRunListResponse,
   EvalTriggerInput,
   TrendChartLabels,
-  TrendQueryParams,
 } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
@@ -90,11 +89,7 @@ import { EvalRunBanner } from "./eval-run-banner";
 import { EvalRunDrawer } from "./eval-run-drawer";
 import { EvalRunHistory } from "./eval-run-history";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
-import {
-  PICKER_METRICS,
-  buildYAxisRangeLabel,
-  resolveVisibleKeys,
-} from "./eval-trend-chart.utils";
+import { PICKER_METRICS, type SpanPreset, type SpanRequest } from "./eval-trend-chart.utils";
 
 const EvalTrendChart = dynamic<EvalTrendChartProps>(
   () => import("./eval-trend-chart"),
@@ -103,10 +98,10 @@ const EvalTrendChart = dynamic<EvalTrendChartProps>(
   },
 );
 
-type Granularity = TrendQueryParams["granularity"];
 type EvalView = "overview" | "questions" | "history";
 
-const GRANULARITIES = ["day", "week", "month"] as const;
+/** 视窗预设三档（contract v4）：日/周/月 = 客户端视窗 24h/7d/30d，切档不 refetch。 */
+const SPAN_PRESETS: readonly SpanPreset[] = ["day", "week", "month"];
 const EVAL_VIEWS = ["overview", "questions", "history"] as const;
 
 /** 终止评测两步 inline 确认的回退窗口（spec 2026-09-06 §11）。 */
@@ -181,8 +176,16 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   const viewToolbarTier = useToolbarTier(viewToolbarRef);
   // 视图 state 在组件本地（不进 URL——知识库页 tab 本就是本地 state）。
   const [view, setView] = useState<EvalView>("overview");
-  // 粒度 state 在组件内（进 queryKey，切换自动重新请求）。
-  const [granularity, setGranularity] = useState<Granularity>("day");
+  // 视窗预设 state（contract v4）：span = 按钮高亮（密度指示器，滚轮回算回流）；
+  // spanRequest = 点击请求（nonce 区分同档重复点击）——仅它驱动 chart 窗口，
+  // 不进 queryKey（服务端一次给 90d，切档不 refetch）。默认 month 与旧
+  // days_back=30 初始视野等价。
+  const [span, setSpan] = useState<SpanPreset>("month");
+  const [spanRequest, setSpanRequest] = useState<SpanRequest>({ preset: "month", nonce: 0 });
+  const requestSpan = (preset: SpanPreset) => {
+    setSpan(preset);
+    setSpanRequest((prev) => ({ preset, nonce: prev.nonce + 1 }));
+  };
   // 点击下钻：drawer 打开时携带该 runId（EvalRunDrawer 内 useEvalRun 拉详情）。
   const [drawerRunId, setDrawerRunId] = useState<string | null>(null);
   // 题库造题入口受控状态（2026-08-29）：按钮在本层工具栏，dialog 在 bank 内。
@@ -220,7 +223,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
   >(undefined);
 
   const overviewQuery = useMetricsOverview(kbId, enabled);
-  const trendQuery = useEvalTrend(kbId, granularity, enabled);
+  const trendQuery = useEvalTrend(kbId, enabled);
   const runsQuery = useEvalRuns(kbId, enabled);
   const triggerMutation = useTriggerEvalRun(kbId);
   // 点击→首次轮询间隙由 isPending 补位（eval-run-status 纯函数）。
@@ -311,9 +314,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
       queryKey: knowledgeEvalLatestKey(kbId),
     });
     void queryClient.invalidateQueries({
-      queryKey: knowledgeEvalTrendKey(kbId, granularity),
+      queryKey: knowledgeEvalTrendKey(kbId),
     });
-  }, [inFlight, kbId, granularity, queryClient]);
+  }, [inFlight, kbId, queryClient]);
 
   // canvas 文案包：eval-trend-chart 保持纯渲染不调 useI18n（spec §3.6）。
   const chartLabels: TrendChartLabels = {
@@ -336,17 +339,6 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
     seedHitRate: tk.seedHitRate,
     notRunInTier: tk.trend.notRunInTier,
   };
-
-  // y 轴范围芯片（spec §4.6）：可见集 = 图例开启项 ∪ picker 选中项；yMin>0（轴不从
-  // 0 起）时诚实提示当前 y 轴范围。数据未加载时 points 为空 → computeYAxisRange 回
-  // [0,1] → buildYAxisRangeLabel 返 null（不出芯片）。
-  const visibleKeys = resolveVisibleKeys(chartLabels, legendSelected, pickerSelected);
-  const yRangeLabel = buildYAxisRangeLabel(
-    trendQuery.data?.points ?? [],
-    trendQuery.data?.baseline ?? null,
-    visibleKeys,
-    tk.trend.yAxisRange,
-  );
 
   // 运行进度（spec 2026-09-06 run-progress / §9）：progress 走 /eval-runs 顶层字段。
   // 底缘细线已退役——它只表征 questions 段（用户口中的“假进度条”）；富进度改由
@@ -703,17 +695,6 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                       {tk.trend.thresholdLabel(trendQuery.data.baseline.threshold_percent)}
                     </Badge>
                   )}
-                  {/* y 轴范围芯片（spec §4.6）：yMin>0（轴不从 0 起）时诚实提示当前
-                      y 轴范围，避免高分簇被误读成从 0 起。yRangeLabel 为 null 时不显。 */}
-                  {yRangeLabel && (
-                    <Badge
-                      className="shrink-0 tabular-nums"
-                      data-testid="eval-yaxis-chip"
-                      variant="secondary"
-                    >
-                      {yRangeLabel}
-                    </Badge>
-                  )}
                   <div className="ml-auto flex shrink-0 items-center gap-1.5">
                     {/* picker 下拉多选（spec §4.3）：4 个仅完整档产出的稀疏指标，勾选
                         条件并入 series（不进 legend.data）；L2 项尾注“仅完整档”。触发
@@ -762,18 +743,18 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                         className="bg-muted flex rounded-md p-0.5"
                         role="radiogroup"
                       >
-                        {GRANULARITIES.map((g) => (
+                        {SPAN_PRESETS.map((g) => (
                           <button
                             key={g}
-                            aria-checked={granularity === g}
+                            aria-checked={span === g}
                             className={`rounded px-2 py-0.5 text-xs ${
-                              granularity === g
+                              span === g
                                 ? "bg-background shadow-sm"
                                 : "text-muted-foreground"
                             }`}
                             role="radio"
                             type="button"
-                            onClick={() => setGranularity(g)}
+                            onClick={() => requestSpan(g)}
                           >
                             {tk.granularity[g]}
                           </button>
@@ -794,12 +775,12 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuRadioGroup
-                            value={granularity}
+                            value={span}
                             onValueChange={(value) =>
-                              setGranularity(value as Granularity)
+                              requestSpan(value as SpanPreset)
                             }
                           >
-                            {GRANULARITIES.map((g) => (
+                            {SPAN_PRESETS.map((g) => (
                               <DropdownMenuRadioItem key={g} value={g}>
                                 {tk.granularity[g]}
                               </DropdownMenuRadioItem>
@@ -824,13 +805,14 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     trendQuery.data.has_data ? (
                       <EvalTrendChart
                         baseline={trendQuery.data.baseline}
-                        granularity={trendQuery.data.granularity}
                         labels={chartLabels}
                         legendSelected={legendSelected}
                         pickerSelected={pickerSelected}
                         points={trendQuery.data.points}
+                        spanRequest={spanRequest}
                         onLegendChange={setLegendSelected}
                         onPointClick={setDrawerRunId}
+                        onSpanChange={setSpan}
                       />
                     ) : (
                       /* 新 KB 无评测历史：空态提示而非空白画布（2026-08-26 补） */

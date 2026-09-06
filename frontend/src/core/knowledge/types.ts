@@ -505,12 +505,12 @@ export interface MetricsOverview {
 // ── Evaluation trend (spec 2026-08-24 §4.1, plan Task 3) ─────────────────
 
 /**
- * 趋势图单个数据点：两层指标独立取数，各自可空。
- * 每个点恒等于一次真实运行（统一「周期末次」聚合语义，spec §4.2）。
+ * 趋势图单个数据点（contract v4，spec 2026-09-07 §2）：一个点 = 一次真实
+ * 运行，不做周期分桶——同日多次运行各自出点，时间连续性由 time 轴承载。
  */
 export interface TrendPoint {
-  /** ISO8601 日期（聚合粒度决定精度）。 */
-  date: string;
+  /** 运行真实时间戳（ISO8601 含 +00:00 偏移，coerce_iso 归一化）。 */
+  ts: string;
   /** Layer 1（该层该周期无数据则 null）。 */
   recall_at_k: number | null;
   hit_rate: number | null;
@@ -525,12 +525,11 @@ export interface TrendPoint {
   citation_precision: number | null;
   citation_recall: number | null;
   seed_hit_rate: number | null;
-  /** 下钻来源行：Layer 1 线挂 layer1_run_id，Layer 2 线挂 layer2_run_id。 */
-  layer1_run_id: string | null;
-  layer2_run_id: string | null;
-  /** 该点 Layer 1 来源运行的门禁判定（透传其 baseline_diff）；无 diff 为 null。 */
+  /** 下钻来源行：点与 run 一一对应（两层同源一行，contract v4 单键）。 */
+  run_id: string;
+  /** 该点运行的门禁判定（透传其 baseline_diff）；无 diff 为 null。 */
   regression: { detected: boolean; categories: string[] } | null;
-  /** 该点对应 Layer 1 运行是否被 --mark-baseline 标记。 */
+  /** 该点运行是否被 --mark-baseline 标记。 */
   is_baseline_update: boolean;
 }
 
@@ -547,38 +546,22 @@ export type SparkMetricKey =
   | "citation_recall"
   | "seed_hit_rate";
 
-/** 趋势图 API 响应（GET /eval-runs/trend）。 */
+/** 趋势图 API 响应（GET /eval-runs/trend，contract v4）。 */
 export interface TrendResponse {
   points: TrendPoint[];
-  granularity: "day" | "week" | "month";
-  /** 窗口回显：只含当前粒度匹配的键（day→days_back / week→weeks_back / month→months_back）。 */
-  days_back?: number;
-  weeks_back?: number;
-  months_back?: number;
   /** 当前 baseline；无 baseline 行时为 null（前端不画阈值线）。 */
   baseline: {
     recall_at_k: number;
     /** DEFAULT_FAIL_THRESHOLD * 100，与 CI 门禁同源。 */
     threshold_percent: number;
   } | null;
-  /** 该时间范围内是否有数据（任一层有即为 true）。 */
+  /** 固定近 90 天窗口内是否有数据（任一层有即为 true）。 */
   has_data: boolean;
   /**
    * 7 个 Layer 2 瓦片的 sparkline 数据源：每键一条 run 级近 10 非空值升序数组。
-   * 与 granularity/时间窗口解耦（spec §6.2）；某键全 null（如 ragas 未装）→ 空数组。
+   * 与趋势固定窗口解耦（spec §6.2）；某键全 null（如 ragas 未装）→ 空数组。
    */
   sparks: Record<SparkMetricKey, number[]>;
-}
-
-/** 趋势图请求参数（窗口参数按粒度配对，spec §4.2）。 */
-export interface TrendQueryParams {
-  granularity: "day" | "week" | "month";
-  /** day 粒度用，默认 30（后端 clamp ≤90）。 */
-  days_back?: number;
-  /** week 粒度用，默认 12。 */
-  weeks_back?: number;
-  /** month 粒度用，默认 6。 */
-  months_back?: number;
 }
 
 /**

@@ -22,7 +22,7 @@ import { useEffect, useRef } from "react";
 
 import type { TrendChartLabels, TrendPoint, TrendResponse } from "@/core/knowledge/types";
 
-import { buildChartOption } from "./eval-trend-chart.utils";
+import { buildChartOption, formatAxisTime, presetToIndexWindow, resolveShowSymbol, spanToPreset, type SpanPreset, type SpanRequest } from "./eval-trend-chart.utils";
 
 echarts.use([
   LineChart,
@@ -36,7 +36,6 @@ echarts.use([
 
 export interface EvalTrendChartProps {
   points: TrendPoint[];
-  granularity: TrendResponse["granularity"];
   baseline: TrendResponse["baseline"];
   /** i18n 文案包（eval-tab 注入；保持本组件纯渲染）。 */
   labels: TrendChartLabels;
@@ -47,6 +46,10 @@ export interface EvalTrendChartProps {
   legendSelected?: Record<string, boolean>;
   /** 图例开关变化回调——驱动 eval-tab 更新 legendSelected → y 轴按可见集自适应。 */
   onLegendChange?: (selected: Record<string, boolean>) => void;
+  /** 视窗预设点击请求（contract v4）：nonce 区分同档重复点击，identity 变化才 apply 窗口。 */
+  spanRequest?: SpanRequest | null;
+  /** 滚轮缩放跨度回算预设上抛——eval-tab 按钮高亮（密度指示器）。 */
+  onSpanChange?: (preset: SpanPreset) => void;
 }
 
 /** 当前是否暗色主题（next-themes 在 <html> 上挂 .dark class）。 */
@@ -56,13 +59,14 @@ function isDarkTheme(): boolean {
 
 export default function EvalTrendChart({
   points,
-  granularity,
   baseline,
   labels,
   onPointClick,
   pickerSelected,
   legendSelected,
   onLegendChange,
+  spanRequest,
+  onSpanChange,
 }: EvalTrendChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.EChartsType | null>(null);
@@ -71,9 +75,17 @@ export default function EvalTrendChart({
   clickRef.current = onPointClick;
   const legendChangeRef = useRef(onLegendChange);
   legendChangeRef.current = onLegendChange;
+  const spanChangeRef = useRef(onSpanChange);
+  spanChangeRef.current = onSpanChange;
+  // run 级点 ts（ms）升序：密度档与视窗预设共用（数据 effect 同步）。
+  const tsRef = useRef<number[]>([]);
+  // 当前密度档（contract v5）：横轴标签格式活读（day 出 HH:mm、其余 MM-DD）。
+  const presetRef = useRef<SpanPreset>("month");
+  // 密度档同步函数：init effect 注册，数据/主题/视窗 effect 重建后调用。
+  const applyDensityRef = useRef<() => void>(() => undefined);
   // 主题重建读取最新 props：init effect 只跑一次，闭包捕获会过期。
-  const argsRef = useRef({ points, granularity, baseline, labels, pickerSelected, legendSelected });
-  argsRef.current = { points, granularity, baseline, labels, pickerSelected, legendSelected };
+  const argsRef = useRef({ points, baseline, labels, pickerSelected, legendSelected });
+  argsRef.current = { points, baseline, labels, pickerSelected, legendSelected };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -90,14 +102,44 @@ export default function EvalTrendChart({
     chart.on("legendselectchanged", (params) => {
       legendChangeRef.current?.((params as { selected: Record<string, boolean> }).selected);
     });
+    // 缩放密度档（contract v5 索引域）：dataZoom 可见窗索引 → 可见 run 数 →
+    // 逐 series patch showSymbol（放大出每次测试点 / 缩小隐点看总体趋势；
+    // 隐点不降采样，hover 仍命中真实 run）；跨度回算预设上抛作按钮密度
+    // 指示，并同步 presetRef 供横轴标签格式活读。只 patch series 不整表重建。
+    const applyDensity = () => {
+      const opt = chart.getOption() as {
+        dataZoom?: Array<{ startValue?: number; endValue?: number }>;
+        series?: unknown[];
+      };
+      const dz = opt.dataZoom?.[0];
+      const tsList = tsRef.current;
+      if (!dz || tsList.length === 0) return;
+      const last = tsList.length - 1;
+      const clampIdx = (n: number) => Math.min(last, Math.max(0, Math.round(n)));
+      const lo = clampIdx(dz.startValue ?? 0);
+      const hi = clampIdx(dz.endValue ?? last);
+      const visible = hi - lo + 1;
+      const showSymbol = resolveShowSymbol(visible);
+      const preset = spanToPreset(tsList[hi]! - tsList[lo]!);
+      presetRef.current = preset;
+      chart.setOption({ series: (opt.series ?? []).map(() => ({ showSymbol })) });
+      spanChangeRef.current?.(preset);
+    };
+    applyDensityRef.current = applyDensity;
+    chart.on("datazoom", applyDensity);
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(container);
     // 主题切换（<html> .dark）→ 全量重建（轴/图例/tooltip 等装饰层主题感知）。
     const themeObserver = new MutationObserver(() => {
       chart.setOption(
-        buildChartOption({ ...argsRef.current, dark: isDarkTheme() }),
+        buildChartOption({
+          ...argsRef.current,
+          dark: isDarkTheme(),
+          formatAxisTime: (ts) => formatAxisTime(ts, presetRef.current),
+        }),
         { notMerge: true },
       );
+      applyDensity();
     });
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => {
@@ -110,19 +152,33 @@ export default function EvalTrendChart({
   }, []);
 
   useEffect(() => {
+    tsRef.current = points.map((p) => new Date(p.ts).getTime()).sort((a, b) => a - b);
     chartRef.current?.setOption(
       buildChartOption({
         points,
-        granularity,
         baseline,
         labels,
         dark: isDarkTheme(),
         pickerSelected,
         legendSelected,
+        formatAxisTime: (ts) => formatAxisTime(ts, presetRef.current),
       }),
       { notMerge: false },
     );
-  }, [points, granularity, baseline, labels, pickerSelected, legendSelected]);
+    applyDensityRef.current();
+  }, [points, baseline, labels, pickerSelected, legendSelected]);
+
+  // 视窗预设（contract v5 索引窗）：仅点击请求（nonce）到达时 apply 窗口——
+  // 滚轮回算的高亮不回灌窗口，避免与用户缩放抢控制权；右缘索引边距防末点贴边。
+  useEffect(() => {
+    const chart = chartRef.current;
+    const tsList = tsRef.current;
+    if (!chart || !spanRequest || tsList.length === 0) return;
+    const win = presetToIndexWindow(tsList, spanRequest.preset);
+    presetRef.current = spanRequest.preset;
+    chart.setOption({ dataZoom: [{ startValue: win.start, endValue: win.end }] });
+    applyDensityRef.current();
+  }, [spanRequest]);
 
   return <div className="h-[280px] w-full" data-testid="eval-trend-chart" ref={containerRef} />;
 }

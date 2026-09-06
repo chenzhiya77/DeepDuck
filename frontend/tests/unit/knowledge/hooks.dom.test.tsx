@@ -228,7 +228,6 @@ const EVAL_OVERVIEW: MetricsOverview = {
 
 const EVAL_TREND: TrendResponse = {
   points: [],
-  granularity: "day",
   baseline: null,
   has_data: false,
   sparks: {
@@ -264,7 +263,7 @@ describe("评测数据 hooks", () => {
     renderHook(() => useMetricsOverview("kb-1", false), {
       wrapper: createWrapper(freshQueryClient()),
     });
-    renderHook(() => useEvalTrend("kb-1", "day", false), {
+    renderHook(() => useEvalTrend("kb-1", false), {
       wrapper: createWrapper(freshQueryClient()),
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -272,33 +271,22 @@ describe("评测数据 hooks", () => {
     expect(api.getEvalTrend).not.toHaveBeenCalled();
   });
 
-  it("granularity goes into the trend queryKey (切换自动重新请求)", async () => {
+  it("trend query caches under a single key (contract v4: no granularity dimension)", async () => {
     const queryClient = freshQueryClient();
-    const wrapper = createWrapper(queryClient);
-    const { rerender } = renderHook(({ granularity }) => useEvalTrend("kb-1", granularity, true), {
-      initialProps: { granularity: "day" as "day" | "week" | "month" },
-      wrapper,
+    const { result } = renderHook(() => useEvalTrend("kb-1", true), {
+      wrapper: createWrapper(queryClient),
     });
-    await waitFor(() => expect(api.getEvalTrend).toHaveBeenCalledWith("kb-1", { granularity: "day" }));
-
-    rerender({ granularity: "week" });
-    await waitFor(() => expect(api.getEvalTrend).toHaveBeenCalledWith("kb-1", { granularity: "week" }));
-    // 两个粒度各自落缓存（queryKey 含粒度），切回 day 不再发请求
-    expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1", "day"))).toEqual(EVAL_TREND);
-    expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1", "week"))).toEqual(EVAL_TREND);
-    const callsAfterWeek = rs.mocked(api.getEvalTrend).mock.calls.length;
-    rerender({ granularity: "day" });
-    await waitFor(() =>
-      expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1", "day"))).toEqual(EVAL_TREND),
-    );
-    expect(rs.mocked(api.getEvalTrend).mock.calls.length).toBe(callsAfterWeek);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // 服务端一次给 90d run 级点：请求无粒度参数，键无粒度维度
+    expect(api.getEvalTrend).toHaveBeenCalledWith("kb-1");
+    expect(queryClient.getQueryData(knowledgeEvalTrendKey("kb-1"))).toEqual(EVAL_TREND);
   });
 
   it("null kbId keeps the queries disabled", async () => {
     renderHook(() => useMetricsOverview(null, true), {
       wrapper: createWrapper(freshQueryClient()),
     });
-    renderHook(() => useEvalTrend(null, "day", true), {
+    renderHook(() => useEvalTrend(null, true), {
       wrapper: createWrapper(freshQueryClient()),
     });
     await new Promise((resolve) => setTimeout(resolve, 20));

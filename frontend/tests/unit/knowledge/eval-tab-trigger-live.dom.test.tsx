@@ -39,7 +39,7 @@ import { zhCN } from "@/core/i18n/locales/zh-CN";
 import type { EvalRunListResponse } from "@/core/knowledge/types";
 
 const OVERVIEW = { kb_id: "kb-1", layer1: null, layer2: null };
-const TREND = { points: [], granularity: "day", days_back: 30, baseline: null, has_data: false };
+const TREND = { points: [], baseline: null, has_data: false };
 
 function renderTab() {
   const queryClient = new QueryClient({
