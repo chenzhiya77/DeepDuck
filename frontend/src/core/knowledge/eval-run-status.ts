@@ -3,7 +3,7 @@
  * polling cadence lives here — like wiki-status.ts — so the hook wiring stays
  * trivially testable.
  */
-import type { EvalRunListResponse, EvalRunProgress } from "./types";
+import type { EvalRunListResponse, EvalRunProgress, EvalRunSummary } from "./types";
 
 /**
  * Polling cadence for the eval runs history while an on-demand run is in
@@ -211,4 +211,32 @@ export function etaMinutes(eta: number | null): number | null {
 export function runningTier(progress: EvalRunProgress | null | undefined, triggeredTier: EvalTier | null, selectedTier: EvalTier): EvalTier {
   if (progress && progress.phase !== "layer1") return "l1_l2";
   return triggeredTier ?? selectedTier;
+}
+
+// ── 状态槽摘要派生（spec 2026-09-06 §10）─────────────────────
+
+/** 历史行档位：零迁移派生，has_layer2 即完整档（历史行序列化已具备该旗标）。 */
+export function tierOfRun(run: EvalRunSummary | null | undefined): EvalTier {
+  return run?.has_layer2 ? "l1_l2" : "l1";
+}
+
+/** 历史行耗时（秒）；缺戳/倒序（脏数据）→ null——摘要行省掉耗时段而不是显个假数字。 */
+export function runDurationSeconds(run: EvalRunSummary | null | undefined): number | null {
+  if (!run?.created_at || !run.completed_at) return null;
+  const created = Date.parse(run.created_at);
+  const completed = Date.parse(run.completed_at);
+  if (Number.isNaN(created) || Number.isNaN(completed)) return null;
+  const seconds = (completed - created) / 1000;
+  return seconds >= 0 ? seconds : null;
+}
+
+/** 时长结构件（i18n 中立）：文案由 i18n dur* 键渲染，纯函数不出中文。 */
+export type DurationParts = { kind: "seconds"; value: number } | { kind: "minutes"; value: number } | { kind: "minutes-seconds"; minutes: number; seconds: number };
+
+export function durationParts(seconds: number): DurationParts {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return { kind: "seconds", value: total };
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest === 0 ? { kind: "minutes", value: minutes } : { kind: "minutes-seconds", minutes, seconds: rest };
 }

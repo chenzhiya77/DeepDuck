@@ -178,3 +178,40 @@ ragas 段 → `质量评估 3/3` + 细线回 pulse;落库瞬间按钮复原`运�
   **logWaiting**(tail 未到的乐观窗口)/ **bannerAria**(progressbar 可读名);三处同步。
 - 测试:eval-run-status 增 f/ETA 纯函数单测;eval-tab 删细线断言、增容器断言(总览运行态);
   后端增 ragas 逐样本 hook 与 tail/durations 单测。
+
+## 10. 常驻评测状态槽(2026-09-06 三轮设计,用户实测后提出)
+
+用户诉求:进度容器完成后直接消失,总览缺「这次评测的上下文」(何时跑/耗时/成败);
+提议容器常驻、完成后换上下文内容或加切换按钮。定案(**用户拍板**):
+
+- **容器升级为常驻「评测状态槽」**(仍仅总览、检索质量卡上方),三态自动 morph,
+  **不加手动切换按钮**——drain 后进度注册表已清空、各段数据未落库,完成后的
+  「进度页」无数据可画,切换按钮是空壳且白引入一个状态位;「看这次评测详情」的
+  诉求由槽内**历史跳转按钮**桥接到历史视图/run 抽屉。
+- 三态:
+  1. running:§9 两行进度 UI,不变。
+  2. idle 且有历史:**单行摘要** `上次评测 · {档位} · 耗时 {duration}` + 右侧
+     `{相对时间}` + 历史跳转按钮;`status∈{error,skipped}` → destructive 色调
+     `上次评测失败 · {相对时间}` + 跳转。**不放题数**(用户定案:检索质量卡已有 n=K,
+     重复即冗余)。
+  3. idle 且无历史:muted 单行「尚未评测」(不重复工具栏触发按钮,避免双 CTA)。
+- **数据源零迁移**(历史行 `_eval_run_summary` 已具备):档位 = `has_layer2`;
+  耗时 = `completed_at − created_at`(缺 completed_at 则省耗时段);相对时间 =
+  `created_at`;成败 = `status`。最新行 = runs 列表首行。**各段耗时不进摘要**:
+  `phase_durations` 未落库,要显需给 eval_runs 加列走迁移——缓议。
+- 布局:常驻挂载顺带修掉「运行开始时 banner 插入顶下卡片」的跳动;运行态两行 /
+  空闲态单行,接受完成瞬间一次 reflow(完成时刻本就是注意力锚点)。
+- 过渡:drain 瞬间容器内容交叉淡入(复用 §9 日志行淡入词汇),容器本身不卸载。
+- 新增纯函数(eval-run-status.ts,实施校正):**i18n 中立结构件**——`durationParts(seconds)`
+  → {seconds|minutes|minutes-seconds}(文案由 i18n dur* 键渲染,纯函数不出中文)、
+  `tierOfRun(run)`(has_layer2)、`runDurationSeconds(run)`(缺戳/倒序 → null)。
+  **相对时间复用既有 `formatTimeAgo`**(@/core/utils/datetime,date-fns locale-aware,
+  不另造纯函数与 rel 族键);不跑定时器 tick,随查询刷新重渲染。
+- i18n 增量(实施校正):slotSummary(tier,duration)/ slotSummaryFailed /
+  slotViewHistory(跳转按钮 aria+title)+ dur 三键(durSeconds/durMinutes/
+  durMinutesSeconds);空历史文案**复用既有死键 `neverRan`**(改词「尚未评测」/
+  「Not yet evaluated」),`lastRunLabel` 退役(无消费者,语义由 slotSummary 模板承载);
+  三处同步。
+- 测试:纯函数单测(durationParts 三档/tierOfRun/runDurationSeconds 含缺戳与倒序
+  防御;相对时间由既有 formatTimeAgo 覆盖,不新增);slot dom 三态断言 +
+  跳转按钮 + error 色调;eval-tab 断言容器常驻(空闲态也在、不再 `running &&`)。

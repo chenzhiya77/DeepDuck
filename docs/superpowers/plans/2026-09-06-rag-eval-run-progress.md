@@ -246,3 +246,34 @@
 - [x] GREEN;revert proof。(backend **352 passed**;eval-run* 4 files、eval-tab 2 files passed;stash runner+ondemand+eval-run-status 后两案均 failed、恢复复绿;knowledge 63 files passed|1 预存 chat-panel;`pnpm check` exit 0、ruff 双净)
 - [x] Commit: `fix(rag): make layer1 progress determinate and price eta per phase`(本提交)。
 - 根因记录:layer1 旧 `total=1` 且零中间事件 → 快速档条全程 0%、完成即消失;ETA 旧门控(f>6% 且 20s)在快速档永不过 → 恒「估算中…」;在 f 上外推把廉价段速率当全程速率 → 早期 ETA 乐观撒谎。
+
+## Phase 6: 常驻评测状态槽(spec §10)
+
+### Task 15: 摘要派生纯函数 + i18n
+
+**Files:**
+- Modify: `frontend/src/core/knowledge/eval-run-status.ts`(`durationParts` + `DurationParts` / `tierOfRun` / `runDurationSeconds`)
+- Modify: `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts`(slotSummary/slotSummaryFailed/slotViewHistory + dur 三键;`neverRan` 改词复用、`lastRunLabel` 退役)
+- Modify: `frontend/tests/unit/knowledge/eval-run-status.unit.test.ts`
+
+- [x] RED:单测先行(durationParts 三档结构件含 59.4 取整与零余量省略、`tierOfRun` 按 has_layer2、`runDurationSeconds` 缺戳/倒序 → null)。
+- [x] Implement;GREEN;revert proof(stash eval-run-status → 1 file failed、恢复复绿);`pnpm check` exit 0。
+- [x] Commit: `feat(rag): add eval slot summary derivation helpers`(本提交)。
+- 实施校正:相对时间**复用既有 `formatTimeAgo`**(@/core/utils/datetime,date-fns locale-aware),不新造纯函数与 rel 族键;时长纯函数为 i18n 中立结构件 `durationParts`(文案走 dur* 键);空历史文案复用死键 `neverRan`(改词),`lastRunLabel` 退役。
+
+### Task 16: 状态槽组件三态 + 总览常驻挂载
+
+**Files:**
+- Modify: `frontend/src/components/workspace/knowledge/eval-run-banner.tsx`(升级为三态槽:running 不变;idle+历史=单行摘要+历史跳转;idle 无历史=muted;error/skipped=destructive 色调;drain 交叉淡入)
+- Modify: `frontend/src/components/workspace/knowledge/eval-tab.tsx`(去掉 `running &&`,槽常驻总览;传 runs 首行)
+- Modify: `frontend/tests/unit/knowledge/{eval-run-banner.dom,eval-tab.dom}.test.tsx`
+
+- [ ] RED:dom 三态断言 + 跳转按钮 + error 色调 + eval-tab 空闲态容器在。
+- [ ] Implement;GREEN;revert proof;knowledge 全量 + `pnpm check`。
+- [ ] Commit: `feat(rag): persist eval status slot with last-run summary`。
+
+### Task 17: 回归收官与验收
+
+- [ ] 全量回归(backend eval 套件 + frontend knowledge + check)与 revert proof 复查。
+- [ ] 手动验收并入 Task 13 清单:空闲态摘要行(档位/耗时/相对时间/跳转)、error 行红色调、从未评测 muted 行、运行开始不再顶下卡片、drain 交叉淡入。
+- [ ] 文档回写确认(spec §10、plan 本 Phase 勾选)。

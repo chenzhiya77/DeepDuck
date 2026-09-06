@@ -6,19 +6,24 @@
  * overallFraction / etaSeconds + etaMinutes（先验与实测自适应、warmup 门控、分钟取整）；
  * 以及 runningTier（在飞那次运行的档位推断）。底缘细线退役后
  * progressFraction / isIndeterminatePhase / progressAriaLabel 一并删除（无生产消费者）。
+ * §10 状态槽摘要派生三件：durationParts / tierOfRun / runDurationSeconds
+ * （相对时间复用 @/core/utils/datetime 的 formatTimeAgo，不另造纯函数）。
  */
 import { describe, expect, it } from "@rstest/core";
 
 import {
   EVAL_PHASE_ORDER,
   adaptiveWeights,
+  durationParts,
   etaMinutes,
   etaSeconds,
   overallFraction,
   phaseStep,
+  runDurationSeconds,
   runningTier,
+  tierOfRun,
 } from "@/core/knowledge/eval-run-status";
-import type { EvalRunProgress } from "@/core/knowledge/types";
+import type { EvalRunProgress, EvalRunSummary } from "@/core/knowledge/types";
 
 function progress(overrides: Partial<EvalRunProgress> = {}): EvalRunProgress {
   return {
@@ -188,5 +193,59 @@ describe("runningTier", () => {
   it("falls back to the selected tier when nothing is known yet", () => {
     expect(runningTier(null, null, "l1_l2")).toBe("l1_l2");
     expect(runningTier(progress({ phase: "layer1" }), null, "l1")).toBe("l1");
+  });
+});
+
+// ── 状态槽摘要派生（spec 2026-09-06 §10）─────────────────────
+
+function run(overrides: Partial<EvalRunSummary> = {}): EvalRunSummary {
+  return {
+    run_id: "run-slot",
+    created_at: iso(-60_000),
+    completed_at: iso(-30_000),
+    environment: "local",
+    status: "completed",
+    is_baseline: false,
+    has_layer1: true,
+    has_layer2: false,
+    regression_detected: false,
+    langfuse_trace_url: null,
+    ...overrides,
+  };
+}
+
+describe("tierOfRun", () => {
+  it("reads the tier from the persisted layer presence", () => {
+    // 零迁移派生：has_layer2 即完整档（历史行序列化已具备该旗标）。
+    expect(tierOfRun(run())).toBe("l1");
+    expect(tierOfRun(run({ has_layer2: true }))).toBe("l1_l2");
+  });
+});
+
+describe("runDurationSeconds", () => {
+  it("subtracts created_at from completed_at", () => {
+    expect(runDurationSeconds(run({ created_at: iso(-60_000), completed_at: iso(-30_000) }))).toBeCloseTo(30, 1);
+  });
+
+  it("withholds the duration when a stamp is missing or inverted", () => {
+    // 缺戳/倒序（脏数据）→ null，摘要行省掉耗时段而不是显个假数字。
+    expect(runDurationSeconds(run({ completed_at: null }))).toBeNull();
+    expect(runDurationSeconds(run({ created_at: null }))).toBeNull();
+    expect(runDurationSeconds(run({ created_at: iso(-10_000), completed_at: iso(-30_000) }))).toBeNull();
+  });
+});
+
+describe("durationParts", () => {
+  it("keeps sub-minute runs in seconds", () => {
+    expect(durationParts(38)).toEqual({ kind: "seconds", value: 38 });
+    expect(durationParts(59.4)).toEqual({ kind: "seconds", value: 59 });
+  });
+
+  it("splits minute runs into minutes and seconds", () => {
+    expect(durationParts(252)).toEqual({ kind: "minutes-seconds", minutes: 4, seconds: 12 });
+  });
+
+  it("drops the zero remainder", () => {
+    expect(durationParts(120)).toEqual({ kind: "minutes", value: 2 });
   });
 });

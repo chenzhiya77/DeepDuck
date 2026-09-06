@@ -496,8 +496,14 @@ export interface Translations {
       logFail: (phase: string, done: number, total: number, failed: number) => string;
       logWaiting: string;
       bannerAria: (phase: string, percent: number) => string;
-      /** 上次运行短文案：label + formatTimeAgo 产物拼接。 */
-      lastRunLabel: string;
+      /** 常驻状态槽（spec 2026-09-06 §10）：空闲态单行摘要（不放题数，检索质量卡
+       *  已有 n=K）；时长结构件（durationParts）→ dur* 键文案。 */
+      slotSummary: (tier: string, duration: string) => string;
+      slotSummaryFailed: string;
+      slotViewHistory: string;
+      durSeconds: (seconds: number) => string;
+      durMinutes: (minutes: number) => string;
+      durMinutesSeconds: (minutes: number, seconds: number) => string;
       neverRan: string;
       runStartedToast: string;
       alreadyRunningToast: string;
