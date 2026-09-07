@@ -1001,7 +1001,7 @@ describe("EvalTab 常驻工具栏", () => {
     ]);
   });
 
-  it("内容区边距：总览/历史 px-4 py-3，题库视图通栏且顶边无内距（表头贴工具栏下沿，文档列表同款）", () => {
+  it("内容区边距：总览/历史 px-4 py-3 滚动容器；题库视图高度有界 flex 列（底部停靠审核容器）", () => {
     renderEvalTab();
     const content = screen.getByTestId("eval-view-content");
     expect(content.className).toContain("px-4");
@@ -1010,12 +1010,13 @@ describe("EvalTab 常驻工具栏", () => {
     expect(content.className).not.toContain("overflow-auto");
 
     fireEvent.click(screen.getByRole("radio", { name: "题库" }));
-    const questionsContent = screen.getByTestId("eval-view-content");
-    expect(questionsContent.className).toContain("px-0");
-    expect(questionsContent.className).not.toContain("px-4");
-    // 顶边对齐文档列表：无顶部内距，表头紧贴工具栏分界线（原 py-3 顶 12px 空白移除）。
-    expect(questionsContent.className).toContain("pt-0");
-    expect(questionsContent.className).not.toContain("py-3");
+    // 题库视图退役外层 ScrollArea（2026-09-07 底部停靠重设计）：高度有界
+    // flex 列——表格区与底部审核容器按比例分高，纵/横滚沉进表格区自身
+    // overflow 容器（吸顶表头滚动祖先行为同原生容器）。
+    expect(screen.queryByTestId("eval-view-content")).toBeNull();
+    const questionsContent = screen.getByTestId("eval-questions-content");
+    expect(questionsContent.className).toContain("flex-1");
+    expect(questionsContent.className).toContain("min-h-0");
 
     fireEvent.click(screen.getByRole("radio", { name: "历史" }));
     expect(screen.getByTestId("eval-view-content").className).toContain("px-4");

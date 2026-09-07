@@ -16,7 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import type { MetricsOverview, TrendResponse } from "@/core/knowledge/types";
+import type { Layer1CategoryKey, MetricsOverview, TrendResponse } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
 import { classifyRagasSkipReason, getProgressBarColor, getSummaryBandClass } from "./eval-metrics-overview.utils";
@@ -212,7 +212,9 @@ function Layer1Table({ metrics }: { metrics: NonNullable<MetricsOverview["layer1
   const { t } = useI18n();
   const tk = t.knowledge.eval;
   // Category order matches wire keys; categories missing from by_category are skipped.
-  const categories: Array<keyof typeof metrics | "summary"> = ["fact", "relation", "concept", "global", "summary"];
+  // 钉 Layer1CategoryKey（2026-09-07）：keyof metrics 会含 questions/top_k 新键，
+  // 索引联合进 EvalQuestionMetric[] 破坏分类行类型。
+  const categories: Array<Layer1CategoryKey | "summary"> = ["fact", "relation", "concept", "global", "summary"];
 
   return (
     /* 表格外壳不走默认 overflow-x-auto（老原生滑块）：横滚由卡内 ScrollArea
@@ -226,7 +228,7 @@ function Layer1Table({ metrics }: { metrics: NonNullable<MetricsOverview["layer1
           <TableHead className="h-8 px-2">{tk.tableCategory}</TableHead>
           {/* 数值列表头右对齐（2026-08-30）：与数据同轴，主流规范文本左/数值右 */}
           <TableHead className="h-8 px-2 text-right">{tk.tableHitRate}</TableHead>
-          <TableHead className="h-8 px-2 text-right">{tk.tableRecallAtK}</TableHead>
+          <TableHead className="h-8 px-2 text-right">{tk.tableRecallAtK(metrics.top_k ?? null)}</TableHead>
           <TableHead className="h-8 px-2 text-right">{tk.tableMrr}</TableHead>
           <TableHead className="h-8 px-2 text-right">{tk.tablePathAccuracy}</TableHead>
         </TableRow>

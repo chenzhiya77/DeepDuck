@@ -13,7 +13,7 @@
  * 工具栏运行键原位切换携 question_ids；行右键菜单承接快速评测/取消选择/
  * 删除所选（结构节奏同文档右键菜单规范）。
  */
-import { Layers, MoreHorizontal, Play, Trash2, X } from "lucide-react";
+import { ArrowUpDown, Check, Info, Layers, MoreHorizontal, Play, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -40,9 +40,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -51,8 +53,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDeleteEvalQuestion, useEvalQuestions } from "@/core/knowledge/hooks";
+import type { SortDirection } from "@/core/knowledge/document-view";
+import { refDocIds } from "@/core/knowledge/format";
+import {
+  useDeleteEvalQuestion,
+  useDocuments,
+  useEvalQuestions,
+  useMetricsOverview,
+} from "@/core/knowledge/hooks";
 import type { EvalQuestion, EvalTriggerInput } from "@/core/knowledge/types";
 
 import { EvalAddQuestionDialog } from "./eval-add-question-dialog";
@@ -68,6 +82,28 @@ import { runAfterMenuClose } from "./run-after-menu-close";
     「表头浅灰、内容深色」的层级语言（文档表 08-31 规范）从未生效——
     钉到单元格层才真正兑现。 */
 const STICKY_HEAD = "sticky top-0 z-10 h-9 bg-background text-muted-foreground shadow-[inset_0_-1px_0_var(--border)]";
+
+/** 召回率@k 三态点（2026-09-07）：全=emerald / 部分=lime / 未命中=destructive——
+    与总览胶囊档位同色系（emerald/lime/orange），零召回升格 destructive：
+    未命中是失败态，与回归徽章同源。 */
+function recallDotClass(recall: number): string {
+  if (recall >= 1) return "bg-emerald-500";
+  if (recall > 0) return "bg-lime-500";
+  return "bg-destructive";
+}
+
+/** 数值语言与总览对齐（2026-09-05）：指标百分数 1 位小数。 */
+const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
+
+/** 表格区 flex 子项公共类（2026-09-07 底部停靠审核容器）：与审核容器展开态
+    flex-1 成 2:1 分高（审核 ≈ 1/3，检索测试路容器范式）；审核收起/空态时
+    grow 独占全高。滚动由 ScrollArea 承接（2026-09-08 对齐隐式设计：overlay
+    滚动条只滚动时浮现、停 2s 淡出、不占布局宽度，同百科 Tab 容器）。 */
+const TABLE_AREA = "min-h-0 flex-[2]";
+
+/** 题库排序键（2026-09-07）：default = golden.jsonl 原序（不参与排序，
+    题目无 created_at 字段，原序即入库序）；其余四键与可见列一一对应。 */
+type QuestionSortKey = "default" | "query" | "category" | "refDocs" | "recall";
 
 export interface EvalQuestionBankProps {
   kbId: string;
@@ -114,6 +150,11 @@ export function EvalQuestionBank({
   const stk = etk.selection;
   const query = useEvalQuestions(kbId, enabled);
   const deleteMutation = useDeleteEvalQuestion(kbId);
+  // 参考文档列 tooltip 的文档标题（与文档 tab 同 queryKey，缓存命中不新增请求）。
+  const docsQuery = useDocuments(kbId);
+  // 召回率@k 列数据源（2026-09-07）：最近一次 completed run 的逐题 slim 指标，
+  // 与总览同 queryKey（useMetricsOverview），无新端点无新请求。
+  const overview = useMetricsOverview(kbId, enabled);
 
   const [drawerQuestion, setDrawerQuestion] = useState<EvalQuestion | null>(null);
   // 删除目标改数组（2026-09-02）：行内删除/drawer 删除 = 单元素，
@@ -134,6 +175,67 @@ export function EvalQuestionBank({
       onSelectedIdsChange(new Set(alive.map((question) => question.id)));
     }
   }, [allQuestions, selectedIds, onSelectedIdsChange]);
+
+  // doc_id → 标题映射；取不到标题回退 doc_id 前 8 位（tooltip 与抽屉组头共用）。
+  const docTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const doc of docsQuery.data ?? []) titles.set(doc.id, doc.name);
+    return titles;
+  }, [docsQuery.data]);
+  const docTitle = (docId: string) => docTitles.get(docId) ?? docId.slice(0, 8);
+
+  // 逐题指标按 id 索引（2026-09-07 修：改 join 跨 run 合并的 question_results——
+  // 只取 latest run 的 questions 会被 scoped run 覆盖成子集，已出数的题消失）；
+  // 旧网关无此键 → 空 Map → 召回列全 —。
+  const questionMetrics = useMemo(() => {
+    const list = overview.data?.question_results;
+    return new Map((list ?? []).map((metric) => [metric.id, metric]));
+  }, [overview.data]);
+
+  // 排序（2026-09-07）：内容逻辑与文档 tab 排序菜单同构（键 + 方向，纯
+  // 前端稳定排序）；形态挪到表头最右悬浮按钮（文档 tab 列显隐钮同款），
+  // 题库无可隐藏列，该钮只承接排序。初始 default：不默默重排既有视图。
+  const [sort, setSort] = useState<{ key: QuestionSortKey; direction: SortDirection }>({ key: "default", direction: "asc" });
+
+  // 菜单项标签全量复用列头词汇（零新词）：召回键随 top_k 动态（召回率@5）。
+  const sortOptions: { key: QuestionSortKey; label: string }[] = [
+    { key: "default", label: qtk.sortDefault },
+    { key: "query", label: qtk.columnQuery },
+    { key: "category", label: qtk.columnCategory },
+    { key: "refDocs", label: qtk.columnRefDocs },
+    { key: "recall", label: etk.tableRecallAtK(overview.data?.layer1?.metrics.top_k ?? null) },
+  ];
+
+  const sortedQuestions = useMemo(() => {
+    if (sort.key === "default") return visibleQuestions;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    const value = (question: EvalQuestion): string | number | null => {
+      switch (sort.key) {
+        case "query":
+          return question.query.toLowerCase();
+        case "category":
+          // 按显示名排（非 wire 键）：用户看到什么就按什么排。
+          return etk.category[question.category];
+        case "refDocs":
+          return refDocIds(question.relevant_chunk_ids).length;
+        case "recall":
+          return questionMetrics.get(question.id)?.recall ?? null;
+        default:
+          return null;
+      }
+    };
+    return [...visibleQuestions].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      // 未测题（recall null）恒沉底，不随方向翻转——同文档 tab
+      // sortDocuments 的 null-sink 纪律。
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "string" && typeof bv === "string") return sign * av.localeCompare(bv);
+      return sign * (Number(av) - Number(bv));
+    });
+  }, [visibleQuestions, sort, questionMetrics, etk]);
 
   const toggleQuestion = (questionId: string, checked: boolean) => {
     const next = new Set(selectedIds);
@@ -179,36 +281,13 @@ export function EvalQuestionBank({
     setDeleteTargets(null);
   };
 
-  const renderAnchors = (question: EvalQuestion) => {
-    if (question.relevant_chunk_ids.length === 0) {
-      return <span className="text-muted-foreground">{qtk.unanchored}</span>;
-    }
-    return (
-      <span className="text-xs">
-        <span>{qtk.anchorsChunks(question.relevant_chunk_ids.length)}</span>
-        {question.relevant_entities.length > 0 && (
-          <>
-            {" · "}
-            <span className="text-muted-foreground">{qtk.anchorsEntities(question.relevant_entities.length)}</span>
-          </>
-        )}
-      </span>
-    );
-  };
-
   return (
-    <div className="flex flex-col gap-2">
-      {/* 候选审核区块：暂存非空或运行中时出现（组件内部判定）；
-          隐藏时组件返回 null，:empty 即 hidden——不留 flex 间隙（表头上方不浮出空白）；
-          显示时保持 px-4 内缩对齐工具栏内容边距 */}
-      <div className="px-4 [&:empty]:hidden">
-        <EvalSynthesisReview enabled={enabled} kbId={kbId} />
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col">
       {/* 批量运行栏退役（2026-09-02）：插入式条推挤表格产生抖动；选题运行
           由工具栏原位切换承接（运行所选/完整运行所选），取消选择/删除所选
           进行右键菜单 */}
 
+      <ScrollArea className={TABLE_AREA} horizontal scrollHideDelay={2000} type="scroll">
       {query.isLoading ? (
         <div className="text-muted-foreground mx-4 rounded-lg border border-dashed p-6 text-center text-sm">
           {etk.loading}
@@ -227,14 +306,14 @@ export function EvalQuestionBank({
         /* 表格样式对齐文档列表（2026-08-30）：表头去默认 h-10 降为 text-xs 自然高（32px），
            数据行同文档列表 px-2 py-2（36px）；松垮根源是 h-10 表头与行尾大图标按钮；
            表头同文档列表用 muted 色。吸顶（2026-09-02）：表头单元格 sticky + inset
-           阴影发丝线（折叠模式下 tr 边框随滚动丢失）；外壳不走 overflow-x-auto（
-           它会接管纵向滚动破坏 sticky，横滚由内容区 eval-view-content 承担） */
+           阴影发丝线（折叠模式下 tr 边框随滚动丢失）；纵/横滚由表格区 ScrollArea
+           承接（2026-09-08 隐式 overlay 滚动条对齐，Viewport 为吸顶滚动祖先） */
         <Table containerClassName="relative w-full">
           <TableHeader className="[&_tr]:border-0 [&_tr]:text-muted-foreground">
             {/* h-9 钉高与文档表头对齐（36px，2026-09-02）；th 自然高低于 36，
                 行高由 tr 裁决；发丝线是 th 的 inset 阴影（不参与布局），
                 复选框状态切换不会引起表头高度重取整。 */}
-            <TableRow className="group h-9">
+            <TableRow className="group/colhead h-9">
               {/* 首列复选框 px-2 与文档表头对齐（2026-09-02）：复选框是悬浮即现的
                   瞬态控件，跨 tab 位置一致比找齐工具栏边距更重要；行复选框同文档表：
                   悬停/勾选/任一选中才显形，静止态不抢戏 */}
@@ -247,14 +326,73 @@ export function EvalQuestionBank({
               </TableHead>
               <TableHead className={`${STICKY_HEAD} px-2 text-xs`}>{qtk.columnQuery}</TableHead>
               <TableHead className={`${STICKY_HEAD} px-2 text-xs`}>{qtk.columnCategory}</TableHead>
-              <TableHead className={`${STICKY_HEAD} px-2 text-xs`}>{qtk.columnExpectedPath}</TableHead>
-              <TableHead className={`${STICKY_HEAD} px-2 text-xs`}>{qtk.columnAnchors}</TableHead>
-              <TableHead className={`${STICKY_HEAD} w-8 pr-4 pl-2 text-right text-xs`}>{""}</TableHead>
+              {/* 参考文档列头（2026-09-07）：数值列右对齐，与文档 tab 数值列
+                  （text-right tabular-nums）同轴语言。 */}
+              <TableHead className={`${STICKY_HEAD} px-2 text-right text-xs`}>{qtk.columnRefDocs}</TableHead>
+              {/* 召回率@k 列头（2026-09-07 表头重设计）：复用总览既有指标词汇
+                  （零新词），时间口径进 ⓘ tooltip——同总览「表头=指标名、
+                  tooltip=口径解释」模式；数值列右对齐与数据同轴。 */}
+              <TableHead className={`${STICKY_HEAD} px-2 text-right text-xs`}>
+                <span className="inline-flex items-center gap-1">
+                  {etk.tableRecallAtK(overview.data?.layer1?.metrics.top_k ?? null)}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={qtk.columnRecallNote}
+                        className="text-muted-foreground inline-flex hover:text-foreground"
+                      >
+                        <Info className="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-60 text-pretty">{qtk.columnRecallNote}</TooltipContent>
+                  </Tooltip>
+                </span>
+              </TableHead>
+              {/* 表头最右悬浮排序钮（2026-09-07）：形态 = 文档 tab 列显隐钮同款
+                  （悬停现形 size-6，聚焦/菜单开常驻），内容 = 文档 tab 排序菜单同构
+                  （Label + 键勾选 + 分隔线 + 升/降序恒常展示）。默认排序态隐形不扰，
+                  排序激活后常驻可见——「当前有排序 + 入口在哪」随时可追溯；默认态
+                  选方向只记档（原序无方向可排），切真实排序键时即生效。 */}
+              <TableHead className={`${STICKY_HEAD} w-10 pr-4 pl-2`}>
+                <div className="flex h-9 items-center justify-end">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={rtk.sortDocuments}
+                        className={`text-muted-foreground hover:text-foreground flex size-6 items-center justify-center rounded transition-opacity focus-visible:opacity-100 has-[[data-state=open]]:opacity-100 ${sort.key === "default" ? "opacity-0 group-hover/colhead:opacity-100" : "opacity-100"}`}
+                      >
+                        <ArrowUpDown className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuLabel>{rtk.sortDocuments}</DropdownMenuLabel>
+                      {sortOptions.map((option) => (
+                        <DropdownMenuItem key={option.key} onSelect={() => setSort((current) => ({ ...current, key: option.key }))}>
+                          <Check className={`size-4 ${sort.key !== option.key ? "invisible" : ""}`} />
+                          {option.label}
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      {(["asc", "desc"] as const).map((direction) => (
+                        <DropdownMenuItem key={direction} onSelect={() => setSort((current) => ({ ...current, direction }))}>
+                          <Check className={`size-4 ${sort.direction !== direction ? "invisible" : ""}`} />
+                          {rtk.sort[direction]}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visibleQuestions.map((question) => {
+            {sortedQuestions.map((question) => {
               const isSelected = selectedIds.has(question.id);
+              const docIds = refDocIds(question.relevant_chunk_ids);
+              const metric = questionMetrics.get(question.id);
+              const recall = metric?.recall ?? null;
               return (
               <ContextMenu key={question.id}>
                 <ContextMenuTrigger asChild>
@@ -284,17 +422,43 @@ export function EvalQuestionBank({
                 <TableCell className="px-2 py-2">
                   <Badge variant="outline">{etk.category[question.category]}</Badge>
                 </TableCell>
-                <TableCell className="px-2 py-2">
-                  {/* 多路预期（2026-08-28 §3）：全量 Badge，单路即一枚。 */}
-                  <span className="inline-flex flex-wrap gap-1">
-                    {question.expected_paths.map((path) => (
-                      <Badge key={path} variant="secondary">
-                        {path}
-                      </Badge>
-                    ))}
-                  </span>
+                {/* 参考文档列（2026-09-07）：计数+单位消歧义（篇 vs 切片 vs 实体）；
+                    hover 列文档标题，chunk 级分解进抽屉；无锚定题空单元格，与
+                    召回列 — 互相呼应（无锚定题不参与命中率计算）。 */}
+                <TableCell className="px-2 py-2 text-right tabular-nums">
+                  {docIds.length > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-default">{qtk.refDocsCount(docIds.length)}</span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-60 text-pretty whitespace-pre-wrap">
+                        {docIds.map(docTitle).join("\n")}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </TableCell>
-                <TableCell className="px-2 py-2">{renderAnchors(question)}</TableCell>
+                {/* 召回率@k 列（2026-09-07）：跨 run 合并的逐题最近结果（三态点+
+                    百分比）；未测显 —；单元格 tooltip 带实际路径（未命中时即
+                    分诊线索）。 */}
+                <TableCell className="px-2 py-2 text-right tabular-nums">
+                  {recall === null ? (
+                    <span aria-label={qtk.recallUntested} className="text-muted-foreground">
+                      —
+                    </span>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex cursor-default items-center justify-end gap-1.5">
+                          <span className={`size-1.5 rounded-full ${recallDotClass(recall)}`} />
+                          {percent(recall)}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-60 text-pretty">
+                        {qtk.recallTip(percent(recall), metric?.actual_path ?? "-")}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </TableCell>
                 {/* 末列悬浮三点（2026-09-02）：替换原 size-8（32px）删除按钮——它是题库行
                     48px 的裁决者，比文档行（40px，由三点 size-6=24px 撑起）高 8px；换成
                     文档 tab 同款 size-6 三点后行高落到 40px，两表逐像素对齐。菜单镜像右键的
@@ -398,6 +562,12 @@ export function EvalQuestionBank({
           <p>{qtk.emptyBankSynthesis}</p>
         </div>
       )}
+      </ScrollArea>
+
+      {/* 候选审核（2026-09-07 底部停靠、2026-09-08 常驻）：无候选收为单行头
+          承载空态/上次合成元信息，有候选展开 1/3 高内滚；采纳的题即刻出现
+          在正上方表格——任务与结果邻接。 */}
+      <EvalSynthesisReview enabled={enabled} kbId={kbId} />
 
       {/* 添加/合成 dialog 受控（2026-08-29）：入口按钮在 eval-tab 常驻工具栏；
           批量完整评测确认已上提 eval-tab（工具栏原位切换，2026-09-02） */}
@@ -408,6 +578,7 @@ export function EvalQuestionBank({
 
       {/* 详情 drawer：行点击下钻（§4.5）；onDelete 关 drawer 再开确认框 */}
       <EvalQuestionDrawer
+        kbId={kbId}
         onDelete={(question) => {
           setDrawerQuestion(null);
           setDeleteTargets([question]);

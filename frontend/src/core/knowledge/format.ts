@@ -111,3 +111,17 @@ export function textLead(text: string, maxLines = 2): string {
     .filter(Boolean)
     .join(" ");
 }
+
+/**
+ * 参考文档去重计数源（2026-09-08 上提共享）：relevant_chunk_ids 的 `#` 前
+ * doc_id 前缀去重（同文档多切片算 1 篇）；无锚定返回空数组。题库参考文档
+ * 列与合成候选卡共用——行/卡级计数统一「篇」语言，切片级分解属下钻层。
+ */
+export function refDocIds(chunkIds: string[]): string[] {
+  const seen: string[] = [];
+  for (const chunkId of chunkIds) {
+    const docId = chunkId.split("#")[0];
+    if (docId && !seen.includes(docId)) seen.push(docId);
+  }
+  return seen;
+}

@@ -22,6 +22,7 @@ const LAYER1_METRICS: NonNullable<MetricsOverview["layer1"]>["metrics"] = {
   relation: { hit_rate: 0.881, recall_at_k: 0.854, mrr: 0.654, path_accuracy: 0.923, question_count: 4 },
   concept: { hit_rate: 0.917, recall_at_k: 0.892, mrr: 0.789, path_accuracy: 0.958, question_count: 3 },
   global: { hit_rate: 0.763, recall_at_k: 0.721, mrr: 0.543, path_accuracy: 0.812, question_count: 1 },
+  top_k: 5,
 };
 
 const FULL_OVERVIEW: MetricsOverview = {
@@ -106,7 +107,7 @@ describe("Layer 1 表格", () => {
     const headers = Array.from(
       screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"),
     );
-    expect(headers.map((h) => h.textContent)).toEqual(["分类", "命中率", "召回率@k", "MRR", "路径准确率"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["分类", "命中率", "召回率@5", "MRR", "路径准确率"]);
   });
 
   it("数值列表头与单元格右对齐 + tabular-nums，分类列保持左对齐（2026-08-30）", () => {
@@ -629,6 +630,6 @@ describe("i18n", () => {
     const headers = Array.from(
       screen.getByTestId("eval-layer1-table").querySelectorAll("thead th"),
     );
-    expect(headers.map((h) => h.textContent)).toEqual(["Category", "Hit Rate", "Recall@k", "MRR", "Path Accuracy"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["Category", "Hit Rate", "Recall@5", "MRR", "Path Accuracy"]);
   });
 });

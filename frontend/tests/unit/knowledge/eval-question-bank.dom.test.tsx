@@ -1,6 +1,7 @@
 /**
  * 题库视图契约测试（2026-08-27 spec §4，plan Task 6）：
- * - 表格三态（loading / 失败 / 数据）与锚定列推导（切片数 · 实体数 / 未锚定）；
+ * - 表格三态（loading / 失败 / 数据）与参考文档列推导（去重文档计数 / 无锚定空单元格）；
+ * - 召回率@k 列三态点+百分比（最近一次 run 逐题 slim 指标 join）与未测 —；
  * - 行点击开详情 drawer；操作列 ↗/🗑 stopPropagation；
  * - 删除二次确认：取消不调 mutation，确认调并发成功 toast；
  * - 添加 dialog：必填校验、提交体不含锚定键（后端补空数组，spec §4.4）；
@@ -29,6 +30,7 @@ const hooksMock = rs.hoisted(() => ({
   useAcceptSynthesisCandidate: rs.fn(),
   useRejectSynthesisCandidate: rs.fn(),
   useDocuments: rs.fn(),
+  useMetricsOverview: rs.fn(),
   useTriggerEvalRun: rs.fn(),
 }));
 
@@ -82,6 +84,17 @@ const Q_MULTI: EvalQuestion = {
   reference_answer: null,
 };
 
+/** 未测题（2026-09-07 排序用例）：question_results 无记录 → 召回列 —，排序恒沉底。 */
+const Q_UNTESTED: EvalQuestion = {
+  id: "q_44444444",
+  query: "未测过的考题",
+  category: "concept",
+  expected_paths: ["vector"],
+  relevant_chunk_ids: [],
+  relevant_entities: [],
+  reference_answer: null,
+};
+
 function questionsState(questions: EvalQuestion[]): { data: EvalQuestionListResponse } {
   return { data: { questions, total: questions.length } };
 }
@@ -123,7 +136,14 @@ beforeEach(() => {
     isLoading: false,
   });
   hooksMock.useDocuments.mockReturnValue({ data: [], isLoading: false });
+  // 召回率@k 列缺省未测（data null → 全行 —）；三态用例自行覆盖。
+  hooksMock.useMetricsOverview.mockReset();
+  hooksMock.useMetricsOverview.mockReturnValue({ data: null });
   hooksMock.useTriggerSynthesis.mockReturnValue({ mutateAsync: rs.fn(), isPending: false });
+  // 审核容器候选非空用例（2026-09-07 底部停靠）会走到 accept/reject 的 isPending，
+  // 缺省兜底避免 undefined 解构。
+  hooksMock.useAcceptSynthesisCandidate.mockReturnValue({ mutateAsync: rs.fn(), isPending: false });
+  hooksMock.useRejectSynthesisCandidate.mockReturnValue({ mutateAsync: rs.fn(), isPending: false });
   hooksMock.useTriggerEvalRun.mockReset();
   hooksMock.useTriggerEvalRun.mockReturnValue({ mutate: rs.fn(), isPending: false });
 });
@@ -166,27 +186,128 @@ describe("EvalQuestionBank 表格", () => {
     expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
   });
 
-  it("行渲染与锚定列推导（切片 · 实体 / 未锚定 muted）", () => {
+  it("行渲染与参考文档列推导（去重文档计数 / 无锚定空单元格）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_UNANCHORED, Q_ANCHORED]) });
     renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.getByText("未锚定的考题")).toBeTruthy();
     expect(screen.getByText("锚定了三个切片的考题")).toBeTruthy();
-    expect(screen.getByText("未锚定")).toBeTruthy();
-    expect(screen.getByText("3 切片")).toBeTruthy();
-    expect(screen.getByText("2 实体")).toBeTruthy();
+    // 参考文档列：Q_ANCHORED 三切片来自三个不同文档 → 3 篇（同文档多切片算 1 篇）。
+    const anchoredRow = screen.getByText("锚定了三个切片的考题").closest("tr")!;
+    expect(within(anchoredRow as HTMLElement).getByText("3 篇")).toBeTruthy();
+    // 数值列右对齐（同文档 tab 数值列 text-right tabular-nums 同轴语言）。
+    const refDocsCell = within(anchoredRow as HTMLElement).getByText("3 篇").closest("td")!;
+    expect(refDocsCell.className).toContain("text-right");
+    expect(refDocsCell.className).toContain("tabular-nums");
+    // 无锚定题：参考文档空单元格（计数与「未锚定」文案都不上行，语义收抽屉）。
+    const unanchoredRow = screen.getByText("未锚定的考题").closest("tr")!;
+    expect(within(unanchoredRow as HTMLElement).queryByText(/篇/)).toBeNull();
+    expect(within(unanchoredRow as HTMLElement).queryByText("未锚定")).toBeNull();
     // 分类显示名走 i18n（wire 键不外露）
     expect(screen.getByText("事实")).toBeTruthy();
     expect(screen.getByText("全局")).toBeTruthy();
   });
 
-  it("路径列渲染 expected_paths 全量 Badge（多路即多枚）", () => {
-    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_MULTI, Q_ANCHORED]) });
+  it("表头为 问题/分类/参考文档/召回率@k（预期路径与锚定列退役）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_MULTI]) });
+    const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    const heads = [...container.querySelectorAll("th")].map((th) => th.textContent);
+    expect(heads).toEqual(["", "问题", "分类", "参考文档", "召回率@k", ""]);
+    // 预期路径 Badge 不再行级出现（配置契约收抽屉）。
+    expect(screen.queryByText("vector")).toBeNull();
+    expect(screen.queryByText("graph")).toBeNull();
+  });
+
+  it("召回率@k 列三态点+百分比（最近一次 run 逐题 slim 指标 join）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_UNANCHORED, Q_ANCHORED, Q_MULTI]) });
+    hooksMock.useMetricsOverview.mockReturnValue({
+      data: {
+        kb_id: "kb-1",
+        layer1: {
+          run_id: "run-1",
+          created_at: "2026-09-07T00:00:00+00:00",
+          metrics: {
+            summary: { hit_rate: 1, recall_at_k: 1, mrr: 1, path_accuracy: 1, question_count: 3 },
+            top_k: 5,
+          },
+        },
+        layer2: null,
+        // 跨 run 合并的逐题最近结果（scoped run 不覆盖其它题）。
+        question_results: [
+          { id: Q_ANCHORED.id, recall: 1, hit: 1, path_correct: true, actual_path: "vector", run_id: "run-1", created_at: "2026-09-07T00:00:00+00:00" },
+          { id: Q_MULTI.id, recall: 0.5, hit: 1, path_correct: true, actual_path: "graph", run_id: "run-1", created_at: "2026-09-07T00:00:00+00:00" },
+          { id: Q_UNANCHORED.id, recall: 0, hit: 0, path_correct: false, actual_path: null, run_id: "run-1", created_at: "2026-09-07T00:00:00+00:00" },
+        ],
+      },
+    });
     renderWithI18n(<BankHarness enabled kbId="kb-1" />);
-    const row = screen.getByText("多路预期的考题").closest("tr")!;
-    expect(within(row as HTMLElement).getByText("vector")).toBeTruthy();
-    expect(within(row as HTMLElement).getByText("graph")).toBeTruthy();
-    const singleRow = screen.getByText("锚定了三个切片的考题").closest("tr")!;
-    expect(within(singleRow as HTMLElement).getAllByText("vector")).toHaveLength(1);
+    // 列头 @k 显具体值（top_k 透传自 run meta）。
+    expect(screen.getByText("召回率@5")).toBeTruthy();
+    const anchoredRow = screen.getByText("锚定了三个切片的考题").closest("tr")!;
+    expect(within(anchoredRow as HTMLElement).getByText("100.0%")).toBeTruthy();
+    expect(anchoredRow.innerHTML).toContain("bg-emerald-500");
+    const multiRow = screen.getByText("多路预期的考题").closest("tr")!;
+    expect(within(multiRow as HTMLElement).getByText("50.0%")).toBeTruthy();
+    expect(multiRow.innerHTML).toContain("bg-lime-500");
+    const unanchoredRow = screen.getByText("未锚定的考题").closest("tr")!;
+    expect(within(unanchoredRow as HTMLElement).getByText("0.0%")).toBeTruthy();
+    expect(unanchoredRow.innerHTML).toContain("bg-destructive");
+  });
+
+  it("召回列未测显 —（latest 无数据 / 旧运行行无 questions 键同待遇）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_UNANCHORED, Q_ANCHORED, Q_MULTI]) });
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    expect(screen.getAllByText("—")).toHaveLength(3);
+  });
+
+  it("表头最右悬浮排序钮：默认隐形、激活常驻；召回率@k 排序未测沉底", async () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED, Q_MULTI, Q_UNANCHORED, Q_UNTESTED]) });
+    hooksMock.useMetricsOverview.mockReturnValue({
+      data: {
+        kb_id: "kb-1",
+        layer1: {
+          run_id: "run-1",
+          created_at: "2026-09-07T00:00:00+00:00",
+          metrics: {
+            summary: { hit_rate: 1, recall_at_k: 1, mrr: 1, path_accuracy: 1, question_count: 3 },
+            top_k: 5,
+          },
+        },
+        layer2: null,
+        question_results: [
+          { id: Q_ANCHORED.id, recall: 1, hit: 1, path_correct: true, actual_path: "vector", run_id: "run-1", created_at: "2026-09-07T00:00:00+00:00" },
+          { id: Q_MULTI.id, recall: 0.5, hit: 1, path_correct: true, actual_path: "graph", run_id: "run-1", created_at: "2026-09-07T00:00:00+00:00" },
+          { id: Q_UNANCHORED.id, recall: 0, hit: 0, path_correct: false, actual_path: null, run_id: "run-1", created_at: "2026-09-07T00:00:00+00:00" },
+        ],
+      },
+    });
+    const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    const orderOf = () => [...container.querySelectorAll("tbody tr")].map((tr) => tr.querySelectorAll("td")[1]!.textContent);
+
+    // 默认：入库原序不默默重排；钮隐形（悬停现形，同文档 tab 列显隐钮）。
+    expect(orderOf()).toEqual(["锚定了三个切片的考题", "多路预期的考题", "未锚定的考题", "未测过的考题"]);
+    const sortBtn = screen.getByRole("button", { name: "排序方式" });
+    expect(sortBtn.className).toContain("opacity-0");
+    expect(sortBtn.className).toContain("group-hover/colhead:opacity-100");
+
+    // 菜单与文档 tab 完全同构：五键 + 升/降序恒常展示（默认态选方向只记档，
+    // 切真实排序键时生效）。
+    // jsdom 中 Radix DropdownMenu 须用 keyDown ArrowDown 展开（同三点菜单先例）。
+    fireEvent.keyDown(sortBtn, { key: "ArrowDown" });
+    expect(await screen.findByRole("menuitem", { name: "默认顺序" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "升序" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "降序" })).toBeTruthy();
+
+    // 选召回率@5（菜单项标签随 top_k 动态）：升序 = 最差在前（分诊视角），
+    // 未测题（recall null）恒沉底不随方向翻转。
+    fireEvent.click(screen.getByRole("menuitem", { name: "召回率@5" }));
+    await waitFor(() => expect(orderOf()).toEqual(["未锚定的考题", "多路预期的考题", "锚定了三个切片的考题", "未测过的考题"]));
+    // 激活后钮常驻（opacity-0 态类名整体移除）。
+    expect(sortBtn.className).not.toContain("opacity-0");
+
+    // 降序：有值题翻转，未测题仍沉底；方向段此时已出现。
+    fireEvent.keyDown(sortBtn, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "降序" }));
+    await waitFor(() => expect(orderOf()).toEqual(["锚定了三个切片的考题", "多路预期的考题", "未锚定的考题", "未测过的考题"]));
   });
 
   it("行点击打开详情 drawer 并携带该题", () => {
@@ -257,12 +378,52 @@ describe("EvalQuestionBank 表格", () => {
     expect(moreWrap.className).toContain("group-hover:opacity-100");
   });
 
-  it("审核区块隐藏时包裹容器不占位（表头上方不浮出 8px 间隙）", () => {
+  it("审核容器常驻底部停靠：空态单行头；表格区 ScrollArea 承隐式滚动", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
-    // 缺省 mock 即空暂存：review 组件返回 null，包裹 div 为 :empty。
+    // 缺省 mock 即空暂存：review 常驻单行头（空态提示、无 toggle/候选区）。
     const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
-    const reviewWrap = container.querySelector("div.px-4")!;
-    expect(reviewWrap.className).toContain("[&:empty]:hidden");
+    expect(screen.getByTestId("eval-synthesis-review")).toBeTruthy();
+    expect(screen.getByText("暂无待审核的候选题")).toBeTruthy();
+    expect(screen.queryByTestId("eval-synthesis-review-toggle")).toBeNull();
+    const root = container.firstElementChild!;
+    expect(root.children).toHaveLength(2);
+    // 表格区 = ScrollArea（隐式 overlay 滚动条，2026-09-08 对齐）+ 2:1 分高类。
+    expect(root.children[0]!.getAttribute("data-slot")).toBe("scroll-area");
+    expect(root.children[0]!.className).toContain("flex-[2]");
+  });
+
+  it("审核暂存非空 → 容器停靠在表格区之后（底部，非表头上方）且展开", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
+    hooksMock.useSynthesisStatus.mockReturnValue({
+      data: {
+        in_progress: false,
+        candidates: [
+          {
+            candidate_id: "c_11111111",
+            query: "候选题一问",
+            category: "fact",
+            expected_paths: ["vector"],
+            relevant_chunk_ids: [],
+            relevant_entities: [],
+            reference_answer: null,
+            doc_id: "a".repeat(32),
+            generated_at: "2026-09-07T00:00:00+00:00",
+          },
+        ],
+        generated_at: "2026-09-07T00:00:00+00:00",
+        doc_ids: ["a".repeat(32)],
+        dropped: 0,
+      },
+      isLoading: false,
+    });
+    const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    // 根两子：表格区 ScrollArea + 审核容器（dialog 关闭态不渲染）——审核在表格之后。
+    const root = container.firstElementChild!;
+    expect(root.children).toHaveLength(2);
+    expect(root.children[1]!.getAttribute("data-testid")).toBe("eval-synthesis-review");
+    // 有候选：toggle 出现（可收起）且候选卡渲染。
+    expect(screen.getByTestId("eval-synthesis-review-toggle")).toBeTruthy();
+    expect(screen.getByText("候选题一问")).toBeTruthy();
   });
 
   it("🗑 三点菜单删除打开确认框：取消不调 mutation", async () => {

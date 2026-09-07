@@ -456,7 +456,9 @@ export interface Translations {
       viewTrace: string;
       tableCategory: string;
       tableHitRate: string;
-      tableRecallAtK: string;
+      /** 召回率列名（2026-09-07 函数化）：k 有值显具体值（召回率@5），
+          旧运行行无 top_k 回退符号 @k；趋势图例跨 run 仍用 trend.recallAtK 符号名。 */
+      tableRecallAtK: (k: number | null) => string;
       tableMrr: string;
       tablePathAccuracy: string;
       /** category 显示名组（2026-08-26 补遗）：wire 键不外露，含汇总行。 */
@@ -533,14 +535,21 @@ export interface Translations {
         selected: (count: number) => string;
         clear: string;
       };
-      /** 题库视图（§4.3）：列头、锚定摘要、行操作、空态与两个弹窗。 */
+      /** 题库视图（§4.3）：列头、参考文档摘要、行操作、空态与两个弹窗。 */
       questions: {
         columnQuery: string;
         columnCategory: string;
-        columnExpectedPath: string;
-        columnAnchors: string;
-        anchorsChunks: (count: number) => string;
-        anchorsEntities: (count: number) => string;
+        /** 参考文档列（2026-09-07 表头重设计）：去重文档计数；空单元格 = 无锚定。 */
+        columnRefDocs: string;
+        refDocsCount: (count: number) => string;
+        /** 召回率@k 列头 tooltip：时间口径（跨 run 合并的逐题最近结果）。 */
+        columnRecallNote: string;
+        /** 排序菜单首项（2026-09-07）：保持 golden.jsonl 原序，不参与排序。 */
+        sortDefault: string;
+        /** 召回列单元格 tooltip：召回百分比 + 实际路径（未命中时即分诊线索）。 */
+        recallTip: (percent: string, path: string) => string;
+        /** 召回列空值 aria（未测 / 上次 run 未包含）。 */
+        recallUntested: string;
         unanchored: string;
         addQuestion: string;
         emptyBank: string;
@@ -573,6 +582,12 @@ export interface Translations {
         /** 详情 drawer 标题（§4.5）。 */
         drawerTitle: string;
         noReferenceAnswer: string;
+        /** 详情抽屉参考答案卡 caption（2026-09-08 裸奔退役：去添加 dialog 的「（可选）」尾缀）。 */
+        answerSection: string;
+        /** 详情抽屉实体卡 caption（仅有值显卡）。 */
+        entitiesSection: string;
+        /** 详情抽屉参考文档卡切片计数徽章（下钻层词汇，区别于行级「N 篇」）。 */
+        drawerChunksCount: (count: number) => string;
         addedToast: string;
         deletedToast: string;
       };
@@ -588,9 +603,17 @@ export interface Translations {
         reviewTitle: string;
         accept: string;
         reject: string;
+        /** 批量采纳（2026-09-08）：逐条 accept，成功单条 toast。 */
+        acceptAll: string;
         rejectAll: string;
-        /** 元信息行：丢弃数（锚定越界/字段违例）。 */
+        /** 元信息行：丢弃数（锚定越界/字段违例）——2026-09-07 起仅作丢弃芯片 tooltip。 */
         metaLine: (dropped: number) => string;
+        /** 头部计数徽章（2026-09-07 底部停靠重设计）：带单位消歧义。 */
+        reviewCount: (count: number) => string;
+        /** 丢弃告警芯片（仅 >0 渲染，琥珀胶囊）；零值不显。 */
+        droppedChip: (dropped: number) => string;
+        /** 头部 ⓘ tooltip：来源文档标题 + 相对时间（元信息行退役后的 salvage 位）。 */
+        reviewMetaTip: (docs: string, time: string) => string;
         empty: string;
         triggerFailed: string;
         acceptFailed: string;

@@ -611,14 +611,35 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
       </div>
 
       {/* 内容区：百科 Tab 容器同款 overlay 滚动条（2026-09-04）：ScrollArea type="scroll"
-            只滚动时浮现、停 2s 淡出、不占布局宽度；horizontal 一并接管题库表格/总览块
-            的横滚（吸顶表头的滚动祖先变为 Viewport，sticky 行为同原生容器）。题库视图
-            通栏：水平拉满且顶边无内距，表头紧贴工具栏下沿；总览/历史保持 px-4 py-3。 */}
+            只滚动时浮现、停 2s 淡出、不占布局宽度；horizontal 接管总览/历史块的横滚。
+            题库视图（2026-09-07 底部停靠审核容器）退役外层 ScrollArea：改高度有界
+            flex 列——表格区与底部审核容器按比例分高（展开 2:1），纵/横滚沉进
+            表格区自身 overflow 容器（吸顶表头滚动祖先行为同原生容器）；
+            总览/历史保持 px-4 py-3。 */}
+      {view === "questions" ? (
+        <div className="min-h-0 flex-1 pb-3" data-testid="eval-questions-content">
+          {/* 题库视图（Task 6）：表格 + 详情 drawer + 受控添加/合成 dialog + 删除确认；
+           * 造题入口按钮在常驻工具栏（2026-08-29），状态由本层下发 */}
+          <EvalQuestionBank
+            addOpen={bankAddOpen}
+            enabled={enabled}
+            kbId={kbId}
+            searchQuery={bankSearchQuery}
+            selectedIds={bankSelectedIds}
+            synthesisOpen={bankSynthesisOpen}
+            onAddOpenChange={setBankAddOpen}
+            onReproduce={onReproduce}
+            onSearchQueryChange={setBankSearchQuery}
+            onSelectedIdsChange={setBankSelectedIds}
+            onSynthesisOpenChange={setBankSynthesisOpen}
+            onTrigger={(input) =>
+              requestRun(input.layers ?? "l1", input.question_ids)
+            }
+          />
+        </div>
+      ) : (
       <ScrollArea
-        className={cn(
-          "min-h-0 flex-1",
-          view === "questions" ? "px-0 pt-0 pb-3" : "px-4 py-3",
-        )}
+        className="min-h-0 flex-1 px-4 py-3"
         data-testid="eval-view-content"
         horizontal
         scrollHideDelay={2000}
@@ -827,27 +848,6 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             </>
           )}
 
-          {view === "questions" && (
-            /* 题库视图（Task 6）：表格 + 详情 drawer + 受控添加/合成 dialog + 删除确认；
-             * 造题入口按钮在常驻工具栏（2026-08-29），状态由本层下发 */
-            <EvalQuestionBank
-              addOpen={bankAddOpen}
-              enabled={enabled}
-              kbId={kbId}
-              searchQuery={bankSearchQuery}
-              selectedIds={bankSelectedIds}
-              synthesisOpen={bankSynthesisOpen}
-              onAddOpenChange={setBankAddOpen}
-              onReproduce={onReproduce}
-              onSearchQueryChange={setBankSearchQuery}
-              onSelectedIdsChange={setBankSelectedIds}
-              onSynthesisOpenChange={setBankSynthesisOpen}
-              onTrigger={(input) =>
-                requestRun(input.layers ?? "l1", input.question_ids)
-              }
-            />
-          )}
-
           {view === "history" && (
             /* 历史视图（Task 7）：运行列表行，行点击复用既有 EvalRunDrawer 实例下钻 */
             <EvalRunHistory
@@ -858,6 +858,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
           )}
         </div>
       </ScrollArea>
+      )}
 
       {/* 完整评测确认对话框（2026-09-01 B 方案）：箭头/⋯ 菜单打开，确认后触发
           l1_l2 档；题库视图有选中时携 question_ids（原批量栏的完整运行所选） */}

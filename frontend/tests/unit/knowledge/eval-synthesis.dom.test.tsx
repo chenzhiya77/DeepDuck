@@ -175,16 +175,21 @@ describe("EvalSynthesisReview（审核面板）", () => {
     hooksMock.useSynthesisStatus.mockReturnValue({ data: status, isLoading: false });
     hooksMock.useAcceptSynthesisCandidate.mockReturnValue({ mutateAsync: acceptAsync, isPending: false });
     hooksMock.useRejectSynthesisCandidate.mockReturnValue({ mutateAsync: rejectAsync, isPending: false });
+    // 来源文档标题（ⓘ tooltip 用）：与参考文档列同 queryKey。
+    hooksMock.useDocuments.mockReturnValue({ data: [READY_DOC, READY_DOC_2], isLoading: false });
     renderWithI18n(<EvalSynthesisReview enabled kbId="kb-1" />);
     return { acceptAsync, rejectAsync };
   }
 
-  it("暂存空且非运行中 → 不渲染（表格常态）", () => {
+  it("常驻：暂存空显单行头空态（无 toggle/候选区，不白占分高）", () => {
     renderReview(STATUS_EMPTY);
-    expect(screen.queryByText(zhCN.knowledge.eval.synthesize.reviewTitle)).toBeNull();
+    expect(screen.getByText(zhCN.knowledge.eval.synthesize.reviewTitle)).toBeTruthy();
+    expect(screen.getByText(zhCN.knowledge.eval.synthesize.empty)).toBeTruthy();
+    expect(screen.queryByTestId("eval-synthesis-review-toggle")).toBeNull();
+    expect(screen.queryByText(CAND_1.query)).toBeNull();
   });
 
-  it("候选卡片字段全量渲染 + 元信息行含丢弃数", () => {
+  it("候选卡片字段全量 + 元信息 salvage（计数徽章/丢弃芯片/ⓘ tooltip，裸行退役）", async () => {
     renderReview(STATUS_WITH_CANDIDATES);
     expect(screen.getByText(zhCN.knowledge.eval.synthesize.reviewTitle)).toBeTruthy();
     expect(screen.getByText(CAND_1.query)).toBeTruthy();
@@ -194,19 +199,51 @@ describe("EvalSynthesisReview（审核面板）", () => {
     expect(screen.getByText("关系")).toBeTruthy();
     expect(screen.getAllByText("vector").length).toBe(2);
     expect(screen.getByText("graph")).toBeTruthy();
-    // 锚定切片数（1 切片 / 2 切片）与参考答案
-    expect(screen.getByText("1 切片")).toBeTruthy();
-    expect(screen.getByText("2 切片")).toBeTruthy();
+    // 参考文档计数与题库参考文档列同语言（N 篇；CAND_2 两切片同文档 → 1 篇）；
+    // 切片计数退役（配置噪声，分解属下钻层）。
+    expect(screen.getAllByText("1 篇")).toHaveLength(2);
+    expect(screen.queryByText(/切片/)).toBeNull();
     expect(screen.getByText("String 是不可变类型。")).toBeTruthy();
-    // 元信息行：丢弃数进文案；来源文档多篇时顿号连接（2026-09-02）。
-    expect(screen.getByText("锚定越界或字段违例被丢弃 2 条")).toBeTruthy();
-    expect(screen.getByText(DOC)).toBeTruthy();
+    // 计数徽章带单位（替换原裸数字）；丢弃 >0 显琥珀芯片，原因沉 tooltip。
+    expect(screen.getByText("2 条待审")).toBeTruthy();
+    expect(screen.getByText("丢弃 2 条")).toBeTruthy();
+    // 计数徽章 = 琥珀「圆点+文字」胶囊（wiki 待更新同款配方），比灰胶囊显眼。
+    const badge = screen.getByText("2 条待审").closest("span")!;
+    expect(badge.className).toContain("amber");
+    expect(badge.querySelector("span[aria-hidden]")).toBeTruthy();
+    // 候选卡边框加深一档（卡容器内边际清晰）。
+    expect(screen.getByText(CAND_1.query).closest("div")!.className).toContain("border-foreground/20");
+    // 裸 doc_id 与裸 ISO 不再渲染；来源标题+相对时间收进 ⓘ tooltip 的 aria-label。
+    expect(screen.queryByText(DOC)).toBeNull();
+    expect(screen.queryByText("2026-08-28T10:00:00+00:00")).toBeNull();
+    const metaTip = screen.getByRole("button", { name: /来自/ }).getAttribute("aria-label")!;
+    expect(metaTip).toContain("Java 并发.md");
+    expect(metaTip).toContain("生成于");
+    // 批量动作收进标题行右键菜单（wiki-panel 头部右键先例）：右键头部得
+    // 全部采纳 → 全部忽略（头部不再留动作钮）。
+    expect(screen.queryByRole("button", { name: "全部采纳" })).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId("eval-synthesis-review-toggle"));
+    expect((await screen.findAllByRole("menuitem")).map((item) => item.textContent)).toEqual(["全部采纳", "全部忽略"]);
   });
 
-  it("多篇来源 → 元信息行顿号连接全部文档 id", () => {
+  it("多篇来源 → ⓘ tooltip 顿号连接（≤2 篇全列）", () => {
     const second = "c".repeat(32);
     renderReview({ ...STATUS_WITH_CANDIDATES, doc_ids: [DOC, second] });
-    expect(screen.getByText(`${DOC}、${second}`)).toBeTruthy();
+    const metaTip = screen.getByRole("button", { name: /来自/ }).getAttribute("aria-label")!;
+    expect(metaTip).toContain("Java 并发.md、集合框架.md");
+  });
+
+  it("收起：只留单行头、候选区卸载；计数徽章留头部；再点展开", () => {
+    renderReview(STATUS_WITH_CANDIDATES);
+    const toggle = screen.getByTestId("eval-synthesis-review-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText(CAND_1.query)).toBeNull();
+    // 收起态头部仍承载「有待审」信号（徽章）；批量动作在右键菜单。
+    expect(screen.getByText("2 条待审")).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(screen.getByText(CAND_1.query)).toBeTruthy();
   });
 
   it("采纳 → accept mutation 携带 candidate_id 并发成功 toast", async () => {
@@ -226,12 +263,35 @@ describe("EvalSynthesisReview（审核面板）", () => {
     await waitFor(() => expect(rejectAsync).toHaveBeenCalledWith("c_bbbb2222"));
   });
 
-  it("全部忽略 → 逐条 reject 每个候选", async () => {
+  it("全部忽略（标题行右键菜单）→ 逐条 reject 每个候选", async () => {
     const { rejectAsync } = renderReview(STATUS_WITH_CANDIDATES);
-    fireEvent.click(screen.getByRole("button", { name: "全部忽略" }));
+    fireEvent.contextMenu(screen.getByTestId("eval-synthesis-review-toggle"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "全部忽略" }));
     await waitFor(() => expect(rejectAsync).toHaveBeenCalledTimes(2));
     expect(rejectAsync).toHaveBeenNthCalledWith(1, "c_aaaa1111");
     expect(rejectAsync).toHaveBeenNthCalledWith(2, "c_bbbb2222");
+  });
+
+  it("全部采纳（标题行右键菜单）→ 逐条 accept 且只发一条成功 toast（不刷屏）", async () => {
+    const { acceptAsync } = renderReview(STATUS_WITH_CANDIDATES);
+    fireEvent.contextMenu(screen.getByTestId("eval-synthesis-review-toggle"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "全部采纳" }));
+    await waitFor(() => expect(acceptAsync).toHaveBeenCalledTimes(2));
+    expect(acceptAsync).toHaveBeenNthCalledWith(1, "c_aaaa1111");
+    expect(acceptAsync).toHaveBeenNthCalledWith(2, "c_bbbb2222");
+    await waitFor(() => {
+      expect(rs.mocked(toast.success).mock.calls.length).toBe(1);
+    });
+  });
+
+  it("候选卡右键菜单提供采纳/忽略（行级，携该候选 id）", async () => {
+    const { acceptAsync, rejectAsync } = renderReview(STATUS_WITH_CANDIDATES);
+    fireEvent.contextMenu(screen.getByText(CAND_2.query));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "忽略" }));
+    await waitFor(() => expect(rejectAsync).toHaveBeenCalledWith("c_bbbb2222"));
+    fireEvent.contextMenu(screen.getByText(CAND_1.query));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "采纳" }));
+    await waitFor(() => expect(acceptAsync).toHaveBeenCalledWith("c_aaaa1111"));
   });
 
   it("in_progress → 生成中文案", () => {

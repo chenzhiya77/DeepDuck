@@ -132,7 +132,7 @@ export function EvalRunDrawer({
                           percent(run.layer1_metrics.summary.hit_rate),
                         ],
                         [
-                          te.tableRecallAtK,
+                          te.tableRecallAtK(run.layer1_metrics.top_k ?? null),
                           percent(run.layer1_metrics.summary.recall_at_k),
                         ],
                         [te.tableMrr, percent(run.layer1_metrics.summary.mrr)],

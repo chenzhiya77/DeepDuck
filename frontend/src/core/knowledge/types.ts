@@ -449,6 +449,17 @@ export interface Layer1CategoryMetrics {
   question_count: number;
 }
 
+/** 逐题 L1 slim 指标（layer1_metrics.questions，2026-09-07 题库分诊列）：
+    保存时自 runner report 投影的五键；旧运行行无此数组（键缺省）。 */
+export interface EvalQuestionMetric {
+  id: string;
+  /** 参考切片被命中比例（0–1）；无锚定题为 null。 */
+  recall: number | null;
+  hit: number | null;
+  path_correct: boolean;
+  actual_path: string | null;
+}
+
 /** Layer 1 summary + dynamic category keys from the dataset schema. */
 export interface Layer1Metrics {
   summary: Layer1CategoryMetrics;
@@ -456,6 +467,10 @@ export interface Layer1Metrics {
   relation?: Layer1CategoryMetrics;
   concept?: Layer1CategoryMetrics;
   global?: Layer1CategoryMetrics;
+  /** 逐题 slim 数组（可选：slim 投影落地前的旧运行行无此键）。 */
+  questions?: EvalQuestionMetric[];
+  /** 该 run 的检索 top_k（列头 @k 具体值数据源，2026-09-07）；旧运行行无此键。 */
+  top_k?: number;
 }
 
 /** RAGAS standard metrics (RagasReport.aggregate.ragas). */
@@ -481,6 +496,14 @@ export interface BaselineDiff {
   regressed_categories?: string[];
 }
 
+/** 逐题最近一次被测结果（latest payload question_results，2026-09-07）：
+    跨 run 倒序合并——scoped run 只含子集，列语义是「该题最近一次被测」
+    而非「最近一次 run」，跑别的题不会抹掉已出数的题。 */
+export interface EvalQuestionResult extends EvalQuestionMetric {
+  run_id: string;
+  created_at: string;
+}
+
 /** MetricsOverview payload for GET /eval-runs/latest (spec §3.2). */
 export interface MetricsOverview {
   kb_id: string;
@@ -500,6 +523,8 @@ export interface MetricsOverview {
     langfuse_trace_url?: string;
     has_graph_questions: boolean;
   } | null;
+  /** 逐题最近结果（跨 run 合并）；旧网关无此键时列全 —。 */
+  question_results?: EvalQuestionResult[];
 }
 
 // ── Evaluation trend (spec 2026-08-24 §4.1, plan Task 3) ─────────────────
