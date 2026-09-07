@@ -114,7 +114,11 @@ class TestLayer1MetricsMapping:
         metrics = persistence.layer1_metrics_from_report(_layer1_report_payload())
 
         # Only the batch's categories appear — never a fixed four-key template.
-        assert set(metrics) == {"summary", "fact", "relation"}
+        # ``questions`` is the per-question slim array (bank triage column);
+        # ``top_k`` is the scalar retrieval depth for @k column headers.
+        assert set(metrics) == {"summary", "fact", "relation", "questions", "top_k"}
+        assert metrics["questions"] == []
+        assert metrics["top_k"] == 5
         assert metrics["fact"] == {
             "hit_rate": pytest.approx(1.0),
             "recall_at_k": pytest.approx(1.0),
@@ -129,7 +133,42 @@ class TestLayer1MetricsMapping:
         payload = _layer1_report_payload()
         payload["by_category"] = {}
 
-        assert set(persistence.layer1_metrics_from_report(payload)) == {"summary"}
+        assert set(persistence.layer1_metrics_from_report(payload)) == {"summary", "questions", "top_k"}
+
+    def test_questions_slim_projection_for_bank_triage(self):
+        payload = _layer1_report_payload()
+        payload["questions"] = [
+            {
+                "id": "q1",
+                "category": "fact",
+                "expected_paths": ["vector"],
+                "actual_path": "vector",
+                "path_correct": True,
+                "hit": 1.0,
+                "recall": 1.0,
+                "mrr": 1.0,
+                "paths": {"vector": {"hits": [{"chunk_id": CHUNK, "score": 0.9}], "failure": None}},
+            },
+            {
+                "id": "q2",
+                "category": "relation",
+                "expected_paths": ["graph"],
+                "actual_path": None,
+                "path_correct": False,
+                "hit": 0.0,
+                "recall": 0.0,
+                "mrr": None,
+                "paths": {},
+            },
+        ]
+
+        metrics = persistence.layer1_metrics_from_report(payload)
+
+        # Slim five keys only — per-path hit detail never reaches eval_runs.
+        assert metrics["questions"] == [
+            {"id": "q1", "recall": 1.0, "hit": 1.0, "path_correct": True, "actual_path": "vector"},
+            {"id": "q2", "recall": 0.0, "hit": 0.0, "path_correct": False, "actual_path": None},
+        ]
 
 
 class TestLayer2MetricsMapping:
@@ -363,7 +402,7 @@ class TestLayer1CliPersistence:
         assert row.kb_id == "kb-1"
         assert row.status == "completed"
         assert row.layer2_metrics == {}
-        assert set(row.layer1_metrics) == {"summary", "fact", "relation"}
+        assert set(row.layer1_metrics) == {"summary", "fact", "relation", "questions", "top_k"}
         assert row.layer1_metrics["summary"]["question_count"] == 2
         assert row.layer1_metrics["summary"]["recall_at_k"] == pytest.approx(1.0)
         assert row.baseline_diff is None

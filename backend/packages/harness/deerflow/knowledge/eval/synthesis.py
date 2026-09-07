@@ -29,6 +29,12 @@ beat dirty questions. The staging file is a single JSON document (not JSONL)
 so metadata (doc_ids / generated_at / dropped) survives after the last
 candidate is reviewed; every synthesis replaces it wholesale — the review
 surface is always exactly one synthesis run's output.
+
+Entity annotations are NOT LLM-produced: the prompt schema deliberately omits
+``relevant_entities`` (model-invented entity names would pollute the
+``seed_hit_rate`` caliber), and ``_guard_candidate`` derives them
+deterministically from the anchored chunks' index-time ``entities`` via
+``chunk_entities_union`` — the same source of truth as the graph seeds.
 """
 
 from __future__ import annotations
@@ -106,6 +112,24 @@ def new_candidate_id() -> str:
     return f"c_{uuid4().hex[:8]}"
 
 
+def chunk_entities_union(chunks: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Order-preserving deduped union of the chunks' ``entities`` (2026-09-08).
+
+    ``chunk.entities`` are the index-time graph extraction names — the same
+    vocabulary as ``trace.seed_entities``, so annotating a question with the
+    union of its anchored chunks' entities is what makes ``seed_hit_rate``
+    applicable without letting the LLM invent entity names. Shared by the
+    synthesis guard and the manual create path (service derives when the
+    request body carries no entities).
+    """
+    names: list[str] = []
+    for chunk in chunks:
+        for name in chunk.get("entities") or []:
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
+    return names
+
+
 def _lock(path: Path) -> asyncio.Lock:
     return _LOCKS.setdefault(str(path), asyncio.Lock())
 
@@ -181,6 +205,8 @@ def _guard_candidate(raw: dict[str, Any], *, chunks: list[dict[str, Any]], candi
     multi-doc chunk list — identical semantics to the single-doc design.
     The candidate's ``doc_id`` is derived from its anchored chunks: the
     distinct source documents, comma-joined in order of appearance.
+    Entity annotations derive from the anchored chunks (see
+    ``chunk_entities_union``), never from the LLM payload.
     """
     refs = raw.get("chunk_refs")
     if not isinstance(refs, list) or not refs:
@@ -201,7 +227,7 @@ def _guard_candidate(raw: dict[str, Any], *, chunks: list[dict[str, Any]], candi
         "category": raw.get("category"),
         "expected_paths": raw.get("expected_paths"),
         "relevant_chunk_ids": list(chunk_ids),
-        "relevant_entities": list(raw.get("relevant_entities") or []),
+        "relevant_entities": chunk_entities_union(anchored),
         "reference_answer": raw.get("reference_answer"),
     }
     try:

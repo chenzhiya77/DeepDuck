@@ -122,6 +122,34 @@ async def test_get_returns_full_question_fields(service) -> None:
     assert question["reference_answer"] == "图谱路径。"
 
 
+async def test_create_derives_entities_from_anchored_chunks_when_body_empty(service) -> None:
+    """实体标注派生（2026-09-08）：造题面本无实体输入，body 空 entities +
+    有锚定时 service 按锚定切片 entities 保序去重并集派生（与合成路同源）；
+    body 显式非空尊重原值不被派生覆盖。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = "d" * 32
+    await service.store.create_document(doc_id=doc_id, kb_id=kb["id"], uploader_id=OWNER_ID, name="java基础.docx", size_bytes=1, storage_path="p")
+    await service.store.insert_chunks(
+        [
+            {"chunk_id": f"{doc_id}#0001", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 1, "text": "t1", "entities": ["Integer", "int"]},
+            {"chunk_id": f"{doc_id}#0002", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 2, "text": "t2", "entities": ["int"]},
+        ]
+    )
+
+    derived = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0001", f"{doc_id}#0002"], relevant_entities=[]),
+    ).json()
+    assert derived["relevant_entities"] == ["Integer", "int"]
+
+    explicit = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0001"], relevant_entities=["手动"]),
+    ).json()
+    assert explicit["relevant_entities"] == ["手动"]
+
+
 async def test_get_dirty_file_maps_to_500_with_line_hint(service) -> None:
     client = _client(service)
     kb = _create_kb(client)

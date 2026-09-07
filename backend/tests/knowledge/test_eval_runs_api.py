@@ -176,6 +176,61 @@ async def test_latest_layer_without_any_run_is_null(service) -> None:
     assert body["layer2"] is None
 
 
+async def test_latest_passes_through_per_question_slim_array(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    layer1 = _l1()
+    layer1["questions"] = [
+        {"id": "q1", "recall": 1.0, "hit": 1.0, "path_correct": True, "actual_path": "vector"},
+        {"id": "q2", "recall": 0.0, "hit": 0.0, "path_correct": False, "actual_path": None},
+    ]
+    await _seed_run(kb["id"], "run-l1", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=layer1)
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/latest").json()
+
+    # 题库分诊列数据源：逐题 slim 数组原样透传（bank 按 id join）。
+    assert body["layer1"]["metrics"]["questions"] == layer1["questions"]
+
+
+async def test_latest_legacy_row_without_questions_key_reads_clean(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-legacy", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1())
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/latest").json()
+
+    # slim 数组落地前的旧运行行 simply 缺键——读集按可选键处理，不报错。
+    assert "questions" not in body["layer1"]["metrics"]
+
+
+async def test_latest_question_results_merge_across_runs(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    old = _l1()
+    old["questions"] = [
+        {"id": "q1", "recall": 1.0, "hit": 1.0, "path_correct": True, "actual_path": "vector"},
+        {"id": "q2", "recall": 0.0, "hit": 0.0, "path_correct": False, "actual_path": None},
+    ]
+    new = _l1()
+    new["questions"] = [{"id": "q2", "recall": 1.0, "hit": 1.0, "path_correct": True, "actual_path": "vector"}]
+    ci = _l1()
+    ci["questions"] = [{"id": "q3", "recall": 1.0, "hit": 1.0, "path_correct": True, "actual_path": "vector"}]
+    await _seed_run(kb["id"], "run-old", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=old)
+    await _seed_run(kb["id"], "run-new", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer1=new)
+    await _seed_run(kb["id"], "run-ci", datetime(2026, 8, 22, 9, 0, tzinfo=UTC), layer1=ci, environment="ci")
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/latest").json()
+
+    # 跨 run 合并：q1 保留 run-old 的结果（scoped run-new 不把它覆盖成缺失）；
+    # q2 取更近的 run-new；ci 行不进读集。
+    merged = {q["id"]: q for q in body["question_results"]}
+    assert merged["q1"]["run_id"] == "run-old"
+    assert merged["q1"]["recall"] == 1.0
+    assert merged["q2"]["run_id"] == "run-new"
+    assert merged["q2"]["recall"] == 1.0
+    assert "q3" not in merged
+
+
 async def test_latest_never_evaluated_returns_both_layers_null(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
@@ -183,7 +238,11 @@ async def test_latest_never_evaluated_returns_both_layers_null(service) -> None:
     response = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/latest")
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"kb_id": kb["id"], "layer1": None, "layer2": None}
+    body = response.json()
+    assert body["kb_id"] == kb["id"]
+    assert body["layer1"] is None
+    assert body["layer2"] is None
+    assert body["question_results"] == []
 
 
 async def test_latest_unknown_kb_404(service) -> None:

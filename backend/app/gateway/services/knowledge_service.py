@@ -32,7 +32,7 @@ import numpy as np
 from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, cancel_eval_run, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
-from deerflow.knowledge.eval.persistence import ENV_CI
+from deerflow.knowledge.eval.persistence import ENV_CI, STATUS_COMPLETED
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.eval.trend import TREND_WINDOW_DAYS, build_run_points, build_sparks, latest_layer_row
 from deerflow.knowledge.graph.communities import assign_communities, summarize_communities
@@ -135,6 +135,35 @@ def _layer1_overview_payload(row: EvalRunRow | None) -> dict[str, Any] | None:
     if row.baseline_diff is not None:
         payload["baseline_diff"] = row.baseline_diff
     return payload
+
+
+def _question_results_payload(rows: Sequence[EvalRunRow]) -> list[dict[str, Any]]:
+    """逐题最近一次被测结果（2026-09-07）：跨 run 倒序合并。
+
+    scoped run 的 questions 数组只含本次子集——bank 列若只取 latest run，
+    其它题的结果会被「覆盖」成缺失（用户实测：跑别的题后已出数的题消失）。
+    故倒序遍历 completed 非 ci 行，每题取首次（即最近）遇到的 slim 记录，
+    列语义 = 「该题最近一次被测结果」，与 run 级 latest 解耦。
+    """
+
+    latest: dict[str, dict[str, Any]] = {}
+    for row in sorted(rows, key=lambda r: (r.created_at, r.id), reverse=True):
+        if row.status != STATUS_COMPLETED or row.environment == ENV_CI:
+            continue
+        for question in (row.layer1_metrics or {}).get("questions") or []:
+            question_id = question.get("id")
+            if not question_id or question_id in latest:
+                continue
+            latest[question_id] = {
+                "id": question_id,
+                "recall": question.get("recall"),
+                "hit": question.get("hit"),
+                "path_correct": question.get("path_correct"),
+                "actual_path": question.get("actual_path"),
+                "run_id": row.id,
+                "created_at": coerce_iso(row.created_at),
+            }
+    return list(latest.values())
 
 
 def _layer2_overview_payload(row: EvalRunRow | None) -> dict[str, Any] | None:
@@ -1188,6 +1217,7 @@ class KnowledgeService:
             "kb_id": kb_id,
             "layer1": _layer1_overview_payload(latest_layer_row(rows, "layer1")),
             "layer2": _layer2_overview_payload(latest_layer_row(rows, "layer2")),
+            "question_results": _question_results_payload(rows),
         }
 
     async def get_eval_trend(self, kb_id: str, *, include_ci: bool) -> dict[str, Any]:
@@ -1249,6 +1279,13 @@ class KnowledgeService:
         relevant_entities: Collection[str],
         reference_answer: str | None,
     ) -> dict[str, Any]:
+        if not relevant_entities and relevant_chunk_ids:
+            # 实体标注派生（2026-09-08，与合成路同源）：造题面（存为考题/添加
+            # dialog）本无实体输入，空标注会让 seed_hit_rate 永久不适用——
+            # 有锚定时取锚定切片 entities 保序去重并集；body 显式非空尊重
+            # 原值（API 契约）。
+            rows = await self.store.get_chunks_by_ids(list(relevant_chunk_ids))
+            relevant_entities = synthesis.chunk_entities_union(rows)
         question = await question_bank.add_question(
             self._golden_path(kb_id),
             query=query,

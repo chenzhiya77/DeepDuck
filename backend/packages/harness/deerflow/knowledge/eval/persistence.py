@@ -103,11 +103,33 @@ def layer1_metrics_from_report(report: Mapping[str, Any]) -> dict[str, Any]:
     ``overall`` → ``summary`` (with ``recall`` → ``recall_at_k`` and
     ``count`` → ``question_count``); ``by_category`` categories pass through as
     top-level dynamic keys — only the categories present in the batch appear.
+    ``questions`` carries a per-question slim array (id/recall/hit/
+    path_correct/actual_path) for the question-bank triage column — the
+    full per-path hit detail stays out of eval_runs on purpose. ``top_k``
+    passes the run's retrieval depth through as a scalar so column headers
+    can render ``召回率@5`` instead of a symbolic k; being a scalar (not a
+    Mapping) it never enters ``baseline_report_from_metrics``'s category
+    reconstruction. Runs saved before these keys existed simply lack them;
+    readers treat them as optional.
     """
 
     result: dict[str, Any] = {"summary": _layer1_scope(report["overall"])}
     for category, metrics in (report.get("by_category") or {}).items():
         result[category] = _layer1_scope(metrics)
+    result["questions"] = [
+        {
+            "id": question.get("id"),
+            "recall": question.get("recall"),
+            "hit": question.get("hit"),
+            "path_correct": question.get("path_correct"),
+            "actual_path": question.get("actual_path"),
+        }
+        for question in (report.get("questions") or [])
+        if isinstance(question, Mapping)
+    ]
+    top_k = (report.get("meta") or {}).get("top_k")
+    if top_k is not None:
+        result["top_k"] = top_k
     return result
 
 

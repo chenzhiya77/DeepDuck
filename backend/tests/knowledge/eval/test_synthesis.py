@@ -99,6 +99,23 @@ async def test_synthesize_writes_validated_candidates_to_staging(tmp_path) -> No
     assert not (tmp_path / "golden.jsonl").exists()
 
 
+async def test_candidate_entities_derived_from_anchored_chunks(tmp_path) -> None:
+    # 实体标注（2026-09-08）：锚定切片 entities 保序去重并集——prompt 输出
+    # schema 本无该字段（LLM 补填会幻觉实体名污染 seed_hit_rate 口径）；
+    # 跨切片重名去重、无实体切片不贡献。
+    chunks = [
+        {"chunk_id": f"{DOC}#0001", "text": "String 是不可变类型。", "entities": ["String", "Java"]},
+        {"chunk_id": f"{DOC}#0002", "text": "StringBuffer 是可变且线程安全的。", "entities": ["Java", "Thread"]},
+        {"chunk_id": f"{DOC}#0003", "text": "StringBuilder 可变但非线程安全。", "entities": []},
+    ]
+    questions = [dict(GOOD_QUESTIONS[0], chunk_refs=[1, 2, 3])]
+
+    _, candidates, dropped, _llm = await _synthesize(tmp_path, questions, docs=[(DOC, "Java 并发.md", chunks)])
+
+    assert dropped == 0
+    assert candidates[0].relevant_entities == ("String", "Java", "Thread")
+
+
 async def test_out_of_range_anchor_drops_only_that_candidate(tmp_path) -> None:
     # 守卫①：锚定编号越界 → 该候选整条丢弃，其余不受影响。
     bad = [GOOD_QUESTIONS[0], dict(GOOD_QUESTIONS[1], chunk_refs=[9])]
