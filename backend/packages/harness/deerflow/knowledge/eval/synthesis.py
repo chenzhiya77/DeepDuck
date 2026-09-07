@@ -30,11 +30,14 @@ so metadata (doc_ids / generated_at / dropped) survives after the last
 candidate is reviewed; every synthesis replaces it wholesale — the review
 surface is always exactly one synthesis run's output.
 
-Entity annotations are NOT LLM-produced: the prompt schema deliberately omits
-``relevant_entities`` (model-invented entity names would pollute the
-``seed_hit_rate`` caliber), and ``_guard_candidate`` derives them
-deterministically from the anchored chunks' index-time ``entities`` via
-``chunk_entities_union`` — the same source of truth as the graph seeds.
+Entity annotations are question-level, not chunk-level (2026-09-08 约束选择
+修订): the prompt ships each chunk's index-time entity vocabulary and asks the
+LLM to SELECT the subset the question actually examines; ``_guard_candidate``
+filters every name outside the anchored chunks' vocabulary union, so selection
+stays grounded (zero hallucination) while the annotation keeps question-level
+granularity — a full-chunk union would dilute ``seed_hit_rate``'s denominator
+with entities the query never seeds. The manual create path (no LLM) still
+derives the chunk union via ``chunk_entities_union``.
 """
 
 from __future__ import annotations
@@ -116,11 +119,10 @@ def chunk_entities_union(chunks: Sequence[Mapping[str, Any]]) -> list[str]:
     """Order-preserving deduped union of the chunks' ``entities`` (2026-09-08).
 
     ``chunk.entities`` are the index-time graph extraction names — the same
-    vocabulary as ``trace.seed_entities``, so annotating a question with the
-    union of its anchored chunks' entities is what makes ``seed_hit_rate``
-    applicable without letting the LLM invent entity names. Shared by the
-    synthesis guard and the manual create path (service derives when the
-    request body carries no entities).
+    vocabulary as ``trace.seed_entities``. Two consumers: the synthesis guard
+    uses the anchored union as the ALLOWED-SELECTION set (constrained choice,
+    out-of-vocabulary names filtered), and the manual create path derives it
+    directly as the annotation (no LLM in that route).
     """
     names: list[str] = []
     for chunk in chunks:
@@ -149,10 +151,12 @@ _SYSTEM_PROMPT = """你是知识库评测题库的出题员，基于给定文档
 - query 禁止照抄切片原文，必须用自己的话提问；
 - category 只能取 fact / relation / concept / global；
 - expected_paths 从 vector / graph / wiki 中选（可多选，数组形式）；
-- chunk_refs 是答案依据的切片编号列表（1 开始，全局编号）。
+- chunk_refs 是答案依据的切片编号列表（1 开始，全局编号）；
+- relevant_entities 从所锚定切片（chunk_refs）的实体词汇表中挑选该题真正
+  考察的实体子集（可空数组）；禁止发明词汇表外的名字。
 
 只输出 JSON，不要其他文字：
-{"questions": [{"query": "...", "category": "...", "expected_paths": ["..."], "chunk_refs": [1, 2], "reference_answer": "..."}]}"""
+{"questions": [{"query": "...", "category": "...", "expected_paths": ["..."], "chunk_refs": [1, 2], "relevant_entities": ["..."], "reference_answer": "..."}]}"""
 
 #: Total chunk budget for ONE LLM call — multi-doc runs split it evenly
 #: across documents, each keeping at least one chunk (no starvation).
@@ -171,7 +175,7 @@ def _sample_chunks(chunks: Sequence[Mapping[str, Any]], quota: int) -> list[Mapp
 
 
 def _build_messages(docs: Sequence[tuple[str, str, Sequence[Mapping[str, Any]]]], count: int, flat_chunks: list[dict[str, Any]]) -> list:
-    lines = "\n".join(f"[{index}] 《{chunk['doc_name']}》 {chunk.get('text', '')}" for index, chunk in enumerate(flat_chunks, start=1))
+    lines = "\n".join(f"[{index}] 《{chunk['doc_name']}》 实体词汇表: [{', '.join(chunk.get('entities') or [])}] {chunk.get('text', '')}" for index, chunk in enumerate(flat_chunks, start=1))
     doc_count = len(docs)
     user = f"以下共 {len(flat_chunks)} 个切片，来自 {doc_count} 篇文档（全局编号）：\n{lines}\n\n请生成 {count} 道题（single-hop 与 multi-hop 混合）。"
     if doc_count > 1:
@@ -205,8 +209,10 @@ def _guard_candidate(raw: dict[str, Any], *, chunks: list[dict[str, Any]], candi
     multi-doc chunk list — identical semantics to the single-doc design.
     The candidate's ``doc_id`` is derived from its anchored chunks: the
     distinct source documents, comma-joined in order of appearance.
-    Entity annotations derive from the anchored chunks (see
-    ``chunk_entities_union``), never from the LLM payload.
+    Entity annotations are the LLM's constrained selection filtered to the
+    anchored vocabulary union (``chunk_entities_union``) — out-of-vocabulary
+    (hallucinated) names are dropped, order preserved, deduped; an empty
+    selection stays an honest no-annotation (no union fallback).
     """
     refs = raw.get("chunk_refs")
     if not isinstance(refs, list) or not refs:
@@ -220,6 +226,10 @@ def _guard_candidate(raw: dict[str, Any], *, chunks: list[dict[str, Any]], candi
     anchored = [chunks[index - 1] for index in indexes]
     chunk_ids = tuple(chunk["chunk_id"] for chunk in anchored)
     source_docs = ",".join(dict.fromkeys(chunk["doc_id"] for chunk in anchored))
+    # 约束选择（2026-09-08）：LLM 从锚定切片实体词汇表挑题面考察子集；
+    # 词汇表外名字（幻觉）过滤，保序去重；空选择=诚实无标注。
+    allowed = set(chunk_entities_union(anchored))
+    entities = list(dict.fromkeys(name for name in (raw.get("relevant_entities") or []) if isinstance(name, str) and name in allowed))
 
     question_raw: dict[str, Any] = {
         "id": candidate_id,
@@ -227,7 +237,7 @@ def _guard_candidate(raw: dict[str, Any], *, chunks: list[dict[str, Any]], candi
         "category": raw.get("category"),
         "expected_paths": raw.get("expected_paths"),
         "relevant_chunk_ids": list(chunk_ids),
-        "relevant_entities": chunk_entities_union(anchored),
+        "relevant_entities": entities,
         "reference_answer": raw.get("reference_answer"),
     }
     try:

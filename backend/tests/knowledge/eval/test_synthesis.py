@@ -99,21 +99,32 @@ async def test_synthesize_writes_validated_candidates_to_staging(tmp_path) -> No
     assert not (tmp_path / "golden.jsonl").exists()
 
 
-async def test_candidate_entities_derived_from_anchored_chunks(tmp_path) -> None:
-    # 实体标注（2026-09-08）：锚定切片 entities 保序去重并集——prompt 输出
-    # schema 本无该字段（LLM 补填会幻觉实体名污染 seed_hit_rate 口径）；
-    # 跨切片重名去重、无实体切片不贡献。
+async def test_candidate_entities_constrained_to_anchored_vocabulary(tmp_path) -> None:
+    # 实体标注（2026-09-08 约束选择）：prompt 逐片下发实体词汇表，LLM 挑
+    # 题面考察子集；guard 过滤词汇表外名字（幻觉零污染）、保序去重。
     chunks = [
         {"chunk_id": f"{DOC}#0001", "text": "String 是不可变类型。", "entities": ["String", "Java"]},
         {"chunk_id": f"{DOC}#0002", "text": "StringBuffer 是可变且线程安全的。", "entities": ["Java", "Thread"]},
-        {"chunk_id": f"{DOC}#0003", "text": "StringBuilder 可变但非线程安全。", "entities": []},
     ]
-    questions = [dict(GOOD_QUESTIONS[0], chunk_refs=[1, 2, 3])]
+    questions = [dict(GOOD_QUESTIONS[0], chunk_refs=[1, 2], relevant_entities=["String", "Java", "幻觉实体", "String"])]
 
-    _, candidates, dropped, _llm = await _synthesize(tmp_path, questions, docs=[(DOC, "Java 并发.md", chunks)])
+    _, candidates, dropped, llm = await _synthesize(tmp_path, questions, docs=[(DOC, "Java 并发.md", chunks)])
 
     assert dropped == 0
-    assert candidates[0].relevant_entities == ("String", "Java", "Thread")
+    assert candidates[0].relevant_entities == ("String", "Java")
+    # 词汇表随 prompt 下发（逐片前缀），模型选得到才挑得准。
+    assert "实体词汇表: [String, Java]" in llm.calls[0][1].content
+
+
+async def test_empty_entity_selection_stays_unannotated(tmp_path) -> None:
+    # 空选择 = 诚实无标注（不回退切片全量并集）：seed_hit_rate 记不适用，
+    # 不制造稀释分母。
+    chunks = [{"chunk_id": f"{DOC}#0001", "text": "t", "entities": ["String"]}]
+    questions = [dict(GOOD_QUESTIONS[0], chunk_refs=[1], relevant_entities=[])]
+
+    _, candidates, _dropped, _llm = await _synthesize(tmp_path, questions, docs=[(DOC, "d.md", chunks)])
+
+    assert candidates[0].relevant_entities == ()
 
 
 async def test_out_of_range_anchor_drops_only_that_candidate(tmp_path) -> None:
@@ -229,6 +240,8 @@ async def test_prompt_contract_carries_numbered_chunks_and_constraints(tmp_path)
     assert "single-hop" in prompt_text and "multi-hop" in prompt_text
     assert "照抄" in prompt_text, "禁止照抄切片原文的约束进 prompt"
     assert "chunk_refs" in prompt_text and "expected_paths" in prompt_text
+    # 约束选择（2026-09-08）：实体子集字段与挑选约束进 prompt 契约。
+    assert "relevant_entities" in prompt_text and "实体词汇表" in prompt_text
 
 
 # ── 多篇联合出题（2026-09-02 路线二）─────────────────────────────────
