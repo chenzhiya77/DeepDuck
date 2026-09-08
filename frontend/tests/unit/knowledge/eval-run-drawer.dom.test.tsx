@@ -1,14 +1,18 @@
 /**
- * 单次评测运行详情 drawer 壳（2026-08-24 spec §5，plan Task 6）：
+ * 单次评测运行详情 drawer 壳（2026-08-24 spec §5，plan Task 6；2026-09-08
+ * 容器化 + 裸奔退役重设计）：
  * - 趋势图数据点点击下钻的数据源（useEvalRun mock 注入）；
- * - 渲染 run 元信息（run_id / created_at / environment / status / 基线徽标）
- *   + 两层指标只读摘要；Layer 2 的 path_accuracy 口径标注必须可见
- *   （与 Layer 1 同名指标口径不同，spec §5 冻结契约）；
- * - 层未执行（*_metrics 为 {}）渲染「未执行」提示；
+ * - sticky 身份头（运行时间 mono 标题 + 环境/状态/评测内容/基线/回退芯片行）
+ *   + 三张 bg-card 卡（运行信息：run_id 代码底 + 复制 / 完整时间；两层指标
+ *   两列内凹瓦片 + 三色进度条）；Layer 2 的 path_accuracy 口径 callout 必须
+ *   可见（与 Layer 1 同名指标口径不同，spec §5 冻结契约）；
+ * - 层未执行（*_metrics 为 {}）渲染「未执行」提示；null 值瓦片 opacity-60 +
+ *   破折号无进度条；
+ * - 复制钮走 navigator.clipboard + toast（settings 集成页同款）；
  * - onOpenChange(false) 关闭（对齐 ChunkDrawer 的 Sheet 模式）。
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 const hooksMock = rs.hoisted(() => ({
   useEvalRun: rs.fn(),
@@ -70,36 +74,118 @@ describe("EvalRunDrawer", () => {
     cleanup();
   });
 
-  it("fetches via useEvalRun with kbId+runId and renders run metadata", () => {
+  it("fetches via useEvalRun with kbId+runId and renders containerized run metadata", () => {
     renderDrawer();
     expect(hooksMock.useEvalRun).toHaveBeenCalledWith("kb-1", "run-l1-1");
-    // 元信息：run_id / 运行时间 / 环境 / 状态（本地化徽标）/ 基线徽标
+    // 运行信息卡：run_id 代码底 + 卡头词汇；环境本地化胶囊；状态芯片；基线琥珀胶囊；评测内容芯片
     expect(screen.getByText("run-l1-1")).toBeTruthy();
     expect(screen.getByText("运行 ID")).toBeTruthy();
-    expect(screen.getByText("环境")).toBeTruthy();
-    expect(screen.getByText("local")).toBeTruthy();
+    expect(screen.getByText("运行信息")).toBeTruthy();
+    expect(screen.getByText("本地")).toBeTruthy();
     expect(screen.getByText("已完成")).toBeTruthy();
     expect(screen.getByText("基线")).toBeTruthy();
+    expect(screen.getByText("完整")).toBeTruthy();
+    // 三张 bg-card 容器（运行信息 / 检索质量 / 生成质量）——裸奔退役
+    expect(document.querySelectorAll("section.bg-card").length).toBe(3);
+    // 内部代号禁现守卫（历史表同纪律）
+    expect(screen.queryByText(/L1|L2/)).toBeNull();
   });
 
-  it("renders both layer summaries including the Layer 2 path_accuracy caveat", () => {
+  it("sticky identity header carries mono run time title and full time in info card", () => {
     renderDrawer();
-    // 检索质量：summary 行四指标 + 题量（区块标题已去 Layer 术语，2026-08-27 方案 A）
+    // 身份标题 = 运行时间 mono（MM-DD HH:mm 词汇同历史表）
+    expect(screen.getByTestId("eval-drawer-title").textContent).toMatch(
+      /\d{2}-\d{2} \d{2}:\d{2}/,
+    );
+    // 完整时间直显（toLocaleString 退役）：含年月日（zh 格式为斜杠分隔）
+    expect(screen.getByTestId("eval-drawer-created-at").textContent).toMatch(
+      /\d{4}[/-]\d{2}[/-]\d{2}/,
+    );
+  });
+
+  it("renders both layer summaries as tiles including the Layer 2 path_accuracy caveat", () => {
+    renderDrawer();
+    // 检索质量：summary 四瓦片 + 题量计数徽章（区块标题已去 Layer 术语）
     expect(screen.getByText("检索质量")).toBeTruthy();
-    expect(screen.getByText("89.7%")).toBeTruthy(); // recall_at_k 0.897
-    expect(screen.getByText("92.8%")).toBeTruthy(); // hit_rate 0.928
-    expect(screen.getByText("81.2%")).toBeTruthy(); // mrr（数值语言统一后同走百分数）
-    // 生成质量：RAGAS 四项 + 架构专属三项 + path_accuracy 及口径标注
+    expect(screen.getByText("n=20")).toBeTruthy();
+    const hitTile = screen.getByTestId("eval-drawer-tile-hit_rate");
+    expect(
+      within(hitTile).getByTestId("eval-drawer-tile-value-hit_rate").textContent,
+    ).toBe("92.8%");
+    // 瓦片带三色进度条（总览 MetricTile 同词汇）
+    expect(hitTile.querySelector('[data-slot="progress-indicator"]')).toBeTruthy();
+    expect(
+      screen.getByTestId("eval-drawer-tile-value-recall_at_k").textContent,
+    ).toBe("89.7%");
+    expect(screen.getByTestId("eval-drawer-tile-value-mrr").textContent).toBe(
+      "81.2%",
+    );
+    // 生成质量：RAGAS 四项 + 架构专属三项 + path_accuracy 及口径 callout
     // （RAGAS 行名与总览卡/趋势图例同词汇，2026-09-05 闭环后为中文）。
     expect(screen.getByText("生成质量")).toBeTruthy();
     expect(screen.getByText("忠实度")).toBeTruthy();
     expect(screen.getByText("上下文召回率")).toBeTruthy();
     expect(screen.getByText("引用准确率")).toBeTruthy();
-    expect(screen.getByText("路径准确率（对话链路）")).toBeTruthy();
-    expect(screen.getByText("87.0%")).toBeTruthy();
+    expect(screen.getByText("路由命中率")).toBeTruthy();
     expect(
-      screen.getByText(/与检索质量表格中同名指标口径不同/),
+      screen.getByTestId("eval-drawer-tile-value-routing_hit_rate").textContent,
+    ).toBe("87.0%");
+    expect(
+      screen.getByText(/与检索质量的路径准确率（离线检索选路）口径不同/),
     ).toBeTruthy();
+  });
+
+  it("regression run shows the red regression chip in the identity header", () => {
+    hooksMock.useEvalRun.mockReturnValue({
+      data: {
+        ...EVAL_RUN,
+        baseline_diff: {
+          recall_at_k_delta: -0.12,
+          regression_detected: true,
+          threshold_percent: 3,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+    renderDrawer();
+    expect(screen.getByText("检测到回退")).toBeTruthy();
+  });
+
+  it("null metric tile renders dash with opacity and no progress bar", () => {
+    hooksMock.useEvalRun.mockReturnValue({
+      data: {
+        ...EVAL_RUN,
+        layer2_metrics: {
+          ragas_available: true,
+          ragas: { faithfulness: 0.933, answer_relevancy: 0.877, context_precision: 0.912, context_recall: 0.864 },
+          arch_specific: { citation_precision: 0.91, citation_recall: 0.85, seed_hit_rate: 0.75 },
+          has_graph_questions: true,
+          path_accuracy: null,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+    renderDrawer();
+    const tile = screen.getByTestId("eval-drawer-tile-routing_hit_rate");
+    expect(tile.className).toContain("opacity-60");
+    expect(
+      screen.getByTestId("eval-drawer-tile-value-routing_hit_rate").textContent,
+    ).toBe("-");
+    expect(tile.querySelector('[data-slot="progress-indicator"]')).toBeNull();
+  });
+
+  it("copies run id via the clipboard button", () => {
+    const writeText = rs.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    renderDrawer();
+    fireEvent.click(screen.getByTestId("eval-drawer-copy-run-id"));
+    // writeText 在 onClick 同步段即被调用（await 只等结果）
+    expect(writeText).toHaveBeenCalledWith("run-l1-1");
   });
 
   it("renders not-executed hints for layers whose metrics are empty objects", () => {
@@ -115,7 +201,7 @@ describe("EvalRunDrawer", () => {
     renderDrawer();
     const hints = screen.getAllByText("本次运行未执行该层");
     expect(hints.length).toBe(2);
-    expect(screen.queryByText("路径准确率（对话链路）")).toBeNull();
+    expect(screen.queryByText("路由命中率")).toBeNull();
   });
 
   it("shows loading then error copy from the query state", () => {

@@ -520,6 +520,8 @@ export interface MetricsOverview {
     ragas_skip_reason?: string;
     ragas: RagasMetrics;
     arch_specific: ArchSpecificMetrics;
+    /** 路由命中率（layer2 顶层 path_accuracy 换展示面键名；总览瓦片数据源）。 */
+    routing_hit_rate: number | null;
     langfuse_trace_url?: string;
     has_graph_questions: boolean;
   } | null;
@@ -550,6 +552,9 @@ export interface TrendPoint {
   citation_precision: number | null;
   citation_recall: number | null;
   seed_hit_rate: number | null;
+  /** 路由命中率（layer2 顶层 path_accuracy；真实对话链路选路口径，与 L1
+   *  同名键不同源；稀疏——仅完整档产出，picker 候选）。 */
+  routing_hit_rate: number | null;
   /** 下钻来源行：点与 run 一一对应（两层同源一行，contract v4 单键）。 */
   run_id: string;
   /** 该点运行的门禁判定（透传其 baseline_diff）；无 diff 为 null。 */
@@ -559,8 +564,8 @@ export interface TrendPoint {
 }
 
 /**
- * sparkline 的 7 个 Layer 2 指标键（RAGAS 4 + 引用 3，含退役的 context_recall）。
- * 与后端 trend.py::SPARK_KEYS 一一对应（spec §6.2 冻结）。
+ * sparkline 的 8 个 Layer 2 指标键（RAGAS 4 + 引用 3 + 路由命中率，含退役的
+ * context_recall）。与后端 trend.py::SPARK_KEYS 一一对应（spec §6.2 冻结）。
  */
 export type SparkMetricKey =
   | "faithfulness"
@@ -569,7 +574,8 @@ export type SparkMetricKey =
   | "context_recall"
   | "citation_precision"
   | "citation_recall"
-  | "seed_hit_rate";
+  | "seed_hit_rate"
+  | "routing_hit_rate";
 
 /** 趋势图 API 响应（GET /eval-runs/trend，contract v4）。 */
 export interface TrendResponse {
@@ -583,7 +589,7 @@ export interface TrendResponse {
   /** 固定近 90 天窗口内是否有数据（任一层有即为 true）。 */
   has_data: boolean;
   /**
-   * 7 个 Layer 2 瓦片的 sparkline 数据源：每键一条 run 级近 10 非空值升序数组。
+   * 8 个 Layer 2 瓦片的 sparkline 数据源：每键一条 run 级近 10 非空值升序数组。
    * 与趋势固定窗口解耦（spec §6.2）；某键全 null（如 ragas 未装）→ 空数组。
    */
   sparks: Record<SparkMetricKey, number[]>;
@@ -601,11 +607,12 @@ export interface TrendChartLabels {
   faithfulness: string;
   answerRelevancy: string;
   contextPrecision: string;
-  /** 4 条 picker 稀疏指标线显示名（复用总览卡/表格同名，词汇闭环；仅 tooltip，不进图例）。 */
+  /** 5 条 picker 稀疏指标线显示名（复用总览卡/表格同名，词汇闭环；仅 tooltip，不进图例）。 */
   pathAccuracy: string;
   citationPrecision: string;
   citationRecall: string;
   seedHitRate: string;
+  routingHitRate: string;
   /** 阈值线名（markLine series 名）。 */
   thresholdLine: string;
   /** 阈值线标签（markLine formatter，含阈值百分数）。 */

@@ -238,6 +238,7 @@ const EVAL_TREND: TrendResponse = {
     citation_precision: [],
     citation_recall: [],
     seed_hit_rate: [],
+    routing_hit_rate: [],
   },
 };
 

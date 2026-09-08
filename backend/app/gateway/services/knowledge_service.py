@@ -177,6 +177,9 @@ def _layer2_overview_payload(row: EvalRunRow | None) -> dict[str, Any] | None:
         "ragas_available": bool(metrics.get("ragas_available")),
         "ragas": metrics.get("ragas") or {},
         "arch_specific": metrics.get("arch_specific") or {},
+        # 路由命中率（真实对话链路选路口径）：存储键 path_accuracy 顶层直取，
+        # 展示面键名 routing_hit_rate 与 L1 同名键解耦（总览瓦片数据源）。
+        "routing_hit_rate": metrics.get("path_accuracy"),
         "has_graph_questions": bool(metrics.get("has_graph_questions")),
     }
     if metrics.get("ragas_skip_reason"):

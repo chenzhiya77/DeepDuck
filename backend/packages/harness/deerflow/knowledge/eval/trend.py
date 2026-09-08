@@ -24,11 +24,14 @@ TREND_WINDOW_DAYS = 90
 #: sparkline 每指标保留的 run 级近端非空值上限（spec §6.2 冻结）。
 MAX_SPARKS = 10
 
-#: 顶层 ``sparks`` 的 7 个 Layer 2 键（RAGAS 4 + 引用 3，含退役的 context_recall）。
-#: ragas 四键取 ``layer2_metrics["ragas"]``，引用三键取 ``layer2_metrics["arch_specific"]``。
+#: 顶层 ``sparks`` 的 8 个 Layer 2 键（RAGAS 4 + 引用 3 + 路由命中率，含退役的
+#: context_recall）。ragas 四键取 ``layer2_metrics["ragas"]``，引用三键取
+#: ``layer2_metrics["arch_specific"]``；路由命中率取 ``layer2_metrics`` 顶层
+#: ``path_accuracy``（真实对话链路口径，展示面键名与存储键名解耦）。
 _SPARK_RAGAS_KEYS = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
 _SPARK_ARCH_KEYS = ("citation_precision", "citation_recall", "seed_hit_rate")
-SPARK_KEYS = (*_SPARK_RAGAS_KEYS, *_SPARK_ARCH_KEYS)
+_SPARK_LIVE_KEYS = ("routing_hit_rate",)
+SPARK_KEYS = (*_SPARK_RAGAS_KEYS, *_SPARK_ARCH_KEYS, *_SPARK_LIVE_KEYS)
 
 
 class EvalTrendRow(Protocol):
@@ -65,15 +68,17 @@ def build_run_points(
 
     读集内（任一层入集即出点）每行一点——x 轴 ``ts`` 为 ``coerce_iso``
     完整时间戳（naive 假定 UTC 补 ``+00:00``），不做周期分桶：同日多次
-    运行各自出点。10 个指标键取**本 run**：L1 四取 ``layer1_metrics
+    运行各自出点。11 个指标键取**本 run**：L1 四取 ``layer1_metrics
     ["summary"]``（recall_at_k/hit_rate/mrr/path_accuracy）；ragas 三取
     ``layer2_metrics["ragas"]``（faithfulness/answer_relevancy/context_precision），
     引用三取 ``layer2_metrics["arch_specific"]``（citation_precision/
-    citation_recall/seed_hit_rate）；该层缺失则对应键 ``None``（前端逐序列
-    取「该指标非空的 run」为点集，不打假缺口）。退役的 ``context_recall``
-    不进点（仅存于 ``sparks``）。``regression`` 透传本 run 的 per-category
-    门禁判定（无 diff 为 ``None``）；``is_baseline_update`` 标记
-    ``--mark-baseline`` 打点；``run_id`` 单键（两层同源一行，退役
+    citation_recall/seed_hit_rate）；路由命中率 ``routing_hit_rate`` 取
+    ``layer2_metrics`` 顶层 ``path_accuracy``（真实对话链路选路口径，与 L1
+    同名键不同源——展示面键名解耦防同名误读）；该层缺失则对应键 ``None``
+    （前端逐序列取「该指标非空的 run」为点集，不打假缺口）。退役的
+    ``context_recall`` 不进点（仅存于 ``sparks``）。``regression`` 透传本 run
+    的 per-category 门禁判定（无 diff 为 ``None``）；``is_baseline_update``
+    标记 ``--mark-baseline`` 打点；``run_id`` 单键（两层同源一行，退役
     ``layer1_run_id``/``layer2_run_id``）。
     """
 
@@ -98,6 +103,7 @@ def build_run_points(
                 "citation_precision": arch.get("citation_precision"),
                 "citation_recall": arch.get("citation_recall"),
                 "seed_hit_rate": arch.get("seed_hit_rate"),
+                "routing_hit_rate": row.layer2_metrics.get("path_accuracy") if row.layer2_metrics else None,
                 "run_id": row.id,
                 "regression": (
                     {
@@ -127,7 +133,7 @@ def build_sparks(
     *,
     include_ci: bool = False,
 ) -> dict[str, list[float]]:
-    """eval_runs 行 → 顶层 ``sparks``（spec §6.2）：7 个 Layer 2 键各一条 run 级
+    """eval_runs 行 → 顶层 ``sparks``（spec §6.2）：8 个 Layer 2 键各一条 run 级
     近 ``MAX_SPARKS`` 个非空值序列（``created_at`` 升序）。
 
     与 ``build_run_points`` 同为 run 级取数，但本函数只服务瓦片 sparkline：
@@ -152,6 +158,10 @@ def build_sparks(
                 series[key].append(value)
         for key in _SPARK_ARCH_KEYS:
             value = arch.get(key)
+            if value is not None:
+                series[key].append(value)
+        for key in _SPARK_LIVE_KEYS:
+            value = row.layer2_metrics.get("path_accuracy")
             if value is not None:
                 series[key].append(value)
     return {key: values[-MAX_SPARKS:] for key, values in series.items()}

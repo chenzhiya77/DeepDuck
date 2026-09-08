@@ -34,6 +34,7 @@ def _l2(faithfulness: float = 0.95, answer_relevancy: float = 0.88, context_prec
             "context_recall": None,
         },
         "arch_specific": {"citation_precision": 0.9, "citation_recall": 0.85, "seed_hit_rate": None},
+        "path_accuracy": 0.75,
         "ragas_available": True,
         "has_graph_questions": False,
     }
@@ -108,18 +109,21 @@ _TREND_METRIC_KEYS = {
     "citation_precision",
     "citation_recall",
     "seed_hit_rate",
+    "routing_hit_rate",
 }
 
 
-def test_run_point_exposes_ten_metric_keys_from_its_own_run() -> None:
+def test_run_point_exposes_eleven_metric_keys_from_its_own_run() -> None:
     row = _row("run-full", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(), layer2=_l2())
 
     point = build_run_points([row])[0]
 
-    assert len(_TREND_METRIC_KEYS) == 10
+    assert len(_TREND_METRIC_KEYS) == 11
     assert _TREND_METRIC_KEYS <= set(point)
-    # 取值口径：path_accuracy 来自本 run L1 summary；引用三来自本 run arch_specific
+    # 取值口径：path_accuracy 来自本 run L1 summary；引用三来自本 run arch_specific；
+    # routing_hit_rate 来自本 run layer2 顶层 path_accuracy（真实对话链路口径）
     assert point["path_accuracy"] == 1.0
+    assert point["routing_hit_rate"] == 0.75
     assert point["citation_precision"] == 0.9
     assert point["citation_recall"] == 0.85
     assert point["seed_hit_rate"] is None
@@ -134,11 +138,13 @@ def test_missing_layer_keys_are_null() -> None:
     assert l1_point["answer_relevancy"] is None
     assert l1_point["context_precision"] is None
     assert l1_point["citation_precision"] is None
+    assert l1_point["routing_hit_rate"] is None
 
     # 仅 L2：L1 键 null，L2 键有值
     l2_point = build_run_points([_row("run-l2", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer2=_l2())])[0]
     assert l2_point["recall_at_k"] is None
     assert l2_point["path_accuracy"] is None
+    assert l2_point["routing_hit_rate"] == 0.75
     assert l2_point["faithfulness"] == 0.95
     assert l2_point["citation_precision"] == 0.9
 
@@ -224,16 +230,17 @@ _SPARK_KEYS = {
     "citation_precision",
     "citation_recall",
     "seed_hit_rate",
+    "routing_hit_rate",
 }
 
 
-def test_sparks_returns_all_seven_l2_keys() -> None:
+def test_sparks_returns_all_eight_l2_keys() -> None:
     sparks = build_sparks([_row("run-l2", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=_l2())])
 
     assert set(sparks) == _SPARK_KEYS
 
 
-def test_sparks_empty_input_returns_seven_empty_arrays() -> None:
+def test_sparks_empty_input_returns_eight_empty_arrays() -> None:
     sparks = build_sparks([])
 
     assert set(sparks) == _SPARK_KEYS
@@ -244,6 +251,7 @@ def test_sparks_maps_ragas_and_arch_specific_sources() -> None:
     layer2 = {
         "ragas": {"faithfulness": 0.9, "answer_relevancy": 0.8, "context_precision": 0.7, "context_recall": 0.6},
         "arch_specific": {"citation_precision": 0.5, "citation_recall": 0.4, "seed_hit_rate": 0.3},
+        "path_accuracy": 0.35,
     }
 
     sparks = build_sparks([_row("run-full", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer2=layer2)])
@@ -255,6 +263,8 @@ def test_sparks_maps_ragas_and_arch_specific_sources() -> None:
     assert sparks["citation_precision"] == [0.5]
     assert sparks["citation_recall"] == [0.4]
     assert sparks["seed_hit_rate"] == [0.3]
+    # 路由命中率取 layer2 顶层 path_accuracy（展示面键名解耦）
+    assert sparks["routing_hit_rate"] == [0.35]
 
 
 def test_sparks_all_null_key_yields_empty_array() -> None:

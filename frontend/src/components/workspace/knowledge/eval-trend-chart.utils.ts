@@ -46,7 +46,7 @@ const METRICS: readonly MetricDef[] = [
   { key: "context_precision", labelKey: "contextPrecision", color: "#06B6D4", layer: 2, defaultOn: false },
 ];
 
-/** 趋势图可画的 10 个数值指标键（6 图例 + 4 picker），均为 TrendPoint 的可空数值键。 */
+/** 趋势图可画的 11 个数值指标键（6 图例 + 5 picker），均为 TrendPoint 的可空数值键。 */
 export type TrendMetricKey =
   | "recall_at_k"
   | "hit_rate"
@@ -57,23 +57,26 @@ export type TrendMetricKey =
   | "context_precision"
   | "citation_precision"
   | "citation_recall"
-  | "seed_hit_rate";
+  | "seed_hit_rate"
+  | "routing_hit_rate";
 
-/** picker 稀疏指标线定义（spec §4.3）：4 个仅完整档产出的候选，线型沿用 layer 语义。 */
+/** picker 稀疏指标线定义（spec §4.3）：5 个仅完整档产出的候选，线型沿用 layer 语义。 */
 export interface PickerMetricDef {
-  key: "path_accuracy" | "citation_precision" | "citation_recall" | "seed_hit_rate";
-  labelKey: "pathAccuracy" | "citationPrecision" | "citationRecall" | "seedHitRate";
+  key: "path_accuracy" | "citation_precision" | "citation_recall" | "seed_hit_rate" | "routing_hit_rate";
+  labelKey: "pathAccuracy" | "citationPrecision" | "citationRecall" | "seedHitRate" | "routingHitRate";
   color: string;
   /** Layer 1 = 实线实心圆；Layer 2 = 虚线空心圆（与图例六线同语义）。 */
   layer: 1 | 2;
 }
 
-/** picker 4 候选（颜色冻结，与图例六色不撞；spec §4.3 + plan Global Constraints）。 */
+/** picker 5 候选（颜色冻结，与图例六色不撞；spec §4.3 + plan Global Constraints；
+    路由命中率 slate 中性色——与十色均不同相，虚线空心圆承载 L2 语义）。 */
 export const PICKER_METRICS: readonly PickerMetricDef[] = [
   { key: "path_accuracy", labelKey: "pathAccuracy", color: "#84CC16", layer: 1 },
   { key: "citation_precision", labelKey: "citationPrecision", color: "#F97316", layer: 2 },
   { key: "citation_recall", labelKey: "citationRecall", color: "#14B8A6", layer: 2 },
   { key: "seed_hit_rate", labelKey: "seedHitRate", color: "#A855F7", layer: 2 },
+  { key: "routing_hit_rate", labelKey: "routingHitRate", color: "#64748B", layer: 2 },
 ];
 
 /** 回退点标红色（regression.detected 驱动，per-category 门禁口径，§4.3.4）。 */

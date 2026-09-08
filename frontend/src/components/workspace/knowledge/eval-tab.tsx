@@ -331,12 +331,13 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
     baselineUpdate: tk.trend.baselineUpdate,
     clickForDetail: tk.trend.clickForDetail,
     regressionPrefix: tk.trend.regressionPrefix,
-    // picker 4 候选标签复用现有指标名（同一指标不在两处起两名，spec §3 词汇闭环）；
+    // picker 5 候选标签复用现有指标名（同一指标不在两处起两名，spec §3 词汇闭环）；
     // notRunInTier 为 tooltip 哑行文案（所选指标在该档 null）。
     pathAccuracy: tk.tablePathAccuracy,
     citationPrecision: tk.citationPrecision,
     citationRecall: tk.citationRecall,
     seedHitRate: tk.seedHitRate,
+    routingHitRate: tk.routingHitRate,
     notRunInTier: tk.trend.notRunInTier,
   };
 

@@ -501,6 +501,7 @@ export const enUS: Translations = {
       citationPrecision: "Citation Precision",
       citationRecall: "Citation Recall",
       seedHitRate: "Seed Entity Hit Rate",
+      routingHitRate: "Routing Hit Rate",
       ragasCard: {
         faithfulness: "Faithfulness",
         answerRelevancy: "Answer Relevancy",
@@ -522,6 +523,8 @@ export const enUS: Translations = {
           "Citation Recall: share of content that should have been cited that actually was",
         seedHitRate:
           "Seed Entity Hit Rate: share of graph questions that hit the preset seed entities",
+        routingHitRate:
+          "Routing Hit Rate: share of questions whose expected paths were hit by the retrieval tools the agent actually called in the live conversation chain; different semantics from the retrieval-quality path accuracy (offline retrieval routing)",
       },
       ragasGroupLabel: "RAGAS probabilistic metrics",
       archGroupLabel: "Citation & graph metrics",
@@ -733,12 +736,10 @@ export const enUS: Translations = {
         statusSkipped: "Skipped",
         statusCancelled: "Cancelled",
         baselineBadge: "Baseline",
+        runInfoSection: "Run info",
         layer1Section: "Retrieval Quality",
         layer2Section: "Generation Quality",
         contextRecallLabel: "Context Recall",
-        pathAccuracyLabel: "Path accuracy (live chat routing)",
-        pathAccuracyNote:
-          "Path accuracy of the live chat routing — different metric semantics from the same-named retrieval-quality metric",
         notRun: "This layer was not executed in this run",
       },
     },

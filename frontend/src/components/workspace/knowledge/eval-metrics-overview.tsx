@@ -180,8 +180,9 @@ export function EvalMetricsOverview({ overview, onViewTrace, sparks }: EvalMetri
                 <Quote className="size-3.5" />
                 {tk.archGroupLabel}
               </div>
-              {/* 统一 grid-cols-4（2026-09-05）：引用组 3 瓦片留一空槽——
-                  纵向列轴与 RAGAS 组对齐，不再 4/3 两行错列。 */}
+              {/* 统一 grid-cols-4（2026-09-05）：引用组原 3 瓦片留一空槽——
+                  纵向列轴与 RAGAS 组对齐；空槽由路由命中率瓦片填满
+                  （2026-09-08 总览露出，layer2 顶层 path_accuracy 换展示面键名）。 */}
               <div className="grid grid-cols-4 gap-3">
                 <MetricTile title={tk.citationPrecision} note={tk.cardNote.citationPrecision} value={layer2.arch_specific.citation_precision} spark={sparks?.citation_precision} testId="citation_precision" />
                 <MetricTile title={tk.citationRecall} note={tk.cardNote.citationRecall} value={layer2.arch_specific.citation_recall} spark={sparks?.citation_recall} testId="citation_recall" />
@@ -193,6 +194,13 @@ export function EvalMetricsOverview({ overview, onViewTrace, sparks }: EvalMetri
                   disabledReason={tk.noGraphQuestions}
                   spark={sparks?.seed_hit_rate}
                   testId="seed_hit_rate"
+                />
+                <MetricTile
+                  title={tk.routingHitRate}
+                  note={tk.cardNote.routingHitRate}
+                  value={layer2.routing_hit_rate}
+                  spark={sparks?.routing_hit_rate}
+                  testId="routing_hit_rate"
                 />
               </div>
               </div>

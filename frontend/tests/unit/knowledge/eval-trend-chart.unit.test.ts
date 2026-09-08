@@ -47,6 +47,7 @@ const LABELS: TrendChartLabels = {
   citationPrecision: "引用准确率",
   citationRecall: "引用召回率",
   seedHitRate: "实体命中率",
+  routingHitRate: "路由命中率",
   thresholdLine: "回退阈值线",
   thresholdLabel: (p) => `回退阈值 -${p}%`,
   baselineUpdate: "基线更新",
@@ -68,6 +69,7 @@ function point(overrides: Partial<TrendPoint> = {}): TrendPoint {
     citation_precision: 0.9,
     citation_recall: 0.85,
     seed_hit_rate: 0.8,
+    routing_hit_rate: 0.87,
     run_id: "run-1",
     regression: null,
     is_baseline_update: false,
@@ -208,18 +210,20 @@ describe("buildChartOption 指标线配置", () => {
 });
 
 describe("buildChartOption picker 稀疏指标线（spec §4.3，plan Task 4）", () => {
-  it("PICKER_METRICS 冻结 4 个稀疏候选与 spec 色/层", () => {
+  it("PICKER_METRICS 冻结 5 个稀疏候选与 spec 色/层", () => {
     expect(PICKER_METRICS.map((m) => m.key)).toEqual([
       "path_accuracy",
       "citation_precision",
       "citation_recall",
       "seed_hit_rate",
+      "routing_hit_rate",
     ]);
     const byKey = new Map(PICKER_METRICS.map((m) => [m.key, m]));
     expect(byKey.get("path_accuracy")).toMatchObject({ color: "#84CC16", layer: 1 });
     expect(byKey.get("citation_precision")).toMatchObject({ color: "#F97316", layer: 2 });
     expect(byKey.get("citation_recall")).toMatchObject({ color: "#14B8A6", layer: 2 });
     expect(byKey.get("seed_hit_rate")).toMatchObject({ color: "#A855F7", layer: 2 });
+    expect(byKey.get("routing_hit_rate")).toMatchObject({ color: "#64748B", layer: 2 });
   });
 
   it("仅在选中时并入 picker 系列，且不进 legend.data（不脏图例）", () => {
@@ -237,7 +241,7 @@ describe("buildChartOption picker 稀疏指标线（spec §4.3，plan Task 4）"
 
   it("picker 线型沿用 layer 语义（L1 实线实心 / L2 虚线空心）", () => {
     const option = buildOption([point()], BASELINE, {
-      pickerSelected: ["path_accuracy", "citation_precision", "citation_recall", "seed_hit_rate"],
+      pickerSelected: ["path_accuracy", "citation_precision", "citation_recall", "seed_hit_rate", "routing_hit_rate"],
     });
     const byName = new Map(option.series.filter((s) => !s.markLine).map((s) => [s.name, s]));
     expect(byName.get("路径准确率")?.lineStyle).toMatchObject({ color: "#84CC16", width: 2 });
@@ -247,6 +251,8 @@ describe("buildChartOption picker 稀疏指标线（spec §4.3，plan Task 4）"
     expect(byName.get("引用准确率")?.symbol).toBe("emptyCircle");
     expect(byName.get("引用召回率")?.lineStyle).toMatchObject({ color: "#14B8A6", type: "dashed" });
     expect(byName.get("实体命中率")?.lineStyle).toMatchObject({ color: "#A855F7", type: "dashed" });
+    // 路由命中率：L2 虚线空心圆 + slate 中性色
+    expect(byName.get("路由命中率")?.lineStyle).toMatchObject({ color: "#64748B", type: "dashed" });
   });
 
   it("picker 系列 runId 取本 run（contract v4 单键）", () => {

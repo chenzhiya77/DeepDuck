@@ -163,6 +163,7 @@ const TREND: TrendResponse = {
       citation_precision: 0.9,
       citation_recall: 0.85,
       seed_hit_rate: 0.8,
+      routing_hit_rate: 0.87,
       run_id: "run-1",
       regression: null,
       is_baseline_update: false,
@@ -178,6 +179,7 @@ const TREND: TrendResponse = {
     citation_precision: [0.9],
     citation_recall: [0.85],
     seed_hit_rate: [0.8],
+    routing_hit_rate: [0.87],
   },
 };
 
@@ -289,7 +291,7 @@ describe("EvalTab 数据联通", () => {
     expect(screen.getByTestId("eval-threshold-chip").textContent).toBe("回退阈值 -3%");
   });
 
-  it("趋势卡头 picker：默认空、开合出 4 个多选项、L2 项带‘仅完整档’尾注", async () => {
+  it("趋势卡头 picker：默认空、开合出 5 个多选项、L2 项带‘仅完整档’尾注", async () => {
     renderEvalTab();
     await screen.findByTestId("eval-trend-chart-mock");
     // 会话级默认空选中透传给 chart
@@ -297,11 +299,12 @@ describe("EvalTab 数据联通", () => {
 
     fireEvent.keyDown(screen.getByTestId("eval-trend-picker"), { key: "ArrowDown" });
     const items = await screen.findAllByRole("menuitemcheckbox");
-    expect(items).toHaveLength(4);
-    // path_accuracy（L1）无尾注；引用三（L2）带‘仅完整档’
+    expect(items).toHaveLength(5);
+    // path_accuracy（L1）无尾注；引用三 + 路由命中率（L2）带‘仅完整档’
     expect(screen.getByRole("menuitemcheckbox", { name: /路径准确率/ }).textContent).not.toContain("仅完整档");
     expect(screen.getByRole("menuitemcheckbox", { name: /引用准确率/ }).textContent).toContain("仅完整档");
     expect(screen.getByRole("menuitemcheckbox", { name: /实体命中率/ }).textContent).toContain("仅完整档");
+    expect(screen.getByRole("menuitemcheckbox", { name: /路由命中率/ }).textContent).toContain("仅完整档");
   });
 
   it("picker 勾选透传给 chart（pickerSelected），且会话级不跨挂载持久化", async () => {

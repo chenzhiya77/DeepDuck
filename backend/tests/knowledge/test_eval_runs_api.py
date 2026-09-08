@@ -160,6 +160,8 @@ async def test_latest_returns_most_recent_completed_run_per_layer(service) -> No
     assert layer2["run_id"] == "run-l2"
     assert layer2["ragas"]["faithfulness"] == 0.97
     assert layer2["arch_specific"]["citation_precision"] == 0.9
+    # 路由命中率（总览瓦片数据源）：layer2 顶层 path_accuracy 换展示面键名
+    assert layer2["routing_hit_rate"] == 0.75
     assert layer2["ragas_available"] is True
     assert layer2["has_graph_questions"] is False
     assert layer2["langfuse_trace_url"] == "https://langfuse.example/trace/1"
@@ -411,6 +413,7 @@ async def test_trend_empty_history_reports_has_data_false(service) -> None:
             "citation_precision": [],
             "citation_recall": [],
             "seed_hit_rate": [],
+            "routing_hit_rate": [],
         },
     }
 

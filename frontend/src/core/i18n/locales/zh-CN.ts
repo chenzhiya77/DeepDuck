@@ -484,6 +484,7 @@ export const zhCN: Translations = {
       citationPrecision: "引用准确率",
       citationRecall: "引用召回率",
       seedHitRate: "实体命中率",
+      routingHitRate: "路由命中率",
       ragasCard: {
         faithfulness: "忠实度",
         answerRelevancy: "相关性",
@@ -505,6 +506,8 @@ export const zhCN: Translations = {
           "引用召回率（Citation Recall）：答案中应当引用的内容被实际引用的比例",
         seedHitRate:
           "实体命中率（Seed Entity Hit Rate）：命中预设种子实体的图谱类问题占比",
+        routingHitRate:
+          "路由命中率（Routing Hit Rate）：真实对话链路中 agent 实际调用的检索工具命中题目预期路径的问题占比；与检索质量的路径准确率（离线检索选路）口径不同",
       },
       ragasGroupLabel: "RAGAS 概率性指标",
       archGroupLabel: "引用与图谱指标",
@@ -706,12 +709,10 @@ export const zhCN: Translations = {
         statusSkipped: "已跳过",
         statusCancelled: "已终止",
         baselineBadge: "基线",
+        runInfoSection: "运行信息",
         layer1Section: "检索质量",
         layer2Section: "生成质量",
         contextRecallLabel: "上下文召回率",
-        pathAccuracyLabel: "路径准确率（对话链路）",
-        pathAccuracyNote:
-          "真实对话链路的选路准确率——与检索质量表格中同名指标口径不同",
         notRun: "本次运行未执行该层",
       },
     },

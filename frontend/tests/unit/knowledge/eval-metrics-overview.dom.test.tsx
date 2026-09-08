@@ -38,6 +38,7 @@ const FULL_OVERVIEW: MetricsOverview = {
     ragas_available: true,
     ragas: { faithfulness: 0.933, answer_relevancy: 0.877, context_precision: 0.912, context_recall: 0.864 },
     arch_specific: { citation_precision: 0.91, citation_recall: 0.85, seed_hit_rate: 0.75 },
+    routing_hit_rate: 0.87,
     langfuse_trace_url: "https://langfuse.example/trace/1",
     has_graph_questions: true,
   },
@@ -52,6 +53,7 @@ const SPARKS: Record<SparkMetricKey, number[]> = {
   citation_precision: [0.89, 0.91],
   citation_recall: [0.82, 0.85],
   seed_hit_rate: [0.7, 0.75],
+  routing_hit_rate: [0.8, 0.87],
 };
 
 function renderOverview(
@@ -347,6 +349,9 @@ describe("Layer 2 卡片", () => {
     expect(screen.getByTestId("eval-card-context_recall").textContent).toContain("86.4%");
     expect(screen.getByTestId("eval-card-citation_precision").textContent).toContain("引用准确率");
     expect(screen.getByTestId("eval-card-seed_hit_rate").textContent).toContain("实体命中率");
+    // 路由命中率瓦片填满引用组空槽（2026-09-08 总览露出）
+    expect(screen.getByTestId("eval-card-routing_hit_rate").textContent).toContain("路由命中率");
+    expect(screen.getByTestId("eval-card-routing_hit_rate").textContent).toContain("87.0%");
   });
 
   it("renders short localized card titles that cannot wrap, with full names only in ⓘ tooltips (2026-08-27 redesign round 2)", () => {
@@ -359,6 +364,7 @@ describe("Layer 2 卡片", () => {
       ["context_precision", "精确率"],
       ["context_recall", "召回率"],
       ["seed_hit_rate", "实体命中率"],
+      ["routing_hit_rate", "路由命中率"],
     ] as const) {
       const titleEl = screen.getByTestId(`eval-card-title-${testId}`);
       expect(titleEl?.textContent).toContain(title);
@@ -370,6 +376,10 @@ describe("Layer 2 卡片", () => {
     expect(screen.getByTestId("eval-card-note-context_recall").getAttribute("aria-label")).toContain("（Context Recall）");
     expect(screen.getByTestId("eval-card-note-seed_hit_rate").getAttribute("aria-label")).toBe(
       "实体命中率（Seed Entity Hit Rate）：命中预设种子实体的图谱类问题占比",
+    );
+    // 路由命中率 ⓘ 承载口径区分（与 L1 路径准确率不同源）
+    expect(screen.getByTestId("eval-card-note-routing_hit_rate").getAttribute("aria-label")).toContain(
+      "与检索质量的路径准确率（离线检索选路）口径不同",
     );
   });
 

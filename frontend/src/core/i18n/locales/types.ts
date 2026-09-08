@@ -430,6 +430,7 @@ export interface Translations {
       citationPrecision: string;
       citationRecall: string;
       seedHitRate: string;
+      routingHitRate: string;
       /** RAGAS 卡片中文短标题（单行 nowrap，≤3 字）；全称进 cardNote tooltip。 */
       ragasCard: {
         faithfulness: string;
@@ -446,6 +447,7 @@ export interface Translations {
         citationPrecision: string;
         citationRecall: string;
         seedHitRate: string;
+        routingHitRate: string;
       };
       /** Layer 2 内两行卡片的分组小标签（概率性 vs 确定性指标）。 */
       ragasGroupLabel: string;
@@ -703,11 +705,10 @@ export interface Translations {
         statusSkipped: string;
         statusCancelled: string;
         baselineBadge: string;
+        runInfoSection: string;
         layer1Section: string;
         layer2Section: string;
         contextRecallLabel: string;
-        pathAccuracyLabel: string;
-        pathAccuracyNote: string;
         notRun: string;
       };
     };
