@@ -297,6 +297,24 @@ class KnowledgeService:
             return None
         return target
 
+    async def resolve_video_stream(self, *, kb_id: str, doc_id: str) -> Path | None:
+        """源视频文件绝对路径；不可流则 ``None``（router → 404，spec 2026-09-08 §4/§5）。
+
+        ``None`` 覆盖：文档不属于该 kb / 非视频文档（后缀 ∉ VIDEO_UPLOAD_SUFFIXES，
+        复用 ``_is_video_document``）/ 文件缺失或非常规文件。Range 协商
+        （200/206/416/400）由 Starlette ``FileResponse`` 原生承担，此处只定位 + 校验；
+        鉴权由 router 的 ``_require_kb_access`` 承载（与文档读取同源）。
+        """
+        document = await self.store.get_document(doc_id)
+        if document is None or document["kb_id"] != kb_id:
+            return None
+        if not self._is_video_document(document):
+            return None
+        target = Path(document["storage_path"])
+        if not target.is_file():
+            return None
+        return target
+
     async def list_document_chunks(self, *, kb_id: str, doc_id: str, offset: int, limit: int) -> dict[str, Any]:
         """文档切片分页（切片抽屉数据源，spec 2026-09-08 §5）：在 store 行之上为
         视频镜头 chunk 补时间码四字段 + ``frame_url``——复用 recall-test 同款

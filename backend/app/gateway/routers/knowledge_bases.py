@@ -30,6 +30,7 @@ from deerflow.knowledge.eval.question_bank import QuestionBankInvalidQuestion
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
 from deerflow.knowledge.parser import supported_upload_suffixes
 from deerflow.knowledge.projection.reducer import UmapUnavailableError
+from deerflow.knowledge.video.streaming import content_type_for_video
 
 router = APIRouter(prefix="/api/knowledge-bases", tags=["knowledge-bases"])
 
@@ -317,6 +318,24 @@ async def get_shot_frame(request: Request, kb_id: str, doc_id: str, shot_index: 
     if frame is None:
         raise HTTPException(status_code=404, detail="Keyframe not found")
     return FileResponse(frame, media_type="image/jpeg")
+
+
+@router.get("/{kb_id}/documents/{doc_id}/video/stream")
+async def stream_video(request: Request, kb_id: str, doc_id: str):
+    """Stream the source video for the drawer's inline player (spec 2026-09-08 §4/§5).
+
+    Auth mirrors document read. Starlette ``FileResponse`` negotiates HTTP Range
+    natively — 200 full / 206 partial with ``Content-Range`` / 416 unsatisfiable /
+    400 malformed — streaming through anyio, so ``<video>`` seeking works without
+    pulling the whole file. Content-Type comes from the pinned suffix map
+    (``mimetypes.guess_type`` is unreliable for ``.mkv``). Non-video document,
+    missing document, or a file gone off disk → 404.
+    """
+    service = await _require_kb_access(request, kb_id)
+    video = await service.resolve_video_stream(kb_id=kb_id, doc_id=doc_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(video, media_type=content_type_for_video(video.suffix))
 
 
 @router.post("/{kb_id}/documents/{doc_id}/video/recaption", status_code=202)
