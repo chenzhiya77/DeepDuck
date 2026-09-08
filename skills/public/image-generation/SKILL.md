@@ -34,6 +34,13 @@ Generate a structured JSON file in `/mnt/user-data/workspace/` with naming patte
 
 ### Step 3: Execute Generation
 
+Prefer the host-side MCP tool when it is in your toolset: if `image-generation_generate_image`
+is available, call it directly (the structured prompt as `prompt`, plus `reference_images` /
+`output_path` / `aspect_ratio` as needed). In local sandbox mode it is the only channel that
+can see provider keys — calling the script there always fails on credentials. Only when the
+tool is absent (server not registered) run the script below, which requires keys inside the
+sandbox environment (container sandbox mode):
+
 Call the Python script:
 ```bash
 python /mnt/skills/public/image-generation/scripts/generate.py \
@@ -178,18 +185,48 @@ For scenarios where visual accuracy is critical, **use the `image_search` tool f
 
 This approach significantly improves generation quality by providing the model with concrete visual guidance rather than relying solely on text descriptions.
 
-## Providers (Gemini / MiniMax)
+## Providers (Gemini / MiniMax / qwen)
 
 This skill auto-selects the provider by environment variables (no CLI change):
 
 - `GEMINI_API_KEY` set → use Gemini (default, unchanged).
 - Only `MINIMAX_API_KEY` set → use MiniMax (`/v1/image_generation`, model `image-01`).
-- Force one explicitly with `IMAGE_GENERATION_PROVIDER=gemini|minimax`.
+- Only `DASHSCOPE_API_KEY` set → use qwen (`qwen-image-3.0`, DashScope multimodal-generation).
+- Force one explicitly with `IMAGE_GENERATION_PROVIDER=gemini|minimax|qwen`.
 
 MiniMax optional overrides: `MINIMAX_API_HOST` (default `https://api.minimaxi.com`),
 `MINIMAX_IMAGE_MODEL` (default `image-01`). Reference images are sent as the MiniMax
 `subject_reference` character image. The CLI and `--prompt-file` / `--reference-images`
-/ `--output-file` / `--aspect-ratio` arguments are identical for both providers.
+/ `--output-file` / `--aspect-ratio` arguments are identical for all providers.
+
+qwen optional overrides: `DASHSCOPE_API_HOST` (default `https://dashscope.aliyuncs.com`;
+workspace-prefixed maas hosts are accepted), `QWEN_IMAGE_MODEL` (default `qwen-image-3.0`).
+Reference images (validated first, at most 3) are sent as base64 data URLs inside
+`input.messages[0].content`; more than 3 valid references returns an error without
+calling the API. The response carries a 24-hour image URL, which the script downloads
+into the output file. `prompt_extend` stays off on purpose — the authored prompt is
+already compressed by the calling agent, and server-side rewriting would drift intent;
+`watermark` is off and `n` is 1.
+
+**qwen prompt handling (provider-internal).** Same rule as MiniMax: only the JSON
+`prompt` field is sent as the single text entry; a JSON `negative_prompt` field, when
+present, is mapped to `parameters.negative_prompt`. The `--aspect-ratio` argument maps
+onto a qwen `size` (`width*height`) via a fixed table (1:1, 16:9, 9:16, 4:3, 3:4, 3:2,
+2:3); explicit `width*height` values pass through when within the API's area and
+ratio bounds, otherwise the default `1024*1024` is used.
+
+## MCP server (host-side key channel)
+
+`scripts/mcp_server.py` exposes this skill's core as an MCP stdio server (server name
+`image-generation`, one `generate_image` tool). In local sandbox mode the sandbox
+strips every `*KEY*`-shaped variable from skill subprocesses, so the script cannot see
+provider keys there; the MCP server runs on the host with explicit env from
+`extensions_config.json` (`"DASHSCOPE_API_KEY": "$DASHSCOPE_API_KEY"`) and is the only
+key channel in that mode, as well as the channel for external MCP clients. Register it
+by editing `extensions_config.json` directly — a disabled example entry ships in
+`extensions_config.example.json`. The tool returns the image path cwd-relative
+(forward slashes) so DeerFlow maps it into `/mnt/user-data/outputs/...`;
+`/mnt/user-data/...` arguments are mapped back to host paths server-side.
 
 **MiniMax prompt handling (provider-internal).** Authoring is provider-agnostic — write
 the same structured JSON regardless of which provider is active. MiniMax `image-01`
@@ -206,3 +243,4 @@ an error instead of calling the API. The Gemini path receives the full structure
 - Reference images enhance generation quality significantly
 - Iterative refinement is normal for optimal results
 - For character generation, include the detailed character object plus a consolidated prompt field
+- Always include a consolidated `prompt` field in the structured JSON (every scenario): single-string providers (MiniMax, qwen) send only that field; without it the entire JSON is sent as the text prompt

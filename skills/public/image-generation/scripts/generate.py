@@ -31,6 +31,7 @@ def _resolve_provider(override_env: str, existing_provider: str, has_existing_cr
     1. Explicit <SKILL>_PROVIDER override wins.
     2. Otherwise prefer the existing provider when its credentials are present.
     3. Otherwise fall back to MiniMax when MINIMAX_API_KEY is set.
+    4. Otherwise fall back to qwen when DASHSCOPE_API_KEY is set.
     """
     override = os.getenv(override_env)
     if override:
@@ -39,14 +40,48 @@ def _resolve_provider(override_env: str, existing_provider: str, has_existing_cr
         return existing_provider
     if os.getenv("MINIMAX_API_KEY"):
         return "minimax"
+    if os.getenv("DASHSCOPE_API_KEY"):
+        return "qwen"
     raise ValueError(
         f"No credentials found. Set GEMINI_API_KEY for {existing_provider}, "
-        f"or MINIMAX_API_KEY for minimax (optionally force with {override_env})."
+        f"MINIMAX_API_KEY for minimax, or DASHSCOPE_API_KEY for qwen "
+        f"(optionally force with {override_env})."
     )
 
 
 def _minimax_host() -> str:
     return os.getenv("MINIMAX_API_HOST", MINIMAX_DEFAULT_HOST).rstrip("/")
+
+
+DASHSCOPE_DEFAULT_HOST = "https://dashscope.aliyuncs.com"
+# qwen-image sizes must stay within 512*512..2048*2048 pixels and a 1:8..8:1 ratio.
+QWEN_SIZE_TABLE = {
+    "1:1": "1024*1024",
+    "16:9": "1664*928",
+    "9:16": "928*1664",
+    "4:3": "1248*936",
+    "3:4": "936*1248",
+    "3:2": "1248*832",
+    "2:3": "832*1248",
+}
+QWEN_DEFAULT_SIZE = "1024*1024"
+QWEN_MAX_REFERENCE_IMAGES = 3
+
+
+def _dashscope_host() -> str:
+    return os.getenv("DASHSCOPE_API_HOST", DASHSCOPE_DEFAULT_HOST).rstrip("/")
+
+
+def _qwen_size(aspect_ratio: str) -> str:
+    """Map an aspect ratio (or explicit width*height) onto a qwen-legal size."""
+    if aspect_ratio in QWEN_SIZE_TABLE:
+        return QWEN_SIZE_TABLE[aspect_ratio]
+    width, sep, height = aspect_ratio.partition("*")
+    if sep and width.isdigit() and height.isdigit():
+        w, h = int(width), int(height)
+        if 512 * 512 <= w * h <= 2048 * 2048 and 1 / 8 <= w / h <= 8:
+            return f"{w}*{h}"
+    return QWEN_DEFAULT_SIZE
 
 
 def _check_base_resp(payload: dict) -> None:
@@ -81,15 +116,14 @@ def _ensure_output_dir(output_file: str) -> None:
         os.makedirs(output_dir, exist_ok=True)
 
 
-def _minimax_prompt(raw: str) -> str:
-    """Extract the single text prompt MiniMax image-01 expects.
+def _single_text_prompt(raw: str) -> str:
+    """Extract the single text prompt a single-string provider expects.
 
     The shared prompt file is structured JSON (a consolidated ``prompt`` plus
     Gemini-oriented fields like ``style`` / ``composition`` / ``negative_prompt``),
-    but MiniMax consumes one string and expands it via ``prompt_optimizer``. The
-    provider adapts the input itself — the caller never needs to know MiniMax is
-    active. Use the JSON ``prompt`` field; fall back to the raw text for plain-text
-    prompt files or JSON without a ``prompt`` field.
+    but single-string providers (MiniMax, qwen) consume one text entry. Use the
+    JSON ``prompt`` field; fall back to the raw text for plain-text prompt files
+    or JSON without a ``prompt`` field.
     """
     text = raw.strip()
     try:
@@ -106,10 +140,10 @@ def _minimax_prompt(raw: str) -> str:
 def _generate_image_minimax(
     prompt: str, reference_images: list[str], output_file: str, aspect_ratio: str
 ) -> str:
-    api_key = os.getenv("MINIMAX_API_KEY")
-    if not api_key:
+    minimax_api_key = os.getenv("MINIMAX_API_KEY")
+    if not minimax_api_key:
         return "MINIMAX_API_KEY is not set"
-    prompt = _minimax_prompt(prompt)
+    prompt = _single_text_prompt(prompt)
     if len(prompt) > MINIMAX_PROMPT_MAX_CHARS:
         return (
             f"Prompt is {len(prompt)} characters but MiniMax image-01 accepts at most "
@@ -132,7 +166,7 @@ def _generate_image_minimax(
         ]
     response = requests.post(
         f"{_minimax_host()}/v1/image_generation",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {minimax_api_key}", "Content-Type": "application/json"},
         json=body,
         timeout=60,
     )
@@ -165,18 +199,19 @@ def _generate_image_gemini(
     for reference_image in valid_reference_images:
         with open(reference_image, "rb") as f:
             image_b64 = base64.b64encode(f.read()).decode("utf-8")
-        parts.append({"inlineData": {"mimeType": "image/jpeg", "data": image_b64}})
+        parts.append({"inlineData": {"mimeType": _guess_mime(reference_image), "data": image_b64}})
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
         return "GEMINI_API_KEY is not set"
     response = requests.post(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent",
-        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+        headers={"x-goog-api-key": gemini_api_key, "Content-Type": "application/json"},
         json={
             "generationConfig": {"imageConfig": {"aspectRatio": aspect_ratio}},
             "contents": [{"parts": [*parts, {"text": prompt}]}],
         },
+        timeout=120,
     )
     response.raise_for_status()
     data = response.json()
@@ -189,6 +224,76 @@ def _generate_image_gemini(
             f.write(base64.b64decode(base64_image))
         return f"Successfully generated image to {output_file}"
     raise Exception("Failed to generate image")
+
+
+def _generate_image_qwen(
+    prompt: str, reference_images: list[str], output_file: str, aspect_ratio: str
+) -> str:
+    dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
+    if not dashscope_api_key:
+        return "DASHSCOPE_API_KEY is not set"
+    text = _single_text_prompt(prompt)
+    negative_prompt = None
+    try:
+        structured = json.loads(prompt.strip())
+    except (ValueError, json.JSONDecodeError):
+        structured = None
+    if isinstance(structured, dict):
+        candidate = structured.get("negative_prompt")
+        if isinstance(candidate, str) and candidate.strip():
+            negative_prompt = candidate.strip()
+
+    valid_reference_images = []
+    for ref_img in reference_images:
+        if validate_image(ref_img):
+            valid_reference_images.append(ref_img)
+        else:
+            print(f"Skipping invalid reference image: {ref_img}")
+    if len(valid_reference_images) > QWEN_MAX_REFERENCE_IMAGES:
+        return (
+            f"qwen accepts at most {QWEN_MAX_REFERENCE_IMAGES} reference images but "
+            f"{len(valid_reference_images)} valid ones were given; drop some or merge them."
+        )
+
+    content = [{"image": _to_data_url(p)} for p in valid_reference_images]
+    content.append({"text": text})
+    parameters = {
+        "size": _qwen_size(aspect_ratio),
+        "prompt_extend": False,
+        "watermark": False,
+        "n": 1,
+    }
+    if negative_prompt:
+        parameters["negative_prompt"] = negative_prompt
+    body = {
+        "model": os.getenv("QWEN_IMAGE_MODEL", "qwen-image-3.0"),
+        "input": {"messages": [{"role": "user", "content": content}]},
+        "parameters": parameters,
+    }
+    response = requests.post(
+        f"{_dashscope_host()}/api/v1/services/aigc/multimodal-generation/generation",
+        headers={"Authorization": f"Bearer {dashscope_api_key}", "Content-Type": "application/json"},
+        json=body,
+        timeout=120,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    choices = (payload.get("output") or {}).get("choices") or []
+    image_url = ""
+    if choices:
+        for entry in choices[0].get("message", {}).get("content", []):
+            if isinstance(entry, dict) and entry.get("image"):
+                image_url = entry["image"]
+                break
+    if not image_url:
+        raise Exception("qwen returned no image")
+    # The API returns a URL valid for 24h, not inline bytes — download to keep the artifact.
+    download = requests.get(image_url, timeout=120)
+    download.raise_for_status()
+    _ensure_output_dir(output_file)
+    with open(output_file, "wb") as f:
+        f.write(download.content)
+    return f"Successfully generated image to {output_file}"
 
 
 def generate_image(
@@ -206,13 +311,17 @@ def generate_image(
         return _generate_image_minimax(prompt, reference_images, output_file, aspect_ratio)
     if provider in ("gemini", "google"):
         return _generate_image_gemini(prompt, reference_images, output_file, aspect_ratio)
-    raise ValueError(f"Unknown image provider: {provider!r} (use 'gemini' or 'minimax')")
+    if provider in ("qwen", "dashscope"):
+        return _generate_image_qwen(prompt, reference_images, output_file, aspect_ratio)
+    raise ValueError(
+        f"Unknown image provider: {provider!r} (use 'gemini', 'minimax', or 'qwen')"
+    )
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate images using Gemini or MiniMax API")
+    parser = argparse.ArgumentParser(description="Generate images using Gemini, MiniMax, or qwen API")
     parser.add_argument("--prompt-file", required=True, help="Absolute path to JSON prompt file")
     parser.add_argument("--reference-images", nargs="*", default=[],
                         help="Absolute paths to reference images (space-separated)")

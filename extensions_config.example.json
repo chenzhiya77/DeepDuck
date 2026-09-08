@@ -20,6 +20,23 @@
       "tool_call_timeout": 60,
       "description": "GitHub MCP server for repository operations"
     },
+    "image-generation": {
+      "enabled": false,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "<ABSOLUTE_REPO_PATH>/backend",
+        "python",
+        "<ABSOLUTE_REPO_PATH>/skills/public/image-generation/scripts/mcp_server.py"
+      ],
+      "env": {
+        "DASHSCOPE_API_KEY": "$DASHSCOPE_API_KEY"
+      },
+      "tool_call_timeout": 300,
+      "description": "Bundled image-generation stdio server (qwen/Gemini/MiniMax via the skill core). The only key channel in local sandbox mode, where skill subprocesses get no *KEY* env vars. Register by editing this file: the HTTP API stdio command allowlist is {npx, uvx}."
+    },
     "postgres": {
       "enabled": false,
       "type": "stdio",

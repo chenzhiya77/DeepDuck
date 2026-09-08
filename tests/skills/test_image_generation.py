@@ -13,7 +13,8 @@ img = load("image-generation")
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     for k in ["GEMINI_API_KEY", "MINIMAX_API_KEY", "IMAGE_GENERATION_PROVIDER",
-              "MINIMAX_API_HOST", "MINIMAX_IMAGE_MODEL"]:
+              "MINIMAX_API_HOST", "MINIMAX_IMAGE_MODEL",
+              "DASHSCOPE_API_KEY", "DASHSCOPE_API_HOST", "QWEN_IMAGE_MODEL"]:
         monkeypatch.delenv(k, raising=False)
 
 
@@ -193,3 +194,205 @@ def test_guess_mime_by_extension():
     assert img._guess_mime("/a/b.webp") == "image/webp"
     assert img._guess_mime("/a/b.jpg") == "image/jpeg"
     assert img._guess_mime("/a/b.unknown") == "image/jpeg"
+
+
+def _write_png(path: Path) -> Path:
+    from PIL import Image
+
+    Image.new("RGB", (8, 8), (200, 30, 40)).save(path, "PNG")
+    return path
+
+
+def _qwen_fake(monkeypatch, captured, raw=b"QWENBYTES"):
+    def fake_post(url, headers=None, json=None, **kw):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["kw"] = kw
+        return FakeResp({"output": {"choices": [{"finish_reason": "stop",
+                                                 "message": {"role": "assistant",
+                                                             "content": [{"image": "https://oss.example/x.png"}]}}]}})
+
+    def fake_get(url, **kw):
+        captured["get_url"] = url
+        captured["get_kw"] = kw
+        return FakeResp(content=raw)
+
+    monkeypatch.setattr(img.requests, "post", fake_post)
+    monkeypatch.setattr(img.requests, "get", fake_get)
+
+
+def test_resolve_falls_back_to_qwen(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    assert img._resolve_provider("IMAGE_GENERATION_PROVIDER", "gemini", False) == "qwen"
+
+
+def test_resolve_minimax_still_before_qwen(monkeypatch):
+    monkeypatch.setenv("MINIMAX_API_KEY", "m")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    assert img._resolve_provider("IMAGE_GENERATION_PROVIDER", "gemini", False) == "minimax"
+
+
+def test_resolve_gemini_still_before_qwen(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    assert img._resolve_provider("IMAGE_GENERATION_PROVIDER", "gemini", True) == "gemini"
+
+
+def test_resolve_no_creds_message_mentions_qwen(monkeypatch):
+    with pytest.raises(ValueError) as e:
+        img._resolve_provider("IMAGE_GENERATION_PROVIDER", "gemini", False)
+    assert "DASHSCOPE_API_KEY" in str(e.value)
+
+
+def test_qwen_missing_key_returns_message(monkeypatch, tmp_path):
+    monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "qwen")
+    pf = tmp_path / "p.json"
+    pf.write_text("x", encoding="utf-8")
+    msg = img.generate_image(str(pf), [], str(tmp_path / "o.jpg"), "1:1")
+    assert msg == "DASHSCOPE_API_KEY is not set"
+
+
+def test_qwen_builds_payload_and_downloads(monkeypatch, tmp_path):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    captured = {}
+    _qwen_fake(monkeypatch, captured)
+    pf = tmp_path / "p.json"
+    pf.write_text("a red apple", encoding="utf-8")
+    out = tmp_path / "o.png"
+    msg = img.generate_image(str(pf), [], str(out), "16:9")
+
+    assert captured["url"].endswith("/api/v1/services/aigc/multimodal-generation/generation")
+    assert captured["headers"]["Authorization"] == "Bearer d"
+    assert captured["kw"]["timeout"] == 120
+    body = captured["json"]
+    assert body["model"] == "qwen-image-3.0"
+    message = body["input"]["messages"][0]
+    assert message["role"] == "user"
+    assert message["content"] == [{"text": "a red apple"}]
+    params = body["parameters"]
+    assert params["size"] == "1664*928"
+    assert params["prompt_extend"] is False
+    assert params["watermark"] is False
+    assert params["n"] == 1
+    assert captured["get_url"] == "https://oss.example/x.png"
+    assert captured["get_kw"]["timeout"] == 120
+    assert out.read_bytes() == b"QWENBYTES"
+    assert "Successfully generated image" in msg
+
+
+def test_qwen_size_mapping_passthrough_and_bounds(monkeypatch, tmp_path):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    sizes = []
+
+    def fake_post(url, headers=None, json=None, **kw):
+        sizes.append(json["parameters"]["size"])
+        return FakeResp({"output": {"choices": [{"message": {"content": [{"image": "https://oss.example/x.png"}]}}]}})
+
+    monkeypatch.setattr(img.requests, "post", fake_post)
+    monkeypatch.setattr(img.requests, "get", lambda url, **kw: FakeResp(content=b"x"))
+    pf = tmp_path / "p.json"
+    pf.write_text("x", encoding="utf-8")
+    for aspect in ["1:1", "9:16", "800*600", "9999*10"]:
+        img.generate_image(str(pf), [], str(tmp_path / "o.png"), aspect)
+    assert sizes == ["1024*1024", "928*1664", "800*600", "1024*1024"]
+
+
+def test_qwen_negative_prompt_mapped(monkeypatch, tmp_path):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    captured = {}
+    _qwen_fake(monkeypatch, captured)
+    pf = tmp_path / "p.json"
+    pf.write_text('{"prompt": "a red barn at dawn", "style": "watercolor", '
+                  '"negative_prompt": "blurry"}', encoding="utf-8")
+    img.generate_image(str(pf), [], str(tmp_path / "o.png"), "1:1")
+    assert captured["json"]["input"]["messages"][0]["content"] == [{"text": "a red barn at dawn"}]
+    assert captured["json"]["parameters"]["negative_prompt"] == "blurry"
+
+
+def test_qwen_reference_images_as_data_urls(monkeypatch, tmp_path):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    captured = {}
+    _qwen_fake(monkeypatch, captured)
+    ref = _write_png(tmp_path / "ref.png")
+    pf = tmp_path / "p.json"
+    pf.write_text("scene", encoding="utf-8")
+    img.generate_image(str(pf), [str(ref)], str(tmp_path / "o.png"), "1:1")
+    content = captured["json"]["input"]["messages"][0]["content"]
+    assert content[0]["image"].startswith("data:image/png;base64,")
+    assert content[-1] == {"text": "scene"}
+
+
+def test_qwen_skips_invalid_refs(monkeypatch, tmp_path):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+    captured = {}
+    _qwen_fake(monkeypatch, captured)
+    good = _write_png(tmp_path / "good.png")
+    bad = tmp_path / "bad.png"
+    bad.write_bytes(b"not an image")
+    pf = tmp_path / "p.json"
+    pf.write_text("scene", encoding="utf-8")
+    img.generate_image(str(pf), [str(good), str(bad)], str(tmp_path / "o.png"), "1:1")
+    content = captured["json"]["input"]["messages"][0]["content"]
+    assert len([c for c in content if "image" in c]) == 1
+
+
+def test_qwen_rejects_more_than_three_refs_without_calling_api(monkeypatch, tmp_path):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "d")
+
+    def fake_post(url, headers=None, json=None, **kw):  # pragma: no cover
+        raise AssertionError("must not call the API when refs exceed the cap")
+
+    monkeypatch.setattr(img.requests, "post", fake_post)
+    refs = [str(_write_png(tmp_path / f"r{i}.png")) for i in range(4)]
+    pf = tmp_path / "p.json"
+    pf.write_text("scene", encoding="utf-8")
+    out = tmp_path / "o.png"
+    msg = img.generate_image(str(pf), refs, str(out), "1:1")
+    assert "3" in msg
+    assert not out.exists()
+
+
+def test_unknown_provider_message_lists_all_providers(monkeypatch, tmp_path):
+    monkeypatch.setenv("IMAGE_GENERATION_PROVIDER", "openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    pf = tmp_path / "p.json"
+    pf.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        img.generate_image(str(pf), [], str(tmp_path / "o.jpg"), "1:1")
+    for name in ["gemini", "minimax", "qwen"]:
+        assert name in str(e.value)
+
+
+def test_gemini_post_has_timeout(monkeypatch, tmp_path):
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, **kw):
+        captured["kw"] = kw
+        return FakeResp({"candidates": [{"content": {"parts": [
+            {"inlineData": {"data": base64.b64encode(b"g").decode()}}]}}]})
+
+    monkeypatch.setattr(img.requests, "post", fake_post)
+    pf = tmp_path / "p.json"
+    pf.write_text("x", encoding="utf-8")
+    img.generate_image(str(pf), [], str(tmp_path / "o.jpg"), "1:1")
+    assert captured["kw"]["timeout"] == 120
+
+
+def test_gemini_inline_mime_follows_extension(monkeypatch, tmp_path):
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, **kw):
+        captured["json"] = json
+        return FakeResp({"candidates": [{"content": {"parts": [
+            {"inlineData": {"data": base64.b64encode(b"g").decode()}}]}}]})
+
+    monkeypatch.setattr(img.requests, "post", fake_post)
+    ref = _write_png(tmp_path / "ref.png")
+    pf = tmp_path / "p.json"
+    pf.write_text("x", encoding="utf-8")
+    img.generate_image(str(pf), [str(ref)], str(tmp_path / "o.jpg"), "1:1")
+    parts = captured["json"]["contents"][0]["parts"]
+    assert parts[0]["inlineData"]["mimeType"] == "image/png"

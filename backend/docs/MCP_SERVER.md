@@ -141,6 +141,38 @@ paths such as `/mnt/user-data/...` to paths accepted by
 `@modelcontextprotocol/server-filesystem`. Use DeerFlow's built-in file tools
 for DeerFlow workspace files.
 
+## Bundled image-generation stdio server
+
+The repo ships an MCP stdio server for the `image-generation` skill at
+`skills/public/image-generation/scripts/mcp_server.py` (server `image-generation`,
+tool `generate_image`, visible as `image-generation_generate_image`). It wraps the
+skill's `generate.py` core (qwen / Gemini / MiniMax) on the host.
+
+Why bundled: in local sandbox mode `sandbox/env_policy.py` strips every `*KEY*`-shaped
+env name from skill subprocesses and `sandbox.environment` does not apply to
+`LocalSandboxProvider`, so the skill script cannot receive provider keys there. This
+server runs on the host with explicit `env` entries
+(`"DASHSCOPE_API_KEY": "$DASHSCOPE_API_KEY"`, resolved from the Gateway env at config
+load) — the only key channel in that mode, and the channel for external MCP clients.
+A disabled example entry ships in `extensions_config.example.json`; registration
+requires editing `extensions_config.json` directly because the HTTP API stdio command
+allowlist is `{npx, uvx}`.
+
+Path contract:
+
+- DeerFlow pins stdio cwd to the thread workspace and TMPDIR to `workspace/.mcp/tmp`,
+  so the server's default output (the sibling `outputs` dir) lands inside the thread's
+  user-data tree.
+- The tool returns the output path as a cwd-relative forward-slash token (e.g.
+  `../outputs/generated-<ts>.png`); DeerFlow's stdio path translation rewrites it to
+  `/mnt/user-data/outputs/...`, which `present_files` and the artifact API accept.
+  Backslash or drive-absolute paths are never translated on Windows, so external
+  callers get absolute paths only when the cwd is not a DeerFlow workspace.
+- `/mnt/user-data/...` values in `reference_images` / `output_path` are mapped back to
+  host paths server-side (cwd.parent is the user-data root).
+- Set `tool_call_timeout` to at least 300: generation performs a POST (120s) plus a
+  result-URL download (120s).
+
 ## OAuth Support (HTTP/SSE MCP Servers)
 
 For `http` and `sse` MCP servers, DeerFlow supports OAuth token acquisition and automatic token refresh.
