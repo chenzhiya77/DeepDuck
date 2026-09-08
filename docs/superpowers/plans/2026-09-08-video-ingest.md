@@ -16,10 +16,10 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Modify: `config.example.yaml`（注释段）
 - Test: `backend/tests/knowledge/test_api.py`（门控并集两态：off 拒 .mp4 / on 收 .mp4；文本集恒在）
 
-- [ ] RED：门控两态用例 failed（端点恒返文本集）。
-- [ ] Implement：配置段 + frozenset + 端点并集。
-- [ ] GREEN + revert proof（stash 端点改动 → RED）。
-- [ ] Commit: `feat(rag): gate video upload suffixes behind rag.video.enabled`
+- [x] RED：门控两态用例 failed（端点恒返文本集）。（8 例 RED，含体积门与配置段用例）
+- [x] Implement：配置段 + frozenset + 端点并集。（另落 `video_upload_limit_bytes()` 体积门：超 `max_size_mb` 门口即拒）
+- [x] GREEN + revert proof（摘 `video_ingest_enabled` 门控 → 4 例 RED）。
+- [x] Commit: `feat(rag): gate video upload suffixes behind rag.video.enabled`（`787e817e`）
 
 ## Task 2: video_shots 表与 store CRUD（spec §3）
 
