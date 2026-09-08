@@ -89,8 +89,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Modify: `backend/app/gateway/routers/knowledge_bases.py`（`GET /{kb_id}/documents/{doc_id}/shots/{shot_index}/frame` 流式 JPEG，鉴权对齐文档读取，无帧 404；文档列表 payload 带 duration_ms/镜头数仅视频文档）
 - Test: `backend/tests/knowledge/test_video_citations_api.py`（payload 字段/404/鉴权/列表时长）
 
-- [ ] RED → Implement → GREEN → revert proof。
-- [ ] Commit: `feat(rag): timecode citations and keyframe serving endpoint`
+- [x] RED → Implement → GREEN → revert proof（stash 摘两实现文件 → 7 RED，与初始 RED 同形；负向「无 shots 不注入」用例两态恒绿，守过度注入）。（8 passed；引用 join 落 recall_test 的 vector hits + graph evidence 两 chunk 级引用面（wiki 条目级不 join），按 chunk_id 扁平序 `{doc_id}#{shot_index:04d}` 分组每文档一次 list_shots，文本文档返回空自然缺省；frame_url 仅镜头有持久化关键帧时带（缺帧降级不带，spec §2）；frame 端点 FileResponse 流式 JPEG、鉴权走 _require_kb_access 与文档读取同源、404 覆盖非视频/缺镜头/缺帧/穿越 keyframe_path/磁盘帧丢失（resolve_shot_frame 镜像 get_document_file 穿越守卫先例，LOW FILE_METADATA 静态发现与兄弟端点同基线、运行时 blocking-io 门禁不覆盖知识库层）；文档列表 duration_ms=末镜 end_ms + shot_count=video_shots 行数，仅 storage_path 后缀 ∈ 视频集且 shots 已物化时注入，文本行 payload 不变；全量 knowledge 950 passed，仅 umap 可选依赖预存无关失败）
+- [x] Commit: `feat(rag): timecode citations and keyframe serving endpoint`（`a751b18c`）
 
 ## Task 8b: recaption 运维重跑入口（spec §2 运维重跑入口，评审 G1）
 
