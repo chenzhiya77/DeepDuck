@@ -158,6 +158,117 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   duplicate. New code under `components/workspace/knowledge/` imports `toast`
   from `./kb-toast`, never from `sonner` directly; core hooks and other pages
   keep the global surface.
+- **Knowledge-page document failure notifications are in-tab (2026-08-29)**:
+  document upload/index failures deliberately bypass both the global sonner
+  surface and the column-scoped `kb-toast` facade — a viewport-anchored toast
+  cannot stay inside the documents tab, and the failure list is stateful
+  (retry / dismiss / hover-to-expand), which sonner is not shaped for.
+  `components/workspace/knowledge/doc-failure-panel.tsx` renders an
+  absolutely-positioned card inside the documents tab's bottom-right corner
+  (bg-white dark:bg-black + border + shadow-lg, matching the global toast
+  look — `bg-background` was rejected for blending into the page). Detection
+  lives in `useDocFailureNotifier` (a rename of the earlier
+  `useDocFailureToasts` — detection semantics unchanged): notify only on
+  transition to `failed` / no backfill on first load / dedupe within a cycle
+  / re-notify on retry-then-fail / retract on leaving `failed` / `report`
+  folds in both upload-rejected-at-door and retry-request-failed. Rows carry
+  a `retryable` flag; retryable rows render a compact retry button reusing
+  the row-level `onRetryDocument` (key = document id). Card is
+  state-driven — no timers, no auto-dismiss; header ✕ closes all, per-row ✕
+  closes one, hover on the collapsed single-row strip expands the body
+  (hover on the ✕ itself does not expand — the sensor is only on the body).
+- **Knowledge-page eval tab structure (2026-09-08)**: `eval-tab.tsx` owns
+  three views (Questions / Overview / History) under one persistent toolbar —
+  segmented control + three action buttons (Sparkles「生成考题」/ Plus「添加考题」
+  / Play「运行评测」) + a bank-scoped search input, all locked to `h-7` on a
+  44px toolbar baseline matching the other five middle tabs. `useToolbarTier`
+  folds everything except the segmented control into a ⋯ menu on narrow
+  panels. Add-question and synthesis dialogs are **controlled from EvalTab**
+  (`bankAddOpen` / `bankSynthesisOpen` state) so toolbar buttons can open
+  them; the bank component never renders its own entry buttons. All run
+  triggers (header button, ⋯ menu, bank row context menu, row ⋮) delegate to
+  a single `requestRun` on EvalTab — child components must not carry their
+  own `useTriggerEvalRun` mutation, which would bypass the optimistic
+  in_flight flag and the full-tier confirmation dialog.
+  **Run banner (`eval-run-banner.tsx`)**: idle state renders `[Tier Name][⌄]`
+  (chevron = tier dropdown, session-only state, default `l1`, never
+  persisted); running state morphs the chevron slot into `[Phase Name + n/3
+  (disabled)][✕]` — the ✕ is a two-step inline cancel (first click morphs to
+  destructive 「确认终止?」 with a 3s timeout, second click fires
+  `useCancelEvalRun`). Narrow panels put the same two-step cancel inside the
+  ⋯ menu (`onSelect preventDefault` keeps the menu open). Progress polling
+  is `useEvalRunProgress` gated by the pure function
+  `evalRunProgressRefetchInterval(data) = in_progress ? 1500 : false` in
+  `eval-run-status.ts`. Phase labels are 4-character Chinese (`检索评测` /
+  `答题评测` / `质量评估`) with an `n/3` counter shown only when
+  `tier === "l1_l2"` or `step > 1` — a quick-tier run never shows `1/3`
+  because it cannot reach `3/3`. Cancelled runs render in history with a
+  `Ban` icon and muted 「已终止」 label, distinct from `completed` and
+  `error`; the banner summary slot morphs to a single-line 「评测已终止」
+  after drain.
+  **Question synthesis**: dialog (`eval-synthesis-dialog.tsx`) is a document
+  dropdown pre-filtered to `status === "ready"` (a doc without chunks would
+  409 anyway) + a count select (1–10, default 5) → `useTriggerSynthesis`
+  (toast on `enqueued` / `already_running`, close dialog on `enqueued`).
+  Review panel (`eval-synthesis-review.tsx`) is inline in the bank view,
+  appearing when staging is non-empty: metadata row (source doc ·
+  generated_at · remaining · dropped count) + candidate cards (query full
+  text + category/paths Badges + anchor chunk count + collapsible
+  reference_answer) + per-card 「✓ 采纳」 (`useAcceptSynthesisCandidate`) /
+  「✕ 忽略」 (`useRejectSynthesisCandidate`) + a 「全部忽略」 secondary
+  button (serial per-card reject — no batch endpoint, staging stays small
+  under wholesale-replace semantics). `in_progress` shows a top spinner
+  「生成中…」; polling is `useSynthesisStatus` gated by the pure function
+  `synthesisRefetchInterval(data) = in_progress ? 3000 : false` in
+  `synthesis-status.ts` (same pattern as `eval-run-status.ts`).
+  **Multi-path `expected_paths`**: both save dialogs
+  (`eval-save-question-dialog.tsx` for recall-panel saves,
+  `eval-add-question-dialog.tsx` for bank manual adds) use a three-item
+  Checkbox group (vector / graph / wiki) instead of a Select; `canSubmit`
+  requires at least one checked (front-end post for the backend's
+  `min_length=1`). Save-dialog default is `[...selectionPaths]` (Set
+  iteration order = click order = submission order) so a mixed-path
+  selection pre-checks multiple boxes; add-dialog defaults to vector only.
+  Bank table and drawer render `expected_paths` as multiple Badges. Tests
+  must assert checkbox state via `getAttribute("aria-checked")` — the Radix
+  checkbox's JS property is not the DOM attribute, so `toHaveProperty`
+  silently passes on stale state (vector-tab tests have the same pitfall
+  pinned).
+  **Wiki row anchoring (`recall-test-panel.tsx`)**: a wiki hit with non-empty
+  `source_chunk_ids` renders a checkbox that folds all its source chunks
+  into `selectedChunkIds` and adds `wiki` to `defaultSavePaths`;
+  manual-card rows (`source_type === "manual"`) never render a checkbox and
+  carry a native `title` tooltip explaining why (lightweight, `getByTitle`
+  assertable). Chunk selection is idempotent — already-selected chunks are
+  not re-added, so the submission body has no duplicates; checked state =
+  "all source chunks already selected".
+  **Trend chart (`eval-trend-chart.tsx` + `.utils.ts`)**: ECharts main chart
+  with 6 default legend lines + 4 picker candidates (`PICKER_METRICS`:
+  faithfulness / answer_relevancy / citation_precision / graph_seed_hit) +
+  baseline/threshold marker series. Picker is a card-header `DropdownMenu`
+  (`SlidersHorizontal` trigger, `h-7`, `DropdownMenuCheckboxItem` × 4,
+  `onSelect preventDefault` for continuous multi-select, session-only
+  state). **Picker series are not in `legend.data`** — the picker is an
+  independent multi-select entry, keeping the six-line legend's defaultOn
+  semantics separate. Y-axis auto-scales to the visible series set
+  (`resolveVisibleKeys` = legend ∪ picker) via `buildYAxisRange` (±0.05
+  padding, 10pp rounding, capped to `[0, 1]`, minimum-range guard); when
+  `yMin > 0` a card-header chip shows the effective range label. Tooltip
+  renders a `notRunInTier` dummy row for picker metrics whose value is
+  `null` at that ordinal — ECharts only emits axis params for non-null
+  points, so the dummy row must be added explicitly. **`context_recall` is
+  retired from the picker and the main-chart series** but is still shown as
+  a 28×12 sparkline in its L2 tile (all 7 L2 tiles carry sparklines fed by
+  the trend payload's `sparks` block). X-axis is a **run ordinal, not a
+  timestamp** — a missing run in the middle must not silently compress two
+  disjoint periods into adjacent points (spec §2.2 ordinal-warp protection).
+  Legend changes flow back via `legendselectchanged` → ref pass-through →
+  EvalTab `setLegendSelected` → prop re-injection → data effect rebuilds
+  option; the ref pass-through avoids identity-change triggering
+  `setOption` loops.
+  Wire contracts live in `core/knowledge/types.ts`; hooks in
+  `core/knowledge/hooks.ts` under the `knowledgeEval*Key` /
+  `knowledgeSynthesisKey` factory namespace.
 - `src/core/threads/hooks.ts` owns pre-submit upload state and thread submission.
 - `src/components/workspace/chats/chat-box.tsx` owns the desktop right-panel layout, and **all three** right panels (artifacts, sidecar, browser) share one `ResizablePanelGroup` — do not fork a non-resizable branch per panel kind, which is how the artifacts divider silently lost its drag handle (#4465). Open/close is `collapse()` / `resize()` on the side panel's imperative handle, not conditional rendering, so the width can animate. Three constraints hold that together: the size transition is applied from the group as `[&>[data-panel]]:transition-[flex-grow]` because the sized flex item is the library's own `[data-panel]` element rather than the child `className` lands on; it is applied only while an open/close is in flight, so a drag is not interpolated frame by frame; and during the animation the panel content is held at its final width in `cqw` and clipped, because a reflowing message list re-runs its scroll-to-bottom (pinned by `tests/e2e/sidecar-chat.spec.ts`'s no-animated-scroll test) and a re-wrapping composer changes which responsive labels it shows. Because the panel is `collapsible`, the library can also collapse it to `0%` on its own when a drag crosses `minSize`, without going through the state that owns it. `onResize` records the last positive size while the pointer moves, but the owning `sidecar` / `browserView` / `artifactsOpen` state must only mirror a final `0%` layout from `onLayoutChanged`, after pointer release; closing on the first `0%` resize frame breaks a continuous drag that reaches the edge and then reverses before release.
 

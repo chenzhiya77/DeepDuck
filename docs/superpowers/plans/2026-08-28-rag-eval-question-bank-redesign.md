@@ -314,7 +314,7 @@
 
 ## Phase 6: 收尾
 
-## Task 12: 文档同步 + 全量回归 + Live 冒烟
+## Task 12: 文档同步 + 全量回归 + Live 冒烟 ⏳ 部分完成（2026-09-08 文档同步已落地，Live 冒烟留用户自跑）
 
 **Files:**
 - Modify: `backend/AGENTS.md`（eval 包补 `synthesis` 模块说明 + 新四端点清单 + 多路语义口径）
@@ -322,20 +322,29 @@
 - Modify: `docs/superpowers/specs/2026-08-28-rag-eval-question-bank-redesign-design.md`（状态行更新为已落地）
 - Create: `frontend/tests/e2e/eval-question-bank-redesign.spec.ts`（Playwright page.route mock：多路 dialog 提交体、合成触发 202 → 审核面板渲染 → accept 后表格 +1——`eval-tab-phase2.spec.ts` 先例若未落地则对齐 `eval-metrics.spec.ts`）
 
-- [ ] E2E 用例落地并跑通。
-- [ ] 全量回归：`cd backend && uv run pytest tests/knowledge -q` 全绿 + `cd frontend && pnpm test` 全绿（既有 chat-panel 失败基线见 frontend AGENTS，非本 plan 回归）+ `ruff check` / `ruff format --check` / `pnpm check` 双净。
-- [ ] Live 冒烟（`make dev` 实跑）：① 存题 dialog 勾两路提交 → 表格双 Badge，跑评测 `path_accuracy` 不因混路误判；② 召回面板搜一题 → 百科词条行勾选 → 存题锚定列含源切片；③ 「从文档生成考题」选一篇已索引文档、5 题 → 审核面板出候选 → 采纳 2 题忽略 3 题 → 题库 +2；④ 合成中再点触发 → `already_running` toast；⑤ 旧格式题库文件（手造一行 `expected_path` 单值）读取正常、经 UI 追加一题后整文件升级新格式仍可跑评测。截图归档 `pr-build/`。
-- [ ] Commit: `docs(rag): sync agent guides and spec status for question bank redesign`
+- [x] E2E 用例落地并跑通。**2026-09-08 决策：不落地独立 e2e**。后续 4 份 plan（run-progress / trend-visibility / trend-runlevel / trend-ordinal-warp）均未写 Playwright e2e，团队实践已收敛到「dom/unit 回归替代 e2e」；本 plan Task 1–11 的 dom/unit 回归（bank / dialog / hooks / recall-test-panel / synthesis 五族用例）已覆盖 e2e 计划断言的全部交互面。
+- [x] 全量回归：`cd backend && uv run pytest tests/knowledge -q` 全绿 + `cd frontend && pnpm test` 全绿（既有 chat-panel 失败基线见 frontend AGENTS，非本 plan 回归）+ `ruff check` / `ruff format --check` / `pnpm check` 双净。**2026-09-08 确认：已被后续 4 份 plan 的收官回归覆盖 4 次**，最新基线 backend eval **358 passed** + frontend knowledge **923 passed | 1 预存**（chat-panel model selector）+ 两端双净（具体数字见后续 plan 尾注）。本 plan Task 1–11 的每次局部回归都钉死了自己涉及的文件，跨 plan 耦合已由后续 RED→GREEN 反复证伪。
+- [ ] Live 冒烟（`make dev` 实跑）：① 存题 dialog 勾两路提交 → 表格双 Badge，跑评测 `path_accuracy` 不因混路误判；② 召回面板搜一题 → 百科词条行勾选 → 存题锚定列含源切片；③ 「从文档生成考题」选一篇已索引文档、5 题 → 审核面板出候选 → 采纳 2 题忽略 3 题 → 题库 +2；④ 合成中再点触发 → `already_running` toast；⑤ 旧格式题库文件（手造一行 `expected_path` 单值）读取正常、经 UI 追加一题后整文件升级新格式仍可跑评测。截图归档 `pr-build/`。**2026-09-08 留用户自跑**，跑完把截图丢 `pr-build/` 后回填本 checkbox 与 Final verification 第 4 项。
+- [x] Commit: `docs(rag): sync agent guides and spec status for eval plans`（2026-09-08 落地，见收尾说明；subject 从原文 `for question bank redesign` 拓宽为 `for eval plans`，反映实际改动覆盖本 plan + 后续 3 份 plan 的产物）
+
+**Task 12 收尾说明（2026-09-08）**：
+
+本 plan Task 1–11 于 2026-08-28 全部落地后，Task 12 因用户紧接着推进后续 4 份 plan（`2026-09-06-rag-eval-run-progress.md` / `2026-09-06-rag-eval-trend-visibility.md` / `2026-09-07-rag-eval-trend-runlevel.md` / `2026-09-07-rag-eval-trend-ordinal-warp.md`）而搁置。2026-09-08 用户拍板按「精简收尾」方案关闭 Task 12：
+
+1. **文档同步（backend/frontend AGENTS.md + spec）本次落地**——backend/AGENTS.md 追加 5 段契约说明（multi-path expected_paths / wiki anchoring / synthesis / progress + cancellation / trend payload v5），覆盖本 plan 与后续 3 份 plan 的后端产物；frontend/AGENTS.md 追加 2 段（document failure notifications in-tab / eval tab structure），覆盖本 plan 与后续 3 份 plan 的前端产物；spec 状态行改 `Landed 2026-08-28, closed 2026-09-08`，§5 `source_type == "card"` → `"manual"` 校正，§6.3 `.jsonl` → `.json` 校正，§7.3 加入「并入常驻工具栏」实施校正脚注，§10 三个开放点全部标注已裁定。
+2. **全量回归与 e2e 已被后续 plan 覆盖**——后续 4 份 plan 每份收官都跑过 backend eval + frontend knowledge 全套回归，最新基线 backend eval 358 passed + frontend knowledge 923 passed | 1 预存（chat-panel）+ 两端双净。本 plan Task 1–11 的局部回归 + 后续 4 份 plan 的全量回归 = 等价于本 Task 12 的全量回归要求，不再重复跑。
+3. **Live 冒烟留用户自跑**——五项冒烟都是新交互路径（多路存题 / 百科行勾选 / 合成审核面板 / already_running toast / 旧格式升级），dom/unit 测覆盖不到「真实 LLM + 真实 qdrant + 真实文件写入」这一层，无法由后续 plan 的自动化回归替代。用户跑完后把截图丢 `pr-build/` 并回填第 3 个 checkbox 与 Final verification 第 4 项。
+4. **AGENTS.md 粒度纪律**——本次补写对齐现有基线：只写「模块存在 + 职责 + 公共接口清单 + 关键契约/口径」，不写 commit hash / RED-GREEN 数字 / 实施偏差 / 手动验收清单（那些留在 plan 与 spec）。判据：新 agent 读完 AGENTS.md 后能「知道模块存在、大致做什么、去哪找细节」即够。
 
 ---
 
 ## Final verification
 
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全绿。
-- [ ] `cd frontend && pnpm test` 全绿（chat-panel 既有失败除外）。
-- [ ] `ruff check` + `ruff format --check` + `pnpm check` 双净。
-- [ ] Live 冒烟五项全过，截图归档。
-- [ ] 守护测试：`tests/fixtures/rag_eval/golden.jsonl` 未改动且加载常绿；CI `rag-eval.yml` 无需变更（本地以 `--golden` fixture 跑一次 `run_rag_eval.py` 佐证）。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全绿。**2026-09-08 状态**：被后续 4 份 plan 收官回归覆盖，最新基线 backend eval **358 passed**（见 run-progress plan Task 21 尾注）。
+- [x] `cd frontend && pnpm test` 全绿（chat-panel 既有失败除外）。**2026-09-08 状态**：被后续 4 份 plan 收官回归覆盖，最新基线 frontend knowledge **923 passed | 1 预存**（chat-panel model selector，与本 plan 零交集）。
+- [x] `ruff check` + `ruff format --check` + `pnpm check` 双净。**2026-09-08 状态**：后续每份 plan 收官均双净，本次文档补写不涉及代码，无需重跑。
+- [ ] Live 冒烟五项全过，截图归档。**2026-09-08 留用户自跑**，跑完把截图丢 `pr-build/` 后回填本 checkbox 与 Task 12 第 3 项。
+- [x] 守护测试：`tests/fixtures/rag_eval/golden.jsonl` 未改动且加载常绿；CI `rag-eval.yml` 无需变更（本地以 `--golden` fixture 跑一次 `run_rag_eval.py` 佐证）。**2026-09-08 状态**：fixture 文件自 Task 1 起零改动（本 plan 纪律钉死），加载器双认契约由 `test_dataset.py` 守护测试常绿；后续 4 份 plan 均未触及 fixture 或 CI workflow。
 
 ---
 

@@ -1,6 +1,6 @@
 # RAG 评测题库改造设计（多路预期 · wiki 锚定 · 自底向上合成造题）
 
-> 状态：ready-for-agent（plan `../plans/2026-08-28-rag-eval-question-bank-redesign.md` 已就绪） · 日期：2026-08-28 · 范围：评测题库的三项修正——①`expected_path` 单值升级为 `expected_paths` 多路集合判定；②百科词条经 `source_chunk_ids` 可锚定 + 造题入口定位反转；③自底向上合成造题（从文档生成候选题 + 人工审核入库）· 关联：父 spec `2026-08-23-rag-retrieval-evaluation-design.md`（指标体系）；二期子 spec `2026-08-27-rag-eval-tab-phase2-design.md`（题库 CRUD / 触发 / 历史，已落地）
+> 状态：**Landed 2026-08-28, closed 2026-09-08**（plan `../plans/2026-08-28-rag-eval-question-bank-redesign.md` Task 1–11 全部落地；Task 12 文档同步已于 2026-09-08 完成，Live 冒烟留用户自跑） · 日期：2026-08-28 · 范围：评测题库的三项修正——①`expected_path` 单值升级为 `expected_paths` 多路集合判定；②百科词条经 `source_chunk_ids` 可锚定 + 造题入口定位反转；③自底向上合成造题（从文档生成候选题 + 人工审核入库）· 关联：父 spec `2026-08-23-rag-retrieval-evaluation-design.md`（指标体系）；二期子 spec `2026-08-27-rag-eval-tab-phase2-design.md`（题库 CRUD / 触发 / 历史，已落地）；后续演进 spec `2026-09-06-rag-eval-run-progress-design.md`（进度条 + 终止）、`2026-09-06-rag-eval-trend-visibility-design.md`（趋势可见性 + `context_recall` 退役）
 >
 > **定案（2026-08-28 用户决策）**：
 > 1. ①② 两项照单全收；③ 只做**自底向上合成**一项（生产流量挖掘、对抗题不做，见 §10）；
@@ -90,7 +90,7 @@
 
 **端点改动**（`recall_test` 的 wiki hit）：
 
-- 每个 `source_type == "wiki"` 的命中补 `source_chunk_ids: list[str]`（`wiki_store.get_entry` 读取，与 `runner.wiki_fn` 同源）；人工卡片（`source_type == "card"`）不带此键。
+- 每个 `source_type == "wiki"` 的命中补 `source_chunk_ids: list[str]`（`wiki_store.get_entry` 读取，与 `runner.wiki_fn` 同源）；人工卡片不带此键。**实施校正（2026-08-28）**：人工卡片的 `source_type` 枚举实际是 `"manual"` 而非本节原文的 `"card"`，判定条件以 `source_type != "wiki"` 为准（含 `manual`），比原文口径更宽——以代码事实为准。
 - 这是纯增量字段，前端旧版本无视即可，无兼容问题。
 
 **前端勾选规则**（§7.2 详述）：百科行有非空 `source_chunk_ids` 时可勾选，勾选贡献其源切片进 `relevant_chunk_ids`；人工卡片行不可勾选（无切片映射，tooltip 说明）——与 `wiki_fn` 跳过人工卡片的口径一致。
@@ -120,7 +120,7 @@
 
 ### 6.3 候选暂存与审核
 
-- 暂存文件：`data/knowledge/<kb_id>/eval_candidates.jsonl`（与 golden.jsonl 同目录树），一行一候选，字段 = 完整题目字段 + `candidate_id`（`c_<hex8>`）+ `generated_at` + `doc_id`；tmp + 原子 replace 落盘，每次合成**整体替换**（不做增量累积——审核面永远是一次合成的产物，心智简单）；
+- 暂存文件：`data/knowledge/<kb_id>/eval_candidates.json`（与 golden.jsonl 同目录树），**实施校正（2026-08-28）**：改用单一 JSON 文档而非原文的 `.jsonl` 逐行格式——元数据（`doc_id` / `generated_at` / `dropped`）必须在候选全部被审核后仍可读（状态端点要展示全部丢弃数），JSONL 逐行格式做不到；文档结构为 `{doc_id, generated_at, dropped, candidates: [...]}`，`candidates[i]` 字段 = 完整题目字段 + `candidate_id`（`c_<hex8>`）；tmp + 原子 replace 落盘，每次合成**整体替换**（不做增量累积——审核面永远是一次合成的产物，心智简单）；
 - 候选**不进 `golden.jsonl`**，不进任何评测——只有审核通过才经既有 `POST /eval/questions` 端点入库（复用全部校验与锁，不新开写路径）；
 - 读端点 `GET /{kb_id}/eval/questions/synthesize`：`{in_progress, candidates: [...], generated_at, doc_id, dropped}`（无暂存文件 → 空列表）；前端 3s 轮询至 drain（wiki-status 先例）；
 - 审核端点（两个，均作用于暂存文件，幂等）：
@@ -151,6 +151,7 @@
 ### 7.3 合成造题入口与候选审核
 
 - 题库视图工具行（表格上方，与「+ 添加考题」并列）：「✦ 从文档生成考题」按钮 → dialog：文档下拉（复用知识库文档列表数据源）+ 数量选择（默认 5，上限 10）→ 触发后 toast + 进入候选审核态；
+  **实施校正（2026-08-29 UX 修订）**：「生成考题」（Sparkles）与「添加考题」（Plus）两个按钮最终**并入 eval-tab 常驻工具栏右侧**（分段控件与「运行评测」之间），不再是题库视图内的独立工具行；bank 组件不再自渲染入口按钮，改由 EvalTab 通过 `bankAddOpen` / `bankSynthesisOpen` 受控 props 驱动 dialog。理由：同类工具按钮分两处（顶部工具行 + 表格尾部虚线行）导致添加入口随列表增长沉底；并入常驻工具栏后窄面板经 `useToolbarTier` 一并收进 ⋯ 菜单，与其他五个 middle tab 的工具栏形态对齐。详见 plan「计划外 UX 修订（2026-08-29）」段。
 - **候选审核面板**（题库视图内联区块，暂存非空时出现，优先于空态展示）：候选卡片列 = query 全文 + category/paths Badge + 锚定切片数 + reference_answer 折叠预览；每卡片「✓ 采纳」（调 accept → 成功 toast，卡片消失）/「✕ 忽略」（调 DELETE）；顶部一行元信息（来源文档 · 生成时间 · 剩余候选数）+「全部忽略」次按钮；
 - `in_progress` 时面板顶部显示 spinner +「生成中…」，轮询至出候选；
 - drain 后暂存为空 → 面板消失，回到表格常态。
@@ -200,11 +201,11 @@
 - 全库级合成（不限文档）——成本与锚定核验性都不可控；
 - 候选题跨合成批次累积（§6.3 已裁定整体替换）。
 
-**开放点（留待 plan 期裁定）**：
+**开放点（plan 期已裁定，2026-08-28 / 2026-09-08 收官时确认）**：
 
-1. 合成用模型是否允许独立配置项（与答题模型错开以减同源偏差）——默认先复用知识功能现有模型配置，跑通后再评估加开关；
-2. 候选审核面板的交互密度——卡片列 vs 表格行，plan 期按组件成本定；
-3. `dropped` 计数是否需要在 UI 露出（审核面板元信息行）——默认露出数字，不做详情。
+1. 合成用模型是否允许独立配置项（与答题模型错开以减同源偏差）——**已裁定：沿用主模型 `deerflow.models.factory.create_chat_model()`，无独立配置项**（spec §10 预裁 + Task 6/7 实施一致）；跑通后按同源偏差观察决定是否加开关，目前无计划；
+2. 候选审核面板的交互密度——**已裁定：卡片列**（Task 11 实施），每卡「✓ 采纳」/「✕ 忽略」+ 顶部「全部忽略」次按钮；表格行方案未采纳，理由是候选字段密度高（query 全文 + Badge 组 + 锚定数 + reference_answer 折叠），卡片列的垂直空间对长 query 更友好；
+3. `dropped` 计数是否需要在 UI 露出（审核面板元信息行）——**已裁定：露出数字**（Task 11 实施），元信息行为「来源文档 · 生成时间 · 剩余数 · dropped 数字」四段；不做详情（丢弃理由不入暂存文件，只日志），理由是 dropped 数字本身已足够传达「合成有守卫、不产出脏题」的信号，详情属于调试信息不该在审核面露出。
 
 ---
 
