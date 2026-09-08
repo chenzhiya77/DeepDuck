@@ -24,6 +24,7 @@ from deerflow.knowledge.models import (
     GraphRelationRow,
     KnowledgeBaseRow,
     ManualKnowledgeRow,
+    VideoShotRow,
     WikiEntryRow,
 )
 from deerflow.utils.time import coerce_iso
@@ -99,7 +100,7 @@ class KnowledgeStore:
             return self._row_to_dict(row)
 
     async def delete_kb(self, kb_id: str) -> bool:
-        """Delete a KB and cascade across all six business tables.
+        """Delete a KB and cascade across all seven business tables.
 
         Vector-side cleanup (three Qdrant collections) is layered on top by
         the API/worker so a vector failure cannot strand business rows
@@ -109,7 +110,7 @@ class KnowledgeStore:
             row = await session.get(KnowledgeBaseRow, kb_id)
             if row is None:
                 return False
-            for model in (ChunkRow, DocumentRow, GraphEntityRow, GraphRelationRow, WikiEntryRow, ManualKnowledgeRow):
+            for model in (ChunkRow, DocumentRow, GraphEntityRow, GraphRelationRow, WikiEntryRow, ManualKnowledgeRow, VideoShotRow):
                 await session.execute(delete(model).where(model.kb_id == kb_id))
             await session.delete(row)
             await session.commit()
@@ -218,11 +219,19 @@ class KnowledgeStore:
             return self._row_to_dict(row)
 
     async def delete_document(self, doc_id: str) -> bool:
+        """Delete one document + its chunk and video_shots rows (business DB).
+
+        Keyframe files live outside the DB — the service-layer cascade removes
+        the per-doc dir (``_remove_dir``) which carries the ``frames/`` subdir
+        (spec 2026-09-08 §9 存储膨胀缓解). Vector/graph/wiki cleanup is layered
+        on top by the caller (``delete_document_cascade``).
+        """
         async with self._sf() as session:
             row = await session.get(DocumentRow, doc_id)
             if row is None:
                 return False
             await session.execute(delete(ChunkRow).where(ChunkRow.doc_id == doc_id))
+            await session.execute(delete(VideoShotRow).where(VideoShotRow.doc_id == doc_id))
             await session.delete(row)
             await session.commit()
             return True

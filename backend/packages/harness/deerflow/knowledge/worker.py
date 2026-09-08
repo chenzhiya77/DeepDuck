@@ -27,25 +27,117 @@ import asyncio
 import contextlib
 import logging
 import shutil
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
+from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.captioner import apply_captions, caption_images
-from deerflow.knowledge.chunker import chunk_markdown
+from deerflow.knowledge.chunker import chunk_markdown, count_tokens
 from deerflow.knowledge.embedder import DashScopeEmbedder, EmbeddingResult
 from deerflow.knowledge.graph.indexer import index_document_graph
 from deerflow.knowledge.graph.resolver import resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.indexer import index_chunks
-from deerflow.knowledge.parser import ParsedDocument, ParsedImage, parse_document
+from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
+from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, transcribe_video
+from deerflow.knowledge.video.captioner import caption_shots
+from deerflow.knowledge.video.frames import extract_caption_frames, extract_keyframes
+from deerflow.knowledge.video.ocr import ocr_frame
+from deerflow.knowledge.video.probe import probe_video
+from deerflow.knowledge.video.segmentation import fallback_windows, merge_scene_bounds
+from deerflow.knowledge.video.shot_card import assemble_card_body, chunk_id_for_shot, heading_path_for_shot, is_empty_card
+from deerflow.knowledge.video.store import VideoShotStore
 from deerflow.knowledge.wiki.generator import generate_wiki, mark_dirty_for_entities, wiki_trigger_ready
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
+
+#: asr 整腿失败时镜头卡口述段的占位（spec §2 降级：区别于无语音的「（无）」）。
+_ASR_FAILED = "（ASR 失败）"
+
+#: caption 临时帧数上界（spec §2「caption 临时可用至多 3 帧」，走 pipe 不持久化）。
+_CAPTION_FRAMES = 3
+
+#: keyframe 腿失败率降级阈值（>30% → error 子标记，对齐 graph 30% 规则，spec §2）。
+_KEYFRAME_DEGRADE_THRESHOLD = 0.30
+
+#: 视频腿 progress 累积权重（spec §2：asr30 / segment5 / caption35 / materialize5 = 75，
+#: 余下 25 由现有 vector/graph 腿在 process_document 里映射，保证整体单调至 100）。
+_PROGRESS_AFTER_ASR = 30
+_PROGRESS_AFTER_SEGMENT = 35
+_PROGRESS_AFTER_CAPTION = 70
+_PROGRESS_AFTER_MATERIALIZE = 75
+
+
+def _is_video_path(storage_path: str) -> bool:
+    """文档是否视频（storage_path 后缀 ∈ 冻结视频集）——worker 分支路由的单一判据。"""
+    return Path(storage_path).suffix.lower() in VIDEO_UPLOAD_SUFFIXES
+
+
+def assign_transcript_to_shots(
+    segments: Sequence[TranscriptSegment],
+    shots: Sequence[tuple[int, int]],
+) -> dict[int, str]:
+    """把 ASR 段按最大重叠占比投影进镜头桶（spec §3 时间轴对齐规则，materialize 核心纯函数）。
+
+    主时钟是镜头边界（PTS 毫秒轴），ASR 只是被投影进桶的一路：
+
+    - 每段归入重叠占比（重叠 ms / 段长）最大的镜头——保句子完整性、检索单元友好；
+    - 占比相同归较早镜头（``enumerate`` 升序 + 严格大于 → 先命中的小 index 保留）；
+    - 同镜头多段按 ``start_ms`` 升序、空格拼接（口述段保持单行，对齐冻结卡三行结构）；
+    - 与所有镜头重叠均为 0 的段丢弃（防御，不落任何桶）；
+    - 无语音镜头缺席结果（调用方 ``.get(index, "")`` 补空 → 卡口述段「（无）」）。
+    """
+    buckets: dict[int, list[tuple[int, str]]] = {}
+    for segment in segments:
+        span = segment.end_ms - segment.start_ms
+        if span <= 0:
+            continue
+        best_index = -1
+        best_ratio = 0.0
+        for index, (start, end) in enumerate(shots):
+            overlap = min(segment.end_ms, end) - max(segment.start_ms, start)
+            if overlap <= 0:
+                continue
+            ratio = overlap / span
+            if ratio > best_ratio:  # 严格大于 → 平局保留较早镜头（index 小）
+                best_ratio = ratio
+                best_index = index
+        if best_index < 0:
+            continue  # 零重叠段丢弃
+        buckets.setdefault(best_index, []).append((segment.start_ms, segment.text))
+    return {index: " ".join(text for _, text in sorted(items)) for index, items in buckets.items()}
+
+
+def _detect_scene_cuts(video_path: str) -> list[float]:
+    """PySceneDetect ContentDetector → 场景切点（PTS 毫秒）。
+
+    重依赖延迟 import（本机/CI 不装）：缺失（ImportError）或解码/检测失败都抛异常，
+    由 worker segment 腿捕获后降级为 ``fallback_windows``（segment=degraded，spec §2）。
+    blocking 的视频解码经调用方 ``run_file_io`` 落线程池，不阻塞事件循环。检测器只是
+    切点的一个来源（换 TransNetV2 只改此函数，spec §3），下游只吃「毫秒切点列表」。
+    """
+    from scenedetect import ContentDetector, detect  # 延迟 import：缺失即降级
+
+    scene_list = detect(video_path, ContentDetector())
+    cuts: list[float] = []
+    for scene in scene_list:
+        start_seconds = scene[0].get_seconds()
+        if start_seconds > 0:  # 首场景起点 0 是轴起点、非内部切点
+            cuts.append(start_seconds * 1000.0)
+    return cuts
+
+
+def _read_frame_bytes(path: Path) -> bytes:
+    """读持久化关键帧 bytes 供 OCR；缺帧 / 读失败降级空 bytes（OCR 再降级空串）。"""
+    try:
+        return path.read_bytes()
+    except OSError:
+        return b""
 
 
 class _DocumentDeletedError(Exception):
@@ -79,6 +171,7 @@ class KnowledgeIndexWorker:
         vector_store: KnowledgeVectorStore,
         graph_store: GraphStore | None = None,
         wiki_store: WikiStore | None = None,
+        video_shot_store: VideoShotStore | None = None,
         concurrency: int = 2,
         parse_fn: Callable[[str], Awaitable[ParsedDocument]] | None = None,
         embedder: _Embedder | None = None,
@@ -92,6 +185,7 @@ class KnowledgeIndexWorker:
         self._vector_store = vector_store
         self._graph_store = graph_store or GraphStore(store._sf)
         self._wiki_store = wiki_store or WikiStore(store._sf)
+        self._video_store = video_shot_store or VideoShotStore(store._sf)
         self._parse_fn = parse_fn or parse_document
         self._embedder = embedder
         self._llm = llm
@@ -185,15 +279,23 @@ class KnowledgeIndexWorker:
         if document is None or document["status"] in ("ready", "failed"):
             return document
         kb_id = document["kb_id"]
+        is_video = _is_video_path(document["storage_path"])
         # P3 per-path sub-status (spec 2026-08-11 §5): initialized up front so the
         # hover breakdown exists from the parsing stage on (2026-08-12 UX fix) —
         # only pre-0012 legacy rows stay NULL and render no hover. Partial-merge
         # writes follow as each leg advances; the wiki leg is NOT tracked on the
-        # row (library-level mirror injected at read time by the API).
+        # row (library-level mirror injected at read time by the API). Video docs
+        # extend the breakdown with the asr/segment/caption legs (spec 2026-09-08
+        # §2); text docs never carry them (NULL-safe hover).
         legs: dict[str, str] = {"vector": "pending", "graph": "pending"}
+        if is_video:
+            legs = {"asr": "pending", "segment": "pending", "caption": "pending", "vector": "pending", "graph": "pending"}
         try:
             if document["status"] in ("uploaded", "parsing", "chunking"):
-                await self._reparse_and_chunk(doc_id, kb_id, document["storage_path"])
+                if is_video:
+                    await self._run_video_legs(doc_id, kb_id, document, legs)
+                else:
+                    await self._reparse_and_chunk(doc_id, kb_id, document["storage_path"])
 
             await self._require_alive(doc_id)  # checkpoint: before the vector leg
             await self._store.update_document_status(doc_id, "indexing", path_status=legs)
@@ -209,8 +311,13 @@ class KnowledgeIndexWorker:
                 legs["vector"] = "done"
             await self._store.update_document_status(doc_id, "indexing", path_status={"vector": legs["vector"]})
 
+            # Video docs spent 0–75% on the media legs (materialize); the shared
+            # vector/graph window maps onto the remaining 25% so progress stays
+            # monotonic (spec §2 腿权重). Text docs keep base=0/span=100 (unchanged).
+            progress_base, progress_span = (_PROGRESS_AFTER_MATERIALIZE, 100 - _PROGRESS_AFTER_MATERIALIZE) if is_video else (0, 100)
+
             async def _on_progress(settled: int, total: int) -> None:
-                percent = (settled * 100) // total if total else 100
+                percent = progress_base + ((settled * progress_span) // total if total else progress_span)
                 await self._store.update_document_status(doc_id, "indexing", progress_percent=percent)
 
             legs["graph"] = "indexing"
@@ -288,16 +395,27 @@ class KnowledgeIndexWorker:
         error = f"{existing}; {marker}" if existing else marker
         await self._store.update_document_status(doc_id, document["status"], error=error)
 
+    async def _wipe_doc_chunks(self, doc_id: str, kb_id: str) -> None:
+        """Drop a document's chunks + their vector/graph residue (idempotent).
+
+        Shared by the text re-parse and the video re-materialize: both rebuild
+        chunks from scratch, so stale points/entities and phantom chunk
+        contributions must go first (chunk ids are deterministic — a rebuild
+        would otherwise upsert over half-cleaned residue).
+        """
+        existing = await self._store.list_chunks(doc_id, limit=1_000_000)
+        if not existing:
+            return
+        chunk_ids = [chunk["chunk_id"] for chunk in existing]
+        orphaned, _affected = await self._graph_store.remove_chunk_contributions(kb_id, chunk_ids)
+        if orphaned:
+            await self._vector_store.delete_entities(kb_id, orphaned)
+        await self._vector_store.delete_by_doc(doc_id)
+        await self._store.delete_chunks_by_doc(doc_id)
+
     async def _reparse_and_chunk(self, doc_id: str, kb_id: str, storage_path: str) -> None:
         """Parse → caption → chunk, wiping any partial output first (idempotent)."""
-        existing = await self._store.list_chunks(doc_id, limit=1_000_000)
-        if existing:
-            chunk_ids = [chunk["chunk_id"] for chunk in existing]
-            orphaned, _affected = await self._graph_store.remove_chunk_contributions(kb_id, chunk_ids)
-            if orphaned:
-                await self._vector_store.delete_entities(kb_id, orphaned)
-            await self._vector_store.delete_by_doc(doc_id)
-            await self._store.delete_chunks_by_doc(doc_id)
+        await self._wipe_doc_chunks(doc_id, kb_id)
 
         await self._store.update_document_status(doc_id, "parsing", path_status={"vector": "pending", "graph": "pending"})
         parsed = await self._parse_fn(storage_path)
@@ -360,6 +478,178 @@ class KnowledgeIndexWorker:
                 target.write_bytes(image.content)
 
         await run_file_io(_write)
+
+    # ── video legs (spec 2026-09-08 §2) ──────────────────────────────────
+
+    async def _run_video_legs(self, doc_id: str, kb_id: str, document: dict[str, Any], legs: dict[str, str]) -> None:
+        """视频腿序：probe → asr → segment → keyframe+ocr → persist 骨架 → caption →
+        materialize（spec §2）。materialize 写 video_shots + 镜头卡 chunks 后，镜头卡即
+        普通 chunk，落入 process_document 现有 vector/graph/wiki 腿（零改动）。
+
+        resume（spec §2 caption_status 状态机，对齐 chunks.extract_status 先例）：
+        video_shots 骨架已在（上次崩溃于 caption 腿或之后）→ 跳过 probe/asr/segment/
+        keyframe（帧已落盘、三路原文已在骨架），只对 pending 镜头重跑 caption，再
+        materialize 重建全量镜头卡。骨架 payload 不写 caption_status，遵守 upsert
+        「absent keys persist」——已 done 的镜头不被隐式重置（Task 2 冻结契约）。
+        """
+        storage_path = document["storage_path"]
+        video_name = document["name"]
+        doc_dir = Path(storage_path).parent
+        cfg = get_app_config().rag.video
+
+        if await self._video_store.list_shots(doc_id):
+            # resume：probe/asr/segment/keyframe 的产物已固化在骨架，不重跑；标
+            # asr/segment done，只补 pending 镜头的 caption 再 materialize。
+            legs["asr"] = "done"
+            legs["segment"] = "done"
+            await self._store.update_document_status(doc_id, "parsing", path_status=legs)
+            await self._video_caption_leg(doc_id, kb_id, storage_path, legs)
+            await self._video_materialize(doc_id, kb_id, video_name, cfg)
+            return
+
+        await self._store.update_document_status(doc_id, "parsing", path_status=legs)
+
+        # ── probe（硬失败腿：不可解码 → 抛出，文档 failed，对齐 EmptyParseResultError）──
+        probe = await probe_video(storage_path)
+        duration_ms = probe.duration_ms
+
+        # ── asr（降级腿：整腿失败 → asr=failed，口述段写「（ASR 失败）」，文档仍 ready）──
+        await self._store.update_document_status(doc_id, "parsing", path_status={"asr": "indexing"})
+        asr_failed = False
+        try:
+            segments = await transcribe_video(storage_path, provider_name=cfg.asr_provider, model=cfg.asr_model)
+        except AsrError as exc:
+            logger.warning("video ASR leg failed for document %s (%s); degrading asr=failed", doc_id, exc)
+            segments = []
+            asr_failed = True
+        legs["asr"] = "failed" if asr_failed else "done"
+        await self._store.update_document_status(doc_id, "parsing", path_status={"asr": legs["asr"]}, progress_percent=_PROGRESS_AFTER_ASR)
+
+        # ── segment（降级腿：检测器失败 → 等距回退窗，segment=degraded）──
+        await self._store.update_document_status(doc_id, "parsing", path_status={"segment": "indexing"})
+        shots = await self._video_segment_leg(doc_id, storage_path, duration_ms, cfg, legs)
+        await self._store.update_document_status(doc_id, "parsing", path_status={"segment": legs["segment"]}, progress_percent=_PROGRESS_AFTER_SEGMENT)
+        if not shots:
+            raise EmptyParseResultError("视频切分产出零镜头：场景检测与等距回退窗均未产出有效区间（时长可能非正），无法入库")
+        await self._require_alive(doc_id)  # checkpoint: after the long media legs, before any write
+
+        # ── keyframe + ocr（单镜头降级：缺帧 → 无 frame_url、屏幕文字空）──
+        keyframes = await extract_keyframes(storage_path, shots, str(doc_dir))
+        ocr_texts = await self._video_ocr_leg(doc_dir, keyframes)
+        missing = sum(1 for rel in keyframes.values() if rel is None)
+        if shots and missing / len(shots) > _KEYFRAME_DEGRADE_THRESHOLD:
+            await self._append_error_marker(doc_id, "keyframe degraded")
+
+        # ── asr 投影到镜头桶（spec §3 时间轴对齐：最大重叠占比归桶）──
+        asr_by_shot = {index: _ASR_FAILED for index in range(len(shots))} if asr_failed else assign_transcript_to_shots(segments, shots)
+
+        # ── persist video_shots 骨架（caption_status 缺省 pending；不写该键以遵守
+        #    upsert「absent keys persist」，resume/recaption 的 done 不被重置）──
+        skeleton = [
+            {
+                "shot_index": index,
+                "start_ms": start,
+                "end_ms": end,
+                "keyframe_path": keyframes.get(index),
+                "asr_text": asr_by_shot.get(index, ""),
+                "ocr_text": ocr_texts.get(index, ""),
+            }
+            for index, (start, end) in enumerate(shots)
+        ]
+        await self._video_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=skeleton)
+
+        # ── caption（降级腿：>30% 失败 → caption=degraded）──
+        await self._video_caption_leg(doc_id, kb_id, storage_path, legs)
+
+        # ── materialize（组装冻结卡正文 → 镜头卡 chunks）──
+        await self._video_materialize(doc_id, kb_id, video_name, cfg)
+
+    async def _video_segment_leg(self, doc_id: str, storage_path: str, duration_ms: int, cfg: Any, legs: dict[str, str]) -> list[tuple[int, int]]:
+        """场景检测 → 镜头区间；检测器整腿失败降级等距回退窗（segment=degraded，spec §2）。
+
+        PySceneDetect 的 blocking 解码经 ``run_file_io`` 落线程池（blocking-io-guard 纪律）。
+        """
+        max_shot_ms = int(cfg.max_shot_seconds * 1000)
+        try:
+            cuts = await run_file_io(_detect_scene_cuts, storage_path)
+            shots = merge_scene_bounds(cuts, duration_ms, max_shot_ms)
+            if not shots:
+                raise ValueError("场景检测产出空镜头序列")
+            legs["segment"] = "done"
+            return shots
+        except Exception as exc:  # 检测器缺失/解码失败/空产出统一降级
+            logger.warning("video segment leg failed for document %s (%s); falling back to uniform windows", doc_id, exc)
+            legs["segment"] = "degraded"
+            return fallback_windows(duration_ms, int(cfg.fallback_window_seconds * 1000))
+
+    async def _video_ocr_leg(self, doc_dir: Path, keyframes: dict[int, str | None]) -> dict[int, str]:
+        """读每镜头持久化中帧 bytes → OCR 屏幕文字；缺帧镜头跳过（空串，spec §2 降级）。"""
+        texts: dict[int, str] = {}
+        for index, rel in keyframes.items():
+            if rel is None:
+                texts[index] = ""
+                continue
+            frame_bytes = await run_file_io(_read_frame_bytes, doc_dir / rel)
+            texts[index] = await ocr_frame(frame_bytes)
+        return texts
+
+    async def _video_caption_leg(self, doc_id: str, kb_id: str, storage_path: str, legs: dict[str, str]) -> None:
+        """对 caption_status=pending 的镜头抽 ≤3 临时帧 → VLM caption → 回填 caption +
+        状态（done/failed）。done/failed/empty 镜头不重跑（resume 只跑 pending，spec §2）；
+        ``empty`` 由 materialize 依三路全空判定，此处不越权。"""
+        legs["caption"] = "indexing"
+        await self._store.update_document_status(doc_id, "parsing", path_status={"caption": "indexing"})
+        pending = await self._video_store.list_pending_shots(doc_id)
+        if pending:
+            shot_frames: dict[int, list[bytes]] = {}
+            for shot in pending:
+                frames = await extract_caption_frames(storage_path, int(shot["start_ms"]), int(shot["end_ms"]), count=_CAPTION_FRAMES)
+                shot_frames[int(shot["shot_index"])] = frames
+            outcome = await caption_shots(shot_frames)
+            legs["caption"] = "degraded" if outcome.degraded else "done"
+            updates = [{"shot_index": index, "caption": caption, "caption_status": "done" if caption.strip() else "failed"} for index, caption in outcome.captions.items()]
+            if updates:
+                await self._video_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=updates)
+        else:
+            legs["caption"] = "done"  # 无 pending（resume 全 done）→ caption 腿视为完成
+        await self._store.update_document_status(doc_id, "parsing", path_status={"caption": legs["caption"]}, progress_percent=_PROGRESS_AFTER_CAPTION)
+
+    async def _video_materialize(self, doc_id: str, kb_id: str, video_name: str, cfg: Any) -> None:
+        """读 video_shots 全量 → 组装冻结卡正文（不含时间码头，spec §3 嵌入文本契约）→
+        幂等 wipe 旧 chunks + insert 镜头卡 chunks；三路全空镜头标 caption_status=empty
+        不产 chunk（计数可视，spec §2）。materialize 后镜头卡即普通 chunk，落入现有腿。"""
+        shots = await self._video_store.list_shots(doc_id)
+        mode = cfg.card_text_mode
+        chunk_rows: list[dict[str, Any]] = []
+        empty_updates: list[dict[str, Any]] = []
+        for shot in shots:
+            index = int(shot["shot_index"])
+            caption = shot.get("caption") or ""
+            asr_text = shot.get("asr_text") or ""
+            ocr_text = shot.get("ocr_text") or ""
+            if is_empty_card(caption=caption, asr_text=asr_text, ocr_text=ocr_text):
+                empty_updates.append({"shot_index": index, "caption_status": "empty"})
+                continue
+            body = assemble_card_body(caption=caption, asr_text=asr_text, ocr_text=ocr_text, mode=mode)
+            chunk_rows.append(
+                {
+                    "chunk_id": chunk_id_for_shot(doc_id, index),
+                    "doc_id": doc_id,
+                    "kb_id": kb_id,
+                    "chunk_index": index,
+                    "text": body,
+                    "heading_path": heading_path_for_shot(video_name, index),
+                    "page": None,
+                    "token_count": count_tokens(body),
+                }
+            )
+        await self._require_alive(doc_id)  # checkpoint: before writing chunks (delete race)
+        await self._wipe_doc_chunks(doc_id, kb_id)  # 幂等：resume 重建前清 vector/graph 残留
+        if chunk_rows:
+            await self._store.insert_chunks(chunk_rows)
+        if empty_updates:
+            await self._video_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=empty_updates)
+        await self._store.update_document_status(doc_id, "indexing", chunk_count=len(chunk_rows), progress_percent=_PROGRESS_AFTER_MATERIALIZE)
 
     async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder) -> None:
         """Triggered batch on first completion, dirty incremental afterwards."""
