@@ -100,8 +100,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Modify: `backend/packages/harness/deerflow/knowledge/worker.py`（子集腿模式：只跑 caption+materialize+增量重嵌向量+`mark_dirty_for_entities`；帧/ASR/segment 腿跳过，帧已持久化）
 - Test: `backend/tests/knowledge/video/test_recaption.py`（重置矩阵 done→pending / empty 保持 / 在飞 409 / 非视频 404 / wiki dirty 传播 / 仅变更 chunk 重嵌）
 
-- [ ] RED → Implement → GREEN → revert proof（摘重置逻辑 → 重跑不生效 RED）。
-- [ ] Commit: `feat(rag): recaption endpoint for caption model upgrades`
+- [x] RED → Implement → GREEN → revert proof（精准 neuter trigger_recaption 的 caption_status 重置 → 重置矩阵用例 RED：done/failed 不翻 pending → worker caption 腿 list_pending_shots 空 → 重跑不生效）。（10 passed；service.trigger_recaption 重置 done/failed→pending（empty 保持，三路俱空重跑无意义）走 bulk_upsert 只翻 caption_status 遵 absent-keys-persist，同步翻文档 parsing 标记在飞（镜像 retry status flip；且 parsing→重启 recover 走 resume 路重跑 pending 镜头正确恢复）；门禁：非视频 NotVideoDocumentError→404、在飞 DocumentProcessingError→409、缺失/跨库 None→404；worker.submit_recaption 不走 resume 队列（recover 不重触，共用信号量+inflight）→ recaption_document 子集腿：复用 _video_caption_leg（只跑 pending）+ _video_recaption_materialize 原地重组（不 wipe，diff 旧正文仅变更 chunk 经 index_chunks 增量重嵌、实体列保留图谱不重抽、镜头转全空退役其卡对齐单删级联）+ mark_dirty_for_entities 传播 wiki dirty，终态 ready/失败降级 ready+error marker；_is_video_document 提取与 _inject_video_summary 共用；全量 knowledge 960 passed，仅 umap 可选依赖预存无关失败）
+- [x] Commit: `feat(rag): recaption endpoint for caption model upgrades`（`7dba2f8d`）
 
 ## Task 9: 前端文档列表与上传面（spec §5）
 
