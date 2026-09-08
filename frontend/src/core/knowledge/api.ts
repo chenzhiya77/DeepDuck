@@ -197,6 +197,17 @@ export function documentFileUrl(kbId: string, docId: string, ref: string): strin
   return kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/files/${encodedRef}`);
 }
 
+/**
+ * URL of a video shot's persisted keyframe (spec 2026-09-08 §4/§5, Task 10):
+ * the chunk drawer's thumbnail <img src>. Mirrors ``documentFileUrl`` — a pure
+ * URL builder over the same gateway prefix, never through the CSRF fetcher.
+ * The chunk payload's ``frame_url`` is the base-relative form; this rebuilds it
+ * with ``getBackendBaseURL()`` so it resolves identically across deployments.
+ */
+export function shotFrameUrl(kbId: string, docId: string, shotIndex: number): string {
+  return kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/shots/${shotIndex}/frame`);
+}
+
 export type WikiGenerateMode = "incremental" | "full";
 
 export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental"): Promise<WikiGenerateAck> {

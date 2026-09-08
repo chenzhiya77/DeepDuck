@@ -259,3 +259,81 @@ describe("ChunkDrawer", () => {
     expect(screen.getByText("当前 #2")).toBeTruthy();
   });
 });
+
+// ── 视频镜头时间码芯片 + 缩略图（spec 2026-09-08 §5，plan Task 10）──────────
+// 视频 chunk（后端 chunks 端点 join video_shots 注入 media/shot_index/start_ms/
+// end_ms/frame_url）在卡片上方渲染 mono 时间码芯片 + lazy 关键帧缩略图（404/缺帧
+// 降级图标）+「复制时间码」按钮（走 kb-toast 中栏作用域）。芯片/缩略图的 seek 播放
+// 语义是 Task 10b，本任务只做展示 + 复制。
+function mockChunks(items: KnowledgeChunk[], total = items.length) {
+  rs.mocked(knowledgeChunksKey).mockReturnValue(["knowledge-bases", "kb-1", "documents", "doc-1", "chunks", { offset: 0, limit: 50 }]);
+  rs.mocked(useQuery).mockReturnValue({ data: { items, total, offset: 0, limit: 50 }, isLoading: false } as never);
+  rs.mocked(useUpdateChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+  rs.mocked(usePreviewChunkDeletion).mockReturnValue({ mutateAsync: rs.fn() } as never);
+  rs.mocked(useReExtractChunk).mockReturnValue({ mutateAsync: rs.fn() } as never);
+  rs.mocked(useDeleteChunk).mockReturnValue({ mutateAsync: rs.fn(), isPending: false } as never);
+}
+
+const VIDEO_CHUNK: KnowledgeChunk = {
+  ...CHUNK,
+  chunk_id: "doc-1#0000",
+  text: "场景：讲师开场\n口述：大家好\n屏幕文字：（无）",
+  media: "video",
+  shot_index: 0,
+  start_ms: 72_000, // 00:01:12
+  end_ms: 100_000, // 00:01:40
+  frame_url: "/api/knowledge-bases/kb-1/documents/doc-1/shots/0/frame",
+};
+
+describe("ChunkDrawer 视频时间码芯片 + 缩略图（spec 2026-09-08 §5）", () => {
+  it("视频 chunk 渲染 mono 时间码芯片 #K · HH:MM:SS–HH:MM:SS", async () => {
+    mockChunks([VIDEO_CHUNK]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    const chip = await screen.findByTestId("timecode-chip");
+    expect(chip.textContent).toContain("#1");
+    expect(chip.textContent).toContain("00:01:12–00:01:40");
+    expect(chip.className).toContain("font-mono");
+  });
+
+  it("有 frame_url 时渲染 lazy 关键帧缩略图，src 指向 shots/{i}/frame", async () => {
+    mockChunks([VIDEO_CHUNK]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    const thumb = await screen.findByTestId("shot-thumbnail");
+    expect(thumb.getAttribute("src")).toContain("documents/doc-1/shots/0/frame");
+    expect(thumb.getAttribute("loading")).toBe("lazy");
+  });
+
+  it("缩略图 404（onError）降级为缺图图标", async () => {
+    mockChunks([VIDEO_CHUNK]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    const thumb = await screen.findByTestId("shot-thumbnail");
+    fireEvent.error(thumb);
+    expect(await screen.findByTestId("shot-thumbnail-missing")).toBeTruthy();
+    expect(screen.queryByTestId("shot-thumbnail")).toBeNull();
+  });
+
+  it("缺帧镜头（无 frame_url）直接渲染缺图图标，不渲染 img", async () => {
+    mockChunks([{ ...VIDEO_CHUNK, frame_url: undefined }]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    expect(await screen.findByTestId("shot-thumbnail-missing")).toBeTruthy();
+    expect(screen.queryByTestId("shot-thumbnail")).toBeNull();
+  });
+
+  it("「复制时间码」按钮写剪贴板并走 kb-toast 中栏作用域（带 toasterId）", async () => {
+    const writeText = rs.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true, writable: true });
+    mockChunks([VIDEO_CHUNK]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    fireEvent.click(await screen.findByTestId("copy-timecode"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("00:01:12–00:01:40"));
+    expect(toast.success).toHaveBeenCalledWith("时间码已复制", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
+  });
+
+  it("文本 chunk 不渲染视频条（旧渲染零回归）", async () => {
+    mockChunks([CHUNK]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    expect(await screen.findByText(CHUNK.text)).toBeTruthy();
+    expect(screen.queryByTestId("video-shot-bar")).toBeNull();
+    expect(screen.queryByTestId("timecode-chip")).toBeNull();
+  });
+});

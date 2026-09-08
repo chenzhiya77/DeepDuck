@@ -470,6 +470,12 @@ export const zhCN: Translations = {
       reExtracting: "抽取中…",
       reExtractHint: "正在抽取实体，请稍候…",
       imageUnavailable: "图片不可用",
+      // 视频镜头时间码芯片 + 缩略图（spec 2026-09-08 §5，Task 10）。
+      timecodeChip: "时间码",
+      copyTimecode: "复制时间码",
+      copiedTimecode: "时间码已复制",
+      copyTimecodeFailed: "复制失败",
+      frameMissing: "关键帧缺失",
     },
     tabs: {
       documents: "文档",

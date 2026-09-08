@@ -77,6 +77,25 @@ export function formatVideoDuration(ms: number): string {
 }
 
 /**
+ * 镜头时间码（spec 2026-09-08 §5，plan Task 10）：PTS 毫秒转定长 ``HH:MM:SS``
+ * （小时恒两位补零，不同于时长徽章的变长 ``formatVideoDuration``）——切片抽屉
+ * 芯片需逐位对齐的等宽时间码，与后端镜头卡 ``format_timecode`` 同口径（去毫秒）。
+ */
+export function formatShotTimecode(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+/** 镜头时间码区间 ``HH:MM:SS–HH:MM:SS``（en dash，对齐 spec §5 芯片文案）。 */
+export function formatTimecodeRange(startMs: number, endMs: number): string {
+  return `${formatShotTimecode(startMs)}–${formatShotTimecode(endMs)}`;
+}
+
+/**
  * 剥掉摘要开头的 markdown 一级标题行（2026-09-03）。
  * 后端 summary = content[:120]（knowledge_service.list_wiki_entries），而 content 由提示词
  * 强制以「# 实体名」H1 开头（wiki/generator.py WIKI_SYSTEM_PROMPT），故列表摘要会以原始

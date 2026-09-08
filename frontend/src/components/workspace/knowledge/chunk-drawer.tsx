@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, ImageOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,8 +15,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
-import { listDocumentChunks } from "@/core/knowledge/api";
-import { chunkPreview } from "@/core/knowledge/format";
+import { listDocumentChunks, shotFrameUrl } from "@/core/knowledge/api";
+import { chunkPreview, formatTimecodeRange } from "@/core/knowledge/format";
 import {
   knowledgeChunksKey,
   useDeleteChunk,
@@ -41,6 +41,81 @@ const PAGE_SIZE = 20;
 /** 单文档切片在该阈值内一次性全量加载（2026-09-05 切片导航）：刻度弹窗每行都有
     真实预览、跳转纯前端；超过才退回「加载更多」+ 弹窗灰显未加载行。 */
 const FULL_LOAD_CAP = 300;
+
+/**
+ * 视频镜头条（spec 2026-09-08 §5，plan Task 10）：切片抽屉里视频 chunk 卡片上方
+ * 的时间码芯片 + 关键帧缩略图 + 复制按钮。数据来自后端 chunks 端点 join
+ * ``video_shots`` 注入的 ``media``/``shot_index``/``start_ms``/``end_ms``/``frame_url``。
+ * 缩略图 lazy 加载，缺帧（无 ``frame_url``）或 404（``onError``）都降级为缺图图标。
+ * 芯片正文按原文展示（``chunks.text`` 不含时间码头，spec §3 嵌入文本契约）；
+ * 芯片/缩略图的点击 seek 播放语义留待 Task 10b，本组件只做展示 + 复制时间码。
+ */
+function VideoShotBar({
+  chunk,
+  kbId,
+  docId,
+}: {
+  chunk: KnowledgeChunk;
+  kbId: string;
+  docId: string;
+}) {
+  const { t } = useI18n();
+  const tc = t.knowledge.chunkDrawer;
+  const [frameFailed, setFrameFailed] = useState(false);
+  const shotIndex = chunk.shot_index ?? 0;
+  const timecode = formatTimecodeRange(chunk.start_ms ?? 0, chunk.end_ms ?? 0);
+  const hasFrame = Boolean(chunk.frame_url) && !frameFailed;
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(timecode);
+      toast.success(tc.copiedTimecode);
+    } catch {
+      toast.error(tc.copyTimecodeFailed);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 pb-1.5" data-testid="video-shot-bar">
+      {hasFrame ? (
+        <img
+          alt=""
+          className="h-9 w-16 shrink-0 rounded border object-cover"
+          data-testid="shot-thumbnail"
+          decoding="async"
+          loading="lazy"
+          onError={() => setFrameFailed(true)}
+          src={shotFrameUrl(kbId, docId, shotIndex)}
+        />
+      ) : (
+        <span
+          className="text-muted-foreground flex h-9 w-16 shrink-0 items-center justify-center rounded border border-dashed"
+          data-testid="shot-thumbnail-missing"
+          title={tc.frameMissing}
+        >
+          <ImageOff className="size-4" />
+        </span>
+      )}
+      {/* mono 等宽时间码芯片（spec §5）：#K 为镜头序号（1 基，与卡片 #N 同序）。 */}
+      <span
+        className="text-muted-foreground font-mono text-xs tabular-nums"
+        data-testid="timecode-chip"
+        title={tc.timecodeChip}
+      >
+        #{shotIndex + 1} · {timecode}
+      </span>
+      <Button
+        aria-label={tc.copyTimecode}
+        className="size-7 shrink-0"
+        data-testid="copy-timecode"
+        onClick={() => void handleCopy()}
+        size="icon"
+        title={tc.copyTimecode}
+        variant="ghost"
+      >
+        <Copy className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Chunk preview drawer (spec §3.6): opens from a document row click and
@@ -373,6 +448,9 @@ export function ChunkDrawer({
                       else cardRefs.current.delete(position);
                     }}
                   >
+                    {chunk.media === "video" && (
+                      <VideoShotBar chunk={chunk} docId={doc.id} kbId={kbId} />
+                    )}
                     <ChunkCard
                       chunkId={chunk.chunk_id}
                       docId={doc.id}

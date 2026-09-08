@@ -486,6 +486,12 @@ export const enUS: Translations = {
       reExtracting: "Extracting…",
       reExtractHint: "Extracting entities, please wait…",
       imageUnavailable: "Image unavailable",
+      // Video shot timecode chip + thumbnail (spec 2026-09-08 §5, Task 10).
+      timecodeChip: "Timecode",
+      copyTimecode: "Copy timecode",
+      copiedTimecode: "Timecode copied",
+      copyTimecodeFailed: "Copy failed",
+      frameMissing: "Keyframe missing",
     },
     tabs: {
       documents: "Documents",

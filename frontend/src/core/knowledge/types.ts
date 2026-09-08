@@ -92,6 +92,18 @@ export interface KnowledgeChunk {
   extract_status: "pending" | "done" | "empty" | "failed" | string;
   /** Phase-3 Batch-1 P2: timestamp of last manual text edit (null = never edited). */
   last_edited_at: string | null;
+  /**
+   * Video shot fields (spec 2026-09-08 §5, Task 10): the chunk list endpoint
+   * joins ``video_shots`` for video-shot chunks — ``media="video"``, the shot
+   * ordinal, the PTS range (start/end_ms), and the keyframe ``frame_url``
+   * (absent when no frame was persisted, spec §2 degradation). Text chunks
+   * carry none of these — the drawer renders no video bar for them (零回归).
+   */
+  media?: "video" | string;
+  shot_index?: number;
+  start_ms?: number;
+  end_ms?: number;
+  frame_url?: string;
 }
 
 /** Chunk row + source document name (2026-09-05 条目↔切片血缘批量端点)。 */

@@ -413,6 +413,12 @@ export interface Translations {
       reExtractHint: string;
       /** 切片图片加载失败时的占位前缀（alt 图注紧随其后）。 */
       imageUnavailable: string;
+      /** Video shot timecode chip + thumbnail (spec 2026-09-08 §5, Task 10). */
+      timecodeChip: string;
+      copyTimecode: string;
+      copiedTimecode: string;
+      copyTimecodeFailed: string;
+      frameMissing: string;
     };
     tabs: {
       documents: string;
