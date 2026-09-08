@@ -420,6 +420,8 @@ export function EvalQuestionBank({
                   {question.query}
                 </TableCell>
                 <TableCell className="px-2 py-2">
+                  {/* 胶囊盒体与列网格线齐线（2026-09-08 八轮用户纠正，历史表环境
+                      列同款）：-ml-2 退役——盒体边缘才是对齐主体。 */}
                   <Badge variant="outline">{etk.category[question.category]}</Badge>
                 </TableCell>
                 {/* 参考文档列（2026-09-07）：计数+单位消歧义（篇 vs 切片 vs 实体）；

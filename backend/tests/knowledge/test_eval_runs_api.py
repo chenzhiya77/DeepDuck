@@ -874,3 +874,62 @@ async def test_cancel_endpoint_cancels_registered_task(service) -> None:
         assert fake.cancel_called is True
     finally:
         eval_ondemand._TASKS.pop(kb["id"], None)
+
+
+# ── DELETE /eval-runs（2026-09-08 历史删除）─────────────────────
+
+
+async def test_delete_eval_runs_removes_rows_and_converges_read_surfaces(service) -> None:
+    """删除后历史列表/ latest / trend 同源收敛于剩余行（三面实时聚合，无伴随写）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_run(kb["id"], "run-a", datetime(2026, 8, 18, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.7))
+    await _seed_run(kb["id"], "run-b", datetime(2026, 8, 20, 9, 0, tzinfo=UTC), layer1=_l1(recall_at_k=0.85))
+    await _seed_run(kb["id"], "run-c", datetime(2026, 8, 21, 9, 0, tzinfo=UTC), layer2=_l2())
+
+    response = client.request(
+        "DELETE",
+        f"/api/knowledge-bases/{kb['id']}/eval-runs",
+        json={"run_ids": ["run-a", "run-c"]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"deleted": 2}
+
+    listed = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs").json()
+    assert [run["run_id"] for run in listed["runs"]] == ["run-b"]
+    # latest 收敛到剩余行（run-a 删除前是 layer1 latest 候选之一）
+    latest = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/latest").json()
+    assert latest["layer1"]["run_id"] == "run-b"
+    assert latest["layer2"] is None
+    # trend 点同步减少
+    trend = client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/trend").json()
+    assert [point["run_id"] for point in trend["points"]] == ["run-b"]
+    # 单 run 详情 404
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/eval-runs/run-a").status_code == 404
+
+
+async def test_delete_eval_runs_cross_kb_ids_ignored(service) -> None:
+    """kb_id 条件是跨库删除的硬隔离线：他库 id 不计入 deleted 且行存活。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    other = _create_kb(client, name="其他库")
+    await _seed_run(kb["id"], "run-mine", datetime(2026, 8, 18, 9, 0, tzinfo=UTC), layer1=_l1())
+    await _seed_run(other["id"], "run-theirs", datetime(2026, 8, 18, 9, 0, tzinfo=UTC), layer1=_l1())
+
+    response = client.request(
+        "DELETE",
+        f"/api/knowledge-bases/{kb['id']}/eval-runs",
+        json={"run_ids": ["run-theirs", "run-ghost"]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 0}
+
+    other_listed = client.get(f"/api/knowledge-bases/{other['id']}/eval-runs").json()
+    assert [run["run_id"] for run in other_listed["runs"]] == ["run-theirs"]
+
+
+async def test_delete_eval_runs_empty_list_rejected(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+    response = client.request("DELETE", f"/api/knowledge-bases/{kb['id']}/eval-runs", json={"run_ids": []})
+    assert response.status_code == 422

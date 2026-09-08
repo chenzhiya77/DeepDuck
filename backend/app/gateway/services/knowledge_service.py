@@ -1437,6 +1437,15 @@ class KnowledgeService:
             "total": len(summaries),
         }
 
+    async def delete_eval_runs(self, kb_id: str, run_ids: Sequence[str]) -> int:
+        """历史删除（2026-09-08）：按选中集批量删 eval_runs 行，返回删除行数。
+
+        趋势主图点 / sparks / 总览 / 题库召回列均为查询时对剩余行的实时
+        聚合——删除后三面自然收敛，无伴随写；删基线行使后续 run 的
+        baseline_diff 失参照（门禁降级为无 diff 放过），警示由前端确认框承载。
+        """
+        return await self.store.delete_eval_runs(kb_id, run_ids)
+
     @staticmethod
     def _eval_run_summary(row: EvalRunRow) -> dict[str, Any]:
         layer1_present = bool(row.layer1_metrics)

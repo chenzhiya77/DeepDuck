@@ -615,7 +615,7 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             题库视图（2026-09-07 底部停靠审核容器）退役外层 ScrollArea：改高度有界
             flex 列——表格区与底部审核容器按比例分高（展开 2:1），纵/横滚沉进
             表格区自身 overflow 容器（吸顶表头滚动祖先行为同原生容器）；
-            总览/历史保持 px-4 py-3。 */}
+            总览保持 px-4 py-3；历史视图三轮起独立 ScrollArea 同题库表。 */}
       {view === "questions" ? (
         <div className="min-h-0 flex-1 pb-3" data-testid="eval-questions-content">
           {/* 题库视图（Task 6）：表格 + 详情 drawer + 受控添加/合成 dialog + 删除确认；
@@ -637,6 +637,24 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
             }
           />
         </div>
+      ) : view === "history" ? (
+        /* 历史视图（2026-09-08 三轮）：独立 ScrollArea 与题库表同容器语境
+           （无横内边距→表格贴面板边、吸顶表头滚动祖先=本 Viewport）——
+           旧共享总览 ScrollArea 的 px-4 py-3 使历史表内嵌/滚动语境与题库
+           表不同，是两表头视觉「不对齐」的根因。 */
+        <ScrollArea
+          className="min-h-0 flex-1"
+          data-testid="eval-history-content"
+          horizontal
+          scrollHideDelay={2000}
+          type="scroll"
+        >
+          <EvalRunHistory
+            enabled={enabled}
+            kbId={kbId}
+            onOpenRun={setDrawerRunId}
+          />
+        </ScrollArea>
       ) : (
       <ScrollArea
         className="min-h-0 flex-1 px-4 py-3"
@@ -846,15 +864,6 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                 )}
               </section>
             </>
-          )}
-
-          {view === "history" && (
-            /* 历史视图（Task 7）：运行列表行，行点击复用既有 EvalRunDrawer 实例下钻 */
-            <EvalRunHistory
-              enabled={enabled}
-              kbId={kbId}
-              onOpenRun={setDrawerRunId}
-            />
           )}
         </div>
       </ScrollArea>

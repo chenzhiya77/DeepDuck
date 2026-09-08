@@ -14,6 +14,7 @@ import type {
   EvalQuestion,
   EvalQuestionCreateInput,
   EvalQuestionListResponse,
+  EvalRunDeleteResponse,
   EvalRunDetail,
   EvalRunListResponse,
   EvalTriggerInput,
@@ -480,6 +481,16 @@ export async function deleteEvalQuestion(kbId: string, questionId: string): Prom
     method: "DELETE",
   });
   await readEmptyResponse(response, "Failed to delete eval question");
+}
+
+/** DELETE /eval-runs：批量删除运行历史（2026-09-08）；复选框选中集/行菜单/
+ *  右键「删除所选」共用；空集 422。返回实际删除行数。 */
+export function deleteEvalRuns(kbId: string, runIds: string[]): Promise<EvalRunDeleteResponse> {
+  return fetch(kbUrl(kbId, "/eval-runs"), {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_ids: runIds }),
+  }).then((r) => readResponse<EvalRunDeleteResponse>(r, "Failed to delete eval runs"));
 }
 
 /**

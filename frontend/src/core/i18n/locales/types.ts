@@ -631,6 +631,33 @@ export interface Translations {
         statusSkipped: string;
         statusCancelled: string;
         emptyHistory: string;
+        /** 表头五列词汇（2026-09-08 表格化 + 二轮时长列）。 */
+        colTime: string;
+        colEnv: string;
+        colScope: string;
+        colStatus: string;
+        colDuration: string;
+        /** 评测内容列词汇（2026-09-08 三轮）：档位短词快速/完整（列头已承载
+            「评测」语义）；残 run 回退「生成」；与工具栏两按钮同根词汇。 */
+        scopeQuick: string;
+        scopeFull: string;
+        scopeGeneration: string;
+        /** 删除功能（2026-09-08）：行复选框 aria / 行菜单删除项 / 确认框
+            标题·描述·基线警示 / toast。删除所选·取消选择·已选计数复用
+            knowledge 根键（题库同款零新词）。 */
+        rowSelectAria: (time: string) => string;
+        rowDelete: string;
+        deleteConfirmTitle: string;
+        deleteConfirmDesc: (count: number) => string;
+        baselineWarn: string;
+        deletedToast: string;
+        deleteFailed: string;
+        /** 排序与时长格式（九轮）：排序默认键词汇 + 时长格式下拉 Label/两档
+            （菜单键标签复用列头词汇零新词；升/降序复用 knowledge.sort）。 */
+        sortDefault: string;
+        durFormatLabel: string;
+        durFormatCompact: string;
+        durFormatSeconds: string;
       };
       trendTitle: string;
       /** 粒度按钮组 aria-label（窄面板降档收进 ⋯ 菜单）。 */

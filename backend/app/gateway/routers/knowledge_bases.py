@@ -88,6 +88,15 @@ class EvalRunTriggerRequest(BaseModel):
     question_ids: list[str] | None = None
 
 
+class EvalRunDeleteRequest(BaseModel):
+    """历史删除载荷（2026-09-08）：复选框选中集/行菜单/右键「删除所选」
+    共用同一端点；空集 422（无删除意图的请求不应到达 service）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_ids: list[str] = Field(min_length=1)
+
+
 class RecallTestRequest(BaseModel):
     """P1 recall-test payload: one query fanned out to the three paths."""
 
@@ -759,6 +768,16 @@ async def list_eval_runs(request: Request, kb_id: str, limit: int = Query(defaul
     顶层 ``in_flight``；默认排除 ci 行，limit 超上限由 service clamp。"""
     service = await _require_kb_access(request, kb_id)
     return await service.list_eval_runs(kb_id, limit=limit, include_ci=include_ci)
+
+
+@router.delete("/{kb_id}/eval-runs")
+async def delete_eval_runs(request: Request, kb_id: str, body: EvalRunDeleteRequest):
+    """批量删除评测运行历史（2026-09-08）：返回实际删除行数；他库/不存在
+    的 id 自然不计入（store 层 kb_id 硬隔离）。趋势/总览/召回列查询时实时
+    聚合剩余行，删除后自然收敛，无伴随写。"""
+    service = await _require_kb_access(request, kb_id)
+    deleted = await service.delete_eval_runs(kb_id, body.run_ids)
+    return {"deleted": deleted}
 
 
 @router.get("/{kb_id}/eval-runs/latest")

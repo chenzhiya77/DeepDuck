@@ -779,3 +779,9 @@ export interface EvalTriggerResponse {
 export interface EvalCancelResponse {
   status: "cancelled";
 }
+
+/** DELETE /eval-runs 响应（2026-09-08 历史删除）：实际删除行数
+ * （他库/不存在的 id 不计入）。 */
+export interface EvalRunDeleteResponse {
+  deleted: number;
+}

@@ -281,6 +281,21 @@ export function useDeleteEvalQuestion(kbId: string) {
 }
 
 /**
+ * 批量删除运行历史（2026-09-08）：invalidate eval-runs 全前缀——history/
+ * latest/trend/detail 同源，删除后四面一起收敛；题库召回列取 latest 的
+ * question_results，同前缀覆盖。
+ */
+export function useDeleteEvalRuns(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runIds: string[]) => api.deleteEvalRuns(kbId, runIds),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["knowledge-bases", kbId, "eval-runs"] });
+    },
+  });
+}
+
+/**
  * 历史列表（GET /eval-runs）：轮询由顶层 in_flight 驱动（eval-run-status
  * 纯函数），drain 后停轮询——运行完成行的刷新走 drain 边 invalidate（§5.2）。
  */

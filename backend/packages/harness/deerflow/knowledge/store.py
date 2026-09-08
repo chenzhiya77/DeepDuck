@@ -526,6 +526,21 @@ class KnowledgeStore:
                 return None
             return row
 
+    async def delete_eval_runs(self, kb_id: str, run_ids: Sequence[str]) -> int:
+        """按 kb + id 集批量删 eval_runs 行（2026-09-08 历史删除），返回影响行数。
+
+        ``kb_id`` 条件是跨库删除的硬隔离线（同 ``get_eval_run_row`` 的 None
+        语义）；集内不存在的 id 自然忽略（幂等）。逐题 slim 记录住在
+        ``layer1_metrics`` JSON 内随行消失——无独立表级联。
+        """
+        if not run_ids:
+            return 0
+        stmt = delete(EvalRunRow).where(EvalRunRow.kb_id == kb_id, EvalRunRow.id.in_(list(run_ids)))
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0)
+
 
 def get_knowledge_store() -> KnowledgeStore:
     """Build the store from the globally-initialized persistence engine."""

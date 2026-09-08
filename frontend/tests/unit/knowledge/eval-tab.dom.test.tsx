@@ -1001,7 +1001,7 @@ describe("EvalTab 常驻工具栏", () => {
     ]);
   });
 
-  it("内容区边距：总览/历史 px-4 py-3 滚动容器；题库视图高度有界 flex 列（底部停靠审核容器）", () => {
+  it("内容区边距：总览 px-4 py-3 滚动容器；题库高度有界 flex 列；历史独立 ScrollArea 同题库表", () => {
     renderEvalTab();
     const content = screen.getByTestId("eval-view-content");
     expect(content.className).toContain("px-4");
@@ -1019,7 +1019,12 @@ describe("EvalTab 常驻工具栏", () => {
     expect(questionsContent.className).toContain("min-h-0");
 
     fireEvent.click(screen.getByRole("radio", { name: "历史" }));
-    expect(screen.getByTestId("eval-view-content").className).toContain("px-4");
+    // 历史视图（2026-09-08 三轮）：独立 ScrollArea 与题库表同容器语境
+    // （无横内边距→表格贴面板边），退役共享总览容器的 px-4。
+    expect(screen.queryByTestId("eval-view-content")).toBeNull();
+    const historyContent = screen.getByTestId("eval-history-content");
+    expect(historyContent.className).not.toContain("px-4");
+    expect(historyContent.getAttribute("data-slot")).toBe("scroll-area");
   });
 
   it("窄面板降档：视图工具栏溢出时运行按钮收进 ⋯ 菜单", async () => {
