@@ -59,8 +59,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Create: `backend/packages/harness/deerflow/knowledge/video/ocr.py`（PaddleOCR 屏幕文字；失败空串）
 - Test: `test_frames.py`（合成视频抽帧尺寸/质量预算/缺帧 None）+ `test_ocr.py`（fake OCR）
 
-- [ ] RED → Implement → GREEN → revert proof。
-- [ ] Commit: `feat(rag): keyframe extraction and screen-text OCR legs`
+- [x] RED → Implement → GREEN → revert proof。（18 passed + 1 skipped；本机无 ffmpeg/PaddleOCR，纯逻辑用 fake runner + fake engine 全覆盖，真实抽帧端到端 skipif；帧路径精化为 `doc_dir/frames/shot_%04d.jpg`——doc_dir 已 per-doc 含 doc_id，对齐现有 images/ 布局、删除文档 _remove_dir 自动级联删帧，不再嵌套 `<doc_id>/`；单镜头失败 None 不阻断、OCR 每帧降级空串、caption 帧走 stdout pipe 不持久化；RED 独立成轮收集，未重蹈 Task 4 并行竞态）
+- [x] Commit: `feat(rag): keyframe extraction and screen-text OCR legs`（`c174be79`）
 
 ## Task 6: 镜头卡 captioner 与卡文本组装（spec §3/§6）
 
