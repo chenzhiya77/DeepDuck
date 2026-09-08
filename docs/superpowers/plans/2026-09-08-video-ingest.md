@@ -145,8 +145,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Modify: `backend/tests/knowledge/eval/`（镜头卡作为 chunk 进 L1 检索的最小集成用例：fake 视频 KB → recall@k 有数）
 - 消融开关 `card_text_mode` 在 Task 6 已落，此处补 recall-test 对比脚本说明进造题指引
 
-- [ ] RED → Implement → GREEN。
-- [ ] Commit: `docs(rag): video KB question authoring guide and eval integration test`
+- [x] RED → Implement → GREEN。（**表征测试（naturally GREEN）+ revert proof**：镜头卡进 L1 是 Task 6/7 已落行为（镜头卡=chunk、chunk_id 扁平序），本集成用例是验证既有兼容性非新功能，故写定即 GREEN；revert proof 补牙：neuter `shot_card.chunk_id_for_shot` 生成不合规 id（`shot-{doc}-{i}`）→ `add_question` 的 `validate_question` 抛 `QuestionBankInvalidQuestion`（relevant_chunk_ids 不匹配 `<32-hex>#NNNN`）→ 两用例 RED → 恢复。新建 `tests/knowledge/eval/test_video_eval.py`（2 例）：`_seed_video_kb` 建 fake 视频 KB（真实 store：.mp4 文档 + 三张镜头卡 chunk，用生产 `shot_card.assemble_card_body`/`chunk_id_for_shot` 组装、对应造题三类视觉/口述/屏幕文字，insert 后从 store 读回 chunk_id），跑生产同款 `run_layer1_for_kb` 编排 + stub searchers（vector 命中镜头卡）：①镜头卡 chunk_id 过 `add_question` golden 校验（零 schema 改造）②recall@k/hit_rate/path_accuracy 均 1.0（有数）。eval 套件 324 passed + ruff 双净。）
+- [x] Commit: `docs(rag): video KB question authoring guide and eval integration test`（`b3f6af02`：造题指引 `backend/docs/video-kb-question-authoring.md`——镜头卡三段=三类信息源、口述/屏幕文字/视觉描述三类造题各一带完整 golden JSONL 例+字段注意、`card_text_mode`（full/caption_only/asr_only）消融×recall-test 对比流程（含 recaption 重嵌路径）、代码索引；+ 集成用例 test_video_eval.py）
 
 ## Task 12: 收官——全量回归 + 浏览器实测 + 指南落档
 
