@@ -107,6 +107,20 @@ describe("KnowledgePanelsShell", () => {
     expect(foldState()).toBe("folding");
   });
 
+  it("narrow-viewport horizontal fallback rides the overlay ScrollArea, not a native bar", () => {
+    const { container } = renderShell();
+    const shell = screen.getByTestId("knowledge-panels-shell");
+    // 老原生滑块常驻底部横跨文档栏+会话栏（2026-09-08 退役）。
+    expect(shell.className).not.toContain("overflow-x-auto");
+    const scroll = container.querySelector("[data-slot='scroll-area']");
+    expect(scroll).toBeTruthy();
+    // 三列 Group 沉进 overlay ScrollArea 的 Viewport（真滚动层）；横向细滑条
+    // 元素在 jsdom 无溢出尺寸时不挂载，故钉结构不钉 scrollbar 节点。
+    const viewport = scroll?.querySelector("[data-slot='scroll-area-viewport']");
+    expect(viewport).toBeTruthy();
+    expect(viewport?.querySelector("#kb-list")).toBeTruthy();
+  });
+
   it("arms the hover reveal once the fold settles", () => {
     const { container } = renderShell();
     const aside = container.querySelector("aside")!;
@@ -235,5 +249,19 @@ describe("KnowledgePanelsShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开列表栏" }));
     settleAt(aside, 224);
     expect(handle.className).not.toContain("pointer-events-none");
+  });
+});
+
+describe("KnowledgePanelsShell 中栏通知面（2026-09-08）", () => {
+  it("mounts the scoped toaster inside the middle column, never in the chat column", () => {
+    renderShell();
+    // 中栏容器 relative：absolute 通知面的定位锚（通知落在本栏右下角）。
+    const middle = screen.getByTestId("middle-content").closest("section");
+    expect(middle?.className).toContain("relative");
+    // sonner scoped Toaster 挂在中栏内（其 section 是 absolute ol 的宿主）。
+    expect(middle?.querySelector("section[aria-label^='Notifications']")).toBeTruthy();
+    // 会话栏零通知面：通知不再 fixed 到视口右下压住输入框。
+    const chat = screen.getByTestId("right-content").closest("aside");
+    expect(chat?.querySelector("section[aria-label^='Notifications']")).toBeFalsy();
   });
 });

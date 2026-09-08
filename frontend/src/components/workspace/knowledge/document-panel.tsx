@@ -17,7 +17,6 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,6 +97,7 @@ import {
   probeSignature,
   type DragProbe,
 } from "./file-type-badge";
+import { toast } from "./kb-toast";
 import { runAfterMenuClose } from "./run-after-menu-close";
 
 const SORT_OPTIONS: {

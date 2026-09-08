@@ -954,6 +954,8 @@ export const enUS: Translations = {
       newChat: "New chat",
       history: "History",
       noHistory: "No conversations for this knowledge base yet",
+      questionTickAria: "Question",
+      questionTickEmpty: "(no text)",
       deleteChat: "Delete conversation",
       deepResearch: "Deep retrieval",
       deepResearchHint:

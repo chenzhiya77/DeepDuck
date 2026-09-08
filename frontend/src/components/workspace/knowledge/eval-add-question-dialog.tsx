@@ -11,7 +11,6 @@
  */
 import { Info } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,6 +26,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useI18n } from "@/core/i18n/hooks";
 import { useAddEvalQuestion } from "@/core/knowledge/hooks";
 import type { RecallPathName } from "@/core/knowledge/types";
+
+import { toast } from "./kb-toast";
 
 export interface EvalAddQuestionDialogProps {
   kbId: string;

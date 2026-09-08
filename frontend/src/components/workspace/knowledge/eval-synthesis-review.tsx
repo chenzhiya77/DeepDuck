@@ -21,7 +21,6 @@
  */
 import { Check, Inbox, Info, Loader2, X } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +45,8 @@ import {
   useSynthesisStatus,
 } from "@/core/knowledge/hooks";
 import { cn } from "@/lib/utils";
+
+import { toast } from "./kb-toast";
 
 export interface EvalSynthesisReviewProps {
   kbId: string;

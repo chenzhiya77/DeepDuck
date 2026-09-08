@@ -942,6 +942,10 @@ export interface Translations {
       newChat: string;
       history: string;
       noHistory: string;
+      /** 会话刻度轨 aria 前缀（“问题 #N” / "Question #N"）。 */
+      questionTickAria: string;
+      /** 会话刻度轨问题文本空时的兑底文案。 */
+      questionTickEmpty: string;
       deleteChat: string;
       deepResearch: string;
       deepResearchHint: string;

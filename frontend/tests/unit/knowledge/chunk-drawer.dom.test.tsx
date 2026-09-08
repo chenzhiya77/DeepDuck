@@ -26,6 +26,7 @@ rs.mock("sonner", () => ({
 
 import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { knowledgeChunksKey, useDeleteChunk, usePreviewChunkDeletion, useReExtractChunk, useUpdateChunk } from "@/core/knowledge/hooks";
@@ -212,7 +213,7 @@ describe("ChunkDrawer", () => {
     // Confirm → the real DELETE mutation fires with the remembered target.
     fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(deleteAsync).toHaveBeenCalledWith(CHUNK.chunk_id));
-    expect(toast.success).toHaveBeenCalledWith("切片已删除");
+    expect(toast.success).toHaveBeenCalledWith("切片已删除", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 
   it("shows the empty-state copy when the document has no chunks", async () => {

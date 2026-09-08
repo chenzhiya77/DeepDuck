@@ -23,7 +23,6 @@
  */
 import { ArrowUpDown, Ban, Check, CheckCircle2, ChevronDown, MoreHorizontal, SkipForward, Trash2, X, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +69,7 @@ import { formatKnowledgeTimestamp } from "@/core/knowledge/format";
 import { useDeleteEvalRuns, useEvalRuns } from "@/core/knowledge/hooks";
 import type { EvalRunSummary } from "@/core/knowledge/types";
 
+import { toast } from "./kb-toast";
 import { runAfterMenuClose } from "./run-after-menu-close";
 
 export interface EvalRunHistoryProps {

@@ -19,6 +19,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import {
   MiddleTabs,
   type KnowledgeMiddleTab,
@@ -275,6 +276,7 @@ describe("MiddleTabs", () => {
     });
     expect(toast.error).toHaveBeenCalledWith(
       expect.stringContaining("evil.exe"),
+      expect.objectContaining({ toasterId: KB_TOASTER_ID }),
     );
     expect(handlers.onUpload).toHaveBeenCalledTimes(1);
     expect(handlers.onUpload).toHaveBeenCalledWith([good]);

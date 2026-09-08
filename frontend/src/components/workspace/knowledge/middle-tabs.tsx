@@ -2,7 +2,6 @@
 
 import { BookOpen, Loader2, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +27,7 @@ import type { WikiGenerateMode } from "@/core/knowledge/api";
 import { acceptAttribute, partitionFilesBySuffix } from "@/core/knowledge/supported-formats";
 import type { KnowledgeBase } from "@/core/knowledge/types";
 
+import { toast } from "./kb-toast";
 import { runAfterMenuClose } from "./run-after-menu-close";
 import { WikiRebuildDialog } from "./wiki-rebuild-dialog";
 

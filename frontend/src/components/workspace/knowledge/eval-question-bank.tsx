@@ -15,7 +15,6 @@
  */
 import { ArrowUpDown, Check, Info, Layers, MoreHorizontal, Play, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,6 +72,7 @@ import { EvalAddQuestionDialog } from "./eval-add-question-dialog";
 import { EvalQuestionDrawer } from "./eval-question-drawer";
 import { EvalSynthesisDialog } from "./eval-synthesis-dialog";
 import { EvalSynthesisReview } from "./eval-synthesis-review";
+import { toast } from "./kb-toast";
 import { runAfterMenuClose } from "./run-after-menu-close";
 
 /** 吸顶表头单元格公共类（2026-09-02）：粘性 + 不透明底 + inset 阴影发丝线；

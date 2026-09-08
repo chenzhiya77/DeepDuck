@@ -343,6 +343,20 @@ export function MessageList({
     useState<SelectionToolbarState | null>(null);
   const messages = thread.messages;
   const groupedMessages = useStableMessageGroups(messages, thread.isLoading);
+  // human turn 全局序号（2026-09-08 会话刻度轨）：human 组按出现顺序编号
+  // （连续 human 消息同组 = 同一刻度），挂组包装 data-human-turn——知识库
+  // 会话刻度轨据此追踪 active 与跳转定位（虚拟化窗口化后全局号仍可读）。
+  const humanTurnOrdinalByGroupIndex = useMemo(() => {
+    const map = new Map<number, number>();
+    let ordinal = 0;
+    groupedMessages.forEach((group, index) => {
+      if (group.type === "human") {
+        map.set(index, ordinal);
+        ordinal += 1;
+      }
+    });
+    return map;
+  }, [groupedMessages]);
   const browserView = useMaybeBrowserView();
   const pushBrowserFrame = browserView?.pushFrame;
   const messageCount = messages.length;
@@ -1029,6 +1043,11 @@ export function MessageList({
                     <div
                       data-assistant-turn={
                         group.type === "assistant" ? "" : undefined
+                      }
+                      data-human-turn={
+                        group.type === "human"
+                          ? humanTurnOrdinalByGroupIndex.get(groupIndex)
+                          : undefined
                       }
                       className={cn(
                         "w-full",

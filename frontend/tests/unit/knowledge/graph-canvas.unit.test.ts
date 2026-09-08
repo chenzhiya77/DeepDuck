@@ -17,12 +17,14 @@ import {
   filterNeighborhood,
   fnv1aHash,
   GRAPH_EXPANSION_BORDER_COLOR,
+  GRAPH_FOCUS_ZOOM,
   GRAPH_HIT_BORDER_COLOR,
   GRAPH_HOVER_BORDER_COLOR,
   GRAPH_PATH_COLOR,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
   initialZoomForGraph,
+  isNodeRenderedAtZoom,
   LABEL_ZOOM_FULL_ABOVE,
   LABEL_ZOOM_HIDE_BELOW,
   labelTextForTier,
@@ -31,6 +33,7 @@ import {
   matchEntityNames,
   nodeSymbolSize,
   renderTierForZoom,
+  tierNodeIds,
   typeColor,
   widenRoamPointerChecker,
 } from "@/components/workspace/knowledge/graph-canvas";
@@ -746,5 +749,84 @@ describe("buildTieredSeries（各 tier 数据子集）", () => {
       expect(tierSeries.data).toEqual(ref.data);
       expect(tierSeries.links).toEqual(ref.links);
     }
+  });
+});
+
+// ── 搜索定位可达性（2026-09-08 LOD 修复）───────────────────────────
+// 旧缺陷：定位下标取自全量 nodes 数组，而 series data 是当前 LOD 档的子集——两下标
+// 不同空间：越界时 getItemLayout 返 undefined → 缩略态搜索静默无反应；落在子集长度
+// 内时更会静默居中到不相干的实体。修复后：下标在已渲染数据里按名解析，搜索一律
+// 升档到定位 zoom 对应档位；连定位档也渲染不出来的命中由 tab 层改走局部图裁剪。
+// 下面钉的是两侧共用的纯函数层（canvas 本体 echarts 在 jsdom 不可跑）。
+
+describe("搜索定位可达性（tierNodeIds / isNodeRenderedAtZoom）", () => {
+  /** LOD 大库 fixture：importantCount 个 mention≥2 实体 + 一个 mention=1 长尾实体。 */
+  function bigGraph(importantCount: number) {
+    const nodes: KnowledgeGraphNode[] = [];
+    for (let i = 0; i < importantCount; i += 1) {
+      nodes.push(node(`hub${i}`, { mention_count: 2, community: i % 4 }));
+    }
+    nodes.push(node("长尾", { mention_count: 1, community: 0 }));
+    const communities: KnowledgeGraphCommunity[] = [0, 1, 2, 3].map((id) => ({
+      id,
+      memberCount: Math.ceil(importantCount / 4),
+      totalMentions: Math.ceil(importantCount / 4) * 2,
+      topMembers: [
+        { id: `hub${id}`, mention_count: 2 },
+        { id: `hub${id + 4}`, mention_count: 2 },
+        { id: `hub${id + 8}`, mention_count: 2 },
+      ],
+      dominantType: "概念",
+    }));
+    return { nodes, communities };
+  }
+
+  /** 601 实体：LOD 激活且 ≤2000（定位档 = all-full）——用户现场库规模档。 */
+  const MID = bigGraph(600);
+  /** 2001 实体：超 LOD_FULL_HARD_LIMIT（定位档熔断为 guide）。 */
+  const HUGE = bigGraph(2000);
+
+  it("tierNodeIds：full / all-full 返 null（全量不裁剪），其余档返子集", () => {
+    expect(tierNodeIds(MID.nodes, MID.communities, "full")).toBeNull();
+    expect(tierNodeIds(MID.nodes, MID.communities, "all-full")).toBeNull();
+    expect(tierNodeIds(MID.nodes, MID.communities, "hub")?.has("hub0")).toBe(true);
+    expect(tierNodeIds(MID.nodes, MID.communities, "hub")?.has("长尾")).toBe(false);
+    expect(tierNodeIds(MID.nodes, MID.communities, "all-important")?.has("长尾")).toBe(false);
+    expect(tierNodeIds(MID.nodes, MID.communities, "guide")?.has("hub0")).toBe(true);
+  });
+
+  it("buildTieredSeries 与 tierNodeIds 同源：各档 data 名集合 = 子集 ∩ nodes", () => {
+    for (const tier of ["hub", "all-important", "guide"] as const) {
+      const [series] = buildTieredSeries(MID.nodes, [], MID.communities, tier, "community");
+      const rendered = (series.data as TierDatum[]).map((d) => d.name);
+      const keep = tierNodeIds(MID.nodes, MID.communities, tier)!;
+      expect(new Set(rendered)).toEqual(new Set(MID.nodes.map((n) => n.id).filter((id) => keep.has(id))));
+    }
+  });
+
+  it("小库门控：≤500 实体任意 zoom 都可定位（LOD 不激活，无裁剪）", () => {
+    for (const zoom of [0.3, 1, GRAPH_FOCUS_ZOOM, 3]) {
+      expect(isNodeRenderedAtZoom(NODES, [], zoom, "堆内存")).toBe(true); // mention=1 也可
+    }
+  });
+
+  it("定位 zoom 的档位可预测：≤2000 升 all-full（长尾也渲染）、>2000 熔断 guide", () => {
+    expect(renderTierForZoom(GRAPH_FOCUS_ZOOM, MID.nodes.length)).toBe("all-full");
+    expect(renderTierForZoom(GRAPH_FOCUS_ZOOM, HUGE.nodes.length)).toBe("guide");
+  });
+
+  it("缩略档不可达 / 定位档可达：这就是「只有放到最大才能搜」的成因", () => {
+    // hub（zoom 0.3）：只渲染每社区 Top3 枢纽——长尾实体不在子集内。
+    expect(isNodeRenderedAtZoom(MID.nodes, MID.communities, 0.3, "长尾")).toBe(false);
+    expect(isNodeRenderedAtZoom(MID.nodes, MID.communities, 0.3, "hub0")).toBe(true);
+    // all-important（zoom 0.7）：mention≥2 才入选。
+    expect(isNodeRenderedAtZoom(MID.nodes, MID.communities, 0.7, "长尾")).toBe(false);
+    // 修复后搜索升档到 all-full → 全量渲染，长尾实体也可居中。
+    expect(isNodeRenderedAtZoom(MID.nodes, MID.communities, GRAPH_FOCUS_ZOOM, "长尾")).toBe(true);
+  });
+
+  it("熔断库（>2000）：长尾实体连定位档也不可达 → tab 层据此进局部图", () => {
+    expect(isNodeRenderedAtZoom(HUGE.nodes, HUGE.communities, GRAPH_FOCUS_ZOOM, "长尾")).toBe(false);
+    expect(isNodeRenderedAtZoom(HUGE.nodes, HUGE.communities, GRAPH_FOCUS_ZOOM, "hub0")).toBe(true);
   });
 });

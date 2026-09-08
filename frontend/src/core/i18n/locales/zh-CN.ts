@@ -905,6 +905,8 @@ export const zhCN: Translations = {
       newChat: "新建会话",
       history: "历史会话",
       noHistory: "该知识库还没有会话",
+      questionTickAria: "问题",
+      questionTickEmpty: "（无文本）",
       deleteChat: "删除会话",
       deepResearch: "深度检索",
       deepResearchHint: "同时启用向量、图谱、百科三通道检索（更慢但更全面）",

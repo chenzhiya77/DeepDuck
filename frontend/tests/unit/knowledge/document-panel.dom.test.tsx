@@ -18,6 +18,7 @@ import {
   DocumentPanel,
   PathStatusBreakdown,
 } from "@/components/workspace/knowledge/document-panel";
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { pathStatusLines } from "@/core/knowledge/path-status";
@@ -634,6 +635,7 @@ describe("DocumentPanel stats row and upload", () => {
     });
     expect(toast.error).toHaveBeenCalledWith(
       expect.stringContaining("evil.exe"),
+      expect.objectContaining({ toasterId: KB_TOASTER_ID }),
     );
     expect(onUpload).toHaveBeenCalledTimes(1);
     expect(onUpload).toHaveBeenCalledWith([good]);

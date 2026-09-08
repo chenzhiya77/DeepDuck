@@ -9,7 +9,6 @@
  * 口，题库随使用自然生长）。保存成功清勾选继续标注下一题——**不跳视图**。
  */
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useI18n } from "@/core/i18n/hooks";
 import { useAddEvalQuestion } from "@/core/knowledge/hooks";
 import type { RecallPathName } from "@/core/knowledge/types";
+
+import { toast } from "./kb-toast";
 
 export interface EvalSaveQuestionDialogProps {
   kbId: string;

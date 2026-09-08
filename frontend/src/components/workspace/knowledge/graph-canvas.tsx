@@ -20,6 +20,7 @@ import {
   type GraphDatum,
   type GraphTooltipParams,
   graphTooltipFormatter,
+  GRAPH_FOCUS_ZOOM,
   initialZoomForGraph,
   type LabelTier,
   labelTextForTier,
@@ -41,12 +42,14 @@ export {
   filterNeighborhood,
   fnv1aHash,
   GRAPH_EXPANSION_BORDER_COLOR,
+  GRAPH_FOCUS_ZOOM,
   GRAPH_HIT_BORDER_COLOR,
   GRAPH_HOVER_BORDER_COLOR,
   GRAPH_PATH_COLOR,
   type GraphColorBy,
   graphTooltipFormatter,
   IMPORTANT_MENTION_MIN,
+  isNodeRenderedAtZoom,
   LABEL_ZOOM_FULL_ABOVE,
   LABEL_ZOOM_HIDE_BELOW,
   type LabelTier,
@@ -61,6 +64,7 @@ export {
   type RenderTier,
   renderTierForZoom,
   typeColor,
+  tierNodeIds,
 } from "./graph-utils";
 
 echarts.use([GraphChart, TooltipComponent, CanvasRenderer]);
@@ -73,6 +77,72 @@ function isDarkTheme(): boolean {
 /** 墨色：浅色主题用深灰，暗色主题翻成亮灰（边/标签等装饰元素）。 */
 function ink(alpha: number, dark: boolean): string {
   return dark ? `rgba(235,238,245,${alpha})` : `rgba(60,60,60,${alpha})`;
+}
+
+/** LOD 跨档过渡动画时长（plan Task 7b：淡出/淡入 300ms 防闪）。 */
+const TIER_TRANSITION_MS = 300;
+/** 搜索定位的力导向稳定窗：布局动画进行中坐标仍会变，实测 500ms 后足够稳定。 */
+const FOCUS_SETTLE_MS = 500;
+
+/** 跨档重建 series 所需的当前数据（= dataRef.current 的形状）。 */
+interface TierInput {
+  nodes: readonly KnowledgeGraphNode[];
+  edges: readonly KnowledgeGraphEdge[];
+  communities: readonly KnowledgeGraphCommunity[];
+  colorBy: GraphColorBy;
+}
+
+/**
+ * 跨档重建 series（merge 语义）：data/links 是整体替换，datum 完整携带
+ * itemStyle/symbolSize——绝不能只 set 部分字段的 series.data（会丢样式，全图
+ * 节点回落默认色板蓝）。roam 跨档与搜索升档共用同一重建路径。
+ */
+function rebuildSeriesAtTier(chart: echarts.ECharts, tier: RenderTier, input: TierInput, overlay: GraphRetrievalTrace | null): void {
+  const [nextSeries] = buildTieredSeries(input.nodes, input.edges, input.communities, tier, input.colorBy, overlay);
+  chart.setOption({
+    series: [
+      {
+        data: nextSeries.data,
+        links: nextSeries.links,
+        edgeSymbol: nextSeries.edgeSymbol,
+        animationDurationUpdate: TIER_TRANSITION_MS,
+      },
+    ],
+  });
+}
+
+/** 标签档位落地：formatter 捕获 tier 于闭包（labelTierRef 由调用方同步去重）。 */
+function applyLabelTier(chart: echarts.ECharts, tier: LabelTier): void {
+  chart.setOption({
+    series: [
+      {
+        label: {
+          show: true,
+          formatter: (params: { data?: unknown }) => {
+            const data = params.data as GraphDatum | undefined;
+            return labelTextForTier(data?.node, tier, data?.name ?? "");
+          },
+        },
+      },
+    ],
+  });
+}
+
+/**
+ * 当前已渲染的 series 数据句柄（echarts 内部 API：类型标私有但运行时可用）。
+ * 按名查下标与读节点 layout 坐标都没有公开替代（convertToPixel 不支持 graph
+ * 系列的 roam 坐标系）。
+ */
+interface SeriesDataHandle {
+  indexOfName(name: string): number;
+  getItemLayout(index: number): [number, number] | undefined;
+}
+
+function seriesDataOf(chart: echarts.ECharts): SeriesDataHandle | undefined {
+  const internals = chart as unknown as {
+    getModel(): { getSeriesByIndex(index: number): { getData(): SeriesDataHandle } | undefined };
+  };
+  return internals.getModel().getSeriesByIndex(0)?.getData();
 }
 
 export interface GraphCanvasProps {
@@ -207,35 +277,13 @@ export default function GraphCanvas({ nodes, edges, communities, colorBy, focusN
       if (tierChanged) {
         renderTierRef.current = nextRenderTier;
         onRenderTierChangeRef.current?.(nextRenderTier);
-        const [nextSeries] = buildTieredSeries(current.nodes, current.edges, current.communities, nextRenderTier, current.colorBy, overlayRef.current);
-        chart.setOption({
-          series: [
-            {
-              data: nextSeries.data,
-              links: nextSeries.links,
-              edgeSymbol: nextSeries.edgeSymbol,
-              animationDurationUpdate: 300,
-            },
-          ],
-        });
+        rebuildSeriesAtTier(chart, nextRenderTier, current, overlayRef.current);
       }
 
       const tier = labelTierForZoom(zoom);
       if (!tierChanged && tier === labelTierRef.current) return;
       labelTierRef.current = tier;
-      chart.setOption({
-        series: [
-          {
-            label: {
-              show: true,
-              formatter: (params: { data?: unknown }) => {
-                const data = params.data as GraphDatum | undefined;
-                return labelTextForTier(data?.node, tier, data?.name ?? "");
-              },
-            },
-          },
-        ],
-      });
+      applyLabelTier(chart, tier);
     });
 
     const observer = new ResizeObserver(() => {
@@ -338,32 +386,61 @@ export default function GraphCanvas({ nodes, edges, communities, colorBy, focusN
     chart.setOption({ series: [{ data: nextSeries.data, links: nextSeries.links }] });
   }, [overlay, nodes, edges, communities, colorBy]);
 
-  // 搜索定位（spec §6 P3）：命中节点 → 视图中心平移到该节点 + 高亮。
-  // center 语义 = roam 视图中心对应的 layout 坐标（echarts graph 原生支持）；
-  // 节点 layout 坐标从 series data 的 getItemLayout 读取（force 布局完成后有值）。
+  // 搜索定位（spec §6 P3 + 2026-09-08 LOD 修复）：命中节点 → 视图中心平移到该
+  // 节点 + 高亮。center 语义 = roam 视图中心对应的 layout 坐标（echarts graph 原生
+  // 支持）；节点 layout 坐标从 series data 的 getItemLayout 读取（force 布局完成后有值）。
+  //
+  // 两处旧缺陷（缩略态搜索静默无反应的根因）：
+  // 1. 下标取自全量 nodes 数组，而 data 是当前 LOD 档的子集——两下标不同空间：
+  //    越界时 getItemLayout 返 undefined 静默 return，落在子集长度内时更会静默居中
+  //    到不相干的实体。现改为在已渲染数据里按名解析（datum.name = 实体 id）。
+  // 2. 定位把 zoom 推到 GRAPH_FOCUS_ZOOM，但 setOption 改 zoom 不触发 graphRoam →
+  //    档位状态与真实 zoom 脱钩，且缩略档上命中实体根本没被渲染。现搜索一律
+  //    升档到定位 zoom 对应的档位（plan Task 7b：任何层级下检索命中都可见）。
+  // 升档后仍不在子集（guide 熔断）时无坐标可居中——这一情形已由 tab 层改走局部图裁剪兜底。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !focusNode) return;
-    const timer = window.setTimeout(() => {
-      // 力导向布局动画进行中坐标仍会变——等一个短暂稳定窗再居中（启动动画期
-      // 的居中会被后续模拟推开，实测 500ms 后布局已足够稳定）。
-      // getModel 是 echarts 内部 API（类型标私有但运行时可用）——读节点 layout
-      // 坐标没有公开替代（convertToPixel 不支持 graph 系列的 roam 坐标系）。
-      const internals = chart as unknown as {
-        getModel(): {
-          getSeriesByIndex(i: number): { getData(): { getItemLayout(i: number): [number, number] | undefined } } | undefined;
-        };
-      };
-      const data = internals.getModel().getSeriesByIndex(0)?.getData();
-      const index = nodes.findIndex((node) => node.id === focusNode);
-      if (!data || index < 0) return;
+    let cancelled = false;
+    const timers: number[] = [];
+
+    const applyFocus = () => {
+      if (cancelled) return;
+      const data = seriesDataOf(chart);
+      if (!data) return;
+      const index = data.indexOfName(focusNode);
+      if (index < 0) return; // 不在已渲染子集内（guide 熔断）——无物可居中
       const layout = data.getItemLayout(index);
-      if (!layout) return;
-      chart.setOption({ series: [{ center: [layout[0], layout[1]], zoom: 1.6 }] });
+      if (!layout) return; // 布局未完成，没有坐标可读
+      chart.setOption({ series: [{ center: [layout[0], layout[1]], zoom: GRAPH_FOCUS_ZOOM }] });
       chart.dispatchAction({ type: "highlight", seriesIndex: 0, dataIndex: index });
-    }, 500);
+    };
+
+    // 力导向布局动画进行中坐标仍会变——等一个短暂稳定窗再居中（启动动画期的
+    // 居中会被后续模拟推开）。
+    timers.push(
+      window.setTimeout(() => {
+        if (cancelled) return;
+        const nextTier = renderTierForZoom(GRAPH_FOCUS_ZOOM, nodes.length);
+        if (nextTier === renderTierRef.current) {
+          applyFocus();
+          return;
+        }
+        // 升档：重建 series 后档位/标签状态必须同步（程序化 zoom 不发 graphRoam），
+        // 否则后续 roam 的跨档判定与 guide 引导提示都拿到陈旧档位。
+        renderTierRef.current = nextTier;
+        onRenderTierChangeRef.current?.(nextTier);
+        labelTierRef.current = labelTierForZoom(GRAPH_FOCUS_ZOOM);
+        rebuildSeriesAtTier(chart, nextTier, dataRef.current, overlayRef.current);
+        applyLabelTier(chart, labelTierRef.current);
+        // 重建重启了力导向模拟 → 再等一个稳定窗才读坐标。
+        timers.push(window.setTimeout(applyFocus, FOCUS_SETTLE_MS));
+      }, FOCUS_SETTLE_MS),
+    );
+
     return () => {
-      window.clearTimeout(timer);
+      cancelled = true;
+      for (const timer of timers) window.clearTimeout(timer);
       chart.dispatchAction({ type: "downplay", seriesIndex: 0 });
     };
   }, [focusNode, nodes]);

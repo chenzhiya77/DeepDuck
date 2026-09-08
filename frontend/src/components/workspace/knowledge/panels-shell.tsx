@@ -1,8 +1,9 @@
 "use client";
 
 import { PanelLeftOpenIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Layout, PanelImperativeHandle } from "react-resizable-panels";
+import { Toaster } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -10,8 +11,11 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+
+import { KB_TOASTER_ID } from "./kb-toast";
 
 const LEFT_PANEL_ID = "kb-list";
 
@@ -62,8 +66,10 @@ export interface KnowledgePanelsControls {
  * The middle column keeps its 320px minimum; the chat column keeps a 320px
  * floor too so the composer row (deep-research switch + model selector + send
  * button) never wraps at the panel's narrowest drag position. Extreme narrow
- * widths fall back to horizontal scrolling on the outer container instead of
- * crushing columns. The Group carries min-w-[52rem] because the library
+ * widths fall back to horizontal scrolling on an overlay ScrollArea (百科 Tab
+ * 容器同款隐式滑条：只滚动时浮现、停 2s 淡出、不占布局高度) instead of the old
+ * native overflow-x-auto bar spanning the columns, and never crush columns.
+ * The Group carries min-w-[52rem] because the library
  * always fits panels into the container width — without it, a viewport
  * narrower than the sum of all panel minimums silently violates every
  * minSize.
@@ -244,7 +250,7 @@ export function KnowledgePanelsShell({
 
   return (
     <div
-      className="relative size-full min-h-0 overflow-x-auto"
+      className="relative size-full min-h-0"
       data-kb-fold-state={phase}
       data-testid="knowledge-panels-shell"
       ref={shellRef}
@@ -262,6 +268,16 @@ export function KnowledgePanelsShell({
         [data-kb-fold-state="collapsed"] .kb-restore-overlay:hover,
         [data-kb-fold-state="collapsed"] .kb-restore-overlay:focus-within { opacity: 1; }
       `}</style>
+      {/* 窄视口横滚（2026-09-08 隐式滑条化）：外壳原生 overflow-x-auto 退役——
+          老滑块常驻底部横跨文档栏+会话栏；改 overlay ScrollArea（horizontal +
+          type="scroll" + 停 2s 淡出）。Viewport 内 Radix 测量 div 默认 auto 高会
+          让 PanelGroup 的 size-full 百分比失解析（高度链断），故钉 h-full。 */}
+      <ScrollArea
+        className="size-full [&_[data-slot=scroll-area-viewport]>div]:h-full"
+        horizontal
+        scrollHideDelay={2000}
+        type="scroll"
+      >
       <ResizablePanelGroup
         className="size-full min-w-[52rem] min-h-0"
         orientation="horizontal"
@@ -324,7 +340,25 @@ export function KnowledgePanelsShell({
           disabled={collapsedEnough}
         />
         <ResizablePanel className="min-h-0 min-w-0" id="documents" minSize={320}>
-          <section className="size-full border-r">{middleNode}</section>
+          <section className="relative size-full border-r">
+            {middleNode}
+            {/* 知识库中栏专属通知面（2026-09-08）：sonner 全局 Toaster 是视口 fixed
+                右下角，在本页正好压住会话栏输入框；改在中栏内挂 absolute 的 scoped
+                Toaster（sonner 2.x 按 toasterId 分流，与全局侧互不重复），通知落在
+                「知识库详情这栏」的右下角。宽度随栏收（中栏最窄 320 < toast 默认
+                356），绝不溢出到会话栏。 */}
+            <Toaster
+              closeButton
+              id={KB_TOASTER_ID}
+              position="bottom-right"
+              style={
+                {
+                  position: "absolute",
+                  "--width": "min(356px, calc(100% - 32px))",
+                } as CSSProperties
+              }
+            />
+          </section>
         </ResizablePanel>
         <ResizableHandle className="hover:bg-accent w-0.5 transition-colors" />
         <ResizablePanel
@@ -337,6 +371,7 @@ export function KnowledgePanelsShell({
           <aside className="size-full">{right}</aside>
         </ResizablePanel>
       </ResizablePanelGroup>
+      </ScrollArea>
     </div>
   );
 }

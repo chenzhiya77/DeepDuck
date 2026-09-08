@@ -18,7 +18,6 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,6 +83,7 @@ import { cn } from "@/lib/utils";
 
 import { DrawerEditor } from "./drawer-editor";
 import { DrawerGlyph } from "./drawer-icon";
+import { toast } from "./kb-toast";
 import { runAfterMenuClose } from "./run-after-menu-close";
 
 interface CardPayload {

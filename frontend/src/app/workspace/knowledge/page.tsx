@@ -2,7 +2,6 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 
 import { KnowledgeChatPanel } from "@/components/workspace/knowledge/chat-panel";
 import { ChunkDrawer } from "@/components/workspace/knowledge/chunk-drawer";
@@ -14,6 +13,7 @@ import {
 import { EvalTab } from "@/components/workspace/knowledge/eval-tab";
 import { GraphTab } from "@/components/workspace/knowledge/graph-tab";
 import { KbListPanel } from "@/components/workspace/knowledge/kb-list-panel";
+import { toast } from "@/components/workspace/knowledge/kb-toast";
 import { ManualCardDrawer } from "@/components/workspace/knowledge/manual-card-drawer";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { KnowledgePanelsShell } from "@/components/workspace/knowledge/panels-shell";

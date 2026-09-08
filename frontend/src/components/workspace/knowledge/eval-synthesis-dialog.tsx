@@ -9,7 +9,6 @@
  * toast 不关闭（用户可等当前一轮落完）。
  */
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +30,8 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/core/i18n/hooks";
 import { useDocuments, useTriggerSynthesis } from "@/core/knowledge/hooks";
+
+import { toast } from "./kb-toast";
 
 export interface EvalSynthesisDialogProps {
   kbId: string;

@@ -15,6 +15,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { VectorTab } from "@/components/workspace/knowledge/vector-tab";
 import { I18nContext } from "@/core/i18n/context";
@@ -515,7 +516,7 @@ describe("VectorTab 检索联动叠加", () => {
     await waitFor(() => expect(mutate).toHaveBeenCalled());
     succeedQuery(mutate, "sha1:stale");
     await waitFor(() => expect(canvasMock.props?.overlay ?? null).toBeNull());
-    expect(toast.info).toHaveBeenCalledWith("投影已更新，检索叠加已失效——请重新触发检索");
+    expect(toast.info).toHaveBeenCalledWith("投影已更新，检索叠加已失效——请重新触发检索", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 
   it("surfaces a notice instead of failing silently when the query projection errors", async () => {
@@ -525,7 +526,7 @@ describe("VectorTab 检索联动叠加", () => {
     await waitFor(() => expect(mutate).toHaveBeenCalled());
     const options = mutate.mock.calls.at(-1)?.[1] as { onError: (error: Error) => void };
     act(() => options.onError(new Error("boom")));
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith("检索叠加失败——请重试"));
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith("检索叠加失败——请重试", expect.objectContaining({ toasterId: KB_TOASTER_ID })));
     expect(canvasMock.props?.overlay ?? null).toBeNull();
   });
 
@@ -540,7 +541,7 @@ describe("VectorTab 检索联动叠加", () => {
     mockProjectionQuery({ data: { ...PROJECTION, fingerprint: "sha1:def" } });
     rerender(renderTab({ overlay: RECALL_OVERLAY }));
     await waitFor(() => expect(canvasMock.props?.overlay ?? null).toBeNull());
-    expect(toast.info).toHaveBeenCalledWith("投影已更新，检索叠加已失效——请重新触发检索");
+    expect(toast.info).toHaveBeenCalledWith("投影已更新，检索叠加已失效——请重新触发检索", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 
   it("disables the overlay with a PCA-only notice under umap (spec §9 公共边界)", async () => {
@@ -551,7 +552,7 @@ describe("VectorTab 检索联动叠加", () => {
     fireEvent.click(screen.getByRole("option", { name: "UMAP" }));
     rerender(renderTab({ overlay: RECALL_OVERLAY }));
     await waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith("检索叠加仅支持 PCA 投影——请切回 PCA 后重试"),
+      expect(toast.info).toHaveBeenCalledWith("检索叠加仅支持 PCA 投影——请切回 PCA 后重试", expect.objectContaining({ toasterId: KB_TOASTER_ID })),
     );
     expect(mutate).not.toHaveBeenCalled();
   });

@@ -9,7 +9,6 @@ import {
   Waypoints,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +31,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 import { EvalSaveQuestionDialog } from "./eval-save-question-dialog";
+import { toast } from "./kb-toast";
 import { RecallGraphMini } from "./recall-graph-mini";
 
 function formatScore(score: number | null): string {

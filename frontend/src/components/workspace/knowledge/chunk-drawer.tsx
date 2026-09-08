@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +35,7 @@ import { ChunkCard } from "./chunk-card";
 import { ChunkTickRail, type ChunkTickEntry } from "./chunk-tick-rail";
 import { DeletePreviewDialog } from "./delete-preview-dialog";
 import { FileTypeBadge } from "./file-type-badge";
+import { toast } from "./kb-toast";
 
 const PAGE_SIZE = 20;
 /** 单文档切片在该阈值内一次性全量加载（2026-09-05 切片导航）：刻度弹窗每行都有

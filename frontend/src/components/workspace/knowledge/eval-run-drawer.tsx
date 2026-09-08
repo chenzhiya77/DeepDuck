@@ -26,7 +26,6 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +55,7 @@ import { cn } from "@/lib/utils";
 
 import { getProgressBarColor } from "./eval-metrics-overview.utils";
 import { formatRunTime } from "./eval-run-history";
+import { toast } from "./kb-toast";
 
 /** 卡容器（eval-question-drawer 09-08 定案配方）：米色画布上 bg-card 抬升 +
     卡内分组头带 border-b；计数徽章 ml-auto。 */

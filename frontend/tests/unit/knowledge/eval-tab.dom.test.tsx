@@ -115,6 +115,7 @@ class ResizeObserverStub {
   ResizeObserverStub;
 
 import { EvalTab } from "@/components/workspace/knowledge/eval-tab";
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { overallFraction } from "@/core/knowledge/eval-run-status";
@@ -1704,7 +1705,7 @@ describe("EvalTab 终止评测（spec §11）", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认终止?" }));
     expect(mutate).toHaveBeenCalledTimes(1);
-    expect(toast.success).toHaveBeenCalledWith("评测已终止");
+    expect(toast.success).toHaveBeenCalledWith("评测已终止", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 
   it("终止失败走错误 toast", () => {
@@ -1719,7 +1720,7 @@ describe("EvalTab 终止评测（spec §11）", () => {
 
     fireEvent.click(screen.getByTestId("eval-cancel-button"));
     fireEvent.click(screen.getByRole("button", { name: "确认终止?" }));
-    expect(toast.error).toHaveBeenCalledWith("终止评测失败");
+    expect(toast.error).toHaveBeenCalledWith("终止评测失败", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 
   it("确认态 3s 超时自动回退首态", () => {
@@ -1800,7 +1801,7 @@ describe("EvalTab 终止评测（spec §11）", () => {
         screen.getByRole("menuitem", { name: "确认终止?" }),
       );
       expect(mutate).toHaveBeenCalledTimes(1);
-      expect(toast.success).toHaveBeenCalledWith("评测已终止");
+      expect(toast.success).toHaveBeenCalledWith("评测已终止", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
     } finally {
       if (original) {
         Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);

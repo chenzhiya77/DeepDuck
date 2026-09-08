@@ -12,7 +12,6 @@
 import { AlignLeft, ChevronLeft, ChevronRight, FileText, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,10 +41,13 @@ import {
   communityColor,
   filterNeighborhood,
   type GraphColorBy,
+  GRAPH_FOCUS_ZOOM,
+  isNodeRenderedAtZoom,
   matchEntityNames,
   type RenderTier,
   typeColor,
 } from "./graph-utils";
+import { toast } from "./kb-toast";
 
 // ssr:false —— echarts 依赖 DOM，且不进首屏 chunk（对齐 vector-tab 先例）。
 const GraphCanvas = dynamic<GraphCanvasProps>(() => import("./graph-canvas"), {
@@ -169,11 +171,17 @@ export function GraphTab({
     );
   }, [graph, visible, neighborhood]);
 
-  /** 搜索提交：模糊匹配第一个命中 → 画布居中高亮；无命中提示。 */
+  /** 搜索提交：模糊匹配第一个命中 → 画布升档居中高亮；无命中提示。
+      LOD 兜底（2026-09-08）：命中实体在定位档也渲染不出来（>2000 实体熔断 guide
+      档 / mention=1 长尾）→ 自动进该实体 1 跳局部图，裁剪后必渲染可居中——即
+      guide 档引导文案「放大或双击节点进入局部图」的自动化执行。 */
   const handleSearch = (event: React.FormEvent) => {
     event.preventDefault();
     const [first] = matchEntityNames(visible.nodes, query);
     if (first) {
+      if (!isNodeRenderedAtZoom(visible.nodes, visibleCommunities, GRAPH_FOCUS_ZOOM, first)) {
+        setNeighborhood({ focusId: first, hops: 1 });
+      }
       setFocusNode(first);
     } else if (query.trim()) {
       toast.info(tg.searchNoMatch);

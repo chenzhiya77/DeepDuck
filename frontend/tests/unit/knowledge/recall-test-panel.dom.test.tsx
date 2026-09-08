@@ -37,6 +37,7 @@ rs.mock("@/components/workspace/knowledge/recall-graph-mini", () => ({
   ),
 }));
 
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { RecallTestPanel } from "@/components/workspace/knowledge/recall-test-panel";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
@@ -241,7 +242,7 @@ describe("RecallTestPanel controls", () => {
       target: { value: "x" },
     });
     fireEvent.click(screen.getByRole("button", { name: "开始检索" }));
-    expect(toast.error).toHaveBeenCalledWith("boom");
+    expect(toast.error).toHaveBeenCalledWith("boom", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 });
 
@@ -619,7 +620,7 @@ describe("RecallTestPanel 存为考题（spec §7.1）", () => {
     expect(body.relevant_chunk_ids).toEqual(["c2", "c1"]);
     expect(body).not.toHaveProperty("relevant_entities");
     await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith("已存为考题");
+      expect(toast.success).toHaveBeenCalledWith("已存为考题", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
     });
     // 成功后清勾选：继续标注下一题，不跳视图
     await waitFor(() => {

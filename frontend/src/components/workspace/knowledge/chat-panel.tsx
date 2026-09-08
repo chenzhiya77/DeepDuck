@@ -30,6 +30,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
@@ -44,11 +45,13 @@ import {
   type HumanInputRequest,
   type HumanInputResponse,
 } from "@/core/messages/human-input";
+import { getMessageCopyData } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
 import { useDeleteThread, useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { cn } from "@/lib/utils";
 
+import { ChunkTickRail } from "./chunk-tick-rail";
 import { KbAssistantContent } from "./kb-assistant-content";
 import { KbCitationSources } from "./kb-citation-sources";
 
@@ -338,6 +341,133 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
     [sendMessage, threadId],
   );
 
+  // ── 会话刻度轨（2026-09-08，文档详情切片刻度轨同款方案）──────────
+  // 刻度内容 = 用户问的问题：连续 human 消息同属一个 turn（与 MessageList
+  // human 组分组同口径），一轮一刻度；preview 取问题文本首行
+  // （getMessageCopyData 已剥 uploaded-files 标签）。
+  const questions = useMemo(() => {
+    const runs: string[] = [];
+    thread.messages.forEach((message, index) => {
+      if (message.type !== "human") return;
+      const firstLine = (getMessageCopyData(message) ?? "").split("\n")[0] ?? "";
+      if (thread.messages[index - 1]?.type === "human" && runs.length > 0) {
+        runs[runs.length - 1] = `${runs[runs.length - 1]} ${firstLine}`.trim();
+      } else {
+        runs.push(firstLine);
+      }
+    });
+    return runs;
+  }, [thread.messages]);
+
+  const tickEntries = useMemo(
+    () =>
+      questions.map((preview, index) => ({
+        index,
+        preview: preview === "" ? null : preview,
+      })),
+    [questions],
+  );
+
+  const [activeQuestion, setActiveQuestion] = useState(0);
+  const messageZoneRef = useRef<HTMLDivElement | null>(null);
+
+  // active 追踪：顶边越过视口 40% 线的最后一个刻度为当前刻度；全局序号来自
+  // data-human-turn（虚拟化窗口化后仍可读）。
+  useEffect(() => {
+    const vp = messageZoneRef.current?.querySelector(
+      "[data-slot='scroll-area-viewport']",
+    );
+    if (!vp || questions.length === 0) return;
+    let frame = 0;
+    const compute = () => {
+      const middle = vp.getBoundingClientRect().top + vp.clientHeight * 0.4;
+      const nodes = vp.querySelectorAll("[data-human-turn]");
+      let next = 0;
+      let found = false;
+      nodes.forEach((node) => {
+        if (node.getBoundingClientRect().top <= middle) {
+          next = Number(node.getAttribute("data-human-turn"));
+          found = true;
+        }
+      });
+      if (!found && nodes.length > 0) {
+        next = Number(nodes[0]?.getAttribute("data-human-turn"));
+      }
+      const clamped = Math.min(Math.max(next, 0), questions.length - 1);
+      setActiveQuestion((prev) => (prev === clamped ? prev : clamped));
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        compute();
+      });
+    };
+    compute();
+    vp.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      vp.removeEventListener("scroll", onScroll);
+    };
+  }, [threadId, questions.length]);
+
+  // 刻度点击跳转：目标在渲染窗口内直接精滚；虚拟化（≥60 组）窗口外先按比例
+  // 落点附近，再按已渲染节点全局序号估步长逐步收敛（封顶 6 步），目标进窗后
+  // 精滚落定。
+  const jumpToQuestion = useCallback(
+    (index: number) => {
+      const vp = messageZoneRef.current?.querySelector(
+        "[data-slot='scroll-area-viewport']",
+      );
+      if (!vp) return;
+      const scrollToNode = (node: Element) => {
+        const top =
+          vp.scrollTop +
+          (node.getBoundingClientRect().top - vp.getBoundingClientRect().top) -
+          16;
+        vp.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      };
+      const direct = vp.querySelector(`[data-human-turn="${index}"]`);
+      if (direct) {
+        scrollToNode(direct);
+        return;
+      }
+      let steps = 0;
+      const converge = () => {
+        const node = vp.querySelector(`[data-human-turn="${index}"]`);
+        if (node) {
+          scrollToNode(node);
+          return;
+        }
+        if (++steps > 6) return;
+        const nodes = [...vp.querySelectorAll("[data-human-turn]")];
+        if (nodes.length === 0) return;
+        const first = nodes[0]!;
+        const last = nodes[nodes.length - 1]!;
+        const oFirst = Number(first.getAttribute("data-human-turn"));
+        const oLast = Number(last.getAttribute("data-human-turn"));
+        const per =
+          oLast > oFirst
+            ? Math.max(
+                80,
+                (last.getBoundingClientRect().top -
+                  first.getBoundingClientRect().top) /
+                  (oLast - oFirst),
+              )
+            : 176;
+        const before = index < oFirst;
+        const anchorOrd = before ? oFirst : oLast;
+        vp.scrollTop += (index - anchorOrd) * per;
+        requestAnimationFrame(converge);
+      };
+      vp.scrollTop =
+        ((index + 0.5) / Math.max(1, questions.length)) *
+        Math.max(0, vp.scrollHeight - vp.clientHeight);
+      requestAnimationFrame(converge);
+    },
+    [questions.length],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="knowledge-chat-panel">
       <header className="flex h-12 shrink-0 items-center gap-1 border-b px-3">
@@ -362,41 +492,54 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
               </Button>
             </DropdownMenuTrigger>
           </Tooltip>
-          <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuContent align="end" className="w-64 overflow-hidden">
             {threadsByDay.length === 0 ? (
               <DropdownMenuLabel>{tc.noHistory}</DropdownMenuLabel>
             ) : (
-              threadsByDay.map(([day, dayThreads]) => (
-                <div key={day}>
-                  <DropdownMenuLabel>{day}</DropdownMenuLabel>
-                  {dayThreads.map((kbThread) => (
-                    <DropdownMenuItem
-                      key={kbThread.thread_id}
-                      className="group/history-item"
-                      onClick={() => handleSelectThread(kbThread.thread_id)}
-                    >
-                      <span className="truncate">
-                        {kbThread.values?.title ?? kbThread.thread_id}
-                      </span>
-                      {/* stopPropagation keeps the row from being selected and
-                          the popover open, so several stale conversations can
-                          be cleaned up in one go. */}
-                      <button
-                        aria-label={tc.deleteChat}
-                        className="text-muted-foreground hover:text-foreground ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity focus-visible:opacity-100 group-hover/history-item:opacity-100"
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          handleDeleteThread(kbThread.thread_id);
-                        }}
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </button>
-                    </DropdownMenuItem>
+              /* 历史会话清单（2026-09-08 隐式滑条化）：DropdownMenuContent 基类
+                 overflow-y-auto 的老原生竖滑条退役——内容改 overflow-hidden，
+                 清单沉进 overlay ScrollArea（type="scroll"、停 2s 淡出）；高度
+                 上限复用 Radix 可用高变量减 content 的 p-1 上下内边距，低视口
+                 自适应不溢出屏幕。 */
+              <ScrollArea
+                className="max-h-[calc(var(--radix-dropdown-menu-content-available-height)-0.5rem)]"
+                scrollHideDelay={2000}
+                type="scroll"
+              >
+                <div className="flex flex-col">
+                  {threadsByDay.map(([day, dayThreads]) => (
+                    <div key={day}>
+                      <DropdownMenuLabel>{day}</DropdownMenuLabel>
+                      {dayThreads.map((kbThread) => (
+                        <DropdownMenuItem
+                          key={kbThread.thread_id}
+                          className="group/history-item"
+                          onClick={() => handleSelectThread(kbThread.thread_id)}
+                        >
+                          <span className="truncate">
+                            {kbThread.values?.title ?? kbThread.thread_id}
+                          </span>
+                          {/* stopPropagation keeps the row from being selected and
+                              the popover open, so several stale conversations can
+                              be cleaned up in one go. */}
+                          <button
+                            aria-label={tc.deleteChat}
+                            className="text-muted-foreground hover:text-foreground ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity focus-visible:opacity-100 group-hover/history-item:opacity-100"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              event.preventDefault();
+                              handleDeleteThread(kbThread.thread_id);
+                            }}
+                          >
+                            <Trash2Icon className="size-3.5" />
+                          </button>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
                   ))}
                 </div>
-              ))
+              </ScrollArea>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -419,19 +562,32 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
         </Tooltip>
       </header>
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1" ref={messageZoneRef}>
         {kb ? (
-          <MessageList
-            className="size-full"
-            threadId={threadId}
-            thread={thread}
-            hasMoreHistory={hasMoreHistory}
-            loadMoreHistory={loadMoreHistory}
-            isHistoryLoading={isHistoryLoading}
-            renderMessageContent={renderMessageContent}
-            renderMessageFooter={renderMessageFooter}
-            onSubmitHumanInput={handleSubmitHumanInput}
-          />
+          <>
+            <MessageList
+              className="size-full"
+              threadId={threadId}
+              thread={thread}
+              hasMoreHistory={hasMoreHistory}
+              loadMoreHistory={loadMoreHistory}
+              isHistoryLoading={isHistoryLoading}
+              renderMessageContent={renderMessageContent}
+              renderMessageFooter={renderMessageFooter}
+              onSubmitHumanInput={handleSubmitHumanInput}
+            />
+            {/* 会话刻度轨（2026-09-08）：文档详情切片刻度轨同款方案——右缘刻度
+                脊 + 悬浮弹窗左侧标签层，刻度内容换为用户问题；overlay 层不进
+                消息滚动流。 */}
+            <ChunkTickRail
+              active={activeQuestion}
+              entries={tickEntries}
+              onJump={jumpToQuestion}
+              tickLabel={tc.questionTickAria}
+              total={questions.length}
+              unloadedLabel={tc.questionTickEmpty}
+            />
+          </>
         ) : (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <div className="text-sm font-medium">{t.knowledge.selectKbTitle}</div>

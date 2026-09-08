@@ -527,6 +527,13 @@ export function renderTierForZoom(zoom: number, totalNodes: number): RenderTier 
 }
 
 /**
+ * 搜索定位的目标 zoom（2026-09-08 抽出为常量）：> LOD_ZOOM_FULL_ABOVE，所以
+ * 定位档恒为 all-full（≤2000）/ guide（熔断）。tab 层判「命中实体在定位档能否
+ * 被渲染」与 canvas 层「升档到哪一档」必须同源，否则两边算出不同答案。
+ */
+export const GRAPH_FOCUS_ZOOM = 1.6;
+
+/**
  * 首次进入的初始 zoom（2026-08-21 实测修正）：LOD 激活的大库从最缩略档进入
  *（0.3 → hub 层 200 枢纽 + 零标签）——原 zoom=1 会先全量力导向布局 1200 节点
  * 再降载，首次进入卡一下。门控小库恒 zoom=1（full + 全标签，行为不变）。
@@ -536,22 +543,17 @@ export function initialZoomForGraph(nodeCount: number): number {
 }
 
 /**
- * 分层渲染 series 组装：按 tier 返回对应数据子集。
- * - full / all-full：全量实体（= buildGraphSeries）；
- * - hub：每社区 Top 3 枢纽实体 + 枢纽间原始边；
- * - all-important / guide：mention≥2 重要节点 + 之间边（guide 层内容由 tab 层加引导提示）。
+ * tier 的渲染子集（实体 id 集合）；full / all-full 返回 null = 全量不裁剪。
+ *
+ * 单一源（2026-09-08）：既供 buildTieredSeries 裁数据，也供「命中可达性」判定
+ * ——搜索定位必须先知道命中实体在目标档位是否真被渲染，否则画布上没有它可居中。
  */
-export function buildTieredSeries(
+export function tierNodeIds(
   nodes: readonly KnowledgeGraphNode[],
-  edges: readonly KnowledgeGraphEdge[],
   communities: readonly KnowledgeGraphCommunity[],
   tier: RenderTier,
-  colorBy: GraphColorBy = "community",
-  overlay?: GraphRetrievalTrace | null,
-): [GraphSeriesConfig] {
-  if (tier === "full" || tier === "all-full") {
-    return buildGraphSeries(nodes, edges, colorBy, overlay);
-  }
+): ReadonlySet<string> | null {
+  if (tier === "full" || tier === "all-full") return null;
 
   // hub：每社区 Top N 枢纽（节点预算内按社区规模降序截断——微社区图防爆）；
   // all-important / guide：mention≥2 重要节点。
@@ -570,6 +572,40 @@ export function buildTieredSeries(
       if (node.mention_count >= IMPORTANT_MENTION_MIN) keep.add(node.id);
     }
   }
+  return keep;
+}
+
+/**
+ * 命中可达性：给定 zoom 的渲染档位下该实体是否会被渲染出来（2026-09-08 搜索
+ * 定位修复）。缩略档只渲染子集——命中实体不在子集内时，居中/高亮都无从落地，
+ * 调用方（graph-tab）据此改走「局部图裁剪」兜底，保证任何库规模都能看见命中。
+ */
+export function isNodeRenderedAtZoom(
+  nodes: readonly KnowledgeGraphNode[],
+  communities: readonly KnowledgeGraphCommunity[],
+  zoom: number,
+  nodeId: string,
+): boolean {
+  const keep = tierNodeIds(nodes, communities, renderTierForZoom(zoom, nodes.length));
+  return keep === null || keep.has(nodeId);
+}
+
+/**
+ * 分层渲染 series 组装：按 tier 返回对应数据子集。
+ * - full / all-full：全量实体（= buildGraphSeries）；
+ * - hub：每社区 Top 3 枢纽实体 + 枢纽间原始边；
+ * - all-important / guide：mention≥2 重要节点 + 之间边（guide 层内容由 tab 层加引导提示）。
+ */
+export function buildTieredSeries(
+  nodes: readonly KnowledgeGraphNode[],
+  edges: readonly KnowledgeGraphEdge[],
+  communities: readonly KnowledgeGraphCommunity[],
+  tier: RenderTier,
+  colorBy: GraphColorBy = "community",
+  overlay?: GraphRetrievalTrace | null,
+): [GraphSeriesConfig] {
+  const keep = tierNodeIds(nodes, communities, tier);
+  if (!keep) return buildGraphSeries(nodes, edges, colorBy, overlay);
   const subNodes = nodes.filter((node) => keep.has(node.id));
   const subEdges = edges.filter((edge) => keep.has(edge.source) && keep.has(edge.target));
   return buildGraphSeries(subNodes, subEdges, colorBy, overlay);

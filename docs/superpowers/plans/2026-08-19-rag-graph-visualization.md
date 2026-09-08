@@ -227,6 +227,11 @@
   3. scaleLimit.min 保持 0.3 不变（cluster 层移除后无需更低缩放；hub 层 0.3~0.6 区间 + 零标签满足缩略态）。
   后端 `communities` 字段保留（hub 层 TopN 枢纽数据源）。guide 层引导文案改为「放大或双击节点进入局部图」（原「双击社区」入口已移除）。
 - [x] Commit: `feat(rag): implement LOD-based hierarchical rendering for knowledge graph scalability`（`8f9ce4ff`）
+- [x] **搜索定位跨档修复（2026-09-08）**：LOD 上线后暴露「缩略态搜索静默无反应，只有把图放到最大（`all-full` 全量渲染）才能搜」——违背本任务的设计前提「任何层级下检索命中都可见」。根因：定位下标取自全量 `nodes` 数组，而 series data 是**当前档位的子集**，两下标不同空间：越界 → `getItemLayout` 返 undefined → 静默 return；落在子集长度内 → **静默居中到不相干实体**。只有 full/all-full 档两数组 1:1 同序才碰巧对上（≤500 实体的门控小库因此从未复现，286 实体 JVM 库实测也没走到这条分支）。修复三段：
+  1. `graph-utils`：抽出 `tierNodeIds`（档位渲染子集单一源，`buildTieredSeries` 改走它）+ `isNodeRenderedAtZoom`（命中可达性）+ `GRAPH_FOCUS_ZOOM = 1.6`（定位 zoom 常量化，tab/canvas 同源）。
+  2. `graph-canvas`：定位下标改为在**已渲染数据**里按名解析（`SeriesData.indexOfName`，datum.name = 实体 id）；搜索一律升档到 `renderTierForZoom(GRAPH_FOCUS_ZOOM, N)` 并同步 `renderTierRef`/`labelTierRef`/`onRenderTierChange`——`setOption` 改 zoom **不发 `graphRoam`**，否则档位状态与真实 zoom 脱钩（后续 roam 跨档判定与 guide 引导提示都拿陈旧档位）；升档重建重启力导向模拟 → 再等一个稳定窗（500ms）才读坐标居中。roam 跨档与搜索升档共用抽出的 `rebuildSeriesAtTier`/`applyLabelTier`。
+  3. `graph-tab`：命中实体连定位档也渲染不出来（>2000 熔断 `guide` / `mention_count=1` 长尾）→ **自动进该实体 1 跳局部图**（用户 2026-09-08 定案，优于「只弹 toast 让用户自己放大」与「强行并入子集破 2000 硬上限」）；裁剪后子图 ≤ `LOD_MIN_NODES` 恒 full 档，必可居中。即 guide 引导文案「放大或双击节点进入局部图」的自动化执行，面包屑负责回全局。
+  回归：graph-canvas 单测 62/62（新增 6 例钉档位可达性与同源一致性）、graph-tab 26/26（新增 3 例：中库不裁剪 / 熔断库自动局部图 / 大库无命中仍 toast，并给小库搜索补「不裁剪」守卫）、knowledge 973 passed | 1 预存无关（chat-panel 模型选择器基线）、`pnpm check` 双净、revert proof（摘掉 tab 兜底 → 自动局部图用例 RED，恢复 GREEN）。canvas 内部升档/居中仍靠浏览器实测兑现（echarts 在 jsdom 不可跑）。
 
 **风险与缓解**：
 | 风险 | 缓解措施 |

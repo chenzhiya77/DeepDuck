@@ -41,7 +41,6 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,6 +89,7 @@ import { EvalRunDrawer } from "./eval-run-drawer";
 import { EvalRunHistory } from "./eval-run-history";
 import type { EvalTrendChartProps } from "./eval-trend-chart";
 import { PICKER_METRICS, type SpanPreset, type SpanRequest } from "./eval-trend-chart.utils";
+import { toast } from "./kb-toast";
 
 const EvalTrendChart = dynamic<EvalTrendChartProps>(
   () => import("./eval-trend-chart"),

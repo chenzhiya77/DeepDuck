@@ -22,7 +22,6 @@ import { MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +58,7 @@ import type {
 } from "@/core/knowledge/types";
 import { cn } from "@/lib/utils";
 
+import { toast } from "./kb-toast";
 import type { VectorCanvasProps } from "./vector-canvas";
 
 // ssr:false —— echarts 依赖 DOM/WebGL，且不进首屏 chunk（性能预算体系只测

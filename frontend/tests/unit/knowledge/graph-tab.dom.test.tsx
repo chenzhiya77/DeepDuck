@@ -10,6 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useState } from "react";
 
 import { GraphTab } from "@/components/workspace/knowledge/graph-tab";
+import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { MiddleTabs, type KnowledgeMiddleTab } from "@/components/workspace/knowledge/middle-tabs";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
@@ -360,6 +361,9 @@ describe("GraphTab 搜索 / 着色 / 局部图（Task 4）", () => {
     fireEvent.change(screen.getByLabelText("搜索实体"), { target: { value: "b" } });
     fireEvent.submit(screen.getByLabelText("搜索实体").closest("form")!);
     await waitFor(() => expect(canvasMock.props?.focusNode).toBe("B"));
+    // 小库（≤LOD_MIN_NODES）恒 full 档——只定位不裁剪（局部图兜底不得误伤）。
+    expect(screen.queryByTestId("graph-breadcrumb")).toBeNull();
+    expect(canvasNodeIds()).toEqual(["A", "B", "C", "D", "E"]);
   });
 
   it("toasts when the search has no match", async () => {
@@ -395,6 +399,76 @@ describe("GraphTab 搜索 / 着色 / 局部图（Task 4）", () => {
     await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C"]));
     fireEvent.click(screen.getByRole("radio", { name: "2 跳" }));
     await waitFor(() => expect(canvasNodeIds()).toEqual(["A", "B", "C", "D"])); // E 孤立不进
+  });
+
+  // ── LOD 搜索兜底（2026-09-08）─────────────────────────────────────
+  // 缩略档只渲染子集，命中实体不在子集内时画布上无物可居中（旧缺陷：缩略态
+  // 搜索静默无反应）。canvas 侧改为「按名解析下标 + 升档到定位 zoom 对应档位」；
+  // 连定位档也不可达（>2000 熔断 guide / mention=1 长尾）时由 tab 层自动进局部图。
+
+  /** LOD 大库 fixture：importantCount 个 mention≥2 实体 + 一个 mention=1 长尾实体。 */
+  const lodGraph = (importantCount: number): KnowledgeGraphResponse => {
+    const nodes: KnowledgeGraphNode[] = [];
+    for (let i = 0; i < importantCount; i += 1) {
+      nodes.push({ id: `重要实体${i}`, type: "概念", description: "", mention_count: 2, community: 0, source_chunk_ids: [] });
+    }
+    nodes.push({ id: "长尾实体", type: "概念", description: "", mention_count: 1, community: 1, source_chunk_ids: [] });
+    return {
+      kb_id: "kb-1",
+      nodes,
+      edges: [{ source: "长尾实体", target: "重要实体0", relation: "r", description: "" }],
+      stats: { node_count: nodes.length, edge_count: 1, community_count: 2 },
+      communities: [
+        {
+          id: 0,
+          memberCount: importantCount,
+          totalMentions: importantCount * 2,
+          topMembers: [{ id: "重要实体0", mention_count: 2 }],
+          dominantType: "概念",
+        },
+        { id: 1, memberCount: 1, totalMentions: 1, topMembers: [{ id: "长尾实体", mention_count: 1 }], dominantType: "概念" },
+      ],
+    };
+  };
+
+  const searchFor = async (text: string) => {
+    fireEvent.change(screen.getByLabelText("搜索实体"), { target: { value: text } });
+    fireEvent.submit(screen.getByLabelText("搜索实体").closest("form")!);
+  };
+
+  it("does not crop the graph when the match is renderable at the focus tier (601 entities)", async () => {
+    stubGraphQuery({ data: lodGraph(600), isLoading: false, isError: false });
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    await searchFor("长尾实体");
+    await waitFor(() => expect(canvasMock.props?.focusNode).toBe("长尾实体"));
+    // 601 ≤ LOD_FULL_HARD_LIMIT → 定位档 all-full 全量渲染 → 升档居中即可，不裁剪。
+    expect(screen.queryByTestId("graph-breadcrumb")).toBeNull();
+    expect(canvasMock.props?.nodes).toHaveLength(601);
+  });
+
+  it("auto-enters the 1-hop neighborhood when the match is unrenderable even at the focus tier", async () => {
+    stubGraphQuery({ data: lodGraph(2000), isLoading: false, isError: false });
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    await searchFor("长尾实体");
+    // 2001 > 2000 → 定位档熔断为 guide（只渲染 mention≥2）→ 长尾实体不可达 →
+    // 自动进 1 跳局部图；裁剪后 2 节点 ≤ LOD_MIN_NODES 恒 full 档，画布必能居中。
+    await waitFor(() => expect(screen.getByTestId("graph-breadcrumb")).toBeTruthy());
+    expect(canvasMock.props?.focusNode).toBe("长尾实体");
+    expect(canvasNodeIds()).toEqual(["重要实体0", "长尾实体"]);
+    expect(screen.getByTestId("graph-breadcrumb").textContent).toContain("长尾实体");
+  });
+
+  it("still toasts and stays put when a large graph has no match", async () => {
+    const { toast } = await import("sonner");
+    stubGraphQuery({ data: lodGraph(2000), isLoading: false, isError: false });
+    renderGraphTab();
+    await waitFor(() => expect(canvasMock.props).toBeTruthy());
+    await searchFor("不存在");
+    await waitFor(() => expect(toast.info).toHaveBeenCalled());
+    expect(canvasMock.props?.focusNode).toBeFalsy();
+    expect(screen.queryByTestId("graph-breadcrumb")).toBeNull();
   });
 });
 
@@ -462,7 +536,7 @@ describe("GraphTab 检索路径叠加（Task 5 P4）", () => {
 
     await waitFor(() => expect(screen.queryByTestId("graph-overlay-badge")).toBeNull());
     expect(canvasMock.props?.overlay ?? null).toBeNull();
-    expect(toast.info).toHaveBeenCalledWith("图谱内容已更新，检索路径高亮已清除");
+    expect(toast.info).toHaveBeenCalledWith("图谱内容已更新，检索路径高亮已清除", expect.objectContaining({ toasterId: KB_TOASTER_ID }));
   });
 
   it("freezes chat overlays while 跟随对话 is off and applies the latest when re-enabled", async () => {

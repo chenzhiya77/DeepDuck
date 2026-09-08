@@ -33,7 +33,17 @@ let capturedMessageListProps: Record<string, unknown> | null = null;
 rs.mock("@/components/workspace/messages", () => ({
   MessageList: (props: Record<string, unknown>) => {
     capturedMessageListProps = props;
-    return <div data-testid="message-list" />;
+    // 假滚动层 + human turn 节点（2026-09-08 刻度轨接线）：面板侧 active
+    // 追踪与跳转都挂这两个钩子（data-slot 视口 / data-human-turn 全局序号），
+    // mock 环境以同结构节点代替真实 MessageList 渲染。
+    return (
+      <div data-testid="message-list">
+        <div data-slot="scroll-area-viewport">
+          <div data-human-turn="0" />
+          <div data-human-turn="1" />
+        </div>
+      </div>
+    );
   },
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM: 120,
 }));
@@ -198,6 +208,12 @@ describe("KnowledgeChatPanel", () => {
     expect(screen.queryByText("别的库会话")).toBeNull();
     expect(screen.queryByText("普通会话")).toBeNull();
     expect(screen.getByText("2026-08-09")).toBeTruthy();
+    // 隐式滑条化（2026-09-08）：content 基类 overflow-y-auto 的老原生竖滑条
+    // 退役——清单沉进 overlay ScrollArea（type="scroll"、停 2s 淡出）。
+    const menu = screen.getByRole("menu");
+    expect(menu.className).toContain("overflow-hidden");
+    expect(menu.className).not.toContain("overflow-y-auto");
+    expect(menu.querySelector("[data-slot='scroll-area']")).toBeTruthy();
   });
 
   it("loads the selected conversation from the history popover", () => {
@@ -249,6 +265,53 @@ describe("KnowledgeChatPanel", () => {
     expect(latestStreamOptions().threadId).toBe("thread-kb1-a");
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     expect(latestStreamOptions().threadId).toBeUndefined();
+  });
+
+  it("renders the question tick rail over the message list (chunk-rail scheme, ticks = user questions)", () => {
+    mockUseThreadStream.mockImplementation(() => ({
+      thread: makeThreadState([
+        { id: "h1", type: "human", content: "第一个问题" },
+        { id: "a1", type: "ai", content: "答一" },
+        { id: "h2", type: "human", content: "第二个问题" },
+        { id: "a2", type: "ai", content: "答二" },
+      ]),
+      sendMessage: mockSendMessage,
+    }));
+    renderPanel(KB);
+    // 两个问题轮 → 两刻度（aria 同切片刻度轨方案「问题 #N」）；弹窗行悬浮
+    // 才挂载，静止态只有刻度脊按钮。
+    expect(screen.getAllByRole("button", { name: /^问题 #/ }).length).toBe(2);
+
+    // 单问题轮不显轨（同切片刻度轨 total<=1 退役纪律）。
+    cleanup();
+    mockUseThreadStream.mockImplementation(() => ({
+      thread: makeThreadState([
+        { id: "h1", type: "human", content: "唯一的问题" },
+        { id: "a1", type: "ai", content: "答一" },
+      ]),
+      sendMessage: mockSendMessage,
+    }));
+    renderPanel(KB);
+    expect(screen.queryByRole("button", { name: /^问题 #/ })).toBeNull();
+  });
+
+  it("jumps the message viewport to the picked question via the tick rail", () => {
+    mockUseThreadStream.mockImplementation(() => ({
+      thread: makeThreadState([
+        { id: "h1", type: "human", content: "第一个问题" },
+        { id: "a1", type: "ai", content: "答一" },
+        { id: "h2", type: "human", content: "第二个问题" },
+        { id: "a2", type: "ai", content: "答二" },
+      ]),
+      sendMessage: mockSendMessage,
+    }));
+    renderPanel(KB);
+    const vp = document.querySelector("[data-slot='scroll-area-viewport']")!;
+    const scrollTo = rs.fn();
+    vp.scrollTo = scrollTo as unknown as typeof vp.scrollTo;
+    fireEvent.click(screen.getByRole("button", { name: "问题 #2" }));
+    // 目标在渲染窗口内 → 直接精滚（jsdom rect 全零，top 钳到 0）。
+    expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it("adopts the backend-created thread id via onStart (metadata.kb_id thread)", () => {
