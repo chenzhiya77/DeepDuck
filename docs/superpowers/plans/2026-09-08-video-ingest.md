@@ -79,8 +79,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Modify: `backend/packages/harness/deerflow/knowledge/store.py`（文档删除级联删 video_shots + 帧目录，对齐 `_remove_dir`）
 - Test: `backend/tests/knowledge/video/test_worker_pipeline.py`（fake 全腿：2 镜头 fixture → legs/path_status/degraded 矩阵/resume 重入只跑 pending/删除级联）
 
-- [ ] RED → Implement → GREEN → revert proof（摘 materialize → RED）。
-- [ ] Commit: `feat(rag): wire video legs into the indexing worker with resume and degradation`
+- [x] RED → Implement → GREEN → revert proof（摘 materialize → 6 RED）。（16 passed 全本机、无 skipif——5 ASR 投影纯函数 + 11 集成；媒体腿全 fake/monkeypatch、DB 真实 SQLite；腿序 probe→asr→segment→keyframe+ocr→**persist 骨架**→caption→materialize，镜头卡落现有 vector/graph/wiki 腿零改动。**persist 骨架前置于 caption** 是 resume「只跑 pending」的必需偏离——骨架写 video_shots（start/end/keyframe/asr/ocr，**不写 caption_status** 遵 upsert absent-keys-persist，done 不重置），caption 腿只跑 list_pending_shots，materialize 组装 chunks（幂等 wipe 重建，提取 `_wipe_doc_chunks` 与文本 reparse 共用）；resume 判据 = video_shots 骨架非空则跳过 probe/asr/segment/keyframe。ASR 投影 `assign_transcript_to_shots` 纯函数钉死 spec §3 时间轴对齐（最大重叠占比归桶 / 同重叠归早桶 / 升序空格拼接 / 零重叠丢弃 / 静默镜头缺席）；progress 权重 asr30·segment5·caption35·materialize5=75，vector/graph 映射 75→100（文本 base0/span100 不变、单调）；path_status 扩 {asr,segment,caption}（文本 NULL 安全）；降级矩阵 asr 失败→asr=failed+口述「（ASR 失败）」、检测器失败→fallback_windows+segment=degraded、caption>30%→degraded、keyframe>30%→error marker（path_status 仅三腿，spec §5）。PySceneDetect/funasr/whisper/paddleocr 均不在依赖，segment detector 延迟 import 缺失即降级，blocking detect/读帧经 run_file_io（blocking_io 守卫仅预存无关失败）；store delete_document/delete_kb 级联删 video_shots，帧目录由 service `_remove_dir(doc_dir)` 覆盖 frames/ 子目录、无需 store 碰文件系统）
+- [x] Commit: `feat(rag): wire video legs into the indexing worker with resume and degradation`（`2c11e501`）
 
 ## Task 8: 引用时间码 + frame 端点（spec §4）
 
