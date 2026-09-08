@@ -297,6 +297,18 @@ class KnowledgeService:
             return None
         return target
 
+    async def list_document_chunks(self, *, kb_id: str, doc_id: str, offset: int, limit: int) -> dict[str, Any]:
+        """文档切片分页（切片抽屉数据源，spec 2026-09-08 §5）：在 store 行之上为
+        视频镜头 chunk 补时间码四字段 + ``frame_url``——复用 recall-test 同款
+        ``_inject_video_citations``（按 chunk_id 扁平序 ``{doc_id}#{shot_index:04d}``
+        join ``video_shots``）；文本 chunk 字段一字不动（前端旧渲染零回归）。
+        正文 ``text`` 不含时间码头（spec §3 嵌入文本契约），时间码由展示层合成。
+        """
+        items = await self.store.list_chunks(doc_id, offset=offset, limit=limit)
+        total = await self.store.count_chunks(doc_id)
+        await self._inject_video_citations(kb_id, items)
+        return {"items": items, "total": total, "offset": offset, "limit": limit}
+
     async def _wiki_path_status(self, kb_id: str) -> str:
         """Library-level wiki status (shared by all documents of the KB).
 

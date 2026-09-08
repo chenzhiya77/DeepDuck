@@ -292,3 +292,64 @@ async def test_document_list_omits_video_fields_before_shots_exist(service):
     assert doc["id"] == video_doc
     assert "duration_ms" not in doc
     assert "shot_count" not in doc
+
+
+# ── chunk list endpoint video join (spec §5, plan Task 10) ────────────────
+
+
+async def test_list_document_chunks_injects_video_timecode_fields(service):
+    """切片抽屉的列表端点为视频镜头 chunk 补时间码四字段 + frame_url（spec §5）
+    ——复用 recall-test 同款 join 助手；正文原样（spec §3 嵌入文本契约，无时间码头）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _make_video_doc(
+        service,
+        kb["id"],
+        shots=[
+            {"shot_index": 0, "start_ms": 0, "end_ms": 5000, "keyframe_path": "frames/shot_0000.jpg"},
+            {"shot_index": 1, "start_ms": 5000, "end_ms": 12400},  # 缺帧 → 无 frame_url
+        ],
+    )
+    await service.store.insert_chunks(
+        [
+            {"chunk_id": f"{doc_id}#0000", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 0, "text": "场景：讲师开场"},
+            {"chunk_id": f"{doc_id}#0001", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 1, "text": "口述：……"},
+        ]
+    )
+
+    body = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks").json()
+    items = {item["chunk_id"]: item for item in body["items"]}
+
+    shot0 = items[f"{doc_id}#0000"]
+    assert shot0["media"] == "video"
+    assert shot0["shot_index"] == 0
+    assert shot0["start_ms"] == 0
+    assert shot0["end_ms"] == 5000
+    assert shot0["frame_url"] == f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/shots/0/frame"
+    # 正文原样：chunks.text 不含时间码头（spec §3），时间码由展示层合成
+    assert shot0["text"] == "场景：讲师开场"
+
+    shot1 = items[f"{doc_id}#0001"]
+    assert shot1["start_ms"] == 5000
+    assert shot1["end_ms"] == 12400
+    assert "frame_url" not in shot1, "缺帧镜头无 frame_url（spec §2 降级）"
+
+
+async def test_list_document_chunks_text_doc_untouched(service):
+    """文本文档的 chunk 不带任何视频字段（前端旧渲染零回归）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    text_doc = uuid.uuid4().hex
+    await service.store.create_document(doc_id=text_doc, kb_id=kb["id"], uploader_id=OWNER_ID, name="手册.md", size_bytes=10, storage_path=f"/tmp/{text_doc}/手册.md")
+    await service.store.insert_chunks(
+        [
+            {"chunk_id": f"{text_doc}#0000", "doc_id": text_doc, "kb_id": kb["id"], "chunk_index": 0, "text": "文本切片", "page": 3},
+        ]
+    )
+
+    (item,) = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{text_doc}/chunks").json()["items"]
+
+    assert "media" not in item
+    assert "shot_index" not in item
+    assert "frame_url" not in item
+    assert item["page"] == 3, "文本 chunk 字段保持原样"

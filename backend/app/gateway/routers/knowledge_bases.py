@@ -256,9 +256,7 @@ async def list_document_chunks(
 ):
     service = await _require_kb_access(request, kb_id)
     await _get_document_or_404(service, kb_id, doc_id)
-    items = await service.store.list_chunks(doc_id, offset=offset, limit=limit)
-    total = await service.store.count_chunks(doc_id)
-    return {"items": items, "total": total, "offset": offset, "limit": limit}
+    return await service.list_document_chunks(kb_id=kb_id, doc_id=doc_id, offset=offset, limit=limit)
 
 
 @router.get("/{kb_id}/chunks")
