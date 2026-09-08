@@ -37,10 +37,10 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/video/probe.py`（ffprobe 时长/可解码性；不可解码抛 `VideoUndecodableError`）
 - Create: `backend/packages/harness/deerflow/knowledge/video/asr.py`（`TranscriptSegment(start_ms,end_ms,text)`；FunASR/whisper 双 provider 协议 + 本地 CPU 档；整腿失败抛 `AsrError`）
-- Test: `backend/tests/knowledge/video/test_probe.py`（ffmpeg 合成 2s 静音 mp4 fixture；坏文件响亮失败）+ `test_asr.py`（fake provider 协议 + 时间戳合并纯函数）
+- Test: `backend/tests/knowledge/video/test_probe.py`（fake runner + 真实 ffprobe JSON 覆盖解析/错误映射；真实二进制端到端 skipif）+ `test_asr.py`（fake provider 协议 + normalize_transcript 时间戳合并纯函数 + provider 输出解析白盒）
 
-- [ ] RED → Implement → GREEN → revert proof。
-- [ ] Commit: `feat(rag): video probe and ASR adapter legs`
+- [x] RED → Implement → GREEN → revert proof。（25 passed + 1 skipped；本机无 ffmpeg/funasr/whisper，纯逻辑用 fake runner + fake provider 全覆盖，真实二进制端到端标 skipif 不阻塞回归——对原文「ffmpeg 合成 fixture」的合理偏离；probe 硬失败 VideoUndecodableError/FfprobeMissingError，asr 整腿降级 AsrError（依赖缺失延迟 import 即降级，不 crash）；normalize_transcript 钉死单位换算/排序/无效丢弃；blocking subprocess/推理经 run_file_io 落线程池）
+- [x] Commit: `feat(rag): video probe and ASR adapter legs`（`c86f1c4f`）
 
 ## Task 4: 场景切分纯函数（spec §2/§10）
 
