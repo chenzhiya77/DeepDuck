@@ -392,6 +392,9 @@ export const enUS: Translations = {
     statsReady: "Ready",
     statsIndexing: "Indexing",
     statsFailed: "Failed",
+    // Video-row badge (spec 2026-09-08 §5): duration as title/aria, shot count inline.
+    videoDuration: "Duration",
+    shotCount: (count: number) => `${count} shots`,
     table: {
       name: "Name",
       uploader: "Uploader",
@@ -423,6 +426,10 @@ export const enUS: Translations = {
       vector: "Vector",
       graph: "Graph",
       wiki: "Wiki",
+      // Video prep legs (spec 2026-09-08 §5): hover-only for video docs, lead the retrieval legs.
+      asr: "Speech",
+      segment: "Shots",
+      caption: "Caption",
       libraryHint: " (library-wide)",
       state: {
         pending: "Pending",

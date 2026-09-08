@@ -70,6 +70,7 @@ import {
 import {
   formatKnowledgeRelativeTime,
   formatKnowledgeTimestamp,
+  formatVideoDuration,
 } from "@/core/knowledge/format";
 import { pathStatusLines } from "@/core/knowledge/path-status";
 import { partitionFilesBySuffix } from "@/core/knowledge/supported-formats";
@@ -145,12 +146,21 @@ export function PathStatusBreakdown({
         <div
           key={line.path}
           className="flex items-center justify-between gap-4 text-xs"
+          data-path={line.path}
         >
           <span className="text-muted-foreground">
             {ps[line.path]}
             {line.path === "wiki" ? ps.libraryHint : ""}
           </span>
-          <span>
+          {/* degraded 着琥珀（spec 2026-09-08 §5）：对齐项目既有 caution 视觉词汇
+              （text-amber-600 dark:text-amber-500，同 vector-tab / eval-synthesis-review）；
+              按状态而非腿着色，图谱腿 degraded 与视频腿 degraded 同一处理。 */}
+          <span
+            className={cn(
+              line.state === "degraded" && "text-amber-600 dark:text-amber-500",
+            )}
+            data-state={line.state}
+          >
             {ps.state[line.state as keyof typeof ps.state] ?? line.state}
             {line.percent !== undefined ? ` ${line.percent}%` : ""}
           </span>
@@ -907,6 +917,30 @@ export function DocumentPanel({
                                 fileName={doc.name}
                               />
                               <span className="truncate">{doc.name}</span>
+                              {/* 视频行徽章（spec 2026-09-08 §5）：时长 + 「N 镜头」。胶片图标
+                                  已由 FileTypeBadge 按 .mp4/.mov/.mkv 后缀自动渲染，此处只补
+                                  时长与镜头数——仅列表接口注入了 duration_ms/shot_count 的
+                                  已物化视频文档才有（文本文档/解析中的视频行不渲染）。 */}
+                              {(doc.duration_ms != null ||
+                                doc.shot_count != null) && (
+                                <span
+                                  className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs tabular-nums"
+                                  data-testid="doc-video-meta"
+                                >
+                                  {doc.duration_ms != null && (
+                                    <span title={tk.videoDuration}>
+                                      {formatVideoDuration(doc.duration_ms)}
+                                    </span>
+                                  )}
+                                  {doc.duration_ms != null &&
+                                    doc.shot_count != null && (
+                                      <span aria-hidden>·</span>
+                                    )}
+                                  {doc.shot_count != null && (
+                                    <span>{tk.shotCount(doc.shot_count)}</span>
+                                  )}
+                                </span>
+                              )}
                             </div>
                           </td>
                           {/* 状态列（2026-09-03 接入列显隐）：单元格内容已提为

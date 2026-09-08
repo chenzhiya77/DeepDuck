@@ -375,6 +375,9 @@ export const zhCN: Translations = {
     statsReady: "就绪",
     statsIndexing: "索引中",
     statsFailed: "失败",
+    // 视频行徽章（spec 2026-09-08 §5）：时长作 title/aria，镜头数为行内文案。
+    videoDuration: "视频时长",
+    shotCount: (count: number) => `${count} 镜头`,
     table: {
       name: "名称",
       uploader: "上传者",
@@ -407,6 +410,10 @@ export const zhCN: Translations = {
       vector: "向量",
       graph: "图谱",
       wiki: "百科",
+      // 视频预处理腿（spec 2026-09-08 §5）：仅视频文档 hover 出现，排在检索腿前。
+      asr: "语音",
+      segment: "分镜",
+      caption: "配文",
       libraryHint: "（库级）",
       state: {
         pending: "待处理",

@@ -316,6 +316,9 @@ export interface Translations {
     statsReady: string;
     statsIndexing: string;
     statsFailed: string;
+    /** Video-row badge (spec 2026-09-08 §5): duration title/aria + shot-count copy. */
+    videoDuration: string;
+    shotCount: (count: number) => string;
     table: {
       name: string;
       uploader: string;
@@ -347,6 +350,10 @@ export interface Translations {
       vector: string;
       graph: string;
       wiki: string;
+      /** Video prep legs (spec 2026-09-08 §5): asr / segment / caption. */
+      asr: string;
+      segment: string;
+      caption: string;
       libraryHint: string;
       state: {
         pending: string;

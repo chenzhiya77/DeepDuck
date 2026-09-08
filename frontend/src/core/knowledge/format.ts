@@ -60,6 +60,23 @@ export function formatKnowledgeRelativeTime(
 }
 
 /**
+ * 视频时长渲染（spec 2026-09-08 §5，plan Task 9）：列表接口注入的
+ * ``duration_ms``（末镜 end_ms）转播放器风格的定长时码。不足一小时
+ * 用 ``M:SS``（首位不补零，如 ``12:34``），超一小时进位 ``H:MM:SS``（如
+ * ``1:02:34``）——与常见视频平台的时长显示一致，秒级取整。
+ */
+export function formatVideoDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${pad(minutes)}:${pad(seconds)}`
+    : `${minutes}:${pad(seconds)}`;
+}
+
+/**
  * 剥掉摘要开头的 markdown 一级标题行（2026-09-03）。
  * 后端 summary = content[:120]（knowledge_service.list_wiki_entries），而 content 由提示词
  * 强制以「# 实体名」H1 开头（wiki/generator.py WIKI_SYSTEM_PROMPT），故列表摘要会以原始

@@ -24,12 +24,23 @@ export type VectorPathState = "pending" | "indexing" | "done" | "failed" | strin
 export type GraphPathState = "pending" | "indexing" | "done" | "degraded" | "failed" | string;
 /** Wiki leg: a library-level mirror injected at read time — identical for every document of the KB. */
 export type WikiPathState = "pending" | "generating" | "ready" | "failed" | string;
+/**
+ * Video prep legs (spec 2026-09-08 §5): asr / segment / caption. Present only
+ * on video documents — text docs write vector/graph alone. Reuses the vector
+ * state vocabulary (pending → indexing → done / degraded / failed); `degraded`
+ * marks a fallback (segment → fixed windows, caption → >30% shot failures).
+ */
+export type VideoLegState = "pending" | "indexing" | "done" | "degraded" | "failed" | string;
 
 /** Per-path indexing sub-status persisted on the document row (wiki mirrored library-wide). */
 export interface DocumentPathStatus {
   vector: VectorPathState;
   graph: GraphPathState;
   wiki: WikiPathState;
+  /** Video prep legs — absent on text documents and legacy rows (spec §5). */
+  asr?: VideoLegState;
+  segment?: VideoLegState;
+  caption?: VideoLegState;
 }
 
 export interface KnowledgeDocument {
@@ -58,6 +69,14 @@ export interface KnowledgeDocument {
    */
   content_hash: string | null;
   created_at: string;
+  /**
+   * Video-only summary fields (spec 2026-09-08 §5, Task 8): the list endpoint
+   * injects `duration_ms` (last shot's end_ms) and `shot_count` once shots are
+   * materialized. Absent on text documents and on video rows still mid-pipeline
+   * — the table renders the video badge only when at least one is present.
+   */
+  duration_ms?: number | null;
+  shot_count?: number | null;
 }
 
 export interface KnowledgeChunk {

@@ -949,3 +949,164 @@ describe("DocumentPanel 失败通知面板接线", () => {
     expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
   });
 });
+
+// ── 视频入库（spec 2026-09-08 §5，plan Task 9）────────────────────────────
+// 文档列表视频行加时长 + 「N 镜头」徽章；path_status hover 为视频文档前置
+// asr/segment/caption 三条腿芯片，degraded 状态着琥珀色（对齐现有视觉词汇）。
+describe("DocumentPanel 视频文档徽章（spec 2026-09-08 §5）", () => {
+  it("视频行渲染时长 + 「N 镜头」徽章（duration_ms/shot_count 由列表接口注入）", () => {
+    renderPanel({
+      documents: [
+        doc({
+          name: "产品培训.mp4",
+          status: "ready",
+          chunk_count: 42,
+          duration_ms: 754_000, // 12:34
+          shot_count: 42,
+        }),
+      ],
+    });
+    const meta = screen.getByTestId("doc-video-meta");
+    expect(meta.textContent).toContain("12:34");
+    expect(meta.textContent).toContain("42 镜头");
+  });
+
+  it("时长跨小时进位为 H:MM:SS", () => {
+    renderPanel({
+      documents: [
+        doc({
+          name: "长视频.mkv",
+          duration_ms: 3_754_000, // 1:02:34
+          shot_count: 7,
+        }),
+      ],
+    });
+    expect(screen.getByTestId("doc-video-meta").textContent).toContain(
+      "1:02:34",
+    );
+  });
+
+  it("文本文档不渲染视频徽章", () => {
+    renderPanel({ documents: [doc({ name: "产品手册.pdf" })] });
+    expect(screen.queryByTestId("doc-video-meta")).toBeNull();
+  });
+
+  it("视频未物化（无 duration_ms/shot_count）时不渲染徽章", () => {
+    renderPanel({
+      documents: [
+        doc({ name: "产品培训.mp4", status: "parsing", chunk_count: null }),
+      ],
+    });
+    expect(screen.queryByTestId("doc-video-meta")).toBeNull();
+  });
+});
+
+describe("PathStatusBreakdown 视频腿三芯片 + degraded 琥珀（spec 2026-09-08 §5）", () => {
+  it("pathStatusLines 为视频文档前置 asr/segment/caption 三腿", () => {
+    const lines = pathStatusLines(
+      doc({
+        path_status: {
+          asr: "done",
+          segment: "degraded",
+          caption: "indexing",
+          vector: "done",
+          graph: "done",
+          wiki: "ready",
+        },
+      }),
+    );
+    expect(lines!.map((line) => line.path)).toEqual([
+      "asr",
+      "segment",
+      "caption",
+      "vector",
+      "graph",
+      "wiki",
+    ]);
+  });
+
+  it("pathStatusLines 文本文档仍只返回 vector/graph/wiki", () => {
+    const lines = pathStatusLines(
+      doc({ path_status: { vector: "done", graph: "done", wiki: "ready" } }),
+    );
+    expect(lines!.map((line) => line.path)).toEqual([
+      "vector",
+      "graph",
+      "wiki",
+    ]);
+  });
+
+  it("视频文档 hover 渲染 asr/segment/caption 标签，排在检索腿之前", () => {
+    render(
+      <I18nContext.Provider
+        value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+      >
+        <PathStatusBreakdown
+          doc={doc({
+            status: "ready",
+            path_status: {
+              asr: "done",
+              segment: "done",
+              caption: "done",
+              vector: "done",
+              graph: "done",
+              wiki: "ready",
+            },
+          })}
+        />
+      </I18nContext.Provider>,
+    );
+    const breakdown = screen.getByTestId("path-status-breakdown");
+    const paths = [...breakdown.querySelectorAll("[data-path]")].map((el) =>
+      el.getAttribute("data-path"),
+    );
+    expect(paths).toEqual([
+      "asr",
+      "segment",
+      "caption",
+      "vector",
+      "graph",
+      "wiki",
+    ]);
+    expect(breakdown.textContent).toContain("语音");
+    expect(breakdown.textContent).toContain("分镜");
+    expect(breakdown.textContent).toContain("配文");
+  });
+
+  it("degraded 腿的状态文案着琥珀色，done 腿不着色", () => {
+    render(
+      <I18nContext.Provider
+        value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+      >
+        <PathStatusBreakdown
+          doc={doc({
+            status: "ready",
+            path_status: {
+              asr: "done",
+              segment: "degraded",
+              caption: "done",
+              vector: "done",
+              graph: "degraded",
+              wiki: "ready",
+            },
+          })}
+        />
+      </I18nContext.Provider>,
+    );
+    const breakdown = screen.getByTestId("path-status-breakdown");
+    const segmentState = breakdown.querySelector(
+      "[data-path='segment'] [data-state='degraded']",
+    );
+    expect(segmentState?.className).toContain("text-amber-600");
+    // 图谱腿 degraded 同样着色（着色按状态而非腿，视觉词汇统一）
+    const graphState = breakdown.querySelector(
+      "[data-path='graph'] [data-state='degraded']",
+    );
+    expect(graphState?.className).toContain("text-amber-600");
+    // done 腿不着琥珀
+    const asrState = breakdown.querySelector(
+      "[data-path='asr'] [data-state='done']",
+    );
+    expect(asrState?.className).not.toContain("text-amber");
+  });
+});

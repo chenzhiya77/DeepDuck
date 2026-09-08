@@ -6,8 +6,8 @@
 import type { KnowledgeDocument } from "./types";
 
 export interface PathStatusLine {
-  path: "vector" | "graph" | "wiki";
-  /** Raw state string (vector/graph/wiki enums differ — see types.ts). */
+  path: "asr" | "segment" | "caption" | "vector" | "graph" | "wiki";
+  /** Raw state string (vector/graph/wiki/video-leg enums differ — see types.ts). */
   state: string;
   /**
    * Set only for the graph leg mid-indexing: `progress_percent` is
@@ -30,7 +30,14 @@ export function pathStatusLines(
   }
   const indexingGraph =
     doc.status === "indexing" && status.graph === "indexing";
+  // Video prep legs (spec 2026-09-08 §5): asr/segment/caption sit upstream of
+  // the retrieval legs, so they lead the breakdown. Only include a leg the
+  // payload actually carries — text documents write vector/graph/wiki alone.
+  const videoLegs: PathStatusLine[] = (["asr", "segment", "caption"] as const)
+    .filter((leg) => status[leg] !== undefined)
+    .map((leg) => ({ path: leg, state: status[leg]! }));
   return [
+    ...videoLegs,
     { path: "vector", state: status.vector },
     {
       path: "graph",
