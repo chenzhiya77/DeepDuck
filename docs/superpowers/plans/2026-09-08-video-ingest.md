@@ -111,8 +111,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Modify: i18n 三文件（videoDuration/shotCount/legs.* 键）
 - Test: `frontend/tests/unit/knowledge/document-panel.dom.test.tsx`（视频徽章/三芯片/degraded 色）
 
-- [ ] RED → Implement → GREEN（`pnpm check` 双净）→ revert proof。
-- [ ] Commit: `feat(frontend): video document badges and video leg status chips`
+- [x] RED → Implement → GREEN（`pnpm check` 双净）→ revert proof（stash 摘 document-panel.tsx + path-status.ts 两运行时实现文件、留测试与 format/types/i18n → 5 RED，与初始 RED 同形；文本行不渲染徽章 / 未物化视频行不渲染徽章 / 文本 pathStatusLines 仍三腿 三条负向用例两态恒绿）。（document-panel.dom.test.tsx +8 例 → 67 passed；视频徽章：胶片图标本就由 FileTypeBadge 按 .mp4/.mov/.mkv 后缀落 media kind 自动渲染（无需新图标），名称单元格只补 duration_ms（formatVideoDuration 秒级取整 M:SS / 超小时 H:MM:SS）+ shot_count「N 镜头」，仅列表接口 Task 8 注入了这两字段的已物化视频文档才渲染（`duration_ms!=null || shot_count!=null` 门控，文本行/解析中视频行不渲染）；path_status hover：pathStatusLines 前置 asr/segment/caption 三腿（管线 upstream 排检索腿前）、只收 payload 实际携带的腿（`.filter(status[leg]!==undefined)`，文本文档仍只 vector/graph/wiki），degraded 按状态而非腿着琥珀 `text-amber-600 dark:text-amber-500`（对齐 vector-tab/eval-synthesis-review 既有 caution 词汇，图谱腿 degraded 同处理），line div 挂 data-path、state span 挂 data-state 供 dom 测试定位；types.ts DocumentPathStatus 加可选 asr/segment/caption（VideoLegState 复用 pending/indexing/done/degraded/failed，与 worker 写入口径一致）+ KnowledgeDocument 加 duration_ms/shot_count，api/hooks 是泛型透传 `readResponse<KnowledgeDocument[]>` 故无需改（新字段随类型自动流通）；i18n 三文件同步 pathStatus.asr|segment|caption（zh 语音/分镜/配文，en Speech/Shots/Caption）+ videoDuration（title/aria）/shotCount(n)；pnpm check（eslint+tsc）双净——修 path-status.ts 一处 `non-nullable-type-assertion-style`（`status[leg] as string` → `status[leg]!`）；prettier 非本仓门禁（.git/hooks/pre-commit 未安装、5/6 被标记文件 HEAD 即已脏），path-status.ts HEAD 干净故单独 prettier --write 复位、余 5 文件不重排以免卷入无关全文件 churn；全量 tests/unit/knowledge 63 passed / 1 failed，唯一失败 chat-panel 模型选择器 `context.model_name` 期望 qwen-plus 得 undefined，git stash 撤回本次全部改动后同样失败 → 预存本地模型配置依赖，与 Task 9 无关）
+- [x] Commit: `feat(frontend): video document badges and video leg status chips`（`8ca4db94`）
 
 ## Task 10: 切片抽屉时间码芯片 + 缩略图（spec §5）
 
