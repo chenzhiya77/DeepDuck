@@ -45,6 +45,7 @@ from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
 from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
 from deerflow.knowledge.reranker import DashScopeReranker
 from deerflow.knowledge.store import KnowledgeStore
+from deerflow.knowledge.video.store import VideoShotStore
 from deerflow.knowledge.wiki.generator import generate_wiki, regenerate_wiki_entries, wiki_generation_in_progress, wiki_last_run_status
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.tools.builtins.graph_search_tool import _graph_search_impl
@@ -199,6 +200,7 @@ class KnowledgeService:
         vector_store: Any,
         graph_store: GraphStore | None = None,
         wiki_store: WikiStore | None = None,
+        video_shot_store: VideoShotStore | None = None,
         worker: Any = None,
         data_dir: str | Path,
         wiki_generate_fn: Callable[[str, bool], None] | None = None,
@@ -211,6 +213,7 @@ class KnowledgeService:
         self.vector_store = vector_store
         self.graph_store = graph_store or GraphStore(store._sf)
         self.wiki_store = wiki_store or WikiStore(store._sf)
+        self.video_shot_store = video_shot_store or VideoShotStore(store._sf)
         self.worker = worker
         self.data_dir = Path(data_dir)
         self.wiki_generate_fn = wiki_generate_fn or self._schedule_wiki_generation
@@ -240,11 +243,46 @@ class KnowledgeService:
         wiki_status = await self._wiki_path_status(kb_id)
         for document in documents:
             path_status = document.get("path_status")
-            if path_status is None:
-                continue
-            wiki = wiki_status if document["status"] in ("ready", "failed") else "pending"
-            document["path_status"] = {**path_status, "wiki": wiki}
+            if path_status is not None:
+                wiki = wiki_status if document["status"] in ("ready", "failed") else "pending"
+                document["path_status"] = {**path_status, "wiki": wiki}
+            await self._inject_video_summary(document)
         return documents
+
+    async def _inject_video_summary(self, document: dict[str, Any]) -> None:
+        """视频文档列表行补 ``duration_ms`` + ``shot_count``（spec 2026-09-08 §5 读时
+        聚合，**不加列**）。判据 = ``storage_path`` 后缀 ∈ 冻结视频集（与 worker
+        分支同源）；文本文档、或视频文档在 materialize 之前（``video_shots`` 尚未
+        物化）都不注入这两键——payload 对旧渲染零回归，前端诚实缺省。
+        """
+        if Path(document["storage_path"]).suffix.lower() not in VIDEO_UPLOAD_SUFFIXES:
+            return
+        shots = await self.video_shot_store.list_shots(document["id"])
+        if not shots:
+            return
+        document["duration_ms"] = max(int(shot["end_ms"]) for shot in shots)
+        document["shot_count"] = len(shots)
+
+    async def resolve_shot_frame(self, *, kb_id: str, doc_id: str, shot_index: int) -> Path | None:
+        """镜头持久化关键帧的绝对路径；缺则 ``None``（router → 404，spec §4）。
+
+        ``None`` 覆盖全部降级面：文档不属于该 kb / 非视频文档（无 ``video_shots``）/
+        镜头不存在 / 镜头缺帧（keyframe_path NULL）/ ``keyframe_path`` 越出 doc 目录
+        （防御，对齐 ``files`` 路由的穿越守卫）/ 磁盘帧已丢失。鉴权由 router 的
+        ``_require_kb_access`` 承载（与文档读取同源），此处不重复门禁。
+        """
+        document = await self.store.get_document(doc_id)
+        if document is None or document["kb_id"] != kb_id:
+            return None
+        shots = await self.video_shot_store.list_shots(doc_id)
+        shot = next((row for row in shots if int(row["shot_index"]) == shot_index), None)
+        if shot is None or not shot.get("keyframe_path"):
+            return None
+        doc_dir = Path(document["storage_path"]).parent.resolve()
+        target = (doc_dir / shot["keyframe_path"]).resolve()
+        if not target.is_relative_to(doc_dir) or not target.is_file():
+            return None
+        return target
 
     async def _wiki_path_status(self, kb_id: str) -> str:
         """Library-level wiki status (shared by all documents of the KB).
@@ -1045,6 +1083,10 @@ class KnowledgeService:
 
         await _inject_chunk_positions(vector_path["hits"])
         await _inject_chunk_positions(graph_path["evidence"])
+        # 视频镜头引用 join（spec 2026-09-08 §4）：chunk 级引用行（vector hits +
+        # graph evidence）补时间码四字段 + frame_url；wiki 命中是条目级，不 join。
+        await self._inject_video_citations(kb_id, vector_path["hits"])
+        await self._inject_video_citations(kb_id, graph_path["evidence"])
 
         return {
             "query": query,
@@ -1080,6 +1122,50 @@ class KnowledgeService:
         空列表返回空映射。
         """
         return {"positions": await self._chunk_position_map(chunk_ids)}
+
+    async def _inject_video_citations(self, kb_id: str, hits: list[dict[str, Any]]) -> None:
+        """chunk 级引用行 join ``video_shots``（spec 2026-09-08 §4）：视频镜头补
+        ``media``/``shot_index``/``start_ms``/``end_ms``/``frame_url``；文本引用字段
+        一字不动（前端旧渲染零回归）。缺帧镜头不带 ``frame_url``（spec §2 降级）。
+        """
+        fields = await self._video_citation_fields(kb_id, (str(hit.get("chunk_id") or "") for hit in hits))
+        for hit in hits:
+            extra = fields.get(str(hit.get("chunk_id") or ""))
+            if extra:
+                hit.update(extra)
+
+    async def _video_citation_fields(self, kb_id: str, chunk_ids: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """chunk_id → 视频引用字段；只有映射到已物化 ``video_shots`` 行的 chunk 入选。
+
+        chunk_id 扁平序 ``{doc_id}#{shot_index:04d}``（spec §3）→ 按 doc 分组，每
+        文档一次 ``list_shots``（文本文档返回空 → 其全部 chunk 自然缺省，不注入）。
+        畸形 id（无 ``#NNNN`` 后缀）与已删镜头同样缺键。
+        """
+        by_doc: dict[str, list[tuple[str, int]]] = {}
+        for chunk_id in chunk_ids:
+            doc_id, _, suffix = str(chunk_id or "").partition("#")
+            if doc_id and suffix.isdigit():
+                by_doc.setdefault(doc_id, []).append((chunk_id, int(suffix)))
+        fields: dict[str, dict[str, Any]] = {}
+        for doc_id, entries in by_doc.items():
+            shots = await self.video_shot_store.list_shots(doc_id)
+            if not shots:
+                continue
+            shot_by_index = {int(shot["shot_index"]): shot for shot in shots}
+            for chunk_id, index in entries:
+                shot = shot_by_index.get(index)
+                if shot is None:
+                    continue
+                item: dict[str, Any] = {
+                    "media": "video",
+                    "shot_index": index,
+                    "start_ms": int(shot["start_ms"]),
+                    "end_ms": int(shot["end_ms"]),
+                }
+                if shot.get("keyframe_path"):
+                    item["frame_url"] = f"/api/knowledge-bases/{kb_id}/documents/{doc_id}/shots/{index}/frame"
+                fields[chunk_id] = item
+        return fields
 
     # ── vector-space projection (spec 2026-08-15 §7 P4) ───────────────────
 

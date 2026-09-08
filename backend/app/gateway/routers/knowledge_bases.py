@@ -303,6 +303,23 @@ async def get_document_file(request: Request, kb_id: str, doc_id: str, file_path
     return FileResponse(target)
 
 
+@router.get("/{kb_id}/documents/{doc_id}/shots/{shot_index}/frame")
+async def get_shot_frame(request: Request, kb_id: str, doc_id: str, shot_index: int):
+    """Serve a video shot's persisted keyframe JPEG (spec 2026-09-08 §4).
+
+    Auth mirrors document read (``_require_kb_access`` → 404 missing kb / 403
+    non-owner). Any missing frame — non-video document, absent shot, degraded
+    shot without a keyframe, poisoned path, or a file gone off disk — is a plain
+    404, so the frontend thumbnail degrades to an icon placeholder rather than
+    a broken image. Streaming is delegated to ``FileResponse``.
+    """
+    service = await _require_kb_access(request, kb_id)
+    frame = await service.resolve_shot_frame(kb_id=kb_id, doc_id=doc_id, shot_index=shot_index)
+    if frame is None:
+        raise HTTPException(status_code=404, detail="Keyframe not found")
+    return FileResponse(frame, media_type="image/jpeg")
+
+
 class UpdateChunkRequest(BaseModel):
     """Phase-3 Batch-1 P2: slice text editing."""
 
