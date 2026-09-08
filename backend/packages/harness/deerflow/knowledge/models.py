@@ -214,3 +214,40 @@ class EvalRunRow(Base):
             postgresql_where=text("is_baseline = true"),
         ),
     )
+
+
+class VideoShotRow(Base):
+    """One shot of a video document (spec 2026-09-08 §3, frozen).
+
+    Media-side fields only: the shot interval on the PTS master clock, the
+    persisted keyframe pointer, and the three raw extraction paths (ASR /
+    OCR / VLM caption). The assembled card *body* lives in ``chunks``
+    (``chunk_id = {doc_id}#{shot_index:04d}``, same order); this row never
+    carries the composed text. ``caption_status`` is the resume state
+    machine mirroring ``chunks.extract_status`` (pending → done / failed /
+    empty).
+    """
+
+    __tablename__ = "video_shots"
+    __table_args__ = (UniqueConstraint("doc_id", "shot_index", name="uq_video_shots_doc_shot"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(64), index=True)
+    kb_id: Mapped[str] = mapped_column(String(64), index=True)
+    # 0-based, ascending by start_ms; same order as the chunk_index of the
+    # materialized shot card.
+    shot_index: Mapped[int] = mapped_column(Integer)
+    # Closed-open interval on the media PTS millisecond axis (master clock,
+    # spec §3 时间轴对齐规则).
+    start_ms: Mapped[int] = mapped_column(Integer)
+    end_ms: Mapped[int] = mapped_column(Integer)
+    # Keyframe JPEG relative to the KB storage dir; NULL = frame missing
+    # (degraded), citation then omits frame_url.
+    keyframe_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Three raw extraction paths; empty string = the path produced nothing.
+    asr_text: Mapped[str] = mapped_column(Text, default="")
+    ocr_text: Mapped[str] = mapped_column(Text, default="")
+    caption: Mapped[str] = mapped_column(Text, default="")
+    # Resume state machine for the caption leg (spec §2).
+    caption_status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
