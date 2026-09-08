@@ -49,8 +49,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - PySceneDetect 调用封在 worker 腿内（可 fake），纯函数不依赖它
 - Test: `backend/tests/knowledge/video/test_segmentation.py`（兜底切/回退窗/零长度剔除/确定性同输入同输出）
 
-- [ ] RED → Implement → GREEN → revert proof。
-- [ ] Commit: `feat(rag): scene segmentation pure functions with max-shot fallback`
+- [x] RED → Implement → GREEN → revert proof。（20 passed 全本机、无 skipif——零外部依赖纯函数；等分兜底避免末尾碎片；覆盖/升序/无缝/≤max_shot/确定性五条不变量钉死；初始 RED 因与写实现并行发命令被抢跑，revert proof 已补回干净 RED 证据）
+- [x] Commit: `feat(rag): scene segmentation pure functions with max-shot fallback`（`ca2ffabe`）
 
 ## Task 5: 关键帧 + OCR 适配层（spec §2/§8）
 
