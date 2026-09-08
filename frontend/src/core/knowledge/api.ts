@@ -208,6 +208,16 @@ export function shotFrameUrl(kbId: string, docId: string, shotIndex: number): st
   return kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/shots/${shotIndex}/frame`);
 }
 
+/**
+ * Absolute URL of a document's source video for the chunk drawer's inline
+ * ``<video>`` player (spec 2026-09-08 §5, Task 10b). The endpoint negotiates
+ * HTTP Range, so seeking streams only the needed bytes rather than the whole
+ * file. Plain ``<video src>`` — not fetched through the CSRF wrapper.
+ */
+export function videoStreamUrl(kbId: string, docId: string): string {
+  return kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/video/stream`);
+}
+
 export type WikiGenerateMode = "incremental" | "full";
 
 export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental"): Promise<WikiGenerateAck> {

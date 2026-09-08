@@ -15,7 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useI18n } from "@/core/i18n/hooks";
-import { listDocumentChunks, shotFrameUrl } from "@/core/knowledge/api";
+import { listDocumentChunks, shotFrameUrl, videoStreamUrl } from "@/core/knowledge/api";
 import { chunkPreview, formatTimecodeRange } from "@/core/knowledge/format";
 import {
   knowledgeChunksKey,
@@ -48,22 +48,26 @@ const FULL_LOAD_CAP = 300;
  * ``video_shots`` 注入的 ``media``/``shot_index``/``start_ms``/``end_ms``/``frame_url``。
  * 缩略图 lazy 加载，缺帧（无 ``frame_url``）或 404（``onError``）都降级为缺图图标。
  * 芯片正文按原文展示（``chunks.text`` 不含时间码头，spec §3 嵌入文本契约）；
- * 芯片/缩略图的点击 seek 播放语义留待 Task 10b，本组件只做展示 + 复制时间码。
+ * 点击缩略图/芯片 → 顶部播放器 seek 到该镜头起点并播放（Task 10b），另设复制时间码按钮。
  */
 function VideoShotBar({
   chunk,
   kbId,
   docId,
+  onSeek,
 }: {
   chunk: KnowledgeChunk;
   kbId: string;
   docId: string;
+  /** 点击缩略图/芯片 → 顶部播放器 seek 到该镜头起点并播放（spec §5，Task 10b）。 */
+  onSeek: (startMs: number) => void;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chunkDrawer;
   const [frameFailed, setFrameFailed] = useState(false);
   const shotIndex = chunk.shot_index ?? 0;
-  const timecode = formatTimecodeRange(chunk.start_ms ?? 0, chunk.end_ms ?? 0);
+  const startMs = chunk.start_ms ?? 0;
+  const timecode = formatTimecodeRange(startMs, chunk.end_ms ?? 0);
   const hasFrame = Boolean(chunk.frame_url) && !frameFailed;
   const handleCopy = async () => {
     try {
@@ -75,33 +79,43 @@ function VideoShotBar({
   };
   return (
     <div className="flex items-center gap-2 pb-1.5" data-testid="video-shot-bar">
-      {hasFrame ? (
-        <img
-          alt=""
-          className="h-9 w-16 shrink-0 rounded border object-cover"
-          data-testid="shot-thumbnail"
-          decoding="async"
-          loading="lazy"
-          onError={() => setFrameFailed(true)}
-          src={shotFrameUrl(kbId, docId, shotIndex)}
-        />
-      ) : (
-        <span
-          className="text-muted-foreground flex h-9 w-16 shrink-0 items-center justify-center rounded border border-dashed"
-          data-testid="shot-thumbnail-missing"
-          title={tc.frameMissing}
-        >
-          <ImageOff className="size-4" />
-        </span>
-      )}
-      {/* mono 等宽时间码芯片（spec §5）：#K 为镜头序号（1 基，与卡片 #N 同序）。 */}
-      <span
-        className="text-muted-foreground font-mono text-xs tabular-nums"
-        data-testid="timecode-chip"
-        title={tc.timecodeChip}
+      {/* 缩略图 + 芯片整体为 seek 触发器：点击 → 顶部播放器跳到 start_ms 并播放（Task 10b）。 */}
+      <button
+        aria-label={tc.playShot}
+        className="flex min-w-0 items-center gap-2"
+        data-testid="shot-seek"
+        onClick={() => onSeek(startMs)}
+        title={tc.playShot}
+        type="button"
       >
-        #{shotIndex + 1} · {timecode}
-      </span>
+        {hasFrame ? (
+          <img
+            alt=""
+            className="h-9 w-16 shrink-0 rounded border object-cover"
+            data-testid="shot-thumbnail"
+            decoding="async"
+            loading="lazy"
+            onError={() => setFrameFailed(true)}
+            src={shotFrameUrl(kbId, docId, shotIndex)}
+          />
+        ) : (
+          <span
+            className="text-muted-foreground flex h-9 w-16 shrink-0 items-center justify-center rounded border border-dashed"
+            data-testid="shot-thumbnail-missing"
+            title={tc.frameMissing}
+          >
+            <ImageOff className="size-4" />
+          </span>
+        )}
+        {/* mono 等宽时间码芯片（spec §5）：#K 为镜头序号（1 基，与卡片 #N 同序）。 */}
+        <span
+          className="text-muted-foreground font-mono text-xs tabular-nums"
+          data-testid="timecode-chip"
+          title={tc.timecodeChip}
+        >
+          #{shotIndex + 1} · {timecode}
+        </span>
+      </button>
       <Button
         aria-label={tc.copyTimecode}
         className="size-7 shrink-0"
@@ -147,6 +161,11 @@ export function ChunkDrawer({
   const [reExtractingChunkId, setReExtractingChunkId] = useState<string | null>(
     null,
   );
+  // 内嵌播放器（spec §5，Task 10b）：抽屉顶部单例 <video>，仅视频文档渲染。
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // 引用定位可能早于播放器挂载（Radix Sheet portal 晚于 effect），故暂存待挂载后补 seek。
+  const pendingPausedSeekRef = useRef<number | null>(null);
+  const [activeShotIndex, setActiveShotIndex] = useState<number | null>(null);
 
   // Use raw query for configurable polling when pending extraction detected
   const query = useQuery({
@@ -169,6 +188,43 @@ export function ChunkDrawer({
 
   const total = page?.total ?? 0;
   const hasMore = items.length < total;
+  // 视频文档判据：任一 chunk 带 media==="video"（后端 chunks 端点注入）。
+  const hasVideo = items.some((chunk) => chunk.media === "video");
+
+  // 播放器挂载回调：赋值 ref，并补上「引用定位早于挂载」时暂存的暂停 seek。
+  const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node && pendingPausedSeekRef.current != null) {
+      node.currentTime = pendingPausedSeekRef.current;
+      pendingPausedSeekRef.current = null;
+    }
+  }, []);
+
+  // 点缩略图/芯片 → seek 到镜头起点并播放（spec §5）。
+  const handleSeekPlay = useCallback((startMs: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = startMs / 1000;
+    void video.play();
+  }, []);
+
+  // timeupdate（浏览器 ~4Hz 节流）→ 高亮播放头所在镜头行；仅变化时 setState
+  // （天然节流，且高亮只改边框不抢滚动——滚动只随显式定位，spec §5）。
+  const handleTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const ms = video.currentTime * 1000;
+    const active = items.find(
+      (chunk) =>
+        chunk.media === "video" &&
+        chunk.start_ms != null &&
+        chunk.end_ms != null &&
+        ms >= chunk.start_ms &&
+        ms < chunk.end_ms,
+    );
+    const next = active?.shot_index ?? null;
+    setActiveShotIndex((prev) => (prev === next ? prev : next));
+  }, [items]);
 
   // 阈值内一次性全量加载（2026-09-05 切片导航）：刻度弹窗每行都有真实预览、
   // 跳转纯前端；超过 FULL_LOAD_CAP 才退回「加载更多」+ 弹窗灰显未加载行。
@@ -240,6 +296,14 @@ export function ChunkDrawer({
     if (position >= 0) {
       focusedIdRef.current = focusChunkId;
       setActiveIndex(position);
+      // 引用闪环定位：视频镜头同时把播放器载到 start_ms，但保持暂停（不惊喜自动播，spec §5）。
+      // 播放器可能尚未挂载（Radix portal 晚于本 effect）→ 暂存，挂载回调补 seek。
+      const target = items[position];
+      if (target?.media === "video") {
+        const seekTo = (target.start_ms ?? 0) / 1000;
+        if (videoRef.current) videoRef.current.currentTime = seekTo;
+        else pendingPausedSeekRef.current = seekTo;
+      }
       requestAnimationFrame(() => scrollToIndex(position));
     } else if (items.length < total) {
       setLimit((value) => value + PAGE_SIZE);
@@ -367,9 +431,25 @@ export function ChunkDrawer({
         >
           {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04，EvalRunDrawer 同款）：整抽屉经
               ScrollArea 滚动；头部 sticky 留在视口内承担位置感（2026-09-05 切片导航）。 */}
-          <div className="relative min-h-0 flex-1">
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {hasVideo && (
+              // 抽屉顶部单例播放器（spec §5）：钉在滚动区之上，浏览镜头卡时始终可见；
+              // 原生 controls、preload=metadata、不自动播；src 走 Range 流端点。
+              <div className="shrink-0 border-b bg-background px-4 py-2" data-testid="shot-player-wrap">
+                <video
+                  className="aspect-video max-h-56 w-full rounded-md bg-black"
+                  controls
+                  data-testid="shot-player"
+                  onTimeUpdate={handleTimeUpdate}
+                  preload="metadata"
+                  ref={attachVideo}
+                  src={videoStreamUrl(kbId, doc.id)}
+                />
+                <p className="text-muted-foreground mt-1 text-[11px]">{tc.playerHint}</p>
+              </div>
+            )}
             <ScrollArea
-              className="size-full"
+              className="min-h-0 w-full flex-1"
               scrollHideDelay={2000}
               type="scroll"
               viewportRef={viewportRef}
@@ -439,7 +519,18 @@ export function ChunkDrawer({
                     className={cn(
                       "rounded-md transition-shadow duration-500",
                       flashIndex === position && "ring-ring/60 ring-2",
+                      // 播放头落在该镜头区间 → 边框提亮（琥珀，不抢滚动，spec §5）。
+                      chunk.media === "video" &&
+                        activeShotIndex != null &&
+                        chunk.shot_index === activeShotIndex &&
+                        "ring-2 ring-amber-500/70",
                     )}
+                    data-chunk-id={chunk.chunk_id}
+                    data-shot-active={
+                      chunk.media === "video" && activeShotIndex != null && chunk.shot_index === activeShotIndex
+                        ? "true"
+                        : undefined
+                    }
                     key={chunk.chunk_id}
                     ref={(el) => {
                       // refs 以列表位置为键（2026-09-05 序号统一）：chunk_index 是
@@ -449,7 +540,7 @@ export function ChunkDrawer({
                     }}
                   >
                     {chunk.media === "video" && (
-                      <VideoShotBar chunk={chunk} docId={doc.id} kbId={kbId} />
+                      <VideoShotBar chunk={chunk} docId={doc.id} kbId={kbId} onSeek={handleSeekPlay} />
                     )}
                     <ChunkCard
                       chunkId={chunk.chunk_id}

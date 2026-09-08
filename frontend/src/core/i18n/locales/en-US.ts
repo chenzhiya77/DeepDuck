@@ -492,6 +492,9 @@ export const enUS: Translations = {
       copiedTimecode: "Timecode copied",
       copyTimecodeFailed: "Copy failed",
       frameMissing: "Keyframe missing",
+      // Inline video player (spec 2026-09-08 §5, Task 10b).
+      playerHint: "Click a shot's timecode or thumbnail to seek and play",
+      playShot: "Play this shot",
     },
     tabs: {
       documents: "Documents",

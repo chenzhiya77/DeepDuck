@@ -419,6 +419,9 @@ export interface Translations {
       copiedTimecode: string;
       copyTimecodeFailed: string;
       frameMissing: string;
+      /** Inline video player (spec 2026-09-08 §5, Task 10b). */
+      playerHint: string;
+      playShot: string;
     };
     tabs: {
       documents: string;

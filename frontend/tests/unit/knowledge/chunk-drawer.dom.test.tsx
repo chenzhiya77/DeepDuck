@@ -337,3 +337,111 @@ describe("ChunkDrawer 视频时间码芯片 + 缩略图（spec 2026-09-08 §5）
     expect(screen.queryByTestId("timecode-chip")).toBeNull();
   });
 });
+
+// ── 内嵌播放器（spec 2026-09-08 §5，plan Task 10b）──────────────────────
+// 抽屉顶部单例 <video>（原生 controls、preload=metadata、不自动播）；点芯片/缩略图
+// → seek(start_ms/1000)+play；timeupdate → currentTime 落某镜头 [start,end) 则该行
+// 高亮（不抢滚动）；引用闪环定位 → 载到 start_ms 但保持暂停。
+// HTMLMediaElement spy：jsdom 的 play() 未实现、currentTime 不回写，故在原型上
+// 装可观察的 setter/play 替身（render 前装，捕获 focus effect 的同步 seek）。
+function installMediaSpy() {
+  let value = 0;
+  const setSpy = rs.fn();
+  const playSpy = rs.fn().mockResolvedValue(undefined);
+  const proto = HTMLMediaElement.prototype;
+  const origTime = Object.getOwnPropertyDescriptor(proto, "currentTime");
+  const origPlay = Object.getOwnPropertyDescriptor(proto, "play");
+  Object.defineProperty(proto, "currentTime", {
+    configurable: true,
+    get: () => value,
+    set: (v: number) => {
+      value = v;
+      setSpy(v);
+    },
+  });
+  Object.defineProperty(proto, "play", { configurable: true, writable: true, value: playSpy });
+  return {
+    setSpy,
+    playSpy,
+    setTime: (v: number) => {
+      value = v;
+    },
+    restore: () => {
+      if (origTime) Object.defineProperty(proto, "currentTime", origTime);
+      if (origPlay) Object.defineProperty(proto, "play", origPlay);
+    },
+  };
+}
+
+describe("ChunkDrawer 内嵌播放器（spec 2026-09-08 §5）", () => {
+  let restoreMedia: (() => void) | null = null;
+  afterEach(() => {
+    restoreMedia?.();
+    restoreMedia = null;
+  });
+
+  const SHOT1: KnowledgeChunk = {
+    ...VIDEO_CHUNK,
+    chunk_id: "doc-1#0001",
+    chunk_index: 1,
+    shot_index: 1,
+    start_ms: 100_000, // 00:01:40
+    end_ms: 140_000, // 00:02:20
+    frame_url: "/api/knowledge-bases/kb-1/documents/doc-1/shots/1/frame",
+  };
+
+  it("视频文档在抽屉顶部渲染单例 <video>（原生 controls、preload=metadata、不自播、src 指向 stream）", async () => {
+    mockChunks([VIDEO_CHUNK, SHOT1]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    const video = await screen.findByTestId("shot-player");
+    expect(video.hasAttribute("controls")).toBe(true);
+    expect(video.getAttribute("preload")).toBe("metadata");
+    expect(video.hasAttribute("autoplay")).toBe(false);
+    expect(video.getAttribute("src")).toContain("documents/doc-1/video/stream");
+  });
+
+  it("点时间码芯片 → 播放器 seek 到 start_ms/1000 并 play()", async () => {
+    const spy = installMediaSpy();
+    restoreMedia = spy.restore;
+    mockChunks([VIDEO_CHUNK, SHOT1]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    await screen.findByTestId("shot-player");
+    const chips = screen.getAllByTestId("timecode-chip");
+    fireEvent.click(chips[1]!); // shot 1
+    expect(spy.setSpy).toHaveBeenCalledWith(100); // 100000/1000
+    expect(spy.playSpy).toHaveBeenCalled();
+  });
+
+  it("timeupdate → currentTime 落某镜头 [start,end) 时该行高亮", async () => {
+    const spy = installMediaSpy();
+    restoreMedia = spy.restore;
+    mockChunks([VIDEO_CHUNK, SHOT1]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    const video = await screen.findByTestId("shot-player");
+    spy.setTime(105); // 落 shot1 [100,140)
+    fireEvent(video, new Event("timeupdate"));
+    await waitFor(() =>
+      expect(document.querySelector('[data-chunk-id="doc-1#0001"]')?.getAttribute("data-shot-active")).toBe("true"),
+    );
+    expect(document.querySelector('[data-chunk-id="doc-1#0000"]')?.getAttribute("data-shot-active")).toBeNull();
+  });
+
+  it("引用定位（focusChunkId）→ 播放器载到该镜头 start_ms 但保持暂停（不 play）", async () => {
+    const spy = installMediaSpy();
+    restoreMedia = spy.restore;
+    mockChunks([VIDEO_CHUNK, SHOT1]);
+    renderWithI18n(
+      <ChunkDrawer kbId="kb-1" doc={DOC} open focusChunkId="doc-1#0001" onOpenChange={() => undefined} />,
+    );
+    await screen.findByTestId("shot-player");
+    await waitFor(() => expect(spy.setSpy).toHaveBeenCalledWith(100));
+    expect(spy.playSpy).not.toHaveBeenCalled();
+  });
+
+  it("纯文本文档不渲染播放器", async () => {
+    mockChunks([CHUNK]);
+    renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
+    expect(await screen.findByText(CHUNK.text)).toBeTruthy();
+    expect(screen.queryByTestId("shot-player")).toBeNull();
+  });
+});

@@ -476,6 +476,9 @@ export const zhCN: Translations = {
       copiedTimecode: "时间码已复制",
       copyTimecodeFailed: "复制失败",
       frameMissing: "关键帧缺失",
+      // 内嵌播放器（spec 2026-09-08 §5，Task 10b）。
+      playerHint: "点击镜头时间码或缩略图即可跳转播放",
+      playShot: "播放此镜头",
     },
     tabs: {
       documents: "文档",
