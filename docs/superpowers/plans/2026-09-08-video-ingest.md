@@ -29,8 +29,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Migration: `make migrate-rev MSG="add video_shots table"`
 - Test: `backend/tests/knowledge/video/test_store.py`（CRUD + resume pending 查询 + 级联删）
 
-- [ ] RED → Implement → GREEN → revert proof。
-- [ ] Commit: `feat(rag): add video_shots table and store for shot cards`
+- [x] RED → Implement → GREEN → revert proof。（5 例；upsert 冻结「present keys overwrite / absent keys persist」，caption_status 不隐式重置；迁移 `77df30935788` 已剔除 autogen 混入的 content_hash 漂移 noise，upgrade head + downgrade -1 实跑验证）
+- [x] Commit: `feat(rag): add video_shots table and store for shot cards`（`8c3868f1`）
 
 ## Task 3: probe + ASR 适配层（spec §2）
 
