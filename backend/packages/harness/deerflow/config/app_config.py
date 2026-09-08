@@ -138,6 +138,25 @@ class LoggingConfig(BaseModel):
     enhance: LoggingEnhanceConfig = Field(default_factory=LoggingEnhanceConfig, description="Request trace correlation logging settings.")
 
 
+class RagVideoConfig(BaseModel):
+    """Video-ingestion pipeline knobs (spec 2026-09-08 §7).
+
+    ``enabled`` is the master gate: the upload-allowlist union (text ∪ video
+    suffixes) and every video leg key off it. Default false keeps the whole
+    video feature's exposure surface at zero.
+    """
+
+    enabled: bool = Field(default=False, description="Master gate for video ingestion; when false, video suffixes are rejected at upload.")
+    max_size_mb: int = Field(default=2048, ge=1, description="Max video upload size in MB; the upload gate rejects larger files at the door.")
+    max_shot_seconds: float = Field(default=5.0, gt=0, description="Upper bound for one shot; longer static scenes are force-cut (长镜头兜底).")
+    fallback_window_seconds: float = Field(default=10.0, gt=0, description="Uniform window length when the scene-detection leg fails (degraded).")
+    keyframes_per_shot: int = Field(default=1, ge=1, description="Persisted keyframes per shot; caption frames (≤3) are transient.")
+    asr_provider: Literal["funasr", "whisper"] = Field(default="funasr", description="ASR backend: funasr (Paraformer, local CPU) or whisper (local CPU fallback tier).")
+    asr_model: str = Field(default="paraformer-zh", description="ASR model name for the chosen provider (whisper tier example: small).")
+    caption_model: str = Field(default="", description="VLM used for shot captions; empty reuses rag.vlm_model.")
+    card_text_mode: Literal["full", "caption_only", "asr_only"] = Field(default="full", description="Shot-card text assembly mode; non-full modes are caption-quality ablation experiments (spec §6), not a production path.")
+
+
 class RagConfig(BaseModel):
     """Configuration for the RAG knowledge-base subsystem.
 
@@ -173,6 +192,8 @@ class RagConfig(BaseModel):
     # Phase-2 entity re-resolution (spec 2026-08-10 D3).
     graph_resolution_full_scan_threshold: int = Field(default=500, ge=1, description="Below this graph size the re-resolver scans the whole entity table; larger graphs resolve only touched entities + 1-hop neighbours.")
     entity_merge_similarity: float = Field(default=0.92, ge=0, le=1, description="Cosine threshold for merging alias entity names, shared by per-slice normalization and the incremental re-resolver.")
+    # Video ingestion (spec 2026-09-08 §7): master-gated, default off.
+    video: RagVideoConfig = Field(default_factory=RagVideoConfig, description="Video ingestion pipeline knobs (shot segmentation / ASR / captioning gates and budgets).")
 
 
 def is_trace_correlation_enabled(config: Any) -> bool:

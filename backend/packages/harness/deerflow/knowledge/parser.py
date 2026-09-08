@@ -29,6 +29,8 @@ from pathlib import Path
 
 import httpx
 
+from deerflow.config.app_config import get_app_config
+
 logger = logging.getLogger(__name__)
 
 MINERU_BASE_URL = "https://mineru.net"
@@ -60,6 +62,12 @@ SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = frozenset(
 #: Suffixes read locally as text — they never hit MinerU.
 _LOCAL_READ_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt", ".csv"})
 
+#: Video upload allowlist (spec 2026-09-08 §2, frozen): an independent
+#: frozenset so the text set above stays byte-identical. Surfaced in the
+#: upload gate and /supported-formats ONLY when ``rag.video.enabled`` is on
+#: (see ``supported_upload_suffixes``).
+VIDEO_UPLOAD_SUFFIXES: frozenset[str] = frozenset({".mp4", ".mov", ".mkv", ".webm"})
+
 _MEDIA_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -70,9 +78,40 @@ _MEDIA_TYPES = {
 }
 
 
+def video_ingest_enabled() -> bool:
+    """``rag.video.enabled`` master gate (spec 2026-09-08 §7). Config load
+    failures degrade to off — the gate never widens the allowlist on error."""
+    try:
+        return bool(get_app_config().rag.video.enabled)
+    except Exception:
+        return False
+
+
+def supported_upload_suffixes() -> frozenset[str]:
+    """Config-gated upload allowlist: the frozen text set, unioned with the
+    video set only when ``rag.video.enabled`` is on. Single source for both
+    the /supported-formats endpoint and the upload gate so the two cannot
+    drift (spec 2026-09-08 §2)."""
+    if video_ingest_enabled():
+        return SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES
+    return SUPPORTED_UPLOAD_SUFFIXES
+
+
+def video_upload_limit_bytes() -> int | None:
+    """``rag.video.max_size_mb`` in bytes; None when the video gate is off
+    (video suffixes are rejected at the door anyway)."""
+    if not video_ingest_enabled():
+        return None
+    try:
+        return int(get_app_config().rag.video.max_size_mb) * 1024 * 1024
+    except Exception:
+        return None
+
+
 def is_supported_suffix(suffix: str) -> bool:
-    """Case-insensitive upload-allowlist membership (dot-prefixed suffix)."""
-    return suffix.lower() in SUPPORTED_UPLOAD_SUFFIXES
+    """Case-insensitive upload-allowlist membership (dot-prefixed suffix);
+    the allowlist is config-gated (see ``supported_upload_suffixes``)."""
+    return suffix.lower() in supported_upload_suffixes()
 
 
 def is_local_suffix(suffix: str) -> bool:

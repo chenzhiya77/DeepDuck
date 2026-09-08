@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,6 +22,7 @@ from fastapi.testclient import TestClient
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
 from app.gateway.services.knowledge_service import KnowledgeService
+from deerflow.knowledge import parser as knowledge_parser
 from deerflow.knowledge.graph.extractor import ExtractedEntity
 from deerflow.knowledge.store import KnowledgeStore
 
@@ -67,6 +69,16 @@ def _create_kb(client: TestClient, name: str = "产品资料") -> dict:
     response = client.post("/api/knowledge-bases", json={"name": name, "description": "d"})
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def _enable_video(monkeypatch) -> None:
+    """rag.video.enabled=on（spec 2026-09-08 §7）：把 parser 的配置读取器指向
+    stub，两态门控无需碰 config.yaml。"""
+    monkeypatch.setattr(
+        knowledge_parser,
+        "get_app_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(video=SimpleNamespace(enabled=True, max_size_mb=2048))),
+    )
 
 
 async def test_kb_crud_round_trip(service):
@@ -176,6 +188,69 @@ async def test_supported_formats_endpoint_matches_parser_constant(service):
 
     assert response.status_code == 200
     assert response.json() == {"suffixes": sorted(SUPPORTED_UPLOAD_SUFFIXES)}
+
+
+# ── 视频后缀门控两态（spec 2026-09-08 §2/§7，plan Task 1）───────────────────
+
+
+async def test_upload_rejects_video_suffix_when_video_disabled(service):
+    """off 态（默认）：视频后缀门口即拒，拒绝文案列出视频后缀，不留文档行。"""
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("培训.mp4", b"\x00\x01\x02", "video/mp4")})
+
+    assert response.status_code == 400
+    assert ".mp4" in response.json()["detail"]
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
+
+
+async def test_supported_formats_unions_video_suffixes_when_enabled(service, monkeypatch):
+    """on 态：端点返回 文本∪视频 并集（排序），文本冻结集恒在其中。"""
+    from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, VIDEO_UPLOAD_SUFFIXES
+
+    _enable_video(monkeypatch)
+    client = _client(service)
+
+    response = client.get("/api/knowledge-bases/supported-formats")
+
+    assert response.status_code == 200
+    suffixes = response.json()["suffixes"]
+    assert set(suffixes) == set(SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES)
+    assert suffixes == sorted(suffixes)
+
+
+async def test_upload_accepts_video_suffix_when_enabled(service, monkeypatch):
+    """on 态：.mp4 过门落 uploaded 行并入队（mock worker）——管线腿后续任务接线。"""
+    _enable_video(monkeypatch)
+    client = _client(service)
+    kb = _create_kb(client)
+    payload = b"\x00\x00\x00\x18ftypmp42"
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("培训.mp4", payload, "video/mp4")})
+
+    assert response.status_code == 202, response.text
+    doc = response.json()
+    assert doc["status"] == "uploaded"
+    assert doc["name"] == "培训.mp4"
+    service.worker.submit.assert_awaited_once_with(doc["id"])
+
+
+async def test_upload_rejects_oversized_video_when_enabled(service, monkeypatch):
+    """on 态：超过 rag.video.max_size_mb 的视频门口即拒（spec §7 预算护栏）。"""
+    monkeypatch.setattr(
+        knowledge_parser,
+        "get_app_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(video=SimpleNamespace(enabled=True, max_size_mb=1))),
+    )
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("大片.mp4", b"x" * (2 * 1024 * 1024), "video/mp4")})
+
+    assert response.status_code == 400
+    assert "1" in response.json()["detail"]  # 拒绝文案带上限额
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
 
 
 async def test_document_list_carries_indexing_fields(service):

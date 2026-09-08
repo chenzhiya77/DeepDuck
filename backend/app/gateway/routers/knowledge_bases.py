@@ -27,7 +27,7 @@ from deerflow.knowledge.eval.dataset import GoldenDatasetError
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty
 from deerflow.knowledge.eval.question_bank import QuestionBankInvalidQuestion
 from deerflow.knowledge.eval.synthesis import SynthesisDocNotReady
-from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
+from deerflow.knowledge.parser import supported_upload_suffixes
 from deerflow.knowledge.projection.reducer import UmapUnavailableError
 
 router = APIRouter(prefix="/api/knowledge-bases", tags=["knowledge-bases"])
@@ -178,9 +178,11 @@ async def create_knowledge_base(request: Request, body: KbCreateRequest):
 @router.get("/supported-formats")
 async def supported_formats():
     """Upload allowlist (Task 6, spec §6). Registered before ``/{kb_id}`` so
-    the literal segment wins over the path parameter. Static data — the
-    frontend uses it for the file-picker ``accept`` and pre-upload intercept."""
-    return {"suffixes": sorted(SUPPORTED_UPLOAD_SUFFIXES)}
+    the literal segment wins over the path parameter. Config-gated union
+    (spec 2026-09-08 §2): video suffixes appear only when
+    ``rag.video.enabled`` is on — the frontend uses this for the file-picker
+    ``accept`` and pre-upload intercept."""
+    return {"suffixes": sorted(supported_upload_suffixes())}
 
 
 @router.get("/{kb_id}")

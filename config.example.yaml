@@ -2616,3 +2616,27 @@ rag:
   # Cosine threshold for merging alias entity names — shared by the per-slice
   # normalizer and the incremental re-resolver.
   entity_merge_similarity: 0.92
+  # --- Video ingestion (spec 2026-09-08 §7) ---
+  # Master gate: when false (default), video suffixes are rejected at upload
+  # and /supported-formats returns the text allowlist only. The video legs
+  # (probe → ASR → scene segmentation → keyframe+OCR → VLM caption →
+  # materialize shot cards) key off this too.
+  video:
+    enabled: false
+    # Max video upload size (MB); the upload gate rejects larger files.
+    max_size_mb: 2048
+    # Upper bound for one shot — longer static scenes are force-cut so card
+    # granularity stays bounded even without visual cuts (长镜头兜底).
+    max_shot_seconds: 5
+    # Uniform window length when the scene-detection leg fails (degraded).
+    fallback_window_seconds: 10
+    # Persisted keyframes per shot; caption frames (≤3) are transient.
+    keyframes_per_shot: 1
+    # ASR backend: funasr (Paraformer, local CPU) | whisper (local fallback).
+    asr_provider: funasr
+    asr_model: paraformer-zh
+    # VLM used for shot captions; empty reuses rag.vlm_model.
+    caption_model: ""
+    # Shot-card text assembly: full | caption_only | asr_only — non-full modes
+    # are caption-quality ablation experiments (spec §6), not a production path.
+    card_text_mode: full

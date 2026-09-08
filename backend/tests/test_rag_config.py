@@ -162,3 +162,52 @@ class TestAppConfigRagSection:
         config = AppConfig.model_validate({**_SANDBOX, "rag": None})
 
         assert config.rag.qdrant_url == "http://localhost:6333"
+
+
+class TestRagVideoConfig:
+    """视频入库配置段（spec 2026-09-08 §7，plan Task 1）：默认全关，
+    enabled 是 allowlist 并集与全部视频腿的总开关。"""
+
+    def test_loads_defaults(self):
+        config = RagConfig()
+
+        assert config.video.enabled is False
+        assert config.video.max_size_mb == 2048
+        assert config.video.max_shot_seconds == 5.0
+        assert config.video.fallback_window_seconds == 10.0
+        assert config.video.keyframes_per_shot == 1
+        assert config.video.asr_provider == "funasr"
+        assert config.video.asr_model == "paraformer-zh"
+        assert config.video.caption_model == ""
+        assert config.video.card_text_mode == "full"
+
+    def test_overridable_from_dict(self):
+        config = RagConfig(
+            **{
+                "video": {
+                    "enabled": True,
+                    "asr_provider": "whisper",
+                    "asr_model": "small",
+                    "card_text_mode": "caption_only",
+                }
+            }
+        )
+
+        assert config.video.enabled is True
+        assert config.video.asr_provider == "whisper"
+        assert config.video.asr_model == "small"
+        assert config.video.card_text_mode == "caption_only"
+
+    def test_rejects_invalid_literals(self):
+        with pytest.raises(ValueError):
+            RagConfig(**{"video": {"asr_provider": "deepgram"}})
+        with pytest.raises(ValueError):
+            RagConfig(**{"video": {"card_text_mode": "vibes"}})
+
+    def test_rejects_invalid_numeric_bounds(self):
+        with pytest.raises(ValueError):
+            RagConfig(**{"video": {"max_size_mb": 0}})
+        with pytest.raises(ValueError):
+            RagConfig(**{"video": {"max_shot_seconds": 0}})
+        with pytest.raises(ValueError):
+            RagConfig(**{"video": {"keyframes_per_shot": 0}})

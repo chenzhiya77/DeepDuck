@@ -384,6 +384,37 @@ def test_supported_upload_suffixes_contract():
     assert not is_local_suffix(".pdf")
 
 
+def test_video_upload_suffixes_contract(monkeypatch):
+    """spec 2026-09-08 §2（plan Task 1）：视频集是独立 frozenset（文本冻结集
+    原地不动），并集助手两态随 rag.video.enabled；off 态默认拒 .mp4。"""
+    from types import SimpleNamespace
+
+    from deerflow.knowledge import parser as knowledge_parser
+    from deerflow.knowledge.parser import (
+        SUPPORTED_UPLOAD_SUFFIXES,
+        VIDEO_UPLOAD_SUFFIXES,
+        is_supported_suffix,
+        supported_upload_suffixes,
+    )
+
+    assert VIDEO_UPLOAD_SUFFIXES == frozenset({".mp4", ".mov", ".mkv", ".webm"})
+    assert SUPPORTED_UPLOAD_SUFFIXES & VIDEO_UPLOAD_SUFFIXES == frozenset()  # 两集不相交
+
+    # off 态（测试环境默认）：并集 = 文本集，视频后缀被拒（大小写不敏感）
+    assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES
+    assert not is_supported_suffix(".MP4")
+
+    # on 态：并集含视频集，文本集不受影响
+    monkeypatch.setattr(
+        knowledge_parser,
+        "get_app_config",
+        lambda: SimpleNamespace(rag=SimpleNamespace(video=SimpleNamespace(enabled=True))),
+    )
+    assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES
+    assert is_supported_suffix(".MP4")
+    assert is_supported_suffix(".md")
+
+
 @pytest.mark.asyncio
 async def test_parse_txt_utf8_short_circuits_mineru(tmp_path, monkeypatch):
     # No token at all — local read must not touch the network or the env var.
