@@ -150,14 +150,14 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 
 ## Task 12: 收官——全量回归 + 浏览器实测 + 指南落档
 
-- [ ] 后端 `pytest tests/knowledge -q` 全量 GREEN + ruff 双净；前端 check 双净 +
-      knowledge 套件对基线（仅预存无关失败）。
+- [x] 后端 `pytest tests/knowledge -q` 全量 GREEN + ruff 双净；前端 check 双净 +
+      knowledge 套件对基线（仅预存无关失败）。（**后端**：971 passed / 1 failed / 4 skipped（7m41s）——唯一失败 `projection/test_reducer.py::test_umap_reduce_with_extra_produces_finite_coords` 是 `pytest.importorskip("umap")` 触发 `import numba` 报错（numba njit 可选依赖环境问题），在 projection/ 与视频 video/ 零交集，Task 7 收官已录同类预存失败；ruff check 视频全集 All passed + format 22 files already formatted（双净）。**前端**：`pnpm check` exit 0（eslint+tsc 双净）；knowledge 套件 63 文件 passed / 1 failed（`chat-panel` model selector 预存无关，历次收官均现）。）
 - [ ] 浏览器实测：真实 2–5min 视频上传 → 腿进度 → 对话命中 → 引用时间码芯片 +
       缩略图 + **点芯片即播/区间高亮/引用定位暂停加载** → 检索测试命中镜头卡 →
-      评测跑一轮视频 KB；截图落 `pr-build/`。
-- [ ] Modify: `backend/AGENTS.md`（knowledge 小节补视频腿与 video_shots 契约）；
-      `frontend/AGENTS.md` 无需改（表面层改动已在组件注释自载）。
-- [ ] Commit: `docs(rag): sync agent guides for video ingest and smoke evidence`
+      评测跑一轮视频 KB；截图落 `pr-build/`。（**交用户手动实测**：live 层需真实视频文件 + ASR/VLM/embedding 密钥 + 运行栈，dom/unit 覆盖不到；需先 `rag.video.enabled=true` + 重启 gateway。逐项验收清单已交付；截图落 `pr-build/` 后补 smoke evidence commit。）
+- [x] Modify: `backend/AGENTS.md`（knowledge 小节补视频腿与 video_shots 契约）；
+      `frontend/AGENTS.md` 无需改（表面层改动已在组件注释自载）。（`### Knowledge Base / RAG` 小节末尾补 `**Video ingestion**` 段：gate（rag.video.enabled + VIDEO_UPLOAD_SUFFIXES）/ legs（_run_video_legs 腿序 + persist 骨架前置 caption 的 resume 理由 + progress 单调 0→75→100 + 降级矩阵）/ video_shots 表（媒体侧字段 + 级联删）/ shot-card=chunk（冻结三段=嵌入文本、chunk_id 扁平序匹配 golden 正则零改造进 L1、card_text_mode 消融）/ path_status 三视频腿 + duration_ms/shot_count 读时聚合 / citations+媒体端点（_inject_video_citations、frame 端点、video/stream 的 FileResponse 原生 Range + streaming.py Content-Type map）/ recaption / tests。对齐 orientation-layer 原则（模块+职责+契约口径，不含 commit hash/RED-GREEN/验收清单）。）
+- [x] Commit: `docs(rag): sync agent guides for video ingest and smoke evidence`（拆两步：本次 `docs(rag): sync backend agent guide for video ingest`——AGENTS.md Video ingestion 段 + 本 plan 回归结论；**smoke evidence 待用户实测截图后另补 commit**。）
 
 ## 风险登记（实施期新增即补此行下表）
 
