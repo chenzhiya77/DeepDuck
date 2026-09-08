@@ -69,8 +69,8 @@ Makefile 同款）+ `ruff check/format` 双净；前端：`python ../scripts/pnp
 - Create: `backend/packages/harness/deerflow/knowledge/video/shot_card.py`（**冻结卡正文模板**组装纯函数（**不含时间码头**，spec §3 嵌入文本契约）+ 展示合成纯函数 `render_card_display(body, shot)`（带头全卡单一源）+ 三模式 `card_text_mode` + 时间码 `HH:MM:SS.mmm` 格式化/解析往返 + `chunk_id_for_shot`）
 - Test: `test_shot_card.py`（正文模板逐字钉死、展示合成往返、三模式、时间码往返、全空镜头判 empty）+ `test_captioner.py`（fake VLM + 30% 降级阈值）
 
-- [ ] RED → Implement → GREEN → revert proof。
-- [ ] Commit: `feat(rag): shot card assembler and VLM captioner with degradation gate`
+- [x] RED → Implement → GREEN → revert proof。（29 passed 全本机、无 skipif——shot_card 纯函数逐字钉死冻结模板（场景/口述/屏幕文字，caption 空补（无）保三行稳定）+ 时间码往返×9 + 三模式消融 + empty 判定 + render 展示合成；captioner 用 httpx.MockTransport（对齐 test_parser 先例）+ monkeypatch DASHSCOPE_API_KEY，钉死 api_key 缺失全降级、单镜头失败计数、>30% degraded（30% 边界严格大于不触发）、无帧镜头不计 failed；base_url 读 cfg.rag.vlm_base_url（config 单一源，避开现有 captioner 未读该键的缺口）；RED 独立成轮收集）
+- [x] Commit: `feat(rag): shot card assembler and VLM captioner with degradation gate`（`94bc2ffa`）
 
 ## Task 7: worker 腿接线 + resume + path_status（spec §2）
 
