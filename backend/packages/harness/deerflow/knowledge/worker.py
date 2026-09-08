@@ -238,6 +238,22 @@ class KnowledgeIndexWorker:
     async def submit(self, doc_id: str) -> None:
         await self._queue.put(doc_id)
 
+    async def submit_recaption(self, doc_id: str) -> None:
+        """入队一次子集腿 recaption 运行（spec 2026-09-08 §2 运维重跑入口）。
+
+        故意不走 resume 队列：recaption 是对终态文档的显式运维重跑，``recover()``
+        不得在重启时重触它——重启于 recaption 中途改由正常管线的 resume 路恢复
+        （service 已把文档翻 ``parsing`` + 镜头重置 ``pending``，resume 恰好重跑
+        这些镜头）。与索引共用并发信号量 + inflight 集（``wait_idle``/``stop`` 覆盖）。
+        """
+        task = asyncio.create_task(self._run_recaption_guarded(doc_id), name=f"kb-recaption-{doc_id}")
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+
+    async def _run_recaption_guarded(self, doc_id: str) -> None:
+        async with self._sem:
+            await self.recaption_document(doc_id)
+
     async def _require_alive(self, doc_id: str) -> None:
         """Liveness checkpoint against the delete-vs-worker race: a document
         deleted mid-pipeline must not be resurrected by further writes
@@ -650,6 +666,101 @@ class KnowledgeIndexWorker:
         if empty_updates:
             await self._video_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=empty_updates)
         await self._store.update_document_status(doc_id, "indexing", chunk_count=len(chunk_rows), progress_percent=_PROGRESS_AFTER_MATERIALIZE)
+
+    # ── recaption 子集腿（spec 2026-09-08 §2 运维重跑入口，plan Task 8b）───────
+
+    async def recaption_document(self, doc_id: str) -> dict[str, Any] | None:
+        """caption 模型/prompt 升级的子集腿重跑（spec §2 运维重跑入口）。
+
+        跳过 probe/asr/segment/keyframe——三路原文与持久化关键帧已在 ``video_shots``。
+        只对 service 重置为 pending 的镜头重跑 caption，原地重组卡正文（不 wipe），
+        **仅文本变更的 chunk** 增量重嵌，受影响实体标 wiki dirty（图谱不重抽）。
+        终态恢复 ready；任何失败降级为 ready + 可见 error marker（旧 caption 内容
+        仍可达，recaption 是增强非破坏）。
+        """
+        document = await self._store.get_document(doc_id)
+        if document is None or not _is_video_path(document["storage_path"]):
+            return None
+        kb_id = document["kb_id"]
+        cfg = get_app_config().rag.video
+        legs: dict[str, str] = {"caption": "pending"}
+        try:
+            await self._require_alive(doc_id)
+            await self._video_caption_leg(doc_id, kb_id, document["storage_path"], legs)
+            await self._require_alive(doc_id)  # checkpoint: caption 腿后、写 chunk 前
+            await self._video_recaption_materialize(doc_id, kb_id, document["name"], cfg)
+            chunk_count = await self._store.count_chunks(doc_id)
+            await self._store.update_document_status(doc_id, "ready", progress_percent=100, chunk_count=chunk_count, path_status={"caption": legs["caption"]})
+        except _DocumentDeletedError:
+            logger.info("document %s deleted mid-recaption; aborted quietly", doc_id)
+            return None
+        except Exception as exc:
+            logger.exception("recaption failed for document %s", doc_id)
+            chunk_count = await self._store.count_chunks(doc_id)
+            await self._store.update_document_status(doc_id, "ready", progress_percent=100, chunk_count=chunk_count)
+            await self._append_error_marker(doc_id, f"recaption failed: {str(exc)[:200]}")
+        return await self._store.get_document(doc_id)
+
+    async def _video_recaption_materialize(self, doc_id: str, kb_id: str, video_name: str, cfg: Any) -> None:
+        """recaption 后的原地重组：仅变更 chunk 增量重嵌 + 受影响实体标 wiki dirty。
+
+        与 ``_video_materialize``（首次入库的全量 wipe + 重建）不同：此处绝不删图谱
+        贡献、绝不重嵌未变更 chunk——caption 升级只动卡正文真正变化的镜头（spec §2
+        运维重跑入口：变更 chunk 增量重嵌）。实体列原样保留（图谱腿不重跑），其 wiki
+        条目标 dirty 等下次增量刷新吃进新措辞。镜头转为全空（caption-only 镜头重跑
+        回空）时退役其卡（对齐单 chunk 删除级联）。
+        """
+        shots = await self._video_store.list_shots(doc_id)
+        mode = cfg.card_text_mode
+        existing = {chunk["chunk_id"]: chunk for chunk in await self._store.list_chunks(doc_id, limit=1_000_000)}
+        changed: list[dict[str, Any]] = []
+        affected_entities: set[str] = set()
+        empty_updates: list[dict[str, Any]] = []
+        for shot in shots:
+            index = int(shot["shot_index"])
+            caption = shot.get("caption") or ""
+            asr_text = shot.get("asr_text") or ""
+            ocr_text = shot.get("ocr_text") or ""
+            chunk_id = chunk_id_for_shot(doc_id, index)
+            old = existing.get(chunk_id)
+            if is_empty_card(caption=caption, asr_text=asr_text, ocr_text=ocr_text):
+                empty_updates.append({"shot_index": index, "caption_status": "empty"})
+                if old is not None:
+                    await self._retire_chunk(kb_id, chunk_id)
+                continue
+            body = assemble_card_body(caption=caption, asr_text=asr_text, ocr_text=ocr_text, mode=mode)
+            if old is not None and old["text"] == body:
+                continue  # 正文未变 → 不重嵌（spec §2 增量）
+            token_count = count_tokens(body)
+            if old is not None:
+                await self._store.update_chunk_text(chunk_id, body, token_count)
+                entities = list(old.get("entities") or [])
+                heading_path = list(old.get("heading_path") or [])
+            else:
+                heading_path = heading_path_for_shot(video_name, index)
+                entities = []
+                await self._store.insert_chunks([{"chunk_id": chunk_id, "doc_id": doc_id, "kb_id": kb_id, "chunk_index": index, "text": body, "heading_path": heading_path, "page": None, "token_count": token_count}])
+            affected_entities.update(entities)
+            changed.append({"chunk_id": chunk_id, "doc_id": doc_id, "kb_id": kb_id, "chunk_index": index, "text": body, "heading_path": heading_path, "page": None, "token_count": token_count, "entities": entities})
+
+        await self._require_alive(doc_id)  # checkpoint: before re-embedding
+        if changed:
+            embedder = self._embedder or DashScopeEmbedder()
+            # 复用 vector 腿：分批嵌入 + upsert（同 chunk_id → 同点覆盖），保留实体 payload。
+            await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=changed)
+        if empty_updates:
+            await self._video_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=empty_updates)
+        if affected_entities:
+            await mark_dirty_for_entities(self._wiki_store, kb_id, affected_entities)
+
+    async def _retire_chunk(self, kb_id: str, chunk_id: str) -> None:
+        """退役转为全空的镜头卡（caption-only 镜头重跑回空的边界）：对齐单 chunk
+        删除级联——图谱贡献 → 孤儿实体向量 → chunk 向量点 → 业务行。"""
+        orphaned, _affected = await self._graph_store.remove_chunk_contributions(kb_id, [chunk_id])
+        if orphaned:
+            await self._vector_store.delete_entities(kb_id, orphaned)
+        await self._vector_store.delete_chunks([chunk_id])
+        await self._store.delete_chunk(chunk_id)
 
     async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder) -> None:
         """Triggered batch on first completion, dirty incremental afterwards."""

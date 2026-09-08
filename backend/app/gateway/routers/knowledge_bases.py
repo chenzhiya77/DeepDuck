@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.gateway.services.knowledge_service import (
     DocumentProcessingError,
     KnowledgeService,
+    NotVideoDocumentError,
     ProjectionModelUnavailableError,
     ProjectionNotComputedError,
 )
@@ -318,6 +319,26 @@ async def get_shot_frame(request: Request, kb_id: str, doc_id: str, shot_index: 
     if frame is None:
         raise HTTPException(status_code=404, detail="Keyframe not found")
     return FileResponse(frame, media_type="image/jpeg")
+
+
+@router.post("/{kb_id}/documents/{doc_id}/video/recaption", status_code=202)
+async def recaption_video(request: Request, kb_id: str, doc_id: str):
+    """Recaption 运维重跑入口（spec 2026-09-08 §2，plan Task 8b）。
+
+    caption 模型/prompt 升级后重跑 caption + materialize 子集腿（帧/ASR/segment
+    跳过，产物已持久化），仅变更 chunk 增量重嵌、受影响实体标 wiki dirty。与在飞
+    管线互斥 409；非视频文档 / 不存在 404。202 后台运行，进度经文档列表轮询。
+    """
+    service = await _require_kb_access(request, kb_id)
+    try:
+        result = await service.trigger_recaption(kb_id=kb_id, doc_id=doc_id)
+    except DocumentProcessingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NotVideoDocumentError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return result
 
 
 class UpdateChunkRequest(BaseModel):

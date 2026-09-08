@@ -70,6 +70,14 @@ class DocumentProcessingError(RuntimeError):
         self.status = status
 
 
+class NotVideoDocumentError(RuntimeError):
+    """Raised when a video-only operation targets a non-video document (spec 2026-09-08 §2 recaption → router 404)."""
+
+    def __init__(self, doc_id: str) -> None:
+        super().__init__(f"Document {doc_id} is not a video document")
+        self.doc_id = doc_id
+
+
 class ProjectionNotComputedError(RuntimeError):
     """POST vector-projection/query arrived before any projection was cached."""
 
@@ -255,13 +263,18 @@ class KnowledgeService:
         分支同源）；文本文档、或视频文档在 materialize 之前（``video_shots`` 尚未
         物化）都不注入这两键——payload 对旧渲染零回归，前端诚实缺省。
         """
-        if Path(document["storage_path"]).suffix.lower() not in VIDEO_UPLOAD_SUFFIXES:
+        if not self._is_video_document(document):
             return
         shots = await self.video_shot_store.list_shots(document["id"])
         if not shots:
             return
         document["duration_ms"] = max(int(shot["end_ms"]) for shot in shots)
         document["shot_count"] = len(shots)
+
+    @staticmethod
+    def _is_video_document(document: dict[str, Any]) -> bool:
+        """文档是否视频（``storage_path`` 后缀 ∈ 冻结视频集）——与 worker 分支同源判据。"""
+        return Path(document["storage_path"]).suffix.lower() in VIDEO_UPLOAD_SUFFIXES
 
     async def resolve_shot_frame(self, *, kb_id: str, doc_id: str, shot_index: int) -> Path | None:
         """镜头持久化关键帧的绝对路径；缺则 ``None``（router → 404，spec §4）。
@@ -427,6 +440,41 @@ class KnowledgeService:
         if self.worker is not None:
             await self.worker.submit(doc_id)
         return reset
+
+    async def trigger_recaption(self, *, kb_id: str, doc_id: str) -> dict[str, Any] | None:
+        """Recaption 运维重跑入口（spec 2026-09-08 §2，plan Task 8b）。
+
+        caption 模型/prompt 升级后的血统入口（类比 ``re_extract_chunk`` /
+        ``regenerate_wiki_entries``）：把 ``video_shots.caption_status`` 重置
+        （done/failed → pending，empty 保持——三路俱空的镜头重跑无意义）→ 翻文档
+        状态标记在飞 → 入队 worker 子集腿（只重跑 caption + materialize + 仅变更
+        chunk 增量重嵌 + wiki dirty，帧/ASR/segment 跳过）。
+
+        Returns ``None`` when the document is missing / cross-kb (router → 404);
+        raises :class:`NotVideoDocumentError` for a text document (router → 404)
+        and :class:`DocumentProcessingError` while the pipeline is in flight
+        (router → 409).
+        """
+        document = await self.store.get_document(doc_id)
+        if document is None or document["kb_id"] != kb_id:
+            return None
+        if not self._is_video_document(document):
+            raise NotVideoDocumentError(doc_id)
+        if document["status"] not in ("ready", "failed"):
+            raise DocumentProcessingError(doc_id, document["status"])
+        shots = await self.video_shot_store.list_shots(doc_id)
+        reset = [{"shot_index": int(shot["shot_index"]), "caption_status": "pending"} for shot in shots if shot.get("caption_status") in ("done", "failed")]
+        if reset:
+            # upsert「present keys overwrite / absent keys persist」→ 只翻
+            # caption_status，三路原文/关键帧/区间保持（Task 2 冻结契约）。
+            await self.video_shot_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=reset)
+        # 同步翻状态标记在飞（镜像 retry 的 status flip）：二次触发 / retry 据此 409；
+        # 置 parsing → 若 gateway 在 worker 接手前重启，recover() 走 resume 路重新
+        # caption 这些 pending 镜头（正确恢复）。caption 腿置 pending 可见排队。
+        await self.store.update_document_status(doc_id, "parsing", path_status={"caption": "pending"})
+        if self.worker is not None:
+            await self.worker.submit_recaption(doc_id)
+        return {"status": "enqueued", "reset_shots": len(reset)}
 
     # ── knowledge base ───────────────────────────────────────────────────
 
