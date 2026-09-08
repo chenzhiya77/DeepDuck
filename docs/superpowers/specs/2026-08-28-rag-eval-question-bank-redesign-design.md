@@ -1,6 +1,6 @@
 # RAG 评测题库改造设计（多路预期 · wiki 锚定 · 自底向上合成造题）
 
-> 状态：**Landed 2026-08-28, closed 2026-09-08**（plan `../plans/2026-08-28-rag-eval-question-bank-redesign.md` Task 1–11 全部落地；Task 12 文档同步已于 2026-09-08 完成，Live 冒烟留用户自跑） · 日期：2026-08-28 · 范围：评测题库的三项修正——①`expected_path` 单值升级为 `expected_paths` 多路集合判定；②百科词条经 `source_chunk_ids` 可锚定 + 造题入口定位反转；③自底向上合成造题（从文档生成候选题 + 人工审核入库）· 关联：父 spec `2026-08-23-rag-retrieval-evaluation-design.md`（指标体系）；二期子 spec `2026-08-27-rag-eval-tab-phase2-design.md`（题库 CRUD / 触发 / 历史，已落地）；后续演进 spec `2026-09-06-rag-eval-run-progress-design.md`（进度条 + 终止）、`2026-09-06-rag-eval-trend-visibility-design.md`（趋势可见性 + `context_recall` 退役）
+> 状态：**Landed 2026-08-28, closed 2026-09-09**（plan `../plans/2026-08-28-rag-eval-question-bank-redesign.md` Task 1–12 全部完结：Task 1–11 于 2026-08-28 交付；Task 12 文档同步 2026-09-08、Live 冒烟用户自跑五项全过 2026-09-09） · 日期：2026-08-28 · 范围：评测题库的三项修正——①`expected_path` 单值升级为 `expected_paths` 多路集合判定；②百科词条经 `source_chunk_ids` 可锚定 + 造题入口定位反转；③自底向上合成造题（从文档生成候选题 + 人工审核入库）· 关联：父 spec `2026-08-23-rag-retrieval-evaluation-design.md`（指标体系）；二期子 spec `2026-08-27-rag-eval-tab-phase2-design.md`（题库 CRUD / 触发 / 历史，已落地）；后续演进 spec `2026-09-06-rag-eval-run-progress-design.md`（进度条 + 终止）、`2026-09-06-rag-eval-trend-visibility-design.md`（趋势可见性 + `context_recall` 退役）
 >
 > **定案（2026-08-28 用户决策）**：
 > 1. ①② 两项照单全收；③ 只做**自底向上合成**一项（生产流量挖掘、对抗题不做，见 §10）；
