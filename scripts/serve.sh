@@ -390,7 +390,12 @@ if ! $SKIP_INSTALL; then
     # `--all-packages` propagates extras into workspace members (deerflow-harness
     # in particular). Required for postgres extras — see PR #2584.
     # Intentionally unquoted to splat multiple `--extra X` pairs.
-    (cd backend && uv sync --quiet --all-packages $UV_EXTRAS_FLAGS) || { echo "✗ Backend dependency install failed"; exit 1; }
+    # `--inexact` preserves optional heavy deps installed via `uv pip install`
+    # (funasr/torch/torchaudio/scenedetect/opencv-python — absent from uv.lock).
+    # An exact sync treats them as extraneous and prunes them on every start
+    # (2026-09-09 incident: video ASR/segment legs lost their libs at runtime).
+    # CI does not use this script, so it stays exact.
+    (cd backend && uv sync --quiet --all-packages --inexact $UV_EXTRAS_FLAGS) || { echo "✗ Backend dependency install failed"; exit 1; }
     (cd frontend && "$DEERFLOW_PNPM_PYTHON" "$DEERFLOW_PNPM_RUNNER" install --silent) || { echo "✗ Frontend dependency install failed"; exit 1; }
     echo "✓ Dependencies synced"
 else
@@ -463,8 +468,11 @@ mkdir -p logs
 mkdir -p temp/client_body_temp temp/proxy_temp temp/fastcgi_temp temp/uwsgi_temp temp/scgi_temp
 
 # 1. Gateway API
+# `--no-sync`: dependencies were already synced with --inexact above; `uv run`'s
+# default exact sync would prune the uv-pip-installed heavy deps again
+# (2026-09-09 incident).
 run_service "Gateway" \
-    "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
+    "cd backend && PYTHONPATH=. uv run --no-sync uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
     8001 30
 
 # 2. Frontend
