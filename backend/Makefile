@@ -1,30 +1,37 @@
+# 视频入库重依赖（funasr/torch/torchaudio/scenedetect/opencv-python）以 uv pip extra
+# 形式安装、不在 uv.lock；exact sync 会把它们当 extraneous 剪除（2026-09-09 剪包事故，
+# 致 ASR/分镜腿运行时缺库）。本地一律 --inexact sync + --no-sync run 以保留；
+# CI 不走本 Makefile（直接 uv sync --group dev），保持 exact 不受影响。
+SYNC = uv sync --inexact --quiet
+RUN = PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run --no-sync
+
 install:
-	uv sync
+	uv sync --inexact
 
 dev:
-	PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload
+	@$(SYNC) && $(RUN) uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload
 
 gateway:
-	PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001
+	@$(SYNC) && $(RUN) uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001
 
 test:
-	PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run pytest -m "not live" tests/ -v
+	@$(SYNC) && $(RUN) pytest -m "not live" tests/ -v
 
 test-live:
-	DEER_FLOW_RUN_LIVE_TESTS=1 PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run pytest -m live tests/ -v -s
+	@$(SYNC) && DEER_FLOW_RUN_LIVE_TESTS=1 $(RUN) pytest -m live tests/ -v -s
 
 test-blocking-io:
-	PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run pytest tests/blocking_io -q --tb=short
+	@$(SYNC) && $(RUN) pytest tests/blocking_io -q --tb=short
 
 lint:
-	uv run ruff check .
-	uv run ruff format --check .
+	@$(SYNC) && $(RUN) ruff check .
+	@$(RUN) ruff format --check .
 
 format:
-	uv run ruff check . --fix && uv run ruff format .
+	@$(SYNC) && $(RUN) ruff check . --fix && $(RUN) ruff format .
 
 detect-blocking-io:
-	@PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run python ../scripts/detect_blocking_io_static.py --output ../.deer-flow/blocking-io-findings.json
+	@$(SYNC) && $(RUN) python ../scripts/detect_blocking_io_static.py --output ../.deer-flow/blocking-io-findings.json
 
 # Generate a new alembic revision by autogenerating the diff against the live
 # ORM models. Usage: make migrate-rev MSG="add foo column to runs"
@@ -35,4 +42,4 @@ detect-blocking-io:
 # against it, so a clean checkout does NOT need a pre-existing ./data/deerflow.db.
 migrate-rev:
 	@if [ -z "$(MSG)" ]; then echo 'usage: make migrate-rev MSG="describe the change"'; exit 1; fi
-	PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run python scripts/_autogen_revision.py "$(MSG)"
+	@$(SYNC) && $(RUN) python scripts/_autogen_revision.py "$(MSG)"
