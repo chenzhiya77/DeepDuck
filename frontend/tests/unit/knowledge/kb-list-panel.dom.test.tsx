@@ -45,6 +45,8 @@ describe("KbListPanel", () => {
   it("renders the 个人知识库 group with every kb", () => {
     renderPanel();
     expect(screen.getByText("个人知识库")).toBeTruthy();
+    // 分组标题带醒目图标（2026-09-10）：图标沉在标题 span 内（非邻接按钮）。
+    expect(screen.getByText("个人知识库").querySelector("svg")).toBeTruthy();
     expect(screen.getByText("产品资料")).toBeTruthy();
     expect(screen.getByText("研发文档")).toBeTruthy();
   });
@@ -161,6 +163,7 @@ describe("KbListPanel", () => {
   it("renders the display-only 共享知识库 preview group under the personal list", () => {
     const { onSelect } = renderPanel();
     expect(screen.getByText("共享知识库")).toBeTruthy();
+    expect(screen.getByText("共享知识库").querySelector("svg")).toBeTruthy();
     expect(screen.getByText("即将上线")).toBeTruthy();
     const sharedRow = screen.getByText("团队共享库").closest("li")!;
     // 纯展示：行不是按钮、不可拖拽，点击也不触发选中。

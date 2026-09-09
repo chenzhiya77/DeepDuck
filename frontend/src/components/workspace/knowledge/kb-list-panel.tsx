@@ -1,6 +1,6 @@
 "use client";
 
-import { LibraryBig, PanelLeftClose, Plus, Users } from "lucide-react";
+import { LibraryBig, PanelLeftClose, Plus, UserRound, Users } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -82,7 +82,10 @@ export function KbListPanel({
   return (
     <div className="flex h-full flex-col" data-testid="kb-list-panel">
       <div className="flex items-center gap-0.5 px-3 pt-3 pb-2">
-        <span className="text-muted-foreground mr-auto text-xs font-medium">
+        <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs font-medium">
+          {/* 分组醒目图标（2026-09-10）：单人=个人、多人=共享，色随项目强调色惯例
+              （text-X-600 dark:text-X-500，同 document-panel 的 amber 用法）。 */}
+          <UserRound className="text-sky-600 dark:text-sky-500 size-3.5 shrink-0" />
           {tk.personalKBs}
         </span>
         <Button
@@ -195,7 +198,8 @@ export function KbListPanel({
             虚线徽章标明尚未上线。 */}
         <div className="mt-4 flex flex-col gap-0.5" data-testid="kb-shared-group">
           <div className="flex items-center gap-1.5 px-2 pb-1">
-            <span className="text-muted-foreground mr-auto text-xs font-medium">
+            <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs font-medium">
+              <Users className="text-violet-600 dark:text-violet-500 size-3.5 shrink-0" />
               {tk.sharedKBs}
             </span>
             <span className="text-muted-foreground rounded-full border border-dashed px-1.5 py-px text-[10px]">
