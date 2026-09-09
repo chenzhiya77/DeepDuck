@@ -157,4 +157,16 @@ describe("KbListPanel", () => {
     renderPanel({ kbs: [] });
     expect(screen.getByText(/还没有知识库/)).toBeTruthy();
   });
+
+  it("renders the display-only 共享知识库 preview group under the personal list", () => {
+    const { onSelect } = renderPanel();
+    expect(screen.getByText("共享知识库")).toBeTruthy();
+    expect(screen.getByText("即将上线")).toBeTruthy();
+    const sharedRow = screen.getByText("团队共享库").closest("li")!;
+    // 纯展示：行不是按钮、不可拖拽，点击也不触发选中。
+    expect(sharedRow.querySelector("button")).toBeNull();
+    expect(sharedRow.getAttribute("draggable")).toBeNull();
+    fireEvent.click(screen.getByText("团队共享库"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

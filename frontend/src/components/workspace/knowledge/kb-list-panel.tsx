@@ -1,6 +1,6 @@
 "use client";
 
-import { LibraryBig, PanelLeftClose, Plus } from "lucide-react";
+import { LibraryBig, PanelLeftClose, Plus, Users } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -189,6 +189,30 @@ export function KbListPanel({
             })}
           </ul>
         )}
+
+        {/* 共享知识库（2026-09-10 纯展示）：后期规划的共享库分组预览——静态行
+            （无按钮、不可拖拽、不可选中），数据未接后端，仅演示信息架构；
+            虚线徽章标明尚未上线。 */}
+        <div className="mt-4 flex flex-col gap-0.5" data-testid="kb-shared-group">
+          <div className="flex items-center gap-1.5 px-2 pb-1">
+            <span className="text-muted-foreground mr-auto text-xs font-medium">
+              {tk.sharedKBs}
+            </span>
+            <span className="text-muted-foreground rounded-full border border-dashed px-1.5 py-px text-[10px]">
+              {tk.sharedKbComingSoon}
+            </span>
+          </div>
+          <ul className="flex flex-col gap-0.5">
+            {tk.sharedKbSamples.map((sample) => (
+              <li key={sample}>
+                <div className="text-muted-foreground flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm">
+                  <Users className="size-4 shrink-0" />
+                  <span className="min-w-0 truncate">{sample}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       </ScrollArea>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

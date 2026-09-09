@@ -241,6 +241,9 @@ export interface Translations {
   // Knowledge base (RAG workspace page, spec §5.2)
   knowledge: {
     personalKBs: string;
+    sharedKBs: string;
+    sharedKbComingSoon: string;
+    sharedKbSamples: string[];
     createKB: string;
     kbNamePlaceholder: string;
     kbDescriptionPlaceholder: string;
