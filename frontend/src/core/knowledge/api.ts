@@ -198,6 +198,30 @@ export function documentFileUrl(kbId: string, docId: string, ref: string): strin
 }
 
 /**
+ * URL of the persisted source file (2026-09-10 round-trip export): the gateway
+ * serves the upload bytes with ``Content-Disposition: attachment`` under the
+ * stored name. Pure URL builder — cookie-authed GET, never through the CSRF
+ * fetcher (same family as ``documentFileUrl``).
+ */
+export function documentSourceUrl(kbId: string, docId: string): string {
+  return kbUrl(kbId, `/documents/${encodeURIComponent(docId)}/source`);
+}
+
+/**
+ * Trigger a browser download of the document's source file (2026-09-10): a
+ * programmatic anchor over {@link documentSourceUrl}; the saved filename comes
+ * from the response's Content-Disposition, so the anchor needs no own name.
+ */
+export function downloadDocumentSource(kbId: string, docId: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = documentSourceUrl(kbId, docId);
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+/**
  * URL of a video shot's persisted keyframe (spec 2026-09-08 §4/§5, Task 10):
  * the chunk drawer's thumbnail <img src>. Mirrors ``documentFileUrl`` — a pure
  * URL builder over the same gateway prefix, never through the CSRF fetcher.

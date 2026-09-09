@@ -282,6 +282,7 @@ export interface Translations {
     deleteSelected: string;
     cancelSelection: string;
     openChunks: string;
+    downloadDocument: string;
     generateQuestion: string;
     generateQuestionBatch: string;
     moreActions: string;

@@ -339,6 +339,7 @@ export const zhCN: Translations = {
     deleteSelected: "删除所选",
     cancelSelection: "取消选择",
     openChunks: "查看切片",
+    downloadDocument: "下载原文",
     // 右键快捷出题（2026-09-02）：出一条，合并进评测页待审候选；
     // 批量文案不带篇数，避免窄面板下菜单项换行
     generateQuestion: "生成考题",

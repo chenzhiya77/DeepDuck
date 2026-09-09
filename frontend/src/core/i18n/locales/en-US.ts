@@ -358,6 +358,7 @@ export const enUS: Translations = {
     deleteSelected: "Delete selected",
     cancelSelection: "Cancel selection",
     openChunks: "View chunks",
+    downloadDocument: "Download original",
     generateQuestion: "Generate question",
     generateQuestionBatch: "Generate question (joint)",
     moreActions: "More actions",

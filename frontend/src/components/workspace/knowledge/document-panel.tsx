@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Columns,
+  Download,
   Eye,
   EyeOff,
   FileText,
@@ -418,6 +419,7 @@ export function DocumentPanel({
   onDeleteDocument,
   onRetryDocument,
   onOpenChunks,
+  onDownload,
   onGenerateQuestion = () => undefined,
   supportedSuffixes,
   failures = [],
@@ -430,6 +432,10 @@ export function DocumentPanel({
   onDeleteDocument: (docId: string) => Promise<void> | void;
   onRetryDocument: (docId: string) => void;
   onOpenChunks: (doc: KnowledgeDocument) => void;
+  /** 下载原文（2026-09-10 回环导出）：页面层触发浏览器下载（源文件路由），
+      本层只挂菜单项（行尾三个点主入口 + 右键兜底，项目惯例双入口）；
+      未提供时不渲染菜单项（复用方不关心下载）。 */
+  onDownload?: (doc: KnowledgeDocument) => void;
   /** 右键快捷出题（2026-09-02）：页面层持有触发与通知（合成 hook + toast），
       本层只负责菜单项显隐（仅就绪文档可选）与回调传参（单篇/选中集）。 */
   onGenerateQuestion?: (docIds: string[]) => void;
@@ -1024,6 +1030,14 @@ export function DocumentPanel({
                                     <FileText className="size-4" />
                                     {tk.openChunks}
                                   </DropdownMenuItem>
+                                  {onDownload && (
+                                    <DropdownMenuItem
+                                      onSelect={() => onDownload(doc)}
+                                    >
+                                      <Download className="size-4" />
+                                      {tk.downloadDocument}
+                                    </DropdownMenuItem>
+                                  )}
                                   {doc.status === "failed" && (
                                     <DropdownMenuItem
                                       onSelect={() => onRetryDocument(doc.id)}
@@ -1099,6 +1113,14 @@ export function DocumentPanel({
                               <FileText className="size-4" />
                               {tk.openChunks}
                             </ContextMenuItem>
+                            {/* 下载不开第二弹层（锚点导航），无 pointer-events 交叠风险，
+                                不像查看切片需 runAfterMenuClose 延后。 */}
+                            {onDownload && (
+                              <ContextMenuItem onSelect={() => onDownload(doc)}>
+                                <Download className="size-4" />
+                                {tk.downloadDocument}
+                              </ContextMenuItem>
+                            )}
                             {/* 快捷出题（2026-09-02）：仅就绪文档可选（无切片必 409），
                               为该篇出一条题，合并进评测页待审候选；图标与评测页入口统一 */}
                             {doc.status === "ready" && (

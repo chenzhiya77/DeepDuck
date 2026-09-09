@@ -23,7 +23,7 @@ import { WikiEditDialog } from "@/components/workspace/knowledge/wiki-edit-dialo
 import { WikiEntryDrawer } from "@/components/workspace/knowledge/wiki-entry-drawer";
 import { WikiTab } from "@/components/workspace/knowledge/wiki-tab";
 import { useI18n } from "@/core/i18n/hooks";
-import type { WikiGenerateMode } from "@/core/knowledge/api";
+import { downloadDocumentSource, type WikiGenerateMode } from "@/core/knowledge/api";
 import { classifyDocError } from "@/core/knowledge/doc-errors";
 import {
   computeSha256,
@@ -446,6 +446,9 @@ export default function KnowledgePage() {
                     });
                   }}
                   onOpenChunks={setDrawerDoc}
+                  onDownload={(doc) =>
+                    downloadDocumentSource(selectedKb.id, doc.id)
+                  }
                   onGenerateQuestion={async (docIds) => {
                     // 右键快捷出题（2026-09-02）：出一条，合并进待审候选（后端合并语义）；
                     // 通知与评测页生成对话框同款（stk.generating），停留文档页。
