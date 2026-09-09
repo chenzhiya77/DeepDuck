@@ -490,4 +490,13 @@ li[data-drag-source="true"] {
   opacity: 0.35;
 }
 
+/* streamdown 表格外壳原生 overflow 退役（2026-09-10 隐式滑条化）：库硬编码的
+   overflow-x/y-auto 粗滑条（带箭头、常驻）改由表格内层 ScrollArea 承担
+   （markdown-content 的 StreamingTable：horizontal + type="scroll" + 停 2s 淡出，
+   aa02a307 同款隐式滑条）。外壳改 visible 后不再自滚；ScrollArea 在壳内 clip 并
+   横滚，宽表不溢出壳的圆角边框。 */
+[data-streamdown="table-wrapper"] {
+  overflow: visible;
+}
+
 @import "./eval-metrics.css";

@@ -7,7 +7,7 @@
  * 非 GFM 表）→ 渲染为纯文本、不生成 `<table>`。散文 chunk 渲染回归恒绿（旧行为不变）。
  */
 import { afterEach, describe, expect, it } from "@rstest/core";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { I18nContext } from "@/core/i18n/context";
@@ -66,5 +66,17 @@ describe("ChunkCard 表格行卡渲染（spec 2026-09-09 §8）", () => {
     const { container } = renderCard(prose);
     expect(container.querySelector("table")).toBeNull();
     expect(container.textContent).toContain(prose);
+  });
+
+  it("表格行卡无 fullscreen 扩大按钮，且表格沉入隐式 ScrollArea（2026-09-10 UI 对齐）", () => {
+    const { container } = renderCard(MARKDOWN_ROW_CARD);
+    // fullscreen 扩大效果退役（controls.table.fullscreen=false）：工具条不再渲染该按钮，
+    // 其 buggy overlay（按钮无效 + 点击穿透退出详情）随之消失；copy/download 保留。
+    expect(screen.queryByLabelText(/fullscreen/i)).toBeNull();
+    // 表格沉入 ScrollArea（隐式滑条，aa02a307 同款）：table 在 scroll-area viewport 内，
+    // 横滚由 ScrollArea 承担而非 streamdown 外壳的原生粗滑条。
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]');
+    expect(viewport).toBeTruthy();
+    expect(viewport!.querySelector("table")).toBeTruthy();
   });
 });
