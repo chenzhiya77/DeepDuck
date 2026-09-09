@@ -62,10 +62,36 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
 - Test: `backend/tests/knowledge/test_api.py`（门控两态：off 拒 `.xlsx` / on 收 `.xlsx`；`.csv`
       恒在；三后缀 `.xlsx`/`.xls`/`.tsv`；`max_size_mb` 体积门）
 
-- [ ] RED：门控两态用例 failed（端点恒返文本集）。
-- [ ] Implement：配置段 + frozenset + 端点并集 + 体积门。
-- [ ] GREEN + revert proof（摘 `table_ingest_enabled` 门控 → 用例 RED）。
-- [ ] Commit: `feat(rag): gate table upload suffixes behind rag.table.enabled`
+- [x] RED：门控两态用例 failed（端点恒返文本集）。—— 6 条新用例 RED（4 条
+      `ImportError: TABLE_UPLOAD_SUFFIXES`、2 条 400≠202）。
+- [x] Implement：配置段 + frozenset + 端点并集 + 体积门。
+- [x] GREEN + revert proof（摘 `table_ingest_enabled` 门控 → 用例 RED）。—— 恢复后
+      `tests/knowledge` + `tests/test_rag_config.py` 全量 **1005 passed / 2 failed / 2 skipped**
+      （6m41s），ruff check + format 双净；revert proof 把 `table_ingest_enabled()` 摘成恒
+      `return False` → 4 条 on 态用例 RED → 恢复。
+- [x] Commit: `feat(rag): gate table upload suffixes behind rag.table.enabled`
+
+### 交付纪要（2026-09-09）
+
+- **预存缺陷顺手修了（本任务同一咽喉）**：三条 off 态门控用例（`test_api.py` 两条 +
+  `test_parser.py::test_video_upload_suffixes_contract`）**开发机上本来就红**：它们声称「测试
+  环境默认 off」却直读真实 `config.yaml`（本机 `rag.video.enabled: true`）。已改为双腿
+  config stub（`_stub_rag_gates` / `_stub_gates`）——stub 必须同时带 video 与 table 两条腿，
+  否则另一腿走 AttributeError 降级路，会把真实行为掩盖成「恰好也是 off」。基线从
+  67 passed/3 failed → 79 passed/0 failed。
+- **两个冻结细节**：①`max_size_mb` 默认 **50**（spec 只给 `ge=1` 未给值；电子表格远小于视频
+  的 2048）；②**体积门只管被门控的三后缀**，`.csv` 不受 `rag.table.max_size_mb` 约束——它是
+  既有文本集成员，spec §4「.csv 不门控」推到体积面就是不得为本特性给它新增限制（已用
+  `test_table_size_gate_does_not_apply_to_csv` 钉死）。
+- **额外覆盖面**（plan Files 未列、对标视频 Task 1 同名提交 `787e817e` 补齐）：
+  `tests/test_rag_config.py::TestRagTableConfig`（6 例：默认值/覆盖/非法 literal/非法下界/
+  两腿独立/**shipped config.example.yaml 的 `rag.table` 段能被模型吃下且值与文档一致**）；
+  路由 `/supported-formats` docstring 补表格腿。`config.example.yaml` 新增注释段；`config.yaml`
+  同步加 `table.enabled: false`（gitignored，仅本机；Task 7 实测时再开门）。
+- **遗留的预存失败（与本任务无关，未动）**：`test_rag_config.py` 两条用例仍钉
+  `vlm_model == "Qwen/Qwen3-VL-30B-A3B-Instruct"`，而 HEAD 上默认值已是 `qwen3.7-flash`
+  （本次 diff 对这两个文件纯增量 +67/-0，未触碰该行）；`ruff format --check` 全仓另有一处
+  预存未格式化文件 `tests/knowledge/tools/test_graph_search.py`（git 未修改，非本次引入）。
 
 ## Task 2: 分隔文本解析 CSV/TSV → GFM（spec §5）
 
