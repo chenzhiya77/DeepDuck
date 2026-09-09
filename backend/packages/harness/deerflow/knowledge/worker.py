@@ -452,7 +452,11 @@ class KnowledgeIndexWorker:
             except Exception:
                 logger.warning("failed to persist parsed images for document %s; continuing without image files", doc_id, exc_info=True)
         await self._store.update_document_status(doc_id, "chunking")
-        chunks = chunk_markdown(markdown, doc_id)
+        # Table-aware chunking reads the row-card serialization mode from config
+        # (spec §4/§7); the worker only forwards it — no branching here. Non-table
+        # documents are unaffected (chunk_markdown ignores card_mode for prose).
+        card_mode = get_app_config().rag.table.card_mode
+        chunks = chunk_markdown(markdown, doc_id, card_mode=card_mode)
         await self._store.insert_chunks(
             [
                 {

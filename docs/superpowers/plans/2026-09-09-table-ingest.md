@@ -166,7 +166,7 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       + `_parse_excel`（gate/延迟 import/run_file_io）+ parse_document Excel 分支 → `test_parser.py`
       **72 passed/1 skipped**、`tests/knowledge` 全量 **1023 passed/3 skipped/0 failed**（5m46s）、ruff 双净；
       revert proof 同时 neuter 两新函数 → **10 条 RED**（`all_sheets_empty` 期望 "" 恒绿 + 真实 xlsx skip）→ 恢复 72 passed。
-- [ ] Commit: `feat(rag): parse Excel workbooks into per-sheet GFM tables via calamine`
+- [x] Commit: `feat(rag): parse Excel workbooks into per-sheet GFM tables via calamine`（`40c77eb2`）
 
 ### 交付纪要（2026-09-09）
 
@@ -230,9 +230,48 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       card_mode 两态逐字钉死冻结模板（spec §7）；溯源说明行仅多块拆分带；
       chunk_index 连续 + id 合规 `[0-9a-f]{32}#\d{4}`；**非表格散文回归逐字不变**守现有行为）
 
-- [ ] RED → Implement → GREEN → revert proof（摘表头重复 → 「每块含表头」用例 RED；摘表格检测
-      → 表块回落硬切、散文回归恒绿）。
+- [x] RED → Implement → GREEN → revert proof（摘表头重复 → 「每块含表头」用例 RED；摘表格检测
+      → 表块回落硬切、散文回归恒绿）。—— 15 条新用例 RED（`is_table`/`_chunk_table_block`/`card_mode`
+      未定义）→ 引入 `_Block` + 表格检测 + `_chunk_table_block` + `chunk_markdown(card_mode=)` + worker
+      接线 → `test_chunker.py` **29 passed**、`tests/knowledge` 全量 **1040 passed/3 skipped/0 failed**
+      （6m02s，+17 无回归）、ruff 双净；revert proof 同时 neuter 表头重复 + 表格检测 → **8 RED / 21 绿**
+      （散文回归 + 现有 12 例 + fence/孤 pipe/provenance/超宽行/linearized 恒绿）→ 恢复 29 passed。
 - [ ] Commit: `feat(rag): table-aware chunking with header-anchored row groups`
+
+### 交付纪要（2026-09-10）
+
+- **plan↔代码结构不符（用户确认走 Option A，偏离 plan 字面）**：plan Task 4 假设 chunker 有 `_Block`
+  dataclass（`.is_table`/`.text`）、heading 归 `heading_path`（不入 text）、`_HEADING_RE` 支持 `#{1,6}`、
+  有 `page_map`；**实际** `chunker.py` 全程用 `(path, text)` 元组、heading **在 text 里**、`_HEADING_RE`
+  仅 `#{1,2}`、无 `page_map`（`Chunk.page` 恒 None）。照 plan 字面实现会破坏现有 12 例（如
+  `test_oversized_block_subdivided_by_paragraph` 断言 `text.startswith("## 1.2 …")`）。故引入轻量
+  `_Block(path, text, is_table=False)` 把元组管线换成它、**保留实际分块语义**（H1/H2、heading-in-text、
+  path 逻辑），现有 12 例仅用公共 `chunk_markdown` → 透明不变；plan 的 Step 4.1 新测试按原样可跑。
+- **实现落点**（`chunker.py`；动 `chunker.py` + `worker.py` 一行接线，**未动 pyproject/lock**）：
+  - `_split_by_headings` 改索引式 while 循环（保留 fence/heading 语义），新增两支表格检测：GFM 管道表
+    （行 `_GFM_ROW_RE` + 次行分隔 `_GFM_DELIM_RE` 双条件，fence 内不触发）→ 收连续管道行为一原子
+    `is_table` 块；残留 HTML `<table`（MinerU 整表压一行）→ 深度计数配平 `</table>` 整段作原子块。
+  - `_subdivide_oversized`/`_merge_small_blocks` 对 `is_table` 块透传（不硬切、不合并、不被合并）。
+  - `_chunk_table_block(path, header, delimiter, rows, max_tokens, card_mode)`：贪心行组（表头计入每组）；
+    **每块重复表头+分隔**；多块拆分每块顶加溯源行 `表格：{名}（第 {起}-{止} 行 / 共 {N} 行）`（名取
+    `path[-1]`）；`card_mode` 两态 markdown（GFM 行）/ linearized（`列名: 值 | …`）；退化：单行+表头超
+    cap 时整行单独成块**绝不中切**。
+  - `chunk_markdown(…, card_mode="markdown")` 新增可选关键字参；路由 GFM 表块 → `_chunk_table_block`、
+    残留 HTML 表块 → 原样原子（绝不 `_hard_split_tokens`，§7.3）、散文 → 原逻辑；`chunk_index` 统一
+    enumerate 连续、`chunk_id={doc_id}#NNNN` 不变。
+  - worker `_reparse_and_chunk`：`card_mode = get_app_config().rag.table.card_mode` → 传入
+    `chunk_markdown`（仅传参、无分支；`.md` 等散文文档 card_mode 被忽略）。
+- **顺带修 H2-only heading_path 累积**（服务「Excel sheet 名进 heading_path」）：原 `path[:1] + [title]`
+  假设 path[0] 是 H1；Excel 每 sheet 是同级 `## {sheet}`（无 H1），第 2+ sheet 会累积成
+  `["Sheet1","Sheet2"]`。改为显式跟踪 `h1`：H2 有 H1 父 → `[h1, title]`、无 H1 → `[title]`（各 sheet
+  独立根）。对现有「H1→H2」文档逐字等价（现有 12 例均有 H1 父，不受影响）。
+- **测试面**：17 例——GFM 表原子检测 / fence 内 `|` 不判表 / 孤立 `|` 行（次行非分隔）不判表 / 残留
+  HTML 原子（含超 cap 不硬切 + Task 0 实测单行 fixture）/ `_chunk_table_block` 小表单块·大表表头重复·
+  溯源行·超宽行不中切·linearized / `chunk_markdown` card_mode 透传·page 恒 None·内嵌表继承 heading_path·
+  Excel sheet 名进 path·chunk_index 连续 / 散文回归不误判。
+- **遗留（未动，非本任务）**：`tests/test_rag_config.py` vlm_model 漂移、uv.lock tenki 再生（同 Task 3
+  纪要，knowledge 目录外/repo-wide 预存）。残留 HTML 表原子块即便超 cap 也整块保留（§7.3 明确取舍，
+  优于现状从 `<td><p>` 中切的损坏）。
 
 ## Task 5: worker 兼容性验证 + eval 接入（spec §3/§9）
 
