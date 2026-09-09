@@ -319,3 +319,34 @@ def test_non_table_prose_regression_unchanged():
     assert chunks[0].heading_path == ["章"]
     assert chunks[0].text.startswith("# 章")  # heading 仍在 text（保留实际语义）
     assert any("## 小节" in c.text for c in chunks)
+
+
+def test_sheet_heading_not_isolated_into_own_chunk():
+    """Excel sheet 标题（`## {sheet}`）后紧跟表 → 不孤立成空卡，整 sheet 一卡（缺陷修复）。
+
+    复现生产：测试.xlsx 单 sheet 产出 2 卡（3-token 孤立 '## Sheet1' + 表卡）；
+    标题信息已在 heading_path，无需再占一卡。
+    """
+    md = "## Sheet1\n\n" + _gfm_table([["a", "b"], ["1", "2"]])
+    chunks = chunk_markdown(md, "doc:1")
+    assert len(chunks) == 1  # 修复前为 2（孤立标题卡 + 表卡）
+    assert chunks[0].heading_path == ["Sheet1"]
+    assert "| 1 | 2 |" in chunks[0].text
+    assert not chunks[0].text.lstrip().startswith("## Sheet1")  # 表卡正文非孤立标题
+
+
+def test_nested_headings_not_isolated_before_table():
+    """多层标题（H1+H2）后紧跟表 → 标题只进 heading_path，不产孤立卡。"""
+    md = "# 年报\n\n## 季度销售\n\n" + _gfm_table([["Region", "Q1"], ["North", "100"]])
+    chunks = chunk_markdown(md, "doc:1")
+    assert len(chunks) == 1
+    assert chunks[0].heading_path == ["年报", "季度销售"]
+    assert "| North | 100 |" in chunks[0].text
+
+
+def test_heading_followed_by_prose_keeps_heading_in_text():
+    """标题后跟正文（非表）→ heading-in-text 语义不变（散文回归守卫）。"""
+    md = "# 章\n\n## 小节\n\n正文内容。"
+    chunks = chunk_markdown(md, "doc:1")
+    assert chunks[0].text.startswith("# 章")
+    assert "## 小节" in chunks[0].text and "正文内容。" in chunks[0].text

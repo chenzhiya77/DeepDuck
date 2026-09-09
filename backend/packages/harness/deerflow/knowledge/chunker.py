@@ -161,7 +161,33 @@ def _split_by_headings(markdown: str) -> list[_Block]:
         buf.append(line)
         i += 1
     flush()
-    return blocks
+    return _drop_orphan_headings_before_table(blocks)
+
+
+def _is_heading_only(text: str) -> bool:
+    """True if every non-empty line is an H1/H2 heading (no prose body)."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return bool(lines) and all(_HEADING_RE.match(ln) for ln in lines)
+
+
+def _drop_orphan_headings_before_table(blocks: list[_Block]) -> list[_Block]:
+    """Drop heading-only blocks whose next kept block is a table.
+
+    A heading immediately preceding a table carries no body of its own; its title
+    already lives in the table block's path (surfaced as heading_path), so emitting
+    it as a separate chunk yields a useless near-empty card — one per Excel sheet
+    in the workbook-normalized markdown. Prose headings (next kept block is not a
+    table) keep their heading-in-text semantics untouched.
+    """
+    kept: list[_Block] = []
+    next_is_table = False
+    for block in reversed(blocks):
+        if not block.is_table and _is_heading_only(block.text) and next_is_table:
+            continue
+        kept.append(block)
+        next_is_table = block.is_table
+    kept.reverse()
+    return kept
 
 
 def _hard_split_tokens(text: str, max_tokens: int) -> list[str]:
