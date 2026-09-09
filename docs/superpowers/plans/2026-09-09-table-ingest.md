@@ -338,7 +338,7 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       → `git stash pop` 恢复 30 passed。
 - [x] **prettier 陷阱**（对齐视频 Task 10 教训）：prettier 非本仓门禁、勿跑 `--write`，
       `pnpm check`（eslint+tsc）才是；匹配周围风格即可。—— 已避：未跑 prettier，仅 `pnpm check` 作门禁。
-- [ ] Commit: `feat(frontend): spreadsheet suffixes and native GFM table rendering in chunk cards`
+- [x] Commit: `feat(frontend): spreadsheet suffixes and native GFM table rendering in chunk cards`（`32c6b271`）
 
 ### 交付纪要（2026-09-10）
 
@@ -363,16 +363,39 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
 
 ## Task 7: 收官——全量回归 + 浏览器实测 + 指南落档
 
-- [ ] 后端 `pytest tests/knowledge -q` 全量 GREEN + `ruff check/format` 双净；前端 `pnpm check`
+- [x] 后端 `pytest tests/knowledge -q` 全量 GREEN + `ruff check/format` 双净；前端 `pnpm check`
       双净 + knowledge 套件对基线（仅预存无关失败，如 chat-panel model selector / umap）。
+      —— 后端 **1042 passed / 3 skipped**（+2 = Task 5 的 test_table_eval；3 skip 为 funasr/calamine
+      真实供应端守门）；ruff check **All checks passed** + format 我的文件全净（`tests/knowledge/tools/
+      test_graph_search.py` 的 format 漂移为 acabd069/2026-09-05 预存、非本特性，同 test_rag_config 漂移例，未动）。
+      前端 knowledge 套件 **999 passed / 1 failed**（唯一失败 = chat-panel model selector，aa02a307/2026-09-08
+      预存、plan 已预言的基线）；`pnpm check`（eslint+tsc）**EXITCODE=0** 双净。
 - [ ] 浏览器实测：上传真实 `.xlsx`（多 sheet）+ `.csv` + 一份含表格的 PDF（补验 Task 0 实测门）
       → 五态到 ready → 切片抽屉行卡**渲染为真表格且每块含表头** → 对话检索命中正确行 →
       检索测试命中行卡 → 评测跑一轮表格 KB；核对 chunk_count 合理（无行爆炸）。截图落 `pr-build/`。
-- [ ] Modify: `backend/AGENTS.md`（`### Knowledge Base / RAG` 小节补「表格入库」段：门控
+      —— **延后（环境未就绪，用户选定先提交文档+回归）**：探测得 nginx:2026 未起（仅 gateway:8001 在跑）、
+      `config.yaml rag.table.enabled=false`、`python-calamine` 未装；真实入库到 ready 还需 embedding/MinerU
+      keys + Qdrant:6333。待环境就绪作为独立步骤补，届时 commit 补 smoke evidence。
+- [x] Modify: `backend/AGENTS.md`（`### Knowledge Base / RAG` 小节补「表格入库」段：门控
       `rag.table.enabled` + `TABLE_UPLOAD_SUFFIXES` / parser 归一 CSV-TSV-Excel-MinerU 表格 → GFM /
       chunker 行组 + 重复表头 + card_mode 消融 / 无新 store 表无新腿 / chunk_id 扁平序进 L1）。
       对齐 orientation-layer 原则（模块+职责+契约口径，不含 commit hash/RED-GREEN/验收清单）。
-- [ ] Commit: `docs(rag): sync agent guide for table ingest and smoke evidence`
+      —— 已补：**Table ingestion** 段（与 **Graph path online flow** 平行），事实已逐一核实源代码
+      （`TABLE_UPLOAD_SUFFIXES`/`table_ingest_enabled` 降级关/`_parse_excel` 延迟 calamine + 清晰 ValueError/
+      `_workbook_rows_to_markdown` 每 sheet GFM）。
+- [x] Commit: `docs(rag): sync agent guide for table ingest`（doc-only；smoke evidence 随实测延后补）
+
+### 交付纪要（2026-09-10）
+
+- **自动化收官全绿**：后端 `tests/knowledge` **1042 passed / 3 skipped**（ruff check 全过、format 本特性文件全净）；
+  前端 knowledge 套件 **999 passed / 1 预存无关失败** + `pnpm check` 双净。Task 0-6 零回归。
+- **文档同步**：`backend/AGENTS.md` 的 `### Knowledge Base / RAG` 补 **Table ingestion** 段（门控+后缀集 /
+  parser 归一四源→GFM / chunker 行卡+重复表头+溯源行+card_mode 消融 / 无新 store 表无新腿 /
+  chunk_id 扁平序零改造进 L1），严格 orientation-layer 口径（无 hash/RED-GREEN/验收清单）。
+- **预存无关项（未动、非本任务）**：`test_graph_search.py` ruff format 漂移（acabd069）、chat-panel
+  model selector 前端失败（aa02a307）、`tests/test_rag_config.py` vlm_model 漂移——均先于本特性。
+- **浏览器实测延后**（用户选定）：环境未就绪（nginx 未起 / 门控关 / calamine 未装 / 需 keys+Qdrant）；
+  就绪后作为独立步骤跑，届时补截图到 `pr-build/` 并 commit smoke evidence。
 
 ## 风险登记（实施期新增即补此行下表）
 
