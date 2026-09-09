@@ -236,7 +236,7 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       接线 → `test_chunker.py` **29 passed**、`tests/knowledge` 全量 **1040 passed/3 skipped/0 failed**
       （6m02s，+17 无回归）、ruff 双净；revert proof 同时 neuter 表头重复 + 表格检测 → **8 RED / 21 绿**
       （散文回归 + 现有 12 例 + fence/孤 pipe/provenance/超宽行/linearized 恒绿）→ 恢复 29 passed。
-- [ ] Commit: `feat(rag): table-aware chunking with header-anchored row groups`
+- [x] Commit: `feat(rag): table-aware chunking with header-anchored row groups`（`3352461b`）
 
 ### 交付纪要（2026-09-10）
 
@@ -286,10 +286,38 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
 - Create: `backend/docs/table-kb-question-authoring.md`（按列值提问型 / 跨行聚合型不可锚定说明 /
       card_mode 消融对比流程，镜像 `video-kb-question-authoring.md`）
 
-- [ ] RED → Implement → GREEN。（表征测试 naturally GREEN + revert proof 补牙：neuter
+- [x] RED → Implement → GREEN。（表征测试 naturally GREEN + revert proof 补牙：neuter
       `chunk_markdown` 生成不合规 id → `validate_question` 抛 `QuestionBankInvalidQuestion` →
-      用例 RED → 恢复，对齐视频 Task 11 手法）
+      用例 RED → 恢复，对齐视频 Task 11 手法）—— `test_table_eval.py` **2 passed**（naturally
+      GREEN：行卡 chunk_id 过 golden 校验 + recall@k/hit_rate/path_accuracy=1.0）；revert proof
+      neuter `{index:04d}`→`{index}` → **2 RED**（`QuestionBankInvalidQuestion: …got '…#0'`）→
+      恢复 chunker.py git-clean；`tests/knowledge/eval` 全量 **326 passed**、ruff 双净。
 - [ ] Commit: `docs(rag): table KB question authoring guide and eval integration test`
+
+### 交付纪要（2026-09-10）
+
+- **纯验证 + 新增（无生产代码改动）**：Task 5 不动任何生产逻辑——worker 文本腿的 card_mode
+  接线已在 Task 4 落地、chunker.py revert proof 后 git-clean。仅新增 1 测试 + 1 指南。
+- **worker 文本腿零改动核实（spec §3）**：`_is_video_path`（后缀 ∈ `VIDEO_UPLOAD_SUFFIXES`
+  = `{.mp4,.mov,.mkv,.webm}`）是视频/文本腿的**单一判据**；表格后缀（.csv/.xlsx/.tsv ∉ 视频集）
+  → 落**文本腿** `_reparse_and_chunk`，`path_status` 仍三腿 `{vector,graph,wiki}`、**无新腿**、
+  **无 `_is_video_path` 的表格类比**；`_reparse_and_chunk` 唯一改动是 Task 4 的 card_mode 透传。
+- **`test_table_eval.py`（镜像 `test_video_eval.py`）**：真实 store 建 fake 表格 KB——一个 `.csv`
+  文档走生产 `parse_document`（永远开启、不受门控）归一、一个 `.xlsx` 文档走生产
+  `_workbook_rows_to_markdown`（纯函数，避开 calamine/门控）组装，二者均用生产 `chunk_markdown`
+  切成行卡入库（字段口径同 worker insert）；跑生产 `run_layer1_for_kb` + stub searchers。断言
+  ① 全部行卡 chunk_id 过 `add_question`→`validate_question` 的 `<32-hex>#NNNN` golden 校验
+  （零 schema 改造）+ CSV 大表切出 ≥2 行卡；② 锚定一张行卡 → recall@k/hit_rate/path_accuracy=1.0。
+- **revert proof（对齐视频 Task 11）**：neuter `chunk_markdown` 的 `chunk_id={doc_id}#{index:04d}`
+  → `{index}`（非 4 位补零）→ 两用例均 RED（`QuestionBankInvalidQuestion: relevant_chunk_ids
+  entries must match '<doc_id>#NNNN', got '…#0'`）→ 恢复后 chunker.py 与 3352461b 逐字一致
+  （git diff 空）。证明用例确实钉住「行卡 chunk_id 合规」而非空跑。
+- **`backend/docs/table-kb-question-authoring.md`（镜像 video 版）**：§1 行卡结构 = spec §7 冻结
+  模板（溯源行 + 重复表头 + 行组）；§2 三类造题——按列值提问型（可精确锚定单卡）/ 跨行聚合型
+  （**不可锚定单卡、属降级语义**，spec §9：L1 单跳召回不覆盖全表，须列全相关卡否则 recall 被低估）/
+  按表头列语义型（每卡重复表头的红利）；§3 golden 字段表格专用注意（含底纹表头失读不猜列名，
+  spec §11）；§4 card_mode（markdown vs linearized）recall-test 消融流程；§5 代码/文档索引。
+- **验证**：`tests/knowledge/eval` 全量 **326 passed**（含新 2 例，无 KB/fixture 冲突）、ruff 双净。
 
 ## Task 6: 前端表面层（spec §8）
 
