@@ -392,9 +392,8 @@ export const enUS: Translations = {
     statsReady: "Ready",
     statsIndexing: "Indexing",
     statsFailed: "Failed",
-    // Video-row badge (spec 2026-09-08 §5): duration as title/aria, shot count inline.
+    // Video-row badge (spec 2026-09-08 §5): duration as title/aria (shot count removed — duplicates the chunks column).
     videoDuration: "Duration",
-    shotCount: (count: number) => `${count} shots`,
     table: {
       name: "Name",
       uploader: "Uploader",

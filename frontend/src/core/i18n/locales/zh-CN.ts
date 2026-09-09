@@ -375,9 +375,8 @@ export const zhCN: Translations = {
     statsReady: "就绪",
     statsIndexing: "索引中",
     statsFailed: "失败",
-    // 视频行徽章（spec 2026-09-08 §5）：时长作 title/aria，镜头数为行内文案。
+    // 视频行时长徽章（spec 2026-09-08 §5）：时长作 title/aria（镜头数与切片列重复已移除）。
     videoDuration: "视频时长",
-    shotCount: (count: number) => `${count} 镜头`,
     table: {
       name: "名称",
       uploader: "上传者",

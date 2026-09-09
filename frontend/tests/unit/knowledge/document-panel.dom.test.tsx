@@ -951,10 +951,11 @@ describe("DocumentPanel 失败通知面板接线", () => {
 });
 
 // ── 视频入库（spec 2026-09-08 §5，plan Task 9）────────────────────────────
-// 文档列表视频行加时长 + 「N 镜头」徽章；path_status hover 为视频文档前置
+// 文档列表视频行加时长徽章；path_status hover 为视频文档前置
 // asr/segment/caption 三条腿芯片，degraded 状态着琥珀色（对齐现有视觉词汇）。
+// 镜头数与「切片数」列重复，2026-09-09 从徽章移除（只留时长）。
 describe("DocumentPanel 视频文档徽章（spec 2026-09-08 §5）", () => {
-  it("视频行渲染时长 + 「N 镜头」徽章（duration_ms/shot_count 由列表接口注入）", () => {
+  it("视频行渲染时长徽章（duration_ms 注入；镜头数与切片列重复已移除）", () => {
     renderPanel({
       documents: [
         doc({
@@ -968,7 +969,7 @@ describe("DocumentPanel 视频文档徽章（spec 2026-09-08 §5）", () => {
     });
     const meta = screen.getByTestId("doc-video-meta");
     expect(meta.textContent).toContain("12:34");
-    expect(meta.textContent).toContain("42 镜头");
+    expect(meta.textContent).not.toContain("镜头"); // 与切片数列重复，不再渲染
   });
 
   it("时长跨小时进位为 H:MM:SS", () => {
@@ -991,7 +992,7 @@ describe("DocumentPanel 视频文档徽章（spec 2026-09-08 §5）", () => {
     expect(screen.queryByTestId("doc-video-meta")).toBeNull();
   });
 
-  it("视频未物化（无 duration_ms/shot_count）时不渲染徽章", () => {
+  it("视频未物化（无 duration_ms）时不渲染徽章", () => {
     renderPanel({
       documents: [
         doc({ name: "产品培训.mp4", status: "parsing", chunk_count: null }),

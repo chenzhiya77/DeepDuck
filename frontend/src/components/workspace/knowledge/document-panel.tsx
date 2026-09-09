@@ -917,28 +917,18 @@ export function DocumentPanel({
                                 fileName={doc.name}
                               />
                               <span className="truncate">{doc.name}</span>
-                              {/* 视频行徽章（spec 2026-09-08 §5）：时长 + 「N 镜头」。胶片图标
-                                  已由 FileTypeBadge 按 .mp4/.mov/.mkv 后缀自动渲染，此处只补
-                                  时长与镜头数——仅列表接口注入了 duration_ms/shot_count 的
-                                  已物化视频文档才有（文本文档/解析中的视频行不渲染）。 */}
-                              {(doc.duration_ms != null ||
-                                doc.shot_count != null) && (
+                              {/* 视频行时长徽章（spec 2026-09-08 §5）：胶片图标已由
+                                  FileTypeBadge 按 .mp4/.mov/.mkv 后缀自动渲染，此处只补时长——
+                                  仅列表接口注入了 duration_ms 的已物化视频文档才有（文本文档/
+                                  解析中的视频行不渲染）。镜头数与「切片数」列重复，2026-09-09 移除。 */}
+                              {doc.duration_ms != null && (
                                 <span
                                   className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs tabular-nums"
                                   data-testid="doc-video-meta"
                                 >
-                                  {doc.duration_ms != null && (
-                                    <span title={tk.videoDuration}>
-                                      {formatVideoDuration(doc.duration_ms)}
-                                    </span>
-                                  )}
-                                  {doc.duration_ms != null &&
-                                    doc.shot_count != null && (
-                                      <span aria-hidden>·</span>
-                                    )}
-                                  {doc.shot_count != null && (
-                                    <span>{tk.shotCount(doc.shot_count)}</span>
-                                  )}
+                                  <span title={tk.videoDuration}>
+                                    {formatVideoDuration(doc.duration_ms)}
+                                  </span>
                                 </span>
                               )}
                             </div>
