@@ -149,7 +149,8 @@ def sheet(args: argparse.Namespace) -> None:
         subprocess.run(["ffmpeg", "-v", "error", "-y", *inputs,
                         "-filter_complex", stack,
                         "-c:v", "libwebp", "-quality", "85", str(args.out)], check=True)
-    manifest = {args.state: {"frames": len(indices), "fps": fps, "loop": args.mode == "loop"}}
+    manifest = {args.state: {"frames": len(indices), "fps": fps, "loop": args.mode == "loop",
+                             "sheetWidth": width, "sheetHeight": cfg["frame"]}}
     print(json.dumps(manifest))
     print(f"wrote {args.out} ({width}x{cfg['frame']}, {len(indices)} frames @ {fps}fps, "
           f"playback {len(indices) / fps:.2f}s)")

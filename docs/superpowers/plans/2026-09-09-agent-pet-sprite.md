@@ -72,7 +72,7 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 - [ ] **Step 1(先写红测试 `fatigue.test.ts`):** 覆盖 ① 五个子分各自封顶 3;② `max` 语义(单一高分即拉满);③ `collectFatigueInput` 从 `additional_kwargs.deerflow_tool_meta` 正确分出 `toolErrorCount` 与 `unrecoverableErrorCount`;④ **meta 缺失时两者都为 0**(不崩、不误判);⑤ `maxConsecutiveSameTool` 的连续同名计数。按 Task 0 Step 1 的结论决定是否保留 ③④。
 - [ ] **Step 2:** 实现 `fatigue.ts`,阈值表按 spec §7(**阈值是猜的,写进模块注释说明需上线后校准**)。
-- [ ] **Step 3(先写红测试 `sprite.test.ts`):** 覆盖 ① `work-{kind}` → `work` → `fallback` 两级回落逐级;② one-shot 优先于 base;③ manifest 里完全没有候选项时返回 `null`;④ `effectiveFps` 对 `loop: true` 应用 `FATIGUE_FPS_SCALE`、对 `loop: false` **不衰减**(spec §9.2 注释:done 是信息必须读得清)。
+- [ ] **Step 3(先写红测试 `sprite.test.ts`):** 覆盖 ① `work-{kind}` → `work` → `fallback` 两级回落逐级;② one-shot 优先于 base;③ manifest 里完全没有候选项时返回 `null`;④ `effectiveFps` 对 `loop: true` 应用 `FATIGUE_FPS_SCALE`、对 `loop: false` **不衰减**(spec §9.2 注释:done 是信息必须读得清)。**用内联 fixture manifest,不 import 真文件**(真 manifest 到 Task 3 才存在;`resolveSprite` 的 manifest 是参数,spec §9.2)。
 - [ ] **Step 4:** 实现 `sprite.ts`,按 spec §9.2。
 - [ ] **Step 5:** 转绿 + `pnpm check`。
 
@@ -83,13 +83,14 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 - [ ] **Step 1:** 写 `manifest.json`,按 spec §8 的形状(`frameWidth` / `frameHeight` / `fallback: "idle"` / `states`)。**第 1 期只声明 `idle` 与 `wait` 两个条目** —— 其余状态故意不声明,用来验证回落契约真的生效。
 - [ ] **Step 2:** 出**占位帧**(纯色块 + 状态名文字,横向单行,`idle` 2 帧 / `wait` 2 帧即可)。目的是让链路能跑通并可浏览器实测;真图由用户后续替换,替换时**代码零改动**(spec §8 规则 1、2)。占位帧必须满足契约:两组同 `frameWidth × frameHeight`。
 - [ ] **Step 3:** `manifest.json` 用**静态 `import`** 引入(spec §11 裁决),不运行时 fetch。确认 TS 能解析 JSON import(`tsconfig.json` 的 `resolveJsonModule`)。
+- [ ] **Step 4(manifest 自洽断言):** 在 `sprite.test.ts`(或独立 `manifest.test.ts`)里对**静态 import 的真 manifest** 逐态断言 `sheetWidth === frames × frameWidth`、`sheetHeight === frameHeight`(spec §8 自校验;占位帧阶段即生效:2 帧 × 512 ⇒ `sheetWidth: 1024`、`sheetHeight: 512`)。防的是「重导了 sheet 却忘改 manifest 的 frames」这类不同步:它不报错,只表现为某态播到尾巴花屏/空白。
 
 ## Task 4: 渲染器组件(TDD,唯一 DOM 测试)
 
 **Files:** Create `frontend/src/components/workspace/pet/pet-sprite.tsx` + `frontend/tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx`
 
 - [ ] **Step 1(先写红测试):** **只测三件**(spec §13.2,刻意压最小):① `motion-reduce` 下不加 animation、停在第 0 帧;② one-shot 播完(`animationEnd`)后回调触发、回到 base;③ 开关关掉时不渲染任何节点。其余逻辑已被 `sprite.ts` 在 node 环境覆盖,**不要在 DOM 测试里重复测回落**。
-- [ ] **Step 2:** 实现 `pet-sprite.tsx`:只吃 `{ base, workKind, fatigue, oneShot }` + manifest,用 `background-position` + `animation: ... steps(N)` 播放。**不引任何动画库**。`pointer-events-none` 在这一层就加上。
+- [ ] **Step 2:** 实现 `pet-sprite.tsx`:只吃 `{ base, workKind, fatigue, oneShot }` + manifest,用 `background-position` + `animation: ... steps(N)` 播放。**不引任何动画库**。`pointer-events-none` 在这一层就加上。盒子边长取 manifest 的 `displaySize` 并**取偶数整数 CSS px**(spec §10:帧宽在设备像素上对齐,防右缘邻帧鬼影;DPR 1.5 下偶数即整数设备像素)。
 - [ ] **Step 3:** 转绿 + `pnpm check`。
 
 ## Task 5: 订阅者组件 + 设置节
@@ -100,13 +101,14 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 - [ ] **Step 2:** `agent-pet.tsx`:读 `useThread()`(`components/workspace/messages/context.ts`),按 spec §12 把两个消息扫描 **memo 在 `messages.length` 上**;`hasOpenHumanInputRequest` 的调用**逐字照抄** `page.tsx:262-269`(同 `useMemo` 键 `[thread.messages]`、同过滤器 `!isHiddenFromUIMessage`)。
 - [ ] **Step 3:** 组件内 ref:`wasLoading`(下降沿检测)、`greet` 一次性触发、`elapsedMs` 起点(spec §15 开放项 6:记「首次观察到 `isLoading === true`」的时刻)。**跨线程重置**:以 `threadId` 为键把 fatigue / wasLoading 归零,`greet` 不重放(spec §11 裁决)。
 - [ ] **Step 4:** 开关关掉时直接返回 `null`(不留 DOM 节点,与 `notification.enabled` 行为一致)。
-- [ ] **Step 5:** `pnpm check`。
+- [ ] **Step 5(自由放置,spec §10.1):** 设置节加 `offset: { right: 12, top: 56 }`;`core/pet/placement.ts` 实现 `clampOffset` 纯函数 + node 测试;`agent-pet.tsx` 实现 Alt+拖拽:window 级 `pointerdown` 判断 Alt 且指针落在宠物盒矩形内(矩形由 offset + displaySize 算出,**不给宠物 pointer-events**),`pointermove` 更新 offset、`pointerup` 写回 `pet.offset`;渲染时 clamp 到面板可见区。设置行加提示文案与重置位置按钮。手势三件套照抄 Qoder 实测值:**位移 > 4px 才起拖**(Alt+单击不算拖拽)、记 `pointerId` 并 `setPointerCapture`(`pointerup` 释放、`pointercancel` 同样收尾)、**起过拖的手势吞掉紧跟的那次 click**(否则松手会点开底下的消息链接)。
+- [ ] **Step 6:** `pnpm check`。
 
 ## Task 6: 挂载
 
 **Files:** Modify `frontend/src/components/workspace/chats/chat-box.tsx`
 
-- [ ] **Step 1:** 在 `:413` 的 `div#chat` 内、`{children}` 之后加 `<AgentPet />`,定位 `absolute right-3 top-14 z-20 pointer-events-none` + Task 0 Step 2 裁定的窄面板隐藏方式。**只改桌面分支,mobile 分支(`:349-353`)不动**(spec §10 裁决)。
+- [ ] **Step 1:** 在 `:413` 的 `div#chat` 内、`{children}` 之后加 `<AgentPet />`,定位 `absolute z-20 pointer-events-none`,`right/top` 读设置 `pet.offset`(渲染时 clamp,默认 12/56 即 right-3 top-14,spec §10.1)+ Task 0 Step 2 裁定的窄面板隐藏方式。**只改桌面分支,mobile 分支(`:349-353`)不动**(spec §10 裁决)。
 - [ ] **Step 2:** 确认没有触碰 `pinnedContentWidth` / `animatingRightPanel` / `handlePanelGroupLayoutChanged` / `handleSidePanelResize` 任何一处(spec §2.6 已核实四条全在侧面板)。
 - [ ] **Step 3:** `pnpm check` + `pnpm test` 全量。
 
@@ -120,6 +122,7 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 - [ ] **Step 6:** 系统开启「减少动态效果」,验证停在静态帧。关掉设置开关,验证 DOM 里无残留节点。
 - [ ] **Step 7:** 切线程再切回,验证 fatigue 归零、`greet` 不重放。
 - [ ] **Step 8:** `cd frontend && pnpm perf:check` 跑一次确认预算未破。
+- [ ] **Step 9(自由放置):** Alt+拖拽鹦鹉到新位置,刷新页面验证持久化;拖窄 sidecar 验证盒子被 clamp 在可见区内不出屏;不按 Alt 在鹦鹉位置按住拖动,验证不起拖且点击穿透到下方内容;**Alt+按住但位移 < 4px 后松手,验证鹦鹉没动**(阈值生效);**把鹦鹉拖到一条消息链接上松手,验证链接没有被点开**(拖后吞 click 生效);**拖拽全程验证鹦鹉仍播当前态、不切态**(§10.1 拖拽不进状态机)。
 
 ## Task 8: 文档同步(仓库强制约定)
 

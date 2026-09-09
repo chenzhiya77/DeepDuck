@@ -394,21 +394,23 @@ export function computeFatigueLevel(i: FatigueInput): FatigueLevel {
   "displaySize": 96,
   "fallback": "idle",
   "states": {
-    "idle":  { "frames": 32, "fps": 8,  "loop": true  },
-    "think": { "frames": 32, "fps": 8,  "loop": true  },
-    "work":  { "frames": 32, "fps": 8,  "loop": true  },
-    "wait":  { "frames": 32, "fps": 8,  "loop": true  },
-    "error": { "frames": 32, "fps": 8,  "loop": true  },
-    "done":  { "frames": 32, "fps": 24, "loop": false },
-    "greet": { "frames": 30, "fps": 12, "loop": false }
+    "idle":  { "frames": 32, "fps": 8,  "loop": true,  "sheetWidth": 16384, "sheetHeight": 512 },
+    "think": { "frames": 32, "fps": 8,  "loop": true,  "sheetWidth": 16384, "sheetHeight": 512 },
+    "work":  { "frames": 32, "fps": 8,  "loop": true,  "sheetWidth": 16384, "sheetHeight": 512 },
+    "wait":  { "frames": 32, "fps": 8,  "loop": true,  "sheetWidth": 16384, "sheetHeight": 512 },
+    "error": { "frames": 32, "fps": 8,  "loop": true,  "sheetWidth": 16384, "sheetHeight": 512 },
+    "done":  { "frames": 32, "fps": 24, "loop": false, "sheetWidth": 16384, "sheetHeight": 512 },
+    "greet": { "frames": 30, "fps": 12, "loop": false, "sheetWidth": 15360, "sheetHeight": 512 }
   }
 }
 ```
 
+**manifest 自校验(2026-09-10 确认)**:每态多存 `sheetWidth / sheetHeight` 两个**由抽帧脚本写出**的数(`pet_extract.py sheet` 的 manifest 输出已含),node 测试逐态断言 `sheetWidth === frames × frameWidth` 且 `sheetHeight === frameHeight`。防的是「重导了 30 帧的 sheet 却忘了改 manifest 的 32」这类不同步:它不报错,只表现为某态播到尾巴花屏/空白,且只在该态播放时露出。纯算术、不解码图片,CI 提交时即拦。对照:Qoder 在加载时硬校验 sheet 网格(`DESKTOP_PET_SPRITESHEET_GRID_INVALID` 直接抛错),我们把它前移到提交时。
+
 **三个尺寸/速度数(2026-09-10 用户确认):**
 
 - `frameWidth × frameHeight = 512` 是 **sheet 帧的像素尺寸**,由缩放上限反推:`帧像素 = 缩放上限 CSS px × 2(桌面 DPR 上限)`。缩放上限 **256 CSS px** 已确认(默认显示 `displaySize: 96` 的约 2.7 倍)。512 在 2x 屏上的清晰显示上限即 256,超过即插值糊,不可逆
-- `displaySize` 是 **CSS 显示尺寸**(元素盒子;鸟占满盒高、水平居中、两侧透明),与帧像素是两个独立的数:前者运行时随便改,后者导出时烘焙定死。缩小免费且干净,放大超过 `帧像素 ÷ DPR` 丢细节
+- `displaySize` 是 **CSS 显示尺寸**(元素盒子;鸟占满盒高、水平居中、两侧透明),与帧像素是两个独立的数:前者运行时改、后者导出时烘焙定死。缩小免费且干净,放大超过 `帧像素 ÷ DPR` 丢细节。**约束(2026-09-10 确认):恒为偶数整数 CSS px**。理由:sheet 是栅格,盒子宽度在设备像素上取整后若与帧宽不齐(`displaySize × DPR` 非整数),盒子右缘会露出邻帧一条亚像素鬼影且随帧跳动;本机 DPR 1.5,偶数 CSS px ⇒ 整数设备像素。Qoder 同款做法:`roundToEven(128 × percent/100)`。缩放控件(§17)的滑杆/档位因此按偶数取整
 - **分档(多档帧像素按显示尺寸切换)暂不做**:分档省体积与解码内存,不省清晰度;母版与 sheet 分离(§8.1)保证将来加档 = 重新导出 + manifest 一行,零重画。若实测 32 帧×512 的解码内存(≈33.5 MB/态)不可接受,加档是唯一优化路径
 
 六条规则,来源标注:
@@ -443,6 +445,8 @@ animation: pet-play calc(var(--frames) / var(--fps) * 1s) steps(var(--frames)) i
 ```
 
 不要 JS rAF、不要 canvas、不要 PixiJS。tachie 用 PixiJS 是为了透明 canvas + 缩放/阴影/截图/主题色提取,本设计无这些需求。一次性动画即 `animation-iteration-count: 1` + `onAnimationEnd` 清 `oneShot` 回 base。
+
+**对照实测(2026-09-10,Qoder 安装包)**:它走的是「烤死 fps 的动画 WebP」路线,代价直接可见 —— 每个状态都要再配一个 `-still` 首帧 WebP,靠 `<picture><source media="(prefers-reduced-motion: reduce)">` 切换(内置角色 11 态 + 16 视线帧 ⇒ 成对资产 ~54 个文件);一次性动作拿不到播完事件,`waving` 问候只能 `setTimeout(2600ms)` 硬切回 idle。本设计的 `steps()` 两个代价都为零:减弱动效 = 动画时长置 0 停在首帧(单套资产),一次性态 = `animationend` 真事件。
 
 ### 9.2 解析与 fps(`core/pet/sprite.ts`,纯函数)
 
@@ -486,7 +490,21 @@ absolute right-3 top-14 z-20 pointer-events-none
 
 **已接受的代价**:该位置会盖住 message list 右上角,可能压到代码块复制按钮。缓解是 `pointer-events-none`(点击穿透)+ 480px 断点隐藏。若实测不可接受,回退方案见 §15 开放项 3。
 
-**缩放(期数未定,§17 行)**:第 1 期按固定 `displaySize: 96` 渲染,全部验收与位置碰撞评估以 96 为准。缩放控件把 displaySize 在 64-256 CSS px 内运行时化:纯 CSS 盒子尺寸 + `background-size` 等比,不改渲染器状态逻辑,不需要新资产档(512 帧像素已覆盖 256@2x,§8);缩到 64 是 512 的 8 倍以内下采样,无细线闪烁风险。
+**缩放(期数未定,§17 行)**:第 1 期按固定 `displaySize: 96` 渲染,全部验收与位置碰撞评估以 96 为准。缩放控件把 displaySize 在 64-256 CSS px 内运行时化:纯 CSS 盒子尺寸 + `background-size` 等比,不改渲染器状态逻辑,不需要新资产档(512 帧像素已覆盖 256@2x,§8);缩到 64 是 512 的 8 倍以内下采样,无细线闪烁风险。**缩放基准点定底边**(`origin-bottom`,Qoder 精灵 `<img>` 同款):鹦鹉常态站地,绕中心缩放会让脚浮空/陷进消息流。**displaySize 恒为偶数整数 CSS px**(2026-09-10 确认):sheet 是栅格,盒子宽在设备像素取整后若与帧宽不齐(`displaySize × DPR` 非整数),右缘会露出邻帧一条亚像素鬼影且随帧跳动;本机 DPR 1.5 ⇒ 偶数 CSS px 即整数设备像素;Qoder 同款 `roundToEven`。故缩放滑杆/档位按偶数取整(64/80/96/…/256)。
+
+### 10.1 自由放置(第 1 期,2026-09-10 确认)
+
+**先例实测(读本机 Qoder 安装包 `app.asar`,2026-09-10)**:桌宠 = 同进程独立 top-level 窗口(surfaceId `desktop-pet`,标题 `Qoder Desktop Pet`,`focusable: true`),窗口盒 = **精灵盒 + 48px 工具条区**:`spriteSize = roundToEven(128 × sizePercent / 100)`,`width = spriteSize`,`height = spriteSize + 48`(默认 100% ⇒ 128×176,与窗口列表实测一致)。内置角色 `Qoduck`,资产为**每态一对预烤 WebP**:`idle / running / running-left / running-right / waiting / review / failed / waving / jumping` 各一个动画 WebP + 一个 `-still` 首帧 WebP,外加 16 个 22.5° 步进的 `look-*` 视线帧(同样成对);渲染是 `<picture><source media="(prefers-reduced-motion: reduce)" srcSet={still}><img src={animated} class="object-contain origin-bottom pointer-events-none"></picture>` —— **动图 fps 烤死在资产里,减弱动效靠双资产切换**。第三方宠物包(petdex)契约:`~/.petdex/pets/<slug>/pet.json` + **恰好一个** `spritesheet.webp|png`(≤32MB),sheet 是 **8 列 × 9 行(v2 为 11 行)网格**,格子 ≥48×52 且宽高比锁死 `cellW×13 === cellH×12`;主进程用 sharp 把每行按 `frameDelaysMs` 数组(逐帧不等间隔,如 idle `[280,110,110,140,140,320]`)编成动画 WebP(`lossless, loop:0`)缓存复用 —— 即**网格 sheet 是分发格式,播放仍是烤死 fps 的动图**。拖拽:`pointerdown`(左键)在 **`id="desktop-pet-hit-target"`、高度 = `spriteSize` 的独立命中元素**上(精灵 `<img>` 自身 `pointer-events-none`)→ `setPointerCapture` → 屏幕坐标位移 `> 4px` 才算起拖并发 IPC `dragStart`,随后 `dragMove`,`pointerup` 发 `dragEnd`,并用一个 ref 标志**吞掉拖拽后紧跟的那次 click**;主进程按 delta 移动窗口 bounds、立即把 `placement` 置 `"detached"`,松手 `clamp` 到当前显示器工作区(`x ∈ [wa.x, wa.x + max(0, wa.w - w)]`,y 同理);默认锚位是工作区**右下角内缩 24px**,且每次开窗都重算 ⇒ **detached 位置不跨重启持久**。另有光标采样 80ms 一次驱动视线跟随(距离 ≥ `max(40, size × 0.38)` 且在 ±200px 内才跟),问候 `waving` 是**循环动图 + `setTimeout(2600ms)` 切回**,没有播完事件。
+
+可迁移四条:① **命中区域与精灵分离**(精灵恒 `pointer-events-none`,输入交给一个精灵盒大小的兄弟元素)—— 与本节 DOM 裁决同构;② **4px 起拖阈值 + pointer capture + 拖后吞 click** 三件套照抄;③ **clamp 是纯函数、在松手/容器变化时对矩形做一次**,与 `clampOffset` 同形;④ **缩放绕底边**(`origin-bottom` + `object-contain`),脚不浮空 —— 写进 §10 缩放行。不可迁移四条:OS 窗口放置与 z 序(本项目在标签页内);按像素点击穿透(它靠窗口管理器,我们靠 `pointer-events-none`,后者更彻底);双资产减弱动效(CSS `steps()` 冻结动画即可,省掉 22 个 still 文件);烤死 fps 的动图(会杀死 §8 的疲劳轴,且一次性态只能退化成硬编码计时器 —— Qoder 的 `waving` 正是这个退化形态)。
+
+**DOM 内实现裁决:Alt+拖拽,window 级矩形命中。** `window` 的 `pointerdown` 上判断 Alt 按下且指针落在宠物盒矩形内(矩形由 `offset` + `displaySize` 算出,**不依赖宠物自身 pointer-events**)→ 记录 `pointerId` + 起点并 `setPointerCapture`;位移 **> 4px** 才真正起拖(照抄 Qoder 的 `dragThreshold = 4`,避免 Alt+单击误判成拖拽);`pointermove` 更新 offset;`pointerup` 写回设置并释放捕获,`pointercancel` 同样收尾。起过拖的手势要**吞掉紧跟的那次 click**(Qoder 用一个 ref 标志做同一件事),否则松手会激活底下的消息链接。鹦鹉**全程保持 `pointer-events-none`**,故自由放置与点击穿透共存:拖拽的成本仅是该次手势本身。**不做 hover 控制药丸**(那要求闲置时给宠物指针事件,遮挡问题回归;Qoder 挂得住药丸因其窗口原生按像素命中)。发现性由设置行提示文案承担。
+
+**拖拽期间状态裁决(2026-09-10,用户确认 ①)**:拖拽手势**不进状态机** —— 拖拽中鹦鹉继续播当前态。理由:拖拽是**摆放操作**不是宠物行为,播当前态不会被读成错误信息;而 Qoder 的方向感知拖拽态(`running-left/right`,宠物「被拖着跑」)需要一条新方向性视频 + 状态机新输入,记 §17 推迟项。实现上即 `dragging` 只存在于手势 ref,不写进 `PetState`。
+
+**持久化与跨面**:`core/settings/local.ts` 的 pet 节加 `offset: { right, top }`,默认 `{ right: 12, top: 56 }`(即原 `right-3 top-14`);按节 merge 自动补默认,无迁移。所有 ChatBox 挂载读同一 offset;**渲染时 clamp 到面板可见区**(sidecar 拖窄、窗口 resize 不把盒子推出屏;clamp 不写回设置),clamp 为纯函数 `clampOffset`,置 `core/pet/placement.ts`,node 环境可测。与 480px 容器隐藏、缩放正交不变。设置行提供「重置位置」。默认 offset 即 §10 的挂载位置,未摆放用户零感知。
+
+**测试**:node 增 `placement.test.ts`(clamp:窄面板/resize 不出屏;默认 offset 即 right-3 top-14);DOM 增两 case(Alt+拖拽更新 offset 并持久化;未按 Alt 不起拖、鹦鹉仍点击穿透)。
 
 ## 11. 开关与降级
 
@@ -515,6 +533,7 @@ frontend/src/core/pet/state.ts        derivePetState + 全部类型
 frontend/src/core/pet/tools.ts        collectActiveToolNames + classifyTool + pickWorkKind
 frontend/src/core/pet/fatigue.ts      collectFatigueInput(读 deerflow_tool_meta) + computeFatigueLevel
 frontend/src/core/pet/sprite.ts       resolveSprite + effectiveFps
+frontend/src/core/pet/placement.ts    clampOffset(自由放置 clamp 纯函数,§10.1)
 frontend/src/components/workspace/pet/pet-sprite.tsx    渲染器,不知道 agent 存在
 frontend/src/components/workspace/pet/agent-pet.tsx     订阅者,读 context 组合上两者
 frontend/src/core/settings/local.ts                     加 pet 节(改)
@@ -524,6 +543,8 @@ frontend/public/pet/parrot/                             manifest.json(静态 imp
 
 `core/pet/` 放 `core/` 而非 `components/` 的理由很具体:按 `frontend/AGENTS.md` 测试约定,`*.test.ts` 跑 node 环境,`*.dom.test.tsx` 跑 happy-dom,后者贵约 3 倍。状态机是 case 最多的部分,必须能在 node 环境测。
 
+**无障碍裁决(2026-09-10,用户确认)**:宠物外壳(含精灵与拖拽命中矩形)一律 `aria-hidden="true"`,不写 `alt`、不用 `role="status"`。理由:鹦鹉陈述的每条状态在消息流里都已有可读载体(run 状态、clarification 卡片都是真实 DOM 内容),装饰复述对读屏是纯噪音;且本设计状态变化频率高(每次工具调用都可能切态),`role="status"` 的自动播报会变成轰炸。对照:Qoder 把 phase 写进窗口 aria-label,因为它是 app 全局唯一陪伴入口且状态变化稀 —— 我们正好相反,不借。
+
 ### 13.2 测试
 
 | 文件 | 环境 | 覆盖 |
@@ -531,8 +552,9 @@ frontend/public/pet/parrot/                             manifest.json(静态 imp
 | `tests/unit/core/pet/state.test.ts` | node | 决策树全分支 + 下降沿 + §5.3 三条不变量逐条 |
 | `tests/unit/core/pet/tools.test.ts` | node | ① `collectActiveToolNames`:多工具并行、**ToolMessage 内容为空仍算已答**(钉住 §15 开放项 1 那个坑)、孤儿 ToolMessage、无 AI 前置;② 6 类映射 + **未知 MCP 名落 `generic`**;③ `pickWorkKind` 优先级表逐对 + 空数组返回 null |
 | `tests/unit/core/pet/fatigue.test.ts` | node | 五子分各自封顶 + max 语义 + `collectFatigueInput` 从 `additional_kwargs.deerflow_tool_meta` 正确分出 `toolErrorCount` 与 `unrecoverableErrorCount`(含 meta 缺失时两者都为 0) |
-| `tests/unit/core/pet/sprite.test.ts` | node | 两级回落 + fallback + 一次性不衰减 fps |
-| `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx` | happy-dom | **只测三件**:`motion-reduce` 出静态帧、one-shot 播完回 base、开关关掉时不渲染 |
+| `tests/unit/core/pet/sprite.test.ts` | node | 两级回落 + fallback + 一次性不衰减 fps + **manifest 自洽:逐态 `sheetWidth === frames × frameWidth`、`sheetHeight === frameHeight`**(§8 自校验) |
+| `tests/unit/core/pet/placement.test.ts` | node | clampOffset:窄面板/resize 不把盒子推出可见区;默认 offset 即 right-3 top-14 |
+| `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx` | happy-dom | **只测五件**:`motion-reduce` 出静态帧、one-shot 播完回 base、开关关掉时不渲染、Alt+拖拽更新 offset 并持久化且未按 Alt 不起拖(§10.1)、外壳 `aria-hidden="true"`(§13.1 无障碍裁决) |
 
 DOM 测试压到最小是刻意的:渲染器逻辑已全被 `sprite.ts` 在 node 环境吃掉。不写 e2e。
 
@@ -587,19 +609,23 @@ DOM 测试压到最小是刻意的:渲染器逻辑已全被 `sprite.ts` 在 node
 | per-agent 皮肤 | 自定义 agent 已有 `SOUL.md` 与 `BotIcon` 作身份表达,宠物再分叉会稀释 | 多 agent 用户实际提出 |
 | 宠物插件系统 / 第三方宠物包 | 一只鹦鹉不需要扩展点 | 出现第二个宠物需求 |
 | 声音(叫一声) | 前端零 TTS/音频输出基建,且工作环境出声是负价值 | 不重估 |
-| 点击交互(摸头) | `pointer-events-none` 是 §10 的缓解手段,开启交互会与该手段冲突 | 挂载位置定案后 |
+| 点击交互(摸头) | 自由放置已用 Alt+拖拽 + window 级矩形命中解决(§10.1),鹦鹉全程 `pointer-events-none`;摸头要求**闲置时**的指针交互,仍会与点击穿透冲突 | 放置上线后,有证据表明有人 care |
+| 拖拽态(方向感知,「被拖着跑」) | Qoder 拖拽时播 `running-left/right`;我们第 1 期拖拽中保持当前态(§10.1 裁决)。新增需一条方向性视频 + 状态机新输入 + manifest 两行 | 有人真的拖着玩并提出 |
+| **跨页挂载(挂到 workspace 外壳,离开聊天页也存活)** | 第 1 期挂 `div#chat`(§10)。上移外壳是 DOM 内能拿到的最大自由度(2026-09-10 用户同意方向),但落地前必须显式重开两条裁决:① §4.1 语义 —— 跨页存活使它从「这个线程的灯」变成「app 的灯」;② §10 的 480px 容器盒子 —— 外壳宽度 ≠ 聊天面板宽度,隐藏断点要重新推导(sidecar 拖窄不再影响它) | **第 2 期候选**;重开上述两条裁决后 |
+| **点鹦鹉跳转该线程(只读)** | 零写路径,不违反 §4.1;需要给外壳一个指针事件入口(与 §10.1「闲置不给指针事件」冲突,故实现走 Alt+单击或命中矩形单击,需单独裁手势) | **第 2 期候选** |
+| **浮动会话卡(显示当前对话片段 + 回复 + 停止)** | **不在本 spec 任何一期**。它是第二个会话写入口(回复 = 第二个 composer 写同一线程),与 §4.1 观察者裁决正面冲突,应自立一条线「浮动会话卡 / 全局会话监视」,自己裁:多 run 时显示哪个会话、写路径一致性、与 workbench 线的边界。本线只借它一个 UI 事实:卡可锚在宠物盒上(复用 §10.1 的 offset/clamp 基建) | 新线立项时(本 spec 不重估) |
 | 跨线程持久状态(宠物会记得你) | 一旦有记忆就成了第 2 档(参与),与 §4.1 观察者裁决和 §4.4 裁决四冲突 | 不重估 |
 | 鹦鹉拥有 agent / 线程 / 回合 | §4.4 裁决四:五条结构性代价,且 AIRI 自身也未这么做 | 不重估 |
 | 对内容的语义反应(为难过的问题难过) | 需语义理解;两个入口(改 lead agent 输出格式、旁路 LLM 判情绪)都被 §16 否决。**但语义不必自造** —— §4.4(a) 的三处既有类型化字段是允许的来源 | 借用既有字段:第 2 期(见 §15 开放项 7);自造语义:不重估 |
 | **生成式评论(鹦鹉开口说一句)** | 唯一被列为候选的 LLM 项。必须走 `oneshot_llm` + §4.4(d) 三道锁,且慢节奏(如一轮 run 结束一次),**永不走 harness** | **第 4 期候选**,前置条件是第 1-3 期已上线且证明有人 care |
-| **宠物缩放**(显示尺寸 64-256 CSS px 用户可控) | 第 1 期按固定 `displaySize: 96` 验收;缩放是纯 UI 控制(把 displaySize 运行时化),渲染器只改盒子与 `background-size` 比例,无状态逻辑改动、无新资产档(512 帧像素已覆盖 256@2x,§8) | **期数未定**(2026-09-10 用户确认功能成立、期数未定;默认候选第 2 期后)。资产侧已预付,将来加它是零资产改动 |
+| **宠物缩放**(显示尺寸 64-256 CSS px 用户可控) | 第 1 期按固定 `displaySize: 96` 验收;缩放是纯 UI 控制(把 displaySize 运行时化),渲染器只改盒子与 `background-size` 比例,无状态逻辑改动、无新资产档(512 帧像素已覆盖 256@2x,§8);**档位按偶数整数取整**(§10 裁决) | **期数未定**(2026-09-10 用户确认功能成立、期数未定;默认候选第 2 期后)。资产侧已预付,将来加它是零资产改动 |
 | 后端新增宠物专用事件 | 违反 §1 目标 3 | 不重估 |
 
 ## 18. 分期
 
 | 期 | 内容 | 帧需求 | 代码改动 |
 |---|---|---|---|
-| **1** | 四个纯函数(`state` / `tools` / `fatigue` / `sprite`)+ 两个组件 + 挂载 + 设置节。`classifyTool` 全部返回 `generic`,`fatigue` 恒为 0(两条轴写好但不生效) | **`idle` + `wait` 两组** | 全部 |
+| **1** | 五个纯函数(`state` / `tools` / `fatigue` / `sprite` / `placement`)+ 两个组件 + 挂载 + 设置节(含 `offset`)+ 自由放置(Alt+拖拽,§10.1)。`classifyTool` 全部返回 `generic`,`fatigue` 恒为 0(两条轴写好但不生效) | **`idle` + `wait` 两组** | 全部 |
 | **2** | 打开 fatigue 计算;补 `think` `work` `error` `done` `greet` | +5 组 | 只改 `agent-pet.tsx` 的常量开关 |
 | **3** | 打开 `workKind` 分类,按在乎的顺序逐个补子类别帧 | 每子类别 +1 组,**可选** | 零(回落契约已保证) |
 | **4(候选,有前置门槛)** | 生成式评论:慢节奏 `oneshot_llm` 一次,遵守 §4.4(d) 三道锁;可同批接 §15 开放项 7 的 goal blocker(需先定新鲜度门槛) | 可能 +1 组「说话」帧 | **唯一需要动后端的一期**(一个新路由,复用 `run_oneshot_llm`) |
