@@ -10,13 +10,14 @@ Local-file flow (精准解析 API):
 4. Download the result zip and unpack ``full.md`` + ``images/*``.
 
 Markdown/text inputs short-circuit: ``.md``/``.markdown``/``.txt`` files are
-already parse output (or plain text) and ``.csv``/``.tsv`` are delimited text,
-so all are read locally without any MinerU call — ``.csv``/``.tsv`` further
-normalize into a GFM pipe table (spec 2026-09-09 §5). MinerU's own output has
-its HTML ``<table>`` blocks normalized to GFM as well, because v4 with the
-default ``model_version="vlm"`` emits HTML rather than GFM (Task 0 实测门). The
-API token always comes from the ``MINERU_API_TOKEN`` env var — never from the
-caller.
+already parse output (or plain text), ``.csv``/``.tsv`` are delimited text, and
+``.xlsx``/``.xls`` are workbooks — all are read locally without any MinerU call.
+``.csv``/``.tsv`` normalize into a GFM pipe table and ``.xlsx``/``.xls`` into one
+GFM table per sheet via python-calamine (gated by ``rag.table.enabled``,
+spec 2026-09-09 §5). MinerU's own output has its HTML ``<table>`` blocks
+normalized to GFM as well, because v4 with the default ``model_version="vlm"``
+emits HTML rather than GFM (Task 0 实测门). The API token always comes from the
+``MINERU_API_TOKEN`` env var — never from the caller.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ import os
 import re
 import time
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
@@ -36,6 +38,7 @@ from pathlib import Path
 import httpx
 
 from deerflow.config.app_config import get_app_config
+from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,12 @@ _LOCAL_READ_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt", ".
 #: dump (spec 2026-09-09 §5). ``.csv`` is an ungated member of the text set;
 #: ``.tsv`` rides the ``rag.table`` gate for *upload* but is always parsed here.
 _DELIMITED_SUFFIXES: frozenset[str] = frozenset({".csv", ".tsv"})
+
+#: Excel workbook suffixes parsed by ``_parse_excel`` (python-calamine) into one
+#: GFM table per sheet — gated behind ``rag.table.enabled`` and never sent to
+#: MinerU (spec 2026-09-09 §5). ``.tsv`` is deliberately absent: it is delimited
+#: text, not a workbook (see ``_DELIMITED_SUFFIXES``).
+_EXCEL_SUFFIXES: frozenset[str] = frozenset({".xlsx", ".xls"})
 
 #: Video upload allowlist (spec 2026-09-08 §2, frozen): an independent
 #: frozenset so the text set above stays byte-identical. Surfaced in the
@@ -239,6 +248,60 @@ def _parse_delimited(path: Path) -> str:
     lines = [_gfm_row(rows[0]), _gfm_separator(width)]
     lines.extend(_gfm_row(_fit_width(row, width)) for row in rows[1:])
     return "\n".join(lines)
+
+
+def _cell_to_text(value: object) -> str:
+    """Spreadsheet cell → text: ``None`` → empty, else ``str(value)`` (numbers and
+    dates keep their natural Python form; ``_gfm_cell`` collapses whitespace and
+    escapes ``|`` downstream)."""
+    return "" if value is None else str(value)
+
+
+def _workbook_rows_to_markdown(sheets: Iterable[tuple[str, list[list[object]]]]) -> str:
+    """Assemble one ``## {sheet_name}`` + GFM pipe table per non-empty sheet.
+
+    Pure transform over ``(sheet_name, rows)`` pairs (rows are calamine's
+    ``to_python()`` output): the first row is the header, ragged rows are
+    padded/truncated to the header width, blank rows and empty sheets are
+    skipped, and sheets are concatenated in order (spec 2026-09-09 §5). The
+    ``##`` heading lets the chunker file every row card under the sheet name.
+    """
+    blocks: list[str] = []
+    for sheet_name, raw_rows in sheets:
+        rows = [[_cell_to_text(cell) for cell in row] for row in raw_rows]
+        rows = [row for row in rows if any(cell.strip() for cell in row)]
+        if not rows:
+            continue  # empty sheet
+        width = len(rows[0])
+        table = [_gfm_row(rows[0]), _gfm_separator(width)]
+        table.extend(_gfm_row(_fit_width(row, width)) for row in rows[1:])
+        blocks.append(f"## {sheet_name}\n\n" + "\n".join(table))
+    return "\n\n".join(blocks)
+
+
+async def _parse_excel(path: Path) -> str:
+    """Parse an ``.xlsx``/``.xls`` workbook into one GFM table per sheet.
+
+    Gated behind ``rag.table.enabled`` and needs ``python-calamine`` (lazy
+    import): when the gate is off or the library is missing, raises a clear,
+    actionable ``ValueError`` so the document fails loudly instead of silently
+    producing nothing (spec 2026-09-09 §4/§8). The blocking workbook read runs on
+    the file-IO pool via ``run_file_io``; each sheet becomes ``## {sheet_name}`` +
+    a GFM pipe table (see ``_workbook_rows_to_markdown``).
+    """
+    if not table_ingest_enabled():
+        raise ValueError("Excel 解析被门控关闭：需开启 rag.table.enabled 才能入库 .xlsx/.xls（spec 2026-09-09 §4）")
+
+    def _blocking() -> list[tuple[str, list[list[object]]]]:
+        try:
+            from python_calamine import CalamineWorkbook  # 延迟 import：缺失即降级
+        except ImportError as exc:
+            raise ValueError("python-calamine 未安装：Excel 解析需要它（pip install python-calamine，对齐视频重依赖的 uv pip 安装先例）") from exc
+        workbook = CalamineWorkbook.from_path(str(path))
+        return [(name, workbook.get_sheet_by_name(name).to_python()) for name in workbook.sheet_names]
+
+    sheets = await run_file_io(_blocking)
+    return _workbook_rows_to_markdown(sheets)
 
 
 class MineruError(Exception):
@@ -594,7 +657,8 @@ async def parse_document(
     """Parse a local document via the MinerU v4 API.
 
     ``.md``/``.markdown``/``.txt`` files are read locally (UTF-8 strict with GBK
-    fallback); ``.csv``/``.tsv`` are parsed locally into a GFM pipe table
+    fallback); ``.csv``/``.tsv`` are parsed locally into a GFM pipe table and
+    ``.xlsx``/``.xls`` into one GFM table per sheet via python-calamine
     (spec 2026-09-09 §5) — none of these ever hit the network. MinerU output has
     its HTML ``<table>`` blocks normalized to GFM. The token comes from the
     ``MINERU_API_TOKEN`` env var. Image references in the returned markdown point
@@ -604,6 +668,8 @@ async def parse_document(
     suffix = path.suffix.lower()
     if suffix in _DELIMITED_SUFFIXES:
         return ParsedDocument(markdown=_parse_delimited(path), images=[])
+    if suffix in _EXCEL_SUFFIXES:
+        return ParsedDocument(markdown=await _parse_excel(path), images=[])
     if is_local_suffix(suffix):
         return ParsedDocument(markdown=_read_local_text(path), images=[])
 

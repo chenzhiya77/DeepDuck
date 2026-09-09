@@ -116,7 +116,7 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       `tests/knowledge` 全量 **1012 passed / 2 skipped / 0 failed**（5m57s）、ruff check+format 双净；
       revert proof 把 `_parse_delimited` 摘成原始 dump + `_normalize_tables_to_gfm` 摘成 no-op →
       **23 条 RED**（no-op/残留/本地守卫 6 条正确恒绿）→ 恢复 61 passed。
-- [ ] Commit: `feat(rag): parse delimited text into GFM tables and normalize MinerU HTML tables`
+- [x] Commit: `feat(rag): parse delimited text into GFM tables and normalize MinerU HTML tables`（`30c70f05`）
 
 ### 交付纪要（2026-09-09）
 
@@ -152,7 +152,7 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
 ## Task 3: Excel 解析 .xlsx/.xls → 每 sheet 一张 GFM 表（spec §5）
 
 **Files:**
-- Modify: `backend/pyproject.toml`（加 `python-calamine`）
+- ~~Modify: `backend/pyproject.toml`（加 `python-calamine`）~~ **改走视频重依赖先例（不进 pyproject/lock）**——uv.lock 因预存 tenki-sandbox 解析失败无法本地再生，加 extra 会令 lock 陈旧卡死 `uv sync`；calamine 走延迟 import + `pip install` 降级（详见交付纪要，用户已确认）
 - Modify: `backend/packages/harness/deerflow/knowledge/parser.py`（`_parse_excel(path)`：延迟
       import `python_calamine`、缺失/门控 off 抛清晰降级错误、blocking 读取经 `run_file_io`、
       每 sheet → `## {sheet_name}\n\n<GFM 表>`、空 sheet 跳过、多 sheet 顺序拼接；`parse_document`
@@ -161,8 +161,47 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       sheet 名进 `##` 标题；真实 `.xlsx` 端到端标 `skipif`——本机无 calamine 不阻塞回归，对齐
       视频 Task 3 skipif 纪律）
 
-- [ ] RED → Implement → GREEN → revert proof（neuter `_parse_excel` → Excel 用例 RED）。
+- [x] RED → Implement → GREEN → revert proof（neuter `_parse_excel` → Excel 用例 RED）。—— 12 条新用例 RED
+      （11 failed：ImportError/路由落 MinerU + 1 真实 xlsx skipif）→ 实现纯函数 `_workbook_rows_to_markdown`
+      + `_parse_excel`（gate/延迟 import/run_file_io）+ parse_document Excel 分支 → `test_parser.py`
+      **72 passed/1 skipped**、`tests/knowledge` 全量 **1023 passed/3 skipped/0 failed**（5m46s）、ruff 双净；
+      revert proof 同时 neuter 两新函数 → **10 条 RED**（`all_sheets_empty` 期望 "" 恒绿 + 真实 xlsx skip）→ 恢复 72 passed。
 - [ ] Commit: `feat(rag): parse Excel workbooks into per-sheet GFM tables via calamine`
+
+### 交付纪要（2026-09-09）
+
+- **实现落点**（`parser.py`，+74 行；仅动 `parser.py` + `test_parser.py`，**未动 pyproject/lock**）：
+  - `_workbook_rows_to_markdown(sheets)`（纯函数）：`(sheet_name, rows)` 序列 → 每非空 sheet 一段
+    `## {sheet}` 标题 + 空行 + GFM 表，多 sheet 以空行顺序拼接；首行表头、行宽按表头补齐/截断
+    （复用 Task 2 的 `_gfm_row`/`_gfm_separator`/`_fit_width`）、跳过空行与空 sheet、全空 → `""`。
+  - `_cell_to_text(value)`：calamine `to_python()` 原生类型（int/float/bool/datetime/None）→ 文本，
+    `None` → 空单元格。
+  - `_parse_excel(path)`（async）：先门控 `table_ingest_enabled()`（off → 清晰 ValueError 带
+    `rag.table.enabled`）→ `_blocking()` 内延迟 import `python_calamine`（缺失 → ValueError 带
+    `pip install python-calamine`）+ `CalamineWorkbook.from_path` + 遍历 `sheet_names` /
+    `get_sheet_by_name().to_python()`，整段 blocking 读取经 `run_file_io` 落线程池 → 交纯函数组装。
+  - 路由：新增 `_EXCEL_SUFFIXES={.xlsx,.xls}`，`parse_document` 在分隔文本分支后、`is_local_suffix`
+    前加 Excel 分支（`await _parse_excel`，绝不触 MinerU）。
+- **calamine 依赖声明改走视频先例（用户确认，偏离 plan 字面）**：plan Files 原写「Modify
+  backend/pyproject.toml 加 python-calamine」。实测 `uv lock` **失败**——`tenki-sandbox` 对
+  `python_full_version>=3.14 & win32` 无 wheel（**预存 repo-wide 问题，与 calamine 无关**，`uv.lock`
+  原子未改）。而 uv.lock 显式枚举每个 extra（root L875 + harness L1014），加 `table` extra 却无法
+  再生 lock → lock 陈旧 → `uv sync --inexact`（make test/dev）与 CI `uv sync --group dev` 会触发重锁
+  并撞 tenki 失败，**破坏开发流**。故按 Makefile 既有纪律（视频 funasr/torch/scenedetect「以 uv pip
+  extra 安装、不在 uv.lock」）：calamine **不进 pyproject/lock**，靠延迟 import + `pip install
+  python-calamine` 降级；spec §11「CI 用 fake 不装重依赖」本就要求 CI 不装它，功能完整。已撤销两处
+  pyproject 改动、降级文案从 `--extra table` 改为 `pip install`（对齐 `asr.py` 的 `pip install funasr`）。
+- **测试面**：纯函数 7 例（单/多 sheet 顺序、空 sheet 跳过、全空、类型 stringify、行宽补齐、仅表头）
+  直测字面数据；`_parse_excel` 4 例（gate off / 缺 calamine / fake happy path / parse_document 路由不触
+  网）用 `sys.modules` 注入 fake calamine 模块（镜像 `from_path`→`sheet_names`→`get_sheet_by_name().
+  to_python()`）+ `None` 强制 ImportError；真实 `.xlsx` 端到端 `skipif(not _calamine_available())`
+  （openpyxl 3.1.5 可造 fixture，本机无 calamine → skip）。
+- **blocking-io**：`_parse_excel` 的 calamine 读取经 `run_file_io`（对齐 asr/ocr/frames 纪律）。
+  `tests/blocking_io` 有 **4 条预存失败**（`test_channel_runtime_config_store` 三条 chmod/owner-only +
+  `test_lark_auth_complete_route`），属 Windows 环境/IM 认证，与本任务无关（parser 不涉及）。
+- **遗留（未动）**：`tests/test_rag_config.py` 两条 vlm_model 漂移（knowledge 目录外）；uv.lock 的
+  tenki-sandbox 再生问题是 repo-wide 预存缺陷，非本任务引入，建议另立 issue（cap `requires-python
+  <3.14` 或等 tenki 发 wheel）。
 
 ## Task 4: 表格感知 chunker（spec §6/§7，核心）
 

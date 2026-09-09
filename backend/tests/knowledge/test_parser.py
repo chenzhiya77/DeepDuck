@@ -1056,3 +1056,204 @@ async def test_local_markdown_trailing_heading_not_touched(tmp_path, monkeypatch
     doc = await parse_document(md, client=httpx.AsyncClient(transport=_mineru_transport([])))
 
     assert doc.markdown == "正文。\n\n## 尾节"
+
+
+# ── Task 3: Excel .xlsx/.xls → 每 sheet 一张 GFM 表（spec 2026-09-09 §5）──────
+#
+# `_parse_excel` 门控 rag.table.enabled + 延迟 import python-calamine（缺失/门控 off
+# 抛清晰 ValueError），blocking 读取经 run_file_io；每 sheet → `## {sheet}\n\n<GFM 表>`，
+# 空 sheet 跳过、多 sheet 顺序拼接。纯转换 `_workbook_rows_to_markdown` 用字面 sheet 数据
+# 直测（复用 Task 2 的 _gfm_row/_fit_width）；`_parse_excel` 用 fake calamine 模块覆盖接线/
+# 降级；真实 .xlsx 端到端 skipif（本机/CI 无 calamine 不阻塞回归，对齐视频 Task 3 skipif 纪律）。
+
+
+def test_workbook_to_markdown_single_sheet_first_row_header():
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown([("Sales", [["Region", "Q1"], ["North", 120], ["South", 98]])])
+
+    assert md == "## Sales\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 |\n| South | 98 |"
+
+
+def test_workbook_to_markdown_multi_sheet_in_order_joined_by_blank_line():
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown(
+        [
+            ("Q1", [["a"], ["1"]]),
+            ("Q2", [["b"], ["2"]]),
+        ]
+    )
+
+    assert md == "## Q1\n\n| a |\n| --- |\n| 1 |\n\n## Q2\n\n| b |\n| --- |\n| 2 |"
+
+
+def test_workbook_to_markdown_skips_empty_sheet():
+    """空 sheet（无行 / 全空行）跳过，不产出空 ## 段（spec §5）。"""
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown(
+        [
+            ("Data", [["a"], ["1"]]),
+            ("Blank", []),
+            ("Whitespace", [["", ""], ["", ""]]),
+            ("More", [["b"], ["2"]]),
+        ]
+    )
+
+    assert "## Blank" not in md
+    assert "## Whitespace" not in md
+    assert md == "## Data\n\n| a |\n| --- |\n| 1 |\n\n## More\n\n| b |\n| --- |\n| 2 |"
+
+
+def test_workbook_to_markdown_all_sheets_empty_returns_empty_string():
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    assert _workbook_rows_to_markdown([("A", []), ("B", [["", ""]])]) == ""
+
+
+def test_workbook_to_markdown_stringifies_typed_cells():
+    """calamine to_python 返回原生类型（int/float/bool/None）→ 文本；None 落空单元格。"""
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown([("S", [["n", "f", "b", "e"], [120, 2.5, True, None]])])
+
+    assert md.splitlines()[-1] == "| 120 | 2.5 | True |  |"
+
+
+def test_workbook_to_markdown_ragged_rows_fit_header_width():
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown([("S", [["a", "b", "c"], ["1"], ["2", "3", "4", "5"]])])
+
+    assert md == "## S\n\n| a | b | c |\n| --- | --- | --- |\n| 1 |  |  |\n| 2 | 3 | 4 |"
+
+
+def test_workbook_to_markdown_header_only_sheet():
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    assert _workbook_rows_to_markdown([("S", [["a", "b"]])]) == "## S\n\n| a | b |\n| --- | --- |"
+
+
+def _install_fake_calamine(monkeypatch, sheets):
+    """把 fake `python_calamine` 塞进 sys.modules：CalamineWorkbook.from_path →
+    sheet_names（属性）/ get_sheet_by_name(name).to_python() → rows，镜像真实 API。"""
+    import sys
+    import types
+
+    class _FakeSheet:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def to_python(self, **kwargs):
+            return self._rows
+
+    class _FakeWorkbook:
+        def __init__(self, data):
+            self._data = data
+            self.sheet_names = list(data)
+
+        @classmethod
+        def from_path(cls, path):
+            return cls(sheets)
+
+        def get_sheet_by_name(self, name):
+            return _FakeSheet(self._data[name])
+
+    module = types.ModuleType("python_calamine")
+    module.CalamineWorkbook = _FakeWorkbook
+    monkeypatch.setitem(sys.modules, "python_calamine", module)
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_gate_off_raises_clear_error(tmp_path, monkeypatch):
+    """门控 off：不进 calamine，直接抛清晰 ValueError（带 rag.table.enabled，spec §4/§8）。"""
+    from deerflow.knowledge.parser import _parse_excel
+
+    _stub_gates(monkeypatch)  # table off
+    p = tmp_path / "book.xlsx"
+    p.write_bytes(b"not-really-read")
+
+    with pytest.raises(ValueError, match="rag.table.enabled"):
+        await _parse_excel(p)
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_missing_calamine_raises_clear_error(tmp_path, monkeypatch):
+    """门控 on 但 python-calamine 缺失：抛清晰 ValueError（带安装指引），不静默产空。"""
+    import sys
+
+    from deerflow.knowledge.parser import _parse_excel
+
+    _stub_gates(monkeypatch, table=True)
+    monkeypatch.setitem(sys.modules, "python_calamine", None)  # 强制 ImportError
+    p = tmp_path / "book.xlsx"
+    p.write_bytes(b"x")
+
+    with pytest.raises(ValueError, match="calamine"):
+        await _parse_excel(p)
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_happy_path_via_fake_calamine(tmp_path, monkeypatch):
+    """fake calamine 走完接线：from_path → sheet_names → get_sheet_by_name → to_python
+    → 每 sheet 一段 GFM；证明 run_file_io 包裹的 blocking 读取产出正确 markdown。"""
+    from deerflow.knowledge.parser import _parse_excel
+
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"Sales": [["Region", "Q1"], ["North", 120]], "Empty": []})
+
+    md = await _parse_excel(tmp_path / "book.xlsx")
+
+    assert md == "## Sales\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 |"
+
+
+@pytest.mark.asyncio
+async def test_parse_document_routes_xlsx_to_parse_excel_no_mineru(tmp_path, monkeypatch):
+    """`.xlsx` 经 parse_document 路由到 _parse_excel（不触 MinerU/网络）。"""
+    monkeypatch.delenv("MINERU_API_TOKEN", raising=False)
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"S1": [["a", "b"], ["1", "2"]]})
+    recorded: list[httpx.Request] = []
+    p = tmp_path / "book.xlsx"
+    p.write_bytes(b"xlsx-bytes")
+
+    doc = await parse_document(p, client=httpx.AsyncClient(transport=_mineru_transport(recorded)))
+
+    assert doc.markdown == "## S1\n\n| a | b |\n| --- | --- |\n| 1 | 2 |"
+    assert doc.images == []
+    assert recorded == []
+
+
+def _calamine_available() -> bool:
+    try:
+        import python_calamine  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _calamine_available(), reason="python-calamine 未安装（uv sync --extra table）")
+@pytest.mark.asyncio
+async def test_parse_excel_real_xlsx_end_to_end(tmp_path, monkeypatch):
+    """真实 .xlsx 端到端（openpyxl 造 → calamine 读）：多 sheet + 空 sheet 跳过 + GFM。
+    本机/CI 无 calamine → skip，不阻塞回归（对齐视频 Task 3 skipif 纪律）。"""
+    import openpyxl
+
+    _stub_gates(monkeypatch, table=True)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sales"
+    ws.append(["Region", "Q1"])
+    ws.append(["North", 120])
+    ws.append(["South", 98])
+    wb.create_sheet("Empty")  # 空 sheet
+    p = tmp_path / "real.xlsx"
+    wb.save(p)
+
+    doc = await parse_document(p, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+    assert "## Sales" in doc.markdown
+    assert "| Region | Q1 |" in doc.markdown
+    assert "| North | 120 |" in doc.markdown
+    assert "## Empty" not in doc.markdown
