@@ -211,3 +211,53 @@ class TestRagVideoConfig:
             RagConfig(**{"video": {"max_shot_seconds": 0}})
         with pytest.raises(ValueError):
             RagConfig(**{"video": {"keyframes_per_shot": 0}})
+
+
+class TestRagTableConfig:
+    """表格入库配置段（spec 2026-09-09 §4，plan Task 1）：默认关门，
+    enabled 只管电子表格三后缀（.csv 恒不门控）。"""
+
+    def test_loads_defaults(self):
+        config = RagConfig()
+
+        assert config.table.enabled is False
+        assert config.table.max_size_mb == 50
+        assert config.table.card_mode == "markdown"
+
+    def test_overridable_from_dict(self):
+        config = RagConfig(**{"table": {"enabled": True, "max_size_mb": 8, "card_mode": "linearized"}})
+
+        assert config.table.enabled is True
+        assert config.table.max_size_mb == 8
+        assert config.table.card_mode == "linearized"
+
+    def test_rejects_invalid_literal(self):
+        with pytest.raises(ValueError):
+            RagConfig(**{"table": {"card_mode": "html"}})
+
+    def test_rejects_invalid_numeric_bounds(self):
+        with pytest.raises(ValueError):
+            RagConfig(**{"table": {"max_size_mb": 0}})
+
+    def test_table_and_video_gates_are_independent(self):
+        """两腿各自默认 off、互不覆盖（并集助手逐腿判断）。"""
+        config = RagConfig(**{"table": {"enabled": True}})
+
+        assert config.table.enabled is True
+        assert config.video.enabled is False
+
+    def test_shipped_example_block_matches_model_defaults(self):
+        """config.example.yaml 是首跑模板（cp → config.yaml）：新增段必须能被
+        模型吃下，且模板值与文档默认一致（防止缩进/键名漂移）。"""
+        from pathlib import Path
+
+        import yaml
+
+        data = yaml.safe_load((Path(__file__).resolve().parents[2] / "config.example.yaml").read_text(encoding="utf-8"))
+        table = data["rag"]["table"]
+
+        config = RagConfig(**{"table": table})
+
+        assert config.table.enabled is False
+        assert config.table.max_size_mb == 50
+        assert config.table.card_mode == "markdown"

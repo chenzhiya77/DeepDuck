@@ -2640,3 +2640,19 @@ rag:
     # Shot-card text assembly: full | caption_only | asr_only — non-full modes
     # are caption-quality ablation experiments (spec §6), not a production path.
     card_text_mode: full
+  # --- Table ingestion (spec 2026-09-09 §4) ---
+  # Master gate for spreadsheet uploads: when false (default), .xlsx/.xls/.tsv
+  # are rejected at upload and /supported-formats omits them. .csv is NOT gated
+  # — it already lives in the text allowlist, and routing it through table-aware
+  # chunking is a correctness fix for the hard-split damage, not a new exposure.
+  table:
+    enabled: false
+    # Max table-file upload size (MB); the upload gate rejects larger files at
+    # the door (row-explosion guard for giant spreadsheets). Applies to the
+    # gated suffixes only — .csv keeps its pre-existing unlimited behaviour.
+    max_size_mb: 50
+    # Row-card body serialization: markdown (GFM table rows — the frontend
+    # renders them as a real table) | linearized ("col: value | col: value"
+    # sentences). linearized is a recall-quality ablation (spec §7), not a
+    # production default.
+    card_mode: markdown

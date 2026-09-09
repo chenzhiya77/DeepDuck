@@ -384,12 +384,33 @@ def test_supported_upload_suffixes_contract():
     assert not is_local_suffix(".pdf")
 
 
-def test_video_upload_suffixes_contract(monkeypatch):
-    """spec 2026-09-08 §2（plan Task 1）：视频集是独立 frozenset（文本冻结集
-    原地不动），并集助手两态随 rag.video.enabled；off 态默认拒 .mp4。"""
+def _stub_gates(monkeypatch, *, video: bool = False, table: bool = False) -> None:
+    """把 parser 的配置读取器指向**双腿** stub：门控两态不读本机 config.yaml。
+
+    预存缺陷修复（2026-09-09）：off 态断言原先依赖「测试环境默认 off」，但开发机
+    的真实 config.yaml 里 `rag.video.enabled: true`，使它们恒红。stub 必须同时带上
+    两条腿，否则另一腿的 ``*_ingest_enabled()`` 会走 AttributeError 降级路，把真实
+    行为掩盖成「恰好也是 off」。
+    """
     from types import SimpleNamespace
 
     from deerflow.knowledge import parser as knowledge_parser
+
+    monkeypatch.setattr(
+        knowledge_parser,
+        "get_app_config",
+        lambda: SimpleNamespace(
+            rag=SimpleNamespace(
+                video=SimpleNamespace(enabled=video, max_size_mb=2048),
+                table=SimpleNamespace(enabled=table, max_size_mb=50, card_mode="markdown"),
+            )
+        ),
+    )
+
+
+def test_video_upload_suffixes_contract(monkeypatch):
+    """spec 2026-09-08 §2（plan Task 1）：视频集是独立 frozenset（文本冻结集
+    原地不动），并集助手两态随 rag.video.enabled；off 态默认拒 .mp4。"""
     from deerflow.knowledge.parser import (
         SUPPORTED_UPLOAD_SUFFIXES,
         VIDEO_UPLOAD_SUFFIXES,
@@ -400,19 +421,82 @@ def test_video_upload_suffixes_contract(monkeypatch):
     assert VIDEO_UPLOAD_SUFFIXES == frozenset({".mp4", ".mov", ".mkv", ".webm"})
     assert SUPPORTED_UPLOAD_SUFFIXES & VIDEO_UPLOAD_SUFFIXES == frozenset()  # 两集不相交
 
-    # off 态（测试环境默认）：并集 = 文本集，视频后缀被拒（大小写不敏感）
+    # off 态：并集 = 文本集，视频后缀被拒（大小写不敏感）
+    _stub_gates(monkeypatch)
     assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES
     assert not is_supported_suffix(".MP4")
 
     # on 态：并集含视频集，文本集不受影响
-    monkeypatch.setattr(
-        knowledge_parser,
-        "get_app_config",
-        lambda: SimpleNamespace(rag=SimpleNamespace(video=SimpleNamespace(enabled=True))),
-    )
+    _stub_gates(monkeypatch, video=True)
     assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES
     assert is_supported_suffix(".MP4")
     assert is_supported_suffix(".md")
+
+
+def test_table_upload_suffixes_contract(monkeypatch):
+    """spec 2026-09-09 §4（plan Task 1）：表格集是独立 frozenset（文本冻结集原地
+    不动、`.csv` 留在文本集不进表格集），并集助手随 rag.table.enabled 两态；
+    与视频腿互不干扰。"""
+    from deerflow.knowledge.parser import (
+        SUPPORTED_UPLOAD_SUFFIXES,
+        TABLE_UPLOAD_SUFFIXES,
+        VIDEO_UPLOAD_SUFFIXES,
+        is_supported_suffix,
+        supported_upload_suffixes,
+        table_ingest_enabled,
+        table_upload_limit_bytes,
+    )
+
+    assert TABLE_UPLOAD_SUFFIXES == frozenset({".xlsx", ".xls", ".tsv"})
+    assert SUPPORTED_UPLOAD_SUFFIXES & TABLE_UPLOAD_SUFFIXES == frozenset()  # 两集不相交
+    assert ".csv" in SUPPORTED_UPLOAD_SUFFIXES  # .csv 恒在文本集，成员身份不变
+    assert ".csv" not in TABLE_UPLOAD_SUFFIXES
+
+    # off 态：表格后缀被拒（大小写不敏感），体积门返 None（不新设限制）
+    _stub_gates(monkeypatch)
+    assert not table_ingest_enabled()
+    assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES
+    assert not is_supported_suffix(".XLSX")
+    assert is_supported_suffix(".csv")
+    assert table_upload_limit_bytes() is None
+
+    # on 态：并集含表格集，体积门按 max_size_mb 折算字节
+    _stub_gates(monkeypatch, table=True)
+    assert table_ingest_enabled()
+    assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES | TABLE_UPLOAD_SUFFIXES
+    assert is_supported_suffix(".XLSX")
+    assert is_supported_suffix(".tsv")
+    assert is_supported_suffix(".md")
+    assert table_upload_limit_bytes() == 50 * 1024 * 1024
+
+    # 两腿同开：三集并；只开视频时表格后缀仍被拒（腿间独立）
+    _stub_gates(monkeypatch, video=True, table=True)
+    assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES | TABLE_UPLOAD_SUFFIXES
+    _stub_gates(monkeypatch, video=True)
+    assert not is_supported_suffix(".xlsx")
+    assert is_supported_suffix(".mp4")
+
+
+def test_table_gate_degrades_to_off_when_config_unreadable(monkeypatch):
+    """配置读取抛错时门控降级为 off——门口绝不因异常而放宽（spec §4）。"""
+    from deerflow.knowledge import parser as knowledge_parser
+    from deerflow.knowledge.parser import (
+        SUPPORTED_UPLOAD_SUFFIXES,
+        is_supported_suffix,
+        supported_upload_suffixes,
+        table_ingest_enabled,
+        table_upload_limit_bytes,
+    )
+
+    def _boom():
+        raise RuntimeError("config.yaml unreadable")
+
+    monkeypatch.setattr(knowledge_parser, "get_app_config", _boom)
+
+    assert not table_ingest_enabled()
+    assert supported_upload_suffixes() == SUPPORTED_UPLOAD_SUFFIXES
+    assert not is_supported_suffix(".xlsx")
+    assert table_upload_limit_bytes() is None
 
 
 @pytest.mark.asyncio

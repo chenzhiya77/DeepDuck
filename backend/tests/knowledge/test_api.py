@@ -71,13 +71,30 @@ def _create_kb(client: TestClient, name: str = "产品资料") -> dict:
     return response.json()
 
 
-def _enable_video(monkeypatch) -> None:
-    """rag.video.enabled=on（spec 2026-09-08 §7）：把 parser 的配置读取器指向
-    stub，两态门控无需碰 config.yaml。"""
+def _stub_rag_gates(
+    monkeypatch,
+    *,
+    video: bool = False,
+    table: bool = False,
+    video_max_mb: int = 2048,
+    table_max_mb: int = 50,
+) -> None:
+    """把 parser 的配置读取器指向 stub——门控两态测试**不读本机 config.yaml**。
+
+    预存缺陷修复（2026-09-09）：off 态用例原先依赖「测试环境默认 off」，但开发机
+    的真实 config.yaml 里 `rag.video.enabled: true`，使三条 off 态断言恒红。两条腿
+    （video/table）都必须在 stub 里出现：缺一条会让另一条腿的 ``*_ingest_enabled()``
+    走 AttributeError 降级路，把真实行为掩盖成「恰好也是 off」。
+    """
     monkeypatch.setattr(
         knowledge_parser,
         "get_app_config",
-        lambda: SimpleNamespace(rag=SimpleNamespace(video=SimpleNamespace(enabled=True, max_size_mb=2048))),
+        lambda: SimpleNamespace(
+            rag=SimpleNamespace(
+                video=SimpleNamespace(enabled=video, max_size_mb=video_max_mb),
+                table=SimpleNamespace(enabled=table, max_size_mb=table_max_mb, card_mode="markdown"),
+            )
+        ),
     )
 
 
@@ -177,11 +194,12 @@ async def test_upload_rejects_empty_file(service):
     assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
 
 
-async def test_supported_formats_endpoint_matches_parser_constant(service):
+async def test_supported_formats_endpoint_matches_parser_constant(service, monkeypatch):
     """Registered before ``/{kb_id}`` so the literal segment wins; payload is
     exactly the parser allowlist (frontend accept/intercept source)."""
     from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES
 
+    _stub_rag_gates(monkeypatch)  # 两腿均 off：并集 = 文本冻结集
     client = _client(service)
 
     response = client.get("/api/knowledge-bases/supported-formats")
@@ -193,8 +211,9 @@ async def test_supported_formats_endpoint_matches_parser_constant(service):
 # ── 视频后缀门控两态（spec 2026-09-08 §2/§7，plan Task 1）───────────────────
 
 
-async def test_upload_rejects_video_suffix_when_video_disabled(service):
+async def test_upload_rejects_video_suffix_when_video_disabled(service, monkeypatch):
     """off 态（默认）：视频后缀门口即拒，拒绝文案列出视频后缀，不留文档行。"""
+    _stub_rag_gates(monkeypatch)
     client = _client(service)
     kb = _create_kb(client)
 
@@ -209,7 +228,7 @@ async def test_supported_formats_unions_video_suffixes_when_enabled(service, mon
     """on 态：端点返回 文本∪视频 并集（排序），文本冻结集恒在其中。"""
     from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, VIDEO_UPLOAD_SUFFIXES
 
-    _enable_video(monkeypatch)
+    _stub_rag_gates(monkeypatch, video=True)
     client = _client(service)
 
     response = client.get("/api/knowledge-bases/supported-formats")
@@ -222,7 +241,7 @@ async def test_supported_formats_unions_video_suffixes_when_enabled(service, mon
 
 async def test_upload_accepts_video_suffix_when_enabled(service, monkeypatch):
     """on 态：.mp4 过门落 uploaded 行并入队（mock worker）——管线腿后续任务接线。"""
-    _enable_video(monkeypatch)
+    _stub_rag_gates(monkeypatch, video=True)
     client = _client(service)
     kb = _create_kb(client)
     payload = b"\x00\x00\x00\x18ftypmp42"
@@ -238,11 +257,7 @@ async def test_upload_accepts_video_suffix_when_enabled(service, monkeypatch):
 
 async def test_upload_rejects_oversized_video_when_enabled(service, monkeypatch):
     """on 态：超过 rag.video.max_size_mb 的视频门口即拒（spec §7 预算护栏）。"""
-    monkeypatch.setattr(
-        knowledge_parser,
-        "get_app_config",
-        lambda: SimpleNamespace(rag=SimpleNamespace(video=SimpleNamespace(enabled=True, max_size_mb=1))),
-    )
+    _stub_rag_gates(monkeypatch, video=True, video_max_mb=1)
     client = _client(service)
     kb = _create_kb(client)
 
@@ -251,6 +266,108 @@ async def test_upload_rejects_oversized_video_when_enabled(service, monkeypatch)
     assert response.status_code == 400
     assert "1" in response.json()["detail"]  # 拒绝文案带上限额
     assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
+
+
+# ── 表格后缀门控两态（spec 2026-09-09 §4，plan Task 1）───────────────────
+
+
+async def test_upload_rejects_table_suffix_when_table_disabled(service, monkeypatch):
+    """off 态（默认）：电子表格后缀门口即拒，拒绝文案带上后缀，不留文档行。"""
+    _stub_rag_gates(monkeypatch)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("销售.xlsx", b"PK\x03\x04", "application/octet-stream")})
+
+    assert response.status_code == 400
+    assert ".xlsx" in response.json()["detail"]
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
+
+
+async def test_supported_formats_unions_table_suffixes_when_enabled(service, monkeypatch):
+    """on 态：端点返回 文本∪表格 并集（排序）；video 腿 off 时视频后缀不得混入
+    （两腿独立门控，单一源不漂移）。"""
+    from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, TABLE_UPLOAD_SUFFIXES
+
+    _stub_rag_gates(monkeypatch, table=True)
+    client = _client(service)
+
+    response = client.get("/api/knowledge-bases/supported-formats")
+
+    assert response.status_code == 200
+    suffixes = response.json()["suffixes"]
+    assert set(suffixes) == set(SUPPORTED_UPLOAD_SUFFIXES | TABLE_UPLOAD_SUFFIXES)
+    assert suffixes == sorted(suffixes)
+    assert ".mp4" not in suffixes
+
+
+async def test_supported_formats_unions_both_gates_when_both_enabled(service, monkeypatch):
+    """两腿同开：并集 = 文本∪视频∪表格（三集互不相交，端点仍是单一源）。"""
+    from deerflow.knowledge.parser import SUPPORTED_UPLOAD_SUFFIXES, TABLE_UPLOAD_SUFFIXES, VIDEO_UPLOAD_SUFFIXES
+
+    _stub_rag_gates(monkeypatch, video=True, table=True)
+    client = _client(service)
+
+    suffixes = client.get("/api/knowledge-bases/supported-formats").json()["suffixes"]
+
+    assert set(suffixes) == set(SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES | TABLE_UPLOAD_SUFFIXES)
+
+
+async def test_upload_accepts_all_three_table_suffixes_when_enabled(service, monkeypatch):
+    """on 态：.xlsx/.xls/.tsv 三后缀逐个过门落 uploaded 行并入队（mock worker）——
+    解析腿由 Task 2/3 接线。"""
+    _stub_rag_gates(monkeypatch, table=True)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    for name in ("销售.xlsx", "旧版.xls", "导出.tsv"):
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": (name, b"payload", "application/octet-stream")})
+        assert response.status_code == 202, response.text
+        assert response.json()["status"] == "uploaded"
+
+    assert service.worker.submit.await_count == 3
+
+
+async def test_csv_is_accepted_regardless_of_table_gate(service, monkeypatch):
+    """`.csv` 恒在文本冻结集，**不随 rag.table.enabled 门控**（spec §4 冻结边界）：
+    off 态照收，on 态端点也恒含它。"""
+    _stub_rag_gates(monkeypatch)  # off
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("数据.csv", b"a,b\n1,2\n", "text/csv")})
+
+    assert response.status_code == 202, response.text
+    assert ".csv" in client.get("/api/knowledge-bases/supported-formats").json()["suffixes"]
+
+    _stub_rag_gates(monkeypatch, table=True)  # on
+    assert ".csv" in client.get("/api/knowledge-bases/supported-formats").json()["suffixes"]
+
+
+async def test_upload_rejects_oversized_table_when_enabled(service, monkeypatch):
+    """on 态：超 rag.table.max_size_mb 的电子表格门口即拒（spec §4 行爆炸护栏），
+    拒绝文案带上限额。"""
+    _stub_rag_gates(monkeypatch, table=True, table_max_mb=1)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("巨型.xlsx", b"x" * (2 * 1024 * 1024), "application/octet-stream")})
+
+    assert response.status_code == 400
+    assert "1" in response.json()["detail"]
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents").json() == []
+
+
+async def test_table_size_gate_does_not_apply_to_csv(service, monkeypatch):
+    """体积门只管被门控的三后缀：`.csv` 是既有文本集成员，不因 rag.table 引入
+    新限制（spec §4「.csv 不门控」在体积面的推论）：同体积 .csv 仍 202。"""
+    _stub_rag_gates(monkeypatch, table=True, table_max_mb=1)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("大表.csv", b"x" * (2 * 1024 * 1024), "text/csv")})
+
+    assert response.status_code == 202, response.text
 
 
 async def test_document_list_carries_indexing_fields(service):

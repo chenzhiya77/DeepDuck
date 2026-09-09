@@ -68,6 +68,15 @@ _LOCAL_READ_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt", ".
 #: (see ``supported_upload_suffixes``).
 VIDEO_UPLOAD_SUFFIXES: frozenset[str] = frozenset({".mp4", ".mov", ".mkv", ".webm"})
 
+#: Spreadsheet upload allowlist (spec 2026-09-09 §4, frozen): an independent
+#: frozenset so the text set above stays byte-identical. Surfaced in the upload
+#: gate and /supported-formats ONLY when ``rag.table.enabled`` is on (see
+#: ``supported_upload_suffixes``). ``.csv`` is deliberately absent: it already
+#: lives in the text set, so its membership never changes — only its *handling*
+#: does (raw text dump → table-aware parse), which is a correctness fix and is
+#: therefore not gated.
+TABLE_UPLOAD_SUFFIXES: frozenset[str] = frozenset({".xlsx", ".xls", ".tsv"})
+
 _MEDIA_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -87,14 +96,27 @@ def video_ingest_enabled() -> bool:
         return False
 
 
+def table_ingest_enabled() -> bool:
+    """``rag.table.enabled`` master gate (spec 2026-09-09 §4). Config load
+    failures degrade to off — the gate never widens the allowlist on error."""
+    try:
+        return bool(get_app_config().rag.table.enabled)
+    except Exception:
+        return False
+
+
 def supported_upload_suffixes() -> frozenset[str]:
-    """Config-gated upload allowlist: the frozen text set, unioned with the
-    video set only when ``rag.video.enabled`` is on. Single source for both
-    the /supported-formats endpoint and the upload gate so the two cannot
-    drift (spec 2026-09-08 §2)."""
+    """Config-gated upload allowlist: the frozen text set, unioned with the video
+    set when ``rag.video.enabled`` is on and the spreadsheet set when
+    ``rag.table.enabled`` is on. The two gates are independent legs. Single source
+    for both the /supported-formats endpoint and the upload gate so they cannot
+    drift (spec 2026-09-08 §2, spec 2026-09-09 §4)."""
+    suffixes = SUPPORTED_UPLOAD_SUFFIXES
     if video_ingest_enabled():
-        return SUPPORTED_UPLOAD_SUFFIXES | VIDEO_UPLOAD_SUFFIXES
-    return SUPPORTED_UPLOAD_SUFFIXES
+        suffixes = suffixes | VIDEO_UPLOAD_SUFFIXES
+    if table_ingest_enabled():
+        suffixes = suffixes | TABLE_UPLOAD_SUFFIXES
+    return suffixes
 
 
 def video_upload_limit_bytes() -> int | None:
@@ -104,6 +126,19 @@ def video_upload_limit_bytes() -> int | None:
         return None
     try:
         return int(get_app_config().rag.video.max_size_mb) * 1024 * 1024
+    except Exception:
+        return None
+
+
+def table_upload_limit_bytes() -> int | None:
+    """``rag.table.max_size_mb`` in bytes; None when the table gate is off
+    (spreadsheet suffixes are rejected at the door anyway, and ``.csv`` — an
+    ungated member of the text set — keeps its pre-table-ingest behaviour of no
+    size ceiling, spec 2026-09-09 §4)."""
+    if not table_ingest_enabled():
+        return None
+    try:
+        return int(get_app_config().rag.table.max_size_mb) * 1024 * 1024
     except Exception:
         return None
 

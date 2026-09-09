@@ -157,6 +157,21 @@ class RagVideoConfig(BaseModel):
     card_text_mode: Literal["full", "caption_only", "asr_only"] = Field(default="full", description="Shot-card text assembly mode; non-full modes are caption-quality ablation experiments (spec §6), not a production path.")
 
 
+class RagTableConfig(BaseModel):
+    """Table-ingestion knobs (spec 2026-09-09 §4).
+
+    ``enabled`` gates the spreadsheet suffixes (``.xlsx``/``.xls``/``.tsv``) at the
+    upload door and in /supported-formats. ``.csv`` is deliberately **not** gated:
+    it already lives in the frozen text allowlist, and routing it through
+    table-aware chunking is a correctness fix for the hard-split damage (spec §1),
+    not a new exposure surface.
+    """
+
+    enabled: bool = Field(default=False, description="Master gate for spreadsheet uploads (.xlsx/.xls/.tsv); when false those suffixes are rejected at upload. .csv is never gated.")
+    max_size_mb: int = Field(default=50, ge=1, description="Max table-file upload size in MB; the upload gate rejects larger files at the door (row-explosion guard).")
+    card_mode: Literal["markdown", "linearized"] = Field(default="markdown", description="Row-card body serialization: markdown (GFM rows) or linearized (col: value sentences); the latter is a recall-quality ablation (spec §7).")
+
+
 class RagConfig(BaseModel):
     """Configuration for the RAG knowledge-base subsystem.
 
@@ -194,6 +209,8 @@ class RagConfig(BaseModel):
     entity_merge_similarity: float = Field(default=0.92, ge=0, le=1, description="Cosine threshold for merging alias entity names, shared by per-slice normalization and the incremental re-resolver.")
     # Video ingestion (spec 2026-09-08 §7): master-gated, default off.
     video: RagVideoConfig = Field(default_factory=RagVideoConfig, description="Video ingestion pipeline knobs (shot segmentation / ASR / captioning gates and budgets).")
+    # Table ingestion (spec 2026-09-09 §4): master-gated, default off.
+    table: RagTableConfig = Field(default_factory=RagTableConfig, description="Table ingestion knobs (spreadsheet upload gate, size ceiling, row-card serialization mode).")
 
 
 def is_trace_correlation_enabled(config: Any) -> bool:

@@ -181,8 +181,9 @@ async def create_knowledge_base(request: Request, body: KbCreateRequest):
 async def supported_formats():
     """Upload allowlist (Task 6, spec §6). Registered before ``/{kb_id}`` so
     the literal segment wins over the path parameter. Config-gated union
-    (spec 2026-09-08 §2): video suffixes appear only when
-    ``rag.video.enabled`` is on — the frontend uses this for the file-picker
+    (spec 2026-09-08 §2, spec 2026-09-09 §4): video suffixes appear only when
+    ``rag.video.enabled`` is on, spreadsheet suffixes (.xlsx/.xls/.tsv) only when
+    ``rag.table.enabled`` is on — the frontend uses this for the file-picker
     ``accept`` and pre-upload intercept."""
     return {"suffixes": sorted(supported_upload_suffixes())}
 

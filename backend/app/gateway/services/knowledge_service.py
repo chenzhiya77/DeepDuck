@@ -39,7 +39,7 @@ from deerflow.knowledge.graph.communities import assign_communities, summarize_c
 from deerflow.knowledge.graph.indexer import extract_single_chunk
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.models import EvalRunRow
-from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, is_supported_suffix, supported_upload_suffixes, video_upload_limit_bytes
+from deerflow.knowledge.parser import TABLE_UPLOAD_SUFFIXES, VIDEO_UPLOAD_SUFFIXES, is_supported_suffix, supported_upload_suffixes, table_upload_limit_bytes, video_upload_limit_bytes
 from deerflow.knowledge.projection.cache import CachedProjection, ProjectionCache, content_fingerprint
 from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
 from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
@@ -363,6 +363,14 @@ class KnowledgeService:
             limit = video_upload_limit_bytes()
             if limit is not None and len(content) > limit:
                 raise ValueError(f"video file too large: {len(content)} bytes exceeds the {limit // (1024 * 1024)} MB limit (rag.video.max_size_mb)")
+
+        # 表格体积门（spec 2026-09-09 §4）：超 rag.table.max_size_mb 的电子表格门口
+        # 即拒，防巨型表行爆炸。只管被门控的三后缀（.xlsx/.xls/.tsv）；.csv 是既有
+        # 文本集成员、不门控，也不因本特性新增体积限制。
+        if suffix in TABLE_UPLOAD_SUFFIXES:
+            limit = table_upload_limit_bytes()
+            if limit is not None and len(content) > limit:
+                raise ValueError(f"table file too large: {len(content)} bytes exceeds the {limit // (1024 * 1024)} MB limit (rag.table.max_size_mb)")
 
         # 空文件拦截 (2026-08-30): 0 字节文件照收会白送云端解析，
         # MinerU 重试耗尽后回吐晦涩的 'retry limit reached'——在门口直接拒。
