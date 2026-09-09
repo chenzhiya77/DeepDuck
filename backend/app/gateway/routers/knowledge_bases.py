@@ -304,6 +304,23 @@ async def get_document_file(request: Request, kb_id: str, doc_id: str, file_path
     return FileResponse(target)
 
 
+@router.get("/{kb_id}/documents/{doc_id}/source")
+async def download_document_source(request: Request, kb_id: str, doc_id: str):
+    """Serve the original uploaded file for round-trip export (2026-09-10).
+
+    The route takes no user-supplied path segment — it serves exactly the
+    row's recorded ``storage_path`` — so traversal is structurally impossible;
+    ``filename`` restores the upload name in ``Content-Disposition``. Auth
+    mirrors document read; a source gone off disk is a plain 404.
+    """
+    service = await _require_kb_access(request, kb_id)
+    document = await _get_document_or_404(service, kb_id, doc_id)
+    source = await service.resolve_source_document(kb_id=kb_id, doc_id=doc_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source file not found")
+    return FileResponse(source, filename=document["name"])
+
+
 @router.get("/{kb_id}/documents/{doc_id}/shots/{shot_index}/frame")
 async def get_shot_frame(request: Request, kb_id: str, doc_id: str, shot_index: int):
     """Serve a video shot's persisted keyframe JPEG (spec 2026-09-08 §4).

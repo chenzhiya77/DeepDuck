@@ -315,6 +315,22 @@ class KnowledgeService:
             return None
         return target
 
+    async def resolve_source_document(self, *, kb_id: str, doc_id: str) -> Path | None:
+        """原始上传文件绝对路径（2026-09-10 下载回环）；不可服务则 ``None``（router → 404）。
+
+        与 ``resolve_video_stream`` 不同：不看后缀——任何文档的源都可下载（上传时
+        字节已固化在 ``storage_path``）。``None`` 覆盖：文档不属于该 kb / 文件缺失
+        或非常规文件。鉴权由 router 的 ``_require_kb_access`` 承载（与文档读取同源）；
+        路由不接受用户路径段，只服务行内记录的路径，穿越结构性不可能。
+        """
+        document = await self.store.get_document(doc_id)
+        if document is None or document["kb_id"] != kb_id:
+            return None
+        target = Path(document["storage_path"])
+        if not target.is_file():
+            return None
+        return target
+
     async def list_document_chunks(self, *, kb_id: str, doc_id: str, offset: int, limit: int) -> dict[str, Any]:
         """文档切片分页（切片抽屉数据源，spec 2026-09-08 §5）：在 store 行之上为
         视频镜头 chunk 补时间码四字段 + ``frame_url``——复用 recall-test 同款
