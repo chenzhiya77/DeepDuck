@@ -292,7 +292,7 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       GREEN：行卡 chunk_id 过 golden 校验 + recall@k/hit_rate/path_accuracy=1.0）；revert proof
       neuter `{index:04d}`→`{index}` → **2 RED**（`QuestionBankInvalidQuestion: …got '…#0'`）→
       恢复 chunker.py git-clean；`tests/knowledge/eval` 全量 **326 passed**、ruff 双净。
-- [ ] Commit: `docs(rag): table KB question authoring guide and eval integration test`
+- [x] Commit: `docs(rag): table KB question authoring guide and eval integration test`（`36241083`）
 
 ### 交付纪要（2026-09-10）
 
@@ -331,11 +331,35 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
 - Test: `frontend/tests/unit/knowledge/*.dom.test.tsx`（markdown 模式行卡渲染为 `<table>`；
       `.tsv` 落 sheet 徽章；linearized 模式渲染为文本行）
 
-- [ ] RED → Implement → GREEN（`pnpm check` 双净）→ revert proof（stash 实现文件、留测试 →
-      RED 同初始形；散文 chunk 渲染回归恒绿）。
-- [ ] **prettier 陷阱**（对齐视频 Task 10 教训）：prettier 非本仓门禁、勿跑 `--write`，
-      `pnpm check`（eslint+tsc）才是；匹配周围风格即可。
+- [x] RED → Implement → GREEN（`pnpm check` 双净）→ revert proof（stash 实现文件、留测试 →
+      RED 同初始形；散文 chunk 渲染回归恒绿）。—— 初始 RED **3 failed**（suffix 列表×2 + `.tsv` 徽章）
+      / dom 渲染用例 naturally GREEN（零改动验证）→ 实现后 3 文件 **30 passed** + `pnpm check` 双净；
+      revert proof stash 两实现文件 → **4 RED**（suffix×2 + badge×2，同初始形）/ dom 渲染 3 例恒绿
+      → `git stash pop` 恢复 30 passed。
+- [x] **prettier 陷阱**（对齐视频 Task 10 教训）：prettier 非本仓门禁、勿跑 `--write`，
+      `pnpm check`（eslint+tsc）才是；匹配周围风格即可。—— 已避：未跑 prettier，仅 `pnpm check` 作门禁。
 - [ ] Commit: `feat(frontend): spreadsheet suffixes and native GFM table rendering in chunk cards`
+
+### 交付纪要（2026-09-10）
+
+- **纯前端表面层（近零改动，spec §8）**：`chunk-card.tsx` **零改动**——核实 `MarkdownContent`
+  默认 `remarkPlugins = streamdownPluginsWithoutRawHtml.remarkPlugins`，其 `sharedRemarkPlugins`
+  含 `[remarkGfm, {singleTilde:false}]`（`core/streamdown/plugins.ts`），GFM 管道表**原生渲染为真
+  `<table>`**；ChunkCard 的 `components` 只覆写 `img`、不动 table/td/th。故 plan 的「若不含 gfm 则显式加」
+  分支未触发。
+- **实现落点**（2 文件小改 + 1 新 dom 测试）：
+  - `supported-formats.ts`：`FALLBACK_SUPPORTED_SUFFIXES` += `.tsv/.xlsx/.xls`（后端 `/supported-formats`
+    端点仍是真源、门控开启才返回并集；fallback 仅镜像作端点未达时的乐观客户端守卫，spec §8）。
+  - `file-type-badge.tsx`：`KIND_BY_SUFFIX` += `.tsv: "sheet"`（xls/xlsx/csv 已在）；`MIME_SPECS` sheet 项
+    += `text/tab-separated-values` + `.tsv`（拖拽 accept，plan 可选项）。
+- **测试面**（node/dom 分环境，遵 AGENTS.md「不渲染的测试不进 dom」）：
+  - node：`supported-formats.test.ts` 精确列表 += 3 后缀 + 专测 spreadsheet 后缀在 fallback；
+    `file-type-badge.test.ts` DESIGN_ROWS sheet += tsv + `kindFromMime("text/tab-separated-values")==="sheet"`。
+  - dom（新 `chunk-table.dom.test.tsx`）：markdown 行卡 → 真 `<table>`（th 含列名 / td 含值）；
+    linearized 行卡 → 无 `<table>`、文本行原样；散文 chunk → 无表格、正文回归。
+- **验证**：3 文件 **30 passed**；`pnpm check`（eslint+tsc）**双净**；revert proof stash 两实现文件 →
+  **4 RED**（suffix×2 + badge×2）/ dom 渲染 3 例恒绿（证 chunk-card 零改动、渲染独立于 fallback/badge）
+  → `git stash pop` 恢复 30 passed。KaTeX quirks-mode warning 为 happy-dom doctype benign 提示，与本任务无关。
 
 ## Task 7: 收官——全量回归 + 浏览器实测 + 指南落档
 

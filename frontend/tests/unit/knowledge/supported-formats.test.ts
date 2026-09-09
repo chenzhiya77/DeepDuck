@@ -47,7 +47,7 @@ describe("acceptAttribute", () => {
 });
 
 describe("FALLBACK_SUPPORTED_SUFFIXES", () => {
-  it("mirrors the backend spec §6 allowlist", () => {
+  it("mirrors the backend spec §6 allowlist (+ table suffixes, spec 2026-09-09 §4)", () => {
     expect([...FALLBACK_SUPPORTED_SUFFIXES].sort()).toEqual([
       ".csv",
       ".doc",
@@ -60,7 +60,17 @@ describe("FALLBACK_SUPPORTED_SUFFIXES", () => {
       ".png",
       ".ppt",
       ".pptx",
+      ".tsv",
       ".txt",
+      ".xls",
+      ".xlsx",
     ]);
+  });
+
+  it("includes the spreadsheet suffixes gated by rag.table.enabled (spec 2026-09-09 §4)", () => {
+    // 后端 /supported-formats 端点是真源；fallback 仅镜像，用于端点未达时的客户端守卫。
+    for (const suffix of [".xlsx", ".xls", ".tsv"]) {
+      expect(FALLBACK_SUPPORTED_SUFFIXES).toContain(suffix);
+    }
   });
 });

@@ -46,6 +46,7 @@ const KIND_BY_SUFFIX: Record<string, FileTypeKind> = {
   ".xls": "sheet",
   ".xlsx": "sheet",
   ".csv": "sheet",
+  ".tsv": "sheet",
   ".numbers": "sheet",
   ".et": "sheet",
   // 演示 #F97316
@@ -375,9 +376,10 @@ const MIME_SPECS: MimeSpec[] = [
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "text/csv",
+      "text/tab-separated-values",
       "application/vnd.apple.numbers",
     ],
-    suffixes: [".xls", ".xlsx", ".csv", ".numbers", ".et"],
+    suffixes: [".xls", ".xlsx", ".csv", ".tsv", ".numbers", ".et"],
   },
   {
     kind: "ppt",

@@ -9,6 +9,13 @@ export const FALLBACK_SUPPORTED_SUFFIXES: readonly string[] = [
   ".markdown",
   ".txt",
   ".csv",
+  // Spreadsheet suffixes (spec 2026-09-09 §8): mirror the backend's rag.table-gated
+  // union. The `/supported-formats` endpoint is the source of truth (it returns these
+  // only when `rag.table.enabled` is on); this fallback is the optimistic
+  // pre-resolution client guard, so it lists them unconditionally.
+  ".tsv",
+  ".xlsx",
+  ".xls",
   ".pdf",
   ".doc",
   ".docx",

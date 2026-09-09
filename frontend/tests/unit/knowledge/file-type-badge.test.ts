@@ -19,7 +19,7 @@ import {
 
 const DESIGN_ROWS: [FileTypeKind, string[]][] = [
   ["word", ["doc", "docx", "wps", "pages", "rtf", "txt"]],
-  ["sheet", ["xls", "xlsx", "csv", "numbers", "et"]],
+  ["sheet", ["xls", "xlsx", "csv", "tsv", "numbers", "et"]],
   ["ppt", ["ppt", "pptx", "key", "dps"]],
   ["pdf", ["pdf"]],
   ["code", ["md", "markdown", "json", "yaml", "xml", "py", "js", "sql"]],
@@ -68,6 +68,7 @@ describe("kindFromMime", () => {
     expect(kindFromMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("word");
     expect(kindFromMime("text/plain")).toBe("word");
     expect(kindFromMime("text/markdown")).toBe("code");
+    expect(kindFromMime("text/tab-separated-values")).toBe("sheet");
     expect(kindFromMime("application/zip")).toBe("archive");
   });
 
