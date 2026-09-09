@@ -432,22 +432,6 @@ export function ChunkDrawer({
           {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04，EvalRunDrawer 同款）：整抽屉经
               ScrollArea 滚动；头部 sticky 留在视口内承担位置感（2026-09-05 切片导航）。 */}
           <div className="relative flex min-h-0 flex-1 flex-col">
-            {hasVideo && (
-              // 抽屉顶部单例播放器（spec §5）：钉在滚动区之上，浏览镜头卡时始终可见；
-              // 原生 controls、preload=metadata、不自动播；src 走 Range 流端点。
-              <div className="shrink-0 border-b bg-background px-4 py-2" data-testid="shot-player-wrap">
-                <video
-                  className="aspect-video max-h-56 w-full rounded-md bg-black"
-                  controls
-                  data-testid="shot-player"
-                  onTimeUpdate={handleTimeUpdate}
-                  preload="metadata"
-                  ref={attachVideo}
-                  src={videoStreamUrl(kbId, doc.id)}
-                />
-                <p className="text-muted-foreground mt-1 text-[11px]">{tc.playerHint}</p>
-              </div>
-            )}
             <ScrollArea
               className="min-h-0 w-full flex-1"
               scrollHideDelay={2000}
@@ -507,6 +491,23 @@ export function ChunkDrawer({
                   {total} {tc.chunkUnit}
                   {total > 0 ? ` · ${tc.current} #${activeIndex + 1}` : ""}
                 </SheetDescription>
+                {hasVideo && (
+                  // 抽屉单例播放器（spec §5）：置于标题容器内、标题行下方——右上角关闭 ×
+                  // 留在标题右侧、不被视频遮挡；sticky 头部使其浏览镜头卡时始终可见。
+                  // 原生 controls、preload=metadata、不自动播；src 走 Range 流端点。
+                  <div className="mt-2" data-testid="shot-player-wrap">
+                    <video
+                      className="aspect-video max-h-56 w-full rounded-md bg-black"
+                      controls
+                      data-testid="shot-player"
+                      onTimeUpdate={handleTimeUpdate}
+                      preload="metadata"
+                      ref={attachVideo}
+                      src={videoStreamUrl(kbId, doc.id)}
+                    />
+                    <p className="text-muted-foreground mt-1 text-[11px]">{tc.playerHint}</p>
+                  </div>
+                )}
               </SheetHeader>
               <div className="flex flex-col gap-2 px-4 pt-4 pb-6">
               {(page?.items ?? []).length === 0 && !isLoading ? (
