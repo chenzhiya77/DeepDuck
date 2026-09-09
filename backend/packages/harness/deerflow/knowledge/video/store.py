@@ -9,10 +9,17 @@ Upsert contract (resume/re-run safe): payload mappings key off
 and fall back to column defaults on insert. ``caption_status`` therefore
 survives a re-materialize unless the payload explicitly resets it — status
 resets belong to the recaption flow (plan Task 8b), not to the write path.
+
+A mapping that would INSERT (row absent) but lacks the non-null
+``start_ms``/``end_ms`` columns is skipped with a warning instead of violating
+NOT NULL — the delete-vs-index race (same-name re-upload cascades the rows
+away mid-flight) must degrade to a no-op, not kill the whole indexing leg
+(2026-09-09 incident).
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -22,6 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from deerflow.knowledge.models import VideoShotRow
 from deerflow.utils.time import coerce_iso
+
+logger = logging.getLogger(__name__)
 
 #: Columns a payload mapping may write (``shot_index`` is the lookup key).
 _WRITABLE = ("start_ms", "end_ms", "keyframe_path", "asr_text", "ocr_text", "caption", "caption_status")
@@ -55,6 +64,9 @@ class VideoShotStore:
                 result = await session.execute(select(VideoShotRow).where(VideoShotRow.doc_id == doc_id, VideoShotRow.shot_index == index))
                 row = result.scalar_one_or_none()
                 if row is None:
+                    if "start_ms" not in shot or "end_ms" not in shot:
+                        logger.warning("skip shot upsert insert: doc %s shot %d has no row and payload lacks start_ms/end_ms", doc_id, index)
+                        continue
                     row = VideoShotRow(id=uuid.uuid4().hex, doc_id=doc_id, kb_id=kb_id, shot_index=index, **{key: shot[key] for key in _WRITABLE if key in shot})
                     session.add(row)
                 else:

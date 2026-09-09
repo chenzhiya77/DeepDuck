@@ -58,6 +58,27 @@ async def test_upsert_update_only_overwrites_present_keys(session_factory):
     assert rows[0]["caption_status"] == "done"
 
 
+async def test_upsert_skips_partial_insert_when_row_absent(session_factory):
+    """删除与索引竞态契约：行已消失且 payload 缺非空列（start_ms/end_ms）时跳过，
+    绝不插 NULL 行（2026-09-09 事故：同名重复上传 cascade 删行后，caption 腿的
+    部分键 upsert 走 INSERT 分支，autoflush 插 NULL start_ms 炸掉整条索引腿）；
+    同批中已有行的映射照常更新。"""
+    store = VideoShotStore(session_factory)
+    await store.bulk_upsert_shots("doc-1", kb_id="kb-1", shots=[_shot(0, 0, 5000)])
+
+    written = await store.bulk_upsert_shots(
+        "doc-1",
+        kb_id="kb-1",
+        shots=[{"shot_index": 0, "caption": "更新已有行"}, {"shot_index": 7, "caption": "行已消失", "caption_status": "done"}],
+    )
+    rows = await store.list_shots("doc-1")
+
+    assert written == 1  # 仅已有行计入；缺行且缺非空列的映射被跳过
+    assert len(rows) == 1  # 没有插出 NULL start_ms 的脏行
+    assert rows[0]["caption"] == "更新已有行"
+    assert rows[0]["caption_status"] == "pending"  # 跳过不影响其余行的状态机
+
+
 async def test_same_shot_index_coexists_across_documents(session_factory):
     """唯一约束 scoped 到 (doc_id, shot_index)：跨文档同序号互不冲突。"""
     store = VideoShotStore(session_factory)
