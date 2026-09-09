@@ -1,0 +1,627 @@
+# Agent 装饰宠物(鹦鹉帧动画)— 设计文档
+
+- 日期:2026-09-09
+- 分支:实施时定。当前分支 `feat/rag-knowledge-base` 与本功能无关,建议新切
+- 上游调研:无独立调研文档。project AIRI 一手核查(moeru-ai/airi @ main,5380 blobs 全量检索)见 §2.5
+- 相邻产品线:`../../HARNESS_EXECUTION_FLOW_MAP.md`(harness 构成观测台,**不是本 spec 的对象**;本 spec 只消费既有前端信号,不新增任何后端事件通道)
+- 计划文档:`../plans/2026-09-09-agent-pet-sprite.md`(第 1 期,已生成)
+
+## 1. 目标
+
+在 agent 聊天窗内加一只装饰性鹦鹉,用帧动画(sprite sheet)反映当前 run 的可观测状态。三件事:
+
+1. **把已经存在但无人读取的状态做成周边视觉**。DeerFlow 的 run 很长(子代理默认 `timeout_seconds=1800`、`general-purpose` 的 `max_turns=150`),用户会走开。今天「agent 在等你回答」这件事**没有任何周边提示**。
+2. **区分「跑完了」和「卡在你身上」**。这是本功能唯一的产品价值支点,也是最容易做错的一处 —— `ClarificationMiddleware` 走 `Command(goto=END)`,两种情形在流层面完全同形(§2.1)。
+3. **第 1-3 期零后端改动、零新依赖、零新事件通道**。全部信号来自前端已有的 `useThread()`。(第 4 期是唯一候选例外,见 §18,且它需同时重开 §4.1 裁决一。)
+
+**明确不做**:鹦鹉语音输出/念回复(前端零 TTS)、鹦鹉被 agent 看见或拥有自己的回合(§4.4)、从模型输出解析情绪(要改 lead agent 输出格式)、任何后端事件新增、PixiJS/Lottie/Rive、宠物插件系统、per-agent 皮肤、通用 avatar 抽象。文字形式的生成式评论是第 4 期候选,不是本 spec 任何一期的交付物。
+
+## 2. 背景与现状(2026-09-09 代码核查,全部带行号)
+
+### 2.1 关键事实:「在等你」和「跑完了」同形
+
+`ClarificationMiddleware` 拦截 `ask_clarification` 后写 `ToolMessage.artifact.human_input` 并 `Command(goto=END)`(见 `backend/AGENTS.md` 中间件链第 35 条)。图直接结束,所以:
+
+| | 流层面表现 |
+|---|---|
+| run 正常完成 | `isLoading` → false,`onFinish` 触发 |
+| agent 在等用户回答 | `isLoading` → false,`onFinish` 触发(**完全相同**) |
+
+唯一能分开二者的信号是 `hasOpenHumanInputRequest`(`core/messages/human-input.ts:486`)。既有调用形状在 `app/workspace/chats/[thread_id]/page.tsx:262-269`:`useMemo` 键为 `[thread.messages]`,过滤器 `(m) => !isHiddenFromUIMessage(m)`。本 spec 的实现必须与它逐字一致,不要另起一套。
+
+### 2.2 实时可观测信号(全部已存在,无需后端改动)
+
+| 信号 | 来源 | 行号 |
+|---|---|---|
+| 加载中 / 出错 | `thread.isLoading` / `thread.error` | `BaseStream<AgentThreadState>`,`components/workspace/messages/context.ts:7` |
+| 三态优先级 | `error > isLoading > ready` | `page.tsx:416-421`(**与本 spec 决策树顶层同构,是既有先例**) |
+| 消息分组 | `getMessageGroups(messages, { isCurrentTurnLoading })` | `core/messages/utils.ts:36`。**2026-09-09 核查:不可用作「在飞工具名」的来源** —— 带工具调用的 AI 消息被拆进**三种互斥** group,优先级为 `hasPresentFiles` → `assistant:present-files`(`:158`)> `hasSubagent`(即 `task`)→ `assistant:subagent`(`:164`)> 其余 → `assistant:processing`(`:170-187`)。故只看 `assistant:processing` **永远看不到 `task` 与 `present_files`**,`delegate` workKind 会变成死代码。见 §6.1 |
+| 某条 AI 消息有工具调用 | `hasToolCalls(message)` = `type === "ai" && tool_calls.length > 0` | `core/messages/utils.ts:664`,可直接复用 |
+| 工具调用是否有结果 | `findToolCallResult(toolCallId, messages)` | `core/messages/utils.ts:706`,**有缺陷不可复用,见 §15 开放项 1** |
+| 未回答的人工输入请求 | `hasOpenHumanInputRequest` | `core/messages/human-input.ts:486` |
+| 隐藏消息判定 | `isHiddenFromUIMessage` | `core/messages/utils.ts:718` |
+| 子代理派生状态 | `parseSubtaskResult` / `derivePendingSubtaskStatus` | `core/tasks/subtask-result.ts:117`、`:198` |
+| 子代理被哪个 guardrail 掐断 | `Subtask.stopReason`:`token_capped` / `turn_capped` / `loop_capped` | `core/tasks/types.ts:32`(字段注释明写「so a future badge can show "capped" **without parsing result text**」) |
+| 目标受阻类型 | `goal.last_evaluation.blocker`(六值) | `core/threads/types.ts:16-22` |
+| 待办 | `todos`:pending / in_progress / completed | `core/todos/types.ts:3` |
+| **工具结果的结构化语义**(2026-09-09 核查新增) | `ToolMessage.additional_kwargs.deerflow_tool_meta`:`status`(`success`\|`error`\|`partial_success`)、`error_type`(auth / rate_limited / transient / config / permission / no_results / not_found / internal / unknown)、`recoverable_by_model: bool`、`recommended_next_action`(`continue`\|`rewrite_query`\|`try_alternative`\|`summarize`\|`stop`)、`source` | 后端 `agents/middlewares/tool_result_meta.py`:`TOOL_META_KEY` `:18`、dataclass `:33-40`、错误分类表 `:43-73`;模块 docstring 明写「Downstream consumers read this key **instead of parsing text**」。**前端当前零命中**(全量检索 `deerflow_tool_meta` / `error_type` / `recoverable_by_model` / `tool_meta` 均无),但 `additional_kwargs` 确实到前端 —— `isHiddenFromUIMessage` 读 `.hide_from_ui`(`utils.ts:718`)、`subtask-result.ts:40-46` 读 ToolMessage 的 `subagent_status` 等键。§7 的 `byErrors` 用它,见 §15 开放项 8 的一次性运行时确认 |
+
+实时 SSE custom 通道的生产者全量只有 4 个(已排除 tests,无截断):`tools/builtins/task_tool.py`(8 处)、`tools/builtins/graph_search_tool.py:59`、`agents/middlewares/llm_error_handling_middleware.py:745,766`、`agents/middlewares/safety_finish_reason_middleware.py:245,268`。
+
+### 2.3 中间件事件只落库(否定「实时语义反应」的可行性)
+
+`RunJournal._put`(`backend/packages/harness/deerflow/runtime/journal.py:646-659`)只 append 到 buffer 再 flush 进 `RunEventStore`;**整个 journal 没有任何 stream publish**。`record_middleware`(`:819-839`)形成的 `middleware:{tag}` 事件因此只能经 REST `GET /runs/{rid}/events` 回读。
+
+后果:护栏拦截(`guardrails/middleware.py:123`)、技能激活、上下文压缩、标题生成、循环检测/token 预算硬停(只 stamp `stop_reason`,完全无事件)、沙箱获取释放 —— 这些**都拿不到实时信号**。轮询 REST 对一个装饰元素是错的方向(换来延迟与请求量),故本 spec 不涉及。
+
+### 2.4 前端动画基建与缺口
+
+`frontend/package.json` 已有 `motion` ^12.26.2、`gsap` ^3.13.0、`ogl`、`canvas-confetti`、`tw-animate-css`;`styles/globals.css` 有 10 个 keyframes(`bouncing` :122、`wave` :154、`ambilight` :420 等)。**无 sprite-sheet / 帧动画 / Lottie / Rive 任何先例**,帧动画基建需从零起(§9 给出纯 CSS 方案,不引依赖)。
+
+`prefers-reduced-motion` 在 `styles/` 里**零命中**,但 Tailwind 的 `motion-reduce:` 变体已在 `components/workspace/chats/chat-box.tsx` 用了 3 处。故降级走 `motion-reduce:` 变体,不写裸 media query(与既有代码一致)。
+
+### 2.5 参照系:project AIRI 的耦合方向相反
+
+一手核查 moeru-ai/airi @ main(48,937 stars,当日仍在推)。它的情绪链路是:
+
+```
+use-airi-runtime-prompt.ts 每次请求注入 9 值情绪清单
+  → 模型在 token 流吐 <|...|> 标记
+    → core-agent/runtime/llm-marker-parser.ts(流式,tailLength 半标记保护)
+    → core-agent/runtime/response-categoriser.ts(rehype 非流式,speech|reasoning|unknown)
+      → constants/emotions.ts 唯一 Emotion 枚举 → 4 张 per-renderer 映射表
+```
+
+**情绪是模型生成的,不是事件派生的** —— 它拥有模型的输出格式。它是第 1 档(表达),本 spec 是第 0 档(观察)。
+
+AIRI 的宠物本身挂着一套 agent 基建:`core-agent` + `memory-pgvector` + `provider-inference` + `plugin-protocol` + `server-runtime` 共 114 个非测试源文件,带六边形端口(`llm-port`/`session-port`/`context-port`/`stream-port`)、自己的上下文压缩 `messages/compaction.ts`。**逐包对照,DeerFlow 全部已有等价物**(`RunManager` / `SummarizationMiddleware` / `models/factory.py` / `ThreadState` / scheduler / DeerMem + `knowledge/` / `models[]` / 扩展系统 + skills / Gateway)。引入它不是加重量,是建第二套 harness 去和第一套抢回复权。
+
+一处更正:`memory-pgvector` **在 main 上是空壳** —— `src/index.ts` 仅 25 行,建一个 `Client`、注册一个空的 `module:configure` handler、`runUntilSignal()`,无任何记忆实现。故「AIRI 有自己的向量记忆」不成立(`stores/character/notebook.ts` 未读,不下判断)。
+
+### 2.5.1 spark-notify:AIRI「主动 agent」的实际形状(§4.4 的证据基础)
+
+`core-agent/agents/spark-notify/`,六个特征均已核实到源码:
+
+1. **一回合、无状态、无历史。** `SparkNotifyAgent.handle(request) => Promise<{ commands }>`,注释原文 "Platform-neutral agent that handles **exactly one prepared** Spark Notify turn"。请求体只有 `event` / `systemPrompt` / `runtimePrompt` / `selectedChat` / `control` —— **无 message history,无 thread id**。用户消息即事件 dump:`JSON.stringify({ notify: event.data, source: event.metadata?.source }, null, 2)`(`agent.ts::renderSparkNotifyUserMessage`)。
+2. **输出是命令,不是聊天。** `SparkNotifyCommandDraft`(`tools.ts`):`destinations[]`、`interrupt: 'force'|'soft'|boolean`、`priority: 'critical'|'high'|'normal'|'low'`、`intent: 'plan'|'proposal'|'action'|'pause'|'resume'|'reroute'|'context'`,加结构化 `guidance.options[]`(每项带 label / steps / rationale / possibleOutcome / risk / fallback / triggers)与 `persona` trait-strength 表。它是 triage router,不是 chatbot。
+3. **默认答案是「什么都不说」。** 有 `builtIn_sparkNoResponse` 工具与 `allowNoResponse` 策略开关;指令块原文(`agent.ts::getSparkNotifyHandlingAgentInstruction`):`'This is AIRI system, the life pod hosting your consciousness. You do not need to respond to every spark:notify event directly.'`
+4. **「说话」与「派活」互斥。** `agent.ts::resolveSparkNotifyRuntimePolicy`:`forceTextResponse` 为真时返回 `{ allowNoResponse: false, allowSparkCommand: false, supportsTools: false }` —— 工具全关,只出文本。
+5. **角色反应只是插件 sink,不是 agent 本身。** `plugins/reaction.ts::createSparkNotifyReactionPlugin({ onDelta, onEnd })` 只监听 `model-output-text` 与 `result` 两类事件,把文本推给 host 呈现层;`plugins/observer.ts::createSparkNotifyObserverPlugin` 是另一个独立插件(诊断/遥测/测试录制)。观察、反应、派命令三者可单独插拔。
+6. **注意力循环是队列 + backoff,不是常驻 agent。** `stage-ui/src/stores/character/orchestrator/store.ts`:`scheduledNotifies` 带 `enqueuedAt/nextRunAt/attempts/maxAttempts`,`computeNextRunAt` 按 urgency 分档(immediate=0 / soon=10s / later=60s / 默认 30s)加 `attempts × requeueDelayMs(30s)`,由 `tickIntervalMs: 2000` 的 tick 驱动,`maxAttempts: 3`。
+
+对照 DeerFlow:
+
+| AIRI spark-notify | DeerFlow 已有等价物 |
+|---|---|
+| 一回合无状态 LLM 调用 | `deerflow.utils.oneshot_llm.run_oneshot_llm`(`utils/oneshot_llm.py:33`;4 个生产调用点:`routers/input_polish.py`、`routers/suggestions.py`、`runtime/goal.py`、`skills/security_scanner.py`) |
+| urgency 分档 + attempts + requeue 队列 | scheduler(`scheduler.enabled`、`overlap_policy=skip`、`uq_scheduled_task_run_active`) |
+| `destinations[]` + priority + interrupt 派给下游 | `task` 工具 + `SubagentExecutor` + `SubagentLimitMiddleware` |
+| observer / reaction 插件分离 | 扩展系统 `IsolatedMiddleware` + 语义 placement |
+| `builtIn_sparkNoResponse`(默认不说话) | 无等价物;纯函数返回 `null` 即同一件事 |
+
+**关键推论**:AIRI 是为「有自主性的伙伴」设计的,它尚且把主动 agent 约束成一回合、无历史、默认闭嘴、工具与文本互斥 —— 那正是 `oneshot_llm` 的形状,不是 harness 的形状。
+
+**但 AIRI 在渲染轴上是空白**:全量 5380 文件检索 `spritesheet|sprite-sheet|flipbook|frame.?animation|atlas` 命中 4 条,全是 LLM 提供商 `atlascloud`,非纹理图集。5 个渲染后端 `stage-ui-{live2d,mmd,spine,tachie,three}` 全是骨骼绑定或静态整图,无一个做帧动画。最接近的 `stage-ui-tachie` 是「一个情绪一张完整静态图」,只有 state 一维,README 明确排除 layered sprites / rigged animation / lip-sync。本 spec 需要 `state × frame` 二维。
+
+**可借的只有契约形状**(§8 逐条标注来源):一枚举 + N 张映射表、有损折叠被允许(`EMOTION_VRMExpressionName_value` 把 `Awkward→neutral`、`Question→think`、`Curious→think`)、`EmotionPayload { name, intensity }` 把「哪个状态」与「多强」分开、tachie 的四条资产规则。代码零可复用(AIRI 是 Vue 3 + Pinia + PixiJS + UnoCSS,本项目 React 19 + Next.js 16 + Tailwind 4)。
+
+### 2.6 挂载面与碰撞清单
+
+`components/workspace/chats/chat-box.tsx:413` 是 `<div className="relative size-full min-h-0 min-w-0" id="chat">`,包在 `<ResizablePanel className="relative min-h-0 min-w-0">`(`:411`)内,是随右侧面板 resize 存活的每面板 relative 容器。**且 `chat-box.tsx:81` 已经有 `const { thread } = useThread();`** —— 挂在这里零新管线,并自动覆盖所有用 ChatBox 的面。
+
+**2026-09-09 通读全文(463 行)后确认挂载安全**:`frontend/AGENTS.md` 记录的三条 ResizablePanelGroup 约束全部作用在**侧面板**,不在聊天面板 —— `pinnedContentWidth`(cqw 宽度锁定)消费于 `:450-452`,位于 `id={...-side}` 的 `<aside id="artifacts">` 子树内;`animatingRightPanel` 消费于 `:404`,是加在 group 上的 `[&>[data-panel]]` flex-grow 过渡;`handlePanelGroupLayoutChanged`(`:199-220`)与 `handleSidePanelResize`(`:192-197`)只处理侧面板的折叠与拖拽。在 `div#chat` 内加一个 `{children}` 的兄弟节点不触碰任何一条。
+
+**但发现一处新的结构事实**:`chat-box.tsx:349-353` 有独立的 **mobile 分支**,`isMobile` 为真时渲染的是 `<div className="relative size-full min-w-0">{children}</div>` —— **没有 `id="chat"`**。即本 spec 的挂载点在移动端不存在。裁决见 §10。
+
+已有主的角落:
+
+| 位置 | 占用者 | 证据 |
+|---|---|---|
+| viewport 右下 | 全局 `<Toaster>` | 知识库页正因「它压在聊天 composer 上」把通知改道中间列(`components/workspace/knowledge/kb-toast.ts`、`panels-shell.tsx`) |
+| documents tab 右下 | `doc-failure-panel.tsx` | 绝对定位失败卡片 |
+| composer 上方 | `GoalStatus` | `page.tsx` composer 栈 |
+| 顶部 `h-12` 横条 | header | `page.tsx:281-283`,`absolute top-0 right-0 left-0 z-30` |
+
+## 3. 术语表(本 spec 一次定死)
+
+| 术语 | 定义 | 避让 |
+|---|---|---|
+| **宠物 / 鹦鹉** | 本功能的装饰性帧动画元素 | 不叫 mascot、avatar、companion(avatar 在本仓库已指自定义 agent 的 `BotIcon`) |
+| **持续态(base)** | 条件成立期间循环播放的帧组,共 5 个 | 不叫 emotion(AIRI 术语,语义是模型自报,与本设计的可观测事实相反) |
+| **一次性(one-shot)** | 边沿触发、播完自动回到 base 的覆盖帧组 | 不叫 transition |
+| **疲劳度(fatigue)** | 0-3 的派生标量,只影响播放参数不新增帧 | 不叫 mood、personality |
+| **工具类别(workKind)** | `base === "work"` 时对当前在飞工具的归类 | 不叫 tool state |
+| **观察者** | 只读信号、不产生输出、不被 agent 看见 | 与 AIRI 的「输出面」严格对立 |
+
+## 4. 四项裁决
+
+### 4.1 裁决一:宠物是观察者,不是 agent 的输出面
+
+宠物不产生任何用户可见内容,不占用回复权,`pointer-events-none` 默认。理由:输出面已被 `MessageList` + Streamdown 占有(所有权见 `frontend/AGENTS.md` Interaction Ownership),且前端零 TTS(全量检索 `frontend/src` 对 `speechSynthesis|TTS|text-to-speech` 命中 0 文件;`core/voice-input/` 只有 ASR 输入)。第 1 档不是「借一个组件」,是新增一整个输出模态 + 一个与 lead agent 抢回复权的人格层,而 DeerFlow 的人格层已归属自定义 agent 的 `SOUL.md`。
+
+**本裁决对第 1-3 期冻结。** §18 的第 4 期候选(文字形式生成式评论)**会与本条直接冲突** —— 一旦鹦鹉显示文本,它就不再是纯观察者,而是产生了一个次要输出面。故第 4 期的前置门槛不只是「证明有人 care」,还必须**显式重开并重写本裁决**(界定气泡与 message list 的关系、失败与误判的降级、以及它是否仍配称「装饰」)。不得静默实现。
+
+### 4.2 裁决二:持续态 + 一次性覆盖,不是扁平枚举
+
+AIRI 的 `Emotion` 是扁平枚举,因为 Live2D motion 本身就是一次性动作叠 idle。帧动画不是这样组织的:美术按**循环**与**一次性**两种交付物出图,播放器也按这两种工作。
+
+把 `done` 建成持续态是错的 —— 必须决定它何时结束,而这个决定是任意的,最终一定退化成写死的 timer。建成「`isLoading` 下降沿触发的一次性覆盖」则无此问题,且与美术交付物天然对齐。
+
+### 4.3 裁决三:纯派生,不订阅 custom 事件
+
+只读 `useThread()`,不在 `onStreamCustomEvent`(`core/threads/hooks.ts:73`、`:1797`)挂订阅。
+
+- 走订阅能多拿 `llm_retry` 与 `safety_termination`,但要动 5 个聊天面的调用点(`page.tsx:117`、`agents/[agent_name]/chats/[thread_id]/page.tsx:112`、`agents/new/page.tsx:95`、`sidecar-panel.tsx:185`、`knowledge/chat-panel.tsx:163`),而 `hooks.ts:1662-1889` 的 options 对象已经很密
+- 这两个事件都是罕见瞬态,且 `llm_retry` 已有 toast(`hooks.ts:1850-1855`)
+- 子代理状态也不需要 custom 事件:`parseSubtaskResult` / `derivePendingSubtaskStatus` 已从 ToolMessage 派生
+
+代价:第一版没有 `alert` 一次性动画。接受。收益:5 个面自动全覆盖,零新管线。
+
+### 4.4 裁决四:鹦鹉不拥有 agent
+
+鹦鹉**永不**持有自己的 agent、线程、记忆或回合。需要语义时只从既有类型化字段借;将来若要生成式评论,走 `oneshot_llm`,不走 harness。
+
+**(a) 语义只借不造。** DeerFlow 已经在产语义,且前端已可读,增量成本为零:
+
+| 语义 | 谁产出 | 前端可达 |
+|---|---|---|
+| goal blocker 六值(`missing_evidence` / `needs_user_input` / `run_failed` / `external_wait` / `goal_not_met_yet`) | `runtime/goal.py` 调 `run_oneshot_llm` 评估 | `thread.values.goal.last_evaluation.blocker`(`core/threads/types.ts:16-22`) |
+| 子代理 guardrail cap(`token_capped` / `turn_capped` / `loop_capped`) | 中间件 stamp 的加性字段 | `Subtask.stopReason`(`core/tasks/types.ts:32`) |
+| 子代理终态五值 + 折叠规则 | `contracts/subagent_status_contract.json` | `parseSubtaskResult` |
+
+第一项已由主 run 付过 LLM 成本,鹦鹉白拿。且仓库自身立场明确 —— `core/tasks/types.ts:26-31` 的字段注释写着 "so a future badge can show 'capped' **without parsing result text**":**用类型化语义字段,不要重新从文本推语义**。一个自判情绪的鹦鹉 agent 正好违背这条既有约定。
+
+**(b) harness agent 的代价是结构性的,不是代码量。**
+
+| 会撞上什么 | 后果 |
+|---|---|
+| `uq_runs_thread_active`(`persistence/migrations/versions/0004_run_ownership.py:27`,每线程最多一个 pending/running run) | 同线程跑鹦鹉 agent 与主 run 409;换独立线程则写 `threads_meta` → **侧边栏出现鹦鹉会话**(Web UI 会话列表即读 `threads_meta`) |
+| `ThreadDataMiddleware` + `SandboxMiddleware` | 一个线程 = 一棵 `.deer-flow/users/{uid}/threads/{tid}/user-data/{workspace,uploads,outputs}` 目录 + 一次沙箱获取,为一只装饰鹦鹉 |
+| `MemoryMiddleware` | 它把用户消息与最终 AI 回复排队进 durable memory。仓库已为子代理加过 `skip_memory_flush=True`,原因正是子代理共享父 `thread_id` 会污染父线程记忆 —— 鹦鹉 agent 是同一类 bug |
+| 成本 | 每次反应一次 LLM 调用;一轮 35 个工具调用的 run = 35 次鹦鹉调用 |
+| 双声音 | 一旦它能说话就与 message list 争信任;它说错损的是整个产品的可信度 |
+
+**(c) AIRI 是这条裁决的证据,不是反例。** 详见 §2.5.1:一个以「有自主性的伙伴」为全部卖点的项目,把主动 agent 约束成一回合、无历史、无 thread id、默认 `builtIn_sparkNoResponse`、工具与文本互斥、角色反应只是一个可插拔 sink 插件。那正是 `oneshot_llm` 的形状。
+
+**(d) 若将来真要开口,抄 AIRI 给自己上的三道锁,并在第 2 条上做得更严:**
+
+1. **一回合、无历史、无线程** → `oneshot_llm` 天然满足(`POST /api/input-polish` 的措辞即 "does not create a LangGraph run, persist a message, or touch thread state")
+2. **默认不说话** → AIRI 给模型一个工具让它自己决定闭嘴;本设计更便宜也更稳:**由死映射决定「要不要开口」,由 `oneshot_llm` 只决定「说什么」**。LLM 永不判断时机,只判断措辞,误判面缩小一个量级,且时机是确定的、可测试的
+3. **说话与做事互斥** → 鹦鹉永远只出反应,永不派活(不接 `task`,不接 scheduler)
+
+## 5. 状态模型
+
+### 5.1 类型(`core/pet/state.ts`)
+
+```ts
+export const PET_BASE_STATES = ["idle", "think", "work", "wait", "error"] as const;
+export type PetBaseState = (typeof PET_BASE_STATES)[number];
+
+export const PET_WORK_KINDS = [
+  "exec", "read", "write", "browse", "recall", "delegate", "generic",
+] as const;
+export type PetWorkKind = (typeof PET_WORK_KINDS)[number];
+
+export const PET_ONE_SHOTS = ["greet", "done"] as const;
+export type PetOneShot = (typeof PET_ONE_SHOTS)[number];
+
+export type FatigueLevel = 0 | 1 | 2 | 3;
+
+export interface PetSignals {
+  isLoading: boolean;
+  wasLoading: boolean;
+  hasError: boolean;
+  hasOpenHumanInputRequest: boolean;
+  /**
+   * 全部在飞工具名,可为多个 —— DeerFlow 支持并行工具调用
+   * (`max_concurrent_subagents` 钳在 1-4,且 LangGraph `ToolNode` 在一个
+   * super-step 内追加多条 ToolMessage)。原设计的 `string | null` 是错的。
+   * 空数组 = 无工具在飞。
+   */
+  activeToolNames: string[];
+  fatigue: FatigueLevel;
+}
+
+export interface PetState {
+  base: PetBaseState;
+  workKind: PetWorkKind | null;
+  fatigue: FatigueLevel;
+  oneShot: PetOneShot | null;
+}
+```
+
+`work` 的子类别**不进 `base` 枚举**,而是 `base === "work"` 时才非 null 的 `workKind`。这样决策树仍只在 5 个 base 上分支,回落是结构性的(§9),且可以一个子类别都不画。
+
+### 5.2 派生逻辑
+
+```ts
+export function derivePetState(s: PetSignals): PetState {
+  if (s.hasError) {
+    return { base: "error", workKind: null, fatigue: s.fatigue, oneShot: null };
+  }
+  if (s.isLoading) {
+    const kind = pickWorkKind(s.activeToolNames);
+    return { base: kind ? "work" : "think", workKind: kind, fatigue: s.fatigue, oneShot: null };
+  }
+  if (s.hasOpenHumanInputRequest) {
+    return { base: "wait", workKind: null, fatigue: s.fatigue, oneShot: null };
+  }
+  return {
+    base: "idle",
+    workKind: null,
+    fatigue: s.fatigue,
+    oneShot: s.wasLoading ? "done" : null,
+  };
+}
+```
+
+`greet` 不进纯函数 —— 它是挂载生命周期,由 `agent-pet.tsx` 触发一次。
+
+### 5.3 三条不变量(测试必须逐条钉住)
+
+1. **`error` 最高,且压掉 `done`** —— 跑挂了不庆祝。与既有语义一致:`thread.error` 本就会清掉 pending 的 human-input card(`shouldClearPendingHumanInputOnThreadError`,`core/messages/human-input.ts:74`)。
+2. **`isLoading` 先分支,所以「未回答请求 + 新 run 在飞」时 `work` 赢。** 这是对的:agent 确实在干活,画 `wait` 会误导。该共存真实可达 —— composer 在有未回答请求时仍可用,且 `backend/AGENTS.md` 明写「没有任何东西保证同时只有一个未回答请求」。
+3. **`done` 只在落到 `idle` 的下降沿触发**,不落到 `wait` 也不落到 `error`。这条就是 §1 目标 2 的实现。
+
+顶层优先级与 `page.tsx:416-421` 的 `ChatStatus` 三元表达式同构(`error > isLoading > ready`),不是新发明。
+
+## 6. 轴一:工具类别(`core/pet/tools.ts`)
+
+### 6.1 在飞工具名怎么取(裁决:直接走 messages,不走 getMessageGroups)
+
+2026-09-09 通读 `core/messages/utils.ts:36-196` 后裁决:**不得从 `getMessageGroups` 的输出派生在飞工具名**。原因是它把带工具调用的 AI 消息拆进三种互斥 group,优先级 `hasPresentFiles` → `assistant:present-files`(`:158`)> `hasSubagent`(即 `task`)→ `assistant:subagent`(`:164`)> 其余 → `assistant:processing`(`:170-187`)。只看 `assistant:processing` 会**永远看不到 `task` 与 `present_files`** —— 恰好是 §6.2 表里的 `delegate` 与 `write` 两项,`delegate` 会整个变成死代码。且一条同时含 `task` 与 `bash` 的消息会被判成 `assistant:subagent`,`bash` 直接消失。
+
+另有两处复杂化因素使「取最后一个 group」不可靠:一个 processing group 会**累积多条** AI 消息(`:185`),每条又可能带多个 tool_calls;而孤儿 ToolMessage 会开出**不含任何 AI 消息**的 processing group(`:124-128`,注释明写 `convertToSteps` 只对 `type === "ai"` 出步骤)。
+
+正确做法是直接走 `thread.messages`,与 group 分类完全解耦:
+
+```ts
+/** 收集当前没有对应 ToolMessage 的全部 tool_call 名。纯函数,O(n) 单遍。 */
+export function collectActiveToolNames(messages: Message[]): string[] {
+  const answered = new Set<string>();
+  for (const m of messages) {
+    // 不复用 findToolCallResult:它在 ToolMessage 存在但内容为空时也返回
+    // undefined(§15 开放项 1),会把「已完成的空结果」误读成「仍在飞」。
+    if (m.type === "tool" && m.tool_call_id) answered.add(m.tool_call_id);
+  }
+  const active: string[] = [];
+  for (const m of messages) {
+    if (!hasToolCalls(m)) continue;
+    for (const call of m.tool_calls ?? []) {
+      if (call.id && !answered.has(call.id)) active.push(call.name);
+    }
+  }
+  return active;
+}
+```
+
+复用 `hasToolCalls`(`core/messages/utils.ts:664`,实现即 `type === "ai" && tool_calls.length > 0`),自己写「有没有结果」的判定。
+
+### 6.2 分类与并行裁决
+
+```ts
+const TOOL_WORK_KINDS: Record<string, PetWorkKind> = {
+  bash: "exec", invoke_acp_agent: "exec",
+  read_file: "read", ls: "read", glob: "read", grep: "read", view_image: "read",
+  write_file: "write", str_replace: "write", present_files: "write",
+  web_search: "browse", web_fetch: "browse", image_search: "browse",
+  web_capture: "browse",
+  browser_navigate: "browse", browser_snapshot: "browse", browser_click: "browse",
+  browser_type: "browse", browser_get_text: "browse", browser_back: "browse",
+  browser_screenshot: "browse", browser_close: "browse",
+  hybrid_search: "recall", graph_search: "recall", wiki_search: "recall",
+  memory_search: "recall", describe_skill: "recall", tool_search: "recall",
+  task: "delegate",
+};
+
+export function classifyTool(name: string): PetWorkKind {
+  return TOOL_WORK_KINDS[name] ?? "generic";
+}
+
+/** 多个工具并行在飞时谁赢。数值越小越显著。 */
+const WORK_KIND_PRECEDENCE: Record<PetWorkKind, number> = {
+  delegate: 0, exec: 1, write: 2, browse: 3, recall: 4, read: 5, generic: 6,
+};
+
+export function pickWorkKind(names: string[]): PetWorkKind | null {
+  if (names.length === 0) return null;
+  return names
+    .map(classifyTool)
+    .sort((a, b) => WORK_KIND_PRECEDENCE[a] - WORK_KIND_PRECEDENCE[b])[0];
+}
+```
+
+优先级理由:`delegate`(派了子代理出去)最显著且最稀有;`exec`(bash)后果最重;`write` 改变产物;其余按对用户可见性递减。**这是产品判断而非推导结果**,若你有不同直觉改这一张表即可,涟漪面只有 `tools.test.ts`。
+
+注意它与仓库既有的 group 优先级(`present_files` > `task` > 其余,§6.1)**故意不同**:那一套解决的是「一条消息只能渲染成一个 group」的互斥问题,这一套解决的是「多个并行工具里哪个最值得画」的显著性问题。两者不是同一个问题,不应统一。
+
+**`?? "generic"` 是必需项而非礼貌兜底**:MCP 工具名是 `<server_name>_<tool>` 的无界命名空间(`tool_name_prefix` 默认 `true`),无法枚举。未知工具落 `generic`,`generic` 无帧则落 `work`。
+
+`ask_clarification` 不在表内 —— 它走 `Command(goto=END)`,`isLoading` 变 false,由 `wait` 分支接管,永远不会作为在飞的 work 工具被观察到。
+
+工具名的实时可见性:Gateway 通过 `messages-tuple` 推送每个工具调用一次(见 `backend/AGENTS.md` Embedded Client 的 stream 语义),且已被 chain-of-thought 步骤面板渲染(`components/workspace/messages/message-group.tsx:317+`)。
+
+## 7. 轴二:疲劳度(`core/pet/fatigue.ts`)
+
+```ts
+export interface FatigueInput {
+  toolCallCount: number;
+  maxConsecutiveSameTool: number;
+  /** `deerflow_tool_meta.status === "error"` 的 ToolMessage 数 */
+  toolErrorCount: number;
+  /** 上者中 `recoverable_by_model === false` 的子集(auth / config / internal 等) */
+  unrecoverableErrorCount: number;
+  elapsedMs: number;
+}
+
+export function computeFatigueLevel(i: FatigueInput): FatigueLevel {
+  return Math.min(3, Math.max(
+    byCount(i.toolCallCount),
+    byRepetition(i.maxConsecutiveSameTool),
+    byErrors(i.toolErrorCount),
+    byUnrecoverable(i.unrecoverableErrorCount),
+    byElapsed(i.elapsedMs),
+  )) as FatigueLevel;
+}
+```
+
+**错误判定来源已核实(2026-09-09,原设计的「带错误内容的 ToolMessage」是未验证假设)。** 后端 `agents/middlewares/tool_result_meta.py` 把 `ToolResultMeta` 盖在 `ToolMessage.additional_kwargs.deerflow_tool_meta`(`TOOL_META_KEY` `:18`,dataclass `:33-40`),模块 docstring 明写「Downstream consumers read this key **instead of parsing text**」。故本设计读 `status`(`success`|`error`|`partial_success`)与 `recoverable_by_model`,**不从文本猜错误** —— 这正是 §4.4(a) 引用的那条仓库约定的同一立场。
+
+拆出 `unrecoverableErrorCount` 的理由:`recoverable_by_model === false` 对应 `error_type` 为 auth / rate_limited / transient / config / internal(`_ERROR_RULES` `:43-73`,`recommended_next_action` 为 `stop` 或 `summarize`),这类错误 agent 自己修不了,与 `no_results` / `not_found` / `permission`(可由模型恢复)是完全不同的处境,不该算同一个分。
+
+五个子分取最大值,各自封顶 3:
+
+| 子分 | 0 | 1 | 2 | 3 |
+|---|---|---|---|---|
+| `toolCallCount` | <5 | <15 | <35 | ≥35 |
+| `maxConsecutiveSameTool` | <3 | 3-4 | 5-7 | ≥8 |
+| `toolErrorCount` | 0 | 1 | 2-3 | ≥4 |
+| `unrecoverableErrorCount` | 0 | 1 | ≥2 | — (1 个即 1,2 个封顶 3) |
+| `elapsedMs` | <2min | <10min | <30min | ≥30min |
+
+**这些阈值是猜的,不是推导出来的**(§15 开放项 2)。尤其 `maxConsecutiveSameTool`:后端 `LoopDetectionMiddleware` 判「重复」用的是完全相同的 tool_calls 集合,而这里只数连续同名,会明显更宽松(agent 反复 `read_file` 不同文件是正常的,不是打转)。
+
+疲劳**只影响播放参数,不新增帧**(§9.2)。后端已有 `ToolProgressMiddleware` / `LoopDetectionMiddleware` 做同类判断,但均无实时事件通道(§2.3),故前端自算。`deerflow_tool_meta` 是否确实随 `messages-tuple` 抵达前端 ToolMessage,需第 1 期开工时做一次运行时确认(§15 开放项 8)。
+
+## 8. 帧资产契约
+
+目录 `frontend/public/pet/parrot/`,`manifest.json` + 每状态一张横向单行 sheet:
+
+```json
+{
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "displaySize": 96,
+  "fallback": "idle",
+  "states": {
+    "idle":  { "frames": 32, "fps": 8,  "loop": true  },
+    "think": { "frames": 32, "fps": 8,  "loop": true  },
+    "work":  { "frames": 32, "fps": 8,  "loop": true  },
+    "wait":  { "frames": 32, "fps": 8,  "loop": true  },
+    "error": { "frames": 32, "fps": 8,  "loop": true  },
+    "done":  { "frames": 32, "fps": 24, "loop": false },
+    "greet": { "frames": 30, "fps": 12, "loop": false }
+  }
+}
+```
+
+**三个尺寸/速度数(2026-09-10 用户确认):**
+
+- `frameWidth × frameHeight = 512` 是 **sheet 帧的像素尺寸**,由缩放上限反推:`帧像素 = 缩放上限 CSS px × 2(桌面 DPR 上限)`。缩放上限 **256 CSS px** 已确认(默认显示 `displaySize: 96` 的约 2.7 倍)。512 在 2x 屏上的清晰显示上限即 256,超过即插值糊,不可逆
+- `displaySize` 是 **CSS 显示尺寸**(元素盒子;鸟占满盒高、水平居中、两侧透明),与帧像素是两个独立的数:前者运行时随便改,后者导出时烘焙定死。缩小免费且干净,放大超过 `帧像素 ÷ DPR` 丢细节
+- **分档(多档帧像素按显示尺寸切换)暂不做**:分档省体积与解码内存,不省清晰度;母版与 sheet 分离(§8.1)保证将来加档 = 重新导出 + manifest 一行,零重画。若实测 32 帧×512 的解码内存(≈33.5 MB/态)不可接受,加档是唯一优化路径
+
+六条规则,来源标注:
+
+1. **`idle` 必需,其余全部可选,缺失回落 `fallback`** —— 借 tachie(`packages/stage-ui-tachie/README.md`:`neutral` required,missing emotions fall back to `neutral`)。效果:可先只画 `idle` + `wait` 两组就上线,后续纯美术增量,代码不动
+2. **扩展名不属于协议** —— 借 tachie。png/webp 都不改代码
+3. **所有 sheet 同 `frameWidth × frameHeight`** —— 借 tachie(「Every recognized image must use the same pixel dimensions」)。防状态切换时布局抖动
+4. **横向单行 sheet** —— 本 spec 加料,理由是 §9 的纯 CSS 播放方案
+5. **帧数预算上限 32 帧/态**(512/帧时)。2026-09-10 在目标浏览器实测:CSS 背景图解码 15360 / 16384 / 20480 ×512 **全部成功** —— 图像解码上限不是 16384;16384 是 WebGL `MAX_TEXTURE_SIZE`(同次实测),不适用 CSS 背景。故宽度不是平台悬崖,≤32 帧是解码内存与字节预算的纪律(32 帧×512 解码 ≈33.5 MB/态,本表最大帧数正好贴线),不是躲解码失败
+6. **帧数与 fps 由源 clip 反推,不独立选**,且 **fps 必须整除源帧率 24**(整数步长防时序抖动,可达阶梯 {24,12,8,6,4,3};15fps 要步长 1.6,否决)。循环态首尾同帧使整条 clip 即循环(§8.1)⇒ `fps = 帧数 ÷ clip 秒数`,clip ≥4s(生成器下限)且帧数 ≤32 ⇒ **循环态 fps 上限 8**:本表取 4s clip、步长 3、32 帧 @8fps。12fps 循环需 48 帧(50 MB/态解码、宽 24,576 未实测),或放弃像素级闭环改周期窗口 —— 后者每圈循环留一个接缝 tick 永久重复,对常驻装饰元素否决;24fps 循环需 96 帧,结构性死。一次性态不循环、窗口自选故 fps 自由:`done` 取 1.33s 窗口 @24fps 步长 1 = 32 帧(视频原生顺滑,奖励时刻零定格感);`greet` 取 2.5s 窗口 @12fps 步长 2 = 30 帧(挥手是长动作,宁可长不要丝)。两者成本几乎相同(都贴 32 帧预算),只差「长而略顿」与「短而丝滑」,按动作性格分配
+
+### 8.1 视频抽帧管线契约(2026-09-10 收敛)
+
+美术源是 MiniMax H3 生成视频(1:1 / 2K 即 1920×1920 / 24fps / 循环态 4s 整条循环且首尾同帧 / 一次性态 ≥4s 切窗口、不要求首尾同帧),不是手画帧。抽帧→资产的四条硬规则,违反任一条都是静默缺陷:
+
+1. **丢重复末帧(仅循环态)**:首尾同帧保证闭环,但像素相同的首末帧会使接缝停留两倍时长 ⇒ 导出取 `[0, N-2]`。首尾同帧与本规则**只适用于循环态 clip**;一次性态 clip 不循环,生成时不需要首尾同帧(prompt 只要求动作发生在片段内),导出时不丢末帧、直接切窗口
+2. **抠像参数全帧统一**:同一组容差/despill 一次设定跑全部帧;逐帧自动 matting 让 alpha 边缘每帧抖(boiling 转移到 alpha 通道)。背景用蓝或品红幕 —— 鹦鹉翅膀是绿色,绿幕对绿色主体是最坏组合
+3. **裁剪框一次锁定,且是跨所有 clip 的全局并集**:裁剪框 = **全部 clip** 鸟运动范围的并集矩形,绝不逐帧自动裁、也绝不每 clip 各量一个 —— per-clip 框会让鸟的尺度随状态不同,状态切换时鸟的大小跳变。由此所有 clip 必须按同一鸟尺度生成:**鸟占画面高度约 60-65%、居中**(不是静态参考图的 96%),四边留运动余量。实测(2026-09-10,f01/f03,1920×1920):96% 占满时左右余量仅 ≈465px/边、上 ≈75px、下 ≈10px,任何翅膀动作都放不下;60-65% 占满(鸟 ≈1200px)时左右 ≈635px/边、上下 ≈360px,容纳半展(水平 ≈1450-1600px)与向上扑翼。**prompt 禁止全展翼**:全展需 ≈3200-3500px 宽,要把鸟缩到画面高 45%(864px,对 512 母版余量仅 1.7×,清晰度太薄)才装得下;且 96px 显示尺寸下全展与半展只差几个像素,不值。鸟 1200px 对 512 母版仍有 2.3× 余量,清晰度无代价
+4. **先选窗口再抽稀,整数步长**:循环态整条即循环无需选窗,步长 3(4s/96 帧 → 32 帧 @8fps);一次性态先选动作窗口再等间隔取帧:`done` 1.33s 窗口步长 1(32 帧 @24fps)、`greet` 2.5s 窗口步长 2(30 帧 @12fps)
+
+管线顺序:`统一抠像 → 锁裁剪 → 重采样烘焙到 512 → 拼横向单行 sheet`。**视频/母版是 source of truth,sheet 是可重导产物**:缩放上限或帧尺寸变更时从母版重新导出,绝不从旧 sheet 放大。
+
+## 9. 渲染器
+
+### 9.1 纯 CSS `steps()`,不引依赖
+
+横向单行等高 sheet 意味着 `background-position` + `steps(N)` 就够:
+
+```css
+animation: pet-play calc(var(--frames) / var(--fps) * 1s) steps(var(--frames)) infinite;
+```
+
+不要 JS rAF、不要 canvas、不要 PixiJS。tachie 用 PixiJS 是为了透明 canvas + 缩放/阴影/截图/主题色提取,本设计无这些需求。一次性动画即 `animation-iteration-count: 1` + `onAnimationEnd` 清 `oneShot` 回 base。
+
+### 9.2 解析与 fps(`core/pet/sprite.ts`,纯函数)
+
+```ts
+export function resolveSprite(state: PetState, manifest: PetManifest): string | null {
+  const oneShot = state.oneShot ? [state.oneShot] : [];
+  const base =
+    state.base === "work" && state.workKind
+      ? [`work-${state.workKind}`, "work"]
+      : [state.base];
+  return [...oneShot, ...base, manifest.fallback].find((c) => c in manifest.states) ?? null;
+}
+
+export const FATIGUE_FPS_SCALE = [1, 0.9, 0.75, 0.6] as const;
+
+export function effectiveFps(sprite: string, state: PetState, manifest: PetManifest): number {
+  const entry = manifest.states[sprite];
+  // 一次性动画不衰减:done 是信息,必须读得清
+  return entry.loop ? entry.fps * FATIGUE_FPS_SCALE[state.fatigue] : entry.fps;
+}
+```
+
+两级回落(`work-{kind}` → `work` → `fallback`)是 §8 规则 1 的自然延伸,使 §6 的六个子类别**全部可选**。
+
+## 10. 挂载与定位(裁决)
+
+挂 `chat-box.tsx:413` 的 `div#chat` 内,作为 `{children}` 的兄弟:
+
+```
+absolute right-3 top-14 z-20 pointer-events-none
+```
+
+- `top-14` = 56px,避开 `h-12`(48px)的 header(`page.tsx:281-283`)
+- `z-20` 低于 header 与 composer 的 `z-30`
+- `pointer-events-none` 让点击穿透
+- **窄面板不渲染,断点定为容器宽度 < 480px**(`@container` 查询,不用 viewport 断点 —— 因为 sidecar 面板可以独立于窗口宽度被拖窄,viewport 断点判不出来)。**2026-09-10 核查更正**:既有的 `container-type:inline-size` 挂在 `ResizablePanelGroup` 上(`chat-box.tsx:400`),量的是 **chat + 右侧面板的总宽**,是错误的盒子 —— 侧面板开着且 group 宽时,chat 面板被拖窄不会触发。裁决:挂载点自己加一层 `[container-type:inline-size]`(加在 `div#chat` 或宠物外壳上),让 `@container` 量 chat 面板;inline-size  containment 不改变布局(宽度仍由父级决定),不触碰三条既有约束。浏览器支持与隐藏语义已实测(`CSS.supports('container-type','inline-size') === true`;400px 容器隐藏、600px 容器显示,均正确)
+
+**移动端裁决:第 1 期桌面端 only。** `chat-box.tsx:349-353` 的 mobile 分支渲染的是 `<div className="relative size-full min-w-0">{children}</div>`,**没有 `id="chat"`**,挂载点不存在。两个选项:① 在 mobile 分支也加一个同结构容器并挂载;② 移动端不渲染。选 ②,理由是移动端聊天面板宽度本就窄,480px 断点已经会把它挡掉,再加挂载点只是多一处需要同步维护的分支。若将来要移动端也有,改动是给 mobile 分支补 `id="chat"` 并复测 Sheet 交互。
+
+**为什么不是右下**:全局 `<Toaster>` 在 viewport 右下,知识库页已因它压 composer 而把通知改道中间列(§2.6)。**为什么不是 header 内**:24px 的元素是状态图标不是宠物,装饰需要存在感。
+
+**已接受的代价**:该位置会盖住 message list 右上角,可能压到代码块复制按钮。缓解是 `pointer-events-none`(点击穿透)+ 480px 断点隐藏。若实测不可接受,回退方案见 §15 开放项 3。
+
+**缩放(期数未定,§17 行)**:第 1 期按固定 `displaySize: 96` 渲染,全部验收与位置碰撞评估以 96 为准。缩放控件把 displaySize 在 64-256 CSS px 内运行时化:纯 CSS 盒子尺寸 + `background-size` 等比,不改渲染器状态逻辑,不需要新资产档(512 帧像素已覆盖 256@2x,§8);缩到 64 是 512 的 8 倍以内下采样,无细线闪烁风险。
+
+## 11. 开关与降级
+
+- **开关**:`core/settings/local.ts:4` 的 `DEFAULT_LOCAL_SETTINGS` 加一节 `pet: { enabled: true }`,形状照抄既有 `notification: { enabled: true }`(`local.ts:5-7`)。`LocalSettingsSetter`(`core/settings/store.ts:14`)是按节 merge 的,**无需迁移**,旧 localStorage 读出时自动补默认节。默认开:这是差异化个性,默认关等于没人看见
+- **`prefers-reduced-motion`**:走 Tailwind `motion-reduce:` 变体(`chat-box.tsx` 已有 3 处先例),停在第 0 帧不加 animation。**无条件生效,不受开关影响**
+- **资产缺失/加载失败**:`resolveSprite` 返回 null 时不渲染任何节点(不渲染破图,不占位)
+- **`manifest.json` 加载方式(裁决):静态 `import`,不运行时 fetch。** 理由:运行时 fetch 会引入 loading 态与失败态两套额外分支,而 manifest 是**代码同期演进的配置**(帧数/fps 改了必须同时改代码里的 state 枚举),不是用户可替换的数据。静态 import 让它进 bundle、类型可校验、无异步窗口。sheet 图片本身仍由浏览器按需加载(第一张 `idle` 随组件挂载请求,其余靠 `<link rel="prefetch">` 或首次切到该状态时请求)。若将来要支持用户自带宠物包,再改成 fetch —— 那是 §17 里已推迟的「宠物插件系统」,不是第 1 期
+- **跨线程重置语义(裁决)**:切换 thread 时 `fatigue` 归零、`wasLoading` 归零、`greet` **不重放**。理由:fatigue 是「本轮 run 有多累」,跨线程延续会把上一个会话的疲劳带到新会话;`greet` 是「宠物第一次出现」的欢迎,每次切线程都放会变成噪音。实现上以 `threadId` 作为 `agent-pet.tsx` 内 ref 的重置键(仓库已有同类做法:composer draft 按会话作用域存储,`core/threads/composer-draft.ts`)
+
+## 12. 性能约束
+
+`collectFatigueInput(messages)` 与 `collectActiveToolNames(messages)`(§6.1)都是对 `thread.messages` 的单遍扫描,二者都必须 **memo 在 `messages.length` 上**,不得每帧重算。依据是既有流式语义:`useStream` 开 `throttle: true`(`core/threads/hooks.ts:1662`,同一宏任务的更新合并),而 `messages-tuple` 的 AI 文本 delta 是**按 id 合并进已有消息**的 —— 故 token 流不改变 `messages.length`,只有新 AI 消息或新 ToolMessage 到达才改变。memo 键天然对齐「结构性变化」,token 级重渲染零成本。
+
+**不得把 `throttle: true` 改成数值延迟** —— `frontend/AGENTS.md` 明确禁止(需先验证 SDK 的 trailing-debounce 行为)。
+
+`hasOpenHumanInputRequest` 的 memo 键同样为 `[thread.messages]`,与 `page.tsx:262-269` 一致。
+
+资产:sprite sheet 是 `public/` 下静态图,不计入 `pnpm perf:check` 的预算(该命令度量唯一 JS 与 CSS 文件)。仍建议 WebP + 懒加载(仅开关打开时请求)。
+
+## 13. 文件清单与测试(TDD)
+
+### 13.1 新增/改动
+
+```
+frontend/src/core/pet/state.ts        derivePetState + 全部类型
+frontend/src/core/pet/tools.ts        collectActiveToolNames + classifyTool + pickWorkKind
+frontend/src/core/pet/fatigue.ts      collectFatigueInput(读 deerflow_tool_meta) + computeFatigueLevel
+frontend/src/core/pet/sprite.ts       resolveSprite + effectiveFps
+frontend/src/components/workspace/pet/pet-sprite.tsx    渲染器,不知道 agent 存在
+frontend/src/components/workspace/pet/agent-pet.tsx     订阅者,读 context 组合上两者
+frontend/src/core/settings/local.ts                     加 pet 节(改)
+frontend/src/components/workspace/chats/chat-box.tsx    挂载一行(改,仅桌面分支)
+frontend/public/pet/parrot/                             manifest.json(静态 import) + sheets
+```
+
+`core/pet/` 放 `core/` 而非 `components/` 的理由很具体:按 `frontend/AGENTS.md` 测试约定,`*.test.ts` 跑 node 环境,`*.dom.test.tsx` 跑 happy-dom,后者贵约 3 倍。状态机是 case 最多的部分,必须能在 node 环境测。
+
+### 13.2 测试
+
+| 文件 | 环境 | 覆盖 |
+|---|---|---|
+| `tests/unit/core/pet/state.test.ts` | node | 决策树全分支 + 下降沿 + §5.3 三条不变量逐条 |
+| `tests/unit/core/pet/tools.test.ts` | node | ① `collectActiveToolNames`:多工具并行、**ToolMessage 内容为空仍算已答**(钉住 §15 开放项 1 那个坑)、孤儿 ToolMessage、无 AI 前置;② 6 类映射 + **未知 MCP 名落 `generic`**;③ `pickWorkKind` 优先级表逐对 + 空数组返回 null |
+| `tests/unit/core/pet/fatigue.test.ts` | node | 五子分各自封顶 + max 语义 + `collectFatigueInput` 从 `additional_kwargs.deerflow_tool_meta` 正确分出 `toolErrorCount` 与 `unrecoverableErrorCount`(含 meta 缺失时两者都为 0) |
+| `tests/unit/core/pet/sprite.test.ts` | node | 两级回落 + fallback + 一次性不衰减 fps |
+| `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx` | happy-dom | **只测三件**:`motion-reduce` 出静态帧、one-shot 播完回 base、开关关掉时不渲染 |
+
+DOM 测试压到最小是刻意的:渲染器逻辑已全被 `sprite.ts` 在 node 环境吃掉。不写 e2e。
+
+## 14. 向后兼容与影响面
+
+- **第 1-3 期零后端改动**,无 schema/迁移/契约文件变更,`contracts/` 不动(第 4 期候选例外,见 §18)
+- **零新依赖**,`package.json` 不变
+- `chat-box.tsx` 只加一个兄弟节点,不改既有 `ResizablePanelGroup` 逻辑(该处有三条已记录的约束,见 `frontend/AGENTS.md` Interaction Ownership 末条,不得触碰)
+- `core/settings/local.ts` 加节是按节 merge,旧 localStorage 自动补默认,无需迁移
+- 关掉开关后 DOM 中不留节点,与既有 `notification.enabled` 行为一致
+- 需按仓库策略同步 `frontend/AGENTS.md`(新增 `core/pet/` 域与宠物挂载所有权)
+
+## 15. 风险与开放项
+
+1. **~~`findToolCallResult` 不能用于「在飞」判定~~ — 已闭环(2026-09-09)。** `core/messages/utils.ts:706` 在 ToolMessage 存在但内容为空时同样返回 `undefined`,于是「已完成的空结果」会被误读成「仍在飞」。修复已写进 §6.1 的 `collectActiveToolNames`(自建 `answered` Set,只看 `type === "tool" && tool_call_id`),并要求 `tools.test.ts` 专门钉这个 case。
+2. **疲劳度阈值全是猜的**,上线后需拿真实 run 校准。`maxConsecutiveSameTool` 的语义偏差见 §7。
+3. **挂载位置盖住 message list 右上角**(§10 已接受)。若实测压到代码块操作,回退候选按序:① 缩到 64px ② 移到 header 右侧当小元素(牺牲存在感) ③ 给 message list 加右侧 padding 让位(改动面最大,需评估对既有滚动/布局的影响)。
+4. **~~`getMessageGroups` 的 `isCurrentTurnLoading` 必须传对~~ — 已失效(2026-09-09)。** §6.1 裁决后本设计**完全不调用 `getMessageGroups`**,该风险自动消失。保留此条仅作记录:该选项(`core/messages/utils.ts:38`)只影响 `currentTurnStartIndex`(`:46-54`)进而影响 `isUnresolvedAssistantText`(`:148-152`),作用面比原描述更窄。
+5. **多面一致性未验证**:sidecar 面板(`sidecar-panel.tsx:185`)与知识库聊天(`knowledge/chat-panel.tsx:163`)的 `MessageList` 实例与主聊天页不同,宠物在这些面的观感需实测。
+6. **`elapsedMs` 的起点**无既有权威字段(run 时长是 run-scoped UI 元数据,`core/messages/run-duration.ts` 折叠的是历史消息上的兼容字段)。第一版用组件内记录的「首次观察到 `isLoading === true`」时刻,不追求与后端 wall-clock 一致。
+7. **`goal.last_evaluation.blocker` 的 `needs_user_input` 比 `hasOpenHumanInputRequest` 宽,但有滞留风险,故第 1 期不接。** `last_evaluation` 是**持久化**字段(`core/threads/types.ts:14-27`,带 `evaluated_at` / `run_id`),run 结束后仍留在 `thread.values.goal` 上。若直接拿它触发 `wait`,一次陈旧的评估会把鹦鹉**永久钉在 `wait`**。要接就必须加新鲜度门槛(如比对 `evaluated_at` 与本轮 run,或只在 `continuation_count` 变化后的一窗内采信),而这个门槛的正确形状需要真实 run 观察后再定。**列为第 2 期候选,不进第 1 期**;第 1 期的 `wait` 只认 `hasOpenHumanInputRequest`。
+8. **`deerflow_tool_meta` 是否真的抵达前端,需一次运行时确认(第 1 期开工第一件事)。** 静态证据充分但未直接观测:后端盖在 `ToolMessage.additional_kwargs`(`tool_result_meta.py:18`),前端已在读同一 dict 的其他键(`utils.ts:718` 读 `.hide_from_ui`、`subtask-result.ts:40-46` 读 ToolMessage 的 `subagent_status`)。**确认方法**:跑一个必然失败的工具调用,在浏览器里打印该 ToolMessage 的 `additional_kwargs`。若不在,§7 的 `byErrors` / `byUnrecoverable` 两路删除,疲劳度退回三子分 —— **不得改为从文本猜错误**(违背 §4.4(a))。
+9. **移动端挂载点不存在,已裁决第 1 期桌面 only。** `chat-box.tsx:349-353` 的 mobile 分支没有 `id="chat"`。裁决与理由见 §10。
+10. **`getMessageGroups` 的三类互斥拆分是 §6.1 存在的唯一原因**(2026-09-09 通读发现,原设计据此写的「取最后一个 processing group」是错的):`present_files`(`:158`)> `task`(`:164`)> processing(`:170`)。若将来有人把 §6.1 改回走 groups,`delegate` 与 `write` 两个 workKind 会静默失效 —— 不报错,只是永远不出现。`tools.test.ts` 必须有一个 case 直接用含 `task` 的 fixture 断言 `delegate` 能出来。
+
+## 16. 否决备选
+
+| 备选 | 否决理由 |
+|---|---|
+| 订阅 `onStreamCustomEvent` 拿 `llm_retry` / `safety_termination` | 要动 5 个调用点,换两个罕见瞬态;`llm_retry` 已有 toast(§4.3) |
+| 轮询 `GET /runs/{rid}/events` 拿 `middleware:{tag}` | 装饰元素不值这个延迟与请求量(§2.3) |
+| 扁平情绪枚举(AIRI 形状) | 帧动画按循环/一次性两种交付物组织,扁平枚举会逼出写死的 timer(§4.2) |
+| 模型生成情绪(AIRI 的 `<\|...\|>` 标记链路) | 要改 lead agent 输出格式,并在 `hooks.ts:472-1163` 那段最脆弱的流式合并逻辑里剥标记;漏一个标记就是用户可见乱码 |
+| 旁路 LLM 调用判情绪 | 延迟 + token 成本 + 一个会错的解释层;死映射的好处正是不会错 |
+| PixiJS 渲染 | tachie 用它是为透明 canvas + 缩放/阴影/截图/主题色提取,本设计无这些需求;横向等高 sheet 用 `background-position` + `steps()` 即可(§9.1) |
+| 直接复用 AIRI 代码 | Vue 3 + Pinia + PixiJS + UnoCSS,与本项目 React 19 + Next.js 16 + Tailwind 4 零兼容;可借的只有契约形状(§2.5) |
+| 把 `work` 子类别做成 6 个 base | 决策树会从 5 分支膨胀到 10 分支,且强制 6 组帧;做成 `workKind` 后可全不画(§5.1) |
+| **给鹦鹉一个「简化版 harness agent」** | 代价是结构性的而非代码量:`uq_runs_thread_active` 冲突或侧边栏出现鹦鹉会话、线程目录 + 沙箱获取、`MemoryMiddleware` 记忆污染、每反应一次 LLM 调用、双声音争信任。且 AIRI 的 spark-notify 证明连「有自主性的伙伴」都只用一回合无状态调用(§4.4(b)、§2.5.1) |
+| 引入 AIRI 的 agent 层(`core-agent` / `spark-notify` / `memory-pgvector`) | 逐包对照 DeerFlow 全部已有等价物,引入等于建第二套 harness 抢回复权(§2.5、§4.4(c));`memory-pgvector` 本身在 main 上还是空壳 |
+| 让 LLM 判断「要不要开口」 | AIRI 用 `builtIn_sparkNoResponse` 工具把时机交给模型;本设计反过来 —— 死映射定时机、`oneshot_llm` 只定措辞,时机确定且可测试(§4.4(d) 第 2 条) |
+| 从 `getMessageGroups` 输出派生在飞工具 | 三类互斥拆分(`present_files` > `task` > processing)会让 `delegate` / `write` 两个 workKind 静默失效;且一个 group 会累积多条 AI 消息、孤儿 ToolMessage 还会开出不含 AI 消息的 group(§6.1、§15 开放项 10) |
+| 从 ToolMessage 文本猜「出错了」 | 后端已把结构化 `deerflow_tool_meta` 盖在 `additional_kwargs`,其模块 docstring 明写「read this key **instead of parsing text**」;猜文本同时违背 §4.4(a)(§7) |
+| 移动端也挂载 | mobile 分支无 `id="chat"`,且 480px 容器断点本就会挡掉窄面板;多一处需同步维护的分支换不到可见收益(§10) |
+
+## 17. 非目标与路线图(YAGNI)
+
+明确推迟。除标注为第 4 期候选的一项外,不在本 spec 任何一期内:
+
+| 项 | 推迟理由 | 何时重估 |
+|---|---|---|
+| `alert` 一次性动画(重试/安全终止) | 需走 §4.3 否决的订阅路径 | 第 3 期,且需先证明有人 care |
+| per-agent 皮肤 | 自定义 agent 已有 `SOUL.md` 与 `BotIcon` 作身份表达,宠物再分叉会稀释 | 多 agent 用户实际提出 |
+| 宠物插件系统 / 第三方宠物包 | 一只鹦鹉不需要扩展点 | 出现第二个宠物需求 |
+| 声音(叫一声) | 前端零 TTS/音频输出基建,且工作环境出声是负价值 | 不重估 |
+| 点击交互(摸头) | `pointer-events-none` 是 §10 的缓解手段,开启交互会与该手段冲突 | 挂载位置定案后 |
+| 跨线程持久状态(宠物会记得你) | 一旦有记忆就成了第 2 档(参与),与 §4.1 观察者裁决和 §4.4 裁决四冲突 | 不重估 |
+| 鹦鹉拥有 agent / 线程 / 回合 | §4.4 裁决四:五条结构性代价,且 AIRI 自身也未这么做 | 不重估 |
+| 对内容的语义反应(为难过的问题难过) | 需语义理解;两个入口(改 lead agent 输出格式、旁路 LLM 判情绪)都被 §16 否决。**但语义不必自造** —— §4.4(a) 的三处既有类型化字段是允许的来源 | 借用既有字段:第 2 期(见 §15 开放项 7);自造语义:不重估 |
+| **生成式评论(鹦鹉开口说一句)** | 唯一被列为候选的 LLM 项。必须走 `oneshot_llm` + §4.4(d) 三道锁,且慢节奏(如一轮 run 结束一次),**永不走 harness** | **第 4 期候选**,前置条件是第 1-3 期已上线且证明有人 care |
+| **宠物缩放**(显示尺寸 64-256 CSS px 用户可控) | 第 1 期按固定 `displaySize: 96` 验收;缩放是纯 UI 控制(把 displaySize 运行时化),渲染器只改盒子与 `background-size` 比例,无状态逻辑改动、无新资产档(512 帧像素已覆盖 256@2x,§8) | **期数未定**(2026-09-10 用户确认功能成立、期数未定;默认候选第 2 期后)。资产侧已预付,将来加它是零资产改动 |
+| 后端新增宠物专用事件 | 违反 §1 目标 3 | 不重估 |
+
+## 18. 分期
+
+| 期 | 内容 | 帧需求 | 代码改动 |
+|---|---|---|---|
+| **1** | 四个纯函数(`state` / `tools` / `fatigue` / `sprite`)+ 两个组件 + 挂载 + 设置节。`classifyTool` 全部返回 `generic`,`fatigue` 恒为 0(两条轴写好但不生效) | **`idle` + `wait` 两组** | 全部 |
+| **2** | 打开 fatigue 计算;补 `think` `work` `error` `done` `greet` | +5 组 | 只改 `agent-pet.tsx` 的常量开关 |
+| **3** | 打开 `workKind` 分类,按在乎的顺序逐个补子类别帧 | 每子类别 +1 组,**可选** | 零(回落契约已保证) |
+| **4(候选,有前置门槛)** | 生成式评论:慢节奏 `oneshot_llm` 一次,遵守 §4.4(d) 三道锁;可同批接 §15 开放项 7 的 goal blocker(需先定新鲜度门槛) | 可能 +1 组「说话」帧 | **唯一需要动后端的一期**(一个新路由,复用 `run_oneshot_llm`) |
+
+第 4 期的前置门槛有两条,缺一不可:① 第 1-3 期已上线且有证据表明有人 care;② **显式重开并重写 §4.1 裁决一**(见该节末段)—— 文字评论会让鹦鹉从纯观察者变成次要输出面,这与裁决一直接冲突,不得静默实现。未过门槛不启动:它是本 spec 里唯一会产生 LLM 成本、唯一需要后端改动、也是唯一动摇既有裁决的一期。
+
+第 1 期就把四个纯函数**全部**写出来并测完,但让两条轴的输出不生效 —— 因为 §8 规则 1 与 §9.2 的两级回落保证了没有帧也能正确塌回 `idle`。这样第 2、3 期是纯美术增量加一个常量开关,不再碰逻辑也不再碰测试。
+
+第 1 期的交付判断只有一条:**「在等你」和「跑完了」视觉上分得开**。这一条就值回整个功能。
+
+### 18.1 代码量估计(第 1 期)
+
+纯函数约 120 行、组件约 110 行、测试约 200 行、`chat-box.tsx` 改 1 行、`core/settings/local.ts` 改 1 节、`manifest.json` 一份。
+
+### 18.2 实施前必读 —— 已于 2026-09-09 读完
+
+四项全部读完,产出两个新缺陷(证明这一步不可跳):
+
+| 读什么 | 产出 |
+|---|---|
+| `core/messages/utils.ts:36-196`(`getMessageGroups` 全文) | **缺陷 3**:三类互斥 group 拆分使「取最后一个 processing group」永远看不到 `task` / `present_files` → 催生 §6.1 裁决与开放项 10;同时令原开放项 4 失效 |
+| `core/messages/human-input.ts:486-494`(`hasOpenHumanInputRequest`) | 签名 `(messages, isVisibleMessage?)` 确认,与 `page.tsx:262-269` 的调用形状一致,spec 原设计无需修改 |
+| `components/workspace/chats/chat-box.tsx` 全文(463 行) | 挂载点确认安全(三条 ResizablePanelGroup 约束全在侧面板:`pinnedContentWidth` 消费于 `:450-452`、`animatingRightPanel` 于 `:404`);**缺陷 4**:mobile 分支 `:349-353` 无 `id="chat"` → §10 裁决桌面 only |
+| `frontend/AGENTS.md` Interaction Ownership 与测试环境分节 | 已在上下文内;`core/pet/` 落 node 环境测试的依据成立 |
+
+追加读(为闭环缺陷 2):`backend/packages/harness/deerflow/agents/middlewares/tool_result_meta.py` → 确认 `ToolResultMeta` 盖在 `additional_kwargs`,§7 的错误判定改为读结构化字段。
