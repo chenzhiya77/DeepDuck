@@ -111,8 +111,43 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       取 `pr-build/t0-mineru-table-gate/t0_mineru_full*.md` 的实测输出**（无 `<thead>` 形 / 嵌套
       `<p><strong>` 形 / colspan 行补齐 / 隐式空 `<td>`）；`.md`/`.txt` 原始直读回归不变）
 
-- [ ] RED → Implement → GREEN → revert proof。
+- [x] RED → Implement → GREEN → revert proof。—— 28 条新用例 RED（27 条 ImportError/断言 + 1 条
+      更新后的 CSV 逐字直读用例）→ 实现两函数 + 路由接线 → `test_parser.py` **61 passed**、
+      `tests/knowledge` 全量 **1012 passed / 2 skipped / 0 failed**（5m57s）、ruff check+format 双净；
+      revert proof 把 `_parse_delimited` 摘成原始 dump + `_normalize_tables_to_gfm` 摘成 no-op →
+      **23 条 RED**（no-op/残留/本地守卫 6 条正确恒绿）→ 恢复 61 passed。
 - [ ] Commit: `feat(rag): parse delimited text into GFM tables and normalize MinerU HTML tables`
+
+### 交付纪要（2026-09-09）
+
+- **实现落点**（`parser.py`，+265 行，纯增量；仅动 `parser.py` + `test_parser.py`）：
+  - `_parse_delimited(path)`：复用 `_read_local_text`（UTF-8 严格→GBK 回退）+ BOM 剥离；`.tsv`
+    固定 tab、`.csv` 用 `csv.Sniffer(delimiters=",;")` 回退逗号；首行表头 → GFM；行宽按表头补空/
+    截断、跳过空行、空输入→`""`（worker 触发 `EmptyParseResultError`，与空文本一致）。
+  - `_normalize_tables_to_gfm(markdown)`：`_find_table_spans` 栈匹配顶层 `<table>` 段（嵌套表标记后
+    原样残留）→ `_TableCellParser`（`HTMLParser`，`convert_charrefs` 自动反转义实体；单元格剥内嵌
+    标签、同级 `<p>` 以空格连接绝不换行、空白折叠）→ `_flatten_rows`（rowspan 值下沉、colspan 首列
+    取值余列空、按表头列数补齐/截断）→ `_gfm_row`（字面 `|` 转义为 `\|`）。表头 `<th>`/`<thead>`
+    优先、缺失回落首 `<tr>`；全空表头保留空列名（绝不臆造）。
+  - 路由：新增 `_DELIMITED_SUFFIXES={.csv,.tsv}`，`parse_document` 先判分隔文本→`_parse_delimited`，
+    再判 `is_local_suffix`→原始直读；`.tsv` 并入 `_LOCAL_READ_SUFFIXES`（永不触 MinerU）。MinerU
+    分支在 `_relocate_trailing_title` 后追加 `_normalize_tables_to_gfm`（仅 MinerU 路，本地 `.md`
+    绝不归一）。
+- **冻结的实现决策**：①rowspan **下沉填充**（非留空）——检索行卡自足（`Widget A | Weight | 2.4 kg`
+  优于空首列），spec §5「下沉填充或留空」二选一取前者；②colspan 首列取值、余列空（spec §5 明定）；
+  ③底纹空表头 → 输出空列名 GFM（`|  |  |  |  |`），仍合法可渲染、绝不猜列名（spec §5 ④/§11）；
+  ④单元格字面 `|` 转义 + 空白折叠 → 保证输出恒为单行合法 GFM（Task 4 表检测与前端 streamdown 渲染
+  前提）；⑤嵌套/畸形表原样残留 HTML，交 chunker 原子块防御（Task 4，spec §6），归一器只吃 T0 两形态。
+- **fixture 来源**：形态 A 两条（含 rowspan/colspan 的 plain + 底纹全空表头的 shaded）**逐字内嵌**
+  `pr-build/t0-mineru-table-gate/t0_mineru_full{_plain,}.md` 实测输出（`pr-build/` 被 gitignore，故
+  内嵌而非读盘，保 CI 自足）；形态 B（`<thead><th>` + 嵌套 `<p><strong>` + 单格多 `<p>` + 隐式空
+  `<td>`）无 fixture 文件（源自 live DB docx 路观测），按 spec §5 实测样例构造。
+- **顺手修的过时用例**：`test_parse_csv_local_read_gbk` 原钉「CSV 逐字直读」（`assert "苹果,3" in`）
+  ——正是本任务升级的旧行为，已改钉 GFM 输出（GBK 回退仍生效）。`test_api.py` 两条 `.csv` 用例只验
+  上传门控（202）+ stub worker，不触解析，未受影响。
+- **遗留（与本任务无关，未动）**：`tests/test_rag_config.py` 两条 vlm_model 漂移失败（Task 1 已记录，
+  在 knowledge 目录外）；`ruff format --check .` 全仓预存 `tests/knowledge/tools/test_graph_search.py`
+  未格式化（非本次引入，未触碰）。
 
 ## Task 3: Excel 解析 .xlsx/.xls → 每 sheet 一张 GFM 表（spec §5）
 

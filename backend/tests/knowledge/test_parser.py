@@ -527,13 +527,13 @@ async def test_parse_txt_gbk_fallback(tmp_path):
 
 @pytest.mark.asyncio
 async def test_parse_csv_local_read_gbk(tmp_path):
-    """CSV is read verbatim (no table-structure understanding, spec §6)."""
+    """CSV 走表格感知解析（spec 2026-09-09 §5）：GBK 回退仍生效，输出 GFM 管道表而非原始逗号文本。"""
     csv = tmp_path / "数据.csv"
     csv.write_bytes("名称,数量\n苹果,3".encode("gbk"))
 
     doc = await parse_document(csv, client=httpx.AsyncClient(transport=_mineru_transport([])))
 
-    assert "苹果,3" in doc.markdown
+    assert doc.markdown == "| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 3 |"
 
 
 @pytest.mark.asyncio
@@ -721,6 +721,329 @@ async def test_mineru_heading_only_document_not_moved(tmp_path, monkeypatch):
     markdown = await _parse_pdf_from_zip(tmp_path, monkeypatch, source)
 
     assert markdown == source
+
+
+# ── Task 2: 分隔文本 CSV/TSV → GFM 管道表（spec 2026-09-09 §5）──────────────
+#
+# `.csv`/`.tsv` 从「原始文本 dump」升级为「表格感知」：首行表头 → GFM 管道表，编码复用
+# UTF-8 严格 → GBK 回退 + BOM 剥离，`.tsv` 固定 tab / `.csv` 用 csv.Sniffer 嗅探逗号/分号
+# （回退逗号）。均经 ``parse_document`` 本地分支路由（不触网、不触 MinerU）。
+
+
+def test_parse_delimited_csv_comma_to_gfm(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "sales.csv"
+    p.write_bytes("名称,数量\n苹果,3\n香蕉,5\n".encode())
+
+    assert _parse_delimited(p) == "| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 3 |\n| 香蕉 | 5 |"
+
+
+def test_parse_delimited_csv_semicolon_sniffed(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "semi.csv"
+    p.write_bytes(b"a;b;c\n1;2;3\n")
+
+    assert _parse_delimited(p) == "| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | 3 |"
+
+
+def test_parse_delimited_tsv_fixed_tab(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "data.tsv"
+    p.write_bytes("列一\t列二\n值A\t值B\n".encode())
+
+    assert _parse_delimited(p) == "| 列一 | 列二 |\n| --- | --- |\n| 值A | 值B |"
+
+
+def test_parse_delimited_gbk_fallback(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "国标.csv"
+    p.write_bytes("名称,数量\n苹果,3".encode("gbk"))
+
+    assert _parse_delimited(p) == "| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 3 |"
+
+
+def test_parse_delimited_strips_utf8_bom(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "bom.csv"
+    p.write_bytes("\ufeff名称,数量\n苹果,3\n".encode("utf-8"))
+
+    out = _parse_delimited(p)
+
+    assert "\ufeff" not in out  # BOM 不残留进首个表头单元格
+    assert out.splitlines()[0] == "| 名称 | 数量 |"
+
+
+def test_parse_delimited_ragged_rows_fit_header_width(tmp_path):
+    """行宽不齐：短行补空、长行截断到表头列数（与 HTML 归一同口径，spec §5）。"""
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "ragged.csv"
+    p.write_bytes(b"a,b,c\n1,2\n3,4,5,6\n")
+
+    assert _parse_delimited(p) == "| a | b | c |\n| --- | --- | --- |\n| 1 | 2 |  |\n| 3 | 4 | 5 |"
+
+
+def test_parse_delimited_cell_pipe_is_escaped(tmp_path):
+    """单元格内字面竖线转义后不破坏 GFM 列结构（parser 保证输出恒为合法 GFM）。"""
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "pipe.csv"
+    p.write_bytes(b"cmd,note\na|b,keep\n")
+
+    assert _parse_delimited(p).splitlines()[2] == "| a\\|b | keep |"
+
+
+def test_parse_delimited_collapses_multiline_cell_to_space(tmp_path):
+    """带引号的多行单元格 → 空白折叠为单空格（GFM 单元格必须单行，spec §5）。"""
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "multi.csv"
+    p.write_bytes(b'a,b\n"line1\nline2",x\n')
+
+    assert _parse_delimited(p).splitlines()[2] == "| line1 line2 | x |"
+
+
+def test_parse_delimited_empty_file_returns_empty_string(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "empty.csv"
+    p.write_bytes(b"")
+
+    assert _parse_delimited(p) == ""
+
+
+def test_parse_delimited_blank_only_returns_empty_string(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "blank.csv"
+    p.write_bytes(b"\n\n  \n")
+
+    assert _parse_delimited(p) == ""
+
+
+def test_parse_delimited_header_only_no_data_rows(tmp_path):
+    """单行（仅表头）→ GFM 表头 + 分隔行，无数据行。"""
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "header_only.csv"
+    p.write_bytes(b"a,b,c\n")
+
+    assert _parse_delimited(p) == "| a | b | c |\n| --- | --- | --- |"
+
+
+def test_parse_delimited_skips_blank_rows(tmp_path):
+    from deerflow.knowledge.parser import _parse_delimited
+
+    p = tmp_path / "gaps.csv"
+    p.write_bytes(b"a,b\n1,2\n\n3,4\n")
+
+    assert _parse_delimited(p) == "| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |"
+
+
+@pytest.mark.asyncio
+async def test_parse_document_routes_csv_to_delimited_not_verbatim(tmp_path, monkeypatch):
+    """`.csv` 本地分支改路由到 `_parse_delimited`：输出 GFM 而非原始逗号文本，仍不触网。"""
+    monkeypatch.delenv("MINERU_API_TOKEN", raising=False)
+    recorded: list[httpx.Request] = []
+    p = tmp_path / "sales.csv"
+    p.write_bytes(b"a,b\n1,2\n")
+
+    doc = await parse_document(p, client=httpx.AsyncClient(transport=_mineru_transport(recorded)))
+
+    assert doc.markdown == "| a | b |\n| --- | --- |\n| 1 | 2 |"
+    assert doc.images == []
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_parse_document_routes_tsv_to_delimited_no_mineru(tmp_path, monkeypatch):
+    """`.tsv` 是本地读后缀（绝不进 MinerU）且走 `_parse_delimited`。"""
+    monkeypatch.delenv("MINERU_API_TOKEN", raising=False)
+    recorded: list[httpx.Request] = []
+    p = tmp_path / "data.tsv"
+    p.write_bytes(b"a\tb\n1\t2\n")
+
+    doc = await parse_document(p, client=httpx.AsyncClient(transport=_mineru_transport(recorded)))
+
+    assert doc.markdown == "| a | b |\n| --- | --- |\n| 1 | 2 |"
+    assert recorded == []
+
+
+def test_is_local_suffix_covers_tsv():
+    """`.tsv` 归本地读集（永不触 MinerU）；`.csv` 成员身份不变。"""
+    from deerflow.knowledge.parser import is_local_suffix
+
+    assert is_local_suffix(".tsv")
+    assert is_local_suffix(".TSV")
+    assert is_local_suffix(".csv")
+
+
+# ── Task 2: MinerU HTML <table> → GFM 归一（spec 2026-09-09 §5，Task 0 实测冻结）──
+#
+# Task 0 实测门坐实：MinerU 云 API v4 + model_version="vlm" 恒出 HTML <table>，不出 GFM →
+# 归一器是必需路径。形态 A fixture 直接取 pr-build/t0-mineru-table-gate/ 两份实测 full.md
+# （无 <thead>/<th>、表头=首 <tr>、整表压一行、含 rowspan/colspan；底纹表头失读→首行全空
+# <td>）。形态 B（docx 路：<thead><th> + 嵌套 <p>/<strong> + 单格多 <p> + 隐式空 <td>）
+# 按 spec §5 实测样例构造。
+
+# 形态 A（t0_mineru_full_plain.md 第 7 行）：无 <thead>、表头=首 <tr>、整表压一行
+_FORM_A_TABLE1 = (
+    "<table><tr><td>Region</td><td>Q1</td><td>Q2</td><td>Total</td></tr>"
+    "<tr><td>North</td><td>120</td><td>135</td><td>255</td></tr>"
+    "<tr><td>South</td><td>98</td><td>112</td><td>210</td></tr>"
+    "<tr><td>East</td><td>143</td><td>150</td><td>293</td></tr>"
+    "<tr><td>West</td><td>87</td><td>94</td><td>181</td></tr></table>"
+)
+# 形态 A（t0_mineru_full_plain.md 第 11 行）：含 rowspan=2 / colspan=3
+_FORM_A_TABLE2 = (
+    "<table><tr><td>Product</td><td>Attribute</td><td>Value</td></tr>"
+    '<tr><td rowspan="2">Widget A</td><td>Color</td><td>Red</td></tr>'
+    "<tr><td>Weight</td><td>2.4 kg</td></tr>"
+    "<tr><td>Widget B</td><td>Color</td><td>Blue</td></tr>"
+    '<tr><td colspan="3">Notes: measured at 20 C under dry conditions.</td></tr></table>'
+)
+# 底纹表头失读（t0_mineru_full.md 第 7 行）：首行 <tr> 全空 <td>
+_FORM_A_SHADED_TABLE1 = (
+    "<table><tr><td></td><td></td><td></td><td></td></tr>"
+    "<tr><td>North</td><td>120</td><td>135</td><td>255</td></tr>"
+    "<tr><td>South</td><td>98</td><td>112</td><td>210</td></tr>"
+    "<tr><td>East</td><td>143</td><td>150</td><td>293</td></tr>"
+    "<tr><td>West</td><td>87</td><td>94</td><td>181</td></tr></table>"
+)
+
+
+def test_normalize_form_a_header_is_first_tr():
+    """形态 A（PDF 路）：无 <thead>/<th> → 表头回落首个 <tr>；整表压一行也吃下。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    assert _normalize_tables_to_gfm(_FORM_A_TABLE1) == ("| Region | Q1 | Q2 | Total |\n| --- | --- | --- | --- |\n| North | 120 | 135 | 255 |\n| South | 98 | 112 | 210 |\n| East | 143 | 150 | 293 |\n| West | 87 | 94 | 181 |")
+
+
+def test_normalize_rowspan_sinks_value_into_spanned_rows():
+    """rowspan=2 扁平化：值下沉填充到被跨的行（检索行卡自足，spec §5）。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    lines = _normalize_tables_to_gfm(_FORM_A_TABLE2).splitlines()
+
+    assert lines[0] == "| Product | Attribute | Value |"
+    assert lines[2] == "| Widget A | Color | Red |"
+    assert lines[3] == "| Widget A | Weight | 2.4 kg |"  # Widget A 下沉填充
+    assert lines[4] == "| Widget B | Color | Blue |"
+
+
+def test_normalize_colspan_row_padded_to_header_width():
+    """colspan=3 行只回 1 个 <td> → 值取首列、余列空、补齐到表头 3 列（spec §5）。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    lines = _normalize_tables_to_gfm(_FORM_A_TABLE2).splitlines()
+
+    assert lines[-1] == "| Notes: measured at 20 C under dry conditions. |  |  |"
+
+
+def test_normalize_shaded_empty_header_not_guessed():
+    """底纹表头失读（首 <tr> 全空 <td>）：不猜列名、退化为无列名行组、列数守恒。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    lines = _normalize_tables_to_gfm(_FORM_A_SHADED_TABLE1).splitlines()
+
+    assert lines[0] == "|  |  |  |  |"  # 4 空列，绝不臆造列名
+    assert lines[1] == "| --- | --- | --- | --- |"
+    assert lines[2] == "| North | 120 | 135 | 255 |"
+
+
+def test_normalize_form_b_nested_p_strong_joined_by_space():
+    """形态 B（docx 路）：<thead><th> + 嵌套 <p>/<strong>；单格多 <p> 以空格连接、绝不插
+    换行；剥内嵌标签。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    html = "<table><thead><tr><th><p><strong>数据类型</strong></p></th><th><p>Private</p><p>扑瑞沃特</p></th></tr></thead><tbody><tr><td><p>基本类型</p></td><td><p>int</p></td></tr></tbody></table>"
+
+    assert _normalize_tables_to_gfm(html) == "| 数据类型 | Private 扑瑞沃特 |\n| --- | --- |\n| 基本类型 | int |"
+
+
+def test_normalize_form_b_implicit_empty_td_tolerated():
+    """形态 B 合并区的隐式空 <td></td>（无 span 属性）：按字面空值处理、宽度守恒。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    html = "<table><tbody><tr><th>类别</th><th>类型</th></tr><tr><td></td><td>可中断锁</td></tr><tr><td></td><td>可重入锁</td></tr></tbody></table>"
+
+    assert _normalize_tables_to_gfm(html) == "| 类别 | 类型 |\n| --- | --- |\n|  | 可中断锁 |\n|  | 可重入锁 |"
+
+
+def test_normalize_unescapes_html_entities():
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    html = "<table><tr><td>A &amp; B</td><td>&lt;tag&gt;</td></tr><tr><td>x</td><td>y</td></tr></table>"
+
+    assert _normalize_tables_to_gfm(html).splitlines()[0] == "| A & B | <tag> |"
+
+
+def test_normalize_already_gfm_is_noop():
+    """已是 GFM 管道表（用户 authored .md）：幂等 no-op，原样返回。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    gfm = "| a | b |\n| --- | --- |\n| 1 | 2 |"
+
+    assert _normalize_tables_to_gfm(gfm) == gfm
+
+
+def test_normalize_prose_with_pipe_untouched():
+    """散文里的 |（shell 管道）不在 <table> 内 → 原样保留，绝不误判为表格（Task 0 #6）。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    prose = "Pipeline note: the shell command cat sales.csv | grep north | wc -l counts rows."
+
+    assert _normalize_tables_to_gfm(prose) == prose
+
+
+def test_normalize_preserves_surrounding_markdown():
+    """归一只替换 <table> 段，标题/散文/空行逐字保留（散文里的 | 不动）。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    md = "## 报告\n\n表一：\n\n" + _FORM_A_TABLE1 + "\n\n结尾 cat a.csv | grep x | wc -l 说明。"
+
+    out = _normalize_tables_to_gfm(md)
+
+    assert out.startswith("## 报告\n\n表一：\n\n| Region | Q1 | Q2 | Total |")
+    assert out.endswith("| West | 87 | 94 | 181 |\n\n结尾 cat a.csv | grep x | wc -l 说明。")
+
+
+def test_normalize_nested_table_left_as_residual_html():
+    """嵌套表（归一器未覆盖形态）→ 整段原样保留为残留 HTML，交 chunker 原子块防御（spec §6）。"""
+    from deerflow.knowledge.parser import _normalize_tables_to_gfm
+
+    nested = "<table><tr><td><table><tr><td>inner</td></tr></table></td></tr></table>"
+
+    assert _normalize_tables_to_gfm(nested) == nested
+
+
+@pytest.mark.asyncio
+async def test_mineru_html_table_normalized_to_gfm(tmp_path, monkeypatch):
+    """集成：MinerU 分支（v4+vlm 恒出 HTML）经 `_normalize_tables_to_gfm` 落地为 GFM。"""
+    md = "## Quarterly Sales Report\n\nTable 1.\n\n" + _FORM_A_TABLE1 + "\n\nNote: cat sales.csv | grep north | wc -l counts rows. End."
+
+    markdown = await _parse_pdf_from_zip(tmp_path, monkeypatch, md)
+
+    assert "| Region | Q1 | Q2 | Total |" in markdown
+    assert "<table>" not in markdown
+    assert "cat sales.csv | grep north | wc -l" in markdown  # 散文 | 保留
+
+
+@pytest.mark.asyncio
+async def test_local_markdown_html_table_not_normalized(tmp_path, monkeypatch):
+    """归一器只作用于 MinerU 分支；本地直读 .md 的 HTML 表原样保留（用户 authored，spec §5）。"""
+    monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
+    md = tmp_path / "笔记.md"
+    md.write_text("前文\n\n<table><tr><td>a</td></tr></table>", encoding="utf-8")
+
+    doc = await parse_document(md, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+    assert "<table><tr><td>a</td></tr></table>" in doc.markdown  # 未归一
 
 
 @pytest.mark.asyncio

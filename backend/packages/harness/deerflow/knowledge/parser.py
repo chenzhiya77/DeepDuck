@@ -9,15 +9,20 @@ Local-file flow (精准解析 API):
    state is ``done`` (grab ``full_zip_url``) or ``failed``.
 4. Download the result zip and unpack ``full.md`` + ``images/*``.
 
-Markdown/text inputs short-circuit: ``.md``/``.markdown``/``.txt``/``.csv``
-files are already parse output (or plain text), so they are read locally
-without any MinerU call. The API token always comes from the
-``MINERU_API_TOKEN`` env var — never from the caller.
+Markdown/text inputs short-circuit: ``.md``/``.markdown``/``.txt`` files are
+already parse output (or plain text) and ``.csv``/``.tsv`` are delimited text,
+so all are read locally without any MinerU call — ``.csv``/``.tsv`` further
+normalize into a GFM pipe table (spec 2026-09-09 §5). MinerU's own output has
+its HTML ``<table>`` blocks normalized to GFM as well, because v4 with the
+default ``model_version="vlm"`` emits HTML rather than GFM (Task 0 实测门). The
+API token always comes from the ``MINERU_API_TOKEN`` env var — never from the
+caller.
 """
 
 from __future__ import annotations
 
 import asyncio
+import csv
 import io
 import logging
 import os
@@ -25,6 +30,7 @@ import re
 import time
 import zipfile
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 
 import httpx
@@ -59,8 +65,15 @@ SUPPORTED_UPLOAD_SUFFIXES: frozenset[str] = frozenset(
     }
 )
 
-#: Suffixes read locally as text — they never hit MinerU.
-_LOCAL_READ_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt", ".csv"})
+#: Suffixes read from local disk — they never hit MinerU. ``.csv``/``.tsv`` are
+#: further routed to ``_parse_delimited`` (table-aware) ahead of the raw-text
+#: branch; see ``_DELIMITED_SUFFIXES`` (spec 2026-09-09 §5).
+_LOCAL_READ_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt", ".csv", ".tsv"})
+
+#: Delimited-text suffixes parsed into a GFM pipe table instead of a raw text
+#: dump (spec 2026-09-09 §5). ``.csv`` is an ungated member of the text set;
+#: ``.tsv`` rides the ``rag.table`` gate for *upload* but is always parsed here.
+_DELIMITED_SUFFIXES: frozenset[str] = frozenset({".csv", ".tsv"})
 
 #: Video upload allowlist (spec 2026-09-08 §2, frozen): an independent
 #: frozenset so the text set above stays byte-identical. Surfaced in the
@@ -170,6 +183,62 @@ def _read_local_text(path: Path) -> str:
         except UnicodeDecodeError as exc:
             raise ValueError(f"cannot decode {path.name}: not valid UTF-8 or GBK") from exc
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _gfm_cell(text: str) -> str:
+    """One GFM table cell: collapse whitespace (a cell must stay single-line) and
+    escape a literal ``|`` so it cannot break the column structure."""
+    return re.sub(r"\s+", " ", text).strip().replace("|", "\\|")
+
+
+def _gfm_row(cells: list[str]) -> str:
+    return "| " + " | ".join(_gfm_cell(c) for c in cells) + " |"
+
+
+def _gfm_separator(width: int) -> str:
+    return "| " + " | ".join(["---"] * width) + " |"
+
+
+def _fit_width(row: list[str], width: int) -> list[str]:
+    """Pad a short row with empty cells / truncate a long row to *width*."""
+    cells = list(row)
+    if len(cells) < width:
+        cells.extend([""] * (width - len(cells)))
+    return cells[:width]
+
+
+def _sniff_delimiter(suffix: str, text: str) -> str:
+    """``.tsv`` → fixed tab; ``.csv`` → ``csv.Sniffer`` over comma/semicolon with a
+    comma fallback (spec 2026-09-09 §5)."""
+    if suffix == ".tsv":
+        return "\t"
+    try:
+        delim = csv.Sniffer().sniff(text[:8192], delimiters=",;").delimiter
+    except csv.Error:
+        delim = ","
+    return delim if delim in (",", ";") else ","
+
+
+def _parse_delimited(path: Path) -> str:
+    """Parse a ``.csv``/``.tsv`` file into a GFM pipe table (spec 2026-09-09 §5).
+
+    Encoding reuses ``_read_local_text`` (UTF-8 strict → GBK fallback) plus BOM
+    stripping. The first row is the header; ragged rows are padded/truncated to
+    the header width and blank rows are skipped, so the output is always a valid
+    single-line-per-row GFM table. Empty input yields ``""`` (the worker then
+    raises EmptyParseResultError, exactly as for an empty text file).
+    """
+    text = _read_local_text(path)
+    if text.startswith("\ufeff"):
+        text = text[1:]  # strip UTF-8 BOM
+    delimiter = _sniff_delimiter(path.suffix.lower(), text)
+    rows = [row for row in csv.reader(io.StringIO(text), delimiter=delimiter) if any(cell.strip() for cell in row)]
+    if not rows:
+        return ""
+    width = len(rows[0])
+    lines = [_gfm_row(rows[0]), _gfm_separator(width)]
+    lines.extend(_gfm_row(_fit_width(row, width)) for row in rows[1:])
+    return "\n".join(lines)
 
 
 class MineruError(Exception):
@@ -322,6 +391,182 @@ def _relocate_trailing_title(markdown: str) -> str:
     return f"{lines[last].rstrip()}\n\n{body}"
 
 
+#: Matches a ``<table>``/``</table>`` open or close token (group 1 == "/" on close).
+_TABLE_TOKEN_RE = re.compile(r"<(/?)table\b[^>]*>", re.IGNORECASE)
+
+
+def _find_table_spans(markdown: str) -> list[tuple[int, int, bool]]:
+    """Locate each top-level ``<table>…</table>`` span as ``(start, end, nested)``.
+
+    Only balanced top-level tables are recorded. A span that contains another
+    ``<table>`` is flagged *nested* so the caller leaves it as residual HTML for
+    the chunker's atomic-block defense (spec 2026-09-09 §6).
+    """
+    spans: list[tuple[int, int, bool]] = []
+    stack: list[int] = []
+    for match in _TABLE_TOKEN_RE.finditer(markdown):
+        if match.group(1) != "/":
+            stack.append(match.start())
+        elif stack:
+            start = stack.pop()
+            if not stack:  # a top-level table just closed
+                inner = markdown[start : match.end()]
+                opens = sum(1 for t in _TABLE_TOKEN_RE.finditer(inner) if t.group(1) != "/")
+                spans.append((start, match.end(), opens > 1))
+    return spans
+
+
+def _span_int(attrs: dict, key: str) -> int:
+    """rowspan/colspan as an int ≥ 1 (missing/invalid → 1)."""
+    try:
+        return max(1, int(str(attrs.get(key) or "1").strip()))
+    except (TypeError, ValueError):
+        return 1
+
+
+class _TableCellParser(HTMLParser):
+    """Collect ``<tr>`` rows of cells from one non-nested table.
+
+    Each cell records its text (nested tags stripped, sibling ``<p>`` blocks
+    joined by a single space — never a newline, char refs decoded, whitespace
+    collapsed), its rowspan/colspan, and whether it is a header cell (``<th>`` or
+    inside ``<thead>``). Covers the two MinerU forms frozen in spec 2026-09-09 §5.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[dict]] = []
+        self._row: list[dict] | None = None
+        self._cell: dict | None = None
+        self._in_thead = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        attributes = dict(attrs)
+        if tag == "tr":
+            self._row = []
+        elif tag in ("td", "th"):
+            self._cell = {
+                "parts": [],
+                "rowspan": _span_int(attributes, "rowspan"),
+                "colspan": _span_int(attributes, "colspan"),
+                "is_header": tag == "th" or self._in_thead,
+            }
+        elif tag == "thead":
+            self._in_thead = True
+        elif tag == "p" and self._cell is not None and self._cell["parts"]:
+            self._cell["parts"].append(" ")  # join sibling <p> blocks with one space
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "thead":
+            self._in_thead = False
+        elif tag == "tr" and self._row is not None:
+            self.rows.append(self._row)
+            self._row = None
+        elif tag in ("td", "th") and self._cell is not None:
+            self._cell["text"] = re.sub(r"\s+", " ", "".join(self._cell["parts"])).strip()
+            if self._row is not None:
+                self._row.append(self._cell)
+            self._cell = None
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell["parts"].append(data)
+
+
+def _flatten_rows(rows: list[list[dict]], width: int) -> list[list[str]]:
+    """Flatten rowspan/colspan into a rectangular *width*-column grid of strings.
+
+    A rowspan value sinks down into the rows it spans (each retrieval row card
+    stays self-contained); a colspan value lands in its first column and leaves
+    the remaining spanned columns empty. Cells beyond *width* are dropped and
+    short rows stay empty-padded (spec 2026-09-09 §5).
+    """
+    grid: list[list[str]] = []
+    pending: dict[int, tuple[int, str]] = {}  # column → (rows remaining, value)
+    for row in rows:
+        out = [""] * width
+        carried = set(pending)
+        for col in carried:
+            remaining, value = pending[col]
+            if col < width:
+                out[col] = value
+            if remaining <= 1:
+                del pending[col]
+            else:
+                pending[col] = (remaining - 1, value)
+        col = 0
+        for cell in row:
+            while col < width and col in carried:
+                col += 1
+            if col >= width:
+                break
+            colspan = cell["colspan"]
+            rowspan = cell["rowspan"]
+            out[col] = cell["text"]
+            if rowspan > 1:
+                for span_col in range(col, min(col + colspan, width)):
+                    pending[span_col] = (rowspan - 1, cell["text"] if span_col == col else "")
+            col += colspan
+        grid.append(out)
+    return grid
+
+
+def _normalize_one_table(table_html: str) -> str | None:
+    """Convert one non-nested ``<table>…</table>`` into a GFM pipe table.
+
+    Returns ``None`` when it cannot be flattened (no rows / no columns) so the
+    caller keeps the original HTML as residual (chunker defends, spec §6). The
+    header is the first ``<th>``/``<thead>`` row, else the first ``<tr>`` (form A);
+    an all-empty header is kept empty — column names are never guessed.
+    """
+    cell_parser = _TableCellParser()
+    try:
+        cell_parser.feed(table_html)
+        cell_parser.close()
+    except Exception:  # malformed markup → residual HTML
+        return None
+    rows = [row for row in cell_parser.rows if row]
+    if not rows:
+        return None
+    header_idx = next((i for i, row in enumerate(rows) if any(cell["is_header"] for cell in row)), 0)
+    width = sum(cell["colspan"] for cell in rows[header_idx])
+    if width <= 0:
+        width = max((sum(cell["colspan"] for cell in row) for row in rows), default=0)
+    if width <= 0:
+        return None
+    grid = _flatten_rows(rows, width)
+    header = grid[header_idx]
+    data = grid[header_idx + 1 :] + grid[:header_idx]
+    lines = [_gfm_row(header), _gfm_separator(width)]
+    lines.extend(_gfm_row(row) for row in data)
+    return "\n".join(lines)
+
+
+def _normalize_tables_to_gfm(markdown: str) -> str:
+    """Rewrite every top-level HTML ``<table>`` into a GFM pipe table.
+
+    MinerU v4 + ``model_version="vlm"`` emits HTML tables rather than GFM (Task 0
+    实测门, spec 2026-09-09 §5), so this is a required step on the MinerU branch —
+    never on user-authored local ``.md``. Content outside ``<table>`` spans
+    (prose, headings, existing GFM tables) is preserved byte-for-byte, making the
+    pass an idempotent no-op when there is no HTML table. Nested/malformed tables
+    stay residual for the chunker's atomic-block defense (§6).
+    """
+    spans = _find_table_spans(markdown)
+    if not spans:
+        return markdown
+    pieces: list[str] = []
+    cursor = 0
+    for start, end, nested in spans:
+        pieces.append(markdown[cursor:start])
+        original = markdown[start:end]
+        replacement = None if nested else _normalize_one_table(original)
+        pieces.append(original if replacement is None else replacement)
+        cursor = end
+    pieces.append(markdown[cursor:])
+    return "".join(pieces)
+
+
 def _unpack_zip(zip_bytes: bytes) -> ParsedDocument:
     markdown: str | None = None
     images: list[ParsedImage] = []
@@ -348,13 +593,18 @@ async def parse_document(
 ) -> ParsedDocument:
     """Parse a local document via the MinerU v4 API.
 
-    ``.md``/``.markdown``/``.txt``/``.csv`` files are read locally (UTF-8
-    strict with GBK fallback) and never hit the network. The token comes from
-    the ``MINERU_API_TOKEN`` env var. Image references in the returned markdown
-    point at ``ParsedImage.ref`` entries (relative zip paths).
+    ``.md``/``.markdown``/``.txt`` files are read locally (UTF-8 strict with GBK
+    fallback); ``.csv``/``.tsv`` are parsed locally into a GFM pipe table
+    (spec 2026-09-09 §5) — none of these ever hit the network. MinerU output has
+    its HTML ``<table>`` blocks normalized to GFM. The token comes from the
+    ``MINERU_API_TOKEN`` env var. Image references in the returned markdown point
+    at ``ParsedImage.ref`` entries (relative zip paths).
     """
     path = Path(file_path)
-    if is_local_suffix(path.suffix):
+    suffix = path.suffix.lower()
+    if suffix in _DELIMITED_SUFFIXES:
+        return ParsedDocument(markdown=_parse_delimited(path), images=[])
+    if is_local_suffix(suffix):
         return ParsedDocument(markdown=_read_local_text(path), images=[])
 
     token = _read_token()
@@ -372,9 +622,11 @@ async def parse_document(
             timeout_seconds=timeout_seconds,
         )
         zip_parsed = _unpack_zip(await _download_zip(zip_url))
-        # MinerU 短文档偶发把页面标题输出到文末（2026-09-04 实测），在此归一化；
+        # MinerU 短文档偶发把页面标题输出到文末（2026-09-04 实测），且 v4+vlm 把表格输出为
+        # HTML <table>（Task 0 实测门，spec 2026-09-09 §5）；两步归一都只作用于 MinerU 分支，
         # 本地直读分支不受影响（用户 authored 内容原样保留）。
-        return ParsedDocument(markdown=_relocate_trailing_title(zip_parsed.markdown), images=zip_parsed.images)
+        markdown = _normalize_tables_to_gfm(_relocate_trailing_title(zip_parsed.markdown))
+        return ParsedDocument(markdown=markdown, images=zip_parsed.images)
     finally:
         if own_client:
             await http.aclose()
