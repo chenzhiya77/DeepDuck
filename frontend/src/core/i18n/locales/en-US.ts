@@ -316,7 +316,6 @@ export const enUS: Translations = {
   knowledge: {
     personalKBs: "Personal knowledge bases",
     sharedKBs: "Shared knowledge bases",
-    sharedKbComingSoon: "Coming soon",
     sharedKbSamples: ["Team shared library", "Product public docs"],
     createKB: "New knowledge base",
     kbNamePlaceholder: "Knowledge base name",

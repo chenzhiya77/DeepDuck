@@ -242,7 +242,6 @@ export interface Translations {
   knowledge: {
     personalKBs: string;
     sharedKBs: string;
-    sharedKbComingSoon: string;
     sharedKbSamples: string[];
     createKB: string;
     kbNamePlaceholder: string;

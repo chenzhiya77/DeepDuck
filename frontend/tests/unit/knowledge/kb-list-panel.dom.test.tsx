@@ -164,12 +164,32 @@ describe("KbListPanel", () => {
     const { onSelect } = renderPanel();
     expect(screen.getByText("共享知识库")).toBeTruthy();
     expect(screen.getByText("共享知识库").querySelector("svg")).toBeTruthy();
-    expect(screen.getByText("即将上线")).toBeTruthy();
+    // 「即将上线」徽章已退役（2026-09-10）。
+    expect(screen.queryByText("即将上线")).toBeNull();
     const sharedRow = screen.getByText("团队共享库").closest("li")!;
     // 纯展示：行不是按钮、不可拖拽，点击也不触发选中。
     expect(sharedRow.querySelector("button")).toBeNull();
     expect(sharedRow.getAttribute("draggable")).toBeNull();
     fireEvent.click(screen.getByText("团队共享库"));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("folds a group when its header label is clicked, and restores on second click", () => {
+    renderPanel();
+    // 个人组：标题即折叠开关（aria-expanded 跟状态），收起后行消失、再点恢复。
+    const personal = screen.getByText("个人知识库").closest("button")!;
+    expect(personal.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(personal);
+    expect(personal.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("产品资料")).toBeNull();
+    fireEvent.click(personal);
+    expect(screen.getByText("产品资料")).toBeTruthy();
+
+    // 共享组同款折叠。
+    const shared = screen.getByText("共享知识库").closest("button")!;
+    fireEvent.click(shared);
+    expect(screen.queryByText("团队共享库")).toBeNull();
+    fireEvent.click(shared);
+    expect(screen.getByText("团队共享库")).toBeTruthy();
   });
 });

@@ -299,7 +299,6 @@ export const zhCN: Translations = {
   knowledge: {
     personalKBs: "个人知识库",
     sharedKBs: "共享知识库",
-    sharedKbComingSoon: "即将上线",
     sharedKbSamples: ["团队共享库", "产品公共文档"],
     createKB: "新建知识库",
     kbNamePlaceholder: "知识库名称",
