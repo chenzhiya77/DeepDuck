@@ -332,8 +332,14 @@ BACKEND_RUNTIME_HOME="$(cd "$BACKEND_RUNTIME_HOME" && pwd -P)"
 export DEER_FLOW_HOME
 
 # Extra flags for uvicorn
+# Reload must ignore the venv / scratch / cache trees: `uv pip install` rewrites
+# thousands of .py files under .venv and test/scratch runs write .pytest-tmp and
+# caches — each write restarted the gateway and reset in-flight uploads with
+# ECONNRESET (2026-09-09 incident: a single drag-upload died mid-request).
+# --reload-exclude with absolute paths does NOT match uvicorn's relative change
+# paths (probe-verified), so whitelist the code dirs with --reload-dir instead.
 if $DEV_MODE && ! $DAEMON_MODE; then
-    GATEWAY_EXTRA_FLAGS="--reload --reload-include='*.yaml' --reload-include='.env' --reload-exclude='*.pyc' --reload-exclude='__pycache__' --reload-exclude='$REPO_ROOT/backend/sandbox' --reload-exclude='$DEER_FLOW_HOME' --reload-exclude='$BACKEND_RUNTIME_HOME'"
+    GATEWAY_EXTRA_FLAGS="--reload --reload-include='*.yaml' --reload-include='.env' --reload-exclude='*.pyc' --reload-exclude='__pycache__' --reload-exclude='$REPO_ROOT/backend/sandbox' --reload-exclude='$DEER_FLOW_HOME' --reload-exclude='$BACKEND_RUNTIME_HOME' --reload-dir='$REPO_ROOT/backend/app' --reload-dir='$REPO_ROOT/backend/packages'"
 else
     GATEWAY_EXTRA_FLAGS=""
 fi

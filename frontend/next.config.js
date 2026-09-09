@@ -27,6 +27,13 @@ const config = {
   },
   devIndicators: false,
   allowedDevOrigins: getAllowedDevOrigins(),
+  // 视频上传经 rewrites 代理转发到 Gateway：Next 代理默认请求体上限 10MB，超限
+  // 只缓冲前 10MB 并掐断连接（2026-09-09 事故：11.1MB 视频 ECONNRESET 上传失败，
+  // 静音视频因 <10MB 幸免）。与后端 rag.video.max_size_mb=2048 对齐。注意：
+  // 16.2.11 已启用新键且禁止与旧键 middlewareClientMaxBodySize 同设（同设启动即崩）。
+  experimental: {
+    proxyClientMaxBodySize: "2gb",
+  },
   async rewrites() {
     const rewrites = [];
     const gatewayURL = getInternalServiceURL(

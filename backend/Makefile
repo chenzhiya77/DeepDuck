@@ -9,7 +9,7 @@ install:
 	uv sync --inexact
 
 dev:
-	@$(SYNC) && $(RUN) uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload
+	@$(SYNC) && $(RUN) uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload --reload-dir app --reload-dir packages
 
 gateway:
 	@$(SYNC) && $(RUN) uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001
