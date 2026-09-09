@@ -1121,6 +1121,19 @@ def test_workbook_to_markdown_stringifies_typed_cells():
     assert md.splitlines()[-1] == "| 120 | 2.5 | True |  |"
 
 
+def test_workbook_to_markdown_integral_float_renders_as_int():
+    """calamine 把数值单元格读成 float（120.0）→ 渲染为整数形式 120，非 120.0。
+
+    真实 .xlsx 端到端（openpyxl 写 int、calamine 读回 float）暴露：整数列显示
+    120.0 是格式瑕疵；整值 float 归一为 int 文本，非整值 float 保留小数。
+    """
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown([("S", [["n", "f"], [120.0, 2.5]])])
+
+    assert md.splitlines()[-1] == "| 120 | 2.5 |"
+
+
 def test_workbook_to_markdown_ragged_rows_fit_header_width():
     from deerflow.knowledge.parser import _workbook_rows_to_markdown
 

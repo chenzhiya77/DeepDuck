@@ -251,10 +251,15 @@ def _parse_delimited(path: Path) -> str:
 
 
 def _cell_to_text(value: object) -> str:
-    """Spreadsheet cell → text: ``None`` → empty, else ``str(value)`` (numbers and
-    dates keep their natural Python form; ``_gfm_cell`` collapses whitespace and
-    escapes ``|`` downstream)."""
-    return "" if value is None else str(value)
+    """Spreadsheet cell → text: ``None`` → empty; an integral float → its int form
+    (calamine reads every numeric cell as float, so ``120`` would otherwise render
+    as ``120.0``); anything else keeps its natural Python form (``_gfm_cell``
+    collapses whitespace and escapes ``|`` downstream)."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 def _workbook_rows_to_markdown(sheets: Iterable[tuple[str, list[list[object]]]]) -> str:
