@@ -10,6 +10,7 @@ no per-loop seam tick can slip in.
 
 Requires ffmpeg/ffprobe on PATH. Stdlib only.
 
+    python scripts/pet_extract.py base --ref parrot.png --out base_A.png
     python scripts/pet_extract.py measure --video clip.mp4
     python scripts/pet_extract.py sheet --video clip.mp4 --config pet.json \
         --state done --mode oneshot --window 24 72 --stride 2 --out done.webp
@@ -154,6 +155,27 @@ def sheet(args: argparse.Namespace) -> None:
           f"playback {len(indices) / fps:.2f}s)")
 
 
+def base(args: argparse.Namespace) -> None:
+    # spec §8.1 rule 5: layout authority lives in this deterministic composite,
+    # not in any image model (they do not honor ratio/position text commands).
+    bottom = args.canvas_size - args.y - args.bird_height
+    if args.bird_height > args.canvas_size * 0.65:
+        fail(f"bird height {args.bird_height} exceeds 65% of canvas {args.canvas_size}; "
+             "wing/flap motion headroom collapses (spec §8.1 rule 3)")
+    if bottom < 80:
+        fail(f"bottom margin {bottom}px < 80px; sigh-sink/crouch (≈40-80px) would clip the feet (spec §8.1 rule 3)")
+    fc = (f"[1:v]scale=-2:{args.bird_height}:flags=lanczos,format=rgba[k];"
+          f"[0:v][k]overlay=(W-w)/2:{args.y}")
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y",
+         "-f", "lavfi", "-i", f"color=c=0x{args.canvas}:s={args.canvas_size}x{args.canvas_size}",
+         "-i", str(args.ref),
+         "-filter_complex", fc, "-frames:v", "1", str(args.out)], check=True)
+    print(f"wrote {args.out} ({args.canvas_size}x{args.canvas_size}, "
+          f"bird {args.bird_height}px at y={args.y}, margins top={args.y} bottom={bottom} "
+          f"sides=({args.canvas_size}-bird_width)/2)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -171,6 +193,14 @@ def main() -> None:
     s.add_argument("--window", type=int, nargs=2, metavar=("START", "END"), help="oneshot frame-index window")
     s.add_argument("--out", type=Path, required=True)
     s.set_defaults(fn=sheet)
+    b = sub.add_parser("base", help="composite the deterministic base frame (spec §8.1 rule 5): transparent ref onto solid canvas at locked scale/position")
+    b.add_argument("--ref", type=Path, required=True, help="transparent-background character reference")
+    b.add_argument("--out", type=Path, required=True)
+    b.add_argument("--canvas", default="FF00FF", help="canvas hex without # (default magenta FF00FF; green forbidden, green wings)")
+    b.add_argument("--canvas-size", type=int, default=1920, help="square canvas edge = video generation resolution")
+    b.add_argument("--bird-height", type=int, default=1152, help="bird height in px (default 1152 = 60 percent of a 1920 canvas)")
+    b.add_argument("--y", type=int, default=668, help="bird box top edge (default leaves 100px bottom margin)")
+    b.set_defaults(fn=base)
     args = ap.parse_args()
     args.fn(args)
 
