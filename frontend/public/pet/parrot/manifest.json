@@ -1,14 +1,14 @@
 {
   "frameWidth": 512,
   "frameHeight": 512,
-  "displaySize": 96,
+  "displaySize": 158,
   "fallback": "idle",
   "states": {
     "idle": {
-      "frames": 2,
+      "frames": 31,
       "fps": 8,
       "loop": true,
-      "sheetWidth": 1024,
+      "sheetWidth": 15872,
       "sheetHeight": 512
     },
     "wait": {
