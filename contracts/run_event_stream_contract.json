@@ -78,7 +78,21 @@
       "content_schema": {
         "type": "object",
         "required": ["chain"],
-        "properties": {"chain": {"type": ["string", "null"]}},
+        "properties": {
+          "chain": {"type": ["string", "null"]},
+          "constitution": {
+            "type": "object",
+            "description": "Derived harness constitution for this run: which middlewares, tools and authorization removals the agent factory actually assembled. Present only on the first run.start of a run (a run emits one per astream, so goal continuations re-trigger it); absent when nothing published one. Additive: required stays [chain] and additionalProperties stays true, so older consumers are unaffected.",
+            "required": ["schema_version", "stages"],
+            "properties": {
+              "schema_version": {"type": "integer", "minimum": 1},
+              "stages": {"type": "array", "items": {"type": "object"}, "description": "Per-stage counts keyed by stage, carrying only keys and counts — never a middleware name, so the end-user projection stays curated rather than a filtered subset of internals."},
+              "middlewares": {"type": "array", "items": {"type": "object"}, "description": "Developer-view detail: real middleware class names with stage, kind, hooks and frequency."},
+              "truncated": {"type": "boolean", "description": "Set when the 16KB budget forced the fixed degradation order."}
+            },
+            "additionalProperties": true
+          }
+        },
         "additionalProperties": true
       },
       "metadata_schema": {

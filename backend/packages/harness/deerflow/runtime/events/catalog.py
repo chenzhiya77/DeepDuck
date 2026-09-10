@@ -55,6 +55,10 @@ class RunEventPattern:
         return f"{self.prefix}{suffix}"
 
 
+# ``content`` always carries ``chain``. The first root chain start of a run also
+# carries ``constitution`` — the derived harness snapshot published by the agent
+# factory (see the constitution-snapshot spec §6.3). A run emits one run.start per
+# ``astream`` (user turn plus each goal continuation), so only the first carries it.
 RUN_START_EVENT = RunEventDefinition("run.start", "trace")
 RUN_END_EVENT = RunEventDefinition("run.end", "outputs")
 RUN_ERROR_EVENT = RunEventDefinition("run.error", "error")

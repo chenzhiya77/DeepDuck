@@ -290,6 +290,13 @@ class RunJournal(BaseCallbackHandler):
         self._produced_artifacts: list[tuple[str, str | None]] = []
         self._produced_artifact_keys: set[tuple[str, str | None]] = set()
 
+        # Derived harness constitution (who assembled this run), pushed in by the
+        # run worker once the agent factory has published it. ``run.start`` fires
+        # once per astream, so ``_constitution_emitted`` keeps the snapshot on the
+        # first one only — goal continuations re-trigger the root chain.
+        self._constitution: dict | None = None
+        self._constitution_emitted = False
+
     # -- Lifecycle callbacks --
 
     @staticmethod
@@ -324,11 +331,17 @@ class RunJournal(BaseCallbackHandler):
         caller = self._identify_caller(tags)
         if parent_run_id is None:
             # Root graph invocation — emit a single trace event for the run start.
+            # A run emits one of these per astream, so the constitution rides only
+            # the first one (a goal continuation re-triggers the root chain).
             chain_name = (serialized or {}).get("name", "unknown")
+            content: dict[str, Any] = {"chain": chain_name}
+            if self._constitution is not None and not self._constitution_emitted:
+                content["constitution"] = self._constitution
+                self._constitution_emitted = True
             self._put(
                 event_type=RUN_START_EVENT.event_type,
                 category=RUN_START_EVENT.category,
-                content={"chain": chain_name},
+                content=content,
                 metadata={"caller": caller, **(metadata or {})},
             )
 
@@ -815,6 +828,15 @@ class RunJournal(BaseCallbackHandler):
     def set_first_human_message(self, content: str) -> None:
         """Record the first human message for convenience fields."""
         self._first_human_msg = content[:2000] if content else None
+
+    def set_constitution(self, record: dict) -> None:
+        """Attach the run's derived harness constitution to ``run.start``.
+
+        Pure assignment, no IO: this is called from the run worker, and every
+        journal callback must stay in-memory only (``run_inline = True``). The
+        record is emitted at most once per run, on the first root chain start.
+        """
+        self._constitution = record
 
     def record_middleware(self, tag: str, *, name: str, hook: str, action: str, changes: dict) -> None:
         """Record a middleware state-change event.

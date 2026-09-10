@@ -146,11 +146,21 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_run_event_stream_contract.py
 
 **Files:** Modify `backend/packages/harness/deerflow/runtime/journal.py`、`runtime/events/catalog.py`、`contracts/run_event_stream_contract.json`、`backend/docs/RUN_EVENT_STREAM.md`、`backend/tests/test_run_event_stream_contract.py`;Create `backend/tests/test_run_journal_constitution.py`
 
-- [ ] **Step 1(先写红测试):** 覆盖 ① `set_constitution` 是**纯赋值**、无 IO(过 blocking-IO 门禁);② set 后 `run.start` 的 `content` 带 `constitution`,且 `content.chain` / `metadata.caller` **原样保留**;③ **未 set 时 `run.start` 与今天逐字节相同**(这是既有消费者的兼容保障);④ first-time-only 守卫——多次根 chain 触发只带一次(断言强度依 Task 0 Step 2 的结论)。
-- [ ] **Step 2:** `journal.py` 加 `set_constitution(self, record: dict) -> None`(照抄 `set_first_human_message` :815-817 的形状,纯赋值,docstring 注明 no IO);`__init__` 加 `self._constitution: dict | None = None` 与 `self._constitution_emitted = False`。
-- [ ] **Step 3:** 改 `on_chain_start` 的 `parent_run_id is None` 分支(:325-333),按 spec §6.3 组装 `content` 后再 `_put`。
-- [ ] **Step 4:** 契约同步:① `contracts/run_event_stream_contract.json` 的 `run.start.content_schema.properties` 加 `constitution`(对象,含 `schema_version` 与各子字段形状;`required` **仍只有** `["chain"]`,保持向后兼容);② `runtime/events/catalog.py:58` 的 `RUN_START_EVENT` 处补形状说明注释;③ `backend/docs/RUN_EVENT_STREAM.md` 补 `run.start` 载荷段落;④ **确认 `deerflow/constants.py` 无需变动**(无新 event_type → 32/16/21 字符上限常量不涉及),若确实无需变动则在 spec §9 记一句"已确认";⑤ `tests/test_run_event_stream_contract.py` 加 `constitution` 形状断言,并确认既有"两个视图与全部 producer 组必须一致"的断言仍通过。
-- [ ] **Step 5:** 转绿 + `cd backend && PYTHONPATH=. uv run pytest tests/test_run_event_stream_contract.py tests/test_run_journal_constitution.py -v --basetemp .pytest-tmp`。
+- [x] **Step 1(先写红测试):** 覆盖 ① `set_constitution` 是**纯赋值**、无 IO(过 blocking-IO 门禁);② set 后 `run.start` 的 `content` 带 `constitution`,且 `content.chain` / `metadata.caller` **原样保留**;③ **未 set 时 `run.start` 与今天逐字节相同**(这是既有消费者的兼容保障);④ first-time-only 守卫——多次根 chain 触发只带一次(断言强度依 Task 0 Step 2 的结论)。
+- [x] **Step 2:** `journal.py` 加 `set_constitution(self, record: dict) -> None`(照抄 `set_first_human_message` :815-817 的形状,纯赋值,docstring 注明 no IO);`__init__` 加 `self._constitution: dict | None = None` 与 `self._constitution_emitted = False`。
+- [x] **Step 3:** 改 `on_chain_start` 的 `parent_run_id is None` 分支(:325-333),按 spec §6.3 组装 `content` 后再 `_put`。
+- [x] **Step 4:** 契约同步(5 处全部完成;**`deerflow/constants.py` 已确认无需改动**——打开核对过,它只有 `RUN_EVENT_TYPE_MAX_LENGTH = 32` 与 `RUN_EVENT_CATEGORY_MAX_LENGTH = 16` 两个常量,本次无新 event_type/category):① `contracts/run_event_stream_contract.json` 的 `run.start.content_schema.properties` 加 `constitution`(对象,含 `schema_version` 与各子字段形状;`required` **仍只有** `["chain"]`,保持向后兼容);② `runtime/events/catalog.py:58` 的 `RUN_START_EVENT` 处补形状说明注释;③ `backend/docs/RUN_EVENT_STREAM.md` 补 `run.start` 载荷段落;④ **确认 `deerflow/constants.py` 无需变动**(无新 event_type → 32/16/21 字符上限常量不涉及),若确实无需变动则在 spec §9 记一句"已确认";⑤ `tests/test_run_event_stream_contract.py` 加 `constitution` 形状断言,并确认既有"两个视图与全部 producer 组必须一致"的断言仍通过。
+- [x] **Step 5:** 转绿 + `cd backend && PYTHONPATH=. uv run pytest tests/test_run_event_stream_contract.py tests/test_run_journal_constitution.py -v --basetemp .pytest-tmp`。
+
+**交付纪要(Task 3,2026-09-10):**
+
+- **修改**:`journal.py`(`__init__` 两个字段 + `set_constitution` + `on_chain_start` 的根链分支)、`runtime/events/catalog.py`(`RUN_START_EVENT` 处注释)、`contracts/run_event_stream_contract.json`(`run.start.content_schema.properties.constitution`)、`backend/docs/RUN_EVENT_STREAM.md`(新增 "Run-Start Constitution Payload" 小节)、`tests/test_run_event_stream_contract.py`(形状断言)、`tests/blocking_io/test_run_journal_callbacks.py`(把 `set_constitution` 纳入 Blockbuster 锚点)。**新增**:`tests/test_run_journal_constitution.py`(7 例)。
+- **首击守卫的断言按实测定死**:一次 run 共 **2 条** `run.start`(Task 0 Step 2 实测),**恰好 1 条带 `constitution` 且是 `seq` 最小的那条**;测试同时把 2 这个发射数本身钉住。
+- **兼容性**:未 set 时 `run.start.content == {"chain": ...}` 逐字节不变(有专门断言);契约 `required` **仍只有** `["chain"]`、`additionalProperties` 保持 `true`,所以既有消费者无需改动。
+- **`deerflow/constants.py` 已打开核对,无需改动**——只有 `RUN_EVENT_TYPE_MAX_LENGTH = 32` 与 `RUN_EVENT_CATEGORY_MAX_LENGTH = 16`,本次无新 event_type/category。
+- **测试**:`test_run_journal_constitution.py` 7 例绿;**Task 3 门禁 279 passed / 0 failed**(契约 + journal + run_journal + blocking-IO 锚点 + 四个宪法文件 + harness 边界 + checkpoint_mode + lead_agent_prompt + 三个 extension 测试);`ruff check` / `format --check` 干净。
+- **revert 证明**:把 first-time-only 守卫去掉(每次都带)→ `test_only_the_first_root_start_carries_the_constitution` 当场红(`assert 2 == 1`),撤销即绿。
+- **环境红(非本任务)**:`tests/blocking_io/` 全目录跑时另有 4 条红——3 条 `assert 438 == 384`(= `0o666 == 0o600`,Windows 上 `os.chmod` 只切只读位)与 1 条 `lark-cli is not installed`。**同一 chmod 签名今天已在 `test_wechat_channel` 上用受控 A/B 证明过是环境性**(见 [[project-env-test-failures]]),且都不碰本任务改过的文件。
 
 ## Task 4: worker 接线 + 降级路径
 

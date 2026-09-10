@@ -724,7 +724,7 @@ GET /api/threads/{thread_id}/runs/{run_id}/events?event_types=run.start
 - **唯一的"成本型"影响(不是逻辑影响,但要知道):`run_events` 的持久化体积每个 run 增加约 5.7 KB(§6.5.1 实测)。** 因为 `run.start` 是**会被写进 store** 的事件(memory / JSONL / DB 三种后端;多 worker 强制 db),所以这份快照不是只飞一次的 SSE 帧。影响面:① 每个 thread 的事件行总量变大(单 run 一次,不随 goal continuation 重复——§6.3 的守卫就是为此);② `GET /runs/{rid}/events` 的响应体略大(前端只读一次,§6.7);③ **不构成 schema/迁移影响**,也**不改变任何既有消费方**的解析(纯加性字段 + `additionalProperties: true`)。**可观测性**:真的超标时 `tools.truncated` / 顶层 `truncated` 会置位,不会静默膨胀。**MCP 重的部署**是唯一需要留意的场景(`deferred_names` 由第三方 server 决定长度,§6.5)。
 - 新增:`agents/constitution_record.py` + 其测试。
 - 修改:`agents/lead_agent/agent.py`(两个站点)、`runtime/journal.py`(setter + `on_chain_start`)、`runtime/runs/worker.py`(接线)、`runtime/events/catalog.py`、`contracts/run_event_stream_contract.json`、`backend/docs/RUN_EVENT_STREAM.md`、`backend/AGENTS.md`。
-- **契约同步 5 处**(`backend/AGENTS.md` 明文要求):producer 代码、`deerflow/constants.py`、`runtime/events/catalog.py`、`contracts/run_event_stream_contract.json`、`backend/docs/RUN_EVENT_STREAM.md`,加 `tests/test_run_event_stream_contract.py`。本 spec 不改 `constants.py` 的上限常量(无新 event_type),但需确认它无需变动。
+- **契约同步 5 处**(`backend/AGENTS.md` 明文要求):producer 代码、`deerflow/constants.py`、`runtime/events/catalog.py`、`contracts/run_event_stream_contract.json`、`backend/docs/RUN_EVENT_STREAM.md`,加 `tests/test_run_event_stream_contract.py`。本 spec 不改 `constants.py` 的上限常量(无新 event_type),**已于 Task 3 打开核对确认无需变动**——该文件只有 `RUN_EVENT_TYPE_MAX_LENGTH = 32` 与 `RUN_EVENT_CATEGORY_MAX_LENGTH = 16` 两个常量,本次既没有新 event_type 也没有新 category,`middleware:` 的 21 字符后缀上限亦不涉及(那张表沿用 §12 第 1 项的 `record_middleware`)。
 
 ## 10. 测试(TDD)
 

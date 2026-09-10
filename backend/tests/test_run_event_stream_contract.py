@@ -282,6 +282,49 @@ async def test_run_end_backend_storage_semantics_match_contract(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_run_start_constitution_payload_matches_contract():
+    """The constitution field is additive, and real payloads validate against it."""
+    contract_event = _contract_events()["run.start"]
+    assert contract_event["content_schema"]["required"] == ["chain"], "chain stays the only required key"
+    constitution_schema = contract_event["content_schema"]["properties"]["constitution"]
+    assert constitution_schema["additionalProperties"] is True
+
+    full = {
+        "schema_version": 1,
+        "stages": [{"key": "intake", "loop": False, "members": 2, "gates": 0, "handoff_gates": 0}],
+        "middlewares": [
+            {
+                "name": "ThreadDataMiddleware",
+                "stage": "intake",
+                "kind": "member",
+                "hooks": ["before_agent"],
+                "frequency": "once_per_run",
+            }
+        ],
+    }
+    # Degraded shape: detail dropped, counts kept, truncated flagged.
+    degraded = {"schema_version": 1, "stages": full["stages"], "middlewares": [], "truncated": True}
+
+    for record in (full, degraded):
+        store = MemoryRunEventStore()
+        journal = RunJournal("run-1", "thread-1", store, flush_threshold=100)
+        journal.set_constitution(record)
+        journal.on_chain_start(
+            {"name": "root"},
+            {},
+            run_id=uuid4(),
+            parent_run_id=None,
+            tags=["lead_agent"],
+            metadata={},
+        )
+        await journal.flush()
+
+        event = (await store.list_events("thread-1", "run-1", event_types=["run.start"]))[0]
+        assert event["content"]["constitution"] == record
+        _assert_fixed_event_valid(event, persisted=True)
+
+
+@pytest.mark.anyio
 async def test_run_journal_observed_events_exactly_match_its_catalog():
     store = MemoryRunEventStore()
     journal = RunJournal("run-1", "thread-1", store, flush_threshold=100)

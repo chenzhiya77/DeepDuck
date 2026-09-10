@@ -81,6 +81,33 @@ Current middleware tags are `guardrail`, `safety_termination`,
 new middleware tags are additive. Because the full event type is limited to 32
 characters and `middleware:` uses 11, a tag must contain 1-21 characters.
 
+### Run-Start Constitution Payload
+
+`run.start.content` always carries `chain`, and carries `constitution` on the
+**first** root chain start of a run.
+
+- **Why only the first**: a run emits one `run.start` per `astream` — the user
+  turn plus every hidden goal continuation re-trigger the root chain. The journal
+  attaches the snapshot to the first one only, so a run never persists the same
+  payload twice.
+- **Where it comes from**: the agent factory publishes it from the locals it just
+  used to build the graph (the mounted middleware chain, the mounted tool
+  catalogue, and the Layer-1 authorization diff). It is a record of *what was
+  assembled*, not a re-derivation from config.
+- **It can be absent**: no snapshot is published for embedded clients, for a
+  custom `agent_factory`, or for a run with no event store. `run.start` is then
+  byte-identical to what it was before this field existed.
+- **`stages[]` carries only stage keys and counts — never a middleware name.**
+  That is what lets an end-user view be a curated projection instead of a
+  filtered subset of internals.
+- **`category: "trace"`** keeps the payload out of message projections, so it
+  never enters the IM channel reply allowlist.
+- **Budget**: capped at `MAX_CONSTITUTION_BYTES` (16 KB) with a fixed degradation
+  order — drop the `tools.mounted` detail, then the `middlewares` detail, and
+  `tool_authorization.removed` last; `truncated: true` marks any of them. Tool
+  name lists are capped at `MAX_TOOL_NAMES` (200) each for `mounted` and
+  `deferred_names`.
+
 ### Opaque Run Outputs
 
 `run.end.content` is the root graph output and is intentionally opaque. Its

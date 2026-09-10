@@ -37,3 +37,13 @@ async def test_inline_tool_callback_does_not_block_event_loop() -> None:
     )
 
     assert journal.get_delivery_content()["paths"] == ["/mnt/user-data/outputs/report.md"]
+
+
+async def test_set_constitution_is_event_loop_safe() -> None:
+    """The worker pushes the snapshot in directly, so it must stay in-memory too."""
+    journal = RunJournal("run-1", "thread-1", MemoryRunEventStore(), flush_threshold=100)
+    record = {"schema_version": 1, "stages": [], "middlewares": []}
+
+    journal.set_constitution(record)
+
+    assert journal._constitution is record
