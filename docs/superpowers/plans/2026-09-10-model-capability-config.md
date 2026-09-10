@@ -45,8 +45,35 @@
 - Test: `backend/tests/test_models_config_api.py`（admin 403；ok 路径 mock 上游 `/models`；
   `model_present=false`；不可达 → `ok=false`+detail；validate 不落盘）
 
-- [ ] RED → Implement → GREEN + revert proof + ruff 双净。
-- [ ] Commit: `feat(gateway): models config validate endpoint (credential + model presence)`
+- [x] RED → Implement → GREEN + revert proof + ruff 双净。（新增 9 例：admin 403 / ok 命中（含 URL+Bearer 断言）/
+  `model_present=false`（回显可用 id）/ 不可达 / 上游 401（detail 不含 key）/ Anthropic 原生探测（`/v1/models` +
+  `x-api-key`+`anthropic-version`，无 Authorization）/ 未知 provider 422（零上游调用）/ 非 http 端点 422 / 不落盘
+  （文件字节不变 + `GET /api/models` 不含该模型）；`test_models_config_api.py` **18 绿**；回归
+  models_config+models_authorization+model_factory **167 绿**（唯一失败 `test_missing_models_file_falls_back_to_config_yaml`
+  为 T1 已复证的环境性——仓库根存在真实 `models_config.json` 且 cwd 上溯被发现，与本增量无关）；ruff check+format 双净。
+  revert proof：neuter ①admin 门控 ②`model_present` 恒真 ③Anthropic 头部→恒 Bearer ⇒ **3 红**
+  （requires_admin / reports_model_absent / uses_anthropic_native_probe）；恢复后全绿）
+- [x] Commit: `feat(gateway): models config validate endpoint (credential + model presence)`
+
+#### Task 2 交付纪要（2026-09-10）
+
+- **实现落点**：`app/gateway/routers/models.py` 新增 `POST /api/models/config/validate`（admin 门控、
+  `extra="forbid"`、**不落盘**），返回 `{ok, model_present, detail}`；辅助件 `_models_probe_url`（端点+路径拼接、
+  去重 `/models` 与 `/v1` 前缀）/ `_models_probe_headers`（Anthropic 原生 vs Bearer）/ `_extract_model_ids`
+  （`{"data":[{"id"}]}` 与裸字符串列表）/ `_probe_failure`。声明在 `/models/{model_name}` **之前**（沿用既有 NOTE 区）。
+- **决策（偏离原计划文字，已记）**：计划写「Bearer key 调 `GET {endpoint}/models`」，但 Anthropic 既不在
+  `/models` 列模型（实际是 `/v1/models`）也不用 Bearer（是 `x-api-key` + 必需 `anthropic-version`）——
+  照字面实现会让三个白名单 provider 之一**永久校验失败**、反而挡住合法 Anthropic 模型。故按 provider 分派
+  路径/头部（openai-compatible + deepseek 仍为 `/models` + Bearer），并加一例钉死。
+- **URL 拼接口径**：`endpoint` 视为**基址**，路径由服务端固定追加（不收自由路径）；同时容忍用户粘贴
+  `.../v1` 或完整 `.../models`（避免 `/v1/v1/models`、`/models/models`）。`endpoint` 必填，须 http(s)
+  （pydantic validator，非 http → 422 且不发起请求）。
+- **不泄漏**：`detail` 从不拼接 `api_key`；上游错误只回状态码 + 折叠空白后 ≤200 字符的响应片段（有断言）。
+- **有界**：`httpx.AsyncClient(timeout=10.0)`；网络类异常（`httpx.HTTPError`/`InvalidURL`）→ `ok=false` 而非 500。
+- **对 Task 3/4 的接口约束**：①前端 step1 需把「端点」设为**必填**（当前 add 弹窗允许留空，validate 不收空端点）；
+  ②body 字段名冻结为 `{provider, endpoint, api_key, model}`，响应 `{ok, model_present, detail}`；
+  ③`detail` 是英文技术文案，前端可自行用 i18n 文案覆盖展示。
+- **遗留（未动）**：Task 3（前端类型/客户端/curated 表）、Task 4（两步向导）、Task 5（输入栏/运行时）、Task 6（收官+文档+浏览器实测）。
 
 ## Task 3: 前端能力类型/客户端/curated 表（seam C node）
 

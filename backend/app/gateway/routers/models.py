@@ -1,8 +1,10 @@
 import asyncio
 import logging
+from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.gateway.authz import (
     _AuthorizationUnavailable,
@@ -212,6 +214,95 @@ class ModelsConfigResponse(BaseModel):
     models: list[ManagedModelResponse]
 
 
+#: Bounded probe budget (spec §5.3.2): an admin ringing a dead endpoint must get
+#: an answer, not a hung request.
+_VALIDATE_TIMEOUT_SECONDS = 10.0
+
+#: OpenAI-compatible providers (OpenAI / DeepSeek) list models at ``{base}/models``.
+_DEFAULT_MODELS_PATH = "/models"
+#: Anthropic is the one allowlisted provider that is neither OpenAI-compatible in
+#: path nor in auth: it lists models at a versioned ``/v1/models`` and expects
+#: ``x-api-key`` plus a required API-version header, so a Bearer probe would 401
+#: on a perfectly valid key.
+_ANTHROPIC_MODELS_PATH = "/v1/models"
+_ANTHROPIC_API_VERSION = "2023-06-01"
+
+#: How many upstream model ids to echo back when the requested one is missing.
+_MODELS_DETAIL_SAMPLE = 10
+#: Cap on the upstream error-body snippet included in ``detail``.
+_ERROR_BODY_SNIPPET = 200
+
+
+class ModelsConfigValidateRequest(BaseModel):
+    """Credential + model-presence probe submitted by the add-model wizard.
+
+    ``extra="forbid"`` for the same reason as :class:`ManagedModelInput`: this
+    route must not become a second, unvalidated way to describe a model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(..., description="Curated provider id from the allowlist.")
+    endpoint: str = Field(..., min_length=1, description="Provider base URL; http(s) only.")
+    api_key: str = Field(..., min_length=1, description="Key used for this probe only; never stored.")
+    model: str = Field(..., min_length=1, description="Provider-side model id whose presence is checked.")
+
+    @field_validator("endpoint")
+    @classmethod
+    def _require_http_url(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped.startswith(("http://", "https://")):
+            raise ValueError("Endpoint must be an http(s) URL.")
+        return stripped
+
+
+class ModelsConfigValidateResponse(BaseModel):
+    """Probe outcome; ``detail`` is human-readable and never contains the API key."""
+
+    ok: bool = Field(..., description="True when the endpoint answered with a model list.")
+    model_present: bool = Field(..., description="True when the requested model id appears in that list.")
+    detail: str = Field(..., description="Why the probe succeeded or failed.")
+
+
+def _models_probe_url(endpoint: str, models_path: str) -> str:
+    """Join the caller's endpoint with the provider's model-list path.
+
+    A caller that pasted a full list URL (``.../models``) or already included the
+    version segment (``.../v1``) must not get it twice.
+    """
+    base = endpoint.rstrip("/")
+    if base.endswith(models_path):
+        return base
+    version = models_path.rsplit("/", 1)[0]
+    if version and base.endswith(version):
+        base = base[: -len(version)]
+    return f"{base}{models_path}"
+
+
+def _models_probe_headers(provider: str, api_key: str) -> dict[str, str]:
+    if provider == "anthropic":
+        return {"x-api-key": api_key, "anthropic-version": _ANTHROPIC_API_VERSION}
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _extract_model_ids(payload: Any) -> list[str] | None:
+    """Read model ids from an OpenAI/Anthropic-style ``{"data": [{"id": ...}]}`` payload."""
+    entries = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        return None
+    ids: list[str] = []
+    for entry in entries:
+        if isinstance(entry, str):
+            ids.append(entry)
+        elif isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            ids.append(entry["id"])
+    return ids
+
+
+def _probe_failure(detail: str) -> ModelsConfigValidateResponse:
+    return ModelsConfigValidateResponse(ok=False, model_present=False, detail=detail)
+
+
 def _managed_response(
     *,
     name: str,
@@ -286,6 +377,58 @@ async def get_models_config(
             )
         )
     return ModelsConfigResponse(models=responses)
+
+
+@router.post(
+    "/models/config/validate",
+    response_model=ModelsConfigValidateResponse,
+    summary="Validate Model Credentials (admin)",
+    description="Probe the provider's model list with the submitted credentials. Nothing is persisted.",
+)
+async def validate_models_config(
+    request: Request,
+    body: ModelsConfigValidateRequest,
+) -> ModelsConfigValidateResponse:
+    """Credential + model-presence probe for the add-model wizard (spec §5.3.2).
+
+    The URL is the caller's endpoint plus a per-provider model-list path, so this
+    route cannot be turned into an arbitrary-URL fetcher. Admin-gated, bounded by
+    a short timeout, and purely observational: the key is used for this call only
+    and never persists, so the wizard can block step 2 before anything is stored.
+    """
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+
+    if resolve_provider_use(body.provider) is None:
+        allowed = ", ".join(sorted(PROVIDER_ALLOWLIST))
+        raise HTTPException(status_code=422, detail=f"Unknown provider '{body.provider}'. Allowed providers: {allowed}.")
+
+    models_path = _ANTHROPIC_MODELS_PATH if body.provider == "anthropic" else _DEFAULT_MODELS_PATH
+    url = _models_probe_url(body.endpoint, models_path)
+    headers = _models_probe_headers(body.provider, body.api_key)
+
+    try:
+        async with httpx.AsyncClient(timeout=_VALIDATE_TIMEOUT_SECONDS) as client:
+            response = await client.get(url, headers=headers)
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        return _probe_failure(f"Could not reach {url}: {exc}")
+
+    if response.status_code != 200:
+        detail = f"{url} returned HTTP {response.status_code}."
+        snippet = " ".join(response.text.split())[:_ERROR_BODY_SNIPPET]
+        return _probe_failure(f"{detail} {snippet}" if snippet else detail)
+
+    try:
+        model_ids = _extract_model_ids(response.json())
+    except ValueError:
+        model_ids = None
+    if model_ids is None:
+        return _probe_failure(f"{url} did not return a JSON model list.")
+
+    if body.model in model_ids:
+        return ModelsConfigValidateResponse(ok=True, model_present=True, detail=f"Model '{body.model}' is available.")
+    detail = f"Model '{body.model}' was not found on this endpoint."
+    available = ", ".join(model_ids[:_MODELS_DETAIL_SAMPLE])
+    return ModelsConfigValidateResponse(ok=True, model_present=False, detail=f"{detail} Available: {available}." if available else detail)
 
 
 @router.get(
