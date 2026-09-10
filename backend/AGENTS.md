@@ -25,6 +25,7 @@ deer-flow/
 ├── Makefile                    # Root commands (check, install, dev, stop)
 ├── config.yaml                 # Main application configuration
 ├── extensions_config.json      # MCP servers and skills configuration
+├── models_config.json          # API-writable UI model set (web Models settings)
 ├── backend/                    # Backend application (this directory)
 │   ├── Makefile               # Backend-only commands (dev, gateway, lint)
 │   ├── langgraph.json         # LangGraph Studio graph configuration
@@ -536,6 +537,34 @@ Configuration priority:
 
 Extensions are optional only in the fallback *search* mode (priority 3-4 above): `ExtensionsConfig.resolve_config_path()` returns `None` when neither an explicit `config_path` nor `DEER_FLOW_EXTENSIONS_CONFIG_PATH` is given and the search locations find nothing. An explicit `config_path` argument or a set `DEER_FLOW_EXTENSIONS_CONFIG_PATH` (priority 1-2) is an operator assertion that one particular file must be used, so a missing file in either of those modes raises `FileNotFoundError` instead — including when the file existed earlier and has since been deleted. The MCP tools cache's staleness check (`deerflow.mcp.cache._resolve_config_path`) is a narrow, deliberate exception to that rule: it catches that `FileNotFoundError` locally and treats it as "unconfigured" so a previously-valid config disappearing mid-run degrades the cache to serving its last-known-good tools instead of raising out of a per-request hot path (see the MCP System section below).
 
+**Models Configuration** (`models_config.json`):
+
+The web **Settings → Models** surface (admin-only) writes model providers and API keys to a
+*separate*, API-writable `models_config.json` in the project root — the model-config counterpart
+of `extensions_config.json`. `config.yaml` stays the operator-trusted source and is never written
+through Gateway APIs (it also carries the code-executing `plugins:` and `extensions.middlewares`
+lists). At load time `AppConfig.from_file()` merges the two model lists by `name`, UI file winning
+on collision; `AppConfig.is_ui_managed_model(name)` reports which models came from the UI file
+(tracked as a private attribute, never a `ModelConfig` field, so it cannot leak into provider
+constructor kwargs).
+
+Security boundary: the management API (`GET/PUT /api/models/config`, admin-gated) never accepts a
+free-text `use:` class path — that is a dynamic-import / code-execution vector of the same class as
+`plugins:`. Callers submit a curated *provider id* that a fixed allowlist
+(`deerflow.config.models_config.PROVIDER_ALLOWLIST`) maps to a concrete `use:` class path and the
+correct endpoint key (`base_url` for OpenAI-compatible / Anthropic, `api_base` for the patched
+DeepSeek adapter). API keys live in the gitignored file, are masked behind a sentinel on read, and
+a submitted sentinel means "keep the stored key". Writes are atomic and lock-serialized
+(`atomic_write_models_config` + `models_config_write_lock`), mirroring `extensions_config.json`.
+
+Resolution mirrors `extensions_config.json`: explicit `config_path`, then
+`DEER_FLOW_MODELS_CONFIG_PATH`, then a project-root / legacy search. The file is optional in search
+mode (most deployments configure models only in `config.yaml`), while an explicit path or a set env
+var is an operator assertion that raises `FileNotFoundError` when missing. The `get_app_config()`
+hot-reload signature covers `models_config.json` alongside `config.yaml`, so a web edit takes effect
+on the next message without a restart. `make doctor`'s "at least one model" check reads the merged
+set, and `make support-bundle` includes a redacted `models-summary.json`.
+
 ### Gateway API (`app/gateway/`)
 
 FastAPI application on port 8001 with health check at `GET /health`. Set `GATEWAY_ENABLE_DOCS=false` to disable `/docs`, `/redoc`, and `/openapi.json` in production (default: enabled).
@@ -551,7 +580,7 @@ Localhost persistence deliberately reads the direct request `Host` and ignores `
 | Router | Endpoints |
 |--------|-----------|
 | **Knowledge Bases** (`/api/knowledge-bases`) | RAG workspace (three retrieval paths over one shared chunk base: vector `hybrid_search`, graph `graph_search`, generated-wiki `wiki_search`): `GET /` `POST /` - list/create bases; `GET/PATCH/DELETE /{kb_id}` - detail/rename/delete (delete cascades chunks, vectors, graph triples, wiki entries); `GET/POST /{kb_id}/documents` - list/upload (202, async indexing worker: parse → structure-aware chunk → embed/graph extract, status polled via `status`/`progress_percent`/`error`); `DELETE /{kb_id}/documents/{doc_id}` - cascading document delete; `POST /{kb_id}/documents/{doc_id}/retry` - re-queue a failed document; `GET /{kb_id}/documents/{doc_id}/chunks` - paginated read-only chunk preview; `POST /{kb_id}/wiki/generate` - enqueue wiki generation. Requires the `rag:` config block (`qdrant_url`, `embedding_model`, `rerank_model`, `vlm_model`, `worker_concurrency`, `extract_rate_limit_rps`); the three retrieval tools are registered in the `rag` tool group and only assemble for the `rag` agent |
-| **Models** (`/api/models`) | `GET /` - list models; `GET /{name}` - model details |
+| **Models** (`/api/models`) | `GET /` - list models; `GET /{name}` - model details; `GET/PUT /config` - admin-only management of the UI-writable `models_config.json` set (curated provider id → fixed `use:` via allowlist, per-provider endpoint key, masked keys with sentinel-preserve, whole-collection PUT that never touches `config.yaml`) |
 | **Features** (`/api/features`) | `GET /` - report config-gated feature availability (`agents_api.enabled`, `browser_control.enabled`) for frontend UI gating |
 | **Console** (`/api/console`) | Read-only cross-thread observability for the current user (the data layer for an operations dashboard or external monitoring): `GET /stats` - headline counters (runs/threads/agents/tokens/cost); `GET /runs` - paginated run history joined with thread titles (per-run cost); `GET /usage` - zero-filled daily token series + per-model breakdown with spend. Queries `runs`/`threads_meta` directly as a reporting layer (no new `RunStore` methods); requires a SQL database backend — returns 503 on `database.backend: memory`. Real-cost estimation reads optional `models[*].pricing` (`currency`, `input_per_million`, `output_per_million`, `input_cache_hit_per_million`; `ModelConfig` is `extra="allow"`, so no schema change) and prices each run from its `token_usage_by_model` input/output split. Pricing is **cache-aware**: `RunJournal` accumulates prompt-cache hits from `usage_metadata.input_token_details.cache_read` into a sparse `cache_read_tokens` bucket key (also threaded through `SubagentTokenCollector` → `record_external_llm_usage_records`), and cache-hit input tokens are billed at `input_cache_hit_per_million` (omitted → billed at the miss price, a conservative upper bound). All priced models must use one currency; mixed currencies disable cost reporting and leave cost/currency fields null instead of producing invalid aggregates. Legacy rows fall back to run-level totals at `model_name`; unpriced models yield `cost: null` and cost fields are null when no pricing is configured |
 | **MCP** (`/api/mcp`) | `GET /config` - get config; `PUT /config` - replace the full config with whole-payload stdio validation; `PATCH /config` - toggle one server while preserving the raw extensions config and validating only an enabled target; both writes reload config and reset the process-local MCP cache |

@@ -138,6 +138,8 @@ That prompt is intended for coding agents. It tells the agent to clone the repo 
    contents.
 
    > **Advanced / manual configuration**: If you prefer to edit `config.yaml` directly, run `make config` instead to copy the full template. See `config.example.yaml` for the complete reference including CLI-backed providers (Codex CLI, Claude Code OAuth), OpenRouter, Responses API, subagent runtime caps such as `subagents.max_total_per_run`, and more.
+   
+   > **Configure models from the web UI**: Admins can add and edit model providers and API keys under **Settings → Models** without touching `config.yaml`. One credential can create several models at once — fill a shared provider, endpoint and API key, then list one or more Model IDs. UI-managed models are stored in a separate gitignored `models_config.json`, merged with any `config.yaml` models (the UI wins on a name clash), and take effect on the next message with no restart. Models defined in `config.yaml` appear read-only here. Only admins see this section, and the server enforces that gate; API keys are masked once saved.
 
    Optional per-model pricing must use one currency across all priced models.
    DeerFlow disables Console cost estimates when currencies are mixed rather
