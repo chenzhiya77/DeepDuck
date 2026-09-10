@@ -154,6 +154,35 @@ def test_context_window_never_reaches_the_provider_client(monkeypatch):
     assert "context_window" not in FakeChatModel.captured_kwargs
 
 
+def test_supported_capability_subsets_never_reach_the_provider_client(monkeypatch):
+    """The capability-subset fields (selectable window sizes / reasoning-effort
+    levels) are DeerFlow settings-UI + runtime-resolution metadata, not provider
+    constructor arguments — the same contract as ``context_window`` / ``pricing``
+    above. ``ModelConfig`` is ``extra="allow"``, so without an explicit ``model_dump``
+    exclusion they would be forwarded into the provider client and divert into
+    ``model_kwargs`` (rejected at request time)."""
+    model = ModelConfig(
+        name="cap-model",
+        display_name="Cap",
+        description=None,
+        use="langchain_openai:ChatOpenAI",
+        model="cap-model",
+        supported_context_windows=[200_000, 1_000_000],
+        context_window=200_000,
+        supported_reasoning_efforts=["low", "high"],
+        reasoning_effort="low",
+        supports_vision=False,
+    )
+    cfg = _make_app_config([model])
+    _patch_factory(monkeypatch, cfg)
+
+    FakeChatModel.captured_kwargs = {}
+    factory_module.create_chat_model(name="cap-model")
+
+    assert "supported_context_windows" not in FakeChatModel.captured_kwargs
+    assert "supported_reasoning_efforts" not in FakeChatModel.captured_kwargs
+
+
 def test_appends_all_tracing_callbacks(monkeypatch):
     cfg = _make_app_config([_make_model("alpha")])
     _patch_factory(monkeypatch, cfg)

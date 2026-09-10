@@ -15,8 +15,10 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from deerflow.config.app_config import AppConfig, get_app_config, reset_app_config
+from deerflow.config.model_config import CONTEXT_WINDOW_OPTIONS, ModelConfig
 from deerflow.config.models_config import (
     MASKED_API_KEY,
     ModelsConfig,
@@ -271,3 +273,100 @@ def test_models_config_from_file_validates_shape(tmp_path: Path, monkeypatch: py
 
     with pytest.raises(ValueError):
         ModelsConfig.from_file()
+
+
+# ---------------------------------------------------------------------------
+# structured capability fields (spec 2026-09-10 model-capability-config)
+#
+# Seam B pins the config-load contract for the new per-model capability fields:
+#   * supported_context_windows  — non-empty, de-duplicated, ascending subset of
+#     CONTEXT_WINDOW_OPTIONS; context_window (the default) must be a member.
+#   * supported_reasoning_efforts — non-empty, de-duplicated, enum-ordered subset
+#     of minimal/low/medium/high; reasoning_effort (the default) must be a member.
+#   * every field optional, so legacy config.yaml / models_config.json keep loading.
+# ---------------------------------------------------------------------------
+
+
+def _cap_model(**overrides) -> ModelConfig:
+    """Build a ``ModelConfig`` directly (no file round-trip) for capability validation."""
+    return ModelConfig(name="cap", use="langchain_openai:ChatOpenAI", model="cap", **overrides)
+
+
+def test_context_window_options_is_the_fixed_enum():
+    assert CONTEXT_WINDOW_OPTIONS == [200_000, 400_000, 1_000_000]
+
+
+def test_supported_context_windows_accepts_ascending_subset():
+    model = _cap_model(supported_context_windows=[200_000, 1_000_000])
+    assert model.supported_context_windows == [200_000, 1_000_000]
+
+
+@pytest.mark.parametrize(
+    ("windows", "match"),
+    [
+        ([128_000], "outside"),  # element not in CONTEXT_WINDOW_OPTIONS
+        ([200_000, 200_000], "duplicate"),  # de-dup required
+        ([400_000, 200_000], "ascending"),  # must be ascending
+        ([], "non-empty"),  # empty list not allowed when set
+    ],
+)
+def test_supported_context_windows_rejects_invalid(windows, match):
+    with pytest.raises(ValidationError, match=match):
+        _cap_model(supported_context_windows=windows)
+
+
+def test_context_window_default_must_be_in_supported_subset():
+    with pytest.raises(ValidationError, match="context_window"):
+        _cap_model(supported_context_windows=[200_000, 400_000], context_window=1_000_000)
+
+
+def test_context_window_default_in_subset_is_accepted():
+    model = _cap_model(supported_context_windows=[200_000, 400_000], context_window=400_000)
+    assert model.context_window == 400_000
+
+
+def test_supported_reasoning_efforts_accepts_ordered_subset():
+    model = _cap_model(supported_reasoning_efforts=["low", "high"])
+    assert model.supported_reasoning_efforts == ["low", "high"]
+
+
+@pytest.mark.parametrize(
+    ("efforts", "match"),
+    [
+        (["turbo"], "supported_reasoning_efforts"),  # outside the 4-level enum
+        (["low", "low"], "duplicate"),  # de-dup required
+        (["high", "low"], "order"),  # must follow minimal<low<medium<high
+        ([], "non-empty"),  # empty list not allowed when set
+    ],
+)
+def test_supported_reasoning_efforts_rejects_invalid(efforts, match):
+    with pytest.raises(ValidationError, match=match):
+        _cap_model(supported_reasoning_efforts=efforts)
+
+
+def test_reasoning_effort_default_must_be_in_supported_subset():
+    with pytest.raises(ValidationError, match="reasoning_effort"):
+        _cap_model(supported_reasoning_efforts=["low", "high"], reasoning_effort="minimal")
+
+
+def test_reasoning_effort_default_in_subset_is_accepted():
+    model = _cap_model(supported_reasoning_efforts=["minimal", "high"], reasoning_effort="high")
+    assert model.reasoning_effort == "high"
+
+
+def test_legacy_config_without_capability_fields_still_loads(env_paths):
+    """Backward compat: a config.yaml / models_config.json predating the capability
+    fields loads unchanged, and the new fields default to ``None`` ("subset not
+    declared") rather than being treated as corrupt."""
+    config_yaml, models_json = env_paths
+    _write_config_yaml(config_yaml, [_model("legacy", context_window=262_144)])
+    _write_models_json(models_json, [_model("legacy-ui")])
+
+    config = AppConfig.from_file(str(config_yaml))
+
+    merged = config.get_model_config("legacy")
+    assert merged is not None
+    assert merged.context_window == 262_144
+    assert merged.supported_context_windows is None
+    assert merged.supported_reasoning_efforts is None
+    assert merged.reasoning_effort is None
