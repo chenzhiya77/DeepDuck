@@ -125,8 +125,33 @@
 - Create: `frontend/src/core/rag/hooks.ts`（TanStack Query：`useRagConfig` / `useSaveRagConfig`）
 - Test: `frontend/tests/unit/rag/config-form.test.ts`（哨兵保留、空值不提交、embedding 变更判定、掩码回显）
 
-- [ ] RED → Implement → GREEN + `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): rag functional-model config client and form mapping`
+- [x] RED → Implement → GREEN + `pnpm check` 双净。（新增 `tests/unit/rag/config-form.test.ts` **15 例**：
+  表单初值（掩码回显 / 空视图兜底）/ 未改动且文件无所属 ⇒ **空 payload**（调用方须视为「无可保存」）/
+  **文件已拥有字段带出**（只改一个字段不会删掉文件里其它覆盖值）/ 文件拥有字段显式清空 ⇒ `""` /
+  operator 拥有字段新填 ⇒ 只提交该字段 / 未动的已存密钥提交哨兵 / 清空已存密钥 ⇒ `""` / 轮换密钥 /
+  env 与 unset 密钥不动则不提交、填了才提交 / 嵌套 `video` 带出+更新 / 提交前 trim /
+  `isEmbeddingChange` 判定（含 trim）/ 客户端 GET URL / PUT 方法+body / 403 ⇒ `isAdminRequired`。
+  `pnpm check`（eslint+tsc）**双净**（一轮修正：两处多余类型断言 + 一处改用可选链）。
+  revert proof：neuter ①文件所属字段带出 ②哨兵重提交 ③`isEmbeddingChange` ⇒ **恰好 3 红**（各对应一条），恢复后 15 绿）
+- [x] Commit: `feat(frontend): rag functional-model config client and form mapping`
+
+#### Task 3 交付纪要（2026-09-10）
+
+- **实现落点**：`core/rag/types.ts`（`RagConfigValues`/`RagVideoValues`/`RagConfigSource`/`RagConfigView`（GET+PUT 回包，
+  含 `config` + 展平 `sources`）/`RagConfigInput`（PUT body = 扁平对象））；`core/rag/api.ts`
+  （`loadRagConfig`/`saveRagConfig`，走 `@/core/api/fetcher`；`MASKED_RAG_SECRET`；`RagConfigRequestError` 带
+  `isAdminRequired`）；`core/rag/config-form.ts`（**纯函数** `formValuesFromConfig`/`buildRagConfigInput`/`isEmbeddingChange`
+  + `RagConfigFormValues`）；`core/rag/hooks.ts`（`useRagConfig({enabled})` + `useSaveRagConfig`，403 不重试、成功 invalidate）。
+- **关键语义（比计划一句话更细，已由用例钉住）**：后端 PUT 是**整对象替换**（省略即从文件移除、回退 config.yaml/env），
+  所以 payload 必须 = **「文件已拥有的字段带出」+「本次改动」**：
+  1. 不这么做的话，只改一个字段会把文件里其它覆盖值一并删掉（有专门用例）；
+  2. 未动的**已存密钥**必须回提交哨兵，否则会被删；
+  3. 清空：文件拥有的字段 ⇒ 提交 `""`（显式回退到 env/config.yaml）；operator 拥有的字段 ⇒ no-op（UI 本就无法"清空"一个非覆盖值）；
+  4. **空 payload = 什么都没改**，调用方必须据此禁用保存（一次空 PUT 会把整个文件清空）——Task 4 的保存按钮按此处理；
+  5. operator 拥有的字段只有被真正覆盖时才写进文件，避免"保存一次就把今天的 config.yaml 值冻结成覆盖"、此后操作员改 config.yaml 失效。
+- **命名/边界**：GET 形状叫 `RagConfigView`（含 `config` + `sources`）；错误类 `RagConfigRequestError` 与 models 的
+  `ModelsConfigRequestError` **同形但独立**（两个配置域互不依赖），403 供视图渲染拒绝态而非 toast。
+- **遗留（未动）**：Task 4（设置页视图切换 + 表单 + i18n）、Task 5（收官）。
 
 ## Task 4: 设置页「模型」分区视图切换 + 功能模型表单 + i18n（seam C dom）
 
