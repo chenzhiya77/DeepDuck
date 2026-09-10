@@ -36,6 +36,11 @@ export function createBuildEnvironment(
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendDir = path.resolve(scriptDir, "..");
+// Invoke Next's own CLI through Node rather than `pnpm exec next`. A bare
+// `pnpm` cannot be spawned on Windows (only a .cmd shim is on PATH and Node
+// does not resolve PATHEXT without a shell), and going through a shell would
+// make the kill() on the server below hit cmd.exe instead of the real process.
+const NEXT_CLI = path.join(frontendDir, "node_modules", "next", "dist", "bin", "next");
 
 export function extractAssetPaths(html) {
   const assets = { css: [], js: [] };
@@ -158,16 +163,15 @@ async function measureRoute(baseUrl, route) {
 
 async function measureBuild(routes, staticWebsiteOnly) {
   const env = createBuildEnvironment(staticWebsiteOnly);
-  await run("pnpm", ["exec", "next", "build"], {
+  await run(process.execPath, [NEXT_CLI, "build"], {
     env,
   });
 
   const port = await getFreePort();
   const server = spawn(
-    "pnpm",
+    process.execPath,
     [
-      "exec",
-      "next",
+      NEXT_CLI,
       "start",
       "--hostname",
       "127.0.0.1",
