@@ -234,15 +234,36 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 ## Task 7: 浏览器验证阶梯(**不可用单测替代**)
 
-- [ ] **Step 1:** `pnpm dev`,开一个线程。验证 `idle` 播放。
-- [ ] **Step 2(核心验收):** 触发一个 `ask_clarification`(让 agent 需要追问),验证鹦鹉切到 **`wait`**;再发一条普通消息跑完,验证鹦鹉播 **`done` 一次性动画后回 `idle`**(第 1 期 `done` 无帧 → 应回落到 `idle`,这正是要验的回落行为)。**两者视觉上必须分得开** —— 这是本期唯一交付判断。
-- [ ] **Step 3:** 触发一个 `error`(断网或配错模型),验证 `error` 态;确认 `error` 压掉 `done`(spec §5.3 不变量 1)。
-- [ ] **Step 4:** 在有未回答的 clarification card 时直接发新消息开新 run,验证鹦鹉走 `work`/`think` 而非 `wait`(spec §5.3 不变量 2)。
-- [ ] **Step 5:** 开右侧 artifacts/sidecar 面板并把分隔条拖到最窄,验证窄面板隐藏生效、且**拖拽手感无变化**(没碰到 ResizablePanelGroup 约束)。
-- [ ] **Step 6:** 系统开启「减少动态效果」,验证停在静态帧。关掉设置开关,验证 DOM 里无残留节点。
-- [ ] **Step 7:** 切线程再切回,验证 fatigue 归零、`greet` 不重放。
-- [ ] **Step 8:** `cd frontend && pnpm perf:check` 跑一次确认预算未破。
-- [ ] **Step 9(自由放置):** Alt+拖拽鹦鹉到新位置,刷新页面验证持久化;拖窄 sidecar 验证盒子被 clamp 在可见区内不出屏;不按 Alt 在鹦鹉位置按住拖动,验证不起拖且点击穿透到下方内容;**Alt+按住但位移 < 4px 后松手,验证鹦鹉没动**(阈值生效);**把鹦鹉拖到一条消息链接上松手,验证链接没有被点开**(拖后吞 click 生效);**拖拽全程验证鹦鹉仍播当前态、不切态**(§10.1 拖拽不进状态机)。
+- [x] **Step 1:** `pnpm dev`,开一个线程。验证 `idle` 播放。— **通过**(见下「已验」)。
+- [x] **Step 2(核心验收):** 触发一个 `ask_clarification`(让 agent 需要追问),验证鹦鹉切到 **`wait`**;再发一条普通消息跑完,验证鹦鹉播 **`done` 一次性动画后回 `idle`**(第 1 期 `done` 无帧 → 应回落到 `idle`,这正是要验的回落行为)。**两者视觉上必须分得开** —— 这是本期唯一交付判断。— **通过**(琥珀 `WAIT 2` 与蓝 `IDLE 1/2` 视觉可分,截图 + 程序化序列双证)。
+- [ ] **Step 3:** 触发一个 `error`(断网或配错模型),验证 `error` 态;确认 `error` 压掉 `done`(spec §5.3 不变量 1)。— **未验**:需要断网或改用户模型配置,本机没做。
+- [x] **Step 4:** 在有未回答的 clarification card 时直接发新消息开新 run,验证鹦鹉走 `work`/`think` 而非 `wait`(spec §5.3 不变量 2)。— **通过**(窗口内从未出现 `wait`);局限见下。
+- [x] **Step 5:** 开右侧 artifacts/sidecar 面板并把分隔条拖到最窄,验证窄面板隐藏生效、且**拖拽手感无变化**(没碰到 ResizablePanelGroup 约束)。— **隐藏机制通过**(`#chat` 压到 400px ⇒ `.pet-shell` `display:none`,恢复即 `block`);**「拖分隔条手感」未验**:该会话没有可开的 sidecar 内容,分隔条处于 `disabled`,无法真拖。
+- [x] **Step 6:** 系统开启「减少动态效果」,验证停在静态帧。关掉设置开关,验证 DOM 里无残留节点。— **开关关闭通过**(`pet.enabled=false` 刷新后 `.pet-shell`/`.pet-sprite` 各 0 节点);**「减少动态效果」未在浏览器验**:browser-use 未暴露 CDP `Emulation.setEmulatedMedia`,改不了该媒体特性,已由 DOM 测试覆盖(无 animation + 停第 0 帧)。
+- [ ] **Step 7:** 切线程再切回,验证 fatigue 归零、`greet` 不重放。— **第 1 期不可观测**:无 `done`/`greet` 帧、疲劳闸门关着,只有结构性就位(见 Task 5 纪要的未覆盖项)。
+- [ ] **Step 8:** `cd frontend && pnpm perf:check` 跑一次确认预算未破。— **交给用户终端**:脚本内部 `spawn("pnpm")`(`measure-route-assets.mjs:161`),Windows 的 Node 在 `shell:false` 下不解析 `.CMD`,本机只有 `pnpm`/`pnpm.CMD`/`pnpm.ps1` ⇒ 我这边必然 ENOENT。命令已给出,待回执。
+- [x] **Step 9(自由放置):** Alt+拖拽鹦鹉到新位置,刷新页面验证持久化;拖窄 sidecar 验证盒子被 clamp 在可见区内不出屏;不按 Alt 在鹦鹉位置按住拖动,验证不起拖且点击穿透到下方内容;**Alt+按住但位移 < 4px 后松手,验证鹦鹉没动**(阈值生效);**把鹦鹉拖到一条消息链接上松手,验证链接没有被点开**(拖后吞 click 生效);**拖拽全程验证鹦鹉仍播当前态、不切态**(§10.1 拖拽不进状态机)。— **六项全通过**(clamp 一项用「越界拖」代替「拖窄 sidecar」,见下)。
+
+**Task 7 交付纪要(2026-09-10,自动化浏览器视口 842px)**
+
+**已验(真实应用内,程序化取证;截图见交付汇报)**
+- **Step 1 `idle` 播放**:`#chat` 的 `container-type: inline-size` 生效;`.pet-shell`/`.pet-sprite` 均 **96×96**,位于 `right≈12 / top=56`;`pointer-events: none`、`aria-hidden="true"`;背景 `url(/pet/parrot/idle.webp)`、`background-size: 200% 100%`;动画 `pet-play 0.25s steps(2, jump-none) infinite`;**两次采样背景位置 `100% → 0%` 证明真在播放**(不是冻结在第 0 帧)。
+- **Step 2 核心验收**:发一条要求 `ask_clarification` 的指令 → 精灵序列 **`idle.webp → wait.webp`**,与「需要你的协助」卡片同时出现(14s);截图存证琥珀 **`WAIT 2`**。随后卡片未答时发普通消息 → 卡片转「**已回答**」,窗口内**只出现 `idle.webp`、从未回到 `wait`**,跑完仍 `idle` ⇒ **`done` 无帧时回落 `idle` 成立**。两者视觉可分(琥珀 WAIT vs 蓝 IDLE)= **本期唯一交付判断通过**。
+- **Step 4 不变量 2**:同一次发送即「未回答请求 + 新 run 在飞」,观测为 `idle`(相位 1 下 work/think 都回落 idle)而非 `wait`。
+- **Step 6 开关关闭**:`pet.enabled=false` + 刷新 ⇒ `.pet-shell` 与 `.pet-sprite` **各 0 个节点**(无残留);恢复后 1 个、位置回默认 12/56。
+- **Step 9 六项**:① Alt+拖 → 存 `{right:72,top:96}`(= 12+60 / 56+40,方向符号正确),**刷新后渲染仍是 72/96**(持久化);② 越界拖 → 存原始 `right:-2108` 但**渲染被 clamp 在面板内**(右下贴边、`insidePanel:true`),**clamp 不回写设置**;③ 不按 Alt 拖 → offset 不变(点击穿透);④ Alt+2px → offset 不变(4px 阈值);⑤ 拖后首次 click 送达 **0** 次、下一次 **1** 次(吞 click);⑥ 拖拽中途 5 次采样**始终 `idle.webp`**(手势不进状态机)。
+- **Step 5 隐藏机制**:`#chat` 内联压到 400px ⇒ `.pet-shell` `display:none`;撤掉即 `block` —— 说明 Task 6 的容器上下文 + `globals.css` 的 `@container (max-width: 480px)` 规则在真实应用内成立。
+
+**未验(逐条给出原因,不含推测)**
+- **Step 3 `error` 态**:要断网或改用户模型配置,本机没做 ⇒ **不验**。`error` 压 `done` 因此也只在 node 层有测试(`state.test.ts` 不变量 1)。
+- **Step 5「拖分隔条手感无变化」**:该会话无可开的 sidecar 内容,`ResizableHandle` 处于 `disabled` ⇒ 无法真拖;只验了隐藏机制本身。**Task 0 Step 2 已证**该挂法不改变布局(759→759、子节点矩形逐字节相同),但「真拖手感」仍属未验。
+- **Step 6「系统减少动态效果」**:browser-use 未暴露 CDP 媒体特性模拟 ⇒ 浏览器侧无法验;DOM 测试覆盖了同一行为。
+- **Step 7**:第 1 期无 `done`/`greet` 帧、疲劳闸门关闭 ⇒ 效果不可观测。
+- **Step 8**:见上,环境限制。
+
+**两个环境事实(供后来者)**
+1. **自动化浏览器视口必须 ≥768px**。否则 `(max-width: 767px)` 命中 → `useIsMobile()` 为真 → ChatBox 走 **mobile 分支**,而第 1 期按 §10 裁决只在桌面分支挂载 ⇒ DOM 里找不到 `.pet-shell` **是正确行为,不是缺陷**。本次实测:初看 661px(找不到宠物)、Task 0 时为 808px,用户拉宽到 842px 后才可测。
+2. **该浏览器里合成输入对编辑器不可靠**:`value` setter + `input` 事件 + 点击 `Submit` 只成功过一次,之后同一手法与 `dispatchEvent(Enter)`、`press_key("Enter")` 均未能提交;需改用原生 `fill`(要从 snapshot 取 uid)。因此 Step 2/4 的第二次 run 是靠**第一次成功发送**的窗口完成的。
 
 ## Task 8: 文档同步(仓库强制约定)
 
