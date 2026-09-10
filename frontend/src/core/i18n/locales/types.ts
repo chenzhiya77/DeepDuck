@@ -1418,6 +1418,7 @@ export interface Translations {
       tools: string;
       skills: string;
       notification: string;
+      pet: string;
       about: string;
     };
     memory: {
@@ -1691,6 +1692,12 @@ export interface Translations {
       testBody: string;
       notSupported: string;
       disableNotification: string;
+    };
+    pet: {
+      title: string;
+      description: string;
+      dragHint: string;
+      resetPosition: string;
     };
     account: {
       profileTitle: string;

@@ -187,12 +187,34 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **Files:** Create `frontend/src/components/workspace/pet/agent-pet.tsx`;Modify `frontend/src/core/settings/local.ts`
 
-- [ ] **Step 1:** `local.ts` 的 `LocalSettings` 类型与 `DEFAULT_LOCAL_SETTINGS` 各加一节 `pet: { enabled: true }`,形状照抄 `notification`(`:5-7`)。**不写迁移**(按节 merge 自动补默认)。
-- [ ] **Step 2:** `agent-pet.tsx`:读 `useThread()`(`components/workspace/messages/context.ts`),按 spec §12 把两个消息扫描 **memo 在 `messages.length` 上**;`hasOpenHumanInputRequest` 的调用**逐字照抄** `page.tsx:262-269`(同 `useMemo` 键 `[thread.messages]`、同过滤器 `!isHiddenFromUIMessage`)。
-- [ ] **Step 3:** 组件内 ref:`wasLoading`(下降沿检测)、`greet` 一次性触发、`elapsedMs` 起点(spec §15 开放项 6:记「首次观察到 `isLoading === true`」的时刻)。**跨线程重置**:以 `threadId` 为键把 fatigue / wasLoading 归零,`greet` 不重放(spec §11 裁决)。
-- [ ] **Step 4:** 开关关掉时直接返回 `null`(不留 DOM 节点,与 `notification.enabled` 行为一致)。
-- [ ] **Step 5(自由放置,spec §10.1):** 设置节加 `offset: { right: 12, top: 56 }`;`core/pet/placement.ts` 实现 `clampOffset` 纯函数 + node 测试;`agent-pet.tsx` 实现 Alt+拖拽:window 级 `pointerdown` 判断 Alt 且指针落在宠物盒矩形内(矩形由 offset + displaySize 算出,**不给宠物 pointer-events**),`pointermove` 更新 offset、`pointerup` 写回 `pet.offset`;渲染时 clamp 到面板可见区。设置行加提示文案与重置位置按钮。手势三件套照抄 Qoder 实测值:**位移 > 4px 才起拖**(Alt+单击不算拖拽)、记 `pointerId` 并 `setPointerCapture`(`pointerup` 释放、`pointercancel` 同样收尾)、**起过拖的手势吞掉紧跟的那次 click**(否则松手会点开底下的消息链接)。
-- [ ] **Step 6:** `pnpm check`。
+- [x] **Step 1:** `local.ts` 的 `LocalSettings` 类型与 `DEFAULT_LOCAL_SETTINGS` 各加一节 `pet: { enabled: true }`,形状照抄 `notification`(`:5-7`)。**不写迁移**(按节 merge 自动补默认)。
+- [x] **Step 2:** `agent-pet.tsx`:读 `useThread()`(`components/workspace/messages/context.ts`),按 spec §12 把两个消息扫描 **memo 在 `messages.length` 上**;`hasOpenHumanInputRequest` 的调用**逐字照抄** `page.tsx:262-269`(同 `useMemo` 键 `[thread.messages]`、同过滤器 `!isHiddenFromUIMessage`)。
+- [x] **Step 3:** 组件内 ref:`wasLoading`(下降沿检测)、`greet` 一次性触发、`elapsedMs` 起点(spec §15 开放项 6:记「首次观察到 `isLoading === true`」的时刻)。**跨线程重置**:以 `threadId` 为键把 fatigue / wasLoading 归零,`greet` 不重放(spec §11 裁决)。
+- [x] **Step 4:** 开关关掉时直接返回 `null`(不留 DOM 节点,与 `notification.enabled` 行为一致)。
+- [x] **Step 5(自由放置,spec §10.1):** 设置节加 `offset: { right: 12, top: 56 }`;`core/pet/placement.ts` 实现 `clampOffset` 纯函数 + node 测试;`agent-pet.tsx` 实现 Alt+拖拽:window 级 `pointerdown` 判断 Alt 且指针落在宠物盒矩形内(矩形由 offset + displaySize 算出,**不给宠物 pointer-events**),`pointermove` 更新 offset、`pointerup` 写回 `pet.offset`;渲染时 clamp 到面板可见区。设置行加提示文案与重置位置按钮。手势三件套照抄 Qoder 实测值:**位移 > 4px 才起拖**(Alt+单击不算拖拽)、记 `pointerId` 并 `setPointerCapture`(`pointerup` 释放、`pointercancel` 同样收尾)、**起过拖的手势吞掉紧跟的那次 click**(否则松手会点开底下的消息链接)。
+- [x] **Step 6:** `pnpm check`。
+
+**Task 5 交付纪要(2026-09-10)**
+
+- **产出(10 个文件)**:新建 `core/pet/placement.ts`、`components/workspace/pet/agent-pet.tsx`、`components/workspace/settings/pet-settings-page.tsx`、`tests/unit/core/pet/placement.test.ts`、`tests/unit/components/workspace/pet/agent-pet.dom.test.tsx`;改 `core/settings/local.ts`(pet 节 + **嵌套 offset 的 merge** —— 这才是「无需迁移」的依据)、`settings-dialog.tsx`(dynamic + union + nav + render + useMemo 依赖)、`styles/globals.css`(`.pet-shell` 窄面板隐藏)、i18n `en-US.ts` / `zh-CN.ts` / `types.ts`(三处都要,漏 `types.ts` 会 tsc 失败)。
+- **RED→GREEN**:`placement.test.ts` RED = 模块不存在 → 8 例;`agent-pet.dom.test.tsx` 首轮 6 例(其中一条因我把「未拖拽时 localStorage 为空」写成「等于默认值」而假红,已改成先播种设置再断言未被改写)→ 最终 **7 例**(中途补的见下)。
+- **revert proof(6 次 neuter)**:
+
+  | # | 被 neuter 的行为 | 改动 | 转红 |
+  |---|---|---|---|
+  | S1 | 开关关闭不渲染 | 守卫改恒假 | 恰好 1 条 |
+  | S2 | 必须按 Alt 才起拖 | 去掉 `altKey` 判断 | 恰好 1 条 |
+  | S3 | 4px 起拖阈值 | 阈值改 0 | 恰好 1 条 |
+  | S4 | 拖后吞掉那次 click | 不再置吞点标志 | 恰好 1 条 |
+  | S5 | 松手写回设置 | 删 `setSettings` | 恰好 1 条 |
+  | S6 | `clampOffset` 真的夹取 | 改成恒等函数 | placement 5 条(两条「保持不变」的用例仍绿,恒等函数恰好满足它们,形态正确) |
+
+- **当场补的有牙用例**:S4 的 neuter 让我发现「拖后吞 click」虽然实现了却**没有任何测试**——补了一条 DOM 用例(拖拽后紧跟的 click 不得到达下层、无拖拽的 click 照常送达),再 neuter 才转红。计划把这条只排在 Task 7 的浏览器验收里,但它是纯事件逻辑,DOM 测试更便宜。
+- **同一纪律下的反向决定**:我一度加了一条「跨线程重置」的 DOM 用例,写好就发现它**没有牙** —— 真 manifest 第 1 期没有 `done`/`greet` 帧,闩锁在或不在渲染出的都是 `idle.webp`,断言两边相同。已删除,缺口记在下方未覆盖项。
+- **计划未命名的必要改动(4 处)**:① **两条相位闸门常量** `FATIGUE_ENABLED` / `WORK_KIND_ENABLED`(§18 要求第 1 期「两条轴写好但不生效」,而 Task 5 只说了要接线);② `greet` 只在 `base === "idle"` 时注入,避免「在等你」或报错时还挥手;③ 可见区用 **ResizeObserver**(计划说「渲染时 clamp」,但纯渲染时测量在面板被拖窄时不会重算,Task 7 Step 5 会验不过);④ `.pet-shell` 的 `@container (max-width: 480px)` 规则写在 `globals.css`(容器上下文由 Task 6 在 `div#chat` 上提供),没用 Tailwind 变体语法以免押注其写法 —— Task 7 用浏览器确认。
+- **给 Task 6 的三个对接事实**:① `ChatBox` **已经**接收 `threadId: string`(`chat-box.tsx:78`),挂载直接 `<AgentPet threadId={threadId} />` 即可,§11 的跨线程键不用另找来源;② 窄面板隐藏需要 Task 6 在 `div#chat` 上加 `[container-type:inline-size]`(Task 0 Step 2 已实测该挂法布局零变化);③ 设置 store 的 `baseSettings` 是**模块级缓存**,只清 localStorage 不会复位(DOM 测试的 afterEach 已按此处理,写新测试时注意)。
+- **门禁(如实)**:我的路径 `eslint` 干净、`tsc` 无错;但仓库级 `pnpm check` **当前是红的,原因不在本线** —— 并发会话的 `src/core/rag/config-form.ts` 报 3 条 eslint(`no-unnecessary-type-assertion` ×2、`prefer-optional-chain` ×1)与 2 条 tsc(第 154/159 行 `string` 不能赋给 `"funasr" | "whisper" | null | undefined`),来自提交 `074b783c`。按纪律我没有改他们的文件;等他们那批落地后 `pnpm check` 自会转绿。宠物侧本轮实跑:**node 108 例 + DOM 11 例全绿**。
+- **未覆盖项(诚实记录)**:① **跨线程重置无测试**:行为已实现(以 `threadId` 为键清 done 闩锁与计时起点、greet 不重放),但它的可观测效果要等第 2 期有 `done`/`greet` 帧才出现,第 1 期写了也是没有牙的断言(见上);Task 7 Step 7 的浏览器验收同样受此限制,需在有帧之后才真正生效。② **`elapsedMs` 无 ticker**:在渲染时按 `Date.now() - 起点` 计算,故一次安静的长 run(长时间无流事件)里时间驱动的疲劳不会自己推进,要等下一次渲染 —— 第 1 期疲劳闸门关着,影响为零,第 2 期打开时需要补一个低频 ticker 或接受该滞后。③ 疲劳/workKind 两条轴按 §18 恒为 0 / 空数组,尚未生效(第 2、3 期的常量开关)。④ `setPointerCapture` 在 happy-dom 下不可用,该句由 `?.` 兜底;真实指针捕获行为要 Task 7 在浏览器里验。
 
 ## Task 6: 挂载
 

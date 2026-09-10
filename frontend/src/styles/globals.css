@@ -101,6 +101,16 @@
   animation-name: pet-play;
 }
 
+/* 窄面板不渲染(spec §10)。容器上下文由挂载点 `div#chat` 提供 —— 既有那个
+   挂在 ResizablePanelGroup 上,量的是 chat + 侧面板的总宽,是错的盒子
+   (2026-09-10 实测:chat 压到 400 时 group 仍 760)。阈值 480 为**闭区间**:
+   同一批实测 481 显示 / 480 隐藏。 */
+@container (max-width: 480px) {
+  .pet-shell {
+    display: none;
+  }
+}
+
 @theme {
   --font-sans:
     ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",

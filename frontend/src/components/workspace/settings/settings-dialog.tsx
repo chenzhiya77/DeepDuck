@@ -7,6 +7,7 @@ import {
   InfoIcon,
   BrainIcon,
   PaletteIcon,
+  PawPrintIcon,
   PlugZapIcon,
   SparklesIcon,
   UserIcon,
@@ -83,6 +84,11 @@ const NotificationSettingsPage = dynamic(
     ),
   { loading: SettingsPageLoading },
 );
+const PetSettingsPage = dynamic(
+  () =>
+    import("./pet-settings-page").then((module) => module.PetSettingsPage),
+  { loading: SettingsPageLoading },
+);
 const SkillSettingsPage = dynamic(
   () =>
     import("./skill-settings-page").then((module) => module.SkillSettingsPage),
@@ -109,6 +115,7 @@ export type SettingsSection =
   | "tools"
   | "skills"
   | "notification"
+  | "pet"
   | "about";
 
 type SettingsDialogProps = React.ComponentProps<typeof Dialog> & {
@@ -147,6 +154,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
         id: "notification",
         label: t.settings.sections.notification,
         icon: BellIcon,
+      },
+      {
+        id: "pet",
+        label: t.settings.sections.pet,
+        icon: PawPrintIcon,
       },
       {
         id: "channels",
@@ -188,6 +200,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       t.settings.sections.tools,
       t.settings.sections.skills,
       t.settings.sections.notification,
+      t.settings.sections.pet,
       t.settings.sections.about,
       isAdmin,
     ],
@@ -244,6 +257,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 />
               )}
               {activeSection === "notification" && <NotificationSettingsPage />}
+              {activeSection === "pet" && <PetSettingsPage />}
               {activeSection === "channels" && <ChannelsSettingsPage />}
               {activeSection === "integrations" && <IntegrationsSettingsPage />}
               {activeSection === "models" && <ModelsSettingsPage />}

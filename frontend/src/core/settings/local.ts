@@ -5,6 +5,10 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   notification: {
     enabled: true,
   },
+  pet: {
+    enabled: true,
+    offset: { right: 12, top: 56 },
+  },
   tokenUsage: {
     headerTotal: true,
     inlineMode: "per_turn",
@@ -66,6 +70,11 @@ export interface LocalSettings {
   notification: {
     enabled: boolean;
   };
+  pet: {
+    enabled: boolean;
+    /** 宠物盒相对聊天面板右上锚点的偏移(CSS px),§10.1 自由放置 */
+    offset: { right: number; top: number };
+  };
   tokenUsage: {
     headerTotal: boolean;
     inlineMode: TokenUsageInlineMode;
@@ -99,6 +108,14 @@ function mergeLocalSettings(settings?: Partial<LocalSettings>): LocalSettings {
     notification: {
       ...DEFAULT_LOCAL_SETTINGS.notification,
       ...settings?.notification,
+    },
+    pet: {
+      ...DEFAULT_LOCAL_SETTINGS.pet,
+      ...settings?.pet,
+      offset: {
+        ...DEFAULT_LOCAL_SETTINGS.pet.offset,
+        ...settings?.pet?.offset,
+      },
     },
   };
 }

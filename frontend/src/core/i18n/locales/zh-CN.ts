@@ -1408,6 +1408,7 @@ export const zhCN: Translations = {
       tools: "工具",
       skills: "技能",
       notification: "通知",
+      pet: "宠物",
       about: "关于",
     },
     memory: {
@@ -1775,6 +1776,13 @@ export const zhCN: Translations = {
       testBody: "这是一条测试通知。",
       notSupported: "当前浏览器不支持通知功能。",
       disableNotification: "关闭通知",
+    },
+    pet: {
+      title: "宠物",
+      description:
+        "聊天面板角落的小装饰，只反映当前 run 在做什么。它不发送任何内容，也不碰对话本身。",
+      dragHint: "按住 Alt 拖动可以挪动它；不按 Alt 时的点击会直接穿透到下面的内容。",
+      resetPosition: "重置位置",
     },
     account: {
       profileTitle: "个人信息",

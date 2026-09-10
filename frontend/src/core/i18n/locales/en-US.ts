@@ -1474,6 +1474,7 @@ export const enUS: Translations = {
       tools: "Tools",
       skills: "Skills",
       notification: "Notification",
+      pet: "Pet",
       about: "About",
     },
     memory: {
@@ -1862,6 +1863,14 @@ export const enUS: Translations = {
       testBody: "This is a test notification.",
       notSupported: "Your browser does not support notifications.",
       disableNotification: "Disable notification",
+    },
+    pet: {
+      title: "Pet",
+      description:
+        "A small companion in the corner of the chat panel that mirrors what the current run is doing. It never sends anything and never touches the conversation.",
+      dragHint:
+        "Hold Alt and drag to move it. A click without Alt passes straight through to the content underneath.",
+      resetPosition: "Reset position",
     },
     account: {
       profileTitle: "Profile",
