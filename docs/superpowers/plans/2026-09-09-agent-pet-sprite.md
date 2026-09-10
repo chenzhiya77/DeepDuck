@@ -220,9 +220,17 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **Files:** Modify `frontend/src/components/workspace/chats/chat-box.tsx`
 
-- [ ] **Step 1:** 在 `:413` 的 `div#chat` 内、`{children}` 之后加 `<AgentPet />`,定位 `absolute z-20 pointer-events-none`,`right/top` 读设置 `pet.offset`(渲染时 clamp,默认 12/56 即 right-3 top-14,spec §10.1)+ Task 0 Step 2 裁定的窄面板隐藏方式。**只改桌面分支,mobile 分支(`:349-353`)不动**(spec §10 裁决)。
-- [ ] **Step 2:** 确认没有触碰 `pinnedContentWidth` / `animatingRightPanel` / `handlePanelGroupLayoutChanged` / `handleSidePanelResize` 任何一处(spec §2.6 已核实四条全在侧面板)。
-- [ ] **Step 3:** `pnpm check` + `pnpm test` 全量。
+- [x] **Step 1:** 在 `:413` 的 `div#chat` 内、`{children}` 之后加 `<AgentPet />`,定位 `absolute z-20 pointer-events-none`,`right/top` 读设置 `pet.offset`(渲染时 clamp,默认 12/56 即 right-3 top-14,spec §10.1)+ Task 0 Step 2 裁定的窄面板隐藏方式。**只改桌面分支,mobile 分支(`:349-353`)不动**(spec §10 裁决)。
+- [x] **Step 2:** 确认没有触碰 `pinnedContentWidth` / `animatingRightPanel` / `handlePanelGroupLayoutChanged` / `handleSidePanelResize` 任何一处(spec §2.6 已核实四条全在侧面板)。
+- [x] **Step 3:** `pnpm check` + `pnpm test` 全量。
+
+**Task 6 交付纪要(2026-09-10)**
+
+- **产出**:只有 `chat-box.tsx` 一个文件、**两个 hunk**:① `div#chat` 的 className 加 `[container-type:inline-size]`(并把该 div 展开成多行);② `{children}` 之后挂 `<AgentPet threadId={threadId} />`。定位、`right/top`、clamp、窄面板隐藏类都已在 Task 5 的 `agent-pet.tsx`/`globals.css` 里,挂载点只决定「放进哪个盒子」—— 所以这一步比计划预期的还小。
+- **Step 2 的证据**:`git diff -U0` 对四处侧面板符号(`pinnedContentWidth` / `animatingRightPanel` / `handlePanelGroupLayoutChanged` / `handleSidePanelResize`)**零命中**,即四条约束全未触碰。
+- **为什么不加测试**:本步是集成挂载,没有独立可测的行为;给它写 DOM 测试要拉起 AuthProvider/i18n/`ThreadContext` 等一整条上下文链,而它真正的验收是 Task 7 的浏览器阶梯。计划 Step 3 也只要求 check + 全量,故**有意不加**,如实记录。
+- **门禁**:`chat-box.tsx` 的 eslint 干净;**全量 `pnpm test`:2226 例 / 2225 通过 / 1 失败**(208 文件 / 1 失败)。这一次**点名确认**了失败:`knowledge/chat-panel.dom.test.tsx`「restores the remembered model per kb…」,签名同前(`expected undefined to be 'qwen-plus'`)—— 并额外排除了一个真实风险:知识库面板**不引用** `ChatBox`(grep 无命中),故我的挂载到不了那条测试。
+- **仓库级 `pnpm check` 仍红,原因不在本线**:并发会话的 `src/core/rag/config-form.ts` 剩 1 条 eslint(`prefer-nullish-coalescing`,第 203 行;他们已把先前的 3 条 eslint + 2 条 tsc 清掉)。等他们那批落地自会转绿。
 
 ## Task 7: 浏览器验证阶梯(**不可用单测替代**)
 
