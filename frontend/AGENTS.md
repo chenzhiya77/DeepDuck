@@ -154,7 +154,28 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   model-reference rows (graph extraction, eval judge, caption VLM) are all plain pickers over
   the configured `models:` entries via `modelReferenceOptions` / `visionReferenceOptions`; the
   backend resolves what each role needs from the named entry, so no row asks for an endpoint or
-  a key of its own.
+  a key of its own. Adding a chat model is a **two-step wizard** (`models-add-dialog.tsx`): step 1
+  collects identity + credentials (provider / endpoint / api_key / one or more Model IDs) and its
+  **Next** button runs `POST /api/models/config/validate` first, so a bad key or an unknown Model ID is
+  caught before anything is stored — step 2 is unreachable until that probe passes. Step 2 is
+  `model-capability-editor.tsx`: supported context windows (200K/400K/1M) plus the default, the
+  vision/thinking chips, and the supported reasoning-effort levels plus the default.
+  `core/models/capability-registry.ts` prefills a **suggested** set for known model ids, and the UI
+  labels it as a suggestion rather than a detected fact — never claim a probe that does not exist.
+
+- `src/core/models/reasoning-effort.ts` owns the composer's model-capability gating as pure rules
+  (`offeredModes` / `isModeOffered`, `resolveMode`, `reasoningEffortLevels`, `resolveReasoningEffort`,
+  `effortAfterModelSelect` / `effortAfterModeSelect`), and
+  `src/components/workspace/composer-reasoning-controls.tsx` owns the `ModeMenu` / `EffortMenu` that
+  consume them; the composer and the sidecar panel both render those components instead of their own
+  copies, because the previous sidecar duplicate carried the same defect. Two invariants hold: **the
+  menus gate themselves** — the effort menu lists only the model's declared
+  `supported_reasoning_efforts` subset and is hidden in `flash`, where it would be a dead control, and
+  the mode menu shows Flash alone for a model without thinking support instead of Pro/Ultra entries
+  that `resolveMode` silently rewrites — and **the displayed value is the sent value**, through the
+  chain *user pick > model default > mode heuristic*, where switching modes does not rewrite the effort
+  once the model declares a default. The three observed forms (thinking+effort declared / thinking only
+  / neither) are pinned by `tests/unit/components/workspace/composer-reasoning-controls.dom.test.tsx`.
 
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns composer busy-state wiring.
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns branch-from-turn submission and navigation; sidecar `MessageList` instances do not receive the branch action.

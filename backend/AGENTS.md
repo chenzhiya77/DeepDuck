@@ -566,6 +566,45 @@ hot-reload signature covers `models_config.json` alongside `config.yaml`, so a w
 on the next message without a restart. `make doctor`'s "at least one model" check reads the merged
 set, and `make support-bundle` includes a redacted `models-summary.json`.
 
+**Structured model capabilities** (spec 2026-09-10 model-capability-config): a `ModelConfig` declares
+*what a model can do* as subsets plus defaults, not only as booleans — `supported_context_windows`
+(a de-duplicated, ascending, non-empty subset of `CONTEXT_WINDOW_OPTIONS` = 200K / 400K / 1M) with
+`context_window` as the **default**, which must belong to that subset; and
+`supported_reasoning_efforts` (a de-duplicated, enum-ordered, non-empty subset of `minimal` / `low` /
+`medium` / `high`) with `reasoning_effort` as the **default**, which must belong to its subset.
+`supports_thinking` / `supports_vision` / `supports_reasoning_effort` remain the coarse gates. Every
+field is optional and `ModelConfig` is `extra="allow"`, so a legacy `config.yaml` / `models_config.json`
+loads unchanged; `ModelConfig._validate_capability_subsets` enforces the invariants at load, so an
+invalid combination fails loudly there instead of surfacing as a broken settings UI. `ReasoningEffort`
+(`deerflow.config.model_config`) is the four-level vocabulary; the backend's agent-level enum stays a
+separate three-level one and unifying them is deliberately out of scope.
+
+Two invariants the code has to keep true:
+
+- **Provider-kwarg isolation.** `create_chat_model` excludes the capability-*subset* fields from the
+  provider constructor kwargs, next to the existing `context_window` / `pricing` exclusions. The
+  asymmetry is deliberate: `reasoning_effort` **is** a real provider kwarg and stays, so it can arrive
+  from both the caller's kwargs and the model's settings — and the construction is
+  `model_class(**kwargs, **model_settings_from_config)`, where two `**` expansions of one key raise
+  `TypeError: got multiple values for keyword argument`. The factory therefore reconciles the sources
+  *before* construction: a caller-supplied non-`None` value wins and the config value is dropped, while
+  a caller `None` gives way to the model default. The user-visible symptom of getting this wrong was a
+  chat that failed before its first token.
+- **The resolved effort chain is `request > agent > model > None`** (`lead_agent`'s
+  `_resolve_runtime_option`), so a non-UI caller (IM channel, scheduler) that supplies no effort still
+  gets the model's declared default instead of a bare `None`.
+
+`POST /api/models/config/validate` (admin-gated, **never persisted**) is the wizard's step-1 probe:
+body `{provider, endpoint, api_key, model}`, response `{ok, model_present, detail}`. The URL is the
+caller's endpoint with the provider's model-list path appended server-side — the endpoint is a base URL,
+never a free path, which keeps the SSRF posture of the management API — the probe is bounded by a 10s
+timeout, and a network error degrades to `ok=false` rather than a 500. Anthropic is dispatched natively
+(`/v1/models` + `x-api-key` + the required `anthropic-version`, no `Authorization`): serving it the
+OpenAI-compatible probe would have made one of the three allowlisted providers permanently
+unvalidatable. `detail` never contains the key — an upstream failure reports the status code plus a
+whitespace-collapsed, truncated body sample. The public `ModelResponse` (`GET /api/models`) carries both
+subset fields and the default effort, because the chat composer needs them to gate its own menus.
+
 **RAG Functional-Model Configuration** (`rag_config.json`):
 
 The same **Settings → Models** surface has a *Functional models* view for the RAG roles that used to
@@ -632,7 +671,7 @@ Localhost persistence deliberately reads the direct request `Host` and ignores `
 | Router | Endpoints |
 |--------|-----------|
 | **Knowledge Bases** (`/api/knowledge-bases`) | RAG workspace (three retrieval paths over one shared chunk base: vector `hybrid_search`, graph `graph_search`, generated-wiki `wiki_search`): `GET /` `POST /` - list/create bases; `GET/PATCH/DELETE /{kb_id}` - detail/rename/delete (delete cascades chunks, vectors, graph triples, wiki entries); `GET/POST /{kb_id}/documents` - list/upload (202, async indexing worker: parse → structure-aware chunk → embed/graph extract, status polled via `status`/`progress_percent`/`error`); `DELETE /{kb_id}/documents/{doc_id}` - cascading document delete; `POST /{kb_id}/documents/{doc_id}/retry` - re-queue a failed document; `GET /{kb_id}/documents/{doc_id}/chunks` - paginated read-only chunk preview; `POST /{kb_id}/wiki/generate` - enqueue wiki generation. Requires the `rag:` config block (`qdrant_url`, `embedding_model`, `rerank_model`, `vlm_model`, `worker_concurrency`, `extract_rate_limit_rps`); the three retrieval tools are registered in the `rag` tool group and only assemble for the `rag` agent |
-| **Models** (`/api/models`) | `GET /` - list models; `GET /{name}` - model details; `GET/PUT /config` - admin-only management of the UI-writable `models_config.json` set (curated provider id → fixed `use:` via allowlist, per-provider endpoint key, masked keys with sentinel-preserve, whole-collection PUT that never touches `config.yaml`) |
+| **Models** (`/api/models`) | `GET /` - list models; `GET /{name}` - model details; `GET/PUT /config` - admin-only management of the UI-writable `models_config.json` set (curated provider id → fixed `use:` via allowlist, per-provider endpoint key, masked keys with sentinel-preserve, whole-collection PUT that never touches `config.yaml`); `POST /config/validate` - admin-only, non-persistent credential + model-presence probe for the add-model wizard (allowlisted provider only, bounded timeout, never echoes the key) |
 | **RAG Config** (`/api/rag/config`) | `GET/PUT` - admin-only management of the UI-writable `rag_config.json` functional-model set (field-level merge over `config.yaml`'s `rag:` block, secrets masked with sentinel-preserve, whole-object PUT that never touches `config.yaml`) |
 | **Features** (`/api/features`) | `GET /` - report config-gated feature availability (`agents_api.enabled`, `browser_control.enabled`) for frontend UI gating |
 | **Console** (`/api/console`) | Read-only cross-thread observability for the current user (the data layer for an operations dashboard or external monitoring): `GET /stats` - headline counters (runs/threads/agents/tokens/cost); `GET /runs` - paginated run history joined with thread titles (per-run cost); `GET /usage` - zero-filled daily token series + per-model breakdown with spend. Queries `runs`/`threads_meta` directly as a reporting layer (no new `RunStore` methods); requires a SQL database backend — returns 503 on `database.backend: memory`. Real-cost estimation reads optional `models[*].pricing` (`currency`, `input_per_million`, `output_per_million`, `input_cache_hit_per_million`; `ModelConfig` is `extra="allow"`, so no schema change) and prices each run from its `token_usage_by_model` input/output split. Pricing is **cache-aware**: `RunJournal` accumulates prompt-cache hits from `usage_metadata.input_token_details.cache_read` into a sparse `cache_read_tokens` bucket key (also threaded through `SubagentTokenCollector` → `record_external_llm_usage_records`), and cache-hit input tokens are billed at `input_cache_hit_per_million` (omitted → billed at the miss price, a conservative upper bound). All priced models must use one currency; mixed currencies disable cost reporting and leave cost/currency fields null instead of producing invalid aggregates. Legacy rows fall back to run-level totals at `model_name`; unpriced models yield `cost: null` and cost fields are null when no pricing is configured |

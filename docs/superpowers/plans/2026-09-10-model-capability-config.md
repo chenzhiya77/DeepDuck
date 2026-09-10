@@ -355,16 +355,24 @@
   恢复后 13 绿。注：中途一次「删闭合标签」的 neuter 破坏了 JSX，已修正为「换掉滚动容器」的非破坏性 neuter）
 - [x] Commit: `fix(frontend): keep password managers out of model dialogs and make long forms scrollable`
 
-> 说明：Task 6 的「浏览器实测」由用户在真实栈上手动进行，本节即其产物之一；文档同步（README/AGENTS）仍未做。
+> 说明：Task 6 的「浏览器实测」由用户在真实栈上手动进行，本节即其产物之一；文档同步（README/AGENTS）已于 2026-09-11 补做（见 Task 6）。
 
 ## Task 6: 收官——回归 + 文档同步 + 浏览器实测
 
-- [ ] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + models/settings/input-box 套件对基线。
-- [ ] Modify: `README.md`（用户面：两步添加/校验/能力子集）+ `backend/AGENTS.md`（架构面：能力字段语义、
-  validate 端点、factory 隔离；orientation-layer 口径）+ `frontend/AGENTS.md`（输入栏门控说明）。
-- [ ] Commit: `docs: sync guides for model capability config`
-- [ ] 浏览器实测（环境就绪时）：两步添加（校验通过→能力配置→保存）→ 输入栏推理深度/模式门控反映；
-  环境未就绪则延后并记录（对齐既有纪律）。
+- [x] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + models/settings/input-box 套件对基线。
+  （后端 `test_models_config` + `test_models_config_api` + `test_model_factory` + `test_models_authorization` +
+  `test_lead_agent_model_resolution` + `test_model_config` **234 绿 / 1 失败**——失败是已复证的环境性
+  `test_missing_models_file_falls_back_to_config_yaml`（仓库根真实 `models_config.json` 被上溯搜到，与本增量无关）；
+  `ruff check .` 全仓净，四个实现文件（`model_config.py` / `factory.py` / `routers/models.py` / `lead_agent/agent.py`）
+  `ruff format --check` 净。前端 `pnpm check`（eslint+tsc）双净；`tests/unit/models` + `tests/unit/settings` +
+  `tests/unit/components/workspace` **38 文件 / 284 用例全绿**。）
+- [x] Modify: `README.md`（用户面：两步向导与 step1 校验、能力子集与默认、curated 表「建议值」口径、输入栏只列声明项）
+  + `backend/AGENTS.md`（架构面：能力字段语义与载入期校验、provider-kwarg 隔离与 `reasoning_effort` 双源收敛、
+  `request > agent > model > None` 解析链、validate 端点契约与 Anthropic 原生探测、`ModelResponse` 数据源、路由表一行）
+  + `frontend/AGENTS.md`（两步向导 / 能力编辑器 / curated 表口径；输入栏门控规则与三个观察形态）。
+- [x] Commit: `docs: sync guides for model capability config`
+- [ ] 浏览器实测（**延后**，需用户在真实栈上手动进行）：两步添加（校验通过→能力配置→保存）→ 输入栏推理深度/模式门控反映。
+  自动化无法穿越登录，维持既有纪律（先记录，环境就绪时补）。
 
 ## 风险登记
 
