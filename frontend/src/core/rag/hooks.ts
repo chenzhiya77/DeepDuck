@@ -21,6 +21,8 @@ export function useRagConfig({ enabled = true }: { enabled?: boolean } = {}) {
     queryKey: ["ragConfig"],
     queryFn: () => loadRagConfig(),
     enabled,
+    // The form is seeded from this view; a focus refetch must not clobber edits.
+    refetchOnWindowFocus: false,
     retry: (count, error) => !(error instanceof RagConfigRequestError) && count < 3,
   });
   return { view: data, isLoading, error };

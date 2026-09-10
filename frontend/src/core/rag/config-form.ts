@@ -145,7 +145,9 @@ export function buildRagConfigInput(
 
   const video: RagVideoValues = {};
   const loadedVideo: RagVideoValues = view.config?.video ?? {};
-  for (const key of ["asr_provider", "asr_model", "caption_model"] as const) {
+
+  // The two free-text fields share one rule...
+  for (const key of ["asr_model", "caption_model"] as const) {
     const source = VIDEO_SOURCES[key]!;
     const previous = asText(loadedVideo[key]);
     const next = values.video[key].trim();
@@ -158,6 +160,15 @@ export function buildRagConfigInput(
     if (next !== "" || owned(view, source)) {
       video[key] = next;
     }
+  }
+
+  // ...while the provider is an enum select, so it keeps its own union type.
+  const provider: "funasr" | "whisper" =
+    values.video.asr_provider === "whisper" ? "whisper" : "funasr";
+  const loadedProvider: "funasr" | "whisper" =
+    loadedVideo.asr_provider === "whisper" ? "whisper" : "funasr";
+  if (provider !== loadedProvider || owned(view, VIDEO_SOURCES.asr_provider!)) {
+    video.asr_provider = provider;
   }
   if (Object.keys(video).length > 0) {
     input.video = video;
@@ -175,4 +186,55 @@ export function isEmbeddingChange(
   view: RagConfigView,
 ): boolean {
   return values.embedding_model.trim() !== loaded(view, "embedding_model");
+}
+
+/** Radix Select rejects an empty item value, so "not configured" gets its own token. */
+export const EXTRACTION_MODEL_NONE = "__none__";
+
+export interface ExtractionModelOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * Options for the graph-extraction picker: the configured chat models, with an explicit
+ * "not configured" entry. A stored value whose model was deleted stays listed (labelled
+ * as itself) so opening the form cannot silently clear it.
+ */
+export function extractionModelOptions(
+  models: readonly { name: string; display_name?: string | null }[],
+  current: string,
+  noneLabel: string,
+): ExtractionModelOption[] {
+  const options: ExtractionModelOption[] = [
+    { value: EXTRACTION_MODEL_NONE, label: noneLabel },
+  ];
+  for (const model of models) {
+    const display = model.display_name?.trim();
+    const hasDisplay = display !== undefined && display.length > 0;
+    options.push({ value: model.name, label: hasDisplay ? display : model.name });
+  }
+  if (current && !models.some((model) => model.name === current)) {
+    options.push({ value: current, label: current });
+  }
+  return options;
+}
+/**
+ * Whether the admin edited anything. Carrying the file's own fields forward is not an
+ * edit, so a pristine form must keep Save disabled (re-submitting identical content is a
+ * pointless write, and an empty payload would clear the file).
+ */
+export function hasFormChanges(
+  values: RagConfigFormValues,
+  view: RagConfigView,
+): boolean {
+  const seeded = formValuesFromConfig(view);
+  const edited = (a: string, b: string) => a.trim() !== b.trim();
+  return (
+    TEXT_FIELDS.some((key) => edited(values[key], seeded[key])) ||
+    SECRET_FIELDS.some((key) => edited(values[key], seeded[key])) ||
+    (["asr_provider", "asr_model", "caption_model"] as const).some((key) =>
+      edited(values.video[key], seeded.video[key]),
+    )
+  );
 }

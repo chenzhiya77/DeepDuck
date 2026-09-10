@@ -166,8 +166,39 @@
 - Test: `frontend/tests/unit/settings/functional-models.dom.test.tsx`（视图切换；抽取模型下拉来自已配模型；
   掩码 + 留空保留；embedding 变更告警出现/不出现；保存 payload 断言；403 三态）
 
-- [ ] RED → Implement → GREEN + revert proof + `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): functional-model settings view for RAG roles`
+- [x] RED → Implement → GREEN + revert proof + `pnpm check` 双净。（新增 dom `tests/unit/settings/functional-models.dom.test.tsx` **7 例**：
+  视图切换（两个选项 + 默认对话视图）/ 生效值 + 已存密钥掩码 + `secretFromEnv` 提示 / 抽取模型下拉取自已配模型（触发器文案）/
+  **无改动时保存禁用**、编辑后可保存 / 换 embedding 模型才出「需重建索引」告警 / 保存 payload =
+  「文件拥有字段带出（哨兵保留密钥）+ 本次改动」/ 非 admin 拒绝态。node 侧补 **7 例**：
+  `extractionModelOptions`（未配置项在前、display_name 回退、已删模型的存量值保留、不重复）+ `hasFormChanges`
+  （种子态为 false、编辑后 true、改回 false、清空文件拥有字段为 true、纯空白改动忽略）。
+  `tests/unit/rag`+`tests/unit/settings` **52 绿**；`settings`+`rag`+`models`+`components/workspace` **300 绿**；
+  `pnpm check`（eslint+tsc）**双净**（修掉两处：`||` → 显式布尔判定；`video.asr_provider` 的类型化写法）。
+  revert proof：neuter ①保存守卫恒可保存 ②embedding 告警恒关 ⇒ **恰好 2 红**；再单独 neuter ③视图切换（两端都渲染对话视图）
+  ⇒ 功能视图不可达、7 红；恢复后 7 绿）
+- [x] Commit: `feat(frontend): functional-model settings view for RAG roles`
+
+#### Task 4 交付纪要（2026-09-10）
+
+- **实现落点**：`functional-models-view.tsx`（**新建**：图谱抽取=已配模型下拉、caption VLM（模型+端点+key）、
+  embedding（模型+key+换模型告警）、rerank（模型+key）、ASR（provider 分段 + 模型名）、服务（qdrant_url / MinerU token）；
+  密钥为密码框并带「已保存/当前由环境变量提供/留空即不再覆盖」提示；保存按钮在**无改动时禁用**并显示
+  `noChanges`）；`models-settings-page.tsx`（顶部 `ToggleGroup` 视图切换，功能视图复用 `SettingsSection` 外壳与三态镜像）；
+  i18n 三文件（`settings.models.view*` + 新增 `settings.functionalModels.*` 22 键）；
+  `core/rag/config-form.ts` 增 `extractionModelOptions`/`hasFormChanges`；`core/rag/hooks.ts` 关掉 focus 重取
+  （避免重取覆盖表单编辑）；非密钥输入用 `AUTOFILL_OFF_INPUT_PROPS`、密钥用 `SECRET_INPUT_AUTOFILL_PROPS`（沿用 Task 4′ 的自动填充防御）。
+- **决策 / 偏离**：
+  1. **「无改动」按表单是否被编辑判定**（`hasFormChanges`），而不是「payload 是否为空」：带出文件已拥有字段会让 payload 恒非空，
+     按 payload 判会永远可保存。这条是 Task 3 那条「空 payload 禁保存」的正确落地方式。
+  2. **三个密钥的可见标签加了后缀**（向量/重排/图片描述）：zh 下都叫「API Key」会让 `getByLabelText` 命中多个，也不利于用户分辨。
+  3. **抽取模型下拉**用 Radix Select（其开合在 happy-dom 不可靠）⇒ 选项列表的规则（未配置项、display_name 回退、已删模型存量值保留）
+     下沉到 node 的 `extractionModelOptions`，dom 侧只断言触发器文案。
+- **⚠ 流程自纠**：Task 3 我报「`pnpm check` 双净」时，实际那次门禁在 **eslint 阶段就失败**（修完 eslint 后只跑了单文件 eslint + 测试，
+  没有重跑完整 `pnpm check`），因此 `tsc` 的一个类型错误（`video.asr_provider` 的联合类型赋值）被漏到本任务才暴露。已修，并在本轮
+  跑完整门禁确认双净。教训：**修完门禁报错必须重跑同一命令**，不能只跑子集。
+- **顺带修（另一条线的遗留）**：`lazy-panels.test.ts` 的动态导入计数停在 10，而宠物线的 `ec5e8766` 已把设置分区加到第 11 个
+  （导航 + 渲染都已接上，合法）⇒ 单独提交 `0a23203d` 把计数改为 11。
+- **遗留（未动）**：Task 5（收官：文档同步 README/AGENTS + 浏览器实测）。
 
 ## Task 5: 收官——回归 + 文档同步 + 浏览器实测
 

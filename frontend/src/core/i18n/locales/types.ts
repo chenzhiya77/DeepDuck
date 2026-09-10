@@ -1566,6 +1566,34 @@ export interface Translations {
       window200k: string;
       window400k: string;
       window1m: string;
+      viewChatModels: string;
+      viewFunctionalModels: string;
+      viewSwitchLabel: string;
+    };
+    functionalModels: {
+      description: string;
+      extractModel: string;
+      extractModelHint: string;
+      extractModelNone: string;
+      captionModel: string;
+      vlmBaseUrl: string;
+      vlmApiKey: string;
+      embeddingModel: string;
+      embeddingApiKey: string;
+      embeddingChangeWarning: string;
+      rerankModel: string;
+      rerankApiKey: string;
+      asrProvider: string;
+      asrProviderFunasr: string;
+      asrProviderWhisper: string;
+      asrModel: string;
+      services: string;
+      qdrantUrl: string;
+      mineruToken: string;
+      secretHint: string;
+      secretFromEnv: string;
+      saved: string;
+      noChanges: string;
     };
     channels: {
       title: string;

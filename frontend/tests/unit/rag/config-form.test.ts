@@ -18,7 +18,10 @@ const { MASKED_RAG_SECRET, loadRagConfig, RagConfigRequestError, saveRagConfig }
   await import("@/core/rag/api");
 import {
   buildRagConfigInput,
+  EXTRACTION_MODEL_NONE,
+  extractionModelOptions,
   formValuesFromConfig,
+  hasFormChanges,
   isEmbeddingChange,
 } from "@/core/rag/config-form";
 import type { RagConfigSource, RagConfigView } from "@/core/rag/types";
@@ -240,5 +243,69 @@ describe("rag config client", () => {
 
     await expect(saveRagConfig({})).rejects.toBeInstanceOf(RagConfigRequestError);
     await expect(saveRagConfig({})).rejects.toMatchObject({ isAdminRequired: true });
+  });
+});
+
+describe("extractionModelOptions", () => {
+  const MODELS = [
+    { name: "deepseek-chat", display_name: "DeepSeek Chat" },
+    { name: "qwen-max", display_name: null },
+  ];
+
+  it("lists configured models after an explicit 'not configured' entry", () => {
+    expect(extractionModelOptions(MODELS, "qwen-max", "(未配置)")).toEqual([
+      { value: EXTRACTION_MODEL_NONE, label: "(未配置)" },
+      { value: "deepseek-chat", label: "DeepSeek Chat" },
+      { value: "qwen-max", label: "qwen-max" },
+    ]);
+  });
+
+  it("keeps a stored value whose model was deleted", () => {
+    const options = extractionModelOptions(MODELS, "gone-model", "(未配置)");
+
+    expect(options.at(-1)).toEqual({ value: "gone-model", label: "gone-model" });
+  });
+
+  it("does not duplicate a configured current value", () => {
+    expect(
+      extractionModelOptions(MODELS, "deepseek-chat", "(未配置)").map((option) => option.value),
+    ).toEqual([EXTRACTION_MODEL_NONE, "deepseek-chat", "qwen-max"]);
+  });
+});
+
+describe("hasFormChanges", () => {
+  it("is false right after seeding, even when the file owns fields", () => {
+    const current = viewWithStoredKey();
+
+    expect(hasFormChanges(formValuesFromConfig(current), current)).toBe(false);
+  });
+
+  it("is true once a field is edited and false again when it is reverted", () => {
+    const current = view();
+    const values = formValuesFromConfig(current);
+
+    values.rerank_model = "qwen3-rerank-v2";
+    expect(hasFormChanges(values, current)).toBe(true);
+
+    values.rerank_model = current.config.rerank_model!;
+    expect(hasFormChanges(values, current)).toBe(false);
+  });
+
+  it("is true when a file-owned field is cleared", () => {
+    const current = viewWithStoredKey();
+    const values = formValuesFromConfig(current);
+
+    values.embedding_api_key = "";
+
+    expect(hasFormChanges(values, current)).toBe(true);
+  });
+
+  it("ignores whitespace-only edits", () => {
+    const current = view();
+    const values = formValuesFromConfig(current);
+
+    values.vlm_model = ` ${current.config.vlm_model} `;
+
+    expect(hasFormChanges(values, current)).toBe(false);
   });
 });

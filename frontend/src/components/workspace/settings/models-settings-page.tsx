@@ -13,6 +13,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
 import { MASKED_API_KEY, ModelsConfigRequestError } from "@/core/models/api";
 import { useModelsConfig, useSaveModelsConfig } from "@/core/models/hooks";
@@ -22,6 +23,7 @@ import type {
   ProviderId,
 } from "@/core/models/types";
 
+import { FunctionalModelsView } from "./functional-models-view";
 import { ModelsAddDialog } from "./models-add-dialog";
 import { ModelsEditDialog } from "./models-edit-dialog";
 import { SettingsSection } from "./settings-section";
@@ -61,6 +63,7 @@ export function ModelsSettingsPage() {
   const adminRequired =
     error instanceof ModelsConfigRequestError && error.isAdminRequired;
 
+  const [view, setView] = useState<"chat" | "functional">("chat");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedModel | null>(null);
 
@@ -104,7 +107,28 @@ export function ModelsSettingsPage() {
 
   return (
     <SettingsSection title={M.title} description={M.description}>
-      {isLoading ? (
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        aria-label={M.viewSwitchLabel}
+        className="mb-4"
+        value={view}
+        onValueChange={(next) => {
+          if (next) setView(next as "chat" | "functional");
+        }}
+      >
+        <ToggleGroupItem value="chat" aria-label={M.viewChatModels}>
+          {M.viewChatModels}
+        </ToggleGroupItem>
+        <ToggleGroupItem value="functional" aria-label={M.viewFunctionalModels}>
+          {M.viewFunctionalModels}
+        </ToggleGroupItem>
+      </ToggleGroup>
+
+      {view === "functional" ? (
+        <FunctionalModelsView />
+      ) : isLoading ? (
         <div className="text-muted-foreground text-sm">{t.common.loading}</div>
       ) : adminRequired ? (
         <div className="text-muted-foreground text-sm">{M.adminRequired}</div>
