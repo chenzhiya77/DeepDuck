@@ -396,6 +396,74 @@ def test_validate_does_not_persist(config_env: Path, monkeypatch: pytest.MonkeyP
     assert "brand-new" not in {m["name"] for m in public["models"]}
 
 
+# ── write: capability subsets/defaults (plan Task 3', seam A 补口) ────────
+
+
+_CAPABILITY_MODEL = {
+    "provider": "openai-compatible",
+    "name": "cap-model",
+    "model": "gpt-5",
+    "api_key": "k",
+    "supports_reasoning_effort": True,
+    "supported_context_windows": [200_000, 400_000],
+    "context_window": 400_000,
+    "supported_reasoning_efforts": ["low", "medium", "high"],
+    "reasoning_effort": "medium",
+}
+
+
+def test_put_persists_and_get_round_trips_capability_fields(config_env: Path):
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [_CAPABILITY_MODEL]}).status_code == 200
+        body = client.get("/api/models/config").json()
+
+    stored = {entry["name"]: entry for entry in _read_models_json(config_env)}["cap-model"]
+    assert stored["supported_context_windows"] == [200_000, 400_000]
+    assert stored["context_window"] == 400_000
+    assert stored["supported_reasoning_efforts"] == ["low", "medium", "high"]
+    assert stored["reasoning_effort"] == "medium"
+
+    read = {m["name"]: m for m in body["models"]}["cap-model"]
+    assert read["supported_context_windows"] == [200_000, 400_000]
+    assert read["supported_reasoning_efforts"] == ["low", "medium", "high"]
+    assert read["reasoning_effort"] == "medium"
+
+
+def test_put_omits_capability_fields_when_not_declared(config_env: Path):
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [{"provider": "deepseek", "name": "plain", "model": "deepseek-chat", "api_key": "k"}]}).status_code == 200
+    stored = {entry["name"]: entry for entry in _read_models_json(config_env)}["plain"]
+    for key in ("supported_context_windows", "supported_reasoning_efforts", "reasoning_effort"):
+        assert key not in stored
+
+
+@pytest.mark.parametrize(
+    "override, expected",
+    [
+        ({"context_window": 1_000_000}, "must be one of supported_context_windows"),
+        ({"supported_context_windows": [400_000, 200_000]}, "ascending order"),
+        ({"supported_context_windows": [200_000, 200_000]}, "duplicates"),
+        ({"supported_context_windows": []}, "must be non-empty"),
+        ({"supported_context_windows": [123]}, "outside CONTEXT_WINDOW_OPTIONS"),
+        ({"supported_reasoning_efforts": ["high", "low"]}, "minimal<low<medium<high"),
+        ({"reasoning_effort": "minimal"}, "must be one of supported_reasoning_efforts"),
+    ],
+)
+def test_put_rejects_invalid_capability_combinations(config_env: Path, override: dict, expected: str):
+    """An illegal combination must fail here: it would otherwise brick config loading."""
+    _seed(config_env)
+    before = (config_env / "models_config.json").read_bytes()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/models/config", json={"models": [{**_CAPABILITY_MODEL, **override}]})
+
+    assert response.status_code == 422
+    assert expected in response.json()["detail"]
+    assert (config_env / "models_config.json").read_bytes() == before
+
+
 # ── support bundle redacts the models file ────────────────────────────────
 
 

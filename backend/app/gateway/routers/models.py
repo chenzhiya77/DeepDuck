@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.gateway.authz import (
     _AuthorizationUnavailable,
@@ -14,6 +14,7 @@ from app.gateway.authz import (
 from app.gateway.deps import get_config, get_optional_user_from_request, require_admin_user
 from deerflow.authz.provider import AuthzDecision, AuthzRequest
 from deerflow.config.app_config import AppConfig
+from deerflow.config.model_config import ModelConfig, ReasoningEffort
 from deerflow.config.models_config import (
     MASKED_API_KEY,
     PROVIDER_ALLOWLIST,
@@ -178,6 +179,18 @@ class ManagedModelInput(BaseModel):
     supports_thinking: bool = Field(default=False, description="Whether the model supports thinking mode.")
     supports_vision: bool = Field(default=False, description="Whether the model supports vision inputs.")
     supports_reasoning_effort: bool = Field(default=False, description="Whether the model supports reasoning effort.")
+    supported_context_windows: list[int] | None = Field(
+        default=None,
+        description="Declared window subset (non-empty, de-duplicated, ascending members of CONTEXT_WINDOW_OPTIONS); None = undeclared.",
+    )
+    supported_reasoning_efforts: list[ReasoningEffort] | None = Field(
+        default=None,
+        description="Declared effort subset (non-empty, de-duplicated, ordered minimal<low<medium<high); None = undeclared.",
+    )
+    reasoning_effort: ReasoningEffort | None = Field(
+        default=None,
+        description="Default reasoning-effort level; must be a member of supported_reasoning_efforts when both are set.",
+    )
     context_window: int | None = Field(default=None, gt=0, description="Total context window in tokens (prompt + completion).")
     max_tokens: int | None = Field(default=None, gt=0, description="Per-call output cap.")
     use_responses_api: bool | None = Field(default=None, description="Route OpenAI-compatible calls through /v1/responses.")
@@ -205,6 +218,9 @@ class ManagedModelResponse(BaseModel):
     supports_thinking: bool = False
     supports_vision: bool = False
     supports_reasoning_effort: bool = False
+    supported_context_windows: list[int] | None = None
+    supported_reasoning_efforts: list[ReasoningEffort] | None = None
+    reasoning_effort: ReasoningEffort | None = None
     context_window: int | None = None
     source: str = Field(default="config_file", description="Origin: 'ui' (models_config.json) or 'config_file' (config.yaml).")
     editable: bool = Field(default=False, description="True only for UI-managed models.")
@@ -212,6 +228,21 @@ class ManagedModelResponse(BaseModel):
 
 class ModelsConfigResponse(BaseModel):
     models: list[ManagedModelResponse]
+
+
+def _validate_capabilities(model_name: str, entry: dict) -> None:
+    """Reject an illegal capability combination before it reaches ``models_config.json``.
+
+    ``AppConfig.from_file`` loads that file on every hot reload with no fallback, so
+    persisting e.g. a default window outside its own declared subset would break every
+    later config read. The check reuses the harness ``ModelConfig`` validator rather
+    than restating its rules here.
+    """
+    try:
+        ModelConfig.model_validate(entry)
+    except ValidationError as exc:
+        message = exc.errors()[0]["msg"].removeprefix("Value error, ")
+        raise HTTPException(status_code=422, detail=f"Model '{model_name}' has an invalid capability configuration: {message}") from None
 
 
 #: Bounded probe budget (spec §5.3.2): an admin ringing a dead endpoint must get
@@ -315,6 +346,9 @@ def _managed_response(
     supports_thinking: bool,
     supports_vision: bool,
     supports_reasoning_effort: bool,
+    supported_context_windows: list[int] | None,
+    supported_reasoning_efforts: list[ReasoningEffort] | None,
+    reasoning_effort: ReasoningEffort | None,
     context_window: int | None,
     source: str,
 ) -> ManagedModelResponse:
@@ -330,6 +364,9 @@ def _managed_response(
         supports_thinking=supports_thinking,
         supports_vision=supports_vision,
         supports_reasoning_effort=supports_reasoning_effort,
+        supported_context_windows=supported_context_windows,
+        supported_reasoning_efforts=supported_reasoning_efforts,
+        reasoning_effort=reasoning_effort,
         context_window=context_window,
         source=source,
         editable=(source == "ui"),
@@ -372,6 +409,9 @@ async def get_models_config(
                 supports_thinking=model.supports_thinking,
                 supports_vision=model.supports_vision,
                 supports_reasoning_effort=model.supports_reasoning_effort,
+                supported_context_windows=model.supported_context_windows,
+                supported_reasoning_efforts=model.supported_reasoning_efforts,
+                reasoning_effort=model.reasoning_effort,
                 context_window=model.context_window,
                 source=source,
             )
@@ -561,13 +601,18 @@ async def put_models_config(
             "supports_thinking": item.supports_thinking,
             "supports_vision": item.supports_vision,
             "supports_reasoning_effort": item.supports_reasoning_effort,
+            "supported_context_windows": item.supported_context_windows,
+            "supported_reasoning_efforts": item.supported_reasoning_efforts,
+            "reasoning_effort": item.reasoning_effort,
             "context_window": item.context_window,
             "max_tokens": item.max_tokens,
             "use_responses_api": item.use_responses_api,
         }
         if item.endpoint:
             entry[endpoint_key] = item.endpoint
-        entries.append({key: value for key, value in entry.items() if value is not None})
+        stored_entry = {key: value for key, value in entry.items() if value is not None}
+        _validate_capabilities(item.name, stored_entry)
+        entries.append(stored_entry)
 
         responses.append(
             _managed_response(
@@ -581,6 +626,9 @@ async def put_models_config(
                 supports_thinking=item.supports_thinking,
                 supports_vision=item.supports_vision,
                 supports_reasoning_effort=item.supports_reasoning_effort,
+                supported_context_windows=item.supported_context_windows,
+                supported_reasoning_efforts=item.supported_reasoning_efforts,
+                reasoning_effort=item.reasoning_effort,
                 context_window=item.context_window,
                 source="ui",
             )

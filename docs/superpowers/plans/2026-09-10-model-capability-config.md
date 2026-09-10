@@ -128,13 +128,40 @@
 ## Task 3': 后端 PUT/GET 透传能力字段（seam A 补口，缺口 1）
 
 > 由 Task 3 交付纪要发现：前端已能构造三条新字段，但写入路径不接收 ⇒ 里程碑不可用。
-> 计划原文未列此任务；**待用户确认后**执行（或并入 Task 4）。
+> 计划原文未列此任务；**用户已确认补做（2026-09-10）**。
 
 **Files:**
 - Modify: `backend/app/gateway/routers/models.py`（`ManagedModelInput` 增 `supported_context_windows`/
   `supported_reasoning_efforts`/`reasoning_effort`；`ManagedModelResponse` 与其映射同步；`put_models_config`
   的 entry 字典透传三者） + `backend/tests/test_models_config_api.py`（PUT 后落盘含子集/默认；GET 回读一致；
   非法组合（默认 ∉ 子集）→ 422；旧客户端不带新字段仍可写）
+
+- [x] RED → Implement → GREEN + revert proof + ruff 双净。（新增 9 例：PUT 落盘+GET 回读往返（窗口子集/默认窗口/
+  强度子集/默认强度）/ 未声明时三者不落盘 / 7 条非法组合 422 参数化（默认 ∉ 窗口子集、非升序、重复、空列表、
+  枚举外窗口、强度非枚举序、默认 ∉ 强度子集）且**被拒时文件字节不变**。RED 基线：实现前 9 例全红，
+  头部字段报 `Extra inputs are not permitted`（正是前端会撞上的 422）；实现后 `test_models_config_api.py`
+  **27 绿**；回归 models_config+model_factory+models_authorization+app_config_reload **212 绿**，3 例失败
+  均为**环境性**（仓库根真实 `models_config.json` 被上溯合并：`test_missing_models_file_falls_back_to_config_yaml`
+  为 T1 已复证者，另两例 `test_app_config_coerces_commented_out_list_sections`/
+  `test_app_config_warns_when_no_models_configured` 断言「模型集为空/无模型告警」而被根文件注入的 GLM 条目打破；
+  该测试文件不导入本路由，见交付纪要）；ruff check+format 双净。
+  revert proof：neuter `_validate_capabilities`（no-op）⇒ **7 红**（全部非法组合用例）；恢复后全绿）
+
+- [x] Commit: `feat(gateway): accept capability subsets and defaults in the models write path`
+
+#### Task 3' 交付纪要（2026-09-10）
+
+- **实现落点**：`ManagedModelInput`/`ManagedModelResponse` 各增三字段（`ReasoningEffort` 直接复用 harness 的
+  Literal，元素级非法值在前端面即 422）；`_managed_response` 增三个具名参数（GET/PUT 两处同步）；
+  `put_models_config` 的 entry 透传三者（沿用 `if value is not None` 过滤 ⇒ 未声明不落盘）。
+- **关键决策：写入前复用 harness 校验器**（`_validate_capabilities` → `ModelConfig.model_validate(entry)`）。
+  理由：`AppConfig.from_file` 在**每次热重载**都无兜底地加载 `models_config.json`（`app_config.py:507`），
+  一旦 PUT 落盘非法组合（如默认窗口 ∉ 自身子集），**后续所有** `get_app_config()` 都会抛错、整个 API 变 500，
+  且只能手改文件恢复。校验只在服务端做一层，规则不复制到路由（避免与 seam B 漂移），错误信息去掉 pydantic 的
+  `Value error, ` 前缀后回 422。被拒请求在写盘前抛错 ⇒ 文件保持原样（有测试钉住）。
+- **前端契约随之升级**：PUT 现在接受（并要求合法）能力三字段，GET 会回读它们 ⇒ Task 4 的
+  `toManagedInput` 必须带上三者，否则整体集合写会抹掉其它模型的能力（见 Task 3 交付纪要缺口 ②）。
+- **遗留（未动）**：Task 4（两步向导+能力编辑器+i18n）、Task 5（输入栏/运行时）、Task 6（收官+文档+浏览器实测）。
 
 ## Task 4: 两步向导 + 能力编辑器 + i18n（seam C dom）
 
