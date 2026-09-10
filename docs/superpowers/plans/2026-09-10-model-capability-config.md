@@ -33,8 +33,8 @@
 - Test: `backend/tests/test_models_config.py`（窗口子集/去重/升序、默认∈已选、强度子集/默认∈子集、
   旧文件无新字段仍可加载、factory 排除：新字段不进 provider kwargs）
 
-- [ ] RED → Implement → GREEN + revert proof + ruff 双净。
-- [ ] Commit: `feat(config): structured model capabilities (window/effort subsets + defaults)`
+- [x] RED → Implement → GREEN + revert proof + ruff 双净。（新增 17 例（16 seam B + 1 factory）：126 绿；revert proof：neuter 校验+排除 → 10 红 → 恢复；模型/配置回归 200 绿；ruff check+format 双净。遗留 `test_missing_models_file_falls_back_to_config_yaml` 失败已 stash 复证为环境性——本地根 `models_config.json` 被发现，与本增量无关）
+- [x] Commit: `feat(config): structured model capabilities (window/effort subsets + defaults)`（44910b71；factory 排除落在 `test_model_factory.py`，紧邻既有 `context_window`/`pricing` 排除先例）
 
 ## Task 2: 凭证/模型存在性校验端点（seam A）
 
