@@ -500,7 +500,7 @@ absolute right-3 top-14 z-20 pointer-events-none
 - `z-20` 低于 header 与 composer 的 `z-30`
 - `pointer-events-none` 让点击穿透
 - **窄面板不渲染,断点定为容器宽度 ≤ 480px**(`@container` 查询,不用 viewport 断点 —— 因为 sidecar 面板可以独立于窗口宽度被拖窄,viewport 断点判不出来;`max-width: 480px` 是闭区间,2026-09-10 实测 481 显示 / 480 隐藏,故措辞从「< 480px」更正为「≤ 480px」)。**2026-09-10 核查更正**:既有的 `container-type:inline-size` 挂在 `ResizablePanelGroup` 上(`chat-box.tsx:400`),量的是 **chat + 右侧面板的总宽**,是错误的盒子 —— 侧面板开着且 group 宽时,chat 面板被拖窄不会触发。裁决:挂载点自己加一层 `[container-type:inline-size]`(加在 `div#chat` 或宠物外壳上),让 `@container` 量 chat 面板;inline-size  containment 不改变布局(宽度仍由父级决定),不触碰三条既有约束。浏览器支持与隐藏语义已实测(`CSS.supports('container-type','inline-size') === true`;400px 容器隐藏、600px 容器显示,均正确)。
-  **2026-09-10 Task 0 Step 2 已在真实应用内闭环**(运行时 spike,零源码改动,reload 后无残留):① `div#chat` 在 `/workspace/chats/new`(新会话页,尚未发消息)就存在,宽 759、`container-type: normal`,而带 `[container-type:inline-size]` 的祖先是 `#workspace-chats-new-group`(宽 760)—— 现场复现了上面的「错误盒子」;② 给 `div#chat` 自挂 `container-type: inline-size` 后**布局逐字节不变**(自身 759→759,首个子节点矩形 before/after 完全相同),「不触碰既有约束」成立;③ 挂在 `div#chat` 下的探针按 700/600/481 显示、480/479/400/300 隐藏,断点精确落在 480;④ **对照实验**:同一时刻把 chat 面板压到 400 而 group 仍为 760,挂在 group 下的同规则探针**不匹配**窄规则(仍按 760 求值)—— 证明自挂不是偏好而是必需,§10 的更正方向正确。Task 6 的隐藏实现照此写即可,Task 7 Step 5 只需再验「sidecar 真拖拽会改变 `div#chat` 宽度」这一环(ResizablePanelGroup 的既有行为,非本设计引入)。
+  **2026-09-10 Task 0 Step 2 已在真实应用内闭环**(运行时 spike,零源码改动,reload 后无残留):① `div#chat` 在 `/workspace/chats/new`(新会话页,尚未发消息)就存在,宽 759、`container-type: normal`,而带 `[container-type:inline-size]` 的祖先是 `#workspace-chats-new-group`(宽 760)—— 现场复现了上面的「错误盒子」;② 给 `div#chat` 自挂 `container-type: inline-size` 后**布局逐字节不变**(自身 759→759,首个子节点矩形 before/after 完全相同),「不触碰既有约束」成立;③ 挂在 `div#chat` 下的探针按 700/600/481 显示、480/479/400/300 隐藏,断点精确落在 480;④ **对照实验**:同一时刻把 chat 面板压到 400 而 group 仍为 760,挂在 group 下的同规则探针**不匹配**窄规则(仍按 760 求值)—— 证明自挂不是偏好而是必需,§10 的更正方向正确。Task 6 的隐藏实现照此写即可;「sidecar 真拖拽会改变 `div#chat` 宽度」这一环已于 2026-09-10 在应用内补验:拖分隔条时 chat 面板 **538 → 318**、side 面板 359 → 579,拖拽期间库自身的 `data-separator` 翻成 `active`(手势被正常接管、约束未被本设计触碰),chat 落到 318(≤480)时 `.pet-shell` **`display: none` 但节点仍在**,拖回后两面板宽度与初始完全对称、宠物**自动回到 `display: block`**,console 全程零报错。
 
 **移动端裁决:第 1 期桌面端 only。** `chat-box.tsx:349-353` 的 mobile 分支渲染的是 `<div className="relative size-full min-w-0">{children}</div>`,**没有 `id="chat"`**,挂载点不存在。两个选项:① 在 mobile 分支也加一个同结构容器并挂载;② 移动端不渲染。选 ②,理由是移动端聊天面板宽度本就窄,480px 断点已经会把它挡掉,再加挂载点只是多一处需要同步维护的分支。若将来要移动端也有,改动是给 mobile 分支补 `id="chat"` 并复测 Sheet 交互。
 
@@ -660,6 +660,8 @@ DOM 测试压到最小是刻意的:渲染器逻辑已全被 `sprite.ts` 在 node
 第 1 期就把四个纯函数**全部**写出来并测完,但让两条轴的输出不生效 —— 因为 §8 规则 1 与 §9.2 的两级回落保证了没有帧也能正确塌回 `idle`。这样第 2、3 期是纯美术增量加一个常量开关,不再碰逻辑也不再碰测试。
 
 第 1 期的交付判断只有一条:**「在等你」和「跑完了」视觉上分得开**。这一条就值回整个功能。
+
+**第 1 期交付状态(2026-09-10)**:代码**已全部交付并挂载**(提交序列 `7073c703` → `3da33b9b`,`frontend/AGENTS.md` 的 `core/pet/` 域与 Interaction Ownership 已同步)。上述交付判断**已在真实应用内验证**:触发 `ask_clarification` 时精灵切到琥珀 `WAIT`,而 run 跑完回落成蓝 `IDLE`,两者视觉可分;§10.1 的自由放置六项(Alt+拖拽持久化、越界 clamp、不按 Alt 不起拖、<4px 阈值、拖后吞 click、拖拽不进状态机)与窄面板隐藏(含拖回后宠物自动回来)亦全部实测通过。**唯一仍待外部输入的是美术**:`public/pet/parrot/` 目前是两张 2 帧占位 sheet(`idle`/`wait`,1024×512),真图替换时**代码零改动** —— 换掉两个 `.webp` 并把 manifest 里的 `frames`(2→32)与 `sheetWidth`(1024→16384)一起改,§8 的 manifest 自洽断言会拦住只改一个的失误;第 2、3 期的其余状态帧也照此增量。
 
 ### 18.1 代码量估计(第 1 期)
 

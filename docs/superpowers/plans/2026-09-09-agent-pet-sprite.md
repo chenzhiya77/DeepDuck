@@ -238,10 +238,12 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 - [x] **Step 2(核心验收):** 触发一个 `ask_clarification`(让 agent 需要追问),验证鹦鹉切到 **`wait`**;再发一条普通消息跑完,验证鹦鹉播 **`done` 一次性动画后回 `idle`**(第 1 期 `done` 无帧 → 应回落到 `idle`,这正是要验的回落行为)。**两者视觉上必须分得开** —— 这是本期唯一交付判断。— **通过**(琥珀 `WAIT 2` 与蓝 `IDLE 1/2` 视觉可分,截图 + 程序化序列双证)。
 - [ ] **Step 3:** 触发一个 `error`(断网或配错模型),验证 `error` 态;确认 `error` 压掉 `done`(spec §5.3 不变量 1)。— **未验**:需要断网或改用户模型配置,本机没做。
 - [x] **Step 4:** 在有未回答的 clarification card 时直接发新消息开新 run,验证鹦鹉走 `work`/`think` 而非 `wait`(spec §5.3 不变量 2)。— **通过**(窗口内从未出现 `wait`);局限见下。
-- [x] **Step 5:** 开右侧 artifacts/sidecar 面板并把分隔条拖到最窄,验证窄面板隐藏生效、且**拖拽手感无变化**(没碰到 ResizablePanelGroup 约束)。— **隐藏机制通过**(`#chat` 压到 400px ⇒ `.pet-shell` `display:none`,恢复即 `block`);**「拖分隔条手感」未验**:该会话没有可开的 sidecar 内容,分隔条处于 `disabled`,无法真拖。
+- [x] **Step 5:** 开右侧 artifacts/sidecar 面板并把分隔条拖到最窄,验证窄面板隐藏生效、且**拖拽手感无变化**(没碰到 ResizablePanelGroup 约束)。— **全通过(2026-09-10,用户造出 `hello.txt` 后右侧面板可开)**:分隔条**真拖生效** —— chat 面板 538 → **318**(左移 220px)、side 面板 359 → **579**,拖拽期间库自己的 `data-separator` 从 `inactive` 翻成 **`active`**(说明手势被正常接管、约束没被本线加的 `container-type` 弄坏);chat 落到 318(≤480)时 `.pet-shell` **`display: none` 但节点仍在**(`petExists: true`)⇒ 隐藏是纯 CSS、不是卸载;拖回后 chat=538 / side=359 **与初始完全对称**,`.pet-shell` 自动回到 `display: block`、精灵仍 96×96 且背景仍是 `idle.webp` ⇒ **状态未丢**。全程 console **零报错**;另外单独验了一条副作用:不按 Alt 的分隔条拖拽**不改变宠物偏移**(51/166 → 51/166)。
 - [x] **Step 6:** 系统开启「减少动态效果」,验证停在静态帧。关掉设置开关,验证 DOM 里无残留节点。— **开关关闭通过**(`pet.enabled=false` 刷新后 `.pet-shell`/`.pet-sprite` 各 0 节点);**「减少动态效果」未在浏览器验**:browser-use 未暴露 CDP `Emulation.setEmulatedMedia`,改不了该媒体特性,已由 DOM 测试覆盖(无 animation + 停第 0 帧)。
 - [ ] **Step 7:** 切线程再切回,验证 fatigue 归零、`greet` 不重放。— **第 1 期不可观测**:无 `done`/`greet` 帧、疲劳闸门关着,只有结构性就位(见 Task 5 纪要的未覆盖项)。
-- [ ] **Step 8:** `cd frontend && pnpm perf:check` 跑一次确认预算未破。— **交给用户终端**:脚本内部 `spawn("pnpm")`(`measure-route-assets.mjs:161`),Windows 的 Node 在 `shell:false` 下不解析 `.CMD`,本机只有 `pnpm`/`pnpm.CMD`/`pnpm.ps1` ⇒ 我这边必然 ENOENT。命令已给出,待回执。
+- [x] **Step 8:** `cd frontend && pnpm perf:check` 跑一次确认预算未破。— **已跑,结论是「工具修好了,但这份检查全局红,与本线无关」**。过程:先确认脚本缺陷(裸名 `spawn("pnpm")`,`measure-route-assets.mjs` 里仅两处;Windows 只有 `pnpm`/`pnpm.CMD`/`pnpm.ps1`,Node 不加 shell 不解析 PATHEXT)⇒ 用户在 PowerShell 里复现同一 `spawn pnpm ENOENT`,证明**本机对谁都跑不了**、不是我 shell 的限制(我先前那个归因是错的,已在记忆里订正)。随后按用户确认修掉:改用 `process.execPath` + `node_modules/next/dist/bin/next`(`build`/`start` 两处),**不用 `shell: true`** —— 在 Windows 上 `shell: true` 只能杀掉 `cmd.exe`,会把真正的 `next start` 孤儿留在端口上,而脚本后面靠 `server.kill()` 收尾。修完用户重跑,构建与摘要正常产出(即修复有效)。
+
+  **实测结果(用户终端,原始字节)**:六条路由**全部超**——`/en/docs` 与 `/blog/posts` **js +1.43 MB**、css +17.8 KB;`/login` js +30.3 KB、css +14.8 KB;`/` css +13.7 KB;`/workspace/chats` js **+8.9 KB**、css +19.5 KB。两条支撑事实说明这是**阈值失真而非本线回归**:① 这份检查**不在 CI 里**(`.github/` 零引用),是纯手工工具;② 预算表最后一次改动是 `459dd787`(PR #4622),此后应用长了很多功能。**宠物只加载 `/workspace/chats` 一条**,且那条的 css 超支 19.5 KB 与宠物无关(本线 CSS 贡献 < 1 KB:一个 `@keyframes` + 两条类规则);js 那 8.9 KB 里宠物的占比**未实测**——用户明确选择「不再为它花一次构建」(前提是那不改变结论:即便宠物占满 8.9 KB,其余五条仍红线)。
 - [x] **Step 9(自由放置):** Alt+拖拽鹦鹉到新位置,刷新页面验证持久化;拖窄 sidecar 验证盒子被 clamp 在可见区内不出屏;不按 Alt 在鹦鹉位置按住拖动,验证不起拖且点击穿透到下方内容;**Alt+按住但位移 < 4px 后松手,验证鹦鹉没动**(阈值生效);**把鹦鹉拖到一条消息链接上松手,验证链接没有被点开**(拖后吞 click 生效);**拖拽全程验证鹦鹉仍播当前态、不切态**(§10.1 拖拽不进状态机)。— **六项全通过**(clamp 一项用「越界拖」代替「拖窄 sidecar」,见下)。
 
 **Task 7 交付纪要(2026-09-10,自动化浏览器视口 842px)**
@@ -256,10 +258,9 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **未验(逐条给出原因,不含推测)**
 - **Step 3 `error` 态**:要断网或改用户模型配置,本机没做 ⇒ **不验**。`error` 压 `done` 因此也只在 node 层有测试(`state.test.ts` 不变量 1)。
-- **Step 5「拖分隔条手感无变化」**:该会话无可开的 sidecar 内容,`ResizableHandle` 处于 `disabled` ⇒ 无法真拖;只验了隐藏机制本身。**Task 0 Step 2 已证**该挂法不改变布局(759→759、子节点矩形逐字节相同),但「真拖手感」仍属未验。
 - **Step 6「系统减少动态效果」**:browser-use 未暴露 CDP 媒体特性模拟 ⇒ 浏览器侧无法验;DOM 测试覆盖了同一行为。
 - **Step 7**:第 1 期无 `done`/`greet` 帧、疲劳闸门关闭 ⇒ 效果不可观测。
-- **Step 8**:见上,环境限制。
+- **Step 8 之外的预算归属**:`pnpm perf:check` 本身已跑通(见上),但「宠物在 `/workspace/chats` 那 8.9 KB js 超支里占多少」**未实测** —— 用户明确选择不为此再花一次构建,理由是该数字不改变结论。
 
 **两个环境事实(供后来者)**
 1. **自动化浏览器视口必须 ≥768px**。否则 `(max-width: 767px)` 命中 → `useIsMobile()` 为真 → ChatBox 走 **mobile 分支**,而第 1 期按 §10 裁决只在桌面分支挂载 ⇒ DOM 里找不到 `.pet-shell` **是正确行为,不是缺陷**。本次实测:初看 661px(找不到宠物)、Task 0 时为 808px,用户拉宽到 842px 后才可测。
@@ -267,10 +268,10 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 ## Task 8: 文档同步(仓库强制约定)
 
-- [ ] **Step 1:** `frontend/AGENTS.md`:`src/` 结构清单加 `core/pet/` 域;Interaction Ownership 加一条「宠物挂载点在 `chat-box.tsx` 桌面分支的 `div#chat`,mobile 分支故意不挂」。
-- [ ] **Step 2:** 把 Task 0 两步的核实结论写回 spec §15(开放项 8 关闭或改写、§10 的断点方式定案)。
-- [ ] **Step 3:** 若占位帧仍是占位,在 spec §18 分期表标注「第 1 期代码已交付,等待真图替换(零代码改动)」。
-- [ ] **Step 4:** `README.md` 是否需要提及由用户定(纯装饰功能,倾向不加)。
+- [x] **Step 1:** `frontend/AGENTS.md`:`src/` 结构清单加 `core/pet/` 域;Interaction Ownership 加一条「宠物挂载点在 `chat-box.tsx` 桌面分支的 `div#chat`,mobile 分支故意不挂」。— **已加**:`core/` 域清单里补 `pet/`(写明五个纯函数 + 组件在 `components/workspace/pet/`);Interaction Ownership 顶部新增一条,把三条不变量一次说清 —— (a) 挂载点与**它自己带容器上下文**(否则 `@container` 会量到 group、永不触发)、mobile 分支故意不挂;(b) 观察者纪律(只读 `useThread()` 派生,不发请求、不持有 agent/线程/记忆、不订阅 custom 事件);(c) 精灵恒 `pointer-events-none`,自由放置靠 window 级命中测试 + Alt 拖拽(4px 阈值、pointer capture、拖后吞 click)。
+- [x] **Step 2:** 把 Task 0 两步的核实结论写回 spec §15(开放项 8 关闭或改写、§10 的断点方式定案)。— **Task 0 时已写回,本步只做确认**:§15 开放项 8 已改为「已闭环」并附四条证据腿;§10 已定案为「挂载点自挂 `container-type`」且措辞更正为 **≤ 480px**(闭区间)。**本步补了一处收口**:§10 末尾原写「Task 7 Step 5 还需再验 sidecar 真拖拽改变 `div#chat` 宽度」,已替换为那次实测的数字(538→318、拖回对称、宠物自动回来、console 零报错)。
+- [x] **Step 3:** 若占位帧仍是占位,在 spec §18 分期表标注「第 1 期代码已交付,等待真图替换(零代码改动)」。— **已加**:§18 交付判断句后新增「第 1 期交付状态(2026-09-10)」段:代码已全部交付并挂载(提交序列 `7073c703` → `3da33b9b`)、交付判断已在应用内验证、放置六项与窄面板隐藏已实测;并写明**唯一待外部输入的是美术** —— 占位仍是两张 2 帧 sheet,真图替换时换两个 `.webp` 并把 manifest 的 `frames`(2→32)与 `sheetWidth`(1024→16384)**一起**改(§8 自洽断言会拦只改一个的失误)。
+- [ ] **Step 4:** `README.md` 是否需要提及由用户定(纯装饰功能,倾向不加)。— **待用户决定**;按计划倾向**不加**(默认开着但纯装饰、无用户需要配置的行为),若要加,一句话挂在 Workspace 功能列表即可。
 
 ---
 

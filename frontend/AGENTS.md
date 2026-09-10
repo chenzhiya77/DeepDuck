@@ -55,7 +55,7 @@ The frontend is a stateful chat application. Users create **threads** (conversat
   - `workspace/` — Chat page components (messages, artifacts, settings)
   - `landing/` — Landing page sections
   - `docs/` — Docs / MDX rendering components
-- **`core/`** — Business logic, the heart of the app. Domains include `threads/` (creation, streaming, state), `api/` (LangGraph client singleton), `agents/` (custom agents), `auth/` (authentication), `artifacts/`, `channels/` (IM connections), `integrations/` (managed third-party integration status/install clients such as Lark CLI), `i18n/` (en-US, zh-CN), `settings/`, `memory/`, `skills/`, `messages/`, `mcp/`, `models/`, `input-polish/` (pre-send draft rewrite API), `knowledge/` (RAG knowledge-base API client, TanStack Query hooks with polling, kb-thread isolation predicates, citation extraction), `voice-input/` (browser speech-recognition helpers), `suggestions/`, `tasks/`, `todos/`, `tools/`, `workspace-changes/` (run-scoped changed-file summaries and diff fetching), `config/`, `notification/`, `blog/`, plus rendering helpers (`rehype/`, `streamdown/`) and `utils/`.
+- **`core/`** — Business logic, the heart of the app. Domains include `threads/` (creation, streaming, state), `api/` (LangGraph client singleton), `agents/` (custom agents), `auth/` (authentication), `artifacts/`, `channels/` (IM connections), `integrations/` (managed third-party integration status/install clients such as Lark CLI), `i18n/` (en-US, zh-CN), `settings/`, `memory/`, `skills/`, `messages/`, `mcp/`, `models/`, `input-polish/` (pre-send draft rewrite API), `knowledge/` (RAG knowledge-base API client, TanStack Query hooks with polling, kb-thread isolation predicates, citation extraction), `voice-input/` (browser speech-recognition helpers), `suggestions/`, `tasks/`, `todos/`, `tools/`, `workspace-changes/` (run-scoped changed-file summaries and diff fetching), `config/`, `notification/`, `pet/` (observer pet sprite: pure state derivation, tool classification, fatigue scoring, sprite resolution and placement clamping; the components that consume them live under `components/workspace/pet/`), `blog/`, plus rendering helpers (`rehype/`, `streamdown/`) and `utils/`.
 - **`hooks/`** — Shared React hooks
 - **`lib/`** — Utilities (`cn()` from clsx + tailwind-merge)
 - **`content/`** — MDX content (blog posts, docs) rendered by the app
@@ -132,6 +132,18 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
 
 ### Interaction Ownership
 
+- `src/components/workspace/pet/agent-pet.tsx` observes the thread and feeds a rendered `PetState` to
+  `pet-sprite.tsx`, which only draws (it resolves the sprite, plays the sheet with
+  `background-position` + `steps(N, jump-none)`, and reports a finished one-shot back). Three
+  invariants hold that split: **(a)** the mount point is the desktop branch's `div#chat` in
+  `chat-box.tsx` — the mobile branch has no `id="chat"` and deliberately gets no pet — and `div#chat`
+  carries its own `[container-type:inline-size]` so the pet's `@container (max-width: 480px)` hide
+  rule measures the chat panel rather than the `ResizablePanelGroup` (whose own container context
+  measures chat + side panel and therefore never fires); **(b)** the pet is an observer — it reads
+  `useThread()` and derived state, and never sends, mutates, owns agent/thread/memory, or subscribes
+  to custom events; **(c)** the sprite stays `pointer-events-none` so clicks pass through, and free
+  placement rides `pet.offset` via window-level hit-testing on Alt+drag (4px threshold, pointer
+  capture, and swallowing the click that follows a drag) instead of giving the pet pointer events.
 - `src/components/workspace/settings/models-settings-page.tsx` owns the **Models** section and
   its two views: the chat-model list (with add/edit dialogs) and `functional-models-view.tsx`,
   the RAG functional-model editor. The functional view reads `core/rag/hooks.ts`
