@@ -288,7 +288,7 @@
   全量 `pnpm test`：**2238 绿 / 1 红**，红的恰是已登记的环境性预存失败（`knowledge/chat-panel.dom.test.tsx`
   的「restores the remembered model per kb」），与本轮改动无关。
   revert proof：neuter `TEXT_FIELDS` 去掉 `judge_model` ⇒ **恰好 3 红**（提交覆盖 / 带出+清空 / 变更判定），恢复后 42 绿。
-- [x] Commit: `feat(rag): admin-selectable eval judge and retrieval endpoint note`
+- [x] Commit: 与「增量（2026-09-11 之二）」合并为 **`0d6bd5d5 feat(rag): pick the eval judge and the caption VLM from configured models`**（用户选一起提交）。
 
 #### 遗留 / 观察
 
@@ -352,7 +352,7 @@
   两文件 **43 绿**；`pnpm check`（eslint+tsc）双净；全量 `pnpm test` **2239 绿 / 1 红**（红仍是已登记的环境性预存失败
   `chat-panel.dom.test.tsx`）。revert proof：neuter ①`isCaptionCapable` 去掉 provider 判定 ②选择器恒显默认项
   ⇒ **恰好 5 红**（3 node + 2 dom），恢复后 43 绿。
-- [x] Commit: `refactor(rag): resolve the caption VLM from its models: entry`
+- [x] Commit: 与上面的 judge 增量合并为 **`0d6bd5d5 feat(rag): pick the eval judge and the caption VLM from configured models`**（26 文件，含陈旧断言修复）。
 
 #### 影响 / 遗留
 
