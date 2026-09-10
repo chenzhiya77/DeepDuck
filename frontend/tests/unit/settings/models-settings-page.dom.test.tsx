@@ -1,0 +1,178 @@
+/**
+ * 模型设置页（spec 2026-09-10 §5.7，plan Task 4 seam C）：
+ * - 三态：loading / adminRequired(403) / 空态引导；
+ * - 列表：来源徽章 + 只读行（config_file）无编辑/删除，UI 行可编辑/删除；
+ * - 批量添加：一把 key + 两个 Model ID → save 收到两条 entry 各带同 key；
+ * - 全空 Model ID 提交被阻（save 不被调用）；
+ * - API 类型仅 openai-compatible 显示（切到 DeepSeek 后隐藏）。
+ */
+import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+import { I18nContext } from "@/core/i18n/context";
+import { zhCN } from "@/core/i18n/locales/zh-CN";
+import { ModelsConfigRequestError } from "@/core/models/api";
+import type { ManagedModel } from "@/core/models/types";
+
+const hooksMock = rs.hoisted(() => ({
+  useModelsConfig: rs.fn(),
+  useSaveModelsConfig: rs.fn(),
+}));
+rs.mock("@/core/models/hooks", () => hooksMock);
+rs.mock("sonner", () => ({
+  toast: { success: rs.fn(), error: rs.fn(), info: rs.fn(), warning: rs.fn() },
+}));
+
+const { ModelsSettingsPage } = await import(
+  "@/components/workspace/settings/models-settings-page"
+);
+
+const M = zhCN.settings.models;
+
+function uiModel(over: Partial<ManagedModel> = {}): ManagedModel {
+  return {
+    name: "ui-model",
+    model: "deepseek-chat",
+    display_name: "UI DeepSeek",
+    provider: "deepseek",
+    endpoint_key: "api_base",
+    endpoint: "https://ui.example",
+    api_key: "********",
+    source: "ui",
+    editable: true,
+    ...over,
+  };
+}
+
+function cfgModel(over: Partial<ManagedModel> = {}): ManagedModel {
+  return {
+    name: "cfg-model",
+    model: "gpt-4",
+    display_name: null,
+    provider: "openai-compatible",
+    endpoint_key: "base_url",
+    endpoint: null,
+    api_key: "********",
+    source: "config_file",
+    editable: false,
+    ...over,
+  };
+}
+
+const saveMock = rs.fn();
+
+function setConfig(models: ManagedModel[], opts: { loading?: boolean; error?: unknown } = {}) {
+  hooksMock.useModelsConfig.mockReturnValue({
+    config: { models },
+    isLoading: opts.loading ?? false,
+    error: opts.error ?? null,
+  });
+  hooksMock.useSaveModelsConfig.mockReturnValue({ mutate: saveMock, isPending: false });
+}
+
+function renderPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <ModelsSettingsPage />
+      </I18nContext.Provider>
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  saveMock.mockReset();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe("ModelsSettingsPage three states", () => {
+  it("shows the loading hint", () => {
+    setConfig([], { loading: true });
+    renderPage();
+    expect(screen.getByText(zhCN.common.loading)).toBeDefined();
+  });
+
+  it("shows adminRequired on a 403", () => {
+    setConfig([], { error: new ModelsConfigRequestError(403, "forbidden") });
+    renderPage();
+    expect(screen.getByText(M.adminRequired)).toBeDefined();
+  });
+
+  it("shows the empty guide with an add button", () => {
+    setConfig([]);
+    renderPage();
+    expect(screen.getByText(M.empty)).toBeDefined();
+    expect(screen.getByRole("button", { name: M.add })).toBeDefined();
+  });
+});
+
+describe("ModelsSettingsPage list", () => {
+  it("renders source badges and only lets UI rows be edited/deleted", () => {
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    expect(screen.getByText(M.sourceUi)).toBeDefined();
+    expect(screen.getByText(M.sourceConfigFile)).toBeDefined();
+    // display_name ?? name
+    expect(screen.getByText("UI DeepSeek")).toBeDefined();
+    expect(screen.getByText("cfg-model")).toBeDefined();
+
+    expect(screen.getAllByRole("button", { name: M.delete })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: M.edit })).toHaveLength(1);
+  });
+});
+
+describe("ModelsSettingsPage batch add", () => {
+  it("expands one key + two model ids into two entries on save", async () => {
+    setConfig([]);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: M.add }));
+
+    fireEvent.change(screen.getByLabelText(M.apiKey), { target: { value: "sk-shared" } });
+    fireEvent.change(screen.getByPlaceholderText(M.modelIdPlaceholder), {
+      target: { value: "model-a" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: M.addModelId }));
+    const ids = screen.getAllByPlaceholderText(M.modelIdPlaceholder);
+    fireEvent.change(ids[1]!, { target: { value: "model-b" } });
+
+    fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const payload = (saveMock.mock.calls[0]?.[0] ?? []) as ManagedModel[];
+    expect(payload).toHaveLength(2);
+    expect(payload[0]).toMatchObject({ name: "model-a", api_key: "sk-shared", provider: "openai-compatible" });
+    expect(payload[1]).toMatchObject({ name: "model-b", api_key: "sk-shared" });
+  });
+
+  it("blocks submit when every model id is empty", async () => {
+    setConfig([]);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: M.add }));
+    fireEvent.change(screen.getByLabelText(M.apiKey), { target: { value: "sk-x" } });
+    fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
+
+    await waitFor(() => expect(screen.getByText(M.validationNoModelId)).toBeDefined());
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the API type selector for the default openai-compatible provider", () => {
+    setConfig([]);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: M.add }));
+    // Default provider is openai-compatible → API type is offered. The
+    // "only openai-compatible" rule (hidden for anthropic/deepseek) is pinned
+    // at the node level in batch.test.ts (use_responses_api gating); we avoid
+    // driving the Radix Select here because its open/close is unreliable under
+    // happy-dom.
+    expect(screen.getByText(M.apiType)).toBeDefined();
+  });
+});

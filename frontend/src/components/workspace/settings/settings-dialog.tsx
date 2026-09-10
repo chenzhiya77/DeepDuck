@@ -3,6 +3,7 @@
 import {
   BellIcon,
   CableIcon,
+  CpuIcon,
   InfoIcon,
   BrainIcon,
   PaletteIcon,
@@ -21,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/core/auth/AuthProvider";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +69,13 @@ const MemorySettingsPage = dynamic(
     ),
   { loading: SettingsPageLoading },
 );
+const ModelsSettingsPage = dynamic(
+  () =>
+    import("./models-settings-page").then(
+      (module) => module.ModelsSettingsPage,
+    ),
+  { loading: SettingsPageLoading },
+);
 const NotificationSettingsPage = dynamic(
   () =>
     import("./notification-settings-page").then(
@@ -95,6 +104,7 @@ export type SettingsSection =
   | "appearance"
   | "channels"
   | "integrations"
+  | "models"
   | "memory"
   | "tools"
   | "skills"
@@ -108,6 +118,8 @@ type SettingsDialogProps = React.ComponentProps<typeof Dialog> & {
 export function SettingsDialog(props: SettingsDialogProps) {
   const { defaultSection = "appearance", ...dialogProps } = props;
   const { t } = useI18n();
+  const { user } = useAuth();
+  const isAdmin = user?.system_role === "admin";
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(defaultSection);
 
@@ -146,6 +158,17 @@ export function SettingsDialog(props: SettingsDialogProps) {
         label: t.settings.sections.integrations,
         icon: PlugZapIcon,
       },
+      // Admin-only: model provider / API key management (spec 2026-09-10 §5.7).
+      // Visibility is UX; the server enforces admin via require_admin_user.
+      ...(isAdmin
+        ? [
+            {
+              id: "models",
+              label: t.settings.sections.models,
+              icon: CpuIcon,
+            },
+          ]
+        : []),
       {
         id: "memory",
         label: t.settings.sections.memory,
@@ -160,11 +183,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
       t.settings.sections.appearance,
       t.settings.sections.channels,
       t.settings.sections.integrations,
+      t.settings.sections.models,
       t.settings.sections.memory,
       t.settings.sections.tools,
       t.settings.sections.skills,
       t.settings.sections.notification,
       t.settings.sections.about,
+      isAdmin,
     ],
   );
   return (
@@ -221,6 +246,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               {activeSection === "notification" && <NotificationSettingsPage />}
               {activeSection === "channels" && <ChannelsSettingsPage />}
               {activeSection === "integrations" && <IntegrationsSettingsPage />}
+              {activeSection === "models" && <ModelsSettingsPage />}
               {activeSection === "about" && <AboutSettingsPage />}
             </div>
           </ScrollArea>
