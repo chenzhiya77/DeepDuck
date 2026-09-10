@@ -334,3 +334,79 @@ describe("ModelsEditDialog capability editor", () => {
     expect(input.model).toBe("claude-sonnet-4-20250514");
   });
 });
+
+function renderEditDialog(onSave: (input: ManagedModelInput) => void, over: Partial<ManagedModel> = {}) {
+  return renderInI18n(
+    <ModelsEditDialog
+      open
+      onOpenChange={() => undefined}
+      model={model(over)}
+      onSave={onSave}
+      isPending={false}
+    />,
+  );
+}
+
+/** The attributes that keep Chromium / 1Password / LastPass out of a non-credential field. */
+function expectAutofillDefenses(endpoint: HTMLElement, apiKey: HTMLElement) {
+  expect(endpoint.getAttribute("type")).toBe("url");
+  expect(endpoint.getAttribute("autocomplete")).toBe("off");
+  expect(endpoint.getAttribute("data-1p-ignore")).toBe("true");
+  expect(endpoint.getAttribute("data-lpignore")).toBe("true");
+  expect(endpoint.getAttribute("data-bwignore")).toBe("true");
+  expect(endpoint.getAttribute("data-form-type")).toBe("other");
+  expect(endpoint.getAttribute("spellcheck")).toBe("false");
+
+  expect(apiKey.getAttribute("type")).toBe("password");
+  // "new-password" is what Chromium honours instead of offering the saved login.
+  expect(apiKey.getAttribute("autocomplete")).toBe("new-password");
+  expect(apiKey.getAttribute("data-1p-ignore")).toBe("true");
+  expect(apiKey.getAttribute("data-lpignore")).toBe("true");
+  expect(apiKey.getAttribute("data-bwignore")).toBe("true");
+}
+
+describe("model dialogs: password-manager autofill", () => {
+  it("keeps autofill out of the add dialog's endpoint and API key", () => {
+    renderAddDialog(rs.fn());
+
+    expectAutofillDefenses(
+      screen.getByLabelText(M.endpoint),
+      screen.getByLabelText(M.apiKey),
+    );
+  });
+
+  it("keeps autofill out of the edit dialog's endpoint and API key", () => {
+    renderEditDialog(rs.fn());
+
+    expectAutofillDefenses(
+      screen.getByLabelText(M.endpoint),
+      screen.getByLabelText(M.apiKey),
+    );
+  });
+});
+
+describe("model dialogs: scrolling long forms", () => {
+  it("puts the add dialog body in a scroll container and the actions outside it", () => {
+    renderAddDialog(rs.fn());
+
+    const scrollArea = document.querySelector('[data-slot="scroll-area"]');
+    const footer = document.querySelector('[data-slot="dialog-footer"]');
+    expect(scrollArea).not.toBeNull();
+    expect(footer).not.toBeNull();
+    // Actions stay reachable while the fields scroll.
+    expect(scrollArea?.contains(footer)).toBe(false);
+    expect(scrollArea?.contains(screen.getByLabelText(M.endpoint))).toBe(true);
+  });
+
+  it("scrolls the edit dialog's capability editor, not its actions", () => {
+    renderEditDialog(rs.fn());
+
+    const scrollArea = document.querySelector('[data-slot="scroll-area"]')!;
+    expect(
+      scrollArea.contains(screen.getByRole("checkbox", { name: M.window200k })),
+    ).toBe(true);
+    expect(
+      scrollArea.contains(document.querySelector('[data-slot="dialog-footer"]')),
+    ).toBe(false);
+  });
+});

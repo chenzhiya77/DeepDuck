@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
 import { MASKED_API_KEY } from "@/core/models/api";
 import {
@@ -21,6 +22,7 @@ import {
   type ModelCapabilityValue,
 } from "@/core/models/capability";
 import type { ManagedModel, ManagedModelInput, ProviderId } from "@/core/models/types";
+import { AUTOFILL_OFF_INPUT_PROPS, SECRET_INPUT_AUTOFILL_PROPS } from "@/lib/input-autofill";
 
 import { ModelCapabilityEditor } from "./model-capability-editor";
 
@@ -86,60 +88,75 @@ export function ModelsEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{M.editTitle}</DialogTitle>
-          <DialogDescription>{M.editDescription}</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex max-h-[90vh] flex-col gap-4 overflow-hidden">
+        {/* Scrollable body with a pinned footer (wiki-edit-dialog precedent). The
+            max-h MUST sit on the ScrollArea root: DialogContent's own height is an
+            auto height capped by max-h (indefinite), so a flex-1 child inherits no
+            bound and the viewport never becomes a scroll container. */}
+        <ScrollArea
+          className="-mr-6 max-h-[calc(90vh-7rem)] min-h-0 min-w-0 flex-1"
+          scrollHideDelay={2000}
+          type="scroll"
+        >
+          <div className="flex min-w-0 flex-col gap-4 pr-6">
+            <DialogHeader>
+              <DialogTitle>{M.editTitle}</DialogTitle>
+              <DialogDescription>{M.editDescription}</DialogDescription>
+            </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          <p className="text-muted-foreground text-xs">{M.identityHint}</p>
+            <div className="space-y-4 py-1">
+              <p className="text-muted-foreground text-xs">{M.identityHint}</p>
 
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.displayName}</span>
-            <Input
-              value={displayName}
-              aria-label={M.displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">{M.displayName}</span>
+                <Input
+                  value={displayName}
+                  aria-label={M.displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">{M.apiKey}</span>
+                <Input
+                  type="password"
+                  {...SECRET_INPUT_AUTOFILL_PROPS}
+                  value={apiKey}
+                  aria-label={M.apiKey}
+                  placeholder={MASKED_API_KEY}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">{M.endpoint}</span>
+                <Input
+                  type="url"
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  value={endpoint}
+                  aria-label={M.endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                />
+              </div>
+
+              <p className="text-muted-foreground text-xs">{M.stepCapabilities}</p>
+              <ModelCapabilityEditor value={capability} onChange={setCapability} />
+
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">{M.maxTokens}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  value={maxTokens}
+                  aria-label={M.maxTokens}
+                  onChange={(e) => setMaxTokens(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
+        </ScrollArea>
 
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.apiKey}</span>
-            <Input
-              type="password"
-              value={apiKey}
-              aria-label={M.apiKey}
-              placeholder={MASKED_API_KEY}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.endpoint}</span>
-            <Input
-              value={endpoint}
-              aria-label={M.endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-            />
-          </div>
-
-          <p className="text-muted-foreground text-xs">{M.stepCapabilities}</p>
-          <ModelCapabilityEditor value={capability} onChange={setCapability} />
-
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.maxTokens}</span>
-            <Input
-              type="number"
-              min={1}
-              value={maxTokens}
-              aria-label={M.maxTokens}
-              onChange={(e) => setMaxTokens(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}

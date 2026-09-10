@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -31,6 +32,7 @@ import {
 } from "@/core/models/capability";
 import { suggestCapabilities } from "@/core/models/capability-registry";
 import type { ManagedModelInput, ProviderId } from "@/core/models/types";
+import { AUTOFILL_OFF_INPUT_PROPS, SECRET_INPUT_AUTOFILL_PROPS } from "@/lib/input-autofill";
 
 import { ModelCapabilityEditor } from "./model-capability-editor";
 
@@ -172,151 +174,166 @@ export function ModelsAddDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{M.addTitle}</DialogTitle>
-          <DialogDescription>{M.addDescription}</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex max-h-[90vh] flex-col gap-4 overflow-hidden">
+        {/* Scrollable body with a pinned footer (wiki-edit-dialog precedent). The
+            max-h MUST sit on the ScrollArea root: DialogContent's own height is an
+            auto height capped by max-h (indefinite), so a flex-1 child inherits no
+            bound and the viewport never becomes a scroll container. */}
+        <ScrollArea
+          className="-mr-6 max-h-[calc(90vh-7rem)] min-h-0 min-w-0 flex-1"
+          scrollHideDelay={2000}
+          type="scroll"
+        >
+          <div className="flex min-w-0 flex-col gap-4 pr-6">
+            <DialogHeader>
+              <DialogTitle>{M.addTitle}</DialogTitle>
+              <DialogDescription>{M.addDescription}</DialogDescription>
+            </DialogHeader>
 
-        <p className="text-muted-foreground text-xs">
-          {step === "identity" ? M.stepIdentity : M.stepCapabilities}
-        </p>
+            <p className="text-muted-foreground text-xs">
+              {step === "identity" ? M.stepIdentity : M.stepCapabilities}
+            </p>
 
-        {step === "identity" ? (
-          <div className="space-y-4 py-1">
-            {/* Provider */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium">{M.provider}</span>
-              <Select
-                value={provider}
-                onValueChange={(value) => setProvider(value as ProviderId)}
-              >
-                <SelectTrigger className="w-full" aria-label={M.provider}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openai-compatible">
-                    {M.providerOpenaiCompatible}
-                  </SelectItem>
-                  <SelectItem value="anthropic">{M.providerAnthropic}</SelectItem>
-                  <SelectItem value="deepseek">{M.providerDeepseek}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {step === "identity" ? (
+              <div className="space-y-4 py-1">
+                {/* Provider */}
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium">{M.provider}</span>
+                  <Select
+                    value={provider}
+                    onValueChange={(value) => setProvider(value as ProviderId)}
+                  >
+                    <SelectTrigger className="w-full" aria-label={M.provider}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai-compatible">
+                        {M.providerOpenaiCompatible}
+                      </SelectItem>
+                      <SelectItem value="anthropic">{M.providerAnthropic}</SelectItem>
+                      <SelectItem value="deepseek">{M.providerDeepseek}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* API type — only meaningful for openai-compatible (spec §5.3.1) */}
-            {provider === "openai-compatible" && (
-              <div className="space-y-1.5">
-                <span className="text-sm font-medium">{M.apiType}</span>
-                <Select
-                  value={apiType}
-                  onValueChange={(value) =>
-                    setApiType(value as "chat" | "responses")
-                  }
-                >
-                  <SelectTrigger className="w-full" aria-label={M.apiType}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="chat">{M.apiTypeChat}</SelectItem>
-                    <SelectItem value="responses">{M.apiTypeResponses}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+                {/* API type — only meaningful for openai-compatible (spec §5.3.1) */}
+                {provider === "openai-compatible" && (
+                  <div className="space-y-1.5">
+                    <span className="text-sm font-medium">{M.apiType}</span>
+                    <Select
+                      value={apiType}
+                      onValueChange={(value) =>
+                        setApiType(value as "chat" | "responses")
+                      }
+                    >
+                      <SelectTrigger className="w-full" aria-label={M.apiType}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="chat">{M.apiTypeChat}</SelectItem>
+                        <SelectItem value="responses">{M.apiTypeResponses}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
-            {/* Endpoint — required, the probe is built from it (spec §5.3.2) */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium">{M.endpoint}</span>
-              <Input
-                value={endpoint}
-                aria-label={M.endpoint}
-                placeholder="https://api.example.com/v1"
-                onChange={(e) => setEndpoint(e.target.value)}
-              />
-            </div>
-
-            {/* API key */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium">{M.apiKey}</span>
-              <div className="relative">
-                <Input
-                  type={showKey ? "text" : "password"}
-                  value={apiKey}
-                  aria-label={M.apiKey}
-                  className="pr-10"
-                  onChange={(e) => setApiKey(e.target.value)}
-                />
-                <button
-                  type="button"
-                  aria-label={M.apiKeyToggle}
-                  onClick={() => setShowKey((v) => !v)}
-                  className="text-muted-foreground absolute top-1/2 right-2 -translate-y-1/2"
-                >
-                  {showKey ? (
-                    <EyeOffIcon className="size-4" />
-                  ) : (
-                    <EyeIcon className="size-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Model IDs (repeatable) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{M.modelIds}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setModelIds((prev) => [...prev, ""])}
-                >
-                  <PlusIcon className="size-4" />
-                  {M.addModelId}
-                </Button>
-              </div>
-              {modelIds.map((id, index) => (
-                <div className="flex items-center gap-2" key={index}>
+                {/* Endpoint — required, the probe is built from it (spec §5.3.2) */}
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium">{M.endpoint}</span>
                   <Input
-                    value={id}
-                    placeholder={M.modelIdPlaceholder}
-                    onChange={(e) => updateModelId(index, e.target.value)}
+                    type="url"
+                    {...AUTOFILL_OFF_INPUT_PROPS}
+                    value={endpoint}
+                    aria-label={M.endpoint}
+                    placeholder="https://api.example.com/v1"
+                    onChange={(e) => setEndpoint(e.target.value)}
                   />
-                  {modelIds.length > 1 && (
+                </div>
+
+                {/* API key */}
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium">{M.apiKey}</span>
+                  <div className="relative">
+                    <Input
+                      type={showKey ? "text" : "password"}
+                      {...SECRET_INPUT_AUTOFILL_PROPS}
+                      value={apiKey}
+                      aria-label={M.apiKey}
+                      className="pr-10"
+                      onChange={(e) => setApiKey(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      aria-label={M.apiKeyToggle}
+                      onClick={() => setShowKey((v) => !v)}
+                      className="text-muted-foreground absolute top-1/2 right-2 -translate-y-1/2"
+                    >
+                      {showKey ? (
+                        <EyeOffIcon className="size-4" />
+                      ) : (
+                        <EyeIcon className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Model IDs (repeatable) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{M.modelIds}</span>
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
-                      aria-label={M.removeModelId}
-                      onClick={() =>
-                        setModelIds((prev) => prev.filter((_, i) => i !== index))
-                      }
+                      size="sm"
+                      onClick={() => setModelIds((prev) => [...prev, ""])}
                     >
-                      <TrashIcon className="size-4" />
+                      <PlusIcon className="size-4" />
+                      {M.addModelId}
                     </Button>
-                  )}
+                  </div>
+                  {modelIds.map((id, index) => (
+                    <div className="flex items-center gap-2" key={index}>
+                      <Input
+                        value={id}
+                        placeholder={M.modelIdPlaceholder}
+                        onChange={(e) => updateModelId(index, e.target.value)}
+                      />
+                      {modelIds.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={M.removeModelId}
+                          onClick={() =>
+                            setModelIds((prev) => prev.filter((_, i) => i !== index))
+                          }
+                        >
+                          <TrashIcon className="size-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            {error && (
-              <p className="text-destructive text-sm" role="alert">
-                {error}
-              </p>
+                {error && (
+                  <p className="text-destructive text-sm" role="alert">
+                    {error}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="py-1">
+                <ModelCapabilityEditor
+                  value={capability}
+                  onChange={setCapability}
+                  suggested={suggested}
+                />
+              </div>
             )}
           </div>
-        ) : (
-          <div className="py-1">
-            <ModelCapabilityEditor
-              value={capability}
-              onChange={setCapability}
-              suggested={suggested}
-            />
-          </div>
-        )}
+        </ScrollArea>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           {step === "identity" ? (
             <>
               <Button

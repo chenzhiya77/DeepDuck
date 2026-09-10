@@ -324,6 +324,39 @@
   `test_missing_models_file_falls_back_to_config_yaml`）；ruff check+format 双净）
 - [x] Commit: `fix(models): reconcile caller and model-default reasoning_effort before construction`
 
+## 浏览器实测发现（2026-09-10，用户手动实测）——两个 UI 缺陷
+
+用户在真实栈上实测模型配置，报两个缺陷（均已修，改了同一对文件，合一个提交）：
+
+**缺陷 1：添加弹窗的「接口地址」被填成本机登录邮箱、「API Key」被填成登录密码。**
+- 根因：**浏览器/密码管理器自动填充**，不是我们的数据——两个字段的 state 初值是 `""`（`reset()` 也清空），应用里根本取不到该邮箱；
+  而 API Key 是 `type="password"` 且**没有任何防自动填充属性**，Chromium 会把相邻文本输入框当「用户名」一起填（截图里的邮箱+密码就是 localhost:3000 保存的那条）。
+- 修法（照仓库既有配方 `channels/channel-runtime-config-dialog.tsx`）：新增 `src/lib/input-autofill.ts` 导出
+  `AUTOFILL_OFF_INPUT_PROPS`（`autoComplete=off` + `autoCorrect/autoCapitalize/spellCheck` + `data-1p-ignore`/
+  `data-lpignore`/`data-bwignore`/`data-form-type=other`）与 `SECRET_INPUT_AUTOFILL_PROPS`（改 `autoComplete="new-password"`，
+  Chrome 明确尊重的「不填已存凭据」信号）；接口地址另加 `type="url"`。两弹窗四处输入框全部套用。
+  与 channels 的差异：**保留 `type="password"`**（各浏览器都能遮），不采用它的 `-webkit-text-security`（Firefox 会明文）。
+
+**缺陷 2：编辑弹窗高于视口时无法滚动**（图 2 标题被顶出屏幕、按钮要滚动才能看到）。
+- 根因：共享原语 `ui/dialog.tsx` 的 `DialogContent` 无 `max-h`、无滚动容器，且以 `top-50% + translate-y-[-50%]` 居中 ⇒ 内容一高就上下同时溢出；Task 4 的能力编辑器加了约 6 行正好越过临界值。
+- 修法（A 方案，照 `wiki-edit-dialog` 已验证模式）：`DialogContent` 加 `flex max-h-[90vh] flex-col overflow-hidden`，
+  正文包 `ScrollArea`（**`max-h` 必须加在 ScrollArea Root 上**：DialogContent 是「auto 高被 max-h 截帽」的 indefinite 高度，
+  flex-1 子元素继承不到界，视口就不会成为滚动容器），**页脚固定在滚动区之外**（`shrink-0`，按钮始终可点）。
+  添加弹窗 step2 与编辑弹窗同一套。
+
+**Files:** `frontend/src/lib/input-autofill.ts`（新建）、`models-add-dialog.tsx`、`models-edit-dialog.tsx`、
+`tests/unit/settings/models-capability-wizard.dom.test.tsx`（+4 例：两弹窗的 autofill 属性钉住；两弹窗「正文在滚动容器内 +
+页脚在容器外」结构钉住）
+
+- [x] RED → Implement → GREEN + revert proof + `pnpm check` 双净。（先由 4 条新用例确证缺陷：属性缺失时 `expected null to be 'url'`、
+  滚动结构缺失时 scroll-area 查不到；修复后 `models-capability-wizard.dom.test.tsx` **13 绿**、
+  `models`+`settings`+`components/workspace` **260 绿**、`pnpm check`（eslint+tsc）**双净**。
+  revert proof：neuter ①添加弹窗去 autofill 属性 ②编辑弹窗去 ScrollArea ⇒ **恰好 2 红**且各自只红对应那条（钉子是精确的）；
+  恢复后 13 绿。注：中途一次「删闭合标签」的 neuter 破坏了 JSX，已修正为「换掉滚动容器」的非破坏性 neuter）
+- [x] Commit: `fix(frontend): keep password managers out of model dialogs and make long forms scrollable`
+
+> 说明：Task 6 的「浏览器实测」由用户在真实栈上手动进行，本节即其产物之一；文档同步（README/AGENTS）仍未做。
+
 ## Task 6: 收官——回归 + 文档同步 + 浏览器实测
 
 - [ ] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + models/settings/input-box 套件对基线。
