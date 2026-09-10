@@ -202,13 +202,24 @@
 
 ## Task 5: 收官——回归 + 文档同步 + 浏览器实测
 
-- [ ] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + `tests/unit/rag` + `tests/unit/settings` 对基线。
-- [ ] Modify: `README.md`（用户面：功能模型配置入口与 embedding 重建索引告警）+ `backend/AGENTS.md`
-  （架构面：`rag_config.json` 合并语义、密钥回退顺序、热重载、信任边界）+ `frontend/AGENTS.md`
-  （设置页两视图的归属说明）。
-- [ ] Commit: `docs: sync guides for rag functional-model config`
-- [ ] 浏览器实测（用户自持栈）：切视图 → 填 VLM/embedding/rerank key → 保存 → 重开弹窗密钥显示掩码 →
-  改 embedding 出现重建索引告警 → 重传一篇文档确认新配置生效；环境未就绪则延后并记录。
+- [x] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + `tests/unit/rag` + `tests/unit/settings` 对基线。
+  （后端 `test_rag_config_file`+`test_rag_config_api`+`test_support_bundle`+`test_app_config_reload`+`test_models_config`+
+  `test_models_config_api` **160 绿**，3 例失败仍是已复证的环境性（仓库根真实 `models_config.json`）；ruff 双净。
+  前端 `pnpm check`（eslint+tsc）**双净**；`tests/unit/rag`+`tests/unit/settings` **52 绿**（Task 4 收尾时更大范围
+  `settings`+`rag`+`models`+`components/workspace` 为 **300 绿**）。）
+- [x] Modify: `README.md` + `backend/AGENTS.md` + `frontend/AGENTS.md`（三段分别覆盖：用户面的入口/env 回退/重建索引告警；
+  架构面的 field-level 合并（`video` 深合并）、密钥 `显式 > 文件 > env` 与 `SECRET_ENV_VARS` 单一来源、admin API 的掩码/`sources`
+  与整对象写语义、热重载路径、support-bundle 脱敏、仓库地图与路由表各一行；前端面的两视图归属 + 「保存守卫按是否被编辑」的理由）。
+- [x] Commit: `docs: sync guides for rag functional-model config`（`b25cbecf`）
+- [ ] **浏览器实测：延后**（需 admin 登录，自动化无法穿越）。已就地确立的两条活证据：① 运行中的网关
+  **OpenAPI 里已列出 `/api/rag/config`**（对照同时列出 `/api/models/config`、`/api/models/config/validate`）⇒ 新代码已加载；
+  ② 未认证请求该路由返回 401（auth 门控生效）。
+  ⚠️ **过程纠正**：一开始我拿「`/api/rag/config` → 401」推断「路由存在」，但对照探针显示 `/api/rag/config/nope` **同样是 401**
+  ——auth 中间件在路由之前拦截，401 不携带路由存在性信息。结论最终由 OpenAPI 探针给出（证据强度与结论匹配）。
+  **留给用户的实测清单**（环境就绪时）：① 登录 admin → 设置 → 模型 → 切到「功能模型」；
+  ② 填 VLM/embedding/rerank 的 key（或留空走 env）→ 保存 → 重开页面确认密钥显示为掩码、来源提示正确；
+  ③ 改 embedding 模型 → 确认出现「需重建索引」告警；④ 保存后重传一篇文档，确认新配置被入库腿采用
+  （或至少 `rag_config.json` 出现且 `GET /api/rag/config` 回读一致）；⑤ 非 admin 账号确认看不到该视图且 API 403。
 
 ## 风险登记
 
