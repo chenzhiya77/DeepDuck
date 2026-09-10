@@ -130,10 +130,29 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **Files:** Create `frontend/public/pet/parrot/{manifest.json,idle.webp,wait.webp}`
 
-- [ ] **Step 1:** 写 `manifest.json`,按 spec §8 的形状(`frameWidth` / `frameHeight` / `fallback: "idle"` / `states`)。**第 1 期只声明 `idle` 与 `wait` 两个条目** —— 其余状态故意不声明,用来验证回落契约真的生效。
-- [ ] **Step 2:** 出**占位帧**(纯色块 + 状态名文字,横向单行,`idle` 2 帧 / `wait` 2 帧即可)。目的是让链路能跑通并可浏览器实测;真图由用户后续替换,替换时**代码零改动**(spec §8 规则 1、2)。占位帧必须满足契约:两组同 `frameWidth × frameHeight`。
-- [ ] **Step 3:** `manifest.json` 用**静态 `import`** 引入(spec §11 裁决),不运行时 fetch。确认 TS 能解析 JSON import(`tsconfig.json` 的 `resolveJsonModule`)。
-- [ ] **Step 4(manifest 自洽断言):** 在 `sprite.test.ts`(或独立 `manifest.test.ts`)里对**静态 import 的真 manifest** 逐态断言 `sheetWidth === frames × frameWidth`、`sheetHeight === frameHeight`(spec §8 自校验;占位帧阶段即生效:2 帧 × 512 ⇒ `sheetWidth: 1024`、`sheetHeight: 512`)。防的是「重导了 sheet 却忘改 manifest 的 frames」这类不同步:它不报错,只表现为某态播到尾巴花屏/空白。
+- [x] **Step 1:** 写 `manifest.json`,按 spec §8 的形状(`frameWidth` / `frameHeight` / `fallback: "idle"` / `states`)。**第 1 期只声明 `idle` 与 `wait` 两个条目** —— 其余状态故意不声明,用来验证回落契约真的生效。
+- [x] **Step 2:** 出**占位帧**(纯色块 + 状态名文字,横向单行,`idle` 2 帧 / `wait` 2 帧即可)。目的是让链路能跑通并可浏览器实测;真图由用户后续替换,替换时**代码零改动**(spec §8 规则 1、2)。占位帧必须满足契约:两组同 `frameWidth × frameHeight`。
+- [x] **Step 3:** `manifest.json` 用**静态 `import`** 引入(spec §11 裁决),不运行时 fetch。确认 TS 能解析 JSON import(`tsconfig.json` 的 `resolveJsonModule`)。
+- [x] **Step 4(manifest 自洽断言):** 在 `sprite.test.ts`(或独立 `manifest.test.ts`)里对**静态 import 的真 manifest** 逐态断言 `sheetWidth === frames × frameWidth`、`sheetHeight === frameHeight`(spec §8 自校验;占位帧阶段即生效:2 帧 × 512 ⇒ `sheetWidth: 1024`、`sheetHeight: 512`)。防的是「重导了 sheet 却忘改 manifest 的 frames」这类不同步:它不报错,只表现为某态播到尾巴花屏/空白。
+
+**Task 3 交付纪要(2026-09-10)**
+
+- **产出**:`frontend/public/pet/parrot/` 下三个文件 —— `manifest.json`(只声明 `idle` / `wait`,其余状态故意不声明以验证回落)、`idle.webp`、`wait.webp`(**各 2 帧、1024×512**,即 `2 × 512` 与 `frameHeight`)。
+- **RED**:`Cannot find module '../../../../public/pet/parrot/manifest.json'`(0 用例收集)。
+- **GREEN**:`sprite.test.ts` 11 → **16 例**(新增 5:1 条 `idle` 必需 + fallback 可达,2 个状态各 1 条宽、1 条高),`core/pet/` 累计 **100 例**全绿。
+- **静态 import 已验证**:`tsconfig.json` 的 `resolveJsonModule: true`;测试从 `tests/unit/core/pet/` 用相对路径 `../../../../public/pet/parrot/manifest.json` 引入真文件,Rstest 的 node 工程正常解析(用例通过即证明),`tsc --noEmit` 也通过 —— 即 spec §11 的「静态 import,不运行时 fetch」成立。渲染器(Task 4)按 `${sprite}.webp` 取同名文件,故文件名必须等于 state key。
+- **revert proof(2 次 neuter)**:
+
+  | # | 被 neuter 的行为 | 改动 | 转红 |
+  |---|---|---|---|
+  | P1 | `sheetWidth === frames × frameWidth` | `idle.frames` 改 3、`sheetWidth` 保持 1024 | **恰好 1 条**,且用例名直接点名 `idle` |
+  | P2 | fallback 必须可达 | `fallback` 指向未声明的 `think` | 恰好 1 条 |
+
+- **manifest 与真实文件的一致性(人工取证,非测试)**:`ffprobe` 逐张读出 `idle.webp` / `wait.webp` 均为 **1024×512**,与 manifest 的 `frames: 2 × frameWidth: 512` / `frameHeight: 512` 吻合。
+- **诚实记录的边界**:Step 4 的断言按 spec §8 的要求是**纯算术、不解码图片**,所以它只能发现「manifest 内部两个数彼此不同步」,**发现不了**「manifest 的数字与 webp 实际尺寸一起错」或「文件缺失」。后者目前靠人工 `ffprobe` 与 Task 7 的浏览器实测兜(资产缺失时渲染器回落成「不渲染任何节点」,是静默降级)。若想把「资产文件本身」也钉住,可在 node 里读 RIFF/WEBP 头 30 行左右拿到真实尺寸再比对 —— 本轮**没做**(计划与 spec 都明确把这条限定为算术自校验),需要的话是一个独立小改动。
+- **占位帧的两处设计决定**:① **fps 用真实值 8,只把帧数降到 2** —— 这样 Task 7 观察到的播放节奏就是上线节奏,将来换真图只改 `frames` / `sheetWidth` 两个数据(P1 那个断言正好守它);代价是 2 帧 @8fps 只有 0.25s,肉眼是明显闪烁,但占位阶段这是**诚实的**占位表现。② 两组用**蓝系 / 琥珀系**区分并各印状态名(`IDLE n` / `WAIT n`),使 Task 7 那条唯一交付判断「『在等你』与『跑完了』视觉上分得开」在占位阶段就可判读。生成方式:ffmpeg `drawtext` + `hstack`(`libwebp` 编码),无新增依赖、无仓库内脚本。
+- **门禁**:`pnpm check` 干净;`core/pet/` 100 例全绿。**本轮未重跑全量套件** —— 改动只有新增资产 + 一个测试文件的新增 describe,不触碰任何既有源文件;上一次全量(2 小时前)是 2173/2172/1(唯一失败为本机预存那条)。Task 4 会改 `pet-sprite.tsx` 等新文件,那时再跑全量。
+- **未覆盖项**:① 占位帧没有做「非 512 尺寸会被拒」的负向校验(渲染器侧不校验,靠 Task 4 的等宽假设);② manifest 只声明两个状态,故 `work-{kind}` / one-shot 等回落路径的真实资产不存在 —— 这正是第 1 期要验的回落行为,由 Task 7 用浏览器确认。
 
 ## Task 4: 渲染器组件(TDD,唯一 DOM 测试)
 

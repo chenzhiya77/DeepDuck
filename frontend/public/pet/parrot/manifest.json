@@ -1,0 +1,22 @@
+{
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "displaySize": 96,
+  "fallback": "idle",
+  "states": {
+    "idle": {
+      "frames": 2,
+      "fps": 8,
+      "loop": true,
+      "sheetWidth": 1024,
+      "sheetHeight": 512
+    },
+    "wait": {
+      "frames": 2,
+      "fps": 8,
+      "loop": true,
+      "sheetWidth": 1024,
+      "sheetHeight": 512
+    }
+  }
+}

@@ -8,6 +8,8 @@ import {
 } from "@/core/pet/sprite";
 import type { PetState } from "@/core/pet/state";
 
+import parrotManifest from "../../../../public/pet/parrot/manifest.json";
+
 function state(overrides: Partial<PetState> = {}): PetState {
   return {
     base: "idle",
@@ -113,4 +115,21 @@ describe("effectiveFps", () => {
   test("pins the scale table", () => {
     expect([...FATIGUE_FPS_SCALE]).toEqual([1, 0.9, 0.75, 0.6]);
   });
+});
+
+describe("parrot manifest self-consistency (spec §8)", () => {
+  test("declares idle and makes the fallback reachable", () => {
+    expect(parrotManifest.states.idle).toBeDefined();
+    expect(parrotManifest.states[parrotManifest.fallback]).toBeDefined();
+  });
+
+  for (const [name, entry] of Object.entries(parrotManifest.states)) {
+    test(`${name}: sheet width is frames x frameWidth`, () => {
+      expect(entry.sheetWidth).toBe(entry.frames * parrotManifest.frameWidth);
+    });
+
+    test(`${name}: sheet height is frameHeight`, () => {
+      expect(entry.sheetHeight).toBe(parrotManifest.frameHeight);
+    });
+  }
 });
