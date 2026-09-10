@@ -29,6 +29,10 @@ SOURCE_FPS = 24
 MAX_FRAMES = 32  # spec §8 rule 5: decode-memory / byte budget at 512 px/frame
 MEASURED_DECODE_WIDTH_OK = 20480  # spec §8 rule 5, measured 2026-09-10
 WARN_DECODE_WIDTH = 16384  # WebGL MAX_TEXTURE_SIZE; CSS images decoded fine above it
+# libwebp refuses to *encode* anything wider than this ("Picture size is too
+# large. Max is 16383x16383."), and the failure surfaces only at the final
+# hstack. 16383 / 512 = 31.99 -> 31 frames per single-row sheet, not 32.
+WEBP_MAX_EDGE = 16383
 
 
 def fail(msg: str) -> None:
@@ -65,6 +69,24 @@ def key_filter(cfg: dict) -> str:
     return f"colorkey={k['color']}:{k['similarity']}:{k['blend']}"
 
 
+def mask_filter(cfg: dict, cli_mask: list[int] | None) -> str:
+    """Paint a rectangle in the key colour before keying.
+
+    For a generator that burns a watermark into the frame: the mark is not the
+    key colour, so colorkey cannot remove it, and it would both pollute the
+    measured union box and ride into the sheet. Filling its rectangle with the
+    key colour makes the existing key remove it, and keeps every rule below
+    unchanged. Rectangle is x0,y0,x1,y1 in source pixels; CLI wins over config.
+    """
+    rect = cli_mask or cfg.get("mask")
+    if not rect:
+        return ""
+    x0, y0, x1, y1 = rect
+    if x1 <= x0 or y1 <= y0:
+        fail(f"mask must be x0,y0,x1,y1 with x1>x0 and y1>y0, got {rect}")
+    return f"drawbox=x={x0}:y={y0}:w={x1 - x0}:h={y1 - y0}:color={cfg['key']['color']}@1.0:t=fill"
+
+
 def measure(args: argparse.Namespace) -> None:
     cfg = load_config(Path(args.config)) if args.config else {
         "key": {"color": "0xFF00FF", "similarity": 0.30, "blend": 0.08}, "frame": 512}
@@ -76,9 +98,10 @@ def measure(args: argparse.Namespace) -> None:
     stream = json.loads(probe.stdout)["streams"][0]
     w, h = stream["width"], stream["height"]
     sw, sh = w // div, h // div
+    mask = mask_filter(cfg, args.mask)
     raw = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(args.video),
-         "-vf", f"{key_filter(cfg)},scale={sw}:{sh}:flags=area",
+         "-vf", ",".join(p for p in (mask, key_filter(cfg), f"scale={sw}:{sh}:flags=area") if p),
          "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
         capture_output=True, check=True).stdout
     frame_bytes = sw * sh * 4
@@ -98,19 +121,33 @@ def measure(args: argparse.Namespace) -> None:
         "union_bbox": box,
         "margins": {"left": box[0], "right": w - box[0] - box[2], "top": box[1], "bottom": h - box[1] - box[3]},
         "frames": n,
+        "mask": (args.mask or cfg.get("mask")),
         "loop_strides_dividing_n_minus_1": [s for s in range(1, 9) if (n - 1) % s == 0 and (n - 1) // s <= MAX_FRAMES and SOURCE_FPS % s == 0],
     }, indent=2))
+    if not [s for s in range(1, 9) if (n - 1) % s == 0 and (n - 1) // s <= MAX_FRAMES and SOURCE_FPS % s == 0]:
+        print(f"warning: no legal loop stride for {n} frames; a loop needs a frame count whose (n-1) is divisible "
+              f"by the stride (e.g. 97 frames -> stride 3 -> 32 frames @8fps). Trim the clip or pass --frames N.")
     print("note: the GLOBAL crop box is the union of this output across ALL clips "
-          "(spec §8.1 rule 3); put it in the shared config as \"crop\": [x, y, w, h].")
+          "(spec §8.1 rule 3); put it in the shared config as \"crop\": [x, y, w, h]. "
+          "If the source carries a burned-in watermark, pass --mask x0,y0,x1,y1 so it never inflates this box.")
 
 
-def sheet(args: argparse.Namespace) -> None:
-    cfg = load_config(Path(args.config))
-    if "crop" not in cfg:
-        fail("config has no \"crop\"; run `measure` on every clip and set the global union box first (spec §8.1 rule 3)")
+def plan_frames(args: argparse.Namespace, cfg: dict) -> tuple[list[int], int, int]:
+    """Pick the frame indices for one clip and enforce every selection guard.
+
+    Shared by `sheet` and `frames` so the two entry points cannot drift on
+    stride divisibility, the loop seam rule, the frame budget, or the WebP
+    width ceiling. Returns (indices, considered frame count, fps).
+    """
     if SOURCE_FPS % args.stride != 0:
         fail(f"stride {args.stride} does not divide {SOURCE_FPS}; fps would be non-integer and steps would jitter (spec §8 rule 6 ladder {sorted({SOURCE_FPS // s for s in range(1, 9)})})")
     n = nb_frames(args.video)
+    if args.frames is not None:
+        if args.mode != "loop":
+            fail("--frames only applies to loop mode; a oneshot clip selects its range with --window")
+        if args.frames > n:
+            fail(f"--frames {args.frames} exceeds the clip's {n} frames")
+        n = args.frames
     if args.mode == "loop":
         # first=last frame makes frame n-1 a duplicate of frame 0: drop it, then
         # require the remainder to divide evenly so the wrap step equals every
@@ -130,12 +167,32 @@ def sheet(args: argparse.Namespace) -> None:
     width = len(indices) * cfg["frame"]
     if width > MEASURED_DECODE_WIDTH_OK:
         fail(f"sheet width {width}px exceeds the measured decode ceiling {MEASURED_DECODE_WIDTH_OK}px")
+    if width > WEBP_MAX_EDGE:
+        max_frames = WEBP_MAX_EDGE // cfg["frame"]
+        fail(f"sheet width {width}px exceeds the WebP encode ceiling {WEBP_MAX_EDGE}px "
+             f"({len(indices)} frames x {cfg['frame']}px); libwebp cannot encode it at all. "
+             f"Use at most {max_frames} frames per single-row sheet "
+             f"(e.g. --frames {1 + max_frames * args.stride} with --stride {args.stride}).")
     if width > WARN_DECODE_WIDTH:
         print(f"warn: sheet width {width}px is above WebGL MAX_TEXTURE_SIZE {WARN_DECODE_WIDTH}px; "
               "CSS backgrounds decoded fine at 20480 in the 2026-09-10 measurement, but re-verify on target browsers")
+    return indices, n, fps
 
-    select = "select='" + "+".join(f"eq(n\\,{i})" for i in indices) + "'"
-    vf = f"{select},{key_filter(cfg)},{cfg['key']['_crop']},scale={cfg['frame']}:{cfg['frame']}:flags=area"
+
+def select_filter(indices: list[int]) -> str:
+    return "select='" + "+".join(f"eq(n\\,{i})" for i in indices) + "'"
+
+
+def sheet(args: argparse.Namespace) -> None:
+    cfg = load_config(Path(args.config))
+    if "crop" not in cfg:
+        fail("config has no \"crop\"; set it once and keep it for every clip (spec §8.1 rule 3)")
+    indices, n, fps = plan_frames(args, cfg)
+    width = len(indices) * cfg["frame"]
+    select = select_filter(indices)
+    mask = mask_filter(cfg, args.mask)
+    vf = ",".join(p for p in (select, mask, key_filter(cfg), cfg["key"]["_crop"],
+                              f"scale={cfg['frame']}:{cfg['frame']}:flags=area") if p)
     with tempfile.TemporaryDirectory() as td:
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(args.video),
                         "-vf", vf, "-fps_mode", "passthrough", f"{td}/f%04d.png"], check=True)
@@ -153,7 +210,95 @@ def sheet(args: argparse.Namespace) -> None:
                              "sheetWidth": width, "sheetHeight": cfg["frame"]}}
     print(json.dumps(manifest))
     print(f"wrote {args.out} ({width}x{cfg['frame']}, {len(indices)} frames @ {fps}fps, "
-          f"playback {len(indices) / fps:.2f}s)")
+          f"playback {len(indices) / fps:.2f}s; considered {n} of the clip's frames"
+          f"{', masked ' + str(args.mask or cfg.get('mask')) if mask else ''})")
+
+
+def frames(args: argparse.Namespace) -> None:
+    """Dump the selected frames with geometry applied but the key colour intact.
+
+    The artist's half of the pipeline: this hands over exactly the frames that
+    would go into the sheet, already masked, cropped and scaled, so the keying
+    can be done elsewhere and the result packed back with `pack`. Sizes are
+    baked in, so an externally keyed frame must come back at frame x frame.
+    """
+    cfg = load_config(Path(args.config))
+    if "crop" not in cfg:
+        fail("config has no \"crop\"; set it once and keep it for every clip (spec §8.1 rule 3)")
+    indices, n, fps = plan_frames(args, cfg)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob("f*.png"):
+        stale.unlink()
+    # --no-scale keeps source resolution so the key can be pulled at full res and
+    # only then downsampled (pack does that), which is the same order the
+    # one-pass `sheet` uses: key -> crop -> scale.
+    scale = "" if args.no_scale else f"scale={cfg['frame']}:{cfg['frame']}:flags=area"
+    vf = ",".join(p for p in (select_filter(indices), mask_filter(cfg, args.mask),
+                              cfg["key"]["_crop"], scale) if p)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(args.video),
+                    "-vf", vf, "-fps_mode", "passthrough", str(out_dir / "f%04d.png")], check=True)
+    produced = sorted(out_dir.glob("f*.png"))
+    if len(produced) != len(indices):
+        fail(f"expected {len(indices)} frames, ffmpeg produced {len(produced)}")
+    crop_w, crop_h = cfg["key"]["_crop"].removeprefix("crop=").split(":")[:2]
+    size = f"{crop_w}x{crop_h} (source resolution, crop applied)" if args.no_scale else f"{cfg['frame']}x{cfg['frame']}"
+    print(f"wrote {len(produced)} frames to {out_dir} ({size}, key colour NOT removed; "
+          f"considered {n} of the clip's frames)")
+    print(f"key them, then: python scripts/pet_extract.py pack --dir \"{out_dir}\" "
+          f"--state {args.state} --fps {fps} --frame {cfg['frame']}{'' if args.mode == 'loop' else ' --oneshot'} --out <sheet.webp>")
+
+
+def pack(args: argparse.Namespace) -> None:
+    """Assemble externally keyed frames into one horizontal sheet.
+
+    Inverse of `frames`: it does not key anything, but it does verify the set is
+    uniform and within the format's limits, so a mismatched export fails here
+    instead of producing a sheet that is silently one frame out of step.
+    """
+    files = sorted(Path(args.dir).glob("*.png"))
+    if not files:
+        fail(f"no PNG frames found in {args.dir}")
+    shapes = set()
+    alphas = set()
+    for f in files:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height,pix_fmt", "-of", "json", str(f)],
+            capture_output=True, text=True, check=True)
+        stream = json.loads(probe.stdout)["streams"][0]
+        shapes.add((stream["width"], stream["height"]))
+        alphas.add(stream["pix_fmt"])
+    if len(shapes) != 1:
+        fail(f"frames differ in size: {sorted(shapes)}; every frame must be the same square box")
+    w, h = shapes.pop()
+    if w != h:
+        fail(f"frames are {w}x{h}; the sheet's frame is square, so a crop must be square too")
+    width = args.frame * len(files)
+    if width > WEBP_MAX_EDGE:
+        fail(f"sheet width {width}px exceeds the WebP encode ceiling {WEBP_MAX_EDGE}px "
+             f"({len(files)} frames x {args.frame}px); drop frames or split the state")
+    if not any("a" in fmt or fmt.startswith("pal8") for fmt in alphas):
+        print(f"warn: frames carry no alpha channel ({sorted(alphas)}); the key colour will be visible — "
+              "did you forget to key them?")
+    if w != args.frame:
+        print(f"note: frames are {w}x{h} and will be scaled to {args.frame}x{args.frame} while stacking "
+              "(keying at source resolution then downscaling matches the one-pass `sheet` order)")
+
+    inputs: list[str] = []
+    for f in files:
+        inputs += ["-i", str(f)]
+    graph = "".join(f"[{i}:v]scale={args.frame}:{args.frame}:flags=area[s{i}];" for i in range(len(files)))
+    graph += "".join(f"[s{i}]" for i in range(len(files))) + f"hstack=inputs={len(files)}"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", *inputs,
+         "-filter_complex", graph,
+         "-c:v", "libwebp", "-quality", str(args.quality), str(args.out)], check=True)
+    manifest = {args.state: {"frames": len(files), "fps": args.fps, "loop": not args.oneshot,
+                             "sheetWidth": width, "sheetHeight": args.frame}}
+    print(json.dumps(manifest))
+    print(f"wrote {args.out} ({width}x{args.frame}, {len(files)} frames @ {args.fps}fps"
+          f"{f', scaled from {w}px' if w != args.frame else ''})")
 
 
 def base(args: argparse.Namespace) -> None:
@@ -184,6 +329,8 @@ def main() -> None:
     m.add_argument("--video", type=Path, required=True)
     m.add_argument("--config", type=Path, help="optional config supplying key params")
     m.add_argument("--scale-div", type=int, default=10, help="bbox precision divisor (default 10 => ±10px)")
+    m.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
+                   help="paint this rectangle in the key colour before keying (burned-in watermark); overrides config \"mask\"")
     m.set_defaults(fn=measure)
     s = sub.add_parser("sheet", help="extract, key, crop, scale and stack one state sheet")
     s.add_argument("--video", type=Path, required=True)
@@ -192,8 +339,37 @@ def main() -> None:
     s.add_argument("--mode", choices=["loop", "oneshot"], required=True)
     s.add_argument("--stride", type=int, required=True)
     s.add_argument("--window", type=int, nargs=2, metavar=("START", "END"), help="oneshot frame-index window")
+    s.add_argument("--frames", type=int,
+                   help="loop only: consider just the first N frames of the clip. Use it when the generator overshoots the "
+                        "nominal duration and no stride divides the real (n-1) — e.g. 107 frames -> --frames 97 --stride 3")
+    s.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
+                   help="paint this rectangle in the key colour before keying (burned-in watermark); overrides config \"mask\"")
     s.add_argument("--out", type=Path, required=True)
     s.set_defaults(fn=sheet)
+    fr = sub.add_parser("frames", help="dump the selected frames with geometry applied but the key colour intact (then key elsewhere and use pack)")
+    fr.add_argument("--video", type=Path, required=True)
+    fr.add_argument("--config", type=Path, required=True, help="shared config: key colour + crop + frame size")
+    fr.add_argument("--state", required=True, help="state name, echoed into the pack hint")
+    fr.add_argument("--mode", choices=["loop", "oneshot"], required=True)
+    fr.add_argument("--stride", type=int, required=True)
+    fr.add_argument("--window", type=int, nargs=2, metavar=("START", "END"), help="oneshot frame-index window")
+    fr.add_argument("--frames", type=int, help="loop only: consider just the first N frames of the clip")
+    fr.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
+                    help="paint this rectangle in the key colour before anything else; overrides config \"mask\"")
+    fr.add_argument("--no-scale", action="store_true",
+                    help="keep source resolution (crop applied, not resized) so the key is pulled at full res and only "
+                         "then downscaled by pack — the same order the one-pass `sheet` uses")
+    fr.add_argument("--out-dir", type=Path, required=True, help="directory to write f0001.png ... into (cleared of f*.png first)")
+    fr.set_defaults(fn=frames)
+    p = sub.add_parser("pack", help="assemble externally keyed frames into one horizontal sheet (inverse of frames)")
+    p.add_argument("--dir", type=Path, required=True, help="directory of equally sized square PNG frames, sorted by name")
+    p.add_argument("--state", required=True)
+    p.add_argument("--fps", type=int, required=True)
+    p.add_argument("--oneshot", action="store_true", help="mark the state as a one-shot instead of a loop")
+    p.add_argument("--frame", type=int, default=512, help="expected square edge, used only in error messages")
+    p.add_argument("--quality", type=int, default=85, help="libwebp quality (default 85)")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(fn=pack)
     b = sub.add_parser("base", help="composite the deterministic base frame (spec §8.1 rule 5): transparent ref onto solid canvas at locked scale/position")
     b.add_argument("--ref", type=Path, required=True, help="transparent-background character reference")
     b.add_argument("--out", type=Path, required=True)
