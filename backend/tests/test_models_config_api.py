@@ -464,6 +464,18 @@ def test_put_rejects_invalid_capability_combinations(config_env: Path, override:
     assert (config_env / "models_config.json").read_bytes() == before
 
 
+def test_public_models_expose_effort_capabilities(config_env: Path):
+    """The chat UI reads the model's effort subset/defaults from the public list."""
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [_CAPABILITY_MODEL]}).status_code == 200
+        public = client.get("/api/models").json()
+
+    entry = {model["name"]: model for model in public["models"]}["cap-model"]
+    assert entry["supported_reasoning_efforts"] == ["low", "medium", "high"]
+    assert entry["reasoning_effort"] == "medium"
+
+
 # ── support bundle redacts the models file ────────────────────────────────
 
 

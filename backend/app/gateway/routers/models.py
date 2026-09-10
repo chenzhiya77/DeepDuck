@@ -42,6 +42,14 @@ class ModelResponse(BaseModel):
     description: str | None = Field(None, description="Model description")
     supports_thinking: bool = Field(default=False, description="Whether model supports thinking mode")
     supports_reasoning_effort: bool = Field(default=False, description="Whether model supports reasoning effort")
+    supported_reasoning_efforts: list[ReasoningEffort] | None = Field(
+        default=None,
+        description="Declared effort subset the composer offers; null = undeclared (all four levels).",
+    )
+    reasoning_effort: ReasoningEffort | None = Field(
+        default=None,
+        description="Default effort level the composer preselects; null = none declared.",
+    )
     context_window: int | None = Field(
         default=None,
         description="Total context window size in tokens (prompt + completion); None when unconfigured",
@@ -140,6 +148,8 @@ async def list_models(
             description=model.description,
             supports_thinking=model.supports_thinking,
             supports_reasoning_effort=model.supports_reasoning_effort,
+            supported_reasoning_efforts=model.supported_reasoning_efforts,
+            reasoning_effort=model.reasoning_effort,
             context_window=model.context_window,
         )
         for model in visible_models
@@ -544,6 +554,8 @@ async def get_model(
         description=model.description,
         supports_thinking=model.supports_thinking,
         supports_reasoning_effort=model.supports_reasoning_effort,
+        supported_reasoning_efforts=model.supported_reasoning_efforts,
+        reasoning_effort=model.reasoning_effort,
         context_window=model.context_window,
     )
 

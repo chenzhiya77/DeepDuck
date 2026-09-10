@@ -747,6 +747,16 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
         logger.warning(f"Thinking mode is enabled but model '{model_name}' does not support it; fallback to non-thinking mode.")
         thinking_enabled = False
 
+    # Per-model default effort (spec 2026-09-10 model-capability-config): the
+    # resolution chain is request > agent > model > None, so callers that send no
+    # level (IM channels, scheduled runs, an older client) still get the model's
+    # declared default. A UI caller that picked a level sends it as the request
+    # value above and keeps winning. ``reasoning_effort`` is validated against
+    # ``supported_reasoning_efforts`` at config load, so a declared default is
+    # always a supported level.
+    if reasoning_effort is None:
+        reasoning_effort = getattr(model_config, "reasoning_effort", None)
+
     logger.info(
         "Create Agent(%s) -> thinking_enabled: %s, reasoning_effort: %s, model_name: %s, is_plan_mode: %s, subagent_enabled: %s, max_concurrent_subagents: %s, max_total_subagents: %s",
         agent_name or "default",

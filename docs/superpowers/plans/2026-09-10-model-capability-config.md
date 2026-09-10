@@ -248,9 +248,52 @@
 - Test: `backend/tests/test_lead_agent_runtime_options.py`（或既有 lead_agent 测试）：无 request/agent effort
   时落到模型默认；有 request effort 时 request 赢
 
-- [ ] RED → Implement → GREEN + revert proof + `pnpm check` 双净。
-- [ ] Commit: `fix(frontend): gate mode menu and reasoning-effort levels by model capabilities`
-- [ ] Commit: `feat(runtime): honor per-model default reasoning effort (user > model > mode heuristic)`
+- [x] RED → Implement → GREEN + revert proof + `pnpm check` 双净。（新增测试：node `tests/unit/models/reasoning-effort.test.ts`
+  **12 例**（模式可见性 / 子集选项 / 方案 A 解析序 / 模式切换保留 / 选中预选）；dom
+  `tests/unit/components/workspace/composer-reasoning-controls.dom.test.tsx` **9 例**（(T,T) 全 4 模式 + 子集深度菜单；
+  (F,F) 只剩闪速；深度菜单只列子集 / 无子集时全 4 档 / 可选可点 / 无 effort 支持不渲染 / flash 不渲染）；
+  后端 `test_lead_agent_model_resolution.py` **+5 例**（模型默认兜底、request 赢、无子集也生效、agent 赢、无默认保持 None）
+  与 `test_models_config_api.py` **+1 例**（公开 `GET /api/models` 带出子集与默认档）。
+  结果：前端 `models`+`settings`+`components/workspace` **256 绿**；后端 lead_agent+models_config_api+prompt+config
+  **141 绿**（唯一失败为已复证的环境性 `test_missing_models_file_falls_back_to_config_yaml`）；
+  `pnpm check`（eslint+tsc）**双净**；ruff check+format 双净。
+  revert proof：neuter ①`offeredModes` 去门控 ②`reasoningEffortLevels` 恒全 4 档 ③`effortAfterModeSelect` 恒启发式
+  ④后端模型默认环 ⇒ **前端 5 + 后端 2 红**（offers-only-flash / lists-only-flash / lists-exactly-subset /
+  keeps-chosen-level / ignores-default-outside-subset + 2 后端兜底用例）；恢复后前端 21 绿）
+- [x] Commit: `fix(frontend): gate mode menu and reasoning-effort levels by model capabilities`
+- [x] Commit: `feat(runtime): honor per-model default reasoning effort (user > model > mode heuristic)`
+
+#### Task 5 交付纪要（2026-09-10）
+
+- **实现落点（前端）**：
+  - `core/models/reasoning-effort.ts`（**新建，纯规则**）：`offeredModes`/`isModeOffered`（thinking 依赖档位门控）、
+    `resolveMode`（兜底）、`reasoningEffortLevels`（子集 ?? 全 4 档）、`modelDefaultEffort`、`modeHeuristicEffort`、
+    `resolveReasoningEffort`（方案 A）、`effortAfterModelSelect`/`effortAfterModeSelect`。
+  - `components/workspace/composer-reasoning-controls.tsx`（**新建**，plan Files 未列）：`ModeMenu` + `EffortMenu`，
+    **两个菜单自己拥有门控规则**（不再由调用点各自判断）。输入栏与侧栏共用，结构上不可能再漂移。
+  - `input-box.tsx`：删除本地 `getResolvedMode` 与两段内联菜单 JSX（-13.8k 字符）；方案 A 三处接线（自动初始化预选模型默认 /
+    选中模型 `effortAfterModelSelect` / 模式切换 `effortAfterModeSelect`）+ 提交守卫同步带 `reasoning_effort`。
+  - `sidecar-panel.tsx`：删除自带的 `SidecarModeMenu`（原样复制品，且同样有 pro/ultra 死条目）、`getResolvedMode`、
+    `reasoningEffortForMode`，改用共用菜单与同一解析函数。
+  - `core/threads/hooks.ts`：两条发送路径的内联 effort 三元表达式（各一份，重复）改走 `resolveReasoningEffort`。
+  - `core/models/types.ts`：公开 `Model` 增 `supported_reasoning_efforts`/`reasoning_effort`。
+- **实现落点（后端）**：`lead_agent/agent.py` 在 `model_config` 解析之后插入模型默认环 → `request > agent > model > None`；
+  `routers/models.py` 公开 `ModelResponse` 增 `supported_reasoning_efforts`/`reasoning_effort`（`list_models` 与 `get_model`
+  两处映射同步）——**计划未列的补口**：输入栏「读子集 / 预选默认」必须有这条数据源，否则前端拿不到。
+- **关键决策**：
+  1. **门控下沉到组件**：死条目的根因是「渲染条件分散在各调用点」，故把可见性/渲染规则放进 `ModeMenu`/`EffortMenu`
+     自身，并用测试直接钉三种形态 (T,T)/(T,F)/(F,F)。
+  2. **方案 A 一律走 `effortAfter*`/`resolveReasoningEffort`**：模型声明默认 ⇒ 模式切换不重写（ultra 不再强制 high）；未声明 ⇒
+     保留旧启发式；选中模型 ⇒ 预选其默认；无默认 ⇒ 保留用户现值。
+  3. **显示值 = 实际发送值**：深度菜单的选中态/触发器文案改用 `resolveReasoningEffort` 的结果，顺带修掉旧显示 bug
+     （未选时恒显示「中」，而 thinking 模式实际发送的是 low）。
+  4. **EffortMenu 自带 `mode !== "flash"` 门控**：flash 不跑推理，深度入口对它是死控件。
+  5. **a11y 变化**：模式触发器新增 `aria-label="模式: <当前模式>"`（原来只有可见文案，图标无语义）；e2e 若按旧文案
+     定位该按钮需改为按解析后的模式名。
+- **未覆盖（诚实记录）**：没有 `InputBox` 组件级集成 dom 测试——该组件依赖 models/auth/skills/thread/prompt-input/
+  sidecar/upload-limits 多处上下文，脚手架成本高且 Radix 菜单在 happy-dom 不稳，故按风险表「枚举门控规则下沉 node 测试钉死」
+  处理：菜单行为由组件级 dom 测试覆盖，「输入栏/侧栏已改走共用解析函数」这一行接线由类型 + 规则测试保证，非端到端 UI 断言。
+- **遗留（未动）**：Task 6（收官：全量回归 + README/AGENTS 文档同步 + 浏览器实测）。
 
 ## Task 6: 收官——回归 + 文档同步 + 浏览器实测
 

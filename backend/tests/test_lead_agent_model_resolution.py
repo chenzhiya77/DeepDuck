@@ -97,7 +97,13 @@ def _make_app_config(models: list[ModelConfig], loop_detection: LoopDetectionCon
     )
 
 
-def _make_model(name: str, *, supports_thinking: bool) -> ModelConfig:
+def _make_model(
+    name: str,
+    *,
+    supports_thinking: bool,
+    reasoning_effort: str | None = None,
+    supported_reasoning_efforts: list[str] | None = None,
+) -> ModelConfig:
     return ModelConfig(
         name=name,
         display_name=name,
@@ -106,6 +112,8 @@ def _make_model(name: str, *, supports_thinking: bool) -> ModelConfig:
         model=name,
         supports_thinking=supports_thinking,
         supports_vision=False,
+        reasoning_effort=reasoning_effort,
+        supported_reasoning_efforts=supported_reasoning_efforts,
     )
 
 
@@ -1309,3 +1317,97 @@ def test_make_lead_agent_no_agent_settings_passes_none_overrides(monkeypatch):
     lead_agent_module._make_lead_agent({"context": {"model_name": "safe-model"}}, app_config=app_config)
 
     assert captured["model_overrides"] is None
+
+
+def _capture_reasoning_effort(monkeypatch, app_config, *, context: dict | None, agent_config=None) -> dict[str, object]:
+    """Run the lead-agent factory and capture the effort handed to create_chat_model."""
+    import deerflow.tools as tools_module
+
+    if agent_config is not None:
+        monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda name, *, user_id=None: agent_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "build_middlewares", lambda config, model_name, agent_name=None, **kwargs: [])
+
+    captured: dict[str, object] = {}
+
+    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None, app_config=None, attach_tracing=True, model_overrides=None):
+        captured["reasoning_effort"] = reasoning_effort
+        return object()
+
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+
+    lead_agent_module._make_lead_agent({"context": context or {}}, app_config=app_config)
+    return captured
+
+
+def test_model_declared_default_reasoning_effort_applies(monkeypatch):
+    """A model's own default is the fallback ring for callers that send none."""
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "reasoning-model",
+                supports_thinking=True,
+                reasoning_effort="high",
+                supported_reasoning_efforts=["low", "high"],
+            )
+        ]
+    )
+
+    captured = _capture_reasoning_effort(monkeypatch, app_config, context={"model_name": "reasoning-model"})
+
+    assert captured["reasoning_effort"] == "high"
+
+
+def test_request_reasoning_effort_beats_the_model_default(monkeypatch):
+    """request > agent > model: an explicit request level still wins."""
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "reasoning-model",
+                supports_thinking=True,
+                reasoning_effort="high",
+                supported_reasoning_efforts=["low", "high"],
+            )
+        ]
+    )
+
+    captured = _capture_reasoning_effort(
+        monkeypatch,
+        app_config,
+        context={"model_name": "reasoning-model", "reasoning_effort": "low"},
+    )
+
+    assert captured["reasoning_effort"] == "low"
+
+
+def test_model_default_applies_without_a_declared_subset(monkeypatch):
+    """A default declared on its own (no subset) is still honoured."""
+    app_config = _make_app_config([_make_model("plain-model", supports_thinking=False, reasoning_effort="medium")])
+
+    captured = _capture_reasoning_effort(monkeypatch, app_config, context={"model_name": "plain-model"})
+
+    assert captured["reasoning_effort"] == "medium"
+
+
+def test_agent_default_reasoning_effort_beats_the_model_default(monkeypatch):
+    """agent > model: a custom agent's default is the closer ring."""
+    app_config = _make_app_config([_make_model("agent-model", supports_thinking=True, reasoning_effort="high")])
+    agent_config = _make_agent_config(model="agent-model", reasoning_effort="medium")
+
+    captured = _capture_reasoning_effort(
+        monkeypatch,
+        app_config,
+        context={"agent_name": "researcher"},
+        agent_config=agent_config,
+    )
+
+    assert captured["reasoning_effort"] == "medium"
+
+
+def test_model_without_a_default_leaves_reasoning_effort_unset(monkeypatch):
+    app_config = _make_app_config([_make_model("plain-model", supports_thinking=False)])
+
+    captured = _capture_reasoning_effort(monkeypatch, app_config, context={"model_name": "plain-model"})
+
+    assert captured["reasoning_effort"] is None
