@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import os
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -25,14 +24,10 @@ import httpx
 from deerflow.config.app_config import get_app_config
 from deerflow.config.rag_config_file import SECRET_ENV_VARS
 from deerflow.knowledge.parser import ParsedImage
+from deerflow.knowledge.vlm_target import resolve_vlm_target
 
 logger = logging.getLogger(__name__)
 
-# OpenAI-compatible endpoint for qwen3.7-flash on DashScope
-# Default endpoint (no workspace ID needed). Override via DASHSCOPE_VL_BASE_URL
-# for workspace-specific domains, e.g. Beijing region:
-# https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-VL_BASE_URL = os.getenv("DASHSCOPE_VL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 # Env var name can be overridden via config
 VL_API_KEY_ENV = SECRET_ENV_VARS["vlm_api_key"]
 
@@ -45,10 +40,10 @@ def _placeholder(ref: str) -> str:
     return f"图片 {Path(ref).name}"
 
 
-async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, model: str, api_key: str) -> str:
+async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, model: str, base_url: str, api_key: str) -> str:
     image_b64 = base64.b64encode(image.content).decode("ascii")
     response = await client.post(
-        VL_BASE_URL + "/chat/completions",  # Append chat completions endpoint
+        base_url.rstrip("/") + "/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
             "model": model,
@@ -81,26 +76,25 @@ async def caption_images(
 ) -> dict[str, str]:
     """Caption every image with concurrent calls; failures degrade to filename placeholders.
 
-    The key comes from ``DASHSCOPE_API_KEY`` env var (configurable via app config);
-    when unset, every image degrades to its placeholder without any outbound call.
-    *model* defaults to ``rag.vlm_model`` from the app config. Uses asyncio.gather
-    with Semaphore(4) for concurrency control; results are returned in input list order
-    to protect Markdown image position mapping.
+    The target (model id, endpoint, key) is resolved by :func:`resolve_vlm_target` — naming
+    a configured ``models:`` entry supplies all three. A missing key degrades every image to
+    its placeholder without any outbound call. *model* overrides ``rag.vlm_model``. Uses
+    asyncio.gather with Semaphore(4) for concurrency control; results are returned in input
+    list order to protect Markdown image position mapping.
     """
     if not images:
         return {}
 
-    # Get config dynamically
     cfg = get_app_config()
     api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
-    api_key = cfg.rag.vlm_api_key or os.environ.get(api_key_env)
+    target = resolve_vlm_target(cfg, model)
+    api_key = target.api_key
 
     if not api_key:
         logger.warning("%s is not set; degrading %d image(s) to filename placeholders", api_key_env, len(images))
         return {image.ref: _placeholder(image.ref) for image in images}
 
-    if model is None:
-        model = cfg.rag.vlm_model
+    model = target.model
 
     own_client = client is None
     # Task 16: timeout raised to 180s for long-form transcription
@@ -114,7 +108,7 @@ async def caption_images(
     async def caption_with_semaphore(img: ParsedImage) -> tuple[str, str]:
         async with semaphore:
             try:
-                result = await _caption_one(http, img, model=model, api_key=api_key)
+                result = await _caption_one(http, img, model=model, base_url=target.base_url, api_key=api_key)
                 return img.ref, result
             except Exception as exc:
                 logger.warning("VLM caption failed for %s (%s); using filename placeholder", img.ref, exc)

@@ -14,7 +14,7 @@ class TestRagConfig:
         assert config.qdrant_url == "http://localhost:6333"
         assert config.embedding_model == "qwen3.7-text-embedding"
         assert config.rerank_model == "qwen3-rerank"
-        assert config.vlm_model == "Qwen/Qwen3-VL-30B-A3B-Instruct"
+        assert config.vlm_model == "qwen3.7-flash"
         assert config.extract_model is None
         assert config.worker_concurrency == 2
         assert config.extract_rate_limit_rps == 5.0
@@ -124,7 +124,7 @@ class TestAppConfigRagSection:
         assert config.rag.qdrant_url == "http://localhost:6333"
         assert config.rag.embedding_model == "qwen3.7-text-embedding"
         assert config.rag.rerank_model == "qwen3-rerank"
-        assert config.rag.vlm_model == "Qwen/Qwen3-VL-30B-A3B-Instruct"
+        assert config.rag.vlm_model == "qwen3.7-flash"
         assert config.rag.worker_concurrency == 2
         assert config.rag.extract_rate_limit_rps == 5.0
 

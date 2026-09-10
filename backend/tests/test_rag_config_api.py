@@ -205,6 +205,34 @@ def test_put_omitting_a_field_clears_it(config_env: Path):
     assert get_app_config().rag.rerank_model == "yaml-rerank"  # back to config.yaml
 
 
+# ── eval judge (a model reference, never a secret) ────────────────────────
+
+
+def test_judge_model_round_trips_as_a_regular_field(config_env: Path):
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"judge_model": "judge-entry"})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env) == {"judge_model": "judge-entry"}
+    body = response.json()
+    assert body["config"]["judge_model"] == "judge-entry"
+    assert body["sources"]["judge_model"] == "ui"
+
+    with _client(system_role="admin") as client:
+        read = client.get("/api/rag/config").json()
+
+    assert read["config"]["judge_model"] == "judge-entry"
+    assert read["sources"]["judge_model"] == "ui"
+
+
+def test_judge_model_falls_back_to_config_yaml(config_env: Path):
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    assert body["config"]["judge_model"] is None
+    assert body["sources"]["judge_model"] == "config_file"
+
+
 # ── hot reload through the shared config singleton ────────────────────────
 
 

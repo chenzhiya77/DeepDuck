@@ -143,8 +143,11 @@ That prompt is intended for coding agents. It tells the agent to clone the repo 
 
    > **Configure the RAG functional models**: The same **Settings → Models** section has a
    > **Functional models** view for the models the knowledge base uses — graph extraction,
-   > image captioning (VLM), embedding, rerank, speech recognition and the Qdrant / MinerU
-   > services. Values left unset fall back to `config.yaml` and, for API keys, to the
+   > image captioning (VLM), embedding, rerank, speech recognition, the evaluation judge that
+   > grades retrieval quality, and the Qdrant / MinerU services. Graph extraction, the caption
+   > VLM and the eval judge are picked from your configured models, and each inherits that
+   > model's endpoint and API key. Values left unset fall back
+   > to `config.yaml` and, for API keys, to the
    > environment variables (`DASHSCOPE_EMBEDDING_API_KEY`, `DASHSCOPE_RERANK_API_KEY`,
    > `SILICONFLOW_VLM_API_KEY`, `MINERU_API_TOKEN`), so existing deployments need no change.
    > Saved values go to a gitignored `rag_config.json` and take effect on the next document
@@ -951,7 +954,9 @@ rag:
   qdrant_url: http://localhost:6333
   embedding_model: qwen3.7-text-embedding
   rerank_model: qwen3-rerank
-  vlm_model: Qwen/Qwen3-VL-30B-A3B-Instruct
+  # Name of a `models:` entry (its endpoint and API key are then reused), or a bare
+  # model id to use rag.vlm_base_url with the caption API key.
+  vlm_model: qwen3.7-flash
   worker_concurrency: 2
   extract_rate_limit_rps: 5.0
 ```

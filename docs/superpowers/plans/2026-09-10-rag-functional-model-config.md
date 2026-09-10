@@ -246,6 +246,123 @@
   revert proof：neuter ①去掉两处密钥可见标签 ②组卡片退回裸 div ③下拉钉死为自定义 ⇒ **恰好 3 红**、各对应一条；恢复后 59 绿）
 - [x] Commit: `fix(frontend): group the functional-model form, label its inputs and pick the caption model`
 
+## 增量（2026-09-11）：评测 judge 选择器 + 检索端点说明
+
+用户在真实栈上看过功能模型视图后问了三件事，已就代码取证并由用户拍板：
+
+1. **检索组的向量/重排要不要 Base URL？** → **不要**：两个客户端都是 DashScope 专用协议
+   （`embedder.py:36-37` 原生 RPC 路径、`reranker.py:31-32` compatible rerank 路径），`base_url` 是构造函数入参、
+   默认值就是这两个常量，`RagConfig` 里根本没有 endpoint 字段 ⇒ UI 无可绑定的目标。
+   （另注：换 endpoint 与换 embedding 模型等价——向量空间随之改变，老库需重建索引。）
+   **用户决策：只加一行提示文案，不开输入框。**
+2. **VLM 既然能选已配模型，为什么还要 endpoint + key？** → 因为 `vlm_model` 存的是**裸模型 id**，不是 `models:` 条目引用，
+   captioner 借不到条目的 client/endpoint/key，只能自带凭据。彻底解法是改成条目引用（captioner 两处解析 + 配置形状 +
+   脱敏 + `sources` 语义都要动，且会改变下拉 value 的语义）。
+   **用户决策：本期保持现状**（继续显示 endpoint + key）。
+3. **有没有 judge 模型？是当前对话模型吗？要不要加选择器？** → 有，但**不是**对话模型：`factory.build_judge_llm`
+   支持 `dashscope:<id>`（key 取 `DASHSCOPE_JUDGE_API_KEY` / `DASHSCOPE_API_KEY`）或 `models:` 条目名，`None` ⇒ 配置里第一个模型；
+   CLI 有 `--judge-model`，而 UI 触发的评测（`ondemand.py:408`）传 `None`（= 主模型），且 `rag` 里没有 judge 字段。
+   **用户决策：加选择器。**
+
+### 交付
+
+- **后端**（`rag.judge_model`，取值 = `models:` 条目名）：`RagConfigFile.judge_model` + `RagConfig.judge_model`
+  两处声明即可打通既有通用管线（`merge_rag_config` 逐字段合并、admin API 的 `_build_response`/`_declared_flat`
+  按 `model_fields` 泛化、热重载签名已覆盖整个 rag 文件）；
+  `knowledge/eval/ondemand.py::_build_layer2_deps` 改为 `build_judge_llm(config.rag.judge_model or None, config=config)`
+  —— `or None` 让手写文件里的空串等同「未配置」（否则会去解析名为 `""` 的模型并抛错）。CLI 的 `--judge-model` 口径不变。
+- **前端**：`core/rag/types.ts`（`judge_model`）、`core/rag/config-form.ts`（表单值 + `TEXT_FIELDS`，随既有「带出/清空」规则自动生效）、
+  `functional-models-view.tsx` 新增「评测裁判」卡片（下拉 = 已配 chat 模型 + 「（使用主模型）」项）+ 检索组端点提示行；
+  i18n 三文件（`groupEvaluation*` / `judgeModel*` / `retrievalEndpointHint`）；
+  顺带把 `EXTRACTION_MODEL_NONE` / `extractionModelOptions` 改名为 `MODEL_REFERENCE_NONE` / `modelReferenceOptions`
+  —— judge 与图谱抽取是同一类「条目名下拉」，用通用名避免第二处误导性命名。
+- **文档**：README 角色清单 + `backend/AGENTS.md`（功能模型角色清单 + Layer 2 段落注明按需评测读 `rag.judge_model`）+
+  `config.example.yaml` 注释项 + `rag_config.example.json` 键。
+
+- [x] RED → Implement → GREEN + revert proof + 双门禁。
+  后端：`test_rag_config_file` 2 例（文件覆盖 / 缺省为 None）+ `test_rag_config_api` 2 例（PUT 回读 + `source=ui` / 缺省回退 `config_file`）
+  + `test_ondemand` 1 例（judge 取值 `judge-entry` → `None` → `""`（空串也归 `None`））；相关子集 **61 绿**；ruff check+format 双净。
+  revert proof：neuter ①`merge_rag_config` 跳过 `judge_model` ②eval 传 `None` ⇒ **恰好 2 红**，恢复后全绿。
+  前端：node 4 例（种子值 / operator 覆盖 / 文件拥有字段带出+清空 / `hasFormChanges`）+ dom 2 例（检索端点提示 / judge 触发器文案）
+  + 布局用例纳入「评测裁判」组；两文件 **42 绿**；`pnpm check`（eslint+tsc）双净。
+  全量 `pnpm test`：**2238 绿 / 1 红**，红的恰是已登记的环境性预存失败（`knowledge/chat-panel.dom.test.tsx`
+  的「restores the remembered model per kb」），与本轮改动无关。
+  revert proof：neuter `TEXT_FIELDS` 去掉 `judge_model` ⇒ **恰好 3 红**（提交覆盖 / 带出+清空 / 变更判定），恢复后 42 绿。
+- [x] Commit: `feat(rag): admin-selectable eval judge and retrieval endpoint note`
+
+#### 遗留 / 观察
+
+- **`vlm_model` → `models:` 条目引用**：曾列为挂起项，**当日即由「增量（2026-09-11 之二）」实现**（见下）。
+- **judge 与作答模型同源**：选择器未做「必须不同」的校验（CLI 文档也只是建议），自我偏好偏差仍在；已记录，不拦。
+- **陈旧断言已修（用户拍板 2026-09-11，与本次一并提交）**：`test_rag_config.py` 的两条默认值断言原写
+  `Qwen/Qwen3-VL-30B-A3B-Instruct`，与代码类默认（HEAD `app_config.py:193` = `qwen3.7-flash`）不符 ⇒ 恒红。
+  按「以代码默认为准」改成 `qwen3.7-flash`（`tests/test_rag_config.py` **23 绿**），并把 README 的 `rag:` 示例片段
+  （`README.md:957`）同步改成 `qwen3.7-flash` 且注明「条目名 or 裸 id」两种语义。
+  注：`docs/superpowers/plans/2026-09-09-table-ingest.md:92` 早前已记过同一处不一致 ⇒ 这是历史陈旧，不是本轮引入；
+  环境性失败清单里那两条后端红自此消掉。
+
+#### 待实测（浏览器，与功能模型视图同一批）
+
+切到「功能模型」→ 看到 5 组卡片（检索 / 图谱抽取 / 评测裁判 / 多模态与视频 / 服务与令牌）→
+评测裁判下拉能选到已配模型、留空即「（使用主模型）」→ 保存后重开仍显示；检索组下方出现端点说明。
+
+## 增量（2026-09-11 之二）：caption VLM 改为 `models:` 条目引用（去掉 endpoint / key 两个框）
+
+**触发**：用户在真实 UI 上追问「多模态与视频里为什么还要留着接口地址、API Key 这两个框」——
+`qwen3.7-flash` 本来就配在对话模型里、下拉也能选到，为什么还要再填一遍凭据？
+
+**取证（三处，全部核对过）**：
+
+1. `captioner.py:35` 的 `VL_BASE_URL` 是**模块常量**（env `DASHSCOPE_VL_BASE_URL` 或 DashScope 默认），
+   `_caption_one` 直接 `post(VL_BASE_URL + "/chat/completions")` ⇒ **UI 里的接口地址对图片腿完全不生效**；
+2. `video/captioner.py:93` 却读 `cfg.rag.vlm_base_url` ⇒ 只有视频腿认这个框（两条腿行为不一致 = 半接线）；
+3. `vlm_model` 存的是**裸模型 id**，captioner 因此拿不到条目里的 `base_url`/`api_key`；
+   而 `/api/models/config` 对 key 永远只回 `********`（`ManagedModelResponse.api_key = MASKED_API_KEY`）
+   ⇒ 前端**在技术上也无法**替你回填 ⇒ 框只能手填。
+
+**用户决策**：两个框（含「自定义端点」兜底分支）**全部去掉**，只留一个模型下拉。
+
+### 交付
+
+- **后端**：新增 `knowledge/vlm_target.py::resolve_vlm_target(config, model=None) -> VlmTarget(model, base_url, api_key, source)`。
+  取值顺序：`vlm_model` 命名到 `models:` 条目 ⇒ 模型 id 取 `entry.model`、endpoint 取条目的 `base_url`/`api_base`
+  （条目没写则回退 `rag.vlm_base_url`）、key 取条目 `api_key`（`$ENV` 在 config 载入时已解析）→ 回退
+  `rag.vlm_api_key` → 回退 `vlm_api_key_env`/`SECRET_ENV_VARS` 指定的环境变量；命名不到条目 ⇒ **legacy 裸 id 路径**
+  （同旧行为：`rag.vlm_base_url` + 文件 key/env）。两条 caption 腿（`captioner.py`、`video/captioner.py`）都改走它，
+  `VL_BASE_URL` 常量与 `DASHSCOPE_VL_BASE_URL` 因此**退役**（config / 条目成为 endpoint 的唯一来源）。
+- **前端**：删除 `VISION_MODEL_CUSTOM` / `visionModelOptions` / `visionModelSelection` / `vlmPrefillFromModel`，
+  改为 `visionReferenceOptions(models, current, noneLabel)` + `isCaptionCapable(model)`（要求 `supports_vision`
+  且 provider ≠ `anthropic`——caption 走 OpenAI 兼容 `/chat/completions`，Anthropic 条目永远不可用）。
+  模态组只剩一个下拉（value = **条目名**，与抽取/judge 行同款），i18n 删 5 键（`vlmPickModel`/`vlmCustom`/`vlmModelId`/
+  `vlmBaseUrl`/`vlmApiKey`）、增 2 键（`captionModelHint`/`vlmModelDefault`）。三个模型引用行至此完全同构。
+- **保留但不再渲染**：`RagConfigFile.vlm_base_url` / `vlm_api_key` 仍在（`TEXT_FIELDS`/`SECRET_FIELDS` 照旧带出，
+  保存不会误删），作为 config.yaml / env 层面的 legacy 兜底；手工 API 写入也仍然有效。
+- **文档**：README 角色清单 + `backend/AGENTS.md`（caption 段改为条目解析 + legacy 回退 + env 退役）+
+  `config.example.yaml` 的 `vlm_base_url` 注释 + `rag_config.example.json`（`vlm_model` 改成 `qwen3.7-flash`，
+  顺手清掉那个没人配置的 `Qwen/Qwen3-VL-30B-A3B-Instruct`）。
+
+- [x] RED → Implement → GREEN + revert proof + 双门禁。
+  后端新增 `tests/knowledge/test_vlm_target.py` **7 例**：条目引用给全三元组 / 条目无 endpoint 回退 `rag.vlm_base_url` /
+  条目无 key 回退文件再回退 env / 命名不到条目走 legacy 裸 id / 缺省取 `rag.vlm_model` / 图片腿与视频腿都打到条目 endpoint 且带条目 key。
+  相关子集 `tests/knowledge` + `test_rag_config_file` + `test_rag_config_api` **1089 绿 / 2 skip**；ruff check+format 双净。
+  revert proof：neuter `resolve_vlm_target` 不查条目 ⇒ **恰好 4 红**（条目三元组 / 条目无 endpoint / 两条腿的 endpoint+key
+  四条），恢复后全绿。⚠️ **首次 neuter 写在真赋值之前被下一行覆盖 ⇒ 207 全绿（假绿）**——neuter 写错会伪装成
+  「用例无牙」，必须先确认 neuter 真的生效再下结论。
+  前端：node 改 3 例 + dom 改 2 例（下拉取条目名、行内**没有任何 input**、未匹配条目名保持原值、过滤器排除 anthropic/非视觉）；
+  两文件 **43 绿**；`pnpm check`（eslint+tsc）双净；全量 `pnpm test` **2239 绿 / 1 红**（红仍是已登记的环境性预存失败
+  `chat-panel.dom.test.tsx`）。revert proof：neuter ①`isCaptionCapable` 去掉 provider 判定 ②选择器恒显默认项
+  ⇒ **恰好 5 红**（3 node + 2 dom），恢复后 43 绿。
+- [x] Commit: `refactor(rag): resolve the caption VLM from its models: entry`
+
+#### 影响 / 遗留
+
+- **`DASHSCOPE_VL_BASE_URL` 退役**：此前只有 `captioner.py` 的代码注释提到它（workspace 专用域名用）。改后 endpoint 的来源是
+  条目 → `rag.vlm_base_url`；要在 workspace 域名上跑 caption 的部署应改用这两处配置。
+- **`vlm_base_url` / `vlm_api_key` 变成「文件里可能存着、UI 看不见」**：不做数据迁移（改 `extra="forbid"` 的字段集会让既有文件
+  直接报错），保存时照旧带出。将来要彻底删这两个文件字段，需要兼容分支或迁移步骤。
+- **条目指向 Anthropic 时**：UI 已过滤；config.yaml 手工指到 anthropic 条目仍会走原始 `/chat/completions` 而失败
+  （降级为 placeholder，与非硬依赖设计一致），未加后端校验。
+
 ## 风险登记
 
 | 风险 | 触发任务 | 缓解 |

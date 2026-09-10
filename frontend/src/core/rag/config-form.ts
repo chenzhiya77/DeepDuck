@@ -34,6 +34,7 @@ export interface RagConfigFormValues {
   vlm_base_url: string;
   vlm_api_key: string;
   extract_model: string;
+  judge_model: string;
   mineru_api_token: string;
   video: {
     asr_provider: "funasr" | "whisper";
@@ -56,6 +57,7 @@ const TEXT_FIELDS = [
   "vlm_model",
   "vlm_base_url",
   "extract_model",
+  "judge_model",
 ] as const;
 
 const VIDEO_SOURCES: Record<string, string> = {
@@ -82,6 +84,7 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     vlm_base_url: asText(config.vlm_base_url),
     vlm_api_key: asText(config.vlm_api_key),
     extract_model: asText(config.extract_model),
+    judge_model: asText(config.judge_model),
     mineru_api_token: asText(config.mineru_api_token),
     video: {
       asr_provider: video.asr_provider === "whisper" ? "whisper" : "funasr",
@@ -189,25 +192,26 @@ export function isEmbeddingChange(
 }
 
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */
-export const EXTRACTION_MODEL_NONE = "__none__";
+export const MODEL_REFERENCE_NONE = "__none__";
 
-export interface ExtractionModelOption {
+export interface ModelReferenceOption {
   value: string;
   label: string;
 }
 
 /**
- * Options for the graph-extraction picker: the configured chat models, with an explicit
- * "not configured" entry. A stored value whose model was deleted stays listed (labelled
+ * Options for a picker whose value is a `models:` entry name (graph extraction, eval
+ * judge): the configured chat models, with an explicit "not configured" entry that means
+ * "let the backend pick". A stored value whose model was deleted stays listed (labelled
  * as itself) so opening the form cannot silently clear it.
  */
-export function extractionModelOptions(
+export function modelReferenceOptions(
   models: readonly { name: string; display_name?: string | null }[],
   current: string,
   noneLabel: string,
-): ExtractionModelOption[] {
-  const options: ExtractionModelOption[] = [
-    { value: EXTRACTION_MODEL_NONE, label: noneLabel },
+): ModelReferenceOption[] {
+  const options: ModelReferenceOption[] = [
+    { value: MODEL_REFERENCE_NONE, label: noneLabel },
   ];
   for (const model of models) {
     const display = model.display_name?.trim();
@@ -239,64 +243,35 @@ export function hasFormChanges(
   );
 }
 
-/** Radix Select needs a concrete value for "type the endpoint by hand". */
-export const VISION_MODEL_CUSTOM = "__custom__";
-
 /** The bits of a configured model the caption picker needs. */
 export interface VisionModelSource {
   name: string;
   model: string;
   display_name?: string | null;
   supports_vision?: boolean;
-  endpoint?: string | null;
+  provider?: string | null;
 }
 
 /**
- * Options for the caption (VLM) picker: the configured models that declare vision, plus
- * a custom-endpoint escape hatch. Values are the provider model ids, because that is what
- * `vlm_model` stores (unlike `extract_model`, which references a registry entry by name).
+ * Whether an entry can serve as the caption VLM. The caption legs post to an
+ * OpenAI-compatible `/chat/completions`, so an Anthropic entry could never work however it is
+ * configured.
  */
-export function visionModelOptions(
+export function isCaptionCapable(model: VisionModelSource): boolean {
+  return Boolean(model.supports_vision) && model.provider !== "anthropic";
+}
+
+/**
+ * Options for the caption (VLM) picker: the entries that can actually serve it, an explicit
+ * "use the configured default" entry, and — through `modelReferenceOptions` — a stored value
+ * that names no entry, so opening the form cannot silently drop it. Values are entry *names*:
+ * the backend resolves the endpoint and key from that entry, which is why this row needs no
+ * endpoint and no key input.
+ */
+export function visionReferenceOptions(
   models: readonly VisionModelSource[],
-  customLabel: string,
-): { value: string; label: string }[] {
-  const options: { value: string; label: string }[] = [
-    { value: VISION_MODEL_CUSTOM, label: customLabel },
-  ];
-  for (const model of models) {
-    if (!model.supports_vision) continue;
-    const display = model.display_name?.trim();
-    const hasDisplay = display !== undefined && display.length > 0;
-    options.push({ value: model.model, label: hasDisplay ? display : model.name });
-  }
-  return options;
-}
-
-/**
- * Which option the stored caption model corresponds to: a configured vision model, or the
- * custom escape hatch. A stored model that no vision-capable entry declares reads as custom,
- * because the picker only offers models the config claims can see.
- */
-export function visionModelSelection(
-  models: readonly VisionModelSource[],
-  currentModel: string,
-): string {
-  const match = models.find(
-    (model) => model.supports_vision && model.model === currentModel,
-  );
-  return match ? match.model : VISION_MODEL_CUSTOM;
-}
-
-/**
- * Fields to write when a configured vision model is picked. The endpoint is only taken from
- * the entry when it declares one, so picking a model never silently replaces a working
- * endpoint with an empty default.
- */
-export function vlmPrefillFromModel(
-  entry: VisionModelSource,
-): { vlm_model: string; vlm_base_url?: string } {
-  const endpoint = entry.endpoint?.trim();
-  return endpoint
-    ? { vlm_model: entry.model, vlm_base_url: endpoint }
-    : { vlm_model: entry.model };
+  current: string,
+  noneLabel: string,
+): ModelReferenceOption[] {
+  return modelReferenceOptions(models.filter(isCaptionCapable), current, noneLabel);
 }

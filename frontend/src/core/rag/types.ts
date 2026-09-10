@@ -24,6 +24,7 @@ export interface RagConfigValues {
   vlm_base_url?: string | null;
   vlm_api_key?: string | null;
   extract_model?: string | null;
+  judge_model?: string | null;
   mineru_api_token?: string | null;
   video?: RagVideoValues | null;
 }

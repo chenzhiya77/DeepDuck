@@ -395,7 +395,10 @@ async def run_full_eval_for_kb(
 
 
 async def _build_layer2_deps(kb_id: str, run_id: str):
-    """生产装配（与 CLI 口径一致）：lead-agent runner + config 主模型 judge + ragas 评估器。"""
+    """生产装配（与 CLI 口径一致）：lead-agent runner + ``rag.judge_model`` judge + ragas 评估器。
+
+    judge 未配置时传 ``None``，由工厂回退到 config 主模型（既有行为）。
+    """
     from deerflow.config.app_config import get_app_config
     from deerflow.knowledge.eval.factory import build_judge_llm, build_ragas_evaluator
     from deerflow.knowledge.eval.ragas_eval import build_lead_agent_runner
@@ -405,7 +408,10 @@ async def _build_layer2_deps(kb_id: str, run_id: str):
     kb = await store.get_kb(kb_id)
     if kb is None:
         raise LookupError(f"knowledge base not found: {kb_id}")
-    judge = build_judge_llm(None, config=get_app_config())
+    config = get_app_config()
+    # A hand-written ``judge_model: ""`` means "not configured" (the API prunes blanks);
+    # passing the empty string through would resolve a model named "" and raise.
+    judge = build_judge_llm(config.rag.judge_model or None, config=config)
     runner = build_lead_agent_runner(kb_id=kb_id, user_id=kb["owner_id"], run_id=run_id)
     return runner, judge, build_ragas_evaluator(judge)
 

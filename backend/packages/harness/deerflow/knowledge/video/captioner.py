@@ -9,8 +9,10 @@ caption 腿：给每镜头的关键帧序列（≤3 帧，来自 ``frames.extrac
 失败 → 该镜头空、计入 failed；failed/total > 30% → degraded（对齐 graph 30% 规则）。
 caption 缺失时镜头卡仍含 asr+ocr（三路并列，幻觉/缺失可被原文对冲，spec §9）。
 
-VLM base_url 读 ``cfg.rag.vlm_base_url``（config 单一源）；``httpx.AsyncClient`` 可
-注入（测试用 MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。
+VLM 目标（模型 id / endpoint / key）由 ``resolve_vlm_target`` 解析：``vlm_model`` 命名
+``models:`` 条目时三者都取自该条目，命名不到条目则回退 ``rag.vlm_base_url`` + rag 文件密钥
+/env。``httpx.AsyncClient`` 可注入（测试用 MockTransport）；Semaphore 按
+``worker_concurrency`` 限流并发。
 """
 
 from __future__ import annotations
@@ -18,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -26,6 +27,7 @@ import httpx
 
 from deerflow.config.app_config import get_app_config
 from deerflow.config.rag_config_file import SECRET_ENV_VARS
+from deerflow.knowledge.vlm_target import resolve_vlm_target
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +91,10 @@ async def caption_shots(
 
     cfg = get_app_config()
     api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
-    api_key = cfg.rag.vlm_api_key or os.environ.get(api_key_env)
-    base_url = cfg.rag.vlm_base_url
     if model is None:
         model = cfg.rag.video.caption_model or cfg.rag.vlm_model
+    target = resolve_vlm_target(cfg, model)
+    model, api_key = target.model, target.api_key
 
     total = len(shot_frames)
     if not api_key:
@@ -111,7 +113,7 @@ async def caption_shots(
             return index, ""  # 无帧镜头：空 caption，不计 failed
         async with semaphore:
             try:
-                return index, await _caption_one_shot(http, frames, model=model, api_key=api_key, base_url=base_url)
+                return index, await _caption_one_shot(http, frames, model=model, api_key=api_key, base_url=target.base_url)
             except Exception as exc:
                 logger.warning("镜头 %d caption 失败（%s）；降级空", index, exc)
                 failed += 1

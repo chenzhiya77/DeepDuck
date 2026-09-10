@@ -25,15 +25,13 @@ import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
   buildRagConfigInput,
-  EXTRACTION_MODEL_NONE,
-  extractionModelOptions,
   formValuesFromConfig,
   hasFormChanges,
+  isCaptionCapable,
   isEmbeddingChange,
-  VISION_MODEL_CUSTOM,
-  visionModelOptions,
-  visionModelSelection,
-  vlmPrefillFromModel,
+  MODEL_REFERENCE_NONE,
+  modelReferenceOptions,
+  visionReferenceOptions,
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
 import { useRagConfig, useSaveRagConfig } from "@/core/rag/hooks";
@@ -45,10 +43,14 @@ import {
 /**
  * RAG functional-model editor (spec 2026-09-10 rag functional-model config §5).
  *
- * Fields are grouped by what they *do* (retrieval / graph / multimodal / services), each with a
- * one-line purpose, because a flat list of model names left admins guessing which role each one
- * plays. Every input carries a visible label — a secret field whose only label was an
- * `aria-label` reads as an anonymous box.
+ * Fields are grouped by what they *do* (retrieval / graph / evaluation / multimodal /
+ * services), each with a one-line purpose, because a flat list of model names left admins
+ * guessing which role each one plays. Every input carries a visible label — a secret field
+ * whose only label was an `aria-label` reads as an anonymous box.
+ *
+ * The three model-reference rows (graph extraction, eval judge, caption VLM) are plain pickers
+ * over the configured `models:` entries: the backend resolves what each role needs from the
+ * named entry, so none of them asks for an endpoint or a key of its own.
  *
  * Saving replaces the whole `rag_config.json` object, so Save stays disabled until the admin
  * actually edits something (see `hasFormChanges`).
@@ -92,9 +94,12 @@ export function FunctionalModelsView() {
 
   const sources = view.sources ?? {};
   const managedModels = modelsConfig?.models ?? [];
-  const visionModels = managedModels.filter((model) => model.supports_vision);
-  const visionSelection = visionModelSelection(managedModels, values.vlm_model);
-  const visionOptions = visionModelOptions(managedModels, F.vlmCustom);
+  const visionOptions = visionReferenceOptions(
+    managedModels,
+    values.vlm_model,
+    F.vlmModelDefault,
+  );
+  const hasVisionModel = managedModels.some(isCaptionCapable);
 
   function update<K extends keyof RagConfigFormValues>(
     key: K,
@@ -118,24 +123,6 @@ export function FunctionalModelsView() {
   function handleSave() {
     if (!hasChanges) return;
     save.mutate(payload, { onSuccess: () => toast.success(F.saved) });
-  }
-
-  function handleVisionSelect(next: string) {
-    if (next === VISION_MODEL_CUSTOM) return; // the raw id input takes over
-    const entry = visionModels.find((model) => model.model === next);
-    if (!entry) return;
-    const prefill = vlmPrefillFromModel(entry);
-    setValues((prev) =>
-      prev
-        ? {
-            ...prev,
-            vlm_model: prefill.vlm_model,
-            ...(prefill.vlm_base_url
-              ? { vlm_base_url: prefill.vlm_base_url }
-              : {}),
-          }
-        : prev,
-    );
   }
 
   return (
@@ -189,21 +176,24 @@ export function FunctionalModelsView() {
             {F.embeddingChangeWarning}
           </p>
         )}
+        <p className="text-muted-foreground mt-3 text-xs">
+          {F.retrievalEndpointHint}
+        </p>
       </Group>
 
       <Group title={F.groupExtraction} hint={F.extractModelHint}>
         <Field label={F.extractModel}>
           <Select
-            value={values.extract_model || EXTRACTION_MODEL_NONE}
+            value={values.extract_model || MODEL_REFERENCE_NONE}
             onValueChange={(next) =>
-              update("extract_model", next === EXTRACTION_MODEL_NONE ? "" : next)
+              update("extract_model", next === MODEL_REFERENCE_NONE ? "" : next)
             }
           >
             <SelectTrigger className="w-full" aria-label={F.extractModel}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {extractionModelOptions(
+              {modelReferenceOptions(
                 models,
                 values.extract_model,
                 F.extractModelNone,
@@ -217,10 +207,41 @@ export function FunctionalModelsView() {
         </Field>
       </Group>
 
+      <Group title={F.groupEvaluation} hint={F.groupEvaluationHint}>
+        <Field label={F.judgeModel}>
+          <Select
+            value={values.judge_model || MODEL_REFERENCE_NONE}
+            onValueChange={(next) =>
+              update("judge_model", next === MODEL_REFERENCE_NONE ? "" : next)
+            }
+          >
+            <SelectTrigger className="w-full" aria-label={F.judgeModel}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {modelReferenceOptions(
+                models,
+                values.judge_model,
+                F.judgeModelNone,
+              ).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </Group>
+
       <Group title={F.groupMultimodal} hint={F.groupMultimodalHint}>
         <div className="flex flex-col gap-4">
-          <Field label={F.captionModel}>
-            <Select value={visionSelection} onValueChange={handleVisionSelect}>
+          <Field label={F.captionModel} hint={F.captionModelHint}>
+            <Select
+              value={values.vlm_model || MODEL_REFERENCE_NONE}
+              onValueChange={(next) =>
+                update("vlm_model", next === MODEL_REFERENCE_NONE ? "" : next)
+              }
+            >
               <SelectTrigger className="w-full" aria-label={F.captionModel}>
                 <SelectValue />
               </SelectTrigger>
@@ -234,43 +255,11 @@ export function FunctionalModelsView() {
             </Select>
           </Field>
 
-          {visionSelection === VISION_MODEL_CUSTOM && (
-            <Field label={F.vlmModelId}>
-              <Input
-                value={values.vlm_model}
-                aria-label={F.vlmModelId}
-                {...AUTOFILL_OFF_INPUT_PROPS}
-                onChange={(event) => update("vlm_model", event.target.value)}
-              />
-            </Field>
-          )}
-
-          {visionModels.length === 0 && (
+          {!hasVisionModel && (
             <p className="text-muted-foreground text-xs">
               {F.vlmNoVisionModel}
             </p>
           )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={F.vlmBaseUrl}>
-              <Input
-                type="url"
-                value={values.vlm_base_url}
-                aria-label={F.vlmBaseUrl}
-                {...AUTOFILL_OFF_INPUT_PROPS}
-                onChange={(event) => update("vlm_base_url", event.target.value)}
-              />
-            </Field>
-            <Field label={F.vlmApiKey} hint={secretHint("vlm_api_key")}>
-              <Input
-                type="password"
-                value={values.vlm_api_key}
-                aria-label={F.vlmApiKey}
-                {...SECRET_INPUT_AUTOFILL_PROPS}
-                onChange={(event) => update("vlm_api_key", event.target.value)}
-              />
-            </Field>
-          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={F.asrProvider}>

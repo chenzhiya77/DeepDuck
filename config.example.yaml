@@ -2572,11 +2572,19 @@ rag:
   embedding_model: qwen3.7-text-embedding
   # DashScope rerank model for hybrid-search precision ranking.
   rerank_model: qwen3-rerank
-  # SiliconFlow VLM model used to caption images extracted from documents.
-  vlm_model: Qwen/Qwen3-VL-30B-A3B-Instruct
+  # Vision-language model used to caption images extracted from documents. Prefer the
+  # name of a `models:` entry — its endpoint and API key are then reused, which is what
+  # the settings form picks from. A bare model id keeps the legacy path: rag.vlm_base_url
+  # (DashScope's compatible endpoint by default) plus DASHSCOPE_API_KEY.
+  vlm_model: qwen3.7-flash
+  # Endpoint used when vlm_model names no `models:` entry. Uncomment to override.
+  # vlm_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
   # Name of the `models:` entry used for graph extraction — pick a small,
   # cheap model with stable JSON output. Omit to use the first configured model.
   # extract_model: deepseek-v4-flash
+  # Name of the `models:` entry used as the eval judge (grades retrieval quality
+  # in the RAGAS eval). Omit to use the first configured model.
+  # judge_model: deepseek-v4-flash
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
   # Requests/second cap for graph-extraction LLM calls during indexing.

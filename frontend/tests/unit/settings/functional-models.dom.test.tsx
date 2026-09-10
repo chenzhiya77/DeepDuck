@@ -48,10 +48,11 @@ function view(over: Partial<RagConfigView["config"]> = {}): RagConfigView {
       embedding_api_key: MASKED,
       rerank_model: "qwen3-rerank",
       rerank_api_key: "",
-      vlm_model: "Qwen/Qwen3-VL-30B-A3B-Instruct",
+      vlm_model: "vl-model",
       vlm_base_url: "https://api.siliconflow.cn/v1",
       vlm_api_key: "",
       extract_model: "deepseek-chat",
+      judge_model: "deepseek-chat",
       mineru_api_token: MASKED,
       video: { asr_provider: "funasr", asr_model: "paraformer-zh", caption_model: "" },
       ...over,
@@ -66,6 +67,7 @@ function view(over: Partial<RagConfigView["config"]> = {}): RagConfigView {
       vlm_base_url: "config_file",
       vlm_api_key: "unset",
       extract_model: "config_file",
+      judge_model: "config_file",
       mineru_api_token: "ui",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
@@ -242,41 +244,67 @@ describe("functional-model layout", () => {
     renderPage();
     openFunctionalView();
 
-    for (const title of [F.groupRetrieval, F.groupExtraction, F.groupMultimodal, F.groupServices]) {
+    for (const title of [
+      F.groupRetrieval,
+      F.groupExtraction,
+      F.groupMultimodal,
+      F.groupEvaluation,
+      F.groupServices,
+    ]) {
       expect(screen.getByText(title)).toBeTruthy();
     }
     expect(screen.getByText(F.groupRetrievalHint)).toBeTruthy();
     expect(screen.getByText(F.groupMultimodalHint)).toBeTruthy();
+    expect(screen.getByText(F.groupEvaluationHint)).toBeTruthy();
     expect(screen.getByText(F.groupServicesHint)).toBeTruthy();
+  });
+
+  it("says the retrieval endpoint is fixed by the client", () => {
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByText(F.retrievalEndpointHint)).toBeTruthy();
+  });
+
+  it("picks a configured chat model as the eval judge", () => {
+    renderPage();
+    openFunctionalView();
+
+    // Radix Select cannot be opened reliably under happy-dom; the trigger carries the
+    // resolved label and the option list itself is pinned by modelReferenceOptions.
+    expect(screen.getByLabelText(F.judgeModel).textContent).toContain("DeepSeek Chat");
   });
 
   it("labels every input, including the ones that used to be bare boxes", () => {
     renderPage();
     openFunctionalView();
 
-    for (const label of [F.embeddingApiKey, F.rerankApiKey, F.vlmApiKey, F.asrModel, F.qdrantUrl, F.mineruToken]) {
+    for (const label of [F.embeddingApiKey, F.rerankApiKey, F.asrModel, F.qdrantUrl, F.mineruToken]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.getByLabelText(F.embeddingApiKey)).toBeTruthy();
     expect(screen.getByLabelText(F.asrModel)).toBeTruthy();
   });
 
-  it("picks a configured vision model for captions, or falls back to custom", () => {
+  it("picks the caption model from the configured entries, asking for no endpoint or key", () => {
     renderPage();
     openFunctionalView();
 
-    // The fixture stores a model no configured entry declares as vision-capable.
-    expect(screen.getByLabelText(F.captionModel).textContent).toContain(F.vlmCustom);
-    expect(screen.getByLabelText(F.vlmModelId)).toHaveProperty("value", "Qwen/Qwen3-VL-30B-A3B-Instruct");
-  });
-
-  it("shows the configured vision model when the stored id matches one", () => {
-    setRag({ vlm_model: "Qwen/Qwen3-VL-30B" });
-    renderPage();
-    openFunctionalView();
+    const captionRow = screen.getByLabelText(F.captionModel).closest("div");
 
     expect(screen.getByLabelText(F.captionModel).textContent).toContain("Qwen3 VL");
-    // A matched model needs no raw id input.
-    expect(screen.queryByLabelText(F.vlmModelId)).toBeNull();
+    // The endpoint and the key come from that entry, so the row has no inputs at all.
+    expect(captionRow?.querySelector("input")).toBeNull();
+    expect(screen.getByText(F.captionModelHint)).toBeTruthy();
+  });
+
+  it("keeps a stored caption model that names no configured entry", () => {
+    setRag({ vlm_model: "qwen3.7-flash-legacy" });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.captionModel).textContent).toContain(
+      "qwen3.7-flash-legacy",
+    );
   });
 });

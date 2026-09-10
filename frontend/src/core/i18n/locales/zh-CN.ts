@@ -1573,21 +1573,27 @@ export const zhCN: Translations = {
       extractModel: "图谱抽取模型",
       groupRetrieval: "检索",
       groupRetrievalHint: "查询时使用：向量化 + 重排。",
+      retrievalEndpointHint:
+        "两者都走 DashScope 自有协议，接口地址由客户端固定，无需填写——只有上方的密钥可以覆盖。",
       groupExtraction: "图谱抽取",
+      groupEvaluation: "评测裁判",
+      groupEvaluationHint:
+        "用 ragas 给检索质量打分，与对话里选的模型无关；留空则用配置里的主模型。",
+      judgeModel: "裁判模型",
+      judgeModelNone: "（使用主模型）",
       groupMultimodal: "多模态与视频",
       groupMultimodalHint: "图片描述把图片与关键帧转成文字；语音识别只服务视频入库。",
       groupServices: "服务与令牌",
       groupServicesHint: "仅当 Qdrant / MinerU 不在默认位置时才需要修改。",
-      vlmPickModel: "选择视觉模型",
-      vlmCustom: "自定义端点",
-      vlmModelId: "模型 ID",
-      vlmNoVisionModel: "没有配置带视觉能力的模型——可直接用自定义端点填写。",
+      vlmNoVisionModel:
+        "还没有配置支持视觉的模型——先到「对话模型」里加一个带视觉能力的模型。",
       extractModelHint:
         "用于从文档构建知识图谱，建议选小、便宜、输出稳定 JSON 的模型。",
       extractModelNone: "（未配置）",
       captionModel: "图片描述模型 (VLM)",
-      vlmBaseUrl: "接口地址",
-      vlmApiKey: "API Key（图片描述）",
+      captionModelHint:
+        "接口地址与 API Key 取自所选模型条目；留空则用配置里的默认 VLM。",
+      vlmModelDefault: "（使用配置默认）",
       embeddingModel: "向量模型 (embedding)",
       embeddingApiKey: "API Key（向量）",
       embeddingChangeWarning:

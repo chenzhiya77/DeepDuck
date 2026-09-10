@@ -6,11 +6,13 @@
 
 ## Problem Statement
 
-1. **RAG 有 6 个模型角色，全部只能改后端**：
+1. **RAG 有 6 个模型角色，全部只能改后端**（本增量追加第 7 个：评测 judge，详见
+   plan `2026-09-10-rag-functional-model-config.md` 的「增量（2026-09-11）」）：
    | 角色 | 字段 | 今天的数据源 |
    |---|---|---|
    | 图谱抽取 LLM | `rag.extract_model` | 已是 `models:` 条目名（`create_chat_model(get_app_config().rag.extract_model)`，`knowledge/graph/extractor.py:117`） |
-   | 图片/视频 caption | `rag.vlm_model` + `vlm_base_url` + `vlm_api_key_env` | 独立 OpenAI 兼容客户端 + env（`knowledge/captioner.py:94`、`knowledge/video/captioner.py:90`） |
+   | 评测 judge | `rag.judge_model` | `models:` 条目名或 `dashscope:<id>`；UI 触发的评测传 `None` ⇒ 主模型（`knowledge/eval/factory.py:66`、`knowledge/eval/ondemand.py:408`） |
+   | 图片/视频 caption | `rag.vlm_model`（+ legacy `vlm_base_url` / `vlm_api_key_env`） | 独立 OpenAI 兼容客户端；`vlm_model` 命名 `models:` 条目 ⇒ 模型 id/endpoint/key 全取该条目（`knowledge/vlm_target.py`），命名不到 ⇒ 旧路径（`vlm_base_url` + 文件 key/env） |
    | embedding | `rag.embedding_model` | DashScope 专用 dense+sparse；key **固定** env `DASHSCOPE_EMBEDDING_API_KEY`（`knowledge/embedder.py:36`，注释明写 never from config） |
    | rerank | `rag.rerank_model` | DashScope rerank API；key **固定** env `DASHSCOPE_RERANK_API_KEY`（`knowledge/reranker.py:31`） |
    | ASR（视频） | `rag.video.asr_provider` / `asr_model` | funasr / whisper 运行时 |
@@ -50,7 +52,7 @@
 - **文件与模型**：`packages/harness/deerflow/config/rag_config_file.py`，`RagConfigFile`（`extra="forbid"`），
   字段为可选的 `embedding_model` / `embedding_api_key` / `rerank_model` / `rerank_api_key` / `vlm_model` /
   `vlm_base_url` / `vlm_api_key` / `video`（`asr_provider` / `asr_model` / `caption_model`）/ `extract_model` /
-  `qdrant_url` / `mineru_api_token`；路径解析镜像 `ModelsConfig.resolve_config_path`
+  `judge_model` / `qdrant_url` / `mineru_api_token`；路径解析镜像 `ModelsConfig.resolve_config_path`
   （显式参数 → `DEER_FLOW_RAG_CONFIG_PATH` → 项目根搜索；搜索模式下文件可选）。
 - **密钥字段命名**：`*_api_key` 是**值**；`vlm_api_key_env` 保留为回退用的 **env 变量名**，语义写进字段描述。
 - **合并**：新增 `merge_rag_config(yaml_rag: dict, ui: RagConfigFile) -> dict`，逐字段覆盖（`None` 视为未声明），

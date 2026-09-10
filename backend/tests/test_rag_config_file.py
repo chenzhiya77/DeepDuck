@@ -260,3 +260,28 @@ def test_app_config_can_be_built_without_a_rag_file(env_paths, monkeypatch: pyte
     config = AppConfig.from_file(str(config_yaml))
 
     assert config.rag.embedding_model == "yaml-embedding"
+
+
+# ── eval judge role ───────────────────────────────────────────────────────
+
+
+def test_judge_model_file_overrides_config_yaml(env_paths):
+    """The eval judge is a UI-manageable role like the rest: the file wins, config.yaml is the fallback."""
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml, rag={**YAML_RAG, "judge_model": "yaml-judge"})
+    _write_rag_json(rag_json, {"judge_model": "ui-judge"})
+
+    assert get_app_config().rag.judge_model == "ui-judge"
+
+    _write_rag_json(rag_json, {})
+
+    assert get_app_config().rag.judge_model == "yaml-judge"
+
+
+def test_judge_model_defaults_to_none(env_paths):
+    """Unset everywhere reads as None, which the eval path resolves to the config primary model."""
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {})
+
+    assert get_app_config().rag.judge_model is None

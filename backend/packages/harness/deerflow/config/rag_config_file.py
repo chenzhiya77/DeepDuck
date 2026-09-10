@@ -1,8 +1,9 @@
 """API-writable RAG functional-model configuration (``rag_config.json``).
 
-The RAG subsystem's roles (embedding / rerank / caption VLM / graph extraction / ASR /
-MinerU parsing) used to be editable only in the operator's ``config.yaml`` plus
-environment variables for the secrets (spec 2026-09-10 rag functional-model config §2).
+The RAG subsystem's roles (embedding / rerank / caption VLM / graph extraction / eval
+judge / ASR / MinerU parsing) used to be editable only in the operator's ``config.yaml``
+plus environment variables for the secrets (spec 2026-09-10 rag functional-model config
+§2).
 This module is that block's API-writable counterpart, in the same shape as
 :mod:`deerflow.config.models_config`: a *separate* runtime-writable file whose declared
 fields override ``config.yaml``'s ``rag:`` block at load time, so the settings UI can
@@ -82,6 +83,7 @@ class RagConfigFile(BaseModel):
     vlm_base_url: str | None = Field(default=None, description="Endpoint for the caption VLM.")
     vlm_api_key: str | None = Field(default=None, description="Caption VLM API key; masked on read, env is the fallback.")
     extract_model: str | None = Field(default=None, description="Name of a config `models:` entry used for graph extraction.")
+    judge_model: str | None = Field(default=None, description="Name of a config `models:` entry used as the ragas eval judge; None uses the config primary model.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token; masked on read, env is the fallback.")
     video: RagVideoFileConfig | None = Field(default=None, description="Video-ingestion model choices.")
 

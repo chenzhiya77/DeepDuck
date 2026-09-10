@@ -90,6 +90,42 @@ def test_generate_run_id_format_matches_cli_contract() -> None:
     assert re.fullmatch(r"rag-\d{8}T\d{6}Z-[0-9a-f]{8}", generate_run_id())
 
 
+async def test_layer2_deps_judges_with_the_configured_judge_model(monkeypatch) -> None:
+    """按需评测的 judge 读 ``rag.judge_model``（与 CLI ``--judge-model`` 同源），未配置为 None → 主模型。"""
+    from types import SimpleNamespace
+
+    from deerflow.config import app_config as app_config_module
+    from deerflow.knowledge import store as store_module
+    from deerflow.knowledge.eval import factory as factory_module
+    from deerflow.knowledge.eval import ragas_eval as ragas_eval_module
+
+    seen: list[str | None] = []
+
+    def fake_build_judge_llm(judge_model, *, config):
+        seen.append(judge_model)
+        return object()
+
+    async def fake_get_kb(kb_id):
+        return {"owner_id": "user-1"}
+
+    monkeypatch.setattr(factory_module, "build_judge_llm", fake_build_judge_llm)
+    monkeypatch.setattr(factory_module, "build_ragas_evaluator", lambda judge: None)
+    monkeypatch.setattr(ragas_eval_module, "build_lead_agent_runner", lambda **kwargs: object())
+    monkeypatch.setattr(store_module, "get_knowledge_store", lambda: SimpleNamespace(get_kb=fake_get_kb))
+
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: SimpleNamespace(rag=SimpleNamespace(judge_model="judge-entry")))
+    await ondemand._build_layer2_deps(KB, "rag-run")
+
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: SimpleNamespace(rag=SimpleNamespace(judge_model=None)))
+    await ondemand._build_layer2_deps(KB, "rag-run")
+
+    # An empty string from a hand-written file is "not configured", not a model named "".
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: SimpleNamespace(rag=SimpleNamespace(judge_model="")))
+    await ondemand._build_layer2_deps(KB, "rag-run")
+
+    assert seen == ["judge-entry", None, None]
+
+
 async def test_completed_run_persists_local_layer1_row(tmp_path, store) -> None:
     golden = tmp_path / "golden.jsonl"
     await _seed_question(golden)

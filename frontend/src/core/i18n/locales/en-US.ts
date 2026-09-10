@@ -1642,21 +1642,26 @@ export const enUS: Translations = {
       extractModel: "Graph extraction model",
       groupRetrieval: "Retrieval",
       groupRetrievalHint: "Used at query time: vectorisation and reranking.",
+      retrievalEndpointHint:
+        "Both are called through DashScope's own protocol, so the endpoint is fixed by the client — only the keys above can be overridden.",
       groupExtraction: "Graph extraction",
+      groupEvaluation: "Evaluation judge",
+      groupEvaluationHint:
+        "Scores retrieval quality with ragas, independently of the model you chat with. Leave it empty to use the configured primary model.",
+      judgeModel: "Judge model",
+      judgeModelNone: "(use the primary model)",
       groupMultimodal: "Multimodal & video",
       groupMultimodalHint: "Captions turn images and keyframes into text; speech recognition only serves video ingestion.",
       groupServices: "Services & tokens",
       groupServicesHint: "Only change these when Qdrant or MinerU is not at its default location.",
-      vlmPickModel: "Pick a vision model",
-      vlmCustom: "Custom endpoint",
-      vlmModelId: "Model ID",
-      vlmNoVisionModel: "No configured model declares vision support — use a custom endpoint instead.",
+      vlmNoVisionModel: "No configured model declares vision support — add a vision-capable model under Chat models first.",
       extractModelHint:
         "Builds the knowledge graph from documents. Prefer a small, cheap model with stable JSON output.",
       extractModelNone: "(not configured)",
       captionModel: "Caption model (VLM)",
-      vlmBaseUrl: "Endpoint",
-      vlmApiKey: "API key (caption)",
+      captionModelHint:
+        "The endpoint and API key come from the selected model entry; leave it unset to use the configured default VLM.",
+      vlmModelDefault: "(use the configured default)",
       embeddingModel: "Embedding model",
       embeddingApiKey: "API key (embedding)",
       embeddingChangeWarning:

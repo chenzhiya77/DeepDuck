@@ -197,6 +197,7 @@ class RagConfig(BaseModel):
     vlm_timeout: float | None = Field(default=None, description="Read timeout for VLM requests; None uses default 180s from code. Connect timeout is always 15s.")
     vlm_connect_timeout: float = Field(default=15.0, description="Connection timeout for VLM requests (seconds).")
     extract_model: str | None = Field(default=None, description="Name of the config `models:` entry used for graph extraction (small, cheap, stable JSON output); None uses the first configured model.")
+    judge_model: str | None = Field(default=None, description="Name of the config `models:` entry used as the ragas eval judge; None uses the first configured model.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token from rag_config.json; None falls back to MINERU_API_TOKEN.")
 
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")

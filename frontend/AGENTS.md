@@ -150,7 +150,11 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   (`GET/PUT /api/rag/config`, admin-gated) and builds its payload with the pure helpers in
   `core/rag/config-form.ts`; the backend replaces the whole `rag_config.json` object, so those
   helpers carry the file's own overrides forward and keep Save disabled until the admin edits
-  something — do not replace that guard with a payload-emptiness check.
+  something — do not replace that guard with a payload-emptiness check. Its three
+  model-reference rows (graph extraction, eval judge, caption VLM) are all plain pickers over
+  the configured `models:` entries via `modelReferenceOptions` / `visionReferenceOptions`; the
+  backend resolves what each role needs from the named entry, so no row asks for an endpoint or
+  a key of its own.
 
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns composer busy-state wiring.
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns branch-from-turn submission and navigation; sidecar `MessageList` instances do not receive the branch action.

@@ -18,15 +18,13 @@ const { MASKED_RAG_SECRET, loadRagConfig, RagConfigRequestError, saveRagConfig }
   await import("@/core/rag/api");
 import {
   buildRagConfigInput,
-  EXTRACTION_MODEL_NONE,
-  extractionModelOptions,
   formValuesFromConfig,
   hasFormChanges,
+  isCaptionCapable,
   isEmbeddingChange,
-  VISION_MODEL_CUSTOM,
-  visionModelOptions,
-  visionModelSelection,
-  vlmPrefillFromModel,
+  MODEL_REFERENCE_NONE,
+  modelReferenceOptions,
+  visionReferenceOptions,
 } from "@/core/rag/config-form";
 import type { RagConfigSource, RagConfigView } from "@/core/rag/types";
 
@@ -49,6 +47,7 @@ function view(
       vlm_base_url: "https://api.siliconflow.cn/v1",
       vlm_api_key: "",
       extract_model: "deepseek-chat",
+      judge_model: "deepseek-chat",
       mineru_api_token: "",
       video: { asr_provider: "funasr", asr_model: "paraformer-zh", caption_model: "" },
       ...over,
@@ -63,6 +62,7 @@ function view(
       vlm_base_url: "config_file",
       vlm_api_key: "unset",
       extract_model: "config_file",
+      judge_model: "config_file",
       mineru_api_token: "unset",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
@@ -250,30 +250,65 @@ describe("rag config client", () => {
   });
 });
 
-describe("extractionModelOptions", () => {
+describe("modelReferenceOptions", () => {
   const MODELS = [
     { name: "deepseek-chat", display_name: "DeepSeek Chat" },
     { name: "qwen-max", display_name: null },
   ];
 
   it("lists configured models after an explicit 'not configured' entry", () => {
-    expect(extractionModelOptions(MODELS, "qwen-max", "(未配置)")).toEqual([
-      { value: EXTRACTION_MODEL_NONE, label: "(未配置)" },
+    expect(modelReferenceOptions(MODELS, "qwen-max", "(未配置)")).toEqual([
+      { value: MODEL_REFERENCE_NONE, label: "(未配置)" },
       { value: "deepseek-chat", label: "DeepSeek Chat" },
       { value: "qwen-max", label: "qwen-max" },
     ]);
   });
 
   it("keeps a stored value whose model was deleted", () => {
-    const options = extractionModelOptions(MODELS, "gone-model", "(未配置)");
+    const options = modelReferenceOptions(MODELS, "gone-model", "(未配置)");
 
     expect(options.at(-1)).toEqual({ value: "gone-model", label: "gone-model" });
   });
 
   it("does not duplicate a configured current value", () => {
     expect(
-      extractionModelOptions(MODELS, "deepseek-chat", "(未配置)").map((option) => option.value),
-    ).toEqual([EXTRACTION_MODEL_NONE, "deepseek-chat", "qwen-max"]);
+      modelReferenceOptions(MODELS, "deepseek-chat", "(未配置)").map((option) => option.value),
+    ).toEqual([MODEL_REFERENCE_NONE, "deepseek-chat", "qwen-max"]);
+  });
+});
+
+describe("judge model", () => {
+  it("seeds the effective value and reports no change for it", () => {
+    const current = view();
+
+    expect(formValuesFromConfig(current).judge_model).toBe("deepseek-chat");
+    expect(buildRagConfigInput(formValuesFromConfig(current), current)).toEqual({});
+  });
+
+  it("submits an override picked for an operator-owned judge", () => {
+    const current = view();
+    const values = formValuesFromConfig(current);
+    values.judge_model = "qwen-max";
+
+    expect(buildRagConfigInput(values, current)).toEqual({ judge_model: "qwen-max" });
+  });
+
+  it("carries a file-owned judge forward and clears it when emptied", () => {
+    const current = view({}, { judge_model: "ui" });
+    const values = formValuesFromConfig(current);
+
+    expect(buildRagConfigInput(values, current)).toEqual({ judge_model: "deepseek-chat" });
+
+    values.judge_model = "";
+    expect(buildRagConfigInput(values, current)).toEqual({ judge_model: "" });
+  });
+
+  it("reports an edit as a change", () => {
+    const current = view();
+    const values = formValuesFromConfig(current);
+    values.judge_model = "qwen-max";
+
+    expect(hasFormChanges(values, current)).toBe(true);
   });
 });
 
@@ -315,35 +350,42 @@ describe("hasFormChanges", () => {
 });
 
 
-describe("vision model picker", () => {
+describe("caption model picker", () => {
   const MODELS = [
-    { name: "gpt-5", model: "gpt-5", display_name: "GPT-5", supports_vision: true, endpoint: null },
-    { name: "vl", model: "Qwen/Qwen3-VL-30B", display_name: "", supports_vision: true, endpoint: "https://api.siliconflow.cn/v1" },
-    { name: "text-only", model: "deepseek-chat", display_name: "DeepSeek", supports_vision: false },
+    { name: "gpt-5", model: "gpt-5", display_name: "GPT-5", supports_vision: true, provider: "openai-compatible" },
+    { name: "vl", model: "Qwen/Qwen3-VL-30B", display_name: "", supports_vision: true, provider: "openai-compatible" },
+    { name: "claude", model: "claude-x", display_name: "Claude X", supports_vision: true, provider: "anthropic" },
+    { name: "text-only", model: "deepseek-chat", display_name: "DeepSeek", supports_vision: false, provider: "openai-compatible" },
+    { name: "legacy", model: "m", display_name: "Legacy", supports_vision: true },
   ];
 
-  it("offers the custom escape hatch plus every vision-capable model", () => {
-    expect(visionModelOptions(MODELS, "自定义端点")).toEqual([
-      { value: VISION_MODEL_CUSTOM, label: "自定义端点" },
+  it("lists the entries that can serve the caption call after the default entry", () => {
+    expect(visionReferenceOptions(MODELS, "gpt-5", "(默认)")).toEqual([
+      { value: MODEL_REFERENCE_NONE, label: "(默认)" },
       { value: "gpt-5", label: "GPT-5" },
       // A blank display name falls back to the registry name.
-      { value: "Qwen/Qwen3-VL-30B", label: "vl" },
+      { value: "vl", label: "vl" },
+      { value: "legacy", label: "Legacy" },
     ]);
   });
 
-  it("selects the matching vision model and falls back to custom otherwise", () => {
-    expect(visionModelSelection(MODELS, "gpt-5")).toBe("gpt-5");
-    // Not configured at all, or configured without vision, is not a claim the picker can make.
-    expect(visionModelSelection(MODELS, "qwen3.7-flash")).toBe(VISION_MODEL_CUSTOM);
-    expect(visionModelSelection(MODELS, "deepseek-chat")).toBe(VISION_MODEL_CUSTOM);
+  it("drops an entry the caption legs could never call, and non-vision entries", () => {
+    const values = visionReferenceOptions(MODELS, "", "(默认)").map((option) => option.value);
+
+    expect(values).not.toContain("claude"); // Anthropic is not OpenAI-compatible
+    expect(values).not.toContain("text-only");
   });
 
-  it("prefills the model and only the endpoint the entry declares", () => {
-    expect(vlmPrefillFromModel(MODELS[1]!)).toEqual({
-      vlm_model: "Qwen/Qwen3-VL-30B",
-      vlm_base_url: "https://api.siliconflow.cn/v1",
+  it("keeps a stored value that names no entry, so a save cannot silently drop it", () => {
+    expect(visionReferenceOptions(MODELS, "qwen3.7-flash", "(默认)").at(-1)).toEqual({
+      value: "qwen3.7-flash",
+      label: "qwen3.7-flash",
     });
-    // No endpoint on the entry: keep whatever endpoint is already configured.
-    expect(vlmPrefillFromModel(MODELS[0]!)).toEqual({ vlm_model: "gpt-5" });
+  });
+
+  it("requires both vision support and an OpenAI-compatible provider", () => {
+    expect(isCaptionCapable({ name: "a", model: "a", supports_vision: true, provider: "anthropic" })).toBe(false);
+    expect(isCaptionCapable({ name: "b", model: "b" })).toBe(false);
+    expect(isCaptionCapable({ name: "c", model: "c", supports_vision: true, provider: "openai-compatible" })).toBe(true);
   });
 });
