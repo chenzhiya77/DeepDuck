@@ -23,6 +23,10 @@ import {
   formValuesFromConfig,
   hasFormChanges,
   isEmbeddingChange,
+  VISION_MODEL_CUSTOM,
+  visionModelOptions,
+  visionModelSelection,
+  vlmPrefillFromModel,
 } from "@/core/rag/config-form";
 import type { RagConfigSource, RagConfigView } from "@/core/rag/types";
 
@@ -307,5 +311,39 @@ describe("hasFormChanges", () => {
     values.vlm_model = ` ${current.config.vlm_model} `;
 
     expect(hasFormChanges(values, current)).toBe(false);
+  });
+});
+
+
+describe("vision model picker", () => {
+  const MODELS = [
+    { name: "gpt-5", model: "gpt-5", display_name: "GPT-5", supports_vision: true, endpoint: null },
+    { name: "vl", model: "Qwen/Qwen3-VL-30B", display_name: "", supports_vision: true, endpoint: "https://api.siliconflow.cn/v1" },
+    { name: "text-only", model: "deepseek-chat", display_name: "DeepSeek", supports_vision: false },
+  ];
+
+  it("offers the custom escape hatch plus every vision-capable model", () => {
+    expect(visionModelOptions(MODELS, "自定义端点")).toEqual([
+      { value: VISION_MODEL_CUSTOM, label: "自定义端点" },
+      { value: "gpt-5", label: "GPT-5" },
+      // A blank display name falls back to the registry name.
+      { value: "Qwen/Qwen3-VL-30B", label: "vl" },
+    ]);
+  });
+
+  it("selects the matching vision model and falls back to custom otherwise", () => {
+    expect(visionModelSelection(MODELS, "gpt-5")).toBe("gpt-5");
+    // Not configured at all, or configured without vision, is not a claim the picker can make.
+    expect(visionModelSelection(MODELS, "qwen3.7-flash")).toBe(VISION_MODEL_CUSTOM);
+    expect(visionModelSelection(MODELS, "deepseek-chat")).toBe(VISION_MODEL_CUSTOM);
+  });
+
+  it("prefills the model and only the endpoint the entry declares", () => {
+    expect(vlmPrefillFromModel(MODELS[1]!)).toEqual({
+      vlm_model: "Qwen/Qwen3-VL-30B",
+      vlm_base_url: "https://api.siliconflow.cn/v1",
+    });
+    // No endpoint on the entry: keep whatever endpoint is already configured.
+    expect(vlmPrefillFromModel(MODELS[0]!)).toEqual({ vlm_model: "gpt-5" });
   });
 });

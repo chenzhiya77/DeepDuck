@@ -1640,6 +1640,17 @@ export const enUS: Translations = {
       description:
         "Models the knowledge base uses for parsing, retrieval and profiling. They are configured separately from the chat models.",
       extractModel: "Graph extraction model",
+      groupRetrieval: "Retrieval",
+      groupRetrievalHint: "Used at query time: vectorisation and reranking.",
+      groupExtraction: "Graph extraction",
+      groupMultimodal: "Multimodal & video",
+      groupMultimodalHint: "Captions turn images and keyframes into text; speech recognition only serves video ingestion.",
+      groupServices: "Services & tokens",
+      groupServicesHint: "Only change these when Qdrant or MinerU is not at its default location.",
+      vlmPickModel: "Pick a vision model",
+      vlmCustom: "Custom endpoint",
+      vlmModelId: "Model ID",
+      vlmNoVisionModel: "No configured model declares vision support — use a custom endpoint instead.",
       extractModelHint:
         "Builds the knowledge graph from documents. Prefer a small, cheap model with stable JSON output.",
       extractModelNone: "(not configured)",

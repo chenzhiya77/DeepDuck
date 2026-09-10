@@ -238,3 +238,65 @@ export function hasFormChanges(
     )
   );
 }
+
+/** Radix Select needs a concrete value for "type the endpoint by hand". */
+export const VISION_MODEL_CUSTOM = "__custom__";
+
+/** The bits of a configured model the caption picker needs. */
+export interface VisionModelSource {
+  name: string;
+  model: string;
+  display_name?: string | null;
+  supports_vision?: boolean;
+  endpoint?: string | null;
+}
+
+/**
+ * Options for the caption (VLM) picker: the configured models that declare vision, plus
+ * a custom-endpoint escape hatch. Values are the provider model ids, because that is what
+ * `vlm_model` stores (unlike `extract_model`, which references a registry entry by name).
+ */
+export function visionModelOptions(
+  models: readonly VisionModelSource[],
+  customLabel: string,
+): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = [
+    { value: VISION_MODEL_CUSTOM, label: customLabel },
+  ];
+  for (const model of models) {
+    if (!model.supports_vision) continue;
+    const display = model.display_name?.trim();
+    const hasDisplay = display !== undefined && display.length > 0;
+    options.push({ value: model.model, label: hasDisplay ? display : model.name });
+  }
+  return options;
+}
+
+/**
+ * Which option the stored caption model corresponds to: a configured vision model, or the
+ * custom escape hatch. A stored model that no vision-capable entry declares reads as custom,
+ * because the picker only offers models the config claims can see.
+ */
+export function visionModelSelection(
+  models: readonly VisionModelSource[],
+  currentModel: string,
+): string {
+  const match = models.find(
+    (model) => model.supports_vision && model.model === currentModel,
+  );
+  return match ? match.model : VISION_MODEL_CUSTOM;
+}
+
+/**
+ * Fields to write when a configured vision model is picked. The endpoint is only taken from
+ * the entry when it declares one, so picking a model never silently replaces a working
+ * endpoint with an empty default.
+ */
+export function vlmPrefillFromModel(
+  entry: VisionModelSource,
+): { vlm_model: string; vlm_base_url?: string } {
+  const endpoint = entry.endpoint?.trim();
+  return endpoint
+    ? { vlm_model: entry.model, vlm_base_url: endpoint }
+    : { vlm_model: entry.model };
+}

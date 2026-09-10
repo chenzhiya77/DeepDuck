@@ -93,7 +93,32 @@ function renderPage() {
     isLoading: false,
     error: null,
   });
-  modelHooksMock.useModelsConfig.mockReturnValue({ config: { models: [] }, isLoading: false, error: null });
+  modelHooksMock.useModelsConfig.mockReturnValue({
+    config: {
+      models: [
+        {
+          name: "vl-model",
+          model: "Qwen/Qwen3-VL-30B",
+          display_name: "Qwen3 VL",
+          supports_vision: true,
+          api_key: "********",
+          source: "ui",
+          editable: true,
+        },
+        {
+          name: "text-model",
+          model: "deepseek-chat",
+          display_name: "DeepSeek Chat",
+          supports_vision: false,
+          api_key: "********",
+          source: "ui",
+          editable: true,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  });
   modelHooksMock.useSaveModelsConfig.mockReturnValue({ mutate: rs.fn(), isPending: false });
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -209,5 +234,49 @@ describe("functional-model form", () => {
 
     expect(screen.getByText(M.adminRequired)).toBeTruthy();
     expect(screen.queryByLabelText(F.embeddingModel)).toBeNull();
+  });
+});
+
+describe("functional-model layout", () => {
+  it("groups the fields under described sections", () => {
+    renderPage();
+    openFunctionalView();
+
+    for (const title of [F.groupRetrieval, F.groupExtraction, F.groupMultimodal, F.groupServices]) {
+      expect(screen.getByText(title)).toBeTruthy();
+    }
+    expect(screen.getByText(F.groupRetrievalHint)).toBeTruthy();
+    expect(screen.getByText(F.groupMultimodalHint)).toBeTruthy();
+    expect(screen.getByText(F.groupServicesHint)).toBeTruthy();
+  });
+
+  it("labels every input, including the ones that used to be bare boxes", () => {
+    renderPage();
+    openFunctionalView();
+
+    for (const label of [F.embeddingApiKey, F.rerankApiKey, F.vlmApiKey, F.asrModel, F.qdrantUrl, F.mineruToken]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
+    expect(screen.getByLabelText(F.embeddingApiKey)).toBeTruthy();
+    expect(screen.getByLabelText(F.asrModel)).toBeTruthy();
+  });
+
+  it("picks a configured vision model for captions, or falls back to custom", () => {
+    renderPage();
+    openFunctionalView();
+
+    // The fixture stores a model no configured entry declares as vision-capable.
+    expect(screen.getByLabelText(F.captionModel).textContent).toContain(F.vlmCustom);
+    expect(screen.getByLabelText(F.vlmModelId)).toHaveProperty("value", "Qwen/Qwen3-VL-30B-A3B-Instruct");
+  });
+
+  it("shows the configured vision model when the stored id matches one", () => {
+    setRag({ vlm_model: "Qwen/Qwen3-VL-30B" });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.captionModel).textContent).toContain("Qwen3 VL");
+    // A matched model needs no raw id input.
+    expect(screen.queryByLabelText(F.vlmModelId)).toBeNull();
   });
 });

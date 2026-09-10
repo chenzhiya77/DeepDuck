@@ -1573,6 +1573,17 @@ export interface Translations {
     functionalModels: {
       description: string;
       extractModel: string;
+      groupRetrieval: string;
+      groupRetrievalHint: string;
+      groupExtraction: string;
+      groupMultimodal: string;
+      groupMultimodalHint: string;
+      groupServices: string;
+      groupServicesHint: string;
+      vlmPickModel: string;
+      vlmCustom: string;
+      vlmModelId: string;
+      vlmNoVisionModel: string;
       extractModelHint: string;
       extractModelNone: string;
       captionModel: string;

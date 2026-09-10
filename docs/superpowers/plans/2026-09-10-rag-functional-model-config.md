@@ -221,6 +221,31 @@
   ③ 改 embedding 模型 → 确认出现「需重建索引」告警；④ 保存后重传一篇文档，确认新配置被入库腿采用
   （或至少 `rag_config.json` 出现且 `GET /api/rag/config` 回读一致）；⑤ 非 admin 账号确认看不到该视图且 API 403。
 
+## 浏览器实测发现（2026-09-10，功能模型视图）——版式与可理解性
+
+用户在真实栈上打开「模型 → 功能模型」后报三件事（均已修，一个提交）：
+
+1. **排版无边界、看不出怎么填**：字段是一条扁平列表，模型名与密钥混排、没有分组；
+2. **「向量模型 / 重排模型」下面各有一个说不出用途的方框**——那其实是它们的 API Key 输入，
+   **只有 `aria-label` 没有可见标签**（`functional-models-view.tsx` 的 embedding/rerank 密钥，以及 ASR 模型名，共 3 处）⇒ **我的缺陷**；
+3. **图片描述模型（VLM）本质是多模态模型**，应该能直接选已配的视觉模型。
+
+**修法（用户拍板：4 组卡片 + VLM 下拉选视觉模型 + 自定义兜底）**：
+
+- **按职责分 4 组卡片**（`Item/Card` 的 `Card`，组标题 + 一句用途）：检索（向量 + 重排）、图谱抽取、多模态与视频、服务与令牌；
+  组内统一两列网格。组标题下的说明就是「不知道填什么」的解药。
+- **每个输入都有可见标签**，密钥标签写明归属（`API Key（向量/重排/图片描述）`，键早已存在）。
+- **VLM 行改为下拉**：只列 `supports_vision` 的已配模型（值 = **厂商模型 id**，因为 `vlm_model` 存的是 id，不是 `models:` 条目名），
+  选中即带出该模型声明的端点（不声明就不覆盖当前端点），密钥仍手填/走 env；未匹配到任何视觉模型时落回「自定义端点」并显示模型 ID 输入框。
+  规则下沉为纯函数（`visionModelOptions`/`visionModelSelection`/`vlmPrefillFromModel`）以避开 Radix Select 在 happy-dom 的开合限制。
+- **明确不做**：把 `vlm_model` 改成 `models:` 条目引用（运行时按工厂解析）——那要改 captioner 的客户端构造，建议另立增量（用户选了本期纯前端方案）。
+
+- [x] RED → Implement → GREEN + revert proof + `pnpm check` 双净。（新增 dom 4 例（4 组标题+说明 / 3 处补标签 / 下拉落回自定义 / 匹配到视觉模型时显示其名且无模型 ID 输入框）
+  与 node 3 例（`visionModelOptions` 过滤+`display_name` 回退、`visionModelSelection` 匹配与非视觉模型落回自定义、`vlmPrefillFromModel` 只带出条目声明的端点）。
+  `tests/unit/rag`+`settings` **59 绿**；`rag`+`settings`+`models`+`components/workspace` **307 绿**；`pnpm check`（eslint+tsc）**双净**。
+  revert proof：neuter ①去掉两处密钥可见标签 ②组卡片退回裸 div ③下拉钉死为自定义 ⇒ **恰好 3 红**、各对应一条；恢复后 59 绿）
+- [x] Commit: `fix(frontend): group the functional-model form, label its inputs and pick the caption model`
+
 ## 风险登记
 
 | 风险 | 触发任务 | 缓解 |

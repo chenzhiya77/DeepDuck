@@ -1571,6 +1571,17 @@ export const zhCN: Translations = {
       description:
         "知识库的解析、检索与画像由这些模型承担，与对话模型分开配置。",
       extractModel: "图谱抽取模型",
+      groupRetrieval: "检索",
+      groupRetrievalHint: "查询时使用：向量化 + 重排。",
+      groupExtraction: "图谱抽取",
+      groupMultimodal: "多模态与视频",
+      groupMultimodalHint: "图片描述把图片与关键帧转成文字；语音识别只服务视频入库。",
+      groupServices: "服务与令牌",
+      groupServicesHint: "仅当 Qdrant / MinerU 不在默认位置时才需要修改。",
+      vlmPickModel: "选择视觉模型",
+      vlmCustom: "自定义端点",
+      vlmModelId: "模型 ID",
+      vlmNoVisionModel: "没有配置带视觉能力的模型——可直接用自定义端点填写。",
       extractModelHint:
         "用于从文档构建知识图谱，建议选小、便宜、输出稳定 JSON 的模型。",
       extractModelNone: "（未配置）",
