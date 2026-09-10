@@ -141,6 +141,17 @@ That prompt is intended for coding agents. It tells the agent to clone the repo 
    
    > **Configure models from the web UI**: Admins can add and edit model providers and API keys under **Settings → Models** without touching `config.yaml`. One credential can create several models at once — fill a shared provider, endpoint and API key, then list one or more Model IDs. UI-managed models are stored in a separate gitignored `models_config.json`, merged with any `config.yaml` models (the UI wins on a name clash), and take effect on the next message with no restart. Models defined in `config.yaml` appear read-only here. Only admins see this section, and the server enforces that gate; API keys are masked once saved.
 
+   > **Configure the RAG functional models**: The same **Settings → Models** section has a
+   > **Functional models** view for the models the knowledge base uses — graph extraction,
+   > image captioning (VLM), embedding, rerank, speech recognition and the Qdrant / MinerU
+   > services. Values left unset fall back to `config.yaml` and, for API keys, to the
+   > environment variables (`DASHSCOPE_EMBEDDING_API_KEY`, `DASHSCOPE_RERANK_API_KEY`,
+   > `SILICONFLOW_VLM_API_KEY`, `MINERU_API_TOKEN`), so existing deployments need no change.
+   > Saved values go to a gitignored `rag_config.json` and take effect on the next document
+   > ingest or retrieval — no restart. **Changing the embedding model requires re-indexing
+   > your knowledge bases**, because their vectors were built with the previous one; the form
+   > warns about this before you save.
+
    Optional per-model pricing must use one currency across all priced models.
    DeerFlow disables Console cost estimates when currencies are mixed rather
    than presenting an invalid aggregate.

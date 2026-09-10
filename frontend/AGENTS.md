@@ -132,6 +132,14 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
 
 ### Interaction Ownership
 
+- `src/components/workspace/settings/models-settings-page.tsx` owns the **Models** section and
+  its two views: the chat-model list (with add/edit dialogs) and `functional-models-view.tsx`,
+  the RAG functional-model editor. The functional view reads `core/rag/hooks.ts`
+  (`GET/PUT /api/rag/config`, admin-gated) and builds its payload with the pure helpers in
+  `core/rag/config-form.ts`; the backend replaces the whole `rag_config.json` object, so those
+  helpers carry the file's own overrides forward and keep Save disabled until the admin edits
+  something — do not replace that guard with a payload-emptiness check.
+
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns composer busy-state wiring.
 - `src/app/workspace/chats/[thread_id]/page.tsx` owns branch-from-turn submission and navigation; sidecar `MessageList` instances do not receive the branch action.
 - `src/app/workspace/chats/[thread_id]/page.tsx` and `src/app/workspace/agents/[agent_name]/chats/[thread_id]/page.tsx` own edit-and-rerun submission wiring because the page must preserve normal/custom-agent run context; `MessageList` only detects the latest editable user turn and renders the inline editor.

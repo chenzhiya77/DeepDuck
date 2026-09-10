@@ -26,6 +26,7 @@ deer-flow/
 ├── config.yaml                 # Main application configuration
 ├── extensions_config.json      # MCP servers and skills configuration
 ├── models_config.json          # API-writable UI model set (web Models settings)
+├── rag_config.json             # API-writable RAG functional-model set (same Models settings)
 ├── backend/                    # Backend application (this directory)
 │   ├── Makefile               # Backend-only commands (dev, gateway, lint)
 │   ├── langgraph.json         # LangGraph Studio graph configuration
@@ -565,6 +566,42 @@ hot-reload signature covers `models_config.json` alongside `config.yaml`, so a w
 on the next message without a restart. `make doctor`'s "at least one model" check reads the merged
 set, and `make support-bundle` includes a redacted `models-summary.json`.
 
+**RAG Functional-Model Configuration** (`rag_config.json`):
+
+The same **Settings → Models** surface has a *Functional models* view for the RAG roles that used to
+live only in `config.yaml` plus fixed environment variables: graph extraction (`extract_model`, a
+picker over the configured chat models), the caption VLM (`vlm_model` / `vlm_base_url` /
+`vlm_api_key`), embedding, rerank, the video ASR provider/model, and the Qdrant / MinerU settings.
+It writes a second API-writable file, `rag_config.json` (gitignored, project root), which
+`AppConfig.from_file()` overlays onto `config.yaml`'s `rag:` block **field by field** — the nested
+`video` block merges key by key, so setting one model cannot drop an operator's gates. Untouched
+fields keep their `config.yaml` values, and `config.yaml` is never written through the Gateway.
+
+Secret resolution is `explicit argument > file > environment`: `RagConfig` carries optional
+`*_api_key` / `mineru_api_token` values filled from the file, and each ingestion client falls back
+to the environment variable named in `deerflow.config.rag_config_file.SECRET_ENV_VARS` (the single
+source for those names — the clients import them, so the name the API reports and the name the
+client reads cannot drift). `configured_rag_secret()` deliberately fails open to `None` when the
+config cannot be resolved, so env-only callers keep working without a config file.
+
+Security boundary: `GET/PUT /api/rag/config` are admin-gated. A read never returns a stored key — it
+comes back as the masking sentinel (or empty when the environment backs it), plus a flattened
+`source` map (`ui` / `config_file` for plain fields, `ui` / `env` / `unset` for secrets, so the UI
+can say "provided by the environment" without seeing a value). A write replaces the whole object:
+an omitted or emptied field is **removed** from the file (reverting it to `config.yaml`, or to the
+environment for a key), and a submitted sentinel keeps the stored key. Writes are atomic and
+lock-serialized (`atomic_write_rag_config` + `rag_config_write_lock`) and off the event loop.
+`RagConfigFile.resolve_config_path` mirrors the models file, and the `get_app_config()` hot-reload
+signature covers `rag_config.json`; `rag` is not in `STARTUP_ONLY_FIELDS`, so a saved change takes
+effect on the next ingest or retrieval without a restart. `make support-bundle` includes a redacted
+`rag-summary.json`.
+
+Operational caveat: the vector collections are fixed at 1024 dimensions
+(`knowledge/vector_store.py`), and the embedding/rerank clients are DashScope-specific, so the view
+edits the model name and key rather than offering arbitrary providers. Chromium-style embedding
+model changes invalidate existing vectors — the UI warns and v1 deliberately does not re-index
+automatically.
+
 ### Gateway API (`app/gateway/`)
 
 FastAPI application on port 8001 with health check at `GET /health`. Set `GATEWAY_ENABLE_DOCS=false` to disable `/docs`, `/redoc`, and `/openapi.json` in production (default: enabled).
@@ -581,6 +618,7 @@ Localhost persistence deliberately reads the direct request `Host` and ignores `
 |--------|-----------|
 | **Knowledge Bases** (`/api/knowledge-bases`) | RAG workspace (three retrieval paths over one shared chunk base: vector `hybrid_search`, graph `graph_search`, generated-wiki `wiki_search`): `GET /` `POST /` - list/create bases; `GET/PATCH/DELETE /{kb_id}` - detail/rename/delete (delete cascades chunks, vectors, graph triples, wiki entries); `GET/POST /{kb_id}/documents` - list/upload (202, async indexing worker: parse → structure-aware chunk → embed/graph extract, status polled via `status`/`progress_percent`/`error`); `DELETE /{kb_id}/documents/{doc_id}` - cascading document delete; `POST /{kb_id}/documents/{doc_id}/retry` - re-queue a failed document; `GET /{kb_id}/documents/{doc_id}/chunks` - paginated read-only chunk preview; `POST /{kb_id}/wiki/generate` - enqueue wiki generation. Requires the `rag:` config block (`qdrant_url`, `embedding_model`, `rerank_model`, `vlm_model`, `worker_concurrency`, `extract_rate_limit_rps`); the three retrieval tools are registered in the `rag` tool group and only assemble for the `rag` agent |
 | **Models** (`/api/models`) | `GET /` - list models; `GET /{name}` - model details; `GET/PUT /config` - admin-only management of the UI-writable `models_config.json` set (curated provider id → fixed `use:` via allowlist, per-provider endpoint key, masked keys with sentinel-preserve, whole-collection PUT that never touches `config.yaml`) |
+| **RAG Config** (`/api/rag/config`) | `GET/PUT` - admin-only management of the UI-writable `rag_config.json` functional-model set (field-level merge over `config.yaml`'s `rag:` block, secrets masked with sentinel-preserve, whole-object PUT that never touches `config.yaml`) |
 | **Features** (`/api/features`) | `GET /` - report config-gated feature availability (`agents_api.enabled`, `browser_control.enabled`) for frontend UI gating |
 | **Console** (`/api/console`) | Read-only cross-thread observability for the current user (the data layer for an operations dashboard or external monitoring): `GET /stats` - headline counters (runs/threads/agents/tokens/cost); `GET /runs` - paginated run history joined with thread titles (per-run cost); `GET /usage` - zero-filled daily token series + per-model breakdown with spend. Queries `runs`/`threads_meta` directly as a reporting layer (no new `RunStore` methods); requires a SQL database backend — returns 503 on `database.backend: memory`. Real-cost estimation reads optional `models[*].pricing` (`currency`, `input_per_million`, `output_per_million`, `input_cache_hit_per_million`; `ModelConfig` is `extra="allow"`, so no schema change) and prices each run from its `token_usage_by_model` input/output split. Pricing is **cache-aware**: `RunJournal` accumulates prompt-cache hits from `usage_metadata.input_token_details.cache_read` into a sparse `cache_read_tokens` bucket key (also threaded through `SubagentTokenCollector` → `record_external_llm_usage_records`), and cache-hit input tokens are billed at `input_cache_hit_per_million` (omitted → billed at the miss price, a conservative upper bound). All priced models must use one currency; mixed currencies disable cost reporting and leave cost/currency fields null instead of producing invalid aggregates. Legacy rows fall back to run-level totals at `model_name`; unpriced models yield `cost: null` and cost fields are null when no pricing is configured |
 | **MCP** (`/api/mcp`) | `GET /config` - get config; `PUT /config` - replace the full config with whole-payload stdio validation; `PATCH /config` - toggle one server while preserving the raw extensions config and validating only an enabled target; both writes reload config and reset the process-local MCP cache |
