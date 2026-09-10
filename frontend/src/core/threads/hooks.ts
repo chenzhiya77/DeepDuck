@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { resolveReasoningEffort } from "@/core/models/reasoning-effort";
 
 import { getAPIClient } from "../api";
 import { fetch } from "../api/fetcher";
@@ -2239,15 +2240,13 @@ export function useThreadStream({
               thinking_enabled: context.mode !== "flash",
               is_plan_mode: context.mode === "pro" || context.mode === "ultra",
               subagent_enabled: context.mode === "ultra",
-              reasoning_effort:
-                context.reasoning_effort ??
-                (context.mode === "ultra"
-                  ? "high"
-                  : context.mode === "pro"
-                    ? "medium"
-                    : context.mode === "thinking"
-                      ? "low"
-                      : undefined),
+              // Option A: the composer context already carries the user's pick,
+              // or the selected model's declared default; the mode heuristic is
+              // the last ring. One resolver keeps this in step with the menus.
+              reasoning_effort: resolveReasoningEffort({
+                explicit: context.reasoning_effort,
+                mode: context.mode,
+              }),
               thread_id: threadId,
             },
           },
@@ -2360,15 +2359,13 @@ export function useThreadStream({
             thinking_enabled: context.mode !== "flash",
             is_plan_mode: context.mode === "pro" || context.mode === "ultra",
             subagent_enabled: context.mode === "ultra",
-            reasoning_effort:
-              context.reasoning_effort ??
-              (context.mode === "ultra"
-                ? "high"
-                : context.mode === "pro"
-                  ? "medium"
-                  : context.mode === "thinking"
-                    ? "low"
-                    : undefined),
+            // Option A: the composer context already carries the user's pick,
+            // or the selected model's declared default; the mode heuristic is
+            // the last ring. One resolver keeps this in step with the menus.
+            reasoning_effort: resolveReasoningEffort({
+              explicit: context.reasoning_effort,
+              mode: context.mode,
+            }),
             thread_id: threadId,
           },
         });

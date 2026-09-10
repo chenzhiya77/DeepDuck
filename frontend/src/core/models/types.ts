@@ -6,6 +6,10 @@ export interface Model {
   description?: string | null;
   supports_thinking?: boolean;
   supports_reasoning_effort?: boolean;
+  /** Declared effort subset; null/undefined = undeclared (all four levels apply). */
+  supported_reasoning_efforts?: ReasoningEffortLevel[] | null;
+  /** Default effort level; NULL/undefined = none declared. */
+  reasoning_effort?: ReasoningEffortLevel | null;
   /** Total context window in tokens; null/undefined when unconfigured. */
   context_window?: number | null;
 }
