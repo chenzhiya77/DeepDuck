@@ -70,10 +70,26 @@ AppConfig 按 `name` 合并（**UI 文件覆盖 config.yaml**）+ provider 白�
       `base_url` / GET 脱敏 / 哨兵保留（读盘断言原 key 不变）/ PUT 后 `GET /api/models` 反映
       （热重载）/ 原子写无 .tmp）
 
-- [ ] RED：路由不存在 → 404/403 断言 failed。
-- [ ] Implement：GET/PUT 路由 + 校验/映射/脱敏/哨兵 + support-bundle redact。
-- [ ] GREEN + revert proof（neuter 白名单校验或脱敏 → 对应用例 RED）+ ruff 双净。
-- [ ] Commit: `feat(gateway): admin models config API with provider allowlist and key masking`
+- [x] RED：路由不存在 → 404/403 断言 failed（7 failed；temp 负向用例恒绿）。
+- [x] Implement：GET/PUT 路由 + 校验/映射/脱敏/哨兵 + support-bundle redact。
+- [x] GREEN + revert proof + ruff 双净。—— `test_models_config_api.py` **9 passed**；回归
+      support_bundle **32** + models_config **23** + app_config_reload **38** +
+      models_authorization **28** passed；ruff check/format 双净。
+      revert proof：neuter `preserve_api_key` + `_managed_response` 脱敏 + 白名单 or-fallback ⇒
+      **3 安全用例 RED**（sentinel/masking/allowlist）；恢复后全绿。
+- [x] Commit: `feat(gateway): admin models config API with provider allowlist and key masking`（`4cc8aaa2`，3 files, +503/-2）
+
+### 交付纪要（2026-09-10）
+
+- **实现落点**：`app/gateway/routers/models.py` 新增 admin `GET/PUT /api/models/config`
+  （`ManagedModelInput` `extra="forbid"` 拒自由 `use:`；白名单映射 `use:`+端点键；哨兵保留；
+  原子写+`models_config_write_lock`；GET 回 `provider`/`endpoint_key`/`endpoint`/脱敏 key/
+  `source`/`editable`）；`scripts/support_bundle.py` 新增 `collect_models_summary` +
+  `models-summary.json` + `--models-config`。
+- **两个陷阱（已修/已记）**：①**FastAPI 注册顺序遮蔽**——`GET /models/{model_name}` 抢匹配
+  `/models/config`（model_name="config" → 404）；config 路由必须声明在 `{model_name}` 之前
+  （已加 NOTE 注释防回归）。②测试夹具 config.yaml 必须带 `sandbox`（AppConfig 必填字段）。
+- **遗留（未动）**：`make doctor` 合并集（Task 3）、前端（Task 4）。
 
 ## Task 3: make doctor 读合并集（spec §5.8）
 
