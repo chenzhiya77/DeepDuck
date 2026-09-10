@@ -20,10 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useI18n } from "@/core/i18n/hooks";
+import { validateModelsConfig } from "@/core/models/api";
 import { expandBatchToEntries } from "@/core/models/batch";
+import {
+  capabilityValueFromSuggestion,
+  capabilityValueToShared,
+  emptyCapabilityValue,
+  type ModelCapabilityValue,
+} from "@/core/models/capability";
+import { suggestCapabilities } from "@/core/models/capability-registry";
 import type { ManagedModelInput, ProviderId } from "@/core/models/types";
+
+import { ModelCapabilityEditor } from "./model-capability-editor";
 
 interface ModelsAddDialogProps {
   open: boolean;
@@ -36,9 +45,10 @@ interface ModelsAddDialogProps {
 }
 
 /**
- * Batch "add models" dialog (spec 2026-09-10 §5.3.1): one shared credential
- * block plus a repeatable Model ID list, expanded client-side into N flat
- * entries. The backend contract is unchanged.
+ * Two-step "add models" dialog (spec 2026-09-10 §5.3.1–§5.3.2): step 1 collects
+ * one shared credential block plus N Model IDs and validates them against the
+ * provider; only a passing probe unlocks step 2, the capability editor. The
+ * backend contract is unchanged — the client expands step 2 into N flat entries.
  */
 export function ModelsAddDialog({
   open,
@@ -50,55 +60,101 @@ export function ModelsAddDialog({
   const { t } = useI18n();
   const M = t.settings.models;
 
+  const [step, setStep] = useState<"identity" | "capabilities">("identity");
   const [provider, setProvider] = useState<ProviderId>("openai-compatible");
   const [apiType, setApiType] = useState<"chat" | "responses">("chat");
   const [endpoint, setEndpoint] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [modelIds, setModelIds] = useState<string[]>([""]);
-  const [thinking, setThinking] = useState(false);
-  const [vision, setVision] = useState(false);
-  const [reasoning, setReasoning] = useState(false);
-  const [contextWindow, setContextWindow] = useState("");
+  const [capability, setCapability] = useState<ModelCapabilityValue>(
+    emptyCapabilityValue,
+  );
+  const [suggested, setSuggested] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
 
   function updateModelId(index: number, value: string) {
     setModelIds((prev) => prev.map((v, i) => (i === index ? value : v)));
   }
 
   function reset() {
+    setStep("identity");
     setProvider("openai-compatible");
     setApiType("chat");
     setEndpoint("");
     setApiKey("");
     setShowKey(false);
     setModelIds([""]);
-    setThinking(false);
-    setVision(false);
-    setReasoning(false);
-    setContextWindow("");
+    setCapability(emptyCapabilityValue());
+    setSuggested(false);
     setError(null);
+    setValidating(false);
   }
 
-  function handleSubmit() {
-    if (!modelIds.some((id) => id.trim())) {
+  function enteredModelIds(): string[] {
+    return modelIds.map((id) => id.trim()).filter(Boolean);
+  }
+
+  /** Step 1 → step 2: validate every Model ID, then seed the capability editor. */
+  async function handleNext() {
+    const ids = enteredModelIds();
+    if (ids.length === 0) {
       setError(M.validationNoModelId);
       return;
     }
-    const parsedWindow = contextWindow.trim()
-      ? Number(contextWindow)
-      : undefined;
+    if (!endpoint.trim()) {
+      setError(M.validationEndpointRequired);
+      return;
+    }
+    if (!apiKey) {
+      setError(M.validationApiKeyRequired);
+      return;
+    }
+
+    setError(null);
+    setValidating(true);
+    try {
+      for (const modelId of ids) {
+        const result = await validateModelsConfig({
+          provider,
+          endpoint: endpoint.trim(),
+          api_key: apiKey,
+          model: modelId,
+        });
+        if (!result.ok || !result.model_present) {
+          setError(`${M.validateFailed} ${result.detail}`);
+          return;
+        }
+      }
+    } catch (validationError) {
+      setError(`${M.validateFailed} ${(validationError as Error).message}`);
+      return;
+    } finally {
+      setValidating(false);
+    }
+
+    const seed = capabilityValueFromSuggestion(
+      suggestCapabilities(ids[0] ?? ""),
+    );
+    setCapability(seed);
+    setSuggested(
+      seed.supportedWindows.length > 0 ||
+        seed.supportedEfforts.length > 0 ||
+        seed.supportsThinking ||
+        seed.supportsVision,
+    );
+    setStep("capabilities");
+  }
+
+  function handleSubmit() {
     const entries = expandBatchToEntries(
       {
         provider,
         endpoint: endpoint.trim() || undefined,
         apiKey: apiKey || undefined,
         apiType,
-        supportsThinking: thinking,
-        supportsVision: vision,
-        supportsReasoningEffort: reasoning,
-        contextWindow:
-          parsedWindow && parsedWindow > 0 ? parsedWindow : undefined,
+        ...capabilityValueToShared(capability),
       },
       modelIds,
       existingNames,
@@ -122,180 +178,172 @@ export function ModelsAddDialog({
           <DialogDescription>{M.addDescription}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          {/* Provider */}
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.provider}</span>
-            <Select
-              value={provider}
-              onValueChange={(value) => setProvider(value as ProviderId)}
-            >
-              <SelectTrigger className="w-full" aria-label={M.provider}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openai-compatible">
-                  {M.providerOpenaiCompatible}
-                </SelectItem>
-                <SelectItem value="anthropic">{M.providerAnthropic}</SelectItem>
-                <SelectItem value="deepseek">{M.providerDeepseek}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <p className="text-muted-foreground text-xs">
+          {step === "identity" ? M.stepIdentity : M.stepCapabilities}
+        </p>
 
-          {/* API type — only meaningful for openai-compatible (spec §5.3.1) */}
-          {provider === "openai-compatible" && (
+        {step === "identity" ? (
+          <div className="space-y-4 py-1">
+            {/* Provider */}
             <div className="space-y-1.5">
-              <span className="text-sm font-medium">{M.apiType}</span>
+              <span className="text-sm font-medium">{M.provider}</span>
               <Select
-                value={apiType}
-                onValueChange={(value) =>
-                  setApiType(value as "chat" | "responses")
-                }
+                value={provider}
+                onValueChange={(value) => setProvider(value as ProviderId)}
               >
-                <SelectTrigger className="w-full" aria-label={M.apiType}>
+                <SelectTrigger className="w-full" aria-label={M.provider}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="chat">{M.apiTypeChat}</SelectItem>
-                  <SelectItem value="responses">{M.apiTypeResponses}</SelectItem>
+                  <SelectItem value="openai-compatible">
+                    {M.providerOpenaiCompatible}
+                  </SelectItem>
+                  <SelectItem value="anthropic">{M.providerAnthropic}</SelectItem>
+                  <SelectItem value="deepseek">{M.providerDeepseek}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {/* Endpoint */}
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.endpoint}</span>
-            <Input
-              value={endpoint}
-              aria-label={M.endpoint}
-              placeholder="https://api.example.com/v1"
-              onChange={(e) => setEndpoint(e.target.value)}
-            />
-          </div>
-
-          {/* API key */}
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.apiKey}</span>
-            <div className="relative">
-              <Input
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                aria-label={M.apiKey}
-                className="pr-10"
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-              <button
-                type="button"
-                aria-label={M.apiKeyToggle}
-                onClick={() => setShowKey((v) => !v)}
-                className="text-muted-foreground absolute top-1/2 right-2 -translate-y-1/2"
-              >
-                {showKey ? (
-                  <EyeOffIcon className="size-4" />
-                ) : (
-                  <EyeIcon className="size-4" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Model IDs (repeatable) */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{M.modelIds}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setModelIds((prev) => [...prev, ""])}
-              >
-                <PlusIcon className="size-4" />
-                {M.addModelId}
-              </Button>
-            </div>
-            {modelIds.map((id, index) => (
-              <div className="flex items-center gap-2" key={index}>
-                <Input
-                  value={id}
-                  placeholder={M.modelIdPlaceholder}
-                  onChange={(e) => updateModelId(index, e.target.value)}
-                />
-                {modelIds.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={M.removeModelId}
-                    onClick={() =>
-                      setModelIds((prev) => prev.filter((_, i) => i !== index))
-                    }
-                  >
-                    <TrashIcon className="size-4" />
-                  </Button>
-                )}
+            {/* API type — only meaningful for openai-compatible (spec §5.3.1) */}
+            {provider === "openai-compatible" && (
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">{M.apiType}</span>
+                <Select
+                  value={apiType}
+                  onValueChange={(value) =>
+                    setApiType(value as "chat" | "responses")
+                  }
+                >
+                  <SelectTrigger className="w-full" aria-label={M.apiType}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="chat">{M.apiTypeChat}</SelectItem>
+                    <SelectItem value="responses">{M.apiTypeResponses}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            ))}
-          </div>
+            )}
 
-          {/* Shared capability defaults */}
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={thinking}
-                onCheckedChange={setThinking}
-                aria-label={M.thinking}
+            {/* Endpoint — required, the probe is built from it (spec §5.3.2) */}
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium">{M.endpoint}</span>
+              <Input
+                value={endpoint}
+                aria-label={M.endpoint}
+                placeholder="https://api.example.com/v1"
+                onChange={(e) => setEndpoint(e.target.value)}
               />
-              {M.thinking}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={vision}
-                onCheckedChange={setVision}
-                aria-label={M.vision}
-              />
-              {M.vision}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={reasoning}
-                onCheckedChange={setReasoning}
-                aria-label={M.reasoning}
-              />
-              {M.reasoning}
-            </label>
-          </div>
+            </div>
 
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">{M.contextWindow}</span>
-            <Input
-              type="number"
-              min={1}
-              value={contextWindow}
-              aria-label={M.contextWindow}
-              onChange={(e) => setContextWindow(e.target.value)}
+            {/* API key */}
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium">{M.apiKey}</span>
+              <div className="relative">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  aria-label={M.apiKey}
+                  className="pr-10"
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <button
+                  type="button"
+                  aria-label={M.apiKeyToggle}
+                  onClick={() => setShowKey((v) => !v)}
+                  className="text-muted-foreground absolute top-1/2 right-2 -translate-y-1/2"
+                >
+                  {showKey ? (
+                    <EyeOffIcon className="size-4" />
+                  ) : (
+                    <EyeIcon className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Model IDs (repeatable) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">{M.modelIds}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setModelIds((prev) => [...prev, ""])}
+                >
+                  <PlusIcon className="size-4" />
+                  {M.addModelId}
+                </Button>
+              </div>
+              {modelIds.map((id, index) => (
+                <div className="flex items-center gap-2" key={index}>
+                  <Input
+                    value={id}
+                    placeholder={M.modelIdPlaceholder}
+                    onChange={(e) => updateModelId(index, e.target.value)}
+                  />
+                  {modelIds.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={M.removeModelId}
+                      onClick={() =>
+                        setModelIds((prev) => prev.filter((_, i) => i !== index))
+                      }
+                    >
+                      <TrashIcon className="size-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {error && (
+              <p className="text-destructive text-sm" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="py-1">
+            <ModelCapabilityEditor
+              value={capability}
+              onChange={setCapability}
+              suggested={suggested}
             />
           </div>
-
-          {error && (
-            <p className="text-destructive text-sm" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
+        )}
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isPending}
-          >
-            {t.common.cancel}
-          </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? t.common.loading : M.addSubmit}
-          </Button>
+          {step === "identity" ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isPending || validating}
+              >
+                {t.common.cancel}
+              </Button>
+              <Button onClick={handleNext} disabled={isPending || validating}>
+                {validating ? M.validating : M.next}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setStep("identity")}
+                disabled={isPending}
+              >
+                {M.back}
+              </Button>
+              <Button onClick={handleSubmit} disabled={isPending}>
+                {isPending ? t.common.loading : M.addSubmit}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

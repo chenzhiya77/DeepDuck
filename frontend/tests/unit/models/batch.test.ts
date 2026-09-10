@@ -84,7 +84,7 @@ describe("expandBatchToEntries", () => {
         apiKey: "k",
         supportsThinking: true,
         supportsVision: true,
-        contextWindow: 128000,
+        defaultWindow: 128000,
       },
       ["a", "b"],
       [],

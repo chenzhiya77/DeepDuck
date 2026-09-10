@@ -2,9 +2,9 @@
  * 模型设置页（spec 2026-09-10 §5.7，plan Task 4 seam C）：
  * - 三态：loading / adminRequired(403) / 空态引导；
  * - 列表：来源徽章 + 只读行（config_file）无编辑/删除，UI 行可编辑/删除；
- * - 批量添加：一把 key + 两个 Model ID → save 收到两条 entry 各带同 key；
- * - 全空 Model ID 提交被阻（save 不被调用）；
- * - API 类型仅 openai-compatible 显示（切到 DeepSeek 后隐藏）。
+ * - 能力字段在外科式整体写中不丢（改 A 保存后 B 的能力仍在）；
+ * - 批量添加：一把 key + 两个 Model ID →「下一步」校验通过 →「添加」save 收到两条 entry 各带同 key；
+ * - 全空 Model ID 被阻（save 不被调用）；API 类型仅 openai-compatible 显示。
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -13,12 +13,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import { ModelsConfigRequestError } from "@/core/models/api";
-import type { ManagedModel } from "@/core/models/types";
+import type { ManagedModel, ManagedModelInput } from "@/core/models/types";
 
+const fetchMock = rs.hoisted(() => ({ fetch: rs.fn() }));
 const hooksMock = rs.hoisted(() => ({
   useModelsConfig: rs.fn(),
   useSaveModelsConfig: rs.fn(),
 }));
+rs.mock("@/core/api/fetcher", () => ({ fetch: fetchMock.fetch }));
 rs.mock("@/core/models/hooks", () => hooksMock);
 rs.mock("sonner", () => ({
   toast: { success: rs.fn(), error: rs.fn(), info: rs.fn(), warning: rs.fn() },
@@ -84,6 +86,13 @@ function renderPage() {
 
 beforeEach(() => {
   saveMock.mockReset();
+  fetchMock.fetch.mockReset();
+  // Step 1 probes the provider before it unlocks the capability step.
+  fetchMock.fetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, model_present: true, detail: "available" }),
+  } as unknown as Response);
 });
 
 afterEach(() => {
@@ -127,6 +136,40 @@ describe("ModelsSettingsPage list", () => {
   });
 });
 
+describe("ModelsSettingsPage capability round trip", () => {
+  it("preserves another model's capability fields when saving an edit", async () => {
+    setConfig([
+      uiModel({
+        name: "with-caps",
+        supported_context_windows: [200_000, 400_000],
+        context_window: 400_000,
+        supported_reasoning_efforts: ["low", "medium"],
+        reasoning_effort: "medium",
+      }),
+      uiModel({ name: "no-caps" }),
+    ]);
+    renderPage();
+
+    // Open the second row's editor and save it untouched: the collection is
+    // written wholesale, so the first row's capabilities must survive.
+    fireEvent.click(screen.getAllByRole("button", { name: M.edit })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const payload = (saveMock.mock.calls[0]?.[0] ?? []) as ManagedModelInput[];
+    expect(payload.map((model) => model.name)).toEqual([
+      "with-caps",
+      "no-caps",
+    ]);
+    expect(payload[0]).toMatchObject({
+      supported_context_windows: [200_000, 400_000],
+      context_window: 400_000,
+      supported_reasoning_efforts: ["low", "medium"],
+      reasoning_effort: "medium",
+    });
+  });
+});
+
 describe("ModelsSettingsPage batch add", () => {
   it("expands one key + two model ids into two entries on save", async () => {
     setConfig([]);
@@ -142,6 +185,11 @@ describe("ModelsSettingsPage batch add", () => {
     const ids = screen.getAllByPlaceholderText(M.modelIdPlaceholder);
     fireEvent.change(ids[1]!, { target: { value: "model-b" } });
 
+    fireEvent.change(screen.getByLabelText(M.endpoint), {
+      target: { value: "https://api.example.com/v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+    await waitFor(() => expect(screen.getByText(M.stepCapabilities)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
 
     await waitFor(() => expect(saveMock).toHaveBeenCalled());
@@ -157,7 +205,7 @@ describe("ModelsSettingsPage batch add", () => {
 
     fireEvent.click(screen.getByRole("button", { name: M.add }));
     fireEvent.change(screen.getByLabelText(M.apiKey), { target: { value: "sk-x" } });
-    fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
 
     await waitFor(() => expect(screen.getByText(M.validationNoModelId)).toBeDefined());
     expect(saveMock).not.toHaveBeenCalled();

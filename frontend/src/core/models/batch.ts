@@ -1,8 +1,6 @@
-import type {
-  ManagedModelInput,
-  ProviderId,
-  ReasoningEffortLevel,
-} from "./types";
+import { capabilityFieldsFromShared } from "./capability";
+import type { CapabilitySharedFields } from "./capability";
+import type { ManagedModelInput, ProviderId } from "./types";
 
 /**
  * Batch-add expansion (spec 2026-09-10 §5.3.1).
@@ -15,38 +13,12 @@ import type {
  * a whole-collection `PUT /api/models/config`.
  */
 
-export interface BatchSharedFields {
+export interface BatchSharedFields extends CapabilitySharedFields {
   provider: ProviderId;
   endpoint?: string;
   apiKey?: string;
   /** "chat" (default) or "responses"; only meaningful for openai-compatible. */
   apiType?: "chat" | "responses";
-  supportsThinking?: boolean;
-  supportsVision?: boolean;
-  supportsReasoningEffort?: boolean;
-  /** Legacy single default window, for callers that declare no subset. */
-  contextWindow?: number;
-  /** Selected window subset (multi-select, `CONTEXT_WINDOW_OPTIONS` members). */
-  supportedWindows?: number[];
-  /** Default window; carried only when it is a member of `supportedWindows`. */
-  defaultWindow?: number;
-  /** Selected effort subset (multi-select, enum order). */
-  supportedEfforts?: ReasoningEffortLevel[];
-  /** Default effort; carried only when it is a member of `supportedEfforts`. */
-  defaultEffort?: ReasoningEffortLevel;
-}
-
-/** An unset or unselected multi-select means "no declared subset", never `[]`. */
-function declaredSubset<T>(values: readonly T[] | undefined): T[] | undefined {
-  return values && values.length > 0 ? [...values] : undefined;
-}
-
-/** The backend rejects a default outside the declared subset, so drop it instead. */
-function gatedDefault<T>(
-  value: T | undefined,
-  subset: readonly T[] | undefined,
-): T | undefined {
-  return value !== undefined && subset?.includes(value) ? value : undefined;
 }
 
 /**
@@ -67,9 +39,8 @@ export function uniqueModelName(desired: string, taken: Set<string>): string {
  * - `name` = Model ID, deduped against `existingNames` and within the batch.
  * - `display_name` defaults to the Model ID.
  * - `use_responses_api` is set only for openai-compatible + "responses".
- * - A declared window/effort subset is carried with its default, and the default
- *   is dropped when it falls outside the subset. Without a declared subset the
- *   legacy single `contextWindow` keeps its old "default window" meaning.
+ * - Capability subsets/defaults are carried per entry with the shared gating
+ *   rules (`capabilityFieldsFromShared`).
  */
 export function expandBatchToEntries(
   shared: BatchSharedFields,
@@ -80,12 +51,7 @@ export function expandBatchToEntries(
   const entries: ManagedModelInput[] = [];
   const useResponsesApi =
     shared.provider === "openai-compatible" && shared.apiType === "responses";
-  const windows = declaredSubset(shared.supportedWindows);
-  const efforts = declaredSubset(shared.supportedEfforts);
-  const windowDefault = windows
-    ? gatedDefault(shared.defaultWindow, windows)
-    : shared.contextWindow;
-  const effortDefault = gatedDefault(shared.defaultEffort, efforts);
+  const capability = capabilityFieldsFromShared(shared);
 
   for (const rawId of modelIds) {
     const modelId = rawId.trim();
@@ -104,10 +70,22 @@ export function expandBatchToEntries(
     };
     if (shared.apiKey) entry.api_key = shared.apiKey;
     if (shared.endpoint) entry.endpoint = shared.endpoint;
-    if (windows) entry.supported_context_windows = [...windows];
-    if (windowDefault !== undefined) entry.context_window = windowDefault;
-    if (efforts) entry.supported_reasoning_efforts = [...efforts];
-    if (effortDefault !== undefined) entry.reasoning_effort = effortDefault;
+    if (capability.supported_context_windows) {
+      entry.supported_context_windows = [
+        ...capability.supported_context_windows,
+      ];
+    }
+    if (capability.context_window !== undefined) {
+      entry.context_window = capability.context_window;
+    }
+    if (capability.supported_reasoning_efforts) {
+      entry.supported_reasoning_efforts = [
+        ...capability.supported_reasoning_efforts,
+      ];
+    }
+    if (capability.reasoning_effort !== undefined) {
+      entry.reasoning_effort = capability.reasoning_effort;
+    }
     if (useResponsesApi) entry.use_responses_api = true;
     entries.push(entry);
   }

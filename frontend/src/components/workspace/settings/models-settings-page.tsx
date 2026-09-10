@@ -26,7 +26,13 @@ import { ModelsAddDialog } from "./models-add-dialog";
 import { ModelsEditDialog } from "./models-edit-dialog";
 import { SettingsSection } from "./settings-section";
 
-/** Project an admin-view model back into a PUT input, preserving its key. */
+/**
+ * Project an admin-view model back into a PUT input, preserving its key.
+ *
+ * Must carry every capability field: the collection is written wholesale, so a
+ * field dropped here is erased from the stored model on the next save of any
+ * other model.
+ */
 function toManagedInput(model: ManagedModel): ManagedModelInput {
   return {
     provider: (model.provider ?? "openai-compatible") as ProviderId,
@@ -39,6 +45,10 @@ function toManagedInput(model: ManagedModel): ManagedModelInput {
     supports_thinking: model.supports_thinking,
     supports_vision: model.supports_vision,
     supports_reasoning_effort: model.supports_reasoning_effort,
+    supported_context_windows: model.supported_context_windows ?? undefined,
+    supported_reasoning_efforts:
+      model.supported_reasoning_efforts ?? undefined,
+    reasoning_effort: model.reasoning_effort ?? undefined,
     context_window: model.context_window ?? undefined,
   };
 }

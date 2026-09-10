@@ -113,7 +113,8 @@
   空/空白 id → `{}`。
 - **`defaultWindow` 的语义分隔**：声明了子集 ⇒ 默认必须 ∈ 子集（否则丢弃）；未声明子集 ⇒ 旧 `contextWindow`
   单值语义原样保留（既有 6 例不破）。空数组视为「未声明」而非「不支持任何档位」，避免提交后端必拒的空列表。
-- **⚠ 计划缺口（Task 3 交付时发现，待确认后补）**：
+  **（T4 订正：`contextWindow` 这个名字已并入 `defaultWindow`，见 T4 交付纪要决策 2。）**
+- **⚠ 计划缺口（Task 3 交付时发现；②③④ 已由 Task 4 闭合，①由 Task 3' 闭合）**：
   1. **后端 PUT 尚不接收新字段**——`app/gateway/routers/models.py` 的 `ManagedModelInput` 是 `extra="forbid"`
      且 `put_models_config` 的 entry 字典未含三个新字段，前端一旦提交 `supported_context_windows` 等即 **422**
      （或若被静默丢弃则能力永不落盘）。计划中 Task 1（harness）/Task 2（validate）/Task 3（前端）**都没有**覆盖写入路径，
@@ -176,8 +177,58 @@
 - Test: `frontend/tests/unit/settings/models-capability-wizard.dom.test.tsx`（step1→validate→step2；
   validate 失败阻止 step2；窗口多选+默认单选；强度子集呈现；批量两 id → PUT payload 两条各带共享能力）
 
-- [ ] RED → Implement → GREEN + revert proof + `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): two-step model wizard with capability editor`
+- [x] RED → Implement → GREEN + revert proof + `pnpm check` 双净。（测试：`capability.test.ts` 16→**28**（+4 编辑规则
+  toggleWindow/toggleEffort、+4 `capabilityValueFromModel` 旧数据兜底、+3 建议预填、+1 共享块派生布尔）；
+  新建 `models-capability-wizard.dom.test.tsx` **9 例**（逐 id 校验、校验失败停在 step1 并显示 detail、缺端点/缺 key
+  本地拦截且零请求、curated 预填+「建议值」标注、未知 id 不预填、批量两条各带子集+默认+派生布尔、Back 保留身份输入、
+  编辑弹窗旧数据不报错、编辑子集与默认往返）；`models-settings-page.dom.test.tsx` +1「整体写不丢能力」，
+  其两条 batch 用例改走两步流程（该文件补 fetch mock）。
+  `tests/unit/models`+`tests/unit/settings` **53 绿**；全量 `tests/unit` **2051 passed / 2 failed**，两例均为**预存失败**、
+  与本任务无关：
+  ① `knowledge/chat-panel.dom.test.tsx`「restores the remembered model」——已用 `git stash push -- frontend/src` 复证
+  HEAD 源码下同样失败；
+  ② `components/workspace/lazy-panels.test.ts`「loads each settings page from its active section」——断言
+  `settings-dialog.tsx` 里 `dynamic(` 出现 9 次，实际 10 次；该文件与测试文件均未被我改动（`git status` 为空 = 内容同 HEAD），
+  且 `settings-dialog.tsx` 最后一次改动是前置计划的 `34cf3d85`（新增 Models 分区时漏改计数）⇒ 属前置交付遗留，待用户定夺是否顺手修。
+  `pnpm check`（eslint+tsc）**exit 0** 无告警。
+  revert proof：neuter ①step1 校验（直通 step2）②`capabilityValueFromModel` 旧布尔兜底 ③`toManagedInput` 能力透传
+  ⇒ **5 红**（probes-every-model-id / stays-on-step-1 / pre-checks-every-level / edit-legacy / capability-round-trip）；
+  恢复后 53 全绿）
+- [x] Commit: `feat(frontend): two-step model wizard with capability editor`
+
+#### Task 4 交付纪要（2026-09-10）
+
+- **实现落点**：
+  - `core/models/capability.ts`（**新建，纯函数**）：`ModelCapabilityValue` + 单一门控实现 `capabilityFieldsFromShared`
+    （add 批量 / edit 单条共用）+ `capabilityValueFromModel`（旧数据兜底）/`capabilityValueFromSuggestion`（预填）/
+    `toggleWindow`/`toggleEffort`（默认 ∈ 子集维护）+ `capabilityInputFromValue`（编辑弹窗一次性取全部能力字段）。
+  - `components/workspace/settings/model-capability-editor.tsx`（**新建**，plan Files 未列）：add step2 与 edit 共用。
+    窗口/强度多选 = Radix `Checkbox`；默认单选 = `ToggleGroup type="single"`（只列已选项，结构上不可能选到子集外）。
+  - `models-add-dialog.tsx`：两步（step1 身份+凭证+Model ID → `handleNext` 逐 id 校验 → 成功才 seed 建议并进 step2）；
+    step2 提交走 `expandBatchToEntries`，共享能力套用到整批。
+  - `models-edit-dialog.tsx`：`capabilityValueFromModel` 回填 + 同一编辑器；身份字段仍冻结；凭证可改。
+  - `models-settings-page.tsx`：`toManagedInput` 补齐三条能力字段（**缺口 ② 闭合**）。
+  - i18n 三文件：+18 键（step 标签 / next/back/validating / validateFailed / 端点与 key 校验文案 /
+    supportedWindows/defaultWindow/supportedEfforts/defaultEffort/suggested / 200K-400K-1M）；**删除 2 个死键**
+    （`settings.models.reasoning`、`settings.models.contextWindow`——单一数字窗口与旧 effort 开关已被编辑器取代，全库零引用）。
+  - `core/models/batch.ts`：门控逻辑下沉到 `capability.ts`（`BatchSharedFields extends CapabilitySharedFields`），
+    batch 只负责命名与展开。
+- **关键决策（4 条，含 1 条对 Task 3 契约的订正）**：
+  1. **step1 校验全部 N 个 Model ID**（不是只验第一条）：step2 是给整批配能力，只验首条会让「3 条里 2 条不存在」
+     蒙混过关；任一条失败即停在 step1 并显示该 id 的服务端 `detail`。首条 id 仍用于 curated 预填。
+  2. **默认字段单一化（订正 T3 计划文字）**：T3 时共享块同时有 legacy `contextWindow` 与 `defaultWindow`；T4 发现
+     编辑弹窗必须保留「旧单值默认」（如 `context_window: 128000` 不在 200K/400K/1M 枚举内，任何子集都装不下它）⇒
+     两个名字会让同一语义分叉。现只保留 `defaultWindow` 一个名字，规则统一为：**未声明子集 ⇒ 单值默认原样落盘；
+     声明了子集 ⇒ 默认必须 ∈ 子集**。`batch.test.ts` 与 `capability.test.ts` 的三条对应用例随之改名/改断言（同义，
+     无行为回归）。计划 Task 3 交付纪要中「legacy `contextWindow`」一句按此订正。
+  3. **强度布尔派生**（缺口 ③ 闭合）：编辑器没有独立 effort 开关，`supports_reasoning_effort = supportedEfforts.length > 0`，
+     从结构上保证布尔与子集不会漂移；旧数据只有布尔时展示四档全勾并固化，不谎称已声明子集。
+  4. **空选择 = 未声明**：空数组绝不落盘为空列表（后端必拒）；唯一选项自动成为默认，多个选项且原默认已失效则留空由
+     用户选（缺口 ④ 的预填规则）。
+- **对 Task 5 的接口**：`ManagedModel` 现在带回 `supported_context_windows`（GET 回读，T3' 已打通），
+  输入栏可直接 `selectedModel.supported_reasoning_efforts ?? 全 4 档`；`supports_reasoning_effort` 由编辑器保证
+  「有子集即 true」，故 Task 5 保留既有布尔门控不会漏亮。
+- **遗留（未动）**：Task 5（输入栏/运行时）、Task 6（收官+文档+浏览器实测）。
 
 ## Task 5: 输入栏/运行时集成——推理深度读子集 + 修模式死条目 + 模型默认档生效（seam C dom + 后端）
 

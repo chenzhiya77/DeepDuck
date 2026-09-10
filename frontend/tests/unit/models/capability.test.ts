@@ -17,7 +17,27 @@ const {
   validateModelsConfig,
 } = await import("@/core/models/api");
 import { expandBatchToEntries } from "@/core/models/batch";
+import {
+  capabilityValueFromModel,
+  capabilityValueFromSuggestion,
+  capabilityValueToShared,
+  emptyCapabilityValue,
+  toggleEffort,
+  toggleWindow,
+} from "@/core/models/capability";
 import { suggestCapabilities } from "@/core/models/capability-registry";
+import type { ManagedModel } from "@/core/models/types";
+
+function managedModel(over: Partial<ManagedModel> = {}): ManagedModel {
+  return {
+    name: "m",
+    model: "m",
+    api_key: "********",
+    source: "ui",
+    editable: true,
+    ...over,
+  };
+}
 
 const PROBE = {
   provider: "deepseek" as const,
@@ -185,7 +205,7 @@ describe("expandBatchToEntries capability subsets", () => {
     expect(entry!.reasoning_effort).toBeUndefined();
   });
 
-  it("omits an empty subset instead of sending an empty list", () => {
+  it("treats an empty selection as undeclared and drops the empty lists", () => {
     const [entry] = expandBatchToEntries(
       {
         provider: "deepseek",
@@ -201,19 +221,174 @@ describe("expandBatchToEntries capability subsets", () => {
 
     expect(entry!.supported_context_windows).toBeUndefined();
     expect(entry!.supported_reasoning_efforts).toBeUndefined();
-    expect(entry!.context_window).toBeUndefined();
-    expect(entry!.reasoning_effort).toBeUndefined();
+    // No subset declared: the single defaults stand, exactly like a legacy row.
+    expect(entry!.context_window).toBe(200_000);
+    expect(entry!.reasoning_effort).toBe("medium");
   });
 
-  it("keeps the legacy single context_window when no subset is declared", () => {
+  it("keeps a single default window with no declared subset", () => {
     const [entry] = expandBatchToEntries(
-      { provider: "deepseek", apiKey: "k", contextWindow: 128_000 },
+      { provider: "deepseek", apiKey: "k", defaultWindow: 128_000 },
       ["m"],
       [],
     );
 
     expect(entry!.context_window).toBe(128_000);
     expect(entry!.supported_context_windows).toBeUndefined();
+  });
+});
+
+describe("capability value editing", () => {
+  it("adds a window in ascending order and auto-picks a lone option as default", () => {
+    const first = toggleWindow(emptyCapabilityValue(), 400_000);
+    expect(first.supportedWindows).toEqual([400_000]);
+    expect(first.defaultWindow).toBe(400_000);
+
+    const second = toggleWindow(first, 200_000);
+    expect(second.supportedWindows).toEqual([200_000, 400_000]);
+    // The previous default is still a member, so it is kept.
+    expect(second.defaultWindow).toBe(400_000);
+  });
+
+  it("clears a default window that the selection no longer contains", () => {
+    let value = toggleWindow(emptyCapabilityValue(), 200_000);
+    value = toggleWindow(value, 400_000);
+    value = toggleWindow(value, 1_000_000);
+    expect(value.defaultWindow).toBe(200_000);
+
+    value = toggleWindow(value, 200_000);
+    expect(value.supportedWindows).toEqual([400_000, 1_000_000]);
+    expect(value.defaultWindow).toBeUndefined();
+  });
+
+  it("clears the selection and the default when the last window is removed", () => {
+    const off = toggleWindow(
+      toggleWindow(emptyCapabilityValue(), 200_000),
+      200_000,
+    );
+    expect(off.supportedWindows).toEqual([]);
+    expect(off.defaultWindow).toBeUndefined();
+  });
+
+  it("adds efforts in enum order with the same default rule", () => {
+    let value = toggleEffort(emptyCapabilityValue(), "medium");
+    expect(value.supportedEfforts).toEqual(["medium"]);
+    expect(value.defaultEffort).toBe("medium");
+
+    value = toggleEffort(value, "minimal");
+    expect(value.supportedEfforts).toEqual(["minimal", "medium"]);
+    expect(value.defaultEffort).toBe("medium");
+
+    value = toggleEffort(value, "minimal");
+    expect(value.supportedEfforts).toEqual(["medium"]);
+    expect(value.defaultEffort).toBe("medium");
+  });
+});
+
+describe("capabilityValueFromModel", () => {
+  it("keeps a legacy single window as an undeclared default", () => {
+    const value = capabilityValueFromModel(
+      managedModel({ context_window: 128_000 }),
+    );
+
+    expect(value.supportedWindows).toEqual([]);
+    expect(value.defaultWindow).toBe(128_000);
+  });
+
+  it("pre-checks every level when only the legacy effort flag is set", () => {
+    const value = capabilityValueFromModel(
+      managedModel({ supports_reasoning_effort: true }),
+    );
+
+    expect(value.supportedEfforts).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+  });
+
+  it("reads a declared subset back as stored", () => {
+    const value = capabilityValueFromModel(
+      managedModel({
+        supported_context_windows: [200_000, 400_000],
+        context_window: 400_000,
+        supported_reasoning_efforts: ["low", "high"],
+        reasoning_effort: "high",
+        supports_thinking: true,
+      }),
+    );
+
+    expect(value).toMatchObject({
+      supportedWindows: [200_000, 400_000],
+      defaultWindow: 400_000,
+      supportedEfforts: ["low", "high"],
+      defaultEffort: "high",
+      supportsThinking: true,
+      supportsVision: false,
+    });
+  });
+
+  it("declares no effort levels without a subset or the flag", () => {
+    expect(capabilityValueFromModel(managedModel()).supportedEfforts).toEqual(
+      [],
+    );
+  });
+});
+
+describe("capabilityValueFromSuggestion", () => {
+  it("seeds a lone suggested window as the default", () => {
+    const value = capabilityValueFromSuggestion(
+      suggestCapabilities("claude-sonnet-4"),
+    );
+
+    expect(value).toMatchObject({
+      supportedWindows: [200_000],
+      defaultWindow: 200_000,
+      supportsThinking: true,
+      supportsVision: true,
+      supportedEfforts: [],
+    });
+  });
+
+  it("seeds a multi-level effort subset with its suggested default", () => {
+    const value = capabilityValueFromSuggestion(suggestCapabilities("gpt-5"));
+
+    expect(value.supportedEfforts).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(value.defaultEffort).toBe("medium");
+    expect(value.defaultWindow).toBe(400_000);
+  });
+
+  it("yields an empty value for an unknown model id", () => {
+    expect(
+      capabilityValueFromSuggestion(suggestCapabilities("acme-llm-9000")),
+    ).toEqual(emptyCapabilityValue());
+  });
+});
+
+describe("capabilityValueToShared", () => {
+  it("derives the effort flag from the declared subset", () => {
+    expect(capabilityValueToShared(emptyCapabilityValue())).toMatchObject({
+      supportsReasoningEffort: false,
+      supportedEfforts: undefined,
+    });
+
+    expect(
+      capabilityValueToShared({
+        ...emptyCapabilityValue(),
+        supportedEfforts: ["low"],
+        defaultEffort: "low",
+      }),
+    ).toMatchObject({
+      supportsReasoningEffort: true,
+      supportedEfforts: ["low"],
+      defaultEffort: "low",
+    });
   });
 });
 
