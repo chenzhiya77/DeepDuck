@@ -98,8 +98,22 @@ AppConfig 按 `name` 合并（**UI 文件覆盖 config.yaml**）+ provider 白�
       models_config.json）
 - Test: doctor 对应测试（两来源任一有模型即通过；都无才报缺）
 
-- [ ] RED → Implement → GREEN + revert proof。
-- [ ] Commit: `fix(doctor): count models from merged config sources`
+- [x] RED → Implement → GREEN + revert proof。—— `test_doctor_models.py` **2 passed**（新增）；
+      回归 `test_doctor.py` **60 passed**（既有 `TestCheckModelsConfigured` 三例不动）；ruff 双净。
+      revert proof：neuter `_merged_models`（忽略 ui + 吞错误）⇒ 2 新用例 RED；恢复全绿。
+- [x] Commit: `feat(doctor): count merged model set so UI-only models pass the models check`（`1c25256b`，2 files, +97/-12）
+
+### 交付纪要（2026-09-10）
+
+- **实现落点**：`scripts/doctor.py` 新增 `_merged_models(config_path)` 并重写
+  `check_models_configured`。合并集 = config.yaml `models` ∪ `models_config.json`
+  （经 `merge_ui_models`），仅 UI 添加模型也能通过「至少一个模型」检查。
+- **关键决策（偏离原计划）**：不走 `AppConfig.from_file()`——它要求整份 config 合法
+  （含必填 `sandbox`），会击穿既有 `test_one_model`（无 sandbox 夹具）。doctor 层改为
+  **只读两份模型列表**并合并（容错、不要求整份 config 可加载）。
+- **降级语义**：`models_config.json` 形状错误 ⇒ `ModelsConfig.from_file()` 抛错 ⇒
+  降级为 config.yaml 集并**记录错误**（有 yaml 模型→warn，无→fail），doctor 绝不崩。
+- **遗留（未动）**：前端（Task 4）、收官+文档+浏览器实测（Task 5）。
 
 ## Task 4: 前端「模型」设置分区 + 批量添加（seam C，spec §5.7/§5.3.1）
 
