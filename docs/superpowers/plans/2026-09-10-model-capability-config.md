@@ -80,18 +80,26 @@
 - [ ] RED → Implement → GREEN + revert proof + `pnpm check` 双净。
 - [ ] Commit: `feat(frontend): two-step model wizard with capability editor`
 
-## Task 5: 输入栏集成——推理深度读子集 + 修模式死条目（seam C dom）
+## Task 5: 输入栏/运行时集成——推理深度读子集 + 修模式死条目 + 模型默认档生效（seam C dom + 后端）
 
 **Files:**
 - Modify: `frontend/src/components/workspace/input-box.tsx`（推理深度选择器选项 =
   `selectedModel.supported_reasoning_efforts ?? 全部 4 档`；模式菜单 `!supportThinking` 时隐藏
-  thinking/pro/ultra 条目，只剩闪速，消除死条目；`getResolvedMode` 兜底保留）
+  thinking/pro/ultra 条目，只剩闪速，消除死条目；`getResolvedMode` 兜底保留；
+  **方案 A 解析序**：handleModeSelect/自动初始化不再无条件重写 effort —— 用户手选 > 模型默认 > 模式启发式；
+  选中模型时预选 `model.reasoning_effort`）
+- Modify: `frontend/src/core/threads/hooks.ts`（发送前 effort 解析对齐方案 A：context 显式 > 模型默认 > 模式启发式）
 - Modify: `frontend/src/components/workspace/sidecar/sidecar-panel.tsx`（同款模式门控对齐，若其菜单同渲染）
+- Modify: `backend/packages/harness/deerflow/agents/lead_agent/agent.py`（解析链插入模型默认兜底环：
+  request > agent > model > None，供非 UI 调用方；模型默认取 `ModelConfig.reasoning_effort` 且 ∈ 子集）
 - Test: `frontend/tests/unit/**/input-box*.dom.test.tsx`（推理深度只列子集；`!supports_thinking` 时模式菜单
-  无 thinking/pro/ultra；(T,F) 全模式无推理深度回归）
+  无 thinking/pro/ultra；(T,F) 全模式无推理深度回归；**模式切换不覆盖模型默认；预选模型默认**）
+- Test: `backend/tests/test_lead_agent_runtime_options.py`（或既有 lead_agent 测试）：无 request/agent effort
+  时落到模型默认；有 request effort 时 request 赢
 
 - [ ] RED → Implement → GREEN + revert proof + `pnpm check` 双净。
 - [ ] Commit: `fix(frontend): gate mode menu and reasoning-effort levels by model capabilities`
+- [ ] Commit: `feat(runtime): honor per-model default reasoning effort (user > model > mode heuristic)`
 
 ## Task 6: 收官——回归 + 文档同步 + 浏览器实测
 
@@ -112,5 +120,6 @@
 | 旧 config 无新字段被误判损坏 | T1/T4 | 新字段全可选 + 向后兼容显示（默认=context_window / 全 4 档） |
 | curated 预填被误读为「检测结果」 | T4 | UI 标注「建议值，可修改」；spec 明令不谎称探测 |
 | 输入栏门控改动破坏既有 (T,T)/(T,F) 行为 | T5 | 回归三形态 dom 测试；`getResolvedMode` 兜底保留 |
+| 方案 A 改变模式→effort 既有语义（ultra 不再强制 high） | T5 | 仅当模型声明默认时模式不重写 effort；无默认保留启发式；dom 测试钉住两分支 |
 | 强度词表三套漂移（前端 4 / 后端 agent 3 / qodercn 5） | 全局 | 本增量只用前端 4 档；词表统一另立增量（out of scope） |
 | Radix 多选/分段在 happy-dom 不稳 | T4/T5 | 关键流转用稳定断言；枚举门控规则下沉 node 测试钉死 |

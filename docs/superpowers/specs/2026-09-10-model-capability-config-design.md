@@ -83,6 +83,12 @@
   - 推理深度选择器选项 = `supported_reasoning_efforts ?? 全部 4 档`（与 `mode !== "flash"` 既有门控叠加）。
   - 模式菜单：`!supports_thinking` 时**隐藏** thinking/pro/ultra 条目（与「思考」条目同一门控），只剩闪速，
     消除「渲染但被打回 flash」的死条目；`getResolvedMode` 的强制回退保留为兜底。
+- **运行时优先级（方案 A，已确认）——「选了这个档位,模型就是这个档位的」**：
+  effort 解析序 = **用户手选**（`context.reasoning_effort` 显式）> **模型默认**（`model.reasoning_effort`，
+  若 ∈ `supported_reasoning_efforts`）> **模式启发式**（兜底，仅当模型无声明默认）。模式切换**不再重写**
+  effort（模型有默认时）；输入栏在选中模型时**预选**模型默认档。模式仍只负责编排
+  （thinking/plan/subagent）。后端对非 UI 调用方（IM/调度）在解析链插入模型默认兜底环：
+  request > agent > model > None（`lead_agent` 的 `_resolve_runtime_option`）。
 - **向后兼容显示**：仅有 `context_window`、无 `supported_context_windows` 的旧数据 → 视为「未声明子集」，
   默认 = `context_window`，不报错；无 `supported_reasoning_efforts` → 输入栏/编辑器显示全部 4 档（现状行为）。
 - **i18n**：复用既有 `inputBox.reasoningEffort*` 4 档标签；新增 settings 侧窗口档位（200K/400K/1M）、
@@ -100,6 +106,7 @@
   `frontend/tests/unit/settings/*.dom.test.tsx`（dom）：step1→validate→step2；validate 失败阻止 step2；
   窗口多选+默认单选；强度子集呈现；批量两 id → PUT payload 两条各带共享能力。
   输入栏门控：推理深度只列子集；`!supports_thinking` 时模式菜单无 thinking/pro/ultra。
+  运行时优先级：模式切换不覆盖模型默认；输入栏预选模型默认；后端无 request/agent effort 时落到模型默认。
 - 先例：既有 `test_models_config.py` / `test_models_config_api.py` / `batch.test.ts` /
   `models-settings-page.dom.test.tsx` / input-box 既有测试的夹具与断言风格。
 
