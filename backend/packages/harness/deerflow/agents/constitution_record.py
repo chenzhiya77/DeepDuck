@@ -26,8 +26,6 @@ from weakref import WeakKeyDictionary
 
 from langchain.agents.middleware import AgentMiddleware
 
-from deerflow.tools.mcp_metadata import is_mcp_tool
-
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
@@ -207,6 +205,11 @@ def _tool_source(tool: Any) -> str:
     currently unreachable here: skill-contributed business tools arrive through
     ``tool_groups``.
     """
+    # Imported here, not at module scope: the agent factory imports this module at
+    # import time, and ``deerflow.tools`` is exactly what it keeps lazy to dodge a
+    # circular import.
+    from deerflow.tools.mcp_metadata import is_mcp_tool
+
     if is_mcp_tool(tool):
         return TOOL_SOURCE_MCP
     func = getattr(tool, "func", None) or getattr(tool, "coroutine", None)

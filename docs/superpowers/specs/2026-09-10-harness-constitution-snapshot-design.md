@@ -291,7 +291,22 @@ publish_constitution(graph, build_constitution_record(
 return graph
 ```
 
-bootstrap 站点(:835-862)同形状,`is_bootstrap=True`、无 `agent_name` / `skill_setup`。
+bootstrap 站点同形状,只有 `is_bootstrap=True` 不同。
+
+> **一处与本文早期草稿不符的实测更正**:草稿写"bootstrap 无 `agent_name` / `skill_setup`",**代码里两个都有**——`skill_setup` 是 `if is_bootstrap:` 分支内部自己构建的(`build_skill_search_setup(bootstrap_skills, ...)`),`agent_name` 在函数作用域内。**两个都照传**(bootstrap 记下"这是为哪个 agent 做的引导装配"比留空更有用)。Task 2 的实现因此把两个站点的事实列表写成同一个形状,只差 `is_bootstrap`。
+
+**实现形状(Task 2 落地)**:两个站点都把构建与发布收敛到同一个模块级助手,避免把 20 行 try/except 抄两遍:
+
+```python
+def _publish_constitution_snapshot(graph: Any, **facts: Any) -> None:
+    """Record which harness this run actually assembled. Observability only."""
+    try:
+        publish_constitution(graph, build_constitution_record(**facts))
+    except Exception:
+        logger.warning("constitution snapshot unpublished", exc_info=True)
+```
+
+**`constitution_record` 的模块级导入是安全的**,但前提是它自己不 import `deerflow.tools`:为此 `_tool_source` 里的 `is_mcp_tool` **改成了函数级导入**(`agent.py` 一直懒加载 `deerflow.tools` 就是在躲循环依赖,模块级拉进来会把它带进导入链)。
 
 **传入的是 `authorization_candidates` 与 `authorized_tools` 两个列表,由 `build_constitution_record` 算差集**,而不是在工厂里算——保持工厂侧只做"交出局部变量",派生逻辑集中在可单测的纯函数里。
 

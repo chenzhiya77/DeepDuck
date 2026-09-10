@@ -33,6 +33,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
 
+from deerflow.agents.constitution_record import build_constitution_record, publish_constitution
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.configured_extensions import load_configured_extension_middlewares
@@ -640,6 +641,20 @@ def _load_enabled_available_skills(available_skills: set[str] | None, *, app_con
     return [skill for skill in skills if skill.name in available_skills]
 
 
+def _publish_constitution_snapshot(graph: Any, **facts: Any) -> None:
+    """Record which harness this run actually assembled. Observability only.
+
+    Both ``create_agent`` sites call this immediately before returning, so the
+    snapshot is published from the same local variables that produced the graph
+    (see the constitution-snapshot spec §6.2). It must never raise: a snapshot is
+    worth strictly less than the agent construction it observes.
+    """
+    try:
+        publish_constitution(graph, build_constitution_record(**facts))
+    except Exception:
+        logger.warning("constitution snapshot unpublished", exc_info=True)
+
+
 def make_lead_agent(config: RunnableConfig):
     """LangGraph graph factory; keep the signature compatible with LangGraph Server."""
     runtime_config = _get_runtime_config(config)
@@ -842,22 +857,23 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             setup,
             top_k=resolved_app_config.tool_search.auto_promote_top_k,
         )
-        return create_agent(
+        middlewares = normalize_middleware_state_schemas(
+            build_middlewares(
+                config,
+                model_name=model_name,
+                available_skills=set(_BOOTSTRAP_SKILL_NAMES),
+                app_config=resolved_app_config,
+                deferred_setup=setup,
+                mcp_routing_middleware=mcp_routing_middleware,
+                user_id=resolved_user_id,
+                authorization_provider=_authz_provider,
+            ),
+            mode,
+        )
+        graph = create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, app_config=resolved_app_config, attach_tracing=False),
             tools=final_tools,
-            middleware=normalize_middleware_state_schemas(
-                build_middlewares(
-                    config,
-                    model_name=model_name,
-                    available_skills=set(_BOOTSTRAP_SKILL_NAMES),
-                    app_config=resolved_app_config,
-                    deferred_setup=setup,
-                    mcp_routing_middleware=mcp_routing_middleware,
-                    user_id=resolved_user_id,
-                    authorization_provider=_authz_provider,
-                ),
-                mode,
-            ),
+            middleware=middlewares,
             system_prompt=apply_prompt_template(
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
@@ -870,6 +886,29 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             ),
             state_schema=get_thread_state_schema(mode),
         )
+        _publish_constitution_snapshot(
+            graph,
+            middlewares=middlewares,
+            tools=final_tools,
+            deferred_setup=setup,
+            authorization_candidates=authorization_candidates,
+            authorized_tools=authorized_tools,
+            model_name=model_name,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+            agent_name=agent_name,
+            is_bootstrap=True,
+            checkpoint_mode=mode,
+            skill_setup=skill_setup,
+            mcp_routing_built=mcp_routing_middleware is not None,
+            app_config=resolved_app_config,
+            is_plan_mode=is_plan_mode,
+            subagent_enabled=subagent_enabled,
+            max_concurrent_subagents=max_concurrent_subagents,
+            max_total_subagents=max_total_subagents,
+            non_interactive=non_interactive,
+        )
+        return graph
 
     # Custom agents can update their own SOUL.md / config via update_agent.
     # The default agent (no agent_name) does not see this tool.
@@ -923,23 +962,24 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
         top_k=resolved_app_config.tool_search.auto_promote_top_k,
     )
     mcp_routing_hints_section = get_mcp_routing_hints_prompt_section(authorized_tools, deferred_names=setup.deferred_names)
-    return create_agent(
+    middlewares = normalize_middleware_state_schemas(
+        build_middlewares(
+            config,
+            model_name=model_name,
+            agent_name=agent_name,
+            available_skills=available_skills,
+            app_config=resolved_app_config,
+            deferred_setup=setup,
+            mcp_routing_middleware=mcp_routing_middleware,
+            user_id=resolved_user_id,
+            authorization_provider=_authz_provider,
+        ),
+        mode,
+    )
+    graph = create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=resolved_app_config, attach_tracing=False, model_overrides=agent_model_overrides),
         tools=final_tools,
-        middleware=normalize_middleware_state_schemas(
-            build_middlewares(
-                config,
-                model_name=model_name,
-                agent_name=agent_name,
-                available_skills=available_skills,
-                app_config=resolved_app_config,
-                deferred_setup=setup,
-                mcp_routing_middleware=mcp_routing_middleware,
-                user_id=resolved_user_id,
-                authorization_provider=_authz_provider,
-            ),
-            mode,
-        ),
+        middleware=middlewares,
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
@@ -954,3 +994,26 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
         ),
         state_schema=get_thread_state_schema(mode),
     )
+    _publish_constitution_snapshot(
+        graph,
+        middlewares=middlewares,
+        tools=final_tools,
+        deferred_setup=setup,
+        authorization_candidates=authorization_candidates,
+        authorized_tools=authorized_tools,
+        model_name=model_name,
+        thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
+        agent_name=agent_name,
+        is_bootstrap=False,
+        checkpoint_mode=mode,
+        skill_setup=skill_setup,
+        mcp_routing_built=mcp_routing_middleware is not None,
+        app_config=resolved_app_config,
+        is_plan_mode=is_plan_mode,
+        subagent_enabled=subagent_enabled,
+        max_concurrent_subagents=max_concurrent_subagents,
+        max_total_subagents=max_total_subagents,
+        non_interactive=non_interactive,
+    )
+    return graph

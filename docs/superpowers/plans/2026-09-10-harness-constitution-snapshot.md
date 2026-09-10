@@ -123,11 +123,24 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_run_event_stream_contract.py
 
 **Files:** Modify `backend/packages/harness/deerflow/agents/lead_agent/agent.py`;Create `backend/tests/test_lead_agent_constitution.py`
 
-- [ ] **Step 1(先写红测试 — hoist 等价性,这是本 Task 的安全网):** 断言改动后传入 `create_agent(middleware=...)` 的列表**内容与顺序与改动前逐项相同**(对 lead 常规链、bootstrap 链、subagent 链各一次,optional 全开与全关各一次)。同时断言 `make_lead_agent` 的**返回类型与签名未变**(钉住 `agent.py:644` 的 LangGraph Server 契约)。**先写这个测试再动代码**——hoist 是纯表达式提取,任何顺序或内容变化都是回归。
-- [ ] **Step 2(先写红测试 — 发布):** 断言 ① **两个** `create_agent` 站点(bootstrap :835-862、常规 :916-946)都调用 `publish_constitution`(bootstrap 那条最易漏);② `constitution_for(graph)` 返回的快照字段与组装现场一致;③ **`build_constitution_record` 抛异常时 agent 仍然构建成功**(发布调用必须包 try/except,spec §7 最后一条)。
-- [ ] **Step 3:** 改常规站点(:916-946):把 `normalize_middleware_state_schemas(build_middlewares(...), mode)` 提为局部变量 `middlewares`,`create_agent` 结果提为 `graph`,然后 `publish_constitution(graph, build_constitution_record(...))`(包 try/except + warning),最后 `return graph`。入参按 spec §6.2 的清单传局部变量,**authorization 差集交给 `build_constitution_record` 算**,工厂侧只做"交出局部变量"。
-- [ ] **Step 4:** 改 bootstrap 站点(:835-862),同形状,`is_bootstrap=True`、无 `agent_name` / `skill_setup`。
-- [ ] **Step 5:** 转绿 + `cd backend && make test`(确认 hoist 没打破既有的位次钉死测试,如 ClarificationMiddleware 必须最后)+ `make lint`。
+- [x] **Step 1(先写红测试 — hoist 等价性,这是本 Task 的安全网):** 断言改动后传入 `create_agent(middleware=...)` 的列表**内容与顺序与改动前逐项相同**(对 lead 常规链、bootstrap 链、subagent 链各一次,optional 全开与全关各一次)。同时断言 `make_lead_agent` 的**返回类型与签名未变**(钉住 `agent.py:644` 的 LangGraph Server 契约)。**先写这个测试再动代码**——hoist 是纯表达式提取,任何顺序或内容变化都是回归。
+- [x] **Step 2(先写红测试 — 发布):** 断言 ① **两个** `create_agent` 站点(bootstrap :835-862、常规 :916-946)都调用 `publish_constitution`(bootstrap 那条最易漏);② `constitution_for(graph)` 返回的快照字段与组装现场一致;③ **`build_constitution_record` 抛异常时 agent 仍然构建成功**(发布调用必须包 try/except,spec §7 最后一条)。
+- [x] **Step 3:** 改常规站点(:916-946):把 `normalize_middleware_state_schemas(build_middlewares(...), mode)` 提为局部变量 `middlewares`,`create_agent` 结果提为 `graph`,然后 `publish_constitution(graph, build_constitution_record(...))`(包 try/except + warning),最后 `return graph`。入参按 spec §6.2 的清单传局部变量,**authorization 差集交给 `build_constitution_record` 算**,工厂侧只做"交出局部变量"。
+- [x] **Step 4:** 改 bootstrap 站点(:835-862),同形状。**修正原描述**:bootstrap 分支其实**有** `skill_setup`(在 `if is_bootstrap:` 内自建)与作用域内的 `agent_name`,两个都传——事实列表与常规站点写成同一形状,只差 `is_bootstrap`(spec §6.2 已更正)。
+- [x] **Step 5:** 转绿 + `cd backend && make test`(确认 hoist 没打破既有的位次钉死测试,如 ClarificationMiddleware 必须最后)+ `make lint`。
+
+**交付纪要(Task 2,2026-09-10):**
+
+- **新增**:`tests/test_lead_agent_constitution.py`(10 例)。**修改**:`agent.py`(唯一非旁路改动)、`constitution_record.py`(把 `is_mcp_tool` 改成函数级导入)。
+- **改动形状**:`agent.py` **97 insertions / 31 deletions**,删掉的只有 2 行 `return create_agent(` 与 2 处内联 middleware 表达式——**没有任何 kwarg 被动过**,是纯 hoist。两个站点各自:`middlewares = normalize_middleware_state_schemas(build_middlewares(...), mode)` → `graph = create_agent(..., middleware=middlewares, ...)` → `_publish_constitution_snapshot(graph, **facts)` → `return graph`。
+- **发布收敛到一处**:新增模块级 `_publish_constitution_snapshot(graph, **facts)`,把 build+publish 包在 try/except 里——避免 20 行抄两遍,也让"绝不影响构建"只有一个实现。
+- **等价性安全网用的是身份而非等值**:断言同一个 list 对象必须流经 `build_middlewares` → `normalize_middleware_state_schemas` → `create_agent`(`is ` 断言)。身份无法被"内容恰好相同"的实现满足,比逐项比内容更强。
+- **导入链的坑**:`constitution_record` 被 `agent.py` 模块级导入,**前提是它自己不 import `deerflow.tools`**。为此 `_tool_source` 里的 `is_mcp_tool` 改成函数级导入——`agent.py` 一直懒加载 `deerflow.tools` 正是在躲循环依赖。
+- **测试**:`test_lead_agent_constitution.py` 10 例绿;四个宪法文件 **60 passed**;**工厂相邻门禁 413 passed / 0 failed**(`test_lead_agent_prompt` / `test_lead_agent_model_resolution` / `test_checkpoint_mode` / `test_extension_ordering` / `test_extension_placement_guarantees` / `test_extension_stack_wiring` / `test_create_deerflow_agent` / `test_subagent_executor` / `test_run_journal` + 四个宪法文件 + harness 边界)——**位次不变量(Clarification 必须最后)与 checkpoint 模式冻结都在其中**。
+- **revert 证明**:把发布助手改成空操作 → **4 个用例当场红**(两个站点 + 两个记录内容用例),撤销即绿。
+- **门禁**:`ruff check` / `ruff format --check` 干净。
+- **全量套件的 149 个失败不是本任务的**:本机后端全量实测 `12133 passed / 149 failed / 109 skipped`。**做了受控 A/B**——把 `agent.py` + `constitution_record.py` 回退到提交态后,同一批 5 个失败文件仍是 `11 failed / 341 passed`(与改动后逐字相同),**证明与 Task 2 无关**。失败集中在环境相关模块(RAG 默认模型取自本机真实 `config.yaml` / Windows 不认 POSIX chmod 的 wechat / AST 递归深度的 skillscan / 本机没有 nginx),另一个来源是在飞的 RAG 那条线。**本任务一条测试都没红。**
+  > **给后续 Task 的提醒**:本机后端全量**不能**当门禁用(149 红是环境基线,远多于旧记录的"3 个")。用上面那个**工厂相邻集合**当门禁,41 秒跑完且全绿。
 
 ## Task 3: journal 承载 + 契约 5 处同步
 
