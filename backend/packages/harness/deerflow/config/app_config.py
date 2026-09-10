@@ -27,6 +27,7 @@ from deerflow.config.loop_detection_config import LoopDetectionConfig
 from deerflow.config.memory_config import MemoryConfig, load_memory_config_from_dict
 from deerflow.config.model_config import ModelConfig
 from deerflow.config.models_config import ModelsConfig, merge_ui_models
+from deerflow.config.rag_config_file import RagConfigFile, merge_rag_config
 from deerflow.config.read_before_write_config import ReadBeforeWriteConfig
 from deerflow.config.reload_boundary import format_field_description
 from deerflow.config.run_events_config import RunEventsConfig
@@ -176,20 +177,28 @@ class RagTableConfig(BaseModel):
 class RagConfig(BaseModel):
     """Configuration for the RAG knowledge-base subsystem.
 
-    Non-secret knobs only: API keys come from environment variables
-    (``DASHSCOPE_EMBEDDING_API_KEY``, ``DASHSCOPE_RERANK_API_KEY``,
-    ``SILICONFLOW_VLM_API_KEY``, ``MINERU_API_TOKEN``), never from config.yaml.
+    The ``*_api_key`` / ``mineru_api_token`` fields are **secrets** and are normally
+    left unset here: they come from the API-writable ``rag_config.json`` (spec
+    2026-09-10 rag functional-model config §3) or, as the fallback, from the
+    environment (``DASHSCOPE_EMBEDDING_API_KEY``, ``DASHSCOPE_RERANK_API_KEY``,
+    ``SILICONFLOW_VLM_API_KEY``, ``MINERU_API_TOKEN``). Their resolution order is
+    ``explicit argument > file > environment``.
     """
 
     qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant server URL hosting the knowledge vector collections (kb_chunks / kb_entities / kb_wiki_entries).")
     embedding_model: str = Field(default="qwen3.7-text-embedding", description="DashScope (Aliyun Bailian) embedding model producing dense+sparse vectors in a single call.")
+    embedding_api_key: str | None = Field(default=None, description="Embedding API key from rag_config.json; None falls back to DASHSCOPE_EMBEDDING_API_KEY.")
     rerank_model: str = Field(default="qwen3-rerank", description="DashScope rerank model used for hybrid-search precision ranking.")
+    rerank_api_key: str | None = Field(default=None, description="Rerank API key from rag_config.json; None falls back to DASHSCOPE_RERANK_API_KEY.")
     vlm_model: str = Field(default="qwen3.7-flash", description="DashScope VLM (visual-language) model for image captioning.")
     vlm_base_url: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1", description="OpenAI-compatible endpoint for qwen3.7-flash.")
-    vlm_api_key_env: str = Field(default="DASHSCOPE_API_KEY", description="Env var name for the VLM API key.")
+    vlm_api_key: str | None = Field(default=None, description="Caption VLM API key from rag_config.json; None falls back to the vlm_api_key_env variable.")
+    vlm_api_key_env: str = Field(default="DASHSCOPE_API_KEY", description="Env var name for the VLM API key (fallback when rag_config.json declares none).")
     vlm_timeout: float | None = Field(default=None, description="Read timeout for VLM requests; None uses default 180s from code. Connect timeout is always 15s.")
     vlm_connect_timeout: float = Field(default=15.0, description="Connection timeout for VLM requests (seconds).")
     extract_model: str | None = Field(default=None, description="Name of the config `models:` entry used for graph extraction (small, cheap, stable JSON output); None uses the first configured model.")
+    mineru_api_token: str | None = Field(default=None, description="MinerU parsing token from rag_config.json; None falls back to MINERU_API_TOKEN.")
+
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
     extract_rate_limit_rps: float = Field(default=5.0, gt=0, description="Rate limit (requests/second) for graph-extraction LLM calls during indexing.")
     # Phase-2 graph-quality knobs (spec 2026-08-10 D1). Setting the caps large
@@ -508,6 +517,13 @@ class AppConfig(BaseModel):
         ui_model_names = {model.name for model in ui_models_config.models}
         config_data["models"] = merge_ui_models(config_data.get("models") or [], ui_models_config)
 
+        # Merge the API-writable rag file (rag_config.json) over config.yaml's `rag:`
+        # block, field by field, so the settings UI can configure the RAG roles without
+        # writing the operator-trusted config.yaml (spec 2026-09-10 rag functional-model
+        # config §3). Untouched knobs keep their config.yaml values.
+        rag_file = RagConfigFile.from_file()
+        config_data["rag"] = merge_rag_config(config_data.get("rag"), rag_file)
+
         result = cls.model_validate(config_data)
         result._ui_model_names = ui_model_names
         if not result.models:
@@ -722,6 +738,7 @@ _app_config_path: Path | None = None
 _app_config_mtime: float | None = None
 _app_config_signature: _ConfigSignature | None = None
 _app_config_models_signature: _ConfigSignature | None = None
+_app_config_rag_signature: _ConfigSignature | None = None
 _app_config_is_custom = False
 _current_app_config: ContextVar[AppConfig | None] = ContextVar("deerflow_current_app_config", default=None)
 _current_app_config_stack: ContextVar[tuple[AppConfig | None, ...]] = ContextVar("deerflow_current_app_config_stack", default=())
@@ -733,6 +750,22 @@ def _get_config_mtime(config_path: Path) -> float | None:
         return config_path.stat().st_mtime
     except OSError:
         return None
+
+
+def _get_rag_config_signature() -> _ConfigSignature | None:
+    """Get the content signature of the API-writable rag file, if present.
+
+    Tracked separately from config.yaml so an edit to ``rag_config.json`` alone
+    triggers an AppConfig reload (spec 2026-09-10 rag functional-model config §3). A
+    missing file or an unresolvable path yields ``None`` (the file is optional).
+    """
+    try:
+        rag_path = RagConfigFile.resolve_config_path()
+    except FileNotFoundError:
+        return None
+    if rag_path is None:
+        return None
+    return _get_config_signature(rag_path)
 
 
 def _get_models_config_signature() -> _ConfigSignature | None:
@@ -753,7 +786,7 @@ def _get_models_config_signature() -> _ConfigSignature | None:
 
 def _load_and_cache_app_config(config_path: str | None = None) -> AppConfig:
     """Load config from disk and refresh cache metadata."""
-    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_is_custom
+    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_rag_signature, _app_config_is_custom
 
     resolved_path = AppConfig.resolve_config_path(config_path)
     _app_config = AppConfig.from_file(str(resolved_path))
@@ -761,6 +794,7 @@ def _load_and_cache_app_config(config_path: str | None = None) -> AppConfig:
     _app_config_mtime = _get_config_mtime(resolved_path)
     _app_config_signature = _get_config_signature(resolved_path)
     _app_config_models_signature = _get_models_config_signature()
+    _app_config_rag_signature = _get_rag_config_signature()
     _app_config_is_custom = False
     return _app_config
 
@@ -786,8 +820,9 @@ def get_app_config() -> AppConfig:
     current_mtime = _get_config_mtime(resolved_path)
     current_signature = _get_config_signature(resolved_path)
     current_models_signature = _get_models_config_signature()
+    current_rag_signature = _get_rag_config_signature()
 
-    should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_signature != current_signature or _app_config_models_signature != current_models_signature
+    should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_signature != current_signature or _app_config_models_signature != current_models_signature or _app_config_rag_signature != current_rag_signature
     if should_reload:
         if _app_config_path == resolved_path and _app_config_mtime is not None and current_mtime is not None and _app_config_mtime != current_mtime:
             logger.info(
@@ -799,6 +834,8 @@ def get_app_config() -> AppConfig:
             logger.info("Config file content signature changed, reloading AppConfig")
         elif _app_config_path == resolved_path and _app_config_models_signature != current_models_signature:
             logger.info("Models config file changed, reloading AppConfig")
+        elif _app_config_path == resolved_path and _app_config_rag_signature != current_rag_signature:
+            logger.info("Rag config file changed, reloading AppConfig")
         _load_and_cache_app_config(str(resolved_path))
     return _app_config
 
@@ -826,12 +863,13 @@ def reset_app_config() -> None:
     `get_app_config()` to reload from file. Useful for testing
     or when switching between different configurations.
     """
-    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_is_custom
+    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_rag_signature, _app_config_is_custom
     _app_config = None
     _app_config_path = None
     _app_config_mtime = None
     _app_config_signature = None
     _app_config_models_signature = None
+    _app_config_rag_signature = None
     _app_config_is_custom = False
 
 
@@ -843,12 +881,13 @@ def set_app_config(config: AppConfig) -> None:
     Args:
         config: The AppConfig instance to use.
     """
-    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_is_custom
+    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_rag_signature, _app_config_is_custom
     _app_config = config
     _app_config_path = None
     _app_config_mtime = None
     _app_config_signature = None
     _app_config_models_signature = None
+    _app_config_rag_signature = None
     _app_config_is_custom = True
 
 

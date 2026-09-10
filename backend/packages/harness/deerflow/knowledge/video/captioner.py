@@ -88,7 +88,7 @@ async def caption_shots(
 
     cfg = get_app_config()
     api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
-    api_key = os.environ.get(api_key_env)
+    api_key = cfg.rag.vlm_api_key or os.environ.get(api_key_env)
     base_url = cfg.rag.vlm_base_url
     if model is None:
         model = cfg.rag.video.caption_model or cfg.rag.vlm_model

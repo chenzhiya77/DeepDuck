@@ -24,6 +24,8 @@ from collections.abc import Sequence
 
 import httpx
 
+from deerflow.config.rag_config_file import configured_rag_secret
+
 logger = logging.getLogger(__name__)
 
 DASHSCOPE_RERANK_BASE_URL = "https://dashscope.aliyuncs.com"
@@ -69,7 +71,7 @@ class DashScopeReranker:
         self._timeout = timeout_seconds
 
     def _read_api_key(self) -> str:
-        key = self._api_key or os.environ.get(_KEY_ENV_VAR)
+        key = self._api_key or configured_rag_secret("rerank_api_key") or os.environ.get(_KEY_ENV_VAR)
         if not key:
             raise RerankerAuthError(f"{_KEY_ENV_VAR} is not set; add it to .env (see .env.example)")
         return key

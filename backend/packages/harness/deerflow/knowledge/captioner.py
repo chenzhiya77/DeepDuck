@@ -92,7 +92,7 @@ async def caption_images(
     # Get config dynamically
     cfg = get_app_config()
     api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
-    api_key = os.environ.get(api_key_env)
+    api_key = cfg.rag.vlm_api_key or os.environ.get(api_key_env)
 
     if not api_key:
         logger.warning("%s is not set; degrading %d image(s) to filename placeholders", api_key_env, len(images))

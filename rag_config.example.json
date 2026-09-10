@@ -1,0 +1,16 @@
+{
+  "qdrant_url": "http://localhost:6333",
+  "embedding_model": "qwen3.7-text-embedding",
+  "embedding_api_key": "",
+  "rerank_model": "qwen3-rerank",
+  "rerank_api_key": "",
+  "vlm_model": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+  "vlm_base_url": "https://api.siliconflow.cn/v1",
+  "vlm_api_key": "",
+  "extract_model": "deepseek-v4-flash",
+  "mineru_api_token": "",
+  "video": {
+    "asr_provider": "funasr",
+    "asr_model": "paraformer-zh"
+  }
+}

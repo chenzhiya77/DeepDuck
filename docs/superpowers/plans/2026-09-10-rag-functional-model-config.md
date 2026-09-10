@@ -1,0 +1,144 @@
+# Plan: RAG 功能模型配置 — 2026-09-10
+
+**Spec**: `docs/superpowers/specs/2026-09-10-rag-functional-model-config-design.md`
+**前置**: `2026-09-10-web-model-provider-config.md`（Task 1–5）与 `2026-09-10-model-capability-config.md`（Task 1–5 + T3' + 回归修复）
+已交付；本增量**只复用**其 seam（旁路可写文件 / admin API / 设置页外壳），不重做。
+
+## 验证基线
+
+- 后端：`cd backend && uv run --no-sync pytest <files> -q --basetemp=.pytest-tmp/ragcfg`；
+  `uv run --no-sync ruff check <files>` + `ruff format --check <files>` 双净。
+- 前端：`cd frontend && python ../scripts/pnpm.py check`（eslint+tsc）双净；`python ../scripts/pnpm.py test <paths>`。
+- Windows：pytest 必须带 `--basetemp`；本机仓库根真实 `models_config.json` 会让
+  `test_missing_models_file_falls_back_to_config_yaml` 等环境性用例恒红——判环境性别当回归。
+- 后端 `--reload` 在本机不可靠（uvicorn win32 分支无硬杀兜底）：改后端后**手动重启网关**（用户自持进程，用 `make gateway`）。
+
+## 架构基调
+
+- **两套数据模型，一个页面外壳**：对话模型（`models_config.json`）与功能模型（`rag_config.json`）各走自己的文件/契约；
+  设置页「模型」分区内用 segmented 切视图。
+- **文件优先、env 回退**：`rag_config.json` 覆盖 config.yaml 的 `rag:`；密钥未落盘时仍读原 env 常量 ⇒ 既有部署零改动。
+- **不探测**：v1 无测试连接/校验端点（embedding/rerank 是 DashScope 专用 RPC，没有统一的「列模型」口径）。
+- **全局单套**：不做 per-KB；换 embedding 只做告警，不做自动重建索引。
+
+## Task 1: `rag_config.json` 存储层 + AppConfig 合并/热重载 + 消费者读密钥（seam B）
+
+**Files:**
+- Create: `backend/packages/harness/deerflow/config/rag_config_file.py`（`RagConfigFile`（`extra="forbid"`，字段全可选：
+  `embedding_model/embedding_api_key/rerank_model/rerank_api_key/vlm_model/vlm_base_url/vlm_api_key/`
+  `extract_model/qdrant_url/mineru_api_token/video{asr_provider,asr_model,caption_model}`）、
+  `resolve_config_path`（`DEER_FLOW_RAG_CONFIG_PATH` 覆盖）、`from_file`（缺失→空、形状错误→ValueError）、
+  `merge_rag_config(yaml_rag, ui)`（逐字段覆盖 + `video` 深合并）、`atomic_write_rag_config` + `rag_config_write_lock`、
+  `MASKED_SECRET` + `preserve_secret`）
+- Modify: `backend/packages/harness/deerflow/config/app_config.py`（`RagConfig` 定义在 **app_config.py:176**，不是独立文件；
+  在 `from_file` 的 models 合并之后合并 rag 文件；`_get_rag_config_signature()` 并入 get_app_config 热重载判定；
+  reset/set 复位；`RagConfig` 增 `embedding_api_key`/`rerank_api_key`/`vlm_api_key`/`mineru_api_token`（`str | None`））
+- Modify: 消费者 key 解析改为 `config 值 ?? env`（env 常量名保留为回退）：
+  `knowledge/embedder.py`（`DASHSCOPE_EMBEDDING_API_KEY`）、`knowledge/reranker.py`（`DASHSCOPE_RERANK_API_KEY`）、
+  `knowledge/captioner.py` + `knowledge/video/captioner.py`（`vlm_api_key_env`）、
+  `knowledge/parser.py:46`（`MINERU_API_TOKEN`）
+- Modify: `.gitignore`（`rag_config.json`）；Create: `rag_config.example.json`
+- Test: `backend/tests/test_rag_config_file.py`（文件优先/深合并/回退/形状错误/原子写/哨兵/仅改 rag 文件也重载）
+
+- [x] RED → Implement → GREEN + revert proof + ruff 双净。（新增 `tests/test_rag_config_file.py` **16 例**：
+  文件逐字段覆盖（未声明字段保留 config.yaml 值）/ `video` 深合并（`enabled`、`max_size_mb` 存活）/ 空文件等同未声明 /
+  显式 `DEER_FLOW_RAG_CONFIG_PATH` 缺失=运维断言报错（镜像 models 语义）/ 搜索模式无文件→回退 config.yaml /
+  形状错误与未知字段→`ValueError` / 合并纯函数不改输入 / **只改 rag 文件也触发 `get_app_config()` 重载** /
+  原子写无残留 / 哨兵保留 / 密钥解析四例（文件 > env、文件无密钥→env、显式构造参数 > 文件、都缺→带 env 提示的 `EmbedderAuthError`）。
+  回归 `test_app_config_reload`+`test_models_config`+`knowledge/test_reranker`+`knowledge/test_parser` **171 绿**
+  （3 例失败仍是已复证的环境性：仓库根真实 `models_config.json` 被搜到）；ruff check+format **双净**。
+  revert proof：neuter ①`merge_rag_config` 忽略文件 ②热重载签名去掉 rag ③`configured_rag_secret` 恒 None
+  ⇒ **5 红**（逐字段覆盖 / video 深合并 / 合并纯度 / 仅改 rag 文件重载 / 文件密钥胜出），恢复后 16 绿）
+- [x] Commit: `feat(config): add API-writable rag_config.json merged into AppConfig`
+
+#### Task 1 交付纪要（2026-09-10）
+
+- **实现落点**：`config/rag_config_file.py`（`RagConfigFile` + `RagVideoFileConfig`（`extra="forbid"`，全字段可选）、
+  `resolve_config_path`（镜像 `ModelsConfig`）、`from_file`、`merge_rag_config`（逐字段 + `video` 深合并）、
+  `preserve_secret`、`configured_rag_secret`、`atomic_write_rag_config` + `rag_config_write_lock`、
+  `MASKED_SECRET`（与 `models_config.MASKED_API_KEY` 同一个哨兵值））；`app_config.py`（`RagConfig` 增 4 个密钥值字段 +
+  文档串改写；`from_file` 在 models 合并后合并 rag 文件；`_get_rag_config_signature()` 并入热重载判定与 reset/set 复位）；
+  消费者密钥解析改为 **显式参数 > 文件 > env**（`embedder.py`/`reranker.py` 保留惰性读取，
+  `captioner.py` + `video/captioner.py` 用已加载的 `cfg.rag.vlm_api_key`，`parser.py` 的 MinerU token 走 `configured_rag_secret`）；
+  `.gitignore` += `rag_config.json`；新增 `rag_config.example.json`。
+- **决策 / 偏离**：
+  1. **测试口径按 spec 修正**（我最初写错）：spec 规定「显式参数或 env 路径缺失 = 运维断言 → 报错，只有搜索模式文件可选」，
+     故拆为 `test_env_asserted_path_must_exist`（报错）与 `test_no_file_configured_keeps_config_yaml_values`（patch resolve 隔离搜索模式）。
+  2. **示例文件用空串而不是 `$VAR`**：本模块取值是**字面量**（env 是回退，不是模板展开），用 `$DASHSCOPE_...` 会误导；
+     空串即「未声明 → 用 env」。
+  3. **`configured_rag_secret` 对不可用配置 fail-open 返回 None**（带 debug 日志）：这是凭证解析路径，
+     在无 config 文件的环境里抛异常会直接打断 env-only 调用方；已在 docstring 写明是刻意降级。
+  4. **原子写独立实现**（未跨模块重构 `models_config`/`extensions_config`）：沿用仓库既有的两份重复惯例，保持本任务边界干净。
+  5. `RagConfig` 原文档串「never from config.yaml」已改写为新语义（文件优先、env 回退）。
+- **遗留（未动）**：Task 2（admin API + 脱敏 + support-bundle）、Task 3/4（前端）、Task 5（收官）。
+
+## Task 2: admin API `GET/PUT /api/rag/config` + 脱敏 + support-bundle（seam A）
+
+**Files:**
+- Create: `backend/app/gateway/routers/rag_config.py`（`GET/PUT /api/rag/config`，`require_admin_user`；
+  GET 回逐字段值 + `source`（`config_file`/`ui`）+ 密钥哨兵；PUT 整集合写**只动 `rag_config.json`**，
+  `extra="forbid"` 拒未知字段（422）、`null` 不写、哨兵保留原值）
+- Modify: `backend/app/gateway/app.py`（挂载路由）
+- Modify: `scripts/support_bundle.py`（新增 `rag-summary.json`，密钥脱敏）
+- Test: `backend/tests/test_rag_config_api.py`（403 / 掩码 + source / 422 / 只写 non-None / 哨兵保留 / PUT 后热重载生效 / 不写 config.yaml）
+
+- [ ] RED → Implement → GREEN + revert proof + ruff 双净。
+- [ ] Commit: `feat(gateway): admin rag config API with key masking`
+
+## Task 3: 前端类型/客户端/组装纯函数（seam C node）
+
+**Files:**
+- Create: `frontend/src/core/rag/types.ts`（`RagConfigView`（GET 形状）/ `RagConfigInput`（PUT 形状））
+- Create: `frontend/src/core/rag/api.ts`（`loadRagConfig` / `saveRagConfig`，走 `@/core/api/fetcher` 带 CSRF，
+  错误映射复用 `ModelsConfigRequestError` 的形态）
+- Create: `frontend/src/core/rag/config-form.ts`（**纯函数**：视图 → 表单初值；表单 → PUT payload，
+  未改动的密钥提交哨兵、空值不提交；`isEmbeddingChange()` 判定换 embedding 需告警）
+- Create: `frontend/src/core/rag/hooks.ts`（TanStack Query：`useRagConfig` / `useSaveRagConfig`）
+- Test: `frontend/tests/unit/rag/config-form.test.ts`（哨兵保留、空值不提交、embedding 变更判定、掩码回显）
+
+- [ ] RED → Implement → GREEN + `pnpm check` 双净。
+- [ ] Commit: `feat(frontend): rag functional-model config client and form mapping`
+
+## Task 4: 设置页「模型」分区视图切换 + 功能模型表单 + i18n（seam C dom）
+
+**Files:**
+- Modify: `frontend/src/components/workspace/settings/models-settings-page.tsx`（顶部 segmented：对话模型 / 功能模型；
+  功能模型视图复用 `SettingsSection` 外壳与三态镜像）
+- Create: `frontend/src/components/workspace/settings/functional-models-view.tsx`（字段分区：
+  图谱抽取=**下拉选已配模型**（来自 `useModels`）、caption VLM（模型 + base_url + key）、embedding（模型 + key + 变更告警）、
+  rerank（模型 + key）、ASR（provider + 模型）、服务（qdrant_url / MinerU token）；密钥输入=掩码展示 + 「留空即保留」）
+- Modify: i18n `types.ts`/`en-US.ts`/`zh-CN.ts`（`settings.functionalModels.*`：视图标签、各字段名与占位、
+  `embeddingChangeWarning`、掩码提示、保存/校验文案）
+- Test: `frontend/tests/unit/settings/functional-models.dom.test.tsx`（视图切换；抽取模型下拉来自已配模型；
+  掩码 + 留空保留；embedding 变更告警出现/不出现；保存 payload 断言；403 三态）
+
+- [ ] RED → Implement → GREEN + revert proof + `pnpm check` 双净。
+- [ ] Commit: `feat(frontend): functional-model settings view for RAG roles`
+
+## Task 5: 收官——回归 + 文档同步 + 浏览器实测
+
+- [ ] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + `tests/unit/rag` + `tests/unit/settings` 对基线。
+- [ ] Modify: `README.md`（用户面：功能模型配置入口与 embedding 重建索引告警）+ `backend/AGENTS.md`
+  （架构面：`rag_config.json` 合并语义、密钥回退顺序、热重载、信任边界）+ `frontend/AGENTS.md`
+  （设置页两视图的归属说明）。
+- [ ] Commit: `docs: sync guides for rag functional-model config`
+- [ ] 浏览器实测（用户自持栈）：切视图 → 填 VLM/embedding/rerank key → 保存 → 重开弹窗密钥显示掩码 →
+  改 embedding 出现重建索引告警 → 重传一篇文档确认新配置生效；环境未就绪则延后并记录。
+
+## 风险登记
+
+| 风险 | 触发任务 | 缓解 |
+|---|---|---|
+| 密钥落盘后被日志/dump 带出 | T1/T2 | 读接口只回哨兵；support-bundle 脱敏；文件 gitignored；消费点只读值不打印 |
+| `rag_config.json` 与 config.yaml 的 `rag:` 合并语义漂移（如 `video` 嵌套被整体覆盖） | T1 | `video` 深合并 + seam B 钉住深合并用例 |
+| 旧部署未设文件却因合并逻辑破坏既有 env 行为 | T1 | 文件缺失 → 空配置；key 解析 `config ?? env`；回退用例钉住 |
+| 改 embedding 模型后老库检索失真/维度不匹配 | T4 | UI 行内告警「需重建索引」；v1 不做自动迁移（明写 Out of Scope） |
+| 把非 chat 模型（embedding/rerank）混进对话模型列表 | 全局 | 两套数据模型；功能模型视图不做 provider 白名单，也不进聊天模型选择器 |
+| 前端 `--reload`/后端重启节奏误判导致「改了没生效」 | T5 | 后端改完手动重启（`make gateway`）；规格里写明 `rag` 非 startup-only |
+| 路由挂载顺序/前缀与其他 router 冲突 | T2 | 沿用 `APIRouter(prefix="/api", tags=[...])` 与既有 router 同构；403 用例先钉 |
+
+## 开口（执行中如遇冲突以此为准）
+
+- 若 `RagConfig` 增密钥字段会破坏既有 config.yaml 反序列化/`extra="allow"` 行为 → 改为**只从文件注入**
+  （`from_file` 合并阶段写入 dict），字段仍可选，保证旧文件零影响。
+- 若 `extract_model` 下拉引用的模型被删除 → 后端保留原值不静默清空（前端下拉提供「(未配置)」项）。

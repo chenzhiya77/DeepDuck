@@ -29,6 +29,8 @@ from dataclasses import dataclass
 import httpx
 from qdrant_client.models import SparseVector
 
+from deerflow.config.rag_config_file import configured_rag_secret
+
 logger = logging.getLogger(__name__)
 
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
@@ -84,7 +86,7 @@ class DashScopeEmbedder:
         self._timeout = timeout_seconds
 
     def _read_api_key(self) -> str:
-        key = self._api_key or os.environ.get(_KEY_ENV_VAR)
+        key = self._api_key or configured_rag_secret("embedding_api_key") or os.environ.get(_KEY_ENV_VAR)
         if not key:
             raise EmbedderAuthError(f"{_KEY_ENV_VAR} is not set; add it to .env (see .env.example)")
         return key

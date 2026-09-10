@@ -38,6 +38,7 @@ from pathlib import Path
 import httpx
 
 from deerflow.config.app_config import get_app_config
+from deerflow.config.rag_config_file import configured_rag_secret
 from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
@@ -349,7 +350,7 @@ _TOKEN_ENV_HINT = f"{_TOKEN_ENV_VAR} is not set; add it to .env (see .env.exampl
 
 
 def _read_token() -> str:
-    token = os.environ.get(_TOKEN_ENV_VAR)
+    token = configured_rag_secret("mineru_api_token") or os.environ.get(_TOKEN_ENV_VAR)
     if not token:
         raise MineruAuthError(_TOKEN_ENV_HINT)
     return token
