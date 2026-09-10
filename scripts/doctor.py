@@ -275,22 +275,45 @@ def check_config_version(config_path: Path, project_root: Path) -> CheckResult:
     return CheckResult("config.yaml version", "ok", f"v{user_ver}")
 
 
+def _merged_models(config_path: Path) -> tuple[list, str | None]:
+    """Return ``(merged_models, error)`` — config.yaml models UNION ``models_config.json``.
+
+    Reads only the model lists (not a full ``AppConfig``) so a partially-valid
+    config.yaml still contributes its models. A malformed ``models_config.json``
+    degrades to the config.yaml set and returns the error instead of raising —
+    doctor must never crash on a bad UI-managed file (spec 2026-09-10 §5.8).
+    """
+    from deerflow.config.models_config import ModelsConfig, merge_ui_models
+
+    try:
+        raw_models = _load_yaml_file(config_path).get("models", []) or []
+    except Exception as exc:
+        return [], str(exc)
+    if not isinstance(raw_models, list):
+        raw_models = []
+    try:
+        ui = ModelsConfig.from_file()
+        return merge_ui_models(raw_models, ui), None
+    except Exception as exc:
+        return raw_models, f"models_config.json error: {exc}"
+
+
 def check_models_configured(config_path: Path) -> CheckResult:
     if not config_path.exists():
         return CheckResult("models configured", "skip")
-    try:
-        data = _load_yaml_file(config_path)
-        models = data.get("models", [])
+    models, error = _merged_models(config_path)
+    if error:
         if models:
-            return CheckResult("models configured", "ok", f"{len(models)} model(s)")
-        return CheckResult(
-            "models configured",
-            "fail",
-            "no models found",
-            fix="Run 'make setup' to configure an LLM provider",
-        )
-    except Exception as exc:
-        return CheckResult("models configured", "fail", str(exc))
+            return CheckResult("models configured", "warn", f"{len(models)} model(s); {error}")
+        return CheckResult("models configured", "fail", error)
+    if models:
+        return CheckResult("models configured", "ok", f"{len(models)} model(s)")
+    return CheckResult(
+        "models configured",
+        "fail",
+        "no models found",
+        fix="Run 'make setup' to configure an LLM provider",
+    )
 
 
 def check_config_loadable(config_path: Path) -> CheckResult:
