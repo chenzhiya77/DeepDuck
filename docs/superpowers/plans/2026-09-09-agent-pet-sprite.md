@@ -60,11 +60,32 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **Files:** Create `frontend/src/core/pet/{state.ts,tools.ts}` + `frontend/tests/unit/core/pet/{state,tools}.test.ts`
 
-- [ ] **Step 1(先写红测试 `tools.test.ts`):** 覆盖 ① `collectActiveToolNames` —— 多工具并行返回多个名、**ToolMessage 内容为空仍算已答**(钉住 spec §15 开放项 1)、孤儿 ToolMessage(无 AI 前置)不崩、空 messages 返回 `[]`;② 6 类映射逐个 + **未知 MCP 名(如 `github_list_prs`)落 `generic`**;③ `pickWorkKind` 优先级表逐对比较 + 空数组返回 `null`;④ **用含 `task` 的 fixture 断言 `delegate` 能出来**(spec §15 开放项 10 的回归锚 —— 将来有人改回走 `getMessageGroups` 时这条会红)。
-- [ ] **Step 2:** 实现 `tools.ts`,逐字按 spec §6.1 的 `collectActiveToolNames` 与 §6.2 的 `classifyTool` / `WORK_KIND_PRECEDENCE` / `pickWorkKind`。复用 `hasToolCalls`(`core/messages/utils.ts:664`),**不复用 `findToolCallResult`**。
-- [ ] **Step 3(先写红测试 `state.test.ts`):** 覆盖决策树全分支 + `done` 下降沿(`wasLoading` true→false)+ **spec §5.3 三条不变量逐条**:① `error` 压掉 `done`;② `isLoading` 为真时即使有未回答请求也是 `work`/`think` 而非 `wait`;③ `done` 只在落到 `idle` 时触发,落到 `wait` / `error` 时 `oneShot` 为 `null`。
-- [ ] **Step 4:** 实现 `state.ts`(类型 + `derivePetState`),按 spec §5.1 / §5.2。注意 `PetSignals.activeToolNames` 是**数组**不是 `string | null`。
-- [ ] **Step 5:** 转绿 + `cd frontend && pnpm check`。
+- [x] **Step 1(先写红测试 `tools.test.ts`):** 覆盖 ① `collectActiveToolNames` —— 多工具并行返回多个名、**ToolMessage 内容为空仍算已答**(钉住 spec §15 开放项 1)、孤儿 ToolMessage(无 AI 前置)不崩、空 messages 返回 `[]`;② 6 类映射逐个 + **未知 MCP 名(如 `github_list_prs`)落 `generic`**;③ `pickWorkKind` 优先级表逐对比较 + 空数组返回 `null`;④ **用含 `task` 的 fixture 断言 `delegate` 能出来**(spec §15 开放项 10 的回归锚 —— 将来有人改回走 `getMessageGroups` 时这条会红)。
+- [x] **Step 2:** 实现 `tools.ts`,逐字按 spec §6.1 的 `collectActiveToolNames` 与 §6.2 的 `classifyTool` / `WORK_KIND_PRECEDENCE` / `pickWorkKind`。复用 `hasToolCalls`(`core/messages/utils.ts:664`),**不复用 `findToolCallResult`**。
+- [x] **Step 3(先写红测试 `state.test.ts`):** 覆盖决策树全分支 + `done` 下降沿(`wasLoading` true→false)+ **spec §5.3 三条不变量逐条**:① `error` 压掉 `done`;② `isLoading` 为真时即使有未回答请求也是 `work`/`think` 而非 `wait`;③ `done` 只在落到 `idle` 时触发,落到 `wait` / `error` 时 `oneShot` 为 `null`。
+- [x] **Step 4:** 实现 `state.ts`(类型 + `derivePetState`),按 spec §5.1 / §5.2。注意 `PetSignals.activeToolNames` 是**数组**不是 `string | null`。
+- [x] **Step 5:** 转绿 + `cd frontend && pnpm check`。
+
+**Task 1 交付纪要(2026-09-10)**
+
+- **RED**:两个文件的红都是「模块不存在」——`Cannot find module '@/core/pet/tools'`(0 用例被收集)、随后 `Cannot find module '@/core/pet/state'`。先写测试跑红再实现,顺序与 Step 1/3 一致。
+- **GREEN**:`tests/unit/core/pet/tools.test.ts` **35 例**、`state.test.ts` **13 例**,合计 **48 例**全绿;两个文件都只跑 node 侧(`*.test.ts`),符合 `frontend/AGENTS.md` 的「纯逻辑不进 DOM」分节纪律。
+- **revert proof(七次 neuter,逐个确认对应用例恰好转红后原样恢复)**:每次只改一处实现,恢复后复跑 48 例全绿。
+
+  | # | 被 neuter 的行为 | 改动 | 转红用例 |
+  |---|---|---|---|
+  | 1 | 空内容 ToolMessage 也算已答 | `answered` 收集加 `&& m.content` | **恰好 1 条**(§15 开放项 1 那条) |
+  | 2 | `delegate` 可达 | 删掉 `task: "delegate"` | **8 条**(`task` 映射 + 6 对 delegate 优先级 + 开放项 10 的锚) |
+  | 3 | 优先级排序 | `pickWorkKind` 去掉 `sort` | **22 条**(21 对两两比较 + state 里「取最显著」那条) |
+  | 4 | 未知工具落 `generic` | `?? "generic"` → `?? "read"` | **恰好 2 条**(`classifyTool` 兜底 + state 的 generic 回落) |
+  | 5 | §5.3 不变量 1(`error` 最高) | `hasError` 分支移到 `wait` 之后 | **恰好 1 条**(不变量 1) |
+  | 6 | §5.3 不变量 2(`isLoading` 先分支) | `wait` 分支提到 `isLoading` 之前 | **恰好 1 条**(不变量 2) |
+  | 7 | §5.3 不变量 3(`done` 只在落 `idle` 时) | `wait` 分支也发 `oneShot` | **恰好 1 条**(不变量 3) |
+
+  三条不变量各自**恰好**命中一条,证明它们是三条独立的钉,不是一条用例重复覆盖。
+- **偏离原计划(2 处,均为 tsconfig 强制,语义不变)**:① spec §6.2 片段里的 `...sort(...)[0]` 在本仓库过不了类型检查 —— `tsconfig.json` 开了 `noUncheckedIndexedAccess`,索引访问恒为 `T | undefined`;改为 `const ranked = ...; return ranked[0] ?? null`(仓库既有写法:`eval-tab.tsx:351` 的 `runs[0] ?? null`)。空数组已由前置 guard 排除,`?? null` 只服务类型。② `collectActiveToolNames` 里除 `hasToolCalls(m)` 外多写了 `m.type !== "ai" ||` —— `hasToolCalls` 不是类型谓词,不加这句 `m.tool_calls` 无法通过类型检查;与既有 `extractPresentFilesFromMessage`(`core/messages/utils.ts:682`)同一写法,`hasToolCalls` 仍被复用。
+- **门禁**:`pnpm check` 干净(先报 1 条 `import/order`、再报 4 条 `noUncheckedIndexedAccess` 类型错,均已修);**全量 `pnpm test`:2121 通过 / 1 失败**,唯一失败是 `knowledge/chat-panel.dom.test.tsx`「restores the remembered model per kb…」——本机**预存环境性失败**(该测试文件与其被测路径在本树中零改动,本轮只新增 `core/pet/` 两个目录、无任何既有文件被改),判据与记录见项目记忆「环境性测试红」。
+- **未覆盖项(诚实记录)**:① 本轮无 DOM 测试 —— 正确而非缺口,`state.ts`/`tools.ts` 是纯函数,AGENTS.md 要求留在 node。② `ask_clarification` 故意不在映射表内也**未加测试**:spec §6.2 已论证它在 `isLoading` 变 false 前不会被观察到(走 `Command(goto=END)`),加一条「它落 generic」的用例会把一个永远不会发生的输入固化成契约。③ `pickWorkKind` 的 `WORK_KIND_PRECEDENCE` 数值本身没有测试断言(只断言相对顺序),这是刻意的:spec §6.2 明说这张表是产品判断、可随时改。
 
 ## Task 2: 疲劳度与精灵解析纯函数(TDD)
 
