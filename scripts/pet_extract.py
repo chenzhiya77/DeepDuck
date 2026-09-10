@@ -38,7 +38,7 @@ def fail(msg: str) -> None:
 
 def load_config(path: Path) -> dict:
     cfg = json.loads(path.read_text(encoding="utf-8"))
-    key = cfg.setdefault("key", {"color": "0x62DB7E", "similarity": 0.30, "blend": 0.08})
+    key = cfg.setdefault("key", {"color": "0xFF00FF", "similarity": 0.30, "blend": 0.08})
     cfg.setdefault("frame", 512)
     if "crop" in cfg:
         x, y, w, h = cfg["crop"]
@@ -67,7 +67,7 @@ def key_filter(cfg: dict) -> str:
 
 def measure(args: argparse.Namespace) -> None:
     cfg = load_config(Path(args.config)) if args.config else {
-        "key": {"color": "0x62DB7E", "similarity": 0.30, "blend": 0.08}, "frame": 512}
+        "key": {"color": "0xFF00FF", "similarity": 0.30, "blend": 0.08}, "frame": 512}
     div = args.scale_div
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
