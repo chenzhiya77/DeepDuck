@@ -365,6 +365,8 @@ export function computeFatigueLevel(i: FatigueInput): FatigueLevel {
 }
 ```
 
+**`collectFatigueInput` 的签名(2026-09-10 Task 2 定案,原文留白)**:`collectFatigueInput(messages: Message[]): FatigueSignals`,其中 `export type FatigueSignals = Omit<FatigueInput, "elapsedMs">`。四种子分(调用数、连续同名、错误数、不可恢复错误数)都可由 `messages` 单遍推出,而 `elapsedMs` 是每 tick 变化的**活值** —— 若让它进 `collectFatigueInput`,调用方就必须把时间传进 memo,§12 要求的「memo 在 `messages.length` 上」当场失效。故 `elapsedMs` 由 `agent-pet.tsx` 在渲染时补进 `computeFatigueLevel({...signals, elapsedMs})`,补这一步的成本可以忽略(纯算术,每帧算也不贵)。另:`toolCallCount` 数的是**发起过的** tool_call(AI 消息 `tool_calls` 的条目数),不是已落地的 ToolMessage 数 —— 前提是「这个 run 干了多少活」,发起即算。
+
 **错误判定来源已核实(2026-09-09,原设计的「带错误内容的 ToolMessage」是未验证假设)。** 后端 `agents/middlewares/tool_result_meta.py` 把 `ToolResultMeta` 盖在 `ToolMessage.additional_kwargs.deerflow_tool_meta`(`TOOL_META_KEY` `:18`,dataclass `:33-40`),模块 docstring 明写「Downstream consumers read this key **instead of parsing text**」。故本设计读 `status`(`success`|`error`|`partial_success`)与 `recoverable_by_model`,**不从文本猜错误** —— 这正是 §4.4(a) 引用的那条仓库约定的同一立场。
 
 拆出 `unrecoverableErrorCount` 的理由:`recoverable_by_model === false` 对应 `error_type` 为 auth / rate_limited / transient / config / internal(`_ERROR_RULES` `:43-73`,`recommended_next_action` 为 `stop` 或 `summarize`),这类错误 agent 自己修不了,与 `no_results` / `not_found` / `permission`(可由模型恢复)是完全不同的处境,不该算同一个分。

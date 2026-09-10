@@ -91,11 +91,39 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **Files:** Create `frontend/src/core/pet/{fatigue.ts,sprite.ts}` + `frontend/tests/unit/core/pet/{fatigue,sprite}.test.ts`
 
-- [ ] **Step 1(先写红测试 `fatigue.test.ts`):** 覆盖 ① 五个子分各自封顶 3;② `max` 语义(单一高分即拉满);③ `collectFatigueInput` 从 `additional_kwargs.deerflow_tool_meta` 正确分出 `toolErrorCount` 与 `unrecoverableErrorCount`;④ **meta 缺失时两者都为 0**(不崩、不误判);⑤ `maxConsecutiveSameTool` 的连续同名计数。按 Task 0 Step 1 的结论决定是否保留 ③④。
-- [ ] **Step 2:** 实现 `fatigue.ts`,阈值表按 spec §7(**阈值是猜的,写进模块注释说明需上线后校准**)。
-- [ ] **Step 3(先写红测试 `sprite.test.ts`):** 覆盖 ① `work-{kind}` → `work` → `fallback` 两级回落逐级;② one-shot 优先于 base;③ manifest 里完全没有候选项时返回 `null`;④ `effectiveFps` 对 `loop: true` 应用 `FATIGUE_FPS_SCALE`、对 `loop: false` **不衰减**(spec §9.2 注释:done 是信息必须读得清)。**用内联 fixture manifest,不 import 真文件**(真 manifest 到 Task 3 才存在;`resolveSprite` 的 manifest 是参数,spec §9.2)。
-- [ ] **Step 4:** 实现 `sprite.ts`,按 spec §9.2。
-- [ ] **Step 5:** 转绿 + `pnpm check`。
+- [x] **Step 1(先写红测试 `fatigue.test.ts`):** 覆盖 ① 五个子分各自封顶 3;② `max` 语义(单一高分即拉满);③ `collectFatigueInput` 从 `additional_kwargs.deerflow_tool_meta` 正确分出 `toolErrorCount` 与 `unrecoverableErrorCount`;④ **meta 缺失时两者都为 0**(不崩、不误判);⑤ `maxConsecutiveSameTool` 的连续同名计数。按 Task 0 Step 1 的结论决定是否保留 ③④。
+- [x] **Step 2:** 实现 `fatigue.ts`,阈值表按 spec §7(**阈值是猜的,写进模块注释说明需上线后校准**)。
+- [x] **Step 3(先写红测试 `sprite.test.ts`):** 覆盖 ① `work-{kind}` → `work` → `fallback` 两级回落逐级;② one-shot 优先于 base;③ manifest 里完全没有候选项时返回 `null`;④ `effectiveFps` 对 `loop: true` 应用 `FATIGUE_FPS_SCALE`、对 `loop: false` **不衰减**(spec §9.2 注释:done 是信息必须读得清)。**用内联 fixture manifest,不 import 真文件**(真 manifest 到 Task 3 才存在;`resolveSprite` 的 manifest 是参数,spec §9.2)。
+- [x] **Step 4:** 实现 `sprite.ts`,按 spec §9.2。
+- [x] **Step 5:** 转绿 + `pnpm check`。
+
+**Task 2 交付纪要(2026-09-10)**
+
+- **RED**:两次都是「模块不存在」(`@/core/pet/fatigue`、`@/core/pet/sprite`,0 用例收集)。
+- **GREEN**:`fatigue.test.ts` **36 例** + `sprite.test.ts` **11 例**;`core/pet/` 四个测试文件合计 **95 例**全绿(35+13+36+11)。
+- **revert proof(12 次 neuter,逐个确认命中)**:N1 是批量(五个子分的首个阈值各 +1 一档),其余每次只改一处。
+
+  | # | 被 neuter 的行为 | 改动 | 转红 |
+  |---|---|---|---|
+  | N1 | 五个子分的档位边界 | 五处首个阈值各 +1 档 | **恰好 5 条**(每个子分各一条边界行) |
+  | N2 | `byUnrecoverable` 的 2→3 跳档(无 2 档) | 补出 `<4 → 2` 一档 | 恰好 1 条 |
+  | N3 | `max` 而非 `sum` | 子分改成相加 | 恰好 1 条(**首次跑没红,见下**) |
+  | N4 | 错误的可恢复性拆分 | `unrecoverable = toolErrorCount` | 恰好 1 条 |
+  | N5 | meta 缺失不算错 | 缺失时 `toolErrorCount += 1` | 恰好 1 条 |
+  | N6 | `partial_success` 不算错 | 把 partial 也计入 | 恰好 1 条 |
+  | N7 | 跨消息的连续同名计数 | 每条消息重置 run 游标 | 恰好 1 条 |
+  | N8 | `work-{kind}` 第一级 | 候选只留 `work` | 恰好 1 条 |
+  | N9 | one-shot 优先于 base | 候选顺序对调 | 恰好 1 条 |
+  | N10 | `fallback` 候选 | 从候选表移除 | 恰好 2 条(两级回落各一条) |
+  | N11 | 全部落空返回 `null` | 改成返回 `fallback` | 恰好 1 条 |
+  | N12 | 只有 `loop: true` 才衰减 | 去掉 `loop` 判断 | 恰好 1 条 |
+
+- **revert proof 抓到一个空洞测试(本轮最有价值的发现)**:N3 第一次跑**全绿** —— 我原来那条「max 不是 sum」的用例给了一个子分 3 档,于是 `Math.min(3, sum)` 同样得 3,断言根本无法失败。改成四个子分各 1 档(同时 `toolCallCount=5`、`maxConsecutiveSameTool=3`、`toolErrorCount=1`、`elapsedMs=2min`)后:max 得 1、sum 得 `min(3,4)=3`,才真正区分开,N3 随即恰好命中。**这条记下来是为了说明 revert proof 不是仪式**:它当场证伪了我一条「看起来在测 max」的用例。
+- **API 决策(spec 留白处,需回填 spec §7/§12)**:`collectFatigueInput` 的签名 spec 没写。实测需要三条约束同时成立 —— 它必须能只靠 `messages` memo(§12 要求 memo 在 `messages.length`),而 `elapsedMs` 是每 tick 变化的活值。故定案:`collectFatigueInput(messages): FatigueSignals`,其中 `FatigueSignals = Omit<FatigueInput, "elapsedMs">`;`elapsedMs` 由调用方在渲染时补进 `computeFatigueLevel`。若按 `FatigueInput` 全量返回,就必须把 `elapsedMs` 传进 memo,缓存每帧失效,直接违背 §12。
+- **其余实现决策(2 处)**:① `toolCallCount` 数的是**发起过的** tool_call(AI 消息的 `tool_calls` 条目),不是已完成的 ToolMessage 数 —— 名字是 tool *call* count,且发起即算「这个 run 干了多少活」;② 错误子分只读 `additional_kwargs.deerflow_tool_meta` 的结构化字段(`isRecord` 局部守卫,仓库同类写法见 `human-input.ts:90`),**零文本解析**。
+- **偏离原计划(1 处,tsconfig 强制)**:`effectiveFps` 里 `manifest.states[sprite]` 在 `noUncheckedIndexedAccess` 下是 `T | undefined`,而 spec §9.2 直接读 `.loop`。用 `!` 非空断言 + 注释说明「调用方只会传 `resolveSprite` 的产物,其键必然存在」;仓库 `src/core/` 已有非空断言先例(`kb-order.ts:70`、`preprocess.ts:90`)。不用「未命中返回 0」那种静默兜底:那会让 fps=0 流进 `calc(frames/fps)` 变成非法 CSS,而断言是响亮失败。
+- **门禁**:`pnpm check` 干净(本轮零 lint/类型错)。全量 `pnpm test` 见下方「未覆盖项」。
+- **未覆盖项(诚实记录)**:① 五个子分的阈值**数值**只被相对边界钉住(`<5` 改 `<6` 会红),但「5 这个数本身对不对」无从测 —— spec §15 开放项 2 已明确阈值是猜的、需上线校准,模块注释里也写明了。② `byUnrecoverable` 的 2→3 跳档在真实数据里**从未触发过**(Task 0 实测 0/138),它的正确性只有合成 fixture 支撑,与 spec §7 的记载一致。③ 本轮仍无 DOM 测试(纯函数,正确);④ `FATIGUE_FPS_SCALE` 只钉了表值(`[1, 0.9, 0.75, 0.6]`)与「一次性态不衰减」,没有验证 0.6 这个下界在浏览器里观感是否合适 —— 那属于 Task 7 的浏览器验收范围。
 
 ## Task 3: 资产契约与占位帧
 
