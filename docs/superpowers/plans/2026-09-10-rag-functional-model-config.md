@@ -211,15 +211,24 @@
   架构面的 field-level 合并（`video` 深合并）、密钥 `显式 > 文件 > env` 与 `SECRET_ENV_VARS` 单一来源、admin API 的掩码/`sources`
   与整对象写语义、热重载路径、support-bundle 脱敏、仓库地图与路由表各一行；前端面的两视图归属 + 「保存守卫按是否被编辑」的理由）。
 - [x] Commit: `docs: sync guides for rag functional-model config`（`b25cbecf`）
-- [ ] **浏览器实测：延后**（需 admin 登录，自动化无法穿越）。已就地确立的两条活证据：① 运行中的网关
+- [x] **浏览器实测：2026-09-11 完成**（原「延后」记录保留在下方）。用户 admin 登录后在真实栈手动走查
+  （设置 → 模型 → 功能模型：5 组卡片 / 检索组提示行 / 评测裁判与图谱抽取下拉 / 模态组只剩一个下拉 / 掩码与来源提示 /
+  换 embedding 告警 / 未改动时保存禁用），**未报异常**；本条属**用户侧确认**，agent 无法独立复核（登录不可自动化）。
+  agent 独立判读的一手证据（`GET /api/rag/config` 响应 + 仓库根文件）另记两条：
+  ① 四个密钥值全空、来源全 `env` ⇒ 文件未落盘、全走 `.env`，与"空框 + 当前由环境变量提供"的设计一致；
+  ② `extract_model: "qwen3.8-flash"` 来源 `ui`，且 `rag_config.json` 已生成（40 B，内容即该条）⇒ **保存落盘与回读一致**已验。
+  已知口径小问题：`vlm_base_url` 来源被报成 `config_file`，而它实为**代码默认值**（`config.yaml` 无此行）——`sources` 缺 `default` 态。
+  <details><summary>原「延后」记录（2026-09-10）</summary>
+  （需 admin 登录，自动化无法穿越）。已就地确立的两条活证据：① 运行中的网关
   **OpenAPI 里已列出 `/api/rag/config`**（对照同时列出 `/api/models/config`、`/api/models/config/validate`）⇒ 新代码已加载；
   ② 未认证请求该路由返回 401（auth 门控生效）。
   ⚠️ **过程纠正**：一开始我拿「`/api/rag/config` → 401」推断「路由存在」，但对照探针显示 `/api/rag/config/nope` **同样是 401**
   ——auth 中间件在路由之前拦截，401 不携带路由存在性信息。结论最终由 OpenAPI 探针给出（证据强度与结论匹配）。
-  **留给用户的实测清单**（环境就绪时）：① 登录 admin → 设置 → 模型 → 切到「功能模型」；
+  **留给用户的实测清单**：① 登录 admin → 设置 → 模型 → 切到「功能模型」；
   ② 填 VLM/embedding/rerank 的 key（或留空走 env）→ 保存 → 重开页面确认密钥显示为掩码、来源提示正确；
   ③ 改 embedding 模型 → 确认出现「需重建索引」告警；④ 保存后重传一篇文档，确认新配置被入库腿采用
   （或至少 `rag_config.json` 出现且 `GET /api/rag/config` 回读一致）；⑤ 非 admin 账号确认看不到该视图且 API 403。
+  </details>
 
 ## 浏览器实测发现（2026-09-10，功能模型视图）——版式与可理解性
 

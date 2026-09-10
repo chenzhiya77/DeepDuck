@@ -179,9 +179,14 @@ AppConfig 按 `name` 合并（**UI 文件覆盖 config.yaml**）+ provider 白�
       API 可写 models_config.json、合并语义、provider 白名单安全边界；orientation-layer 口径，
       不含 commit hash/RED-GREEN/验收清单）。
 - [x] Commit: `docs: sync README and agent guide for web model provider config`（`aff1b18b`，2 files, +32/-1）
-- [ ] 浏览器实测（**延后**，用户选择「延后并记录」）。原因：本地栈未运行
-      （2026/3000/8001 均未监听），且实测需 admin 账号 + 一个真实 provider key 才能验证
-      「发消息热重载」；按纪律不擅自起栈/改 config/注入 key。
+- [x] 浏览器实测：**2026-09-11 完成**——用户 admin 登录后在真实栈手动走查（设置 → 模型：添加模型两步向导，
+  故意填错的 key/Model ID 被拦在第一步、改正后进入第二步并保存；一个 key 批量多个 Model ID；模型列表出现后
+  发消息热重载生效），**未报异常**。本条属**用户侧确认**：登录不可自动化，agent 无法独立复核。
+  <details><summary>原「延后」记录（2026-09-10）</summary>
+  （用户选择「延后并记录」）。原因：本地栈未运行
+  （2026/3000/8001 均未监听），且实测需 admin 账号 + 一个真实 provider key 才能验证
+  「发消息热重载」；按纪律不擅自起栈/改 config/注入 key。
+  </details>
 
 ### 交付纪要（2026-09-10）
 
