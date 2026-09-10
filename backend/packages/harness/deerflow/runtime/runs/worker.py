@@ -819,6 +819,20 @@ async def run_agent(
         with bind_agent_build_extensions(extensions):
             agent = agent_factory(**agent_factory_kwargs)
 
+        # Hand the factory's constitution snapshot to the journal, which puts it on
+        # the first run.start. The agent cannot read the process-wide registry
+        # itself, so the worker is the only place that can bridge them. Read it
+        # here, while the graph is alive: the registry is a WeakKeyDictionary, so a
+        # later read could miss a collected graph. Every branch below is a no-op
+        # when nothing published (custom factory, embedded client) — observability
+        # must never change what a run does.
+        if journal is not None:
+            from deerflow.agents.constitution_record import constitution_for
+
+            constitution = constitution_for(agent)
+            if constitution is not None:
+                journal.set_constitution(constitution)
+
         accessor = CheckpointStateAccessor.bind(
             agent,
             checkpointer,

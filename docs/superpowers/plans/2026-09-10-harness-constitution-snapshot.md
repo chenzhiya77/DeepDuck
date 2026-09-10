@@ -166,9 +166,19 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_run_event_stream_contract.py
 
 **Files:** Modify `backend/packages/harness/deerflow/runtime/runs/worker.py`;Create `backend/tests/test_run_worker_constitution.py`
 
-- [ ] **Step 1(先写红测试):** 覆盖 ① 工厂发布后 worker 接线成功,`journal.set_constitution` 被调用且参数等于 `constitution_for(agent)`;② **自定义 `agent_factory` 不发布**时不炸、`run.start` 保持原样(`worker.py:815` 的 `_agent_factory_supports_app_config` 说明工厂可注入);③ `journal is None`(无 event store)时整段跳过;④ 接线发生在 `astream`(:922/:933)**之前**。
-- [ ] **Step 2:** 在 `worker.py:820`(`agent = agent_factory(**agent_factory_kwargs)`)之后、`CheckpointStateAccessor.bind`(:822)附近插入 spec §6.4 的四行接线。
-- [ ] **Step 3:** 转绿 + `cd backend && make test`(worker 测试面广,全量跑)。
+- [x] **Step 1(先写红测试):** 覆盖 ① 工厂发布后 worker 接线成功,`journal.set_constitution` 被调用且参数等于 `constitution_for(agent)`;② **自定义 `agent_factory` 不发布**时不炸、`run.start` 保持原样(`worker.py:815` 的 `_agent_factory_supports_app_config` 说明工厂可注入);③ `journal is None`(无 event store)时整段跳过;④ 接线发生在 `astream`(:922/:933)**之前**。
+- [x] **Step 2:** 在 `worker.py:820`(`agent = agent_factory(**agent_factory_kwargs)`)之后、`CheckpointStateAccessor.bind`(:822)附近插入 spec §6.4 的四行接线。
+- [x] **Step 3:** 转绿 + `cd backend && make test`(worker 测试面广,全量跑)。
+
+**交付纪要(Task 4,2026-09-10):**
+
+- **修改**:`worker.py`——在 `agent = agent_factory(...)` 之后、`CheckpointStateAccessor.bind` 之前插入接线(14 行含注释),`constitution_for` 用函数级导入(与该文件既有的 `RunJournal` 懒导入风格一致)。**新增**:`tests/test_run_worker_constitution.py`(5 例)。
+- **为什么必须由 worker 桥接**:agent 自己读不到进程级注册表,worker 是唯一同时持有 agent 与 journal 的地方;**而且必须在图仍存活时读**——注册表是 `WeakKeyDictionary`,晚读可能已被回收。
+- **测试**:5 例绿;Task 4 门禁 **233 passed / 0 failed**(worker 四个文件 + 契约 + journal + blocking-IO 锚点 + 四个宪法文件 + harness 边界);`ruff check/format` 干净。
+- **真端到端**:新增一例把**真实 `make_lead_agent`** 当 `agent_factory`(只桩掉会打 provider / 拉 MCP 的两个叶子)。断言 `run.start` 上带的是真实装配出来的快照:类名非空且**全部落在归属表内**、含 `ThreadDataMiddleware` 与 `ClarificationMiddleware`、`Σ(stages[]) == len(middlewares)`。**这条就"整条链跑通"的证明**——工厂组装 → 注册表 → worker 桥接 → journal → `run.start` 载荷。
+- **revert 证明**:把取回那行改成 `constitution = None` → 2 条接线用例当场红,2 条降级路径仍绿(正好区分"接线"与"降级"),撤销即绿。
+- **测试自身踩到两个 bug(都已修,值得记)**:① 我的 stub agent 用 `config["context"]["__run_journal"]` 硬取,而**无 event store 时该键本来就不存在**——它掩盖了"整段跳过"这条降级路径,改成 `.get()` 容错;② 那条"接线发生在 astream 之前"的用例,**工厂忘了发布快照**,于是它其实什么都没验,补上 `publish_constitution` 后才有牙。
+- **环境红(非本任务)**:与 Task 3 同——`tests/blocking_io/` 全目录另有的 Windows chmod / lark-cli 那几条。
 
 ## Task 5: 文档同步 + 全量验证
 
