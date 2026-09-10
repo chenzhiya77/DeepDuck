@@ -30,6 +30,7 @@ from app.gateway.routers import (
     mcp,
     memory,
     models,
+    rag_config,
     runs,
     scheduled_tasks,
     skills,
@@ -693,6 +694,9 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
     # Include routers
     # Models API is mounted at /api/models
     app.include_router(models.router)
+
+    # RAG functional-model config is mounted at /api/rag/config (admin)
+    app.include_router(rag_config.router)
 
     # Features API is mounted at /api/features
     app.include_router(features.router)

@@ -82,8 +82,37 @@
 - Modify: `scripts/support_bundle.py`（新增 `rag-summary.json`，密钥脱敏）
 - Test: `backend/tests/test_rag_config_api.py`（403 / 掩码 + source / 422 / 只写 non-None / 哨兵保留 / PUT 后热重载生效 / 不写 config.yaml）
 
-- [ ] RED → Implement → GREEN + revert proof + ruff 双净。
-- [ ] Commit: `feat(gateway): admin rag config API with key masking`
+- [x] RED → Implement → GREEN + revert proof + ruff 双净。（新增 `tests/test_rag_config_api.py` **10 例**：
+  非 admin 403（GET+PUT）/ GET 回「生效值 + 密钥掩码/空 + 逐字段来源（`ui`/`config_file`/`env`/`unset`）」/
+  响应体绝不含已存密钥原文 / PUT 未知字段 422 且文件不变 / 非法 `video.asr_provider` 422 /
+  PUT 只写 `rag_config.json`（config.yaml 字节不变）/ 哨兵保留已存密钥（再传新值可轮换）/
+  **省略字段即从文件移除并回退 config.yaml**（整对象替换语义）/ PUT 后热重载生效 / support-bundle 脱敏 + 产物登记。
+  回归 `test_rag_config_file`+`test_support_bundle`+`test_models_config_api`+`knowledge/test_reranker`+`knowledge/test_parser`
+  +`test_app_config_reload` **203 绿**（2 例失败为已复证的环境性）；ruff check+format **双净**。
+  revert proof：neuter ①admin 门控 ②密钥原样回显 ③PUT 当补丁合并 ⇒ **4 红**（requires_admin / 来源与掩码 /
+  绝不含密钥 / 省略字段被清除），恢复后 10 绿）
+- [x] Commit: `feat(gateway): admin rag config API with key masking`
+
+#### Task 2 交付纪要（2026-09-10）
+
+- **实现落点**：`app/gateway/routers/rag_config.py`（`GET/PUT /api/rag/config`，`require_admin_user`；
+  GET = 生效值（密钥掩码/空）+ 展平 `sources` 映射（非密钥 `ui`/`config_file`，密钥 `ui`/`env`/`unset`）；
+  PUT = body 即 `RagConfigFile`（`extra="forbid"` + 嵌套 `video` 字面量校验 ⇒ 未知字段/非法 provider 自动 422），
+  哨兵保留已存密钥、空串与空块**剔除**（省略=清除=回退 config.yaml/env），原子写走 `asyncio.to_thread` + 写锁，
+  只写 `rag_config.json`）；`app/gateway/app.py` 挂载；`scripts/support_bundle.py` 新增 `collect_rag_summary` +
+  `rag-summary.json` 产物与 `--rag-config` 参数。
+- **顺带收敛**：新增 `SECRET_ENV_VARS`（harness）作为「密钥字段 → 回退 env 名」的**唯一来源**，
+  `embedder/reranker/captioner/video-captioner/parser` 的 env 常量改为从它取值 ⇒ API 报告「当前由哪个 env 提供」
+  与客户端实际读取的名字不可能漂移。
+- **决策 / 偏离**：
+  1. **PUT = 整对象替换**（不是补丁）：提交的对象就是新文件内容，省略某字段即从文件移除、回退到 config.yaml（密钥则回退 env）。
+     这样「清除」可用；代价是客户端必须整表单回传（与 `models` 的整体集合写同款契约，Task 4 的表单会照此实现）。
+     计划里写的「`null` 不写」据此细化为「`null` 与空串都视为未声明 → 从文件剔除」。
+  2. **密钥来源三态**（`ui`/`env`/`unset`）比计划多一档：UI 需要显示「当前使用环境变量」，且只报**存在性**不报值。
+  3. **路由自测挂载 + 生产同时挂载**：测试自己 `include_router`，另外在 `app.py` 真实挂载并实测 `create_app()` 后
+     `/api/rag/config` 已注册（避免「测试绿但生产没接上」）。
+  4. `_load_stored()` 对损坏文件回 500 而不是静默重置（不吞错误）。
+- **遗留（未动）**：Task 3（前端 client/纯函数）、Task 4（设置页视图 + i18n）、Task 5（收官）。
 
 ## Task 3: 前端类型/客户端/组装纯函数（seam C node）
 

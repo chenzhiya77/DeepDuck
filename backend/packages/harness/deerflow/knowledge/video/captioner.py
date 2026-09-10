@@ -25,10 +25,11 @@ from dataclasses import dataclass, field
 import httpx
 
 from deerflow.config.app_config import get_app_config
+from deerflow.config.rag_config_file import SECRET_ENV_VARS
 
 logger = logging.getLogger(__name__)
 
-VL_API_KEY_ENV = "DASHSCOPE_API_KEY"  # 对齐现有 captioner.py 的默认 env 名
+VL_API_KEY_ENV = SECRET_ENV_VARS["vlm_api_key"]  # 对齐现有 captioner.py 的默认 env 名
 
 _SHOT_CAPTION_PROMPT = (
     "这是同一段视频镜头的若干关键帧（按时间顺序）。用于视频检索索引："

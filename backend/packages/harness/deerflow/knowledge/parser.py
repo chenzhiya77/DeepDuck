@@ -38,13 +38,13 @@ from pathlib import Path
 import httpx
 
 from deerflow.config.app_config import get_app_config
-from deerflow.config.rag_config_file import configured_rag_secret
+from deerflow.config.rag_config_file import SECRET_ENV_VARS, configured_rag_secret
 from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
 
 MINERU_BASE_URL = "https://mineru.net"
-_TOKEN_ENV_VAR = "MINERU_API_TOKEN"
+_TOKEN_ENV_VAR = SECRET_ENV_VARS["mineru_api_token"]
 #: MinerU business codes (response body ``code``) for token problems.
 _AUTH_CODES = {"A0202", "A0211"}
 #: Poll states that mean "keep waiting".

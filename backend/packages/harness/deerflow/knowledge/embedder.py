@@ -29,13 +29,13 @@ from dataclasses import dataclass
 import httpx
 from qdrant_client.models import SparseVector
 
-from deerflow.config.rag_config_file import configured_rag_secret
+from deerflow.config.rag_config_file import SECRET_ENV_VARS, configured_rag_secret
 
 logger = logging.getLogger(__name__)
 
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
 _EMBEDDING_PATH = "/api/v1/services/embeddings/text-embedding/text-embedding"
-_KEY_ENV_VAR = "DASHSCOPE_EMBEDDING_API_KEY"
+_KEY_ENV_VAR = SECRET_ENV_VARS["embedding_api_key"]
 
 #: qwen3.7-text-embedding accepts at most 20 rows per call (Aliyun docs).
 DASHSCOPE_BATCH_LIMIT = 20

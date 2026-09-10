@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 #: keys, so the UI can share one constant.
 MASKED_SECRET = MASKED_API_KEY
 
+#: Environment variable backing each secret when ``rag_config.json`` declares none. The
+#: ingestion clients import these names as their fallback, so the name the admin API
+#: reports as the current source and the name the client actually reads cannot drift.
+SECRET_ENV_VARS: dict[str, str] = {
+    "embedding_api_key": "DASHSCOPE_EMBEDDING_API_KEY",
+    "rerank_api_key": "DASHSCOPE_RERANK_API_KEY",
+    "vlm_api_key": "DASHSCOPE_API_KEY",
+    "mineru_api_token": "MINERU_API_TOKEN",
+}
+
 
 class RagVideoFileConfig(BaseModel):
     """The video-ingestion fields the settings UI may override.

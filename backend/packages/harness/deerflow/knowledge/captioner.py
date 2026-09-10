@@ -23,6 +23,7 @@ from pathlib import Path
 import httpx
 
 from deerflow.config.app_config import get_app_config
+from deerflow.config.rag_config_file import SECRET_ENV_VARS
 from deerflow.knowledge.parser import ParsedImage
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 # https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 VL_BASE_URL = os.getenv("DASHSCOPE_VL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 # Env var name can be overridden via config
-VL_API_KEY_ENV = "DASHSCOPE_API_KEY"
+VL_API_KEY_ENV = SECRET_ENV_VARS["vlm_api_key"]
 
 _CAPTION_PROMPT = "请分析这张图片，用于文档检索索引：如果图片以文字内容为主（如文档截图、表格、代码），请完整转录图中的全部文字；否则请用一句简洁的中文描述图片的主要内容（对象、场景、关键文字）。只输出转录或描述文本，不要多余解释。"
 

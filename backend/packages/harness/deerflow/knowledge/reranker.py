@@ -24,13 +24,13 @@ from collections.abc import Sequence
 
 import httpx
 
-from deerflow.config.rag_config_file import configured_rag_secret
+from deerflow.config.rag_config_file import SECRET_ENV_VARS, configured_rag_secret
 
 logger = logging.getLogger(__name__)
 
 DASHSCOPE_RERANK_BASE_URL = "https://dashscope.aliyuncs.com"
 _RERANK_PATH = "/compatible-api/v1/reranks"
-_KEY_ENV_VAR = "DASHSCOPE_RERANK_API_KEY"
+_KEY_ENV_VAR = SECRET_ENV_VARS["rerank_api_key"]
 
 #: Default rerank task instruction (Aliyun's recommended QA-retrieval prompt).
 DEFAULT_INSTRUCT = "Given a web search query, retrieve relevant passages that answer the query."
