@@ -188,8 +188,9 @@
   ① `knowledge/chat-panel.dom.test.tsx`「restores the remembered model」——已用 `git stash push -- frontend/src` 复证
   HEAD 源码下同样失败；
   ② `components/workspace/lazy-panels.test.ts`「loads each settings page from its active section」——断言
-  `settings-dialog.tsx` 里 `dynamic(` 出现 9 次，实际 10 次；该文件与测试文件均未被我改动（`git status` 为空 = 内容同 HEAD），
-  且 `settings-dialog.tsx` 最后一次改动是前置计划的 `34cf3d85`（新增 Models 分区时漏改计数）⇒ 属前置交付遗留，待用户定夺是否顺手修。
+  `settings-dialog.tsx` 里 `dynamic(` 出现 9 次，实际 10 次；该文件与测试文件均未被本任务改动（`git status` 为空 = 内容同 HEAD），
+  且 `settings-dialog.tsx` 最后一次改动是前置计划的 `34cf3d85`（新增 Models 分区时漏改计数）⇒ 属前置交付遗留，
+  **用户确认后已顺手修（`47aef6d6`，9→10，该文件 3 例全绿）**。
   `pnpm check`（eslint+tsc）**exit 0** 无告警。
   revert proof：neuter ①step1 校验（直通 step2）②`capabilityValueFromModel` 旧布尔兜底 ③`toManagedInput` 能力透传
   ⇒ **5 红**（probes-every-model-id / stays-on-step-1 / pre-checks-every-level / edit-legacy / capability-round-trip）；
