@@ -82,6 +82,25 @@
   animation: streaming-list-marker-fade-in 200ms ease both;
 }
 
+/* Pet sprite playback (spec §9.1). Duration, timing function and iteration
+   count are set inline per state; this rule only anchors the keyframes so the
+   inline animation-name cannot be pruned from the bundle. The travel is
+   percentage-based on purpose: with background-size N x 100%, frame k sits at
+   100k/(N-1)%, which is exactly what steps(N, jump-none) emits — plain
+   steps(N) never reaches the last frame. */
+@keyframes pet-play {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.pet-sprite {
+  animation-name: pet-play;
+}
+
 @theme {
   --font-sans:
     ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",

@@ -442,11 +442,24 @@ export function computeFatigueLevel(i: FatigueInput): FatigueLevel {
 
 ### 9.1 纯 CSS `steps()`,不引依赖
 
-横向单行等高 sheet 意味着 `background-position` + `steps(N)` 就够:
+横向单行等高 sheet 意味着 `background-position` + `steps(N, jump-none)` 就够:
 
 ```css
-animation: pet-play calc(var(--frames) / var(--fps) * 1s) steps(var(--frames)) infinite;
+/* 盒子边长 = displaySize;sheet 宽 = N 帧 */
+background-size: calc(var(--frames) * 100%) 100%;
+animation: pet-play calc(var(--frames) / var(--fps) * 1s) steps(var(--frames), jump-none) infinite;
 ```
+
+**必须是 `jump-none`,不能是裸 `steps(N)`(2026-09-10 真实浏览器实测,订正本节原片段)。** 数学:sheet 宽设为 N×盒子宽后,背景可移动范围是 `(N-1)×盒子宽`,于是第 k 帧恰好落在 `100k/(N-1)%` 上 —— 这正是 `steps(N, jump-none)` 输出的 N 个离散值(含首末两端)。裸 `steps(N)` 输出的是 `k/N`,少了一整帧的行程:
+
+| 进度 | `steps(4, jump-none)` | 裸 `steps(4)` |
+|---|---|---|
+| 0 | 0% | 0% |
+| 1/4 | **33.3333%** | 25% |
+| 2/4 | **66.6667%** | 50% |
+| 3/4 | **100%** | 75%(**末帧永不可达**) |
+
+即裸写法**永远播不到最后一帧**(N=4 时整帧缺失,N=32 时漂移到约一帧并丢掉末帧);`CSS.supports('animation-timing-function','steps(4, jump-none)') === true`,支持无虞。另外盒子尺寸一旦变化(缩放、DPR 变化)就会重排并重置 `background-position` 的百分比基准 —— §10 的「displaySize 恒为偶数整数 CSS px」同时也在防这件事。
 
 不要 JS rAF、不要 canvas、不要 PixiJS。tachie 用 PixiJS 是为了透明 canvas + 缩放/阴影/截图/主题色提取,本设计无这些需求。一次性动画即 `animation-iteration-count: 1` + `onAnimationEnd` 清 `oneShot` 回 base。
 
@@ -559,7 +572,8 @@ frontend/public/pet/parrot/                             manifest.json(静态 imp
 | `tests/unit/core/pet/fatigue.test.ts` | node | 五子分各自封顶 + max 语义 + `collectFatigueInput` 从 `additional_kwargs.deerflow_tool_meta` 正确分出 `toolErrorCount` 与 `unrecoverableErrorCount`(含 meta 缺失时两者都为 0) |
 | `tests/unit/core/pet/sprite.test.ts` | node | 两级回落 + fallback + 一次性不衰减 fps + **manifest 自洽:逐态 `sheetWidth === frames × frameWidth`、`sheetHeight === frameHeight`**(§8 自校验) |
 | `tests/unit/core/pet/placement.test.ts` | node | clampOffset:窄面板/resize 不把盒子推出可见区;默认 offset 即 right-3 top-14 |
-| `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx` | happy-dom | **只测五件**:`motion-reduce` 出静态帧、one-shot 播完回 base、开关关掉时不渲染、Alt+拖拽更新 offset 并持久化且未按 Alt 不起拖(§10.1)、外壳 `aria-hidden="true"`(§13.1 无障碍裁决) |
+| `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx` | happy-dom | **只测三件**(2026-09-10 按组件归属重新切分):① `motion-reduce` 出静态帧(同一条里带「允许动效时确有 `steps(N, jump-none)`」的正向对照,否则「无 animation」在组件压根不动画时也会通过);② one-shot 播完回 base;③ 解析不到 sprite 时不渲染任何节点(资产缺失降级)。精灵根节点带 `aria-hidden="true"`,其断言随外壳 |
+| `tests/unit/components/workspace/pet/agent-pet.dom.test.tsx` | happy-dom | **订阅者两条**:开关关掉时不渲染任何节点;Alt+拖拽更新 offset 并持久化、未按 Alt 不起拖(§10.1) |
 
 DOM 测试压到最小是刻意的:渲染器逻辑已全被 `sprite.ts` 在 node 环境吃掉。不写 e2e。
 

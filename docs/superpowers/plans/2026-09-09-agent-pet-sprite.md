@@ -158,9 +158,30 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 **Files:** Create `frontend/src/components/workspace/pet/pet-sprite.tsx` + `frontend/tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx`
 
-- [ ] **Step 1(先写红测试):** **只测三件**(spec §13.2,刻意压最小):① `motion-reduce` 下不加 animation、停在第 0 帧;② one-shot 播完(`animationEnd`)后回调触发、回到 base;③ 开关关掉时不渲染任何节点。其余逻辑已被 `sprite.ts` 在 node 环境覆盖,**不要在 DOM 测试里重复测回落**。
-- [ ] **Step 2:** 实现 `pet-sprite.tsx`:只吃 `{ base, workKind, fatigue, oneShot }` + manifest,用 `background-position` + `animation: ... steps(N)` 播放。**不引任何动画库**。`pointer-events-none` 在这一层就加上。盒子边长取 manifest 的 `displaySize` 并**取偶数整数 CSS px**(spec §10:帧宽在设备像素上对齐,防右缘邻帧鬼影;DPR 1.5 下偶数即整数设备像素)。
-- [ ] **Step 3:** 转绿 + `pnpm check`。
+- [x] **Step 1(先写红测试):** **只测三件**(spec §13.2,刻意压最小):① `motion-reduce` 下不加 animation、停在第 0 帧;② one-shot 播完(`animationEnd`)后回调触发、回到 base;③ 开关关掉时不渲染任何节点。其余逻辑已被 `sprite.ts` 在 node 环境覆盖,**不要在 DOM 测试里重复测回落**。
+- [x] **Step 2:** 实现 `pet-sprite.tsx`:只吃 `{ base, workKind, fatigue, oneShot }` + manifest,用 `background-position` + `animation: ... steps(N)` 播放。**不引任何动画库**。`pointer-events-none` 在这一层就加上。盒子边长取 manifest 的 `displaySize` 并**取偶数整数 CSS px**(spec §10:帧宽在设备像素上对齐,防右缘邻帧鬼影;DPR 1.5 下偶数即整数设备像素)。
+- [x] **Step 3:** 转绿 + `pnpm check`。
+
+**Task 4 交付纪要(2026-09-10)**
+
+- **产出**:`src/components/workspace/pet/pet-sprite.tsx`(新)、`tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx`(新,唯一 DOM 测试),外加**计划未列的一个改动**:`src/styles/globals.css` 增 `@keyframes pet-play` + `.pet-sprite { animation-name: pet-play; }`(见下「订正」第二条,附锚定理由)。
+- **RED**:`Cannot find module '@/components/workspace/pet/pet-sprite'`(0 用例收集)。
+- **GREEN**:**4 条 DOM 用例**(计划的三件 —— ① 我把「允许动效时确实带 animation」折进同一条,否则「无 animation」的断言在组件压根不动画时也会通过;② 一次性播完回调 + 回 base;③ 解析不到时不渲染节点)。node 侧宠物套件不受影响:**100 例**仍在。
+- **订正一(实现层,已在真实浏览器实测)**:`steps(N)` 必须写成 **`steps(N, jump-none)`**。百分比行程下背景可移动范围是 `(N-1)×盒子宽`,第 k 帧落在 `100k/(N-1)%` —— 正是 `jump-none` 输出的 N 个离散值;裸 `steps(N)` 输出 `k/N`,**永远播不到末帧**(实测 N=4:33.3333/66.6667/100% vs 25/50/75%)。`CSS.supports('steps(4, jump-none)') === true`。**spec §9.1 的片段已按此订正**(含实测表),这是本轮发现的一个真问题、不是风格偏好。验证方式:临时 HTML 探针 + `animation-play-state: paused` + 负 `animation-delay` 采样 4 个进度点,探针文件已删。
+- **订正二(资源层)**:`@keyframes` 必须落在全局 CSS,而组件把 animation 写在**内联 style** 里 —— 若 keyframes 只被内联字符串引用,生产构建有把它当未使用符号剪掉的风险。故在 `globals.css` 里同时加了一条 `.pet-sprite { animation-name: pet-play; }` 作为锚定规则(该 class 由组件常量携带),并注明原因。这是计划文件清单外的一处必要改动。
+- **revert proof(4 次 neuter,各恰好 1 条)**:
+
+  | # | 被 neuter 的行为 | 改动 | 转红 |
+  |---|---|---|---|
+  | R1 | 减弱动效时不加 animation | 守卫改成恒真 | 恰好 1 条(reduced 那条) |
+  | R2 | 一次性播完回调 | 删 `onAnimationEnd` | 恰好 1 条(one-shot 那条) |
+  | R3 | 解析不到不渲染节点 | `return null` → `return <div/>` | 恰好 1 条(空 manifest 那条) |
+  | R4 | `steps(N, jump-none)` | 退回裸 `steps(N)` | 恰好 1 条(正向动画那条) |
+
+- **两处实现决定**:① **manifest 走 prop 而非在渲染器里 import** —— 渲染器因此完全纯净、可用内联 fixture 测(one-shot 那条必须用 fixture,真 manifest 第 1 期没有 `done`)。真 JSON 的静态 import 由 Task 5 的订阅者承担;计划 Task 3 Step 3 只要求「静态 import」,没指定落点。② 精灵根节点带 `aria-hidden="true"`(spec §13.1)—— 它在任何外壳里都是装饰件;拖拽命中矩形的 `aria-hidden` 随 Task 5 的外壳一起。
+- **口径对齐(本批已收敛)**:spec §13.2 的表格原把 **5 条** DOM 用例都挂在本文件(含 Alt+拖拽、开关关闭、aria-hidden),而计划 Task 4 只要求 3 条 —— 两处口径不一致。本轮已按**组件归属**把 spec §13.2 改成两行:`pet-sprite.dom.test.tsx` 三件(渲染器),新增的 `agent-pet.dom.test.tsx` 两件(开关关闭不渲染、Alt+拖拽更新 offset 且未按 Alt 不起拖),aria-hidden 的断言归外壳。Task 5 需据此真的建出 `agent-pet.dom.test.tsx`。
+- **门禁**:`pnpm check` 干净(先报 4 条 `@typescript-eslint/no-empty-function`,已修);DOM 4/4、node 100/100;**全量 `pnpm test`:2182 例 / 2181 通过 / 1 失败**(204 文件 / 1 失败)。唯一失败与前一次全量的 1 file/1 test 完全同形,判据同前(本机预存 `knowledge/chat-panel.dom.test.tsx`,该文件与其被测路径在本树零改动);本次日志经 `tail -8` 截断,故未再读一遍失败名。
+- **未覆盖项(诚实记录)**:① `evenBoxSize` 的奇数入参路径(97→98)已实现但无测试 —— 第 1 期 `displaySize` 恒为 96,该分支随缩放功能才可达;② 减弱动效的判定发生在 `usePrefersReducedMotion` 的 effect 里,即**首帧之后**才纠正(SSR/首绘可能短暂带 animation);纯 CSS 的 `@media (prefers-reduced-motion: reduce)` 能消掉这个窗口,但计划要求的是可测的 JS 形式,故未加 CSS 兜底 —— 要点可后补;③ `steps()` 的采样验证是在**独立探针页**做的,尚未在应用内真实 sheet 上复验(真 manifest 只有 2 帧、看不出漂移),这一环并入 Task 7。
 
 ## Task 5: 订阅者组件 + 设置节
 
