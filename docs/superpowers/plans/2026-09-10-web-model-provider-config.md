@@ -135,10 +135,38 @@ AppConfig 按 `name` 合并（**UI 文件覆盖 config.yaml**）+ provider 白�
       admin 见分区非 admin 不见 / 列表来源徽章+只读行无删除 / 批量添加两行→PUT payload 两条
       entry 各带同 key / API 类型仅 openai-compatible 显 / 全空 Model ID 提交被阻 / 空态引导）
 
-- [ ] RED：dom/node 用例 failed（分区/组件/展开函数不存在）。
-- [ ] Implement：settings 接线 + models-settings-page + 弹窗 + core/models + i18n。
-- [ ] GREEN + revert proof（stash 实现留测试 → RED）+ `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): admin Models settings section with batch add (one key, N models)`
+- [x] RED：dom/node 用例 failed（3 文件 failed：分区/组件/展开函数不存在）。
+- [x] Implement：settings 接线 + models-settings-page + 增/改弹窗 + core/models + i18n。
+- [x] GREEN + revert proof + `pnpm check` 双净。—— 新增 **15 passed**（batch node 6 +
+      nav dom 2 + page dom 7）；`pnpm check`（eslint+tsc）**EXITCODE=0** 双净；
+      回归 `agent-settings-dialog-helpers` **10 passed**（`Model` 类型未动）。
+      revert proof：`git stash -u` 所有实现文件（留测试）⇒ 3 文件 RED；`stash pop` 恢复 15 passed。
+- [x] Commit: `feat(frontend): admin Models settings section with batch add (one key, N models)`（`34cf3d85`）
+
+### 交付纪要（2026-09-10）
+
+- **实现落点**：
+  - `core/models/`：`types.ts`（`ManagedModel`/`ManagedModelInput`/`ProviderId`）、`api.ts`
+    （`loadModelsConfig`/`saveModelsConfig` + `ModelsConfigRequestError.isAdminRequired` +
+    `MASKED_API_KEY`，走 `@/core/api/fetcher` 带 CSRF）、`batch.ts`（`expandBatchToEntries`/
+    `uniqueModelName` 纯函数）、`hooks.ts`（`useModelsConfig`/`useSaveModelsConfig`，成功后
+    同时 invalidate `["modelsConfig"]` 与 `["models"]` 以刷新聊天选择器）。
+  - 组件：`models-settings-page.tsx`（三态镜像 `ToolSettingsPage` + `Item variant="outline"`
+    卡片列表 + 来源 `Badge` + 仅 editable 行显编辑/删除）、`models-add-dialog.tsx`（批量：
+    共享凭证块 + 可重复 Model ID 行 + API 类型仅 openai-compatible）、`models-edit-dialog.tsx`
+    （单模型，身份字段只读，空 key → 哨兵保留）。
+  - `settings-dialog.tsx`：`CpuIcon` + `models` 分区（插在「集成」后「记忆」前）+ 渲染分支；
+    **admin-only** 由 `useAuth().user?.system_role === "admin"` 控制导航可见性（服务端为准）。
+  - i18n：`types.ts`/`en-US.ts`/`zh-CN.ts` 同步新增 `settings.sections.models` + `settings.models.*`。
+- **关键决策 / 陷阱**：
+  - **PUT 是整体集合写**：添加/编辑/删除都重建「UI 管理集」全量提交（`uiModels.map(toManagedInput)`
+    ± 变更项），config.yaml 模型不入 PUT；未改的 key 以哨兵保留。
+  - **批量 = 客户端展开**：`expandBatchToEntries` 把共享块 + N 个 Model ID 展为 N 条扁平 entry
+    （name=Model ID、重名 -2/-3、display_name 默认=Model ID、`use_responses_api` 仅 openai-compatible+Responses）。
+  - **Radix Select 在 happy-dom 开合不可靠**（与已有记忆一致）：DOM 测试不驱动 provider 下拉切换，
+    「API 类型仅 openai-compatible」的规则由 node `batch.test.ts`（use_responses_api 门控）钉死。
+  - 眼睛切换按钮需独立 `aria-label`（`apiKeyToggle`），否则与 key 输入框同 label → `getByLabelText` 命中多个。
+- **遗留（未动）**：Task 5 收官（全量回归 + README/AGENTS 文档同步 + 浏览器实测）。
 
 ## Task 5: 收官——回归 + 文档同步 + 浏览器实测
 
