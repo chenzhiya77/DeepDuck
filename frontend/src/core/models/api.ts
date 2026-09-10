@@ -7,12 +7,25 @@ import type {
   ManagedModelInput,
   ModelsConfigResponse,
   ModelsResponse,
+  ValidateModelsConfigInput,
+  ValidateModelsConfigResult,
 } from "./types";
 
 const STATIC_MODELS_RESPONSE: ModelsResponse = {
   models: [],
   token_usage: { enabled: false },
 };
+
+/** Selectable context-window sizes; mirrors the backend `CONTEXT_WINDOW_OPTIONS`. */
+export const CONTEXT_WINDOW_OPTIONS = [200_000, 400_000, 1_000_000] as const;
+
+/** Reasoning-effort levels, in enum order; mirrors the backend `REASONING_EFFORT_LEVELS`. */
+export const REASONING_EFFORT_LEVELS = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+] as const;
 
 export async function loadModels(): Promise<ModelsResponse> {
   if (isStaticWebsiteOnly()) {
@@ -81,4 +94,30 @@ export async function saveModelsConfig(
     );
   }
   return response.json() as Promise<ModelsConfigResponse>;
+}
+
+/**
+ * Probe a provider's model list with the submitted credentials (spec §5.3.2).
+ *
+ * Purely observational — the server persists nothing, so the add-model wizard can
+ * block its second step on `!ok || !model_present` before anything is stored.
+ */
+export async function validateModelsConfig(
+  input: ValidateModelsConfigInput,
+): Promise<ValidateModelsConfigResult> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/models/config/validate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    throw new ModelsConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to validate model credentials"),
+    );
+  }
+  return response.json() as Promise<ValidateModelsConfigResult>;
 }

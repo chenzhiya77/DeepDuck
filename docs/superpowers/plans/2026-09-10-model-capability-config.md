@@ -88,8 +88,53 @@
   未知 → 空）
 - Test: `frontend/tests/unit/models/capability.test.ts`（registry 已知/未知；展开携带；默认∈子集门控）
 
-- [ ] RED → Implement → GREEN + `pnpm check` 双净。
-- [ ] Commit: `feat(frontend): model capability types, validate client, curated capability registry`
+- [x] RED → Implement → GREEN + `pnpm check` 双净。（`capability.test.ts` 新建，**16 绿**：词表常量=后端 200K/400K/1M 与
+  minimal/low/medium/high / registry claude+claude 无强度子集 / gpt-5 全 4 档+默认 medium / gpt-4.1 与 gpt-4o 不串档 /
+  deepseek-reasoner 仅 thinking / deepseek-chat 非推理 / 大小写 / 未知与空 id → `{}` / 返回拷贝不可污染表 /
+  展开携带窗口+强度子集与默认 / 默认 ∉ 子集被丢（窗口、强度各一）/ 空子集不发 `[]` / 无子集时保留旧 `contextWindow` /
+  validate 客户端 POST+body 与错误 detail 映射。既有 `batch.test.ts` 6 例仍绿（旧契约未破）；
+  `tests/unit/models`+`tests/unit/settings` 全绿；`pnpm check`（eslint+tsc）**exit 0**。
+  revert proof：neuter `gatedDefault`（恒返回默认值）⇒ **3 红**（窗口默认、强度默认、空子集）；恢复后全绿）
+- [x] Commit: `feat(frontend): model capability types, validate client, curated capability registry`
+
+#### Task 3 交付纪要（2026-09-10）
+
+- **实现落点**：`core/models/types.ts`（`ReasoningEffortLevel` + `ManagedModel`/`ManagedModelInput` 增
+  `supported_context_windows`/`supported_reasoning_efforts`/`reasoning_effort` + validate 的入参/出参类型）；
+  `core/models/api.ts`（`CONTEXT_WINDOW_OPTIONS`/`REASONING_EFFORT_LEVELS` 常量 + `validateModelsConfig`，
+  失败走 `ModelsConfigRequestError`）；`core/models/batch.ts`（`BatchSharedFields` 增
+  supportedWindows/defaultWindow/supportedEfforts/defaultEffort；`declaredSubset`+`gatedDefault` 门控）；
+  `core/models/capability-registry.ts`（新建）。
+- **curated 表口径（7 行，全部只写厂商明面事实）**：claude→200K+vision+thinking（**不声称强度子集**：Anthropic 是
+  thinking budget，不是 effort 档位）；gpt-5→400K+全 4 档+默认 medium+vision；gpt-4.1→1M+vision；
+  gpt-4o/4-turbo→仅 vision（128K 不在枚举内，故不声明窗口）；o1/o3/o4→200K+low/medium/high+默认 medium；
+  deepseek-reasoner→thinking；deepseek-chat/v3→非 thinking。**未声称**的一律留空，由用户声明（spec §5.3.2 明令不谎称探测）。
+- **函数纯度**：`suggestCapabilities` 对结果做拷贝（含数组），避免调用方原地改表污染后续预填（有测试钉住）；
+  空/空白 id → `{}`。
+- **`defaultWindow` 的语义分隔**：声明了子集 ⇒ 默认必须 ∈ 子集（否则丢弃）；未声明子集 ⇒ 旧 `contextWindow`
+  单值语义原样保留（既有 6 例不破）。空数组视为「未声明」而非「不支持任何档位」，避免提交后端必拒的空列表。
+- **⚠ 计划缺口（Task 3 交付时发现，待确认后补）**：
+  1. **后端 PUT 尚不接收新字段**——`app/gateway/routers/models.py` 的 `ManagedModelInput` 是 `extra="forbid"`
+     且 `put_models_config` 的 entry 字典未含三个新字段，前端一旦提交 `supported_context_windows` 等即 **422**
+     （或若被静默丢弃则能力永不落盘）。计划中 Task 1（harness）/Task 2（validate）/Task 3（前端）**都没有**覆盖写入路径，
+     需补一个小任务（建议「Task 3.5：PUT/GET 透传能力字段 + seam A 测试」）或并入 Task 4。
+  2. **`toManagedInput` 会丢新字段**——`models-settings-page.tsx:30` 逐字段重建 PUT 入参；整体集合写语义下，
+     任意一次保存（增/改/删）都会抹掉**所有其它模型**的能力子集。Task 4 需补该映射并加「保存往返不丢能力」用例。
+  3. **`supports_reasoning_effort` 布尔不在 curated 形状内**（spec 只列了 5 个键）：Task 4 需按
+     `supported_reasoning_efforts` 是否声明来推导该 chip 的预填状态，否则 Task 5 的输入栏门控
+     （`supports_reasoning_effort && mode !== "flash"`）不会亮、强度子集形同虚设。
+  4. curated 形状**不含默认窗口**：Task 4 自行决定预填规则（建议：子集只有一个 → 直接选中；多个 → 留空由用户选）。
+
+## Task 3': 后端 PUT/GET 透传能力字段（seam A 补口，缺口 1）
+
+> 由 Task 3 交付纪要发现：前端已能构造三条新字段，但写入路径不接收 ⇒ 里程碑不可用。
+> 计划原文未列此任务；**待用户确认后**执行（或并入 Task 4）。
+
+**Files:**
+- Modify: `backend/app/gateway/routers/models.py`（`ManagedModelInput` 增 `supported_context_windows`/
+  `supported_reasoning_efforts`/`reasoning_effort`；`ManagedModelResponse` 与其映射同步；`put_models_config`
+  的 entry 字典透传三者） + `backend/tests/test_models_config_api.py`（PUT 后落盘含子集/默认；GET 回读一致；
+  非法组合（默认 ∉ 子集）→ 422；旧客户端不带新字段仍可写）
 
 ## Task 4: 两步向导 + 能力编辑器 + i18n（seam C dom）
 

@@ -24,6 +24,9 @@ export interface ModelsResponse {
 /** Curated provider ids the backend allowlists (maps to a fixed `use:` path). */
 export type ProviderId = "openai-compatible" | "anthropic" | "deepseek";
 
+/** Reasoning-effort levels, in enum order; mirrors the backend `REASONING_EFFORT_LEVELS`. */
+export type ReasoningEffortLevel = "minimal" | "low" | "medium" | "high";
+
 export type ModelSource = "config_file" | "ui";
 
 /** Admin view of one model returned by `GET /api/models/config`. */
@@ -42,6 +45,12 @@ export interface ManagedModel {
   supports_thinking?: boolean;
   supports_vision?: boolean;
   supports_reasoning_effort?: boolean;
+  /** Declared window subset (ascending); null/undefined = never declared. */
+  supported_context_windows?: number[] | null;
+  /** Declared effort subset (enum order); null/undefined = never declared. */
+  supported_reasoning_efforts?: ReasoningEffortLevel[] | null;
+  /** Default effort level; the backend requires it to be a member of the subset. */
+  reasoning_effort?: ReasoningEffortLevel | null;
   context_window?: number | null;
   source: ModelSource;
   editable: boolean;
@@ -63,7 +72,27 @@ export interface ManagedModelInput {
   supports_thinking?: boolean;
   supports_vision?: boolean;
   supports_reasoning_effort?: boolean;
+  supported_context_windows?: number[];
+  supported_reasoning_efforts?: ReasoningEffortLevel[];
+  reasoning_effort?: ReasoningEffortLevel;
   context_window?: number;
   max_tokens?: number;
   use_responses_api?: boolean;
+}
+
+/** Body of `POST /api/models/config/validate` (spec §5.3.2). */
+export interface ValidateModelsConfigInput {
+  provider: ProviderId;
+  /** Provider base URL; the server appends its own model-list path. */
+  endpoint: string;
+  /** Probe-only credential: used for this call and never persisted. */
+  api_key: string;
+  model: string;
+}
+
+/** Outcome of the probe; `detail` is server-authored and never contains the key. */
+export interface ValidateModelsConfigResult {
+  ok: boolean;
+  model_present: boolean;
+  detail: string;
 }
