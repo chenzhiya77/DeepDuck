@@ -170,15 +170,34 @@ AppConfig 按 `name` 合并（**UI 文件覆盖 config.yaml**）+ provider 白�
 
 ## Task 5: 收官——回归 + 文档同步 + 浏览器实测
 
-- [ ] 后端全量相关子集 GREEN + ruff check/format 双净；前端 `pnpm check` 双净 + settings 套件
-      对基线（仅预存无关失败）。
-- [ ] Modify: `README.md`（用户面：网页配模型/批量添加）+ `backend/AGENTS.md`（架构面：新增
+- [x] 后端全量相关子集 GREEN + ruff check/format 双净；前端 `pnpm check` 双净 + settings 套件
+      对基线。—— 后端 `test_models_config`+`test_models_config_api`+`test_doctor_models`+`test_doctor`+
+      `test_support_bundle`+`test_app_config_reload`+`test_models_authorization` **192 passed**；
+      ruff check/format **8 文件双净**。前端 `pnpm check`（eslint+tsc）**EXITCODE=0**；
+      `tests/unit/models`+`tests/unit/settings` **15 passed**。
+- [x] Modify: `README.md`（用户面：网页配模型/批量添加）+ `backend/AGENTS.md`（架构面：新增
       API 可写 models_config.json、合并语义、provider 白名单安全边界；orientation-layer 口径，
       不含 commit hash/RED-GREEN/验收清单）。
-- [ ] Commit: `docs: sync README and agent guide for web model provider config`
-- [ ] 浏览器实测（可选/环境就绪时）：设置→模型→一把 key + 两个 Model ID 批量添加 → 保存 →
-      聊天模型下拉出现两项 → 发一条消息验证热重载生效；截图落 `pr-build/`。环境未就绪则延后
-      并记录（对齐 table-ingest Task 7 纪律）。
+- [x] Commit: `docs: sync README and agent guide for web model provider config`（`aff1b18b`，2 files, +32/-1）
+- [ ] 浏览器实测（**延后**，用户选择「延后并记录」）。原因：本地栈未运行
+      （2026/3000/8001 均未监听），且实测需 admin 账号 + 一个真实 provider key 才能验证
+      「发消息热重载」；按纪律不擅自起栈/改 config/注入 key。
+
+### 交付纪要（2026-09-10）
+
+- **自动化部分全部完成并锁定**：后端 192 passed + ruff 双净；前端 check 双净 + 15 passed；
+      文档同步 `aff1b18b`。三 seam（B 存储/A API/doctor）+ 前端批量添加均已 TDD 落地。
+- **浏览器实测接续清单（环境就绪时）**：
+  1. 起栈：`make dev`（或 `make up`），浏览器开 `http://localhost:2026`；`make doctor` 确认「models configured」。
+  2. 以 **admin** 账号登录 → 设置 → 左导航「模型」分区（非 admin 不见）。
+  3. 点「添加模型」→ 选 provider（如 OpenAI 兼容）+ 填端点/一把 API Key + 两个 Model ID
+     （「+ 添加 Model ID」）→ 添加。
+  4. 核对：列表出现两行（来源徽章「UI·可编辑」）；`GET /api/models` / 聊天模型下拉出现两项；
+     磁盘 `models_config.json` 两条 entry 各带同 key、端点键随 provider（deepseek=`api_base`）。
+  5. 发一条消息验证热重载生效（无需重启）；编辑一行改 display_name/能力→保存→生效；删除一行→集合更新。
+  6. 截图落 `pr-build/`（列表/批量弹窗/聊天下拉）作为 evidence。
+- **非目标（未动，符合 spec §10）**：per-user BYO key/多租户、自由 `use:`、测试连接按钮、
+      `make setup` 写 models_config.json、前端配后端地址。
 
 ## 风险登记（实施期新增即补此行下表）
 
