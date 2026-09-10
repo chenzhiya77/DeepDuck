@@ -315,6 +315,18 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
         if "stream_usage" in getattr(model_class, "model_fields", {}):
             model_settings_from_config["stream_usage"] = True
 
+    # `reasoning_effort` can legitimately arrive from both sides: the caller passes the
+    # run's resolved level (request > agent > model) while a model that declares a
+    # default carries one in its own config (deliberately not excluded above, because
+    # it is a real provider kwarg). Two `**` unpacks of one keyword raise
+    # "got multiple values for keyword argument", so reconcile before constructing:
+    # the caller's level wins, and a caller that left it unset (None) lets the model's
+    # configured default stand instead of clearing it.
+    if kwargs.get("reasoning_effort") is None:
+        kwargs.pop("reasoning_effort", None)
+    else:
+        model_settings_from_config.pop("reasoning_effort", None)
+
     _warn_unknown_model_settings(model_class, name, model_settings_from_config)
 
     model_instance = model_class(**kwargs, **model_settings_from_config)

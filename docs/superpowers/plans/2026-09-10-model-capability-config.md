@@ -295,6 +295,35 @@
   处理：菜单行为由组件级 dom 测试覆盖，「输入栏/侧栏已改走共用解析函数」这一行接线由类型 + 规则测试保证，非端到端 UI 断言。
 - **遗留（未动）**：Task 6（收官：全量回归 + README/AGENTS 文档同步 + 浏览器实测）。
 
+## 回归修复：`reasoning_effort` 双源 kwargs 冲突（2026-09-10，用户实测发现）
+
+**现象**：在设置里配好模型（含默认推理深度）后发起对话，前端控制台/Next 覆盖层报
+`langchain_openai.chat_models.base.ChatOpenAI() got multiple values for keyword argument 'reasoning_effort'`，运行在首 token 前即失败。
+
+**根因（已用测试复现，`factory.py:320`）**：`model_class(**kwargs, **model_settings_from_config)` 是**两次 `**` 展开**，
+同一个关键字出现两次即抛 `TypeError`。而 `reasoning_effort` 恰好**两源都可能有**：
+- `model_settings_from_config` 侧：T1 有意**不把** `reasoning_effort` 排除出 provider 参数（它是真实 provider kwarg），
+  于是模型一旦声明默认档，`model_dump(exclude_none=True)` 就把它带进构造参数；
+- `kwargs` 侧：lead agent 一直显式传 `reasoning_effort=`（T5 后该值就是解析出的「模型默认」）。
+
+触发条件 = 「模型声明了 `reasoning_effort`」——正是 T4 向导新增的能力字段落盘后的必然状态；此前没有任何 model 配置带这个键，
+所以冲突不可达（T1 的 factory 测试也没覆盖「模型自带默认 + 调用方同时传值」这一组合）。
+
+**修复**：构造前统一收敛到一处（工厂层，覆盖全部调用方，含 `title_middleware` 等 `**model_kwargs` 路径）——
+调用方传了非 None 档位 ⇒ 调用方胜出并从配置侧删键；调用方传 None ⇒ 视为「未设置」从 kwargs 删键、让模型配置默认生效；
+调用方不传 ⇒ 配置默认原样生效（Codex 分支自己已 pop，天然不受影响）。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/models/factory.py`（构造前协调 `reasoning_effort` 双源）
+- Test: `backend/tests/test_model_factory.py`（+4：模型默认透传 / 调用方同值不冲突（回归）/ 调用方不同值胜出 / 调用方 None 保留默认）
+
+- [x] RED → Implement → GREEN。（RED：`-k "declared_default or collide or wins_over or none_lets"` ⇒ 3 failed（三例均在
+  `factory.py:320` 抛同一个 `got multiple values for keyword argument 'reasoning_effort'`，与用户截图一致）、1 passed
+  （调用方不传键的用例不触发冲突）；修复后 `test_model_factory.py` **87 绿**；回归
+  factory+lead_agent+models_config_api+models_config+client **370 绿**（唯一失败为已复证的环境性
+  `test_missing_models_file_falls_back_to_config_yaml`）；ruff check+format 双净）
+- [x] Commit: `fix(models): reconcile caller and model-default reasoning_effort before construction`
+
 ## Task 6: 收官——回归 + 文档同步 + 浏览器实测
 
 - [ ] 后端相关子集 GREEN + ruff 双净；前端 `pnpm check` 双净 + models/settings/input-box 套件对基线。
@@ -309,6 +338,7 @@
 | 风险 | 触发任务 | 缓解 |
 |---|---|---|
 | 新字段泄漏进 provider 构造 kwargs | T1 | factory 排除 + seam B 钉住「不进 kwargs」 |
+| `reasoning_effort` 同时来自调用方与模型配置 ⇒ 构造期重复关键字 TypeError | T1×T4/T5 交互（实测已触发） | factory 构造前统一收敛（调用方非 None 胜出、None 视为未设置、不传则配置默认生效）+ seam B 四例回归 |
 | validate 端点被滥用做 SSRF/自由 URL | T2 | 只收白名单 provider + 端点键映射拼 URL；admin 门控；有界超时 |
 | 默认窗口/强度 ∉ 子集的非法组合 | T1/T4 | 配置层校验 + 前端提交门控双保险 |
 | 旧 config 无新字段被误判损坏 | T1/T4 | 新字段全可选 + 向后兼容显示（默认=context_window / 全 4 档） |

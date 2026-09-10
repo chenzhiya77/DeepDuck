@@ -30,6 +30,8 @@ def _make_model(
     use: str = "langchain_openai:ChatOpenAI",
     supports_thinking: bool = False,
     supports_reasoning_effort: bool = False,
+    reasoning_effort: str | None = None,
+    supported_reasoning_efforts: list[str] | None = None,
     when_thinking_enabled: dict | None = None,
     when_thinking_disabled: dict | None = None,
     thinking: dict | None = None,
@@ -44,6 +46,8 @@ def _make_model(
         max_tokens=max_tokens,
         supports_thinking=supports_thinking,
         supports_reasoning_effort=supports_reasoning_effort,
+        reasoning_effort=reasoning_effort,
+        supported_reasoning_efforts=supported_reasoning_efforts,
         when_thinking_enabled=when_thinking_enabled,
         when_thinking_disabled=when_thinking_disabled,
         thinking=thinking,
@@ -1632,3 +1636,66 @@ def test_codex_still_strips_overridden_max_tokens(monkeypatch):
     factory_module.create_chat_model(name="codex", model_overrides={"max_tokens": 9999})
 
     assert "max_tokens" not in captured
+
+
+def _capture_constructor_kwargs(monkeypatch, cfg, captured: dict):
+    class CapturingModel(FakeChatModel):
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            BaseChatModel.__init__(self, **kwargs)
+
+    _patch_factory(monkeypatch, cfg)
+    monkeypatch.setattr(factory_module, "resolve_class", lambda path, base: CapturingModel)
+
+
+def _defaulted_model():
+    return _make_model(
+        "defaulted",
+        supports_thinking=True,
+        supports_reasoning_effort=True,
+        reasoning_effort="high",
+        supported_reasoning_efforts=["low", "high"],
+    )
+
+
+def test_model_declared_default_effort_reaches_the_client(monkeypatch):
+    """A model's configured default is forwarded when the caller sends no level."""
+    captured: dict = {}
+    _capture_constructor_kwargs(monkeypatch, _make_app_config([_defaulted_model()]), captured)
+
+    factory_module.create_chat_model(name="defaulted", thinking_enabled=True)
+
+    assert captured.get("reasoning_effort") == "high"
+
+
+def test_caller_effort_does_not_collide_with_the_model_default(monkeypatch):
+    """Regression (2026-09-10): the caller's resolved level and the model's own
+    default both reach the constructor, and two ``**`` unpacks of one keyword raised
+    ``got multiple values for keyword argument 'reasoning_effort'`` — which made every
+    run against a model with a configured default fail before the first token."""
+    captured: dict = {}
+    _capture_constructor_kwargs(monkeypatch, _make_app_config([_defaulted_model()]), captured)
+
+    factory_module.create_chat_model(name="defaulted", thinking_enabled=True, reasoning_effort="high")
+
+    assert captured.get("reasoning_effort") == "high"
+
+
+def test_caller_effort_wins_over_the_model_default(monkeypatch):
+    """request > agent > model: an explicit level outranks the configured default."""
+    captured: dict = {}
+    _capture_constructor_kwargs(monkeypatch, _make_app_config([_defaulted_model()]), captured)
+
+    factory_module.create_chat_model(name="defaulted", thinking_enabled=True, reasoning_effort="low")
+
+    assert captured.get("reasoning_effort") == "low"
+
+
+def test_caller_none_lets_the_model_default_stand(monkeypatch):
+    """``reasoning_effort=None`` from a caller means "unset", not "clear it"."""
+    captured: dict = {}
+    _capture_constructor_kwargs(monkeypatch, _make_app_config([_defaulted_model()]), captured)
+
+    factory_module.create_chat_model(name="defaulted", thinking_enabled=True, reasoning_effort=None)
+
+    assert captured.get("reasoning_effort") == "high"
