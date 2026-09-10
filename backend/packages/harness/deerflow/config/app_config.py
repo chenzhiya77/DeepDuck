@@ -26,6 +26,7 @@ from deerflow.config.input_polish_config import InputPolishConfig
 from deerflow.config.loop_detection_config import LoopDetectionConfig
 from deerflow.config.memory_config import MemoryConfig, load_memory_config_from_dict
 from deerflow.config.model_config import ModelConfig
+from deerflow.config.models_config import ModelsConfig, merge_ui_models
 from deerflow.config.read_before_write_config import ReadBeforeWriteConfig
 from deerflow.config.reload_boundary import format_field_description
 from deerflow.config.run_events_config import RunEventsConfig
@@ -402,6 +403,10 @@ class AppConfig(BaseModel):
     _models_by_name: dict[str, ModelConfig] = PrivateAttr(default_factory=dict)
     _tools_by_name: dict[str, ToolConfig] = PrivateAttr(default_factory=dict)
     _tool_groups_by_name: dict[str, ToolGroupConfig] = PrivateAttr(default_factory=dict)
+    # Names of models sourced from the API-writable models_config.json (spec
+    # 2026-09-10 §5.2). Derived at load, never written back to any config file;
+    # kept off ModelConfig itself so it can never leak into provider kwargs.
+    _ui_model_names: set[str] = PrivateAttr(default_factory=set)
 
     @model_validator(mode="before")
     @classmethod
@@ -496,7 +501,15 @@ class AppConfig(BaseModel):
             extensions_data.update(yaml_extensions_config.model_dump(by_alias=True, exclude_unset=True))
         config_data["extensions"] = extensions_data
 
+        # Merge the API-writable models file (models_config.json) over the
+        # config.yaml `models:` list: union by name, UI-managed entry winning
+        # collisions (spec 2026-09-10 §5.2). config.yaml is never written back.
+        ui_models_config = ModelsConfig.from_file()
+        ui_model_names = {model.name for model in ui_models_config.models}
+        config_data["models"] = merge_ui_models(config_data.get("models") or [], ui_models_config)
+
         result = cls.model_validate(config_data)
+        result._ui_model_names = ui_model_names
         if not result.models:
             logger.warning(
                 "No models are configured in %s. Add at least one entry under `models:` (see the commented examples in config.example.yaml) or run `make setup`.",
@@ -670,6 +683,14 @@ class AppConfig(BaseModel):
         """
         return self._models_by_name.get(name)
 
+    def is_ui_managed_model(self, name: str) -> bool:
+        """Return True when *name* came from the API-writable models_config.json.
+
+        Drives the settings UI's read-only vs editable distinction (spec §5.2):
+        config.yaml-sourced models are display-only, UI-managed ones editable.
+        """
+        return name in self._ui_model_names
+
     def get_tool_config(self, name: str) -> ToolConfig | None:
         """Get the tool config by name.
 
@@ -700,6 +721,7 @@ _app_config: AppConfig | None = None
 _app_config_path: Path | None = None
 _app_config_mtime: float | None = None
 _app_config_signature: _ConfigSignature | None = None
+_app_config_models_signature: _ConfigSignature | None = None
 _app_config_is_custom = False
 _current_app_config: ContextVar[AppConfig | None] = ContextVar("deerflow_current_app_config", default=None)
 _current_app_config_stack: ContextVar[tuple[AppConfig | None, ...]] = ContextVar("deerflow_current_app_config_stack", default=())
@@ -713,15 +735,32 @@ def _get_config_mtime(config_path: Path) -> float | None:
         return None
 
 
+def _get_models_config_signature() -> _ConfigSignature | None:
+    """Get the content signature of the API-writable models file, if present.
+
+    Tracked separately from config.yaml so an edit to ``models_config.json``
+    alone triggers an AppConfig reload (spec 2026-09-10 §5.6). A missing file or
+    an unresolvable path yields ``None`` (the file is optional).
+    """
+    try:
+        models_path = ModelsConfig.resolve_config_path()
+    except FileNotFoundError:
+        return None
+    if models_path is None:
+        return None
+    return _get_config_signature(models_path)
+
+
 def _load_and_cache_app_config(config_path: str | None = None) -> AppConfig:
     """Load config from disk and refresh cache metadata."""
-    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_is_custom
+    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_is_custom
 
     resolved_path = AppConfig.resolve_config_path(config_path)
     _app_config = AppConfig.from_file(str(resolved_path))
     _app_config_path = resolved_path
     _app_config_mtime = _get_config_mtime(resolved_path)
     _app_config_signature = _get_config_signature(resolved_path)
+    _app_config_models_signature = _get_models_config_signature()
     _app_config_is_custom = False
     return _app_config
 
@@ -746,8 +785,9 @@ def get_app_config() -> AppConfig:
     resolved_path = AppConfig.resolve_config_path()
     current_mtime = _get_config_mtime(resolved_path)
     current_signature = _get_config_signature(resolved_path)
+    current_models_signature = _get_models_config_signature()
 
-    should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_signature != current_signature
+    should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_signature != current_signature or _app_config_models_signature != current_models_signature
     if should_reload:
         if _app_config_path == resolved_path and _app_config_mtime is not None and current_mtime is not None and _app_config_mtime != current_mtime:
             logger.info(
@@ -757,6 +797,8 @@ def get_app_config() -> AppConfig:
             )
         elif _app_config_path == resolved_path and _app_config_signature != current_signature:
             logger.info("Config file content signature changed, reloading AppConfig")
+        elif _app_config_path == resolved_path and _app_config_models_signature != current_models_signature:
+            logger.info("Models config file changed, reloading AppConfig")
         _load_and_cache_app_config(str(resolved_path))
     return _app_config
 
@@ -784,11 +826,12 @@ def reset_app_config() -> None:
     `get_app_config()` to reload from file. Useful for testing
     or when switching between different configurations.
     """
-    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_is_custom
+    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_is_custom
     _app_config = None
     _app_config_path = None
     _app_config_mtime = None
     _app_config_signature = None
+    _app_config_models_signature = None
     _app_config_is_custom = False
 
 
@@ -800,11 +843,12 @@ def set_app_config(config: AppConfig) -> None:
     Args:
         config: The AppConfig instance to use.
     """
-    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_is_custom
+    global _app_config, _app_config_path, _app_config_mtime, _app_config_signature, _app_config_models_signature, _app_config_is_custom
     _app_config = config
     _app_config_path = None
     _app_config_mtime = None
     _app_config_signature = None
+    _app_config_models_signature = None
     _app_config_is_custom = True
 
 
