@@ -673,3 +673,117 @@ def test_known_gaps_do_not_reclassify_current_events_as_missing():
 
     assert {"tool-call-intent", "terminal-run-status"}.issubset(gap_ids)
     assert all(gap.get("event_type") not in current_types for gap in contract["known_gaps"])
+
+
+# --------------------------------------------------------------------------- #
+# run.delivery — the terminal delivery receipt
+# --------------------------------------------------------------------------- #
+# Spec: docs/superpowers/specs/2026-09-12-harness-delivery-layer-design.md §3.
+# The event shipped with a producer and no declaration anywhere (not in this
+# contract, not in the catalog, not in the docs, not even in ``known_gaps``), so
+# an undeclared payload was one refactor away from silently changing shape under
+# whatever consumed it first.
+DELIVERY_STAGES = ("presented", "mismatched", "not_started")
+
+
+def _delivery_event(content: dict) -> dict:
+    """The full persisted record, because that is what a consumer receives."""
+    return {
+        "thread_id": "thread-delivery",
+        "run_id": "run-delivery",
+        "seq": 1,
+        "event_type": "run.delivery",
+        "category": "outputs",
+        "content": content,
+        "metadata": {},
+        "created_at": "2026-09-12T00:00:00+00:00",
+    }
+
+
+def test_run_delivery_is_declared_in_the_contract_and_the_catalog():
+    from deerflow.runtime.events.catalog import DELIVERY_RUN_EVENT_DEFINITIONS, FIXED_RUN_EVENT_DEFINITIONS
+
+    declared = {definition.event_type: definition.category for definition in DELIVERY_RUN_EVENT_DEFINITIONS}
+    assert declared == {"run.delivery": "outputs"}
+
+    # Defining the family is not publishing it: an event the contract knows about
+    # must be reachable through FIXED_RUN_EVENT_DEFINITIONS, which is what the
+    # runtime and the contract are reconciled against.
+    published = {(definition.event_type, definition.category) for definition in FIXED_RUN_EVENT_DEFINITIONS}
+    assert ("run.delivery", "outputs") in published, "run.delivery is defined but not published through FIXED_RUN_EVENT_DEFINITIONS"
+
+    contract_event = _contract_events().get("run.delivery")
+    assert contract_event is not None, "run.delivery has a producer but is not declared in the contract"
+    assert contract_event["category"] == "outputs", "the runtime writes category=outputs; changing it would be a breaking change"
+
+
+def test_run_delivery_base_shape_matches_the_contract():
+    """The shape most runs emit — a fact record, with no verdict on it."""
+    event = _delivery_event(
+        {"presented": 0, "paths": [], "by_tool": {}},
+    )
+
+    _assert_fixed_event_valid(event, persisted=True)
+
+
+def test_run_delivery_verdict_shape_matches_the_contract():
+    """The shape a run that produced outputs emits."""
+    event = _delivery_event(
+        {
+            "presented": 3,
+            "paths": ["/mnt/user-data/outputs/report.md"],
+            "by_tool": {"present_files": ["/mnt/user-data/outputs/report.md"]},
+            "verification": {
+                "source": "outputs_changed",
+                "requirement": "present_files_matches_produced_output",
+            },
+            "produced_paths": ["/mnt/user-data/outputs/report.md"],
+            "presented_paths": ["/mnt/user-data/outputs/report.md"],
+            "matched_paths": ["/mnt/user-data/outputs/report.md"],
+            "stage": "presented",
+            "satisfied": True,
+        },
+    )
+
+    _assert_fixed_event_valid(event, persisted=True)
+
+
+def test_run_delivery_stage_vocabulary_is_pinned_by_the_contract():
+    contract_event = _contract_events()["run.delivery"]
+    stage_schema = contract_event["content_schema"]["properties"]["stage"]
+
+    assert stage_schema["enum"] == list(DELIVERY_STAGES), "the three verdict states are a contract, not an implementation detail"
+
+
+@pytest.mark.parametrize(
+    ("presented", "expected_stage"),
+    [
+        # Presented path covers the produced one.
+        (["/out/a.md"], "presented"),
+        # Something was presented, but none of it covers what this run produced.
+        (["/out/other.md"], "mismatched"),
+        # Nothing was presented at all.
+        ([], "not_started"),
+    ],
+)
+def test_run_delivery_stage_vocabulary_matches_the_producer(presented, expected_stage):
+    """The producer's vocabulary and the contract's enum must not drift apart.
+
+    The function derives ``stage`` itself from produced-vs-presented, so this
+    drives all three branches through the real code and checks each one against
+    the contract's enum — locking the runtime and the declaration together
+    rather than a local tuple that agrees with itself.
+    """
+    from deerflow.runtime.runs.worker import _delivery_content_with_outputs
+
+    enum = _contract_events()["run.delivery"]["content_schema"]["properties"]["stage"]["enum"]
+    produced = ["/out/a.md"]
+
+    content = _delivery_content_with_outputs(
+        {"presented": len(presented), "paths": presented, "by_tool": {"present_files": presented}},
+        produced,
+    )
+
+    assert content["stage"] == expected_stage
+    assert content["stage"] in enum, f"{content['stage']!r} is produced but not declared in the contract"
+    assert content["satisfied"] is (expected_stage == "presented")

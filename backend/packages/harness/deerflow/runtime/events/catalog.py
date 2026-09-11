@@ -74,6 +74,14 @@ SUBAGENT_END_EVENT = RunEventDefinition("subagent.end", "subagent")
 
 WORKSPACE_CHANGES_EVENT = RunEventDefinition(WORKSPACE_CHANGES_EVENT_TYPE, WORKSPACE_CHANGES_EVENT_CATEGORY)
 
+# Terminal delivery receipt for a run: what it produced under outputs, and whether
+# ``present_files`` actually handed it over. Written by the run worker (and
+# backfilled by the manager during orphan recovery), never by the journal — so it
+# belongs in its own family rather than JOURNAL_RUN_EVENT_DEFINITIONS, whose test
+# asserts an exact match against the events the journal itself observes.
+# Spec: docs/superpowers/specs/2026-09-12-harness-delivery-layer-design.md
+RUN_DELIVERY_EVENT = RunEventDefinition("run.delivery", "outputs")
+
 MIDDLEWARE_EVENT_PATTERN = RunEventPattern(
     pattern="middleware:{tag}",
     prefix="middleware:",
@@ -125,8 +133,11 @@ SUBAGENT_RUN_EVENT_DEFINITIONS = (
 
 WORKSPACE_RUN_EVENT_DEFINITIONS = (WORKSPACE_CHANGES_EVENT,)
 
+DELIVERY_RUN_EVENT_DEFINITIONS = (RUN_DELIVERY_EVENT,)
+
 FIXED_RUN_EVENT_DEFINITIONS = (
     *JOURNAL_RUN_EVENT_DEFINITIONS,
     *SUBAGENT_RUN_EVENT_DEFINITIONS,
     *WORKSPACE_RUN_EVENT_DEFINITIONS,
+    *DELIVERY_RUN_EVENT_DEFINITIONS,
 )

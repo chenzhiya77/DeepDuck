@@ -53,7 +53,7 @@ through run-event or specialized APIs:
 | Category | Purpose |
 | --- | --- |
 | `trace` | Execution evidence. |
-| `outputs` | Root graph completion output. |
+| `outputs` | Root graph completion output and terminal delivery receipt. |
 | `error` | Callback-observed failure evidence. |
 | `middleware` | Middleware state-change audit evidence. |
 | `context` | Effective hidden-context identity. |
@@ -188,6 +188,23 @@ string `task_id`; `task_running` additionally requires a non-negative integer
 category `workspace` when a run changed files. Its string content is a summary;
 the structured versioned summary, file list, and limits live in
 `metadata.workspace_changes`.
+
+`runtime.runs.worker._persist_delivery_receipt()` writes `run.delivery` in
+category `outputs` once per run, through an idempotent write so crash recovery can
+safely backfill it. It answers "did this run hand over what it produced" —
+`presented` / `paths` / `by_tool` record what `present_files` handed over, and a
+run that **produced** output artifacts additionally carries a verdict:
+`verification`, `produced_paths`, `presented_paths`, `matched_paths`, `stage`
+(`presented` | `mismatched` | `not_started`) and `satisfied`.
+
+**Two shapes, and the verdict is the switch.** A run that produced no output
+artifacts emits only the base record, with no verdict fields at all — that is the
+majority shape, so a consumer must switch on the presence of `satisfied`, never on
+the event's presence. Note also that `satisfied` means *at least one* produced
+output was handed over: `matched_paths` may be shorter than `produced_paths`, so
+`presented` is not a claim that everything was handed over. A run that produced
+outputs without satisfying delivery ends as `error` with
+`Artifact delivery incomplete: no produced output artifact was presented`.
 
 The JSON contract defines required and optional payload fields using JSON
 Schema. It is the authoritative field-level reference.

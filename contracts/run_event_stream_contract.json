@@ -63,7 +63,7 @@
   "categories": {
     "trace": "Execution evidence that is excluded from message projections.",
     "message": "A candidate message projection. Server and frontend visibility filters still apply.",
-    "outputs": "Root graph completion output; not an authoritative run lifecycle status.",
+    "outputs": "Root graph completion output (run.end) plus the terminal delivery receipt (run.delivery); neither is an authoritative run lifecycle status.",
     "error": "Callback-observed run or chain failure evidence.",
     "middleware": "Middleware state-change audit evidence.",
     "context": "Identity-only evidence about effective hidden context.",
@@ -404,6 +404,29 @@
         },
         "additionalProperties": true
       }
+    },
+    {
+      "event_type": "run.delivery",
+      "category": "outputs",
+      "producer": "runtime.runs.worker._persist_delivery_receipt",
+      "content_description": "Terminal delivery receipt: what this run produced under outputs, and whether present_files actually handed it over. Two shapes — a run that produced no output artifacts emits the base record with no verdict fields at all (the majority shape); the verdict is attached only when produced_paths is non-empty. Switch on the verdict's presence (satisfied), never on the event's. satisfied is true when at least one produced output is covered by a presented path, so matched_paths may still be shorter than produced_paths.",
+      "content_schema": {
+        "type": "object",
+        "required": ["presented"],
+        "properties": {
+          "presented": {"type": "integer", "minimum": 0, "description": "How many paths present_files handed over. The base record is a fact, not a verdict."},
+          "paths": {"type": "array", "items": {"type": "string"}},
+          "by_tool": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+          "verification": {"type": "object", "required": ["source", "requirement"], "properties": {"source": {"type": "string"}, "requirement": {"type": "string"}}, "additionalProperties": true, "description": "Which rule produced the verdict. Present only alongside one."},
+          "produced_paths": {"type": "array", "items": {"type": "string"}, "description": "Regular files created or modified under /mnt/user-data/outputs by this run."},
+          "presented_paths": {"type": "array", "items": {"type": "string"}},
+          "matched_paths": {"type": "array", "items": {"type": "string"}, "description": "Produced paths a presented path covers. Non-empty is what makes satisfied true; it may be shorter than produced_paths."},
+          "stage": {"enum": ["presented", "mismatched", "not_started"], "description": "presented = at least one produced output was handed over; mismatched = something was handed over but none of it covers this run's output; not_started = nothing was handed over."},
+          "satisfied": {"type": "boolean", "description": "The verdict. Absent on the base record, so its presence — not the event's — is what a consumer switches on."}
+        },
+        "additionalProperties": true
+      },
+      "metadata_schema": {"type": "object", "additionalProperties": true}
     }
   ],
   "dynamic_event_patterns": [
