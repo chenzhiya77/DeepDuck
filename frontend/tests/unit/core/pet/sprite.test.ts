@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, test } from "@rstest/core";
 
 import {
@@ -9,6 +12,9 @@ import {
 import type { PetState } from "@/core/pet/state";
 
 import parrotManifest from "../../../../public/pet/parrot/manifest.json";
+
+/** 渲染器按 `/pet/parrot/{sprite}.webp` 取图,这里复现同一约定去落盘找文件 */
+const PARROT_DIR = join(import.meta.dirname, "../../../../public/pet/parrot");
 
 function state(overrides: Partial<PetState> = {}): PetState {
   return {
@@ -130,6 +136,14 @@ describe("parrot manifest self-consistency (spec §8)", () => {
 
     test(`${name}: sheet height is frameHeight`, () => {
       expect(entry.sheetHeight).toBe(parrotManifest.frameHeight);
+    });
+
+    // 上面的算术断言查不出「声明了 sheet 却没把文件提进来」—— manifest 自己
+    // 完全自洽,应用却指向一个仓库里不存在的文件。真发生不至于白屏(解码门的
+    // 「失败就不换」会留着上一张),但首帧直接落在该态上就是一个空盒子。
+    test(`${name}: the declared sheet file exists`, () => {
+      const sheet = join(PARROT_DIR, `${name}.webp`);
+      expect(existsSync(sheet), `missing ${sheet}`).toBe(true);
     });
   }
 });
