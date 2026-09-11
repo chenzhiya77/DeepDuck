@@ -74,6 +74,7 @@ export function ModelsAddDialog({
   );
   const [suggested, setSuggested] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
 
   function updateModelId(index: number, value: string) {
@@ -91,6 +92,7 @@ export function ModelsAddDialog({
     setCapability(emptyCapabilityValue());
     setSuggested(false);
     setError(null);
+    setWarning(null);
     setValidating(false);
   }
 
@@ -116,6 +118,8 @@ export function ModelsAddDialog({
 
     setError(null);
     setValidating(true);
+    // Non-blocking advice rides along: the probe tolerates a method path, the runtime does not.
+    let advice: string | null = null;
     try {
       for (const modelId of ids) {
         const result = await validateModelsConfig({
@@ -128,6 +132,7 @@ export function ModelsAddDialog({
           setError(`${M.validateFailed} ${result.detail}`);
           return;
         }
+        advice = advice ?? result.warning ?? null;
       }
     } catch (validationError) {
       setError(`${M.validateFailed} ${(validationError as Error).message}`);
@@ -146,6 +151,7 @@ export function ModelsAddDialog({
         seed.supportsThinking ||
         seed.supportsVision,
     );
+    setWarning(advice);
     setStep("capabilities");
   }
 
@@ -322,7 +328,15 @@ export function ModelsAddDialog({
                 )}
               </div>
             ) : (
-              <div className="py-1">
+              <div className="flex flex-col gap-3 py-1">
+                {warning && (
+                  <p
+                    className="text-muted-foreground text-sm"
+                    role="status"
+                  >
+                    {warning}
+                  </p>
+                )}
                 <ModelCapabilityEditor
                   value={capability}
                   onChange={setCapability}

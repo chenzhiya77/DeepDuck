@@ -157,7 +157,10 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   a key of its own. Adding a chat model is a **two-step wizard** (`models-add-dialog.tsx`): step 1
   collects identity + credentials (provider / endpoint / api_key / one or more Model IDs) and its
   **Next** button runs `POST /api/models/config/validate` first, so a bad key or an unknown Model ID is
-  caught before anything is stored — step 2 is unreachable until that probe passes. Step 2 is
+  caught before anything is stored — step 2 is unreachable until that probe passes. The probe's
+  optional `warning` (the endpoint path looks like a method or model-list URL) rides along to step 2
+  as a `role="status"` note instead of blocking, because the probe tolerates that value while the
+  runtime does not. Step 2 is
   `model-capability-editor.tsx`: supported context windows (200K/400K/1M) plus the default, the
   vision/thinking chips, and the supported reasoning-effort levels plus the default.
   `core/models/capability-registry.ts` prefills a **suggested** set for known model ids, and the UI

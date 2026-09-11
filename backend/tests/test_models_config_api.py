@@ -370,6 +370,94 @@ def test_validate_rejects_unknown_provider(config_env: Path, monkeypatch: pytest
     assert upstream.get.await_count == 0
 
 
+# ── validate: complete-path endpoint advisory (soft, never blocks) ─────────
+
+
+def test_validate_warns_when_the_endpoint_is_a_method_path(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """A base-URL field holding `.../chat/completions` is a common paste; say so."""
+    _seed(config_env)
+    _mock_upstream(monkeypatch, payload={"data": [{"id": "deepseek-chat"}]})
+
+    with _client(system_role="admin") as client:
+        response = client.post(
+            "/api/models/config/validate",
+            json={**_VALID_BODY, "endpoint": "https://ds.example/v1/chat/completions"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True  # soft: the probe result is unchanged
+    assert "/chat/completions" in body["warning"]
+    assert "base URL" in body["warning"]
+
+
+def test_validate_warns_on_the_anthropic_messages_path(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed(config_env)
+    _mock_upstream(monkeypatch, payload={"data": [{"id": "claude-sonnet-4"}]})
+
+    with _client(system_role="admin") as client:
+        response = client.post(
+            "/api/models/config/validate",
+            json={"provider": "anthropic", "endpoint": "https://api.anthropic.com/v1/messages", "api_key": "sk-ant", "model": "claude-sonnet-4"},
+        )
+
+    assert response.status_code == 200
+    assert "/messages" in response.json()["warning"]
+
+
+def test_validate_warns_about_a_model_list_paste_even_though_the_probe_tolerates_it(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The probe strips a trailing `/models`, but storing that value still breaks runtime."""
+    _seed(config_env)
+    upstream = _mock_upstream(monkeypatch, payload={"data": [{"id": "deepseek-chat"}]})
+
+    with _client(system_role="admin") as client:
+        response = client.post("/api/models/config/validate", json={**_VALID_BODY, "endpoint": "https://ds.example/v1/models"})
+
+    body = response.json()
+    assert upstream.get.await_args.args[0] == "https://ds.example/v1/models"  # tolerated, no duplication
+    assert body["ok"] is True
+    assert "/models" in body["warning"]
+
+
+def test_validate_warning_survives_a_failed_probe(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The advice matters most when the probe just failed."""
+    _seed(config_env)
+    _mock_upstream(monkeypatch, error=httpx.ConnectError("connection refused"))
+
+    with _client(system_role="admin") as client:
+        response = client.post(
+            "/api/models/config/validate",
+            json={**_VALID_BODY, "endpoint": "https://ds.example/v1/chat/completions"},
+        )
+
+    body = response.json()
+    assert body["ok"] is False
+    assert "base URL" in body["warning"]
+
+
+def test_validate_has_no_warning_for_a_base_url(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed(config_env)
+    _mock_upstream(monkeypatch, payload={"data": [{"id": "deepseek-chat"}]})
+
+    with _client(system_role="admin") as client:
+        response = client.post("/api/models/config/validate", json={**_VALID_BODY, "endpoint": "https://ds.example/v1"})
+
+    assert "warning" not in response.json()  # absent, not null — the wire stays additive
+
+
+def test_validate_warning_ignores_a_query_string(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    _seed(config_env)
+    _mock_upstream(monkeypatch, error=httpx.ConnectError("connection refused"))
+
+    with _client(system_role="admin") as client:
+        response = client.post(
+            "/api/models/config/validate",
+            json={**_VALID_BODY, "endpoint": "https://ds.example/v1/chat/completions?api-version=2024-10-21"},
+        )
+
+    assert "base URL" in response.json()["warning"]
+
+
 def test_validate_rejects_non_http_endpoint(config_env: Path, monkeypatch: pytest.MonkeyPatch):
     _seed(config_env)
     upstream = _mock_upstream(monkeypatch, payload={"data": []})

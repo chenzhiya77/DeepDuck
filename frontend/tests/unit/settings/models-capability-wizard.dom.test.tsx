@@ -149,6 +149,43 @@ describe("ModelsAddDialog two-step wizard", () => {
     expect(screen.getByText(M.stepIdentity)).toBeDefined();
   });
 
+  it("surfaces the probe's endpoint advice on step 2 without blocking", async () => {
+    fetchMock.fetch.mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        model_present: true,
+        detail: "Model 'model-a' is available.",
+        warning:
+          "The endpoint path ends with '/chat/completions' (chat completions). Use the base URL.",
+      }),
+    );
+    renderAddDialog(rs.fn());
+    fillIdentity({
+      ids: ["model-a"],
+      endpoint: "https://ds.example/v1/chat/completions",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+
+    // Soft: the wizard still advances, the advice rides along.
+    await waitFor(() =>
+      expect(screen.getByText(M.stepCapabilities)).toBeDefined(),
+    );
+    expect(screen.getByText(/Use the base URL/)).toBeDefined();
+  });
+
+  it("shows no endpoint advice when the probe reports none", async () => {
+    renderAddDialog(rs.fn());
+    fillIdentity({ ids: ["model-a"] });
+
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+
+    await waitFor(() =>
+      expect(screen.getByText(M.stepCapabilities)).toBeDefined(),
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("requires an endpoint and a key before probing", async () => {
     renderAddDialog(rs.fn());
     fireEvent.change(screen.getByPlaceholderText(M.modelIdPlaceholder), {

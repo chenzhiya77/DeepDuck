@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -303,6 +304,33 @@ class ModelsConfigValidateResponse(BaseModel):
     ok: bool = Field(..., description="True when the endpoint answered with a model list.")
     model_present: bool = Field(..., description="True when the requested model id appears in that list.")
     detail: str = Field(..., description="Why the probe succeeded or failed.")
+    warning: str | None = Field(default=None, description="Non-blocking advice about the submitted endpoint (spec: base-URL field holding a method or model-list path); absent when there is nothing to say.")
+
+
+#: Path segments that mean the value in the endpoint field is a *method or list URL*, not the
+#: base URL the client will use. The probe tolerates them (it strips and re-joins the path), so
+#: without this advisory a wrong value validates here and then fails on the first real call.
+_ENDPOINT_PATH_ADVICE: tuple[tuple[str, str], ...] = (
+    ("/chat/completions", "chat completions"),
+    ("/completions", "completions"),
+    ("/messages", "messages"),
+    ("/responses", "responses"),
+    ("/models", "the model list"),
+)
+
+
+def _endpoint_path_warning(endpoint: str) -> str | None:
+    """Advice when the submitted endpoint carries a method or model-list path.
+
+    Purely advisory: the probe already tolerates these values, but the stored value is used
+    verbatim at runtime, where a complete path (`.../v1/chat/completions`) makes the client
+    append its own path and 404. Query strings and fragments are ignored.
+    """
+    path = urlsplit(endpoint.strip()).path.rstrip("/")
+    for suffix, label in _ENDPOINT_PATH_ADVICE:
+        if path.endswith(suffix):
+            return f"The endpoint path ends with '{suffix}' ({label}). Use the base URL — the client appends its own path — otherwise this value may validate here and still fail when the model is used."
+    return None
 
 
 def _models_probe_url(endpoint: str, models_path: str) -> str:
@@ -340,8 +368,8 @@ def _extract_model_ids(payload: Any) -> list[str] | None:
     return ids
 
 
-def _probe_failure(detail: str) -> ModelsConfigValidateResponse:
-    return ModelsConfigValidateResponse(ok=False, model_present=False, detail=detail)
+def _probe_failure(detail: str, warning: str | None = None) -> ModelsConfigValidateResponse:
+    return ModelsConfigValidateResponse(ok=False, model_present=False, detail=detail, warning=warning)
 
 
 def _managed_response(
@@ -432,6 +460,9 @@ async def get_models_config(
 @router.post(
     "/models/config/validate",
     response_model=ModelsConfigValidateResponse,
+    # Additive wire: `warning` is a new, optional field, so it must be absent (not null) when
+    # there is nothing to say — older clients keep seeing exactly the response they used to.
+    response_model_exclude_none=True,
     summary="Validate Model Credentials (admin)",
     description="Probe the provider's model list with the submitted credentials. Nothing is persisted.",
 )
@@ -455,30 +486,31 @@ async def validate_models_config(
     models_path = _ANTHROPIC_MODELS_PATH if body.provider == "anthropic" else _DEFAULT_MODELS_PATH
     url = _models_probe_url(body.endpoint, models_path)
     headers = _models_probe_headers(body.provider, body.api_key)
+    warning = _endpoint_path_warning(body.endpoint)
 
     try:
         async with httpx.AsyncClient(timeout=_VALIDATE_TIMEOUT_SECONDS) as client:
             response = await client.get(url, headers=headers)
     except (httpx.HTTPError, httpx.InvalidURL) as exc:
-        return _probe_failure(f"Could not reach {url}: {exc}")
+        return _probe_failure(f"Could not reach {url}: {exc}", warning)
 
     if response.status_code != 200:
         detail = f"{url} returned HTTP {response.status_code}."
         snippet = " ".join(response.text.split())[:_ERROR_BODY_SNIPPET]
-        return _probe_failure(f"{detail} {snippet}" if snippet else detail)
+        return _probe_failure(f"{detail} {snippet}" if snippet else detail, warning)
 
     try:
         model_ids = _extract_model_ids(response.json())
     except ValueError:
         model_ids = None
     if model_ids is None:
-        return _probe_failure(f"{url} did not return a JSON model list.")
+        return _probe_failure(f"{url} did not return a JSON model list.", warning)
 
     if body.model in model_ids:
-        return ModelsConfigValidateResponse(ok=True, model_present=True, detail=f"Model '{body.model}' is available.")
+        return ModelsConfigValidateResponse(ok=True, model_present=True, detail=f"Model '{body.model}' is available.", warning=warning)
     detail = f"Model '{body.model}' was not found on this endpoint."
     available = ", ".join(model_ids[:_MODELS_DETAIL_SAMPLE])
-    return ModelsConfigValidateResponse(ok=True, model_present=False, detail=f"{detail} Available: {available}." if available else detail)
+    return ModelsConfigValidateResponse(ok=True, model_present=False, detail=f"{detail} Available: {available}." if available else detail, warning=warning)
 
 
 @router.get(

@@ -99,4 +99,9 @@ export interface ValidateModelsConfigResult {
   ok: boolean;
   model_present: boolean;
   detail: string;
+  /**
+   * Non-blocking endpoint advice (e.g. a method path was pasted into a base-URL field).
+   * Absent when the server has nothing to say.
+   */
+  warning?: string | null;
 }
