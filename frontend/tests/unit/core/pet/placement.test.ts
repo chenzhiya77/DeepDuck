@@ -4,6 +4,7 @@ import {
   PET_DISPLAY_SIZE_MAX,
   PET_DISPLAY_SIZE_MIN,
   PET_DISPLAY_SIZE_SHARP_MAX,
+  PET_DISPLAY_SIZE_SNAP_FROM,
   clampOffset,
   commitDisplaySize,
   evenBoxSize,
@@ -103,10 +104,10 @@ describe("evenBoxSize / normalizeDisplaySize", () => {
   });
 
   it("pins both ceilings to the numbers §10.2 derives them from", () => {
-    // 512 = 帧像素数;1:1 的最后一点是 341(512 ÷ DPR 1.5),512 是刻意留的 1.5× 余量
+    // 512 = 帧像素数;它是刻意留 1.5× 插值余量的上界
     expect(PET_DISPLAY_SIZE_MAX).toBe(512);
-    // 156 = 质量提示线,它是鸟的口径、不是可拖上界
-    expect(PET_DISPLAY_SIZE_SHARP_MAX).toBe(156);
+    // 340 = 完全不插值的最后一个偶数盒子(帧 512 ÷ DPR 1.5 ≈ 341)
+    expect(PET_DISPLAY_SIZE_SHARP_MAX).toBe(340);
     expect(PET_DISPLAY_SIZE_SHARP_MAX).toBeLessThan(PET_DISPLAY_SIZE_MAX);
   });
 
@@ -119,12 +120,13 @@ describe("evenBoxSize / normalizeDisplaySize", () => {
     expect(normalizeDisplaySize("200")).toBe(158);
   });
 
-  it("snaps 154 to the sharp ceiling and leaves 158 alone", () => {
-    // 156 是清晰上限(512 ÷ 2 × 61.5%),给一个吸附点让用户能精确落在它上面
-    expect(commitDisplaySize(154)).toBe(PET_DISPLAY_SIZE_SHARP_MAX);
-    // 158 是默认值,不能被吸走 —— 否则等于偷偷把下限挪了
+  it("snaps the step below the no-interpolation ceiling up onto it", () => {
+    // 吸附点是「让用户能精确落在不插值边界上」,不是质量提示;它恒是上限的前一步(step 2)
+    expect(PET_DISPLAY_SIZE_SHARP_MAX - PET_DISPLAY_SIZE_SNAP_FROM).toBe(2);
+    expect(commitDisplaySize(338)).toBe(340);
+    // 只有紧邻的那一步被吸;默认值与更远的中间值原样保留
     expect(commitDisplaySize(158)).toBe(158);
-    expect(commitDisplaySize(152)).toBe(152);
+    expect(commitDisplaySize(336)).toBe(336);
   });
 
   it("still runs the normalizer before snapping", () => {

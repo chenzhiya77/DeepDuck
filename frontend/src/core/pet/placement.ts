@@ -24,10 +24,10 @@ export const PET_DISPLAY_SIZE_MIN = 64;
  */
 export const PET_DISPLAY_SIZE_MAX = 512;
 /**
- * 鸟的**清晰**缩放上限 ≈156。来历:帧像素 512 ÷ 桌面 DPR 上限 2 = 256,而帧装的是整个
- * 场景、鸟只占帧高 ~61.5%(§8)⇒ 256 × 0.615 ≈ 156。再往上只是插值放大(不禁止)。
+ * **完全不插值**的最后一个偶数盒子 = `帧像素 512 ÷ 用户屏 DPR 1.5 ≈ 341` ⇒ 340。
+ * 341 以上整帧开始被放大(到上界 512 是 1.5×)。**注意这条与 DPR 有关**:DPR 2 的屏 ⇒ 256。
  */
-export const PET_DISPLAY_SIZE_SHARP_MAX = 156;
+export const PET_DISPLAY_SIZE_SHARP_MAX = 340;
 /** 与 manifest 的默认值一致(= §8 的帧内占比补偿值) */
 export const PET_DISPLAY_SIZE_DEFAULT = 158;
 
@@ -50,11 +50,11 @@ export function normalizeDisplaySize(value: unknown): number {
   );
 }
 
-/** 吸附点:滑杆落在 154 时吸到清晰上限 156(不吸 158 —— 它是默认值,吸走等于偷改下限) */
-export const PET_DISPLAY_SIZE_SNAP_FROM = 154;
+/** 吸附点:滑杆落在 338(不插值上限的前一步)时吸到 340,让用户能精确落在边界上 */
+export const PET_DISPLAY_SIZE_SNAP_FROM = 338;
 
 /**
- * 松手时提交的值:先收口(取偶 / 越界 / 非法),再把 `154` 吸到清晰上限 156。
+ * 松手时提交的值:先收口(取偶 / 越界 / 非法),再把 `338` 吸到不插值上限 340。
  *
  * 控件只在 `pointerup` / `keyup` / `blur` 时调它 —— 拖动中改盒子尺寸会重排并重置
  * `background-position` 的百分比基准,动画会抖(spec §9.1 / §10.2)。

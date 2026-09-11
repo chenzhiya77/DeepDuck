@@ -2042,7 +2042,7 @@ export const enUS: Translations = {
       resetPosition: "Reset position",
       size: "Size",
       sizeHint:
-        "Applied once you let go — resizing mid-drag makes the animation stutter. Past 156px the sheet is scaled up and softens.",
+        "Applied once you let go — resizing mid-drag makes the animation stutter. Past 340px the sheet is scaled up and softens.",
     },
     account: {
       profileTitle: "Profile",

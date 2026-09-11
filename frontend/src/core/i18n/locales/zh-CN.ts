@@ -1928,7 +1928,8 @@ export const zhCN: Translations = {
       dragHint: "按住 Alt 拖动可以挪动它；不按 Alt 时的点击会直接穿透到下面的内容。",
       resetPosition: "重置位置",
       size: "大小",
-      sizeHint: "松手才生效 —— 拖动中改尺寸会让动画抖。超过 156px 是插值放大，会变软。",
+      sizeHint:
+        "松手才生效 —— 拖动中改尺寸会让动画抖。超过 340px 开始插值放大，会变软。",
     },
     account: {
       profileTitle: "个人信息",
