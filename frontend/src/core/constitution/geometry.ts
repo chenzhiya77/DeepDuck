@@ -23,6 +23,18 @@ export const RING_BAND = 40;
 export const RING_GAP_DEG = 6;
 export const RING_START_DEG = -90;
 
+/** Radius of the looping three stages' shared track, outside the arcs. */
+export const LOOP_TRACK_RADIUS = RING_RADIUS + RING_BAND / 2 + 8;
+/** Radius of the out-of-ring band, outside the loop track. */
+export const OUTSIDE_BAND_RADIUS = LOOP_TRACK_RADIUS + 6;
+export const OUTSIDE_BAND_WIDTH = 12;
+/** Labels live in the empty middle, clear of the arcs' inner edge. */
+export const LABEL_RADIUS = RING_RADIUS - RING_BAND / 2 - 28;
+/** Badges sit on the arc's centreline, where their own background reads. */
+export const BADGE_RADIUS = RING_RADIUS;
+/** The stage the chain exits on; the out-of-ring band hangs outside it. */
+export const EXIT_STAGE_KEY = "epilogue";
+
 /** The five stages share the circle; the count comes from the ring, not a constant. */
 export function spanDeg(count: number): number {
   return count === 0 ? 0 : (360 - RING_GAP_DEG * count) / count;
@@ -57,6 +69,14 @@ function point(radius: number, deg: number): { x: number; y: number } {
 
 function round(value: number): string {
   return value.toFixed(2);
+}
+
+/** Raw coordinates on the ring, inside the `RING_VIEWBOX` square. */
+export function polarPoint(
+  radius: number,
+  deg: number,
+): { x: number; y: number } {
+  return point(radius, deg);
 }
 
 /** An SVG arc path, sweeping clockwise from `startDeg` to `endDeg`. */

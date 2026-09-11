@@ -95,10 +95,10 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/components/workspace/constitution/constitution-ring.tsx`、`frontend/tests/unit/components/workspace/constitution/constitution-ring.dom.test.tsx`
 
-- [ ] **Step 1(RED —— DOM 测试,固定快照 fixture):** 断言 ① 五段弧各带 `aria-label`(用 `constitution.a11y.segment` 文案);② `loop:true` 的三段有循环体细弧,`intake`/`epilogue` 没有;③ extension 行**只在**传入时渲染、且不进环(环外带);④ 未知 stage key 落同一外带槽;⑤ `handoff_gates > 0` 才出环边;⑥ 每段的闸门徽标计数 = `gates + handoff_gates`,handoff 单独标记。
-- [ ] **Step 2:** 实现:SVG 画弧(path)/ loop 细弧 / extension 外带 / handoff 出环边;**文字、徽标、标签用 DOM 叠层**(绝对定位,`polarPercent` 算坐标);`viewBox 0 0 360 360`,根容器 `relative` + `size-full`。
-- [ ] **Step 3:** 交互本期只有 hover / 选中态(`transition-colors`)+ `onSelectStage` 回调、`selectedKey` 受控 prop;指针 / 动画是 §12 第 6 项,不做。
-- [ ] **Step 4:** 转绿 + `pnpm check` + `pnpm format`。
+- [x] **Step 1(RED —— DOM 测试,固定快照 fixture):** 断言 ① 五段弧各带 `aria-label`(用 `constitution.a11y.segment` 文案);② `loop:true` 的三段有循环体细弧,`intake`/`epilogue` 没有;③ extension 行**只在**传入时渲染、且不进环(环外带);④ 未知 stage key 落同一外带槽;⑤ `handoff_gates > 0` 才出环边;⑥ 每段的闸门徽标计数 = `gates + handoff_gates`,handoff 单独标记。
+- [x] **Step 2:** 实现:SVG 画弧(path)/ loop 细弧 / extension 外带 / handoff 出环边;**文字、徽标、标签用 DOM 叠层**(绝对定位,`polarPercent` 算坐标);`viewBox 0 0 360 360`,根容器 `relative` + `size-full`。
+- [x] **Step 3:** 交互本期只有 hover / 选中态(`transition-colors`)+ `onSelectStage` 回调、`selectedKey` 受控 prop;指针 / 动画是 §12 第 6 项,不做。
+- [x] **Step 4:** 转绿 + `pnpm check` + `pnpm format`。
 
 **交付判据:** DOM 测试全绿;组件**不含任何一档的词汇**(所有文案由 props / i18n 注入,`constitution.*` 之外不新增 key);不 import 任何新依赖。
 
@@ -180,3 +180,16 @@ _（Task 3–6 待填）_
 - **一处偏离计划的措辞(已就地修正)**:计划把 `gate-events.test.ts` 的一条用例描述为"两条只差 `action` 的事件"——**去重键是 `[tag, name, changes]`,只差 `action` 会被正确折叠**,改成两条 `changes` 不同的事件才是这条用例的真实意图。
 
 _（Task 4–6 待填）_
+
+### Task 4 — 已交付(2026-09-12):环绘制原语
+
+- **产物**:`components/workspace/constitution/constitution-ring.tsx`(SVG 画弧 / 循环体细弧 / 环外带 / handoff 出环刺;文字与徽标走 DOM 叠层)+ `geometry.ts` 新增四个**具名布局半径**(`LOOP_TRACK_RADIUS` / `OUTSIDE_BAND_RADIUS` / `LABEL_RADIUS` / `BADGE_RADIUS` + `EXIT_STAGE_KEY`)+ `polarPoint` 导出;测试 **11 例**(`constitution-ring.dom.test.tsx`)。
+- **GREEN**:本文件 **11 passed**;全量 **2302 passed / 1 failed**(仍是那条已登记的 `knowledge/chat-panel` 预存红);`pnpm check` 干净;新文件 `prettier --check` 通过。
+- **revert 证明(四探针,各红一条)**:① 循环体细弧不按 `loop` 过滤 → `draws the loop track only on the looping stages` 红;② 徽标只数 `gates`(漏 `handoff_gates`) → `counts gates plus handoffs` 红;③ handoff 出环刺不看 `handoff_gates` → `draws the handoff exit only where a stage hands off` 红;④ **环外带改回跨接缝** → `hangs the band outside the exit arc` 红。撤即绿。
+- **⭐ 对着渲染图看出来的两处自身缺陷(Task 1-3 全靠单测,这是第一次真的看到形状)**。做法:临时写一个 DOM 视觉 harness 把组件渲成静态 HTML,**用仓库已有的 `@resvg/resvg-js`(sharp 同层依赖)把 SVG 栅格化成 PNG** 直接看——不需要装浏览器、不需要起 dev server。看出的两处:
+  1. **`extension` 带被我画在了首尾接缝上**,而一期 spec §8 风险 11 的冻结裁决是"画在**出口弧外侧**"。**这是我写前端 spec 时未经记录地改掉的**(该 spec §5.1 原文写"跨首尾接缝 253°–287°")。已改回出口弧(epilogue)角度,**spec 与代码双改并留修正框**,并新增一条断言把"挂在出口弧、不是接缝"钉死(第 ④ 个探针证明它有牙)。理由也补上了:接缝是出口弧与入口弧的交界,带子画在那里读成"两不属于"。
+  2. **徽标原本画在弧外缘(R=138),与循环体细弧(R=146)只差 8px 会贴住**;而**标签原本压在弧上**——弧选中时会变深(`text-foreground/70`),压在上面的文字会被吃掉对比度。改成:标签进环内空区(R=70,唯一无人占用处),徽标落到弧中心线(R=118,自带背景色故弧深浅两态都可读)。
+  - 探针(视觉 harness + 两个栅格化脚本 + scratch 目录)用完即删;**栅格化只验证了 SVG 几何**;DOM 叠层的位置由 geometry 的数值测试 + 新增的两条断言覆盖,但**它在真实浏览器里的观感仍要走 Task 6**(本机内嵌浏览器无可见视口、Playwright 的 chromium 未安装,且叠层依赖 Tailwind 编译后的 CSS)。
+- **一处记录在案的实现选择**:`constitution-ring.tsx` 不 import i18n,四类文案全走 props(`labelForStage` / `segmentLabel`)——环被两档共用,而两档词汇表不同;绘制原语自己挑一个,正是两档重新长回去的路径。
+
+_（Task 5–6 待填）_
