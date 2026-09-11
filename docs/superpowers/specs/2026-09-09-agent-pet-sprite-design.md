@@ -574,10 +574,13 @@ absolute right-3 top-14 z-20 pointer-events-none
 1. **撤掉第 1 期挂点**:不再挂 `div#chat`(否则会同时存在两只宠物)。
 2. **`pet.offset` 语义变更**:从「聊天面板内缩进」变成「内容区内缩进」;默认 `{ right: 12, top: 56 }` 需要重新评估(56 的理由是聊天页 `h-12` 的 header,跨页后这个理由不成立)。
 3. **480px 断点必须重推**(§10 那条):现在量的是 `div#chat` 自己挂的 `container-type` 容器宽;换到内容区后盒子变了,而且**拖 sidecar 不再影响它**(现在会)。**新断点数值要实测,不得沿用 480 拍脑袋。**
-4. **前置工程:外壳级线程 provider(本线最大的一次改动)**。宠物要从消息派生,外壳就得一直持有**当前线程的消息**(理由见 §4.1 重开段)。现状:① `ThreadContext` 是**按页面**挂的(`messages/context.ts`,由三个 chat 页面各自渲染);② 流的创建点有**五处**(`chats/[thread_id]/page.tsx`、`agents/[agent_name]/chats/[thread_id]/page.tsx`、`agents/new/page.tsx`、`knowledge/chat-panel.tsx`、`sidecar/sidecar-panel.tsx`)。形态:**在外壳引入「当前线程」provider(持有 threadId + 流),chat 页面改成消费它而不是各建各的**;`knowledge` 与 `sidecar` 服务的是别的线程(知识库线程、引用的侧会话),**预期不动** —— 但这条是**从命名推断的,未读那两处代码坐实**。必须防住「页面挂载时与外壳重复订阅同一条流」。
+4. **前置工程:外壳订阅「当前活跃线程」(形态已于 2026-09-12 Task 0 裁决)**。宠物要从消息派生,外壳就得一直持有**当前线程的消息**(理由见 §4.1 重开段)。**已核实的现状**:① `ThreadContext` 是按页面挂的(`messages/context.ts`,由三个 chat 页面各自渲染);② 流的创建点有五处,其中 `sidecar-panel.tsx` 传的是 `sidecar.sidecarThreadId`、`knowledge/chat-panel.tsx` 传的是自己的 kb 线程(`useState(() => uuid())` + `metadata.kb_id`)⇒ **这两处服务的是别的线程,不参与本条**;③ `useThreadStream` 的返回(`hooks.ts:2605`)九项里**只有 `thread`(`messages` + `isLoading`)是宠物需要的**,其余八项(`sendMessage` / `regenerateMessage` / `editAndRegenerateMessage` / `isUploading` / `isHistoryLoading` / `hasMoreHistory` / `loadMoreHistory` / `pendingUsageMessages`)全是页面与 composer 的机器;④ `thread.messages` = 历史查询 + 实时流 + 乐观消息三者合并,其中**历史那半本来就全局**(`useThreadHistory` 是 QueryClient 下的 TanStack Query),只有实时那半是每次挂载各建一份。
+   **选定形态(B+,取代本节原先写的「整体上提」)**:外壳持有**一条薄订阅**(只要 `messages` + `isLoading`),目标线程由**各主面挂载时注册** —— 共四个面:`chats/*`、`agents/*/chats/*`、`agents/new`、**`knowledge/chat-panel`(2026-09-12 用户裁决:也跟)**;后两者只加一行注册,**仍用自己的富 hook、不重构**。注册的值与该面传给 `useThreadStream` 的 `threadId` 一致(新会话页与 kb 新会话在首条消息前是 `undefined`,即「还没有线程」时不注册)。**外壳一旦拿到 threadId 就自己续订,不随页面卸载而断** —— 这正是「换页后仍在跑 / 仍能说在等你」的来源。页面**不改造成消费外壳**,继续用各自的富 hook。
+   **为什么否掉另两条**:**整体上提**(本节原文的形态)—— 三个 chat 页面传的上下文不同(`context.agent_name`,以及新会话页的 `threadId: undefined` + `onStart` 回收新 id),外壳无法用一条 hook 持有它们;硬做就得在外壳建「活跃流注册表」,那已是 B+ 的另一半。**页面快照广播** —— 页面一卸载即失活,说不出「在等你」,**不满足目标**。
+   **已知代价**:页面挂载期间同一线程会有**两条订阅**(页面的富 hook + 外壳的薄订阅)。外壳那条**零副作用**(无乐观消息、无 ledger、无 artifact 自动打开),故不产生重复行为,代价只是多一条 SSE。
    **顺带收益**:换页不再断流、回到聊天页时流已就绪(今天靠 `Last-Event-ID` 重接)。
 
-**待核实项(实施前必须先闭环,不许默认)**:① sidecar / knowledge 是否真的服务别的线程;② 重复订阅的防法 —— 外壳与页面谁持有 `useStream`、页面是「消费」还是「镜像」;③ 新容器下的隐藏断点数值;④ 宠物第一次出现在非聊天页(尤其知识库三列布局)时的落位观感。
+**待核实项(实施前必须先闭环,不许默认)**:① ~~sidecar / knowledge 是否服务别的线程~~ **已闭环(2026-09-12)**:是,两者都用别的线程,不参与。② ~~重复订阅的防法~~ **已裁决(2026-09-12)**:选 B+,接受两条订阅,外壳那条零副作用(见上)。③ 新容器下的隐藏断点数值(**待实测**)。④ 宠物第一次出现在非聊天页(尤其知识库三列布局)时的落位观感(**待实测**)。⑤ **【新】B+ 的载荷性假设:迟到的订阅者能不能正确报告一条「已在飞行中」的 run** —— 外壳在 run 已开始后才订上时,`isLoading` 与 `messages` 是否正确(能否 join)。**Task 1 之前必须先 spike 坐实**,这是 B+ 唯一的硬假设。⑥ ~~知识库面板要不要注册~~ **已裁决(2026-09-12,用户):跟**。它有自己 kb 绑定的线程(`useState(() => uuid())` + `metadata.kb_id`);不跟的话,在知识库里聊天时宠物会显示主线程(那条可能一直是 idle),看起来像坏了。跟随的成本只是面板加一行注册(新会话在首条消息前是 `undefined`,即不注册),**不重构它的富 hook**。
 
 ## 11. 开关与降级
 
