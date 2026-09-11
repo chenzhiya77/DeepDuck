@@ -78,16 +78,16 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/constitution/{types,parse,run-id,gate-events,geometry,api,hooks}.ts`、`frontend/tests/unit/core/constitution/{parse,run-id,gate-events,geometry}.test.ts`
 
-- [ ] **Step 1(RED —— 四个纯函数各一组测试):**
+- [x] **Step 1(RED —— 四个纯函数各一组测试):**
   - `run-id.test.ts`:live 优先 / 从 `messages` 末尾向前扫 `run_id` / 空线程返回 `null` 三条分支。
   - `gate-events.test.ts`:两种载荷形态归一(custom 帧 `{type,…}` ↔ 持久行 `{event_type:"middleware:<tag>", content:{…}}`);去重键折叠逐字相同的事件;排序(回填 `seq` 升序、展示倒序);未知 tag / 缺字段丢弃而不抛。
   - `parse.test.ts`:`schema_version: 2` 仍按已知字段解析;顶层或 `tools.truncated` 置标记;未知 stage key 落 extension 兜底槽;无 `constitution` 的行返回 `null`(取"第一个带 constitution 的行",不是第一行)。
   - `geometry.test.ts`:五段等分(起点 -90°、跨度 66°、间隙 6°)、`arcPath` 的 sweep 标志、`loop:true` 恰三段、`ringLayout` 把 extension 排除在环外、`polarPercent` 四象限。
-- [ ] **Step 2:** `types.ts` 定义快照 / 事件 / 投影的前端类型(镜像后端形状;**不引入新词汇**)。
-- [ ] **Step 3:** 实现四个纯函数(零依赖,无 DOM、无 React)。
-- [ ] **Step 4:** `api.ts` 照 `core/tasks/api.ts` 的形状:用 `getBackendBaseURL()` + `core/api/fetcher` 的 `fetch`,抓 `?event_types=run.start`(取第一个带 `constitution` 的行)与 `?event_types=middleware:<6 tags>`(逗号分隔)。
-- [ ] **Step 5:** `hooks.ts`:`useConstitution(threadId, runId)`(`queryKey: ["constitution", threadId, runId]`、`enabled`、`staleTime: Infinity`、`refetchOnWindowFocus: false`、同线程 `placeholderData`)、`useGateEvents(...)`(同款;`queryKey: ["gate-events", …]`)。
-- [ ] **Step 6:** 转绿 + `pnpm check` + `pnpm format`。
+- [x] **Step 2:** `types.ts` 定义快照 / 事件 / 投影的前端类型(镜像后端形状;**不引入新词汇**)。
+- [x] **Step 3:** 实现四个纯函数(零依赖,无 DOM、无 React)。
+- [x] **Step 4:** `api.ts` 照 `core/tasks/api.ts` 的形状:用 `getBackendBaseURL()` + `core/api/fetcher` 的 `fetch`,抓 `?event_types=run.start`(取第一个带 `constitution` 的行)与 `?event_types=middleware:<6 tags>`(逗号分隔)。
+- [x] **Step 5:** `hooks.ts`:`useConstitution(threadId, runId)`(`queryKey: ["constitution", threadId, runId]`、`enabled`、`staleTime: Infinity`、`refetchOnWindowFocus: false`、同线程 `placeholderData`)、`useGateEvents(...)`(同款;`queryKey: ["gate-events", …]`)。
+- [x] **Step 6:** 转绿 + `pnpm check` + `pnpm format`。
 
 **交付判据:** 四个纯函数测试全绿(node 环境,**不进 dom project**);`pnpm check` 干净。
 
@@ -167,3 +167,16 @@ _（Task 2–6 待填）_
   - 探针(临时脚本)用完即删;服务已停;`run.start` 的发射条数与未 set 时的逐字节载荷由既有用例继续钉住,未变。
 
 _（Task 3–6 待填）_
+
+### Task 3 — 已交付(2026-09-12):前端数据层(四个纯函数 + 抓取 + hooks)
+
+- **产物**:`core/constitution/` 七个模块 —— `types.ts`(线上形状逐字镜像,含六个 gate tag)· `run-id.ts` · `gate-events.ts`(双腿归一 + 去重键 + 合并 + `GATE_EVENT_TYPES` filter)· `parse.ts`(`parseConstitution` 逐字段重建 + `splitStages` 环内/环外)· `geometry.ts`(常量 + `arcPath` + `polarPercent` + `ringLayout`)· `api.ts`(两个真实 URL)· `hooks.ts`(`useConstitution` / `useGateEvents`,同线程 placeholder)。测试 **30 例**四个文件。
+- **GREEN**:`pnpm test core/constitution` **30 passed**(node project,四个纯函数文件均进 node 而非 dom);`pnpm check` 干净;全量 **2273 passed / 1 failed**(仍是那条已登记的 `knowledge/chat-panel` 预存红,与本题无关);新文件 `prettier --check` 通过(其余 167 文件的红是既有的 CRLF 环境条件)。
+- **revert 证明(三探针,各打一处行为)**:① `findConstitution` 只看第一行 → `reads the first row that carries one` 红;② `mergeGateEvents` 关掉去重 → `folds an event that arrived on both legs` 红;③ `resolveRunId` 改为从前往后扫 → `falls back to the newest run id` 红。**恰好三条红、每模块一条,其余全绿**;撤即绿。
+- **真栈冒烟(私有 `:8099`,两阶段,验证的是真实载荷而非我的夹具)**:
+  - **快照腿**:用 `api.ts` **完全相同**的 URL 形状拉 `?event_types=run.start&limit=20` → 1 行、`constitution` 在;键集与 `STAGE_KEYS` 一致;`middlewares[0]` 字段集 = `{frequency, hooks, kind, name, stage}`;`stages` 五段齐全。
+  - **闸门腿**:先探到"新建文件本就不被拦"(只拦覆盖/追加),于是预置一个已存在文件再让它不读直写 → **拿到 1 条真实 `middleware:read_gate`**:`content` 恰为 `{name, hook, action, changes}` 四键,`changes` = `{tool_name:"write_file", tool_call_id, path, reason:"no_current_read_mark"}` —— 与 `parseGateRow` 预期**逐字吻合**。
+  - 探针用完即删、服务已停、预置文件与线程一并清掉;未碰用户 8001。
+- **一处偏离计划的措辞(已就地修正)**:计划把 `gate-events.test.ts` 的一条用例描述为"两条只差 `action` 的事件"——**去重键是 `[tag, name, changes]`,只差 `action` 会被正确折叠**,改成两条 `changes` 不同的事件才是这条用例的真实意图。
+
+_（Task 4–6 待填）_
