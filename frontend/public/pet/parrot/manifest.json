@@ -11,6 +11,13 @@
       "sheetWidth": 15872,
       "sheetHeight": 512
     },
+    "think": {
+      "frames": 31,
+      "fps": 8,
+      "loop": true,
+      "sheetWidth": 15872,
+      "sheetHeight": 512
+    },
     "wait": {
       "frames": 30,
       "fps": 8,
