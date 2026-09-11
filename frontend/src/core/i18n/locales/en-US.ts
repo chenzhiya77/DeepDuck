@@ -2036,10 +2036,13 @@ export const enUS: Translations = {
     pet: {
       title: "Pet",
       description:
-        "A small companion in the corner of the chat panel that mirrors what the current run is doing. It never sends anything and never touches the conversation.",
+        "A small companion in the corner of the workspace that mirrors what the current run is doing. It never sends anything and never touches the conversation.",
       dragHint:
         "Hold Alt and drag to move it. A click without Alt passes straight through to the content underneath.",
       resetPosition: "Reset position",
+      size: "Size",
+      sizeHint:
+        "Applied once you let go — resizing mid-drag makes the animation stutter. Past 156px the sheet is scaled up and softens.",
     },
     account: {
       profileTitle: "Profile",

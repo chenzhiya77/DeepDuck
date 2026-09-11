@@ -9,6 +9,8 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   pet: {
     enabled: true,
     offset: { right: 12, top: 56 },
+    /** CSS 显示尺寸;帧装整个场景、鸟只占帧高 ~61.5%,故 158 是补偿值(§8/§10.2) */
+    displaySize: 158,
   },
   constitution: {
     view: "user",
@@ -80,8 +82,10 @@ export interface LocalSettings {
   };
   pet: {
     enabled: boolean;
-    /** 宠物盒相对聊天面板右上锚点的偏移(CSS px),§10.1 自由放置 */
+    /** 宠物盒相对内容区右上锚点的偏移(CSS px),§10.1 自由放置 */
     offset: { right: number; top: number };
+    /** CSS 显示尺寸(盒子边长,恒偶数);读取时统一过 normalizeDisplaySize,§10.2 */
+    displaySize: number;
   };
   tokenUsage: {
     headerTotal: boolean;

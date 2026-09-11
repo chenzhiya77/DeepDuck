@@ -1,6 +1,14 @@
 import { describe, expect, it } from "@rstest/core";
 
-import { clampOffset } from "@/core/pet/placement";
+import {
+  PET_DISPLAY_SIZE_MAX,
+  PET_DISPLAY_SIZE_MIN,
+  PET_DISPLAY_SIZE_SHARP_MAX,
+  clampOffset,
+  commitDisplaySize,
+  evenBoxSize,
+  normalizeDisplaySize,
+} from "@/core/pet/placement";
 import { DEFAULT_LOCAL_SETTINGS } from "@/core/settings/local";
 
 const BOX = { size: 96 };
@@ -62,5 +70,65 @@ describe("default pet placement", () => {
 
   it("defaults the pet to on", () => {
     expect(DEFAULT_LOCAL_SETTINGS.pet.enabled).toBe(true);
+  });
+
+  it("ships displaySize at the frame-share-compensated value", () => {
+    // 帧装整个场景、鸟只占帧高 61.5%,故 158 是「期望鸟显示 ~96」补偿出来的(§8/§10.2)
+    expect(DEFAULT_LOCAL_SETTINGS.pet.displaySize).toBe(158);
+  });
+});
+
+describe("evenBoxSize / normalizeDisplaySize", () => {
+  it("always returns an even edge(奇数取最近的偶数)", () => {
+    expect(evenBoxSize(157)).toBe(158);
+    expect(evenBoxSize(159)).toBe(160);
+    expect(evenBoxSize(155)).toBe(156);
+    expect(evenBoxSize(158)).toBe(158);
+  });
+
+  it("keeps every value in the sweep even", () => {
+    for (let value = PET_DISPLAY_SIZE_MIN; value <= PET_DISPLAY_SIZE_MAX; value += 1) {
+      expect(normalizeDisplaySize(value) % 2).toBe(0);
+    }
+  });
+
+  it("clamps into 64–256", () => {
+    expect(normalizeDisplaySize(0)).toBe(PET_DISPLAY_SIZE_MIN);
+    expect(normalizeDisplaySize(-40)).toBe(PET_DISPLAY_SIZE_MIN);
+    expect(normalizeDisplaySize(9999)).toBe(PET_DISPLAY_SIZE_MAX);
+  });
+
+  it("falls back to the default for a stored value that is not a finite number", () => {
+    // 旧 localStorage / 手改过的值都从这里收口,不把 NaN 传进盒子尺寸
+    expect(normalizeDisplaySize(undefined)).toBe(158);
+    expect(normalizeDisplaySize(null)).toBe(158);
+    expect(normalizeDisplaySize(Number.NaN)).toBe(158);
+    // 字符串不猜数字:直接回落默认(拿一个和默认不同的字符串才有区分力)
+    expect(normalizeDisplaySize("200")).toBe(158);
+  });
+
+  it("snaps 154 to the sharp ceiling and leaves 158 alone", () => {
+    // 156 是清晰上限(512 ÷ 2 × 61.5%),给一个吸附点让用户能精确落在它上面
+    expect(commitDisplaySize(154)).toBe(PET_DISPLAY_SIZE_SHARP_MAX);
+    // 158 是默认值,不能被吸走 —— 否则等于偷偷把下限挪了
+    expect(commitDisplaySize(158)).toBe(158);
+    expect(commitDisplaySize(152)).toBe(152);
+  });
+
+  it("still runs the normalizer before snapping", () => {
+    expect(commitDisplaySize(9999)).toBe(PET_DISPLAY_SIZE_MAX);
+    expect(commitDisplaySize("nope")).toBe(158);
+  });
+
+  it("clamps the box with the resized edge, not the old one", () => {
+    // 缩放后要重跑 clamp:同一个 offset 在大盒子上会被拉回可见区
+    const viewport = { width: 300, height: 300 };
+    expect(clampOffset({ right: 12, top: 56 }, { size: 64 }, viewport)).toEqual({
+      right: 12,
+      top: 56,
+    });
+    expect(
+      clampOffset({ right: 12, top: 56 }, { size: 256 }, viewport),
+    ).toEqual({ right: 12, top: 300 - 256 });
   });
 });

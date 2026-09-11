@@ -7,7 +7,12 @@ import { PetSprite } from "@/components/workspace/pet/pet-sprite";
 import { hasOpenHumanInputRequest } from "@/core/messages/human-input";
 import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { collectFatigueInput, computeFatigueLevel } from "@/core/pet/fatigue";
-import { clampOffset, type PetOffset, type PetViewport } from "@/core/pet/placement";
+import {
+  clampOffset,
+  normalizeDisplaySize,
+  type PetOffset,
+  type PetViewport,
+} from "@/core/pet/placement";
 import { derivePetState, type PetState } from "@/core/pet/state";
 import { collectActiveToolNames } from "@/core/pet/tools";
 import { useLocalSettings } from "@/core/settings/hooks";
@@ -135,7 +140,8 @@ export function AgentPet() {
   }, []);
 
   const offset = settings.pet.offset;
-  const boxSize = 2 * Math.round(petManifest.displaySize / 2);
+  // 盒子尺寸的唯一来源:用户设置收口一次,既喂 clamp 也喂渲染器(§10.2)
+  const boxSize = normalizeDisplaySize(settings.pet.displaySize);
   const rendered = clampOffset(
     dragOffset ?? offset,
     { size: boxSize },
@@ -275,6 +281,7 @@ export function AgentPet() {
       <PetSprite
         state={state}
         manifest={petManifest}
+        size={boxSize}
         onOneShotEnd={handleOneShotEnd}
       />
     </div>

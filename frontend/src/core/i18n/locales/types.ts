@@ -1841,6 +1841,8 @@ export interface Translations {
       description: string;
       dragHint: string;
       resetPosition: string;
+      size: string;
+      sizeHint: string;
     };
     account: {
       profileTitle: string;

@@ -3,19 +3,17 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { usePrefersReducedMotion } from "@/core/dom/render-activity";
+import { evenBoxSize } from "@/core/pet/placement";
 import { effectiveFps, resolveSprite, type PetManifest } from "@/core/pet/sprite";
 import type { PetState } from "@/core/pet/state";
 
 export interface PetSpriteProps {
   state: PetState;
   manifest: PetManifest;
+  /** 盒子边长(CSS px,恒偶数)。省略时退回 `manifest.displaySize`(§8 的占比补偿值) */
+  size?: number;
   /** 一次性态播完(`animationend`)时触发,由上层清掉 `oneShot` 回到 base */
   onOneShotEnd?: () => void;
-}
-
-/** 恒为偶数 CSS px:帧宽在设备像素上对齐,防右缘露出邻帧的亚像素鬼影(spec §10) */
-function evenBoxSize(displaySize: number): number {
-  return 2 * Math.round(displaySize / 2);
 }
 
 const spriteUrl = (sprite: string) => `/pet/parrot/${sprite}.webp`;
@@ -64,7 +62,12 @@ function warmSprite(url: string): Promise<boolean> {
  * 于是切换状态时旧的那张一直在画,不会先消失再出现(2026-09-11 实测缺陷)。
  * 首帧没有旧图可留,所以直接画 —— 只有「换」才值得等。
  */
-export function PetSprite({ state, manifest, onOneShotEnd }: PetSpriteProps) {
+export function PetSprite({
+  state,
+  manifest,
+  size: sizeProp,
+  onOneShotEnd,
+}: PetSpriteProps) {
   const reducedMotion = usePrefersReducedMotion();
   const sprite = resolveSprite(state, manifest);
   const [painted, setPainted] = useState<string | null>(sprite);
@@ -86,7 +89,8 @@ export function PetSprite({ state, manifest, onOneShotEnd }: PetSpriteProps) {
 
   const entry = manifest.states[painted]!;
   const fps = effectiveFps(painted, state, manifest);
-  const size = evenBoxSize(manifest.displaySize);
+  // 尺寸的唯一来源是调用方(它读用户设置);manifest 的 displaySize 只是默认值
+  const size = sizeProp ?? evenBoxSize(manifest.displaySize);
 
   const style: CSSProperties = {
     width: size,
