@@ -47,6 +47,7 @@ import {
 } from "@/core/messages/human-input";
 import { getMessageCopyData } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
+import { useRegisterActivity } from "@/core/threads/activity-context";
 import { useDeleteThread, useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { cn } from "@/lib/utils";
@@ -156,6 +157,7 @@ export function KnowledgeChatPanel({
 
   const {
     thread,
+    liveRunId,
     sendMessage,
     isHistoryLoading,
     hasMoreHistory,
@@ -177,6 +179,10 @@ export function KnowledgeChatPanel({
       }
     },
   });
+
+  // 知识库面板也注册(2026-09-12 用户裁决「跟」):它有自己的 kb 绑定线程,不跟的话,
+  // 在这聊天时 app 的灯会显示主线程那条可能一直 idle 的线程,看起来像坏了。
+  useRegisterActivity(isNewThread ? null : { threadId, runId: liveRunId });
 
   const threadsQuery = useInfiniteThreads();
 

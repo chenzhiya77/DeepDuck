@@ -8,6 +8,7 @@ import { GatewayOfflineBanner } from "@/components/workspace/gateway-offline-ban
 import { SettingsDialogHost } from "@/components/workspace/settings";
 import { WorkspaceSettingsDeepLink } from "@/components/workspace/workspace-settings-deep-link";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
+import { ActivityProvider } from "@/core/threads/activity-context";
 
 function parseSidebarOpenCookie(
   value: string | undefined,
@@ -31,13 +32,17 @@ export async function WorkspaceContent({
 
   return (
     <QueryClientProvider>
-      <SidebarProvider className="h-screen" defaultOpen={initialSidebarOpen}>
-        <WorkspaceSidebar />
-        <SidebarInset className="min-w-0">
-          <GatewayOfflineBanner gatewayUnavailable={gatewayUnavailable} />
-          {children}
-        </SidebarInset>
-      </SidebarProvider>
+      {/* 外壳订阅「当前活跃线程」(spec §10.3):目标由会话主面注册,外壳拿到就自己
+          续订、不随页面卸载而断。没人注册时它是惰性的 —— 一个请求都不发。 */}
+      <ActivityProvider>
+        <SidebarProvider className="h-screen" defaultOpen={initialSidebarOpen}>
+          <WorkspaceSidebar />
+          <SidebarInset className="min-w-0">
+            <GatewayOfflineBanner gatewayUnavailable={gatewayUnavailable} />
+            {children}
+          </SidebarInset>
+        </SidebarProvider>
+      </ActivityProvider>
       <CommandPalette />
       <SettingsDialogHost />
       <WorkspaceSettingsDeepLink />

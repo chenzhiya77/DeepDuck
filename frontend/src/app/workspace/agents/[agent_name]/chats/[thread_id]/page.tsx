@@ -44,6 +44,7 @@ import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
 import { useLocalSettings, useThreadSettings } from "@/core/settings";
+import { useRegisterActivity } from "@/core/threads/activity-context";
 import {
   useThreadMetadata,
   useThreadStream,
@@ -101,6 +102,7 @@ export default function AgentChatPage() {
 
   const {
     thread,
+    liveRunId,
     pendingUsageMessages,
     sendMessage,
     regenerateMessage,
@@ -144,6 +146,9 @@ export default function AgentChatPage() {
       }
     },
   });
+
+  // 注册给外壳订阅(spec §10.3):必须带 liveRunId,理由见 chats 页同处注释。
+  useRegisterActivity(isNewThread ? null : { threadId, runId: liveRunId });
 
   const hasThreadMessages = thread.messages.length > 0;
 

@@ -52,6 +52,7 @@ import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
 import { useLocalSettings, useThreadSettings } from "@/core/settings";
+import { useRegisterActivity } from "@/core/threads/activity-context";
 import {
   useBranchThread,
   useThreadMetadata,
@@ -169,6 +170,11 @@ export default function ChatPage() {
       }
     },
   });
+
+  // 注册给外壳订阅(spec §10.3):宠物是 app 的灯,跟着「最后在看的这个会话」。
+  // 必须带 liveRunId —— 只给 threadId 的话,外壳在那条最常见的路径上永远拿不到
+  // 「在跑」(Leg 0 静态结论)。卸载不注销,否则一离开这页灯就灭。
+  useRegisterActivity(isNewThread ? null : { threadId, runId: liveRunId });
 
   const hasThreadMessages = thread.messages.length > 0;
 
