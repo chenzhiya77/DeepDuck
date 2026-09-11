@@ -233,6 +233,16 @@ export interface Translations {
     };
   };
 
+  // Harness Delivery (run-scoped delivery receipt)
+  delivery: {
+    /** matched / produced counts. `matched` may be below `produced` and the run still passed. */
+    presented: (matched: number, produced: number) => string;
+    /** presented count: paths were handed over, but none covered this run's output. */
+    mismatched: (presented: number) => string;
+    /** produced count: nothing was handed over at all. */
+    not_started: (produced: number) => string;
+  };
+
   // Input Box
   inputBox: {
     placeholder: string;

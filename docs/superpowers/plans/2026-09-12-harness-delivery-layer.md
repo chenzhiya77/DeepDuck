@@ -39,14 +39,14 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/delivery/delivery-i18n-keys.json`、`backend/tests/test_delivery_i18n_keys.py`、`frontend/tests/unit/support/i18n-key-manifest.ts`(新目录)、`frontend/tests/unit/core/delivery/i18n-keys.test.ts`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`、`frontend/tests/unit/core/constitution/i18n-keys.test.ts`(改用共享助手)
 
-- [ ] **Step 1(一处偏离 spec 表、先说明)**:键名**逐字对齐契约的 `stage` 枚举**——`delivery.presented` / `delivery.mismatched` / **`delivery.not_started`**(spec §6 表里写的是 `notStarted`)。**只改标识符,不改任何一条文案**;理由是 snake/camel 的对应关系会变成一张手写映射表,那正是上一条线里 `guard`→`gate` 那处**用词错位**的同一种病,而这里可以彻底消灭它(guard 变成集合相等,零映射)。spec §6 的表已就地更正并留痕。
-- [ ] **Step 2(RED)**:写 `delivery-i18n-keys.json`(嵌套形状:`{"stages": ["presented","mismatched","not_started"]}`);写前端 guard 与后端 guard,**先确认它们红**(缺 locale 键 / 缺后端对账)。
-- [ ] **Step 3**:把现有 `constitution` guard 的遍历逻辑抽到 `tests/unit/support/i18n-key-manifest.ts`(纯函数:`expectedPaths(manifest)` / `leafAt` / `collectLeafPaths` / 双向比对),`constitution` 那条测试改为 import 它(**行为不变**,跑一次确认仍绿)。
-- [ ] **Step 4**:新 guard `tests/unit/core/delivery/i18n-keys.test.ts`——同一套双向遍历(每个 key 在两份 locale 里非空、且无孤儿),并断言清单计数。
-- [ ] **Step 5**:`types.ts` 加 `delivery` 块(`presented` / `mismatched` / `not_started` 都是函数:参数数量与 spec §6 一致);`zh-CN.ts` / `en-US.ts` 填 3 条(照抄 spec §6,零改写)。
-- [ ] **Step 6**:后端 `test_delivery_i18n_keys.py`:用 `parents[2]` 读前端清单(先例 `test_compose_default_bind_host.py`),断言 **清单的 stages 集合 == 契约里 `run.delivery.content_schema.properties.stage.enum`**——这把前端文案和 Task 0 的声明钉在一起,是本项唯一有实质内容的跨端断言。
-- [ ] **Step 7**:转绿 + `pnpm check` + 后端 `ruff`。
-- [ ] **Step 8(revert 证明)**:①删 `zh-CN.ts` 一条 `delivery.*` → 前端正向缺键红;②给 `en-US.ts` 加一条孤儿 `delivery.*` → 反向红;③给清单加一个契约枚举里没有的 stage → **后端**红(证明那条跨端断言有牙,不是自说自话)。
+- [x] **Step 1(一处偏离 spec 表、先说明)**:键名**逐字对齐契约的 `stage` 枚举**——`delivery.presented` / `delivery.mismatched` / **`delivery.not_started`**(spec §6 表里写的是 `notStarted`)。**只改标识符,不改任何一条文案**;理由是 snake/camel 的对应关系会变成一张手写映射表,那正是上一条线里 `guard`→`gate` 那处**用词错位**的同一种病,而这里可以彻底消灭它(guard 变成集合相等,零映射)。spec §6 的表已就地更正并留痕。
+- [x] **Step 2(RED)**:写 `delivery-i18n-keys.json`(嵌套形状:`{"stages": ["presented","mismatched","not_started"]}`);写前端 guard 与后端 guard,**先确认它们红**(缺 locale 键 / 缺后端对账)。
+- [x] **Step 3**:把现有 `constitution` guard 的遍历逻辑抽到 `tests/unit/support/i18n-key-manifest.ts`(纯函数:`expectedPaths(manifest)` / `leafAt` / `collectLeafPaths` / 双向比对),`constitution` 那条测试改为 import 它(**行为不变**,跑一次确认仍绿)。
+- [x] **Step 4**:新 guard `tests/unit/core/delivery/i18n-keys.test.ts`——同一套双向遍历(每个 key 在两份 locale 里非空、且无孤儿),并断言清单计数。
+- [x] **Step 5**:`types.ts` 加 `delivery` 块(`presented` / `mismatched` / `not_started` 都是函数:参数数量与 spec §6 一致);`zh-CN.ts` / `en-US.ts` 填 3 条(照抄 spec §6,零改写)。
+- [x] **Step 6**:后端 `test_delivery_i18n_keys.py`:用 `parents[2]` 读前端清单(先例 `test_compose_default_bind_host.py`),断言 **清单的 stages 集合 == 契约里 `run.delivery.content_schema.properties.stage.enum`**——这把前端文案和 Task 0 的声明钉在一起,是本项唯一有实质内容的跨端断言。
+- [x] **Step 7**:转绿 + `pnpm check` + 后端 `ruff`。
+- [x] **Step 8(revert 证明)**:①删 `zh-CN.ts` 一条 `delivery.*` → 前端正向缺键红;②给 `en-US.ts` 加一条孤儿 `delivery.*` → 反向红;③给清单加一个契约枚举里没有的 stage → **后端**红(证明那条跨端断言有牙,不是自说自话)。
 
 **交付判据:** 两处 guard 绿且各自有牙;文案逐字等于 spec §6(标识符按 Step 1 调整);`constitution` 那条测试重构后行为不变。
 
@@ -105,4 +105,13 @@ Task 1 与 Task 2 相互独立、可并行;Task 3 依赖两者;Task 4 依赖全�
 
 ## 交付纪要(待填)
 
-_(Task 0 见上;Task 1–4 完成后逐条回写)_
+### Task 1 — 已交付(2026-09-12):文案落盘 + 三处 guard
+
+- **产物**:`core/delivery/delivery-i18n-keys.json`(清单,`stages` 三项)· `types.ts` 的 `delivery` 块 · `zh-CN.ts` / `en-US.ts` 各 3 条(照抄 spec §6,**文案零改写**)· 前端 guard `tests/unit/core/delivery/i18n-keys.test.ts` · 后端 guard `backend/tests/test_delivery_i18n_keys.py` · **共享助手** `tests/unit/support/i18n-key-manifest.ts`(新目录)。
+- **一处重构(行为不变)**:把 constitution guard 的遍历逻辑抽进共享助手(点分路径 + 双向比对 + 函数叶子判定),`tests/unit/core/constitution/i18n-keys.test.ts` 改为 import 它——**抽完先跑一次确认 3 例仍绿**,再写 delivery 那条。清单的嵌套形状各自留在各自的测试里(constitution 是 `core`+`middlewares`,delivery 是平面的 `stages`)。
+- **文案键的标识符修正**:第三条用 `delivery.not_started`,与契约 `stage` 枚举**逐字同名**(spec §6 已留痕,文案一字未改)。效果是后端那条对账变成**集合相等、零映射**。
+- **GREEN**:`pnpm test core/delivery` 3 passed、`core/constitution` 6 passed;`pnpm check`(eslint + tsc)干净;新文件 `prettier --check` 通过;后端 `test_delivery_i18n_keys.py` + `test_constitution_i18n_keys.py` + 契约 + harness 边界 **60 passed**,`ruff check` 干净、新文件 `format --check` 通过。
+- **revert 证明(三探针,全部先确认探针真的生效)**:①删 `zh-CN.ts` 的 `not_started` → `missing: ['not_started']`;②给 `en-US.ts` 加 `orphanProbe` → `orphans` 非空;③给清单加 `invented_stage` → **后端**红(证明那条跨端对账不是自说自话)。
+  > **第一个探针差点是假的**:我最初用 shell 里的 python 内联替换删键,**反引号转义没匹配上、文件没变**,于是测试"全绿"——差点被读成"用例没牙"。**改用 Edit(锚点不匹配会直接报错)后确认文件真的变了**才重跑。**教训:探针必须先证明自己生效**(`grep` 一下被改的文件),再信它的结果。
+- **后端那条 guard 是"一开就绿"的,不是 RED 型**:清单与契约此刻本就一致(枚举是 Task 0 钉的),所以它的牙由探针 ③ 证明,而不是由 RED 阶段证明——**如实记下,不假装它红过**。
+- **⭐ 全量套件出现 27 条红,已 A/B 证明与本次改动无关**:全部落在 `tests/unit/knowledge/chat-panel.dom.test.tsx`,报错是 `useActivity* must be used inside <ActivityProvider>`。根因是**宠物线**在本工作树提交的 `0156a64c` 把 `useRegisterActivity` 加进了 `knowledge/chat-panel.tsx`(第 50 行)而该测试的 wrapper 没有对应的 provider——两文件都已提交、工作树干净,**不是我改的**。**证明方式**:把我的 3 个 locale 文件退回 HEAD、新文件移开、只跑那一个文件 → **照样红**(同一报错 81 次);恢复后我的两个 guard 文件全绿。**未修**——那是另一条线的在飞工作(其记忆里写着"剩挂载 + 四个注册点"没做完),改它会与另一会话的编辑撞车。

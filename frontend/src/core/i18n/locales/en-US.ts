@@ -277,6 +277,16 @@ export const enUS: Translations = {
     },
   },
 
+  // Harness Delivery
+  delivery: {
+    presented: (matched, produced) =>
+      `Handed over ${matched} of ${produced} artifacts`,
+    mismatched: (presented) =>
+      `Handed over ${presented}, none of which this run produced`,
+    not_started: (produced) =>
+      `Produced ${produced} artifacts but handed over none`,
+  },
+
   // Input Box
   inputBox: {
     placeholder: "How can I assist you today?",

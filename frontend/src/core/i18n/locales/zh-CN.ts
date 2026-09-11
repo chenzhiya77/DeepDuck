@@ -249,6 +249,13 @@ export const zhCN: Translations = {
     },
   },
 
+  // Harness Delivery
+  delivery: {
+    presented: (matched, produced) => `已交出 ${matched}/${produced} 个产物`,
+    mismatched: (presented) => `交出了 ${presented} 个，但都不是这次产出的`,
+    not_started: (produced) => `产出了 ${produced} 个，一个都没交出`,
+  },
+
   // Input Box
   inputBox: {
     placeholder: "今天我能为你做些什么？",
