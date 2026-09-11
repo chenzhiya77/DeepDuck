@@ -45,10 +45,10 @@
 | # | 接什么 | 位置 | 怎么接 |
 |---|---|---|---|
 | 1 | 头部触发器的位置 | `app/workspace/chats/[thread_id]/page.tsx:292-316` 的右簇(现 6 项:`ThreadScheduledTasksLink` / token 或 `ContextUsageBadge` / `SidecarTrigger` / `BrowserTrigger` / `ExportTrigger` / `ArtifactTrigger`) | 插成第 7 项,排在 `ArtifactTrigger` 之后 |
-| 2 | 触发器形状 | `components/workspace/artifacts/artifact-trigger.tsx:11-36`:`variant="ghost"` + `Tooltip` + `<span className="hidden sm:inline">` 标签 + `aria-label` + `data-testid` | 逐字照抄这套形状(§12.1 的裁决) |
+| 2 | 触发器形状 | `components/workspace/artifacts/artifact-trigger.tsx:11-36`:`variant="ghost"` + `Tooltip` + `<span className="hidden sm:inline">` 标签 + `aria-label` + `data-testid` | 照抄形状,但**不带可见标签**——理由与备选见下方修正框 |
 | 3 | 头部高度约束 | `page.tsx:280-287`,`h-12`(48px)+ `absolute top-0 z-30` | 只放触发器,环开在 Dialog(§12.1 已裁) |
 | 4 | Dialog | `components/ui/dialog.tsx:63` 默认 `sm:max-w-lg`,业务先例 `delete-preview-dialog.tsx:40`(`max-w-2xl`)、`settings-dialog.tsx:214`(`sm:max-w-5xl`) | 本项从 `sm:max-w-2xl` 起步(§12.1 建议值) |
-| 5 | **run id 的实时来源** | `core/threads/hooks.ts:1676-1677` `onCreated(meta) → handleStreamStart(meta.thread_id, meta.run_id)`;`:1635` `listeners.current.onStart?.(_threadId, _runId)`。页面当前**只用了第一个参数**(`page.tsx:128` `onStart: (createdThreadId) => {...}`) | 页面把第二个参数接住:`onStart: (tid, runId) => { ...; setLiveRunId(runId) }` |
+| 5 | **run id 的实时来源** | `core/threads/hooks.ts:1676-1677` `onCreated(meta) → handleStreamStart(meta.thread_id, meta.run_id)`;`:1635-1637` **`onStart` 只在 `startedRef` 为假时转发,即每线程一次** | **改用 `useThreadStream` 新返回的 `liveRunId`**(在 `handleStreamStart` 里由 `onCreated` 每 run 写入,线程切换时清空)——见下方修正框 |
 | 6 | **run id 的历史来源** | 消息自带 `run_id`(`hooks.ts:284` 的 `${message.run_id}:${identity}`;`workspace-changes` 就是靠 `(threadId, runId)` 定位的) | 纯函数:从 `thread.messages` 末尾向前扫第一个非空 `run_id` |
 | 7 | **闸门事件的实时入口** | `ThreadStreamOptions.onStreamCustomEvent`(`hooks.ts:74`)→ `:1580-1581` 的**单槽** ref → `:1794-1798` 在 `task_*` / `stream_replay_gap` 之前原样转发 | 主聊天页今天**没有**传它(只有知识页 `knowledge/chat-panel.tsx:170` 传了);本项在 `page.tsx:117` 的 `useThreadStream` 调用里补上传参 |
 | 8 | run 事件端点抓取先例 | `core/tasks/api.ts:24-65`(`fetchSubtaskSteps`):`getBackendBaseURL()` 拼 URL + `core/api/fetcher` 的 `fetch` + `?event_types=…` + 翻页 | 新模块照抄这套,不做翻页(构成只有一个 run,数据量小) |
@@ -59,6 +59,12 @@
 
 - **`onStreamCustomEvent` 是单槽的**(`hooks.ts:1580-1581` 每次渲染直接覆盖 ref)。主聊天页今天没占用它,本项占用后,后续任何新消费者都必须**并到同一个转发函数里**,不能各传各的。
 - **合成输入的浏览器验证有既有约束**(本机实测记录):视口须 ≥768px 才能可靠地往编辑器敲字。本项的验收里**只有窄屏检查**需要 <768px,而它只看头部是否溢出(截图 + 量宽),不需要输入 ⇒ 不受该约束影响。
+
+> **修正框(2026-09-12,实施 Task 5 时发现两处,均已就地改掉)**
+>
+> **① 第 5 行原写的 `onStart` 拿不到当前 run。** `handleStreamStart` 里 `listeners.current.onStart` 只在 **`startedRef.current` 为假时**转发,而 `startedRef` 只在线程切换时重置 ⇒ **`onStart` 是"线程建立"信号,同一线程的第二次 run 永远到不了它**。照原写法,第二次 run 会拿着第一次的 run id 去查快照与闸门事件,把上一轮的闸门通知挂在上一轮的构成上。**改法**:`useThreadStream` 新增返回 `liveRunId`(在 `handleStreamStart` 里由每 run 触发的 `onCreated` 写入,随其余线程本地状态一起清空)——这是本次唯一一处改到共享 hook 的地方,约 6 行,并有一条 DOM 测试钉住"第二次 run 会替换它"。
+>
+> **② 第 2 行的"逐字照抄含可见标签"没有可用的文案。** 冻结的 67 条里没有这个控件的短标签,而 `constitution.title` 是一整句("本次 run 的构成",9 字),头部既有标签全是 2–4 字;头部右簇加到第 7 项本来就是 spec 自己标出的拥挤风险。**改法**:做成**纯图标**(`aria-label` + tooltip 用 `constitution.title`),与同一簇里的 `SidecarTrigger` 一致(它也是只有 `aria-label`)。**不新增文案。** 若用户要可见标签,需要的是一条**新的短 key**(例如 `constitution.trigger`),那要单独批。
 
 ### 2.4 i18n 现状
 
@@ -227,8 +233,9 @@ ringLayout(stages): RingStage[]                // {key, loop, members, gates, ha
 输入:`middlewares[]` + `stages[]` + `tools` + `tool_authorization` + 闸门事件的 `changes`。
 
 - 环(同一几何)+ 按 stage 分组的可折叠列表:每行 = 真名 + `kind`(`constitution.kind.*`)+ `frequency`(`constitution.frequency.*`)+ 可展开的 `hooks[]`(原始标识符,不翻译,同真名的处理);悬停出行内人话 tooltip = `constitution.middleware.<真名>`(34 条已冻结);
+  > **2026-09-12 实施时发现的用词错位(已就地处理)**:payload 把 overlay 拆成 `kind:"overlay"` + `overlay_kind`,且它的值是 **`guard`**;而冻结文案表 §13.4 的三个键是 `member` / **`gate`** / `handoff`。**同一件事两个词**(payload 说 guard,文案键说 gate)。键只是标识符(§8 风险 8),所以映射写在组件里一张显式的三行表(`guard → gate`),不藏进 fallback——否则下次有人只改一边,显示的会是英文 `overlay`。
 - 闸门事件的 `changes` 以 key-value 小表呈现(键是代码标识符,不翻译);`tool_call_id` 显示为等宽文本(跳转见 §10);
-- **事实条**(v1 最小集):模型名 / 工具(挂载 N + 展开名字 / 延迟 N / 被移除 N)/ `truncated` 提示。`runtime_flags` / `checkpoint_mode` / `skills` 本期不渲染(它们要么别处已有,要么需要更多文案——见 §8.1)。
+- **事实条**(v1 最小集):模型名 / 工具(挂载 N / 延迟 N / 被移除 N)/ `truncated` 提示。`runtime_flags` / `checkpoint_mode` / `skills` 本期不渲染(它们要么别处已有,要么需要更多文案——见 §8.1)。
 
 ### 6.3 视图切换与持久化
 

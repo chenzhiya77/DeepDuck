@@ -1565,6 +1565,10 @@ export function useThreadStream({
   // and to allow access to the current thread id in onUpdateEvent
   const threadIdRef = useRef<string | null>(threadId ?? null);
   const startedRef = useRef(false);
+  // The run currently streaming, for run-scoped reads (the constitution view
+  // fetches per run). `onStart` cannot carry this: it fires once per thread, so
+  // a second run never reaches it. Cleared with the other thread-local state.
+  const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const pendingUsageBaselineMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingPreparedReplayRef = useRef<PendingPreparedReplayMask | null>(
     null,
@@ -1600,6 +1604,7 @@ export function useThreadStream({
     if (!normalizedThreadId) {
       // Reset when the UI moves back to a brand new unsaved thread.
       startedRef.current = false;
+      setLiveRunId(null);
       setOnStreamThreadId(normalizedThreadId);
     } else {
       setOnStreamThreadId(normalizedThreadId);
@@ -1609,6 +1614,7 @@ export function useThreadStream({
 
   const handleStreamStart = useCallback((_threadId: string, _runId: string) => {
     threadIdRef.current = _threadId;
+    setLiveRunId(_runId);
     setOptimisticThreadId((currentOptimisticThreadId) => {
       const currentView = currentViewThreadIdRef.current;
       if (
@@ -1979,6 +1985,7 @@ export function useThreadStream({
   // optimistic messages and in-flight guards do not leak across chat views.
   useEffect(() => {
     startedRef.current = false;
+    setLiveRunId(null);
     sendInFlightRef.current = false;
     messagesRef.current = [];
     transientHistoryBridgeRef.current = [];
@@ -2604,6 +2611,7 @@ export function useThreadStream({
 
   return {
     thread: mergedThread,
+    liveRunId,
     pendingUsageMessages,
     sendMessage,
     regenerateMessage,

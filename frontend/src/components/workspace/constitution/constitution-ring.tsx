@@ -45,6 +45,8 @@ export interface ConstitutionRingProps {
   segmentLabel: (segment: number, total: number) => string;
   selectedKey?: string | null;
   onSelectStage?: (key: string) => void;
+  /** Fires with the stage under the pointer, and with null when it leaves. */
+  onHoverStage?: (key: string | null) => void;
   className?: string;
 }
 
@@ -54,6 +56,7 @@ export function ConstitutionRing({
   segmentLabel,
   selectedKey,
   onSelectStage,
+  onHoverStage,
   className,
 }: ConstitutionRingProps) {
   const { ring, outside } = ringLayout(stages);
@@ -86,6 +89,8 @@ export function ConstitutionRing({
                   : "text-muted-foreground/25 hover:text-muted-foreground/45",
               )}
               onClick={() => onSelectStage?.(arc.key)}
+              onPointerEnter={() => onHoverStage?.(arc.key)}
+              onPointerLeave={() => onHoverStage?.(null)}
             />
           );
         })}
@@ -134,6 +139,8 @@ export function ConstitutionRing({
               : "text-muted-foreground hover:text-foreground",
           )}
           onClick={() => onSelectStage?.(arc.key)}
+          onPointerEnter={() => onHoverStage?.(arc.key)}
+          onPointerLeave={() => onHoverStage?.(null)}
         >
           {labelForStage(arc.key)}
         </button>

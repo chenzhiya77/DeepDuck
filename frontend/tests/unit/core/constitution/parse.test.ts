@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@rstest/core";
 
-import { parseConstitution, splitStages } from "@/core/constitution/parse";
+import {
+  groupMiddlewares,
+  parseConstitution,
+  splitStages,
+} from "@/core/constitution/parse";
 
 /**
  * Reading the snapshot off the run event stream.
@@ -51,6 +55,7 @@ const record = (overrides: Record<string, unknown> = {}) => ({
     describe_skill_bound: false,
   },
   mcp_routing_built: true,
+  truncated: false,
   ...overrides,
 });
 
@@ -169,6 +174,60 @@ describe("splitStages", () => {
     expect(outside.map((entry) => entry.key)).toEqual([
       "extension",
       "something_new",
+    ]);
+  });
+});
+
+describe("groupMiddlewares", () => {
+  const row = (name: string, stage: string) => ({
+    name,
+    stage,
+    kind: "member",
+    hooks: ["before_agent"],
+    frequency: "once_per_run",
+  });
+
+  it("orders ring stages by the ring and drops groups with no rows", () => {
+    const groups = groupMiddlewares(
+      record({
+        middlewares: [
+          row("ToolsOne", "tools"),
+          row("EpilogueOne", "epilogue"),
+          row("ToolsTwo", "tools"),
+        ],
+      }),
+    );
+
+    expect(groups.ring.map((group) => group.key)).toEqual([
+      "tools",
+      "epilogue",
+    ]);
+    expect(groups.ring[0]?.rows.map((entry) => entry.name)).toEqual([
+      "ToolsOne",
+      "ToolsTwo",
+    ]);
+  });
+
+  it("keeps out-of-ring groups in first-appearance order", () => {
+    const groups = groupMiddlewares(
+      record({
+        middlewares: [
+          row("ExtOne", "extension"),
+          row("IntakeOne", "intake"),
+          row("CustomOne", "custom_thing"),
+          row("ExtTwo", "extension"),
+        ],
+      }),
+    );
+
+    expect(groups.ring.map((group) => group.key)).toEqual(["intake"]);
+    expect(groups.outside.map((group) => group.key)).toEqual([
+      "extension",
+      "custom_thing",
+    ]);
+    expect(groups.outside[0]?.rows.map((entry) => entry.name)).toEqual([
+      "ExtOne",
+      "ExtTwo",
     ]);
   });
 });

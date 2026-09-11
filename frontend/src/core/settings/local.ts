@@ -1,3 +1,4 @@
+import type { ConstitutionView } from "../constitution/types";
 import type { TokenUsageInlineMode } from "../messages/usage-model";
 import type { AgentThreadContext } from "../threads";
 
@@ -8,6 +9,9 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   pet: {
     enabled: true,
     offset: { right: 12, top: 56 },
+  },
+  constitution: {
+    view: "user",
   },
   tokenUsage: {
     headerTotal: true,
@@ -70,6 +74,10 @@ export interface LocalSettings {
   notification: {
     enabled: boolean;
   };
+  /** Which tier the harness view opens on; the two tiers are separate components. */
+  constitution: {
+    view: ConstitutionView;
+  };
   pet: {
     enabled: boolean;
     /** 宠物盒相对聊天面板右上锚点的偏移(CSS px),§10.1 自由放置 */
@@ -108,6 +116,10 @@ function mergeLocalSettings(settings?: Partial<LocalSettings>): LocalSettings {
     notification: {
       ...DEFAULT_LOCAL_SETTINGS.notification,
       ...settings?.notification,
+    },
+    constitution: {
+      ...DEFAULT_LOCAL_SETTINGS.constitution,
+      ...settings?.constitution,
     },
     pet: {
       ...DEFAULT_LOCAL_SETTINGS.pet,

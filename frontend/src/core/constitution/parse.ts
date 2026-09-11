@@ -232,3 +232,44 @@ export function splitStages(stages: readonly ConstitutionStage[]): {
   }
   return { ring, outside };
 }
+
+export interface MiddlewareGroup {
+  key: string;
+  rows: ConstitutionMiddleware[];
+}
+
+/**
+ * The mounted middlewares, grouped by the stage they belong to: ring stages in
+ * ring order first, then everything else in first-appearance order. Groups with
+ * no rows are omitted — the ring already shows every canonical stage, and an
+ * empty heading in the list would read as a stage that failed to load.
+ */
+export function groupMiddlewares(record: ConstitutionRecord): {
+  ring: MiddlewareGroup[];
+  outside: MiddlewareGroup[];
+} {
+  const byStage = new Map<string, MiddlewareGroup>();
+  const outside: MiddlewareGroup[] = [];
+
+  for (const row of record.middlewares) {
+    const group = byStage.get(row.stage);
+    if (group) {
+      group.rows.push(row);
+      continue;
+    }
+    const created: MiddlewareGroup = { key: row.stage, rows: [row] };
+    byStage.set(row.stage, created);
+    if (!STAGE_KEY_SET.has(row.stage)) {
+      outside.push(created);
+    }
+  }
+
+  const ring: MiddlewareGroup[] = [];
+  for (const key of STAGE_KEYS) {
+    const group = byStage.get(key);
+    if (group) {
+      ring.push(group);
+    }
+  }
+  return { ring, outside };
+}

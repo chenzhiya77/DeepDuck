@@ -18,6 +18,9 @@ export const GATE_TAGS = [
 
 export type GateTag = (typeof GATE_TAGS)[number];
 
+/** Which tier the view shows. The two tiers are separate components, not a toggle. */
+export type ConstitutionView = "user" | "developer";
+
 export interface ConstitutionStage {
   key: string;
   loop: boolean;

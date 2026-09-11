@@ -13,6 +13,7 @@ import {
   useSpecificChatMode,
   useThreadChat,
 } from "@/components/workspace/chats";
+import { ConstitutionTrigger } from "@/components/workspace/constitution";
 import { ContextUsageBadge } from "@/components/workspace/context-usage-badge";
 import { ExportTrigger } from "@/components/workspace/export-trigger";
 import { GoalStatus } from "@/components/workspace/goal-status";
@@ -35,6 +36,10 @@ import { TodoList } from "@/components/workspace/todo-list";
 import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicator";
 import { useActiveGoal } from "@/components/workspace/use-active-goal";
 import { Welcome } from "@/components/workspace/welcome";
+import { mergeGateEvents, parseGateFrame } from "@/core/constitution/gate-events";
+import { useConstitution, useGateEvents } from "@/core/constitution/hooks";
+import { resolveRunId } from "@/core/constitution/run-id";
+import type { GateNotification } from "@/core/constitution/types";
 import { useBrowserControlEnabled } from "@/core/features";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -72,6 +77,9 @@ export default function ChatPage() {
   // the moment the user submits so the UI animates immediately, even though
   // `isNewThread` stays true until the backend actually creates the thread.
   const [isWelcomeMode, setIsWelcomeMode] = useState(isNewThread);
+  // Gate decisions seen on the live stream, for the run in flight. The persisted
+  // ones come from the events endpoint (see `useGateEvents` below).
+  const [liveGates, setLiveGates] = useState<GateNotification[]>([]);
   const [settings, setSettings] = useThreadSettings(threadId);
   const [localSettings, setLocalSettings] = useLocalSettings();
   const { enabled: browserControlEnabled } = useBrowserControlEnabled();
@@ -106,6 +114,7 @@ export default function ChatPage() {
 
   const {
     thread,
+    liveRunId,
     pendingUsageMessages,
     sendMessage,
     regenerateMessage,
@@ -130,6 +139,18 @@ export default function ChatPage() {
       history.replaceState(null, "", `/workspace/chats/${createdThreadId}`);
       setThreadId(createdThreadId);
       setIsNewThread(false);
+      // A fresh run starts with a fresh set of gate decisions.
+      setLiveGates([]);
+    },
+    // `onStreamCustomEvent` is a single slot on the stream hook: it forwards
+    // every custom frame, and whoever needs one routes it here. The harness view
+    // takes the six gate frames; anything else added later must merge into this
+    // same callback rather than passing its own.
+    onStreamCustomEvent: (event) => {
+      const gate = parseGateFrame(event);
+      if (gate) {
+        setLiveGates((current) => [...current, gate]);
+      }
     },
     onFinish: (state) => {
       if (document.hidden || !document.hasFocus()) {
@@ -150,6 +171,23 @@ export default function ChatPage() {
   });
 
   const hasThreadMessages = thread.messages.length > 0;
+
+  // The harness view is run-scoped. `liveRunId` covers the run in flight (the
+  // streaming messages carry no run id of their own); once history loads, the
+  // messages do, which is what a reloaded page has to go on.
+  const constitutionRunId = resolveRunId(liveRunId, thread.messages);
+  const { data: constitution } = useConstitution(threadId, constitutionRunId);
+  const { data: persistedGates } = useGateEvents(threadId, constitutionRunId);
+  const constitutionGates = useMemo(
+    () => mergeGateEvents(persistedGates ?? [], liveGates),
+    [persistedGates, liveGates],
+  );
+
+  // Switching threads must not carry the previous thread's decisions across,
+  // even if the new one has not produced any yet.
+  useEffect(() => {
+    setLiveGates([]);
+  }, [threadId]);
 
   useEffect(() => {
     if (
@@ -313,6 +351,10 @@ export default function ChatPage() {
                 {browserEnabled && <BrowserTrigger />}
                 <ExportTrigger threadId={threadId} />
                 <ArtifactTrigger />
+                <ConstitutionTrigger
+                  record={constitution}
+                  gates={constitutionGates}
+                />
               </div>
             </header>
             <main className="flex min-h-0 max-w-full grow flex-col">

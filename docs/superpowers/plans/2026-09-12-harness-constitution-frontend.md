@@ -106,13 +106,13 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create 四个组件(`constitution-{user-view,developer-view,dialog,trigger}.tsx`)+ 两个 dom 测试;Modify `frontend/src/app/workspace/chats/[thread_id]/page.tsx`
 
-- [ ] **Step 1(RED —— 用户档 dom 测试,最重要的一条):** 用固定快照 + 两条闸门事件渲染**用户档**,断言 ① 出现三段以上 `constitution.stage.*` 文案;② **整棵树的可读文本里搜不到任何 `…Middleware` 真名、也搜不到 `tools.mounted` 里的工具名**——这是 §6.8 策展投影在前端的渲染层对偶。
-- [ ] **Step 2(RED —— 开发者档 dom 测试):** 34 条 tooltip 抽 3 条可悬停取出;`kind` / `frequency` 徽标按数据渲染;未知 stage 的行落环外带分组;`truncated` 时出现 `constitution.truncated` 提示;闸门事件的 `changes` 以 key-value 原样展示(**不做键名映射**)。
-- [ ] **Step 3:** 实现两个视图(两个独立组件;共享的只有 Task 4 的绘制原语)。用户档文案只读 `stages[]` + 闸门事件;开发者档按 stage 分组列表 + 事实条(`facts.*` 4 条)+ tooltip。
-- [ ] **Step 4:** `constitution-dialog.tsx`:Dialog 外壳(`sm:max-w-2xl` 起步)+ 两段式切换(默认用户档;偏好存 `localSettings`,新增 `constitution.view`)+ 主体 `next/dynamic` + `ssr:false` 懒加载。
-- [ ] **Step 5:** `constitution-trigger.tsx`:逐字照抄 `artifact-trigger.tsx:11-36` 的形状(`variant="ghost"` + `Tooltip` + `hidden sm:inline` 标签 + `aria-label` + `data-testid`);**可见性 = `data != null`**(无快照不出触发器,不需要空态文案)。
-- [ ] **Step 6:** 页面接线(`page.tsx`):① `onStart: (tid, runId) => { …; setLiveRunId(runId) }`(接住第二个参数);② `onStreamCustomEvent` 累积 live 闸门事件(线程切换 / 新 run 清空);③ 头部右簇 `ArtifactTrigger` 之后插第 7 项;④ **在传参旁留一行注释**说明该单槽 ref 的所有者与"后来者须并到同一转发函数"的约定。
-- [ ] **Step 7:** 转绿 + `pnpm test`(全量)+ `pnpm check` + `pnpm format`。
+- [x] **Step 1(RED —— 用户档 dom 测试,最重要的一条):** 用固定快照 + 两条闸门事件渲染**用户档**,断言 ① 出现三段以上 `constitution.stage.*` 文案;② **整棵树的可读文本里搜不到任何 `…Middleware` 真名、也搜不到 `tools.mounted` 里的工具名**——这是 §6.8 策展投影在前端的渲染层对偶。
+- [x] **Step 2(RED —— 开发者档 dom 测试):** 34 条 tooltip 抽 3 条可悬停取出;`kind` / `frequency` 徽标按数据渲染;未知 stage 的行落环外带分组;`truncated` 时出现 `constitution.truncated` 提示;闸门事件的 `changes` 以 key-value 原样展示(**不做键名映射**)。
+- [x] **Step 3:** 实现两个视图(两个独立组件;共享的只有 Task 4 的绘制原语)。用户档文案只读 `stages[]` + 闸门事件;开发者档按 stage 分组列表 + 事实条(`facts.*` 4 条)+ tooltip。
+- [x] **Step 4:** `constitution-dialog.tsx`:Dialog 外壳(`sm:max-w-2xl` 起步)+ 两段式切换(默认用户档;偏好存 `localSettings`,新增 `constitution.view`)+ 主体 `next/dynamic` + `ssr:false` 懒加载。
+- [x] **Step 5:** `constitution-trigger.tsx`:逐字照抄 `artifact-trigger.tsx:11-36` 的形状(`variant="ghost"` + `Tooltip` + `hidden sm:inline` 标签 + `aria-label` + `data-testid`);**可见性 = `data != null`**(无快照不出触发器,不需要空态文案)。
+- [x] **Step 6:** 页面接线(`page.tsx`):① `onStart: (tid, runId) => { …; setLiveRunId(runId) }`(接住第二个参数);② `onStreamCustomEvent` 累积 live 闸门事件(线程切换 / 新 run 清空);③ 头部右簇 `ArtifactTrigger` 之后插第 7 项;④ **在传参旁留一行注释**说明该单槽 ref 的所有者与"后来者须并到同一转发函数"的约定。
+- [x] **Step 7:** 转绿 + `pnpm test`(全量)+ `pnpm check` + `pnpm format`。
 
 **交付判据:** 三个 dom 测试全绿;`pnpm test` 全量 0 failed;用户档渲染测试**有牙**(故意在用户档里渲染一个真名 → 当场红,验后撤销)。
 
@@ -193,3 +193,23 @@ _（Task 4–6 待填）_
 - **一处记录在案的实现选择**:`constitution-ring.tsx` 不 import i18n,四类文案全走 props(`labelForStage` / `segmentLabel`)——环被两档共用,而两档词汇表不同;绘制原语自己挑一个,正是两档重新长回去的路径。
 
 _（Task 5–6 待填）_
+
+### Task 5 — 已交付(2026-09-12):两档视图 + Dialog + 触发器 + 页面接线
+
+- **产物(7 个新文件 + 4 个改动)**:
+  - 组件:`constitution-user-view.tsx` · `constitution-developer-view.tsx` · `constitution-dialog-body.tsx` · `constitution-dialog.tsx` · `constitution-trigger.tsx` · `index.ts`(桶);
+  - 数据/纯函数:`parse.ts` 新增 `groupMiddlewares`(按 stage 分组,环序 + 环外首现序,空组不画);
+  - 共享 hook:`useThreadStream` 新增返回 **`liveRunId`**(见下);
+  - 设置:`LocalSettings.constitution.view`(类型 + 默认 + 段合并三处);
+  - 页面:`page.tsx` 接线(runId 推导 / 两个查询 / live 闸门累积 / 头部第 7 项 / 单槽转发注释)。
+- **测试 24 例新增**:`constitution-user-view.dom`(7)· `constitution-developer-view.dom`(6)· `constitution-trigger.dom`(5)· `live-run-id.dom`(2)· `parse.test` 的 `groupMiddlewares`(2)· 既有 2 例调整。
+- **GREEN**:`pnpm check`(eslint + tsc)干净;`pnpm test` 全量 **2324 passed / 1 failed**(仍是那条已登记的 `knowledge/chat-panel` 预存红);新文件 `prettier --check` 通过。
+- **revert 证明(三探针,各红目标断言)**:① 用户档把真名当 fallback 渲染 → `never paints an internal name` 红(**这正是计划要求的"用户档渲染测试有牙"**);② 开发者档跳过 `guard → gate` 映射 → 两个轴那条红;③ 触发器忽略 `record == null` → `stays out of the header` 红。撤即绿。
+- **⭐ 计划里的两处错误,实施时发现并改掉(spec 里留了修正框)**:
+  1. **`onStart` 拿不到当前 run。** 计划写"`onStart: (tid, runId) => setLiveRunId(runId)`",但 `handleStreamStart` 只在 **`startedRef` 为假时**转发 `onStart`,而 `startedRef` 只在线程切换时重置 ⇒ **它是"线程建立"信号,同一线程的第二次 run 永远到不了它**。照原写法会把上一轮的闸门通知挂在本轮的构成上。**改法**:`useThreadStream` 新增 `liveRunId`(由每 run 触发的 `onCreated` 写入,随线程本地状态清空),并加一条 DOM 测试专门钉"第二次 run 会替换它"——这条测试在实现前是红的(`expected undefined`),不是事后补的。
+  2. **触发器没有可用的短标签。** 计划写"逐字照抄 `ArtifactTrigger` 形状"含可见标签,但冻结的 67 条里没有这个控件的短标签,`constitution.title` 是一整句,而头部既有标签全是 2–4 字,且第 7 项本来就是 spec 标出的拥挤风险。**改法**:纯图标(`aria-label` + tooltip = `constitution.title`),与同簇的 `SidecarTrigger` 一致;**不新增文案**。要可见标签需单批一条新 key。
+- **第三处用词错位(实施中发现)**:payload 的 `overlay_kind` 值是 **`guard`**,而冻结文案的键是 **`gate`** ——同一件事两个词。映射写成组件里一张显式的三行表,不藏在 fallback 里(否则只改一边时会显示英文 `overlay`)。
+- **两处行为选择(记录在案)**:①用户档的"该段在干什么"那句是**悬停优先、点击兜底**(`hover ?? selected`),空态**占位不卸载**以免描述时把下方通知推上推下;②开发者档的 `changes` 按原键展示,**不做键名映射**(键是契约字段)。
+- **未覆盖面(如实记)**:本轮**没有真浏览器验证**——两个视图的观感、Dialog 布局、`next/dynamic` 的加载表现、以及头部第 7 项的窄屏拥挤,全部留到 Task 6。本机内嵌浏览器无可见视口、Playwright chromium 未安装;而 Tailwind 编译后的类名效果无法靠栅格化预演(栅格化只能验 SVG,Task 4 已用过)。
+
+_（Task 6 待填）_
