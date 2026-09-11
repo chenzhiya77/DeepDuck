@@ -156,6 +156,12 @@ class _FakeDeferredSetup:
         self.deferred_names = frozenset(names)
 
 
+class _FakeToolConfig:
+    def __init__(self, name: str, group: str):
+        self.name = name
+        self.group = group
+
+
 class _FakeAppConfig:
     class _ToolSearch:
         auto_promote_top_k = 3
@@ -165,6 +171,11 @@ class _FakeAppConfig:
 
     tool_search = _ToolSearch()
     skills = _Skills()
+    # The group lives here and nowhere else — nothing attaches it to the tool.
+    tools = (
+        _FakeToolConfig("web_search", "web"),
+        _FakeToolConfig("hybrid_search", "rag"),
+    )
 
 
 def _record(middlewares=(), **overrides):
@@ -425,6 +436,21 @@ def test_tool_source_derivation():
     ]
     assert record["tools"]["mounted_count"] == 4
     assert record["tools"]["truncated"] is False
+
+
+def test_tool_group_is_read_from_the_config_list_not_the_tool_object():
+    """The spec's sample shows ``group: "rag"``; nothing puts it on the tool."""
+    configured = _FakeTool("hybrid_search")  # carries no group of its own
+    assert not getattr(configured, "metadata", {})
+
+    record = _record(tools=[configured])
+
+    assert record["tools"]["mounted"] == [{"name": "hybrid_search", "source": "tool_group", "group": "rag"}]
+
+
+def test_tools_outside_the_config_list_report_no_group():
+    record = _record(tools=[_FakeTool("mcp_thing"), _FakeTool("present_files")])
+    assert [t["group"] for t in record["tools"]["mounted"]] == [None, None]
 
 
 def test_deferred_names_come_from_the_setup_and_carry_the_config_top_k():

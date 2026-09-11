@@ -229,9 +229,25 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_harness_boundary.py -v --bas
   | 三处反直觉项 | `DynamicContextMiddleware` = `once_per_run` ✅、`TitleMiddleware` = `per_model_call` ✅、`InputSanitizationMiddleware` 落在 `context` 而非 `intake` ✅ |
   | 唯一 handoff | `ClarificationMiddleware` 是**全链唯一**带 `overlay_kind=handoff` 且 `exits_run=True` 的项 ✅ |
   | 模型/flags | `qwen3.8-flash`、thinking off、plan/subagent 均 false(与发出的请求一致) |
-- [ ] **Step 5:** 手工验收第二腿(**按 agent 追加的那一类**):用 `rag` agent 发一条消息,确认 `content.constitution.middlewares` 里出现 `DeepResearchMiddleware` 且 `stage="context"`。这条腿专门验 spec §8 风险 6——只测默认 agent 会漏掉它。
+- [x] **Step 5:** 手工验收第二腿(**按 agent 追加的那一类**):用 `rag` agent 发一条消息,确认 `content.constitution.middlewares` 里出现 `DeepResearchMiddleware` 且 `stage="context"`。这条腿专门验 spec §8 风险 6——只测默认 agent 会漏掉它。
 
-  **状态:未做,原因是环境性的**——`rag` agent 那条腿要先把 `rag:` 配置块与四把密钥(`DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `SILICONFLOW_VLM_API_KEY` / `MINERU_API_TOKEN`)备齐、并跑通一次知识库索引,超出本次变更范围。**替代证据(同等强度)**:`tests/test_constitution_record.py` 的 guard test 已经在**真实 `agent_name="rag"` 链**上断言 `DeepResearchMiddleware` 在链里且归属 `context`(Task 1 Step 3),而 Task 4 的真端到端已经证明"真实链 → worker → `run.start`"这段对任意工厂都成立。两段合起来覆盖了这条腿要验的东西。
+  **实测结果(2026-09-10,两腿合并跑,PASS)。先纠正一条我先前的错误判断**:我曾把这条腿记为"需要 rag 配置块 + 四把密钥 + 一次知识库索引,故未做"——**三条都不成立**:① `rag` 是**内置 agent**(`packages/harness/deerflow/agents/assets/rag/{SOUL.md,config.yaml}`,`tool_groups: [rag]`),由 `load_agent_config` 在 store 查不到时回退到内置资产,**不需要先创建**;② 本机 `config.yaml` **早就有 `rag:` 配置块**;③ 四把密钥与索引只在**调用检索工具**时才需要,而这条腿只验组装与快照,**不碰 Qdrant**。所以它当时就能跑。
+
+  做法与第一腿同栈同法,只是把 `context` 换成 `{"agent_name": "rag"}`(即知识页 `chat-panel.tsx` 发的形状);两次 run 合并在一个探针里,便于逐项对比:
+
+  | 判据 | default agent | **rag agent** |
+  |---|---|---|
+  | `agent.name` | `None` | **`rag`** |
+  | 挂载 middleware 数 | 26 | **27**(恰 +1) |
+  | `Σ(stages[]) == mounted` | True | True |
+  | **`DeepResearchMiddleware`** | absent | **PRESENT,`stage=context`,`hooks=[wrap_model_call]`,`frequency=per_model_call`** ✅ |
+  | 快照字节 | 6,035 | 5,798(工具更少) |
+  | `tools.mounted` | 16 | 10 |
+  | `group == "rag"` 的工具 | `[]` | **`['hybrid_search','wiki_search','graph_search']`** ✅ |
+
+  **rag-only delta 恰好为 1** —— 正是那条按 agent 追加的 middleware,spec §8 风险 6 由此在真栈上闭环。
+
+  **这一轮顺带抓到并修掉一个真缺陷(不是我计划内的)**:第一腿时我发现 `tools.mounted[].group` **恒为 `null`**,包括明显属 rag 组的工具——而 spec §6.5 的样例里写着 `group: "rag"`。根因:group **只存在于 `config.yaml` 的 `tools[]`**(`ToolConfig.group`,也就是驱动分组过滤的那一份),**从来没有写进 tool 对象的 metadata**,而我当初从 metadata 读。修法:`_configured_tool_groups(app_config)` 建 `name → group` 映射,`_tool_group` 从它读(metadata 只作降级)。新增两条断言钉住(配置里有 → 给出组名;不在配置里 → `null`)。**这个字段是"我的工具为什么不见了"的直接答案**,恒空等于该问题的答案被静默吃掉。
 
 ---
 
@@ -265,9 +281,10 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_harness_boundary.py -v --bas
 | spec §8 风险 1-5 写回 | ✅ | 另关掉风险 9(不编号)与 11(`extension` 位置);**风险 12 仍开放** |
 | `make format` 干净 | ⚠️ **我的文件干净** | 全后端另有 2 处(HEAD 既有、他线在改):`tests/test_models_config_api.py` F841、`app/gateway/routers/models.py` 格式 |
 | 手工验收第一腿 | ✅ | 真栈真 HTTP,**5,986 B / 26 条 / 三条来源各归位 / 唯一 handoff 正确**(明细见上) |
-| 手工验收第二腿(rag) | ⚠️ **未做** | 环境性(需 rag 配置块 + 四把密钥 + 一次索引);替代证据两段见上 |
+| 手工验收第二腿(rag) | ✅ | 两腿合并跑:**rag-only delta 恰为 1 = `DeepResearchMiddleware`(`stage=context`)**,`group=="rag"` 的工具恰为三路检索工具。明细见 Step 5 |
+| `tools.mounted[].group` 真实可信 | ✅ (**验收中修掉的缺陷**) | 原先恒为 `null`(我从 tool metadata 读,而 group 只在 `config.yaml` 的 `tools[]` 上);改为 `_configured_tool_groups(app_config)` 映射 + 两条断言 |
 
-**结论:功能判据全绿,两条 ⚠️ 均为环境性且已给出证据链。** 四个提交:`0954bc4b`(记录层)、`e05b30b1`(工厂发布)、`724fc4eb`(journal + 契约)、`a52bf61f`(worker 桥接)。
+**结论:功能判据全绿,唯一一条 ⚠️ 是环境性的且已给出证据链(`make format` 全后端的另外 2 处属 HEAD 既有、且不在本线的文件里)。** 四个提交:`0954bc4b`(记录层)、`e05b30b1`(工厂发布)、`724fc4eb`(journal + 契约)、`a52bf61f`(worker 桥接)。手工验收两腿都过之后,又补一个 `fix` 提交(上面的 `group` 缺陷)。
 
 ## 不在本计划内(归属见 spec §5 / §12)
 

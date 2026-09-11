@@ -219,7 +219,28 @@ def _tool_source(tool: Any) -> str:
     return TOOL_SOURCE_TOOL_GROUP
 
 
-def _tool_group(tool: Any) -> str | None:
+def _configured_tool_groups(app_config: Any) -> dict[str, str]:
+    """Configured tool name -> group, from the same list that drives filtering.
+
+    The group lives on the tool *config* (``config.yaml`` ``tools[]``) and never
+    on the assembled tool object — nothing attaches it to ``BaseTool.metadata`` —
+    so this list is the only honest source. It matters: "my tool is missing" is
+    usually "its group is not in the agent's ``tool_groups``".
+    """
+    groups: dict[str, str] = {}
+    for tool_config in getattr(app_config, "tools", None) or ():
+        name = getattr(tool_config, "name", None)
+        group = getattr(tool_config, "group", None)
+        if isinstance(name, str) and isinstance(group, str):
+            groups[name] = group
+    return groups
+
+
+def _tool_group(tool: Any, configured: dict[str, str]) -> str | None:
+    name = getattr(tool, "name", None)
+    if isinstance(name, str) and name in configured:
+        return configured[name]
+    # Fallback for a tool that carries its own group; nothing in-tree does today.
     metadata = getattr(tool, "metadata", None) or {}
     group = metadata.get("group") if isinstance(metadata, dict) else None
     return group if isinstance(group, str) else None
@@ -276,9 +297,10 @@ def _tools_block(
     tools: Any,
     deferred_setup: Any,
     auto_promote_top_k: int,
+    configured_groups: dict[str, str],
 ) -> dict[str, Any]:
     mounted_all = [_tool_name(tool) for tool in tools or ()]
-    mounted = [{"name": name, "source": _tool_source(tool), "group": _tool_group(tool)} for name, tool in zip(mounted_all, tools or (), strict=False)]
+    mounted = [{"name": name, "source": _tool_source(tool), "group": _tool_group(tool, configured_groups)} for name, tool in zip(mounted_all, tools or (), strict=False)]
     # Sorted: a frozenset has no stable order, and the snapshot's byte size must
     # be reproducible for the same chain.
     deferred_all = sorted(getattr(deferred_setup, "deferred_names", None) or ())
@@ -386,6 +408,7 @@ def build_constitution_record(
             tools,
             deferred_setup,
             auto_promote_top_k=_config_value(app_config, "tool_search", "auto_promote_top_k", default=0) or 0,
+            configured_groups=_configured_tool_groups(app_config),
         ),
         "tool_authorization": _authorization_block(authorization_candidates, authorized_tools),
         "skills": {
