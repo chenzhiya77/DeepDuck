@@ -412,11 +412,13 @@ if journal is not None:
   "tool_authorization": {"removed": ["dangerous_tool"], "removed_count": 1},
   "skills": {
     "available_count": 8, "deferred_discovery": false,
-    "describe_skill_bound": false, "active_names": []
+    "describe_skill_bound": false
   },
   "mcp_routing_built": true
 }
 ```
+
+> **`skills.active_names` 已删除(2026-09-11)。** 它原先写死为 `[]`(`constitution_record.py:419`),而**结构上不可能有别的值**:快照在**图构建时**产生(`_make_lead_agent`),而 skill 激活发生在**图运行中** ⇒ 构建时必然为空。留着它等于邀请前端把"没有 skill 激活"渲染成一个事实(而用户刚打过 `/skill-name`)。**前端要这个信息就读 `middleware:skill_activation` 事件**(通道已存在)。趁 `6c350316` 未推送、零消费者,删除免费。
 
 **`hooks[]` 与 `frequency` 的分工(2026-09-10 裁决:取消 `mixed`,如实报出 hook 集合):**
 
@@ -628,8 +630,22 @@ GET /api/threads/{thread_id}/runs/{run_id}/events?event_types=run.start
 
 **刻意不额外发 custom stream 事件**,两条理由:
 
-1. **IM 通道安全**:`backend/AGENTS.md` 记录过一次真实事故——Buzz relay 把隐藏的 `<memory>` 块和用户自己的消息当助手回复发出去了,因为 `_accumulate_stream_text` 用的是 denylist;现已改为按消息类型前缀(`ai` / `assistant`)的 allowlist。`run.start` 的 `category: "trace"` 定义为"excluded from message projections"(契约 :64),天然不进那个 allowlist。**新增 custom stream 事件则要重新过一次 allowlist 审查**,而构成是 run 级静态事实,没有流式价值,不值得冒这个险。
+1. ~~**IM 通道安全**:……**新增 custom stream 事件则要重新过一次 allowlist 审查**~~ **——这条理由已于 2026-09-11 核实并更正,结论不变、依据换掉(见下方更正框)。**
 2. 构成在一个 run 内**不变**(goal continuation 也不变,§6.3 的守卫正是为此),fetch-once 语义正确。
+
+> **更正框(2026-09-11):"新增 custom stream 事件要重过 IM allowlist 审查"这个前提不成立。**
+>
+> **真实边界是订阅,不是 allowlist。** IM 通道订阅的 stream mode 是白名单且**不含 `custom`**:
+> ```python
+> # app/channels/manager.py:75
+> STREAM_MODES = ["messages-tuple", "values"]      # ← 不含 custom
+> MESSAGE_STREAM_EVENTS = ("messages-tuple", "messages")
+> ```
+> `_accumulate_stream_text` 的 docstring 也写明它只处理 `messages-tuple`。**Buzz 事故是 `messages-tuple` 泄漏**(隐藏 `HumanMessage` 被当助手回复发出去),而 `custom` 是**另一个 stream mode**,IM 不订阅它、worker 也不会为 IM 的 run 产生 custom 帧。
+>
+> **而且仓里已经这么干了**:子代理的 `task_*` 就是**双发**——`deerflow.utils.custom_events.emit_custom_event`(SSE custom)+ 落 `run_events`(供重载),前端今天靠它实时更新 subtask 卡(`hooks.ts:1832`)。这是本仓"实时 + 可回填"的**既定范式**。
+>
+> **所以本条的结论(fetch-once、不给构成发流式事件)保持不变,但理由只剩第 2 条**:构成是 run 级静态事实、run 内不变、无流式价值。**别再传"SSE 危险"这条错规则**——它会把后续项(尤其 §12 第 6 项实时脉冲)逼进"不能发 SSE"的死角,而闸门事件恰恰**必须**走 SSE(见 `2026-09-11-harness-gate-instrumentation-design.md` §4.6)。
 
 ### 6.8 双受众投影:一份真相,两层渲染
 
@@ -710,7 +726,18 @@ GET /api/threads/{thread_id}/runs/{run_id}/events?event_types=run.start
     - **为什么 `loop: false`**:它们的触发时机跟随各自实现的 hook,不由环的循环体决定;把它们画进循环体会让"绕几圈"多出无意义的成员。
     - **只覆盖未映射的那部分**:按 §6.6.3 的 placement 映射,能映射到 `MODEL_*` / `TOOL_*` 的 extension **本来就落进 `model` / `tools`**,只有 `STANDARD` 与无 placement 声明的 custom middlewares 落 `extension`。
     - **这条也正是 `stages[].loop` 必须由服务端拥有的原因**(§6.6.1):前端若推"首尾之间就是循环体",遇到第六个 stage 必然猜错。本 spec 冻结两件事:`extension` 是合法 stage 取值,且它的 `loop` 是一个**显式写定的固定值**(§10 有对应断言)。
-12. **开放项(环形裁决带出):环形布局的实现成本未评估。** React Flow 的自动布局(dagre / elk)对环形不友好,`components/ai-elements/` 那七个包装组件是 registry 生成物**不可手改**(`frontend/AGENTS.md:281`、`eslint.config.js:15` 已 ignore 该目录),要扩展只能在业务目录下写自有包装(丙1 spec §2.4 的同一结论)。**是否值得为环形手写极坐标定位、还是退回"线性五格 + 圈数徽标"的折中,是前端 spec 的第一个裁决点**;若退回折中,`stages[].loop` 字段仍然要发(圈数徽标也要知道哪三段在循环体内),数据契约不受影响。
+12. ~~**开放项:环形布局的实现成本未评估**~~ **已裁决(2026-09-11,用户批「手写 SVG」):环形用 SVG 画,不引 React Flow。** 五段弧用 SVG path / `stroke-dasharray`,标签与闸门徽标用 DOM 叠层,展开面板是普通列表(按 stage 分组)。**零新依赖**,资产预算不再是约束。证据(2026-09-11 实测,四条):
+    - **React Flow 今天完全不在任何聊天包里**:`src/` 全量 grep 只有 `ai-elements/` 那 9 个包装组件 import `@xyflow/react`,而它们**零外部消费者** ⇒ 引它是**净新增**成本,不是沉没成本。(`.next` 里那个含 "xyflow" 字样的 chunk 是**被打包的 `package.json` 元数据**,不是 React Flow 的代码——别据此误判"已经在包里了"。)
+    - **实测体积 ≈ 93 KB gzip**(`@xyflow/react` 58,564 B + `@xyflow/system` 34,242 B,取自包产物),而线程路由实测 **js 4,092,559 / 预算 4,100,000**,**只剩 7,441 字节余量(0.18%)**。
+    - **那套包装组件在环形里用不了,且不许改**:`ai-elements/node.tsx` 把 Handle 硬编码成 `Position.Left`(target) + `Position.Right`(source),是"左进右出"的二部图约定;环要的是首尾相接绕圈。而 `ai-elements/**` 是 registry 生成物、eslint 已 ignore、`frontend/AGENTS.md:281` 明令不可手改 ⇒ **用 React Flow 也得自己写包装**。
+    - **极坐标数学两种方案都得手写**:React Flow **不附带布局引擎**(dagre/elk 要另装,且 dagre 是分层 DAG 布局),而 5 段固定语义的弧**不需要布局引擎** ⇒ 引它省不掉最难那步,只多一层坐标系转换 + 视口模型 + 边/Handle 路由;而 `Canvas` 包装已经把 `panOnDrag`/`zoomOnDoubleClick` 关掉了,等于为用不上的视口付费。
+    - **反方证据(不藏)**:① 预算表本身过期(自 #4622 未更新、不在 CI)且用户已决定不重校 ⇒ 93 KB 是**设计成本**而非门禁问题;② spec §3 裁决过与丙1 共享 `@xyflow/react` —— 但"共享一个库"≠"这条路由必须装它";丙1 的能力清单是**真的二部图**(agent → tools 一对多),React Flow 在那儿挣得到它的钱,**本环不共享该结论**。
+    - **顺带答掉一个子裁决**:"`pnpm perf:check` 资产预算"在 SVG 方案下**不再是约束**;只有改选 React Flow 才需要接受 +93 KB。
+    - **若退回"线性五格 + 圈数徽标"折中**:`stages[].loop` 仍然要发(圈数徽标也要知道哪三段在循环体内),数据契约不受影响。**该折中仍可作为退路**,但本裁决不选它。
+13. **已知限制(2026-09-11 复核,不是缺口,是设计边界)** —— 三条都**不需要新代码**,前端 spec 按此设计即可:
+    - **脉冲只能到 stage 级,拿不到 per-middleware 精度。** `intake` 的两步(ThreadData / Uploads)与 `context` 的多数成员**不发任何事件**(12 个里只有 `SkillActivation` 有 tag),指针走过它们无迹可寻。**但设计从没承诺 per-middleware** —— §6.6.2 的时间结构与 §12 第 6 项的两个数据源都是 **stage 级**,而 stage 级现成够用:`llm.human.input`(在**首次** `on_chat_model_start` 发,即"备料完成、开始思考")· `llm.ai.response`(带 `llm_call_index`)· `llm.tool.result` · `run.delivery`。另核实:`on_chat_model_start` **只自增计数器、不发事件**,所以一次 model 调用期间后端无事件;但前端本就有 live 信号(AI 文本块在 `messages-tuple` 里流式到达),"正在思考"不需要新事件源。
+    - **subagent 侧看不到三样东西,其中两样是有意为之**:① **子代理构成** = §12 第 7 项(已裁决,不是缺陷);② **子代理内部的闸门事件永不记录** = **设计如此**(`deerflow_loop_bound=True` 不继承 journal),别去"修"那个循环边界;③ 子代理**步骤事件**走另一条 buffer(`_SubagentEventBuffer`,`FLUSH_THRESHOLD = 25` + `subagent.end` 时急切刷,`worker.py:494`/`:516`)——**阈值 25 与 journal 的 20 不同不是不一致**:两者服务的读者不同,步骤事件的**实时**部分走 custom SSE(`task_running`,前端 `hooks.ts:1832` 已在消费),`run_events` 那份是**给重载/回填**的。
+    - **闸门事件的实时性依赖"双发"。** 闸门事件只落 `run_events` 时**run 结束前读不到**(`flush_threshold = 20` 且生产**只有 `worker.py:656` 一处**构造 journal、未覆盖该值;`_put` 无时间兜底);而前端在 run 进行中**没有 run 级轮询**。所以闸门事件必须走 **custom SSE** 才谈得上实时 —— 修法与 IM 安全性依据见闸门埋点 spec §4.6。**构成快照本身仍 fetch-once**(run 级静态事实),两者投递方式不同,因为时效性不同,不要合并。
 
 ## 9. 向后兼容与影响面
 
@@ -774,11 +801,12 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_constitution_record.py tests
 - **发两套事件(开发者一套、终端用户一套)**:两套必然腐烂。§6.8 的裁决是一份真相 + 两层渲染,stage 分类法服务端拥有、文案前端拥有。
 - **把 ⑧ 的六道闸门埋点并入本 spec**:两者耦合度为零(⑧ 照抄 §2.7 的 `record_middleware` 形状,不碰工厂、不碰契约 schema),合并只会让本 spec 的唯一非旁路改动被埋在一堆旁路改动里,评审时看不清风险面。分开实施。
 - **与丙1 的能力清单端点共用类型定义 / 共用解析函数**:两者真值条件不同(存储声明 vs 真实组装),共用会把"配置里写了什么"和"运行时装了什么"混成一个概念,违反丙1 spec §3 与本 spec §3 的不合并原则。仅对齐 `name`/`source`/`group` 字段名与 `source` 取值域。
+- **用 React Flow 画环(2026-09-11 实测后否决)**:四条理由。① **它是净新增成本**:`src/` 只有 `ai-elements/` 那 9 个包装组件 import 它,而它们零外部消费者 ⇒ 实测 **≈93 KB gzip**(`@xyflow/react` 58,564 B + `@xyflow/system` 34,242 B),而线程路由只剩 **7,441 字节**余量。② **包装组件在环形里用不了且不许改**:`ai-elements/node.tsx` 把 Handle 硬编码成 Left/target + Right/source(左进右出),`ai-elements/**` 是 registry 生成物、`frontend/AGENTS.md:281` 明令不可手改 ⇒ 引它也得自写包装。③ **省不掉最难那步**:React Flow 不附带布局引擎(dagre/elk 另装;dagre 是分层 DAG),5 段固定语义的弧不需要布局引擎,极坐标数学两方案都得手写。④ **为用不上的视口付费**:`Canvas` 包装已经把 `panOnDrag`/`zoomOnDoubleClick` 关掉了,而环的位次由 tests 钉死、**不可编排、无可拖拽**。⑤ 代价面:不引它则该路由零新增依赖。**注意反向证据**:预算表过期且不在 CI,所以这条是设计成本而非门禁;**且本否决不适用于丙1 的能力清单**——那是真的二部图(agent → tools),React Flow 在那儿有正当理由。
 - **把十段流图全部画出来**:②③⑨ 三段是管道、① 的设计时预览归丙1(§5),画成盒子只给用户无法行动的信息,且会稀释 ⑦⑧⑩ 三段的解释力。**但 ④⑥ 不在此列**——它们不是构成却可行动性最高,已单独认领为 §12 第 5 项。初版把 ①②③④⑥⑨ 一并否掉是过度归并。
 - **七段线性阶段(`intake`/`context`/`model`/`tools`/`guards`/`synthesis`/`delivery`)**:本 spec 的初版提案,**已否决**,三条理由见 §6.6.1——`guards` 不是位次而是包裹层(且跨 `model` 与 `tools` 两个挂载点)、`synthesis` 与 `delivery` 的成员是 `after_agent` 只走一次而非每圈都走、分布失衡(一段 9 个一段 1 个)。
 - **把阶段当"角色"而非"位次",画成分层/洋葱视图**(包裹层画外圈、位次层画内圈):这在结构上最诚实——wrap-only 中间件约占 44%(§2.1),它们本来就没有位次槽。**否决理由是与需求不符**:用户的原话是"用户可以看到自己问了问题后 agent 是怎么去工作的,**流程走到哪**",那是位次概念;洋葱图按**包裹深度**同心分层,没有"沿路前进"的路径,因此承载不了"走到哪"的脉冲动画。
   > **这条否决的理由只对洋葱成立,不能连带否掉环形——初版曾把它当成拒绝一切非线性布局的依据,是一处过度推广,2026-09-10 已修正。** 环 ≠ 洋葱:洋葱是按包裹深度分层,环是把**同一条线性管道首尾接起来**,它有明确的前进路径,因此**同时**承载位次(指针沿环走)与圈结构(绕 N 圈)。环形已被采纳(§6.6.1 的二次裁决)。洋葱仍然否决;若日后用户改口要"看清包裹关系"而非"看清进度",**洋葱**(不是环)应当重新评估。
-- **五段线性管道(初版采纳、现已否决)**:七段被否之后的落点,**2026-09-10 由环形取代**。否决理由是它无法表达 §6.6.2 自己写出的真实时间结构 `intake → [context → model ⇄ tools] × N 圈 → epilogue`:`context` 的 12 个成员每圈都走却被画成"第二步",`model ⇄ tools` 的双向循环被画成两个先后格子,补救手段是给 `frequency` 加文字标注("每圈检查")——**用文字补形状的债**,且"第几格亮了"与"这件事每圈都在发生"是两个互相矛盾的信号同时出现在一张图上。改环形的代价见 §6.6.1;它带出的两项里 **`extension` 的位置已裁决**(§8 风险 11),**只剩"环形怎么实现"未决**(§8 风险 12)。**`middlewares[]` 的 `kind` 字段在两个方案下都必须存在**(区分占位次的成员与不占位次的闸门),它不是线性方案的专属遗产。
+- **五段线性管道(初版采纳、现已否决)**:七段被否之后的落点,**2026-09-10 由环形取代**。否决理由是它无法表达 §6.6.2 自己写出的真实时间结构 `intake → [context → model ⇄ tools] × N 圈 → epilogue`:`context` 的 12 个成员每圈都走却被画成"第二步",`model ⇄ tools` 的双向循环被画成两个先后格子,补救手段是给 `frequency` 加文字标注("每圈检查")——**用文字补形状的债**,且"第几格亮了"与"这件事每圈都在发生"是两个互相矛盾的信号同时出现在一张图上。改环形的代价见 §6.6.1;它带出的两项**都已裁决**——`extension` 的位置(§8 风险 11)与**环形怎么实现(§8 风险 12:手写 SVG,不引 React Flow)**。**`middlewares[]` 的 `kind` 字段在两个方案下都必须存在**(区分占位次的成员与不占位次的闸门),它不是线性方案的专属遗产。
 
 ## 12. 非目标与后续
 
@@ -787,12 +815,15 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_constitution_record.py tests
 **本线的后续项(依赖排序,非偏好排序):**
 
 1. **⑧ 闸门埋点**(天级,纯旁路)——**已另立 spec:`2026-09-11-harness-gate-instrumentation-design.md`**(2026-09-11 立项)。原文四项走 `middleware:{tag}`(ReadBeforeWrite 拦截、ToolProgress WARNED/BLOCKED、subagent 限额截断、deferred 工具提升);**新 spec 的勘查把「改变了执行结果的闸门」这条规则跑全,补上两处同类**:`SandboxAudit`(命令位置替换会被拦)与 `SkillToolPolicy`(越权工具会被拦)——**共 6 个埋点**,见新 spec §3.1(该处标注为**可被否决**)。subagent 侧 `loop_capped` / `token_capped` **零后端改动**,通道已存在(`stop_reason` → `subagent.end`),只需前端渲染。前置:新增 tag ≤21 字符(已核实为 32 − 11 = 21,六个新 tag 全部 ≤ 14)。
-2. **前端构成视图**(另立 spec)——消费本 spec 的 `run.start.constitution` + ⑧ 的事件。**布局已裁决为环形**(§6.6.1 的二次裁决),所以它的**第一个裁决点不是路由而是布局实现**:React Flow 的自动布局对环形不友好,`ai-elements/` 七个包装组件是 registry 生成物**不可手改**(`frontend/AGENTS.md:281`、`eslint.config.js:15` 已 ignore 该目录,丙1 spec §2.4 的同一结论),因此要么在业务目录下写自有包装 + 手写极坐标定位,要么退回"线性五格 + 圈数徽标"的折中(§8 风险 12;退回不影响数据契约,`stages[].loop` 照样发)。**已裁决不用再议的**:两档是**两个独立组件**(§6.8.1,不是一个视图加详略开关);`extension` 是 `kind:"member"` 的环外附加带、`loop:false`(§8 风险 11);构成是 run 级事实,**挂在本次 run 最后一条 assistant 气泡上**、⑧ 的闸门通知**长在既有工具卡上**(§12.1)。**仍需裁决**:落在哪个路由(thread 视图内嵌还是独立面板)、stage 的中文文案、`pnpm perf:check` 的资产预算(环形布局比五格贵)、环形布局的实现方式(§8 风险 12)。
+2. **前端构成视图**(另立 spec)——消费本 spec 的 `run.start.constitution` + ⑧ 的事件。**布局已裁决为环形**(§6.6.1),**环形怎么实现也已裁决(2026-09-11):手写 SVG,不引 React Flow**(§8 风险 12,含四条实测证据)。**已裁决不用再议的**:两档是**两个独立组件**(§6.8.1);`extension` 是 `kind:"member"` 的环外附加带、`loop:false`(§8 风险 11);⑧ 的闸门通知**长在既有工具卡上**;**构成上头部栏、⑩ 交付层留在内联**(§12.1,2026-09-11 修订——原"两者共用内联锚点"已撤销);环形与预算无关(SVG 零依赖)。**落点已裁决(2026-09-11):头部栏触发器 + Dialog,不新增路由、不新增顶级入口**(详见 §12.1)。原"落哪个路由"的三候选(A thread 内嵌 / B 独立路由 / C 头部弹层)**由 C 变体胜出**——但**不是**我原先描述的"头部弹层放不下环",而是**头部只放触发器、环开在 Dialog**,理由见 §12.1。**`middlewares[]` 的 tooltip 文案已冻结**(§13),前端 spec 不再重新裁决。
 
-   **本项必须一并交付 i18n 文案表的防腐机制(2026-09-10 裁决)。** §6.6.3 的人话列不进 payload、归前端 i18n,于是文案表是**按 middleware 真名索引**的:34 个具名 middleware + 5 个 stage key ≈ 39 条 × en-US/zh-CN ≈ **78 条**。服务端那张 stage 表有 guard test 防腐(漏一个 middleware 就红,§6.6.4),**前端这张文案表目前没有任何对账机制**——加一个 middleware,开发者档会静默显示成 `XxxMiddleware` 类名,没有任何测试会红。腐烂风险从服务端搬到了前端,防线没跟着搬。**要求两条测试,一条在每侧:**
+   **本项零新依赖**(环形手写 SVG,§8 风险 12 已裁)⇒ `pnpm perf:check` **不再是本项的约束**;文案 120 条落 `zh-CN.ts` / `en-US.ts` / **`types.ts`** 三文件,guard test 三处(§13.6)。
 
-   1. **前端**(`frontend/tests/unit/…`):断言 zh-CN 与 en-US 两个 locale 对**一份 checked-in 的密钥清单**里每个 key(middleware 真名 + 5 个 stage key)都有非空条目,且没有多余条目(双向等值,防止改名后留下孤儿文案)。
-   2. **后端**(`backend/tests/test_constitution_i18n_keys.py`):断言那份 checked-in 清单与 `STAGE_OF_MIDDLEWARE` 的键集**逐项相等**。后端测试读另一个模块的仓库文件在本仓有先例(`backend/tests/test_compose_default_bind_host.py` 读 `docker/` 的 compose 文件),纪律同 §6.6.4 引的 `_BASELINE_TABLE_NAMES` 钉 `0001_baseline.upgrade()`——**改了服务端表而没同步清单,CI 就红**。
+   **本项必须一并交付 i18n 文案表的防腐机制(2026-09-10 裁决,2026-09-11 更新为三处)。** §6.6.3 的人话列不进 payload、归前端 i18n,于是文案表是**按 middleware 真名索引**的。服务端那张 stage 表有 guard test 防腐(漏一个 middleware 就红,§6.6.4),**前端这张文案表目前没有任何对账机制**——加一个 middleware,开发者档会静默显示成 `XxxMiddleware` 类名,没有任何测试会红。腐烂风险从服务端搬到了前端,防线没跟着搬。**文案与三处测试的完整定义见 §13**(60 key × 2 = 120 条,不是原写的 78 条)。**要求三处测试:**
+
+   1. **前端 locale**(`frontend/tests/unit/…`):断言 zh-CN 与 en-US 两个 locale 对**一份 checked-in 的密钥清单**里每个 key 都有非空条目,且没有多余条目(双向等值,防止改名后留下孤儿文案)。
+   2. **前端类型**(同文件或相邻):断言 `types.ts` 的 `constitution` 块与同一清单一致。**漏一个 key 会在 TS 编译期就红,但孤儿 key 不会** —— 所以要显式断言,不能只靠编译。
+   3. **后端**(`backend/tests/test_constitution_i18n_keys.py`):断言那份 checked-in 清单与 `STAGE_OF_MIDDLEWARE` 的键集**逐项相等**。后端测试读另一个模块的仓库文件在本仓有先例(`backend/tests/test_compose_default_bind_host.py` 读 `docker/` 的 compose 文件),纪律同 §6.6.4 引的 `_BASELINE_TABLE_NAMES` 钉 `0001_baseline.upgrade()`——**改了服务端表而没同步清单,CI 就红**。
 
    **为什么不让前端从 `hooks[]`/`error` 之类的运行期数据里取 key**:文案是**静态穷举**的,必须能在构建期校验;靠运行期发现漏文案,等价于让用户先看到类名。
 3. **十段流图里的 ⑩ 交付层**(零后端改动)——`run.delivery` 回执已带 `produced_paths` / `presented_paths` / `matched_paths` / `verification` / `stage` / `satisfied`,`workspace_changes` 也已存在且前端有 `core/workspace-changes/`。这是"agent 最后拿出了什么"的现成故事,可与构成视图同期做。**按 §6.6.1 它渲染在 `epilogue`(环的出口弧)内**,与 Title / Memory 同弧但 producer 不同,所以它不进 `stages[].members` 计数。**注意 `run.delivery` 今天前端零消费者**——2026-09-10 grep `run.delivery` / `produced_paths` / `presented_paths` 在 `frontend/src` 全部零命中,而后端三个发射点已存在(`runtime/runs/worker.py:136`、`runtime/runs/manager.py:995`、`runtime/journal.py:885-891`)。所以本项是"零后端改动"里最大的一块纯前端增量。
@@ -826,12 +857,34 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_constitution_record.py tests
    **契约影响**:`contracts/subagent_status_contract.json` 需加一个加性字段(与 `stop_reason` 同样是 optional,老消费者忽略);`subagent.end` 的载荷形状要过 §9 那套 5 处同步。
    **代价**:多一处**非旁路改动**(子代理构建器,与 §6.2 的 lead 站点同类),因此不适合并进本 spec(本 spec 的唯一非旁路改动已经要评审了);且它让"委派树"真正成立,产品收益大,值得单列。
 
-### 12.1 跨项约束:与既有 run 作用域 UI 的整合点(2026-09-10)
+### 12.1 跨项约束:与既有 run 作用域 UI 的整合点(2026-09-10;**2026-09-11 修订**)
 
 **这一条管的是"别做完才发现和现有 UI 打架"**,适用于第 2/3/4/5 项:
 
-- **⑧ 的闸门通知长在既有的工具卡上,不另开一处。** `Guardrail` / `SandboxAudit` / `ReadBeforeWrite` / `ToolProgress` 拦的都是**某一次工具调用**,而工具卡(`messages/message-group.tsx` 的步骤项)就是它的自然归属;现有的 `deerflow_tool_meta`(`status` / `error_type` / `recoverable_by_model` / `recommended_next_action`)已经是这些闸门在结果上留下的痕迹。**另开一个"闸门面板"会让同一次工具调用的信息分裂在两处。**
-- **构成视图与 ⑩ 交付层共用同一个 run 作用域锚点。** 前端已有明确先例与规则:run 作用域的展示**挂在本次 run 最后一条 assistant 气泡上**(`core/messages/workspace-change-anchor.ts` + `frontend/AGENTS.md` 的"Any future run-scoped display belongs in the same place — do not hang one off every message")。构成是 run 级事实,必须遵守同一规则,**不要每条消息挂一份**。
+- **⑧ 的闸门通知长在既有的工具卡上,不另开一处。** `Guardrail` / `SandboxAudit` / `ReadBeforeWrite` / `ToolProgress` 拦的都是**某一次工具调用**,而工具卡(`messages/message-group.tsx` 的步骤项)就是它的自然归属;现有的 `deerflow_tool_meta`(`status` / `error_type` / `recoverable_by_model` / `recommended_next_action`)已经是这些闸门在结果上的残留痕迹。**另开一个"闸门面板"会让同一次工具调用的信息分裂在两处。**
+
+- **构成视图与 ⑩ 交付层"共用同一个锚点"已撤销,改成按信息性质拆开(2026-09-11 用户裁决)。**
+
+  原裁决(2026-09-10)让两者共用"本次 run 最后一条 assistant 气泡"。**它的真实来源是一条反重复规则**——`frontend/AGENTS.md` 的 "Any future run-scoped display belongs in the same place — **do not hang one off every message**"——**管的是"别每条消息挂一份",不是"必须内联"**。2026-09-11 复核后发现这两件事其实是**两类信息**,继续绑在一处会让脉冲无处可放:
+
+  | | 信息性质 | 落点 |
+  |---|---|---|
+  | **⑩ 交付层**(`run.delivery`:"这次拿出了什么") | **对话内容** | **留在内联**——本次 run 最后一条 assistant 气泡(与 `workspace-change` 卡一致) |
+  | **构成**(:"harness 怎么装的 / 走到哪了") | **chrome / 元信息** | **上头部栏**(与 `ContextUsageBadge` / `ArtifactTrigger` / token 用量一致) |
+
+  **决定性论据(实时脉冲,第 6 项)**:内联锚点是**本次 run 最后一条 assistant 气泡**,而它在 run 跑完之前并不确定——"流程走到哪"必须在**运行过程中**看。头部是稳定且始终在屏幕上的位置,内联不是。
+
+  **反重复规则本身仍然有效**:构成**不在消息流里再渲染一份**。头部是它唯一的落点。
+
+- **头部栏的形态已裁决(2026-09-11):`h-12` 头部只放触发器,环开在 Dialog 里。**
+
+  - **头部放不下环**:`app/workspace/chats/[thread_id]/page.tsx:281` 的 header 是 `h-12`(48px,`absolute top-0 z-30`)。所以头部是**触发器**,内容是 **Dialog 居中弹窗**。
+  - **触发器照抄 `ArtifactTrigger` 的形状**:`variant="ghost"` + `Tooltip` + `<span className="hidden sm:inline">` 标签 + `aria-label`。**不新增顶级入口、不新增路由**(这就是原"落哪个路由"那个裁决的答案:它活在既有 thread 视图里)。
+  - **Dialog 尺寸**:仓里 `DialogContent` 默认 `sm:max-w-lg`(512px),业务里有用到 `max-w-2xl` / `max-w-5xl` 的先例。环需要近似方形的区域(5 段弧 + 弧上标签),**建议 `sm:max-w-2xl` 起步**,具体由前端 spec 定。
+  - **`Dialog` 而非右侧面板**(用户 2026-09-11 裁决):右侧面板是**互斥**的(`ArtifactTrigger` 开时会 `sidecar?.close()`),放构成会挤掉产物/浏览器/sidecar;Dialog 空间更宽松且不参与那套互斥。**代价**:Dialog 会挡住对话——对"边跑边看"是减分项,**但头部触发器上的实时小状态(脉冲)仍然可见**,所以不致命。
+  - **唯一需要实测的风险是拥挤**:头部右簇已有 **6 项**(定时任务 · token/上下文 · sidecar · 浏览器 · 导出 · 产物),加它成**第 7 项**;且标签在 `sm` 以下已隐藏(`hidden sm:inline`),**窄屏全靠图标**。前端 spec 必须验窄屏(移动端视口),必要时把它收进溢出菜单。
+  - **不可拖动**(与环形裁决同源):34 条 middleware 的顺序是语义(Clarification 必须最后、SkillToolPolicy 必须紧跟 SkillActivation),**改顺序就是改行为** ⇒ 它是**只读仪表**,不是可编辑画布(可拖拽画布是丙1/甲那条线)。可交互的只有:点弧段展开成员 · 悬停 tooltip · 点闸门徽标看它拦了什么 · 点成员跳去对应工具卡。
+
 - **不要与 subtask 卡重复表达同一件事**:委派的可视化已经由 subtask 卡承担(含步骤时间线与实时状态)。第 7 项落地时,子代理构成应当是**那张卡的展开内容**,不是新的一张卡。
 
 **编号:已裁决不引入独立体系(§8 风险 9)。** 本线的"二期"= 上面这七项,引用时写"§12 第 N 项";丙1 的 甲/乙/丙 编号归丙1,两条线不共用词汇。
@@ -844,3 +897,107 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_constitution_record.py tests
 - **五个 stage key 集合在本 spec 冻结**(`intake` / `context` / `model` / `tools` / `epilogue`,加 extension 兜底)。中文文案属前端 spec(§8 风险 8),但 key 一旦发布就是契约,改名要走 `schema_version`。`frequency` 的**三个**取值(`once_per_run` / `per_model_call` / `per_tool_call`)同理冻结——**注意取消一个取值和新增一个一样是契约变更**:`mixed` 是在发布前(本期)取消的,因此免费;一旦 `schema_version: 1` 发出去,再去掉或用满一个取值都要走版本变更。
 - `tools.mounted[]` 的 `name`/`source`/`group` 与丙1 spec §11.1 对齐,便于两条线在同一张卡片视觉语言下渲染(丙1 spec §6.3 定义了卡片四要素与确定性标记位)。
 - `schema_version: 1` 从第一天就有,后续加字段时前端可据此降级。
+## 13. 冻结文案(2026-09-11 用户批,前端 spec 直接消费)
+
+**这一节把 §8 风险 8 里"文案属于前端 spec"那条兑现掉**:文案由用户 2026-09-11 逐条批定,**前端 spec 不再重新裁决文案,只消费**。落 **三个文件**:`src/core/i18n/locales/zh-CN.ts` / `en-US.ts` / **`types.ts`**(类型定义必须同步——原方案漏了这一个)。
+
+> **计数更正**:原方案记的"78 条"是 **39 个 key × 2 locale 的条目数**,而且既漏算了两类又没算 tooltip。实际 **60 个 key × 2 = 120 条**:核心 26 + tooltip 34。
+
+**键前缀统一为 `constitution.*`**,`types.ts` 里对应一个 `constitution` 块。
+
+### 13.1 环上的段名(静态,画在弧上)
+
+| key | zh-CN | en-US |
+|---|---|---|
+| `constitution.stage.intake` | 接收 | Intake |
+| `constitution.stage.context` | 备料 | Context |
+| `constitution.stage.model` | 思考 | Model |
+| `constitution.stage.tools` | 执行 | Tools |
+| `constitution.stage.epilogue` | 收尾 | Wrap-up |
+| `constitution.stage.extension` | 扩展 | Extension |
+
+### 13.2 指针到某段时显示的一句(动态)
+
+| key | zh-CN | en-US |
+|---|---|---|
+| `constitution.activity.intake` | 收到了你的问题 | Got your message |
+| `constitution.activity.context` | 在准备上下文 | Preparing context |
+| `constitution.activity.model` | 在思考 | Thinking |
+| `constitution.activity.tools` | 在调用工具 | Using tools |
+| `constitution.activity.epilogue` | 正在收尾 | Wrapping up |
+
+### 13.3 闸门触发时的话(用户档的全部价值所在)
+
+**来源是 ⑧ 的 6 个 gate tag**(`2026-09-11-harness-gate-instrumentation-design.md`),**不是**本 spec 的静态快照。快照只负责说明"这里有 5 道闸门"。
+
+| key | zh-CN | en-US |
+|---|---|---|
+| `constitution.gate.read_gate` | 有个文件没先读就想改，已拦下 | Blocked a write to a file that wasn't read first |
+| `constitution.gate.tool_progress` | 某个工具连续没给出新信息，已停用 | A tool kept returning nothing new, so it was disabled |
+| `constitution.gate.subagent_limit` | 同时派出的子任务太多，已收窄 | Too many subtasks at once — trimmed |
+| `constitution.gate.tool_promotion` | 放出了一批之前隐藏的工具 | Released some previously hidden tools |
+| `constitution.gate.sandbox_audit` | 有条命令有风险，没让它执行 | A command looked risky, so it didn't run |
+| `constitution.gate.skill_policy` | 当前技能不允许用这个工具 | The active skill doesn't allow that tool |
+
+### 13.4 开发者档的两个轴与视图自身
+
+| key | zh-CN | en-US |
+|---|---|---|
+| `constitution.frequency.once_per_run` | 每 run 一次 | once per run |
+| `constitution.frequency.per_model_call` | 每圈 | per model call |
+| `constitution.frequency.per_tool_call` | 每次工具调用 | per tool call |
+| `constitution.kind.member` | 位次成员 | member |
+| `constitution.kind.gate` | 闸门 | gate |
+| `constitution.kind.handoff` | 交接 | handoff |
+| `constitution.title` | 本次 run 的构成 | This run's harness |
+| `constitution.a11y.segment` | 环上第 N 段，共 M 项 | Segment N of M |
+| `constitution.a11y.total` | 共 N 项 | N items |
+
+### 13.5 34 条 middleware tooltip
+
+每条一句话,**只描述它做什么,不抄实现细节**。绑定的是 `middlewares[].name`(真实类名,§6.6.3 的命名要求:必须逐字等于 `type(mw).__name__`)。
+
+| middleware 真名 | zh-CN | en-US |
+|---|---|---|
+| `ThreadDataMiddleware` | 建这个会话专属的工作目录 | Creates this conversation's own working directories |
+| `UploadsMiddleware` | 告诉你我看到了刚上传的文件 | Notes the files you just uploaded |
+| `InputSanitizationMiddleware` | 先给用户输入做消毒，原文另存备用 | Sanitizes your input first, keeping the original aside |
+| `ToolOutputBudgetMiddleware` | 工具返回太长就存成文件，对话里只留摘要 | Long tool output goes to a file; only a summary stays |
+| `ToolResultSanitizationMiddleware` | 清掉外部网页内容里伪装的系统标签 | Strips fake system tags from fetched web content |
+| `DanglingToolCallMiddleware` | 给没收到回应的工具调用补个占位 | Backfills a placeholder for tool calls that got no reply |
+| `DynamicContextMiddleware` | 注入今天的日期和你的记忆 | Injects today's date and your memory |
+| `SkillActivationMiddleware` | 你打 `/技能名` 时把该技能正文读进来 | Loads a skill's body when you type `/skill-name` |
+| `DurableContextMiddleware` | 把委派记录与技能引用存进状态，压缩后仍在 | Keeps delegation and skill records visible through compaction |
+| `DeerFlowSummarizationMiddleware` | 快装满时把旧对话压成摘要 | Compresses old turns into a summary near the context limit |
+| `TodoMiddleware` | 计划模式下提供待办清单 | Provides the todo list in plan mode |
+| `ViewImageMiddleware` | 把图片转成模型能看的形式 | Converts images into something the model can see |
+| `SystemMessageCoalescingMiddleware` | 把多条系统消息合成一条 | Merges multiple system messages into one |
+| `DeepResearchMiddleware` | 只有 rag agent 装：强制三路检索 | rag agent only: enforces the three-path retrieval |
+| `LLMErrorHandlingMiddleware` | 模型挂了转成可恢复的提示，别让整轮崩掉 | Turns a provider failure into a recoverable message |
+| `TokenUsageMiddleware` | 记 token 用量 | Records token usage |
+| `ModelLengthFinishReasonMiddleware` | 因长度被截断时记下原因 | Records why an answer was cut off by length |
+| `SubagentLimitMiddleware` | 超过并发或总量上限的子任务调用会被砍掉 | Drops subtask calls past the concurrency or per-run cap |
+| `LoopDetectionMiddleware` | 发现反复调同样的工具就硬停 | Hard-stops the turn when identical tool calls repeat |
+| `TokenBudgetMiddleware` | 到 token 上限就强制收尾 | Forces a wrap-up at the token budget |
+| `TerminalResponseMiddleware` | 模型回了空内容就提示重试一次 | Retries once when the model returns nothing |
+| `SafetyFinishReasonMiddleware` | 被内容过滤终止时不让工具继续跑 | Suppresses tool calls after a content-filter stop |
+| `SandboxMiddleware` | 申请沙箱，收尾时释放 | Acquires the sandbox and releases it at the end |
+| `SkillToolPolicyMiddleware` | 按当前技能的 allowed-tools 收窄工具集 | Narrows the toolset to the active skill's allowed tools |
+| `McpRoutingMiddleware` | 按你说的话自动放出匹配的 MCP 工具 | Auto-releases matching MCP tools based on your message |
+| `DeferredToolFilterMiddleware` | 藏起还没放出的 MCP 工具 schema | Hides MCP tool schemas until they're released |
+| `GuardrailMiddleware` | 工具执行前的授权 + 护栏双闸 | Authorization and guardrail gates before any tool runs |
+| `SandboxAuditMiddleware` | 有风险位置的命令替换会被拦下 | Blocks command substitution in command position |
+| `ReadBeforeWriteMiddleware` | 没先读过这个文件就不许改 | Won't let a file be modified before it's read |
+| `ToolProgressMiddleware` | 工具反复没新信息就先警告、再停用 | Warns, then disables a tool that keeps returning nothing new |
+| `ToolErrorHandlingMiddleware` | 工具报错转成消息，让 run 继续 | Turns tool exceptions into messages so the run continues |
+| `ClarificationMiddleware` | 需要你确认时把控制权交回给你 | Hands control back to you when it needs your input |
+| `TitleMiddleware` | 第一轮后自动给会话起标题 | Names the conversation after the first exchange |
+| `MemoryMiddleware` | 把对话排队给异步记忆抽取 | Queues the conversation for async memory extraction |
+
+### 13.6 guard test 的落点(从"两侧"改"三处")
+
+原方案写"两条测试,一条在每侧",**实测后发现要多钉一处**:
+
+1. **前端 locale 测试**:`zh-CN` 与 `en-US` 对**一份 checked-in 密钥清单**双向等值(每个 key 有非空条目、且无孤儿条目)。
+2. **前端类型测试**:`types.ts` 的 `constitution` 块与同一清单一致(漏一个 key 会 TS 编译失败,但**孤儿 key 不会** —— 所以要显式断言)。
+3. **后端**:`backend/tests/test_constitution_i18n_keys.py` 断言该清单与 `STAGE_OF_MIDDLEWARE` 的键集逐项相等(先例:`test_compose_default_bind_host.py` 读 `docker/` 的 compose,纪律同 `_BASELINE_TABLE_NAMES` 钉 `0001_baseline.upgrade()`)。

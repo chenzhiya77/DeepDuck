@@ -132,6 +132,23 @@ cd backend && PYTHONPATH=. .venv/Scripts/python.exe -m pytest \
 - **规格修正**:入选规则"改变了执行结果的闸门"跑全后,埋点数从计划的 4 个变 **6 个**(补 `sandbox_audit` 与 `skill_policy`),经用户 2026-09-11 批"6 个"。
 - **未做(开放项,spec §7 风险 4/5)**:`sandbox_audit` 的 `warn` 档、`tool_promotion` 的 `query`。
 
+### 追加补丁(2026-09-11 第二轮,用户从侧窗发现 → 复核 → 落笔)
+
+用户报了两组问题,复核后**一组成立需修、一组部分成立**。三处改动:
+
+1. **双发(spec §4.6,本 spec 第二核心)**:闸门事件原先**只落 run_events**,而 `_put` 只在 buffer 攒够 `flush_threshold = 20` 时刷(生产**只有 `worker.py:656` 一处**构造 journal、未覆盖该值),**且无时间兜底** ⇒ 闸门事件一次 run 通常个位数,**run 结束前读不到**。而 §1 的宣称是"回答 agent 为什么突然不说话"——**不实时就等于答得太晚**。
+   **修法**:`record_gate_event` 内部双发——custom SSE 帧(实时)+ 既有 run_events(重载/回填),**同一个 payload**。照搬仓里 `task_*` 的既定范式。
+   **两条复核结论推翻了原判断**:(a) **"光刷 flush 就通了"不成立**——全量核查前端:`run_events`/token usage/run 状态**都没有 `refetchInterval`**,run 进行中唯一的 live 通道是 SSE;(b) **"闸门事件上 SSE 危险得多"前提不成立**——IM 的隔离边界是**订阅**(`app/channels/manager.py:75` 的 `STREAM_MODES = ["messages-tuple","values"]` **不含 custom**),Buzz 事故是 `messages-tuple` 泄漏,与 custom 无关。**构成快照 spec §6.7 那条"新增 custom 事件要重过 allowlist"的前提已就地更正**(结论不变、依据换掉)。
+   **实测**:探针验过 **sync/async 共用的助手可直接双发**(6 个埋点全在共用函数里、不能 await;在 async hook 里调同步 `emit_custom_event` **不报错、帧到达**)——**不必拆 `_emit`/`_aemit` 两套**(`safety_finish_reason` 那套拆法是因为它的调用点分两处、可以 await)。
+2. **每个 per-call tag 补 `tool_call_id`(spec §4.4)**:§12.1 裁过"闸门通知长在既有工具卡上",而挂到**哪张**卡需要 id——原先 6 个 tag 里**只有 `read_gate` 有**。补:`tool_progress`(取 `result.tool_call_id`)、`sandbox_audit`(`:416` 已算出、只是没进 changes)、`skill_policy` 各一个单值;**`subagent_limit` 用数组 `dropped_tool_call_ids`**(它按批丢,单值没意义);`tool_promotion` 不适用。
+3. **删 `skills.active_names`(构成快照 spec §6.5)**:它写死 `[]`,而**结构上不可能有别的值**——快照在**图构建时**产生、激活在**图运行中**发生。留着等于请前端把"无激活"渲染成一个事实(而用户刚打过 `/skill-name`)。**前端要就读 `middleware:skill_activation`**。
+
+**追加后的验证**:`test_gate_instrumentation.py` **24 passed**(新增 4 条双发用例);窄集合门禁 **593 passed / 0 failed**;`ruff check` / `format --check` 干净。
+**双发的 revert 证明**:把 `_emit_gate_frame` 改成空操作 → **3 条双发断言转红**(第 4 条只断言"拦截仍发生",保持绿——正确),撤销即绿。
+**真栈验收(直接解析 SSE 流,PASS)**:私有端口 `:8099`;触发一次 `read_gate` 拦截后,流里共 **14 帧 = metadata 1 / values 11 / **custom 1** / end 1**,**那唯一一个 custom 帧就是 `read_gate`**,带 `tool_call_id`;另一条腿(查 `?event_types=middleware:read_gate`)**同一条事件、同一个 id** ⇒ **双发两条腿都对上**;且直播那条腿**不含文件正文**。
+
+**另两条经复核不成立(未改代码,记为已知限制,见构成快照 spec §8 风险 13)**:① 子代理**步骤事件走另一条 buffer、阈值 25** 与 journal 的 20 不同**不是不一致**——它服务的读者不同,实时部分走 custom SSE(`task_running`,前端 `hooks.ts:1832` 已在消费),`run_events` 那份是给重载的;② 脉冲拿不到 **per-middleware** 精度**不是缺口**——设计承诺的是 **stage 级**,而 stage 级现成够用(`llm.human.input` / `llm.ai.response` + `llm_call_index` / `llm.tool.result` / `run.delivery`)。
+
 ## 完成判据
 
 - 6 个 tag 全部经 `MIDDLEWARE_EVENT_TAGS` 发布,契约 `known_tags` 与之双向相等,全部 ≤ 21 字符

@@ -356,6 +356,9 @@ class ToolProgressMiddleware(AgentMiddleware[AgentState]):
                     action="warn" if new_state.phase == "warned" else "block",
                     changes={
                         "tool_name": tool_name,
+                        # Lets the UI attach this escalation to the exact tool card
+                        # (constitution spec §12.1: the notice lives on the card).
+                        "tool_call_id": str(result.tool_call_id or ""),
                         "from_phase": state.phase,
                         "to_phase": new_state.phase,
                         "consecutive_problems": new_state.consecutive_problems,

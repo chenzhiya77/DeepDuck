@@ -421,6 +421,7 @@ GATE_TAG_CHANGES = {
     },
     "tool_progress": {
         "tool_name": "web_search",
+        "tool_call_id": "call-1",
         "from_phase": "active",
         "to_phase": "warned",
         "consecutive_problems": 3,
@@ -429,6 +430,7 @@ GATE_TAG_CHANGES = {
     },
     "subagent_limit": {
         "dropped_count": 2,
+        "dropped_tool_call_ids": ["call-3", "call-4"],
         "requested_count": 5,
         "allowed": 3,
         "cap": "per_response_concurrency",
@@ -443,11 +445,13 @@ GATE_TAG_CHANGES = {
     },
     "sandbox_audit": {
         "tool_name": "bash",
+        "tool_call_id": "call-1",
         "verdict": "block",
         "reason": "command substitution in command position",
     },
     "skill_policy": {
         "tool_name": "bash",
+        "tool_call_id": "call-1",
         "policy_source": "slash",
         "active_path_count": 1,
     },

@@ -149,7 +149,24 @@
 
 `names` 截断到与构成快照同一上限(`MAX_TOOL_NAMES`),避免两处阈值漂移。
 
-### 4.4 契约与文档同步(5 处,与构成快照同规矩)
+### 4.4 每个 per-call tag 必须带 `tool_call_id`(2026-09-11 加,加性补丁)
+
+**为什么**:构成快照 spec §12.1 裁过"**闸门通知长在既有的工具卡上**",而"挂到**哪一张**卡上"需要 `tool_call_id`。**当前 6 个 tag 里只有 `read_gate` 有**(2026-09-11 复核):
+
+| tag | 需要传 | 怎么改 |
+|---|---|---|
+| `read_gate` | ✅ 已有 | `read_before_write_middleware.py:219` |
+| `tool_progress` | **单值** | id 已在作用域(`request.tool_call["id"]`) |
+| `sandbox_audit` | **单值** | `:416` 已算出 `tool_call_id`,只是没进 `changes` |
+| `skill_policy` | **单值** | 同上 |
+| `subagent_limit` | **数组 `dropped_tool_call_ids`** | 它**按批**丢(`indices_to_drop`),单值没有意义;用数组让前端能把**每一个**被丢的调用标出来 |
+| `tool_promotion` | **不适用** | 它不拦任何工具调用 |
+
+**三处的 id 都已在作用域里**(`ToolCallRequest.tool_call["id"]`),改动是纯粹的字段补充,**加性、不改任何既有字段**。
+
+> **一件相关但不同的事,别捆进来**:`sandbox_audit` 与 `skill_policy` 的**拦截消息**是裸 `ToolMessage`,零 `deerflow_tool_meta` 标记(grep `normalize_tool_result` / `TOOL_META_KEY` 命中均为 0),而 `tool_progress` 自盖 meta、`read_before_write` 走 `normalize_tool_result`。**这不影响"挂卡"**——消息自带 `tool_call_id` + `name`,前端照样定位。它影响的是 **ToolProgress 的分类**(裸消息 → `_parse_tool_meta` 返回 `None` → 打 warning 并**跳过计数**)。**那是既有行为,与本 spec 无关**;要修应另开(它会改变 ToolProgress 的计数与既有用例的期望)。
+
+### 4.5 契约与文档同步(5 处,与构成快照同规矩)
 
 1. **生产者代码** —— 6 个埋点的中间件 + `tool_search`;
 2. `runtime/events/catalog.py` —— 新增 6 个 tag 常量并并入 `MIDDLEWARE_EVENT_TAGS`(**必须走这个元组**,否则契约测试看不见它们);
@@ -158,6 +175,26 @@
 5. `tests/test_run_event_stream_contract.py` —— 既有 `@pytest.mark.parametrize("tag", MIDDLEWARE_EVENT_TAGS)` 自动覆盖新 tag 的**形状**;每个 tag 的**语义**另测(§6)。
 
 `deerflow/constants.py` **无需改动**(无新 event_type / category —— 该文件只有 32/16 两个长度常量,构成快照 Task 3 已核对过同一结论)。
+
+### 4.6 双发:闸门事件同时走 custom SSE 与 run_events(2026-09-11 加,本 spec 的核心补丁)
+
+**问题(2026-09-11 复核确认)**:闸门事件只落 `run_events`,而 **`_put` 只在 buffer 攒够 `flush_threshold = 20` 时刷**(`journal.py:231` 的默认值;生产全仓**只有一处**构造 journal——`worker.py:656`,**没传这个参数**),且**无时间兜底**。闸门事件一次 run 通常个位数 ⇒ **run 结束前读不到**。而 §1 的宣称是"回答 **agent 为什么突然不说话**"——**不实时的话,那个问题到得太晚**。
+
+> 先例确实存在但不可直接套用:`progress_flush_interval = 5.0`(`journal.py:233`,注释 "for active run visibility")解决的正是同一问题,**但它刷的是"进度上报"(`run_manager.update_run_progress`),不是事件 buffer**;而且**光刷早也不够**——2026-09-11 全量核查前端:**`run_events` / token usage / run 状态都没有 `refetchInterval`**(只有侧边栏 thread-search、知识页、定时任务三处有轮询),前端在 run 进行中**唯一的 live 通道是 SSE**。
+
+**裁决:闸门事件双发——custom SSE(实时)+ run_events(重载/回填)。** 照搬本仓既定范式:`deerflow.utils.custom_events.emit_custom_event`,子代理的 `task_*` 就是这么做且前端已在消费(`hooks.ts:1832`)。
+
+**IM 安全性(2026-09-11 核实,不是推断)**:IM 通道的隔离边界是**订阅**,不是 allowlist —— `app/channels/manager.py:75` 的 `STREAM_MODES = ["messages-tuple", "values"]` **不含 `custom`**,`_accumulate_stream_text` 也只消费 `messages-tuple`。Buzz 事故是 **`messages-tuple` 泄漏**,与 `custom` 无关;IM 的 run 里根本不会产生 custom 帧。**构成快照 spec §6.7 那条"新增 custom 事件要重过 allowlist"的前提已就地更正**(结论不变、依据换掉)。
+
+**实现要点(已实测,2026-09-11)**:
+
+- **同步助手可直接双发,不必拆 sync/async 两套。** 我的 6 个埋点全部落在 **sync/async 共用的函数**里(例如 `_truncate_task_calls` 同时被 `after_model` 与 `aafter_model` 调用),**不能 `await`**;而探针实测:**在 async hook 里调用同步的 `emit_custom_event` 不报错、帧正常到达**(`async_path: "ok"`,`custom_frames: 1`)。所以 `record_gate_event` 内部即可完成双发。
+  > 注意与 `safety_finish_reason_middleware` 的差别:它**拆了** `_emit_event` / `_aemit_event` 两套,那是因为它的调用点本身分 sync/async 两处、可以 await。**本 spec 的埋点在共用函数里,拆不开,也不需要拆。**
+- **writer 的获取**:`from langgraph.config import get_stream_writer`(仓内既有先例:`safety_finish_reason_middleware.py:235`、`llm_error_handling_middleware.py:742`),包在 try/except 里;**拿不到就只落 run_events**(embedded 客户端、非 streaming 调用)。
+- **事件形状**:`{"type": "<tag>", ...changes}` —— 与 `task_*` / `safety_termination` 同款,`type` 非空字符串是回调派发的前提。
+- **best-effort**:与落 run_events 同级——**SSE 发失败也绝不抛**,只 warning(`emit_custom_event` 自己已吞 `Exception` 并 re-raise `GraphBubbleUp`,沿用即可)。
+
+**范围声明**:双发只给**闸门事件**;构成快照**仍然 fetch-once 不上 SSE**(它是 run 级静态事实,run 内不变,无流式价值 —— 构成快照 spec §6.7 的结论不变)。**这两件事的投递方式不同,因为它们的时效性不同**,不要合并。
 
 ## 5. 失败模式(全部降级)
 

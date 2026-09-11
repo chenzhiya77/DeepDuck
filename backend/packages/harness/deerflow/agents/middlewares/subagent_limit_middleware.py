@@ -148,6 +148,10 @@ class SubagentLimitMiddleware(AgentMiddleware[AgentState]):
         indices_to_drop = set(task_indices[allowed_task_calls:])
         truncated_tool_calls = [tc for i, tc in enumerate(tool_calls) if i not in indices_to_drop]
         dropped_count = len(indices_to_drop)
+        # This gate drops calls in a batch, so a single id would be arbitrary —
+        # the array lets the UI mark every dropped call's card (constitution spec
+        # §12.1). Ids stay in message order.
+        dropped_tool_call_ids = [str(tool_calls[i].get("id") or "") for i in sorted(indices_to_drop)]
         logger.warning(
             "Truncated %s excess task tool call(s) from model response (concurrent limit: %s; total limit: %s; prior delegations: %s)",
             dropped_count,
@@ -173,6 +177,7 @@ class SubagentLimitMiddleware(AgentMiddleware[AgentState]):
             action="truncate",
             changes={
                 "dropped_count": dropped_count,
+                "dropped_tool_call_ids": dropped_tool_call_ids,
                 "requested_count": len(task_indices),
                 "allowed": allowed_task_calls,
                 "cap": "per_run_total" if remaining_total == 0 else "per_response_concurrency",

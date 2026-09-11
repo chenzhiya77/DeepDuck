@@ -242,6 +242,7 @@ class SkillToolPolicyMiddleware(AgentMiddleware[AgentState]):
             action="block",
             changes={
                 "tool_name": name,
+                "tool_call_id": str(request.tool_call.get("id") or ""),
                 "policy_source": policy[0],
                 "active_path_count": len(policy[1]),
             },

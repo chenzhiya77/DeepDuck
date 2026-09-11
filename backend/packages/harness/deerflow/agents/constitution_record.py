@@ -411,12 +411,13 @@ def build_constitution_record(
             configured_groups=_configured_tool_groups(app_config),
         ),
         "tool_authorization": _authorization_block(authorization_candidates, authorized_tools),
+        # No `active_names`: this record is built at graph-assembly time, while
+        # skill activation happens during the run, so any value here would be a
+        # permanent lie. Consumers read `middleware:skill_activation` instead.
         "skills": {
             "available_count": len(getattr(skill_setup, "skill_names", None) or ()),
             "deferred_discovery": bool(_config_value(app_config, "skills", "deferred_discovery", default=False)),
             "describe_skill_bound": getattr(skill_setup, "describe_skill_tool", None) is not None,
-            # Activation happens on later turns; a run-start snapshot has none yet.
-            "active_names": [],
         },
         "mcp_routing_built": bool(mcp_routing_built),
     }

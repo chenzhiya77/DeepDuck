@@ -193,6 +193,8 @@ async def test_tool_progress_records_only_the_phase_transition():
     assert content["changes"]["to_phase"] == "warned"
     assert content["changes"]["consecutive_problems"] == 2
     assert content["changes"]["tool_name"] == "web_search"
+    # §4.4: the id is what lets the notice land on the right tool card.
+    assert content["changes"]["tool_call_id"] == "tc-web_search"
 
 
 @pytest.mark.anyio
@@ -260,6 +262,8 @@ async def test_subagent_limit_records_the_concurrency_cap():
     assert changes["dropped_count"] == 1
     assert changes["requested_count"] == 3
     assert changes["allowed"] == 2
+    # §4.4: batch gate, so an array of the calls it actually dropped — in order.
+    assert changes["dropped_tool_call_ids"] == ["t2"]
 
 
 @pytest.mark.anyio
@@ -277,6 +281,7 @@ async def test_subagent_limit_records_the_per_run_total_cap():
     assert changes["dropped_count"] == 2
     assert changes["remaining_total"] == 0
     assert changes["prior_delegations"] == 1
+    assert changes["dropped_tool_call_ids"] == ["t0", "t1"]
 
 
 def test_subagent_limit_survives_an_exploding_journal():
@@ -322,6 +327,7 @@ async def test_sandbox_audit_records_a_blocked_command():
     content = events[0]["content"]
     assert content["action"] == "block"
     assert content["changes"]["tool_name"] == "bash"
+    assert content["changes"]["tool_call_id"] == "call-bash"
     assert content["changes"]["verdict"] == "block"
     assert content["changes"]["reason"]
     # The command itself is tool arguments — it must never be persisted.
@@ -403,6 +409,7 @@ async def test_skill_policy_records_a_blocked_tool():
     content = events[0]["content"]
     assert content["action"] == "block"
     assert content["changes"]["tool_name"] == "bash"
+    assert content["changes"]["tool_call_id"] == "call-skill"
     assert content["changes"]["policy_source"] == "slash"
     assert content["changes"]["active_path_count"] == 1
 
@@ -499,3 +506,60 @@ async def test_tool_promotion_records_the_auto_routing_path():
 
 def test_auto_promotion_stays_silent_without_a_journal():
     assert _run_auto_promotion(_runtime(None)) is not None
+
+
+# --------------------------------------------------------------------------- #
+# dual delivery (spec §4.6): the live frame must not depend on the journal
+# --------------------------------------------------------------------------- #
+def _capture_frames(monkeypatch) -> list:
+    frames: list = []
+    monkeypatch.setattr("langgraph.config.get_stream_writer", lambda: frames.append)
+    return frames
+
+
+def test_gate_event_is_streamed_to_a_live_consumer(monkeypatch):
+    frames = _capture_frames(monkeypatch)
+    journal, _ = _journal()
+
+    _run_read_gate(_runtime(journal))
+
+    assert len(frames) == 1, "exactly one live frame per gate decision"
+    frame = frames[0]
+    assert frame["type"] == "read_gate"
+    assert frame["action"] == "block"
+    assert frame["changes"]["tool_call_id"] == "call-1"
+    # Same payload on both legs — one shape to reason about.
+    assert {"name", "hook", "action", "changes"} <= set(frame)
+
+
+def test_live_frame_does_not_require_a_journal(monkeypatch):
+    """Embedded clients have no journal but still stream custom frames."""
+    frames = _capture_frames(monkeypatch)
+
+    _run_read_gate(_runtime(None))
+
+    assert [f["type"] for f in frames] == ["read_gate"]
+
+
+def test_gate_event_survives_an_exploding_stream_writer(monkeypatch):
+    def _boom():
+        raise RuntimeError("no writer here")
+
+    monkeypatch.setattr("langgraph.config.get_stream_writer", _boom)
+
+    blocked = _run_read_gate(_runtime(_ExplodingJournal()))
+
+    assert blocked.status == "error", "a failed live frame must not change the block"
+
+
+def test_gate_event_carries_no_blocked_content_on_either_leg(monkeypatch):
+    frames = _capture_frames(monkeypatch)
+    journal, store = _journal()
+
+    _run_audit(_runtime(journal), command=BLOCKED_COMMAND)
+
+    both_legs = json.dumps(frames, default=str)
+    assert BLOCKED_COMMAND not in both_legs
+    assert "evil.example" not in both_legs
+    # And the journal leg is the same payload.
+    assert frames[0]["type"] == "sandbox_audit"

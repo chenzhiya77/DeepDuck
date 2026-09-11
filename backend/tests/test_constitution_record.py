@@ -517,15 +517,19 @@ def test_skills_block_reports_counts_and_config_flags():
         "available_count": 2,
         "deferred_discovery": True,  # from app_config
         "describe_skill_bound": True,
-        "active_names": [],
     }
+
+
+def test_skills_block_has_no_runtime_activation_field():
+    """Activation happens during the run; a build-time record must not claim it."""
+    record = _record(skill_setup=_FakeSkillSetup(["alpha"]))
+    assert "active_names" not in record["skills"]
 
 
 def test_skills_block_without_setup_is_all_empty():
     record = _record(skill_setup=None)
     assert record["skills"]["available_count"] == 0
     assert record["skills"]["describe_skill_bound"] is False
-    assert record["skills"]["active_names"] == []
 
 
 # --------------------------------------------------------------------------- #

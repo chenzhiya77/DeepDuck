@@ -424,6 +424,7 @@ class SandboxAuditMiddleware(AgentMiddleware[ThreadState]):
             action="block",
             changes={
                 "tool_name": str(request.tool_call.get("name") or "bash"),
+                "tool_call_id": tool_call_id,
                 "verdict": "block",
                 "reason": reason,
             },

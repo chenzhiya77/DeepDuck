@@ -88,24 +88,37 @@ a tool call, drops delegations, or releases deferred tool schemas. Observation
 alone does not emit: e.g. `ToolOutputBudgetMiddleware` externalizing an oversized
 result is not a gate event, but a blocked write is.
 
+Every gate tag that blocks a specific tool call carries `tool_call_id`, which is
+what lets a UI attach the notice to that call's card. `subagent_limit` drops a
+**batch**, so it carries `dropped_tool_call_ids` (array, message order) instead;
+`tool_promotion` blocks nothing and carries neither.
+
 | Tag | Emitted when | `changes` |
 | --- | --- | --- |
 | `read_gate` | A write is blocked because the target was not read first (content-hash mark missing/mismatched). | `tool_name`, `tool_call_id`, `path` (virtual), `reason` |
-| `tool_progress` | A tool's stagnation state escalates. `action` is `warn` or `block`. | `tool_name`, `from_phase`, `to_phase`, `consecutive_problems`, `error_type`, `block_reason` |
-| `subagent_limit` | Excess `task` calls are truncated. | `dropped_count`, `requested_count`, `allowed`, `cap` (`per_response_concurrency` \| `per_run_total`), `prior_delegations`, `remaining_total` |
+| `tool_progress` | A tool's stagnation state escalates. `action` is `warn` or `block`. | `tool_name`, `tool_call_id`, `from_phase`, `to_phase`, `consecutive_problems`, `error_type`, `block_reason` |
+| `subagent_limit` | Excess `task` calls are truncated. | `dropped_count`, `dropped_tool_call_ids`, `requested_count`, `allowed`, `cap` (`per_response_concurrency` \| `per_run_total`), `prior_delegations`, `remaining_total` |
 | `tool_promotion` | Deferred MCP tool schemas are released. | `source` (`model` \| `auto_routing`), `names`, `count`, and `top_k` for the routing path |
-| `sandbox_audit` | A `bash` command is blocked by position-based command-substitution rules. | `tool_name`, `verdict`, `reason` |
-| `skill_policy` | A tool outside the active skill's `allowed-tools` is blocked. | `tool_name`, `policy_source` (`slash` \| `skill_context`), `active_path_count` |
+| `sandbox_audit` | A `bash` command is blocked by position-based command-substitution rules. | `tool_name`, `tool_call_id`, `verdict`, `reason` |
+| `skill_policy` | A tool outside the active skill's `allowed-tools` is blocked. | `tool_name`, `tool_call_id`, `policy_source` (`slash` \| `skill_context`), `active_path_count` |
 
-Two properties hold for every one of them:
+Three properties hold for every one of them:
 
 - **`changes` never carries the content that was blocked.** No command text, no
   file contents, no retrieval query, no secret values — only the decision facts.
   This follows `safety_finish_reason_middleware`'s rule of not persisting the very
   content the provider filtered.
-- **Persistence is best-effort and never changes execution.** The middleware
-  silently skips when `__run_journal` is absent (embedded client, subagent runs)
-  and swallows any `record_middleware` failure with a warning.
+- **Best-effort on both channels, and neither can change execution.** The journal
+  leg silently skips when `__run_journal` is absent (embedded client, subagent
+  runs) and swallows any `record_middleware` failure with a warning; the live leg
+  skips when there is no stream writer and swallows a failed frame the same way.
+- **Dual-delivered: a live `custom` SSE frame *and* this persisted event**, with
+  the same payload on both. A gate acting is exactly the moment a run "goes quiet",
+  and the journal's write buffer only flushes at `flush_threshold` — journal-only
+  events would land after the run ended, too late to explain anything. The live
+  frame deliberately does **not** depend on the journal, because embedded clients
+  have no journal but do stream custom events. IM channels are unaffected: they
+  subscribe to `messages-tuple` and `values` only, never `custom`.
 
 `tool_progress` only emits on a **phase transition**, not on every problem call:
 the state machine is hysteretic (three consecutive problems to escalate, a good
