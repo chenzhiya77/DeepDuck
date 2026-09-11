@@ -56,7 +56,10 @@ import type {
   RunMessage,
   ThreadTokenUsageResponse,
 } from "./types";
-import { buildThreadCreatedMetadata, THREAD_PINNED_METADATA_KEY } from "./utils";
+import {
+  buildThreadCreatedMetadata,
+  THREAD_PINNED_METADATA_KEY,
+} from "./utils";
 
 export type ThreadStreamOptions = {
   threadId?: string | null | undefined;
@@ -1567,8 +1570,14 @@ export function useThreadStream({
   const startedRef = useRef(false);
   // The run currently streaming, for run-scoped reads (the constitution view
   // fetches per run). `onStart` cannot carry this: it fires once per thread, so
-  // a second run never reaches it. Cleared with the other thread-local state.
-  const [liveRunId, setLiveRunId] = useState<string | null>(null);
+  // a second run never reaches it. The run id travels with the thread it belongs
+  // to rather than being cleared by a thread-change effect: for a new thread the
+  // id goes from undefined to real, which such an effect would read as a switch
+  // and would wipe the very id `onCreated` just recorded.
+  const [liveRun, setLiveRun] = useState<{
+    threadId: string;
+    runId: string;
+  } | null>(null);
   const pendingUsageBaselineMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingPreparedReplayRef = useRef<PendingPreparedReplayMask | null>(
     null,
@@ -1604,7 +1613,6 @@ export function useThreadStream({
     if (!normalizedThreadId) {
       // Reset when the UI moves back to a brand new unsaved thread.
       startedRef.current = false;
-      setLiveRunId(null);
       setOnStreamThreadId(normalizedThreadId);
     } else {
       setOnStreamThreadId(normalizedThreadId);
@@ -1614,7 +1622,7 @@ export function useThreadStream({
 
   const handleStreamStart = useCallback((_threadId: string, _runId: string) => {
     threadIdRef.current = _threadId;
-    setLiveRunId(_runId);
+    setLiveRun({ threadId: _threadId, runId: _runId });
     setOptimisticThreadId((currentOptimisticThreadId) => {
       const currentView = currentViewThreadIdRef.current;
       if (
@@ -1985,7 +1993,6 @@ export function useThreadStream({
   // optimistic messages and in-flight guards do not leak across chat views.
   useEffect(() => {
     startedRef.current = false;
-    setLiveRunId(null);
     sendInFlightRef.current = false;
     messagesRef.current = [];
     transientHistoryBridgeRef.current = [];
@@ -2611,7 +2618,7 @@ export function useThreadStream({
 
   return {
     thread: mergedThread,
-    liveRunId,
+    liveRunId: liveRun && liveRun.threadId === threadId ? liveRun.runId : null,
     pendingUsageMessages,
     sendMessage,
     regenerateMessage,

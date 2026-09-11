@@ -95,3 +95,17 @@ test("drops the live run id when the view moves to another thread", () => {
   rerender({ id: "thread-2" });
   expect(result.current.liveRunId).toBeNull();
 });
+
+test("keeps the run id while an unsaved thread becomes a saved one", () => {
+  // The first run of a new chat is exactly this: the id goes undefined → real.
+  // Clearing the run id on that change (as a thread-switch effect would) hides
+  // the harness for the whole first run of every conversation.
+  const { result, rerender } = renderThreadStream(undefined);
+
+  act(() => {
+    streamMockState.onCreated?.({ thread_id: "fresh-thread", run_id: "run-1" });
+  });
+  rerender({ id: "fresh-thread" });
+
+  expect(result.current.liveRunId).toBe("run-1");
+});

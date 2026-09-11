@@ -817,7 +817,11 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_constitution_record.py tests
 1. **⑧ 闸门埋点**(天级,纯旁路)——**已另立 spec:`2026-09-11-harness-gate-instrumentation-design.md`**(2026-09-11 立项)。原文四项走 `middleware:{tag}`(ReadBeforeWrite 拦截、ToolProgress WARNED/BLOCKED、subagent 限额截断、deferred 工具提升);**新 spec 的勘查把「改变了执行结果的闸门」这条规则跑全,补上两处同类**:`SandboxAudit`(命令位置替换会被拦)与 `SkillToolPolicy`(越权工具会被拦)——**共 6 个埋点**,见新 spec §3.1(该处标注为**可被否决**)。subagent 侧 `loop_capped` / `token_capped` **零后端改动**,通道已存在(`stop_reason` → `subagent.end`),只需前端渲染。前置:新增 tag ≤21 字符(已核实为 32 − 11 = 21,六个新 tag 全部 ≤ 14)。
 2. **前端构成视图**(另立 spec)——消费本 spec 的 `run.start.constitution` + ⑧ 的事件。**布局已裁决为环形**(§6.6.1),**环形怎么实现也已裁决(2026-09-11):手写 SVG,不引 React Flow**(§8 风险 12,含四条实测证据)。**已裁决不用再议的**:两档是**两个独立组件**(§6.8.1);`extension` 是 `kind:"member"` 的环外附加带、`loop:false`(§8 风险 11);⑧ 的闸门通知**长在既有工具卡上**;**构成上头部栏、⑩ 交付层留在内联**(§12.1,2026-09-11 修订——原"两者共用内联锚点"已撤销);环形与预算无关(SVG 零依赖)。**落点已裁决(2026-09-11):头部栏触发器 + Dialog,不新增路由、不新增顶级入口**(详见 §12.1)。原"落哪个路由"的三候选(A thread 内嵌 / B 独立路由 / C 头部弹层)**由 C 变体胜出**——但**不是**我原先描述的"头部弹层放不下环",而是**头部只放触发器、环开在 Dialog**,理由见 §12.1。**`middlewares[]` 的 tooltip 文案已冻结**(§13),前端 spec 不再重新裁决。
 
-   **本项零新依赖**(环形手写 SVG,§8 风险 12 已裁)⇒ `pnpm perf:check` **不再是本项的约束**;文案 120 条落 `zh-CN.ts` / `en-US.ts` / **`types.ts`** 三文件,guard test 三处(§13.6)。
+   > **✅ 本项已交付(2026-09-12)。** 另立的前端 spec = `2026-09-12-harness-constitution-frontend-design.md`,实施计划 = `plans/2026-09-12-harness-constitution-frontend.md`(六个 Task 全绿,提交 `4da65ce3` → `12f1cf02` + 本 Task 6)。交付内容:头部触发器 + Dialog、环形(手写 SVG)、两档独立组件、67 key 文案全量落盘 + 三处 guard、`run.start` 即时落库(见下)。**真栈真浏览器验收 17/17 过**(系统 Chrome + Playwright,私有 `:8099`),含窄屏 375px 不溢出、刷新后闸门通知仍在、**run 进行中 686ms 即可读到**(§12.1 那条决定性理由)。
+   >
+   > **两处只有真浏览器才暴露的缺陷(单测当时全绿)**,都已修并各自补了测试:①**新对话的第一次 run 看不到构成**——`liveRunId` 被"线程切换即清空"的重置效果抹掉,而新线程的 `threadId` 从 undefined 变真实值正好触发它;改成 run id 与所属 thread **成对携带**后不再需要重置效果。②**一次读到空就被永久缓存**——`run.start` 在 run 创建后 0.17–2.2s 才落库(实测),而页面拿到 run id 就立刻问,空答案被 `staleTime: Infinity` 锁住整轮;`fetchConstitution` 改为有界重问。
+   >
+   > **本项零新依赖**(环形手写 SVG,§8 风险 12 已裁)⇒ `pnpm perf:check` **不再是本项的约束**;文案 **67 条**(§13 的 60 + 前端 spec §8.3 新批的 7)落 `zh-CN.ts` / `en-US.ts` / **`types.ts`** 三文件,guard test 三处(§13.6)。
 
    **本项必须一并交付 i18n 文案表的防腐机制(2026-09-10 裁决,2026-09-11 更新为三处)。** §6.6.3 的人话列不进 payload、归前端 i18n,于是文案表是**按 middleware 真名索引**的。服务端那张 stage 表有 guard test 防腐(漏一个 middleware 就红,§6.6.4),**前端这张文案表目前没有任何对账机制**——加一个 middleware,开发者档会静默显示成 `XxxMiddleware` 类名,没有任何测试会红。腐烂风险从服务端搬到了前端,防线没跟着搬。**文案与三处测试的完整定义见 §13**(60 key × 2 = 120 条,不是原写的 78 条)。**要求三处测试:**
 

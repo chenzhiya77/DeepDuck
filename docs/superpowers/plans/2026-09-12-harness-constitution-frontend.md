@@ -120,11 +120,11 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Modify `frontend/AGENTS.md`(Interaction Ownership 增一条)、`docs/superpowers/specs/2026-09-10-harness-constitution-snapshot-design.md`(§12 第 2 项标记交付)、本 plan(交付纪要)
 
-- [ ] **Step 1(真栈):** 后端私有端口 `:8099` + `DEER_FLOW_AUTH_DISABLED=1`(**绝不碰用户自己的 8001**);前端 `scripts/pnpm.py dev`(:3000);浏览器视口 ≥768px(合成输入约束)。
-- [ ] **Step 2:** 走 spec §11 的六条:① 用户档五段齐全 + 闸门通知文案逐字一致 + 文本里搜不到真名/工具名;② 开发者档分组 / `changes` / tooltip;③ 刷新后通知仍在(回填);④ **run 进行中**打开 Dialog,快照 1 秒内出现(Task 2 的验收);⑤ 375px 视口头部不溢出(溢出则按 spec §10 风险 2 收进菜单);⑥ 无快照的 run 不出触发器、无空壳弹窗。
-- [ ] **Step 3:** `frontend/AGENTS.md` 的 Interaction Ownership 增加构成视图条目(触发器 / Dialog 的所有权 + `onStreamCustomEvent` 单槽约定 + 用户档的策展投影约束)。
-- [ ] **Step 4:** 回写:一期 spec §12 第 2 项标"已交付";本 plan 末尾的交付纪要(逐 Task 记 hash 与实测数字)。
-- [ ] **Step 5:** 按冻结信息提交(**不推送**,沿用本线惯例);`git status` 确认只含本线文件。
+- [x] **Step 1(真栈):** 后端私有端口 `:8099` + `DEER_FLOW_AUTH_DISABLED=1`(**绝不碰用户自己的 8001**);前端 `scripts/pnpm.py dev`(:3000);浏览器视口 ≥768px(合成输入约束)。
+- [x] **Step 2:** 走 spec §11 的六条:① 用户档五段齐全 + 闸门通知文案逐字一致 + 文本里搜不到真名/工具名;② 开发者档分组 / `changes` / tooltip;③ 刷新后通知仍在(回填);④ **run 进行中**打开 Dialog,快照 1 秒内出现(Task 2 的验收);⑤ 375px 视口头部不溢出(溢出则按 spec §10 风险 2 收进菜单);⑥ 无快照的 run 不出触发器、无空壳弹窗。
+- [x] **Step 3:** `frontend/AGENTS.md` 的 Interaction Ownership 增加构成视图条目(触发器 / Dialog 的所有权 + `onStreamCustomEvent` 单槽约定 + 用户档的策展投影约束)。
+- [x] **Step 4:** 回写:一期 spec §12 第 2 项标"已交付";本 plan 末尾的交付纪要(逐 Task 记 hash 与实测数字)。
+- [x] **Step 5:** 按冻结信息提交(**不推送**,沿用本线惯例);`git status` 确认只含本线文件。
 
 **交付判据:** 六条验收全过(任一不过:**不提交**,记为开放项);`pnpm check` / `pnpm test` / `pnpm format` 与服务端窄集合门禁**双净**。
 
@@ -213,3 +213,40 @@ _（Task 5–6 待填）_
 - **未覆盖面(如实记)**:本轮**没有真浏览器验证**——两个视图的观感、Dialog 布局、`next/dynamic` 的加载表现、以及头部第 7 项的窄屏拥挤,全部留到 Task 6。本机内嵌浏览器无可见视口、Playwright chromium 未安装;而 Tailwind 编译后的类名效果无法靠栅格化预演(栅格化只能验 SVG,Task 4 已用过)。
 
 _（Task 6 待填）_
+
+### Task 6 — 已交付(2026-09-12):真栈真浏览器验收 + 文档同步
+
+**验收环境**:后端私有 `:8099`(`DEER_FLOW_AUTH_DISABLED=1`,**未碰用户的 8001**)+ 前端 dev `:3000` 指向它;**用系统已装的 Chrome 经 Playwright 驱动**(`channel: "chrome"`)——**无需下载浏览器**。两处环境坑:`next.config.js` 的兜底 rewrite 只在 `NEXT_PUBLIC_*` **未设**时注册,所以前端只设 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL` 就走同源代理(**设了 `NEXT_PUBLIC_*` 反而把 `/api/*` 打成 404,连登录页都进不去**);前端也要 `DEER_FLOW_AUTH_DISABLED=1`(它有自己的同名判据,`core/auth/auth-disabled-user.ts`)。
+
+**验收结果 17/17 全过**(一条脚本跑完,含零 console 错误):
+
+| # | 检查 | 实测 |
+|---|---|---|
+| 1 | 头部出现触发器 | 是 |
+| 2 | 1280px 右簇不溢出 | header 1023 / cluster 384 |
+| 3 | 环上五段 | count=5 |
+| 4 | 循环体细弧恰三段 | 是 |
+| 5 | 用户档说出段名 | 接收 备料 思考 执行 收尾 |
+| 6 | **用户档不含任何真名/工具名** | 是 |
+| 7 | 闸门通知逐字等于冻结文案 | "有个文件没先读就想改，已拦下" |
+| 8 | 悬停某段给出那句话 | "在调用工具" |
+| 9 | 开发者档给出事实条 | qwen3.8-flash / 挂载 16 |
+| 10 | `changes` 按原键展示 | `no_current_read_mark` / `call_…` |
+| 11 | 开发者档也画环 | 是 |
+| 12 | 悬停某行给出人话 tooltip | "没先读过这个文件就不许改" |
+| 13 | 档位选择刷新后仍在 | 是 |
+| 14 | 刷新后闸门通知仍在(回填腿) | 是 |
+| 15 | **375px 头部不溢出** | 375/375,右簇 286 |
+| 16 | 无快照的线程不出触发器 | 是 |
+| 17 | 零 console 错误 | 是 |
+
+**⭐ 两处只有真浏览器才暴露的缺陷(当时单测全绿、`pnpm check` 干净)——这是 Task 6 存在的全部理由**:
+
+1. **新对话的第一次 run 完全看不到构成。** Task 5 给 `liveRunId` 加的"线程切换即清空"重置效果依赖 `[threadId]`,而新对话的第一次 run 恰好让 `threadId` 从 `undefined` 变真实值,**效果当场把 `onCreated` 刚写进去的 run id 抹掉**——正是这个机制本来要防的那类 bug。改成 **run id 与所属 thread 成对携带**(`liveRun`),按"配对是否匹配当前 thread"决定暴露,两处重置效果随之删除。新增 1 例 DOM 测试(第二次 run 替换 id / 切线程失效 / **未保存线程变已保存时保住 id**)。
+2. **一次读到空就被永久缓存。** 后端 `run.start` 在 run 创建后 **0.17–2.2s** 才落库(5 次实测),而前端拿到 run id 就立刻问(实测 +348ms),空答案被 `staleTime: Infinity` 锁死整轮。`fetchConstitution` 改为**有界重问**(最多 6 次、间隔 400ms,拿到即停;真没有快照的 run 只多这几次)。新增 `api.test.ts` 4 例。
+
+**修复后重验(run 进行中可见)**:从浏览器 composer 真发一条消息,时间线显示 **+686ms 触发器出现、当时 run 状态 = `running`**,快照请求在 +510ms 发出——**§12.1 那条决定性理由("脉冲必须在 run 进行中看")在真栈上成立**。修复前同一脚本是"4.9s 后才出现、那时已 `success`"。
+
+**文档同步**:`frontend/AGENTS.md` 的 Interaction Ownership 增一条(两档是两个组件 / 环只收 props / 触发器可见性即快照存在性 / 读按 run 作用域 + 两条时序陷阱);一期 spec §12 第 2 项标 ✅ 已交付并记两处缺陷。
+
+**未覆盖/开放项(如实记)**:①环形弧对比度实测偏低(未选中 ≈1.36:1、选中 ≈2.82:1,深浅两主题同量级)——但弧是 40px 宽的大面积、分段靠间隙、文案与徽标另在其上,截图判读清楚可辨,**未改**(若嫌淡是一行常量的事)。②闸门点跳工具卡、事实条里的 `runtime_flags`/`checkpoint_mode`/`skills` 仍按 spec 不做。③本次只用了**一条会触发 `read_gate` 的真实 run**,未逐个渲染另外五种闸门事件(文案由 §8.2 guard + 单测覆盖,渲染路径与 `read_gate` 同一条)。④探针脚本(`.scratch-task6/`)用完即删,两个服务已停。

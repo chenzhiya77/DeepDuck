@@ -318,6 +318,30 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   `core/knowledge/hooks.ts` under the `knowledgeEval*Key` /
   `knowledgeSynthesisKey` factory namespace.
 - `src/core/threads/hooks.ts` owns pre-submit upload state and thread submission.
+- **Harness constitution view (2026-09-12)**: `components/workspace/constitution/` owns the
+  run-scoped "what did this run assemble" view — a header trigger plus a Dialog, opened from
+  `app/workspace/chats/[thread_id]/page.tsx`'s right cluster. Four invariants:
+  **(a)** the two tiers are **two components**, not one with a detail switch
+  (`constitution-user-view.tsx` reads only `stages[]` and the gate events, so it is
+  structurally unable to paint a middleware or tool name; `constitution-developer-view.tsx`
+  is where the real names, the `kind`/`frequency` axes, the `hooks[]` list and the raw gate
+  `changes` keys belong — do not merge them, and do not hand the user tier more props);
+  **(b)** `constitution-ring.tsx` is a drawing primitive that takes **all** its copy as props,
+  because both tiers share it and their vocabularies differ — teaching it to call `useI18n`
+  is how the two drift back together;
+  **(c)** the trigger's visibility **is** the snapshot's existence: a run with no snapshot
+  renders no trigger, which is why neither tier needs an empty-state string;
+  **(d)** the reads are run-scoped — `core/constitution/hooks.ts` is keyed by
+  `(threadId, runId)`, where the run id comes from `useThreadStream`'s **`liveRunId`** for the
+  run in flight and from the newest `message.run_id` after a reload. `liveRunId` is written
+  from the per-run `onCreated` (**not** `onStart`, which fires once per thread) and is paired
+  with its owning thread id so a thread change invalidates it without a reset effect — such an
+  effect also fires on a new thread's `undefined → real` transition and would wipe the id it
+  had just recorded. A snapshot's first `run.start` reaches the store **after** the run is
+  created (measured 0.17–2.2 s) while the page asks as soon as it knows the run id, so
+  `fetchConstitution` re-asks a bounded number of times before accepting "no snapshot": the
+  caller caches the answer for the run's lifetime (`staleTime: Infinity`), so a raced empty
+  answer would otherwise freeze for the whole run.
 - `src/components/workspace/chats/chat-box.tsx` owns the desktop right-panel layout, and **all three** right panels (artifacts, sidecar, browser) share one `ResizablePanelGroup` — do not fork a non-resizable branch per panel kind, which is how the artifacts divider silently lost its drag handle (#4465). Open/close is `collapse()` / `resize()` on the side panel's imperative handle, not conditional rendering, so the width can animate. Three constraints hold that together: the size transition is applied from the group as `[&>[data-panel]]:transition-[flex-grow]` because the sized flex item is the library's own `[data-panel]` element rather than the child `className` lands on; it is applied only while an open/close is in flight, so a drag is not interpolated frame by frame; and during the animation the panel content is held at its final width in `cqw` and clipped, because a reflowing message list re-runs its scroll-to-bottom (pinned by `tests/e2e/sidecar-chat.spec.ts`'s no-animated-scroll test) and a re-wrapping composer changes which responsive labels it shows. Because the panel is `collapsible`, the library can also collapse it to `0%` on its own when a drag crosses `minSize`, without going through the state that owns it. `onResize` records the last positive size while the pointer moves, but the owning `sidecar` / `browserView` / `artifactsOpen` state must only mirror a final `0%` layout from `onLayoutChanged`, after pointer release; closing on the first `0%` resize frame breaks a continuous drag that reaches the edge and then reverses before release.
 
 ## Code Style
