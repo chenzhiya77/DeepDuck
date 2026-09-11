@@ -184,9 +184,9 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_run_event_stream_contract.py
 
 **Files:** Modify `backend/AGENTS.md`;Modify spec(写回 Task 0 三项结论)
 
-- [ ] **Step 1:** `backend/AGENTS.md` 补两处:① Middleware Chain 段落加一句"组装结果由 `agents/constitution_record.py` 发布为 run 级构成快照,挂在 `run.start` 上";② Run event stream 段落(那句"changes must keep producer code, `deerflow/constants.py`, ... in sync")附近记录 `run.start.content.constitution` 的存在与 `additionalProperties: true` 的兼容依据。**根 `AGENTS.md` 无需改动**(本变更不涉及服务拓扑、命令或跨模块约定)。
-- [ ] **Step 2:** 把 Task 0 三项实测结论写回 spec §8 风险 1/2/3/4(逐项标注"已核实"与实测数字),照丙1 spec §7 风险 6 的删除线 + 裁决记录风格。
-- [ ] **Step 3:** 全量验证阶梯:
+- [x] **Step 1:** `backend/AGENTS.md` 补两处(Task 5 已落):① Middleware Chain 段落**末尾新增 "Assembled-chain snapshot (constitution)" 整段**——不止一句,因为这段要承担"链长可变、所以必须从组装现场记录"的因果;② Run event stream 的契约同步段末补 `run.start.content.constitution` 的存在、加性依据(`required` 仍只有 `chain`、`additionalProperties` 为 true)与"trace 类不进 IM allowlist"。**根 `AGENTS.md` 未改**(本变更不涉及服务拓扑、命令或跨模块约定)。原文:"组装结果由 `agents/constitution_record.py` 发布为 run 级构成快照,挂在 `run.start` 上";② Run event stream 段落(那句"changes must keep producer code, `deerflow/constants.py`, ... in sync")附近记录 `run.start.content.constitution` 的存在与 `additionalProperties: true` 的兼容依据。**根 `AGENTS.md` 无需改动**(本变更不涉及服务拓扑、命令或跨模块约定)。
+- [x] **Step 2:** 把 Task 0 三项实测结论写回 spec §8 风险 1/2/3/4(逐项标注"已核实"与实测数字),照丙1 spec §7 风险 6 的删除线 + 裁决记录风格。**已完成且超出原范围**——写回的是**风险 1-5 全部**(1/2/3/4 在 Task 0 那轮,5 更早),另有风险 9 与 11 在后续裁决中关闭,风险 12 仍开放。
+- [x] **Step 3:** 全量验证阶梯:
 ```bash
 cd backend && make test
 cd backend && make lint
@@ -194,8 +194,44 @@ cd backend && make format
 cd backend && PYTHONPATH=. uv run pytest tests/blocking_io/ -v --basetemp .pytest-tmp   # run_inline 门禁
 cd backend && PYTHONPATH=. uv run pytest tests/test_harness_boundary.py -v --basetemp .pytest-tmp
 ```
-- [ ] **Step 4:** 手工验收(需真实 `config.yaml` 与凭据,不进 CI):起 Gateway,发一条消息,`curl` 该 run 的 `GET /api/threads/{tid}/runs/{rid}/events?event_types=run.start`,确认返回的 `content.constitution` 里 ① middleware 条数与 `STAGE_OF_MIDDLEWARE` 覆盖一致、② `tools.mounted` 与 `config.yaml` 的 `tool_groups` 展开吻合、③ 若 authorization 开启则 `tool_authorization.removed` 非空且解释得通、④ 整体字节数在 16KB 内且 `truncated: false`、⑤ **`frequency` 探测结果与 Task 0 Step 4 的实测对账**——"只有 `wrap_*`"的恰好 15 个,且 `DynamicContext=once_per_run` / `Title=per_model_call` / `InputSanitization` 落在 `context` 而非 `intake`。
+
+  **实测结果(2026-09-10)。逐项:**
+
+  | 阶梯项 | 实测 | 结论 |
+  |---|---|---|
+  | `make lint`(全后端 `ruff check .` + `format --check .`) | 我的 **12 个文件全净**;根另有 2 处报错(`tests/test_models_config_api.py` 的 F841、`app/gateway/routers/models.py` 与 `tests/knowledge/tools/test_graph_search.py` 的格式) | **那 2 处属 HEAD 既有且不在我的文件里**;而且正在被另一条线编辑(工作区里它们是 `M`) |
+  | `blocking_io/` 门禁 | 我新增的 `test_set_constitution_is_event_loop_safe` 绿;**全目录另有 4 条环境红**(3 条 `assert 438 == 384` = `0o666==0o600` 的 Windows chmod、1 条 `lark-cli` 未安装) | 非本任务;同一 chmod 签名已 A/B 证过是环境性 |
+  | `test_harness_boundary.py` | 绿 | ✅ |
+  | `make test`(全量) | **155 failed / 12107 passed / 160 skipped**;`grep -c constitution` = **0** | 见下 |
+
+  **全量套件的 155 条,逐条归属核查:**
+  1. **`grep constitution` 命中 0** —— 本线没有任何一条测试红。
+  2. **宪法五文件单独复跑 71 passed**。
+  3. 与上一次全量(149 failed)的**可见尾部**相比,多出 `test_pnpm_script`(2)与 `test_provisioner_pvc_volumes`(4)。这 6 条:
+     - **在隔离下同样红**(`6 failed, 51 passed`),不是顺序依赖;
+     - 把我的改动回退后**逐字重现**(同样 `6 failed, 51 passed`);
+     - **不 import 我改过的任何模块**(grep 确认);
+     - 失败签名是决定性的 Windows 环境问题——PVC 四条断言 `/skills_view/public` 却拿到 `\.deer-flow\skills_view\public`(路径分隔符),pnpm 两条一条 CRLF 多一个字符、一条 stdout 为 `None`。**我的功能不可能改变 `os.path.join` 的分隔符行为。**
+  4. **注意:这一轮全量是在别的线正在编辑同一棵工作树时跑的**(工作区有 `backend/app/gateway/routers/models.py`、`frontend/...` 等 `M` 文件),这解释了 149→155 的漂移与 `test_rag_config` 两轮的进出——本机基线本身在动。
+
+  > **我自己的一处取证失误,记下来免得重犯**:上一轮我把 pytest 输出接进 `| tail -30` 再存盘,于是两个全量输出文件**各自只剩 30 行**;我却拿它们做 `comm` 求"新增失败"集合差——**那是在两个被截断的尾部上求差,结论无效**。计数(149/155)取自摘要行所以可信,枚举不可信。**以后跑全量一律重定向到完整文件**(`> /tmp/suite.txt 2>&1`),不要在管道里截断。
+- [x] **Step 4:** 手工验收(需真实 `config.yaml` 与凭据,不进 CI):起 Gateway,发一条消息,`curl` 该 run 的 `GET /api/threads/{tid}/runs/{rid}/events?event_types=run.start`,确认返回的 `content.constitution` 里 ① middleware 条数与 `STAGE_OF_MIDDLEWARE` 覆盖一致、② `tools.mounted` 与 `config.yaml` 的 `tool_groups` 展开吻合、③ 若 authorization 开启则 `tool_authorization.removed` 非空且解释得通、④ 整体字节数在 16KB 内且 `truncated: false`、⑤ **`frequency` 探测结果与 Task 0 Step 4 的实测对账**——"只有 `wrap_*`"的恰好 15 个,且 `DynamicContext=once_per_run` / `Title=per_model_call` / `InputSanitization` 落在 `context` 而非 `intake`。
+  **实测结果(2026-09-10,第一腿 PASS)**:真栈起 Gateway(`uvicorn app.gateway.app:app` on `127.0.0.1:8001`,带 `DEER_FLOW_AUTH_DISABLED=1`——本机 auth 开着但没有浏览器会话,该环境变量是仓库既有的本地旁路,启动会打一行警告),真 HTTP 走 `POST /api/threads` → `POST /api/threads/{tid}/runs/stream` → `GET .../events?event_types=run.start`(探针 gitignored,测完已删):
+
+  | 判据 | 实测 |
+  |---|---|
+  | `run.start` 条数 / 带快照的条数 | 1 / **1**(本条 run 无 goal continuation,与 §6.3 的"每 astream 一条"一致) |
+  | middleware 条数 | **26**,`Σ(stages[]) == 26` ✅ |
+  | 快照字节 | **5,986 B = 16KB 的 36.5%**,`truncated` 未置位 ✅ |
+  | 本链 wrap-only | **12**(26 条中)——与 Task 0 Step 3 用真实链复算的 12 一致 ✅ |
+  | `tools.mounted` | **16** 个,与 `config.yaml` 的 `tool_groups` 展开吻合:`web_search`/`web_fetch`/`image_search` 报 `tool_group`、sandbox+buildin 报 `builtin`、**`image-generation_generate_image` 报 `mcp`** ✅ |
+  | `tool_authorization.removed` | 0——**符合预期**:本机 `authorization.enabled` 为 false,没有可删项 |
+  | 三处反直觉项 | `DynamicContextMiddleware` = `once_per_run` ✅、`TitleMiddleware` = `per_model_call` ✅、`InputSanitizationMiddleware` 落在 `context` 而非 `intake` ✅ |
+  | 唯一 handoff | `ClarificationMiddleware` 是**全链唯一**带 `overlay_kind=handoff` 且 `exits_run=True` 的项 ✅ |
+  | 模型/flags | `qwen3.8-flash`、thinking off、plan/subagent 均 false(与发出的请求一致) |
 - [ ] **Step 5:** 手工验收第二腿(**按 agent 追加的那一类**):用 `rag` agent 发一条消息,确认 `content.constitution.middlewares` 里出现 `DeepResearchMiddleware` 且 `stage="context"`。这条腿专门验 spec §8 风险 6——只测默认 agent 会漏掉它。
+
+  **状态:未做,原因是环境性的**——`rag` agent 那条腿要先把 `rag:` 配置块与四把密钥(`DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `SILICONFLOW_VLM_API_KEY` / `MINERU_API_TOKEN`)备齐、并跑通一次知识库索引,超出本次变更范围。**替代证据(同等强度)**:`tests/test_constitution_record.py` 的 guard test 已经在**真实 `agent_name="rag"` 链**上断言 `DeepResearchMiddleware` 在链里且归属 `context`(Task 1 Step 3),而 Task 4 的真端到端已经证明"真实链 → worker → `run.start`"这段对任意工厂都成立。两段合起来覆盖了这条腿要验的东西。
 
 ---
 
@@ -212,6 +248,26 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_harness_boundary.py -v --bas
 - blocking-IO 门禁与 harness 边界测试绿
 - `make format` 干净(CI 强制 `ruff format --check`)
 - spec §8 风险 1-5 全部写回实测结论(风险 5 已于 2026-09-10 写回)
+
+### 实际达成情况(2026-09-10 收尾核)
+
+| 判据 | 达成 | 证据 |
+|---|---|---|
+| 两个站点都发布 + hoist 等价性 | ✅ | `test_lead_agent_constitution.py` 10 例;等价性用 **`is` 身份断言**(同一 list 对象流经三站) |
+| `make_lead_agent` 签名/返回类型未变 | ✅ | 同文件的 signature 断言 + 返回 `CompiledStateGraph` 断言 |
+| 三条降级路径静默 | ✅ | 未发布 / 无 event store(Task 4)/ 构建抛异常(Task 2) |
+| stage guard test 覆盖四条链 | ✅ | `test_every_mounted_middleware_has_a_stage_across_four_real_chains`;**它首战就抓到我测试里的真 bug** |
+| 两个轴都钉死 | ✅ | 34 具名逐个断言 `hooks[]` 集合 + 派生规则三分支 + `Sandbox` 例外 + 断言 `mixed` 不出现 |
+| 策展投影不变量 | ✅ | `test_stages_serialization_contains_no_middleware_class_name` |
+| `loop` 标记钉死 | ✅ | `test_loop_flags_are_intake_and_epilogue_false` + `extension` 段的固定值断言 |
+| 契约 5 处同步 | ✅ | `test_run_start_constitution_payload_matches_contract`(含降级形态) |
+| blocking-IO 门禁 + harness 边界 | ✅ | 新增 `set_constitution` 锚点;边界测试绿 |
+| spec §8 风险 1-5 写回 | ✅ | 另关掉风险 9(不编号)与 11(`extension` 位置);**风险 12 仍开放** |
+| `make format` 干净 | ⚠️ **我的文件干净** | 全后端另有 2 处(HEAD 既有、他线在改):`tests/test_models_config_api.py` F841、`app/gateway/routers/models.py` 格式 |
+| 手工验收第一腿 | ✅ | 真栈真 HTTP,**5,986 B / 26 条 / 三条来源各归位 / 唯一 handoff 正确**(明细见上) |
+| 手工验收第二腿(rag) | ⚠️ **未做** | 环境性(需 rag 配置块 + 四把密钥 + 一次索引);替代证据两段见上 |
+
+**结论:功能判据全绿,两条 ⚠️ 均为环境性且已给出证据链。** 四个提交:`0954bc4b`(记录层)、`e05b30b1`(工厂发布)、`724fc4eb`(journal + 契约)、`a52bf61f`(worker 桥接)。
 
 ## 不在本计划内(归属见 spec §5 / §12)
 
