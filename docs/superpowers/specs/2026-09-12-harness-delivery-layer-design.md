@@ -121,7 +121,9 @@
 |---|---|---|
 | `delivery.presented` | `已交出 {matched}/{produced} 个产物` | `Handed over {matched} of {produced} artifacts` |
 | `delivery.mismatched` | `交出了 {presented} 个，但都不是这次产出的` | `Handed over {presented}, none of which this run produced` |
-| `delivery.notStarted` | `产出了 {produced} 个，一个都没交出` | `Produced {produced} artifacts but handed over none` |
+| `delivery.not_started` | `产出了 {produced} 个，一个都没交出` | `Produced {produced} artifacts but handed over none` |
+
+> **2026-09-12 标识符更正(用户批文案后、写 plan 时发现)**:第三条的键原写 `delivery.notStarted`,现改为 **`delivery.not_started`** —— **文案一字未改**,只让键**逐字对齐契约的 `stage` 枚举**(§3 刚钉死的那三个值)。理由:snake/camel 的对应关系会变成一张手写映射表,而那正是上一条线里 `guard`→`gate` 那处**用词错位**的同一种病(前端 spec §6.2 的修正框记的就是它);改成同名之后,`delivery.*` 的键集与契约枚举**集合相等**,guard 零映射,那处病在源头被消灭。
 
 **两条措辞理由(要写进 spec 而不是留在实现里)**:
 
