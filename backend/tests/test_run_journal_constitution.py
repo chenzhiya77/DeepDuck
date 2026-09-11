@@ -9,10 +9,16 @@ The load-bearing facts here:
 - One run emits **two** ``run.start`` events (user turn + one goal continuation,
   measured in Task 0 Step 2); only the first carries the snapshot, and the test
   pins that count so a change in the emission shape cannot go unnoticed.
+- The root ``run.start`` is readable from the store **while the run is still
+  going** (frontend spec §3): a run that emits fewer than ``flush_threshold``
+  events would otherwise keep the snapshot in the write buffer until the run
+  ends, and the frontend's ``?event_types=run.start`` fetch would come back
+  empty for the whole duration.
 """
 
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -154,3 +160,59 @@ async def test_constitution_is_reread_per_journal_not_shared():
     events_b = await store.list_events("thread-1", "run-b", event_types=["run.start"])
     assert events_a[0]["content"]["constitution"] == RECORD
     assert events_b[0]["content"]["constitution"] == other
+
+
+# --------------------------------------------------------------------------- #
+# the root run.start is readable while the run is still going
+# --------------------------------------------------------------------------- #
+async def _settle_scheduled_flushes(rounds: int = 3) -> None:
+    """Give the event loop turns so a scheduled flush task can reach the store.
+
+    This mirrors the client's situation: between the root chain start and a
+    later HTTP read the loop keeps running, and nothing calls ``flush()``.
+    """
+    for _ in range(rounds):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.anyio
+async def test_root_start_is_readable_without_an_explicit_flush():
+    """Production defaults: threshold 20, one event, and no ``flush()`` call.
+
+    A run that emits fewer than ``flush_threshold`` events is the typical case,
+    so without the eager flush at the root start the snapshot would stay in the
+    write buffer for the entire run.
+    """
+    store = MemoryRunEventStore()
+    journal = RunJournal("run-1", "thread-1", store)
+    journal.set_constitution(RECORD)
+
+    _root_start(journal)
+    await _settle_scheduled_flushes()
+
+    events = await store.list_events("thread-1", "run-1", event_types=["run.start"])
+    assert len(events) == 1, "the root start must reach the store before the run ends"
+    assert events[0]["content"]["constitution"] == RECORD
+
+
+@pytest.mark.anyio
+async def test_a_nested_start_adds_nothing_after_the_root_flush():
+    """The eager flush belongs to the root branch; nested starts stay silent."""
+    store = MemoryRunEventStore()
+    journal = RunJournal("run-1", "thread-1", store)
+    journal.set_constitution(RECORD)
+
+    _root_start(journal)
+    await _settle_scheduled_flushes()
+    after_root = await store.list_events("thread-1", "run-1")
+
+    journal.on_chain_start(
+        {"name": "model"},
+        {},
+        run_id=uuid4(),
+        parent_run_id=uuid4(),
+        tags=["lead_agent"],
+    )
+    await _settle_scheduled_flushes()
+
+    assert await store.list_events("thread-1", "run-1") == after_root

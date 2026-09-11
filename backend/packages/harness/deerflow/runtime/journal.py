@@ -344,6 +344,12 @@ class RunJournal(BaseCallbackHandler):
                 content=content,
                 metadata={"caller": caller, **(metadata or {})},
             )
+            # Flush eagerly, same as on_chain_end / on_chain_error: the buffer's
+            # own threshold (20 by default) is only reached by long runs, and
+            # readers consume this event — the constitution rides it — while the
+            # run is still going. ``_flush_sync`` degrades to leaving the event
+            # buffered when there is no running loop.
+            self._flush_sync()
 
     def on_chain_end(
         self,

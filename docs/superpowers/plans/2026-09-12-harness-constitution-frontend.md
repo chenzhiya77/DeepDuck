@@ -50,15 +50,15 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/constitution/constitution-i18n-keys.json`、`frontend/tests/unit/core/constitution/i18n-keys.test.ts`、`backend/tests/test_constitution_i18n_keys.py`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`
 
-- [ ] **Step 1(RED —— 先写两个 guard 测试,今天必红):**
+- [x] **Step 1(RED —— 先写两个 guard 测试,今天必红):**
   - 前端 `i18n-keys.test.ts`(node 环境):以清单 json 为基准**双向**遍历 `zhCN.constitution` / `enUS.constitution` —— 正向:每个 key 存在且非空(`title` 是字符串;`a11y.segment` / `a11y.total` 用 `typeof === "function"` 断言,不能只查 truthy);反向:两份 locale 的 `constitution` 子树**没有多余叶子**(逐层比 key 集合)。同时断言清单计数 `core 33 / middlewares 34 / 合计 67`。
   - 后端 `test_constitution_i18n_keys.py`:用 `Path(__file__).resolve().parents[2]` 定位仓库根读清单(先例 `test_compose_default_bind_host.py`)—— ① `manifest["middlewares"]` ↔ `STAGE_OF_MIDDLEWARE` 键集**双向相等**;② `manifest["core"]["gate"]` ↔ catalog 的六个闸门 tag 常量;③ 34 个 middleware 名**不在** `core` 子树里(它们是索引键,不是普通 key)。
-- [ ] **Step 2:** 写清单 `constitution-i18n-keys.json`(结构照 spec §8.1;**34 个名字必须逐字等于 `type(mw).__name__`**,先从 `STAGE_OF_MIDDLEWARE` 键盘点一遍再落盘)。
-- [ ] **Step 3:** `types.ts` 加 `constitution` 块(67 个 key;34 个真名作为嵌套的索引键;`a11y.segment` / `a11y.total` 是函数类型)。
-- [ ] **Step 4:** `zh-CN.ts` 填 33 条 core key——`+ 6 stage / 5 activity / 6 gate / 3 frequency / 3 kind / 2 a11y / 1 title` 照抄一期 spec §13.1–§13.4,`facts 4 / view 2 / truncated 1` 照抄本 spec §8.3;34 条 tooltip 照抄 §13.5 中文列(**不改写**)。
-- [ ] **Step 5:** `en-US.ts` 同 67 条,照抄各表的英文列。
-- [ ] **Step 6:** 转绿:`pnpm test`(两个新测试;单文件过滤可选)+ `pnpm check`(编译约束生效)+ `pnpm format`;后端 `pytest tests/test_constitution_i18n_keys.py` + `ruff`。
-- [ ] **Step 7(revert 证明):** 从 `zh-CN.ts` 删掉任意一条 key → 前端 guard 红(正向缺键);给 `en-US.ts` 加一条孤儿 key → 后端(或前端反向)红。两条都验,撤销即绿。
+- [x] **Step 2:** 写清单 `constitution-i18n-keys.json`(结构照 spec §8.1;**34 个名字必须逐字等于 `type(mw).__name__`**,先从 `STAGE_OF_MIDDLEWARE` 键盘点一遍再落盘)。
+- [x] **Step 3:** `types.ts` 加 `constitution` 块(67 个 key;34 个真名作为嵌套的索引键;`a11y.segment` / `a11y.total` 是函数类型)。
+- [x] **Step 4:** `zh-CN.ts` 填 33 条 core key——`+ 6 stage / 5 activity / 6 gate / 3 frequency / 3 kind / 2 a11y / 1 title` 照抄一期 spec §13.1–§13.4,`facts 4 / view 2 / truncated 1` 照抄本 spec §8.3;34 条 tooltip 照抄 §13.5 中文列(**不改写**)。
+- [x] **Step 5:** `en-US.ts` 同 67 条,照抄各表的英文列。
+- [x] **Step 6:** 转绿:`pnpm test`(两个新测试;单文件过滤可选)+ `pnpm check`(编译约束生效)+ `pnpm format`;后端 `pytest tests/test_constitution_i18n_keys.py` + `ruff`。
+- [x] **Step 7(revert 证明):** 从 `zh-CN.ts` 删掉任意一条 key → 前端 guard 红(正向缺键);给 `en-US.ts` 加一条孤儿 key → 后端(或前端反向)红。两条都验,撤销即绿。
 
 **交付判据:** 两个 guard 绿且各自有牙;**零文案重写**——逐条 diff 与 spec 表格一致;`pnpm check` / `format` / 后端 `ruff` 干净。
 
@@ -66,11 +66,11 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Modify `backend/packages/harness/deerflow/runtime/journal.py`、`backend/tests/test_run_journal_constitution.py`
 
-- [ ] **Step 1(RED):** `test_run_journal_constitution.py` 加一例:真实 `RunJournal` + `MemoryRunEventStore`,**只触发根 `on_chain_start`**,断言**立即**能从 store 读到 `run.start`(且 `content.constitution` 在)。**今天必红**(`_put` 只在缓冲 ≥ 20 时刷,`journal.py:659-672`,默认 `:231`)。
-- [ ] **Step 2:** 在 `on_chain_start` 的根分支 `_put(...)` 之后补 `self._flush_sync()`(与 `on_chain_end` `:367` 同款);嵌套分支不动(`parent_run_id is not None` 早退,`:331-332`)。
-- [ ] **Step 3(GREEN + 不变量):** 同一文件再加一例:根 start 之后再触发**嵌套** `on_chain_start`,断言不产生新的 `run.start` 行、store 内容不变。既有用例(2 条 `run.start`、只有第一条带 `constitution`、`set_constitution` 纯赋值)保持绿。
-- [ ] **Step 4:** 窄集合门禁:`pytest tests/test_run_journal_constitution.py tests/test_run_event_stream_contract.py tests/blocking_io/test_run_journal_callbacks.py -q`(**blocking-IO 锚点必须绿**——`_flush_sync` 只做 `loop.create_task`,不碰 IO)+ `ruff check` / `format --check`。
-- [ ] **Step 5(revert 证明):** 注释掉 `_flush_sync()` → Step 1 那条转红,Step 3 那条保持绿。
+- [x] **Step 1(RED):** `test_run_journal_constitution.py` 加一例:真实 `RunJournal` + `MemoryRunEventStore`,**只触发根 `on_chain_start`**,断言**立即**能从 store 读到 `run.start`(且 `content.constitution` 在)。**今天必红**(`_put` 只在缓冲 ≥ 20 时刷,`journal.py:659-672`,默认 `:231`)。
+- [x] **Step 2:** 在 `on_chain_start` 的根分支 `_put(...)` 之后补 `self._flush_sync()`(与 `on_chain_end` `:367` 同款);嵌套分支不动(`parent_run_id is not None` 早退,`:331-332`)。
+- [x] **Step 3(GREEN + 不变量):** 同一文件再加一例:根 start 之后再触发**嵌套** `on_chain_start`,断言不产生新的 `run.start` 行、store 内容不变。既有用例(2 条 `run.start`、只有第一条带 `constitution`、`set_constitution` 纯赋值)保持绿。
+- [x] **Step 4:** 窄集合门禁:`pytest tests/test_run_journal_constitution.py tests/test_run_event_stream_contract.py tests/blocking_io/test_run_journal_callbacks.py -q`(**blocking-IO 锚点必须绿**——`_flush_sync` 只做 `loop.create_task`,不碰 IO)+ `ruff check` / `format --check`。
+- [x] **Step 5(revert 证明):** 注释掉 `_flush_sync()` → Step 1 那条转红,Step 3 那条保持绿。
 
 **交付判据:** 三条新/旧断言齐绿;门禁窄集合 0 failed;`run.start` 的发射条数与载荷**逐字节不变**(只提前落库)。
 
@@ -154,3 +154,16 @@ Task 1 / 2 / 3 相互独立,可并行;Task 4 只依赖 Task 3;Task 5 依赖 1+3+
 - **一处顺手修正(非格式)**:`en-US` 的 4 条 tooltip 在初稿里手动折行位置与 prettier 不符(3 条该拆、1 条该合),已按 prettier 输出定稿。
 
 _（Task 2–6 待填）_
+
+### Task 2 — 已交付(2026-09-12):`run.start` 即时落库
+
+- **产物**:`journal.py` 根 `on_chain_start` 分支的 `_put(...)` 之后补一次 `self._flush_sync()`(与 `on_chain_end` / `on_chain_error` 同款);`tests/test_run_journal_constitution.py` **+2 例**(`test_root_start_is_readable_without_an_explicit_flush` 用**生产默认阈值**且**不调 `flush()`**;`test_a_nested_start_adds_nothing_after_the_root_flush` 钉住嵌套分支零增行)。
+- **RED**:新用例 `assert 0 == 1` —— 事件确实卡在写缓冲里(`_put` 只在 ≥20 条时刷,典型 run 到不了)。
+- **GREEN**:本文件 9 passed;**窄集合 171 passed / 0 failed**(journal × 2 + 契约 + worker 宪法 + worker delivery + blocking-IO 锚点);`ruff check` / `format --check` 干净。
+- **revert 证明**:注释掉那一行 → **恰好 1 条转红**(新用例),另 8 条(含嵌套不变量、2 条 `run.start` 发射数、未 set 时逐字节不变)保持绿 —— 两组用例的牙相互独立。
+- **真栈 A/B 验收(本轮最强证据,私有 `:8099` + `DEER_FLOW_AUTH_DISABLED=1`,未碰 8001)**:
+  - **修复后**:建线程 → 建后台 run → 高速轮询 `GET .../events?event_types=run.start`,该行在 **0.094s** 可见、**当时 run 状态 = `running`**(真正的跑动中读取);载荷带 `constitution`(26 条 middleware、`qwen3.8-flash`、`stages` = intake 2 / context 10 / model 3+3 / tools 2+3 / epilogue 2);run 随后正常 `success`。
+  - **对照腿(去掉那一行、重启同一栈、同一探针)**:首次可见 **1.531s**、且状态已是 **`success`** —— 即只能在 `on_chain_end` 的 flush 时落库。**这证明"跑动中可读"由那一行产生,不是别的路径顺带带来的。**
+  - 探针(临时脚本)用完即删;服务已停;`run.start` 的发射条数与未 set 时的逐字节载荷由既有用例继续钉住,未变。
+
+_（Task 3–6 待填）_
