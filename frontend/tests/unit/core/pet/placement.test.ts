@@ -96,16 +96,16 @@ describe("evenBoxSize / normalizeDisplaySize", () => {
     }
   });
 
-  it("clamps into the 64–340 range", () => {
+  it("clamps into the 64–512 range", () => {
     expect(normalizeDisplaySize(0)).toBe(PET_DISPLAY_SIZE_MIN);
     expect(normalizeDisplaySize(-40)).toBe(PET_DISPLAY_SIZE_MIN);
     expect(normalizeDisplaySize(9999)).toBe(PET_DISPLAY_SIZE_MAX);
   });
 
   it("pins both ceilings to the numbers §10.2 derives them from", () => {
-    // 上界 340 = 整帧 512px 在 DPR 1.5 下 1:1 的最后一个偶数点(512 ÷ 1.5 ≈ 341)
-    expect(PET_DISPLAY_SIZE_MAX).toBe(340);
-    // 清晰上限 156 = 鸟的占比口径(512 ÷ 2 × 61.5%),它是质量分水岭、不是可拖上界
+    // 512 = 帧像素数;1:1 的最后一点是 341(512 ÷ DPR 1.5),512 是刻意留的 1.5× 余量
+    expect(PET_DISPLAY_SIZE_MAX).toBe(512);
+    // 156 = 质量提示线,它是鸟的口径、不是可拖上界
     expect(PET_DISPLAY_SIZE_SHARP_MAX).toBe(156);
     expect(PET_DISPLAY_SIZE_SHARP_MAX).toBeLessThan(PET_DISPLAY_SIZE_MAX);
   });

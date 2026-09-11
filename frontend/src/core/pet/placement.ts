@@ -15,13 +15,14 @@ export interface PetViewport {
   height: number;
 }
 
-/** 缩放范围(spec §10.2):64–340 CSS px,恒取偶数 */
+/** 缩放范围(spec §10.2):64–512 CSS px,恒取偶数 */
 export const PET_DISPLAY_SIZE_MIN = 64;
 /**
- * 上界 340 是**把整张帧放到 1:1** 的最后一个偶数点:帧高 512 ÷ 用户屏 DPR 1.5 ≈ 341。
- * 再往上整帧就开始插值放大,连场景背景都糊了。它不是清晰度上限(那是下面那个)。
+ * 上界 512 = **帧的像素数**,是在 1:1 临界点之上刻意留 1.5× 插值余量的封顶值(用户裁定)。
+ * 整帧 1:1 的最后一个偶数点是 `512 ÷ 用户屏 DPR 1.5 ≈ 341`,340 及以下不插值、341 以上开始
+ * 放大;512 时整帧 1.5×。它不是清晰度上限(那是下面那个),也不是 1:1 点。
  */
-export const PET_DISPLAY_SIZE_MAX = 340;
+export const PET_DISPLAY_SIZE_MAX = 512;
 /**
  * 鸟的**清晰**缩放上限 ≈156。来历:帧像素 512 ÷ 桌面 DPR 上限 2 = 256,而帧装的是整个
  * 场景、鸟只占帧高 ~61.5%(§8)⇒ 256 × 0.615 ≈ 156。再往上只是插值放大(不禁止)。
@@ -36,7 +37,7 @@ export function evenBoxSize(displaySize: number): number {
 }
 
 /**
- * 存量设置与用户输入都从这里收口:非有限数回落默认,越界收进 64–340,最后取偶。
+ * 存量设置与用户输入都从这里收口:非有限数回落默认,越界收进 64–512,最后取偶。
  * 放在纯函数里而不是控件里 —— 换控件、手改 localStorage、旧版本存量值都绕不过它。
  */
 export function normalizeDisplaySize(value: unknown): number {
