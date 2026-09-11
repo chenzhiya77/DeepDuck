@@ -141,6 +141,98 @@ export interface Translations {
     truncatedSummary: string;
   };
 
+  // Harness Constitution (run-scoped assembled-chain view)
+  constitution: {
+    stage: {
+      intake: string;
+      context: string;
+      model: string;
+      tools: string;
+      epilogue: string;
+      extension: string;
+    };
+    activity: {
+      intake: string;
+      context: string;
+      model: string;
+      tools: string;
+      epilogue: string;
+    };
+    gate: {
+      read_gate: string;
+      tool_progress: string;
+      subagent_limit: string;
+      tool_promotion: string;
+      sandbox_audit: string;
+      skill_policy: string;
+    };
+    frequency: {
+      once_per_run: string;
+      per_model_call: string;
+      per_tool_call: string;
+    };
+    kind: {
+      member: string;
+      gate: string;
+      handoff: string;
+    };
+    a11y: {
+      /** N = 1-based segment index, M = number of segments on the ring. */
+      segment: (segment: number, total: number) => string;
+      /** N = number of items in the list being labelled. */
+      total: (count: number) => string;
+    };
+    facts: {
+      model: string;
+      tools: string;
+      deferred: string;
+      removed: string;
+    };
+    view: {
+      user: string;
+      developer: string;
+    };
+    title: string;
+    truncated: string;
+    /** Indexed by real `type(mw).__name__`; the key list is constitution-i18n-keys.json. */
+    middleware: {
+      ThreadDataMiddleware: string;
+      UploadsMiddleware: string;
+      InputSanitizationMiddleware: string;
+      ToolOutputBudgetMiddleware: string;
+      ToolResultSanitizationMiddleware: string;
+      DanglingToolCallMiddleware: string;
+      DynamicContextMiddleware: string;
+      SkillActivationMiddleware: string;
+      DurableContextMiddleware: string;
+      DeerFlowSummarizationMiddleware: string;
+      TodoMiddleware: string;
+      ViewImageMiddleware: string;
+      SystemMessageCoalescingMiddleware: string;
+      DeepResearchMiddleware: string;
+      LLMErrorHandlingMiddleware: string;
+      TokenUsageMiddleware: string;
+      ModelLengthFinishReasonMiddleware: string;
+      SubagentLimitMiddleware: string;
+      LoopDetectionMiddleware: string;
+      TokenBudgetMiddleware: string;
+      TerminalResponseMiddleware: string;
+      SafetyFinishReasonMiddleware: string;
+      SandboxMiddleware: string;
+      SkillToolPolicyMiddleware: string;
+      McpRoutingMiddleware: string;
+      DeferredToolFilterMiddleware: string;
+      GuardrailMiddleware: string;
+      SandboxAuditMiddleware: string;
+      ReadBeforeWriteMiddleware: string;
+      ToolProgressMiddleware: string;
+      ToolErrorHandlingMiddleware: string;
+      ClarificationMiddleware: string;
+      TitleMiddleware: string;
+      MemoryMiddleware: string;
+    };
+  };
+
   // Input Box
   inputBox: {
     placeholder: string;

@@ -165,6 +165,118 @@ export const enUS: Translations = {
     truncatedSummary: "Some changes were truncated.",
   },
 
+  // Harness Constitution
+  constitution: {
+    stage: {
+      intake: "Intake",
+      context: "Context",
+      model: "Model",
+      tools: "Tools",
+      epilogue: "Wrap-up",
+      extension: "Extension",
+    },
+    activity: {
+      intake: "Got your message",
+      context: "Preparing context",
+      model: "Thinking",
+      tools: "Using tools",
+      epilogue: "Wrapping up",
+    },
+    gate: {
+      read_gate: "Blocked a write to a file that wasn't read first",
+      tool_progress: "A tool kept returning nothing new, so it was disabled",
+      subagent_limit: "Too many subtasks at once — trimmed",
+      tool_promotion: "Released some previously hidden tools",
+      sandbox_audit: "A command looked risky, so it didn't run",
+      skill_policy: "The active skill doesn't allow that tool",
+    },
+    frequency: {
+      once_per_run: "once per run",
+      per_model_call: "per model call",
+      per_tool_call: "per tool call",
+    },
+    kind: {
+      member: "member",
+      gate: "gate",
+      handoff: "handoff",
+    },
+    a11y: {
+      segment: (segment, total) => `Segment ${segment} of ${total}`,
+      total: (count) => `${count} items`,
+    },
+    facts: {
+      model: "Model",
+      tools: "Mounted tools",
+      deferred: "Deferred tools",
+      removed: "Removed by authorization",
+    },
+    view: {
+      user: "User view",
+      developer: "Developer view",
+    },
+    title: "This run's harness",
+    truncated: "The record was too large; some details are omitted",
+    middleware: {
+      ThreadDataMiddleware:
+        "Creates this conversation's own working directories",
+      UploadsMiddleware: "Notes the files you just uploaded",
+      InputSanitizationMiddleware:
+        "Sanitizes your input first, keeping the original aside",
+      ToolOutputBudgetMiddleware:
+        "Long tool output goes to a file; only a summary stays",
+      ToolResultSanitizationMiddleware:
+        "Strips fake system tags from fetched web content",
+      DanglingToolCallMiddleware:
+        "Backfills a placeholder for tool calls that got no reply",
+      DynamicContextMiddleware: "Injects today's date and your memory",
+      SkillActivationMiddleware:
+        "Loads a skill's body when you type `/skill-name`",
+      DurableContextMiddleware:
+        "Keeps delegation and skill records visible through compaction",
+      DeerFlowSummarizationMiddleware:
+        "Compresses old turns into a summary near the context limit",
+      TodoMiddleware: "Provides the todo list in plan mode",
+      ViewImageMiddleware: "Converts images into something the model can see",
+      SystemMessageCoalescingMiddleware:
+        "Merges multiple system messages into one",
+      DeepResearchMiddleware:
+        "rag agent only: enforces the three-path retrieval",
+      LLMErrorHandlingMiddleware:
+        "Turns a provider failure into a recoverable message",
+      TokenUsageMiddleware: "Records token usage",
+      ModelLengthFinishReasonMiddleware:
+        "Records why an answer was cut off by length",
+      SubagentLimitMiddleware:
+        "Drops subtask calls past the concurrency or per-run cap",
+      LoopDetectionMiddleware:
+        "Hard-stops the turn when identical tool calls repeat",
+      TokenBudgetMiddleware: "Forces a wrap-up at the token budget",
+      TerminalResponseMiddleware: "Retries once when the model returns nothing",
+      SafetyFinishReasonMiddleware:
+        "Suppresses tool calls after a content-filter stop",
+      SandboxMiddleware: "Acquires the sandbox and releases it at the end",
+      SkillToolPolicyMiddleware:
+        "Narrows the toolset to the active skill's allowed tools",
+      McpRoutingMiddleware:
+        "Auto-releases matching MCP tools based on your message",
+      DeferredToolFilterMiddleware:
+        "Hides MCP tool schemas until they're released",
+      GuardrailMiddleware:
+        "Authorization and guardrail gates before any tool runs",
+      SandboxAuditMiddleware: "Blocks command substitution in command position",
+      ReadBeforeWriteMiddleware:
+        "Won't let a file be modified before it's read",
+      ToolProgressMiddleware:
+        "Warns, then disables a tool that keeps returning nothing new",
+      ToolErrorHandlingMiddleware:
+        "Turns tool exceptions into messages so the run continues",
+      ClarificationMiddleware:
+        "Hands control back to you when it needs your input",
+      TitleMiddleware: "Names the conversation after the first exchange",
+      MemoryMiddleware: "Queues the conversation for async memory extraction",
+    },
+  },
+
   // Input Box
   inputBox: {
     placeholder: "How can I assist you today?",
