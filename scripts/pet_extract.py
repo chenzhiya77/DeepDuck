@@ -126,9 +126,10 @@ def measure(args: argparse.Namespace) -> None:
     }, indent=2))
     if not [s for s in range(1, 9) if (n - 1) % s == 0 and (n - 1) // s <= MAX_FRAMES and SOURCE_FPS % s == 0]:
         print(f"warning: no legal loop stride for {n} frames; a loop needs a frame count whose (n-1) is divisible "
-              f"by the stride (e.g. 97 frames -> stride 3 -> 32 frames @8fps). Trim the clip or pass --frames N.")
-    print("note: the GLOBAL crop box is the union of this output across ALL clips "
-          "(spec §8.1 rule 3); put it in the shared config as \"crop\": [x, y, w, h]. "
+              f"by the stride (e.g. 94 frames -> stride 3 -> 31 frames @8fps). Trim the clip or pass --frames N.")
+    print("note: the crop box is DECLARED once in canvas coordinates and reused for every clip and every re-export "
+          "(spec §8.1 rule 3) — this measurement only checks the bird stays inside it. Put it in the shared config as "
+          "\"crop\": [x, y, w, h]. "
           "If the source carries a burned-in watermark, pass --mask x0,y0,x1,y1 so it never inflates this box.")
 
 
@@ -141,6 +142,9 @@ def plan_frames(args: argparse.Namespace, cfg: dict) -> tuple[list[int], int, in
     """
     if SOURCE_FPS % args.stride != 0:
         fail(f"stride {args.stride} does not divide {SOURCE_FPS}; fps would be non-integer and steps would jitter (spec §8 rule 6 ladder {sorted({SOURCE_FPS // s for s in range(1, 9)})})")
+    start = args.start
+    if start and args.mode != "loop":
+        fail("--start only applies to loop mode; a oneshot clip selects its range with --window")
     n = nb_frames(args.video)
     if args.frames is not None:
         if args.mode != "loop":
@@ -149,14 +153,19 @@ def plan_frames(args: argparse.Namespace, cfg: dict) -> tuple[list[int], int, in
             fail(f"--frames {args.frames} exceeds the clip's {n} frames")
         n = args.frames
     if args.mode == "loop":
-        # first=last frame makes frame n-1 a duplicate of frame 0: drop it, then
-        # require the remainder to divide evenly so the wrap step equals every
-        # other step (otherwise one seam tick per loop, forever).
-        if (n - 1) % args.stride != 0:
-            fail(f"loop clip has {n} frames; (n-1)={n - 1} not divisible by stride {args.stride} "
-                 f"-> the wrap step would differ from the others (seam tick). "
-                 f"Divisible strides: {[s for s in range(1, 9) if (n - 1) % s == 0]}")
-        indices = list(range(0, n - 1, args.stride))
+        if n - 1 - start <= 0:
+            fail(f"--start {start} leaves no frames before the dropped duplicate at {n - 1}")
+        # The clip opens and closes on the same pose (spec §8.1 rule 1), so the
+        # frame at n-1 duplicates frame `start`: drop it, then require the rest
+        # to divide evenly so the wrap step equals every other step (otherwise
+        # one seam tick per loop, forever). --start > 0 exists because a
+        # generated clip often opens with a stationary hold; starting the loop
+        # inside that hold makes every cycle begin with a dead beat.
+        if (n - 1 - start) % args.stride != 0:
+            fail(f"loop covers frames [{start}, {n - 1}); span {n - 1 - start} not divisible by "
+                 f"stride {args.stride} -> the wrap step would differ from the others (seam tick). "
+                 f"Divisible strides: {[s for s in range(1, 9) if (n - 1 - start) % s == 0]}")
+        indices = list(range(start, n - 1, args.stride))
     else:
         if not args.window:
             fail("oneshot mode requires --window START END (frame indices)")
@@ -325,7 +334,7 @@ def base(args: argparse.Namespace) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    m = sub.add_parser("measure", help="print the keyed union bbox of one clip (run per clip; global crop = union of all)")
+    m = sub.add_parser("measure", help="check one clip: print its keyed union bbox and margins (spec §8.1 rule 3 — the crop is declared once, so this is a health check, not a box to lock)")
     m.add_argument("--video", type=Path, required=True)
     m.add_argument("--config", type=Path, help="optional config supplying key params")
     m.add_argument("--scale-div", type=int, default=10, help="bbox precision divisor (default 10 => ±10px)")
@@ -340,8 +349,11 @@ def main() -> None:
     s.add_argument("--stride", type=int, required=True)
     s.add_argument("--window", type=int, nargs=2, metavar=("START", "END"), help="oneshot frame-index window")
     s.add_argument("--frames", type=int,
-                   help="loop only: consider just the first N frames of the clip. Use it when the generator overshoots the "
-                        "nominal duration and no stride divides the real (n-1) — e.g. 107 frames -> --frames 97 --stride 3")
+                   help="loop only: consider frames [start, N). Use it when the generator overshoots the nominal duration "
+                        "and no stride divides the real span — e.g. 107 frames -> --frames 94 --stride 3 -> 31 frames")
+    s.add_argument("--start", type=int, default=0,
+                   help="loop only: first frame of the loop (default 0). Use it when the clip opens with a stationary "
+                        "hold — starting the loop inside that hold gives every cycle a dead beat")
     s.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
                    help="paint this rectangle in the key colour before keying (burned-in watermark); overrides config \"mask\"")
     s.add_argument("--out", type=Path, required=True)
@@ -353,7 +365,8 @@ def main() -> None:
     fr.add_argument("--mode", choices=["loop", "oneshot"], required=True)
     fr.add_argument("--stride", type=int, required=True)
     fr.add_argument("--window", type=int, nargs=2, metavar=("START", "END"), help="oneshot frame-index window")
-    fr.add_argument("--frames", type=int, help="loop only: consider just the first N frames of the clip")
+    fr.add_argument("--frames", type=int, help="loop only: consider frames [start, N)")
+    fr.add_argument("--start", type=int, default=0, help="loop only: first frame of the loop (default 0)")
     fr.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
                     help="paint this rectangle in the key colour before anything else; overrides config \"mask\"")
     fr.add_argument("--no-scale", action="store_true",
