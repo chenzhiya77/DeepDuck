@@ -28,6 +28,13 @@ rs.mock("@/core/models/hooks", () => ({
   useModels: () => mockUseModels(),
 }));
 
+// 面板挂载时会向外壳登记「当前跟哪个会话」(spec §10.3),但那件事由
+// activity-context / agent-pet 两套用例覆盖(含注册值),这里只测 kb 绑定与流,
+// 不为了它把每条 render 都包一层 ActivityProvider。
+rs.mock("@/core/threads/activity-context", () => ({
+  useRegisterActivity: () => undefined,
+}));
+
 let capturedMessageListProps: Record<string, unknown> | null = null;
 
 rs.mock("@/components/workspace/messages", () => ({
