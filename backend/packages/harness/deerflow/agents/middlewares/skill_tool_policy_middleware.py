@@ -17,6 +17,8 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
+from deerflow.agents.middlewares.gate_events import record_gate_event
+from deerflow.runtime.events.catalog import MIDDLEWARE_SKILL_POLICY_TAG
 from deerflow.runtime.secret_context import SKILL_TOOL_POLICY_DECISION_CONTEXT_KEY, read_slash_skill_source_path
 from deerflow.skills.storage import get_or_new_skill_storage, get_or_new_user_skill_storage
 from deerflow.skills.tool_policy import ALWAYS_AVAILABLE_BUILTIN_TOOL_NAMES, allowed_tool_names_for_skills
@@ -225,10 +227,25 @@ class SkillToolPolicyMiddleware(AgentMiddleware[AgentState]):
         request: ToolCallRequest,
         *,
         allowed: set[str] | None,
+        policy: _PolicySignature,
     ) -> ToolMessage | None:
         name = str(request.tool_call.get("name") or "")
         if allowed is None or not name or name in allowed:
             return None
+        # Only the decision is recorded — never the blocked call's arguments, and
+        # a count rather than the whole allow-list (spec §4.2e).
+        record_gate_event(
+            getattr(request, "runtime", None),
+            tag=MIDDLEWARE_SKILL_POLICY_TAG,
+            name=type(self).__name__,
+            hook="wrap_tool_call",
+            action="block",
+            changes={
+                "tool_name": name,
+                "policy_source": policy[0],
+                "active_path_count": len(policy[1]),
+            },
+        )
         return ToolMessage(
             content=f"Error: Tool '{name}' is not allowed by the active skill policy.",
             tool_call_id=str(request.tool_call.get("id") or "missing_tool_call_id"),
@@ -343,7 +360,7 @@ class SkillToolPolicyMiddleware(AgentMiddleware[AgentState]):
         if not policy[1]:
             return handler(request)
         allowed = self._allowed_names(request, policy=policy)
-        blocked = self._blocked_tool_message(request, allowed=allowed)
+        blocked = self._blocked_tool_message(request, allowed=allowed, policy=policy)
         if blocked is not None:
             return blocked
         return self._filter_tool_search_result(request, handler(request), allowed=allowed)
@@ -358,7 +375,7 @@ class SkillToolPolicyMiddleware(AgentMiddleware[AgentState]):
         if not policy[1]:
             return await handler(request)
         allowed = await asyncio.to_thread(self._allowed_names, request, policy=policy)
-        blocked = self._blocked_tool_message(request, allowed=allowed)
+        blocked = self._blocked_tool_message(request, allowed=allowed, policy=policy)
         if blocked is not None:
             return blocked
         return self._filter_tool_search_result(request, await handler(request), allowed=allowed)

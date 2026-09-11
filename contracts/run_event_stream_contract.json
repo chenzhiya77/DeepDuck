@@ -411,7 +411,7 @@
       "pattern": "middleware:{tag}",
       "category": "middleware",
       "producer": "RunJournal.record_middleware(tag, ...)",
-      "known_tags": ["guardrail", "safety_termination", "skill_activation", "skill_secrets"],
+      "known_tags": ["guardrail", "safety_termination", "skill_activation", "skill_secrets", "read_gate", "tool_progress", "subagent_limit", "tool_promotion", "sandbox_audit", "skill_policy"],
       "event_type_schema": {
         "type": "string",
         "pattern": "^middleware:",

@@ -84,11 +84,26 @@ MIDDLEWARE_GUARDRAIL_TAG = "guardrail"
 MIDDLEWARE_SAFETY_TERMINATION_TAG = "safety_termination"
 MIDDLEWARE_SKILL_ACTIVATION_TAG = "skill_activation"
 MIDDLEWARE_SKILL_SECRETS_TAG = "skill_secrets"
+# Gate instrumentation: emitted when a gate actually changes execution — blocks a
+# tool call, drops delegations, or releases deferred tool schemas. Spec:
+# docs/superpowers/specs/2026-09-11-harness-gate-instrumentation-design.md
+MIDDLEWARE_READ_GATE_TAG = "read_gate"
+MIDDLEWARE_TOOL_PROGRESS_TAG = "tool_progress"
+MIDDLEWARE_SUBAGENT_LIMIT_TAG = "subagent_limit"
+MIDDLEWARE_TOOL_PROMOTION_TAG = "tool_promotion"
+MIDDLEWARE_SANDBOX_AUDIT_TAG = "sandbox_audit"
+MIDDLEWARE_SKILL_POLICY_TAG = "skill_policy"
 MIDDLEWARE_EVENT_TAGS = (
     MIDDLEWARE_GUARDRAIL_TAG,
     MIDDLEWARE_SAFETY_TERMINATION_TAG,
     MIDDLEWARE_SKILL_ACTIVATION_TAG,
     MIDDLEWARE_SKILL_SECRETS_TAG,
+    MIDDLEWARE_READ_GATE_TAG,
+    MIDDLEWARE_TOOL_PROGRESS_TAG,
+    MIDDLEWARE_SUBAGENT_LIMIT_TAG,
+    MIDDLEWARE_TOOL_PROMOTION_TAG,
+    MIDDLEWARE_SANDBOX_AUDIT_TAG,
+    MIDDLEWARE_SKILL_POLICY_TAG,
 )
 
 JOURNAL_RUN_EVENT_DEFINITIONS = (

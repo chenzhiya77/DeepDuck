@@ -11,7 +11,10 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage
 from langgraph.runtime import Runtime
 
+from deerflow.agents.constitution_record import MAX_TOOL_NAMES
+from deerflow.agents.middlewares.gate_events import record_gate_event
 from deerflow.config.tool_search_config import clamp_auto_promote_top_k
+from deerflow.runtime.events.catalog import MIDDLEWARE_TOOL_PROMOTION_TAG
 from deerflow.utils.messages import get_original_user_content_text, is_real_user_message
 
 logger = logging.getLogger(__name__)
@@ -101,7 +104,7 @@ class McpRoutingMiddleware(AgentMiddleware[AgentState]):
         matched.sort(key=lambda item: (-item[0], item[1]))
         return [name for _, name in matched[: self._top_k]]
 
-    def _state_update(self, state: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    def _state_update(self, state: Mapping[str, Any] | None, runtime: Runtime | None = None) -> dict[str, Any] | None:
         names = self._matched_names(state)
         if not names:
             return None
@@ -110,6 +113,16 @@ class McpRoutingMiddleware(AgentMiddleware[AgentState]):
             len(names),
             (self._catalog_hash or "")[:8],
             names,
+        )
+        # Same `promoted` payload that `tool_search` writes, so the event is the
+        # only place the two promotion paths are distinguishable.
+        record_gate_event(
+            runtime,
+            tag=MIDDLEWARE_TOOL_PROMOTION_TAG,
+            name=type(self).__name__,
+            hook="before_model",
+            action="promote",
+            changes={"source": "auto_routing", "names": names[:MAX_TOOL_NAMES], "count": len(names), "top_k": self._top_k},
         )
         return {
             "promoted": {
@@ -120,11 +133,11 @@ class McpRoutingMiddleware(AgentMiddleware[AgentState]):
 
     @override
     def before_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-        return self._state_update(state)
+        return self._state_update(state, runtime)
 
     @override
     async def abefore_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-        return self._state_update(state)
+        return self._state_update(state, runtime)
 
 
 def assert_mcp_routing_before_deferred_filter(middlewares: Sequence[AgentMiddleware]) -> None:

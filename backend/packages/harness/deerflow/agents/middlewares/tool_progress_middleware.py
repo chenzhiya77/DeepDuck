@@ -64,7 +64,9 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from deerflow.agents.middlewares.gate_events import record_gate_event
 from deerflow.agents.middlewares.tool_result_meta import TOOL_META_KEY, ToolResultMeta
+from deerflow.runtime.events.catalog import MIDDLEWARE_TOOL_PROGRESS_TAG
 
 if TYPE_CHECKING:
     from deerflow.config.tool_progress_config import ToolProgressConfig
@@ -341,6 +343,25 @@ class ToolProgressMiddleware(AgentMiddleware[AgentState]):
                     "tool_progress: %s/%s -> ACTIVE (reset after good result)",
                     thread_id,
                     tool_name,
+                )
+            # Escalations are the gate acting; a reset back to active is the tool
+            # recovering and carries no gate event (the next escalation reports
+            # `from_phase: "active"` again).
+            if new_state.phase in ("warned", "blocked"):
+                record_gate_event(
+                    runtime,
+                    tag=MIDDLEWARE_TOOL_PROGRESS_TAG,
+                    name=type(self).__name__,
+                    hook="wrap_tool_call",
+                    action="warn" if new_state.phase == "warned" else "block",
+                    changes={
+                        "tool_name": tool_name,
+                        "from_phase": state.phase,
+                        "to_phase": new_state.phase,
+                        "consecutive_problems": new_state.consecutive_problems,
+                        "error_type": meta.error_type,
+                        "block_reason": new_state.block_reason,
+                    },
                 )
         if hint and self._inject_assessment:
             self._queue_assessment(runtime, hint)

@@ -410,6 +410,85 @@ def test_dynamic_middleware_event_rejects_tags_that_do_not_fit_persistence(tag):
         )
 
 
+# The six gate tags from the gate-instrumentation spec. These `changes` shapes
+# become contract: once published, renaming a field is a contract change.
+GATE_TAG_CHANGES = {
+    "read_gate": {
+        "tool_name": "write_file",
+        "tool_call_id": "call-1",
+        "path": "/mnt/user-data/workspace/report.md",
+        "reason": "no_current_read_mark",
+    },
+    "tool_progress": {
+        "tool_name": "web_search",
+        "from_phase": "active",
+        "to_phase": "warned",
+        "consecutive_problems": 3,
+        "error_type": "no_results",
+        "block_reason": None,
+    },
+    "subagent_limit": {
+        "dropped_count": 2,
+        "requested_count": 5,
+        "allowed": 3,
+        "cap": "per_response_concurrency",
+        "prior_delegations": 1,
+        "remaining_total": 5,
+    },
+    "tool_promotion": {
+        "source": "auto_routing",
+        "names": ["mcp_demo__lookup"],
+        "count": 1,
+        "top_k": 3,
+    },
+    "sandbox_audit": {
+        "tool_name": "bash",
+        "verdict": "block",
+        "reason": "command substitution in command position",
+    },
+    "skill_policy": {
+        "tool_name": "bash",
+        "policy_source": "slash",
+        "active_path_count": 1,
+    },
+}
+
+
+def test_gate_tags_are_declared_in_the_catalog():
+    """A gate tag must ship through MIDDLEWARE_EVENT_TAGS, not a local string."""
+    from deerflow.runtime.events import catalog
+
+    for tag in GATE_TAG_CHANGES:
+        assert tag in MIDDLEWARE_EVENT_TAGS, f"{tag} is not published through MIDDLEWARE_EVENT_TAGS"
+        assert len(tag) <= MIDDLEWARE_EVENT_TAG_MAX_LENGTH, f"{tag} exceeds the persisted tag width"
+        assert getattr(catalog, f"MIDDLEWARE_{tag.upper()}_TAG") == tag
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tag", sorted(GATE_TAG_CHANGES))
+async def test_gate_tag_changes_match_the_pattern_contract(tag):
+    store = MemoryRunEventStore()
+    journal = RunJournal("run-1", "thread-1", store, flush_threshold=100)
+    journal.record_middleware(
+        tag,
+        name="GateMiddleware",
+        hook="wrap_tool_call",
+        action="block",
+        changes=GATE_TAG_CHANGES[tag],
+    )
+    await journal.flush()
+
+    event = (await store.list_events("thread-1", "run-1"))[0]
+    pattern = _load_contract()["dynamic_event_patterns"][0]
+
+    assert event["event_type"] == MIDDLEWARE_EVENT_PATTERN.event_type(tag)
+    assert event["category"] == MIDDLEWARE_EVENT_PATTERN.category
+    _assert_schema_valid(pattern["event_type_schema"], event["event_type"])
+    _assert_schema_valid(pattern["tag_schema"], tag)
+    _assert_schema_valid(pattern["content_schema"], event["content"])
+    assert event["content"]["changes"] == GATE_TAG_CHANGES[tag]
+
+
 def test_subagent_observed_events_exactly_match_its_catalog_and_payloads():
     long_result = "r" * (SUBAGENT_STEP_MAX_CHARS + 1)
     long_error = "e" * (SUBAGENT_STEP_MAX_CHARS + 1)

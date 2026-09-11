@@ -13,7 +13,9 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
+from deerflow.agents.middlewares.gate_events import record_gate_event
 from deerflow.agents.thread_state import ThreadState
+from deerflow.runtime.events.catalog import MIDDLEWARE_SANDBOX_AUDIT_TAG
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +414,20 @@ class SandboxAuditMiddleware(AgentMiddleware[ThreadState]):
 
     def _build_block_message(self, request: ToolCallRequest, reason: str) -> ToolMessage:
         tool_call_id = str(request.tool_call.get("id") or "missing_id")
+        # The command itself is tool arguments and is deliberately not recorded —
+        # only which tool was blocked and why (spec §4.1).
+        record_gate_event(
+            request.runtime,
+            tag=MIDDLEWARE_SANDBOX_AUDIT_TAG,
+            name=type(self).__name__,
+            hook="wrap_tool_call",
+            action="block",
+            changes={
+                "tool_name": str(request.tool_call.get("name") or "bash"),
+                "verdict": "block",
+                "reason": reason,
+            },
+        )
         return ToolMessage(
             content=f"Command blocked: {reason}. Please use a safer alternative approach.",
             tool_call_id=tool_call_id,

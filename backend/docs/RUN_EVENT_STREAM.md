@@ -81,6 +81,37 @@ Current middleware tags are `guardrail`, `safety_termination`,
 new middleware tags are additive. Because the full event type is limited to 32
 characters and `middleware:` uses 11, a tag must contain 1-21 characters.
 
+### Gate Events
+
+Six more tags are emitted when a gate **actually changes execution** — it blocks
+a tool call, drops delegations, or releases deferred tool schemas. Observation
+alone does not emit: e.g. `ToolOutputBudgetMiddleware` externalizing an oversized
+result is not a gate event, but a blocked write is.
+
+| Tag | Emitted when | `changes` |
+| --- | --- | --- |
+| `read_gate` | A write is blocked because the target was not read first (content-hash mark missing/mismatched). | `tool_name`, `tool_call_id`, `path` (virtual), `reason` |
+| `tool_progress` | A tool's stagnation state escalates. `action` is `warn` or `block`. | `tool_name`, `from_phase`, `to_phase`, `consecutive_problems`, `error_type`, `block_reason` |
+| `subagent_limit` | Excess `task` calls are truncated. | `dropped_count`, `requested_count`, `allowed`, `cap` (`per_response_concurrency` \| `per_run_total`), `prior_delegations`, `remaining_total` |
+| `tool_promotion` | Deferred MCP tool schemas are released. | `source` (`model` \| `auto_routing`), `names`, `count`, and `top_k` for the routing path |
+| `sandbox_audit` | A `bash` command is blocked by position-based command-substitution rules. | `tool_name`, `verdict`, `reason` |
+| `skill_policy` | A tool outside the active skill's `allowed-tools` is blocked. | `tool_name`, `policy_source` (`slash` \| `skill_context`), `active_path_count` |
+
+Two properties hold for every one of them:
+
+- **`changes` never carries the content that was blocked.** No command text, no
+  file contents, no retrieval query, no secret values — only the decision facts.
+  This follows `safety_finish_reason_middleware`'s rule of not persisting the very
+  content the provider filtered.
+- **Persistence is best-effort and never changes execution.** The middleware
+  silently skips when `__run_journal` is absent (embedded client, subagent runs)
+  and swallows any `record_middleware` failure with a warning.
+
+`tool_progress` only emits on a **phase transition**, not on every problem call:
+the state machine is hysteretic (three consecutive problems to escalate, a good
+result resets it, `blocked` is terminal), so one run produces a handful of events
+rather than one per tool call.
+
 ### Run-Start Constitution Payload
 
 `run.start.content` always carries `chain`, and carries `constitution` on the

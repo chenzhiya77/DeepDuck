@@ -39,7 +39,9 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
+from deerflow.agents.middlewares.gate_events import record_gate_event
 from deerflow.agents.middlewares.tool_result_meta import normalize_tool_result
+from deerflow.runtime.events.catalog import MIDDLEWARE_READ_GATE_TAG
 from deerflow.sandbox.tools import read_current_file_content
 
 logger = logging.getLogger(__name__)
@@ -206,6 +208,19 @@ class ReadBeforeWriteMiddleware(AgentMiddleware):
         if self._latest_mark_hash(request.state, norm_path) == _content_hash(current):
             return None
         tool_name = str(tool_call.get("name", "write"))
+        record_gate_event(
+            request.runtime,
+            tag=MIDDLEWARE_READ_GATE_TAG,
+            name=type(self).__name__,
+            hook="wrap_tool_call",
+            action="block",
+            changes={
+                "tool_name": tool_name,
+                "tool_call_id": str(tool_call.get("id", "")),
+                "path": path,
+                "reason": "no_current_read_mark",
+            },
+        )
         return ToolMessage(
             content=_BLOCK_MESSAGE.format(tool_name=tool_name, path=path),
             tool_call_id=str(tool_call.get("id", "")),

@@ -7,6 +7,7 @@ from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langgraph.runtime import Runtime
 
+from deerflow.agents.middlewares.gate_events import record_gate_event
 from deerflow.agents.middlewares.tool_call_metadata import clone_ai_message_with_tool_calls
 from deerflow.config.subagents_config import (
     DEFAULT_MAX_TOTAL_SUBAGENTS_PER_RUN,
@@ -17,6 +18,7 @@ from deerflow.config.subagents_config import (
     clamp_subagent_concurrency,
     clamp_total_subagents_per_run,
 )
+from deerflow.runtime.events.catalog import MIDDLEWARE_SUBAGENT_LIMIT_TAG
 from deerflow.subagents.executor import MAX_CONCURRENT_SUBAGENTS
 
 logger = logging.getLogger(__name__)
@@ -159,6 +161,25 @@ class SubagentLimitMiddleware(AgentMiddleware[AgentState]):
         # token_capped / safety_capped (#4176).
         if remaining_total == 0 and isinstance(getattr(runtime, "context", None), dict):
             runtime.context["stop_reason"] = "subagent_limit_capped"
+
+        # Which cap fired is otherwise only inferable from `remaining_total == 0`;
+        # record it so a UI can say "this response was full" vs "this run's
+        # delegation budget is used up".
+        record_gate_event(
+            runtime,
+            tag=MIDDLEWARE_SUBAGENT_LIMIT_TAG,
+            name=type(self).__name__,
+            hook="after_model",
+            action="truncate",
+            changes={
+                "dropped_count": dropped_count,
+                "requested_count": len(task_indices),
+                "allowed": allowed_task_calls,
+                "cap": "per_run_total" if remaining_total == 0 else "per_response_concurrency",
+                "prior_delegations": prior_delegation_count,
+                "remaining_total": remaining_total,
+            },
+        )
 
         # Replace the AIMessage with truncated tool_calls (same id triggers replacement)
         content = _append_text(last_msg.content, _TOTAL_LIMIT_STOP_MSG) if remaining_total == 0 else None

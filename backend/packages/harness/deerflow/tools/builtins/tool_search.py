@@ -32,7 +32,11 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langgraph.types import Command
 
+from deerflow.agents.constitution_record import MAX_TOOL_NAMES
+from deerflow.agents.middlewares.gate_events import record_gate_event
+from deerflow.runtime.events.catalog import MIDDLEWARE_TOOL_PROMOTION_TAG
 from deerflow.tools.mcp_metadata import get_mcp_routing, is_mcp_tool
+from deerflow.tools.types import Runtime
 
 if TYPE_CHECKING:
     from langchain.agents.middleware import AgentMiddleware
@@ -143,7 +147,7 @@ def build_tool_search_tool(catalog: DeferredToolCatalog) -> BaseTool:
     catalog_hash = catalog.hash
 
     @tool
-    def tool_search(query: str, tool_call_id: Annotated[str, InjectedToolCallId]) -> Command:
+    def tool_search(query: str, tool_call_id: Annotated[str, InjectedToolCallId], runtime: Runtime) -> Command:
         """Fetches full schema definitions for deferred tools so they can be called.
 
         Deferred tools appear by name in <available-deferred-tools> in the system
@@ -162,6 +166,18 @@ def build_tool_search_tool(catalog: DeferredToolCatalog) -> BaseTool:
         else:
             content = json.dumps([convert_to_openai_function(t) for t in matched], indent=2, ensure_ascii=False)
             names = [t.name for t in matched]
+        # Tool search is one of the two promotion writers; the auto-routing
+        # middleware is the other, and only this event tells them apart (the
+        # `promoted` state they both write carries no source). The query is
+        # model-authored text and is deliberately not recorded.
+        record_gate_event(
+            runtime,
+            tag=MIDDLEWARE_TOOL_PROMOTION_TAG,
+            name="tool_search",
+            hook="tool",
+            action="promote",
+            changes={"source": "model", "names": names[:MAX_TOOL_NAMES], "count": len(names)},
+        )
         return Command(
             update={
                 "promoted": {"catalog_hash": catalog_hash, "names": names},
