@@ -132,18 +132,24 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
 
 ### Interaction Ownership
 
-- `src/components/workspace/pet/agent-pet.tsx` observes the thread and feeds a rendered `PetState` to
-  `pet-sprite.tsx`, which only draws (it resolves the sprite, plays the sheet with
-  `background-position` + `steps(N, jump-none)`, and reports a finished one-shot back). Three
-  invariants hold that split: **(a)** the mount point is the desktop branch's `div#chat` in
-  `chat-box.tsx` — the mobile branch has no `id="chat"` and deliberately gets no pet — and `div#chat`
-  carries its own `[container-type:inline-size]` so the pet's `@container (max-width: 480px)` hide
-  rule measures the chat panel rather than the `ResizablePanelGroup` (whose own container context
-  measures chat + side panel and therefore never fires); **(b)** the pet is an observer — it reads
-  `useThread()` and derived state, and never sends, mutates, owns agent/thread/memory, or subscribes
-  to custom events; **(c)** the sprite stays `pointer-events-none` so clicks pass through, and free
-  placement rides `pet.offset` via window-level hit-testing on Alt+drag (4px threshold, pointer
-  capture, and swallowing the click that follows a drag) instead of giving the pet pointer events.
+- `src/components/workspace/pet/agent-pet.tsx` reads the workspace shell's thin subscription
+  (`core/threads/activity-context.tsx`, spec §10.3 — the pet is "the app's light", not one page's) and
+  feeds a rendered `PetState` to `pet-sprite.tsx`, which only draws (it resolves the sprite, plays the
+  sheet with `background-position` + `steps(N, jump-none)`, and reports a finished one-shot back).
+  Three invariants hold that split: **(a)** the mount point is the workspace shell — `AgentPet` is
+  rendered inside `SidebarInset` in `workspace-content.tsx`, and `SidebarInset` carries the
+  `[container-type:inline-size]` so the pet's `@container (max-width: 480px)` hide rule measures the
+  **content area** (not the `ResizablePanelGroup`, whose container measures chat + side panel). It is
+  therefore present on every `/workspace/*` page and deliberately absent from the public routes
+  (`/`, `/login`, `/[lang]/docs`, `/blog`) — those never render `WorkspaceContent`, and the root
+  layout must stay static. Conversation surfaces register their `(threadId, liveRunId)` so the shell
+  follows the last one you were in; registering is a set, not a lease (unmounting a surface must not
+  drop the subscription — that is what lets the pet outlive the page); **(b)** the pet is an observer
+  — it reads that subscription and derived state, and never sends, mutates, owns
+  agent/thread/memory, or subscribes to custom events; **(c)** the sprite stays `pointer-events-none`
+  so clicks pass through, and free placement rides `pet.offset` via window-level hit-testing on
+  Alt+drag (4px threshold, pointer capture, and swallowing the click that follows a drag) instead of
+  giving the pet pointer events.
 - `src/components/workspace/settings/models-settings-page.tsx` owns the **Models** section and
   its two views: the chat-model list (with add/edit dialogs) and `functional-models-view.tsx`,
   the RAG functional-model editor. The functional view reads `core/rag/hooks.ts`

@@ -89,14 +89,21 @@
 
 ## Task 2:挂点迁移 + 断点重推
 
-- [ ] **Step 1** 给内容区加容器上下文:`WorkspaceContent` 里 `<SidebarInset className="min-w-0 [container-type:inline-size]">` —— `SidebarInset` 的 `className` 走 `cn(...)` 合并(`components/ui/sidebar.tsx:307-318` 已核实),**不改 `ui/` 下的生成文件**。
-- [ ] **Step 2** `AgentPet` 从 `chat-box.tsx:415` 的 `div#chat` 迁到外壳(与 `CommandPalette` / `Toaster` 同一层);`aria-hidden`、`pointer-events-none`、`z-20` 三项不变。
-- [ ] **Step 3(回收)** 迁移后 `div#chat` 那条 `[container-type:inline-size]`(`chat-box.tsx:415`)失去消费者 —— 已核实**除 `.pet-shell` 外全仓库没有别的 `@container` 消费者**(`globals.css:108` 是唯一一条规则,`src/` 下无 Tailwind 容器变体)。确认后删掉;`chat-box.tsx:401` 那条在 `ResizablePanelGroup` 上是既有的、**不在本线范围**,不动。
-- [ ] **Step 4(断点重推)** 实测内容区宽度下的隐藏断点,**不沿用 480**。记录:多少 px 时宠物开始压到可见内容/布局崩坏,据此取闭区间阈值。
-- [ ] **Step 5(`pet.offset` 语义重估)** 默认值从「面板内缩进 12/56」重估 —— 56 的理由(避开 `h-12` 的 header)跨页后不成立;写新默认值并说明依据。
-- [ ] **Step 6** 门禁 + 真栈浏览器验收(task 5 复验)。
-- **验收**:① workspace 五个面之间切换宠物都在;② 公开路由(`/`、`/login`、`/docs`、`/blog`)**没有**宠物;③ 新断点有实测数字;④ 拖 sidecar 不再改变宠物可见性(与 §10 旧行为不同,属预期)。
-- **交付纪要**:待填。
+**进展(2026-09-12):Step 1 / 2 / 3 / 5 已交付;Step 4(断点)与 Step 6(真栈部分)待浏览器。**
+
+- [x] **Step 1** 给内容区加容器上下文:`WorkspaceContent` 里 `<SidebarInset className="min-w-0 [container-type:inline-size]">` —— `SidebarInset` 的 `className` 走 `cn(...)` 合并(`components/ui/sidebar.tsx:307-318` 已核实),**不改 `ui/` 下的生成文件**。**风险已排除**:`container-type` 会给 `fixed` 后代换包含块,而 workspace 下**全量 grep 确认没有任何 `fixed` 后代**,这一层安全。
+- [x] **Step 2** `AgentPet` 从 `chat-box.tsx` 的 `div#chat` 迁到外壳(落 `SidebarInset` 内,与 `CommandPalette` / `Toaster` 同层);`aria-hidden`、`pointer-events-none`、`z-20` 三项不变。**同时改了数据源**:`useThread()` → `useAppActivity()`,并**去掉 `threadId` prop**(重置键改从 `activity.target?.threadId` 取)。为此给活动状态**补了 `hasError`**:宠物的优先级是 error > 在跑 > wait > done(§5.3 不变量 1),少了它,外壳版宠物永远到不了 error 态 —— 页面的 `thread.error` 在迁移中是丢掉的。**消息类型在宠物这一侧收口**(`activity.messages as Message[]`):活动层刻意对消息形状不可知。
+- [x] **Step 3(回收)** 已删掉 `div#chat` 上那条 `[container-type:inline-size]`,以及 `chat-box.tsx` 里 `<AgentPet threadId={…} />` 与它的 import(宠物不再挂在聊天页里)。`chat-box.tsx:401` 那条在 `ResizablePanelGroup` 上是既有的、**不在本线范围**,不动。
+- [x] **Step 4(断点:实测后**保持 480**,不改 `globals.css` 的阈值)** —— 2026-09-12 真实应用采样(用户操作):边界落在内容区 **482 显示 / 480 隐藏**,回程 **479 隐藏 / 483 显示** ⇒ 容器查询确实量的是内容区(闭区间确认)。**同时测出那条规则在桌面布局里永远触发不到**:内容区 = 窗口 − 侧边栏(展开 **256** / 收起 **48**),窗口 <768 切移动布局(此时内容区 = 窗口)⇒ 桌面最窄内容区 = `768 − 256 = `**512** > 480。**用户裁定:窄窗口(481–767)也要有宠物**(实测 512–600 不挤),故阈值**不动**;只更新了 `globals.css` 的注释与 spec §10 的布局覆盖裁决(原「第 1 期桌面端 only」作废)。
+- [x] **Step 5(`pet.offset` 语义重估;结论:保持 `{ right: 12, top: 56 }`)** 坐标空间从「chat 面板」换成「内容区」,但**默认值不变**,理由:**需要让开的 header / 工具栏本来就在内容区里面**(聊天页的 `h-12` header 与知识库工具栏都由页面自己渲染,不在内容区之外)⇒ 垂直让位量不变;水平上 `right: 12` 在聊天页仍等价于「距 chat 面板右缘 12px」。差异只出现在**非聊天页**(宠物现在在那里也出现),与各页工具栏的观感交给 **Task 5 Step 7**。
+- [x] **Step 6** 门禁 + 真栈浏览器验收。**代码侧已过**(1164 例、tsc/eslint 干净)。**真栈(用户实测 2026-09-12)**:① 切页后宠物还在 ✓(迁移的核心成果);② `/`、`/login`、showcase 404 页都**没有**宠物 ✓;③ 断点边界有实测数字 ✓。**未验**:④ 拖 sidecar 不再改变宠物可见性(容器已换成内容区,理论上与之无关,但**没有实测**)。
+- **验收**:① ✅(用户实测)② ✅(用户实测)③ ✅(482/480 边界)④ **未验**
+- **交付纪要(2026-09-12)**:
+  - **交付物**:`AgentPet` 改挂 `SidebarInset` 并改读 `useAppActivity()`(去掉 `threadId` prop);`SidebarInset` 承载容器上下文;`chat-box.tsx` 移除宠物挂载与 `div#chat` 的 `container-type`;活动状态**新增 `hasError`**(否则 error 态在迁移中静默丢失);宠物 DOM 用例改用 `ActivityProvider`,并新增「活动里的未答请求 ⇒ `wait.webp`」这条核心断言。
+  - **测试量**:agent-pet **7 → 9 例**;`tests/unit/core` + `tests/unit/components/workspace` **1164 例全过**;tsc 全量干净、eslint 干净。
+  - **改写/偏离**:① spec §10 的「第 1 期桌面端 only」**作废**(原理由「mobile 分支没有 `id="chat"`」随迁移失效);② `frontend/AGENTS.md` 的 Interaction Ownership (a) 已同步(挂载点 / 容器 / 公开路由 / 注册语义);③ 注册值带 `liveRunId`、只用 `liveRunId` 不用 `resolveRunId`(见 Task 1)。
+  - **未覆盖**:④ sidecar 拖拽;**Task 5 的阶梯**(跨页 `wait` / 缩放 / 跳转 / 非聊天页观感)整体仍待做。
+  - **已知但未处理**:窄窗口(481–767)现在也会显示宠物 —— 这是**用户明确要的**(裁定见 spec §10),不是缺陷;窗口 <480 时由那条容器规则兜底隐藏。
 
 ## Task 3:缩放控件
 
