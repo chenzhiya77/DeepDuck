@@ -12,10 +12,10 @@
       "sheetHeight": 512
     },
     "wait": {
-      "frames": 2,
+      "frames": 30,
       "fps": 8,
       "loop": true,
-      "sheetWidth": 1024,
+      "sheetWidth": 15360,
       "sheetHeight": 512
     }
   }
