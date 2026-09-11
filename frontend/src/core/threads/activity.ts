@@ -17,6 +17,15 @@
 export interface ActivityTarget {
   threadId: string;
   runId: string | null;
+  /**
+   * 回跳这个会话的规范路由,**由注册方算好交过来**(§10.3 / Task 4)。
+   *
+   * 不能由外壳从 threadId 反推:同一个线程在不同面上是不同路由 —— 知识库线程
+   * 走 `/workspace/knowledge?kb=…`(推成 chats 路由会跑一个**没有 kb 绑定**的
+   * rag agent,检索永不触发),自定义 agent 的线程走
+   * `/workspace/agents/<name>/chats/…`。只有注册方(它知道自己是谁)拿得到这些。
+   */
+  href?: string;
 }
 
 export interface ActivityState {
@@ -64,10 +73,12 @@ export function reduceActivity(
 ): ActivityState {
   if (event.kind === "register") {
     const previous = state.target;
-    // 幂等:完全相同的注册不动状态 —— 否则一次无谓的重放会把正在跑的 join 抹成停跑
+    // 幂等:完全相同的注册不动状态 —— 否则一次无谓的重放会把正在跑的 join 抹成停跑。
+    // href 要一起比:同一线程在两个面上是两条路由,漏了它就会留着旧路由去回跳。
     if (
       previous?.threadId === event.target.threadId &&
-      previous?.runId === event.target.runId
+      previous?.runId === event.target.runId &&
+      previous?.href === event.target.href
     ) {
       return state;
     }

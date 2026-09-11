@@ -70,6 +70,25 @@ describe("外壳活跃 run:注册与重置", () => {
     expect(again.running).toBe(true);
   });
 
+  it("同一个线程、同一条 run,但注册方换了回跳路由:采纳新路由", () => {
+    // 同一个 threadId 在不同面上是不同路由(知识库 vs chats),幂等判定必须认 href
+    let state = reduceActivity(EMPTY_ACTIVITY, {
+      kind: "register",
+      target: { threadId: "A", runId: "run-1", href: "/workspace/chats/A" },
+    });
+
+    state = reduceActivity(state, {
+      kind: "register",
+      target: {
+        threadId: "A",
+        runId: "run-1",
+        href: "/workspace/knowledge?kb=k1&thread=A",
+      },
+    });
+
+    expect(state.target?.href).toBe("/workspace/knowledge?kb=k1&thread=A");
+  });
+
   it("同一会话里挂着的重取请求不会被一次重注册抹掉", () => {
     const afterEnd = reduceActivity(runningOnA(), { kind: "end", threadId: "A" });
     expect(afterEnd.needsRefetch).toBe(true);

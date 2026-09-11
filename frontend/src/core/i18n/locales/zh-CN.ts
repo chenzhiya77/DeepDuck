@@ -1925,7 +1925,8 @@ export const zhCN: Translations = {
       title: "宠物",
       description:
         "工作区角落的小装饰，只反映当前 run 在做什么。它不发送任何内容，也不碰对话本身。",
-      dragHint: "按住 Alt 拖动可以挪动它；不按 Alt 时的点击会直接穿透到下面的内容。",
+      dragHint:
+        "按住 Alt 拖动可以挪动它；Alt+单击回到它代表的那个会话。不按 Alt 时的点击会直接穿透到下面的内容。",
       resetPosition: "重置位置",
       size: "大小",
       sizeHint:

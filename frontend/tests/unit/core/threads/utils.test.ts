@@ -6,6 +6,7 @@ import {
   buildThreadCreatedMetadata,
   channelSourceOfThread,
   isThreadPinned,
+  pathOfKnowledgeThread,
   pathOfThread,
   sortPinnedThreads,
   textOfMessage,
@@ -76,6 +77,16 @@ test("opens KB-bound threads in knowledge page with query params (spec §5.2)", 
 test("kb branch takes precedence over agent branch (kb threads carry both)", () => {
   const kbThread = makeThread("thread-kb-2", { agent_name: "rag", kb_id: "kb-def" });
   expect(pathOfThread(kbThread)).toBe("/workspace/knowledge?kb=kb-def&thread=thread-kb-2");
+});
+
+test("builds the knowledge route from bare ids, for callers holding no thread object", () => {
+  // 知识库面板手上只有 kb id 与 thread id(线程对象在另一条查询链上),两条路必须同形
+  expect(pathOfKnowledgeThread("kb 1", "thread#1")).toBe(
+    "/workspace/knowledge?kb=kb%201&thread=thread%231",
+  );
+  expect(pathOfKnowledgeThread("kb-abc", "thread-kb-1")).toBe(
+    "/workspace/knowledge?kb=kb-abc&thread=thread-kb-1",
+  );
 });
 
 test("prefers context.agent_name over metadata.agent_name", () => {

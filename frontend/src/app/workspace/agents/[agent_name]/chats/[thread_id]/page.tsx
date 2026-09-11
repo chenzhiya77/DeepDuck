@@ -54,7 +54,7 @@ import {
   selectContextUsage,
   threadTokenUsageToTokenUsage,
 } from "@/core/threads/token-usage";
-import { textOfMessage } from "@/core/threads/utils";
+import { pathOfThread, textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
@@ -148,7 +148,17 @@ export default function AgentChatPage() {
   });
 
   // 注册给外壳订阅(spec §10.3):必须带 liveRunId,理由见 chats 页同处注释。
-  useRegisterActivity(isNewThread ? null : { threadId, runId: liveRunId });
+  // href 必须带上 agent_name —— 只给 threadId 会回跳到 chats 路由,那条路由上
+  // 跑的是默认 agent,不是这条线程绑定的那个。
+  useRegisterActivity(
+    isNewThread
+      ? null
+      : {
+          threadId,
+          runId: liveRunId,
+          href: pathOfThread(threadId, { agent_name }),
+        },
+  );
 
   const hasThreadMessages = thread.messages.length > 0;
 

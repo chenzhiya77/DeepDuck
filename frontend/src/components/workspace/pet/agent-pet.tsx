@@ -1,6 +1,7 @@
 "use client";
 
 import type { Message } from "@langchain/langgraph-sdk";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PetSprite } from "@/components/workspace/pet/pet-sprite";
@@ -17,6 +18,7 @@ import { derivePetState, type PetState } from "@/core/pet/state";
 import { collectActiveToolNames } from "@/core/pet/tools";
 import { useLocalSettings } from "@/core/settings/hooks";
 import { useAppActivity } from "@/core/threads/activity-context";
+import { pathOfThread } from "@/core/threads/utils";
 
 import petManifest from "../../../../public/pet/parrot/manifest.json";
 
@@ -70,6 +72,24 @@ export function AgentPet() {
   offsetRef.current = dragOffset ?? settings.pet.offset;
 
   const [viewport, setViewport] = useState<PetViewport | null>(null);
+
+  const pathname = usePathname();
+  const router = useRouter();
+
+  /**
+   * Alt+单击 = 跳回它代表的那个会话(Task 4)。**只做单目标** —— 宠物代表一个
+   * 线程,点它直接回去,不做选择器(多会话版是「浮动会话卡」那条独立线,§17)。
+   */
+  const jumpRef = useRef<(() => void) | null>(null);
+  jumpRef.current = () => {
+    const target = activity.target;
+    if (!target) return;
+    const href = target.href ?? pathOfThread(target.threadId);
+    // 目标不在当前页才跳;同路径即无操作 —— 知识库页打开线程后会把 thread 参数
+    // 从 URL 上抹掉(只剩 ?kb=),所以只能比路径,不能比整个 URL
+    if (href.split("?")[0] === pathname) return;
+    router.push(href);
+  };
 
   // 活动状态对消息形状保持不可知(它是通道,不是解析者),形状在这一侧收口
   const messages = activity.messages as Message[];
@@ -153,7 +173,7 @@ export function AgentPet() {
     setDoneActive(false);
   }, []);
 
-  // Alt+拖拽:命中测试走 window 级矩形,宠物自身恒 pointer-events-none(§10.1)
+  // Alt+拖拽 / Alt+单击:命中测试走 window 级矩形,宠物自身恒 pointer-events-none(§10.1)
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       if (!event.altKey) return;
@@ -177,6 +197,9 @@ export function AgentPet() {
           // 合成事件里 pointerId 可能无效;window 级监听照常收事件
         }
       }
+      // 落在宠物盒上的 Alt 手势一律吞掉紧随的 click:拖拽是显而易见的,单击也
+      // 一样 —— 不吞的话 Alt+单击会同时触发底下的消息链接(§10.1 / Task 4)
+      swallowNextClickRef.current = true;
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -197,8 +220,6 @@ export function AgentPet() {
           return;
         }
         drag.dragged = true;
-        // 起过拖的手势要吞掉紧跟的那次 click,否则松手会激活底下的消息链接
-        swallowNextClickRef.current = true;
       }
       setDragOffset({
         right: drag.startOffset.right - dx,
@@ -215,7 +236,11 @@ export function AgentPet() {
       } catch {
         // 元素可能已卸载,无需处理
       }
-      if (!drag.dragged) return;
+      if (!drag.dragged) {
+        // 没越过阈值 = 单击 ⇒ 跳回它代表的会话(阈值天然把两种手势分开,§10.1)
+        jumpRef.current?.();
+        return;
+      }
       setDragOffset(null);
       setSettings("pet", {
         offset: {

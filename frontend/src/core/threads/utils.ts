@@ -24,6 +24,15 @@ type ThreadRouteTarget =
       metadata?: Record<string, unknown> | null;
     };
 
+/**
+ * 知识库绑定线程的规范路由。抽出来给**只有 id、没有线程对象**的调用方用
+ * (知识库聊天面板就是这种:它手上是 kb id + thread id),与 `pathOfThread`
+ * 的 kb 分支共用同一个构造,免得两处各写一份 URL。
+ */
+export function pathOfKnowledgeThread(kbId: string, threadId: string) {
+  return `/workspace/knowledge?kb=${encodeURIComponent(kbId)}&thread=${encodeURIComponent(threadId)}`;
+}
+
 export function pathOfThread(
   thread: ThreadRouteTarget,
   context?: Pick<AgentThreadContext, "agent_name"> | null,
@@ -37,7 +46,7 @@ export function pathOfThread(
   if (typeof thread !== "string") {
     const kbId = kbIdOfThread(thread);
     if (kbId) {
-      return `/workspace/knowledge?kb=${encodeURIComponent(kbId)}&thread=${encodedThreadId}`;
+      return pathOfKnowledgeThread(kbId, threadId);
     }
   }
   let agentName: string | undefined;

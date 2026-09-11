@@ -18,6 +18,15 @@ const PANEL = { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 60
 // eslint-disable-next-line @typescript-eslint/unbound-method
 const originalRect = Element.prototype.getBoundingClientRect;
 
+// 路由:槽位在用例里改,工厂只读槽位(rs.mock 会被提升,不能闭包用例内的变量)
+const push = rs.fn();
+let currentPath = "/workspace/chats/A";
+
+rs.mock("next/navigation", () => ({
+  usePathname: () => currentPath,
+  useRouter: () => ({ push }),
+}));
+
 interface StubClient {
   runs: {
     joinStream: (
@@ -97,6 +106,29 @@ function shell(container: HTMLElement): HTMLElement {
   return element;
 }
 
+/** 一条已在跑的线程:注册带的是 runId: null,所以外壳走 getState 那条路 */
+function stubIdleThread(): void {
+  client = {
+    runs: {
+      joinStream: () => {
+        throw new Error("runId 为 null 时不该去 join");
+      },
+    },
+    threads: { getState: async () => ({ values: { messages: [] } }) },
+  };
+}
+
+/** Alt+单击:pointerdown→pointerup 位移 <4px,即不越过拖拽阈值 */
+function altClick(pointerId = 90, x = 400, y = 100): void {
+  fireEvent.pointerDown(window, {
+    altKey: true,
+    pointerId,
+    clientX: x,
+    clientY: y,
+  });
+  fireEvent.pointerUp(window, { pointerId, clientX: x, clientY: y });
+}
+
 function spriteUrl(container: HTMLElement): string {
   const sprite = container.querySelector(".pet-sprite");
   if (!(sprite instanceof HTMLElement)) {
@@ -107,6 +139,8 @@ function spriteUrl(container: HTMLElement): string {
 
 beforeEach(() => {
   client = undefined as unknown as StubClient;
+  push.mockClear();
+  currentPath = "/workspace/chats/A";
   Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
 });
 
@@ -253,6 +287,107 @@ describe("AgentPet Alt+drag placement", () => {
     // 没有拖拽的手势,点击照常送达
     fireEvent.click(underlying);
     expect(onClick).toHaveBeenCalledTimes(1);
+
+    underlying.removeEventListener("click", onClick);
+  });
+});
+
+describe("AgentPet Alt+单击跳转(Task 4)", () => {
+  it("jumps to the thread it stands for when the current page is another one", async () => {
+    stubIdleThread();
+    seedSettings({ offset: DEFAULT_LOCAL_SETTINGS.pet.offset });
+    currentPath = "/workspace/agents";
+    renderPet({ threadId: "T", runId: null });
+
+    altClick();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(push).toHaveBeenCalledWith("/workspace/chats/T");
+    // 单击不是拖拽:offset 一个字节都不写
+    expect(storedOffset()).toEqual(DEFAULT_LOCAL_SETTINGS.pet.offset);
+  });
+
+  it("does nothing when the current page already shows that thread", () => {
+    stubIdleThread();
+    currentPath = "/workspace/chats/T";
+    renderPet({ threadId: "T", runId: null });
+
+    altClick();
+
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("uses the href the registrant handed over, not a route derived from the id", () => {
+    stubIdleThread();
+    currentPath = "/workspace/agents";
+    renderPet({
+      threadId: "T",
+      runId: null,
+      href: "/workspace/knowledge?kb=k1&thread=T",
+    });
+
+    altClick();
+
+    // 知识库线程若从 id 反推会落到 chats 路由,那里的 rag agent 没有 kb 绑定
+    expect(push).toHaveBeenCalledWith("/workspace/knowledge?kb=k1&thread=T");
+  });
+
+  it("treats the knowledge page as the current page for its own thread", () => {
+    stubIdleThread();
+    currentPath = "/workspace/knowledge";
+    renderPet({
+      threadId: "T",
+      runId: null,
+      href: "/workspace/knowledge?kb=k1&thread=T",
+    });
+
+    altClick();
+
+    // 知识库把 thread 参数从 URL 上抹掉了(打开即 router.replace),所以只能比路径
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump without a registered target", () => {
+    currentPath = "/workspace/agents";
+    renderPet(null);
+
+    altClick();
+
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("keeps the two branches apart: past the threshold it drags and never jumps", () => {
+    stubIdleThread();
+    currentPath = "/workspace/agents";
+    renderPet({ threadId: "T", runId: null });
+
+    fireEvent.pointerDown(window, {
+      altKey: true,
+      pointerId: 91,
+      clientX: 400,
+      clientY: 100,
+    });
+    fireEvent.pointerMove(window, { pointerId: 91, clientX: 360, clientY: 140 });
+    fireEvent.pointerUp(window, { pointerId: 91, clientX: 360, clientY: 140 });
+
+    expect(push).not.toHaveBeenCalled();
+    expect(storedOffset()).toEqual({ right: 52, top: 96 });
+  });
+
+  it("swallows the click behind an Alt+单击, so no link underneath fires", () => {
+    stubIdleThread();
+    currentPath = "/workspace/agents";
+    const { container } = renderPet({ threadId: "T", runId: null });
+    const underlying = container.parentElement ?? document.body;
+    const onClick = rs.fn();
+    underlying.addEventListener("click", onClick);
+
+    altClick();
+    fireEvent.click(underlying);
+
+    expect(onClick).not.toHaveBeenCalled();
 
     underlying.removeEventListener("click", onClick);
   });

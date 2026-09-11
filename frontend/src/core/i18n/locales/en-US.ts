@@ -2038,7 +2038,7 @@ export const enUS: Translations = {
       description:
         "A small companion in the corner of the workspace that mirrors what the current run is doing. It never sends anything and never touches the conversation.",
       dragHint:
-        "Hold Alt and drag to move it. A click without Alt passes straight through to the content underneath.",
+        "Hold Alt and drag to move it; Alt+click jumps back to the thread it stands for. A click without Alt passes straight through.",
       resetPosition: "Reset position",
       size: "Size",
       sizeHint:

@@ -171,7 +171,7 @@ function useActivityContext(): ActivityContextValue {
 }
 
 /**
- * 会话主面挂载时登记自己代表的 (threadId, liveRunId)。
+ * 会话主面挂载时登记自己代表的 (threadId, liveRunId, href)。
  *
  * **卸载不注销** —— 外壳订阅必须活过页面卸载,那正是「离开聊天页仍在跑 / 仍能说
  * 在等你」的来源。换会话由下一次注册覆盖,不做「谁卸载谁清空」的所有权争夺。
@@ -181,12 +181,13 @@ export function useRegisterActivity(target: ActivityTarget | null): void {
   const { register } = useActivityContext();
   const threadId = target?.threadId ?? null;
   const runId = target?.runId ?? null;
+  const href = target?.href ?? null;
 
   useEffect(() => {
     // 还没有线程(新会话、非会话页)时不登记,也不清掉上一个 —— 上一个可能还在跑
     if (!threadId) return;
-    register({ threadId, runId });
-  }, [register, threadId, runId]);
+    register({ threadId, runId, href: href ?? undefined });
+  }, [register, threadId, runId, href]);
 }
 
 /** 消费者(宠物)读它 —— 只认这一条,与页面自己的富 hook 无关 */

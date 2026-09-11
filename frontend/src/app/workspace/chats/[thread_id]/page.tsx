@@ -63,7 +63,7 @@ import {
   selectContextUsage,
   threadTokenUsageToTokenUsage,
 } from "@/core/threads/token-usage";
-import { textOfMessage } from "@/core/threads/utils";
+import { pathOfThread, textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
@@ -174,7 +174,12 @@ export default function ChatPage() {
   // 注册给外壳订阅(spec §10.3):宠物是 app 的灯,跟着「最后在看的这个会话」。
   // 必须带 liveRunId —— 只给 threadId 的话,外壳在那条最常见的路径上永远拿不到
   // 「在跑」(Leg 0 静态结论)。卸载不注销,否则一离开这页灯就灭。
-  useRegisterActivity(isNewThread ? null : { threadId, runId: liveRunId });
+  // href 由本页算好(Alt+单击回跳用它):只有注册方知道这条线程该落在哪条路由上。
+  useRegisterActivity(
+    isNewThread
+      ? null
+      : { threadId, runId: liveRunId, href: pathOfThread(threadId) },
+  );
 
   const hasThreadMessages = thread.messages.length > 0;
 
