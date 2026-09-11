@@ -1,35 +1,82 @@
-import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { afterEach, describe, expect, it, rs } from "@rstest/core";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 
-import { ThreadContext } from "@/components/workspace/messages/context";
 import { AgentPet } from "@/components/workspace/pet/agent-pet";
 import {
   DEFAULT_LOCAL_SETTINGS,
   LOCAL_SETTINGS_KEY,
 } from "@/core/settings/local";
 import { updateLocalSettings } from "@/core/settings/store";
-import type { AgentThreadState } from "@/core/threads";
+import type { ActivityTarget } from "@/core/threads/activity";
+import {
+  ActivityProvider,
+  useRegisterActivity,
+} from "@/core/threads/activity-context";
 
 const PANEL = { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 };
 // 只为还原,从不直接调用,故 unbound-method 在此不适用
 // eslint-disable-next-line @typescript-eslint/unbound-method
 const originalRect = Element.prototype.getBoundingClientRect;
 
-function fakeThread(): BaseStream<AgentThreadState> {
-  return {
-    values: { title: "t", messages: [] },
-    messages: [],
-    isLoading: false,
-    error: undefined,
-  } as unknown as BaseStream<AgentThreadState>;
+interface StubClient {
+  runs: {
+    joinStream: (
+      threadId: string,
+      runId: string,
+      options: { signal?: AbortSignal; streamMode?: unknown },
+    ) => AsyncGenerator<{ event: string; data?: unknown }>;
+  };
+  threads: { getState: (threadId: string) => Promise<unknown> };
 }
 
-function renderPet(threadId = "thread-1") {
+let client: StubClient;
+
+// 工厂不能闭包用例内的变量(rs.mock 会被提升),走模块级槽位转接
+rs.mock("@/core/api/api-client", () => ({
+  getAPIClient: () => client,
+}));
+
+/** 一条真实的 ask_clarification 请求(v1 · free_text)—— 它就是 wait 的来源 */
+const humanInputRequest = {
+  type: "tool",
+  name: "ask_clarification",
+  content: "fallback",
+  artifact: {
+    human_input: {
+      version: 1,
+      kind: "human_input_request",
+      source: "ask_clarification",
+      request_id: "clarification:call-1",
+      question: "Which file?",
+      input_mode: "free_text",
+    },
+  },
+};
+
+/** 跑完的 run:先给一次快照,再给终结帧 */
+function stubFinishedRun(messages: unknown[]): void {
+  client = {
+    runs: {
+      joinStream: () =>
+        (async function* () {
+          yield { event: "values", data: { messages } };
+          yield { event: "end", data: null };
+        })(),
+    },
+    threads: { getState: async () => ({ values: { messages } }) },
+  };
+}
+
+function PetHost({ target }: { target: ActivityTarget | null }) {
+  useRegisterActivity(target);
+  return <AgentPet />;
+}
+
+function renderPet(target: ActivityTarget | null = null) {
   return render(
-    <ThreadContext.Provider value={{ thread: fakeThread() }}>
-      <AgentPet threadId={threadId} />
-    </ThreadContext.Provider>,
+    <ActivityProvider>
+      <PetHost target={target} />
+    </ActivityProvider>,
   );
 }
 
@@ -50,6 +97,19 @@ function shell(container: HTMLElement): HTMLElement {
   return element;
 }
 
+function spriteUrl(container: HTMLElement): string {
+  const sprite = container.querySelector(".pet-sprite");
+  if (!(sprite instanceof HTMLElement)) {
+    throw new Error("AgentPet rendered no sprite");
+  }
+  return sprite.style.backgroundImage;
+}
+
+beforeEach(() => {
+  client = undefined as unknown as StubClient;
+  Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
+});
+
 afterEach(() => {
   cleanup();
   // store 的 baseSettings 是模块级缓存,只清 localStorage 会留下上一条用例的值
@@ -59,6 +119,24 @@ afterEach(() => {
   });
   window.localStorage.clear();
   Element.prototype.getBoundingClientRect = originalRect;
+});
+
+describe("AgentPet 数据源(外壳那条薄订阅)", () => {
+  it("活动里出现未答请求时显示 wait —— 迁移的核心断言", async () => {
+    stubFinishedRun([humanInputRequest]);
+    const { container } = renderPet({ threadId: "A", runId: "run-1" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(spriteUrl(container)).toContain("wait.webp");
+  });
+
+  it("没有注册目标时照常渲染 idle,不抛错", () => {
+    const { container } = renderPet(null);
+
+    expect(spriteUrl(container)).toContain("idle.webp");
+  });
 });
 
 describe("AgentPet switch", () => {
@@ -78,7 +156,6 @@ describe("AgentPet switch", () => {
 
 describe("AgentPet Alt+drag placement", () => {
   it("drags the box and persists the new offset", () => {
-    Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
     const { container } = renderPet();
     const box = shell(container);
 
@@ -103,7 +180,6 @@ describe("AgentPet Alt+drag placement", () => {
   });
 
   it("does not drag without Alt, so clicks pass through", () => {
-    Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
     seedSettings({ enabled: true, offset: DEFAULT_LOCAL_SETTINGS.pet.offset });
     const { container } = renderPet();
     const box = shell(container);
@@ -123,7 +199,6 @@ describe("AgentPet Alt+drag placement", () => {
   });
 
   it("ignores an Alt gesture that never passes the drag threshold", () => {
-    Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
     const { container } = renderPet();
     const box = shell(container);
 
@@ -141,7 +216,6 @@ describe("AgentPet Alt+drag placement", () => {
   });
 
   it("ignores a drag that starts outside the pet box", () => {
-    Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
     const { container } = renderPet();
     const box = shell(container);
 
@@ -159,7 +233,6 @@ describe("AgentPet Alt+drag placement", () => {
   });
 
   it("swallows the click that follows a drag so it cannot hit the content underneath", () => {
-    Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
     const { container } = renderPet();
     const underlying = container.parentElement ?? document.body;
     const onClick = rs.fn();

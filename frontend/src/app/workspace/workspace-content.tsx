@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@/components/query-client-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { CommandPalette } from "@/components/workspace/command-palette";
 import { GatewayOfflineBanner } from "@/components/workspace/gateway-offline-banner";
+import { AgentPet } from "@/components/workspace/pet/agent-pet";
 import { SettingsDialogHost } from "@/components/workspace/settings";
 import { WorkspaceSettingsDeepLink } from "@/components/workspace/workspace-settings-deep-link";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
@@ -37,9 +38,13 @@ export async function WorkspaceContent({
       <ActivityProvider>
         <SidebarProvider className="h-screen" defaultOpen={initialSidebarOpen}>
           <WorkspaceSidebar />
-          <SidebarInset className="min-w-0">
+          {/* 内容区自己带容器上下文:宠物的 @container 隐藏规则要量**内容区**宽度,
+              而不是 ResizablePanelGroup 上那个(它量的是 chat + 侧面板总宽) */}
+          <SidebarInset className="min-w-0 [container-type:inline-size]">
             <GatewayOfflineBanner gatewayUnavailable={gatewayUnavailable} />
             {children}
+            {/* 宠物挂在外壳而不是聊天页里 —— 换页时它还在,这就是「app 的灯」(§10.3) */}
+            <AgentPet />
           </SidebarInset>
         </SidebarProvider>
       </ActivityProvider>

@@ -26,6 +26,12 @@ export interface ActivityState {
   messages: unknown[];
   /** 结束或缺口 ⇒ 重取一次 thread state,不靠回放重建消息(§10.3) */
   needsRefetch: boolean;
+  /**
+   * 跟着的这条 run 出错了。**不能省**:宠物把 error 排在 done 与 wait 之前
+   * (§5.3 不变量 1),少了这个信号,外壳版宠物就再也到不了 error 态 ——
+   * 页面的 `thread.error` 在迁移中是丢掉的。
+   */
+  hasError: boolean;
 }
 
 export const EMPTY_ACTIVITY: ActivityState = {
@@ -33,6 +39,7 @@ export const EMPTY_ACTIVITY: ActivityState = {
   running: false,
   messages: [],
   needsRefetch: false,
+  hasError: false,
 };
 
 export type ActivityEvent =
@@ -72,6 +79,8 @@ export function reduceActivity(
       running: false,
       // 同一会话里挂着的重取请求要留着,否则它会输给这次注册而丢失
       needsRefetch: sameThread ? state.needsRefetch : false,
+      // 新目标或新 run ⇒ 上一轮的 error 已陈旧
+      hasError: false,
     };
   }
 
@@ -81,7 +90,8 @@ export function reduceActivity(
 
   switch (event.kind) {
     case "join-open":
-      return { ...state, running: true };
+      // 新 run 开跑 ⇒ 上一轮的 error 清掉
+      return { ...state, running: true, hasError: false };
     case "snapshot":
       // values 是完整快照,整体替换而不是合并
       return { ...state, messages: event.messages };
@@ -91,7 +101,7 @@ export function reduceActivity(
       // 缺口不代表 run 结束 —— 只标记要重取,running 保持原样
       return { ...state, needsRefetch: true };
     case "join-error":
-      return { ...state, running: false, needsRefetch: true };
+      return { ...state, running: false, needsRefetch: true, hasError: true };
     case "refetched":
       return { ...state, needsRefetch: false };
   }

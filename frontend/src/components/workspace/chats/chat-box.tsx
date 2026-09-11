@@ -29,7 +29,6 @@ import { cn } from "@/lib/utils";
 import { useArtifacts } from "../artifacts/context";
 import { useMaybeBrowserView } from "../browser-view/context";
 import { useThread } from "../messages/context";
-import { AgentPet } from "../pet/agent-pet";
 import { useMaybeSidecar } from "../sidecar/context";
 
 function RightPanelLoading() {
@@ -411,13 +410,8 @@ const ChatBox: React.FC<{
         minSize="30%"
         className="relative min-h-0 min-w-0"
       >
-        <div
-          className="relative size-full min-h-0 min-w-0 [container-type:inline-size]"
-          id="chat"
-        >
+        <div className="relative size-full min-h-0 min-w-0" id="chat">
           {children}
-          {/* 宠物挂载:自己定位在面板右上角,窄面板时由 .pet-shell 的容器查询隐藏 */}
-          <AgentPet threadId={threadId} />
         </div>
       </ResizablePanel>
       <ResizableHandle

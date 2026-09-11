@@ -126,7 +126,7 @@ describe("外壳活跃 run:join 生命周期", () => {
     expect(state.needsRefetch).toBe(true);
   });
 
-  it("join 出错 ⇒ 停止 + 要求重取", () => {
+  it("join 出错 ⇒ 停止 + 要求重取 + 置错误标志", () => {
     const state = reduceActivity(runningOnA(), {
       kind: "join-error",
       threadId: "A",
@@ -134,6 +134,23 @@ describe("外壳活跃 run:join 生命周期", () => {
 
     expect(state.running).toBe(false);
     expect(state.needsRefetch).toBe(true);
+    // 宠物把 error 排在 done 与 wait 之前(§5.3 不变量 1),这个信号不能只是「顺手带上」
+    expect(state.hasError).toBe(true);
+  });
+
+  it("新 run 开跑会清掉上一轮的 error", () => {
+    const errored = reduceActivity(runningOnA(), {
+      kind: "join-error",
+      threadId: "A",
+    });
+    expect(errored.hasError).toBe(true);
+
+    const restarted = reduceActivity(errored, {
+      kind: "join-open",
+      threadId: "A",
+    });
+
+    expect(restarted.hasError).toBe(false);
   });
 
   it("重取完成后清掉标志(否则每帧都会再取一次)", () => {

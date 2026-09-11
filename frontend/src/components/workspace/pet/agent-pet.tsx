@@ -1,8 +1,8 @@
 "use client";
 
+import type { Message } from "@langchain/langgraph-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useThread } from "@/components/workspace/messages/context";
 import { PetSprite } from "@/components/workspace/pet/pet-sprite";
 import { hasOpenHumanInputRequest } from "@/core/messages/human-input";
 import { isHiddenFromUIMessage } from "@/core/messages/utils";
@@ -11,6 +11,7 @@ import { clampOffset, type PetOffset, type PetViewport } from "@/core/pet/placem
 import { derivePetState, type PetState } from "@/core/pet/state";
 import { collectActiveToolNames } from "@/core/pet/tools";
 import { useLocalSettings } from "@/core/settings/hooks";
+import { useAppActivity } from "@/core/threads/activity-context";
 
 import petManifest from "../../../../public/pet/parrot/manifest.json";
 
@@ -18,6 +19,7 @@ import petManifest from "../../../../public/pet/parrot/manifest.json";
  * §18 分期:两条轴在第 1 期写好但**不生效** —— 第 2 期翻 `FATIGUE_ENABLED`,
  * 第 3 期翻 `WORK_KIND_ENABLED`。第 1 期只有 idle/wait 两组帧,任何非 idle 的
  * base 都会经两级回落塌回 idle,故视觉上恒定。
+ * 疲劳轴于 2026-09-12 被用户明确「不做」,`FATIGUE_ENABLED` 保持 false(见 spec §17)。
  */
 const FATIGUE_ENABLED = false;
 const WORK_KIND_ENABLED = false;
@@ -25,28 +27,27 @@ const WORK_KIND_ENABLED = false;
 /** 起拖阈值:照抄 Qoder 实测值,避免 Alt+单击被误判成拖拽 */
 const DRAG_THRESHOLD_PX = 4;
 
-export interface AgentPetProps {
-  /** 会话身份,作跨线程重置的键(spec §11) */
-  threadId: string;
-}
-
 /**
- * 订阅者:读 `useThread()` 派生状态,把渲染交给 `PetSprite`。
+ * 订阅者:读**外壳那条薄订阅**(`useAppActivity`,spec §10.3)派生状态,把渲染
+ * 交给 `PetSprite`。
  *
- * 它是**观察者**,不是 agent 的输出面(spec §4.1):不订阅 custom 事件、
- * 不持有线程/记忆、不发任何请求。两个消息扫描都 memo 在 `messages.length`
- * 上 —— token 级 delta 按 id 合并进已有消息,不改变长度,故流式期间零重算。
+ * 它挂在外壳而不在聊天页里 —— 所以换页时它还在,这就是「app 的灯」。仍是
+ * **观察者**(§4.1):不订阅 custom 事件、不持有线程/记忆、不发任何请求。
+ * 三个扫描都 memo 在 `activity.messages` 上;外壳用 `values` 快照喂消息,数组只在
+ * **结构性变化**时换新,与 §12「token 级零重算」同效。
  */
-export function AgentPet({ threadId }: AgentPetProps) {
-  const { thread } = useThread();
+export function AgentPet() {
+  const activity = useAppActivity();
+  // 跨线程重置的键来自外壳的目标,不再是页面的路由参数
+  const threadId = activity.target?.threadId ?? null;
   const [settings, setSettings] = useLocalSettings();
   const shellRef = useRef<HTMLDivElement>(null);
 
   // 一次性态:`greet` 是挂载生命周期(每挂载一次,切线程不重放),
-  // `done` 是 isLoading 的下降沿闩锁,播完由 animationend 清掉。
+  // `done` 是「在跑」的下降沿闩锁,播完由 animationend 清掉。
   const [greetActive, setGreetActive] = useState(true);
   const [doneActive, setDoneActive] = useState(false);
-  const wasLoadingRef = useRef(thread.isLoading);
+  const wasLoadingRef = useRef(activity.running);
   const loadingStartedAtRef = useRef<number | null>(null);
 
   // 拖拽手势只活在 ref 里,不进状态机(spec §10.1)
@@ -65,50 +66,53 @@ export function AgentPet({ threadId }: AgentPetProps) {
 
   const [viewport, setViewport] = useState<PetViewport | null>(null);
 
-  // 消息侧的两个扫描:同样 memo 在 messages 上(spec §12)
+  // 活动状态对消息形状保持不可知(它是通道,不是解析者),形状在这一侧收口
+  const messages = activity.messages as Message[];
+
+  // 消息侧的两个扫描:同样 memo 在消息数组上(spec §12)
   const activeToolNames = useMemo(
-    () => collectActiveToolNames(thread.messages),
-    [thread.messages],
+    () => collectActiveToolNames(messages),
+    [messages],
   );
   const fatigueSignals = useMemo(
-    () => collectFatigueInput(thread.messages),
-    [thread.messages],
+    () => collectFatigueInput(messages),
+    [messages],
   );
 
-  // 逐字照抄 page.tsx 的调用形式(同 memo 键、同过滤器)
+  // 逐字照抄 page.tsx 的调用形式(同过滤器)
   const hasOpenHumanInputCard = useMemo(
     () =>
       hasOpenHumanInputRequest(
-        thread.messages,
+        messages,
         (message) => !isHiddenFromUIMessage(message),
       ),
-    [thread.messages],
+    [messages],
   );
 
   // 下降沿:开始计时 + 触发 done 闩锁
   useEffect(() => {
     const wasLoading = wasLoadingRef.current;
-    if (thread.isLoading && !wasLoading) {
+    if (activity.running && !wasLoading) {
       loadingStartedAtRef.current = Date.now();
       // 新 run 开始 ⇒ 上一轮的 done 已陈旧(例如它落在 wait/error 分支没播)
       setDoneActive(false);
     }
-    if (!thread.isLoading && wasLoading) {
+    if (!activity.running && wasLoading) {
       setDoneActive(true);
     }
-    wasLoadingRef.current = thread.isLoading;
-  }, [thread.isLoading]);
+    wasLoadingRef.current = activity.running;
+  }, [activity.running]);
 
   // 跨线程重置:done 闩锁与计时起点归零;greet 不重放(spec §11)
   useEffect(() => {
     setDoneActive(false);
     loadingStartedAtRef.current = null;
-    wasLoadingRef.current = thread.isLoading;
-    // threadId 变即重置,不看 isLoading 的瞬时值
+    wasLoadingRef.current = activity.running;
+    // threadId 变即重置,不看「在跑」的瞬时值
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 
-  // 可见区:随面板尺寸变化重算,供渲染时 clamp
+  // 可见区:随外壳尺寸变化重算,供渲染时 clamp
   useEffect(() => {
     const parent = shellRef.current?.parentElement;
     if (!parent) return;
@@ -244,9 +248,9 @@ export function AgentPet({ threadId }: AgentPetProps) {
       : Date.now() - loadingStartedAtRef.current;
 
   const derived = derivePetState({
-    isLoading: thread.isLoading,
+    isLoading: activity.running,
     wasLoading: doneActive,
-    hasError: Boolean(thread.error),
+    hasError: activity.hasError,
     hasOpenHumanInputRequest: hasOpenHumanInputCard,
     activeToolNames: WORK_KIND_ENABLED ? activeToolNames : [],
     fatigue: FATIGUE_ENABLED
