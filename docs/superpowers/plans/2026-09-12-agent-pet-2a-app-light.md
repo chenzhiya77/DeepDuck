@@ -107,20 +107,20 @@
 
 ## Task 3:缩放控件
 
-**进展(2026-09-12):Step 1 / 2 已交付(数据层);Step 3-6 待做。** 裁定沿用 spec §10.2 已写的:**不封顶**,`>156` 标注「开始插值」并给吸附点。
+**进展(2026-09-12):Step 1–6 全交付。** 裁定沿用 spec §10.2 已写的:**不封顶**,`>156` 标注「开始插值」并给吸附点。**范围上界当日由 256 上调到 340**(用户裁定,理由见下「偏离 ④」)。
 
-- [x] **Step 1(先写红测试)** 纯函数落在 `core/pet/placement.ts`:`evenBoxSize`(恒偶数)与 `normalizeDisplaySize`(非有限数回落 158 → 收进 64–256 → 取偶)。**clamp 侧不需要新增函数** —— `clampOffset` 本就按 `{ size }` 算盒矩形,所以「缩放后重跑 clamp」是**调用方传新盒子**的事(已加一条对应用例:同为 offset 12/56,盒子 64 时不动、256 时 top 被拉回 `300 − 256`)。**revert 证明**:把收口整体拿掉 ⇒ **恰好 3 条红**(全偶数扫描 / 越界 / 非有限数回落),其余 11 条绿。
+- [x] **Step 1(先写红测试)** 纯函数落在 `core/pet/placement.ts`:`evenBoxSize`(恒偶数)与 `normalizeDisplaySize`(非有限数回落 158 → 收进 64–340 → 取偶)。**clamp 侧不需要新增函数** —— `clampOffset` 本就按 `{ size }` 算盒矩形,所以「缩放后重跑 clamp」是**调用方传新盒子**的事(已加一条对应用例:同为 offset 12/56,盒子 64 时不动、256 时 top 被拉回 `300 − 256`)。**revert 证明**:把收口整体拿掉 ⇒ **恰好 3 条红**(全偶数扫描 / 越界 / 非有限数回落),其余 11 条绿。
 - [x] **Step 2** `core/settings/local.ts` 的 pet 节加 `displaySize`(默认 **158**)。**无需迁移**:merge 是「节级 spread + offset 单独嵌套」,新键直接由默认值补上(旧 localStorage 的 pet 节没这个键)。类型注释里写明**读取时统一过 `normalizeDisplaySize`**。
-- [x] **Step 3** 控件落在 `settings/pet-settings-page.tsx`:range 滑杆(`min 64 / max 256 / step 2`,恒偶数)+ 实时读数 + `sizeHint` 文案(`>156` 是插值、松手才生效)。**吸附点**:`154 → 156`(清晰上限),**不吸 158** —— 那是默认值,吸走等于偷改下限。文案走 i18n 两语言(`types.ts` + `en-US` + `zh-CN` 各加 `size` / `sizeHint`);顺手把 `description` 里过期的「聊天面板角落」改成「工作区角落」(宠物已不在聊天面板里)。
+- [x] **Step 3** 控件落在 `settings/pet-settings-page.tsx`:range 滑杆(`min 64 / max 340 / step 2`,恒偶数)+ 实时读数 + `sizeHint` 文案(`>156` 是插值、松手才生效)。**吸附点**:`154 → 156`(清晰上限),**不吸 158** —— 那是默认值,吸走等于偷改下限。文案走 i18n 两语言(`types.ts` + `en-US` + `zh-CN` 各加 `size` / `sizeHint`);顺手把 `description` 里过期的「聊天面板角落」改成「工作区角落」(宠物已不在聊天面板里)。
 - [x] **Step 4(松手才应用)** 拖动中只写 `draft`,`onPointerUp` / `onKeyUp` / `onBlur` 才调 `commitDisplaySize` 落盘 —— 盒子尺寸一变就重排并重置 `background-position` 的百分比基准(§9.1 实测),逐帧写设置会让动画抖。
 - [x] **Step 5** 渲染层:`AgentPet` 用 `normalizeDisplaySize(settings.pet.displaySize)` 算**一次**盒子尺寸,既喂 `clampOffset` 又作为 `size` prop 传给 `PetSprite` —— **单一来源**;`PetSprite` 的 `size` 可选,省略时退回 `manifest.displaySize`(§8 的占比补偿值),所以既有渲染用例不必改。顺手**去重**:`evenBoxSize` 原在 `pet-sprite.tsx` 内自有一份,现统一从 `core/pet/placement` 引。
 - [x] **Step 6 降级为纯函数用例(并说明为什么)**:"松手才写设置"在控件里是**接线**,把它做成 DOM 用例要包一层 SettingsSection + i18n provider,成本高而覆盖薄。改成把提交语义**抽成纯函数** `commitDisplaySize`(先收口再吸附),node 用例覆盖:偶数扫描 / 越界 / 非有限数回落 / `154→156` / `158` 不动 / 归一化先于吸附。**未覆盖**:控件本身的交互(拖滑杆)没有 DOM 用例 —— 与三处注册同理,靠 Task 5 的真栈验收。
 - **验收**:§10.2 的五条 —— ① 恒偶数 ✅(纯函数 + `step 2`)② DPR 1.5 下整数设备像素 ✅(偶数 ⇒ 158×1.5=237)③ **拖动不抖帧** ✅(松手才落盘)④ 缩放后不出屏 ✅(clamp 用新盒子,有用例)⑤ 切状态不空白 ✅(§9.1 的解码门不受影响);**刷新后持久**待 Task 5 真栈验。
 - **交付纪要(2026-09-12)**:
   - **交付物**:`core/pet/placement.ts`(`evenBoxSize` / `normalizeDisplaySize` / `commitDisplaySize` + 4 个常量)、`local.ts` 的 `displaySize: 158`、`pet-settings-page.tsx` 的滑杆、`PetSprite` 的 `size` prop、i18n 两语言 2 键 + 1 处过期文案修正。
-  - **测试量**:placement **8 → 16 例**;`core/pet + components/pet + core/settings + components/settings` **143 例全过**;eslint 干净、tsc 全量干净。
-  - **revert 证明**:把 `normalizeDisplaySize` 的收口整体拿掉 ⇒ **恰好 3 条红**(全偶数扫描 / 越界 / 非有限数回落),其余 11 条绿。
-  - **偏离**:① Step 6 从 DOM 用例**降级为纯函数用例**(理由见上);② **没做「大小」的单独重置按钮** —— 滑杆可拖回 158 且 158 就是默认值,不存在「回不去」,加按钮是多余的一行 UI;③ 顺手改了 i18n 里过期的 description 文案(宠物已不在聊天面板)。
+  - **测试量**:placement **8 → 17 例**(上界上调当日补了 1 例**钉值**用例 —— 原来两个用例都走 `PET_DISPLAY_SIZE_MAX` 符号,改常量不会转红,等于上界没牙);`core/pet + components/pet + core/settings + components/settings` 全过;eslint 干净、tsc 全量干净、prettier(按 `tr -d '\r'` 后比对)干净。
+  - **revert 证明**:① 把 `normalizeDisplaySize` 的收口整体拿掉 ⇒ **恰好 3 条红**(全偶数扫描 / 越界 / 非有限数回落),其余绿;② 把 `PET_DISPLAY_SIZE_MAX` 拨回 256 ⇒ **恰好 1 条红**(钉值用例),其余 16 条绿。
+  - **偏离**:① Step 6 从 DOM 用例**降级为纯函数用例**(理由见上);② **没做「大小」的单独重置按钮** —— 滑杆可拖回 158 且 158 就是默认值,不存在「回不去」,加按钮是多余的一行 UI;③ 顺手改了 i18n 里过期的 description 文案(宠物已不在聊天面板);④ **范围上界 `256 → 340`**(用户裁定,2026-09-12)。原 256 的来历是「鸟占满帧」假设下的 `512 ÷ 2`;本设计帧装整个场景,故改用**整帧在用户屏 DPR 1.5 下 1:1 的最后一个偶数点** `512 ÷ 1.5 ≈ 341 ⇒ 340`。清晰上限 `156`(鸟的口径)**不变**,吸附点也不变;滑杆 156–340 段仍标注「开始插值」。
   - **未覆盖**:拖滑杆的 DOM 交互;缩放后持久化;DPR 1.5 下的实际盒宽(需浏览器)。
 
 ## Task 4:单目标点击跳转(Alt+单击)
@@ -142,7 +142,7 @@
 - [ ] **Step 1** 起栈(`backend` 的 gateway + `frontend` 的 `scripts/pnpm.py dev`;无 nginx,`make dev` 必失败),登录后进一个线程。
 - [ ] **Step 2(跨页)** 依次切到 agents / knowledge / scheduled-tasks,每次断言宠物节点存在且仍在播;再进 `/`、`/login`、`/docs` 断言**不存在**。
 - [ ] **Step 3(核心)** 触发 `ask_clarification` ⇒ 切到**另一个页面** ⇒ 宠物仍显示 `wait`(这是「app 的灯」的验收点,也是本期唯一的产品判断);答完 ⇒ 切页仍回落 `idle`。
-- [ ] **Step 4(缩放)** 拖滑杆全程截图/采样,确认无帧位抖动;256 与 64 两端都试;刷新验证持久;缩放后把宠物拖到边缘验证 clamp。
+- [ ] **Step 4(缩放)** 拖滑杆全程截图/采样,确认无帧位抖动;**340 与 64 两端**都试;刷新验证持久;缩放后把宠物拖到边缘验证 clamp。
 - [ ] **Step 5(断点)** 把内容区宽度压到新阈值附近,确认闭区间行为;并记录与旧 480 的差异。
 - [ ] **Step 6(跳转)** 在 agents 页 Alt+单击 ⇒ 回到宠物代表的线程;当前页即目标线程 ⇒ 无操作;不按 Alt 单击 ⇒ 穿透且什么都不发生。
 - [ ] **Step 7(观感)** 知识库三列布局下的落位 —— 这是宠物第一次出现在非聊天页,重点看遮挡与视觉重量。
