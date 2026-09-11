@@ -12,7 +12,7 @@
 - 纯逻辑放 `core/pet/`(`*.test.ts`,node 环境);只有真渲染才用 `*.dom.test.tsx`(贵约 3 倍)。
 - 每个 Task 末尾写**交付纪要**:真实数字 / revert 证明 / 偏离 / 未覆盖项。**未覆盖项必须显式列出**,不许用「验证通过」盖过去。
 - 门禁:`frontend` 下 `pnpm check`(scoped eslint + 过滤 tsc)+ 相关测试全绿。
-- **提交粒度**:Task 0 结论落 spec 一笔;Task 1-5 按可独立回滚的单元提交。提交前 `git status` 核对该笔只含本线文件。
+- **提交粒度**:Task 0 结论落 spec 一笔;Task 1-6 按可独立回滚的单元提交。提交前 `git status` 核对该笔只含本线文件。
 
 ---
 
@@ -43,13 +43,49 @@
 
 按 Task 0 的裁决(**B+**)实现:外壳持有**一条薄订阅**,主面**注册**线程 id。**不是**把页面改造成消费外壳。
 
-- [ ] **Step 1(spike,阻塞)** 先坐实 B+ 唯一的硬假设:**迟到的订阅者能否正确报告一条「已在飞行中」的 run** —— 外壳在 run 开始后才订上时,SDK `useStream` 的 `isLoading` 与 `messages` 是否正确(能否 join)。**用真栈验证**(起一段长 run,再挂上薄订阅,看这两个值),不得用单测或推断代替。若不成立,B+ 需改写(候选:改回 A,或外壳改用「run 事件端点」),**先改 spec 再继续**。
-- [ ] **Step 2(先写红测试)** 契约三条:① **宠物只认外壳那一条** —— 页面那条富 hook 与宠物无关,两者不得争「谁更新宠物」;② `threadId` 切换时的重置照 §11 既有契约(fatigue / `wasLoading` 归零、`greet` **不重放**);③ 无注册线程 / 非聊天页时给出稳定空态,不抛错。
-- [ ] **Step 3** 实现外壳薄订阅(只取 `messages` + `isLoading`)+ 注册协议。**要点:外壳拿到 threadId 后自己续订,不随页面卸载而断** —— 这正是「换页后仍在跑 / 仍能说在等你」的来源。
-- [ ] **Step 4** 四个主面**注册**当前线程 id(`chats/[thread_id]/page.tsx`、`agents/[agent_name]/chats/[thread_id]/page.tsx`、`agents/new/page.tsx` 的 `onStart`、**`knowledge/chat-panel.tsx`** —— 2026-09-12 用户裁决:知识库也跟)。注册值与该面传给 `useThreadStream` 的 `threadId` 一致(新会话在首条消息前是 `undefined`,即不注册)。**不改造它们去消费外壳**,它们继续用自己的富 hook。
-- [ ] **Step 5** 转绿 + 门禁。
+- [x] **Step 1(spike,阻塞)** 坐实外壳薄订阅的机制。**Leg 0(静态)+ Leg 1(传输层)+ Leg 2(重定向后)均已跑完(2026-09-12);Leg 3 移出到 Task 5 Step 3。** Leg 0 改变了机制的形状,Leg 1/2 把剩下的假设全部实测掉。
+
+  **Leg 0(静态读源码,已完成)**:应用走 `useStreamLGP`(选项里没有 `transport`,`dist/react/stream.js` 的分流),返回的 `isLoading` = `stream.isLoading`(`stream.lgp.js:401`),而它**只在两种情况下为真**:① **本 hook 自己**发起 submit(49/55);② 挂载时的 reconnect 路径(386-388)调到 `joinStream(runId)`,而它需要 `reconnectOnMount` 真值(应用已开,`hooks.ts:1667` ⇒ `sessionStorage`)、`lg:stream:<threadId>` 里有 runId,且 `reconnectKey` 这个 memo **重算** —— 它的依赖是 `[runMetadataStorage, stream.isLoading, threadId]`。
+  ⇒ **两条推论**:
+  - **A(订阅后跑)**:外壳在 run 已在飞时挂上,若 `lg:stream:X` 已有 runId ⇒ 会 join ⇒ `isLoading` 真、能收后续事件。**预期可行。**
+  - **B(先订阅后跑,即常见情形)**:外壳的 hook 先挂好,随后页面发送消息、另一个 hook 把 runId 写进 storage ⇒ **外壳那条的 memo 不会重算**(它的 `stream.isLoading` 仍为 false、`threadId` 未变)⇒ **`isLoading` 永远 false**。**静态预测:这条路径不行。**
+  ⇒ **机制必须改**:注册协议要带 **runId**,而不是只带 threadId(`useThreadStream` 的 `onCreated` 已经拿到 `meta.thread_id` + `meta.run_id`,`hooks.ts:1676`),外壳侧显式 join。两个候选(**Leg 1 实测后选定 J2**):
+  - **J1** 外壳把 runId 写进 SDK 的私有 key `lg:stream:<threadId>` 并让 hook 重挂 —— 零新流代码,但依赖 SDK 私有实现;
+  - **J2** 外壳自己 `getAPIClient().runs.joinStream(threadId, runId)` —— join **只当存活信号**,精确状态在 run 结束时**重取一次 thread state**(那时消息已落盘,`wait` 才可靠)。
+
+  **Leg 1(传输层)已跑完(2026-09-12,私有免鉴权实例 8099,不需要登录)**。三条 run,全部在**已在飞行中**时才 `/join`:
+
+  | run | 迟到 | 事件总数 | 收到 | 首个事件 | 终态 |
+  |---|---|---|---|---|---|
+  | `sleep 45` | 8s | 119 | 119 | `…-0`(run 首事件) | `event: end` ✅ |
+  | 1500 字散文 | 10s | 675 | 675 | `…-0` ✅ | `end` ✅ |
+  | 2500 字散文 | 32s | 864 | 864 | `…-0` ✅ | `end` ✅ |
+
+  ⇒ **拿到的是从事件 0 的完整回放 + 终结帧**,比原判据要求的「尾部」更强。**未验**:`gap` 路径没能触发(非法 / 合法但极旧 / 未来 id 三种都完整回放;`queue_maxsize` 默认 256,但订阅时事件已远超 256 仍完整回放)⇒ 记为未测,因此 J2 仍要求在 run 结束或收到 gap 时**重取一次 thread state**。
+
+  **Leg 2(原「客户端 A/B 两条件对照」)已重定向并跑完**。原设计要用「第二个 `useStream`」探针在 J1/J2 之间选;但 **Leg 1 已证明原始 `/join` 可用 ⇒ 直接选 J2(客户端级 join),那个探针失去对象**。改为跑两件不需要登录、且真正决定设计的事:
+  - **premise(实测钉死「status 说不出在等你」)**:一条以 `ask_clarification` 结束的 run 与普通跑完**完全同形** —— run 都 `success`、`GET /api/threads/{id}.status` 都 `idle`;唯一区分点是消息里的 `artifact.human_input`(`request_id=clarification:call_84b93bbd…`、`input_mode=free_text`、`version=1`)。**判据成立 ⇒ 粗档作废,wait 必须由消息派生。**
+  - **并发(把「两条订阅」从推断变实测)**:两个订阅者同时挂同一条 run,**各拿到 111 事件**(`metadata` 1 / `values` 13 / `messages` 95 / `end` 1,逐项相同)、都从 `…-0` 起、都看到 `end`、互不干扰 ⇒ 代价就是 2× 事件量。
+
+  **Leg 3 移出本 spike**:它要「宠物在切页状态下显示 `wait`」,而 2a 未落地时离开聊天页**根本没有宠物** —— 它是功能验收,且**已逐字写在 Task 5 Step 3**,留在那里。
+
+  **证据与可复现性**:结论已写回 spec §10.3 待核实项 ⑤;脚本是一次性的(已删),但上表的数字与判定都在此处与 spec 里。**机制若有变,先改 spec 再写代码。**
+- [x] **Step 2(先写红测试)** 契约三条:① **宠物只认外壳那一条** —— 页面那条富 hook 与宠物无关,两者不得争「谁更新宠物」;② `threadId` 切换时的重置照 §11 既有契约(fatigue / `wasLoading` 归零、`greet` **不重放**);③ 无注册线程 / 非聊天页时给出稳定空态,不抛错。
+- [x] **Step 3** 实现外壳薄订阅(只取 `messages` + `isLoading`)+ 注册协议。**要点:外壳拿到 threadId 后自己续订,不随页面卸载而断** —— 这正是「换页后仍在跑 / 仍能说在等你」的来源。
+- [x] **Step 4(阻塞已解,2026-09-12)** 四个主面**注册 `(threadId, liveRunId)`** —— **不是只有 threadId**:Leg 0 已证「只带线程 id」在那条最常见的路径上永远拿不到 `isLoading`,必须带 runId 才能 join。
+  **那条线已落地**(用户选择等它):`liveRunId` 现在在 `HEAD` 里,是**派生值** —— `liveRun && liveRun.threadId === threadId ? liveRun.runId : null`(`hooks.ts:2621`),在 `onCreated` 时置入、随线程本地状态一起清;`chats/[thread_id]/page.tsx` 也已经在解构它。同批还落了一个 `@/core/constitution/run-id::resolveRunId(liveRunId, messages)`。
+  **本步只用 `liveRunId`,不用 `resolveRunId`**:后者的回退值是「消息里最近一条 `run_id`」= 一条**已经跑完**的 run,join 上去只会立刻收到 `end`,而 `runId: null` 那条路径已经会取一次 thread state —— 所以回退在这里是白做功。**注册值**:`{ threadId, runId: liveRunId }`;新会话在首条消息前 `threadId` 为空 ⇒ 不登记(也不清掉上一个,见 `useRegisterActivity` 的注释:卸载与空线程都不注销,否则外壳订阅活不过页面)。
+  **实际是三个面(不是四个,已改)**:`chats/[thread_id]/page.tsx`、`agents/[agent_name]/chats/[thread_id]/page.tsx`、`knowledge/chat-panel.tsx`。**`agents/new/page.tsx` 被剔除**,依据有据:它**不渲染 `ChatBox`**(第 399 行直接用 `MessageList`),而宠物挂在 ChatBox 的桌面分支 ⇒ **那里没有宠物**,注册它无的放矢;它还把 `threadId: undefined` 硬编码传给 hook、没有 `onStart`,连线程 id 都拿不到;它的线程是引导式(建完 agent 就回不去)。**不改造它们去消费外壳**,它们继续用自己的富 hook。
+- [x] **Step 5** 转绿 + 门禁。
 - **验收**:契约三条各有用例;Step 1 的 spike 有实测证据;**页面富 hook 与外壳薄订阅同时存在时,`messages` 与 `isLoading` 都正确**。
-- **交付纪要**:待填。
+- **交付纪要(2026-09-12 完成)**:
+  - **交付物**:`core/threads/activity.ts`(纯状态机)+ `core/threads/activity-context.tsx`(provider:join 消费 + 注册协议)+ 两个测试文件 + provider 挂载到 `WorkspaceContent` + **三处**注册。
+  - **测试量**:**21 例**(14 node 纯函数 + 7 DOM);连同本线既有套件,`core/threads + core/pet + components/pet` **348 例全过**。门禁:scoped eslint 干净、**tsc 全量干净**。
+  - **revert 证明(两轮,都恰好命中)**:(1) provider 层同时破坏三处(换目标不 abort / 不重取 / 无 run 时不取状态)⇒ **恰好 3 条红**、其余 3 条绿;(2) 修掉两个自埋缺陷后再同时破坏(去掉幂等与保留标志 / 恢复卸载注销)⇒ **恰好 3 条红**(2 node + 1 DOM)。
+  - **过程中修掉的两个自埋缺陷**:① `useRegisterActivity` 原本**卸载即注销** ⇒ 一离开会话页订阅就断,与「离开聊天页仍在跑」正相反 —— 改为卸载与空线程都**不**注销(换会话由下次注册覆盖);② `register` 原本重置 `needsRefetch` ⇒ run 刚结束标记的重取会被紧随其后的重注册吃掉 —— 改为同线程重注册**保留**该标志,并加**幂等**判定(完全相同的注册不动状态,否则一次重放会把在跑的 join 抹成停跑)。
+  - **偏离 spec/plan**:① 注册面 **4 → 3**(剔 `agents/new`,依据见 Step 4);② **放弃 `resolveRunId`**,只用 `liveRunId`(理由见 Step 4);③ 注册值从 plan 原文的「只注册线程 id」改为 **`(threadId, liveRunId)`**(Leg 0 结论)。
+  - **未覆盖(诚实记录)**:**三处注册是页面级接线,没有单测** —— tsc 只保证调用形状正确;「切页之后宠物仍能说 wait」要等 **Task 5 的浏览器阶梯**才验。provider 的 `gap` 与 `join-error` 两条分支**只有单测覆盖,从未被真栈触发**。
+  - **过渡状态(提交时必须知道)**:注册已接上 ⇒ **外壳订阅现在会真的跑起来**,与页面那条**并存**(已量化:2× 事件量)。宠物**仍读页面的 `useThread()`**,要等 Task 2 把它挂到外壳并改读 `useAppActivity()`;在那之前这是一笔**已知、已量化、spec 里记过的过渡成本**。
 
 ## Task 2:挂点迁移 + 断点重推
 
@@ -58,7 +94,7 @@
 - [ ] **Step 3(回收)** 迁移后 `div#chat` 那条 `[container-type:inline-size]`(`chat-box.tsx:415`)失去消费者 —— 已核实**除 `.pet-shell` 外全仓库没有别的 `@container` 消费者**(`globals.css:108` 是唯一一条规则,`src/` 下无 Tailwind 容器变体)。确认后删掉;`chat-box.tsx:401` 那条在 `ResizablePanelGroup` 上是既有的、**不在本线范围**,不动。
 - [ ] **Step 4(断点重推)** 实测内容区宽度下的隐藏断点,**不沿用 480**。记录:多少 px 时宠物开始压到可见内容/布局崩坏,据此取闭区间阈值。
 - [ ] **Step 5(`pet.offset` 语义重估)** 默认值从「面板内缩进 12/56」重估 —— 56 的理由(避开 `h-12` 的 header)跨页后不成立;写新默认值并说明依据。
-- [ ] **Step 6** 门禁 + 真栈浏览器验收(task 4 复验)。
+- [ ] **Step 6** 门禁 + 真栈浏览器验收(task 5 复验)。
 - **验收**:① workspace 五个面之间切换宠物都在;② 公开路由(`/`、`/login`、`/docs`、`/blog`)**没有**宠物;③ 新断点有实测数字;④ 拖 sidecar 不再改变宠物可见性(与 §10 旧行为不同,属预期)。
 - **交付纪要**:待填。
 
@@ -73,7 +109,19 @@
 - **验收**:§10.2 的五条(偶数 / DPR 1.5 整数设备像素 / **拖动不抖帧** / 缩放后不出屏 / 切状态不空白)+ 刷新后持久。
 - **交付纪要**:待填。
 
-## Task 4:浏览器验收阶梯(**不可用单测替代**)
+## Task 4:单目标点击跳转(Alt+单击)
+
+宠物代表**一个**线程,点它直接跳回那一个 —— **不做选择器**(多会话版属另一条线,见 spec §17「浮动会话卡」)。用户 2026-09-12 选「先做单目标」,手势定为 Alt+单击。
+
+- [ ] **Step 1(复用而非新写)** 走 §10.1 已有的 Alt+`pointerdown` window 级命中路径:把「Alt + 位移 **<4px** 后抬起」判定为**单击**,**≥4px 仍是拖拽**(阈值不变)。**宠物仍 `pointer-events-none`**,入口只在命中矩形上 —— 纯单击被否决,因为那要求 idle 时给宠物指针事件,会静默吞掉底下消息列表的点击。
+- [ ] **Step 2** 跳转规则:目标线程**不在当前页时才跳**,否则不做任何事(知识库面板也注册 ⇒ 在知识库页点它可能是无操作)。路径必须走 `core/threads/utils.ts::pathOfThread()`(仓库约定:百分号编码自定义 agent 名与 thread id)。
+- [ ] **Step 3** 单击**不得**触发底下的消息链接 —— 复用 §10.1 已有的「拖后吞 click」逻辑,不新写一套。
+- [ ] **Step 4** 设置行提示文案补一句「Alt+单击回到该会话」(发现性由文案承担,与 §10.1 同款)。
+- [ ] **Step 5** DOM 用例:Alt+位移 <4px 触发跳转且**不写 offset**;Alt+位移 ≥4px 只拖拽**不跳转** —— 两条互斥,钉住 4px 这个分叉。
+- **验收**:① 在非聊天页 Alt+单击 ⇒ 回到宠物代表的那个线程;② 当前页就是目标线程 ⇒ **无操作**(不刷新、不跳空路由);③ 不按 Alt 单击 ⇒ 什么都不发生且点击穿透到下方内容;④ §10.1 的拖拽六项**不回归**。
+- **交付纪要**:待填。
+
+## Task 5:浏览器验收阶梯(**不可用单测替代**)
 
 前 1 期的阶梯是在**占位帧**上跑的(已在 spec §18 标注),本期必须用**真美术**重跑与本线相关的部分。
 
@@ -82,13 +130,14 @@
 - [ ] **Step 3(核心)** 触发 `ask_clarification` ⇒ 切到**另一个页面** ⇒ 宠物仍显示 `wait`(这是「app 的灯」的验收点,也是本期唯一的产品判断);答完 ⇒ 切页仍回落 `idle`。
 - [ ] **Step 4(缩放)** 拖滑杆全程截图/采样,确认无帧位抖动;256 与 64 两端都试;刷新验证持久;缩放后把宠物拖到边缘验证 clamp。
 - [ ] **Step 5(断点)** 把内容区宽度压到新阈值附近,确认闭区间行为;并记录与旧 480 的差异。
-- [ ] **Step 6(观感)** 知识库三列布局下的落位 —— 这是宠物第一次出现在非聊天页,重点看遮挡与视觉重量。
+- [ ] **Step 6(跳转)** 在 agents 页 Alt+单击 ⇒ 回到宠物代表的线程;当前页即目标线程 ⇒ 无操作;不按 Alt 单击 ⇒ 穿透且什么都不发生。
+- [ ] **Step 7(观感)** 知识库三列布局下的落位 —— 这是宠物第一次出现在非聊天页,重点看遮挡与视觉重量。
 - **验收**:每步给证据(截图 / DOM 断言 / 计算样式采样),**无证据的步骤记为未验**。
 - **交付纪要**:待填(含未验项)。
 
-## Task 5:文档同步
+## Task 6:文档同步
 
-- [ ] **Step 1** `frontend/AGENTS.md` 的 Interaction Ownership:挂载点从 `div#chat` 改写为外壳(`SidebarInset`)+ 撤掉「mobile 分支没有 `id="chat"` 所以不挂」那条理由(跨页后这个理由不再成立,改写成「公开路由不挂」)。三条不变量(a)(b)(c)中 (a) 需重写,(b)(c) 原样。
+- [ ] **Step 1** `frontend/AGENTS.md` 的 Interaction Ownership:挂载点从 `div#chat` 改写为外壳(`SidebarInset`)+ 撤掉「mobile 分支没有 `id="chat"` 所以不挂」那条理由(跨页后这个理由不再成立,改写成「公开路由不挂」)+ 把 Alt 那条从「拖拽」补成「拖拽 / 单击两分支」。三条不变量 (a) 需重写,(b)(c) 原样。
 - [ ] **Step 2** spec §18 补 2a 交付状态(含测试量、真栈验收、未验项);§10.3 待核实项按 Task 0 结论关闭。
 - [ ] **Step 3** 若 `displaySize` 的取值/语义与 §8 的补偿公式有出入,同步 §8。
 - **验收**:两份文档与代码一致;无「待填」。
@@ -98,6 +147,8 @@
 
 ## 依赖与并行
 
-- **Task 0 阻塞 1-5**(② 的结论决定 1 的形态)。
-- Task 2 / 3 相互独立,可并行;两者都依赖 Task 1。
-- **2b(美术)与本 plan 完全无依赖**,可同时进行:另一个会话出 `think` / `work` / `error` / `done` / `greet` 五组帧 + 阈值校准,不碰本 plan 的任何文件。
+- **Task 0 阻塞 1-6**(② 的结论决定 1 的形态)。
+- **Task 3(缩放)不依赖任何别的 Task** —— 它只动设置节、`placement.ts` 与 `pet-sprite.tsx` 的盒子尺寸,与外壳订阅无关(本条 2026-09-12 更正:原文写成「依赖 Task 1」是过度约束)。**所以 Task 1 Step 4 挂起期间可以先做 Task 3。**
+- Task 2 依赖 Task 1(挂到外壳才有壳订阅可读)。
+- **Task 4 依赖 Task 1 + Task 2**(要有壳订阅才知道跳去哪,要有壳挂载才有那个点击目标)。
+- **2b(美术)与本 plan 完全无依赖**,可同时进行:另一个会话出 `think` / `work` / `error` / `done` / `greet` 五组帧,帧到位后翻 `WORK_KIND_ENABLED`,不碰本 plan 的任何文件。(**疲劳轴不在 2b**:用户 2026-09-12 明确不做,闸门 `FATIGUE_ENABLED` 恒 `false`,见 spec §17。)
