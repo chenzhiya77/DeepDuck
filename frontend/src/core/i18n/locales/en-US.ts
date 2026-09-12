@@ -982,21 +982,20 @@ export const enUS: Translations = {
       deleteConfirmDescription:
         "Deletes the entry text and its search vector; the entity itself stays. If the entity is still eligible, the next generation run recreates the entry from current material.",
     },
-    /** Phase-3 Batch-1 P1: dual-mode wiki entry editor (main content + supplement layer). */
+    /** Phase-3 Batch-1 P1 + spec 2026-09-12: main content is replaceable; the supplement layer steers generation. */
     wikiEdit: {
       title: "Edit Wiki Entry",
       description:
-        "Main content can be replaced by regeneration; supplement layer persists",
+        "Main content can be replaced by regeneration; the supplement layer persists and steers every generation",
       mainContentLabel: "Main Content (Auto-generated)",
       mainContentPlaceholder:
         "AI-generated content will be displayed here, you can manually edit",
-      mainContentHint:
-        "⚠️ This content will be replaced on next regeneration; your edits will be incorporated as reference material",
-      supplementLabel: "Supplement Layer (Manual Annotations)",
+      mainContentHint: "⚠️ This content will be replaced on next regeneration",
+      supplementLabel: "Supplement Layer (Generation Direction)",
       supplementPlaceholder:
-        "Add your annotations, notes, or supplementary information here",
+        "Describe how you want the AI to rewrite this entry — it works like a prompt for generation. e.g. Keep the tone rigorous and cover more related concepts",
       supplementHint:
-        "✅ Content in this area persists permanently and won't be overwritten by regeneration",
+        "✅ Persists permanently; it is passed to the AI as your requirement on every regeneration",
       auditLastEdited: "Last edited",
       save: "Save",
       saving: "Saving…",

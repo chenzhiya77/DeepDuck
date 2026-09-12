@@ -917,17 +917,18 @@ export const zhCN: Translations = {
       deleteConfirmDescription:
         "将删除条目正文与检索向量，实体本身保留。若实体仍符合生成资格，下次生成时会按最新材料重新创建该条目。",
     },
-    /** Phase-3 Batch-1 P1: dual-mode wiki entry editor (main content + supplement layer). */
+    /** Phase-3 Batch-1 P1 + spec 2026-09-12: 主内容区可被覆盖，补充层是每次生成的方向。 */
     wikiEdit: {
       title: "编辑百科条目",
-      description: "主内容区可被下次生成覆盖，补充层永久保留不被覆盖",
+      description:
+        "主内容区可被下次生成覆盖；补充层永久保留，并作为每次生成的方向",
       mainContentLabel: "主内容区（自动生成）",
       mainContentPlaceholder: "AI 生成的内容将在此显示，您可以手动编辑",
-      mainContentHint:
-        "⚠️ 此内容会在下次重新生成时被覆盖，您的编辑将作为参考材料融入新版本",
-      supplementLabel: "补充层（人工批注）",
-      supplementPlaceholder: "在这里添加您的批注、笔记或补充说明",
-      supplementHint: "✅ 此区域内容永久保留，不会被重新生成覆盖",
+      mainContentHint: "⚠️ 此内容会在下次重新生成时被覆盖",
+      supplementLabel: "补充层（AI 生成方向）",
+      supplementPlaceholder:
+        "写下你希望 AI 怎么改这篇条目，等同于给生成用的提示词。例如：语气严谨些，多介绍相关概念",
+      supplementHint: "✅ 永久保留；每次重新生成都会作为你的要求带给 AI",
       auditLastEdited: "最后编辑时间",
       save: "保存",
       saving: "保存中…",

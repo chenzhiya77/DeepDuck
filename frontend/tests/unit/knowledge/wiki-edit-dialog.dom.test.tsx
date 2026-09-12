@@ -149,4 +149,16 @@ describe("WikiEditDialog", () => {
       );
     });
   });
+
+  it("describes the supplement layer as generation direction, not a mere annotation (2026-09-12)", () => {
+    // 主内容区不再承诺"编辑会被融入新版本"：那条路没有实现，正文只会被覆盖。
+    // 补充层则相反 —— 它真的会在每次重新生成时作为方向注入（spec 2026-09-12）。
+    renderDialog();
+
+    expect(screen.queryByText(/参考材料/)).toBeNull();
+    expect(screen.getByText(/此内容会在下次重新生成时被覆盖/)).toBeTruthy();
+    expect(
+      screen.getByText(/每次重新生成都会作为你的要求带给 AI/),
+    ).toBeTruthy();
+  });
 });

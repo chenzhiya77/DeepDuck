@@ -956,7 +956,7 @@ export interface Translations {
       deleteConfirmTitle: string;
       deleteConfirmDescription: string;
     };
-    /** Phase-3 Batch-1 P1: dual-mode wiki entry editor (main content + supplement layer). */
+    /** Phase-3 Batch-1 P1 + spec 2026-09-12: main content is replaceable; the supplement layer steers generation. */
     wikiEdit: {
       title: string;
       description: string;
