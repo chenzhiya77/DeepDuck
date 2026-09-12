@@ -46,7 +46,7 @@ from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.models import DocumentRow
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, WikiEntryUpsert
-from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +237,26 @@ def _parse_batch_response(text: str, expected_titles: set[str]) -> dict[str, str
     return entries
 
 
+def _normalized_direction(value: str | None) -> str | None:
+    """空白串与 ``None`` 同义（与 service 侧 ``_normalized_supplement`` 同一条规则）。"""
+    text = (value or "").strip()
+    return text or None
+
+
+async def _direction_moved_since_snapshot(wiki_store: WikiStore, kb_id: str, title: str, guidance: str | None) -> bool:
+    """这一轮生成期间，该条目的补充层被改过吗？
+
+    保存补充层时若已有 run 在跑，``KnowledgeService.update_wiki_entry`` 只能标脏
+    （待更新）；本次写入若照旧写 ``ready``，就把那枚待更新记号擦掉了 —— 方向留在
+    库里却再也不会有下一轮来处理它（2026-09-12 真栈实测）。发现方向已动就写回
+    ``dirty``，把这条交给下一次生成。条目不存在（backfill 首次生成）天然为 False。
+    """
+    entry = await wiki_store.get_entry(wiki_entry_id(kb_id, title))
+    if entry is None:
+        return False
+    return _normalized_direction(entry.get("supplement_content")) != _normalized_direction(guidance)
+
+
 async def _persist_entry(
     wiki_store: WikiStore,
     vector_store: KnowledgeVectorStore | None,
@@ -247,6 +267,7 @@ async def _persist_entry(
     content: str,
     embedder: _Embedder | None,
     stats: WikiStats,
+    guidance: str | None = None,
 ) -> None:
     """Store one entry: business row + dense vector, and account for it.
 
@@ -254,6 +275,9 @@ async def _persist_entry(
     来源文档可致实体失格/消失——无重验则 upsert 会把幽灵条目写回。拦截时
     顺带补删残留旧条目（快照合格使它们不在 stale_titles 清理范围），否则
     dirty 条目永挂。删除顺序与级联规则一致：Qdrant 先行失败吞掉，业务行必删。
+
+    ``guidance`` 是本轮开始时抓到的方向；写前与库中值再比一次，动了就写 ``dirty``
+    （见 ``_direction_moved_since_snapshot``）。
     """
     if not await _is_currently_eligible(graph_store, kb_id, row["name"]):
         stats.skipped_stale += 1
@@ -265,7 +289,8 @@ async def _persist_entry(
         stats.pruned += await wiki_store.delete_entries(kb_id, [row["name"]])
         logger.info("wiki entry write skipped: %s lost eligibility mid-run (stale entry pruned)", row["name"])
         return
-    entry = await wiki_store.upsert_entry(kb_id, title=row["name"], content=content, source_chunk_ids=list(row.get("source_chunk_ids") or []), status="ready")
+    status = "dirty" if await _direction_moved_since_snapshot(wiki_store, kb_id, row["name"], guidance) else "ready"
+    entry = await wiki_store.upsert_entry(kb_id, title=row["name"], content=content, source_chunk_ids=list(row.get("source_chunk_ids") or []), status=status)
     if vector_store is not None and embedder is not None:
         (embedding,) = await embedder.embed([f"{row['name']}\n{content[:EMBED_CONTENT_CHARS]}"])
         await vector_store.upsert_wiki_entries([WikiEntryUpsert(entry_id=entry["id"], kb_id=kb_id, title=row["name"], dense=embedding.dense)])
@@ -310,7 +335,7 @@ async def _write_entry(
     if not content:
         logger.warning("wiki generation returned empty content for entity %s, skipped", row["name"])
         return
-    await _persist_entry(wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, content=content, embedder=embedder, stats=stats)
+    await _persist_entry(wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, content=content, embedder=embedder, stats=stats, guidance=guidance)
 
 
 async def _write_bundle(
