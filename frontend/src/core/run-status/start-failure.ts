@@ -1,5 +1,5 @@
 import { classifyStartFailure } from "./classify";
-import type { RunOutcomeVerdict } from "./types";
+import type { RunOutcomeVerdict, StartFailureNotice } from "./types";
 
 /**
  * Where the verdict rides on the reader's own message after a failed start, so
@@ -29,4 +29,27 @@ export function describeStartFailure(error: unknown): RunOutcomeVerdict {
       ? Reflect.get(error, "status")
       : undefined;
   return classifyStartFailure(typeof status === "number" ? status : null);
+}
+
+/**
+ * The verdict a message carries, or null when it carries none.
+ *
+ * Exactly one message carries one at a time — the reader's own, kept back when
+ * its run never started — and reading it is how the notice finds its anchor. No
+ * parsing beyond the field lookup: the marker is written by this app onto a
+ * message that never left it, so there is nothing to defend against here.
+ */
+export function readStartFailure(message: unknown): StartFailureNotice | null {
+  if (typeof message !== "object" || message === null) {
+    return null;
+  }
+  const kwargs = Reflect.get(message, "additional_kwargs");
+  if (typeof kwargs !== "object" || kwargs === null) {
+    return null;
+  }
+  const notice = Reflect.get(kwargs, START_FAILURE_KWARG) as
+    | StartFailureNotice
+    | null
+    | undefined;
+  return notice ?? null;
 }

@@ -63,6 +63,11 @@ import { cn } from "@/lib/utils";
 import { WorkspaceChangeBadge } from "../changes";
 import { CitationSourcesPanel } from "../citations/citation-sources-panel";
 import { CopyButton } from "../copy-button";
+import { RunStatusBadge } from "../run-status/run-status-badge";
+import {
+  RunStatusNoticeForRun,
+  RunStatusNoticeFromMessage,
+} from "../run-status/run-status-notice";
 import { ReferenceAttachmentSummary } from "../sidecar/reference-attachments";
 import { SlashSkillChip } from "../slash-skill-chip";
 import { Tooltip } from "../tooltip";
@@ -147,6 +152,7 @@ export function MessageListItem({
   artifactPaths = [],
   showCopyButton = true,
   showWorkspaceChanges = false,
+  showStartFailure = false,
   canEdit = false,
   isEditPending = false,
   onEditAndRegenerate,
@@ -162,6 +168,8 @@ export function MessageListItem({
   runId?: string;
   showCopyButton?: boolean;
   showWorkspaceChanges?: boolean;
+  /** This group owns a failed start's notice: the reader's turn never got a run. */
+  showStartFailure?: boolean;
   canEdit?: boolean;
   isEditPending?: boolean;
   onEditAndRegenerate?: (replacementText: string) => void | Promise<boolean>;
@@ -228,6 +236,7 @@ export function MessageListItem({
         runId={runId}
         renderContent={renderContent}
         showWorkspaceChanges={showWorkspaceChanges}
+        showStartFailure={showStartFailure}
         editState={
           isHuman && isEditing
             ? {
@@ -379,6 +388,7 @@ function MessageContent_({
   artifactPaths,
   runId,
   showWorkspaceChanges = false,
+  showStartFailure = false,
   editState,
   renderContent,
 }: {
@@ -389,6 +399,7 @@ function MessageContent_({
   artifactPaths: readonly string[];
   runId?: string;
   showWorkspaceChanges?: boolean;
+  showStartFailure?: boolean;
   renderContent?: (content: string, isLoading: boolean) => ReactNode;
   editState?: {
     draft: string;
@@ -568,6 +579,9 @@ function MessageContent_({
             <HumanMessageText content={contentToDisplay} />
           </AIElementMessageContent>
         ) : null}
+        {isHuman && showStartFailure && (
+          <RunStatusNoticeFromMessage message={message} />
+        )}
       </div>
     );
   }
@@ -596,6 +610,22 @@ function MessageContent_({
           runId={runId}
           disabled={isLoading}
         />
+      )}
+      {/* The run's ending and its reason, on the same anchor as the file card:
+          one run's story belongs in one place, and both are run-scoped. */}
+      {message.type === "ai" && showWorkspaceChanges && runId && (
+        <>
+          <RunStatusBadge
+            threadId={threadId}
+            runId={runId}
+            enabled={!isLoading}
+          />
+          <RunStatusNoticeForRun
+            threadId={threadId}
+            runId={runId}
+            enabled={!isLoading}
+          />
+        </>
       )}
     </AIElementMessageContent>
   );

@@ -75,3 +75,16 @@ export interface RunOutcomeVerdict {
 export interface RunOutcomeView extends RunOutcomeVerdict {
   outcome: RunOutcome;
 }
+
+/**
+ * The verdict as it rides on the reader's own message after a failed start, so
+ * the notice has an anchor to render under.
+ *
+ * It carries the sentence as well as the category: the category decides the
+ * visible line, and this is the raw one the toast already showed — the notice's
+ * details line reads it verbatim rather than leaving the reader with only the
+ * category's summary.
+ */
+export interface StartFailureNotice extends RunOutcomeVerdict {
+  message: string;
+}

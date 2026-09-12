@@ -93,17 +93,17 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 ## Task 5: 组件 + 两处锚点接线
 
-**Files:** Create `frontend/src/components/workspace/run-status/{run-status-badge,run-status-notice}.tsx` + `.dom.test.tsx`;Modify `frontend/src/components/workspace/messages/{message-list,message-list-item}.tsx` 与 `frontend/src/core/messages/`(新增 pre-stream 锚点取法)
+**Files:** Create `frontend/src/components/workspace/run-status/{run-status-badge,run-status-notice}.tsx` + `.dom.test.tsx`;Create `frontend/src/core/messages/start-failure-anchor.ts` + 单测;Modify `frontend/src/components/workspace/messages/{message-list,message-list-item}.tsx`
 
-- [ ] **Step 1(RED —— 锚点取法,纯函数优先)**:新取法 `getStartFailureAnchorGroupIndices(groups)` —— "本轮最后一条 `human` 且其后没有任何 assistant/tool 消息"。**纯函数 + 单测**(spec §8 风险 2:不要在渲染处内联判断)。用例:① 只有 human → 命中;② human 后跟了 assistant → 不命中;③ 多条 human 时取最后一条;④ 空列表 → 空。
-- [ ] **Step 2(RED —— 徽标)**:`run-status-badge.dom.test.tsx` —— `error`/`timeout`/`interrupted` 各渲染徽标且文案逐字;**`success`/`running` 不渲染**。
-- [ ] **Step 3(RED —— 失败条)**:`run-status-notice.dom.test.tsx` —— 占用类/配置类/环境类/运行期失败各一条,断言**文案逐字 + 动作可见 + 色调**(醒目 vs 中性);`422` 与 `success` **整块不渲染**。
-- [ ] **Step 4**:实现两个组件。**复用现成的色调词汇**(`text-muted-foreground` / `text-destructive`,`eval-run-banner` 是现成先例),不发明新色。动作是**按钮/链接**,不是纯文字。
-- [ ] **Step 5**:接线两处锚点:post-stream 挂 `MessageListItem`(与 `WorkspaceChangeBadge` **同一位置**);pre-stream 挂 `MessageList`(按 Step 1 的取法)。
-- [ ] **Step 6**:转绿 + `pnpm test`(全量)+ `pnpm check` + `pnpm format`。
-- [ ] **Step 7(revert 证明)**:把 `success` 也渲染徽标 → 对应用例红;把 pre-stream 锚点取法的"其后无 assistant"条件去掉 → 对应用例红。
+- [x] **Step 1(RED —— 锚点取法,纯函数优先)**:新取法 `getStartFailureAnchorGroupIndices(groups)`。**⚠ 判据被更正**:原文写的是"本轮最后一条 `human` 且其后没有任何 assistant/tool 消息",实际实现是**"这条 human 带着失败 verdict"**(Task 3 把 verdict 挂在那条消息上)。marker **严格强于**结构条件,不是替代:marker 只写在一个从未建起 run 的提交上(`onCreated` 会把簿记清掉)⇒ 带 marker 的消息后面不可能有那个 run 的输出;而结构规则会**误命中一条普通的尾随用户消息** —— 那正是要防的(把失败挂到没失败的那一轮下)。5 例:①标记过 → 命中;②未标记的尾随 human → **不命中**(结构规则抓不到这例);③标记的不是最后一条 human 时,取**标记的那条**而非最后一条;④run 的答案不锚;⑤空 → 空。
+- [x] **Step 2(RED —— 徽标)**:`run-status-badge.dom.test.tsx` —— `error`/`timeout`/`interrupted` 各渲染徽标且文案逐字;**`success`/`running` 不渲染**。**5 例**,并且**只 mock API**、让真的 `parse` + `classify` 跑,所以同时钉住 status→kind 映射。
+- [x] **Step 3(RED —— 失败条)**:`run-status-notice.dom.test.tsx` —— 占用类/配置类/环境类/模式不匹配各一条,断言**文案逐字 + 色调**;**`runFailed` 那条见 Step 4 的更正**;`stopped` 与 `none`(含 422/success)**整块不渲染**。**8 例**。
+- [x] **Step 4**:实现两个组件。**复用现成的色调词汇**(`text-muted-foreground` / `text-destructive`),不发明新色。**⚠ 两处按效果收窄**(依据见交付纪要):① **动作控件** —— 冻结的 7 条里只有 `details`("看详情")是动作文字,其余四句的指令**本来就写在句子里**(且 composer 里已有停止/换模型控件、重启服务应用内无目的地)⇒ 只给 `inspect` 一个 `看详情` 折叠;② **`runFailed` 不再重复那句"这次没跑完"** —— 它由**徽标**说,失败条只加徽标说不出的"为什么"(后端 `error` 原文,折叠)。
+- [x] **Step 5**:接线两处锚点:post-stream 挂 `MessageListItem`(与 `WorkspaceChangeBadge` **同一位置**、**同一个 `showWorkspaceChanges` 锚点集合**);pre-stream 也挂 `MessageListItem` 的 human 分支,由 `MessageList` 用新 `showStartFailure` 开关(gate 来自 Step 1 的取法)传入 —— **比原计划把它挂 `MessageList` 更省**:`MessageListItem` 本来就渲染 human 消息,不必为它再开一条渲染路径。
+- [x] **Step 6**:转绿 + `pnpm test`(全量)+ `pnpm check` + `pnpm format`。**新增 18 例(锚点 5 + 徽标 5 + 失败条 8);`pnpm check` exit 0;prettier 全过;全量 2431 passed / 1 failed(同一条预存失败)。**
+- [x] **Step 7(revert 证明)**:三刀都有牙,其中一刀**当场逮出一条无牙用例**(见交付纪要)。
 
-**交付判据:** 三个 dom 测试全绿;`success` 零呈现(不产生任何新节点);与交付那一行**同锚点不抢位**(手工在真栈上确认一次)。
+**交付判据:** 三个 dom 测试全绿;`success` 零呈现(不产生任何新节点);与交付那一行**同锚点不抢位**(手工在真栈上确认一次)。 **前三项达成;最后一项归 Task 6 的真栈四腿。**
 
 ## Task 6: 真栈验收 + 文档 + 收尾
 
@@ -272,3 +272,33 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 ① 清单形状 = **两个平铺数组**(`kinds` + `keys`),不是原文含糊的"嵌套形状" —— 因为"会被呈现的类别名"与"文案 key 名"是**两套名字**(kind `occupied` ↔ key `busy`),各由一个数组拥有才不会混;原文只提了 `kinds`,但前端 guard 需要 key 列表 ⇒ 补了 `keys`。
 ② 后端对账的读法:原文举的先例 `test_constitution_i18n_keys.py` 实际读的是**清单 JSON + 后端 Python 常量**,不是前端 TS。真正读前端**源文件**的先例是 `test_gateway_runtime_cleanup.py`(读 `frontend/next.config.js`),本次照那条做(正则抽 `export const PRESENTED_KINDS` 块)。
 ③ **kind→文案 key 的映射不在清单里**,留给 Task 5 的组件及其测试 —— 清单只钉"哪几档要被呈现"与"有哪几条文案"。**这是本任务唯一的跨端断言(清单 ↔ `PRESENTED_KINDS`),它已落地。**
+
+### Task 5(组件 + 两处锚点接线)— 2026-09-12,已交付,**未提交**
+
+**改动**:新建 `core/messages/start-failure-anchor.ts`、`components/workspace/run-status/{run-status-badge,run-status-notice}.tsx` + 三个测试(锚点 node、两个组件 dom);改 `core/run-status/{types,start-failure}.ts`(加 `StartFailureNotice` 类型 + `readStartFailure` 读回器)、`message-list.tsx`、`message-list-item.tsx`。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **18**(锚点 5 + 徽标 5 + 失败条 8) |
+| GREEN | 三套全绿 |
+| `pnpm check` | exit 0(被 eslint `import/order` 挡过两次,已修) |
+| prettier | 新文件全过(两个文件按 prettier 折行);两个 `message-list*` 用「剥 CR 比对」法残差 **0** |
+| 全量 | **2431 passed / 1 failed**(同一条预存失败;比 Task 4 多 18 = 本项) |
+
+**⚠ 三处对计划的更正/收窄**(都围绕同一件事:冻结文案与计划的断言对不上)
+
+1. **锚点判据** —— 计划写"最后一条 human 且其后无 assistant/tool",实现改为 **"这条 human 带着失败 verdict"**。marker **严格强于**结构条件:它蕴含结构条件(带 marker ⇒ 后面不可能有那个 run 的输出),并且额外拒绝**未标记的尾随 human** —— 结构规则会误命中它,把失败挂到没失败的那一轮下。
+2. **动作控件** —— 冻结的 7 条里只有 `details` 是动作文字。**用户 2026-09-12 把这一裁交给我("哪个效果最好")**,我选 **句子即指令 + 只给 `inspect` 一个 `看详情`**。理由:① 那四句的指令本来就写在句子里;② 控件得**真有地方可去** —— 停止按钮与模型选择器就在同屏 composer 里,重复放一个没意义,而"重启服务"应用内**无路可走**,给按钮是说假话;③ `runFailed` 的"为什么"今天**根本看不见**,`看详情` 是唯一真有东西可展开的。**如实记的欠账**:`environment`(404) 有一条**会用得上但今天没接**的"回列表"链接(要往消息树里塞路由导航)⇒ 留 Task 6 真栈上看着画面再定。
+3. **`runFailed` 的句子切分** —— 徽标已经说"这次没跑完",失败条**不再重复**它,只加"为什么"。否则同一句话会在相邻两行各出现一次。
+
+**revert proof(三刀,其中一刀逮出无牙用例)**
+
+| neuter | 结果 |
+|---|---|
+| 徽标去掉 `kind === "none"` 守卫 | **第一次跑没红** ⇒ **用例无牙**:我的否定断言只等"读发起了",不等"数据到了",于是在 race 里通过。**当场改强**(先等 query cache 里真有数据再断言无节点),改强后该刀**红了**两条(`success` / `running`)—— 这是本轮唯一一次 neuter 没红,按纪律当信号处理,没放过 |
+| 失败条把 `runFailed` 也映射到句子 | **2 红**(句子重复那条 + 无原因那条) |
+| 锚点忽略 marker(等价于回到结构规则) | **3 红** —— 正是那三条例外/否定用例 |
+
+恢复后 18 例全绿,`grep NEUTER` 零残留。
+
+**未覆盖(诚实记录)**:真栈观感(同锚点是否抢位、色调实际效果、`看详情` 展开的样子)归 Task 6;上面第 2 条记的 `environment` 链接是欠账。

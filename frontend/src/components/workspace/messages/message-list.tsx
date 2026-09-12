@@ -38,6 +38,7 @@ import {
   type HumanInputResponse,
 } from "@/core/messages/human-input";
 import { getRunDurationDisplaysByGroupIndex } from "@/core/messages/run-duration";
+import { getStartFailureAnchorGroupIndices } from "@/core/messages/start-failure-anchor";
 import {
   buildTokenDebugSteps,
   type TokenDebugStep,
@@ -478,6 +479,10 @@ export function MessageList({
   );
   const workspaceChangeAnchorGroupIndices = useMemo(
     () => getWorkspaceChangeAnchorGroupIndices(groupedMessages),
+    [groupedMessages],
+  );
+  const startFailureAnchorGroupIndices = useMemo(
+    () => getStartFailureAnchorGroupIndices(groupedMessages),
     [groupedMessages],
   );
   useEffect(() => {
@@ -1078,6 +1083,9 @@ export function MessageList({
                             }
                             showCopyButton={group.type !== "assistant"}
                             showWorkspaceChanges={workspaceChangeAnchorGroupIndices.has(
+                              groupIndex,
+                            )}
+                            showStartFailure={startFailureAnchorGroupIndices.has(
                               groupIndex,
                             )}
                             canEdit={
