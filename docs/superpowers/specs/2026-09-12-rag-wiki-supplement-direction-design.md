@@ -21,6 +21,7 @@
 1. **注入**：`_write_entry` 增加可选 `guidance`，作为独立段落拼进 **user message**（`WIKI_SYSTEM_PROMPT` / `WIKI_BATCH_SYSTEM_PROMPT` 一字不动）；两个"已存在条目"的调用点把补充层带下去。
 2. **全量重建不再无视方向**：`only_dirty=False` 时先按"是否有非空补充层"把合格实体分两拨——有的走单条 `_write_entry`（带方向），没有的仍批量。
 3. **保存即重写**：`update_wiki_entry` 检测到**补充层变化**时调 `trigger_wiki_regeneration(kb_id, [entry_id])`（fire-and-forget，复用现成 `_IN_FLIGHT` 互斥）；返回 `False`（库级生成在跑）则回退 `mark_dirty_for_titles`，让方向进下一次增量。
+   **写入侧护栏（2026-09-12 真栈实测后补）**：兜底标脏会被那次在飞的 run 收尾写库时无条件写的 `ready` 擦掉，方向即"存着却永不生效"。故 `_persist_entry` 写前重读该条目的补充层，与本轮抓到的快照不一致时写 `dirty` 而非 `ready`（`_direction_moved_since_snapshot`），把延迟生效做实；方向未变时仍照常清标。
 4. **文案说真话**：`mainContentHint` 删"融入"半句；补充层三条改为"方向"口径；对话框副标题同步。
 
 ## User Stories

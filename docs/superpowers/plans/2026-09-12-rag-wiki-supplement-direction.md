@@ -164,6 +164,39 @@
   ④ （busy 路径）在库级生成进行中保存补充层 → 条目落「待更新」脏态而非静默丢弃。
 - **未做**：真栈四腿（原因：需用户自持进程与手动登录，agent 不代起长跑进程）。其余全部达成。
 
+## Task 5（补丁，2026-09-12）：busy 路径的「待更新」记号必须存活
+
+**触发**：收官真栈腿④ 实测查出的真缺陷——库级 run 在飞时保存补充层，PATCH 的兜底标脏会被**该 run 收尾写库时无条件写的 `ready`** 擦掉，方向存着却永不生效。实测时序：`dirty`（PATCH 瞬间）→ `ready`（run 收尾）。
+
+**Files:**
+- Modify: `backend/packages/harness/deerflow/knowledge/wiki/generator.py`
+  - `_persist_entry` 增 `guidance: str | None = None`；写库前调 `_direction_moved_since_snapshot`，真则写 `dirty` 否则 `ready`
+  - 新增 `_direction_moved_since_snapshot`（重读条目、归一后比较）与 `_normalized_direction`（与 service 侧 `_normalized_supplement` 同规则）
+  - `_write_entry` 把 `guidance` 透传给写库点（`_write_bundle` 的批量写入保持默认 `None`）
+- Test: `backend/tests/knowledge/wiki/test_generator.py`（新增 2 例 + `_MidRunEditLLM` 假 LLM）
+
+- [x] **Step 1（RED）**：`_MidRunEditLLM` 在 LLM 调用返回后写一次条目（`status="dirty"` + 新补充层），模拟"生成途中用户保存了方向"；两例分别走 full 与 dirty 增量路径，断言 `supplement_content` 是新值且 `status == "dirty"`。**红在哪**：两例都在状态断言上红（`'ready' == 'dirty'` 失败），即缺陷被复现。
+- [x] **Step 2**：实现（写前重读 + 状态判定；不新增查询以外的状态）。
+- [x] **Step 3（GREEN）**：`test_generator.py` **34 passed**；`tests/knowledge` **1071 passed / 2 skipped**；ruff check + format 双净。
+- [x] **Step 4（revert proof）**：两刀把行为两侧都钉住
+  —— 刀一 状态恒写 `ready` ⇒ **恰好 2 红**（两条新用例）、32 绿（既有"dirty→ready 清标"用例不受影响）；
+  刀二 判定恒真（每次写入都算"方向动过"）⇒ **11 红**（全部是既有的 `status == "ready"` 断言：`test_regenerate_preserves_supplement_layer`、`test_only_dirty_*`、`test_batch_generation_*` 等），两条新用例通过。
+  ⚠️ **`_write_entry` 的 guidance 只透传给单实体路径**：批量路径（backfill）行的条目若被用户中途加了方向，`get_entry` 仍能发现（快照 `None` ≠ 新值）⇒ 同样留 `dirty`。
+- [x] **Step 5**：Commit **`e9b3b329`（测试半）+ `b0c62235`（实现半）** —— 上一笔 `git add` 因多带了一个不存在的路径而整体失败、只提交了测试，故拆两笔补齐（未 amend）。
+
+**交付判据**：run 收尾写入不得擦掉"期间保存过方向"的待更新记号；方向未变时仍照常清标。 **✅ 达成。**
+**待办**：真栈腿④ 需在**重启网关**后复验（后端 Python 改动，本机 `--reload` 不可靠）。
+
+#### Task 5 交付纪要（2026-09-12）
+
+- **实现落点**：`generator.py` —— `_normalized_direction` / `_direction_moved_since_snapshot` / `_persist_entry(guidance=...)` / `_write_entry` 透传；`wiki_entry_id` 新增导入。
+- **决策 / 偏离**：
+  1. **判定只看补充层，不看正文**（与 Task 2 的冻结决定一致：正文编辑既不触发重写也不标脏）。若改用 `updated_at` 时间戳判定，会把"只改正文"也留成 dirty，等于推翻 Task 2。
+  2. **仍然写库**（内容照落），只把状态留成 `dirty`：用户能看到本轮产物 + 「待更新」徽标，下一轮按新方向重写；比"丢弃本次生成"信息更全。
+  3. 每写一条多一次 `get_entry` 读（SQLite，量级可忽略；backfill 新条目读不到即 False）。
+  4. **提交拆两笔**（上一条），属操作失误的补救，非设计。
+- **遗留**：真栈腿④ 复验（等网关重启）。
+
 ## 风险登记
 
 | 风险 | 触发任务 | 缓解 |
