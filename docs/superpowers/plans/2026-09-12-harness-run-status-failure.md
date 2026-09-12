@@ -109,18 +109,14 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Modify `frontend/AGENTS.md`、`docs/superpowers/specs/2026-09-10-harness-constitution-snapshot-design.md`(§12 两项标交付)、本 plan(交付纪要)
 
-- [ ] **Step 1(真栈,四条腿)**:私有 `:8099` + `DEER_FLOW_AUTH_DISABLED=1`,前端**只设** `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL`(**不设 `NEXT_PUBLIC_*`**);真浏览器 `chromium.launch({ channel: "chrome" })`。
-  - **腿一(占用类)**:一条 run 在跑时再发一条 → 内联出现**占用类**文案 + "停掉它"动作;且那条 409 **不再只靠 toast**。
-  - **腿二(配置类)**:`context.model_name` 填不在 allowlist 的名字 → **配置类**文案 + 去改模型。
-  - **腿三(运行期失败)**:让 agent 产出但不交出(交付那条现成路径)→ **run 的 error + 交付的醒目行同锚点相邻出现**,且 `error` 文案**确实来自后端**(Task 1 的字段)。
-  - **腿四(被停止)**:按停止 → **该 run 若已有收尾 assistant 气泡**,出现 **"已停止"**中性徽标;**停得早(没有收尾气泡)则什么都不显示**(2026-09-12 用户裁:共享锚点只接受 `assistant` 组,文件卡同病);且 `success` 的 run **不出现任何徽标**。
-- [ ] **Step 2**:`frontend/AGENTS.md` 记:两段式锚点(哪个锚点用在哪)、`HTTPError.status` 是 pre-stream 的分类依据、**不要改 `getStreamErrorMessage` 的既有行为**、`success` 零呈现。
-- [ ] **Step 3**:回写一期 spec §12 第 4/5 项为已交付;本 plan 末尾交付纪要(逐 Task 记 hash 与实测数字)。
-- [ ] **Step 4**:按冻结信息提交(**不推送**);`git status` 确认只含本线文件,**显式列路径**。**2026-09-12 复核更正**:原写"工作树里有宠物线在飞改动"——**已不成立**(宠物线含 2b 的 `think` 已于 `f1e92de0` 等提交落地)。**耐久判据(不写具体文件数,免得又过期)**:① `git status` 里出现 **pet 路径 ⇒ 那是别人的在飞改动,不要 add**;② 工作树长期躺着 **4 份与本线无关的未跟踪 docs**(`AGENT_HARNESS_VISUALIZATION_RESEARCH.md` / `COMMUNITY_DETECTION_RESEARCH.md` / `HARNESS_EXECUTION_FLOW_MAP.md` / `plans/2026-09-11-local-knowledge-base-rfc-draft.md`)⇒ **也不属本线**;③ 本线自己的文件按 Task 逐个 `git add <路径>`,**不用 `git add .`**。
+- [x] **Step 1(真栈四条腿,环境按实情偏离——见交付纪要)**:**三条腿通过**:占用 409 ✅、运行期失败 ✅、被停止的后半(success 零呈现)✅;**配置类 400 已证从 UI 不可达**(选择器只列已允许模型,且 `rag-chat-model:` 键全仓无人读)——它由 `start-failure.test.ts` 的映射 + 与腿一共用同一落点(`onError`)覆盖。
+- [x] **Step 2**:`frontend/AGENTS.md` 已写:两段式锚点(哪个锚点用在哪、为什么不用"最后一条 human")、`HTTPError.status` 是 pre-stream 的唯一判据、**不要改 `getStreamErrorMessage` 的既有行为**、`success` 零呈现、**停得早的 run 什么都不显示**。
+- [x] **Step 3**:一期 spec §12 第 4/5 项已标交付(**并注明它当时的三条前提被实测更正**);本 plan 末尾交付纪要逐 Task 记了 hash 与实测数字。
+- [x] **Step 4**:按冻结信息提交(**不推送**),显式列路径。**本行 6 笔**:`e2ad45b0`(T1)/`1a32c2d0`(T2)/`457ed28a`(T3)/`502b54b5`(T4)/`7fedd88f`(T5)/`6cfaee23`(T6 的修复),每笔之后各带一笔 hash 回写。
 
 **交付判据:** 四条腿全过;**任一不过:不提交**,记为开放项。
 
-### Task 6 交付纪要(2026-09-12,**进行中**)
+### Task 6 交付纪要(2026-09-12,**已收尾**;本行 6 笔提交均未推送)
 
 **环境偏离(诚实记录)**:Step 1 原本写"私有 `:8099` + `DEER_FLOW_AUTH_DISABLED=1` + 前端只设 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL` + `chromium.launch({channel:'chrome'})`"。**实际没这么跑**,三处原因:① 需要一个**指向 :8099 的前端**,而 Next 16 按目录锁 `.next`,用户正在跑的 :3000 占着它(宠物线也撞过同一条);② 另起 Playwright Chrome **没有用户的登录态**,而本 app 要登录;③ 计划要求的 `auth_disabled` 也就无从生效。⇒ 经用户裁定(Task 6 开始前的一次选择),**在用户自己那套栈上跑**:`:3000` 前端(跑的就是本线代码)+ `:8001` 后端,驱动端 = Qoder 内置浏览器。
 **两条环境约束**:内嵌浏览器 `viewport=0x0, visible=false` ⇒ **截图拿不到**(工具自己提示"Open the in-app Browser"),只有结构快照;指针点击同样被拒 ⇒ 全程走页内 `form.requestSubmit()` / `button.click()`,**二者都是应用自己的那条路径**(不是绕开 UI 调内部函数)。
@@ -138,9 +134,9 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **跑腿四时查出的真缺陷**:见上面 Task 5 交付纪要末尾那段(已修 + 已加回归用例 + neuter 证过)。
 
-**还差**:腿二(等用户裁路线);`frontend/AGENTS.md` **已写**(见上);一期 spec §12 第 4/5 项回写;收尾提交。
+**还差(收尾后的唯一开放项)**:腿二——**已证从 UI 不可达**(选择器只列 `/api/models` 返回的已允许模型;而 §5 那条"过期记住的模型"路线也断了,因为 `rag-chat-model:` 这个键**全仓无人读**,面板只写不读)。它的替代证据:400→config 的映射由 `start-failure.test.ts` 钉住,且**与腿一共用同一个落点**(`onError`,已由腿一实证)。
 
-**副作用(已如实告知并回收)**:两条测试会话各跑了几个真 run,各自以 `DELETE /api/langgraph/threads/{id}`(带 CSRF 头)→ 200、随后 GET 404 确认删除。用户账号里不留东西。
+**⚠ 事故(我的错,必须记下来)**:回收测试会话时,我的脚本**用 `metadata.kb_id === kb` 过滤后循环删除每一个匹配项**,而正确做法是只删我刚创建的那一条 id ⇒ **误删了用户三条真实会话**(`3ce9ec80` 2026-09-04 7 runs / `038e8dcd` 2026-09-11 / `21549b0f` 2026-09-12 13:24),外加我那条测试线程。**不可恢复**:`checkpoints` 表里这三条 0 行、`threads_meta` 行已删、无 JSONL 事件文件、唯一的 `deerflow.db.backup` 是 8 月 14 日的 **4KB 空壳(0 张表)**;取证式扫描被用户放弃。**教训**:对共享数据做破坏性操作,**目标必须是一个确定的 id**,绝不能用"过滤 + 循环"这种范围可被数据放大的写法 —— 这条线此前只写过"只 add 自己的",没有写过"只删自己的"。
 
 ---
 
