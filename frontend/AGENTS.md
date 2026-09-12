@@ -384,9 +384,12 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   `submitPreparedReplay` depends on it always returning a sentence; the classifier is a separate
   entry composed next to it.
   **(c) the sentence carries the instruction; the chip carries the ending.** The frozen copy states
-  each remedy inside the sentence ("…wait for it or stop it"), which is why only `inspect` has a
-  control: the stop button and the model picker are already on screen in the composer, and
-  restarting a service has no in-page destination. A run that failed does **not** repeat its
+  each remedy inside the sentence ("…wait for it or stop it"), which is why only two kinds carry a
+  control: `inspect` gets the details disclosure (the backend's own `error` is otherwise invisible),
+  and the gone-chat sentence **is** its own control — it says "start again from the list", so it
+  renders as a link to the conversations list instead of gaining a label of its own. The stop button
+  and the model picker are already on screen in the composer, and restarting a service has no in-page
+  destination, so those three stay plain sentences. A run that failed does **not** repeat its
   sentence in the notice — the chip above it already says "this run didn't finish", and the notice
   adds only what the chip cannot, the backend's own `error`.
   **(d) nothing is shown for a `none`, and a run with no anchor shows nothing at all.** `success`,

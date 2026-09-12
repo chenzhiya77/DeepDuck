@@ -111,21 +111,43 @@ export function KnowledgeChatPanel({
   const [draft, setDraft] = useState("");
   // Composer model selector: null = unselected → context.model_name stays
   // undefined and the backend resolves request → agent config → global
-  // default. A picked model is remembered per kb (localStorage).
-  const [selectedModelName, setSelectedModelName] = useState<string | null>(null);
+  // default. A picked model is remembered per kb (localStorage) and read back
+  // here, so `rag-chat-model:{kbId}` is the whole memory — nothing else has to
+  // agree with it.
+  const [pickedModel, setPickedModel] = useState<{
+    kbId: string | null;
+    name: string;
+  } | null>(null);
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const { models } = useModels();
-  // The trigger shows the effective model: the remembered pick, else the
-  // backend's global default (models[0]).
-  const activeModel = models.find((m) => m.name === selectedModelName) ?? models[0];
 
   // Switching knowledge bases always starts a fresh conversation: threads are
-  // bound to exactly one kb via metadata.kb_id and must never bleed across.
-  // The composer model reverts to whatever was remembered for the new kb.
+  // bound to exactly one kb via metadata.kb_id and must never bleed across. So
+  // the pick is scoped to the kb it was made on (not a bare name that would leak
+  // across), and the remembered one is only restored while this build still
+  // offers that model — the trigger shows the effective model, so restoring a
+  // name the server no longer accepts would make the display lie about what gets
+  // sent. Deriving it (rather than an effect) also means it settles by itself
+  // once the model list arrives.
+  const selectedModelName = useMemo(() => {
+    const offered = (name: string | null | undefined) =>
+      Boolean(name) && models.some((m) => m.name === name);
+    if (pickedModel?.kbId === kbId && offered(pickedModel.name)) {
+      return pickedModel.name;
+    }
+    const remembered = kbId
+      ? localStorage.getItem(MODEL_STORAGE_PREFIX + kbId)
+      : null;
+    return offered(remembered) ? remembered : null;
+  }, [pickedModel, kbId, models]);
+
+  // The trigger shows the effective model: the pick (remembered or made here),
+  // else the backend's global default (models[0]).
+  const activeModel = models.find((m) => m.name === selectedModelName) ?? models[0];
 
   const handleModelSelect = useCallback(
     (name: string) => {
-      setSelectedModelName(name);
+      setPickedModel({ kbId, name });
       if (kbId) {
         localStorage.setItem(MODEL_STORAGE_PREFIX + kbId, name);
       }

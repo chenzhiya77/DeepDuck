@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { useI18n } from "@/core/i18n/hooks";
@@ -40,6 +41,17 @@ import type { FailureAction, FailureKind } from "@/core/run-status/types";
  * and `none` covers success, a run in flight, and the two frontend-bug statuses.
  */
 type SentenceKey = "busy" | "modelNotAllowed" | "threadGone" | "modeMismatch";
+
+/**
+ * Where the gone-chat sentence sends the reader.
+ *
+ * A single target on purpose: the conversations list is the one surface every
+ * layer of the app can reach. A knowledge-base thread's own list lives under
+ * `/workspace/knowledge`, so this lands a kb reader one hop away rather than at
+ * their own list — recorded as a known limit instead of guessed at, because the
+ * notice cannot tell which surface it was rendered on.
+ */
+const CHAT_LIST_HREF = "/workspace/chats";
 
 const SENTENCE_KEY: Record<FailureKind, SentenceKey | null> = {
   occupied: "busy",
@@ -82,7 +94,20 @@ export function RunStatusNotice({
       {sentence !== null && (
         <p className="flex items-center gap-1.5">
           <CircleAlert className="size-3.5 shrink-0" />
-          <span>{sentence}</span>
+          {kind === "environment" ? (
+            // The sentence already says "start again from the list", so it *is*
+            // the control for this kind: a link, no new copy, and the reader can
+            // act on it where they read it.
+            <Link
+              href={CHAT_LIST_HREF}
+              data-testid="run-status-list-link"
+              className="underline underline-offset-2"
+            >
+              {sentence}
+            </Link>
+          ) : (
+            <span>{sentence}</span>
+          )}
         </p>
       )}
       {openable && (

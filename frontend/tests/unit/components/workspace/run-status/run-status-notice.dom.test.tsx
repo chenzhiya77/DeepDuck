@@ -43,6 +43,9 @@ describe("RunStatusNotice", () => {
       "这个会话已有一个任务在跑，等它结束或先停掉它",
     );
     expect(notice.className).toContain("text-destructive");
+    // Only the gone-chat sentence carries a link; this kind's remedy is already on
+    // screen in the composer.
+    expect(screen.queryByTestId("run-status-list-link")).toBeNull();
   });
 
   it("tells the reader to pick another model", () => {
@@ -53,12 +56,17 @@ describe("RunStatusNotice", () => {
     );
   });
 
-  it("tells the reader the chat is gone", () => {
+  it("tells the reader the chat is gone, and links them to the list", () => {
     renderNotice("environment", "backToList");
 
     expect(screen.getByTestId("run-status-notice").textContent).toContain(
       "这个会话不存在了，回到列表重新开始",
     );
+    // For this kind the sentence *is* the instruction, so it is also the control:
+    // no extra copy, and the reader can act where they read it.
+    const link = screen.getByTestId("run-status-list-link");
+    expect(link.getAttribute("href")).toBe("/workspace/chats");
+    expect(link.textContent).toBe("这个会话不存在了，回到列表重新开始");
   });
 
   it("tells the reader to restart with the matching mode", () => {
