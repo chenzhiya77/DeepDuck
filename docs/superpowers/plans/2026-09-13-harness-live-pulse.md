@@ -34,21 +34,23 @@ node node_modules/prettier/bin/prettier.cjs --check <文件>  # 逐文件;CRLF �
 
 - [x] 私有 `:8099`(`DEER_FLOW_AUTH_DISABLED=1`)+ python 直读 SSE,`stream_mode:["messages-tuple","values","custom"]` + `stream_subgraphs: true`;3 条真 run 量出**根命名空间 distinct AI id == `llm_call_index`**(2=2、2=2、1=1),含命名空间会数成 4。收尾:5 条测试线程**按确定 id** 删除并逐条复核 404、实例停掉、脚本删掉。**结论写回 spec §7。**(用户 `:8001` 全程未碰。)
 
-## Task 1: 数据层 `core/pulse/`(纯函数)
+## Task 1: 数据层 `core/pulse/`(纯函数)—— **已交付 2026-09-13,未提交**
 
 **Files:** Create `frontend/src/core/pulse/{types,reduce}.ts`、`frontend/tests/unit/core/pulse/reduce.test.ts`
 
-- [ ] **Step 1(RED —— 规则表逐条)** `reducePulse(messages, { finished })`:
+- [x] **Step 1(RED —— 规则表逐条)** `reducePulse(messages, { finished })`:
   - `lap` **只数带 `tool_calls` 的 AI 消息**(最后那条纯文本回答不计一圈);
   - **指针的段**:还没出现任何 AI 消息 ⇒ `intake`(与 `context` 不可分,合并显示);最近一条 AI **带** `tool_calls` ⇒ `tools`;最近一条 AI **不带** ⇒ `model`;`finished` ⇒ `epilogue`;
   - **未知/空输入 ⇒ `null`(不呈现),不猜** —— 与本线其余几项同一条纪律。
   - 用例:① 空 → `null`;② 只有 human → `intake`;③ AI 带 `tool_calls` → `tools`;④ AI 不带 → `model`;⑤ `finished` → `epilogue`;⑥ **混进一条带命名空间标记的消息不影响 `lap`**(钉住规则);⑦ 多轮 model→tools 往返 ⇒ `lap` 递增而指针回到 `model`。
-- [ ] **Step 2**:`types.ts` 给 `PulseState { stageKey: string; lap: number }`;`reduce.ts` 是**纯函数、零依赖**(不 import React、不 import 任何 hook)。
-- [ ] **Step 3**:转绿。
-- [ ] **Step 4(revert 证明)**:把 `tool_calls` 判据去掉(凡 AI 都计一圈)⇒ 用例 ⑦ 红;把 `finished` 分支去掉 ⇒ 用例 ⑤ 红。
-- [ ] **Step 5**:单文件测试 + `pnpm check`。
+- [x] **Step 2**:`types.ts` 给 `PulseState { stageKey: string; lap: number }`;`reduce.ts` 是**纯函数、零依赖**(不 import React、不 import 任何 hook)。
+- [x] **Step 3**:转绿 —— **7 例全绿**。
+- [x] **Step 4(revert 证明)**:**两刀都有牙**——去掉 `tool_calls` 判据 ⇒ **3 红**(三条断言圈数的);去掉 `finished` 分支 ⇒ **恰好 1 红**(`parks on the exit arc once the run is over`)。两刀均已恢复,`grep NEUTER` 零残留。
+- [x] **Step 5**:单文件 7 绿 + `pnpm check` **exit 0**;prettier 干净(测试文件按 prettier 折了三处长行,行尾仍 LF)。
 
-**交付判据:** 纯函数全绿;模块**不 import React**;未知输入一律 `null`。
+**交付判据:** 纯函数全绿;模块**不 import React**;未知输入一律 `null`。 **✅ 达成。**
+
+**⚠ 一处偏离(诚实记录)**:计划的用例 ⑥ 原写"**混进一条带命名空间标记的消息不影响 `lap`**"。实施时发现**这个用例没有可断言的对象**:子代理帧**从不进入**这份列表——线程 feed 会滤掉 `subagent` 类别,且应用不请求 `stream_subgraphs` ⇒ **root-only 是"输入"的性质,不是 reducer 能检查的东西**。硬造一个标记字段就是给不存在的场景写代码。⇒ 换成一个真实的不变量:**"只数 assistant 轮"**(`tool` 消息即使带 `tool_call_id` 也不得抬高圈数)。它管住了同一件事里**可能真发生**的那一半;命名空间那半留在 spec §7 作为**要守的输入前提**,并在 Task 5 写进 `frontend/AGENTS.md`。
 
 ## Task 2: 文案 + 三处机具(**只做两处**)
 
@@ -111,6 +113,23 @@ Task 2(文案) ───┘
 ```
 Task 1 与 Task 2 相互独立;Task 3 依赖 1(拿到 `PulseState` 的形状)+ 2(文案只在调用方,环不吃文案,所以 2 不阻塞 3,但 4 需要);Task 5 依赖全部。
 
-## 交付纪要(待填)
+## 交付纪要
 
-_(Task 0 见上;Task 1–5 完成后逐条回写:提交号、用例数、revert 命中、偏离、未覆盖项)_
+### Task 0(探针)— 2026-09-13,**已提交 `39f257d8`**(spec+plan+上游指针同笔)
+
+见上方 Task 0 与 spec §7。
+
+### Task 1(数据层 `core/pulse/`)— 2026-09-13,**已交付,未提交**
+
+**改动**:新建 `frontend/src/core/pulse/{types,reduce}.ts` + `frontend/tests/unit/core/pulse/reduce.test.ts`。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **7** |
+| RED | 1 failed / 0 tests —— `Cannot find module '@/core/pulse/reduce'` |
+| GREEN | **7 passed** |
+| `pnpm check` | **exit 0** |
+| prettier | 全过(测试文件的 3 处长行按 prettier 折行后复检;行尾 LF) |
+| revert | **两刀**:`tool_calls` 判据 → **3 红**(三条断言圈数的);`finished` 分支 → **恰好 1 红**。恢复后 7 绿、`NEUTER` 零残留 |
+
+**偏离(见上方用例 ⑥ 那段)**:命名空间那条用例换成"只数 assistant 轮",因为子代理帧从不进入这份列表 ⇒ root-only 属于输入前提、不是 reducer 的检查对象。
