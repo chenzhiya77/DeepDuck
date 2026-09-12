@@ -273,7 +273,7 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 ② 后端对账的读法:原文举的先例 `test_constitution_i18n_keys.py` 实际读的是**清单 JSON + 后端 Python 常量**,不是前端 TS。真正读前端**源文件**的先例是 `test_gateway_runtime_cleanup.py`(读 `frontend/next.config.js`),本次照那条做(正则抽 `export const PRESENTED_KINDS` 块)。
 ③ **kind→文案 key 的映射不在清单里**,留给 Task 5 的组件及其测试 —— 清单只钉"哪几档要被呈现"与"有哪几条文案"。**这是本任务唯一的跨端断言(清单 ↔ `PRESENTED_KINDS`),它已落地。**
 
-### Task 5(组件 + 两处锚点接线)— 2026-09-12,已交付,**未提交**
+### Task 5(组件 + 两处锚点接线)— 2026-09-12,**已提交 `7fedd88f`**（11 文件 / +673 −10）
 
 **改动**:新建 `core/messages/start-failure-anchor.ts`、`components/workspace/run-status/{run-status-badge,run-status-notice}.tsx` + 三个测试(锚点 node、两个组件 dom);改 `core/run-status/{types,start-failure}.ts`(加 `StartFailureNotice` 类型 + `readStartFailure` 读回器)、`message-list.tsx`、`message-list-item.tsx`。
 
