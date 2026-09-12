@@ -69,11 +69,11 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/tests/unit/components/workspace/changes/workspace-change-badge.dom.test.tsx`;Modify `frontend/src/components/workspace/changes/workspace-change-badge.tsx`
 
-- [ ] **Step 1(RED —— DOM 测试,四个形态)**:①`satisfied` → **安静**行(断言色调类 + 图标)且文案**逐字**等于冻结值;②`mismatched` / `not_started` → **醒目**行;③**回执缺失 → 卡片照常渲染,只是没有那一行**(不能因为回执没到就把整张文件卡吞掉);④`available=false` 或 `count=0` → 卡片整体仍为 `null`(**门槛未被放宽**)。
-- [ ] **Step 2**:在卡片的头部区之下、文件列表之上插那一行;`useDelivery(threadId, runId)` 与已有的 `useWorkspaceChanges` 并列调用;**不新增可点区域**(v1 是纯文本)。
-- [ ] **Step 3**:`matched/produced` 用回执字段直接显示,**不做集合运算**;色调只由 `stage` 决定。
-- [ ] **Step 4**:转绿 + `pnpm test`(全量)+ `pnpm check` + `pnpm format`。
-- [ ] **Step 5(revert 证明)**:把安静/醒目两档色调对调 → ①的断言红;把"回执缺失就不渲染卡片"改成提前 `return null` → ③红。
+- [x] **Step 1(RED —— DOM 测试,四个形态)**:①`satisfied` → **安静**行(断言色调类 + 图标)且文案**逐字**等于冻结值;②`mismatched` / `not_started` → **醒目**行;③**回执缺失 → 卡片照常渲染,只是没有那一行**(不能因为回执没到就把整张文件卡吞掉);④`available=false` 或 `count=0` → 卡片整体仍为 `null`(**门槛未被放宽**)。
+- [x] **Step 2**:在卡片的头部区之下、文件列表之上插那一行;`useDelivery(threadId, runId)` 与已有的 `useWorkspaceChanges` 并列调用;**不新增可点区域**(v1 是纯文本)。
+- [x] **Step 3**:`matched/produced` 用回执字段直接显示,**不做集合运算**;色调只由 `stage` 决定。
+- [x] **Step 4**:转绿 + `pnpm test`(全量)+ `pnpm check` + `pnpm format`。
+- [x] **Step 5(revert 证明)**:把安静/醒目两档色调对调 → ①的断言红;把"回执缺失就不渲染卡片"改成提前 `return null` → ③红。
 
 **交付判据:** 四个形态全绿;全量 0 failed(除已登记的环境红);**不因判定放宽卡片门槛**这条由 ④ 钉住。
 
@@ -127,3 +127,14 @@ Task 1 与 Task 2 相互独立、可并行;Task 3 依赖两者;Task 4 依赖全�
 - **`RunEventRow` 就地定义**而非从 `constitution/types` 引入:两者是兄弟功能、互不依赖;若出现第三个消费者(§12 第 6 项实时脉冲会需要)再抽共享模块。
 - **GREEN**:`pnpm test core/delivery` 21 passed(含 Task 1 的 3 例);`pnpm check` 干净;新文件 `prettier --check` 通过。
 - **revert 证明(两探针,均先 `grep` 确认探针真的落盘)**:①关掉"三个列表全在"的守卫 → `refuses a missing path list` 与 `refuses a stage outside the vocabulary` 两条红;②把有界重问换成一发即走 → `re-asks while the run has not written its receipt yet` 红。
+
+### Task 3 — 已交付(2026-09-12):文件卡上那一行
+
+- **产物**:`WorkspaceChangeBadge` 内新增 `DeliveryLine` + 新测试 `tests/unit/components/workspace/changes/workspace-change-badge.dom.test.tsx`(**6 例**)。
+- **形态**:插在卡片头部之下、文件列表之上,自带 `border-b` 成一条带;`data-testid="delivery-verdict"`。**不动锚点、不加卡、不改 `message-list-item.tsx` 的传参**。
+- **色调用仓库现成的一对,不发明新色**:`satisfied ? "text-muted-foreground" : "text-destructive"` —— 直接照 `eval-run-banner.tsx:90` 的同款用法(同一行、成败换色调);图标 `Check` / `CircleAlert` 用工作区组件惯用的**裸名**(`doc-failure-panel.tsx` 就是 `CircleAlert`)。
+- **计数直接取判定的列表长度**,前端不做任何集合运算:`satisfied` 只要求 matched 非空 ⇒ `已交出 1/3` 是**成功态**;专门一条用例钉住"部分交出**不**说成全交"。
+- **一处对 Task 2 的小改**:`useDelivery` 由位置参数改为**选项入参**(`{threadId, runId, enabled}`),与它并排调用的 `useWorkspaceChanges` 一致——消费点就在同一个组件里,两个 hook 收同样的三个输入却用两种写法是没必要的摩擦。`enabled` 让卡片在 run 跑动中不去问(回执那时还没写,问了只是白花有界重问)。
+- **GREEN**:该文件 6 passed;`pnpm check` 干净;新文件 `prettier --check` 通过。
+- **revert 证明(两探针)**:①对调安静/醒目两档色调 → 三条色调断言红;②把"回执缺失"改成提前 `return null`(即让判定决定卡片存亡)→ `keeps the file card when the receipt read came back empty` 红——**这条用例的作用正是守住"不回执≠不显示卡片"**,没它没人拦这个错。
+- **全量套件**:`Test Files 1 failed | 224 passed (225)`,唯一失败是那条**已登记的 `knowledge/chat-panel` 环境红**(模型记忆项)。Task 1 里报的 27 条 `useActivity*` 红**在此期间已被宠物线自己修好**(同一工作树、另一会话在改),本轮输出里该报错 0 次——所以那条不是本项的开放项,已闭环。

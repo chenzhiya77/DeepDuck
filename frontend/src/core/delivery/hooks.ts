@@ -22,10 +22,15 @@ export const deliveryQueryKey = (
   runId: string | null | undefined,
 ) => ["delivery", threadId, runId] as const;
 
-export function useDelivery(
-  threadId: string | null | undefined,
-  runId: string | null | undefined,
-) {
+export function useDelivery({
+  threadId,
+  runId,
+  enabled = true,
+}: {
+  threadId: string | null | undefined;
+  runId: string | null | undefined;
+  enabled?: boolean;
+}) {
   return useQuery<DeliveryReceipt | null>({
     queryKey: deliveryQueryKey(threadId, runId),
     queryFn: async () => {
@@ -34,7 +39,9 @@ export function useDelivery(
       }
       return fetchDelivery(threadId, runId);
     },
-    enabled: Boolean(threadId && runId),
+    // Callers hold this off while a run is in flight: the receipt is written when
+    // the run ends, so asking earlier only spends the bounded re-ask.
+    enabled: enabled && Boolean(threadId && runId),
     staleTime: Infinity,
     retry: false,
     refetchOnWindowFocus: false,

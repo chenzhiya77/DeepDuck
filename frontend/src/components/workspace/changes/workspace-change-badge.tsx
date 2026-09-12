@@ -1,9 +1,16 @@
 "use client";
 
-import { ArrowUpRightIcon, FileDiffIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  Check,
+  CircleAlert,
+  FileDiffIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Sheet } from "@/components/ui/sheet";
+import { useDelivery } from "@/core/delivery/hooks";
+import type { DeliveryVerdict } from "@/core/delivery/types";
 import { useI18n } from "@/core/i18n/hooks";
 import { useWorkspaceChanges } from "@/core/workspace-changes/hooks";
 import {
@@ -14,6 +21,46 @@ import type { WorkspaceFileChange } from "@/core/workspace-changes/types";
 import { cn } from "@/lib/utils";
 
 import { WorkspaceChangePanel } from "./workspace-change-panel";
+
+/**
+ * The delivery verdict, as one line on the file card.
+ *
+ * Spec: docs/superpowers/specs/2026-09-12-harness-delivery-layer-design.md §4.
+ * It answers "did this run hand over what it produced", which the file list below
+ * does not — that one answers "what changed". Sharing the card rather than
+ * opening a second one keeps one run's story in one place.
+ *
+ * The counts come straight from the verdict's own lists: `satisfied` only means
+ * *at least one* produced output was handed over, so a partial hand-over is a
+ * pass and the line reports the real ratio instead of claiming "all".
+ */
+function DeliveryLine({ verdict }: { verdict: DeliveryVerdict }) {
+  const { t } = useI18n();
+
+  const text =
+    verdict.stage === "presented"
+      ? t.delivery.presented(
+          verdict.matched_paths.length,
+          verdict.produced_paths.length,
+        )
+      : verdict.stage === "mismatched"
+        ? t.delivery.mismatched(verdict.presented_paths.length)
+        : t.delivery.not_started(verdict.produced_paths.length);
+
+  const Icon = verdict.satisfied ? Check : CircleAlert;
+  return (
+    <p
+      data-testid="delivery-verdict"
+      className={cn(
+        "border-border/70 flex items-center gap-1.5 border-b px-3 py-2 text-xs",
+        verdict.satisfied ? "text-muted-foreground" : "text-destructive",
+      )}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate">{text}</span>
+    </p>
+  );
+}
 
 export function WorkspaceChangeBadge({
   threadId,
@@ -33,6 +80,11 @@ export function WorkspaceChangeBadge({
     includeDiff: false,
     enabled: Boolean(runId) && !disabled,
   });
+  const { data: delivery } = useDelivery({
+    threadId,
+    runId,
+    enabled: !disabled,
+  });
 
   if (!runId || !data?.available) {
     return null;
@@ -44,6 +96,7 @@ export function WorkspaceChangeBadge({
   }
 
   const files = sortWorkspaceChanges(data.files);
+  const verdict = delivery?.verdict ?? null;
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -73,6 +126,8 @@ export function WorkspaceChangeBadge({
             className="hidden text-xs font-semibold sm:inline-flex"
           />
         </div>
+
+        {verdict && <DeliveryLine verdict={verdict} />}
 
         <div className="py-1">
           {isLoading && (
