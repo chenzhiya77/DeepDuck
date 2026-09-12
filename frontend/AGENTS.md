@@ -142,14 +142,20 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   **content area** (not the `ResizablePanelGroup`, whose container measures chat + side panel). It is
   therefore present on every `/workspace/*` page and deliberately absent from the public routes
   (`/`, `/login`, `/[lang]/docs`, `/blog`) — those never render `WorkspaceContent`, and the root
-  layout must stay static. Conversation surfaces register their `(threadId, liveRunId)` so the shell
-  follows the last one you were in; registering is a set, not a lease (unmounting a surface must not
-  drop the subscription — that is what lets the pet outlive the page); **(b)** the pet is an observer
+  layout must stay static. Conversation surfaces register their `(threadId, liveRunId, href)` so the
+  shell follows the last one you were in; `href` is the registrant's own canonical route back to that
+  thread (a kb thread's is the knowledge page, a custom agent's is under `agents/<name>/chats/…`), so
+  the shell never derives one from the id — deriving would run a kb thread without its kb binding;
+  registering is a set, not a lease (unmounting a surface must not drop the subscription — that is
+  what lets the pet outlive the page); **(b)** the pet is an observer
   — it reads that subscription and derived state, and never sends, mutates, owns
   agent/thread/memory, or subscribes to custom events; **(c)** the sprite stays `pointer-events-none`
-  so clicks pass through, and free placement rides `pet.offset` via window-level hit-testing on
-  Alt+drag (4px threshold, pointer capture, and swallowing the click that follows a drag) instead of
-  giving the pet pointer events.
+  so clicks pass through, and interaction rides window-level hit-testing on the pet's box instead of
+  giving the pet pointer events. One Alt gesture, two branches split by the same 4px threshold:
+  past it, Alt+drag moves the pet (pointer capture, offset written on release); below it, Alt+click
+  jumps back to the thread the pet stands for — and only when that thread is not already the current
+  page (compared by path, because the knowledge page strips its `thread` param once applied). Both
+  branches swallow the click that follows, so neither can also activate a message link underneath.
 - `src/components/workspace/settings/models-settings-page.tsx` owns the **Models** section and
   its two views: the chat-model list (with add/edit dialogs) and `functional-models-view.tsx`,
   the RAG functional-model editor. The functional view reads `core/rag/hooks.ts`
