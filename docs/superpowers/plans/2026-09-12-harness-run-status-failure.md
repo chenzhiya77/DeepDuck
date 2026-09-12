@@ -240,7 +240,7 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 
 **偏离原计划(其余,诚实记录)**:③ 原文要"读 `error.text` 拿原始 body(便于控制台)"——**没做**,因为 SDK 已 `console.error(error)` 整个对象(`ui/manager.js:280`),`.text` 本就在控制台,再加是重复;④ 原文"两者都没有才退回消息文本"由调用方用既有 `getStreamErrorMessage` **组合**实现,不复制那份逻辑;⑤ **额外新增了一个 DOM 测试文件**(原计划只列了 `start-failure.ts` + 单测)——因为 Step 4 补进来的"保留消息"是这次的真实行为变化,而它没有纯函数可测,只能用 `local-turn-order.dom.test.tsx` 那套 `rs.mock("@langchain/langgraph-sdk/react")` 脚手架驱动。**这个额外测试正是第二刀能命中保留分支的原因。**
 
-### Task 4(文案落盘 + 两处 guard)— 2026-09-12,已交付,**未提交**
+### Task 4(文案落盘 + 两处 guard)— 2026-09-12,**已提交 `502b54b5`**（7 文件 / +192 −7）
 
 **改动**:新建 `frontend/src/core/run-status/run-status-i18n-keys.json`、`frontend/tests/unit/core/run-status/i18n-keys.test.ts`、`backend/tests/test_run_status_i18n_keys.py`;改 `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts`(各加一个 `runOutcome` 块)。
 
