@@ -208,7 +208,7 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 ③ **`useRunOutcome` 返回 `{outcome, kind, action}`** 而不是裸 `RunOutcome` —— Task 5 的两个组件要 kind/action,详情行要 `error` 原文,一次给全,组件不用自己再调 classify。
 ④ **查表用 `Map` 而非对象字面量** —— `status` 来自线上,对象字面量会对 `"constructor"` 这类键返回 Object 构造函数并被当成 verdict。这是本仓已有的一类防护(见 clarification 字段/`__proto__` 的既有守卫)。
 
-### Task 3(pre-stream 分类入口)— 2026-09-12,已交付,**未提交**
+### Task 3(pre-stream 分类入口)— 2026-09-12,**已提交 `457ed28a`**（6 文件 / +328 −15）
 
 **改动**:新建 `frontend/src/core/run-status/start-failure.ts`(纯:`describeStartFailure` + `START_FAILURE_KWARG`)、`frontend/tests/unit/core/run-status/start-failure.test.ts`、`frontend/tests/unit/core/threads/start-failure.dom.test.tsx`;改 `frontend/src/core/threads/hooks.ts`(import ×2、`pendingSendMessageIdRef` 声明、`sendMessage` 记 id、`onCreated` 清 id、`onError` 分类+保留)。
 
