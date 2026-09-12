@@ -54,7 +54,7 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 **Files:** Create `frontend/src/core/run-status/{types,classify,parse,hooks}.ts`、`frontend/tests/unit/core/run-status/{classify,parse}.test.ts`
 
 - [ ] **Step 1(RED —— 两个纯函数的测试)**:
-  - `classify.test.ts`:**逐类各一条** —— `{status:409}`→占用类;`{status:400}`/`{status:501}`→配置类;`{status:404}`/`{status:503}`→环境类;`{status:422}`→按已裁**返回"不呈现"**;`{status:"error"}`→运行期失败;`{status:"timeout"}`→运行期失败;`{status:"interrupted"}`→被停止;`{status:"success"}`→**不呈现**;`{status:"running"|"pending"}`→**不呈现**(还没结局)。**未知状态码/未知 status 一律落到"不呈现"而不是猜**(与快照/交付两条线同一条纪律)。
+  - `classify.test.ts`:**逐类各一条** —— `{status:409}`→占用类;`{status:400}`→配置类;`{status:404}`→环境类;`{status:503}`→**模式不匹配类**(§5.1);`{status:422}`/`{status:501}`→**不呈现**(两者都是前端 bug,已裁);`{status:"error"}`/`{status:"timeout"}`→运行期失败;`{status:"interrupted"}`→被停止;`{status:"success"}`→**不呈现**;`{status:"running"|"pending"}`→**不呈现**(还没结局)。**未知状态码/未知 status 一律落到"不呈现"而不是猜**(与快照/交付两条线同一条纪律)。
   - `parse.test.ts`:`parseRunOutcome(row)` 逐字段重建 —— 有 `error` 时读出、没有时为 `null`;`stop_reason` 有则读;未知字段丢弃;`status` 缺失 → 返回 `null`。
 - [ ] **Step 2**:`types.ts` —— `RunOutcome`(从 `RunResponse` 投影:`status` / `stop_reason` / `error`)+ `FailureKind`(`occupied` / `config` / `environment` / `runFailed` / `stopped` / `none`)+ 动作键。
 - [ ] **Step 3**:`classify.ts` —— **纯函数,零依赖**:`classifyRunOutcome(outcome)` 与 `classifyStartFailure(httpStatus)`(**两个入口**,因为两个方向的输入不同)。**这是本项唯一有判断逻辑的地方。**
@@ -82,10 +82,10 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/run-status/run-status-i18n-keys.json`、`backend/tests/test_run_status_i18n_keys.py`、`frontend/tests/unit/core/run-status/i18n-keys.test.ts`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`
 
-- [ ] **Step 0(前置,硬)**:spec §5 那 6 条文案**先拿用户批**(命名空间 `runOutcome.*`),批完再落盘。**未批不动这一步。**
+- [ ] **Step 0(前置,硬)**:spec §5 那 6 条**已批**(2026-09-12);**§5.1 补批的 1 条(`runOutcome.modeMismatch`)待批**。**那条未批之前,本任务只落 6 条 + 让 `modeMismatch` 暂时落回"不呈现"**(别用 `threadGone` 顶替——那是会说假话的错答案)。
 - [ ] **Step 1(RED)**:写清单(嵌套形状,`kinds` 列出**会被呈现**的类别)+ 前端 guard(复用 `tests/unit/support/i18n-key-manifest.ts`,Task 1 交付层已抽出)+ 后端 guard。**先确认红。**
 - [ ] **Step 2**:`types.ts` 加 `runOutcome` 块;两份 locale 填文案(照抄 spec,**零改写**)。
-- [ ] **Step 3**:后端 guard 的对账对象:断言清单的 `kinds` 集合 == **`FailureKind` 里"会被呈现"的那几个**——**但前端类型在后端读不到**,所以退一步:**断言清单与前端 `classify.ts` 里导出的 `PRESENTED_KINDS` 常量逐项相等**(后端读前端源文件有先例 `test/constitution_i18n_keys.py`)。**这是本任务唯一有实质内容的跨端断言。**
+- [ ] **Step 3**:后端 guard 的对账对象:断言清单的 `kinds` 集合 == **`FailureKind` 里"会被呈现"的那几个**(`occupied` / `config` / `environment` / `modeMismatch` / `runFailed` / `stopped`;**不含** `422`/`501` 那一档)。**前端类型在后端读不到**,所以退一步:**断言清单与前端 `classify.ts` 导出的 `PRESENTED_KINDS` 常量逐项相等**(后端读前端源文件有先例 `test_constitution_i18n_keys.py`)。**这是本任务唯一有实质内容的跨端断言。**
 - [ ] **Step 4**:转绿 + `pnpm check` + `ruff`。
 - [ ] **Step 5(revert 证明)**:删一条 locale key → 正向红;加一条孤儿 → 反向红;给清单加一个不该呈现的类别 → 后端红。
 
