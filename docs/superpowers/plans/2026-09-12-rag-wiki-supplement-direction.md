@@ -33,23 +33,35 @@
   - `regenerate_wiki_entries`（`:443-464`）：`entry` 已在手，把它带进 `_write_entry`
 - Test: `backend/tests/knowledge/wiki/test_generator.py`（新增 5 例；复用既有 `_WikiLLM.calls`，无需新 fake）
 
-- [ ] **Step 1（RED）**：5 条用例先写测试
+- [x] **Step 1（RED）**：5 条用例先写测试
   ① `test_dirty_regeneration_injects_supplement_as_direction`：dirty 条目带补充层 → `llm.calls` 里该次 user message 含补充层原文与 `WIKI_DIRECTION_HEADER`；
   ② `test_regeneration_without_supplement_omits_direction_block`：无补充层 → 不含 header；
-  ③ `test_full_rebuild_routes_guided_entries_through_single_call`：`only_dirty=False` 且库中一条有条目+补充层、一条无条目 → `llm.calls` 里同时存在"批量调用"（含 `实体清单：`）与"单条调用"（含 header），且批量名单里**不含**那条有方向的实体；
+  ③ `test_full_rebuild_sends_guided_entries_through_single_call`：`only_dirty=False` 且库中一条有条目+补充层、一条无条目 → `llm.calls` 里同时存在"批量调用"（含 `实体清单：`）与"单条调用"（含 header），且批量名单里**不含**那条有方向的实体；
   ④ `test_per_entry_regenerate_injects_direction`：`regenerate_wiki_entries` 同样带上；
   ⑤ `test_blank_supplement_is_not_injected`：`"   "` → 不注入。
-  **红在哪**：①③④ 因 prompt 里没有该段而失败（断言 header 文本不存在），②⑤ 会意外通过——它们构成"不注入"的护栏，不参与 RED 计数。
-- [ ] **Step 2**：实现。`guidance` 为空（`strip()` 后）时不拼段；dirty/regenerate 两条路径走成对传递；non-dirty 拆分只动路由，不改 `plan_entry_batches` 本身。
+  **红在哪**：collection 期 `ImportError: cannot import name 'WIKI_DIRECTION_HEADER'`（符号尚不存在）——整文件 1 个收集错误，非断言写错。
+- [x] **Step 2**：实现。`guidance` 为空（`strip()` 后）时不拼段；dirty/regenerate 两条路径走成对传递；non-dirty 拆分只动路由，不改 `plan_entry_batches` 本身。
   注意 `_write_bundle` 内部漏标题时回退 `_write_entry`（`:323`）**不带** guidance —— 那条路是 backfill（无条目），正确。
-- [ ] **Step 3（GREEN）**：5 例转绿；相关子集 `tests/knowledge` 全绿。
-- [ ] **Step 4（revert proof）**：两刀——① `_write_entry` 忽略 `guidance`；② dirty 分支与 regenerate 分支不传 `entry["supplement_content"]` ⇒ 期望 ①②④ 转红且 ③ 转绿（有方向的实体又回到批量名单里）；恢复后 5 绿。
-- [ ] **Step 5**：`ruff check` + `ruff format --check` 双净。
-- [ ] **Step 6**：Commit。
+- [x] **Step 3（GREEN）**：`test_generator.py` **32 passed**；整个 `tests/knowledge` **1064 passed / 2 skipped**（`generator.py` 的调用方全在这一层：worker、service、e2e smoke）。
+- [x] **Step 4（revert proof）**：两刀都有牙——刀一 `_write_entry` 忽略 `guidance`（`direction = ""`）⇒ **3 红**（①注入 / ③全量拆条 / ④局部重建注入），②⑤ 两个"不注入"护栏仍绿；
+  刀二 三个调用点全改传 `None`（dirty 成对 / 全量拆条 / regenerate 成对）⇒ **同样 3 红**，②⑤ 绿。恢复后 32 绿。
+  **偏离**：原计划写"刀二只动 dirty+regenerate、③ 应保持绿"，实际把全量拆条一并 neuter（更强：三个站点各自被钉住），故 ③ 也转红。
+- [x] **Step 5**：`ruff check` + `ruff format --check` 双净（两文件）。
+- [x] **Step 6**：Commit **`06bffc01 feat(rag): feed the wiki supplement layer into generation as direction`**（2 文件，+138/-13）。
 
-**交付判据**：`_write_entry` 的 guidance 只在非空时进入 user message；三个调用点的数据来源一次性核对（`:323` 不带、`:391` 带、`:464` 带）；`WIKI_SYSTEM_PROMPT` / `WIKI_BATCH_SYSTEM_PROMPT` 与 `_write_bundle` 字节不变。
+**交付判据**：`_write_entry` 的 guidance 只在非空时进入 user message；三个调用点的数据来源一次性核对（`:323` 不带、`:391` 带、`:464` 带）；`WIKI_SYSTEM_PROMPT` / `WIKI_BATCH_SYSTEM_PROMPT` 与 `_write_bundle` 字节不变。 **✅ 达成。**
 
-#### Task 1 交付纪要（待填）
+#### Task 1 交付纪要（2026-09-12）
+
+- **实现落点**：`generator.py` —— 模块常量 `WIKI_DIRECTION_HEADER`（表头同时写明优先级与"不得引入材料与要求之外的信息"）；`_write_entry` 增 `guidance: str | None = None`，非空时在"已有描述"与"来源切片"之间插 `HEADER\ndirection\n\n`；
+  `generate_wiki` dirty 分支 `singles` 改 `(row, supplement)` 成对；非 dirty 分支新增 guided/plain 拆条（有非空补充层的走 `_write_entry`、其余保留 `plan_entry_batches`）；`regenerate_wiki_entries` 的 `rows` 改 `targets` 成对；
+  模块 docstring 增一条 "Supplement as direction" 说明。
+- **决策 / 偏离**：
+  1. **无方向时 prompt 逐字节不变**：`direction_block` 为空串，字符串仍是 `…已有描述：…\n\n来源切片：…`。这是刻意设计（避免动到既有 27 例的 prompt 断言，也避免无谓的缓存失效），已写进 `_write_entry` docstring。
+  2. **方向只进 user message，系统提示词零改动**（spec 的冻结决定）：静态前缀不变。
+  3. **全量分支多一次 `list_entries(kb_id)` 读**：只在 `only_dirty=False` 时发生，换来"全量重建不静默丢方向"。可接受。
+  4. 表头措辞按 spec 冻结值一字未改。
+- **遗留**：Task 2（保存补充层即排队重写）、Task 3（文案三处 + DOM 断言）、Task 4（AGENTS 同步与全量回归）。
 
 ## Task 2: 保存补充层即排队重写（seam A）
 
