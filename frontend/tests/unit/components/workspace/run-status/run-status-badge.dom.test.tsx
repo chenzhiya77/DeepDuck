@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, rs } from "@rstest/core";
+import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
@@ -29,9 +29,13 @@ rs.mock("@/core/api", () => ({
 const { RunStatusBadge } =
   await import("@/components/workspace/run-status/run-status-badge");
 
+beforeEach(() => {
+  runState.read.mockClear();
+});
+
 afterEach(cleanup);
 
-function renderBadge(status: Record<string, unknown>) {
+function renderBadge(status: Record<string, unknown>, enabled = true) {
   runState.row = status;
   runState.read.mockImplementation(async () => runState.row);
   const queryClient = new QueryClient({
@@ -42,7 +46,7 @@ function renderBadge(status: Record<string, unknown>) {
       <I18nContext.Provider
         value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
       >
-        <RunStatusBadge threadId="thread-1" runId="run-1" />
+        <RunStatusBadge threadId="thread-1" runId="run-1" enabled={enabled} />
       </I18nContext.Provider>
     </QueryClientProvider>,
   );
@@ -103,5 +107,25 @@ describe("RunStatusBadge", () => {
     const queryClient = renderBadge({ status: "running" });
 
     await expectNoChip(queryClient);
+  });
+
+  it("does not read while the thread is still streaming", async () => {
+    // Found on the real stack, not here: a group's own `isLoading` is only true for
+    // the *last* group, and during a run the anchor is usually not the last group —
+    // so a per-group flag let this read happen mid-run. It answered `running`, and
+    // because the answer is cached for the run's lifetime, the real ending was
+    // never judged and the chip never appeared. The caller now holds it off with
+    // the thread-level flag, and this pins that the flag is honoured.
+    const queryClient = renderBadge({ status: "error", error: "boom" }, false);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(runState.read).not.toHaveBeenCalled();
+    expect(
+      queryClient.getQueryData(runOutcomeQueryKey("thread-1", "run-1")),
+    ).toBeUndefined();
+    expect(screen.queryByTestId("run-status-badge")).toBeNull();
   });
 });

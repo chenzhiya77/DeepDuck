@@ -113,12 +113,34 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
   - **腿一(占用类)**:一条 run 在跑时再发一条 → 内联出现**占用类**文案 + "停掉它"动作;且那条 409 **不再只靠 toast**。
   - **腿二(配置类)**:`context.model_name` 填不在 allowlist 的名字 → **配置类**文案 + 去改模型。
   - **腿三(运行期失败)**:让 agent 产出但不交出(交付那条现成路径)→ **run 的 error + 交付的醒目行同锚点相邻出现**,且 `error` 文案**确实来自后端**(Task 1 的字段)。
-  - **腿四(被停止)**:按停止 → **"已停止"**中性徽标;且 `success` 的 run **不出现任何徽标**。
+  - **腿四(被停止)**:按停止 → **该 run 若已有收尾 assistant 气泡**,出现 **"已停止"**中性徽标;**停得早(没有收尾气泡)则什么都不显示**(2026-09-12 用户裁:共享锚点只接受 `assistant` 组,文件卡同病);且 `success` 的 run **不出现任何徽标**。
 - [ ] **Step 2**:`frontend/AGENTS.md` 记:两段式锚点(哪个锚点用在哪)、`HTTPError.status` 是 pre-stream 的分类依据、**不要改 `getStreamErrorMessage` 的既有行为**、`success` 零呈现。
 - [ ] **Step 3**:回写一期 spec §12 第 4/5 项为已交付;本 plan 末尾交付纪要(逐 Task 记 hash 与实测数字)。
 - [ ] **Step 4**:按冻结信息提交(**不推送**);`git status` 确认只含本线文件,**显式列路径**。**2026-09-12 复核更正**:原写"工作树里有宠物线在飞改动"——**已不成立**(宠物线含 2b 的 `think` 已于 `f1e92de0` 等提交落地)。**耐久判据(不写具体文件数,免得又过期)**:① `git status` 里出现 **pet 路径 ⇒ 那是别人的在飞改动,不要 add**;② 工作树长期躺着 **4 份与本线无关的未跟踪 docs**(`AGENT_HARNESS_VISUALIZATION_RESEARCH.md` / `COMMUNITY_DETECTION_RESEARCH.md` / `HARNESS_EXECUTION_FLOW_MAP.md` / `plans/2026-09-11-local-knowledge-base-rfc-draft.md`)⇒ **也不属本线**;③ 本线自己的文件按 Task 逐个 `git add <路径>`,**不用 `git add .`**。
 
 **交付判据:** 四条腿全过;**任一不过:不提交**,记为开放项。
+
+### Task 6 交付纪要(2026-09-12,**进行中**)
+
+**环境偏离(诚实记录)**:Step 1 原本写"私有 `:8099` + `DEER_FLOW_AUTH_DISABLED=1` + 前端只设 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL` + `chromium.launch({channel:'chrome'})`"。**实际没这么跑**,三处原因:① 需要一个**指向 :8099 的前端**,而 Next 16 按目录锁 `.next`,用户正在跑的 :3000 占着它(宠物线也撞过同一条);② 另起 Playwright Chrome **没有用户的登录态**,而本 app 要登录;③ 计划要求的 `auth_disabled` 也就无从生效。⇒ 经用户裁定(Task 6 开始前的一次选择),**在用户自己那套栈上跑**:`:3000` 前端(跑的就是本线代码)+ `:8001` 后端,驱动端 = Qoder 内置浏览器。
+**两条环境约束**:内嵌浏览器 `viewport=0x0, visible=false` ⇒ **截图拿不到**(工具自己提示"Open the in-app Browser"),只有结构快照;指针点击同样被拒 ⇒ 全程走页内 `form.requestSubmit()` / `button.click()`,**二者都是应用自己的那条路径**(不是绕开 UI 调内部函数)。
+
+**四条腿**
+
+| 腿 | 结果 | 证据 |
+|---|---|---|
+| 一(占用 409) | ✅ | `POST /api/langgraph/threads/{tid}/runs/stream **[409]**`(reqid=426);notice `data-kind=occupied` + 文案逐字「这个会话已有一个任务在跑,等它结束或先停掉它」+ `text-destructive` + **无详情控件**;**读者那条消息仍在**(Task 3 的保留裁决在真栈生效) |
+| 二(配置 400) | ⏳ **未跑**(可达性见下) | — |
+| 三(运行期失败) | ✅ | run `67614392` `status=error`、`error="Artifact delivery incomplete: no produced output artifact was presented"`;徽标「这次没跑完」+ notice **只有**「看详情」+ 交付行「产出了 1 个,一个都没交出」——**三样同锚点相邻**;点开「看详情」`aria-expanded=true` 且 `pre` 正文 = **后端那句原文** |
+| 四(被停止) | ✅/已裁 | `success` run **零呈现两次**(且 `workspace-changes` + `run.delivery` + `/runs/{id}` 全发 ⇒ 锚点确实渲染,不是竞态);按停止 → 两 run 都 `interrupted`(`cancel→202`),但**停得早的 run 没有 `assistant` 组** ⇒ 什么都不显示 —— **用户裁定为正确行为**,spec §4.2 已据此收窄 |
+
+**腿二的可达性(如实)**:`context.model_name` 来自 composer 的模型选择器,而那个选择器只列 `/api/models` 返回的**已允许**模型 ⇒ **从 UI 触发不到 400**。要真跑这一腿只有两条路:① **让客户端发一个不在列表里的名字**(最便宜且完全可逆的做法:临时改 kb 面板"每个知识库记住的模型"那条 localStorage,跑完还原);② 动用户的模型配置(**不做**)。**在跑之前,这条腿的证据只有**:`400→config` 的映射由 `start-failure.test.ts` 钉住,且它**与腿一共用同一个落点**(`onError`,已由腿一实证)。
+
+**跑腿四时查出的真缺陷**:见上面 Task 5 交付纪要末尾那段(已修 + 已加回归用例 + neuter 证过)。
+
+**还差**:腿二(等用户裁路线);`frontend/AGENTS.md` **已写**(见上);一期 spec §12 第 4/5 项回写;收尾提交。
+
+**副作用(已如实告知并回收)**:两条测试会话各跑了几个真 run,各自以 `DELETE /api/langgraph/threads/{id}`(带 CSRF 头)→ 200、随后 GET 404 确认删除。用户账号里不留东西。
 
 ---
 
@@ -302,3 +324,10 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 恢复后 18 例全绿,`grep NEUTER` 零残留。
 
 **未覆盖(诚实记录)**:真栈观感(同锚点是否抢位、色调实际效果、`看详情` 展开的样子)归 Task 6;上面第 2 条记的 `environment` 链接是欠账。
+
+**⚠ 真栈复验时查出一个真缺陷并已修(2026-09-12,Task 6 腿四过程中)**:
+- **症状**:按停止后徽标不出现(停成 `interrupted` 已由 API 确认)。
+- **根因**:`enabled` 用的是**这个 group 的** `isLoading`,而它只在"最后一个 group"为真;run 进行中锚点 group 通常**不是**最后一个 ⇒ 查询在 run 还在飞时就发了(日志实证:`GET /runs/{id}` 早于 `cancel`),读到 `running` ⇒ 分类 `none`,而 `staleTime: Infinity` 把它**永久冻住**。**这正是这个 hook 自己的注释警告过的模式。**
+- **修法**:`MessageList` 传**线程级** `runStreaming={Boolean(thread.isLoading)}`,`MessageListItem` 一路透到徽标/失败条,`enabled={!runStreaming}`。
+- **回归用例**:`run-status-badge.dom.test.tsx` 新增「调用方说还在流时一次都不许读」;neuter(把 `enabled` 去掉)**恰好只有它红**。
+- **教训**:单测拿不到这一刀 —— 它们 mock 掉 API,不经过 `enabled` 与"最后一个 group"的交互。**只有真栈能暴露它。**

@@ -1088,6 +1088,7 @@ export function MessageList({
                             showStartFailure={startFailureAnchorGroupIndices.has(
                               groupIndex,
                             )}
+                            runStreaming={Boolean(thread.isLoading)}
                             canEdit={
                               group.type === "human" &&
                               Boolean(msg.id) &&

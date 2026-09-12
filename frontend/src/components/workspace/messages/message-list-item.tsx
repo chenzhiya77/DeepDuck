@@ -153,6 +153,7 @@ export function MessageListItem({
   showCopyButton = true,
   showWorkspaceChanges = false,
   showStartFailure = false,
+  runStreaming = false,
   canEdit = false,
   isEditPending = false,
   onEditAndRegenerate,
@@ -170,6 +171,8 @@ export function MessageListItem({
   showWorkspaceChanges?: boolean;
   /** This group owns a failed start's notice: the reader's turn never got a run. */
   showStartFailure?: boolean;
+  /** The thread is still streaming, so a run's outcome is not a fact yet. */
+  runStreaming?: boolean;
   canEdit?: boolean;
   isEditPending?: boolean;
   onEditAndRegenerate?: (replacementText: string) => void | Promise<boolean>;
@@ -237,6 +240,7 @@ export function MessageListItem({
         renderContent={renderContent}
         showWorkspaceChanges={showWorkspaceChanges}
         showStartFailure={showStartFailure}
+        runStreaming={runStreaming}
         editState={
           isHuman && isEditing
             ? {
@@ -389,6 +393,7 @@ function MessageContent_({
   runId,
   showWorkspaceChanges = false,
   showStartFailure = false,
+  runStreaming = false,
   editState,
   renderContent,
 }: {
@@ -400,6 +405,7 @@ function MessageContent_({
   runId?: string;
   showWorkspaceChanges?: boolean;
   showStartFailure?: boolean;
+  runStreaming?: boolean;
   renderContent?: (content: string, isLoading: boolean) => ReactNode;
   editState?: {
     draft: string;
@@ -612,18 +618,23 @@ function MessageContent_({
         />
       )}
       {/* The run's ending and its reason, on the same anchor as the file card:
-          one run's story belongs in one place, and both are run-scoped. */}
+          one run's story belongs in one place, and both are run-scoped.
+          `enabled` is the **thread-level** streaming flag, never this group's own
+          `isLoading`: that one is only true for the last group, while the anchor
+          is usually not the last group during a run, so a per-group flag let the
+          query fire mid-run — and the answer is cached for the run's lifetime, so
+          a `running` read froze and the real ending was never judged. */}
       {message.type === "ai" && showWorkspaceChanges && runId && (
         <>
           <RunStatusBadge
             threadId={threadId}
             runId={runId}
-            enabled={!isLoading}
+            enabled={!runStreaming}
           />
           <RunStatusNoticeForRun
             threadId={threadId}
             runId={runId}
-            enabled={!isLoading}
+            enabled={!runStreaming}
           />
         </>
       )}

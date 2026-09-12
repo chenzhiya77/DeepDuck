@@ -367,6 +367,39 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   verdict's own lists with no set arithmetic, because `satisfied` means *at least one* produced
   output was handed over — a partial hand-over passes, and the line reports the real ratio
   instead of claiming everything was handed over.
+- **Run-status and failure notice (2026-09-12)**: `core/run-status/` decides *how a run ended* and
+  *why a start failed*; `components/workspace/run-status/` renders both. Four rules hold it:
+  **(a) two anchors, one component.** A start that failed renders under **the reader's own message** —
+  the one `onError` kept back and marked in `additional_kwargs.deerflow_run_status`, which is what
+  `core/messages/start-failure-anchor.ts` looks for. Deliberately **not** "the last user turn with
+  nothing after it": that rule also matches an ordinary trailing turn the notice has nothing to say
+  about, and would hang this failure under a turn that never failed. A run that ended renders under
+  **the run's last answer bubble**, sharing the file card's `showWorkspaceChanges` anchor so one
+  run's story stays in one place.
+  **(b) pre-stream failures have one landing site.** The SDK's stream manager routes a rejected run
+  creation to `useStream`'s `onError` instead of rejecting `submit`, so `sendMessage` and
+  `submitPreparedReplay` **never** see a 409/400/404/503 — do not go looking for a per-path catch.
+  The category comes from `HTTPError.status` alone: `core/run-status/start-failure.ts` reads that
+  field, and nothing classifies free text. **Do not change `getStreamErrorMessage`'s behaviour** —
+  `submitPreparedReplay` depends on it always returning a sentence; the classifier is a separate
+  entry composed next to it.
+  **(c) the sentence carries the instruction; the chip carries the ending.** The frozen copy states
+  each remedy inside the sentence ("…wait for it or stop it"), which is why only `inspect` has a
+  control: the stop button and the model picker are already on screen in the composer, and
+  restarting a service has no in-page destination. A run that failed does **not** repeat its
+  sentence in the notice — the chip above it already says "this run didn't finish", and the notice
+  adds only what the chip cannot, the backend's own `error`.
+  **(d) nothing is shown for a `none`, and a run with no anchor shows nothing at all.** `success`,
+  a run with no terminal state yet, and the two frontend-bug statuses (422/501) all classify to
+  `none` and produce **no nodes** — `success` in particular must never gain a chip. Unknown statuses
+  resolve to `none` rather than the nearest sentence: `core/run-status/types.ts`'s `PRESENTED_KINDS`
+  is the one list of what may be shown, it mirrors `run-status-i18n-keys.json`, and a backend guard
+  reads it as text so a new kind cannot ship without copy. Separately, **a run stopped before it
+  produced a closing answer bubble renders nothing** — its messages end in tool/processing state, so
+  it has no `assistant` group for the anchor to land on (measured on the real stack: a thread with
+  two user turns held a single `assistant-turn` group). That is accepted behaviour, not a gap to
+  patch: the reader stopped it, so there is no ending to announce. The file card has the same
+  limitation from the same shared anchor.
 - `src/components/workspace/chats/chat-box.tsx` owns the desktop right-panel layout, and **all three** right panels (artifacts, sidecar, browser) share one `ResizablePanelGroup` — do not fork a non-resizable branch per panel kind, which is how the artifacts divider silently lost its drag handle (#4465). Open/close is `collapse()` / `resize()` on the side panel's imperative handle, not conditional rendering, so the width can animate. Three constraints hold that together: the size transition is applied from the group as `[&>[data-panel]]:transition-[flex-grow]` because the sized flex item is the library's own `[data-panel]` element rather than the child `className` lands on; it is applied only while an open/close is in flight, so a drag is not interpolated frame by frame; and during the animation the panel content is held at its final width in `cqw` and clipped, because a reflowing message list re-runs its scroll-to-bottom (pinned by `tests/e2e/sidecar-chat.spec.ts`'s no-animated-scroll test) and a re-wrapping composer changes which responsive labels it shows. Because the panel is `collapsible`, the library can also collapse it to `0%` on its own when a drag crosses `minSize`, without going through the state that owns it. `onResize` records the last positive size while the pointer moves, but the owning `sidecar` / `browserView` / `artifactsOpen` state must only mirror a final `0%` layout from `onLayoutChanged`, after pointer release; closing on the first `0%` resize frame breaks a continuous drag that reaches the edge and then reverses before release.
 
 ## Code Style
