@@ -141,7 +141,7 @@ Task 1 与 Task 2 相互独立;Task 3 依赖 2;Task 4 依赖 2(清单要镜像 `
 
 见上方 Task 0 与 spec §3.3/§7。
 
-### Task 1(后端加性字段)— 2026-09-12,工作树已改,**未提交**
+### Task 1(后端加性字段)— 2026-09-12,**已提交 `e2ad45b0`**（4 文件 / +111 −19；代码仅 +2 行）
 
 **改动**:`backend/app/gateway/routers/thread_runs.py` 两处(`RunResponse` 加 `error: str | None = None`;`_record_to_response` 加 `error=record.error`)+ `backend/tests/test_gateway_run_recovery.py` 两条新用例。
 
@@ -169,4 +169,4 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 
 **契约/文档同步:** 无需。`backend/docs/API.md` 不列 run 响应字段,`contracts/` 下只有 `subagent_status_contract.json` 提到 `stop_reason`,均不 pin `RunResponse` 的字段表(已 grep 确认)。
 
-**下一步**:Task 2(前端数据层)不依赖本 Task,可独立开;Task 1 的提交按计划留到 Task 6 一并处理(或按用户指示单提)。
+**下一步**:**Task 1 已按用户指示单提为 `e2ad45b0`**(2026-09-12,含两个代码文件 + spec/plan 的文案批准与本次交付纪要)。Task 2(前端数据层)不依赖本 Task,可独立开。
