@@ -23,6 +23,7 @@ from qdrant_client.models import FieldCondition, Filter, MatchValue, SparseVecto
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.extractor import ExtractedEntity
 from deerflow.knowledge.wiki.generator import (
+    WIKI_DIRECTION_HEADER,
     WikiStats,
     generate_wiki,
     mark_dirty_for_entities,
@@ -712,3 +713,97 @@ async def test_regenerate_reembeds_vector_point_in_place(wiki_env):
     assert len(points) == 1  # in-place overwrite, no duplicate point
     entries = {e["title"]: e for e in await wiki_store.list_entries(kb_id)}
     assert entries["DeerFlow"]["status"] == "ready"
+
+
+# ── 补充层即生成方向 (spec 2026-09-12) ──────────────────────────────────────
+#
+# 此前只有「保留」落地（test_regenerate_preserves_supplement_layer），spec A7 的
+# 「重生成时作为额外参考材料提供」没有 —— 下面钉住"被消费"这一半。
+
+
+@pytest.mark.asyncio
+async def test_dirty_regeneration_injects_supplement_as_direction(wiki_db_env):
+    """dirty 增量重写把补充层原文带进 user message（方向必须真的到达模型）。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    direction = "语气严谨些，多介绍相关概念"
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty", supplement_content=direction)
+
+    llm = _WikiLLM()
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
+
+    assert stats.generated == 1
+    assert len(llm.calls) == 1
+    assert WIKI_DIRECTION_HEADER in llm.calls[0]
+    assert direction in llm.calls[0]
+
+
+@pytest.mark.asyncio
+async def test_regeneration_without_supplement_omits_direction_block(wiki_db_env):
+    """护栏：没有补充层时不得凭空多出一段"用户要求"。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty")
+
+    llm = _WikiLLM()
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
+
+    assert stats.generated == 1
+    assert len(llm.calls) == 1
+    assert WIKI_DIRECTION_HEADER not in llm.calls[0]
+
+
+@pytest.mark.asyncio
+async def test_blank_supplement_is_not_injected(wiki_db_env):
+    """护栏：只有空白的补充层等同未填写。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty", supplement_content="   ")
+
+    llm = _WikiLLM()
+    await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
+
+    assert len(llm.calls) == 1
+    assert WIKI_DIRECTION_HEADER not in llm.calls[0]
+
+
+@pytest.mark.asyncio
+async def test_full_rebuild_sends_guided_entries_through_single_call(wiki_db_env):
+    """全量重建走的是批量 prompt，而批量 prompt 读不到补充层 —— 有方向的条目
+    必须回到单实体路径，否则一次「全量更新」会静默丢掉所有方向（spec 2026-09-12）。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])  # freq 1→2 → eligible
+    direction = "只讲关系，别展开实现细节"
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="ready", supplement_content=direction)
+
+    llm = _WikiLLM()
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm)
+
+    assert stats.generated == 2  # DeerFlow（有方向）+ Gateway（无条目）
+    guided = [call for call in llm.calls if WIKI_DIRECTION_HEADER in call]
+    batched = [call for call in llm.calls if "实体清单：" in call]
+    assert len(guided) == 1
+    assert "DeerFlow" in guided[0] and direction in guided[0]
+    assert len(batched) == 1
+    roster = batched[0].split("实体清单：", 1)[1].split("\n", 1)[0]
+    assert "DeerFlow" not in roster  # 有方向的条目不再进批量名单
+    assert "Gateway" in roster
+
+
+@pytest.mark.asyncio
+async def test_per_entry_regenerate_injects_direction(wiki_db_env):
+    """局部更新（用户手选条目重写）同样把补充层当作方向。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    direction = "补上版本适用范围"
+    entry_id = wiki_entry_id(kb_id, "DeerFlow")
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty", supplement_content=direction)
+
+    llm = _WikiLLM()
+    stats = await regenerate_wiki_entries(store, graph_store, wiki_store, None, kb_id=kb_id, entry_ids=[entry_id], llm=llm)
+
+    assert stats.generated == 1
+    assert len(llm.calls) == 1
+    assert WIKI_DIRECTION_HEADER in llm.calls[0]
+    assert direction in llm.calls[0]

@@ -17,6 +17,12 @@
   entities ``dirty``; ``generate_wiki(only_dirty=True)`` regenerates those
   per-entity against their *current* source chunks and clears the flag, and
   also backfills eligible entities that have no entry yet (≤40 new per run).
+- **Supplement as direction (spec 2026-09-12)**: an entry's supplement layer is
+  user-written guidance for how it should be written. Every path that rewrites
+  an *existing* entry (dirty refresh, per-entry regenerate, the guided slice of
+  a full rebuild) passes it into the user message as ``WIKI_DIRECTION_HEADER``.
+  The batch path serves backfill only — entities with no entry have no
+  supplement — so it stays untouched.
 
 Each entry is written by the main model (stable long-form Chinese), full text
 stored in ``wiki_entries``, dense vector (title + content head) upserted to
@@ -87,6 +93,11 @@ WIKI_BATCH_SYSTEM_PROMPT = """你是知识库百科撰写者。根据给定的�
 - 只输出一个 JSON 数组，每个元素形如 {"title": "实体名", "content": "正文"}；title 必须逐字取自实体清单。
 - 每篇 content 以 markdown 一级标题（# 实体名）开头，正文 2~4 段：先给定义与定位，再展开关键事实、与其他实体的关系，最后补充应用场景或注意事项（若材料支持）。
 - 严格依据给定材料撰写，材料没有的信息不要编造；不要输出参考文献或链接；不要输出 JSON 数组以外的任何内容。"""
+
+#: 补充层注入段的表头。放在 user message（而非系统提示词）里：系统提示词是静态前缀，
+#: 逐条目的方向不该改写它。措辞同时说明优先级（人工指令优先于切片）与护栏
+#: （不得引入材料与要求之外的信息）。
+WIKI_DIRECTION_HEADER = "用户在补充层写下的要求（人工指令，优先于来源切片；仍不得引入材料与要求之外的信息）："
 
 
 class _LLM(Protocol):
@@ -273,16 +284,25 @@ async def _write_entry(
     llm: _LLM,
     embedder: _Embedder | None,
     stats: WikiStats,
+    guidance: str | None = None,
 ) -> None:
-    """Per-entity generation: the dirty refresh and bundle-fallback path."""
+    """Per-entity generation: the dirty refresh and bundle-fallback path.
+
+    ``guidance`` is the entry's supplement layer (spec 2026-09-12): the direction
+    the user wrote for how this entry should read. It is injected only when
+    non-blank, so an entry without a supplement produces the byte-identical
+    prompt this path produced before the feature.
+    """
     chunk_ids = list(row.get("source_chunk_ids") or [])
     chunks = await store.get_chunks_by_ids(chunk_ids)
     materials = "\n\n".join(f"【切片 {i + 1}】{chunk['text']}" for i, chunk in enumerate(chunks))
+    direction = (guidance or "").strip()
+    direction_block = f"{WIKI_DIRECTION_HEADER}\n{direction}\n\n" if direction else ""
     messages = [
         {"role": "system", "content": WIKI_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": (f"实体：{row['name']}\n类型：{row.get('type') or '未分类'}\n已有描述：{row.get('description') or '无'}\n\n来源切片：\n{materials or '（无切片材料）'}"),
+            "content": (f"实体：{row['name']}\n类型：{row.get('type') or '未分类'}\n已有描述：{row.get('description') or '无'}\n\n{direction_block}来源切片：\n{materials or '（无切片材料）'}"),
         },
     ]
     response = await llm.ainvoke(messages)
@@ -356,7 +376,7 @@ async def generate_wiki(
             # (精确匹配 title == entity name, 精度保持现状).
             eligible_rows = await select_eligible_entities(graph_store, kb_id)
             eligible_by_name = {row["name"]: row for row in eligible_rows}
-            singles = [eligible_by_name[entry["title"]] for entry in dirty if entry["title"] in eligible_by_name]
+            singles = [(eligible_by_name[entry["title"]], entry.get("supplement_content")) for entry in dirty if entry["title"] in eligible_by_name]
             # 失格即删 (2026-08-14 拍板, 方案 A): a dirty entry whose entity
             # vanished from the graph or fell below the eligibility bar is
             # pruned here — the same rule the Task 12 / re-extract cascades
@@ -369,9 +389,16 @@ async def generate_wiki(
             entry_titles = {entry["title"] for entry in await wiki_store.list_entries(kb_id)}
             backfill = [row for row in eligible_rows if row["name"] not in entry_titles][:backfill_limit]
         else:
-            singles = []
             stale_titles = []
             backfill = await select_eligible_entities(graph_store, kb_id)
+            # A full rebuild hands every eligible entity to the batch path, whose
+            # prompt cannot carry per-entry guidance — so entries that DO have a
+            # supplement layer are pulled back onto the per-entity path instead of
+            # silently losing their direction (spec 2026-09-12).
+            existing = {entry["title"]: entry for entry in await wiki_store.list_entries(kb_id)}
+            singles = [(row, (existing.get(row["name"]) or {}).get("supplement_content")) for row in backfill if ((existing.get(row["name"]) or {}).get("supplement_content") or "").strip()]
+            guided_titles = {row["name"] for row, _ in singles}
+            backfill = [row for row in backfill if row["name"] not in guided_titles]
 
         stats = WikiStats(selected=len(singles) + len(backfill))
         if stale_titles:
@@ -386,9 +413,11 @@ async def generate_wiki(
                     logger.exception("qdrant delete_wiki_entries failed during wiki prune for kb %s (%d titles)", kb_id, len(stale_titles))
             stats.pruned = await wiki_store.delete_entries(kb_id, stale_titles)
             logger.info("wiki regeneration: pruned %d disqualified/vanished dirty entries for kb %s", stats.pruned, kb_id)
-        # Dirty refresh runs per-entity: a handful at a time, not worth bundling.
-        for row in singles:
-            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
+        # Per-entity work (dirty refresh + the guided slice of a full rebuild) runs
+        # one call at a time: a handful, not worth bundling — and the guidance is
+        # per-entry, which a shared batch prompt cannot express.
+        for row, guidance in singles:
+            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats, guidance=guidance)
         for bundle in plan_entry_batches(backfill):
             await _write_bundle(store, wiki_store, vector_store, graph_store, kb_id=kb_id, rows=bundle, llm=llm, embedder=embedder, stats=stats)
         _LAST_RUN[kb_id] = "succeeded"
@@ -421,7 +450,8 @@ async def regenerate_wiki_entries(
     is the same atomic rewrite as the dirty refresh (``_write_entry``): map each
     ``entry_id`` to its title, resolve the entity's *current* source chunks, and
     re-run the single-entity LLM pass (clears ``dirty``, preserves the
-    supplement layer, re-embeds). Entries whose entity vanished from the graph
+    supplement layer **and feeds it back as the entry's direction**, re-embeds).
+    Entries whose entity vanished from the graph
     are pruned here (失格即删, same rule as the incremental stale branch);
     entities that still exist but lost eligibility are caught by the write-time
     re-check in ``_persist_entry``.
@@ -437,7 +467,7 @@ async def regenerate_wiki_entries(
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     try:
         entities_by_name = {row["name"]: row for row in await graph_store.list_entities(kb_id)}
-        rows: list[dict[str, Any]] = []
+        targets: list[tuple[dict[str, Any], str | None]] = []
         orphan_titles: list[str] = []
         for entry_id in entry_ids:
             entry = await wiki_store.get_entry(entry_id)
@@ -449,9 +479,9 @@ async def regenerate_wiki_entries(
                 # failures swallowed — mirrors the module cascade ordering).
                 orphan_titles.append(entry["title"])
             else:
-                rows.append(row)
+                targets.append((row, entry.get("supplement_content")))
 
-        stats = WikiStats(selected=len(rows))
+        stats = WikiStats(selected=len(targets))
         if orphan_titles:
             if vector_store is not None:
                 try:
@@ -460,8 +490,8 @@ async def regenerate_wiki_entries(
                     logger.exception("qdrant delete_wiki_entries failed during regen orphan prune for kb %s (%d titles)", kb_id, len(orphan_titles))
             stats.pruned = await wiki_store.delete_entries(kb_id, orphan_titles)
             logger.info("wiki regeneration: pruned %d orphaned entries for kb %s", stats.pruned, kb_id)
-        for row in rows:
-            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats)
+        for row, guidance in targets:
+            await _write_entry(store, wiki_store, vector_store, graph_store, kb_id=kb_id, row=row, llm=llm, embedder=embedder, stats=stats, guidance=guidance)
         _LAST_RUN[kb_id] = "succeeded"
         return stats
     except Exception:
