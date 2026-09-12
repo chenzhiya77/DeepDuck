@@ -70,23 +70,34 @@
   - 保存前比较：`_normalize_supplement(body 值)` 与 `_normalize_supplement(entry["supplement_content"])`（空白串 → `None`）
   - 变化 ⇒ `self.trigger_wiki_regeneration(kb_id, [entry_id])`（`:562`）；返回 `False` ⇒ `await self.wiki_store.mark_dirty_for_titles(kb_id, [entry["title"]])`（`wiki/store.py:117`）
   - 正文变化不参与触发
-- Modify: `backend/tests/knowledge/test_api.py`（新增 4 例，沿用 `service` fixture 与 `test_api.py:776-792` 的 monkeypatch 手法）
+- Modify: `backend/tests/knowledge/test_api.py`（新增 5 例，沿用 `service` fixture 与 `test_api.py:776-792` 的观测手法）
 
-- [ ] **Step 1（RED）**：4 条用例
-  ① `test_saving_supplement_triggers_single_entry_rewrite`：PATCH 补充层由 A→B ⇒ 触发被调且 `entry_ids == [entry_id]`；
-  ② `test_saving_supplement_while_busy_falls_back_to_dirty`：`wiki_generation_in_progress` 为真 ⇒ 不触发、条目 `status == "dirty"`；
-  ③ `test_editing_main_content_alone_neither_triggers_nor_marks_dirty`：只改正文 ⇒ 两个副作用都没有；
-  ④ `test_clearing_supplement_also_triggers`：补充层 A→`None` ⇒ 触发（撤下方向同样要重写）。
-  **红在哪**：①④ 因无触发而失败（mock 未被调用/条目未标脏），②③ 在 Step 2 之前会"通过"——它们锁定"不该发生的事"，属护栏而非 RED。
-- [ ] **Step 2**：实现（含空白归一；保持 HTTP 契约与返回体不变，PATCH 仍回条目）。
-- [ ] **Step 3（GREEN）**：4 例转绿；`tests/knowledge/test_api.py` 全绿。
-- [ ] **Step 4（revert proof）**：一刀——`update_wiki_entry` 去掉触发与回退 ⇒ ①④ 转红、②③ 仍绿；恢复后 4 绿。
-- [ ] **Step 5**：`ruff` 双净。
-- [ ] **Step 6**：Commit。
+- [x] **Step 1（RED）**：**5 条**用例（比计划多 1：把「空白串 == 无方向」这条归一规则单独钉住）
+  ① `test_saving_supplement_queues_single_entry_rewrite`：PATCH 补充层 A→B ⇒ 排队入口被调且 `entry_ids == [entry_id]`，补充层已落库；
+  ② `test_saving_supplement_while_generation_running_falls_back_to_dirty`：`wiki_generation_in_progress` 为真 ⇒ 不排队、条目 `status == "dirty"`；
+  ③ `test_editing_main_content_alone_neither_queues_nor_dirties`：只改正文 ⇒ 既不排队也不标脏；
+  ④ `test_clearing_supplement_queues_rewrite_too`：A→`None` ⇒ 排队；
+  ⑤ `test_whitespace_only_supplement_is_treated_as_unchanged`：库中 `"   "`、提交 `None` ⇒ 归一后相等 ⇒ 不排队。
+  **红在哪**：①②④ **3 红**（①④「未被调用」、②「状态仍是 ready 而非 dirty」），③⑤ 是"不该发生"的护栏。
+- [x] **Step 2**：实现（新增模块级 `_normalized_supplement`；**写库之后**才排队；HTTP 契约与返回体不变）。
+- [x] **Step 3（GREEN）**：5 例转绿；`tests/knowledge/test_api.py` **51 passed**；`tests/knowledge` 全套 **1069 passed / 2 skipped**。
+- [x] **Step 4（revert proof）**：**两刀**（计划只冻结一刀，第二刀把两个护栏也验出牙）
+  —— 刀一 `update_wiki_entry` 去掉触发与回退（`_ = direction_changed`）⇒ **3 红**（①②④）；
+  刀二 把 `direction_changed` 恒置 `True`（"每次都算变了"）⇒ **恰好 2 红**（③⑤ 两个护栏），①④ 仍绿。恢复后 51 绿。
+- [x] **Step 5**：`ruff check` + `ruff format --check` 双净（两文件）。
+- [x] **Step 6**：Commit **`f4e2790b feat(rag): queue a wiki rewrite when the supplement layer changes`**（2 文件，+115/-2）。
 
-**交付判据**：PATCH 响应体形状不变；触发只在补充层变化时发生；busy 路径有一条显式断言证明"方向没有静默丢失"（落 `dirty`）。
+**交付判据**：PATCH 响应体形状不变；触发只在补充层变化时发生；busy 路径有一条显式断言证明"方向没有静默丢失"（落 `dirty`）。 **✅ 达成。**
 
-#### Task 2 交付纪要（待填）
+#### Task 2 交付纪要（2026-09-12）
+
+- **实现落点**：`knowledge_service.py` —— 新增模块级 `_normalized_supplement`（空白 ↔ `None` 同义）；`update_wiki_entry` 在写库后比较归一值，变化则 `trigger_wiki_regeneration(kb_id, [entry_id])`，返回 `False` 时 `mark_dirty_for_titles(kb_id, [title])` 兜底；docstring 与注释写明"为什么必须在写库之后排队"。
+- **决策 / 偏离**：
+  1. **排队在写库之后**（计划没写这一条，是实现时发现的顺序约束）：重写任务会 `get_entry` 读补充层，先排队会把旧方向交给它。
+  2. **观测点选 `wiki_regenerate_fn`**（构造器注入的排队入口）而不是 monkeypatch `trigger_wiki_regeneration`：这样跑的是**真实的** `trigger_wiki_regeneration`（含 `_IN_FLIGHT` 互斥判断），又不产生后台任务、不依赖事件循环时序。`trigger → 真任务 → regenerate_wiki_entries` 那段管道由既有 `test_manual_wiki_regenerate_passes_embedder`（`test_api.py:776`）覆盖，两处合起来是完整链路。
+  3. **兜底标脏后响应体仍回 `status: "ready"`**：`upsert_entry` 已按旧状态写回，标脏发生在其后。前端保存后会 invalidate 列表，脏徽标以列表为准；不为这个瞬时不一致改返回体（HTTP 契约冻结）。
+  4. 用例从 4 条加到 5 条（新增空白归一的护栏）——这条规则是本任务新引入的，值得单独钉。
+- **遗留**：Task 3（文案三处 + DOM 断言）、Task 4（AGENTS 同步与全量回归）。
 
 ## Task 3: 文案（i18n 三处 + DOM 断言）（seam C）
 
