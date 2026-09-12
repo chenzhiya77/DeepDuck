@@ -53,17 +53,17 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/run-status/{types,classify,parse,hooks}.ts`、`frontend/tests/unit/core/run-status/{classify,parse}.test.ts`
 
-- [ ] **Step 1(RED —— 两个纯函数的测试)**:
+- [x] **Step 1(RED —— 两个纯函数的测试)**:
   - `classify.test.ts`:**逐类各一条** —— `{status:409}`→占用类;`{status:400}`→配置类;`{status:404}`→环境类;`{status:503}`→**模式不匹配类**(§5.1);`{status:422}`/`{status:501}`→**不呈现**(两者都是前端 bug,已裁);`{status:"error"}`/`{status:"timeout"}`→运行期失败;`{status:"interrupted"}`→被停止;`{status:"success"}`→**不呈现**;`{status:"running"|"pending"}`→**不呈现**(还没结局)。**未知状态码/未知 status 一律落到"不呈现"而不是猜**(与快照/交付两条线同一条纪律)。
   - `parse.test.ts`:`parseRunOutcome(row)` 逐字段重建 —— 有 `error` 时读出、没有时为 `null`;`stop_reason` 有则读;未知字段丢弃;`status` 缺失 → 返回 `null`。
-- [ ] **Step 2**:`types.ts` —— `RunOutcome`(从 `RunResponse` 投影:`status` / `stop_reason` / `error`)+ `FailureKind`(`occupied` / `config` / `environment` / `runFailed` / `stopped` / `none`)+ 动作键。
-- [ ] **Step 3**:`classify.ts` —— **纯函数,零依赖**:`classifyRunOutcome(outcome)` 与 `classifyStartFailure(httpStatus)`(**两个入口**,因为两个方向的输入不同)。**这是本项唯一有判断逻辑的地方。**
-- [ ] **Step 4**:`parse.ts` —— 逐字段重建(手法同 `core/constitution/parse.ts` 与 `core/delivery/parse.ts`)。
-- [ ] **Step 5**:`hooks.ts` —— `useRunOutcome(threadId, runId)`:走既有 `useRunDetail` 那类查询(`(threadId, runId)` 维度、`staleTime: Infinity`、同线程 `placeholderData`);`status` 还是 `running` 时**不判定**(见 Step 1)。
-- [ ] **Step 6**:转绿 + `pnpm check`。
-- [ ] **Step 7(revert 证明)**:把"未知 status 落到不呈现"改成"落到运行期失败" → 对应用例红;把 `422` 改成呈现 → 对应用例红。
+- [x] **Step 2**:`types.ts` —— `RunOutcome`(从 `RunResponse` 投影:`status` / `stop_reason` / `error`)+ `FailureKind` + 动作键。**注意:本步原文漏了 `modeMismatch`**(Step 1 与 Task 4 Step 3 都要求它),已按那两处补进 `FAILURE_KINDS`,并另导出 `PRESENTED_KINDS`(Task 4 的 guard 对账对象)。
+- [x] **Step 3**:`classify.ts` —— **纯函数,零依赖**:`classifyRunOutcome(outcome)` 与 `classifyStartFailure(httpStatus)`(**两个入口**,因为两个方向的输入不同)。**这是本项唯一有判断逻辑的地方。** 查表用 `Map` 而非对象字面量:status 来自线上,`Record<string,...>["constructor"]` 会返回 Object 构造函数(会当 verdict 用),原型键不该能供货。
+- [x] **Step 4**:`parse.ts` —— 逐字段重建(手法同 `core/constitution/parse.ts` 与 `core/delivery/parse.ts`)。
+- [x] **Step 5**:`hooks.ts` —— `useRunOutcome`:走既有 `useRunDetail` 那类查询(`(threadId, runId)` 维度、`staleTime: Infinity`、同线程 `placeholderData`);`status` 还是 `running` 时**不判定**(由 Step 1 的 `none` 承担)。**两处按邻居收紧**:入参用 options bag(与 `useDelivery`/`useWorkspaceChanges` 同形,并给出 `enabled` 供调用方在 run 在飞时关掉——`staleTime: Infinity` 会把 mid-run 的 `running` 冻住);返回值 = `{ outcome, kind, action }`(Task 5 的组件要 kind/action,详情行要 `error` 原文)。
+- [x] **Step 6**:转绿 + `pnpm check`。**测试 15 绿、eslint 0、prettier 干净;`pnpm check` 复跑 exit 0**(中间被一个坏掉的生成物挡过一次,非本项引入,见交付纪要)。
+- [x] **Step 7(revert 证明)**:三刀都有牙(见交付纪要)。
 
-**交付判据:** 两个纯函数测试全绿(node project);`pnpm check` 干净;模块**不 import React**(`hooks.ts` 除外)。
+**交付判据:** 两个纯函数测试全绿(node project);`pnpm check` 干净;**模块不 import React**(`hooks.ts` 除外——它只 import `useQuery`,不 import React 本身)。 **✅ 达成。**
 
 ## Task 3: pre-stream 分类入口(读 `error.status`)
 
@@ -170,3 +170,40 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 **契约/文档同步:** 无需。`backend/docs/API.md` 不列 run 响应字段,`contracts/` 下只有 `subagent_status_contract.json` 提到 `stop_reason`,均不 pin `RunResponse` 的字段表(已 grep 确认)。
 
 **下一步**:**Task 1 已按用户指示单提为 `e2ad45b0`**(2026-09-12,含两个代码文件 + spec/plan 的文案批准与本次交付纪要)。Task 2(前端数据层)不依赖本 Task,可独立开。
+
+### Task 2(前端数据层 `core/run-status/`)— 2026-09-12,代码就绪,**未提交**
+
+**改动**:新建 `frontend/src/core/run-status/{types,classify,parse,hooks}.ts` + `frontend/tests/unit/core/run-status/{classify,parse}.test.ts`。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **15**(`classify.test.ts` 11 + `parse.test.ts` 4),全在 node project(非 dom) |
+| RED | 2 failed / 0 tests —— 两条都是 `Cannot find module '@/core/run-status/...'`(模块不存在) |
+| GREEN | 2 files passed / **15 passed** |
+| eslint | `pnpm lint` **exit 0** |
+| prettier | 6 个新文件全 `use Prettier code style!`;**全为 LF**(避开本仓的 autocrlf 陷阱);`parse.test.ts` 一处长行按 prettier 折行后复检通过 |
+| tsc | 初跑未过(坏掉的生成物,见下);**重启 dev server 后 `pnpm check` 复跑 exit 0** |
+
+**revert proof(三刀,各自命中,无溢出)**
+
+| neuter | 结果 |
+|---|---|
+| `classifyRunOutcome` 未知 status 的兜底 `?? NOTHING` → `?? {kind:"runFailed",action:"inspect"}` | 恰好 **1 红**(`classifyRunOutcome > shows nothing for a status it does not know...`),14 绿 |
+| `[422, NOTHING]` → `[422, {kind:"config",action:"configure"}]` | `shows nothing for the two frontend-bug statuses` **红** |
+| `classifyStartFailure` 兜底 `?? NOTHING` → `?? {kind:"occupied",action:"stop"}` | `shows nothing for a status it does not know` **红** |
+
+第三刀是计划外的:计划只点名了前两刀,但前两刀都只压 `ended` 那一侧,`classifyStartFailure` 的兜底就没有任何用例压着它了 —— 补上后它同样有牙。两刀同跑时恰好 2 红,互不干扰,可逐条归因。恢复后复跑 15 绿,`grep NEUTER` 零残留。
+
+**曾出现的环境红(非本项引入,同日已解决):`pnpm check` 的 tsc 步。**
+- 全部 5 条错误都在 `frontend/.next/dev/types/routes.d.ts`( **gitignored 的生成物**),第 117 行是 `r route handlers`(被写坏/错接),mtime 就是刚才。
+- 成因:用户的 `next dev --turbo` **正在跑**(:3000,PID 38668/38556),该文件由它生成;这是一次撕裂写。**本项改动不涉及它**。
+- 本项代码**类型是干净的**:全项目 tsc 跑过,诊断只出现在那一个文件里,`src/core/run-status/*` 与两个测试文件**零诊断**。
+- 为什么不能绕开:`next-env.d.ts` 有 `import "./.next/dev/types/routes.d.ts"`,所以它必被拉进编译;我试过用临时 tsconfig 把 `.next` 排除,仍被该 import 引入(临时文件已删)。
+- **处置(用户裁 `重启 dev server`,2026-09-12 20:31)**:用户重启后 Next 重写该文件(新 md5 `1557a774…`,第 117 行恢复正常)⇒ 复跑 `pnpm check` **exit 0**。按纪律没去动用户 dev server 的产物(删文件是错的:文件缺失会让 `next-env.d.ts` 报"找不到模块",更糟)。
+- 当时的旁证(临时 tsconfig 排除 `.next`,已删)只证明"我的文件干净";最终结论由 `pnpm check` 本身复跑确证。
+
+**偏离原计划(诚实记录):**
+① **`FailureKind` 补了 `modeMismatch`** —— Step 2 的枚举漏了它,而 Step 1 与 Task 4 Step 3 都要求这一档;按那两处为准。
+② **`useRunOutcome` 入参改成 options bag**(`{threadId, runId, enabled}`),不再按 Step 5 的字面 `(threadId, runId)` —— 与紧邻的 `useDelivery` / `useWorkspaceChanges` 同形,且 `enabled` 是必需的:查询是 `staleTime: Infinity`,调用方若在 run 在飞时读一次,`running` 会被永久冻住、真实结局再也判不出来。
+③ **`useRunOutcome` 返回 `{outcome, kind, action}`** 而不是裸 `RunOutcome` —— Task 5 的两个组件要 kind/action,详情行要 `error` 原文,一次给全,组件不用自己再调 classify。
+④ **查表用 `Map` 而非对象字面量** —— `status` 来自线上,对象字面量会对 `"constructor"` 这类键返回 Object 构造函数并被当成 verdict。这是本仓已有的一类防护(见 clarification 字段/`__proto__` 的既有守卫)。
