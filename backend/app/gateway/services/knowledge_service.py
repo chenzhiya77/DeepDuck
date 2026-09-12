@@ -198,6 +198,16 @@ def _layer2_overview_payload(row: EvalRunRow | None) -> dict[str, Any] | None:
     return payload
 
 
+def _normalized_supplement(value: str | None) -> str | None:
+    """空白串与 ``None`` 同义：都表示「这里没有方向」（spec 2026-09-12）。
+
+    保存时的"方向是否变了"用归一后的值比较，否则一次「清空但留了空格」的保存
+    会把无方向当成有方向、白跑一次重写。
+    """
+    text = (value or "").strip()
+    return text or None
+
+
 class KnowledgeService:
     """Coordinates stores + worker for the knowledge-base endpoints."""
 
@@ -636,13 +646,18 @@ class KnowledgeService:
     ) -> dict | None:
         """Update wiki entry content and supplement layer (Phase-3 Batch-1 P1).
 
-        Main content can be replaced by next LLM re-generation; supplement layer
-        persists across regeneration cycles.
+        Main content can be replaced by next LLM re-generation. The supplement
+        layer persists across regeneration cycles **and steers them** (spec
+        2026-09-12): a changed direction queues one per-entry rewrite right away,
+        falling back to a ``dirty`` mark when a library-level run holds the
+        in-flight lock — so a saved direction is never silently lost.
         """
         # Verify entry exists and belongs to this kb
         entry = await self.wiki_store.get_entry(entry_id)
         if entry is None or entry["kb_id"] != kb_id:
             return None
+
+        direction_changed = _normalized_supplement(supplement_content) != _normalized_supplement(entry.get("supplement_content"))
 
         # Update via store (title comes from existing entry)
         updated = await self.wiki_store.upsert_entry(
@@ -653,6 +668,12 @@ class KnowledgeService:
             status=entry["status"],
             supplement_content=supplement_content,
         )
+        # Queue strictly AFTER the write: the rewrite task reads the stored
+        # supplement, so triggering first would hand it the previous direction.
+        # Only a direction change qualifies — queueing on a main-content edit
+        # would let the user's own save overwrite the edit they just made.
+        if direction_changed and not self.trigger_wiki_regeneration(kb_id, [entry_id]):
+            await self.wiki_store.mark_dirty_for_titles(kb_id, [entry["title"]])
         return updated
 
     async def update_chunk_text(self, *, kb_id: str, chunk_id: str, text: str) -> dict | None:

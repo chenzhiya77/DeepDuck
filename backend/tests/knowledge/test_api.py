@@ -792,6 +792,98 @@ async def test_manual_wiki_regenerate_passes_embedder(service, monkeypatch):
     assert captured.get("embedder") is not None, "per-entry regenerate must pass an embedder or the entry keeps a stale vector"
 
 
+# ── 补充层即生成方向：保存即排队重写 (spec 2026-09-12) ──────────────────────────
+#
+# 保存补充层 = 用户写下了方向 ⇒ 立刻排队该条目的单条重写，而不是等下一次文档入库。
+# 观察点用 `wiki_regenerate_fn`（真正的排队入口）：它被调用即"已排队"，
+# 不产生后台任务，用例因此不依赖事件循环时序。
+
+
+async def test_saving_supplement_queues_single_entry_rewrite(service):
+    """补充层变化 ⇒ 单条重写入队，且补充层已落库。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    entry = await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="# DeerFlow", source_chunk_ids=["c1", "c2"])
+    queued = MagicMock()
+    service.wiki_regenerate_fn = queued
+
+    response = client.patch(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}", json={"content": "# DeerFlow", "supplement_content": "语气严谨些"})
+
+    assert response.status_code == 200, response.text
+    queued.assert_called_once_with(kb["id"], [entry["id"]])
+    stored = await service.wiki_store.get_entry(entry["id"])
+    assert stored["supplement_content"] == "语气严谨些"
+    assert stored["status"] == "ready"
+
+
+async def test_saving_supplement_while_generation_running_falls_back_to_dirty(service, monkeypatch):
+    """库级生成在跑 ⇒ 单条重写被 _IN_FLIGHT 互斥拒掉 ⇒ 退化为标脏：
+    方向进下一次增量，而不是静默丢失。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    entry = await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="# DeerFlow", source_chunk_ids=["c1", "c2"])
+    queued = MagicMock()
+    service.wiki_regenerate_fn = queued
+    monkeypatch.setattr("app.gateway.services.knowledge_service.wiki_generation_in_progress", lambda kb_id: True)
+
+    response = client.patch(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}", json={"content": "# DeerFlow", "supplement_content": "语气严谨些"})
+
+    assert response.status_code == 200, response.text
+    queued.assert_not_called()
+    stored = await service.wiki_store.get_entry(entry["id"])
+    assert stored["supplement_content"] == "语气严谨些"
+    assert stored["status"] == "dirty"
+
+
+async def test_editing_main_content_alone_neither_queues_nor_dirties(service):
+    """只改正文不触发重写：否则用户刚手改的正文会被同一个请求立刻冲掉。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    entry = await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="# DeerFlow", source_chunk_ids=["c1", "c2"], supplement_content="语气严谨些")
+    queued = MagicMock()
+    service.wiki_regenerate_fn = queued
+
+    response = client.patch(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}", json={"content": "# 我手改的正文", "supplement_content": "语气严谨些"})
+
+    assert response.status_code == 200, response.text
+    queued.assert_not_called()
+    stored = await service.wiki_store.get_entry(entry["id"])
+    assert stored["content"] == "# 我手改的正文"
+    assert stored["supplement_content"] == "语气严谨些"
+    assert stored["status"] == "ready"
+
+
+async def test_clearing_supplement_queues_rewrite_too(service):
+    """撤下方向同样要重写一次，否则正文会继续带着旧方向的口径。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    entry = await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="# DeerFlow", source_chunk_ids=["c1", "c2"], supplement_content="语气严谨些")
+    queued = MagicMock()
+    service.wiki_regenerate_fn = queued
+
+    response = client.patch(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}", json={"content": "# DeerFlow", "supplement_content": None})
+
+    assert response.status_code == 200, response.text
+    queued.assert_called_once_with(kb["id"], [entry["id"]])
+    stored = await service.wiki_store.get_entry(entry["id"])
+    assert stored["supplement_content"] is None
+
+
+async def test_whitespace_only_supplement_is_treated_as_unchanged(service):
+    """只有空白 == 没有方向：不该因为一次「清空但留了空格」的保存就重写。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    entry = await service.wiki_store.upsert_entry(kb["id"], title="DeerFlow", content="# DeerFlow", source_chunk_ids=["c1", "c2"], supplement_content="   ")
+    queued = MagicMock()
+    service.wiki_regenerate_fn = queued
+
+    response = client.patch(f"/api/knowledge-bases/{kb['id']}/wiki/entries/{entry['id']}", json={"content": "# DeerFlow", "supplement_content": None})
+
+    assert response.status_code == 200, response.text
+    queued.assert_not_called()
+    assert (await service.wiki_store.get_entry(entry["id"]))["status"] == "ready"
+
+
 async def test_wiki_entries_list_and_detail(service):
     """Wiki tab contract (phase-2 batch-1): list is summary-only (no full
     content), detail carries the full entry; both scoped to the kb."""
