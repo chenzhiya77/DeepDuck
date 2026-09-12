@@ -52,7 +52,7 @@ node node_modules/prettier/bin/prettier.cjs --check <文件>  # 逐文件;CRLF �
 
 **⚠ 一处偏离(诚实记录)**:计划的用例 ⑥ 原写"**混进一条带命名空间标记的消息不影响 `lap`**"。实施时发现**这个用例没有可断言的对象**:子代理帧**从不进入**这份列表——线程 feed 会滤掉 `subagent` 类别,且应用不请求 `stream_subgraphs` ⇒ **root-only 是"输入"的性质,不是 reducer 能检查的东西**。硬造一个标记字段就是给不存在的场景写代码。⇒ 换成一个真实的不变量:**"只数 assistant 轮"**(`tool` 消息即使带 `tool_call_id` 也不得抬高圈数)。它管住了同一件事里**可能真发生**的那一半;命名空间那半留在 spec §7 作为**要守的输入前提**,并在 Task 5 写进 `frontend/AGENTS.md`。
 
-## Task 2: 文案 + 机具 —— **已交付 2026-09-13,未提交**(1 条文案、2 处机具)
+## Task 2: 文案 + 机具 —— **已提交 `a3da2957`**(1 条文案、2 处机具)
 
 **Files:** Create `frontend/src/core/pulse/pulse-i18n-keys.json`、`frontend/tests/unit/core/pulse/i18n-keys.test.ts`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`
 
@@ -119,7 +119,7 @@ Task 1 与 Task 2 相互独立;Task 3 依赖 1(拿到 `PulseState` 的形状)+ 2
 
 见上方 Task 0 与 spec §7。
 
-### Task 2(文案 + 机具)— 2026-09-13,**已交付,未提交**
+### Task 2(文案 + 机具)— 2026-09-13,**已提交 `a3da2957`**
 
 **改动**:新建 `frontend/src/core/pulse/pulse-i18n-keys.json` + `tests/unit/core/pulse/i18n-keys.test.ts`;改三个 locale(各加一个 `pulse` 块)。
 
