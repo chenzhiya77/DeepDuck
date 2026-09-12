@@ -136,14 +136,33 @@
 - Modify: `docs/superpowers/specs/2026-09-12-rag-wiki-supplement-direction-design.md`（状态翻转 + 落地日期）
 - Modify: 本 Plan（Task 逐条回写提交号）
 
-- [ ] **Step 1**：三处文档同步（AGENTS 是开发面、spec 是状态、plan 是回写）。
-- [ ] **Step 2**：全量回归——后端 `tests/knowledge` 全绿（环境性红单列）；前端 `pnpm test` 全绿（预存红单列）；`pnpm check` 与 ruff 双门禁净。
-- [ ] **Step 3（真栈实测，可选但建议）**：`make gateway` + `scripts/pnpm.py dev`：① 编辑条目写补充层「语气严谨些，多介绍相关概念」→ 保存 → 观察 wiki 页「更新中」→ 完成后正文**确实按方向变化**且补充层原文一字未动；② 改「更新百科」全量模式，确认有方向的条目仍按方向重写；③ 清空补充层 → 保存 → 重写后正文回到中性口径。
-- [ ] **Step 4**：Commit（文档 + 交付纪要）。
+- [x] **Step 1**：四处文档同步（AGENTS 是开发面、新 spec 是状态、旧 spec 补更正、plan 是回写）。
+- [x] **Step 2**：全量回归——后端 `tests/knowledge` **1069 passed / 2 skipped**；前端 `pnpm test` **2434 passed / 0 failed**；`pnpm check` exit 0；ruff check + format **双净**（4 个改动文件）。
+  **窄门禁在本次是完整门禁**：`grep -rl "knowledge_service|knowledge\.wiki|generate_wiki" backend/tests` 的 **26 个文件全部落在 `tests/knowledge/` 内**，外部无消费者。
+- [ ] **Step 3（真栈实测）**：**待用户实测**——需要用户自持的网关与前端进程 + 手动登录，agent 不代起长跑进程。清单见下方"交付纪要 → 待实测"。
+- [x] **Step 4**：Commit **`a57c9823 docs(rag): sync AGENTS and specs with the supplement-as-direction semantics`**（3 文件，+11/-2）+ 本交付纪要。
 
-**交付判据**：AGENTS.md 的表述与代码一致；spec 状态翻转；三条实测（或写明未测原因）落进交付纪要。
+**交付判据**：AGENTS.md 的表述与代码一致；spec 状态翻转；三条实测（或写明未测原因）落进交付纪要。 **✅ 前两项达成；第三项按"未测原因 + 可执行清单"交付。**
 
-#### Task 4 交付纪要（待填）
+#### Task 4 交付纪要（2026-09-12）
+
+- **文档改动**：
+  1. `backend/AGENTS.md`：P1 bullet 重写（补充层=生成方向；正文"只承诺被覆盖、从不融入"；PATCH 的排队/兜底语义）；新增 "Supplement → generation direction (2026-09-12)" bullet 记 `WIKI_DIRECTION_HEADER` 与三条注入路径；局部重生成 bullet 补「并作为方向回喂」。
+  2. 新 spec：状态翻 `✅ 已落地（2026-09-12）` + plan 链接。
+  3. 旧 spec（2026-08-15）§3：加一条**更正**——A7 只落地一半，「正文编辑作为材料」从未实现且不在实现范围；原文保留为决策记录。**（这一处超出 plan 列的三个文件，是同步时发现该 spec 与代码不符，一并更正）**
+- **全量回归（最终状态的证据）**：
+  | 门禁 | 结果 |
+  |---|---|
+  | 后端 `tests/knowledge` | **1069 passed / 2 skipped**（Task 2 之后无后端代码改动，故该次即最终态） |
+  | 前端 `pnpm test` | **2434 passed / 0 failed**（233 文件；Task 3 之后无前端代码改动） |
+  | `pnpm check` | exit 0（Task 3 的最终格式之后运行） |
+  | ruff check + format --check（4 文件） | 双净 |
+- **待实测（真栈，交用户）**：`make gateway` + `frontend: python scripts/pnpm.py dev`（本机无 nginx，`make dev` 必 FAIL），浏览器打开 `:3000` 并登录后：
+  ① 百科 tab 编辑任一条目，补充层写「语气严谨些，多介绍相关概念」→ 保存 → 观察列表出现「更新中」→ 完成后正文按方向变化，**补充层原文一字未动**；
+  ② 点「更新百科」走全量模式 → 有补充层的条目仍按方向重写（不被批量路径吞掉）；
+  ③ 清空补充层 → 保存 → 重写后正文回到中性口径；
+  ④ （busy 路径）在库级生成进行中保存补充层 → 条目落「待更新」脏态而非静默丢弃。
+- **未做**：真栈四腿（原因：需用户自持进程与手动登录，agent 不代起长跑进程）。其余全部达成。
 
 ## 风险登记
 
