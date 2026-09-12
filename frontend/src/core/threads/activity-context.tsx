@@ -32,7 +32,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** thread state / values 事件里取 raw messages(取不到交给调用方决定怎么处理) */
+/**
+ * 取 raw messages —— 两种形状都要认:join 的 `values` 事件体是状态本身(`{messages}`),
+ * 而 `GET /threads/{id}/state` 是**信封**(`{values:{messages}}`)。少认后者的话,
+ * 「没有 run 在飞时回到一条正在等你的线程」永远拿不到消息(= 永远说不出 wait),
+ * 而它恰恰是本设计唯一的交付判断(2026-09-12 浏览器阶梯实测抓到)。
+ * 取不到就交给调用方决定怎么处理。
+ */
 function messagesOf(payload: unknown): unknown[] | null {
   let bag: unknown = payload;
   if (typeof bag === "string") {
@@ -43,8 +49,11 @@ function messagesOf(payload: unknown): unknown[] | null {
     }
   }
   if (!isRecord(bag)) return null;
-  const messages = bag.messages;
-  return Array.isArray(messages) ? messages : null;
+  if (Array.isArray(bag.messages)) return bag.messages;
+  const values = bag.values;
+  return isRecord(values) && Array.isArray(values.messages)
+    ? values.messages
+    : null;
 }
 
 /**

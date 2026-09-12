@@ -179,6 +179,16 @@ describe("ActivityProvider:订阅", () => {
     expect(read().thread).toBe("A");
   });
 
+  it("取状态拿到的消息要真的进状态 —— 形状是 {values:{messages}},不是顶层 messages", async () => {
+    // 只数「取了一次」会漏掉这件事:真实 GET /threads/{id}/state 的顶层没有 messages,
+    // 消息在 values 里;不拆这层信封的话「回到一条正在等你的线程」永远是空态(2026-09-12 浏览器阶梯抓到)
+    stubClient("open");
+    renderWith({ threadId: "A", runId: null });
+    await flush();
+
+    expect(read().count).toBe("1");
+  });
+
   it("切目标会中止旧订阅(不能两条流同时喂一个状态)", async () => {
     const rec = stubClient("open");
     const view = render(
@@ -222,7 +232,7 @@ describe("ActivityProvider:订阅", () => {
       </ActivityProvider>,
     );
     await flush();
-    expect(read('[data-consumer]').running).toBe("true");
+    expect(read("[data-consumer]").running).toBe("true");
 
     // 离开会话页:注册面没了,但目标与订阅都得留下
     view.rerender(
@@ -232,9 +242,9 @@ describe("ActivityProvider:订阅", () => {
     );
     await flush();
 
-    expect(read('[data-consumer]').thread).toBe("A");
-    expect(read('[data-consumer]').running).toBe("true");
-    expect(read('[data-consumer]').count).toBe("1");
+    expect(read("[data-consumer]").thread).toBe("A");
+    expect(read("[data-consumer]").running).toBe("true");
+    expect(read("[data-consumer]").count).toBe("1");
     expect(rec.signals[0]?.aborted).toBe(false);
   });
 });
