@@ -54,14 +54,14 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/delivery/{types,parse,api,hooks}.ts`、`frontend/tests/unit/core/delivery/{parse,api}.test.ts`
 
-- [ ] **Step 1(RED —— 两个纯函数的测试)**:
+- [x] **Step 1(RED —— 两个纯函数的测试)**:
   - `parse.test.ts`:基础形状(无判定)→ 判定为 `null`;**详细形状三个 stage 各一条**;半套判定字段(`stage` 有而 `satisfied` 无)→ 按**无判定**处理(**不能让 UI 渲染出一个悬空判定**);未知字段丢弃而不抛;`content` 不是对象 → `null`。
   - `api.test.ts`(照 `core/constitution/api.test.ts` 的 `rs.mock("@/core/api/fetcher")` 手法):回执**已存在** → 一次问成;**尚未落库 → 有界重问**(回执是 run 结束时写的,与构成快照同一类竞态);真的没有 → 到上限后放弃;500 → 抛。
-- [ ] **Step 2**:`types.ts` 镜像契约(基础字段必选、判定字段可选),**不含任何推导**;`parse.ts` 逐字段重建(与 `core/constitution/parse.ts` 同一手法)。
-- [ ] **Step 3**:`api.ts` 的 URL 与 `.constitution` 同形:events 端点 + `event_types=run.delivery`;**有界重问照抄那里的常量与注释理由**。
-- [ ] **Step 4**:`hooks.ts`:`useDelivery(threadId, runId)` —— `(threadId, runId)` 维度、`staleTime: Infinity`、`refetchOnWindowFocus: false`、同线程 `placeholderData`(终局事实,run 内不变)。
-- [ ] **Step 5**:转绿 + `pnpm check`。
-- [ ] **Step 6(revert 证明)**:把"半套判定"改成按有判定处理 → 对应用例红;把有界重问的循环去掉 → 重问那条例红。
+- [x] **Step 2**:`types.ts` 镜像契约(基础字段必选、判定字段可选),**不含任何推导**;`parse.ts` 逐字段重建(与 `core/constitution/parse.ts` 同一手法)。
+- [x] **Step 3**:`api.ts` 的 URL 与 `.constitution` 同形:events 端点 + `event_types=run.delivery`;**有界重问照抄那里的常量与注释理由**。
+- [x] **Step 4**:`hooks.ts`:`useDelivery(threadId, runId)` —— `(threadId, runId)` 维度、`staleTime: Infinity`、`refetchOnWindowFocus: false`、同线程 `placeholderData`(终局事实,run 内不变)。
+- [x] **Step 5**:转绿 + `pnpm check`。
+- [x] **Step 6(revert 证明)**:把"半套判定"改成按有判定处理 → 对应用例红;把有界重问的循环去掉 → 重问那条例红。
 
 **交付判据:** 两个测试文件全绿(node project,不进 dom);`pnpm check` 干净;`parse` 与 `api` 均无 React 依赖。
 
@@ -115,3 +115,15 @@ Task 1 与 Task 2 相互独立、可并行;Task 3 依赖两者;Task 4 依赖全�
   > **第一个探针差点是假的**:我最初用 shell 里的 python 内联替换删键,**反引号转义没匹配上、文件没变**,于是测试"全绿"——差点被读成"用例没牙"。**改用 Edit(锚点不匹配会直接报错)后确认文件真的变了**才重跑。**教训:探针必须先证明自己生效**(`grep` 一下被改的文件),再信它的结果。
 - **后端那条 guard 是"一开就绿"的,不是 RED 型**:清单与契约此刻本就一致(枚举是 Task 0 钉的),所以它的牙由探针 ③ 证明,而不是由 RED 阶段证明——**如实记下,不假装它红过**。
 - **⭐ 全量套件出现 27 条红,已 A/B 证明与本次改动无关**:全部落在 `tests/unit/knowledge/chat-panel.dom.test.tsx`,报错是 `useActivity* must be used inside <ActivityProvider>`。根因是**宠物线**在本工作树提交的 `0156a64c` 把 `useRegisterActivity` 加进了 `knowledge/chat-panel.tsx`(第 50 行)而该测试的 wrapper 没有对应的 provider——两文件都已提交、工作树干净,**不是我改的**。**证明方式**:把我的 3 个 locale 文件退回 HEAD、新文件移开、只跑那一个文件 → **照样红**(同一报错 81 次);恢复后我的两个 guard 文件全绿。**未修**——那是另一条线的在飞工作(其记忆里写着"剩挂载 + 四个注册点"没做完),改它会与另一会话的编辑撞车。
+
+### Task 2 — 已交付(2026-09-12):前端数据层
+
+- **产物**:`core/delivery/{types,parse,api,hooks}.ts` + 测试 **18 例**(`parse.test.ts` 13、`api.test.ts` 5)。
+- **核心规则"判定要么齐要么全无"**:`parseVerdict` 要求 `stage` 在枚举内 **且** `satisfied` 是布尔 **且** 三个路径列表都在,**否则整个判定为 `null`**——文案里插值的计数就来自那三个列表,缺一个就会渲染出一句有洞的话。由 5 个参数化用例钉住(缺判定 / 缺 stage / 缺列表 / 枚举外的 stage / 非布尔 satisfied)。
+- **渲染开关是判定而非事件**:基础形状(多数 run)解析出 `verdict: null`,由专门用例钉住——否则绝大多数 run 都会显示一行"交出 0 个"。
+- **`presented` 的兜底**:缺失时回退到 `paths.length`,这不是重新推导——worker 在同一记录里写的就是 `presented: len(paths)`。
+- **有界重问照抄同线先例**(≤6 次 / 400ms),理由同一类:回执在 run 结束时才写,而卡片拿到 run id 就问,`staleTime: Infinity` 会把那次空答案锁住整轮。另加一条断言钉住 URL **只**要 `event_types=run.delivery`。
+- **字段名不改成 camelCase**:沿用线上名(`by_tool` / `produced_paths`),与 `core/constitution/types.ts` 的同一条规则一致——它们就是契约。
+- **`RunEventRow` 就地定义**而非从 `constitution/types` 引入:两者是兄弟功能、互不依赖;若出现第三个消费者(§12 第 6 项实时脉冲会需要)再抽共享模块。
+- **GREEN**:`pnpm test core/delivery` 21 passed(含 Task 1 的 3 例);`pnpm check` 干净;新文件 `prettier --check` 通过。
+- **revert 证明(两探针,均先 `grep` 确认探针真的落盘)**:①关掉"三个列表全在"的守卫 → `refuses a missing path list` 与 `refuses a stage outside the vocabulary` 两条红;②把有界重问换成一发即走 → `re-asks while the run has not written its receipt yet` 红。
