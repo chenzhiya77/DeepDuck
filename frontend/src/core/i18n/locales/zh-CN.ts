@@ -256,6 +256,17 @@ export const zhCN: Translations = {
     not_started: (produced) => `产出了 ${produced} 个，一个都没交出`,
   },
 
+  // Harness run status and failure
+  runOutcome: {
+    busy: "这个会话已有一个任务在跑，等它结束或先停掉它",
+    modelNotAllowed: "当前模型不在允许列表里，换一个模型再试",
+    threadGone: "这个会话不存在了，回到列表重新开始",
+    modeMismatch: "这个会话的数据用了另一种存储模式，重启服务后再试",
+    runFailed: "这次没跑完",
+    runStopped: "已停止",
+    details: "看详情",
+  },
+
   // Input Box
   inputBox: {
     placeholder: "今天我能为你做些什么？",

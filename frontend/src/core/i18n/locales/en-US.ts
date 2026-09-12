@@ -287,6 +287,18 @@ export const enUS: Translations = {
       `Produced ${produced} artifacts but handed over none`,
   },
 
+  // Harness run status and failure
+  runOutcome: {
+    busy: "This chat already has a run going — wait for it or stop it",
+    modelNotAllowed: "That model isn't in the allowed list — pick another",
+    threadGone: "This chat no longer exists — start again from the list",
+    modeMismatch:
+      "This chat's data uses another storage mode — restart the service and try again",
+    runFailed: "This run didn't finish",
+    runStopped: "Stopped",
+    details: "Details",
+  },
+
   // Input Box
   inputBox: {
     placeholder: "How can I assist you today?",

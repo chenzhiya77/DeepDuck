@@ -243,6 +243,24 @@ export interface Translations {
     not_started: (produced: number) => string;
   };
 
+  // Harness run status and failure (run-scoped outcome; §4.2 of the spec)
+  runOutcome: {
+    /** 409: the chat already has an active run. */
+    busy: string;
+    /** 400: the requested model is not in the configured allowlist. */
+    modelNotAllowed: string;
+    /** 404: the chat is gone. */
+    threadGone: string;
+    /** 503: the stored data uses another checkpoint mode. */
+    modeMismatch: string;
+    /** error / timeout: the run started and did not finish. */
+    runFailed: string;
+    /** interrupted: the user stopped it. */
+    runStopped: string;
+    /** Opens the failure's details. */
+    details: string;
+  };
+
   // Input Box
   inputBox: {
     placeholder: string;

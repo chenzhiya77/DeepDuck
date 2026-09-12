@@ -1,0 +1,19 @@
+{
+  "kinds": [
+    "occupied",
+    "config",
+    "environment",
+    "modeMismatch",
+    "runFailed",
+    "stopped"
+  ],
+  "keys": [
+    "busy",
+    "modelNotAllowed",
+    "threadGone",
+    "runFailed",
+    "runStopped",
+    "details",
+    "modeMismatch"
+  ]
+}

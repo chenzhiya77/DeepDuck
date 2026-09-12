@@ -82,14 +82,14 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/run-status/run-status-i18n-keys.json`、`backend/tests/test_run_status_i18n_keys.py`、`frontend/tests/unit/core/run-status/i18n-keys.test.ts`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`
 
-- [ ] **Step 0(前置,硬)**:spec §5 那 **7 条已批**(2026-09-12,含补批的 `runOutcome.modeMismatch`)。落盘 7 条,照抄 spec,**零改写**。
-- [ ] **Step 1(RED)**:写清单(嵌套形状,`kinds` 列出**会被呈现**的类别)+ 前端 guard(复用 `tests/unit/support/i18n-key-manifest.ts`,Task 1 交付层已抽出)+ 后端 guard。**先确认红。**
-- [ ] **Step 2**:`types.ts` 加 `runOutcome` 块;两份 locale 填文案(照抄 spec,**零改写**)。
-- [ ] **Step 3**:后端 guard 的对账对象:断言清单的 `kinds` 集合 == **`FailureKind` 里"会被呈现"的那几个**(`occupied` / `config` / `environment` / `modeMismatch` / `runFailed` / `stopped`;**不含** `422`/`501` 那一档)。**前端类型在后端读不到**,所以退一步:**断言清单与前端 `classify.ts` 导出的 `PRESENTED_KINDS` 常量逐项相等**(后端读前端源文件有先例 `test_constitution_i18n_keys.py`)。**这是本任务唯一有实质内容的跨端断言。**
-- [ ] **Step 4**:转绿 + `pnpm check` + `ruff`。
-- [ ] **Step 5(revert 证明)**:删一条 locale key → 正向红;加一条孤儿 → 反向红;给清单加一个不该呈现的类别 → 后端红。
+- [x] **Step 0(前置,硬)**:spec §5 那 **7 条已批**(2026-09-12,含补批的 `runOutcome.modeMismatch`)。落盘 7 条,照抄 spec,**零改写**。
+- [x] **Step 1(RED)**:写清单 + 前端 guard(复用 `tests/unit/support/i18n-key-manifest.ts`)+ 后端 guard。**先确认红** —— 前端 **2 红**(两个 locale 各缺 7 个 key);后端那条**当次就是绿的**,它的红由 Step 5 的第三刀给出(清单被塞进不该呈现的类别),因为清单与 `PRESENTED_KINDS` 是同一轮一起写的。
+- [x] **Step 2**:`types.ts` 加 `runOutcome` 块(7 个 `string`,带 doc 注明各档来源);两份 locale 填文案(逐字照抄 spec,**零改写**)。
+- [x] **Step 3**:后端 guard 的对账对象 = **`PRESENTED_KINDS` 常量**(`frontend/src/core/run-status/types.ts`),用正则把该 `export const` 块读成字符串列表再比集合(后端读前端源文件有先例:`test_gateway_runtime_cleanup.py` 读 `frontend/next.config.js`);并断言清单 `kinds` 无重复。**清单的 `kinds` 就是"会被呈现"的六档**(`occupied` / `config` / `environment` / `modeMismatch` / `runFailed` / `stopped`;**不含** 422/501 那一档)。
+- [x] **Step 4**:转绿 + `pnpm check` + `ruff`。**前端 3 绿、后端 1 绿;`pnpm check` exit 0;`ruff check` + `format --check` 干净(新文件);prettier 干净。**
+- [x] **Step 5(revert 证明)**:三刀都有牙(见交付纪要)。
 
-**交付判据:** 两处 guard 绿且各自有牙;文案逐字等于 spec;清单是 `PRESENTED_KINDS` 的镜像。
+**交付判据:** 两处 guard 绿且各自有牙;文案逐字等于 spec;清单是 `PRESENTED_KINDS` 的镜像。 **✅ 达成。**
 
 ## Task 5: 组件 + 两处锚点接线
 
@@ -239,3 +239,36 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 **未覆盖(诚实记录)**:`describeStartFailure` 里 422/501 → `none` 两条**对第二刀没有牙**(该刀把一切都变成 `none`,而这两条期望的正是 `none`);那两档的映射由 Task 2 的 `classify.test.ts` 钉住(Task 2 的第二刀已证)。另:保留消息在真栈上的**观感**只有单测担保,端到端归 Task 5 的腿一/腿二。
 
 **偏离原计划(其余,诚实记录)**:③ 原文要"读 `error.text` 拿原始 body(便于控制台)"——**没做**,因为 SDK 已 `console.error(error)` 整个对象(`ui/manager.js:280`),`.text` 本就在控制台,再加是重复;④ 原文"两者都没有才退回消息文本"由调用方用既有 `getStreamErrorMessage` **组合**实现,不复制那份逻辑;⑤ **额外新增了一个 DOM 测试文件**(原计划只列了 `start-failure.ts` + 单测)——因为 Step 4 补进来的"保留消息"是这次的真实行为变化,而它没有纯函数可测,只能用 `local-turn-order.dom.test.tsx` 那套 `rs.mock("@langchain/langgraph-sdk/react")` 脚手架驱动。**这个额外测试正是第二刀能命中保留分支的原因。**
+
+### Task 4(文案落盘 + 两处 guard)— 2026-09-12,已交付,**未提交**
+
+**改动**:新建 `frontend/src/core/run-status/run-status-i18n-keys.json`、`frontend/tests/unit/core/run-status/i18n-keys.test.ts`、`backend/tests/test_run_status_i18n_keys.py`;改 `frontend/src/core/i18n/locales/{types,zh-CN,en-US}.ts`(各加一个 `runOutcome` 块)。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **4**(前端 3 node + 后端 1) |
+| RED | 前端 **2 红**(两个 locale 各缺 7 个 key);后端当次即绿(见 Step 1 的说明) |
+| GREEN | 前端 `core/run-status` 4 文件 **25 passed**;后端 **1 passed** |
+| `pnpm check` | **exit 0**(中途被 eslint `import/order` 挡过一次,已修) |
+| ruff | 新文件 `check` + `format --check` 干净 |
+| prettier | 新增文件全过;三个 locale 的残差 **24 / 30 / 7** —— **与 HEAD 逐个相同** ⇒ 零新增格式债 |
+| 全量 | **2413 passed / 1 failed**(同一条预存失败;比 Task 3 多 3 条 = 本项新用例) |
+
+**revert proof(三刀,各自命中)**
+
+| neuter | 结果 |
+|---|---|
+| 从 zh-CN 删掉 `details` | 前端 `zh-CN covers…` **红**,报 `missing: ['details']` |
+| 给 en-US 塞一条 `orphanKey` | 前端 `en-US covers…` **红**,报 `orphans: ['orphanKey']` |
+| 给清单 `kinds` 加一个 `none` | 后端 **红**,报 `Extra items in the left set: 'none'`(前端那条 `kinds` 断言同时红,因为它是 `toEqual`) |
+
+三刀均已恢复;复跑前端 25 + 后端 1 全绿。
+
+**⚠ 一条踩到的坑(留给下次)**:用 python 改这两个 locale 时,`read_text` 默认做通用换行归一 ⇒ **CRLF 被读成 LF 再写回**,两个文件整份变成 LF(我的改动内容没问题,但行尾变了)。发现后按原有约定修回 CRLF,并用 `git diff --stat` 证实**只有新增行**(12/18/11),没有整文件重写。**教训:改这两个 i18n 文件优先用 Edit 工具;非要用 python 就 `read_bytes`/`write_bytes`,不要 `read_text`。**
+
+**更正一处旧基线**:`[[project-env-test-failures]]` 记的"zh-CN 残差 27"已过期 —— 现在 **HEAD 本身就是 24**(本次实测)。判合规的正确口径是**工作树数字 == HEAD 数字**(本次三个文件逐个相同),而不是背一个绝对值。
+
+**偏离原计划(诚实记录)**:
+① 清单形状 = **两个平铺数组**(`kinds` + `keys`),不是原文含糊的"嵌套形状" —— 因为"会被呈现的类别名"与"文案 key 名"是**两套名字**(kind `occupied` ↔ key `busy`),各由一个数组拥有才不会混;原文只提了 `kinds`,但前端 guard 需要 key 列表 ⇒ 补了 `keys`。
+② 后端对账的读法:原文举的先例 `test_constitution_i18n_keys.py` 实际读的是**清单 JSON + 后端 Python 常量**,不是前端 TS。真正读前端**源文件**的先例是 `test_gateway_runtime_cleanup.py`(读 `frontend/next.config.js`),本次照那条做(正则抽 `export const PRESENTED_KINDS` 块)。
+③ **kind→文案 key 的映射不在清单里**,留给 Task 5 的组件及其测试 —— 清单只钉"哪几档要被呈现"与"有哪几条文案"。**这是本任务唯一的跨端断言(清单 ↔ `PRESENTED_KINDS`),它已落地。**
