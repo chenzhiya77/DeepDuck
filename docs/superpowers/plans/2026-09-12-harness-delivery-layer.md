@@ -81,13 +81,13 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Modify `frontend/AGENTS.md`(Interaction Ownership 增/并入一条)、`docs/superpowers/specs/2026-09-10-harness-constitution-snapshot-design.md`(§12 第 3 项标记交付)、本 plan(交付纪要)
 
-- [ ] **Step 1(两条腿,各自都要真数据)**:私有 `:8099` + `DEER_FLOW_AUTH_DISABLED=1`,前端只设 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL`(**不设 `NEXT_PUBLIC_*`**,否则 `/api/*` 全 404);真浏览器用 `chromium.launch({ channel: "chrome" })` 驱动系统 Chrome。
+- [x] **Step 1(两条腿,各自都要真数据)**:私有 `:8099` + `DEER_FLOW_AUTH_DISABLED=1`,前端只设 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL`(**不设 `NEXT_PUBLIC_*`**,否则 `/api/*` 全 404);真浏览器用 `chromium.launch({ channel: "chrome" })` 驱动系统 Chrome。
   - **腿一(成功态)**:让 agent 产出一个 outputs 文件并用 `present_files` 交出来 → **安静行**,文案逐字一致。
   - **腿二(失败态)**:让它产出但**不交** → **醒目行**,且该 run 在后端以 `error` 收尾、`error` 字段含 `_DELIVERY_INCOMPLETE_ERROR` ——**界面上说的和后端说的是同一件事**,这是本项唯一要证明的因果。
   - 顺带确认:**回执缺失的 run(产出为空)不显示那一行,但文件卡仍在**。
-- [ ] **Step 2**:`frontend/AGENTS.md` 记录:这一行**只陈述投递事实**,run 终态归 §12 第 4 项;以及"渲染开关是 `satisfied` 的存在"这条易错点。
-- [ ] **Step 3**:回写 spec §12 第 3 项为已交付(含两处修正:不再是"零后端改动";`not_started` 标识符);本 plan 末尾交付纪要(逐 Task 记 hash 与实测数字)。
-- [ ] **Step 4**:按冻结信息提交(**不推送**,沿用本线惯例);`git status` 确认只含本线文件(工作树里有宠物线的在飞改动,**只 add 自己的**)。
+- [x] **Step 2**:`frontend/AGENTS.md` 记录:这一行**只陈述投递事实**,run 终态归 §12 第 4 项;以及"渲染开关是 `satisfied` 的存在"这条易错点。
+- [x] **Step 3**:回写 spec §12 第 3 项为已交付(含两处修正:不再是"零后端改动";`not_started` 标识符);本 plan 末尾交付纪要(逐 Task 记 hash 与实测数字)。
+- [x] **Step 4**:按冻结信息提交(**不推送**,沿用本线惯例);`git status` 确认只含本线文件(工作树里有宠物线的在飞改动,**只 add 自己的**)。
 
 **交付判据:** 两条腿都过且失败态的界面与后端错误对得上;**任一不过:不提交**,记为开放项。
 
@@ -138,3 +138,12 @@ Task 1 与 Task 2 相互独立、可并行;Task 3 依赖两者;Task 4 依赖全�
 - **GREEN**:该文件 6 passed;`pnpm check` 干净;新文件 `prettier --check` 通过。
 - **revert 证明(两探针)**:①对调安静/醒目两档色调 → 三条色调断言红;②把"回执缺失"改成提前 `return null`(即让判定决定卡片存亡)→ `keeps the file card when the receipt read came back empty` 红——**这条用例的作用正是守住"不回执≠不显示卡片"**,没它没人拦这个错。
 - **全量套件**:`Test Files 1 failed | 224 passed (225)`,唯一失败是那条**已登记的 `knowledge/chat-panel` 环境红**(模型记忆项)。Task 1 里报的 27 条 `useActivity*` 红**在此期间已被宠物线自己修好**(同一工作树、另一会话在改),本轮输出里该报错 0 次——所以那条不是本项的开放项,已闭环。
+
+### Task 4 — 已交付(2026-09-12):真栈验收 + 文档 + 收尾
+
+- **真栈环境**:私有 `:8099`(`DEER_FLOW_AUTH_DISABLED=1`)+ 前端 `:3000` 只设 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL`;真浏览器 = 系统 Chrome 经 `chromium.launch({ channel: "chrome" })`。
+- **三条腿各自造真数据,全部 PASS(11/11)**:①**成功态**——agent 写出 `outputs/summary.md` 并 `present_files` ⇒ `stage=presented / satisfied=true / produced 1 presented 1 matched 1`,run `success`;界面 **安静行** `已交出 1/1 个产物`,逐字一致,`text-muted-foreground`,另一档色调缺席。②**失败态**——只写不交 ⇒ `not_started / satisfied=false / produced 1 presented 0 matched 0`,run **`error`**;界面 **醒目行** `产出了 1 个，一个都没交出`,逐字一致,`text-destructive`。③**无判定**——只改 workspace 不改 outputs ⇒ 回执是**基础形状**(无判定字段)、workspace 有 1 处新增 ⇒ **卡片在、行不在**。
+- **⭐ 核实推翻了一处前提(与 §8 的说法冲突,已记进 spec §12 第 3 项)**:失败腿那个 run 的 **`RunResponse` 没有 `error` 字段**(`routers/thread_runs.py:150-168` 逐字段核过),`run.error` 事件也没发(终态只有 `run.end`,而它按已知缺口永远写 `success`)。**后端把 run 标成 `error`,却没有任何 API 告诉调用方为什么。** 后果两条:(a) 这一行**目前是用户唯一的线索**——失败腿的截图里 agent 自己说 "Done."、界面别处一切正常,只有那行红字说出真相;(b) 本 Task 的判据退到**状态级**(`status=error`)而非消息级;把消息暴露出来归 §12 第 5 项。
+- **一条本地环境的坑(记下)**:第一次跑浏览器腿时页面路由整体挂死——**不是代码问题**,是 `.next` dev 缓存坏了(日志里连编译行都没有、所有页面路由 45s 无响应,而 rewrite 到网关的 API 仍 200)。处置:杀掉前端树(**先用命令行/PID 链确认是自己的进程**,`python ../scripts/pnpm.py dev` → next dev → start-server)、`rm -rf .next`、重启并**轮询到真的应答**再跑;冷缓存首次编译那条路由要 **37s**,所以验收脚本的 `page.goto` 超时也调到了 120s。
+- **文档**:`frontend/AGENTS.md` 增一条(四条规则:共用文件卡 / 开关是判定不是回执 / 只陈述投递事实且缺回执不吞卡片 / 计数直取不做集合运算);一期 spec §12 第 3 项标 ✅ 并**记下两处被推翻的前提**。
+- **清理**:探针脚本 `.scratch-task4/` 已删;两个服务已停(`:8099` 用 PID 链确认是自己的才杀;`:8001` 全程未触碰);三条腿的测试线程目录已删。

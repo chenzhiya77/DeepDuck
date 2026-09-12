@@ -354,6 +354,19 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   `fetchConstitution` re-asks a bounded number of times before accepting "no snapshot": the
   caller caches the answer for the run's lifetime (`staleTime: Infinity`), so a raced empty
   answer would otherwise freeze for the whole run.
+- **Delivery verdict line (2026-09-12)**: `components/workspace/changes/workspace-change-badge.tsx`
+  carries one extra line for a run's terminal delivery receipt (`run.delivery`, read by
+  `core/delivery/`) — quiet when the run handed its output over, raised when it did not. Four
+  rules hold it: **(a)** it shares the file card rather than opening a second one (the file list
+  answers "what changed", this answers "was it handed over"), so do not split it out and do not
+  add a second anchor; **(b)** the switch is the **verdict's** presence, never the receipt's — most
+  runs publish only the base record with no verdict fields, and switching on the receipt would
+  print "handed over 0" on almost every run; **(c)** it renders only delivery facts and never the
+  run's terminal state — "how did this run end" belongs to the run-status work, and a missing
+  receipt must not hide the file card (a test pins exactly that); **(d)** the counts come off the
+  verdict's own lists with no set arithmetic, because `satisfied` means *at least one* produced
+  output was handed over — a partial hand-over passes, and the line reports the real ratio
+  instead of claiming everything was handed over.
 - `src/components/workspace/chats/chat-box.tsx` owns the desktop right-panel layout, and **all three** right panels (artifacts, sidecar, browser) share one `ResizablePanelGroup` — do not fork a non-resizable branch per panel kind, which is how the artifacts divider silently lost its drag handle (#4465). Open/close is `collapse()` / `resize()` on the side panel's imperative handle, not conditional rendering, so the width can animate. Three constraints hold that together: the size transition is applied from the group as `[&>[data-panel]]:transition-[flex-grow]` because the sized flex item is the library's own `[data-panel]` element rather than the child `className` lands on; it is applied only while an open/close is in flight, so a drag is not interpolated frame by frame; and during the animation the panel content is held at its final width in `cqw` and clipped, because a reflowing message list re-runs its scroll-to-bottom (pinned by `tests/e2e/sidecar-chat.spec.ts`'s no-animated-scroll test) and a re-wrapping composer changes which responsive labels it shows. Because the panel is `collapsible`, the library can also collapse it to `0%` on its own when a drag crosses `minSize`, without going through the state that owns it. `onResize` records the last positive size while the pointer moves, but the owning `sidecar` / `browserView` / `artifactsOpen` state must only mirror a final `0%` layout from `onLayoutChanged`, after pointer release; closing on the first `0%` resize frame breaks a continuous drag that reaches the edge and then reverses before release.
 
 ## Code Style
