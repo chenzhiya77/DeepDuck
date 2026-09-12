@@ -866,7 +866,9 @@ cd backend && PYTHONPATH=. uv run pytest tests/test_constitution_record.py tests
 
    **两条形状约束:** ① 脉冲必须沿**环**走 N 圈(§6.6.1),不是五格依次点亮——这是环形布局存在的全部理由;② 构成快照仍然是 **fetch-once**(run 内不变,§6.7),**脉冲是第二条数据通道**,不要把两者混成一次拉取,否则会把 run 级静态事实错误地当成流式数据处理。
 
-   **依赖排序:本项在第 1 项与第 2 项之后**(需要闸门事件 + 需要环已渲染出来)。
+   **依赖排序:本项在第 1 项与第 2 项之后**(需要闸门事件 + 需要环已渲染出来)。**两项前置均已交付**。
+
+   > **spec + plan 已成对(2026-09-13):`2026-09-13-harness-live-pulse-design.md` / `../plans/2026-09-13-harness-live-pulse.md`(5 个 Task)。** 起草时核实出**本文上面那句"通道是通的"只对了一半**:闸门事件确实实时(#1 双发),但 **`llm_call_index` 挂在 journal 事件上、没有实时通道**(全仓实时 custom 发射者只有 5 个,不含它)—— 那句"通"指的是**分页回填**,不是实时。⇒ "实时性从哪来"由此成为裁决点 D1;**Task 0 探针先跑**(私有 `:8099`,3 条真 run 证明客户端从既有 live 状态推出的圈数与 `llm_call_index` **逐条相等**),**用户据此裁 A(前端派生,零后端改动)**;D2(一圈 = 一次 model→tools 往返、闸门不在环上重复)与 D3(只在 Dialog 内)亦已裁。**开工前无需再议。**
 7. **subagent 的构成快照**(2026-09-10 新认领;**不是硬墙**——§5 已就地纠正"做不了"的说法)——委派出去的子代理有自己的 middleware 链(`build_subagent_runtime_middlewares`,与 lead 不同:摘要中间件的插入位置在后、没有 lead-only 的那些),今天**完全没有记录**,所以构成图只能讲 lead 的故事、画不出委派树。
    **机制(复用现成通道,不新开)**:§4 的注册表是**进程级**的,子代理图同样经 `create_agent` 组装 → **它已经在注册表里**;唯一跨不过去的是 journal(`deerflow_loop_bound=True` 把 journal 从子代理回调里摘除)。所以照 `stop_reason` 的**现成先例**走加性字段:`_aexecute` 在图仍存活时 `constitution_for(graph)` → 塞进 `SubagentResult` → `task_tool` 侧写进 `subagent.end`(通道已存在,§5 第一行就是它的先例)。
    **时序约束(易踩)**:读取必须在 `_aexecute` **内部**、图释放之前。等执行器返回后再查注册表,弱引用可能已被回收 → 静默拿到 `None`。这与 §4 的回收语义是同一件事的两面。
