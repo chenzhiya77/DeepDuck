@@ -166,6 +166,7 @@ class RunResponse(BaseModel):
     middleware_tokens: int = 0
     message_count: int = 0
     stop_reason: str | None = None
+    error: str | None = None
 
 
 class ThreadTokenUsageModelBreakdown(BaseModel):
@@ -282,6 +283,7 @@ def _record_to_response(record: RunRecord) -> RunResponse:
         middleware_tokens=record.middleware_tokens,
         message_count=record.message_count,
         stop_reason=record.stop_reason,
+        error=record.error,
     )
 
 

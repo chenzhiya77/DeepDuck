@@ -36,18 +36,18 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 ## Task 1: 后端把 `error` 暴露到 `RunResponse`(加性)
 
-**Files:** Modify `backend/app/gateway/routers/thread_runs.py`;Modify 既有终态路径测试(见 Step 3)
+**Files:** Modify `backend/app/gateway/routers/thread_runs.py`;Modify `backend/tests/test_gateway_run_recovery.py`
 
-- [ ] **Step 1(RED)**:在既有终态路径测试里加断言——一个**真的以 error 收尾**的 run,经 `GET /threads/{tid}/runs/{rid}` 能拿到那条消息。首选落点:`tests/test_gateway_run_recovery.py`(它的 `orphan_recovered` 路径**确实会写 `error`**);交付未达标那条(`_DELIVERY_INCOMPLETE_ERROR`)是同类。**今天必红**(响应没有 `error` 键)。
-- [ ] **Step 2**:`RunResponse`(`:150-168`)加 `error: str | None = None`;构造点(`:266-284`)加 `error=record.error`。**纯加性**——既有字段一个不动、`stop_reason` 保持原样。
-- [ ] **Step 3(GREEN)**:Step 1 那条例绿;并补一条**未失败时是 `None`**(别把 `None` 和空串混起来)。
-- [ ] **Step 4(安全面过一遍,spec §8 风险 4)**:确认这几类 `error`(交付固定文案 / `on_chain_error` 的 `str(error)`)**不会带 prompt 或 tool 输出**;若有风险,在本步就地记录并缩小暴露面(而不是留给"以后注意")。
-- [ ] **Step 5**:窄集合门禁(见下方)+ `ruff`。
-- [ ] **Step 6(revert 证明)**:把 `error=record.error` 去掉 → Step 1 转红,Step 3 那条(未失败为 `None`)保持绿。
+- [x] **Step 1(RED)**:在 `tests/test_gateway_run_recovery.py` 加两条 TestClient 用例(经 `_router_auth_helpers.make_authed_test_app` + `app.state.run_manager` 桩,`GET /api/threads/thread-1/runs/run-1`)。**红在哪**:两条都 `KeyError: 'error'`(响应里没有该键)——即"加性字段不存在"本身,不是断言写错。
+- [x] **Step 2**:`RunResponse`(`:167-168`)加 `error: str | None = None`;构造点 `_record_to_response`(`:285-286`)加 `error=record.error`。**纯加性**——既有字段一个不动、`stop_reason` 保持原样。全仓只有这一个构造点(已 grep 确认)。
+- [x] **Step 3(GREEN)**:两条转绿;第二条断言未失败时是 **`None`**(不是空串)。
+- [x] **Step 4(安全面过一遍)**:见下方交付纪要的"§8 风险 4 结论"——**已就地定案,不改代码**。
+- [x] **Step 5**:窄集合门禁 44 passed;`ruff check` + `ruff format --check` 两文件干净。
+- [x] **Step 6(revert 证明)**:两刀都有牙(见交付纪要)。
 
 **窄集合门禁:** `test_gateway_run_recovery.py` + `test_run_worker_delivery.py` + `test_thread_run_query_validation.py` + `test_run_events_endpoint.py` + `test_harness_boundary.py`(**不用全量**:本机全量有 155 条环境红)。
 
-**交付判据:** 加性字段可读;既有响应字段零变化;`ruff check`/`format --check` 干净。
+**交付判据:** 加性字段可读;既有响应字段零变化;`ruff check`/`format --check` 干净。 **✅ 达成。**
 
 ## Task 2: 前端数据层 `core/run-status/`
 
@@ -82,7 +82,7 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 **Files:** Create `frontend/src/core/run-status/run-status-i18n-keys.json`、`backend/tests/test_run_status_i18n_keys.py`、`frontend/tests/unit/core/run-status/i18n-keys.test.ts`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`
 
-- [ ] **Step 0(前置,硬)**:spec §5 那 6 条**已批**(2026-09-12);**§5.1 补批的 1 条(`runOutcome.modeMismatch`)待批**。**那条未批之前,本任务只落 6 条 + 让 `modeMismatch` 暂时落回"不呈现"**(别用 `threadGone` 顶替——那是会说假话的错答案)。
+- [ ] **Step 0(前置,硬)**:spec §5 那 **7 条已批**(2026-09-12,含补批的 `runOutcome.modeMismatch`)。落盘 7 条,照抄 spec,**零改写**。
 - [ ] **Step 1(RED)**:写清单(嵌套形状,`kinds` 列出**会被呈现**的类别)+ 前端 guard(复用 `tests/unit/support/i18n-key-manifest.ts`,Task 1 交付层已抽出)+ 后端 guard。**先确认红。**
 - [ ] **Step 2**:`types.ts` 加 `runOutcome` 块;两份 locale 填文案(照抄 spec,**零改写**)。
 - [ ] **Step 3**:后端 guard 的对账对象:断言清单的 `kinds` 集合 == **`FailureKind` 里"会被呈现"的那几个**(`occupied` / `config` / `environment` / `modeMismatch` / `runFailed` / `stopped`;**不含** `422`/`501` 那一档)。**前端类型在后端读不到**,所以退一步:**断言清单与前端 `classify.ts` 导出的 `PRESENTED_KINDS` 常量逐项相等**(后端读前端源文件有先例 `test_constitution_i18n_keys.py`)。**这是本任务唯一有实质内容的跨端断言。**
@@ -116,7 +116,7 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
   - **腿四(被停止)**:按停止 → **"已停止"**中性徽标;且 `success` 的 run **不出现任何徽标**。
 - [ ] **Step 2**:`frontend/AGENTS.md` 记:两段式锚点(哪个锚点用在哪)、`HTTPError.status` 是 pre-stream 的分类依据、**不要改 `getStreamErrorMessage` 的既有行为**、`success` 零呈现。
 - [ ] **Step 3**:回写一期 spec §12 第 4/5 项为已交付;本 plan 末尾交付纪要(逐 Task 记 hash 与实测数字)。
-- [ ] **Step 4**:按冻结信息提交(**不推送**);`git status` 确认只含本线文件(工作树里有宠物线在飞改动,**只 add 自己的**)。
+- [ ] **Step 4**:按冻结信息提交(**不推送**);`git status` 确认只含本线文件。**2026-09-12 复核更正**:原写"工作树里有宠物线在飞改动"——**已不成立**,宠物线(含 2b 的 `think`)已于 `f1e92de0` 等提交落地,`git status` 里 **0 个** pet 路径。当前工作树 = 本线 4 个文件(2 代码 + 2 文档)**+ 4 份与本线无关的未跟踪 docs**(`AGENT_HARNESS_VISUALIZATION_RESEARCH.md` / `COMMUNITY_DETECTION_RESEARCH.md` / `HARNESS_EXECUTION_FLOW_MAP.md` / `plans/2026-09-11-local-knowledge-base-rfc-draft.md`)⇒ **仍要显式列路径,但那 4 份 docs 不属本线,不要顺手 add**。
 
 **交付判据:** 四条腿全过;**任一不过:不提交**,记为开放项。
 
@@ -135,6 +135,38 @@ Task 2(数据层) ─→ Task 3(pre-stream) ─┘
 Task 1 与 Task 2 相互独立;Task 3 依赖 2;Task 4 依赖 2(清单要镜像 `PRESENTED_KINDS`);Task 5 依赖 1+3+4;Task 6 依赖全部。
 **可先落的那半**:pre-stream(Task 2+3+4+5 的 pre-stream 部分)不依赖 Task 1。
 
-## 交付纪要(待填)
+## 交付纪要
 
-_(Task 0 见上;Task 1–6 完成后逐条回写)_
+### Task 0(探针)— 已提交 `b9c9938f`
+
+见上方 Task 0 与 spec §3.3/§7。
+
+### Task 1(后端加性字段)— 2026-09-12,工作树已改,**未提交**
+
+**改动**:`backend/app/gateway/routers/thread_runs.py` 两处(`RunResponse` 加 `error: str | None = None`;`_record_to_response` 加 `error=record.error`)+ `backend/tests/test_gateway_run_recovery.py` 两条新用例。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **2** 条:`test_run_detail_exposes_error_reason`、`test_run_detail_reports_no_error_for_successful_run` |
+| RED | 2 failed / 5 deselected —— 两条都 `KeyError: 'error'`(键不存在,非断言写错) |
+| GREEN | 本文件 **7 passed**;窄集合(**5 文件**)**44 passed** |
+| 门禁 | `ruff check` **All checks passed**;`ruff format --check` **2 files already formatted** |
+
+**revert proof(两刀,都有牙)**
+
+| neuter | 结果 |
+|---|---|
+| `error=record.error` → `error=None` | `..._exposes_error_reason` **红**;`..._no_error_for_successful_run` **绿**(它只钉默认值,符合预期) |
+| `error=record.error` → `error=record.error or ""` | `..._no_error_for_successful_run` **红**(证明第二条不是哑的:`None` 与空串真的被区分开) |
+
+两刀均已原样恢复并复跑,上表 GREEN 数字是恢复后的实测。
+
+**§8 风险 4(暴露面)结论 —— 已就地定案,不改代码:**
+run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait` 返回 `{"status": ..., "error": record.error}`(`routers/runs.py:89`),管理台 `console.py:414` 也返回 `row.error` 的截断。本字段只是把**同一份数据**补到**同一个 owner 作用域**的 `GET /threads/{tid}/runs/{rid}`(该路由带 `runs:read` + `owner_check=True`)。⇒ 它改变的是"在哪读得到",不是"读到的是什么",**不引入新的敏感数据类别**。
+残余(已知,不在本 Task 范围):worker 的兜底 `except Exception as exc: error = f"{exc}"`(`runtime/runs/worker.py:1075-1077`)会写入任意异常文本;若将来要收窄,改动点在**写入侧**(worker),而不是这个读投影。其余写入点都是固定文案:`STARTUP_ORPHAN_RECOVERY_ERROR`、`LEASE_ORPHAN_RECOVERY_ERROR`、`_DELIVERY_INCOMPLETE_ERROR`、`"Rolled back by user"`、takeover 固定串。
+
+**偏离原计划(诚实记录):** 计划写的是"在**既有**终态路径测试里加断言"。实际该文件既有的两个用例是 lifespan 级 `_FakeRunManager` 桩,没有 HTTP 面(`reconcile_calls` 断言,不经过路由),无法承载"经 GET 能拿到"这一断言。故**新增两条 TestClient 用例**,复用既有的 `_router_auth_helpers.make_authed_test_app` 机具(与 `test_thread_run_query_validation.py` 同款)。落点仍是计划指定的文件。
+
+**契约/文档同步:** 无需。`backend/docs/API.md` 不列 run 响应字段,`contracts/` 下只有 `subagent_status_contract.json` 提到 `stop_reason`,均不 pin `RunResponse` 的字段表(已 grep 确认)。
+
+**下一步**:Task 2(前端数据层)不依赖本 Task,可独立开;Task 1 的提交按计划留到 Task 6 一并处理(或按用户指示单提)。

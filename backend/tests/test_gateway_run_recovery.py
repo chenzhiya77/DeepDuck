@@ -6,13 +6,17 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import anyio
 import pytest
+from _router_auth_helpers import make_authed_test_app
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 import deerflow.runtime as runtime_module
 from app.gateway import deps as gateway_deps
+from app.gateway.routers import thread_runs
 from deerflow.config.run_ownership_config import RunOwnershipConfig
 from deerflow.persistence import engine as engine_module
 from deerflow.persistence import thread_meta as thread_meta_module
@@ -301,3 +305,57 @@ async def test_sqlite_runtime_does_not_mark_thread_error_when_newer_run_is_succe
     assert thread_store.status_updates == []
     assert stream_bridge.publish_end_calls == ["old-running"]
     assert stream_bridge.cleanup_calls == [("old-running", 60.0)]
+
+
+def _run_detail_app(record) -> FastAPI:
+    app = make_authed_test_app()
+    app.include_router(thread_runs.router)
+    run_manager = MagicMock()
+    run_manager.get = AsyncMock(return_value=record)
+    app.state.run_manager = run_manager
+    return app
+
+
+def test_run_detail_exposes_error_reason():
+    """A terminalized run's reason must reach the run-detail API.
+
+    Startup/orphan recovery writes a human-readable ``error`` onto the run row
+    (``reconcile_orphaned_inflight_runs(error=...)``). Without an ``error``
+    field on ``RunResponse`` that reason exists only in the database: the UI
+    sees ``status="error"`` with nothing to explain it.
+    """
+    record = runtime_module.RunRecord(
+        run_id="run-1",
+        thread_id="thread-1",
+        assistant_id="lead-agent",
+        status=runtime_module.RunStatus.error,
+        on_disconnect=runtime_module.DisconnectMode.cancel,
+        error=runtime_module.STARTUP_ORPHAN_RECOVERY_ERROR,
+        stop_reason=runtime_module.ORPHAN_RECOVERY_STOP_REASON,
+    )
+
+    with TestClient(_run_detail_app(record)) as client:
+        response = client.get("/api/threads/thread-1/runs/run-1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["error"] == runtime_module.STARTUP_ORPHAN_RECOVERY_ERROR
+    assert body["stop_reason"] == runtime_module.ORPHAN_RECOVERY_STOP_REASON
+
+
+def test_run_detail_reports_no_error_for_successful_run():
+    """An un-failed run reports ``error`` as ``None``, never an empty string."""
+    record = runtime_module.RunRecord(
+        run_id="run-2",
+        thread_id="thread-1",
+        assistant_id="lead-agent",
+        status=runtime_module.RunStatus.success,
+        on_disconnect=runtime_module.DisconnectMode.cancel,
+    )
+
+    with TestClient(_run_detail_app(record)) as client:
+        response = client.get("/api/threads/thread-1/runs/run-2")
+
+    assert response.status_code == 200
+    assert response.json()["error"] is None
