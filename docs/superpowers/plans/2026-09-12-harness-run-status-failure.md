@@ -116,7 +116,7 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
   - **腿四(被停止)**:按停止 → **"已停止"**中性徽标;且 `success` 的 run **不出现任何徽标**。
 - [ ] **Step 2**:`frontend/AGENTS.md` 记:两段式锚点(哪个锚点用在哪)、`HTTPError.status` 是 pre-stream 的分类依据、**不要改 `getStreamErrorMessage` 的既有行为**、`success` 零呈现。
 - [ ] **Step 3**:回写一期 spec §12 第 4/5 项为已交付;本 plan 末尾交付纪要(逐 Task 记 hash 与实测数字)。
-- [ ] **Step 4**:按冻结信息提交(**不推送**);`git status` 确认只含本线文件。**2026-09-12 复核更正**:原写"工作树里有宠物线在飞改动"——**已不成立**,宠物线(含 2b 的 `think`)已于 `f1e92de0` 等提交落地,`git status` 里 **0 个** pet 路径。当前工作树 = 本线 4 个文件(2 代码 + 2 文档)**+ 4 份与本线无关的未跟踪 docs**(`AGENT_HARNESS_VISUALIZATION_RESEARCH.md` / `COMMUNITY_DETECTION_RESEARCH.md` / `HARNESS_EXECUTION_FLOW_MAP.md` / `plans/2026-09-11-local-knowledge-base-rfc-draft.md`)⇒ **仍要显式列路径,但那 4 份 docs 不属本线,不要顺手 add**。
+- [ ] **Step 4**:按冻结信息提交(**不推送**);`git status` 确认只含本线文件,**显式列路径**。**2026-09-12 复核更正**:原写"工作树里有宠物线在飞改动"——**已不成立**(宠物线含 2b 的 `think` 已于 `f1e92de0` 等提交落地)。**耐久判据(不写具体文件数,免得又过期)**:① `git status` 里出现 **pet 路径 ⇒ 那是别人的在飞改动,不要 add**;② 工作树长期躺着 **4 份与本线无关的未跟踪 docs**(`AGENT_HARNESS_VISUALIZATION_RESEARCH.md` / `COMMUNITY_DETECTION_RESEARCH.md` / `HARNESS_EXECUTION_FLOW_MAP.md` / `plans/2026-09-11-local-knowledge-base-rfc-draft.md`)⇒ **也不属本线**;③ 本线自己的文件按 Task 逐个 `git add <路径>`,**不用 `git add .`**。
 
 **交付判据:** 四条腿全过;**任一不过:不提交**,记为开放项。
 
@@ -171,7 +171,7 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 
 **下一步**:**Task 1 已按用户指示单提为 `e2ad45b0`**(2026-09-12,含两个代码文件 + spec/plan 的文案批准与本次交付纪要)。Task 2(前端数据层)不依赖本 Task,可独立开。
 
-### Task 2(前端数据层 `core/run-status/`)— 2026-09-12,代码就绪,**未提交**
+### Task 2(前端数据层 `core/run-status/`)— 2026-09-12,**已提交 `1a32c2d0`**（7 文件 / +471 −8）
 
 **改动**:新建 `frontend/src/core/run-status/{types,classify,parse,hooks}.ts` + `frontend/tests/unit/core/run-status/{classify,parse}.test.ts`。
 
