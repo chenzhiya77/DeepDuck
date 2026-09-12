@@ -111,15 +111,23 @@
 
 **新文案（en）**：`description` "Main content can be replaced by regeneration; the supplement layer persists and steers every generation"；`mainContentHint` "⚠️ This content will be replaced on next regeneration"；`supplementLabel` "Supplement Layer (Generation Direction)"；`supplementPlaceholder` "Describe how you want the AI to rewrite this entry — it works like a prompt for generation. e.g. Keep the tone rigorous and cover more related concepts"；`supplementHint` "✅ Persists permanently; it is passed to the AI as your requirement on every regeneration"。
 
-- [ ] **Step 1（RED）**：DOM 测试加两条断言——主内容区 hint **不含** `/参考材料|reference material/`；补充层 hint 匹配 `/方向|direction/`。
-- [ ] **Step 2**：改三处 i18n；`types.ts` 只更新块注释（**key 集不变**，无新增/删除键）。
-- [ ] **Step 3（GREEN）**：`wiki-edit-dialog.dom.test.tsx` 全绿（既有 `/主内容区/`、`/补充层/` 正则不受新标签影响）；`pnpm check` 双净。
-- [ ] **Step 4（revert proof）**：一刀——`mainContentHint` 恢复旧值 ⇒ 1 红；恢复后全绿。
-- [ ] **Step 5**：Commit。
+- [x] **Step 1（RED）**：DOM 测试加一条用例、三项断言——`queryByText(/参考材料/)` 为 `null`；主内容区 hint 匹配"此内容会在下次重新生成时被覆盖"；补充层 hint 匹配"每次重新生成都会作为你的要求带给 AI"。**红在哪**：第 1 项拿到 `参考材料`（旧文案仍在）⇒ 1 红 / 10 绿。
+- [x] **Step 2**：改三处 i18n；`types.ts` 只更新块注释（**key 集不变**，无新增/删除键）。
+- [x] **Step 3（GREEN）**：`wiki-edit-dialog.dom.test.tsx` **11 passed**（既有 `/主内容区/`、`/补充层/` 正则不受新标签影响）；前端全量 **2434 passed / 0 failed**（233 文件；较上一轮 2433 恰为 +1）；`pnpm check` exit 0。
+  另按仓库既有判法核对格式：四份文件的"剥 CR 后与 prettier 输出比对"漂移条数与 **HEAD 完全相同**（zh-CN 24 / en-US 30 / types 7 / dom 46）⇒ **零新增漂移**；`pnpm format` 全树红仍是本机 autocrlf 的预存环境条件。
+- [x] **Step 4（revert proof）**：一刀——zh `mainContentHint` 恢复旧值（含"参考材料融入"）⇒ **1 红 / 10 绿**；恢复后 11 绿。
+- [x] **Step 5**：Commit **`f807311f feat(rag): describe the supplement layer as generation direction in the editor`**（4 文件，+27/-15）。
 
-**交付判据**：中文与英文 key 集逐一对齐（无缺漏）；对话框里不再出现任何"会融入"的表述；"方向"语义在 label/placeholder/hint 三处一致。
+**交付判据**：中文与英文 key 集逐一对齐（无缺漏）；对话框里不再出现任何"会融入"的表述；"方向"语义在 label/placeholder/hint 三处一致。 **✅ 达成。**
 
-#### Task 3 交付纪要（待填）
+#### Task 3 交付纪要（2026-09-12）
+
+- **实现落点**：`zh-CN.ts` / `en-US.ts` 的 `knowledge.wikiEdit` 块（`description` / `mainContentHint` / `supplementLabel` / `supplementPlaceholder` / `supplementHint` 五项），`types.ts` 仅块注释；`wiki-edit-dialog.dom.test.tsx` +1 用例。
+- **决策 / 偏离**：
+  1. **断言改成"不出现 + 出现"双向**（计划写的是 `/参考材料|reference material/` 与 `/方向|direction/`）：`方向` 一词在 label 与新 hint 里各出现一次，`getByText(/方向/)` 会撞"多个元素"；改为按**新 hint 的整句**断言，既钉住语义也避开多匹配。
+  2. **主动折行以不引入新漂移**：`description` 与 `supplementPlaceholder` 两条在 zh 侧超宽，`getByText` 那条断言在 dom 侧超宽——按 prettier 偏好把值/参数放到独立行，之后四份文件的漂移计数与 HEAD 相等。
+  3. en 侧文案按 spec 冻结值，未改。
+- **遗留**：Task 4（AGENTS.md 同步 + spec 状态翻转 + 全量回归 + 可选真栈三腿）。
 
 ## Task 4: 文档同步与全量回归
 
