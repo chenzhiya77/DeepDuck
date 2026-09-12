@@ -791,6 +791,66 @@ async def test_full_rebuild_sends_guided_entries_through_single_call(wiki_db_env
     assert "Gateway" in roster
 
 
+class _MidRunEditLLM(_WikiLLM):
+    """生成途中"用户保存了方向"：模拟 PATCH 落在这次 run 的 LLM 调用期间。
+
+    KnowledgeService.update_wiki_entry 在库级 run 在跑时只能标脏（待更新），
+    所以这里也写 status="dirty"。
+    """
+
+    def __init__(self, wiki_store: WikiStore, kb_id: str, *, title: str, new_supplement: str) -> None:
+        super().__init__()
+        self._wiki_store = wiki_store
+        self._kb_id = kb_id
+        self._title = title
+        self._new_supplement = new_supplement
+        self._edited = False
+
+    async def ainvoke(self, messages):
+        response = await super().ainvoke(messages)
+        if not self._edited:
+            self._edited = True
+            await self._wiki_store.upsert_entry(self._kb_id, title=self._title, content="此刻的正文", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty", supplement_content=self._new_supplement)
+        return response
+
+
+@pytest.mark.asyncio
+async def test_write_keeps_dirty_when_direction_changed_mid_run(wiki_db_env):
+    """在飞的那次写入不得擦掉"期间保存过方向"的待更新标记。
+
+    真栈实测缺陷（2026-09-12）：保存补充层时若有 run 在跑，PATCH 会兜底标脏；
+    该 run 收尾写库却照旧写 ready ⇒ 待更新没了，方向躺在库里永不生效。
+    """
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="ready", supplement_content="旧方向")
+    llm = _MidRunEditLLM(wiki_store, kb_id, title="DeerFlow", new_supplement="新方向：语气严谨些")
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm)
+
+    assert stats.generated == 1
+    entry = await wiki_store.get_entry(wiki_entry_id(kb_id, "DeerFlow"))
+    assert entry["supplement_content"] == "新方向：语气严谨些"  # 用户的方向保住了
+    assert entry["status"] == "dirty"  # ……而且待更新记号也保住了
+    assert "百科综述正文" in entry["content"]  # 本次生成仍然落了库
+
+
+@pytest.mark.asyncio
+async def test_write_keeps_dirty_mid_run_on_dirty_refresh(wiki_db_env):
+    """同一条规则在 dirty 增量路径上成立（该路径本来就是 dirty→ready 清标）。"""
+    store, graph_store, kb_id = wiki_db_env["store"], wiki_db_env["graph_store"], wiki_db_env["kb_id"]
+    wiki_store = WikiStore(store._sf)
+    await wiki_store.upsert_entry(kb_id, title="DeerFlow", content="旧内容", source_chunk_ids=["doc-w-c0", "doc-w-c1"], status="dirty", supplement_content="旧方向")
+    llm = _MidRunEditLLM(wiki_store, kb_id, title="DeerFlow", new_supplement="新方向：补上适用范围")
+
+    stats = await generate_wiki(store, graph_store, wiki_store, None, kb_id=kb_id, llm=llm, only_dirty=True)
+
+    assert stats.generated == 1
+    entry = await wiki_store.get_entry(wiki_entry_id(kb_id, "DeerFlow"))
+    assert entry["supplement_content"] == "新方向：补上适用范围"
+    assert entry["status"] == "dirty"
+
+
 @pytest.mark.asyncio
 async def test_per_entry_regenerate_injects_direction(wiki_db_env):
     """局部更新（用户手选条目重写）同样把补充层当作方向。"""
