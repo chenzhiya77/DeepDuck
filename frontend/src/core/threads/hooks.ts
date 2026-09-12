@@ -26,6 +26,10 @@ import {
   isHiddenFromUIMessage,
 } from "../messages/utils";
 import type { FileInMessage } from "../messages/utils";
+import {
+  describeStartFailure,
+  START_FAILURE_KWARG,
+} from "../run-status/start-failure";
 import type { LocalSettings } from "../settings";
 import { isSidecarThread, SIDECAR_METADATA_KEY } from "../sidecar/thread";
 import { useSubtaskContext, useUpdateSubtask } from "../tasks/context";
@@ -1556,6 +1560,11 @@ export function useThreadStream({
   const [liveMessagesThreadId, setLiveMessagesThreadId] = useState<
     string | null
   >(null);
+  // The message a plain send put on screen, until the run is created. A start
+  // that fails keeps exactly this one (the reader's own turn) so the failure
+  // notice has an anchor; a created run clears it, because from then on the
+  // outcome belongs to the run row, not to the submit.
+  const pendingSendMessageIdRef = useRef<string | null>(null);
   const [pendingSupersededRunIds, setPendingSupersededRunIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -1688,6 +1697,7 @@ export function useThreadStream({
     // Keep explicit: SDK types claim @default true, but runtime uses throttle ?? false.
     throttle: true,
     onCreated(meta) {
+      pendingSendMessageIdRef.current = null;
       handleStreamStart(meta.thread_id, meta.run_id);
       const now = new Date().toISOString();
       const createdMetadata = buildThreadCreatedMetadata(context);
@@ -1870,8 +1880,36 @@ export function useThreadStream({
       }
     },
     onError(error) {
-      setOptimisticMessages([]);
-      setOptimisticThreadId(null);
+      // This is the one place a failed start lands, whichever path submitted it:
+      // the SDK's stream manager routes the failure to `onError` instead of
+      // rejecting `submit`, so neither `sendMessage`'s catch nor
+      // `submitPreparedReplay`'s ever sees a 409/400/404/503.
+      const failure = describeStartFailure(error);
+      const failedSendMessageId = pendingSendMessageIdRef.current;
+      pendingSendMessageIdRef.current = null;
+      if (failure.kind === "none" || failedSendMessageId === null) {
+        setOptimisticMessages([]);
+        setOptimisticThreadId(null);
+      } else {
+        // A run that never started: keep the reader's own message so the notice
+        // has the user-message anchor it was designed around, and ride the
+        // verdict on it for the notice to read back. Only that one message
+        // survives — the mock "uploading" bubble described a run that does not
+        // exist. `optimisticThreadId` stays, because it is the gate that keeps
+        // optimistic messages on screen.
+        const notice = { ...failure, message: getStreamErrorMessage(error) };
+        setOptimisticMessages((current) =>
+          current
+            .filter((message) => message.id === failedSendMessageId)
+            .map((message) => ({
+              ...message,
+              additional_kwargs: {
+                ...message.additional_kwargs,
+                [START_FAILURE_KWARG]: notice,
+              },
+            })),
+        );
+      }
       setLiveMessagesThreadId(null);
       pendingPreparedReplayRef.current = null;
       setPendingSupersededRunIds(new Set());
@@ -2148,6 +2186,8 @@ export function useThreadStream({
       setOptimisticThreadId(threadId);
       setLiveMessagesThreadId(threadId);
       setOptimisticMessages(newOptimistic);
+      pendingSendMessageIdRef.current =
+        newOptimistic.find((message) => message.type === "human")?.id ?? null;
 
       listeners.current.onSend?.(threadId);
 

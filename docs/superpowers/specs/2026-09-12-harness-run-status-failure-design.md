@@ -148,11 +148,12 @@ VERDICT: hook fired with a numeric status 0 time(s)
 
 新建 `frontend/src/core/run-status/`(与 `core/delivery/` 同构,薄一层):
 
-- `types.ts`:`RunOutcome`(从 `RunResponse` 投影:`status` / `stop_reason` / `error?`)+ `FailureKind`(上表四类枚举)。
-- `classify.ts`:**纯函数**,把"HTTP 状态码 / `status` / `stop_reason` / `error`"映射成 `FailureKind` + 动作键。**这是本项唯一有判断逻辑的地方,必须纯函数 + 单测**,因为它的输入来自三个不同的地方。
+- `types.ts`:`RunOutcome`(从 `RunResponse` 投影:`status` / `stop_reason` / `error?`)+ `FailureKind`(**按 §4.2 的表:七档** —— `occupied` / `config` / `environment` / `modeMismatch` / `runFailed` / `stopped` / `none`)+ 另导出 **`PRESENTED_KINDS`**(会被呈现的六档;Task 4 的后端 guard 以它为对账对象)。动作是**键**(`stop` / `configure` / `backToList` / `restart` / `inspect`),句子由文案层给。
+- `classify.ts`:**纯函数**,把"HTTP 状态码 / `status`"映射成 `FailureKind` + 动作键(**两个入口**:`classifyStartFailure(httpStatus)` 与 `classifyRunOutcome(outcome)`)。**这是本项唯一有判断逻辑的地方,必须纯函数 + 单测**,因为它的输入来自两个不同的地方。查表用 `Map`:键来自线上,对象字面量会被原型键供货。
 - `parse.ts`:`parseRunOutcome(row)`(逐字段重建,未知字段丢弃——与 `core/constitution/parse.ts` / `core/delivery/parse.ts` 同一手法)。
-- `hooks.ts`:`useRunOutcome(threadId, runId)`(`staleTime: Infinity`:终态事实)。
-- **pre-stream 失败进不来 hook**(那时没有 runId):它需要一个**页面级的短命记录**——提交时记住"这次提交",失败时把 `{category, message}` 挂到那条用户消息上,成功开始流式后清掉。**待裁**:这个记录放页面 state 还是 `sessionStorage`(刷新后是否还该看到上次那条失败)。
+- `start-failure.ts`:`describeStartFailure(error)` —— 把 `onError` 拿到的 `HTTPError` 形状(读 `.status`)适配给 `classifyStartFailure`,并导出 `START_FAILURE_KWARG`(verdict 挂在哪)。
+- `hooks.ts`:`useRunOutcome({threadId, runId, enabled})`(`staleTime: Infinity`:终态事实;**`enabled` 是必需的** —— 否则 mid-run 读一次会把 `running` 永久冻住)。
+- **pre-stream 失败进不来 hook**(那时没有 runId):它需要一个**页面级的短命记录**——提交时记住"这次提交",失败时把 `{kind, action, message}` 挂到那条用户消息上。**已定(2026-09-12 Task 3)**:① 记录**随那条消息**留在页面内存里(不落 `sessionStorage`)⇒ 刷新即消失;② 前提是**那条用户消息必须被保留** —— 今天 `onError` 会把它连同乐观消息一起清掉,而它正是 §4.1 的 pre-stream 锚点(用户 2026-09-12 裁定保留,见 §8 风险 6);③ 只对 plain send 保留,replay 路径(edit)的乐观消息是服务端的替换副本。挂载点是 `additional_kwargs[deerflow_run_status]`。
 
 ### 4.4 与交付层的边界(承接它的 §8)
 
@@ -211,7 +212,8 @@ VERDICT: hook fired with a numeric status 0 time(s)
 3. **toast 与内联并存(已裁:保留)**:内联出现后,同一条失败**仍会**从 toast 冒出来。**用户 2026-09-12 裁"保留"**——toast 在滚动位置不在锚点附近时仍然有用。⇒ **本项不删任何 toast**;只是让内联同时存在。
 4. **post-stream 的后端面需要评审**:把 `error` 暴露到 `RunResponse` 是加性字段,但它是"把失败原文交给前端",要考虑它是否可能含敏感内容(交付那条消息是固定文案,但 `on_chain_error` 的 `str(error)` 可能是任意异常文本)。**落地时必须过一遍"这几类 `error` 里会不会带 prompt/tool 输出"**。
 5. **本项与 §12 第 6 项(实时脉冲)的分工**:脉冲讲"正在走到哪",本项讲"结局如何"。两者都在 run 作用域内,**若都选内联锚点,要注意不要互相抢位**(建议:脉冲在头部触发器上给一个小状态,本项在内联)。**待第 6 项时确认**。
-6. **`getStreamErrorMessage` 是"丢信息"的那一跳,改它影响面不小**:它有 4 个调用点(`hooks.ts:1879` / `:2213` / `:2413` / `:2732`),其中只有 `:2413` 是 run 创建失败。**不要改动它的既有行为**(其他三处依赖"总能返回一句话"),而是**新增**一个能同时给出 `{kind, message}` 的解析入口,让 run 创建那条路径用它。
+6. **`getStreamErrorMessage` 是"丢信息"的那一跳,但它不是落点** —— **2026-09-12 Task 3 实测更正**:它现在只有 **2** 个调用点(`hooks.ts:1879` 的 `onError` 与 `:2413` 的 `submitPreparedReplay`),不是初稿写的 4 个;而且**run 创建失败根本不在 `:2413`** —— 所有提交路径(send/regenerate/edit)都走 `thread.submit`,SDK 的 `StreamManager.start` 不 await 队列、`enqueue` 也在 catch 里调 `options.onError` 后不 rethrow,`await thread.submit(...)` **永不 reject** ⇒ 真实落点是**一个共享的 `onError`**。**不要改动 `getStreamErrorMessage` 的既有行为**(`:2413` 依赖"总能返回一句话"),而是新增 `describeStartFailure` 做分类,由 `onError` 组合两者。
+   ⇒ 由此还带出一条必须写死的实现约束:**那条用户消息在失败时会被清掉**(`onError` 第一行的 `setOptimisticMessages([])`),而 §4.1 的 pre-stream 锚点正是它。**用户 2026-09-12 裁定:保留它**(只对 plain send 保留;replay 路径的乐观消息是服务端替换副本,保留会出现重影)。详见 Task 3 的 Step 4 与交付纪要。
 
 ## 9. 依赖排序与规模
 

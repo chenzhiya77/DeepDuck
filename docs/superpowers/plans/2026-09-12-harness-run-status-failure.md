@@ -67,16 +67,16 @@ cd backend && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.e
 
 ## Task 3: pre-stream 分类入口(读 `error.status`)
 
-**Files:** Create `frontend/src/core/run-status/start-failure.ts` + 单测;Modify `frontend/src/core/threads/hooks.ts`(run 创建失败那条路径)
+**Files:** Create `frontend/src/core/run-status/start-failure.ts` + 单测;Create `frontend/tests/unit/core/threads/start-failure.dom.test.tsx`;Modify `frontend/src/core/threads/hooks.ts`(`onError` —— **本步的落点被更正过,见 Step 3**)
 
-- [ ] **Step 1(RED)**:`start-failure.test.ts` —— `describeStartFailure(error)` 对**真实形状**分类:① `HTTPError` 带 `.status = 409` → 占用类;② `.status = 400` → 配置类;③ `.status = 404` → 环境类;④ `.status = 422` → `none`(不呈现);⑤ 无 `.status` 的普通 Error → 兜底(见 Step 3);⑥ `null`/字符串 → 兜底。
-- [ ] **Step 2**:实现 `describeStartFailure(error)`:**先读 `error.status`**(`HTTPError.status`),再读 `error.text` 拿原始 body(便于控制台),两者都没有才退回消息文本。**不做字符串匹配分类**——spec 明确否掉"按自由文本猜"。
-- [ ] **Step 3(与既有行为共存,spec §8 风险 6)**:`hooks.ts:2413` 那条 run 创建失败的路径改为**同时**产出 `{kind, message}`;`getStreamErrorMessage` 的**行为不改**(另外 3 个调用点依赖它总能返回一句话)。
-- [ ] **Step 4**:pre-stream 的**短命记录**:提交时记本次提交、失败时把 `{kind, message}` 挂到那条**用户消息**上,开始流式后清掉。**待裁(小口子)**:放页面 state 还是 `sessionStorage`(刷新后是否还该看到上次那条失败)——**实现前问一次**,默认页面 state(刷新即消失)。
-- [ ] **Step 5**:转绿 + `pnpm check`。
-- [ ] **Step 6(revert 证明)**:把"读 `error.status`"改成"只读 message" → 前三条例红。
+- [x] **Step 1(RED)**:`start-failure.test.ts` —— `describeStartFailure(error)` 对**真实形状**分类:① `HTTPError` 带 `.status = 409` → 占用类;② `.status = 400` → 配置类;③ `.status = 404` → 环境类;④ `.status = 422` → `none`(不呈现);⑤ 无 `.status` 的普通 Error → 兜底(见 Step 3);⑥ `null`/字符串 → 兜底。**实际写了 7 条**(补了 503→模式不匹配、501→不呈现、`status` 类型不对→不读),RED 2 红(`Cannot find module`)。
+- [x] **Step 2**:实现 `describeStartFailure(error)`:**读 `error.status`**,交给 Task 2 的 `classifyStartFailure`。**不做字符串匹配分类**。**两处按实情收窄**:① 原文的"再读 `error.text` 拿原始 body(便于控制台)"**没做** —— SDK 自己已经 `console.error(error)` 整个错误对象(`ui/manager.js:280`),`.text` 本来就在控制台里,再加一份是重复;② 原文"两者都没有才退回消息文本"由调用方用既有的 `getStreamErrorMessage` 组合,**不复制那份逻辑**(见 Step 3)。
+- [x] **Step 3(与既有行为共存,spec §8 风险 6)**:**⚠ 落点更正 —— 不是 `hooks.ts:2413`,是 `onError`。** 证据:所有提交(send/regenerate/edit)都走 `thread.submit` → SDK `useStreamLGP.submit` → `StreamManager.start`,而 `start` 只做 `this.queue = this.queue.then(...)`、**不 await 也不返回那个队列**,真正的执行体 `enqueue` 在 catch 里调 `options.onError(error)` 后**不 rethrow**(`ui/manager.js:279-291`)⇒ **run 创建失败的 HTTP 错误根本不会从 `await thread.submit(...)` 抛出来**,`submitPreparedReplay` 的 catch(`:2413`)只接得到 `prepare()` 自己抛的错。真实落点是**一个**共享的 `onError`(send/regenerate/edit 共用)。⇒ 从"逐路径接入"变成**一个 choke point**,更简单。`getStreamErrorMessage` 的**行为不改**;另更正 spec §8 风险 6 的计数:它现在只有 **2** 个调用点(`:1879` `onError`、`:2413`),不是 4 个。
+- [x] **Step 4**:**⚠ 本步缺了一环,已按用户裁决补上。** 那个 `onError` 第一行就是 `setOptimisticMessages([])` —— 失败时**那条用户消息会被清掉**,于是 D1-B 要挂的锚点**不在**(新会话里根本没有 human 消息;已有会话里"本轮最后一条 human"会变成上一轮那条)。**用户 2026-09-12 裁定:保留那条用户消息**(选项:保留(推荐)/ 不保留改挂输入框上方 / 保留+回填草稿)。实现:用 `pendingSendMessageIdRef` 记住**这次 plain send** 建的那条消息(在 `onCreated` 里清掉 —— run 建起来了就不再是"没起来"),失败时**只留它**、把 `{kind, action, message}` 挂到 `additional_kwargs[deerflow_run_status]`;其余乐观消息(含"上传中"的模拟 AI 气泡)照旧清掉。**只对 plain send 保留** —— replay 路径(edit)的乐观消息是服务端的替换副本,保留会让同一段文字在界面上出现两次。原文"待裁:页面 state 还是 `sessionStorage`"**因此自动定案**:记录随那条消息留在页面内存里,刷新即消失(= 原文的默认)。
+- [x] **Step 5**:转绿 + `pnpm check`。**22 node 例 + 2 DOM 例绿;`pnpm check` exit 0;全量 2410 passed / 1 failed(那 1 条是 A/B 证过的预存失败,见交付纪要)。**
+- [x] **Step 6(revert 证明)**:两刀都有牙(见交付纪要)。
 
-**交付判据:** 分类只依赖结构化字段(测试里**不含**"按文案匹配"的用例);既有 toast 行为不变(有断言或手工确认)。
+**交付判据:** 分类只依赖结构化字段(测试里**不含**"按文案匹配"的用例);既有 toast 行为不变(有断言或手工确认)。 **✅ 达成**(toast 未删未改,`toast.error(getStreamErrorMessage(error))` 原样保留)。
 
 ## Task 4: 文案落盘 + 两处 guard
 
@@ -207,3 +207,35 @@ run 的 `error` 字符串**今天已经在 API 上暴露**:`POST /api/runs/wait`
 ② **`useRunOutcome` 入参改成 options bag**(`{threadId, runId, enabled}`),不再按 Step 5 的字面 `(threadId, runId)` —— 与紧邻的 `useDelivery` / `useWorkspaceChanges` 同形,且 `enabled` 是必需的:查询是 `staleTime: Infinity`,调用方若在 run 在飞时读一次,`running` 会被永久冻住、真实结局再也判不出来。
 ③ **`useRunOutcome` 返回 `{outcome, kind, action}`** 而不是裸 `RunOutcome` —— Task 5 的两个组件要 kind/action,详情行要 `error` 原文,一次给全,组件不用自己再调 classify。
 ④ **查表用 `Map` 而非对象字面量** —— `status` 来自线上,对象字面量会对 `"constructor"` 这类键返回 Object 构造函数并被当成 verdict。这是本仓已有的一类防护(见 clarification 字段/`__proto__` 的既有守卫)。
+
+### Task 3(pre-stream 分类入口)— 2026-09-12,已交付,**未提交**
+
+**改动**:新建 `frontend/src/core/run-status/start-failure.ts`(纯:`describeStartFailure` + `START_FAILURE_KWARG`)、`frontend/tests/unit/core/run-status/start-failure.test.ts`、`frontend/tests/unit/core/threads/start-failure.dom.test.tsx`;改 `frontend/src/core/threads/hooks.ts`(import ×2、`pendingSendMessageIdRef` 声明、`sendMessage` 记 id、`onCreated` 清 id、`onError` 分类+保留)。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **9**(`start-failure.test.ts` 7 node + `start-failure.dom.test.tsx` 2 DOM) |
+| RED | node 2 红(`Cannot find module '@/core/run-status/start-failure'`) |
+| GREEN | `core/run-status` 3 文件 **22 passed**;DOM **2 passed** |
+| eslint / tsc | `pnpm check` **exit 0** |
+| prettier | 4 个触碰文件全过;`hooks.ts` 用「剥 CR 后与 prettier 输出比对」法 = 残差 **0** |
+| 全量 | **2410 passed / 1 failed** |
+
+**那条 1 failed 已 A/B 认领(不是本次引入)**:`knowledge/chat-panel.dom.test.tsx::restores the remembered model per kb…`。做法:`cp hooks.ts /tmp/hooks.mine → git checkout -- src/core/threads/hooks.ts → 只跑该文件` ⇒ **HEAD 版本下同样 `1 failed / 26 passed`**;随后复制回并核对 diff(42+/2−)。沿用复制/checkout/复制回,**不碰 stash**(见 [[project-env-test-failures]])。
+
+**revert proof(两刀,各自命中,无溢出)**
+
+| neuter | 结果 |
+|---|---|
+| `onError` 的保留分支改成无条件清空(`if (true)`) | DOM 的**保留**用例红;「无 status 则清空」用例**绿** ⇒ 两条用例各管一半,没有互相代偿 |
+| `describeStartFailure` 改成恒 `classifyStartFailure(null)` | node **4 红**(409 / 400 / 404 / 503);另 3 条保持绿(422/501 与"无 status"/"类型不对"本就期望 `none`)⇒ 与预期一致 |
+
+两刀均已原样恢复并复跑(22 + 2 全绿),`grep NEUTER` 零残留。
+
+**⚠ 两处对原计划/上游 spec 的更正**(都在上文 Step 3/Step 4 详述):
+① **落点**:pre-stream 失败**不落在 `hooks.ts:2413`**,落在共享的 `onError`(所有提交路径共用一个 choke point)—— 因为 SDK 的 `StreamManager.start` 不 await 队列、`enqueue` 也不 rethrow,`await thread.submit(...)` **永不 reject**。spec §8 风险 6 的"4 个调用点、只有 `:2413` 是 run 创建失败"**两处都不准**(实为 2 个调用点,且 run 创建失败不在其中)。
+② **计划缺一环**:那个 `onError` 会清掉那条用户消息,而 D1-B 的 pre-stream 锚点正是它。**用户 2026-09-12 裁定保留**("保留那条用户消息(推荐)"),实现见 Step 4。这一环原计划没有,是我核到冲突后停下摊证据、由用户裁的。
+
+**未覆盖(诚实记录)**:`describeStartFailure` 里 422/501 → `none` 两条**对第二刀没有牙**(该刀把一切都变成 `none`,而这两条期望的正是 `none`);那两档的映射由 Task 2 的 `classify.test.ts` 钉住(Task 2 的第二刀已证)。另:保留消息在真栈上的**观感**只有单测担保,端到端归 Task 5 的腿一/腿二。
+
+**偏离原计划(其余,诚实记录)**:③ 原文要"读 `error.text` 拿原始 body(便于控制台)"——**没做**,因为 SDK 已 `console.error(error)` 整个对象(`ui/manager.js:280`),`.text` 本就在控制台,再加是重复;④ 原文"两者都没有才退回消息文本"由调用方用既有 `getStreamErrorMessage` **组合**实现,不复制那份逻辑;⑤ **额外新增了一个 DOM 测试文件**(原计划只列了 `start-failure.ts` + 单测)——因为 Step 4 补进来的"保留消息"是这次的真实行为变化,而它没有纯函数可测,只能用 `local-turn-order.dom.test.tsx` 那套 `rs.mock("@langchain/langgraph-sdk/react")` 脚手架驱动。**这个额外测试正是第二刀能命中保留分支的原因。**
