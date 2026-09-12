@@ -261,6 +261,12 @@ export interface Translations {
     details: string;
   };
 
+  // Live pulse (where a run in flight is on the constitution ring)
+  pulse: {
+    /** Laps run so far; one lap is one model→tools round trip. */
+    lap: (lap: number) => string;
+  };
+
   // Input Box
   inputBox: {
     placeholder: string;

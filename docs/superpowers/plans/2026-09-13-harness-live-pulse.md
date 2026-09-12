@@ -34,7 +34,7 @@ node node_modules/prettier/bin/prettier.cjs --check <文件>  # 逐文件;CRLF �
 
 - [x] 私有 `:8099`(`DEER_FLOW_AUTH_DISABLED=1`)+ python 直读 SSE,`stream_mode:["messages-tuple","values","custom"]` + `stream_subgraphs: true`;3 条真 run 量出**根命名空间 distinct AI id == `llm_call_index`**(2=2、2=2、1=1),含命名空间会数成 4。收尾:5 条测试线程**按确定 id** 删除并逐条复核 404、实例停掉、脚本删掉。**结论写回 spec §7。**(用户 `:8001` 全程未碰。)
 
-## Task 1: 数据层 `core/pulse/`(纯函数)—— **已交付 2026-09-13,未提交**
+## Task 1: 数据层 `core/pulse/`(纯函数)—— **已提交 `58578f5f`**(4 文件 / +216 −9)
 
 **Files:** Create `frontend/src/core/pulse/{types,reduce}.ts`、`frontend/tests/unit/core/pulse/reduce.test.ts`
 
@@ -52,17 +52,17 @@ node node_modules/prettier/bin/prettier.cjs --check <文件>  # 逐文件;CRLF �
 
 **⚠ 一处偏离(诚实记录)**:计划的用例 ⑥ 原写"**混进一条带命名空间标记的消息不影响 `lap`**"。实施时发现**这个用例没有可断言的对象**:子代理帧**从不进入**这份列表——线程 feed 会滤掉 `subagent` 类别,且应用不请求 `stream_subgraphs` ⇒ **root-only 是"输入"的性质,不是 reducer 能检查的东西**。硬造一个标记字段就是给不存在的场景写代码。⇒ 换成一个真实的不变量:**"只数 assistant 轮"**(`tool` 消息即使带 `tool_call_id` 也不得抬高圈数)。它管住了同一件事里**可能真发生**的那一半;命名空间那半留在 spec §7 作为**要守的输入前提**,并在 Task 5 写进 `frontend/AGENTS.md`。
 
-## Task 2: 文案 + 三处机具(**只做两处**)
+## Task 2: 文案 + 机具 —— **已交付 2026-09-13,未提交**(1 条文案、2 处机具)
 
 **Files:** Create `frontend/src/core/pulse/pulse-i18n-keys.json`、`frontend/tests/unit/core/pulse/i18n-keys.test.ts`;Modify `frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`
 
-- [ ] **Step 1(RED)**:清单 + 前端 guard(复用 `tests/unit/support/i18n-key-manifest.ts`)。**先确认红。**
-- [ ] **Step 2**:落 2 条:`pulse.lap(n)`(第几圈)与 `pulse.markerA11y(stage, lap)`(指针的无障碍名)。**照本线流程逐字冻、送批**(不自己写措辞)。
-- [ ] **Step 3**:**明说为什么没有第三处(后端)guard**:`pulse.*` **不映射任何后端枚举**(不像 `delivery.*` 挂契约的 `stage`、`constitution.*` 挂 middleware 真名)⇒ 只有清单 + 前端 locale + 前端类型三处,少的那一处是**因为不存在跨端对账对象**,不是漏了。
-- [ ] **Step 4**:转绿 + `pnpm check` + prettier。
-- [ ] **Step 5(revert)**:删一条 locale key ⇒ 正向红;加一条孤儿 ⇒ 反向红。
+- [x] **Step 1(RED)**:清单 + 前端 guard(复用 `tests/unit/support/i18n-key-manifest.ts`)。**先确认红** —— **2 红**(两个 locale 各缺 1 条),清单形状那条当次即绿。
+- [x] **Step 2**:**只落 1 条** —— `pulse.lap(n)`:`第 ${lap} 圈` / `Lap ${lap}`(**用户 2026-09-13 授权"你来定"**)。⚠ **砍掉计划的第 2 条 `pulse.markerA11y`**:marker 按 Task 3 的裁决是 `aria-hidden` 的纯装饰,语义由调用方那行**可见的**圈数文本承载 ⇒ 再造一个无障碍名是把同一件事说两遍。**段名也不新增**:环早就有 `labelForStage` prop,文案在构成那套已冻结的 67 条里。
+- [x] **Step 3**:**明说为什么没有第三处(后端)guard**:`pulse.*` **不映射任何后端枚举**(不像 `delivery.*` 挂契约的 `stage`、`constitution.*` 挂 middleware 真名)⇒ 只有清单 + 前端 locale + 前端类型三处,少的那一处是**因为不存在跨端对账对象**,不是漏了。
+- [x] **Step 4**:转绿(**10 例**:7 reduce + 3 i18n)+ **全量 235 文件 / 2444 例 / 0 失败** + `pnpm check` **exit 0** + prettier 干净(3 个 locale 的残差与 HEAD **逐字相同** 24/30/7 ⇒ 零新增格式债)。
+- [x] **Step 5(revert)**:**两刀各自命中** —— zh-CN 删 `lap` ⇒ `missing:['lap']`;en-US 加 `orphanKey` ⇒ `orphans`。恢复后 10 绿,零残留。
 
-**交付判据:** 清单是 `pulse.*` 的完整镜像;文案逐字等于冻结稿。
+**交付判据:** 清单是 `pulse.*` 的完整镜像;文案逐字等于落盘值。 **✅ 达成**(文案由我起草并已报告给用户——他授权自定,但措辞可一句话改)。
 
 ## Task 3: 环上的 marker(组件)
 
@@ -119,7 +119,22 @@ Task 1 与 Task 2 相互独立;Task 3 依赖 1(拿到 `PulseState` 的形状)+ 2
 
 见上方 Task 0 与 spec §7。
 
-### Task 1(数据层 `core/pulse/`)— 2026-09-13,**已交付,未提交**
+### Task 2(文案 + 机具)— 2026-09-13,**已交付,未提交**
+
+**改动**:新建 `frontend/src/core/pulse/pulse-i18n-keys.json` + `tests/unit/core/pulse/i18n-keys.test.ts`;改三个 locale(各加一个 `pulse` 块)。
+
+| 项 | 实测 |
+|---|---|
+| 新增用例 | **3**(两个 locale 各 1 + 清单形状 1) |
+| RED | **2 红**(两 locale 各缺 1 条) |
+| GREEN | `core/pulse` **10 passed**(7 reduce + 3 i18n);**全量 2444 例 / 0 失败** |
+| `pnpm check` | **exit 0** |
+| prettier | 新文件全过;三个 locale 残差 **24/30/7 = 与 HEAD 逐字相同** ⇒ 零新增格式债 |
+| revert | 删 zh-CN `lap` → `missing`;en-US 加孤儿 → `orphans`。**两刀各自命中** |
+
+**偏离(诚实记录)**:计划要 2 条,实际落 **1 条** —— `pulse.markerA11y` 被砍(marker 是 `aria-hidden` 纯装饰,可见的圈数文本已经承载语义;段名复用环既有的 `labelForStage`)。
+
+### Task 1(数据层 `core/pulse/`)— 2026-09-13,**已提交 `58578f5f`**
 
 **改动**:新建 `frontend/src/core/pulse/{types,reduce}.ts` + `frontend/tests/unit/core/pulse/reduce.test.ts`。
 

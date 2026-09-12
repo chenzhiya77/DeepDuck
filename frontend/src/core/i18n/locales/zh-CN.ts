@@ -267,6 +267,11 @@ export const zhCN: Translations = {
     details: "看详情",
   },
 
+  // Live pulse
+  pulse: {
+    lap: (lap) => `第 ${lap} 圈`,
+  },
+
   // Input Box
   inputBox: {
     placeholder: "今天我能为你做些什么？",

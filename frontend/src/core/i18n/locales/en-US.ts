@@ -299,6 +299,11 @@ export const enUS: Translations = {
     details: "Details",
   },
 
+  // Live pulse
+  pulse: {
+    lap: (lap) => `Lap ${lap}`,
+  },
+
   // Input Box
   inputBox: {
     placeholder: "How can I assist you today?",
