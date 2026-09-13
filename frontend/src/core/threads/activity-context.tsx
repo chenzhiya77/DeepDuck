@@ -11,6 +11,8 @@ import {
 } from "react";
 
 import { getAPIClient } from "@/core/api/api-client";
+import { classifyRunOutcome } from "@/core/run-status/classify";
+import { parseRunOutcome } from "@/core/run-status/parse";
 
 import {
   EMPTY_ACTIVITY,
@@ -18,6 +20,30 @@ import {
   type ActivityState,
   type ActivityTarget,
 } from "./activity";
+
+/**
+ * 这轮 run 的终态是不是失败(error / timeout)。
+ *
+ * **best-effort**:读不到或读失败一律当「没失败」。反过来的话,一次网络抖动就会
+ * 把宠物钉在一个谎报的 error 上 —— 那比漏报糟得多。
+ *
+ * 判据复用 `run-status` 的分类器(状态码进、结论出,不读自由文本),与聊天页
+ * `thread.error → ChatStatus` 那条链同源;区别只是应用级 provider 没有
+ * `useStream`,所以要自己问一次 run 记录。
+ */
+async function runFailed(
+  client: ReturnType<typeof getAPIClient>,
+  threadId: string,
+  runId: string,
+): Promise<boolean> {
+  try {
+    const row = await client.runs.get(threadId, runId);
+    return classifyRunOutcome(parseRunOutcome(row)).kind === "runFailed";
+  } catch {
+    // 读不到就当作没失败 —— 别把一次抖动变成宠物上的谎报
+    return false;
+  }
+}
 
 interface ActivityContextValue {
   activity: ActivityState;
@@ -124,7 +150,15 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
             break;
           }
         }
-        if (!cancelled) dispatch({ kind: "end", threadId });
+        if (!cancelled) {
+          // 流正常收尾**不等于**这轮跑成功了 —— 终态可能是 error / timeout。
+          // 这一步只在流结束后问,所以不会踩 run-status 那条「在做飞时读会把
+          // running 冻住」的坑。
+          const failed = await runFailed(client, threadId, runId);
+          if (!cancelled) {
+            dispatch({ kind: failed ? "run-failed" : "end", threadId });
+          }
+        }
       } catch {
         // abort 是正常的换目标/卸载,不算错误
         if (!cancelled) dispatch({ kind: "join-error", threadId });

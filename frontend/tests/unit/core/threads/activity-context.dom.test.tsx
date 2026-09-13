@@ -23,9 +23,13 @@ let client: {
       runId: string,
       options: { signal?: AbortSignal; streamMode?: unknown },
     ) => AsyncGenerator<Chunk>;
+    get: (threadId: string, runId: string) => Promise<unknown>;
   };
   threads: { getState: (threadId: string) => Promise<unknown> };
 };
+
+/** run 记录的槽位:终态的分类判据来自它 */
+let runRow: unknown = { status: "success", stop_reason: null, error: null };
 
 // 工厂不能闭包测试内的变量(rs.mock 会被提升),所以拿一个模块级槽位转接
 rs.mock("@/core/api/api-client", () => ({
@@ -61,6 +65,11 @@ function stubClient(
           });
         })();
       },
+      get: async () => {
+        // "reject" 是刻意的失败哨兵:catch 分支必须有用例走到,否则它坏掉没人发现
+        if (runRow === "reject") throw new Error("runs.get failed");
+        return runRow;
+      },
     },
     threads: {
       getState: async () => {
@@ -80,6 +89,7 @@ function Probe({ target }: { target: ActivityTarget | null }) {
       data-running={String(activity.running)}
       data-count={String(activity.messages.length)}
       data-thread={activity.target?.threadId ?? "none"}
+      data-error={String(activity.hasError)}
     />
   );
 }
@@ -88,6 +98,7 @@ interface ProbeAttrs {
   running: string | null;
   count: string | null;
   thread: string | null;
+  error: string | null;
 }
 
 function read(selector = "output"): ProbeAttrs {
@@ -97,6 +108,7 @@ function read(selector = "output"): ProbeAttrs {
     running: el.getAttribute("data-running"),
     count: el.getAttribute("data-count"),
     thread: el.getAttribute("data-thread"),
+    error: el.getAttribute("data-error"),
   };
 }
 
@@ -121,12 +133,63 @@ function renderWith(target: ActivityTarget | null): void {
   );
 }
 
-/** 冲掉挂起的 effect 与微任务(异步订阅是生成器,得让它转起来) */
+/** 冲掉挂起的 effect 与微任务(异步订阅是生成器,且终结前还要问一次 run 终态,故多冲几轮) */
 async function flush(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-  });
+  for (let i = 0; i < 4; i += 1) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
 }
+
+describe("run 终态也算出错(只看流失败会漏报)", () => {
+  // 本块声明在文件级钩子之前,拿不到那份 cleanup —— 自带一份,免得挂载的树串到别的用例
+  afterEach(() => {
+    cleanup();
+    runRow = { status: "success", stop_reason: null, error: null };
+  });
+
+  it("终态是 error ⇒ hasError 置真", async () => {
+    const rec = stubClient("closed");
+    runRow = { status: "error", stop_reason: null, error: "boom" };
+    renderWith({ threadId: "T", runId: "R" });
+    await flush();
+
+    const seen = read();
+    expect(seen.error).toBe("true");
+    expect(seen.running).toBe("false");
+    expect(rec.joins.length).toBe(1);
+  });
+
+  it("终态是 success ⇒ hasError 保持 false", async () => {
+    stubClient("closed");
+    runRow = { status: "success", stop_reason: null, error: null };
+    renderWith({ threadId: "T", runId: "R" });
+    await flush();
+
+    expect(read().error).toBe("false");
+  });
+
+  it("读不到 run 记录 ⇒ 不伪造 error", async () => {
+    stubClient("closed");
+    runRow = undefined; // 解析不出 outcome,分类器给 none
+    renderWith({ threadId: "T", runId: "R" });
+    await flush();
+
+    expect(read().error).toBe("false");
+  });
+
+  it("读 run 记录本身失败 ⇒ 也不伪造 error(走 catch 分支)", async () => {
+    stubClient("closed");
+    runRow = "reject"; // 哨兵:让 runs.get 抛
+    renderWith({ threadId: "T", runId: "R" });
+    await flush();
+
+    expect(read().error).toBe("false");
+    // 读失败也要正常收尾 —— 别因为一次抖动把 running 永远挂住
+    expect(read().running).toBe("false");
+  });
+});
 
 beforeEach(() => {
   client = undefined as unknown as typeof client;

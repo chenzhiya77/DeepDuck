@@ -59,6 +59,8 @@ export type ActivityEvent =
   | { kind: "end"; threadId: string }
   | { kind: "gap"; threadId: string }
   | { kind: "join-error"; threadId: string }
+  /** run 流跑完了,但它的终态是 error/timeout(见 `run-status` 的分类器) */
+  | { kind: "run-failed"; threadId: string }
   /** 重取 thread state 完成 —— 必须清标志,否则每帧都会再取一次 */
   | { kind: "refetched"; threadId: string };
 
@@ -112,6 +114,10 @@ export function reduceActivity(
       // 缺口不代表 run 结束 —— 只标记要重取,running 保持原样
       return { ...state, needsRefetch: true };
     case "join-error":
+      return { ...state, running: false, needsRefetch: true, hasError: true };
+    case "run-failed":
+      // 与 join-error 的区别只在**谁**报的:一个说流断了,一个说这轮跑失败了。
+      // 对宠物而言都是「出错了」,所以状态形状相同。
       return { ...state, running: false, needsRefetch: true, hasError: true };
     case "refetched":
       return { ...state, needsRefetch: false };
