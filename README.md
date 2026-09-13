@@ -2,7 +2,7 @@
 
 > 一套**内置本地知识库（RAG）子系统**，构建在 **harness agent** 框架之上：不依赖任何外部 RAG 引擎，从文档 / 表格 / 视频的解析与切分，到实体图谱、百科条目、三路检索、工作区管理与检索质量评测，整条链路都在框架内完成。
 >
-> 本仓库是一个**通用 agent**——底座是 harness agent 框架（lead agent 与子代理编排、中间件链、沙箱执行、工具 / MCP / 技能、记忆与持久化、网关运行时），其上为本项目实现的 **harness RAG**。框架部分来自 **DeerFlow**（[bytedance/deer-flow](https://github.com/bytedance/deer-flow)，MIT）。
+> 本仓库是一个**通用 agent**——底座是 harness agent 框架（lead agent 与子代理编排、中间件链、沙箱执行、工具 / MCP / 技能、记忆与持久化、网关运行时），其上为本项目实现的 **harness RAG**。框架部分来自 **DeerFlow**（[bytedance/deer-flow](https://github.com/bytedance/deer-flow)，MIT）。除 harness RAG 之外，agent 层还有本项目的自有能力（如「Agent 观测宠物」，见下文）。
 >
 > 工作分支：`feat/rag-knowledge-base`
 
@@ -11,6 +11,7 @@
 - [两个组成部分](#两个组成部分)
 - [harness RAG 提供什么](#harness-rag-提供什么)
 - [效果展示](#效果展示)
+- [Agent 观测宠物](#agent-观测宠物)
 - [快速开始](#快速开始)
 - [规模（实测）](#规模实测)
 - [状态](#状态)
@@ -112,44 +113,93 @@
 ### ① 文档与解析
 
 上传后逐路径解析状态（向量 / 图谱 / 百科三条腿），失败可就地重试；点开文档即进入切片抽屉。
+<img src="docs/assets/rag/4.2-1.jpg" width="720" alt="文档与解析">
 
-<!-- 图：工作区「文档」tab —— 文档表 + 解析状态 + 切片抽屉。候选 pr-build/kb-doc-sticky-header.png（建议新截：带上解析进度与失败态更完整） -->
+<details>
+<summary>展开截图：文档切片抽屉 / 视频切片抽屉 / 会话切片抽屉 / 类型展示 / 会话导入知识库（5 张）</summary>
+<img src="docs/assets/rag/4.2-文档.jpg" width="720" alt="文档切片">
+<img src="docs/assets/rag/4.2-视频.jpg" width="720" alt="视频切片">
+<img src="docs/assets/rag/4.2-会话.jpg" width="720" alt="会话切片">
+<img src="docs/assets/rag/4.2-类型展示.jpg" width="720" alt="类型展示">
+<img src="docs/assets/rag/4.2-会话导入知识库.jpg" width="720" alt="会话导入知识库">
+</details>
 
 ### ② 百科：生成条目 / 我的条目
 
 AI 按实体资格自动沉淀「生成条目」；用户自建的「我的条目」与 AI 完全隔离、永不自动更新，可一键「混入搜索」参与检索；条目编辑内容还会作为后续重生成的"生成方向"。
+<img src="docs/assets/rag/4.3-1.jpg" width="720" alt="百科 tab（生成条目 / 我的条目）">
 
-<!-- 图：百科 tab 两区并列（生成条目 / 我的条目）。候选 pr-build/kb-synth-multi-review.png、pr-build/rag-phase3-manual-citation.png -->
+<details>
+<summary>展开截图：wiki指定方向优化 / 用户自建wiki条目（2 张）</summary>
+<img src="docs/assets/rag/4.3-wiki指定方向优化.jpg" width="720" alt="wiki指定方向优化">
+<img src="docs/assets/rag/4.3-自建条目.jpg" width="720" alt="用户自建wiki条目">
+</details>
 
 ### ③ 检索测试：三路命中对比
 
 一条查询同时跑向量 / 图谱 / 百科三路，命中并列展示（含跨路耗时排名），结果可一键存为评测题。
+<img src="docs/assets/rag/4.4-测试.jpg" width="720" alt="三路检索命中对比">
 
-<!-- 图：一次查询的三路命中对比。候选 pr-build/rag-vector-space-recall-overlay.png -->
+<details>
+<summary>展开截图：测试实体切换（1 张）</summary>
+<img src="docs/assets/rag/4.4-测试实体.jpg" width="720" alt="测试实体切换">
+</details>
 
 ### ④ 向量空间
 
 切片 / 实体 / 百科 / 条目四类点的 2D / 3D 投影；检索命中实时叠加到图上，开「跟随对话」后每轮问答自动落点。
+<img src="docs/assets/rag/4.5-向量空间.jpg" width="720" alt="向量空间投影与检索叠加">
 
-<!-- 图：散点 + 检索叠加。候选 pr-build/rag-vector-space-scatter.png、pr-build/rag-vector-space-chat-overlay.png、pr-build/umap-3d-live-check.png -->
+<details>
+<summary>展开截图：向量空间跳转（1 张）</summary>
+<img src="docs/assets/rag/4.5-向量空间跳转.jpg" width="720" alt="向量空间跳转">
+</details>
 
 ### ⑤ 知识图谱
 
 实体关系力导向图，社区层可上卷看全局；检索路径按种子 / 扩展 / 证据三层染色，叠加不重排布局。
+<img src="docs/assets/rag/4.6-知识图谱.jpg" width="720" alt="知识图谱与检索路径染色">
 
-<!-- 图：图谱全局 + 一次检索的三层染色。候选 pr-build/rag-graph-base.jpg、pr-build/rag-graph-overlay.png、pr-build/rag-graph-neighborhood.jpg -->
+<details>
+<summary>展开截图：图谱放大1 / 图谱放大2（2 张）</summary>
+<img src="docs/assets/rag/4.6-知识图谱-放大1.jpg" width="720" alt="知识图谱-放大1">
+<img src="docs/assets/rag/4.6-知识图谱-放大2.jpg" width="720" alt="知识图谱-放大2">
+</details>
 
 ### ⑥ 评测
 
 题库（可由 AI 从文档生成候选、人工采纳）+ 指标总览 + 趋势图；运行中可见三阶段进度，支持中止。
+<img src="docs/assets/rag/4.7-评测-总览.jpg" width="720" alt="评测页指标总览与趋势">
 
-<!-- 图：评测页指标总览与趋势。候选 pr-build/rag-eval-metrics-overview.png、pr-build/rag-eval-trend-chart.png -->
+<details>
+<summary>展开截图：考题生成 / 考题评审 / 评测详情 / 评测历史（4 张）</summary>
+<img src="docs/assets/rag/4.7-测评-考题生成.jpg" width="720" alt="考题生成">
+<img src="docs/assets/rag/4.7-考题-审核.jpg" width="720" alt="考题评审">
+<img src="docs/assets/rag/4.7-评测-详情.jpg" width="720" alt="评测详情">
+<img src="docs/assets/rag/4.7-评测-历史.jpg" width="720" alt="评测历史">
+</details>
 
 ### ⑦ 对话引用回显
 
 回答句末标 `[n]`，点开即见「参考来源」；编号由检索工具生成、模型只许照抄，无证据宁可拒答。
+<img src="docs/assets/rag/4.8-对话框.jpg" width="720" alt="回答中的引用与参考来源">
 
-<!-- 图：回答 + 引用标注 + 参考来源展开（核心能力，建议 GIF）。候选 pr-build/rag-phase3-manual-citation.png、pr-build/rag-phase3-manual-citation-hover.png -->
+## Agent 观测宠物
+
+桌面上的一只鹦鹉，把 agent 的运行状态变成看得见的动作。它是**纯观察者**——只读线程状态，不发送、不修改内容，且点击穿透，可以理解成"app 的灯"。
+
+五个循环态各有一套逐帧动画，随运行状态自动切换：
+
+| 状态 | 动作 | 帧数 | 帧率 | 含义 |
+| --- | --- | --- | --- | --- |
+| `idle` | <img src="docs/assets/pet/parrot-idle.gif" width="120" alt="idle"> | 31 | 8 | 空闲 |
+| `think` | <img src="docs/assets/pet/parrot-think.gif" width="120" alt="think"> | 31 | 8 | 思考中 |
+| `wait` | <img src="docs/assets/pet/parrot-wait.gif" width="120" alt="wait"> | 30 | 8 | 等待中 |
+| `work` | <img src="docs/assets/pet/parrot-work.gif" width="120" alt="work"> | 31 | 8 | 工具执行中 |
+| `error` | <img src="docs/assets/pet/parrot-error.gif" width="120" alt="error"> | 31 | 8 | 运行出错 |
+
+- 上表就是产品内的同一套精灵图；5 个循环态都已是真美术，`done` / `greet` 两个一次性态在画
+- 美术与状态机分离：帧宽 / 帧率 / 显示尺寸由 manifest 声明，换一套图不需要改逻辑
 
 ## 快速开始
 
@@ -200,7 +250,8 @@ Docker / Helm / 完整配置参考等文档：[UPSTREAM_README.md](UPSTREAM_READ
 | 部分 | 状态 |
 | --- | --- |
 | harness RAG | 已实现，含上面列出的全部能力 |
-| Agent 观测宠物 / Harness 可视化 / 组装画布与对外 MCP | 同一分支上在研，不属于 harness RAG |
+| Agent 观测宠物 | 5 个循环态（`idle` / `think` / `wait` / `work` / `error`）已交付；`done` / `greet` 在画 |
+| Harness 可视化 / 组装画布与对外 MCP | 同一分支上在研 |
 
 ## 归属与许可
 
