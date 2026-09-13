@@ -254,17 +254,26 @@ def frames(args: argparse.Namespace) -> None:
     size = f"{crop_w}x{crop_h} (source resolution, crop applied)" if args.no_scale else f"{cfg['frame']}x{cfg['frame']}"
     print(f"wrote {len(produced)} frames to {out_dir} ({size}, key colour NOT removed; "
           f"considered {n} of the clip's frames)")
-    print(f"key them, then: python scripts/pet_extract.py pack --dir \"{out_dir}\" "
+    print(f"retouch, then either key them yourself or let pack do it (--config <same config>); then: "
+          f"python scripts/pet_extract.py pack --dir \"{out_dir}\" "
           f"--state {args.state} --fps {fps} --frame {cfg['frame']}{'' if args.mode == 'loop' else ' --oneshot'} --out <sheet.webp>")
 
 
 def pack(args: argparse.Namespace) -> None:
-    """Assemble externally keyed frames into one horizontal sheet.
+    """Assemble externally edited frames into one horizontal sheet.
 
-    Inverse of `frames`: it does not key anything, but it does verify the set is
-    uniform and within the format's limits, so a mismatched export fails here
-    instead of producing a sheet that is silently one frame out of step.
+    Inverse of `frames`. By default the frames are assumed already keyed; pass
+    `--config` to key them here instead, with the same `colorkey` the one-pass
+    `sheet` uses — that is the path for an artist who retouched a watermark but
+    should not also be hand-keying, because per-frame matting makes the alpha
+    edge boil (spec §8.1 rule 2).
+
+    Either way it verifies the set is uniform and within the format's limits, so
+    a mismatched export fails here instead of producing a sheet that is silently
+    one frame out of step.
     """
+    cfg = load_config(Path(args.config)) if args.config else None
+    key = key_filter(cfg) + "," if cfg else ""
     files = sorted(Path(args.dir).glob("*.png"))
     if not files:
         fail(f"no PNG frames found in {args.dir}")
@@ -287,9 +296,9 @@ def pack(args: argparse.Namespace) -> None:
     if width > WEBP_MAX_EDGE:
         fail(f"sheet width {width}px exceeds the WebP encode ceiling {WEBP_MAX_EDGE}px "
              f"({len(files)} frames x {args.frame}px); drop frames or split the state")
-    if not any("a" in fmt or fmt.startswith("pal8") for fmt in alphas):
+    if not cfg and not any("a" in fmt or fmt.startswith("pal8") for fmt in alphas):
         print(f"warn: frames carry no alpha channel ({sorted(alphas)}); the key colour will be visible — "
-              "did you forget to key them?")
+              "did you forget to key them? (or pass --config to key them here)")
     if w != args.frame:
         print(f"note: frames are {w}x{h} and will be scaled to {args.frame}x{args.frame} while stacking "
               "(keying at source resolution then downscaling matches the one-pass `sheet` order)")
@@ -297,7 +306,7 @@ def pack(args: argparse.Namespace) -> None:
     inputs: list[str] = []
     for f in files:
         inputs += ["-i", str(f)]
-    graph = "".join(f"[{i}:v]scale={args.frame}:{args.frame}:flags=area[s{i}];" for i in range(len(files)))
+    graph = "".join(f"[{i}:v]{key}scale={args.frame}:{args.frame}:flags=area[s{i}];" for i in range(len(files)))
     graph += "".join(f"[s{i}]" for i in range(len(files))) + f"hstack=inputs={len(files)}"
     subprocess.run(
         ["ffmpeg", "-v", "error", "-y", *inputs,
@@ -376,6 +385,9 @@ def main() -> None:
     fr.set_defaults(fn=frames)
     p = sub.add_parser("pack", help="assemble externally keyed frames into one horizontal sheet (inverse of frames)")
     p.add_argument("--dir", type=Path, required=True, help="directory of equally sized square PNG frames, sorted by name")
+    p.add_argument("--config", type=Path,
+                   help="optional: key the frames here with this config's colorkey before stacking, instead of "
+                        "expecting them already keyed (same params the one-pass `sheet` uses)")
     p.add_argument("--state", required=True)
     p.add_argument("--fps", type=int, required=True)
     p.add_argument("--oneshot", action="store_true", help="mark the state as a one-shot instead of a loop")
