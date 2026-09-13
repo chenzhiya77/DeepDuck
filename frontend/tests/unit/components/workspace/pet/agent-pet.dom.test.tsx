@@ -17,6 +17,33 @@ const PANEL = { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 60
 // 只为还原,从不直接调用,故 unbound-method 在此不适用
 // eslint-disable-next-line @typescript-eslint/unbound-method
 const originalRect = Element.prototype.getBoundingClientRect;
+const originalImage = window.Image;
+
+/**
+ * happy-dom 的 `Image` 不会真的去加载,而渲染器的解码门要等 `load` 才放行 ⇒
+ * 宠物会永远停在首帧。这里给一个「赋 src 即 load、decode 立刻成功」的假件。
+ */
+class LoadedImage {
+  assignedSrc = "";
+  listeners: Record<string, ((event?: unknown) => void)[]> = {};
+
+  set src(value: string) {
+    this.assignedSrc = value;
+    (this.listeners.load ?? []).forEach((fn) => fn());
+  }
+
+  get src(): string {
+    return this.assignedSrc;
+  }
+
+  addEventListener(type: string, fn: (event?: unknown) => void): void {
+    (this.listeners[type] ??= []).push(fn);
+  }
+
+  decode(): Promise<void> {
+    return Promise.resolve();
+  }
+}
 
 // 路由:槽位在用例里改,工厂只读槽位(rs.mock 会被提升,不能闭包用例内的变量)
 const push = rs.fn();
@@ -170,10 +197,12 @@ beforeEach(() => {
   push.mockClear();
   currentPath = "/workspace/chats/A";
   Element.prototype.getBoundingClientRect = () => PANEL as DOMRect;
+  window.Image = LoadedImage as unknown as typeof Image;
 });
 
 afterEach(() => {
   cleanup();
+  window.Image = originalImage;
   // store 的 baseSettings 是模块级缓存,只清 localStorage 会留下上一条用例的值
   updateLocalSettings("pet", {
     enabled: DEFAULT_LOCAL_SETTINGS.pet.enabled,

@@ -29,6 +29,9 @@ const manifest: PetManifest = {
     think: entry(8, true),
     wait: entry(8, true),
     error: entry(8, true),
+    // 只给「宽限期」那条用例用:它的 URL 没被别的用例暖过,
+    // 否则模块级 warmCache 会把上一条的失败结果喂给这一条
+    greet: entry(8, true),
     done: entry(24, false),
   },
 };
@@ -42,12 +45,33 @@ const originalImage = window.Image;
  */
 let decodeSettlers: ((ok: boolean) => void)[] = [];
 let requestedUrls: string[] = [];
+/** 解码的默认行为:pending = 永不 settle(页面不可见时真会这样) */
+let decodeMode: "pending" | "ok" | "fail" = "pending";
 
 class FakeImage {
-  src = "";
+  assignedSrc = "";
+  listeners: Record<string, ((event?: unknown) => void)[]> = {};
+
+  set src(value: string) {
+    this.assignedSrc = value;
+    requestedUrls.push(value);
+    // 同步推进到「字节到齐、等 decode」—— 测试不需要模拟网络延迟
+    (this.listeners.load ?? []).forEach((fn) => fn());
+  }
+
+  get src(): string {
+    return this.assignedSrc;
+  }
+
+  addEventListener(type: string, fn: (event?: unknown) => void): void {
+    (this.listeners[type] ??= []).push(fn);
+  }
 
   decode(): Promise<void> {
-    requestedUrls.push(this.src);
+    if (decodeMode === "ok") return Promise.resolve();
+    if (decodeMode === "fail") {
+      return Promise.reject(new Error("decode failed"));
+    }
     return new Promise<void>((resolve, reject) => {
       decodeSettlers.push((ok) =>
         ok ? resolve() : reject(new Error("decode failed")),
@@ -85,6 +109,7 @@ function spriteBox(container: HTMLElement): HTMLElement {
 beforeEach(() => {
   decodeSettlers = [];
   requestedUrls = [];
+  decodeMode = "pending";
   window.Image = FakeImage as unknown as typeof Image;
 });
 
@@ -183,6 +208,26 @@ describe("PetSprite state switch", () => {
     // 换上去是空白,留着旧的至少还是一只鸟
     expect(box.style.backgroundImage).toContain("idle.webp");
     expect(box.style.animation).toContain("infinite");
+  });
+
+  it("decode 永不 settle ⇒ 过了宽限期照样换图", async () => {
+    stubReducedMotion(false);
+    const { container, rerender } = render(
+      <PetSprite state={petState()} manifest={manifest} />,
+    );
+    const box = spriteBox(container);
+
+    // 页面被判为不可见时 Chrome 会推迟解码:既不 resolve 也不 reject。
+    // 这里就是那个情形 —— 一次都不调用 settleDecode。
+    rerender(<PetSprite state={petState({ base: "greet" })} manifest={manifest} />);
+    expect(box.style.backgroundImage).toContain("idle.webp");
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    // 字节已经到齐,只是解码没动静 —— 不能因此把换图永久扣住
+    expect(spriteBox(container).style.backgroundImage).toContain("greet.webp");
   });
 });
 

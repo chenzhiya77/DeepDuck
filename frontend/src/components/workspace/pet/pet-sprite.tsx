@@ -32,23 +32,50 @@ interface WarmSprite {
  */
 const warmCache = new Map<string, WarmSprite>();
 
-/** @returns true = 已解码、可以画;false = 加载或解码失败 */
+/**
+ * 字节到齐之后,最多再等 `decode()` 这么久。
+ *
+ * `decode()` 是「解码好了」的**优先**信号,不是**可靠**信号:页面被判为不可见时
+ * Chrome 会推迟解码,它既不 resolve 也不 reject,可以永不 settle(2026-09-13 在
+ * 自动化浏览器里实测超时)。只认它会把换图**永久扣住** —— 宠物停在上一张,直到
+ * 下一次状态变化再来一遍。所以给一个上界:等它,但不无限等。
+ */
+const DECODE_GRACE_MS = 150;
+
+/** @returns true = 可以画;false = 加载或解码真的失败 */
 function warmSprite(url: string): Promise<boolean> {
   const cached = warmCache.get(url);
   if (cached) return cached.ready;
 
   const img = new Image();
+  const ready = new Promise<boolean>((resolve) => {
+    let settled = false;
+    const settle = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    img.addEventListener(
+      "load",
+      () => {
+        if (typeof img.decode !== "function") {
+          settle(true);
+          return;
+        }
+        // 当成「能画」—— 解码只是提前量
+        void img.decode().then(
+          () => settle(true),
+          // 真解码失败:换上去是破图,留旧的
+          () => settle(false),
+        );
+        setTimeout(() => settle(true), DECODE_GRACE_MS);
+      },
+      { once: true },
+    );
+    img.addEventListener("error", () => settle(false), { once: true });
+  });
   img.src = url;
-  const ready =
-    typeof img.decode === "function"
-      ? img.decode().then(
-          () => true,
-          () => false,
-        )
-      : new Promise<boolean>((resolve) => {
-          img.onload = () => resolve(true);
-          img.onerror = () => resolve(false);
-        });
+
   warmCache.set(url, { img, ready });
   return ready;
 }
