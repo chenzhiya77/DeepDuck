@@ -24,6 +24,13 @@
       "loop": true,
       "sheetWidth": 15360,
       "sheetHeight": 512
+    },
+    "work": {
+      "frames": 31,
+      "fps": 8,
+      "loop": true,
+      "sheetWidth": 15872,
+      "sheetHeight": 512
     }
   }
 }

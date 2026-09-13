@@ -76,6 +76,34 @@ function stubFinishedRun(messages: unknown[]): void {
   };
 }
 
+/**
+ * 仍在跑的 run:给一次快照之后**永不结束**(不给 `end`)。外壳把「循环退出」
+ * 也当作结束,所以桩必须挂住,否则 `isLoading` 会立刻回落。
+ */
+function stubRunningRun(messages: unknown[]): void {
+  client = {
+    runs: {
+      joinStream: () =>
+        (async function* () {
+          yield { event: "values", data: { messages } };
+          await new Promise(() => undefined);
+        })(),
+    },
+    threads: { getState: async () => ({ values: { messages } }) },
+  };
+}
+
+/** 一条在飞的工具调用:没有对应的 ToolMessage ⇒ `collectActiveToolNames` 认它在飞 */
+const openToolCall = {
+  id: "ai-tool",
+  type: "ai",
+  content: "",
+  tool_calls: [{ id: "call-1", name: "read_file", args: {} }],
+};
+
+/** 在跑但没有任何工具在飞 ⇒ 纯推理 */
+const thinkingOnly = { id: "ai-think", type: "ai", content: "……" };
+
 function PetHost({ target }: { target: ActivityTarget | null }) {
   useRegisterActivity(target);
   return <AgentPet />;
@@ -170,6 +198,29 @@ describe("AgentPet 数据源(外壳那条薄订阅)", () => {
     const { container } = renderPet(null);
 
     expect(spriteUrl(container)).toContain("idle.webp");
+  });
+});
+
+describe("AgentPet 在想 vs 在干活(§18 2b 打开 WORK_KIND_ENABLED)", () => {
+  it("有工具在飞时显示 work,而不是 think", async () => {
+    stubRunningRun([openToolCall]);
+    const { container } = renderPet({ threadId: "A", runId: "run-1" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // work-read 没画 ⇒ 按 §9.2 的两级回落落到 work
+    expect(spriteUrl(container)).toContain("work.webp");
+  });
+
+  it("纯推理(无工具在飞)时显示 think", async () => {
+    stubRunningRun([thinkingOnly]);
+    const { container } = renderPet({ threadId: "A", runId: "run-1" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(spriteUrl(container)).toContain("think.webp");
   });
 });
 

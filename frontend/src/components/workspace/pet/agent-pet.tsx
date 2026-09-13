@@ -23,13 +23,13 @@ import { pathOfThread } from "@/core/threads/utils";
 import petManifest from "../../../../public/pet/parrot/manifest.json";
 
 /**
- * §18 分期:两条轴在第 1 期写好但**不生效** —— 第 2 期翻 `FATIGUE_ENABLED`,
- * 第 3 期翻 `WORK_KIND_ENABLED`。第 1 期只有 idle/wait 两组帧,任何非 idle 的
- * base 都会经两级回落塌回 idle,故视觉上恒定。
- * 疲劳轴于 2026-09-12 被用户明确「不做」,`FATIGUE_ENABLED` 保持 false(见 spec §17)。
+ * §18 分期:`FATIGUE_ENABLED` 保持 false —— 疲劳轴 2026-09-12 被用户明确「不做」(见 spec §17)。
+ * `WORK_KIND_ENABLED` 于 2026-09-13 打开:`think` 与 `work` 两组真美术都已到位,于是
+ * 「在推理」与「有工具在飞」不再共用同一张图;未声明的子类别(`work-exec` 等)按 §9.2
+ * 的两级回落落到 `work`。这两张帧到位之前翻它是无效的(全部塌回 idle)。
  */
 const FATIGUE_ENABLED = false;
-const WORK_KIND_ENABLED = false;
+const WORK_KIND_ENABLED = true;
 
 /** 起拖阈值:照抄 Qoder 实测值,避免 Alt+单击被误判成拖拽 */
 const DRAG_THRESHOLD_PX = 4;
