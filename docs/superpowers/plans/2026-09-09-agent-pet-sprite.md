@@ -271,7 +271,7 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 - [x] **Step 1:** `frontend/AGENTS.md`:`src/` 结构清单加 `core/pet/` 域;Interaction Ownership 加一条「宠物挂载点在 `chat-box.tsx` 桌面分支的 `div#chat`,mobile 分支故意不挂」。— **已加**:`core/` 域清单里补 `pet/`(写明五个纯函数 + 组件在 `components/workspace/pet/`);Interaction Ownership 顶部新增一条,把三条不变量一次说清 —— (a) 挂载点与**它自己带容器上下文**(否则 `@container` 会量到 group、永不触发)、mobile 分支故意不挂;(b) 观察者纪律(只读 `useThread()` 派生,不发请求、不持有 agent/线程/记忆、不订阅 custom 事件);(c) 精灵恒 `pointer-events-none`,自由放置靠 window 级命中测试 + Alt 拖拽(4px 阈值、pointer capture、拖后吞 click)。
 - [x] **Step 2:** 把 Task 0 两步的核实结论写回 spec §15(开放项 8 关闭或改写、§10 的断点方式定案)。— **Task 0 时已写回,本步只做确认**:§15 开放项 8 已改为「已闭环」并附四条证据腿;§10 已定案为「挂载点自挂 `container-type`」且措辞更正为 **≤ 480px**(闭区间)。**本步补了一处收口**:§10 末尾原写「Task 7 Step 5 还需再验 sidecar 真拖拽改变 `div#chat` 宽度」,已替换为那次实测的数字(538→318、拖回对称、宠物自动回来、console 零报错)。
 - [x] **Step 3:** 若占位帧仍是占位,在 spec §18 分期表标注「第 1 期代码已交付,等待真图替换(零代码改动)」。— **已加**:§18 交付判断句后新增「第 1 期交付状态(2026-09-10)」段:代码已全部交付并挂载(提交序列 `7073c703` → `3da33b9b`)、交付判断已在应用内验证、放置六项与窄面板隐藏已实测;并写明**唯一待外部输入的是美术** —— 占位仍是两张 2 帧 sheet,真图替换时换两个 `.webp` 并把 manifest 的 `frames`(2→32)与 `sheetWidth`(1024→16384)**一起**改(§8 自洽断言会拦只改一个的失误)。
-- [ ] **Step 4:** `README.md` 是否需要提及由用户定(纯装饰功能,倾向不加)。— **待用户决定**;按计划倾向**不加**(默认开着但纯装饰、无用户需要配置的行为),若要加,一句话挂在 Workspace 功能列表即可。
+- [x] **Step 4:** `README.md` 是否需要提及由用户定(纯装饰功能,倾向不加)。— **已收口(2026-09-13),结论:无需再加。** README 已被 `4ff9c54c` 改成 **Harness RAG 的落地页**,不再是 DeerFlow 的 Workspace 功能表(全仓已无「功能列表」可挂,本步原方案失效);而它**已经**在「状态」表里带了宠物一行:`| Agent 观测宠物 / Harness 可视化 / 组装画布与对外 MCP | 同一分支上在研,不属于 harness RAG |` —— 定位正确(明确划到 RAG 之外,与对外口径「不写动画」一致)。
 
 ---
 
