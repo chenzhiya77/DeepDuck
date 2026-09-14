@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 37
+config_version: 38
 
 # ============================================================================
 # Logging
@@ -2563,6 +2563,9 @@ authorization:
 #   DASHSCOPE_RERANK_API_KEY     — Aliyun Bailian rerank
 #   SILICONFLOW_VLM_API_KEY      — SiliconFlow VLM image captioning
 #   MINERU_API_TOKEN             — MinerU document parsing API
+#   RAG_EMBEDDING_API_KEY        — fallback key when embedding_provider is not dashscope
+#   RAG_RERANK_API_KEY           — fallback key when rerank_provider is not dashscope
+#   RAG_SPARSE_API_KEY           — fallback key for the external sparse service
 rag:
   # Qdrant server hosting the kb_chunks / kb_entities / kb_wiki_entries
   # collections. Default matches the qdrant service in docker-compose*.yaml.
@@ -2585,6 +2588,22 @@ rag:
   # Name of the `models:` entry used as the eval judge (grades retrieval quality
   # in the RAGAS eval). Omit to use the first configured model.
   # judge_model: deepseek-v4-flash
+  # --- Provider selection (spec 2026-09-14, §4.1) ---
+  # Curated ids from `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`. Every default
+  # reproduces the behaviour of a config that sets only the models above; the fields
+  # are listed here for discoverability, uncomment to override.
+  # embedding_provider: dashscope        # dashscope | openai-compatible (dense only)
+  # embedding_base_url:                  # endpoint; empty uses the provider default
+  # embedding_dimension:                 # dense dimension override; empty probes at enable time
+  # embedding_sparse_source: provider    # provider | external | bm25
+  # sparse_provider: openai-compatible   # only when embedding_sparse_source=external
+  # sparse_base_url:
+  # sparse_model:
+  # rerank_provider: dashscope           # dashscope | generic-rerank
+  # rerank_base_url:
+  # parse_provider: mineru-cloud         # mineru-cloud | mineru-local
+  # parse_base_url:                      # required when parse_provider=mineru-local
+  # parse_backend:                       # vlm | hybrid; empty lets the local service decide
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
   # Requests/second cap for graph-extraction LLM calls during indexing.

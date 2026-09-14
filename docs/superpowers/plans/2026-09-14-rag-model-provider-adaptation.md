@@ -32,20 +32,28 @@
 
 ---
 
-## Task 1: 配置层——provider 维度 + 受控映射
+## Task 1: 配置层——provider 维度 + 受控映射 ✅ 已完成（2026-09-14）
 
 **Files:**
 - Modify: `backend/packages/harness/deerflow/config/rag_config_file.py`（新增字段）
 - Modify: `backend/packages/harness/deerflow/config/app_config.py`（`RagConfig` 同步新增）
 - Create: `backend/packages/harness/deerflow/knowledge/providers/__init__.py`（provider 受控映射表）
 - Create: `backend/tests/knowledge/test_rag_provider_config.py`
+- Modify（计划外，仓库规矩要求）: `config.example.yaml`（`config_version` 37→38 + 新字段注释 + 三个 `RAG_*` env 名）
+- Modify（计划外，随代码同步）: spec §4.1 —— `parse_backend` 的取值收成 `vlm | hybrid`，allowlist 对照表补 `sparse` 腿
 
-- [ ] RED test：新增 13 个字段的解析与默认值；**老配置守护**——只写 `embedding_model` 的 `config.yaml` 解析后 provider 一律取默认、行为与今天一致；**allowlist 拒绝**——非法 provider id 报错且不产生自由文本类路径；**密钥 env 按 provider 解析**（`dashscope` 仍读 `DASHSCOPE_EMBEDDING_API_KEY`，通用 provider 读新名并回退）。
-- [ ] Run `cd backend && uv run pytest tests/knowledge/test_rag_provider_config.py -q`，记录 missing-module RED。
-- [ ] Implement：`rag_config_file.py` / `app_config.py` 加字段（全部 `None` 默认）；`knowledge/providers/__init__.py` 落 spec §4.1 的 allowlist 对照表（`dashscope` / `openai-compatible` / `generic-rerank` / `mineru-cloud` / `mineru-local`），暴露 `resolve_provider(leg, provider_id) -> (impl, endpoint_key)`。
-- [ ] GREEN；revert proof：移走 `providers/__init__.py` → collection RED → 恢复 → GREEN。
-- [ ] `ruff check` / `ruff format` 双净。
-- [ ] Commit: `feat(knowledge): add provider dimension to rag config with a curated allowlist`
+- [x] RED test：新增字段的解析与默认值；**老配置守护**——只写 `embedding_model` 的 `config.yaml` 解析后 provider 一律取默认、行为与今天一致；**allowlist 拒绝**——非法 provider id 与自由文本类路径都报错；**密钥 env 按 provider 解析**（`dashscope` 仍读 `DASHSCOPE_EMBEDDING_API_KEY`，通用 provider 读新名）。
+- [x] Run `pytest tests/knowledge/test_rag_provider_config.py -q`，记录 `ModuleNotFoundError: deerflow.knowledge.providers` RED。
+- [x] Implement：两个模型加字段（`RagConfig` 带默认、`RagConfigFile` 全可选）；`knowledge/providers/__init__.py` 落 allowlist 与 `resolve_provider` / `provider_ids` / `secret_env_var`。
+- [x] GREEN（**25 passed**）；revert proof 两半都做：① 移走 `providers/__init__.py` → 收集期 RED → 恢复 GREEN；② `git stash` 两个配置模型 → **7 failed** → 恢复 GREEN。
+- [x] `ruff check` / `ruff format --check` 双净。
+- [x] Commit: `feat(knowledge): add the rag provider dimension with a curated allowlist`
+
+**实现期做出的两个判断**（已同步 spec）：
+1. **补第 4 条腿 `sparse`**——`sparse_provider` 也必须受控，它不属于 embedding/rerank/parse 三条腿；其 `path` **刻意留空**（`None`），那个服务的请求形状未定，P3 再钉。
+2. **`parse_backend` 只接受 `vlm | hybrid`**——D2 的直接落实（`pipeline` 没有 http-client 变体），spec §4.1 已同步。
+
+**环境说明（非本 Task 引入）**：本机 `tmp_path` 夹具不可写（`AppData\Local\Temp\pytest-of-h7242` 权限拒绝），故测试运行加了 `--basetemp=<仓外可写目录>`；未改动的 `tests/test_rag_config_file.py` 同样 16 个 ERROR 可佐证是环境性。全量套件 160 failed 亦为本机既有基线——抽查与**同口径前后对比**（`git stash` 后回跑同样三条，失败集完全一致）确认与本次改动无关。
 
 ## Task 2: 设置页——provider 控件 + 重建入口
 

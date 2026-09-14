@@ -200,6 +200,27 @@ class RagConfig(BaseModel):
     judge_model: str | None = Field(default=None, description="Name of the config `models:` entry used as the ragas eval judge; None uses the first configured model.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token from rag_config.json; None falls back to MINERU_API_TOKEN.")
 
+    # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Every
+    # default reproduces today's behaviour, so a config.yaml that only sets the models
+    # above keeps resolving to exactly the providers it used before. The ids are
+    # validated against `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`.
+    embedding_provider: Literal["dashscope", "openai-compatible"] = Field(default="dashscope", description="Embedding provider id (curated allowlist); `openai-compatible` emits dense only.")
+    embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
+    embedding_dimension: int | None = Field(default=None, ge=1, description="Override for the dense dimension; None probes the provider at enable time. Must be 1024 — the Qdrant collections are created at that size.")
+    embedding_sparse_source: Literal["provider", "external", "bm25"] = Field(default="provider", description="Who supplies the sparse vectors: the embedding provider itself, the separate `sparse_*` service, or a local BM25 encoder.")
+    sparse_provider: Literal["openai-compatible"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
+    sparse_base_url: str | None = Field(default=None, description="Sparse service endpoint; used when embedding_sparse_source=external.")
+    sparse_model: str | None = Field(default=None, description="Sparse model name; used when embedding_sparse_source=external.")
+    sparse_api_key: str | None = Field(default=None, description="Sparse service API key; None falls back to RAG_SPARSE_API_KEY.")
+    rerank_provider: Literal["dashscope", "generic-rerank"] = Field(default="dashscope", description="Rerank provider id (curated allowlist).")
+    rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
+    parse_provider: Literal["mineru-cloud", "mineru-local"] = Field(default="mineru-cloud", description="Document-parsing provider: the MinerU cloud API, or a local MinerU service.")
+    parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local. That service ships without auth, so expose it on an internal network only.")
+    parse_backend: Literal["vlm", "hybrid"] | None = Field(
+        default=None,
+        description="Optional backend hint for the local MinerU service; None lets the service decide. `pipeline` is deliberately absent (spec §6): it has no http-client variant, so it is outside the supported deployment shape.",
+    )
+
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
     extract_rate_limit_rps: float = Field(default=5.0, gt=0, description="Rate limit (requests/second) for graph-extraction LLM calls during indexing.")
     # Phase-2 graph-quality knobs (spec 2026-08-10 D1). Setting the caps large

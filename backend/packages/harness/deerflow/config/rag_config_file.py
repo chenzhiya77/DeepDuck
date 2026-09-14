@@ -85,6 +85,22 @@ class RagConfigFile(BaseModel):
     extract_model: str | None = Field(default=None, description="Name of a config `models:` entry used for graph extraction.")
     judge_model: str | None = Field(default=None, description="Name of a config `models:` entry used as the ragas eval judge; None uses the config primary model.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token; masked on read, env is the fallback.")
+    # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Ids are
+    # validated against `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`; every field is
+    # optional, so an existing file that only sets the models keeps loading unchanged.
+    embedding_provider: Literal["dashscope", "openai-compatible"] | None = Field(default=None, description="Embedding provider id; None uses config.yaml.")
+    embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
+    embedding_dimension: int | None = Field(default=None, ge=1, description="Dense dimension override; None probes the provider at enable time.")
+    embedding_sparse_source: Literal["provider", "external", "bm25"] | None = Field(default=None, description="Where the sparse vectors come from; None uses config.yaml.")
+    sparse_provider: Literal["openai-compatible"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
+    sparse_base_url: str | None = Field(default=None, description="Sparse service endpoint; used when embedding_sparse_source=external.")
+    sparse_model: str | None = Field(default=None, description="Sparse model name; used when embedding_sparse_source=external.")
+    sparse_api_key: str | None = Field(default=None, description="Sparse service API key; masked on read, env is the fallback.")
+    rerank_provider: Literal["dashscope", "generic-rerank"] | None = Field(default=None, description="Rerank provider id; None uses config.yaml.")
+    rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
+    parse_provider: Literal["mineru-cloud", "mineru-local"] | None = Field(default=None, description="Document-parsing provider; None uses config.yaml.")
+    parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local.")
+    parse_backend: Literal["vlm", "hybrid"] | None = Field(default=None, description="Optional backend hint for the local MinerU service; None lets the service decide.")
     video: RagVideoFileConfig | None = Field(default=None, description="Video-ingestion model choices.")
 
     @classmethod

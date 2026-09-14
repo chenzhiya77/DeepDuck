@@ -153,7 +153,7 @@
 | `rag.rerank_base_url` | 端点 | 空 |
 | `rag.parse_provider` | `mineru-cloud` / `mineru-local` | `mineru-cloud` |
 | `rag.parse_base_url` | 本地服务地址 | 空 |
-| `rag.parse_backend` | `pipeline` / `vlm` / `hybrid` / 空 | 空 |
+| `rag.parse_backend` | `vlm` / `hybrid` / 空 | 空 |
 
 **provider allowlist 对照（P0 的实现依据）**：
 
@@ -165,6 +165,7 @@
 | 重排 | `generic-rerank` | 新增 | `/rerank`（另注册 `/v1/rerank`、`/v2/rerank`）；**不发 `instruct`**（§3.2、§8.4 已核） |
 | 解析 | `mineru-cloud` | 现有实现 | `https://mineru.net/api/v4/…`；`MINERU_API_TOKEN` |
 | 解析 | `mineru-local` | 新增 | 本地服务地址（`parse_base_url`）；**无鉴权**；契约见 §8.1 |
+| 稀疏 | `openai-compatible` | 新增（P3） | 路径**刻意留空**（`path=None`）——该服务的请求形状尚未定，P3 再钉；env 回退 `RAG_SPARSE_API_KEY` |
 
 **两条硬约束**：
 
