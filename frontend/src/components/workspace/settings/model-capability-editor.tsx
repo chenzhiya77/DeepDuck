@@ -1,8 +1,21 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Brain, ChevronDown, Eye } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   CONTEXT_WINDOW_OPTIONS,
@@ -14,6 +27,7 @@ import {
   type ModelCapabilityValue,
 } from "@/core/models/capability";
 import type { ReasoningEffortLevel } from "@/core/models/types";
+import { cn } from "@/lib/utils";
 
 interface ModelCapabilityEditorProps {
   value: ModelCapabilityValue;
@@ -27,6 +41,10 @@ interface ModelCapabilityEditorProps {
  * (spec 2026-09-10 §5.4). Windows and effort levels are declared as multi-select
  * subsets, each with a single-choice default drawn from the selected subset, so
  * the form cannot express a default outside its own subset.
+ *
+ * Windows and the capability pair use the compact forms (a dropdown and two
+ * side-by-side toggles): the three window options plus a default are one decision,
+ * and the capability pair is a pair of switches, not a list to scan.
  */
 export function ModelCapabilityEditor({
   value,
@@ -68,125 +86,175 @@ export function ModelCapabilityEditor({
         <p className="text-muted-foreground text-xs">{M.suggested}</p>
       )}
 
-      <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={value.supportsThinking}
-            onCheckedChange={(checked) =>
-              onChange({ ...value, supportsThinking: checked })
-            }
-            aria-label={M.thinking}
-          />
-          {M.thinking}
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={value.supportsVision}
-            onCheckedChange={(checked) =>
-              onChange({ ...value, supportsVision: checked })
-            }
-            aria-label={M.vision}
-          />
-          {M.vision}
-        </label>
+      <div className="grid grid-cols-2 gap-2">
+        <CapabilityToggle
+          icon={<Brain className="size-4" />}
+          label={M.thinking}
+          checked={value.supportsThinking}
+          onChange={(checked) =>
+            onChange({ ...value, supportsThinking: checked })
+          }
+        />
+        <CapabilityToggle
+          icon={<Eye className="size-4" />}
+          label={M.vision}
+          checked={value.supportsVision}
+          onChange={(checked) =>
+            onChange({ ...value, supportsVision: checked })
+          }
+        />
       </div>
 
-      <fieldset className="space-y-1.5">
-        <legend className="text-sm font-medium">
-          {M.supportedWindows}
-        </legend>
-        <div className="flex flex-wrap gap-4">
-          {CONTEXT_WINDOW_OPTIONS.map((size) => (
-            <label key={size} className="flex items-center gap-2 text-sm">
-              <Checkbox
+      <div className="space-y-1.5">
+        <span className="text-sm font-medium">{M.supportedWindows}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label={M.supportedWindows}
+              className="w-full justify-between font-normal"
+            >
+              {M.subsetSelected(value.supportedWindows.length)}
+              <ChevronDown className="size-4 opacity-50" />
+            </Button>
+          </DropdownMenuTrigger>
+          {/* Stays open across picks: choosing a subset is one decision, not N. */}
+          <DropdownMenuContent
+            align="start"
+            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+          >
+            {CONTEXT_WINDOW_OPTIONS.map((size) => (
+              <DropdownMenuCheckboxItem
+                key={size}
                 checked={value.supportedWindows.includes(size)}
                 onCheckedChange={() => onChange(toggleWindow(value, size))}
-                aria-label={windowLabel(size)}
-              />
-              {windowLabel(size)}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+                onSelect={(event) => event.preventDefault()}
+              >
+                {windowLabel(size)}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {value.supportedWindows.length > 0 && (
         <div className="space-y-1.5">
           <span className="text-sm font-medium">{M.defaultWindow}</span>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            aria-label={M.defaultWindow}
+          <Select
             value={
               value.defaultWindow != null ? String(value.defaultWindow) : ""
             }
-            onValueChange={(next) => {
-              if (next) {
-                onChange({ ...value, defaultWindow: Number(next) });
-              }
-            }}
+            onValueChange={(next) =>
+              onChange({ ...value, defaultWindow: Number(next) })
+            }
           >
-            {value.supportedWindows.map((size) => (
-              <ToggleGroupItem
-                key={size}
-                value={String(size)}
-                aria-label={windowLabel(size)}
-              >
-                {windowLabel(size)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            <SelectTrigger className="w-full" aria-label={M.defaultWindow}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {value.supportedWindows.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {windowLabel(size)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
-      <fieldset className="space-y-1.5">
-        <legend className="text-sm font-medium">
-          {M.supportedEfforts}
-        </legend>
-        <div className="flex flex-wrap gap-4">
-          {REASONING_EFFORT_LEVELS.map((level) => (
-            <label key={level} className="flex items-center gap-2 text-sm">
-              <Checkbox
+      <div className="space-y-1.5">
+        <span className="text-sm font-medium">{M.supportedEfforts}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label={M.supportedEfforts}
+              className="w-full justify-between font-normal"
+            >
+              {M.subsetSelected(value.supportedEfforts.length)}
+              <ChevronDown className="size-4 opacity-50" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+          >
+            {REASONING_EFFORT_LEVELS.map((level) => (
+              <DropdownMenuCheckboxItem
+                key={level}
                 checked={value.supportedEfforts.includes(level)}
                 onCheckedChange={() => onChange(toggleEffort(value, level))}
-                aria-label={effortLabel(level)}
-              />
-              {effortLabel(level)}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+                onSelect={(event) => event.preventDefault()}
+              >
+                {effortLabel(level)}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {value.supportedEfforts.length > 0 && (
         <div className="space-y-1.5">
           <span className="text-sm font-medium">{M.defaultEffort}</span>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            aria-label={M.defaultEffort}
+          <Select
             value={value.defaultEffort ?? ""}
-            onValueChange={(next) => {
-              if (next) {
-                onChange({
-                  ...value,
-                  defaultEffort: next as ReasoningEffortLevel,
-                });
-              }
-            }}
+            onValueChange={(next) =>
+              onChange({
+                ...value,
+                defaultEffort: next as ReasoningEffortLevel,
+              })
+            }
           >
-            {value.supportedEfforts.map((level) => (
-              <ToggleGroupItem
-                key={level}
-                value={level}
-                aria-label={effortLabel(level)}
-              >
-                {effortLabel(level)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            <SelectTrigger className="w-full" aria-label={M.defaultEffort}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {value.supportedEfforts.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {effortLabel(level)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * One half of the capability pair. A `switch`-roled button rather than a switch
+ * *inside* a box, so the whole tile is the hit target and the label is the box.
+ */
+function CapabilityToggle({
+  icon,
+  label,
+  checked,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "flex h-9 items-center justify-center gap-2 rounded-md border text-sm transition-colors",
+        checked
+          ? "border-primary/60 bg-primary/10 text-foreground"
+          : "text-muted-foreground hover:bg-muted/50",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

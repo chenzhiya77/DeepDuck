@@ -1645,11 +1645,9 @@ export interface Translations {
       empty: string;
       add: string;
       addTitle: string;
-      addDescription: string;
       addSubmit: string;
       edit: string;
       editTitle: string;
-      editDescription: string;
       delete: string;
       sourceConfigFile: string;
       sourceUi: string;
@@ -1676,8 +1674,6 @@ export interface Translations {
       deleted: string;
       validationNoModelId: string;
       identityHint: string;
-      stepIdentity: string;
-      stepCapabilities: string;
       next: string;
       back: string;
       validating: string;
@@ -1685,7 +1681,9 @@ export interface Translations {
       validationEndpointRequired: string;
       validationApiKeyRequired: string;
       supportedWindows: string;
+      subsetSelected: (count: number) => string;
       defaultWindow: string;
+      capabilities: string;
       supportedEfforts: string;
       defaultEffort: string;
       suggested: string;
@@ -1767,6 +1765,23 @@ export interface Translations {
       reindexConfirmTitle: string;
       reindexConfirmDescription: string;
       reindexConfirmAction: string;
+      providerLabel: string;
+      modelLabel: string;
+      endpointLabel: string;
+      apiKeyLabel: string;
+      advancedSettings: (count: number) => string;
+      lockedByProvider: string;
+      lockedCloudOnly: string;
+      lockedLocalOnly: string;
+      lockedExternalOnly: string;
+      secretFromEnvBadge: string;
+      roleTagEmbedding: string;
+      roleTagRerank: string;
+      providerTeiSparse: string;
+      sparseProvider: string;
+      sparseBaseUrl: string;
+      sparseModel: string;
+      sparseApiKey: string;
     };
     channels: {
       title: string;

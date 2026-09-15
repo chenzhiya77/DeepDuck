@@ -8,7 +8,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
@@ -196,7 +203,7 @@ describe("functional-model form", () => {
     );
     expect(screen.getByLabelText(F.embeddingApiKey)).toHaveProperty("value", MASKED);
     expect(screen.getByLabelText(F.rerankApiKey)).toHaveProperty("value", "");
-    expect(screen.getByText(F.secretFromEnv)).toBeTruthy();
+    expect(screen.getByText(F.secretFromEnvBadge)).toBeTruthy();
   });
 
   it("uses the configured chat models for the extraction picker", () => {
@@ -283,17 +290,20 @@ describe("functional-model layout", () => {
     ]) {
       expect(screen.getByText(title)).toBeTruthy();
     }
-    expect(screen.getByText(F.groupRetrievalHint)).toBeTruthy();
-    expect(screen.getByText(F.groupMultimodalHint)).toBeTruthy();
-    expect(screen.getByText(F.groupEvaluationHint)).toBeTruthy();
-    expect(screen.getByText(F.groupServicesHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.groupRetrievalHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.groupMultimodalHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.groupEvaluationHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.groupServicesHint)).toBeTruthy();
   });
 
-  it("says the retrieval endpoint is fixed by the client", () => {
+  it("labels a provider-fixed endpoint as locked instead of hiding it", () => {
     renderPage();
     openFunctionalView();
 
-    expect(screen.getByText(F.retrievalEndpointHint)).toBeTruthy();
+    // DashScope ships its own address: the rows stay visible, say why, and carry no input.
+    expect(screen.getAllByText(F.lockedByProvider).length).toBe(2);
+    expect(screen.queryByLabelText(F.embeddingBaseUrl)).toBeNull();
+    expect(screen.queryByLabelText(F.rerankBaseUrl)).toBeNull();
   });
 
   it("picks a configured chat model as the eval judge", () => {
@@ -305,11 +315,94 @@ describe("functional-model layout", () => {
     expect(screen.getByLabelText(F.judgeModel).textContent).toContain("DeepSeek Chat");
   });
 
+  it("writes the retrieval pair's row labels once, not once per column", () => {
+    renderPage();
+    openFunctionalView();
+
+    // The two roles share one label gutter (2026-09-15): each of the pair's four rows is
+    // labelled a single time, while the credentials keep their per-column accessible names.
+    // Scoped to the retrieval card: 「模型」 is also the section's own title.
+    const card = screen
+      .getByText(F.groupRetrieval)
+      .closest<HTMLElement>('[data-slot="card"]')!;
+    const counts = [
+      F.providerLabel,
+      F.modelLabel,
+      F.apiKeyLabel,
+      F.endpointLabel,
+    ].map((shared) => [shared, within(card).getAllByText(shared).length]);
+    expect(Object.fromEntries(counts)).toEqual({
+      [F.providerLabel]: 1,
+      [F.modelLabel]: 1,
+      [F.apiKeyLabel]: 1,
+      [F.endpointLabel]: 1,
+    });
+    expect(screen.getByLabelText(F.embeddingApiKey)).toBeTruthy();
+    expect(screen.getByLabelText(F.rerankApiKey)).toBeTruthy();
+  });
+
+  it("puts the provenance chip inside the credential field, not beside it", () => {
+    renderPage();
+    openFunctionalView();
+
+    // The fixture backs the rerank key from the environment, so that row carries the chip.
+    const input = screen.getByLabelText(F.rerankApiKey);
+    const chip = screen.getByText(F.secretFromEnvBadge);
+
+    // One wrapper holds both, so the chip spends the field's own padding instead of the
+    // row's width — the retrieval pair has two fields on that row (2026-09-16).
+    expect(input.parentElement).toBe(chip.parentElement);
+    expect(input.className).toContain("pl-32");
+    // It is a label on the field, never a click target: the caret must still land on the input.
+    expect(chip.className).toContain("pointer-events-none");
+  });
+
+  it("treats the chip as a placeholder: it clears the moment the field is yours", () => {
+    renderPage();
+    openFunctionalView();
+
+    const input = screen.getByLabelText(F.rerankApiKey);
+    expect(screen.getByText(F.secretFromEnvBadge)).toBeTruthy();
+    expect(input.className).toContain("pl-32");
+
+    // Focusing already means "this field is mine": the caret must not start after the note.
+    fireEvent.focus(input);
+    expect(screen.queryByText(F.secretFromEnvBadge)).toBeNull();
+    expect(input.className).not.toContain("pl-32");
+
+    // Left empty again, the note is back — it is state, not a one-shot hint.
+    fireEvent.blur(input);
+    expect(screen.getByText(F.secretFromEnvBadge)).toBeTruthy();
+
+    // And once something is typed it stays away on blur: the override is what the field holds,
+    // so the note must never re-appear in front of it (2026-09-16).
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "sk-mine" } });
+    fireEvent.blur(input);
+    expect(screen.queryByText(F.secretFromEnvBadge)).toBeNull();
+  });
+
+  it("paints a credential chip and a locked row's reason identically", () => {
+    renderPage();
+    openFunctionalView();
+
+    // Two cells that both say "you do not type this here", so they read the same: same size,
+    // same tint, and both lead their field. They used to differ in all three (2026-09-16).
+    const chip = screen.getByText(F.secretFromEnvBadge);
+    const reason = screen.getAllByText(F.lockedByProvider)[0]!;
+
+    for (const element of [chip, reason]) {
+      expect(element.className).toContain("text-sm");
+      expect(element.className).toContain("text-muted-foreground/70");
+    }
+    expect(chip.className).toContain("left-3");
+  });
+
   it("labels every input, including the ones that used to be bare boxes", () => {
     renderPage();
     openFunctionalView();
 
-    for (const label of [F.embeddingApiKey, F.rerankApiKey, F.asrModel, F.qdrantUrl, F.mineruToken]) {
+    for (const label of [F.apiKeyLabel, F.asrModel, F.qdrantUrl, F.mineruToken]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.getByLabelText(F.embeddingApiKey)).toBeTruthy();
@@ -325,7 +418,7 @@ describe("functional-model layout", () => {
     expect(screen.getByLabelText(F.captionModel).textContent).toContain("Qwen3 VL");
     // The endpoint and the key come from that entry, so the row has no inputs at all.
     expect(captionRow?.querySelector("input")).toBeNull();
-    expect(screen.getByText(F.captionModelHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.captionModelHint)).toBeTruthy();
   });
 
   it("keeps a stored caption model that names no configured entry", () => {

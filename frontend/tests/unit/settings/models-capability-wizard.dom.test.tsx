@@ -92,6 +92,69 @@ function fillIdentity(values: { endpoint?: string; apiKey?: string; ids: string[
   });
 }
 
+/**
+ * The window subset is a multi-select dropdown and the default is a single-select — Radix
+ * menus open on pointerdown, so these two helpers are the only place that knowledge lives.
+ * The dropdown stays open across picks (one decision, not N), the select closes on pick.
+ */
+function openWindowMenu() {
+  fireEvent.pointerDown(
+    screen.getByRole("button", { name: M.supportedWindows }),
+    { button: 0 },
+  );
+}
+
+/**
+ * Close it before touching anything else: Radix's menu is modal, so an open menu marks the
+ * rest of the form `aria-hidden` and role queries stop finding it (and an absence assertion
+ * would pass for the wrong reason).
+ */
+function closeWindowMenu() {
+  fireEvent.keyDown(document, { key: "Escape" });
+}
+
+async function pickWindow(label: string) {
+  fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: label }));
+}
+
+function openEffortMenu() {
+  fireEvent.pointerDown(
+    screen.getByRole("button", { name: M.supportedEfforts }),
+    { button: 0 },
+  );
+}
+
+async function pickEffort(label: string) {
+  fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: label }));
+}
+
+function effortChecked(label: string): string | null {
+  return screen
+    .getByRole("menuitemcheckbox", { name: label })
+    .getAttribute("aria-checked");
+}
+
+/** The default rows are single-selects; unit tests read their *displayed* value. */
+function defaultEffortShown(): string {
+  return screen.getByLabelText(M.defaultEffort).textContent ?? "";
+}
+
+/** The default row is a single-select; unit tests read its *displayed* value, not its portal. */
+function defaultWindowShown(): string {
+  return screen.getByLabelText(M.defaultWindow).textContent ?? "";
+}
+
+/** Reads the windows dropdown's *closed* state: the trigger summarises the subset size. */
+function windowsSummary(): string {
+  return screen.getByRole("button", { name: M.supportedWindows }).textContent ?? "";
+}
+
+function windowChecked(label: string): string | null {
+  return screen
+    .getByRole("menuitemcheckbox", { name: label })
+    .getAttribute("aria-checked");
+}
+
 beforeEach(() => {
   fetchMock.fetch.mockReset();
   fetchMock.fetch.mockResolvedValue(probeOk());
@@ -108,12 +171,14 @@ describe("ModelsAddDialog two-step wizard", () => {
     fillIdentity({ ids: ["model-a", "model-b"] });
 
     // Step 1 owns identity only.
-    expect(screen.getByText(M.stepIdentity)).toBeDefined();
-    expect(screen.queryByRole("checkbox", { name: M.window200k })).toBeNull();
+    expect(screen.getByLabelText(M.endpoint)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: M.supportedWindows }),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: M.next }));
 
-    await waitFor(() => expect(screen.getByText(M.stepCapabilities)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined());
     expect(fetchMock.fetch).toHaveBeenCalledTimes(2);
     const bodies = fetchMock.fetch.mock.calls.map(([, init]) =>
       JSON.parse(String(init.body)),
@@ -124,7 +189,9 @@ describe("ModelsAddDialog two-step wizard", () => {
       endpoint: "https://ds.example",
       api_key: "sk-shared",
     });
-    expect(screen.getByRole("checkbox", { name: M.window200k })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: M.supportedWindows }),
+    ).toBeDefined();
   });
 
   it("stays on step 1 and shows the server detail when a probe fails", async () => {
@@ -145,8 +212,10 @@ describe("ModelsAddDialog two-step wizard", () => {
         screen.getByText(/Model 'model-b' was not found on this endpoint/),
       ).toBeDefined(),
     );
-    expect(screen.queryByRole("checkbox", { name: M.window200k })).toBeNull();
-    expect(screen.getByText(M.stepIdentity)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: M.supportedWindows }),
+    ).toBeNull();
+    expect(screen.getByLabelText(M.endpoint)).toBeDefined();
   });
 
   it("surfaces the probe's endpoint advice on step 2 without blocking", async () => {
@@ -169,7 +238,7 @@ describe("ModelsAddDialog two-step wizard", () => {
 
     // Soft: the wizard still advances, the advice rides along.
     await waitFor(() =>
-      expect(screen.getByText(M.stepCapabilities)).toBeDefined(),
+      expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined(),
     );
     expect(screen.getByText(/Use the base URL/)).toBeDefined();
   });
@@ -181,7 +250,7 @@ describe("ModelsAddDialog two-step wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: M.next }));
 
     await waitFor(() =>
-      expect(screen.getByText(M.stepCapabilities)).toBeDefined(),
+      expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined(),
     );
     expect(screen.queryByRole("status")).toBeNull();
   });
@@ -215,20 +284,24 @@ describe("ModelsAddDialog two-step wizard", () => {
 
     await waitFor(() => expect(screen.getByText(M.suggested)).toBeDefined());
     expect(
-      screen.getByRole("checkbox", { name: M.window200k }).getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(
       screen.getByRole("switch", { name: M.thinking }).getAttribute("aria-checked"),
     ).toBe("true");
     expect(
       screen.getByRole("switch", { name: M.vision }).getAttribute("aria-checked"),
     ).toBe("true");
     // Anthropic takes a thinking budget, not effort levels: nothing to pre-check.
-    expect(
-      screen
-        .getByRole("checkbox", { name: EFFORT.reasoningEffortLow })
-        .getAttribute("aria-checked"),
-    ).toBe("false");
+    openEffortMenu();
+    await screen.findByRole("menuitemcheckbox", {
+      name: EFFORT.reasoningEffortLow,
+    });
+    expect(effortChecked(EFFORT.reasoningEffortLow)).toBe("false");
+    closeWindowMenu();
+    // The curated window subset lands pre-checked in its dropdown.
+    openWindowMenu();
+    await screen.findByRole("menuitemcheckbox", { name: M.window200k });
+    expect(windowChecked(M.window200k)).toBe("true");
+    closeWindowMenu();
+    expect(windowsSummary()).toContain(M.subsetSelected(1));
   });
 
   it("does not prefill or claim a suggestion for an unknown model id", async () => {
@@ -237,12 +310,13 @@ describe("ModelsAddDialog two-step wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: M.next }));
 
     await waitFor(() =>
-      expect(screen.getByText(M.stepCapabilities)).toBeDefined(),
+      expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined(),
     );
     expect(screen.queryByText(M.suggested)).toBeNull();
-    expect(
-      screen.getByRole("checkbox", { name: M.window200k }).getAttribute("aria-checked"),
-    ).toBe("false");
+    openWindowMenu();
+    await screen.findByRole("menuitemcheckbox", { name: M.window200k });
+    expect(windowChecked(M.window200k)).toBe("false");
+    closeWindowMenu();
   });
 
   it("carries the shared window/effort subsets and defaults into every entry", async () => {
@@ -250,24 +324,29 @@ describe("ModelsAddDialog two-step wizard", () => {
     renderAddDialog(onAdd);
     fillIdentity({ ids: ["model-a", "model-b"] });
     fireEvent.click(screen.getByRole("button", { name: M.next }));
-    await waitFor(() => expect(screen.getByText(M.stepCapabilities)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined());
 
-    fireEvent.click(screen.getByRole("checkbox", { name: M.window200k }));
-    fireEvent.click(screen.getByRole("checkbox", { name: M.window400k }));
-    fireEvent.click(screen.getByRole("radio", { name: M.window400k }));
-    fireEvent.click(screen.getByRole("checkbox", { name: EFFORT.reasoningEffortLow }));
-    fireEvent.click(screen.getByRole("checkbox", { name: EFFORT.reasoningEffortMedium }));
-    fireEvent.click(screen.getByRole("radio", { name: EFFORT.reasoningEffortMedium }));
-
+    openWindowMenu();
+    await pickWindow(M.window200k);
+    await pickWindow(M.window400k);
+    closeWindowMenu();
+    // 200K came in alone, so it was adopted as the default; adding 400K does not move a
+    // still-valid default (capability.nextDefault) — the select shows where it landed.
+    expect(defaultWindowShown()).toContain(M.window200k);
+    openEffortMenu();
+    await pickEffort(EFFORT.reasoningEffortLow);
+    await pickEffort(EFFORT.reasoningEffortMedium);
+    closeWindowMenu();
     fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
 
     const entries = onAdd.mock.calls[0]?.[0] as ManagedModelInput[];
     expect(entries.map((entry) => entry.name)).toEqual(["model-a", "model-b"]);
     for (const entry of entries) {
       expect(entry.supported_context_windows).toEqual([200_000, 400_000]);
-      expect(entry.context_window).toBe(400_000);
+      expect(entry.context_window).toBe(200_000);
       expect(entry.supported_reasoning_efforts).toEqual(["low", "medium"]);
-      expect(entry.reasoning_effort).toBe("medium");
+      // "low" came in alone and was adopted; the still-valid default does not follow later picks.
+      expect(entry.reasoning_effort).toBe("low");
       expect(entry.supports_reasoning_effort).toBe(true);
       expect(entry.api_key).toBe("sk-shared");
     }
@@ -277,18 +356,32 @@ describe("ModelsAddDialog two-step wizard", () => {
     renderAddDialog(rs.fn());
     fillIdentity({ ids: ["model-a"] });
     fireEvent.click(screen.getByRole("button", { name: M.next }));
-    await waitFor(() => expect(screen.getByText(M.stepCapabilities)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined());
 
     fireEvent.click(screen.getByRole("button", { name: M.back }));
 
-    expect(screen.getByText(M.stepIdentity)).toBeDefined();
+    expect(screen.getByLabelText(M.endpoint)).toBeDefined();
     expect(screen.getByDisplayValue("model-a")).toBeDefined();
     expect(screen.getByLabelText(M.apiKey)).toHaveProperty("value", "sk-shared");
   });
 });
 
 describe("ModelsEditDialog capability editor", () => {
-  it("shows legacy data without subsets without erroring", () => {
+  it("keeps the frozen-identity warning in the title's ⓘ, not on a line of its own", () => {
+    renderEditDialog(rs.fn());
+
+    // It described the dialog, not a field, and a line of prose above the first input read as
+    // part of the form (2026-09-16).
+    expect(screen.queryByText(M.identityHint)).toBeNull();
+    expect(screen.getByLabelText(M.identityHint)).toBeTruthy();
+    // The ⓘ is the dialog's first tabbable, so the focus scope used to land on it — and Radix
+    // opens a focused tooltip trigger, which popped the bubble open unprompted. The caret goes
+    // to the first field instead, and nothing is open until someone asks.
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText(M.displayName));
+  });
+
+  it("shows legacy data without subsets without erroring", async () => {
     const onSave = rs.fn();
     renderInI18n(
       <ModelsEditDialog
@@ -304,21 +397,27 @@ describe("ModelsEditDialog capability editor", () => {
       />,
     );
 
-    // No declared window subset: nothing is checked, the legacy default is kept.
-    expect(
-      screen.getByRole("checkbox", { name: M.window200k }).getAttribute("aria-checked"),
-    ).toBe("false");
+    // No declared window subset: nothing is checked, and with no subset there is nothing
+    // to pick a default from, so that row is absent.
+    expect(screen.queryByLabelText(M.defaultWindow)).toBeNull();
+    openWindowMenu();
+    await screen.findByRole("menuitemcheckbox", { name: M.window200k });
+    expect(windowChecked(M.window200k)).toBe("false");
+    closeWindowMenu();
     // The legacy flag is shown as the full four-level set.
+    openEffortMenu();
+    await screen.findByRole("menuitemcheckbox", {
+      name: EFFORT.reasoningEffortMinimal,
+    });
     for (const label of [
       EFFORT.reasoningEffortMinimal,
       EFFORT.reasoningEffortLow,
       EFFORT.reasoningEffortMedium,
       EFFORT.reasoningEffortHigh,
     ]) {
-      expect(
-        screen.getByRole("checkbox", { name: label }).getAttribute("aria-checked"),
-      ).toBe("true");
+      expect(effortChecked(label)).toBe("true");
     }
+    closeWindowMenu();
 
     fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
 
@@ -335,7 +434,7 @@ describe("ModelsEditDialog capability editor", () => {
     expect(input.reasoning_effort).toBeUndefined();
   });
 
-  it("saves edited subsets and their defaults", () => {
+  it("saves an edited subset and keeps a still-valid default", async () => {
     const onSave = rs.fn();
     renderInI18n(
       <ModelsEditDialog
@@ -352,23 +451,46 @@ describe("ModelsEditDialog capability editor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("checkbox", { name: M.window1m }));
-    fireEvent.click(screen.getByRole("radio", { name: M.window1m }));
-    fireEvent.click(screen.getByRole("checkbox", { name: EFFORT.reasoningEffortMedium }));
+    openWindowMenu();
+    await pickWindow(M.window1m);
+    closeWindowMenu();
+    // The default (200K) is still inside the new subset, so it stays — moving it is the
+    // select's job, and its rule is pinned by models/capability.test.ts.
+    expect(defaultWindowShown()).toContain(M.window200k);
+    openEffortMenu();
+    await pickEffort(EFFORT.reasoningEffortMedium);
+    closeWindowMenu();
     fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
 
     const input = onSave.mock.calls[0]?.[0] as ManagedModelInput;
     expect(input.supported_context_windows).toEqual([200_000, 1_000_000]);
-    expect(input.context_window).toBe(1_000_000);
+    expect(input.context_window).toBe(200_000);
     expect(input.supported_reasoning_efforts).toEqual([
       "low",
       "medium",
       "high",
     ]);
+    // The seeded effort default ("high") is still in the subset, so it stays.
     expect(input.reasoning_effort).toBe("high");
+    expect(defaultEffortShown()).toContain(EFFORT.reasoningEffortHigh);
     // Identity stays frozen.
     expect(input.name).toBe("claude-sonnet-4");
     expect(input.model).toBe("claude-sonnet-4-20250514");
+  });
+
+  it("labels the capability block without the add wizard's step number", () => {
+    renderEditDialog(rs.fn(), {
+      supported_context_windows: [200_000],
+      context_window: 200_000,
+    });
+
+    // It has no step 1, so reusing the wizard's step-2 title leaked a stray "2." here.
+    expect(screen.getByText(M.capabilities)).toBeDefined();
+    expect(screen.queryByText("2. 能力配置")).toBeNull();
+    expect(screen.getByText(M.supportedWindows)).toBeDefined();
+    expect(screen.getByText(M.defaultWindow)).toBeDefined();
+    // The windows dropdown summarises its subset instead of listing every option.
+    expect(windowsSummary()).toContain(M.subsetSelected(1));
   });
 });
 
@@ -440,7 +562,7 @@ describe("model dialogs: scrolling long forms", () => {
 
     const scrollArea = document.querySelector('[data-slot="scroll-area"]')!;
     expect(
-      scrollArea.contains(screen.getByRole("checkbox", { name: M.window200k })),
+      scrollArea.contains(screen.getByRole("button", { name: M.supportedWindows })),
     ).toBe(true);
     expect(
       scrollArea.contains(document.querySelector('[data-slot="dialog-footer"]')),

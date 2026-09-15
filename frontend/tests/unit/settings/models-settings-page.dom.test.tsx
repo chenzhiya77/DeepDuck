@@ -118,6 +118,41 @@ describe("ModelsSettingsPage three states", () => {
     expect(screen.getByText(M.empty)).toBeDefined();
     expect(screen.getByRole("button", { name: M.add })).toBeDefined();
   });
+
+  it("keeps the add button on the view-switch row, not on a line of its own", () => {
+    setConfig([]);
+    renderPage();
+
+    // Same parent = same row: the switch is on the left, its action on the right.
+    const toggle = screen.getByRole("group", { name: M.viewSwitchLabel });
+    expect(screen.getByRole("button", { name: M.add }).parentElement).toBe(
+      toggle.parentElement,
+    );
+  });
+
+  it("still hides the add action when the admin cannot manage models", () => {
+    setConfig([], { error: new ModelsConfigRequestError(403, "forbidden") });
+    renderPage();
+
+    // Moving the button up must not offer a wizard that can only fail on save.
+    expect(screen.getByText(M.adminRequired)).toBeDefined();
+    expect(screen.queryByRole("button", { name: M.add })).toBeNull();
+  });
+
+  it("moves the section's prose into the title's ⓘ, both views' sentences together", () => {
+    setConfig([]);
+    renderPage();
+
+    const F = zhCN.settings.functionalModels;
+    // Neither sentence is a line on the page any more (2026-09-16)…
+    expect(screen.queryByText(M.description)).toBeNull();
+    expect(screen.queryByText(F.description)).toBeNull();
+    // …they are one accessible name on the title: the functional view configures this section
+    // too, so its sentence belongs here rather than under the view switch.
+    expect(
+      screen.getByLabelText(`${M.description} ${F.description}`),
+    ).toBeDefined();
+  });
 });
 
 describe("ModelsSettingsPage list", () => {
@@ -133,6 +168,19 @@ describe("ModelsSettingsPage list", () => {
 
     expect(screen.getAllByRole("button", { name: M.delete })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: M.edit })).toHaveLength(1);
+  });
+
+  it("fills the model rows, so the list stops reading as one grey block", () => {
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    const rows = document.querySelectorAll('[data-slot="item"]');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      // The settings body and an outlined row resolved to the same colour (2026-09-16);
+      // `bg-card` is what the functional view's panels use, so both views share one surface.
+      expect(row.className).toContain("bg-card");
+    }
   });
 });
 
@@ -189,7 +237,7 @@ describe("ModelsSettingsPage batch add", () => {
       target: { value: "https://api.example.com/v1" },
     });
     fireEvent.click(screen.getByRole("button", { name: M.next }));
-    await waitFor(() => expect(screen.getByText(M.stepCapabilities)).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: M.supportedWindows })).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
 
     await waitFor(() => expect(saveMock).toHaveBeenCalled());

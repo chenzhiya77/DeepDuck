@@ -158,7 +158,12 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   branches swallow the click that follows, so neither can also activate a message link underneath.
 - `src/components/workspace/settings/models-settings-page.tsx` owns the **Models** section and
   its two views: the chat-model list (with add/edit dialogs) and `functional-models-view.tsx`,
-  the RAG functional-model editor. The functional view reads `core/rag/hooks.ts`
+  the RAG functional-model editor. The section's own prose — and the functional view's, which
+  used to sit alone under the view switch — lives in the **one ⓘ on the section title**
+  (`info-tip.tsx`; `text` is the accessible name, `content` the rendered bubble), so neither view
+  spends a line on description. The chat-model rows are `bg-card` on purpose: the settings body
+  and an outlined row resolve to the same colour, and the filled row is what the functional
+  view's panels use. The functional view reads `core/rag/hooks.ts`
   (`GET/PUT /api/rag/config`, admin-gated) and builds its payload with the pure helpers in
   `core/rag/config-form.ts`; the backend replaces the whole `rag_config.json` object, so those
   helpers carry the file's own overrides forward and keep Save disabled until the admin edits
@@ -169,8 +174,25 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   a key of its own. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
   they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and
   the embedding row also carries the sparse-source select — the field that decides whether a
-  dense-only provider is usable at all. An endpoint input appears only for a provider with no
-  built-in default, so a DashScope deployment still sees no address field. The same view carries the
+  dense-only provider is usable at all. Every provider-driven row is **always rendered**: a row the
+  selected provider fixes (a built-in address, the other parse mode, the sparse fields when the source
+  is not `external`) is shown **locked** with the reason instead of being hidden — a control that
+  disappears on a provider switch reads as a missing feature, and the tallest cell used to push the
+  two retrieval columns out of alignment. Every group is therefore laid out as one form: a label
+  gutter on the left, values on the right, hairline-separated rows. The two retrieval roles are the
+  one **two-value** form — they share four rows (provider / model / API key / endpoint), so each of
+  those labels is written **once** in the gutter instead of once per column, and the columns are told
+  apart by the bold role heading above them, whose English tag rides in a muted pill. The sparse
+  settings live behind an advanced disclosure, **nested** under the sparse-source select
+  (`RowLabel nested` → `NESTED_GUTTER`: an indent and a rule, not a prefix): they are asked the
+  same four questions as the embedding service, in the same order, so their visible labels are
+  the *shared* ones and only their accessible names (`F.sparse*`) tell the two apart out loud —
+  「稀疏」 used to be repeated on every row to say what the indent says once. Every explanatory
+  sentence sits behind an ⓘ tooltip — only state (the embedding-change warning, the
+  environment-provenance badge, the no-changes hint) stays visible. That badge rides *inside* the
+  credential field it describes (`SecretInput`: one positioned wrapper, the field's own padding
+  spent on it), because beside
+  the field it took width from the row — and the retrieval pair has two fields on that row. The same view carries the
   **rebuild-index entry** (spec 2026-09-14 §5 / P4): because this panel is app-wide while a rebuild is
   library-scoped, the row picks the target library itself (session-only state) and the confirm dialog
   names it before anything runs — the copy states that source files are not re-parsed. Progress is

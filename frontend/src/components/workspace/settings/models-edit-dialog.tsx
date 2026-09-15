@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -24,6 +23,7 @@ import {
 import type { ManagedModel, ManagedModelInput, ProviderId } from "@/core/models/types";
 import { AUTOFILL_OFF_INPUT_PROPS, SECRET_INPUT_AUTOFILL_PROPS } from "@/lib/input-autofill";
 
+import { InfoTip } from "./info-tip";
 import { ModelCapabilityEditor } from "./model-capability-editor";
 
 interface ModelsEditDialogProps {
@@ -57,6 +57,7 @@ export function ModelsEditDialog({
   const [capability, setCapability] = useState<ModelCapabilityValue>(
     emptyCapabilityValue,
   );
+  const displayNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!model) return;
@@ -88,7 +89,16 @@ export function ModelsEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col gap-4 overflow-hidden">
+      <DialogContent
+        className="flex max-h-[90vh] flex-col gap-4 overflow-hidden"
+        // Land the caret in the first field instead of on the title's ⓘ (2026-09-16): the
+        // focus scope focuses the dialog's first tabbable, the ⓘ is it, and Radix opens a
+        // tooltip whose trigger is focused — so the identity warning popped up by itself.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          displayNameRef.current?.focus();
+        }}
+      >
         {/* Scrollable body with a pinned footer (wiki-edit-dialog precedent). The
             max-h MUST sit on the ScrollArea root: DialogContent's own height is an
             auto height capped by max-h (indefinite), so a flex-1 child inherits no
@@ -100,16 +110,17 @@ export function ModelsEditDialog({
         >
           <div className="flex min-w-0 flex-col gap-4 pr-6">
             <DialogHeader>
-              <DialogTitle>{M.editTitle}</DialogTitle>
-              <DialogDescription>{M.editDescription}</DialogDescription>
+              <DialogTitle className="flex items-center gap-1.5">
+                {M.editTitle}
+                <InfoTip text={M.identityHint} />
+              </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-4 py-1">
-              <p className="text-muted-foreground text-xs">{M.identityHint}</p>
-
               <div className="space-y-1.5">
                 <span className="text-sm font-medium">{M.displayName}</span>
                 <Input
+                  ref={displayNameRef}
                   value={displayName}
                   aria-label={M.displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
@@ -139,7 +150,9 @@ export function ModelsEditDialog({
                 />
               </div>
 
-              <p className="text-muted-foreground text-xs">{M.stepCapabilities}</p>
+              {/* Its own label, not the wizard's step-2 title — reusing that one leaked a
+                  "2." into a dialog that has no step 1. */}
+              <p className="text-sm font-medium">{M.capabilities}</p>
               <ModelCapabilityEditor value={capability} onChange={setCapability} />
 
               <div className="space-y-1.5">

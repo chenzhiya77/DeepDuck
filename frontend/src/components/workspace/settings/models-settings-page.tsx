@@ -24,6 +24,7 @@ import type {
 } from "@/core/models/types";
 
 import { FunctionalModelsView } from "./functional-models-view";
+import { InfoTip } from "./info-tip";
 import { ModelsAddDialog } from "./models-add-dialog";
 import { ModelsEditDialog } from "./models-edit-dialog";
 import { SettingsSection } from "./settings-section";
@@ -58,6 +59,7 @@ function toManagedInput(model: ManagedModel): ManagedModelInput {
 export function ModelsSettingsPage() {
   const { t } = useI18n();
   const M = t.settings.models;
+  const F = t.settings.functionalModels;
   const { config, isLoading, error } = useModelsConfig();
   const save = useSaveModelsConfig();
   const adminRequired =
@@ -106,25 +108,58 @@ export function ModelsSettingsPage() {
   }
 
   return (
-    <SettingsSection title={M.title} description={M.description}>
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
-        aria-label={M.viewSwitchLabel}
-        className="mb-4"
-        value={view}
-        onValueChange={(next) => {
-          if (next) setView(next as "chat" | "functional");
-        }}
-      >
-        <ToggleGroupItem value="chat" aria-label={M.viewChatModels}>
-          {M.viewChatModels}
-        </ToggleGroupItem>
-        <ToggleGroupItem value="functional" aria-label={M.viewFunctionalModels}>
-          {M.viewFunctionalModels}
-        </ToggleGroupItem>
-      </ToggleGroup>
+    <SettingsSection
+      // Both views' prose lives in the one ⓘ on the section title (2026-09-16): each said what
+      // it configured in a line of its own, and the functional view's line then sat under the
+      // view switch with nothing on it but an icon. The two sentences describe one section.
+      title={
+        <span className="flex items-center gap-1.5">
+          {M.title}
+          <InfoTip
+            text={`${M.description} ${F.description}`}
+            content={
+              <>
+                <p>{M.description}</p>
+                <p className="mt-1">{F.description}</p>
+              </>
+            }
+          />
+        </span>
+      }
+    >
+      {/* One row: the view switch on the left, its own action on the right — a second
+          line holding only a button left the header half empty. */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          aria-label={M.viewSwitchLabel}
+          value={view}
+          onValueChange={(next) => {
+            if (next) setView(next as "chat" | "functional");
+          }}
+        >
+          <ToggleGroupItem value="chat" aria-label={M.viewChatModels}>
+            {M.viewChatModels}
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="functional"
+            aria-label={M.viewFunctionalModels}
+          >
+            {M.viewFunctionalModels}
+          </ToggleGroupItem>
+        </ToggleGroup>
+
+        {/* Same visibility as before the move: the action belongs to a usable list, not to
+            the loading / admin-required / error states. */}
+        {view === "chat" && !adminRequired && !error && (
+          <Button onClick={() => setAddOpen(true)}>
+            <PlusIcon className="size-4" />
+            {M.add}
+          </Button>
+        )}
+      </div>
 
       {view === "functional" ? (
         <FunctionalModelsView />
@@ -136,18 +171,18 @@ export function ModelsSettingsPage() {
         <div>Error: {error.message}</div>
       ) : (
         <div className="flex w-full flex-col gap-4">
-          <div className="flex justify-end">
-            <Button onClick={() => setAddOpen(true)}>
-              <PlusIcon className="size-4" />
-              {M.add}
-            </Button>
-          </div>
-
           {models.length === 0 ? (
             <div className="text-muted-foreground text-sm">{M.empty}</div>
           ) : (
             models.map((model) => (
-              <Item className="w-full" variant="outline" key={model.name}>
+              // A filled row, not an outlined one (2026-09-16): the settings body and the row
+              // resolved to the same colour, so the list read as one grey block. `bg-card` is
+              // what makes the functional view's panels read as cards — same surface, one story.
+              <Item
+                className="bg-card w-full"
+                variant="outline"
+                key={model.name}
+              >
                 <ItemContent>
                   <ItemTitle>{model.display_name ?? model.name}</ItemTitle>
                   <ItemDescription>

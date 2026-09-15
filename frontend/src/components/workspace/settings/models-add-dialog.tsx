@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -193,12 +192,7 @@ export function ModelsAddDialog({
           <div className="flex min-w-0 flex-col gap-4 pr-6">
             <DialogHeader>
               <DialogTitle>{M.addTitle}</DialogTitle>
-              <DialogDescription>{M.addDescription}</DialogDescription>
             </DialogHeader>
-
-            <p className="text-muted-foreground text-xs">
-              {step === "identity" ? M.stepIdentity : M.stepCapabilities}
-            </p>
 
             {step === "identity" ? (
               <div className="space-y-4 py-1">

@@ -1,16 +1,16 @@
 "use client";
 
+import { ChevronRight, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -42,6 +42,7 @@ import {
   PARSE_BACKEND_OPTIONS,
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
+  SPARSE_PROVIDER_OPTIONS,
   visionReferenceOptions,
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
@@ -50,11 +51,16 @@ import {
   AUTOFILL_OFF_INPUT_PROPS,
   SECRET_INPUT_AUTOFILL_PROPS,
 } from "@/lib/input-autofill";
+import { cn } from "@/lib/utils";
 
+import { InfoTip } from "./info-tip";
 import { ReindexDialog } from "./reindex-dialog";
 
 /** Sentinel for "no value" — Radix Select rejects an empty item value. */
 const AUTO_OPTION_VALUE = "__auto__";
+
+/** Rows the retrieval group's advanced section holds; its trigger names that count. */
+const ADVANCED_SETTING_COUNT = 5;
 
 /**
  * A provider dropdown. Its ids come from the backend's curated allowlist; the empty id means
@@ -98,21 +104,153 @@ function OptionSelect({
 }
 
 /**
+ * One row of the form: the label sits in a fixed gutter, so every value column lines up no
+ * matter how long the labels are. Two values = the two retrieval roles, one = an ordinary row.
+ */
+const ROW = "grid grid-cols-[8rem_1fr] items-center gap-x-4 py-3";
+const ROW_PAIR = "grid grid-cols-[8rem_1fr_1fr] items-center gap-x-4 py-3";
+
+/** Hairlines between rows; with the shared gutter they are what makes a group read as one form. */
+function Rows({ children }: { children: React.ReactNode }) {
+  return <div className="divide-y">{children}</div>;
+}
+
+/**
+ * A row that only exists because of the row above it: indented behind a rule, so the scope is
+ * shown instead of spelled out — the sparse rows used to repeat 「稀疏」 five times to say what
+ * this indent says once (2026-09-16).
+ */
+const NESTED_GUTTER = "ml-3 border-l border-border pl-3";
+
+/** The gutter cell: the visible label, plus an ⓘ when there is a sentence for it. */
+function RowLabel({
+  children,
+  info,
+  nested,
+}: {
+  children: React.ReactNode;
+  info?: string;
+  nested?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "text-muted-foreground flex items-center gap-1 text-xs",
+        nested && NESTED_GUTTER,
+      )}
+    >
+      {children}
+      {info && <InfoTip text={info} />}
+    </span>
+  );
+}
+
+/** A role heading: the role name carries the weight, its English tag is a quiet pill. */
+function RoleHeading({ label, tag }: { label: string; tag: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-semibold">{label}</span>
+      <span className="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[10px]">
+        {tag}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The stand-in text of a field that holds no value of its own: the reason a row is locked, and
+ * the note that a credential arrives from the environment. Same message, so same type and same
+ * weight — they sit in comparable rows and used to differ in size, side and tint (2026-09-16).
+ */
+const PLACEHOLDER_TEXT = "text-muted-foreground/70 text-sm";
+
+/**
+ * A value the current provider fixes — shown rather than hidden (2026-09-15): a control that
+ * vanishes when you switch provider reads as a missing feature, and the tallest cell used to
+ * push its neighbour out of alignment. The box states *why* it is locked.
+ */
+function LockedBox({
+  reason,
+  value,
+}: {
+  reason: string;
+  /** Only ever a non-secret value; secret rows pass nothing and show the reason alone. */
+  value?: string;
+}) {
+  return (
+    <div className="border-input bg-muted/40 text-muted-foreground flex h-9 items-center justify-between gap-2 rounded-md border px-3">
+      {/* A blank or absent value shows the reason: the box must never look editable-empty. */}
+      <span className={cn("truncate", !value?.trim() && PLACEHOLDER_TEXT)}>
+        {value?.trim() ? value : reason}
+      </span>
+      <Lock className="size-3.5 shrink-0" aria-hidden="true" />
+    </div>
+  );
+}
+
+/**
+ * A credential input whose provenance chip rides *inside* the field (2026-09-16): set beside
+ * the box it squeezed the box — worst on the retrieval pair, where the row then had to hold
+ * two of them. Inside, it costs the field a slice of its own padding instead of the row's width.
+ *
+ * It leads the field while the field is untouched, like a locked row's reason does, and clears
+ * the moment the field becomes yours — on focus, or because something is typed in it. It is a
+ * note about provenance, not a placeholder for a format: left up while typing it reads as part
+ * of the value, and the text typed after it looks appended to the note.
+ *
+ * `env`-sourced fields come back from the API empty (the environment holds the secret), so a
+ * chip next to a non-empty field can only mean an override is being typed — never a stored key.
+ */
+function SecretInput({
+  badge,
+  className,
+  value,
+  ...props
+}: React.ComponentProps<"input"> & { badge?: string }) {
+  const [focused, setFocused] = useState(false);
+  const showBadge = Boolean(badge) && !focused && !value;
+
+  return (
+    <div className={cn("relative", className)}>
+      <Input
+        type="password"
+        className={showBadge ? "pl-32" : undefined}
+        value={value}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        {...SECRET_INPUT_AUTOFILL_PROPS}
+        {...props}
+      />
+      {showBadge && (
+        <span
+          className={cn(
+            "pointer-events-none absolute top-1/2 left-3 -translate-y-1/2",
+            PLACEHOLDER_TEXT,
+          )}
+        >
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
  * RAG functional-model editor (spec 2026-09-10 rag functional-model config §5, extended by
  * spec 2026-09-14 rag model provider adaptation §4.1).
  *
- * Fields are grouped by what they *do* (retrieval / graph / evaluation / multimodal /
- * services), each with a one-line purpose, because a flat list of model names left admins
- * guessing which role each one plays. Every input carries a visible label — a secret field
- * whose only label was an `aria-label` reads as an anonymous box.
+ * Every group reads as the same form: a label gutter on the left, values on the right, rows
+ * separated by a hairline. The retrieval group is the one two-value form — 向量 and 重排 are
+ * peers with identical row structure, so their row labels are written **once** in the gutter
+ * instead of once per column. The sparse settings live behind an advanced disclosure because
+ * three of them only matter in one configuration.
  *
  * The three model-reference rows (graph extraction, eval judge, caption VLM) are plain pickers
  * over the configured `models:` entries: the backend resolves what each role needs from the
  * named entry, so none of them asks for an endpoint or a key of its own. The embedding and
  * rerank rows are the exception — they select a *provider* from the backend's curated
- * allowlist and carry an endpoint, because those clients are not model-entry based. The
- * endpoint input appears only for a provider that has no built-in default, so a DashScope
- * deployment still shows no address field at all.
+ * allowlist and carry an endpoint, because those clients are not model-entry based. A provider
+ * that ships its own address shows that row **locked** rather than hidden.
  *
  * Saving replaces the whole `rag_config.json` object, so Save stays disabled until the admin
  * actually edits something (see `hasFormChanges`).
@@ -175,6 +313,7 @@ export function FunctionalModelsView() {
     dashscope: F.providerDashscope,
     "openai-compatible": F.providerOpenAIChat,
     "generic-rerank": F.providerGenericRerank,
+    "tei-sparse": F.providerTeiSparse,
     "mineru-cloud": F.providerMineruCloud,
     "mineru-local": F.providerMineruLocal,
     "": F.parseBackendAuto,
@@ -198,10 +337,16 @@ export function FunctionalModelsView() {
     );
   }
 
-  function secretHint(field: string): string | undefined {
-    if (sources[field] === "env") return F.secretFromEnv;
-    if (sources[field] === "ui") return F.secretHint;
-    return undefined;
+  /** Provenance is state, not documentation: a chip when the environment supplies it. */
+  function isEnvBacked(field: string) {
+    return sources[field] === "env";
+  }
+
+  /** The overwrite warning, shown once per row even though the pair holds two credentials. */
+  function secretHintFor(...fields: string[]) {
+    return fields.some((field) => sources[field] === "ui")
+      ? F.secretHint
+      : undefined;
   }
 
   function handleSave() {
@@ -227,16 +372,20 @@ export function FunctionalModelsView() {
     });
   }
 
+  const sparseExternal = values.embedding_sparse_source === "external";
+
   return (
     <div className="flex w-full flex-col gap-4">
-      <p className="text-muted-foreground text-sm">{F.description}</p>
+      <Group title={F.groupRetrieval} info={F.groupRetrievalHint}>
+        <Rows>
+          <div className={`${ROW_PAIR} pt-0 pb-2`}>
+            <span />
+            <RoleHeading label={F.embeddingModel} tag={F.roleTagEmbedding} />
+            <RoleHeading label={F.rerankModel} tag={F.roleTagRerank} />
+          </div>
 
-      <Group title={F.groupRetrieval} hint={F.groupRetrievalHint}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={F.embeddingModel} hint={secretHint("embedding_api_key")}>
-            <span className="mb-2 block text-sm font-medium">
-              {F.embeddingProvider}
-            </span>
+          <div className={ROW_PAIR}>
+            <RowLabel>{F.providerLabel}</RowLabel>
             <OptionSelect
               label={F.embeddingProvider}
               value={values.embedding_provider}
@@ -249,63 +398,6 @@ export function FunctionalModelsView() {
                 )
               }
             />
-            <Input
-              value={values.embedding_model}
-              aria-label={F.embeddingModel}
-              {...AUTOFILL_OFF_INPUT_PROPS}
-              onChange={(event) => update("embedding_model", event.target.value)}
-            />
-            {values.embedding_provider !== "dashscope" && (
-              <>
-                <span className="mt-3 block text-sm font-medium">
-                  {F.embeddingBaseUrl}
-                </span>
-                <Input
-                  value={values.embedding_base_url}
-                  aria-label={F.embeddingBaseUrl}
-                  {...AUTOFILL_OFF_INPUT_PROPS}
-                  onChange={(event) =>
-                    update("embedding_base_url", event.target.value)
-                  }
-                />
-              </>
-            )}
-            <span className="mt-3 block text-sm font-medium">
-              {F.embeddingSparseSource}
-            </span>
-            <OptionSelect
-              label={F.embeddingSparseSource}
-              value={values.embedding_sparse_source}
-              options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
-              labels={SPARSE_SOURCE_LABELS}
-              onChange={(next) =>
-                update(
-                  "embedding_sparse_source",
-                  next as RagConfigFormValues["embedding_sparse_source"],
-                )
-              }
-            />
-            <p className="text-muted-foreground mt-2 text-xs">
-              {F.sparseSourceHint}
-            </p>
-            <span className="mt-3 block text-sm font-medium">
-              {F.embeddingApiKey}
-            </span>
-            <Input
-              type="password"
-              value={values.embedding_api_key}
-              aria-label={F.embeddingApiKey}
-              {...SECRET_INPUT_AUTOFILL_PROPS}
-              onChange={(event) =>
-                update("embedding_api_key", event.target.value)
-              }
-            />
-          </Field>
-
-          <Field label={F.rerankModel} hint={secretHint("rerank_api_key")}>
-            <span className="mb-2 block text-sm font-medium">
-              {F.rerankProvider}
-            </span>
             <OptionSelect
               label={F.rerankProvider}
               value={values.rerank_provider}
@@ -318,51 +410,204 @@ export function FunctionalModelsView() {
                 )
               }
             />
+          </div>
+
+          <div className={ROW_PAIR}>
+            <RowLabel>{F.modelLabel}</RowLabel>
+            <Input
+              value={values.embedding_model}
+              aria-label={F.embeddingModel}
+              {...AUTOFILL_OFF_INPUT_PROPS}
+              onChange={(event) =>
+                update("embedding_model", event.target.value)
+              }
+            />
             <Input
               value={values.rerank_model}
               aria-label={F.rerankModel}
               {...AUTOFILL_OFF_INPUT_PROPS}
               onChange={(event) => update("rerank_model", event.target.value)}
             />
-            {values.rerank_provider !== "dashscope" && (
-              <>
-                <span className="mt-3 block text-sm font-medium">
-                  {F.rerankBaseUrl}
-                </span>
-                <Input
-                  value={values.rerank_base_url}
-                  aria-label={F.rerankBaseUrl}
-                  {...AUTOFILL_OFF_INPUT_PROPS}
-                  onChange={(event) =>
-                    update("rerank_base_url", event.target.value)
-                  }
-                />
-              </>
-            )}
-            <span className="mt-3 block text-sm font-medium">
-              {F.rerankApiKey}
-            </span>
-            <Input
-              type="password"
+          </div>
+
+          <div className={ROW_PAIR}>
+            <RowLabel
+              info={secretHintFor("embedding_api_key", "rerank_api_key")}
+            >
+              {F.apiKeyLabel}
+            </RowLabel>
+            <SecretInput
+              badge={
+                isEnvBacked("embedding_api_key")
+                  ? F.secretFromEnvBadge
+                  : undefined
+              }
+              value={values.embedding_api_key}
+              aria-label={F.embeddingApiKey}
+              onChange={(event) =>
+                update("embedding_api_key", event.target.value)
+              }
+            />
+            <SecretInput
+              badge={
+                isEnvBacked("rerank_api_key") ? F.secretFromEnvBadge : undefined
+              }
               value={values.rerank_api_key}
               aria-label={F.rerankApiKey}
-              {...SECRET_INPUT_AUTOFILL_PROPS}
               onChange={(event) => update("rerank_api_key", event.target.value)}
             />
-          </Field>
-        </div>
+          </div>
+
+          <div className={ROW_PAIR}>
+            <RowLabel info={F.retrievalEndpointHint}>
+              {F.endpointLabel}
+            </RowLabel>
+            {values.embedding_provider === "dashscope" ? (
+              <LockedBox
+                reason={F.lockedByProvider}
+                value={values.embedding_base_url}
+              />
+            ) : (
+              <Input
+                value={values.embedding_base_url}
+                aria-label={F.embeddingBaseUrl}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+                onChange={(event) =>
+                  update("embedding_base_url", event.target.value)
+                }
+              />
+            )}
+            {values.rerank_provider === "dashscope" ? (
+              <LockedBox
+                reason={F.lockedByProvider}
+                value={values.rerank_base_url}
+              />
+            ) : (
+              <Input
+                value={values.rerank_base_url}
+                aria-label={F.rerankBaseUrl}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+                onChange={(event) =>
+                  update("rerank_base_url", event.target.value)
+                }
+              />
+            )}
+          </div>
+        </Rows>
+
+        <Collapsible className="mt-5">
+          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1.5 text-xs">
+            <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
+            {F.advancedSettings(ADVANCED_SETTING_COUNT)}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-4">
+            <Rows>
+              <div className={ROW}>
+                <RowLabel info={F.sparseSourceHint}>
+                  {F.embeddingSparseSource}
+                </RowLabel>
+                <OptionSelect
+                  label={F.embeddingSparseSource}
+                  value={values.embedding_sparse_source}
+                  options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
+                  labels={SPARSE_SOURCE_LABELS}
+                  onChange={(next) =>
+                    update(
+                      "embedding_sparse_source",
+                      next as RagConfigFormValues["embedding_sparse_source"],
+                    )
+                  }
+                />
+              </div>
+
+              {sparseExternal ? (
+                <>
+                  {/* The sparse service is asked the same four questions, in the same order, as
+                      the embedding service above — 提供商 / Model ID / API Key / 接口地址. The
+                      gutter names them once for both; each control still carries its own
+                      accessible name (F.sparse*) so the two are never confused out loud. */}
+                  <div className={ROW}>
+                    <RowLabel nested>{F.providerLabel}</RowLabel>
+                    <OptionSelect
+                      label={F.sparseProvider}
+                      value={values.sparse_provider}
+                      options={SPARSE_PROVIDER_OPTIONS}
+                      labels={PROVIDER_LABELS}
+                      onChange={(next) =>
+                        update(
+                          "sparse_provider",
+                          next as RagConfigFormValues["sparse_provider"],
+                        )
+                      }
+                    />
+                  </div>
+                  <div className={ROW}>
+                    <RowLabel nested>{F.modelLabel}</RowLabel>
+                    <Input
+                      value={values.sparse_model}
+                      aria-label={F.sparseModel}
+                      {...AUTOFILL_OFF_INPUT_PROPS}
+                      onChange={(event) =>
+                        update("sparse_model", event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className={ROW}>
+                    <RowLabel nested>{F.apiKeyLabel}</RowLabel>
+                    <SecretInput
+                      badge={
+                        isEnvBacked("sparse_api_key")
+                          ? F.secretFromEnvBadge
+                          : undefined
+                      }
+                      value={values.sparse_api_key}
+                      aria-label={F.sparseApiKey}
+                      onChange={(event) =>
+                        update("sparse_api_key", event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className={ROW}>
+                    <RowLabel nested>{F.endpointLabel}</RowLabel>
+                    <Input
+                      value={values.sparse_base_url}
+                      aria-label={F.sparseBaseUrl}
+                      {...AUTOFILL_OFF_INPUT_PROPS}
+                      onChange={(event) =>
+                        update("sparse_base_url", event.target.value)
+                      }
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {[
+                    F.providerLabel,
+                    F.modelLabel,
+                    F.apiKeyLabel,
+                    F.endpointLabel,
+                  ].map((label) => (
+                    <div key={label} className={ROW}>
+                      <RowLabel nested>{label}</RowLabel>
+                      <LockedBox reason={F.lockedExternalOnly} />
+                    </div>
+                  ))}
+                </>
+              )}
+            </Rows>
+          </CollapsibleContent>
+        </Collapsible>
+
         {embeddingChanged && (
           <p className="text-destructive mt-3 text-xs" role="alert">
             {F.embeddingChangeWarning}
           </p>
         )}
-        <p className="text-muted-foreground mt-3 text-xs">
-          {F.retrievalEndpointHint}
-        </p>
       </Group>
 
-      <Group title={F.groupExtraction} hint={F.extractModelHint}>
-        <Field label={F.extractModel}>
+      <Group title={F.groupExtraction} info={F.extractModelHint}>
+        <div className={ROW}>
+          <RowLabel>{F.extractModel}</RowLabel>
           <Select
             value={values.extract_model || MODEL_REFERENCE_NONE}
             onValueChange={(next) =>
@@ -384,11 +629,12 @@ export function FunctionalModelsView() {
               ))}
             </SelectContent>
           </Select>
-        </Field>
+        </div>
       </Group>
 
-      <Group title={F.groupEvaluation} hint={F.groupEvaluationHint}>
-        <Field label={F.judgeModel}>
+      <Group title={F.groupEvaluation} info={F.groupEvaluationHint}>
+        <div className={ROW}>
+          <RowLabel>{F.judgeModel}</RowLabel>
           <Select
             value={values.judge_model || MODEL_REFERENCE_NONE}
             onValueChange={(next) =>
@@ -410,77 +656,80 @@ export function FunctionalModelsView() {
               ))}
             </SelectContent>
           </Select>
-        </Field>
-      </Group>
-
-      <Group title={F.groupMultimodal} hint={F.groupMultimodalHint}>
-        <div className="flex flex-col gap-4">
-          <Field label={F.captionModel} hint={F.captionModelHint}>
-            <Select
-              value={values.vlm_model || MODEL_REFERENCE_NONE}
-              onValueChange={(next) =>
-                update("vlm_model", next === MODEL_REFERENCE_NONE ? "" : next)
-              }
-            >
-              <SelectTrigger className="w-full" aria-label={F.captionModel}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {visionOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          {!hasVisionModel && (
-            <p className="text-muted-foreground text-xs">
-              {F.vlmNoVisionModel}
-            </p>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={F.asrProvider}>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                aria-label={F.asrProvider}
-                value={values.video.asr_provider}
-                onValueChange={(next) => {
-                  if (next) updateVideo("asr_provider", next);
-                }}
-              >
-                <ToggleGroupItem value="funasr" aria-label={F.asrProviderFunasr}>
-                  {F.asrProviderFunasr}
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="whisper"
-                  aria-label={F.asrProviderWhisper}
-                >
-                  {F.asrProviderWhisper}
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </Field>
-            <Field label={F.asrModel}>
-              <Input
-                value={values.video.asr_model}
-                aria-label={F.asrModel}
-                {...AUTOFILL_OFF_INPUT_PROPS}
-                onChange={(event) =>
-                  updateVideo("asr_model", event.target.value)
-                }
-              />
-            </Field>
-          </div>
         </div>
       </Group>
 
-      <Group title={F.groupServices} hint={F.groupServicesHint}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={F.qdrantUrl}>
+      <Group title={F.groupMultimodal} info={F.groupMultimodalHint}>
+        <Rows>
+          <div className={ROW}>
+            <RowLabel info={F.captionModelHint}>{F.captionModel}</RowLabel>
+            <div className="space-y-1.5">
+              <Select
+                value={values.vlm_model || MODEL_REFERENCE_NONE}
+                onValueChange={(next) =>
+                  update("vlm_model", next === MODEL_REFERENCE_NONE ? "" : next)
+                }
+              >
+                <SelectTrigger className="w-full" aria-label={F.captionModel}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {visionOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {!hasVisionModel && (
+                <p className="text-muted-foreground text-xs">
+                  {F.vlmNoVisionModel}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className={ROW}>
+            <RowLabel>{F.asrProvider}</RowLabel>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              aria-label={F.asrProvider}
+              value={values.video.asr_provider}
+              onValueChange={(next) => {
+                if (next) updateVideo("asr_provider", next);
+              }}
+            >
+              <ToggleGroupItem value="funasr" aria-label={F.asrProviderFunasr}>
+                {F.asrProviderFunasr}
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="whisper"
+                aria-label={F.asrProviderWhisper}
+              >
+                {F.asrProviderWhisper}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          <div className={ROW}>
+            <RowLabel>{F.asrModel}</RowLabel>
+            <Input
+              value={values.video.asr_model}
+              aria-label={F.asrModel}
+              {...AUTOFILL_OFF_INPUT_PROPS}
+              onChange={(event) => updateVideo("asr_model", event.target.value)}
+            />
+          </div>
+        </Rows>
+      </Group>
+
+      <Group title={F.groupServices} info={F.groupServicesHint}>
+        <Rows>
+          <div className={ROW}>
+            <RowLabel>{F.qdrantUrl}</RowLabel>
             <Input
               type="url"
               value={values.qdrant_url}
@@ -488,8 +737,10 @@ export function FunctionalModelsView() {
               {...AUTOFILL_OFF_INPUT_PROPS}
               onChange={(event) => update("qdrant_url", event.target.value)}
             />
-          </Field>
-          <Field label={F.parseProvider} hint={secretHint("mineru_api_token")}>
+          </div>
+
+          <div className={ROW}>
+            <RowLabel info={F.parseBaseUrlHint}>{F.parseProvider}</RowLabel>
             <OptionSelect
               label={F.parseProvider}
               value={values.parse_provider}
@@ -502,11 +753,12 @@ export function FunctionalModelsView() {
                 )
               }
             />
-            {values.parse_provider === "mineru-local" ? (
-              <>
-                <span className="mt-3 block text-sm font-medium">
-                  {F.parseBaseUrl}
-                </span>
+          </div>
+
+          {values.parse_provider === "mineru-local" ? (
+            <>
+              <div className={ROW}>
+                <RowLabel>{F.parseBaseUrl}</RowLabel>
                 <Input
                   value={values.parse_base_url}
                   aria-label={F.parseBaseUrl}
@@ -515,9 +767,9 @@ export function FunctionalModelsView() {
                     update("parse_base_url", event.target.value)
                   }
                 />
-                <span className="mt-3 block text-sm font-medium">
-                  {F.parseBackend}
-                </span>
+              </div>
+              <div className={ROW}>
+                <RowLabel>{F.parseBackend}</RowLabel>
                 <OptionSelect
                   label={F.parseBackend}
                   value={values.parse_backend}
@@ -530,32 +782,45 @@ export function FunctionalModelsView() {
                     )
                   }
                 />
-                <p className="text-muted-foreground mt-2 text-xs">
-                  {F.parseBaseUrlHint}
-                </p>
-              </>
-            ) : (
-              <>
-                <span className="mt-3 block text-sm font-medium">
-                  {F.mineruToken}
-                </span>
-                <Input
-                  type="password"
+              </div>
+              <div className={ROW}>
+                <RowLabel>{F.mineruToken}</RowLabel>
+                <LockedBox reason={F.lockedCloudOnly} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={ROW}>
+                <RowLabel>{F.parseBaseUrl}</RowLabel>
+                <LockedBox reason={F.lockedLocalOnly} />
+              </div>
+              <div className={ROW}>
+                <RowLabel>{F.parseBackend}</RowLabel>
+                <LockedBox reason={F.lockedLocalOnly} />
+              </div>
+              <div className={ROW}>
+                <RowLabel>{F.mineruToken}</RowLabel>
+                <SecretInput
+                  badge={
+                    isEnvBacked("mineru_api_token")
+                      ? F.secretFromEnvBadge
+                      : undefined
+                  }
                   value={values.mineru_api_token}
                   aria-label={F.mineruToken}
-                  {...SECRET_INPUT_AUTOFILL_PROPS}
                   onChange={(event) =>
                     update("mineru_api_token", event.target.value)
                   }
                 />
-              </>
-            )}
-          </Field>
-        </div>
+              </div>
+            </>
+          )}
+        </Rows>
       </Group>
 
-      <Group title={F.reindexTitle} hint={F.reindexHint}>
-        <Field label={F.reindexKbLabel}>
+      <Group title={F.reindexTitle} info={F.reindexHint}>
+        <div className={ROW}>
+          <RowLabel>{F.reindexKbLabel}</RowLabel>
           <Select value={reindexKbId} onValueChange={setReindexKbId}>
             <SelectTrigger className="w-full" aria-label={F.reindexKbLabel}>
               <SelectValue placeholder={F.reindexKbPlaceholder} />
@@ -568,7 +833,7 @@ export function FunctionalModelsView() {
               ))}
             </SelectContent>
           </Select>
-        </Field>
+        </div>
         <div className="mt-3 flex items-center justify-end gap-3">
           {reindexRunning && (
             <span className="text-muted-foreground text-xs" role="status">
@@ -622,42 +887,25 @@ export function FunctionalModelsView() {
   );
 }
 
-/** One bordered group: a title, a one-line purpose, then the fields. */
+/** A titled card whose explanatory sentence sits behind an ⓘ (see `InfoTip`). */
 function Group({
   title,
-  hint,
+  info,
   children,
 }: {
   title: string;
-  hint?: string;
+  info?: string;
   children: React.ReactNode;
 }) {
   return (
     <Card className="gap-3 py-4">
       <CardHeader className="px-4">
-        <CardTitle className="text-sm">{title}</CardTitle>
-        {hint && <CardDescription className="text-xs">{hint}</CardDescription>}
+        <CardTitle className="flex items-center gap-1.5 text-sm">
+          {title}
+          {info && <InfoTip text={info} />}
+        </CardTitle>
       </CardHeader>
       <CardContent className="px-4">{children}</CardContent>
     </Card>
-  );
-}
-
-/** A labelled field; the label is visible, never an `aria-label` only. */
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <span className="text-sm font-medium">{label}</span>
-      {children}
-      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
-    </div>
   );
 }
