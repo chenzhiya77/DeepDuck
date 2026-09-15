@@ -52,6 +52,17 @@
 
 ## Task 2 — 后端：PUT 用同一段代码判定（D3）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- **判定基准（spec 没写"用哪份配置"，而它决定结论）**：必须是 `config.yaml ⊕ 待写入的 payload`。拿 `config.rag` 当基准不行——它已经含着**待替换的那个文件**，"管理员刚清掉的字段"会被按旧值判；只拿 payload 也不行——yaml 里声明、payload 未携带的字段（前端只带"文件已拥有 + 本次改动"）会退化成 section 默认值。为此给 `AppConfig` 加了私有属性 `_yaml_rag` 与公开属性 `yaml_rag`（照 `_ui_model_names` 的先例，在合并 API 文件**之前**留一份），并给 `build_embedder` 加了 `rag=` 覆盖参数（现有调用点零改动）。
+- 校验落在 `_reject_unusable_after_save()`，**排在任何写入之前**；失败即 400，`detail` 前缀 `提交后的配置仍不可用：`。
+- 用例 5 条：400 + detail 三要素、被拒的写**落盘为零**、同一写换成 `bm25` 则 200（反例）、**基准必须含 yaml**（payload 省略 provider 时不能靠默认值过关）、**不能把旧文件的值当基准**（`512` 能加载、只有 build 拒，拿旧文件当基准会把"修好的写"也拒掉）。另加 `test_app_config_reload.py::test_app_config_exposes_the_yaml_rag_block_before_the_file_merges` 钉住新属性。
+- **有牙证明（两个方向各一次，因为它们互相不能替代）**：基准换成 `config.rag` → 只有"别过度拒绝"那条红；基准换成只校验 payload → 只有"必须含 yaml"那条红；不校验（RED 态）→ 两条 400 用例红。
+- **被测试逼出来的两处修正**：① 后端那句原本写 `'bm25'（本地）`，验收要求含「本地 BM25」⇒ 改成直接引用界面选项名：`请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）`；② 既有用例 `test_embedding_secret_env_source_follows_the_selected_provider` 做的是"不带地址切到 openai-compatible"，现在必须是一次**可用**的切换（地址 + 稀疏来源一起改，因为 `embedding_sparse_source` 缺省是 `provider`）。
+- **门禁**：`tests/test_rag_config_api.py` 29 passed；周边子集（knowledge/ + app_config + config_version + support_bundle）跑到 ~85% 零 F；`ruff check` / `ruff format --check` 干净；**全量 144 failed / 12335 passed，与 Task 1 那轮逐条比对「新增失败 = 0」**（只少了一个随机差分用例的偶发红）。
+
 **RED**
 
 - 三条用例：
@@ -65,12 +76,14 @@
 - `put_rag_config` 在 `atomic_write_rag_config` **之前**校验：
 
 ```python
-merged = merge_rag_config(config.rag.model_dump(exclude_none=True), RagConfigFile.model_validate(_prune_empty(submitted)))
+pending = merge_rag_config(config.yaml_rag, RagConfigFile.model_validate(payload))
 try:
-    build_embedder(config, rag=RagConfig.model_validate(merged))
+    build_embedder(config, rag=RagConfig.model_validate(pending))
 except RagConfigurationError as exc:
     raise HTTPException(400, detail=f"提交后的配置仍不可用：{exc}") from exc
 ```
+
+> **Task 2 落地时按实际改了这里**：基准从 `config.rag.model_dump(...)` 换成 `config.yaml_rag`（前者含待替换的文件、后者是 yaml 原样），并先写 `except ValueError`（该类型由 Task 3 引入）。理由见 Task 1/2 的交付纪要。
 
 - 校验的是**将要写入的**合并结果，不是当前 `config.rag`。
 - 写入必须排在校验之后——失败路径上一次 `atomic_write` 都不能发生。
@@ -93,6 +106,7 @@ except RagConfigurationError as exc:
 **GREEN**
 
 - `knowledge/embedder_factory.py`（或 `providers` 旁）新增 `RagConfigurationError(ValueError)`，把该模块现有 `ValueError` 换成它；
+- **把 Task 2 里那句 `except ValueError` 收窄成 `except RagConfigurationError`**（Task 2 落地时该类型还不存在，那里的注释已写明由本任务接手）；
 - `app/gateway/app.py` 注册 `app.add_exception_handler(RagConfigurationError, handler)`，返回 `JSONResponse(400, {"detail": str(exc)})`；
 - 确认 harness → app 方向依赖不变（`test_harness_boundary.py` 必须全绿）。
 

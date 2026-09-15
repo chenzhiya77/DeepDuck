@@ -800,3 +800,41 @@ def test_get_memory_config_falls_back_on_broken_config(tmp_path, monkeypatch):
         assert get_memory_config().enabled is False
     finally:
         _reset_config_singletons()
+
+
+def test_app_config_exposes_the_yaml_rag_block_before_the_file_merges(tmp_path, monkeypatch):
+    """``yaml_rag`` is the merge base the settings PUT validates against.
+
+    The live ``rag`` already carries ``rag_config.json``, so it cannot answer for a field an
+    admin just cleared; the save-time check needs what ``config.yaml`` itself declares
+    (spec 2026-09-16 §3 D3).
+    """
+    config_path = tmp_path / "config.yaml"
+    extensions_path = tmp_path / "extensions_config.json"
+    models_path = tmp_path / "models_config.json"
+    rag_path = tmp_path / "rag_config.json"
+    _write_extensions_config(extensions_path)
+    models_path.write_text(json.dumps({"models": []}), encoding="utf-8")
+    rag_path.write_text(json.dumps({"embedding_model": "ui-embedding"}), encoding="utf-8")
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"},
+                "models": [],
+                "rag": {"embedding_model": "yaml-embedding", "embedding_dimension": 1024},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DEER_FLOW_EXTENSIONS_CONFIG_PATH", str(extensions_path))
+    monkeypatch.setenv("DEER_FLOW_MODELS_CONFIG_PATH", str(models_path))
+    monkeypatch.setenv("DEER_FLOW_RAG_CONFIG_PATH", str(rag_path))
+
+    config = AppConfig.from_file(str(config_path))
+
+    assert config.rag.embedding_model == "ui-embedding"  # the merged view
+    assert config.rag.embedding_dimension == 1024  # untouched by the file
+    assert config.yaml_rag == {"embedding_model": "yaml-embedding", "embedding_dimension": 1024}
+
+    config.yaml_rag["embedding_model"] = "mutated"
+    assert config.yaml_rag["embedding_model"] == "yaml-embedding"  # a copy, not the live block

@@ -35,9 +35,9 @@ YAML_RAG = {
 }
 
 
-def _write_config_yaml(root: Path) -> None:
+def _write_config_yaml(root: Path, rag: dict | None = None) -> None:
     (root / "config.yaml").write_text(
-        yaml.safe_dump({"sandbox": SANDBOX, "models": [], "rag": YAML_RAG}),
+        yaml.safe_dump({"sandbox": SANDBOX, "models": [], "rag": rag or YAML_RAG}),
         encoding="utf-8",
     )
 
@@ -362,7 +362,17 @@ def test_embedding_secret_env_source_follows_the_selected_provider(config_env: P
     monkeypatch.setenv("DASHSCOPE_EMBEDDING_API_KEY", "env-dashscope")
     with _client(system_role="admin") as client:
         assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "env"
-        switched = client.put("/api/rag/config", json={"embedding_provider": "openai-compatible"}).json()
+        # A switch to a dense-only provider has to be *usable* to be savable now: it needs an
+        # address, and the sparse half has to come from somewhere else in the same write —
+        # `embedding_sparse_source` defaults to 'provider' (spec 2026-09-16 §3 D3).
+        switched = client.put(
+            "/api/rag/config",
+            json={
+                "embedding_provider": "openai-compatible",
+                "embedding_base_url": "http://localhost:8080/v1",
+                "embedding_sparse_source": "bm25",
+            },
+        ).json()
         # The switch re-points the fallback in the same response, not only after a reload.
         assert switched["sources"]["embedding_api_key"] == "unset"
         assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "unset"
@@ -441,3 +451,77 @@ def test_put_response_only_gained_the_capability_field(config_env: Path):
 
     assert response.status_code == 200
     _assert_pure_addition(response.json(), _GOLDEN["put"]["response"])
+
+
+# ── save-time validation of the configuration about to be persisted ──────────
+#
+# Spec 2026-09-16 §3 D3. The PUT refuses a write whose *result* cannot build an embedder, so
+# the admin learns while editing instead of on the next ingest. The judgement is the pipeline's
+# own construction (`build_embedder`) against the merge the write will actually produce:
+# ``config.yaml``'s `rag:` block overlaid with the file being persisted.
+
+#: A dense-only provider asked to supply the sparse half — legal JSON, unusable configuration.
+_UNUSABLE = {
+    "embedding_provider": "openai-compatible",
+    "embedding_base_url": "http://localhost:8080/v1",
+    "embedding_sparse_source": "provider",
+}
+
+
+def test_put_rejects_a_configuration_that_cannot_build_an_embedder(config_env: Path):
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json=_UNUSABLE)
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail.startswith("提交后的配置仍不可用：")
+    assert "openai-compatible" in detail
+    assert "独立稀疏服务" in detail and "本地 BM25" in detail
+
+
+def test_a_rejected_put_writes_nothing(config_env: Path):
+    _write_rag_json(config_env, {"embedding_model": "kept"})
+
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json=_UNUSABLE).status_code == 400
+
+    assert _read_rag_json(config_env) == {"embedding_model": "kept"}
+
+
+def test_put_accepts_the_same_write_once_the_sparse_source_is_legal(config_env: Path):
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={**_UNUSABLE, "embedding_sparse_source": "bm25"})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env)["embedding_sparse_source"] == "bm25"
+
+
+def test_put_validates_against_config_yaml_not_the_payload_alone(config_env: Path):
+    """The payload omits the provider, so validating it alone would let the section default
+    (``dashscope``) stand in and pass. The configuration that will actually be read after this
+    write is ``config.yaml``'s dense-only provider, which cannot supply the sparse half."""
+    _write_config_yaml(
+        config_env,
+        {**YAML_RAG, "embedding_provider": "openai-compatible", "embedding_base_url": "http://yaml-embed"},
+    )
+    reset_app_config()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"embedding_sparse_source": "provider"})
+
+    assert response.status_code == 400
+    assert "openai-compatible" in response.json()["detail"]
+
+
+def test_put_accepts_clearing_a_field_only_the_previous_file_declared(config_env: Path):
+    """The mirror image: a field the *replaced* file declared must not be judged at its old
+    value. ``512`` loads (only the build refuses it), so a check based on the live ``config.rag``
+    — which still carries that file — would keep seeing 512 and reject a write that is fine."""
+    _write_rag_json(config_env, {"embedding_dimension": 512})
+    reset_app_config()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"embedding_model": "ui-embedding"})
+
+    assert response.status_code == 200
+    assert "embedding_dimension" not in _read_rag_json(config_env)

@@ -23,16 +23,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.deps import get_config, require_admin_user
-from deerflow.config.app_config import AppConfig
+from deerflow.config.app_config import AppConfig, RagConfig
 from deerflow.config.rag_config_file import (
     MASKED_SECRET,
     SECRET_ENV_VARS,
     RagConfigFile,
     atomic_write_rag_config,
+    merge_rag_config,
     preserve_secret,
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
+from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
 
 router = APIRouter(prefix="/api", tags=["rag"])
@@ -197,6 +199,28 @@ async def get_rag_config(
     return _build_response(config, _declared_flat(_load_stored()))
 
 
+def _reject_unusable_after_save(config: AppConfig, payload: dict[str, Any]) -> None:
+    """Refuse a write whose *result* cannot build an embedder (spec 2026-09-16 §3 D3).
+
+    The judgement is the pipeline's own construction, run against the configuration the write
+    will actually produce: ``config.yaml``'s ``rag:`` block overlaid with the file about to be
+    persisted. Two things this shape is load-bearing for:
+
+    - the base is ``config.yaml``'s own block, **not** the live ``config.rag`` — the latter
+      already carries the file being replaced, so a field the admin just cleared would be
+      judged at the value that file gave it (and a fix would be refused);
+    - it runs **before** the write, so a rejected request leaves the file untouched.
+
+    Catching ``ValueError`` here is deliberately narrow (the one call); Task 3 of the plan
+    narrows it further to the dedicated configuration error once that type exists.
+    """
+    pending = merge_rag_config(config.yaml_rag, RagConfigFile.model_validate(payload))
+    try:
+        build_embedder(config, rag=RagConfig.model_validate(pending))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
+
+
 @router.put(
     "/rag/config",
     response_model=RagConfigResponse,
@@ -225,6 +249,7 @@ async def put_rag_config(
             submitted[name] = preserve_secret(submitted[name], getattr(stored, name, "") or "")
 
     payload = _prune_empty(submitted)
+    _reject_unusable_after_save(config, payload)
     target_path = RagConfigFile.resolve_config_path() or (project_root() / "rag_config.json")
 
     def _write() -> None:

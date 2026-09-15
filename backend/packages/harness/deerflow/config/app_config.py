@@ -438,6 +438,12 @@ class AppConfig(BaseModel):
     # 2026-09-10 §5.2). Derived at load, never written back to any config file;
     # kept off ModelConfig itself so it can never leak into provider kwargs.
     _ui_model_names: set[str] = PrivateAttr(default_factory=set)
+    # The `rag:` block exactly as config.yaml declares it, captured before the API-writable
+    # file is merged over it. The settings PUT validates the configuration it is *about to
+    # persist*, and that merge is `config.yaml ⊕ file`: using the already-merged `rag` as the
+    # base would judge a field the admin just cleared at the value the replaced file gave it
+    # (spec 2026-09-16 §3 D3).
+    _yaml_rag: dict[str, Any] = PrivateAttr(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -544,10 +550,12 @@ class AppConfig(BaseModel):
         # writing the operator-trusted config.yaml (spec 2026-09-10 rag functional-model
         # config §3). Untouched knobs keep their config.yaml values.
         rag_file = RagConfigFile.from_file()
-        config_data["rag"] = merge_rag_config(config_data.get("rag"), rag_file)
+        yaml_rag = config_data.get("rag")
+        config_data["rag"] = merge_rag_config(yaml_rag, rag_file)
 
         result = cls.model_validate(config_data)
         result._ui_model_names = ui_model_names
+        result._yaml_rag = dict(yaml_rag) if isinstance(yaml_rag, Mapping) else {}
         if not result.models:
             logger.warning(
                 "No models are configured in %s. Add at least one entry under `models:` (see the commented examples in config.example.yaml) or run `make setup`.",
@@ -728,6 +736,17 @@ class AppConfig(BaseModel):
         config.yaml-sourced models are display-only, UI-managed ones editable.
         """
         return name in self._ui_model_names
+
+    @property
+    def yaml_rag(self) -> dict[str, Any]:
+        """The `rag:` block as ``config.yaml`` declares it, before ``rag_config.json`` merges in.
+
+        Read-only and captured at load. The settings PUT's save-time validation needs this base
+        to judge the configuration it is about to persist (spec 2026-09-16 §3 D3); the live
+        ``rag`` already carries the *current* file and would therefore answer for a field the
+        admin just cleared.
+        """
+        return dict(self._yaml_rag)
 
     def get_tool_config(self, name: str) -> ToolConfig | None:
         """Get the tool config by name.

@@ -66,11 +66,15 @@ class _DimensionCheckedEmbedder:
         return results
 
 
-def build_embedder(config: Any | None = None, *, client: Any | None = None) -> Embedder:
+def build_embedder(config: Any | None = None, *, rag: Any | None = None, client: Any | None = None) -> Embedder:
     """Instantiate the configured embedder (dense + sparse route).
 
     ``client`` is forwarded to whichever HTTP clients are built (tests and deployments with
     custom transports/proxies pass one); the providers create their own when it is omitted.
+
+    ``rag`` overrides the RAG section for this call. The settings PUT validates a configuration
+    it has *not written yet*, so it passes the merge it is about to persist — reusing the live
+    ``config.rag`` there would answer for the file being replaced (spec 2026-09-16 §3 D3).
 
     Raises ``ValueError`` when the configuration cannot describe a usable embedder: a
     dense-only provider paired with ``sparse_source=provider``, a missing sparse endpoint,
@@ -78,13 +82,14 @@ def build_embedder(config: Any | None = None, *, client: Any | None = None) -> E
     """
     if config is None:
         config = get_app_config()
-    rag = config.rag
+    if rag is None:
+        rag = config.rag
     provider_id = rag.embedding_provider
     sparse_source = rag.embedding_sparse_source
     spec = resolve_provider("embedding", provider_id)
 
     if sparse_source == "provider" and not spec.emits_sparse:
-        raise ValueError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为 'external'（独立稀疏服务）或 'bm25'（本地）。")
+        raise ValueError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。")
 
     declared = rag.embedding_dimension
     if declared is not None and declared != COLLECTION_DIMENSION:
