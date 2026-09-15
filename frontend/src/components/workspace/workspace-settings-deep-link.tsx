@@ -9,23 +9,31 @@ import {
   useSettingsDialog,
 } from "./settings";
 
-const SETTINGS_SECTIONS = new Set<SettingsSection>([
-  "account",
-  "appearance",
-  "channels",
-  "integrations",
-  "memory",
-  "tools",
-  "skills",
-  "notification",
-  "about",
-]);
+/**
+ * Every {@link SettingsSection}, as a lookup table rather than a hand-copied list: typed as a
+ * total record, the compiler rejects a section that is added to the union but not listed here.
+ * That drift is what dropped `models` and `pet` from the old hand-written set, and a dropped
+ * section makes `?settings=<it>` do nothing at all — no error, no hint, no dialog (2026-09-16).
+ */
+const SETTINGS_SECTION_IDS: Record<SettingsSection, true> = {
+  account: true,
+  appearance: true,
+  channels: true,
+  integrations: true,
+  models: true,
+  memory: true,
+  tools: true,
+  skills: true,
+  notification: true,
+  pet: true,
+  about: true,
+};
+
+const SETTINGS_SECTIONS = new Set<string>(Object.keys(SETTINGS_SECTION_IDS));
 
 function asSettingsSection(value: string | null): SettingsSection | null {
   if (!value) return null;
-  return SETTINGS_SECTIONS.has(value as SettingsSection)
-    ? (value as SettingsSection)
-    : null;
+  return SETTINGS_SECTIONS.has(value) ? (value as SettingsSection) : null;
 }
 
 /**
