@@ -21,11 +21,13 @@ import {
   deleteKnowledgeBase,
   generateWiki,
   getKnowledgeBase,
+  getReindexStatus,
   getSupportedFormats,
   listDocuments,
   listDocumentChunks,
   listKnowledgeBases,
   projectVectorQuery,
+  reindexKnowledgeBase,
   retryDocument,
   updateKnowledgeBase,
   uploadDocument,
@@ -245,5 +247,34 @@ describe("projectVectorQuery（P6 检索联动 query 投影）", () => {
     expect(mockedFetch.mock.calls.at(-1)?.[0]).toBe(
       "http://gw/api/knowledge-bases/kb-1/vector-projection/query",
     );
+  });
+});
+
+describe("reindex endpoint", () => {
+  test("reindexKnowledgeBase POSTs the library-scoped rebuild path", async () => {
+    mockedFetch.mockResolvedValueOnce(jsonResponse(202, { status: "enqueued" }));
+    const result = await reindexKnowledgeBase("kb-1");
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      "http://gw/api/knowledge-bases/kb-1/reindex",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(result.status).toBe("enqueued");
+  });
+
+  test("getReindexStatus reads the status path and keeps the progress payload", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, {
+        in_progress: true,
+        last_run: null,
+        progress: { documents_total: 7, documents_done: 3, chunks_indexed: 42 },
+      }),
+    );
+
+    const status = await getReindexStatus("kb-1");
+
+    expect(mockedFetch).toHaveBeenCalledWith("http://gw/api/knowledge-bases/kb-1/reindex/status");
+    expect(status.in_progress).toBe(true);
+    expect(status.progress?.chunks_indexed).toBe(42);
   });
 });

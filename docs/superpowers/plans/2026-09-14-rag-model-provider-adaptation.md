@@ -121,19 +121,29 @@
 
 另外两条实现选择：错误沿用云端的 `MineruError` / `MineruParseFailedError` / `MineruTimeoutError`（另起一套会让 worker 的降级契约分叉）；新增公共入口 `normalize_mineru_markdown`（两步归一化）供两个 provider 共用，云端是**等价搬运**——**未改动的 `test_parser.py` 全绿即证据**。`MineruCloudParseProvider` 的类名/模块由已提交的 allowlist 钉死。
 
-## Task 5: 重建入口（P4）——换 provider / 换维度的唯一出口
+## Task 5: 重建入口（P4）——换 provider / 换维度的唯一出口 ✅ 已完成（2026-09-15）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/reindex.py`（纯编排：遍历文档 → 分页读 chunk → `index_chunks`）
 - Modify: `backend/app/gateway/services/knowledge_service.py` + `routers/knowledge_bases.py`（触发与进度）
 - Modify: `frontend/src/components/workspace/settings/functional-models-view.tsx` + i18n（**设置页的重建入口与确认弹窗**，自 Task 2 挪来）
 - Create: `backend/tests/knowledge/test_reindex.py`
+- Create（实现期补）: `frontend/src/components/workspace/settings/reindex-dialog.tsx`、`frontend/src/core/knowledge/reindex-status.ts`、`frontend/tests/unit/knowledge/reindex-status.test.ts`
 
-- [ ] RED test：**幂等自检**——用同一个（fake）embedder 重建后，向量点集合与重建前逐点一致；**不重解析**——断言重建过程中 parser **零调用**（这是与 `retry` 的关键区别）；分页读 chunk；单文档失败不中断整库（沿用既有降级契约）。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement `reindex.py` + Gateway 触发（202 + 进度；与现有 wiki 重建同形态的可观测）。
-- [ ] GREEN；revert proof；`ruff` 双净。
-- [ ] Commit: `feat(knowledge): add a re-embed reindex entry`
+- [x] RED test：**幂等自检**——用同一个（fake）embedder 重建后，向量点集合与重建前逐点一致；**不重解析**——断言重建过程中 parser **零调用**（这是与 `retry` 的关键区别）；分页读 chunk；单文档失败不中断整库（沿用既有降级契约）。
+- [x] Run focused test 确认 RED。
+- [x] Implement `reindex.py` + Gateway 触发（202 + 进度；与现有 wiki 重建同形态的可观测）。
+- [x] GREEN；revert proof；`ruff` 双净。
+- [x] Commit: `feat(knowledge): add a re-embed reindex entry`
+
+**实现期判断**：
+
+1. **入口落点裁定（甲，2026-09-15）**：spec §4.5 把「重建索引」列在设置页表里，但设置页是**无知识库身份**的全局面板（`FunctionalModelsView` 零 props），而重建是按库的 ⇒ 摊开三个落法后用户选**甲**：设置页加一行「目标知识库」（下拉，session-only）+ 确认弹窗**点名目标**。README 未动（归 Task 7）。
+2. **分页与 `chunk_count` 的语义错位**：`index_chunks` 的 `chunk_count` 是「**本次调用**索引了多少」，分页后会写成最后一页的大小 ⇒ 编排层在每篇文档收尾时写真实总数（用例钉住 5，而不是 2）。端点处的分页同时天然给出进度计数。
+3. **只重建终态文档**（`ready` / `failed`）：`uploading`/`parsing`/`chunking`/`indexing` 的文档交给 worker —— 它的腿读的本来就是当前配置，重建去动它只会打架。无切片的文档计入 `documents_skipped`。
+4. **降级分三层**：单批嵌入失败走 `index_chunks` 既有契约（标脏该批、继续）；**单文档**异常由编排层捕获记账后继续下一篇；只有库级异常才置 `last_run="failed"`。`last_run` 回答的是「这一轮库级重建成功了吗」，不是「每篇都成功了」。
+5. **同形态可观测**：模块级 `_IN_FLIGHT` / `_LAST_RUN` / `_PROGRESS`（照 `wiki/generator.py`），`GET /{kb_id}/reindex/status` 出 `{in_progress, last_run, progress:{documents_total, documents_done, chunks_indexed}}`；前端 `reindex-status.ts` 只在 `in_progress` 时轮询，并用 mutation 的 pending 弥合 202→首次轮询的空档。
+6. **顺手修掉一条既有红**：`frontend/tests/unit/settings/functional-models.dom.test.tsx` 的保存 payload 断言缺 Task 2 新增的四个 provider 字段（`embedding_provider` / `embedding_sparse_source` / `rerank_provider` / `parse_provider`）。**A/B 证明是预存红**（把我的前端改动全部 checkout 回 HEAD 后，同一文件仍 `1 failed / 12 passed`），非本 Task 引入；按 `config-form.test.ts:423-424` 已钉住的语义（provider 下拉没有空态 ⇒ 未改动的行显式提交生效默认值）补齐期望值。
 
 ## Task 6: 嵌入——provider 抽象 + 稀疏补齐（P3）
 

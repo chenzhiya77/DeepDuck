@@ -43,6 +43,7 @@ from deerflow.knowledge.parser import TABLE_UPLOAD_SUFFIXES, VIDEO_UPLOAD_SUFFIX
 from deerflow.knowledge.projection.cache import CachedProjection, ProjectionCache, content_fingerprint
 from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
 from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
+from deerflow.knowledge.reindex import reindex_in_progress, reindex_kb, reindex_last_run_status, reindex_progress
 from deerflow.knowledge.reranker_factory import build_reranker
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.video.store import VideoShotStore
@@ -225,6 +226,7 @@ class KnowledgeService:
         wiki_regenerate_fn: Callable[[str, list[str]], None] | None = None,
         eval_trigger_fn: Callable[..., None] | None = None,
         synthesis_trigger_fn: Callable[..., None] | None = None,
+        reindex_fn: Callable[[str], None] | None = None,
         projection_cache: ProjectionCache | None = None,
     ) -> None:
         self.store = store
@@ -238,10 +240,12 @@ class KnowledgeService:
         self.wiki_regenerate_fn = wiki_regenerate_fn or self._schedule_wiki_regeneration
         self.eval_trigger_fn = eval_trigger_fn or self._schedule_eval_run
         self.synthesis_trigger_fn = synthesis_trigger_fn or self._schedule_question_synthesis
+        self.reindex_fn = reindex_fn or self._schedule_reindex
         self.projection_cache = projection_cache or ProjectionCache()
         self._wiki_tasks: set[asyncio.Task[None]] = set()
         self._eval_tasks: set[asyncio.Task[None]] = set()
         self._synthesis_tasks: set[asyncio.Task[None]] = set()
+        self._reindex_tasks: set[asyncio.Task[None]] = set()
 
     # ── documents ────────────────────────────────────────────────────────
 
@@ -1704,6 +1708,39 @@ class KnowledgeService:
         task = asyncio.create_task(self._run_wiki_regeneration(kb_id, entry_ids), name=f"kb-wiki-regen-{kb_id}")
         self._wiki_tasks.add(task)
         task.add_done_callback(self._wiki_tasks.discard)
+
+    def trigger_reindex(self, kb_id: str) -> bool:
+        """Fire-and-forget library-level re-embed (spec 2026-09-14 §5 / P4).
+
+        The only exit from a changed embedding provider or dimension: it re-embeds the
+        stored chunks and never re-parses. Refused while a rebuild is already in flight
+        for this KB, so the router reports ``already_running`` instead of queueing a
+        second pass over the same vectors.
+        """
+        if reindex_in_progress(kb_id):
+            return False
+        self.reindex_fn(kb_id)
+        return True
+
+    def reindex_status(self, kb_id: str) -> dict[str, Any]:
+        """Poll payload for the rebuild entry (progress while running)."""
+        return {"in_progress": reindex_in_progress(kb_id), "last_run": reindex_last_run_status(kb_id), "progress": reindex_progress(kb_id)}
+
+    def _schedule_reindex(self, kb_id: str) -> None:
+        task = asyncio.create_task(self._run_reindex(kb_id), name=f"kb-reindex-{kb_id}")
+        self._reindex_tasks.add(task)
+        task.add_done_callback(self._reindex_tasks.discard)
+
+    async def _run_reindex(self, kb_id: str) -> None:
+        try:
+            from deerflow.knowledge.embedder import DashScopeEmbedder
+
+            # Same embedder wiring as the worker's vector leg: the rebuild must land in
+            # the vector space the *current* configuration describes, that being the
+            # whole point of the entry.
+            await reindex_kb(self.store, self.vector_store, DashScopeEmbedder(), kb_id=kb_id)
+        except Exception:
+            logger.exception("reindex failed for kb %s", kb_id)
 
     async def _run_wiki_regeneration(self, kb_id: str, entry_ids: list[str]) -> None:
         try:

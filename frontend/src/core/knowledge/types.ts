@@ -134,6 +134,28 @@ export interface WikiGenerateAck {
   status: "enqueued" | "already_running" | string;
 }
 
+/** Reindex ack (spec 2026-09-14 §5 / P4): the 202 from `POST /{kb_id}/reindex`. */
+export interface ReindexAck {
+  status: "enqueued" | "already_running" | string;
+}
+
+/** Live rebuild counters while `in_progress`; the backend sends `null` when idle. */
+export interface ReindexProgress {
+  documents_total: number;
+  documents_done: number;
+  chunks_indexed: number;
+}
+
+/**
+ * Library rebuild status (spec 2026-09-14 §5 / P4). `last_run` is the *previous* run's
+ * verdict, so an idle entry can still say whether the last rebuild worked.
+ */
+export interface ReindexStatus {
+  in_progress: boolean;
+  last_run: "succeeded" | "failed" | string | null;
+  progress: ReindexProgress | null;
+}
+
 /** Wiki tab list item (phase-2 batch-1): summary-only, no full content. */
 export interface WikiEntrySummary {
   id: string;

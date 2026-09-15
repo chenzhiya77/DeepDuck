@@ -41,7 +41,17 @@ rs.mock("@/core/models/hooks", () => ({
   useModelsConfig: () => ({ config: { models: [] } }),
 }));
 
-rs.mock("sonner", () => ({ toast: { success: rs.fn() } }));
+// The rebuild entry is library-scoped and its hooks poll; these display-rule cases only
+// need the row to render, so the entry stays inert (no library, idle, nothing pending).
+rs.mock("@/core/knowledge/hooks", () => ({
+  useKnowledgeBases: () => ({ data: [], isLoading: false, error: null }),
+  useReindexStatus: () => ({ data: undefined }),
+  useReindexKnowledgeBase: () => ({ mutate: rs.fn(), isPending: false }),
+}));
+
+rs.mock("sonner", () => ({
+  toast: { success: rs.fn(), info: rs.fn() },
+}));
 
 /** The file owns nothing, so every value below is the effective config.yaml / env one. */
 function renderWith(config: Partial<RagConfigValues>) {

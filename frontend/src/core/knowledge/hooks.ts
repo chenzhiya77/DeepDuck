@@ -9,6 +9,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import * as api from "./api";
 import { documentsRefetchInterval } from "./document-stats";
 import { evalRunsRefetchInterval } from "./eval-run-status";
+import { reindexRefetchInterval } from "./reindex-status";
 import { synthesisRefetchInterval } from "./synthesis-status";
 import type {
   EvalQuestionCreateInput,
@@ -169,6 +170,39 @@ export function useRegenerateWikiEntries(kbId: string) {
 
 export function knowledgeWikiEntriesKey(kbId: string) {
   return ["knowledge-bases", kbId, "wiki-entries"] as const;
+}
+
+export function knowledgeReindexStatusKey(kbId: string) {
+  return ["knowledge-bases", kbId, "reindex-status"] as const;
+}
+
+/**
+ * 重建进度（spec 2026-09-14 §5 / P4）：只在重建在飞时轮询，空闲不打扰。
+ * 设置页的重建入口用它渲染进度行与禁用按钮。
+ */
+export function useReindexStatus(kbId: string | null) {
+  return useQuery({
+    queryKey: knowledgeReindexStatusKey(kbId ?? ""),
+    queryFn: () => api.getReindexStatus(kbId!),
+    enabled: kbId !== null,
+    refetchInterval: (query) => reindexRefetchInterval(query.state.data),
+  });
+}
+
+/**
+ * 触发库级重建（202）。与 ``useGenerateWiki`` 同一失效节奏（含 1s 延迟二次失效）：
+ * 202 ack 先于后台任务翻 in-flight 标志返回，立即 refetch 可能仍读到空闲。
+ */
+export function useReindexKnowledgeBase(kbId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.reindexKnowledgeBase(kbId!),
+    onSuccess: () => {
+      if (kbId === null) return;
+      void queryClient.invalidateQueries({ queryKey: knowledgeReindexStatusKey(kbId) });
+      setTimeout(() => void queryClient.invalidateQueries({ queryKey: knowledgeReindexStatusKey(kbId) }), 1000);
+    },
+  });
 }
 
 /** 评测数据（2026-08-24 spec §5，plan Task 5）：latest 无参数维度，键即 kb 粒度。 */

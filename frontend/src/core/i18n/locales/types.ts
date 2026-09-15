@@ -1752,6 +1752,21 @@ export interface Translations {
       secretFromEnv: string;
       saved: string;
       noChanges: string;
+      reindexTitle: string;
+      reindexHint: string;
+      reindexKbLabel: string;
+      reindexKbPlaceholder: string;
+      reindexNoKb: string;
+      reindexAction: string;
+      reindexRunning: string;
+      reindexChunksWritten: string;
+      reindexLastSucceeded: string;
+      reindexLastFailed: string;
+      reindexEnqueued: string;
+      reindexAlreadyRunning: string;
+      reindexConfirmTitle: string;
+      reindexConfirmDescription: string;
+      reindexConfirmAction: string;
     };
     channels: {
       title: string;

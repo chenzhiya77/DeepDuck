@@ -23,8 +23,14 @@ const modelHooksMock = rs.hoisted(() => ({
   useModelsConfig: rs.fn(),
   useSaveModelsConfig: rs.fn(),
 }));
+const knowledgeHooksMock = rs.hoisted(() => ({
+  useKnowledgeBases: rs.fn(),
+  useReindexStatus: rs.fn(),
+  useReindexKnowledgeBase: rs.fn(),
+}));
 rs.mock("@/core/rag/hooks", () => ragHooksMock);
 rs.mock("@/core/models/hooks", () => modelHooksMock);
+rs.mock("@/core/knowledge/hooks", () => knowledgeHooksMock);
 rs.mock("sonner", () => ({
   toast: { success: rs.fn(), error: rs.fn(), info: rs.fn(), warning: rs.fn() },
 }));
@@ -39,6 +45,7 @@ const F = zhCN.settings.functionalModels;
 const MASKED = "********";
 
 const saveMock = rs.fn();
+const reindexMock = rs.fn();
 
 function view(over: Partial<RagConfigView["config"]> = {}): RagConfigView {
   return {
@@ -83,6 +90,21 @@ function setRag(over: Partial<RagConfigView["config"]> = {}, opts: { loading?: b
     error: opts.error ?? null,
   });
   ragHooksMock.useSaveRagConfig.mockReturnValue({ mutate: saveMock, isPending: false });
+  setKnowledge();
+}
+
+/** 重建入口的默认桩：一个库、空闲、未在提交。 */
+function setKnowledge(over: { libraries?: Array<{ id: string; name: string }>; status?: unknown; pending?: boolean } = {}) {
+  knowledgeHooksMock.useKnowledgeBases.mockReturnValue({
+    data: over.libraries ?? [{ id: "kb-1", name: "产品资料" }],
+    isLoading: false,
+    error: null,
+  });
+  knowledgeHooksMock.useReindexStatus.mockReturnValue({ data: over.status });
+  knowledgeHooksMock.useReindexKnowledgeBase.mockReturnValue({
+    mutate: reindexMock,
+    isPending: over.pending ?? false,
+  });
 }
 
 function renderPage() {
@@ -140,6 +162,7 @@ function openFunctionalView() {
 
 beforeEach(() => {
   saveMock.mockReset();
+  reindexMock.mockReset();
   setRag();
 });
 
@@ -226,6 +249,13 @@ describe("functional-model form", () => {
       // The file already owns these two secrets: re-submitted as sentinels so they survive.
       embedding_api_key: MASKED,
       mineru_api_token: MASKED,
+      // The provider selects have no empty state — their ids come from the backend allowlist —
+      // so an untouched row submits the *effective* default explicitly (config-form.test.ts
+      // pins that; 2026-09-14 provider dimension).
+      embedding_provider: "dashscope",
+      embedding_sparse_source: "provider",
+      rerank_provider: "dashscope",
+      parse_provider: "mineru-cloud",
     });
   });
 
@@ -306,5 +336,107 @@ describe("functional-model layout", () => {
     expect(screen.getByLabelText(F.captionModel).textContent).toContain(
       "qwen3.7-flash-legacy",
     );
+  });
+});
+
+/**
+ * 重建入口（spec 2026-09-14 §5 / P4）：设置页本身没有知识库身份，所以目标库由这一行
+ * 选出来，再经确认弹窗点名——重建会把目标库的全部切片重新嵌入，点错代价高。
+ */
+describe("rebuild entry", () => {
+  it("keeps the action disabled until a library is chosen", () => {
+    renderPage();
+    openFunctionalView();
+
+    const action = screen.getByRole<HTMLButtonElement>("button", {
+      name: F.reindexAction,
+    });
+    expect(action.disabled).toBe(true);
+    // 目标未定时不撒谎：连「上次重建完成」这类历史结论也不必显示（这里本来就没有）
+    expect(screen.queryByText(F.reindexLastFailed)).toBeNull();
+  });
+
+  it("says there is nothing to rebuild when the user owns no library", () => {
+    setRag();
+    setKnowledge({ libraries: [] });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByText(F.reindexNoKb)).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: F.reindexAction }).disabled).toBe(true);
+  });
+
+  it("renders live counters while a rebuild runs and disables the action", () => {
+    setRag();
+    setKnowledge({
+      status: { in_progress: true, last_run: null, progress: { documents_total: 7, documents_done: 3, chunks_indexed: 42 } },
+    });
+    renderPage();
+    openFunctionalView();
+
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("3/7");
+    expect(status.textContent).toContain("42");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: F.reindexAction }).disabled).toBe(true);
+  });
+
+  it("reports the previous run's verdict when idle", () => {
+    setRag();
+    setKnowledge({ status: { in_progress: false, last_run: "failed", progress: null } });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByRole("alert").textContent).toContain(F.reindexLastFailed);
+  });
+});
+
+/** 确认弹窗单独测：不驱动 Radix，直接渲染它自己的契约（点名目标 + 确认/禁用）。 */
+describe("ReindexDialog", () => {
+  it("names the target library and confirms", async () => {
+    const { ReindexDialog } = await import(
+      "@/components/workspace/settings/reindex-dialog"
+    );
+    const onConfirm = rs.fn();
+    render(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <ReindexDialog
+          open
+          onOpenChange={() => undefined}
+          kbName="产品资料"
+          onConfirm={onConfirm}
+          pending={false}
+        />
+      </I18nContext.Provider>,
+    );
+
+    // 目标必须点名：设置页没有库身份，确认框是最后一道「点错库」的防线
+    expect(screen.getByText(F.reindexConfirmTitle)).toBeTruthy();
+    expect(screen.getByText("产品资料")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: F.reindexConfirmAction }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a second confirm while the request is in flight", async () => {
+    const { ReindexDialog } = await import(
+      "@/components/workspace/settings/reindex-dialog"
+    );
+    render(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <ReindexDialog
+          open
+          onOpenChange={() => undefined}
+          kbName="产品资料"
+          onConfirm={rs.fn()}
+          pending
+        />
+      </I18nContext.Provider>,
+    );
+
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: F.reindexConfirmAction,
+      }).disabled,
+    ).toBe(true);
   });
 });

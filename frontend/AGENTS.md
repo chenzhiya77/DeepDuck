@@ -170,7 +170,12 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and
   the embedding row also carries the sparse-source select — the field that decides whether a
   dense-only provider is usable at all. An endpoint input appears only for a provider with no
-  built-in default, so a DashScope deployment still sees no address field. Adding a chat model is a **two-step wizard** (`models-add-dialog.tsx`): step 1
+  built-in default, so a DashScope deployment still sees no address field. The same view carries the
+  **rebuild-index entry** (spec 2026-09-14 §5 / P4): because this panel is app-wide while a rebuild is
+  library-scoped, the row picks the target library itself (session-only state) and the confirm dialog
+  names it before anything runs — the copy states that source files are not re-parsed. Progress is
+  read through `useReindexStatus` (`reindex-status.ts` decides the polling cadence), and the action
+  stays disabled while a run is in flight. Adding a chat model is a **two-step wizard** (`models-add-dialog.tsx`): step 1
   collects identity + credentials (provider / endpoint / api_key / one or more Model IDs) and its
   **Next** button runs `POST /api/models/config/validate` first, so a bad key or an unknown Model ID is
   caught before anything is stored — step 2 is unreachable until that probe passes. The probe's

@@ -21,6 +21,12 @@ import {
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  useKnowledgeBases,
+  useReindexKnowledgeBase,
+  useReindexStatus,
+} from "@/core/knowledge/hooks";
+import { isReindexRunning } from "@/core/knowledge/reindex-status";
 import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
@@ -44,6 +50,8 @@ import {
   AUTOFILL_OFF_INPUT_PROPS,
   SECRET_INPUT_AUTOFILL_PROPS,
 } from "@/lib/input-autofill";
+
+import { ReindexDialog } from "./reindex-dialog";
 
 /** Sentinel for "no value" — Radix Select rejects an empty item value. */
 const AUTO_OPTION_VALUE = "__auto__";
@@ -119,6 +127,13 @@ export function FunctionalModelsView() {
   const { config: modelsConfig } = useModelsConfig();
 
   const [values, setValues] = useState<RagConfigFormValues | null>(null);
+  // The rebuild entry is library-scoped while this view is app-wide, so the target is picked
+  // here (session-only) instead of being derived from wherever the dialog was opened.
+  const [reindexKbId, setReindexKbId] = useState("");
+  const [reindexOpen, setReindexOpen] = useState(false);
+  const { data: knowledgeBases } = useKnowledgeBases();
+  const reindexStatus = useReindexStatus(reindexKbId || null);
+  const reindex = useReindexKnowledgeBase(reindexKbId || null);
 
   useEffect(() => {
     if (!view) return;
@@ -192,6 +207,24 @@ export function FunctionalModelsView() {
   function handleSave() {
     if (!hasChanges) return;
     save.mutate(payload, { onSuccess: () => toast.success(F.saved) });
+  }
+
+  const libraries = knowledgeBases ?? [];
+  const selectedKb = libraries.find((kb) => kb.id === reindexKbId);
+  const reindexRunning = isReindexRunning(reindexStatus.data, reindex.isPending);
+  const reindexProgress = reindexStatus.data?.progress;
+
+  function handleReindexConfirm() {
+    reindex.mutate(undefined, {
+      onSuccess: (ack) => {
+        if (ack.status === "already_running") {
+          toast.info(F.reindexAlreadyRunning);
+        } else {
+          toast.success(F.reindexEnqueued);
+        }
+        setReindexOpen(false);
+      },
+    });
   }
 
   return (
@@ -520,6 +553,62 @@ export function FunctionalModelsView() {
           </Field>
         </div>
       </Group>
+
+      <Group title={F.reindexTitle} hint={F.reindexHint}>
+        <Field label={F.reindexKbLabel}>
+          <Select value={reindexKbId} onValueChange={setReindexKbId}>
+            <SelectTrigger className="w-full" aria-label={F.reindexKbLabel}>
+              <SelectValue placeholder={F.reindexKbPlaceholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {libraries.map((kb) => (
+                <SelectItem key={kb.id} value={kb.id}>
+                  {kb.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <div className="mt-3 flex items-center justify-end gap-3">
+          {reindexRunning && (
+            <span className="text-muted-foreground text-xs" role="status">
+              {reindexProgress
+                ? `${F.reindexRunning} ${reindexProgress.documents_done}/${reindexProgress.documents_total} · ${F.reindexChunksWritten} ${reindexProgress.chunks_indexed}`
+                : F.reindexRunning}
+            </span>
+          )}
+          {!reindexRunning && reindexStatus.data?.last_run === "succeeded" && (
+            <span className="text-muted-foreground text-xs">
+              {F.reindexLastSucceeded}
+            </span>
+          )}
+          {!reindexRunning && reindexStatus.data?.last_run === "failed" && (
+            <span className="text-destructive text-xs" role="alert">
+              {F.reindexLastFailed}
+            </span>
+          )}
+          {libraries.length === 0 && (
+            <span className="text-muted-foreground text-xs">
+              {F.reindexNoKb}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            disabled={!reindexKbId || reindexRunning}
+            onClick={() => setReindexOpen(true)}
+          >
+            {F.reindexAction}
+          </Button>
+        </div>
+      </Group>
+
+      <ReindexDialog
+        open={reindexOpen}
+        onOpenChange={setReindexOpen}
+        kbName={selectedKb?.name ?? ""}
+        onConfirm={handleReindexConfirm}
+        pending={reindex.isPending}
+      />
 
       <div className="flex items-center justify-end gap-3">
         {!hasChanges && (

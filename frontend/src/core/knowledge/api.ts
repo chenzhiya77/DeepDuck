@@ -28,6 +28,8 @@ import type {
   ManualCardsPage,
   MetricsOverview,
   RecallTestResponse,
+  ReindexAck,
+  ReindexStatus,
   SynthesisStatus,
   SynthesisTriggerInput,
   SynthesisTriggerResponse,
@@ -247,6 +249,23 @@ export type WikiGenerateMode = "incremental" | "full";
 export function generateWiki(kbId: string, mode: WikiGenerateMode = "incremental"): Promise<WikiGenerateAck> {
   return fetch(kbUrl(kbId, `/wiki/generate?mode=${mode}`), { method: "POST" }).then((r) =>
     readResponse<WikiGenerateAck>(r, "Failed to trigger wiki generation"),
+  );
+}
+
+/**
+ * 重建索引（spec 2026-09-14 §5 / P4）：把库里现有切片重新嵌入一次，**不重解析**。
+ * 换嵌入 provider / 维度之后的唯一出口——没有它，「拒绝启用非 1024 维」就是死胡同。
+ */
+export function reindexKnowledgeBase(kbId: string): Promise<ReindexAck> {
+  return fetch(kbUrl(kbId, "/reindex"), { method: "POST" }).then((r) =>
+    readResponse<ReindexAck>(r, "Failed to trigger knowledge-base reindex"),
+  );
+}
+
+/** 重建进度（设置页轮询）：`in_progress` 为假时 `progress` 为 null，`last_run` 是上一轮结论。 */
+export function getReindexStatus(kbId: string): Promise<ReindexStatus> {
+  return fetch(kbUrl(kbId, "/reindex/status")).then((r) =>
+    readResponse<ReindexStatus>(r, "Failed to fetch reindex status"),
   );
 }
 

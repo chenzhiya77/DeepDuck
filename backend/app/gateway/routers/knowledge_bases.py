@@ -479,6 +479,27 @@ async def regenerate_wiki_entries(request: Request, kb_id: str, body: Regenerate
     return {"status": "enqueued" if enqueued else "already_running"}
 
 
+@router.post("/{kb_id}/reindex", status_code=202)
+async def reindex_knowledge_base(request: Request, kb_id: str):
+    """Re-embed the library's existing chunks (spec 2026-09-14 §5 / P4).
+
+    The only exit after switching the embedding provider or dimension: it reads the
+    stored chunks and re-embeds them, **never re-parsing** the source documents — which
+    is why it also works for documents whose original upload is gone. ``already_running``
+    when a rebuild is in flight for this KB. Progress is polled via
+    ``GET /{kb_id}/reindex/status``.
+    """
+    service = await _require_kb_access(request, kb_id)
+    enqueued = service.trigger_reindex(kb_id)
+    return {"status": "enqueued" if enqueued else "already_running"}
+
+
+@router.get("/{kb_id}/reindex/status")
+async def reindex_status(request: Request, kb_id: str):
+    service = await _require_kb_access(request, kb_id)
+    return service.reindex_status(kb_id)
+
+
 @router.get("/{kb_id}/wiki/entries")
 async def list_wiki_entries(request: Request, kb_id: str):
     service = await _require_kb_access(request, kb_id)

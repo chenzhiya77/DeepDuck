@@ -1744,6 +1744,23 @@ export const zhCN: Translations = {
       secretFromEnv: "当前由环境变量提供。",
       saved: "功能模型配置已保存",
       noChanges: "没有需要保存的改动",
+      reindexTitle: "重建索引",
+      reindexHint:
+        "换嵌入 provider / 维度后，已有向量全部失效——用这里的入口重新嵌入。只读库中现有切片，不重解析源文件。",
+      reindexKbLabel: "目标知识库",
+      reindexKbPlaceholder: "选择知识库",
+      reindexNoKb: "还没有知识库可重建。",
+      reindexAction: "重建索引",
+      reindexRunning: "重建中",
+      reindexChunksWritten: "已写入向量",
+      reindexLastSucceeded: "上次重建已完成。",
+      reindexLastFailed: "上次重建失败，详见服务端日志。",
+      reindexEnqueued: "已开始重建索引",
+      reindexAlreadyRunning: "已有重建正在进行",
+      reindexConfirmTitle: "确认重建索引？",
+      reindexConfirmDescription:
+        "将重新嵌入该知识库的全部切片（不重解析源文件），期间检索结果可能不稳。目标知识库：",
+      reindexConfirmAction: "开始重建",
     },
     channels: {
       title: "渠道",
