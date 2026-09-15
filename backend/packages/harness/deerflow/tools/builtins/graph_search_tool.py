@@ -26,7 +26,8 @@ from deerflow.knowledge.graph.extractor import _strip_fence, get_extract_llm
 from deerflow.knowledge.graph.normalizer import cosine_similarity
 from deerflow.knowledge.graph.retrieval import Candidate, apply_source_caps, collect_candidates, expand_neighborhood, select_evidence
 from deerflow.knowledge.graph.store import GraphStore
-from deerflow.knowledge.reranker import DashScopeReranker, RerankerError
+from deerflow.knowledge.reranker import RerankerError
+from deerflow.knowledge.reranker_factory import build_reranker
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
 from deerflow.tools.types import Runtime
@@ -400,7 +401,7 @@ async def graph_search(
         query,
         runtime,
         hops=hops,
-        reranker=DashScopeReranker() if rag.graph_rerank else None,
+        reranker=build_reranker() if rag.graph_rerank else None,
         per_entity_cap=rag.graph_per_entity_cap,
         per_edge_cap=rag.graph_per_edge_cap,
         hop0_guarantee=rag.graph_hop0_guarantee,

@@ -373,9 +373,9 @@ def build_default_searchers(
     async def graph_fn(query: str, top_k: int) -> tuple[ScoredHit, ...]:
         reranker = None
         if rag.graph_rerank:
-            from deerflow.knowledge.reranker import DashScopeReranker
+            from deerflow.knowledge.reranker_factory import build_reranker
 
-            reranker = DashScopeReranker()
+            reranker = build_reranker()
         raw = await graph_impl(
             query,
             runtime,

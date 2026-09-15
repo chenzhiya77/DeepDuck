@@ -1,0 +1,144 @@
+"""Generic OpenAI-compatible rerank client (spec 2026-09-14 §4.1, shape from §8.4).
+
+The contract is the one vLLM implements (Apache-2.0 source): the request is
+``{model, query, documents}`` plus an optional ``top_n`` and deliberately carries **no
+``instruct``**; the response is ``{results: [{index, relevance_score, document}], usage}``,
+which parses exactly like the DashScope one (we read ``index`` / ``relevance_score``).
+"""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+
+from deerflow.knowledge.reranker import RerankerAuthError, RerankerError
+from deerflow.knowledge.reranker_generic import GenericReranker
+
+BASE_URL = "http://localhost:8000"
+
+
+def _client(recorded: list[httpx.Request], handler) -> httpx.AsyncClient:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return handler(request)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(_handler))
+
+
+async def test_sends_the_generic_shape_and_parses_the_response():
+    recorded: list[httpx.Request] = []
+    body = {
+        "results": [
+            {"index": 0, "relevance_score": 0.2, "document": {"text": "a"}},
+            {"index": 1, "relevance_score": 0.9, "document": {"text": "b"}},
+        ],
+        "usage": {"total_tokens": 12},
+    }
+    reranker = GenericReranker(
+        model="bge-reranker",
+        base_url=BASE_URL,
+        api_key="sk-rerank",
+        client=_client(recorded, lambda _request: httpx.Response(200, json=body)),
+    )
+
+    pairs = await reranker.rerank("q", ["a", "b"], top_n=2)
+
+    request = recorded[0]
+    assert request.url.path == "/rerank"
+    assert request.headers["authorization"] == "Bearer sk-rerank"
+    sent = json.loads(request.content)
+    assert sent == {
+        "model": "bge-reranker",
+        "query": "q",
+        "documents": ["a", "b"],
+        "top_n": 2,
+    }
+    assert "instruct" not in sent
+    # Best first, regardless of the order the server returned.
+    assert pairs == [(1, 0.9), (0, 0.2)]
+
+
+async def test_caps_top_n_at_the_document_count():
+    recorded: list[httpx.Request] = []
+    reranker = GenericReranker(
+        model="m",
+        base_url=BASE_URL,
+        api_key="sk-test",
+        client=_client(recorded, lambda _request: httpx.Response(200, json={"results": []})),
+    )
+
+    await reranker.rerank("q", ["only"], top_n=5)
+
+    assert json.loads(recorded[0].content)["top_n"] == 1
+
+
+async def test_empty_documents_never_hit_the_network():
+    recorded: list[httpx.Request] = []
+    reranker = GenericReranker(
+        model="m",
+        base_url=BASE_URL,
+        api_key="sk-test",
+        client=_client(recorded, lambda _request: httpx.Response(500)),
+    )
+
+    assert await reranker.rerank("q", []) == []
+    assert recorded == []
+
+
+async def test_retries_a_transient_failure_then_succeeds():
+    recorded: list[httpx.Request] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        if len(recorded) == 1:
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"results": [{"index": 0, "relevance_score": 0.5}]})
+
+    reranker = GenericReranker(
+        model="m",
+        base_url=BASE_URL,
+        api_key="sk-test",
+        retry_backoff_seconds=0.0,
+        client=_client(recorded, handler),
+    )
+
+    assert await reranker.rerank("q", ["a"]) == [(0, 0.5)]
+    assert len(recorded) == 2
+
+
+async def test_auth_failure_is_not_retried_and_is_classified():
+    recorded: list[httpx.Request] = []
+    reranker = GenericReranker(
+        model="m",
+        base_url=BASE_URL,
+        api_key="sk-test",
+        retry_backoff_seconds=0.0,
+        client=_client(recorded, lambda _request: httpx.Response(401, json={"error": "nope"})),
+    )
+
+    with pytest.raises(RerankerAuthError):
+        await reranker.rerank("q", ["a"])
+    assert len(recorded) == 1
+
+
+async def test_exhausted_retries_raise_a_reranker_error():
+    recorded: list[httpx.Request] = []
+    reranker = GenericReranker(
+        model="m",
+        base_url=BASE_URL,
+        api_key="sk-test",
+        max_retries=2,
+        retry_backoff_seconds=0.0,
+        client=_client(recorded, lambda _request: httpx.Response(429, json={"error": "slow"})),
+    )
+
+    with pytest.raises(RerankerError):
+        await reranker.rerank("q", ["a"])
+    assert len(recorded) == 2
+
+
+def test_the_endpoint_is_required():
+    """A generic provider has no default address to fall back to."""
+    with pytest.raises(TypeError):
+        GenericReranker(model="m")

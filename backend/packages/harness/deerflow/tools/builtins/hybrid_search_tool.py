@@ -18,7 +18,8 @@ from langchain.tools import tool
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
 from deerflow.knowledge.citation_counter import claim_citation_range
 from deerflow.knowledge.embedder import DashScopeEmbedder
-from deerflow.knowledge.reranker import DashScopeReranker, RerankerError
+from deerflow.knowledge.reranker import RerankerError
+from deerflow.knowledge.reranker_factory import build_reranker
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
 from deerflow.tools.types import Runtime
@@ -46,7 +47,7 @@ async def _hybrid_search_impl(
         return {"results": [], "message": ACCESS_DENIED_MESSAGE}
     vector_store = vector_store or get_vector_store()
     embedder = embedder or DashScopeEmbedder()
-    reranker = reranker or DashScopeReranker()
+    reranker = reranker or build_reranker()
 
     (query_vector,) = await embedder.embed([query], text_type="query")
     candidates = await vector_store.hybrid_query(

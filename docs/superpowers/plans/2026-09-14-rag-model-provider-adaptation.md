@@ -80,18 +80,22 @@
 
 **环境说明（非本 Task 引入）**：`pnpm check` 在本分支**恒红**，唯一原因是 `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx:222` 的 `"greet"` 不在组件 prop 联合里——那是**宠物线的在飞改动**，本轮**未触碰**该文件，也未代为修复。
 
-## Task 3: 重排——`generic-rerank` provider（P1）
+## Task 3: 重排——`generic-rerank` provider（P1）✅ 已完成（2026-09-14）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/reranker_generic.py`
-- Modify: 检索两处构造点（`tools/builtins/hybrid_search_tool.py` / `graph_search_tool.py`）改为经 allowlist 解析
+- Create: `backend/packages/harness/deerflow/knowledge/reranker_factory.py`（计划外：**三处构造点需要一个共同入口**，见下）
+- Modify: `tools/builtins/hybrid_search_tool.py`、`tools/builtins/graph_search_tool.py`、`knowledge/eval/runner.py` 改为经工厂解析
 - Create: `backend/tests/knowledge/test_reranker_generic.py`
 
-- [ ] RED test：**真实载荷断言**——请求体为 `{model, query, documents}` + 可选 `top_n`，**不含 `instruct`**；响应 `results[{index, relevance_score, document}]` 解析与现有百炼分支同形；非 2xx / 429 / 5xx 的重试与最后抛 `RerankerError`；**降级**——`RerankerError` 时调用侧回退 RRF 序（回归用例）。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement `GenericReranker`：路径 `/rerank`（`/v1/rerank`、`/v2/rerank` 亦可用），载荷去掉 `instruct`，其余与 `DashScopeReranker` 同构（复用重试与错误分类）。
-- [ ] GREEN；revert proof；`ruff` 双净。
-- [ ] Commit: `feat(knowledge): add a generic rerank provider`
+- [x] RED test：**真实载荷断言**——路径 `/rerank`、body 恰为 `{model, query, documents, top_n}` 且**不含 `instruct`**；响应 `results[{index, relevance_score, document}]` 解析与百炼分支同形（按分数降序）；`top_n` 被裁剪到文档数；空文档不发请求；5xx 重试后成功；401 **不重试**且分类为 `RerankerAuthError`；重试耗尽抛 `RerankerError`；`base_url` 缺省即构造失败。
+- [x] Implement `GenericReranker`：**复用** `reranker.py` 的 `RerankerError` / `RerankerAuthError`（换一套异常会让调用侧的 RRF 降级静默失效）；env 回退名从 allowlist 取（`secret_env_var("rerank", "generic-rerank")`），避免与 API 上报的名字漂移。
+- [x] GREEN（**7 passed**）；revert proof：移走 `reranker_generic.py` → 收集期 RED → 恢复 → 7 passed。
+- [x] 窄门禁：**`tests/knowledge` 1103 passed / 2 skipped**（较 Task 2 的 1096 多出 7 条新用例）。
+- [x] `ruff check` / `ruff format` 双净。
+- [x] Commit: `feat(knowledge): add a generic rerank provider`
+
+**计划修正（2026-09-14）**：计划写的是「检索两处构造点」，实际有**三处**——`eval/runner.py:378` 也 new 了 `DashScopeReranker`。三处都改经 `build_reranker()`，理由是**评测必须量到线上同款重排器**，否则报告与线上不是同一回事。工厂在缺端点且 provider 非 `dashscope` 时抛 `ValueError`（只有百炼有内置地址）。
 
 ## Task 4: 解析——本地 MinerU provider（P2）
 
