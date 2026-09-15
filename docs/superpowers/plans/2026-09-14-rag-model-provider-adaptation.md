@@ -177,20 +177,27 @@
 - Modify: `backend/AGENTS.md`（Knowledge Base / RAG 与配置系统两节）
 - Modify: spec 头部状态 + 本 plan 的 Task 勾选
 
-- [ ] README：新增 provider 选择说明、三处缺口的最新口径、重建入口的说明。
-- [ ] AGENTS.md：新增 provider 机制（与 Models 机制**互不相通**）、稀疏三条路、重建入口、以及「说明 VLM 限 OpenAI 兼容」这条现状约束。
-- [ ] 回归：`make test`（全量）+ `pnpm check`；确认老配置守护用例在整仓范围内也绿。
-- [ ] Commit: `docs(rag): sync README and AGENTS for the provider adaptation`
+- [x] README：新增 provider 选择说明、三处缺口的最新口径、重建入口的说明。
+- [x] AGENTS.md：新增 provider 机制（与 Models 机制**互不相通**）、稀疏三条路、重建入口、以及「说明 VLM 限 OpenAI 兼容」这条现状约束。
+- [x] 回归：`make test`（全量）+ `pnpm check`；确认老配置守护用例在整仓范围内也绿。
+- [x] Commit: `docs(rag): sync README and AGENTS for the provider adaptation`
 
----
+**收尾口径（2026-09-15）**：
+
+1. **README 按用户裁定「甲」只提交本人的 hunk**：工作树里另有命名线的 3 行未提交改动（标题改名 + 文末两条归属句），与该线无关，故用「存补丁 → 回 HEAD → 写自己的 → `git add` → 把补丁打回工作树」保住各归各的提交（工作树剩余改动与那份补丁逐行一致）。
+2. **其余两节的 AGENTS.md 内容已在 Task 4/5/6 顺手落地**（Parse/Embedding provider dimension 段落 + 路由表两行），本 Task 补的是**配置系统节里已过期的那句**（原写「embedding/rerank 客户端是 DashScope 专用，所以视图只改模型名与密钥」——provider 维度落地后不再成立）与「与 Models 机制互不相通 + VLM 限 OpenAI 兼容」这条约束。
+3. **回归口径**：本 Task 只改 `.md` ⇒ 未重跑 18 分钟的后端全量；用的是 Task 6 刚跑完的那次（`159 failed / 12311 passed / 109 skipped`，其中多出的 15 条为本机 DNS 短暂不可用导致的 SSRF 守卫批量拒绝、复跑那批文件即全绿，失败集合里**旧的 144 条逐行未变**）＋ 老配置守护用例的当轮实测。
+4. **spec 头部**已从「草案 … plan 待写」改成「已实现」，并点出两处实现期与本文不同的选择（`-http-client` 后缀、TEI 形状 + id 改名）。
 
 ## Final verification
 
 - [ ] `cd backend && make test` 全量绿（含新增 6 个测试文件）
 - [ ] `cd frontend && pnpm check` 双净
-- [ ] 老配置回归：只用 `config.yaml` 原有字段启动，三条腿行为与改造前一致（守护测试 + 手工起栈确认）
+- [x] 老配置回归：只用 `config.yaml` 原有字段启动，三条腿行为与改造前一致（**守护测试**：`test_rag_provider_config.py` 的「老配置只写 `embedding_model` ⇒ provider 全取默认」等用例；**手工起栈未做**）
 - [ ] 三条腿各接一次真实本地/外部服务（重排用任一 OpenAI 兼容 rerank；解析用本地 MinerU 服务；嵌入用 1024 维的兼容端点），确认端到端可用
 - [ ] 换 provider → 触发重建 → 检索结果正常的完整链路走通一次
+
+> **上面两条未勾的是「需要真实服务」的端到端验收**：本机没有可用的 OpenAI 兼容重排 / 1024 维嵌入端点、也没有自建 MinerU 服务，且这类验收要用户在自己的部署里做。其余三条按下列口径收：① 后端全量在本机**永远不会全绿**（存量环境红 144 条，与本次改动无关，判据是失败集合逐行 diff 不变）；② 前端 `pnpm check` 唯一残留是宠物线既有的 `greet` 类型错误（非本线文件）；③ 老配置回归已由守护测试覆盖，「手工起栈」留给真实部署。
 
 ## 运行期遗留（不属本 plan 交付，供后续决策）
 

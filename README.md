@@ -41,6 +41,7 @@
 - **本地直读**（不走网络）：`.md` / `.markdown` / `.txt`
 - **表格**：`.csv` 始终可用；`.xlsx` / `.xls` / `.tsv` 由 `rag.table.enabled` 门控。统一归一为 GFM 表格——Excel 逐 sheet 一张表，`.csv` / `.tsv` 按分隔符解析
 - **视频**：`.mp4` / `.mov` / `.mkv` / `.webm`，由 `rag.video.enabled` 门控。**ASR（funasr / Paraformer）与关键帧 OCR（PaddleOCR）在本地运行**，不依赖外部推理服务；镜头画面说明与向量化仍走所配置的模型端点。ASR + 关键帧 + 分镜卡，产物以切片形式进入同一套检索
+- **解析可接自建服务**：`rag.parse_provider` 默认 `mineru-cloud`（MinerU 官方 API）；改成 `mineru-local` 并填 `rag.parse_base_url` 即接**自建的 MinerU 服务**（轻客户端形态，本机不跑模型推理；该服务本身不带鉴权，只应部署在内网）。换解析来源不影响表格归一化、图片落盘与就地渲染
 
 全部开启时共支持 19 种后缀。
 
@@ -107,6 +108,9 @@
 
 - 聊天模型：两步向导（先探活密钥与模型 ID，再声明能力），密钥落盘到 gitignored 的 `models_config.json`
 - RAG 功能模型：图抽取、评测 judge、说明生成 VLM 从已配置模型中选择；另含嵌入、重排、ASR、Qdrant / MinerU 设置，落盘到 `rag_config.json`
+- **三条外部依赖可选 provider**（与上面的聊天模型机制**互不相通**——不共享条目，也不继承其支持面）：嵌入可走百炼原生接口，或任一 OpenAI 兼容的 `/v1/embeddings`；重排可走百炼，或通用 `/rerank`；解析可走云，或自建的 MinerU 服务。**非 1024 维的嵌入会被拒绝启用**（向量库集合固定 1024 维），并提示走下面的重建入口
+- **稀疏来源三选一**（`rag.embedding_sparse_source`）：随嵌入模型同出（百炼）、另配一个专门的稀疏服务（`tei-sparse`，对接 Text Embeddings Inference 的 `/embed_sparse`）、或本地 BM25（零模型、确定性最好，中文按字符二元切分）。换成只出稠密向量的嵌入模型后，必须选后两者之一
+- **重建索引**：「设置 → 模型 → 功能模型 → 重建索引」按库重新嵌入现有切片。它只重嵌入、**不重解析**源文件——所以换 provider / 换维度之后原文件不在也照样能换
 
 ## 🖼️ 效果展示
 

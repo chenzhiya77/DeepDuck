@@ -674,10 +674,20 @@ effect on the next ingest or retrieval without a restart. `make support-bundle` 
 `rag-summary.json`.
 
 Operational caveat: the vector collections are fixed at 1024 dimensions
-(`knowledge/vector_store.py`), and the embedding/rerank clients are DashScope-specific, so the view
-edits the model name and key rather than offering arbitrary providers. Chromium-style embedding
-model changes invalidate existing vectors — the UI warns and v1 deliberately does not re-index
-automatically.
+(`knowledge/vector_store.py`) — that is a **hard gate**, not a default: `build_embedder()` refuses a
+non-1024 provider (§4.2). Embedding model changes invalidate existing vectors, and since
+2026-09-14 the provider dimension exists too (embedding / rerank / parse each pick a curated
+provider id), so the view warns on any of those changes and the rebuild entry is the documented way
+out — it re-embeds the stored chunks and never re-parses (v1 still does not re-index automatically).
+
+**The RAG provider mechanism is deliberately not the Models mechanism.** The three legs above are
+raw HTTP clients, not LangChain models, so they never appear in a `models:` picker and do not
+inherit that mechanism's provider set (Anthropic included): they resolve their own curated
+allowlist in `knowledge/providers/__init__.py`. Conversely, a `models:` entry's usability differs
+per *leg* — the two caption legs (image captions, video shots) are plain OpenAI-compatible
+`base_url + /chat/completions` calls, so an entry that works for graph extraction and the eval
+judge (both LangChain) may not work there. That asymmetry is why the settings view labels the
+caption rows as OpenAI-compatible only.
 
 ### Gateway API (`app/gateway/`)
 

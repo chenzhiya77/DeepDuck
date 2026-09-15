@@ -1,7 +1,8 @@
 # RAG 模型 provider 适配（嵌入 / 重排 / 解析）— 设计文档
 
 **日期：** 2026-09-14
-**状态：** 草案。四项裁定已落（§2）；**Task 0 五项探针已完成（§8，2026-09-14）⇒ 本地 provider 的接口可冻结**；plan 待写。
+**状态：** **已实现**（2026-09-15）。四项裁定已落（§2）；**Task 0 五项探针已完成（§8，2026-09-14）⇒ 本地 provider 的接口可冻结**；plan 已写并**全部交付**（`plans/2026-09-14-rag-model-provider-adaptation.md`，P0–P4 六项 Task 勾满）。
+实现期对**两处**做了与本文不同的选择，均已写进 plan 的对应 Task：① `parse_backend` 下发时补 `-http-client` 后缀（上游公开取值带后缀，短名会被 400 拒）；② `external` 稀疏来源的形状由 P3 定为 **TEI**（`POST /embed_sparse`），allowlist 的 id 随之从占位名改成 `tei-sparse`。
 **上游背景：** 本 spec 是 `2026-09-10-rag-functional-model-config-design.md` 的**扩展**——那份解决了「RAG 功能模型可在设置页里选」，但选的是**模型名**，没有 **provider 维度**。裁定清单见 §2。
 
 ---
