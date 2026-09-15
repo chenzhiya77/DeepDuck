@@ -43,7 +43,7 @@ from deerflow.knowledge.parser import TABLE_UPLOAD_SUFFIXES, VIDEO_UPLOAD_SUFFIX
 from deerflow.knowledge.projection.cache import CachedProjection, ProjectionCache, content_fingerprint
 from deerflow.knowledge.projection.fetcher import fetch_projection_vectors
 from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
-from deerflow.knowledge.reranker import DashScopeReranker
+from deerflow.knowledge.reranker_factory import build_reranker
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.video.store import VideoShotStore
 from deerflow.knowledge.wiki.generator import generate_wiki, regenerate_wiki_entries, wiki_generation_in_progress, wiki_last_run_status
@@ -1099,7 +1099,7 @@ class KnowledgeService:
                     vector_store=self.vector_store,
                     # mirror the online wrapper's config-driven parameters;
                     # the recall test's top_k maps to evidence_limit
-                    reranker=DashScopeReranker() if rag.graph_rerank else None,
+                    reranker=build_reranker() if rag.graph_rerank else None,
                     per_entity_cap=rag.graph_per_entity_cap,
                     per_edge_cap=rag.graph_per_edge_cap,
                     hop0_guarantee=rag.graph_hop0_guarantee,

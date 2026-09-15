@@ -19,6 +19,7 @@ import pytest
 from _router_auth_helpers import make_authed_test_app
 from fastapi.testclient import TestClient
 
+import deerflow.config.app_config as app_config_module
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
 from app.gateway.services import knowledge_service as ks_module
@@ -313,6 +314,38 @@ async def test_recall_test_gate_403_404_and_impls_untouched(service, monkeypatch
     assert owner_client.post("/api/knowledge-bases/nonexistent/recall-test", json={"query": "x"}).status_code == 404
     for impl in (vector, graph, wiki):
         impl.assert_not_called(), "门禁先于 impl 调用"
+
+
+async def test_recall_test_graph_rerank_resolves_through_the_factory(service, monkeypatch):
+    """图检索腿的重排器必须由 reranker_factory 解析（spec 2026-09-14 P1）。
+
+    recall_test 承诺复用线上 `_*_impl`「verbatim」，而线上 graph_search 传的是
+    `build_reranker()`。若这里自己 new 一个百炼重排器，把 rerank 指向非 dashscope
+    的部署会在召回测试里静默走回百炼——RerankerError 降级成余弦序，界面上看不出差别。
+    """
+    _vector, graph, _wiki = _mock_impls(monkeypatch)
+    real_config = app_config_module.get_app_config()
+    sentinel = object()
+    built: list[int] = []
+    monkeypatch.setattr(ks_module, "build_reranker", lambda: built.append(1) or sentinel)
+    client = _client(service)
+    kb = _create_kb(client)
+    url = f"/api/knowledge-bases/{kb['id']}/recall-test"
+
+    def _config_with(graph_rerank: bool):
+        return real_config.model_copy(update={"rag": real_config.rag.model_copy(update={"graph_rerank": graph_rerank})})
+
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: _config_with(True))
+    assert client.post(url, json={"query": "x"}).status_code == 200
+    assert graph.call_args.kwargs["reranker"] is sentinel, "图腿必须拿到工厂解析出的重排器"
+    assert len(built) == 1
+
+    # 关闭时不构造——与线上 `build_reranker() if rag.graph_rerank else None` 同形
+    built.clear()
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: _config_with(False))
+    assert client.post(url, json={"query": "x"}).status_code == 200
+    assert graph.call_args.kwargs["reranker"] is None
+    assert built == [], "graph_rerank 关闭时不应构造重排器"
 
 
 # ── integration: real impls against the seeded tools_env ─────────────────

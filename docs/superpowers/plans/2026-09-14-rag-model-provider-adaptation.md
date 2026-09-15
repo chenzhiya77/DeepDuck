@@ -86,6 +86,7 @@
 - Create: `backend/packages/harness/deerflow/knowledge/reranker_generic.py`
 - Create: `backend/packages/harness/deerflow/knowledge/reranker_factory.py`（计划外：**三处构造点需要一个共同入口**，见下）
 - Modify: `tools/builtins/hybrid_search_tool.py`、`tools/builtins/graph_search_tool.py`、`knowledge/eval/runner.py` 改为经工厂解析
+- Modify（补正，见下）: `backend/app/gateway/services/knowledge_service.py`（`recall_test` 图腿）
 - Create: `backend/tests/knowledge/test_reranker_generic.py`
 
 - [x] RED test：**真实载荷断言**——路径 `/rerank`、body 恰为 `{model, query, documents, top_n}` 且**不含 `instruct`**；响应 `results[{index, relevance_score, document}]` 解析与百炼分支同形（按分数降序）；`top_n` 被裁剪到文档数；空文档不发请求；5xx 重试后成功；401 **不重试**且分类为 `RerankerAuthError`；重试耗尽抛 `RerankerError`；`base_url` 缺省即构造失败。
@@ -96,6 +97,8 @@
 - [x] Commit: `feat(knowledge): add a generic rerank provider`
 
 **计划修正（2026-09-14）**：计划写的是「检索两处构造点」，实际有**三处**——`eval/runner.py:378` 也 new 了 `DashScopeReranker`。三处都改经 `build_reranker()`，理由是**评测必须量到线上同款重排器**，否则报告与线上不是同一回事。工厂在缺端点且 provider 非 `dashscope` 时抛 `ValueError`（只有百炼有内置地址）。
+
+**遗漏补正（2026-09-15）**：上面那句「三处」并不完整——`app/gateway/services/knowledge_service.py:1102`（`recall_test` 的图腿）仍在直连 `DashScopeReranker()`，是**第四处**，Task 3 提交时漏了。它恰好破坏本 Task 自己的理由：`recall_test` 的 docstring 承诺复用线上 `_*_impl`「verbatim」，而线上 `graph_search_tool.py:404` 传的是 `build_reranker()`。暴露条件窄但会静默——只在 `rag.graph_rerank: true`（默认 false）时才有分叉，且失败会走既有的 `RerankerError` 降级回余弦序，界面上看不出差别。已补：改经 `build_reranker()`，并加两个守护用例——`tests/knowledge/test_rerank_factory_coverage.py` 扫全部生产代码、禁止直接构造 allowlist 里的任何重排实现（由 `PROVIDER_ALLOWLIST["rerank"]` 驱动，加 provider 即自动覆盖）；`test_recall_test_api.py::test_recall_test_graph_rerank_resolves_through_the_factory` 断言图腿拿到的是工厂产物、且 `graph_rerank` 关闭时不构造。向量腿无此问题（没传 reranker，落 `hybrid_search_tool.py:50` 的默认工厂）。
 
 ## Task 4: 解析——本地 MinerU provider（P2）
 
