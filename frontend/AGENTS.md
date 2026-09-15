@@ -165,8 +165,12 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   something — do not replace that guard with a payload-emptiness check. Its three
   model-reference rows (graph extraction, eval judge, caption VLM) are all plain pickers over
   the configured `models:` entries via `modelReferenceOptions` / `visionReferenceOptions`; the
-  backend resolves what each role needs from the named entry, so no row asks for an endpoint or
-  a key of its own. Adding a chat model is a **two-step wizard** (`models-add-dialog.tsx`): step 1
+  backend resolves what each role needs from the named entry, so none of them asks for an endpoint or
+  a key of its own. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
+  they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and
+  the embedding row also carries the sparse-source select — the field that decides whether a
+  dense-only provider is usable at all. An endpoint input appears only for a provider with no
+  built-in default, so a DashScope deployment still sees no address field. Adding a chat model is a **two-step wizard** (`models-add-dialog.tsx`): step 1
   collects identity + credentials (provider / endpoint / api_key / one or more Model IDs) and its
   **Next** button runs `POST /api/models/config/validate` first, so a bad key or an unknown Model ID is
   caught before anything is stored — step 2 is unreachable until that probe passes. The probe's

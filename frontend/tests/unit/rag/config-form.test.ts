@@ -49,6 +49,18 @@ function view(
       extract_model: "deepseek-chat",
       judge_model: "deepseek-chat",
       mineru_api_token: "",
+      embedding_provider: "dashscope",
+      embedding_base_url: "",
+      embedding_sparse_source: "provider",
+      sparse_provider: null,
+      sparse_base_url: "",
+      sparse_model: "",
+      sparse_api_key: "",
+      rerank_provider: "dashscope",
+      rerank_base_url: "",
+      parse_provider: "mineru-cloud",
+      parse_base_url: "",
+      parse_backend: null,
       video: { asr_provider: "funasr", asr_model: "paraformer-zh", caption_model: "" },
       ...over,
     },
@@ -64,6 +76,18 @@ function view(
       extract_model: "config_file",
       judge_model: "config_file",
       mineru_api_token: "unset",
+      embedding_provider: "config_file",
+      embedding_base_url: "config_file",
+      embedding_sparse_source: "config_file",
+      sparse_provider: "config_file",
+      sparse_base_url: "config_file",
+      sparse_model: "config_file",
+      sparse_api_key: "unset",
+      rerank_provider: "config_file",
+      rerank_base_url: "config_file",
+      parse_provider: "config_file",
+      parse_base_url: "config_file",
+      parse_backend: "config_file",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
       "video.caption_model": "config_file",
@@ -387,5 +411,76 @@ describe("caption model picker", () => {
     expect(isCaptionCapable({ name: "a", model: "a", supports_vision: true, provider: "anthropic" })).toBe(false);
     expect(isCaptionCapable({ name: "b", model: "b" })).toBe(false);
     expect(isCaptionCapable({ name: "c", model: "c", supports_vision: true, provider: "openai-compatible" })).toBe(true);
+  });
+});
+
+describe("provider dimension (spec 2026-09-14 §4.1)", () => {
+  it("seeds the fields and keeps the effective defaults when the file declares none", () => {
+    const values = formValuesFromConfig(view());
+
+    expect(values.embedding_provider).toBe("dashscope");
+    expect(values.embedding_sparse_source).toBe("provider");
+    expect(values.rerank_provider).toBe("dashscope");
+    expect(values.parse_provider).toBe("mineru-cloud");
+    expect(values.parse_backend).toBe("");
+    expect(values.embedding_base_url).toBe("");
+  });
+
+  it("submits the provider and endpoint the admin picked, and nothing else", () => {
+    const base = formValuesFromConfig(view());
+    const input = buildRagConfigInput(
+      {
+        ...base,
+        rerank_provider: "generic-rerank",
+        rerank_base_url: "http://localhost:8000",
+        parse_provider: "mineru-local",
+        parse_base_url: "http://localhost:30000",
+      },
+      view(),
+    );
+
+    expect(input.rerank_provider).toBe("generic-rerank");
+    expect(input.rerank_base_url).toBe("http://localhost:8000");
+    expect(input.parse_provider).toBe("mineru-local");
+    expect(input.parse_base_url).toBe("http://localhost:30000");
+    // An operator-owned field this edit never touched stays out of the payload.
+    expect(input.embedding_provider).toBeUndefined();
+  });
+
+  it("carries the file's own provider override forward", () => {
+    const owned = view({ embedding_provider: "openai-compatible" }, { embedding_provider: "ui" });
+
+    expect(buildRagConfigInput(formValuesFromConfig(owned), owned).embedding_provider).toBe("openai-compatible");
+  });
+
+  it("treats sparse_api_key as a secret", () => {
+    const owned = view({ sparse_api_key: MASKED_RAG_SECRET }, { sparse_api_key: "ui" });
+
+    expect(buildRagConfigInput(formValuesFromConfig(owned), owned).sparse_api_key).toBe(MASKED_RAG_SECRET);
+    expect(buildRagConfigInput({ ...formValuesFromConfig(owned), sparse_api_key: "" }, owned).sparse_api_key).toBe("");
+    expect(buildRagConfigInput({ ...formValuesFromConfig(owned), sparse_api_key: "sk-new" }, owned).sparse_api_key).toBe(
+      "sk-new",
+    );
+  });
+});
+
+describe("isEmbeddingChange covers the whole provider dimension", () => {
+  it("reports a changed provider, endpoint or sparse source, not only the model", () => {
+    const base = formValuesFromConfig(view());
+
+    expect(isEmbeddingChange(base, view())).toBe(false);
+    expect(isEmbeddingChange({ ...base, embedding_provider: "openai-compatible" }, view())).toBe(true);
+    expect(isEmbeddingChange({ ...base, embedding_base_url: "http://localhost:8080/v1" }, view())).toBe(true);
+    expect(isEmbeddingChange({ ...base, embedding_sparse_source: "bm25" }, view())).toBe(true);
+  });
+});
+
+describe("hasFormChanges covers the provider fields", () => {
+  it("reports a provider edit as a change", () => {
+    const base = formValuesFromConfig(view());
+
+    expect(hasFormChanges(base, view())).toBe(false);
+    expect(hasFormChanges({ ...base, parse_provider: "mineru-local" }, view())).toBe(true);
+    expect(hasFormChanges({ ...base, embedding_base_url: "http://x" }, view())).toBe(true);
   });
 });

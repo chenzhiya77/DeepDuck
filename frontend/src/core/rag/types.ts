@@ -26,6 +26,23 @@ export interface RagConfigValues {
   extract_model?: string | null;
   judge_model?: string | null;
   mineru_api_token?: string | null;
+  /**
+   * Provider dimension (spec 2026-09-14 §4.1). Ids mirror the backend's curated
+   * allowlist: a value outside it is rejected by the server, not silently accepted.
+   */
+  embedding_provider?: "dashscope" | "openai-compatible" | null;
+  embedding_base_url?: string | null;
+  embedding_dimension?: number | null;
+  embedding_sparse_source?: "provider" | "external" | "bm25" | null;
+  sparse_provider?: "openai-compatible" | null;
+  sparse_base_url?: string | null;
+  sparse_model?: string | null;
+  sparse_api_key?: string | null;
+  rerank_provider?: "dashscope" | "generic-rerank" | null;
+  rerank_base_url?: string | null;
+  parse_provider?: "mineru-cloud" | "mineru-local" | null;
+  parse_base_url?: string | null;
+  parse_backend?: "vlm" | "hybrid" | null;
   video?: RagVideoValues | null;
 }
 

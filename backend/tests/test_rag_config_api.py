@@ -61,7 +61,15 @@ def config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("DEER_FLOW_EXTENSIONS_CONFIG_PATH", str(extensions))
     monkeypatch.setenv("DEER_FLOW_RAG_CONFIG_PATH", str(tmp_path / "rag_config.json"))
     # Keep the secret-source expectations independent of the ambient environment.
-    for name in ("DASHSCOPE_EMBEDDING_API_KEY", "DASHSCOPE_RERANK_API_KEY", "DASHSCOPE_API_KEY", "MINERU_API_TOKEN"):
+    for name in (
+        "DASHSCOPE_EMBEDDING_API_KEY",
+        "DASHSCOPE_RERANK_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "MINERU_API_TOKEN",
+        "RAG_EMBEDDING_API_KEY",
+        "RAG_RERANK_API_KEY",
+        "RAG_SPARSE_API_KEY",
+    ):
         monkeypatch.delenv(name, raising=False)
     _write_config_yaml(tmp_path)
     _write_rag_json(tmp_path, {})
@@ -261,17 +269,126 @@ def test_support_bundle_redacts_rag_config(config_env: Path):
             "rerank_api_key": "sk-rerank-secret",
             "vlm_api_key": "sk-vlm-secret",
             "mineru_api_token": "mineru-secret",
+            "sparse_api_key": "sk-sparse-secret",
         },
     )
 
     summary = support_bundle.collect_rag_summary(config_env / "rag_config.json")
     blob = json.dumps(summary)
 
-    for secret in ("sk-embed-secret", "sk-rerank-secret", "sk-vlm-secret", "mineru-secret"):
+    for secret in ("sk-embed-secret", "sk-rerank-secret", "sk-vlm-secret", "mineru-secret", "sk-sparse-secret"):
         assert secret not in blob
     assert summary["embedding_model"] == "ui-embedding"
     assert summary["embedding_api_key"] == "<redacted>"
     assert summary["mineru_api_token"] == "<redacted>"
+    # The sparse key is covered by the same key-name pattern, so it needs no special case.
+    assert summary["sparse_api_key"] == "<redacted>"
     # The bundle advertises the artifact it now ships.
     names = [entry["path"] for entry in support_bundle._evidence_files(include_doctor=False, include_thread_summary=False)]
     assert "rag-summary.json" in names
+
+
+# ── provider dimension (spec 2026-09-14 rag model provider adaptation §4.1) ──
+
+
+def test_get_reports_the_provider_fields_with_their_origins(config_env: Path):
+    """The new fields ride the same generic path as every other non-secret field."""
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    assert body["config"]["embedding_provider"] == "dashscope"
+    assert body["config"]["rerank_provider"] == "dashscope"
+    assert body["config"]["parse_provider"] == "mineru-cloud"
+    assert body["config"]["embedding_sparse_source"] == "provider"
+    assert body["sources"]["embedding_provider"] == "config_file"
+    assert body["sources"]["parse_base_url"] == "config_file"
+
+
+def test_put_round_trips_the_provider_fields_and_marks_them_ui(config_env: Path):
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/rag/config",
+            json={
+                "embedding_provider": "openai-compatible",
+                "embedding_base_url": "http://localhost:8080/v1",
+                "embedding_sparse_source": "bm25",
+                "rerank_provider": "generic-rerank",
+                "rerank_base_url": "http://localhost:8000",
+                "parse_provider": "mineru-local",
+                "parse_base_url": "http://localhost:30000",
+                "parse_backend": "hybrid",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+
+    assert body["config"]["embedding_provider"] == "openai-compatible"
+    assert body["config"]["parse_backend"] == "hybrid"
+    assert body["sources"]["parse_provider"] == "ui"
+    stored = _read_rag_json(config_env)
+    assert stored["parse_base_url"] == "http://localhost:30000"
+    assert stored["embedding_sparse_source"] == "bm25"
+
+
+def test_put_rejects_a_provider_outside_the_allowlist(config_env: Path):
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"embedding_provider": "some-vendor"}).status_code == 422
+
+
+def test_put_rejects_the_pipeline_backend(config_env: Path):
+    """D2 supports the http-client deployment shape; `pipeline` has no such variant."""
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"parse_backend": "pipeline"}).status_code == 422
+
+
+def test_sparse_api_key_is_treated_as_a_secret(config_env: Path):
+    """Left out of ``_SECRET_FIELDS`` this key would come back in plaintext."""
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"sparse_api_key": "sk-sparse"}).status_code == 200
+        body = client.get("/api/rag/config").json()
+
+    assert body["config"]["sparse_api_key"] == MASKED_SECRET
+    assert body["sources"]["sparse_api_key"] == "ui"
+    assert "sk-sparse" not in json.dumps(body)
+
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"sparse_api_key": MASKED_SECRET}).status_code == 200
+    assert _read_rag_json(config_env)["sparse_api_key"] == "sk-sparse"
+
+
+def test_embedding_secret_env_source_follows_the_selected_provider(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The reported fallback must be the variable the *selected* provider reads."""
+    monkeypatch.setenv("DASHSCOPE_EMBEDDING_API_KEY", "env-dashscope")
+    with _client(system_role="admin") as client:
+        assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "env"
+        switched = client.put("/api/rag/config", json={"embedding_provider": "openai-compatible"}).json()
+        # The switch re-points the fallback in the same response, not only after a reload.
+        assert switched["sources"]["embedding_api_key"] == "unset"
+        assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "unset"
+        monkeypatch.setenv("RAG_EMBEDDING_API_KEY", "env-generic")
+        assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "env"
+
+
+def test_rerank_secret_env_source_follows_the_provider(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("DASHSCOPE_RERANK_API_KEY", "env-dashscope")
+    with _client(system_role="admin") as client:
+        assert client.get("/api/rag/config").json()["sources"]["rerank_api_key"] == "env"
+        client.put("/api/rag/config", json={"rerank_provider": "generic-rerank"})
+        assert client.get("/api/rag/config").json()["sources"]["rerank_api_key"] == "unset"
+        monkeypatch.setenv("RAG_RERANK_API_KEY", "env-generic")
+        assert client.get("/api/rag/config").json()["sources"]["rerank_api_key"] == "env"
+
+
+def test_local_mineru_has_no_secret_fallback(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The local MinerU service ships without auth, so its token has no env source."""
+    monkeypatch.setenv("MINERU_API_TOKEN", "tok")
+    with _client(system_role="admin") as client:
+        assert client.get("/api/rag/config").json()["sources"]["mineru_api_token"] == "env"
+        client.put("/api/rag/config", json={"parse_provider": "mineru-local"})
+        assert client.get("/api/rag/config").json()["sources"]["mineru_api_token"] == "unset"
+
+
+def test_sparse_secret_env_source_uses_the_generic_name(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("RAG_SPARSE_API_KEY", "env-sparse")
+    with _client(system_role="admin") as client:
+        assert client.get("/api/rag/config").json()["sources"]["sparse_api_key"] == "env"

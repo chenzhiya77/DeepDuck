@@ -33,13 +33,25 @@ from deerflow.config.rag_config_file import (
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
+from deerflow.knowledge.providers import provider_ids, secret_env_var
 
 router = APIRouter(prefix="/api", tags=["rag"])
 
 _ADMIN_DETAIL = "Admin privileges required to manage the RAG configuration."
 
 #: Secret fields: masked on read, sentinel-preserving on write, env-backed when unset.
-_SECRET_FIELDS: tuple[str, ...] = ("embedding_api_key", "rerank_api_key", "vlm_api_key", "mineru_api_token")
+_SECRET_FIELDS: tuple[str, ...] = ("embedding_api_key", "rerank_api_key", "vlm_api_key", "mineru_api_token", "sparse_api_key")
+
+#: Secret field -> (allowlist leg, the config field naming that leg's provider). A secret's
+#: environment fallback is the one the *selected* provider reads, so switching provider
+#: re-points it (spec 2026-09-14 §4.1). The caption VLM key is deliberately absent: its env
+#: name comes from the plain ``vlm_api_key_env`` field, not from a curated provider.
+_SECRET_LEGS: dict[str, tuple[str, str]] = {
+    "embedding_api_key": ("embedding", "embedding_provider"),
+    "rerank_api_key": ("rerank", "rerank_provider"),
+    "mineru_api_token": ("parse", "parse_provider"),
+    "sparse_api_key": ("sparse", "sparse_provider"),
+}
 
 #: The video sub-block is a nested object in the file; the API reports/receives it as one.
 _VIDEO_FIELDS: tuple[str, ...] = ("asr_provider", "asr_model", "caption_model")
@@ -84,11 +96,21 @@ def _prune_empty(data: dict[str, Any]) -> dict[str, Any]:
     return pruned
 
 
-def _secret_env_name(field_name: str, config: AppConfig) -> str:
-    """The environment variable backing a secret when the file declares none."""
+def _secret_env_name(field_name: str, config: AppConfig, written: dict[str, Any]) -> str | None:
+    """The environment variable backing a secret when the file declares none.
+
+    Returns ``None`` when no fallback exists — the local MinerU service ships without auth,
+    so a deployment that selects it has nothing to point at.
+    """
     if field_name == "vlm_api_key":
         return config.rag.vlm_api_key_env or SECRET_ENV_VARS[field_name]
-    return SECRET_ENV_VARS[field_name]
+    leg, provider_field = _SECRET_LEGS[field_name]
+    # The submitted object wins: a PUT that switches provider must report the new fallback
+    # in its own response, before ``get_app_config()`` reloads the file it just wrote.
+    provider = written.get(provider_field) or getattr(config.rag, provider_field, None)
+    if provider is None:
+        provider = provider_ids(leg)[0]
+    return secret_env_var(leg, provider)
 
 
 def _load_stored() -> RagConfigFile:
@@ -121,7 +143,8 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
             if written.get(name):
                 sources[name] = "ui"
             else:
-                sources[name] = "env" if environment.get(_secret_env_name(name, config)) else "unset"
+                env_name = _secret_env_name(name, config, written)
+                sources[name] = "env" if env_name and environment.get(env_name) else "unset"
         else:
             values[name] = written.get(name, getattr(config.rag, name))
             sources[name] = "ui" if name in written else "config_file"

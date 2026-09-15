@@ -36,6 +36,18 @@ export interface RagConfigFormValues {
   extract_model: string;
   judge_model: string;
   mineru_api_token: string;
+  embedding_provider: "dashscope" | "openai-compatible";
+  embedding_base_url: string;
+  embedding_sparse_source: "provider" | "external" | "bm25";
+  sparse_provider: "openai-compatible" | "";
+  sparse_base_url: string;
+  sparse_model: string;
+  sparse_api_key: string;
+  rerank_provider: "dashscope" | "generic-rerank";
+  rerank_base_url: string;
+  parse_provider: "mineru-cloud" | "mineru-local";
+  parse_base_url: string;
+  parse_backend: "vlm" | "hybrid" | "";
   video: {
     asr_provider: "funasr" | "whisper";
     asr_model: string;
@@ -43,11 +55,25 @@ export interface RagConfigFormValues {
   };
 }
 
+/**
+ * The select options for the provider dimension. These mirror the backend's curated
+ * allowlist (`deerflow.knowledge.providers`), which is the authority: a value outside it
+ * is rejected with a 422 rather than silently accepted, so drift shows up loudly.
+ */
+export const EMBEDDING_PROVIDER_OPTIONS = ["dashscope", "openai-compatible"] as const;
+export const EMBEDDING_SPARSE_SOURCE_OPTIONS = ["provider", "external", "bm25"] as const;
+export const SPARSE_PROVIDER_OPTIONS = ["", "openai-compatible"] as const;
+export const RERANK_PROVIDER_OPTIONS = ["dashscope", "generic-rerank"] as const;
+export const PARSE_PROVIDER_OPTIONS = ["mineru-cloud", "mineru-local"] as const;
+/** Empty means "let the local MinerU service decide"; `pipeline` is outside the support surface. */
+export const PARSE_BACKEND_OPTIONS = ["", "vlm", "hybrid"] as const;
+
 const SECRET_FIELDS = [
   "embedding_api_key",
   "rerank_api_key",
   "vlm_api_key",
   "mineru_api_token",
+  "sparse_api_key",
 ] as const;
 
 const TEXT_FIELDS = [
@@ -58,6 +84,21 @@ const TEXT_FIELDS = [
   "vlm_base_url",
   "extract_model",
   "judge_model",
+  "embedding_base_url",
+  "sparse_base_url",
+  "sparse_model",
+  "rerank_base_url",
+  "parse_base_url",
+] as const;
+
+/** Enum selects: they carry their own union type, so they are handled apart from text. */
+const SELECT_FIELDS = [
+  "embedding_provider",
+  "embedding_sparse_source",
+  "sparse_provider",
+  "rerank_provider",
+  "parse_provider",
+  "parse_backend",
 ] as const;
 
 const VIDEO_SOURCES: Record<string, string> = {
@@ -68,6 +109,11 @@ const VIDEO_SOURCES: Record<string, string> = {
 
 function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/** Narrow a wire value onto one of a select's options, falling back when it is absent or unknown. */
+function asEnum<T extends string>(value: unknown, options: readonly T[], fallback: T): T {
+  return typeof value === "string" && (options as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
 /** Effective view → form values; a stored secret stays masked so the input shows it as set. */
@@ -86,6 +132,18 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     extract_model: asText(config.extract_model),
     judge_model: asText(config.judge_model),
     mineru_api_token: asText(config.mineru_api_token),
+    embedding_provider: asEnum(config.embedding_provider, EMBEDDING_PROVIDER_OPTIONS, "dashscope"),
+    embedding_base_url: asText(config.embedding_base_url),
+    embedding_sparse_source: asEnum(config.embedding_sparse_source, EMBEDDING_SPARSE_SOURCE_OPTIONS, "provider"),
+    sparse_provider: asEnum(config.sparse_provider, SPARSE_PROVIDER_OPTIONS, ""),
+    sparse_base_url: asText(config.sparse_base_url),
+    sparse_model: asText(config.sparse_model),
+    sparse_api_key: asText(config.sparse_api_key),
+    rerank_provider: asEnum(config.rerank_provider, RERANK_PROVIDER_OPTIONS, "dashscope"),
+    rerank_base_url: asText(config.rerank_base_url),
+    parse_provider: asEnum(config.parse_provider, PARSE_PROVIDER_OPTIONS, "mineru-cloud"),
+    parse_base_url: asText(config.parse_base_url),
+    parse_backend: asEnum(config.parse_backend, PARSE_BACKEND_OPTIONS, ""),
     video: {
       asr_provider: video.asr_provider === "whisper" ? "whisper" : "funasr",
       asr_model: asText(video.asr_model),
@@ -100,6 +158,11 @@ function owned(view: RagConfigView, key: string): boolean {
 
 function loaded(view: RagConfigView, key: keyof RagConfigValues): string {
   return asText(view.config?.[key]);
+}
+
+/** Write one field of the payload; the caller has already narrowed the key and value. */
+function writeField(input: RagConfigInput, key: string, value: unknown): void {
+  (input as Record<string, unknown>)[key] = value;
 }
 
 /**
@@ -146,6 +209,18 @@ export function buildRagConfigInput(
     input[key] = next;
   }
 
+  // Enum selects follow the same carry-forward rule. They write through a widened view
+  // because their option unions differ per field, which TS cannot prove from a key union.
+  for (const key of SELECT_FIELDS) {
+    const next = values[key];
+    const previous = asText(view.config?.[key]);
+    if (next === previous) {
+      if (next !== "" && owned(view, key)) writeField(input, key, next); // carry the file's own override
+      continue;
+    }
+    if (next !== "" || owned(view, key)) writeField(input, key, next);
+  }
+
   const video: RagVideoValues = {};
   const loadedVideo: RagVideoValues = view.config?.video ?? {};
 
@@ -181,14 +256,22 @@ export function buildRagConfigInput(
 }
 
 /**
- * Whether this edit replaces the embedding model, which invalidates the vectors of every
- * knowledge base already indexed with the previous one (they need re-indexing).
+ * Whether this edit invalidates the vectors of every knowledge base already indexed — which
+ * means re-indexing, not just a settings change. It covers the whole provider dimension
+ * (spec 2026-09-14 §5), not only the model name: switching provider, endpoint or sparse
+ * source changes the vectors too, so warning on the model alone would miss most switches.
  */
 export function isEmbeddingChange(
   values: RagConfigFormValues,
   view: RagConfigView,
 ): boolean {
-  return values.embedding_model.trim() !== loaded(view, "embedding_model");
+  const seeded = formValuesFromConfig(view);
+  return (
+    values.embedding_model.trim() !== seeded.embedding_model.trim() ||
+    values.embedding_provider !== seeded.embedding_provider ||
+    values.embedding_base_url.trim() !== seeded.embedding_base_url.trim() ||
+    values.embedding_sparse_source !== seeded.embedding_sparse_source
+  );
 }
 
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */
@@ -237,6 +320,7 @@ export function hasFormChanges(
   return (
     TEXT_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SECRET_FIELDS.some((key) => edited(values[key], seeded[key])) ||
+    SELECT_FIELDS.some((key) => values[key] !== seeded[key]) ||
     (["asr_provider", "asr_model", "caption_model"] as const).some((key) =>
       edited(values.video[key], seeded.video[key]),
     )

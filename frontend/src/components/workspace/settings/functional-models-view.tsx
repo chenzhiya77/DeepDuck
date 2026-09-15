@@ -25,12 +25,17 @@ import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
   buildRagConfigInput,
+  EMBEDDING_PROVIDER_OPTIONS,
+  EMBEDDING_SPARSE_SOURCE_OPTIONS,
   formValuesFromConfig,
   hasFormChanges,
   isCaptionCapable,
   isEmbeddingChange,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
+  PARSE_BACKEND_OPTIONS,
+  PARSE_PROVIDER_OPTIONS,
+  RERANK_PROVIDER_OPTIONS,
   visionReferenceOptions,
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
@@ -40,8 +45,53 @@ import {
   SECRET_INPUT_AUTOFILL_PROPS,
 } from "@/lib/input-autofill";
 
+/** Sentinel for "no value" — Radix Select rejects an empty item value. */
+const AUTO_OPTION_VALUE = "__auto__";
+
 /**
- * RAG functional-model editor (spec 2026-09-10 rag functional-model config §5).
+ * A provider dropdown. Its ids come from the backend's curated allowlist; the empty id means
+ * "let the downstream service decide", which is what the wire carries as null.
+ */
+function OptionSelect({
+  label,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  labels: Record<string, string>;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <Select
+      value={value || AUTO_OPTION_VALUE}
+      onValueChange={(next) =>
+        onChange(next === AUTO_OPTION_VALUE ? "" : next)
+      }
+    >
+      <SelectTrigger className="w-full" aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem
+            key={option || AUTO_OPTION_VALUE}
+            value={option || AUTO_OPTION_VALUE}
+          >
+            {labels[option] ?? option}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * RAG functional-model editor (spec 2026-09-10 rag functional-model config §5, extended by
+ * spec 2026-09-14 rag model provider adaptation §4.1).
  *
  * Fields are grouped by what they *do* (retrieval / graph / evaluation / multimodal /
  * services), each with a one-line purpose, because a flat list of model names left admins
@@ -50,7 +100,11 @@ import {
  *
  * The three model-reference rows (graph extraction, eval judge, caption VLM) are plain pickers
  * over the configured `models:` entries: the backend resolves what each role needs from the
- * named entry, so none of them asks for an endpoint or a key of its own.
+ * named entry, so none of them asks for an endpoint or a key of its own. The embedding and
+ * rerank rows are the exception — they select a *provider* from the backend's curated
+ * allowlist and carry an endpoint, because those clients are not model-entry based. The
+ * endpoint input appears only for a provider that has no built-in default, so a DashScope
+ * deployment still shows no address field at all.
  *
  * Saving replaces the whole `rag_config.json` object, so Save stays disabled until the admin
  * actually edits something (see `hasFormChanges`).
@@ -101,6 +155,21 @@ export function FunctionalModelsView() {
   );
   const hasVisionModel = managedModels.some(isCaptionCapable);
 
+  // Ids come from the backend's curated allowlist; the empty id is "let the service decide".
+  const PROVIDER_LABELS: Record<string, string> = {
+    dashscope: F.providerDashscope,
+    "openai-compatible": F.providerOpenAIChat,
+    "generic-rerank": F.providerGenericRerank,
+    "mineru-cloud": F.providerMineruCloud,
+    "mineru-local": F.providerMineruLocal,
+    "": F.parseBackendAuto,
+  };
+  const SPARSE_SOURCE_LABELS: Record<string, string> = {
+    provider: F.sparseSourceProvider,
+    external: F.sparseSourceExternal,
+    bm25: F.sparseSourceBm25,
+  };
+
   function update<K extends keyof RagConfigFormValues>(
     key: K,
     value: RagConfigFormValues[K],
@@ -132,12 +201,60 @@ export function FunctionalModelsView() {
       <Group title={F.groupRetrieval} hint={F.groupRetrievalHint}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={F.embeddingModel} hint={secretHint("embedding_api_key")}>
+            <span className="mb-2 block text-sm font-medium">
+              {F.embeddingProvider}
+            </span>
+            <OptionSelect
+              label={F.embeddingProvider}
+              value={values.embedding_provider}
+              options={EMBEDDING_PROVIDER_OPTIONS}
+              labels={PROVIDER_LABELS}
+              onChange={(next) =>
+                update(
+                  "embedding_provider",
+                  next as RagConfigFormValues["embedding_provider"],
+                )
+              }
+            />
             <Input
               value={values.embedding_model}
               aria-label={F.embeddingModel}
               {...AUTOFILL_OFF_INPUT_PROPS}
               onChange={(event) => update("embedding_model", event.target.value)}
             />
+            {values.embedding_provider !== "dashscope" && (
+              <>
+                <span className="mt-3 block text-sm font-medium">
+                  {F.embeddingBaseUrl}
+                </span>
+                <Input
+                  value={values.embedding_base_url}
+                  aria-label={F.embeddingBaseUrl}
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  onChange={(event) =>
+                    update("embedding_base_url", event.target.value)
+                  }
+                />
+              </>
+            )}
+            <span className="mt-3 block text-sm font-medium">
+              {F.embeddingSparseSource}
+            </span>
+            <OptionSelect
+              label={F.embeddingSparseSource}
+              value={values.embedding_sparse_source}
+              options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
+              labels={SPARSE_SOURCE_LABELS}
+              onChange={(next) =>
+                update(
+                  "embedding_sparse_source",
+                  next as RagConfigFormValues["embedding_sparse_source"],
+                )
+              }
+            />
+            <p className="text-muted-foreground mt-2 text-xs">
+              {F.sparseSourceHint}
+            </p>
             <span className="mt-3 block text-sm font-medium">
               {F.embeddingApiKey}
             </span>
@@ -153,12 +270,42 @@ export function FunctionalModelsView() {
           </Field>
 
           <Field label={F.rerankModel} hint={secretHint("rerank_api_key")}>
+            <span className="mb-2 block text-sm font-medium">
+              {F.rerankProvider}
+            </span>
+            <OptionSelect
+              label={F.rerankProvider}
+              value={values.rerank_provider}
+              options={RERANK_PROVIDER_OPTIONS}
+              labels={PROVIDER_LABELS}
+              onChange={(next) =>
+                update(
+                  "rerank_provider",
+                  next as RagConfigFormValues["rerank_provider"],
+                )
+              }
+            />
             <Input
               value={values.rerank_model}
               aria-label={F.rerankModel}
               {...AUTOFILL_OFF_INPUT_PROPS}
               onChange={(event) => update("rerank_model", event.target.value)}
             />
+            {values.rerank_provider !== "dashscope" && (
+              <>
+                <span className="mt-3 block text-sm font-medium">
+                  {F.rerankBaseUrl}
+                </span>
+                <Input
+                  value={values.rerank_base_url}
+                  aria-label={F.rerankBaseUrl}
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  onChange={(event) =>
+                    update("rerank_base_url", event.target.value)
+                  }
+                />
+              </>
+            )}
             <span className="mt-3 block text-sm font-medium">
               {F.rerankApiKey}
             </span>
@@ -309,16 +456,67 @@ export function FunctionalModelsView() {
               onChange={(event) => update("qdrant_url", event.target.value)}
             />
           </Field>
-          <Field label={F.mineruToken} hint={secretHint("mineru_api_token")}>
-            <Input
-              type="password"
-              value={values.mineru_api_token}
-              aria-label={F.mineruToken}
-              {...SECRET_INPUT_AUTOFILL_PROPS}
-              onChange={(event) =>
-                update("mineru_api_token", event.target.value)
+          <Field label={F.parseProvider} hint={secretHint("mineru_api_token")}>
+            <OptionSelect
+              label={F.parseProvider}
+              value={values.parse_provider}
+              options={PARSE_PROVIDER_OPTIONS}
+              labels={PROVIDER_LABELS}
+              onChange={(next) =>
+                update(
+                  "parse_provider",
+                  next as RagConfigFormValues["parse_provider"],
+                )
               }
             />
+            {values.parse_provider === "mineru-local" ? (
+              <>
+                <span className="mt-3 block text-sm font-medium">
+                  {F.parseBaseUrl}
+                </span>
+                <Input
+                  value={values.parse_base_url}
+                  aria-label={F.parseBaseUrl}
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  onChange={(event) =>
+                    update("parse_base_url", event.target.value)
+                  }
+                />
+                <span className="mt-3 block text-sm font-medium">
+                  {F.parseBackend}
+                </span>
+                <OptionSelect
+                  label={F.parseBackend}
+                  value={values.parse_backend}
+                  options={PARSE_BACKEND_OPTIONS}
+                  labels={PROVIDER_LABELS}
+                  onChange={(next) =>
+                    update(
+                      "parse_backend",
+                      next as RagConfigFormValues["parse_backend"],
+                    )
+                  }
+                />
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {F.parseBaseUrlHint}
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="mt-3 block text-sm font-medium">
+                  {F.mineruToken}
+                </span>
+                <Input
+                  type="password"
+                  value={values.mineru_api_token}
+                  aria-label={F.mineruToken}
+                  {...SECRET_INPUT_AUTOFILL_PROPS}
+                  onChange={(event) =>
+                    update("mineru_api_token", event.target.value)
+                  }
+                />
+              </>
+            )}
           </Field>
         </div>
       </Group>

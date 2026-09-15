@@ -55,21 +55,30 @@
 
 **环境说明（非本 Task 引入）**：本机 `tmp_path` 夹具不可写（`AppData\Local\Temp\pytest-of-h7242` 权限拒绝），故测试运行加了 `--basetemp=<仓外可写目录>`；未改动的 `tests/test_rag_config_file.py` 同样 16 个 ERROR 可佐证是环境性。全量套件 160 failed 亦为本机既有基线——抽查与**同口径前后对比**（`git stash` 后回跑同样三条，失败集完全一致）确认与本次改动无关。
 
-## Task 2: 设置页——provider 控件 + 重建入口
+## Task 2: 设置页——provider 控件 + 说明 VLM 提示 ✅ 已完成（2026-09-14）
 
 **Files:**
-- Modify: `backend/app/gateway/routers/rag_config.py`（GET/PUT 增字段；`_SECRET_FIELDS` 同步）
+- Modify: `backend/app/gateway/routers/rag_config.py`（新字段随 `model_fields` 自动进 GET/PUT；`_SECRET_FIELDS` 加 `sparse_api_key`；**密钥 env 来源改为跟随所选 provider**）
+- Modify: `backend/tests/test_rag_config_api.py`（扩，不新建——该 API 的既有测试文件）
 - Modify: `frontend/src/core/rag/config-form.ts`、`frontend/src/core/rag/types.ts`
-- Modify: `frontend/src/components/workspace/settings/functional-models-view.tsx`（嵌入/重排 + provider 下拉与端点；解析 + 云/本地开关与服务地址；新增**重建索引**入口；说明 VLM 行加「限 OpenAI 兼容」提示）
-- Modify: i18n `zh-CN.ts` / `en-US.ts`（新文案）
-- Modify: `frontend/tests/`（对应单测）
+- Modify: `frontend/src/components/workspace/settings/functional-models-view.tsx`（嵌入/重排 + provider 下拉与端点；解析 + 云/本地开关与服务地址；说明 VLM 行加「限 OpenAI 兼容」提示）
+- Modify: i18n `zh-CN.ts` / `en-US.ts` / `types.ts`（新文案 + 键声明）
+- Create: `frontend/tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`
+- Modify（计划外，随代码同步）: `frontend/AGENTS.md`（picker 规则的例外）、spec §4.5（甲裁定 + 端点按需出现）
 
-- [ ] RED test（后端）：`GET /api/rag/config` 返回新字段与 `source` map；`PUT` 整对象替换语义不变；空 payload 仍禁保存。
-- [ ] RED test（前端）：provider 切换时端点字段的显隐；说明 VLM 的 OpenAI 兼容提示渲染；重建入口的确认弹窗。
-- [ ] Implement：按 spec §4.5 的表；文案从 provider 映射派生（哪些字段该出现）。
-- [ ] GREEN；revert proof 同上。
-- [ ] `ruff` 双净 + `pnpm check`（lint + typecheck）。
-- [ ] Commit: `feat(workspace): expose rag provider settings and a reindex entry`
+- [x] RED test（后端）：新字段进 `config` 与 `sources`；PUT 往返；非法 provider / `pipeline` → 422；**`sparse_api_key` 脱敏 + sentinel 保留**；**密钥 env 来源跟随 provider**。
+- [x] RED test（前端）：`config-form` 6 例（值映射、提交、带出文件覆盖、稀疏密钥是密钥、`isEmbeddingChange` 扩判据、`hasFormChanges`）；`functional-models-view.dom` 4 例（端点显隐规则 ×2、稀疏来源常显、解析云/本地的 token ↔ 地址互换）。
+- [x] Implement：按 spec §4.5 的表；端点输入只在 provider 无内置默认时出现；文案从 provider 映射派生。
+- [x] GREEN：**后端 21 passed**、`config-form` **36 passed**、视图 dom **4 passed**。
+- [x] revert proof：后端（路由退 HEAD → 5 failed → 恢复 21 passed）；视图（拆掉端点显隐守卫 → **1 failed** → 恢复 4 passed）。
+- [x] `ruff` 双净；`pnpm check` 的 eslint 与 tsc **对本轮文件全清**（唯一残留是**既有的** pet `greet` 类型错误，见下）。
+- [x] Commit: `feat(workspace): expose the rag provider settings`
+
+**两处实现时的补充（已同步 spec §4.5）**：
+1. **稀疏来源进 UI**（用户裁定「甲」）——它是决定「换成只出稠密的 provider 后配置是否成立」的字段；不暴露会让用户在启用或检索时才发现问题。
+2. **端点按需出现**——只在 provider 没有内置默认时显示（`openai-compatible` / `generic-rerank` / `mineru-local`），`dashscope` / `mineru-cloud` 不显示。
+
+**环境说明（非本 Task 引入）**：`pnpm check` 在本分支**恒红**，唯一原因是 `tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx:222` 的 `"greet"` 不在组件 prop 联合里——那是**宠物线的在飞改动**，本轮**未触碰**该文件，也未代为修复。
 
 ## Task 3: 重排——`generic-rerank` provider（P1）
 
@@ -101,6 +110,7 @@
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/reindex.py`（纯编排：遍历文档 → 分页读 chunk → `index_chunks`）
 - Modify: `backend/app/gateway/services/knowledge_service.py` + `routers/knowledge_bases.py`（触发与进度）
+- Modify: `frontend/src/components/workspace/settings/functional-models-view.tsx` + i18n（**设置页的重建入口与确认弹窗**，自 Task 2 挪来）
 - Create: `backend/tests/knowledge/test_reindex.py`
 
 - [ ] RED test：**幂等自检**——用同一个（fake）embedder 重建后，向量点集合与重建前逐点一致；**不重解析**——断言重建过程中 parser **零调用**（这是与 `retry` 的关键区别）；分页读 chunk；单文档失败不中断整库（沿用既有降级契约）。
