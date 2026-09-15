@@ -21,6 +21,7 @@ from app.gateway.auth.models import User
 from app.gateway.routers import rag_config as rag_config_router
 from deerflow.config.app_config import get_app_config, reset_app_config
 from deerflow.config.rag_config_file import MASKED_SECRET
+from deerflow.knowledge.providers import provider_ids
 
 SANDBOX = {"use": "deerflow.sandbox.local:LocalSandboxProvider"}
 
@@ -392,3 +393,51 @@ def test_sparse_secret_env_source_uses_the_generic_name(config_env: Path, monkey
     monkeypatch.setenv("RAG_SPARSE_API_KEY", "env-sparse")
     with _client(system_role="admin") as client:
         assert client.get("/api/rag/config").json()["sources"]["sparse_api_key"] == "env"
+
+
+# ── embedding provider capabilities (spec 2026-09-16 §3 D1) ──────────────────
+#
+# The capability block is what lets the settings UI refuse a combination that cannot work
+# (a dense-only provider asked to supply the sparse half) before it is ever saved. The
+# golden below was captured from the *pre-change* endpoints (see `_precondition` in it), so
+# "pure addition" is measured against real bytes rather than a hand-written expectation.
+
+_GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "rag_config" / "response_golden.json").read_text(encoding="utf-8"))
+_CAPABILITY_FIELD = "embedding_providers"
+
+
+def _assert_pure_addition(body: dict, golden: dict) -> None:
+    """The response may only have *gained* the capability field; nothing else may move.
+
+    Two ordered assertions on purpose: a shape change names the offending key, a value
+    change shows the field-by-field diff.
+    """
+    assert set(body) == set(golden) | {_CAPABILITY_FIELD}
+    assert {key: value for key, value in body.items() if key != _CAPABILITY_FIELD} == golden
+
+
+def test_get_returns_the_embedding_provider_capabilities(config_env: Path):
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    # The list mirrors the curated allowlist in its own order — never a second copy of it.
+    assert [entry["provider_id"] for entry in body[_CAPABILITY_FIELD]] == list(provider_ids("embedding"))
+    assert {entry["provider_id"]: entry["emits_sparse"] for entry in body[_CAPABILITY_FIELD]} == {
+        "dashscope": True,
+        "openai-compatible": False,
+    }
+
+
+def test_get_response_only_gained_the_capability_field(config_env: Path):
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    _assert_pure_addition(body, _GOLDEN["get"])
+
+
+def test_put_response_only_gained_the_capability_field(config_env: Path):
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json=_GOLDEN["put"]["payload"])
+
+    assert response.status_code == 200
+    _assert_pure_addition(response.json(), _GOLDEN["put"]["response"])

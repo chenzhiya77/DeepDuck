@@ -33,7 +33,7 @@ from deerflow.config.rag_config_file import (
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
-from deerflow.knowledge.providers import provider_ids, secret_env_var
+from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
 
 router = APIRouter(prefix="/api", tags=["rag"])
 
@@ -57,6 +57,19 @@ _SECRET_LEGS: dict[str, tuple[str, str]] = {
 _VIDEO_FIELDS: tuple[str, ...] = ("asr_provider", "asr_model", "caption_model")
 
 
+class RagEmbeddingProviderCapability(BaseModel):
+    """One embedding provider's declared capability (spec 2026-09-16 §3 D1).
+
+    Only the embedding leg reports this. It is the one allowlist row that carries a
+    *capability* flag the UI has to know in advance — whether the provider supplies the
+    sparse half itself. The rerank and parse legs have no equivalent: their constraints are
+    value dependencies (an address, a token) and are caught when a save is validated.
+    """
+
+    provider_id: str = Field(..., description="Curated allowlist id, exactly as the PUT accepts it.")
+    emits_sparse: bool = Field(..., description="True when 'provider' is a valid embedding_sparse_source for it.")
+
+
 class RagConfigResponse(BaseModel):
     """Effective configuration plus where each value came from.
 
@@ -64,10 +77,17 @@ class RagConfigResponse(BaseModel):
     ``ui`` (declared in ``rag_config.json``) or ``config_file``; secret fields report
     ``ui``, ``env`` (no stored value, but the backing environment variable is set) or
     ``unset``.
+
+    ``embedding_providers`` is read-only metadata, not configuration: it lets the settings UI
+    refuse a dense-only provider paired with ``sparse_source='provider'`` before the write.
     """
 
     config: RagConfigFile = Field(..., description="Effective values; stored secrets are masked, env-backed secrets are empty.")
     sources: dict[str, str] = Field(..., description="Origin of each flattened field.")
+    embedding_providers: list[RagEmbeddingProviderCapability] = Field(
+        default_factory=list,
+        description="Capability of every embedding provider in the curated allowlist, in its own order.",
+    )
 
 
 def _declared_flat(stored: RagConfigFile) -> dict[str, Any]:
@@ -149,7 +169,17 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
             values[name] = written.get(name, getattr(config.rag, name))
             sources[name] = "ui" if name in written else "config_file"
 
-    return RagConfigResponse(config=RagConfigFile.model_validate(values), sources=sources)
+    return RagConfigResponse(
+        config=RagConfigFile.model_validate(values),
+        sources=sources,
+        embedding_providers=[
+            RagEmbeddingProviderCapability(
+                provider_id=provider_id,
+                emits_sparse=resolve_provider("embedding", provider_id).emits_sparse,
+            )
+            for provider_id in provider_ids("embedding")
+        ],
+    )
 
 
 @router.get(

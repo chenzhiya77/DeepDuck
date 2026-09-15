@@ -19,6 +19,16 @@
 
 ## Task 1 — 后端：能力块随配置下发（D1）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- 夹具 `backend/tests/fixtures/rag_config/response_golden.json` 由**改动前的端点真跑**捕获（临时脚本用完即删）：GET（空 `rag_config.json` 叠在 `YAML_RAG` 上）与一次成功 PUT（那份覆盖全部新字段的 payload）。捕获时验了可复现——GET 连跑两遍相等、换新文件重跑 PUT 相等——并查验夹具无绝对路径泄漏、密钥字段皆为哨兵。
+- 三条用例落在 `tests/test_rag_config_api.py` 末尾：能力列表（顺序取自 `provider_ids("embedding")`，值钉死 `dashscope=True / openai-compatible=False`）、GET 形状守卫、PUT 形状守卫。plan 里的 bullet 2/3 合并成 `_assert_pure_addition` 的两条有序断言：先键集（形状变了就点名那个键），再深层相等（值动了就 diff 出字段）。
+- 实现：`app/gateway/routers/rag_config.py` 新增 `RagEmbeddingProviderCapability` 与 `RagConfigResponse.embedding_providers`（`default_factory=list`，纯加法），`_build_response` 按 `provider_ids("embedding")` 顺序用 `resolve_provider(...).emits_sparse` 填。字段说明写明「只报嵌入 leg」的理由。
+- **有牙证明**：(a) 把 `emits_sparse` 写死 `True`（忽略允许名单）→ 能力用例红（`{'openai-compatible': True}` vs `False`）；(b) 键集不变、只把 `sources["qdrant_url"]` 改成 `ui` → GET 与 PUT 两条形状守卫同时红，diff 指出值变了。
+- **门禁**：`tests/test_rag_config_api.py` 24 passed；周边子集（`tests/knowledge/` + 三个 rag_config 文件）绿；`ruff check` / `ruff format --check` 干净；全量后端 `pytest -m "not live" tests/` = **145 failed / 12328 passed**，其中 144 个可复现的失败**在 HEAD 上跑同一批 id 得到逐条相同的集合**（差集为空），即全部预存；余下 1 个是偶发（重跑即过）。本机跑全量需 `--basetemp=<可写目录>`，否则 `tmp_path` 用例成批 ERROR。
+
 **RED**
 
 - **第 0 步：先捕获 golden（必须在改任何代码之前做）。**
