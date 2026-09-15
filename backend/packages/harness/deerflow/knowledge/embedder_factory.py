@@ -84,7 +84,7 @@ def build_embedder(config: Any | None = None, *, client: Any | None = None) -> E
     spec = resolve_provider("embedding", provider_id)
 
     if sparse_source == "provider" and not spec.emits_sparse:
-        raise ValueError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为 'external'（另配稀疏服务）或 'bm25'（本地）。")
+        raise ValueError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为 'external'（独立稀疏服务）或 'bm25'（本地）。")
 
     declared = rag.embedding_dimension
     if declared is not None and declared != COLLECTION_DIMENSION:
