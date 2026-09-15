@@ -1,5 +1,11 @@
 """MinerU official API (v4) client for document parsing.
 
+Provider dimension (spec 2026-09-14 §4.4): ``parse_document`` resolves
+``rag.parse_provider`` through the curated allowlist — ``mineru-cloud`` (this module's
+own client, below) or ``mineru-local`` (a self-hosted MinerU HTTP service, see
+``parse_local.py``). Both return the same ``ParsedDocument`` and share
+``normalize_mineru_markdown``; only the transport differs.
+
 Local-file flow (精准解析 API):
 
 1. ``POST /api/v4/file-urls/batch`` — apply for an OSS upload URL.
@@ -39,6 +45,7 @@ import httpx
 
 from deerflow.config.app_config import get_app_config
 from deerflow.config.rag_config_file import SECRET_ENV_VARS, configured_rag_secret
+from deerflow.knowledge.providers import resolve_provider
 from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
@@ -636,6 +643,17 @@ def _normalize_tables_to_gfm(markdown: str) -> str:
     return "".join(pieces)
 
 
+def normalize_mineru_markdown(markdown: str) -> str:
+    """The two MinerU-output steps, in order: trailing-title relocation, then GFM tables.
+
+    Both belong to *any* MinerU provider, not just the cloud one (spec §4.4): a
+    self-hosted service emits the same markdown generator's output, so it has the same
+    HTML-``<table>`` shape and the same occasional trailing-title quirk. User-authored
+    local ``.md`` never goes through here.
+    """
+    return _normalize_tables_to_gfm(_relocate_trailing_title(markdown))
+
+
 def _unpack_zip(zip_bytes: bytes) -> ParsedDocument:
     markdown: str | None = None
     images: list[ParsedImage] = []
@@ -652,6 +670,77 @@ def _unpack_zip(zip_bytes: bytes) -> ParsedDocument:
     return ParsedDocument(markdown=markdown, images=images)
 
 
+class MineruCloudParseProvider:
+    """The MinerU cloud client (spec §4.4: 云 provider = 现有实现，不改行为).
+
+    Class-shaped so the parse leg matches the other provider legs
+    (``parse(path) -> ParsedDocument``) and the curated allowlist can name it; the
+    request sequence is exactly the pre-provider one.
+    """
+
+    def __init__(
+        self,
+        *,
+        client: httpx.AsyncClient | None = None,
+        model_version: str = "vlm",
+        poll_interval_seconds: float = 5.0,
+        timeout_seconds: float = 1800.0,
+    ) -> None:
+        self._client = client
+        self._model_version = model_version
+        self._poll_interval_seconds = poll_interval_seconds
+        self._timeout_seconds = timeout_seconds
+
+    async def parse(self, file_path: str | Path) -> ParsedDocument:
+        path = Path(file_path)
+        token = _read_token()
+        own_client = self._client is None
+        http = self._client or httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
+        try:
+            batch_id, upload_url = await _apply_upload_url(http, file_name=path.name, data_id=path.stem, model_version=self._model_version, token=token)
+            await _upload_file(http, upload_url, path.read_bytes())
+            zip_url = await _poll_result(
+                http,
+                batch_id=batch_id,
+                file_name=path.name,
+                token=token,
+                poll_interval_seconds=self._poll_interval_seconds,
+                timeout_seconds=self._timeout_seconds,
+            )
+            zip_parsed = _unpack_zip(await _download_zip(zip_url))
+            return ParsedDocument(markdown=normalize_mineru_markdown(zip_parsed.markdown), images=zip_parsed.images)
+        finally:
+            if own_client:
+                await http.aclose()
+
+
+def _build_parse_provider(
+    *,
+    client: httpx.AsyncClient | None,
+    model_version: str,
+    poll_interval_seconds: float,
+    timeout_seconds: float,
+) -> object:
+    """Resolve ``rag.parse_provider`` through the curated allowlist (spec §4.1).
+
+    Same rule as the rerank factory: the provider id picks the implementation, the
+    caller never supplies a class path. Constructor kwargs differ per provider, so the
+    split lives here — ``mineru-local`` takes the configured address and backend hint,
+    the cloud provider takes ``model_version``.
+    """
+    rag = get_app_config().rag
+    spec = resolve_provider("parse", rag.parse_provider)
+    kwargs: dict = {"client": client, "poll_interval_seconds": poll_interval_seconds, "timeout_seconds": timeout_seconds}
+    if spec.provider_id == "mineru-local":
+        kwargs["base_url"] = rag.parse_base_url
+        kwargs["backend"] = rag.parse_backend
+    else:
+        kwargs["model_version"] = model_version
+    from deerflow.reflection import resolve_variable
+
+    return resolve_variable(spec.implementation)(**kwargs)
+
+
 async def parse_document(
     file_path: str | Path,
     *,
@@ -660,15 +749,20 @@ async def parse_document(
     poll_interval_seconds: float = 5.0,
     timeout_seconds: float = 1800.0,
 ) -> ParsedDocument:
-    """Parse a local document via the MinerU v4 API.
+    """Parse a local document with the configured MinerU provider.
+
+    Provider is ``rag.parse_provider`` (default ``mineru-cloud`` = the MinerU v4 API;
+    ``mineru-local`` = a self-hosted MinerU HTTP service, which needs
+    ``rag.parse_base_url``). ``model_version`` is a cloud-only knob.
 
     ``.md``/``.markdown``/``.txt`` files are read locally (UTF-8 strict with GBK
     fallback); ``.csv``/``.tsv`` are parsed locally into a GFM pipe table and
     ``.xlsx``/``.xls`` into one GFM table per sheet via python-calamine
-    (spec 2026-09-09 §5) — none of these ever hit the network. MinerU output has
-    its HTML ``<table>`` blocks normalized to GFM. The token comes from the
-    ``MINERU_API_TOKEN`` env var. Image references in the returned markdown point
-    at ``ParsedImage.ref`` entries (relative zip paths).
+    (spec 2026-09-09 §5) — none of these ever hit the network, whichever provider is
+    configured. Provider output has its HTML ``<table>`` blocks normalized to GFM and a
+    trailing title relocated (see ``normalize_mineru_markdown``). The cloud token comes
+    from the ``MINERU_API_TOKEN`` env var; the local service ships without auth. Image
+    references in the returned markdown point at ``ParsedImage.ref`` entries.
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -679,29 +773,13 @@ async def parse_document(
     if is_local_suffix(suffix):
         return ParsedDocument(markdown=_read_local_text(path), images=[])
 
-    token = _read_token()
-    own_client = client is None
-    http = client or httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
-    try:
-        batch_id, upload_url = await _apply_upload_url(http, file_name=path.name, data_id=path.stem, model_version=model_version, token=token)
-        await _upload_file(http, upload_url, path.read_bytes())
-        zip_url = await _poll_result(
-            http,
-            batch_id=batch_id,
-            file_name=path.name,
-            token=token,
-            poll_interval_seconds=poll_interval_seconds,
-            timeout_seconds=timeout_seconds,
-        )
-        zip_parsed = _unpack_zip(await _download_zip(zip_url))
-        # MinerU 短文档偶发把页面标题输出到文末（2026-09-04 实测），且 v4+vlm 把表格输出为
-        # HTML <table>（Task 0 实测门，spec 2026-09-09 §5）；两步归一都只作用于 MinerU 分支，
-        # 本地直读分支不受影响（用户 authored 内容原样保留）。
-        markdown = _normalize_tables_to_gfm(_relocate_trailing_title(zip_parsed.markdown))
-        return ParsedDocument(markdown=markdown, images=zip_parsed.images)
-    finally:
-        if own_client:
-            await http.aclose()
+    provider = _build_parse_provider(
+        client=client,
+        model_version=model_version,
+        poll_interval_seconds=poll_interval_seconds,
+        timeout_seconds=timeout_seconds,
+    )
+    return await provider.parse(path)
 
 
 async def _download_via(zip_url: str, *, proxy: str | None) -> bytes:

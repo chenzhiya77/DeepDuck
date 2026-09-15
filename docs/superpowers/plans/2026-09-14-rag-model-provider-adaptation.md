@@ -100,17 +100,26 @@
 
 **遗漏补正（2026-09-15）**：上面那句「三处」并不完整——`app/gateway/services/knowledge_service.py:1102`（`recall_test` 的图腿）仍在直连 `DashScopeReranker()`，是**第四处**，Task 3 提交时漏了。它恰好破坏本 Task 自己的理由：`recall_test` 的 docstring 承诺复用线上 `_*_impl`「verbatim」，而线上 `graph_search_tool.py:404` 传的是 `build_reranker()`。暴露条件窄但会静默——只在 `rag.graph_rerank: true`（默认 false）时才有分叉，且失败会走既有的 `RerankerError` 降级回余弦序，界面上看不出差别。已补：改经 `build_reranker()`，并加两个守护用例——`tests/knowledge/test_rerank_factory_coverage.py` 扫全部生产代码、禁止直接构造 allowlist 里的任何重排实现（由 `PROVIDER_ALLOWLIST["rerank"]` 驱动，加 provider 即自动覆盖）；`test_recall_test_api.py::test_recall_test_graph_rerank_resolves_through_the_factory` 断言图腿拿到的是工厂产物、且 `graph_rerank` 关闭时不构造。向量腿无此问题（没传 reranker，落 `hybrid_search_tool.py:50` 的默认工厂）。
 
-## Task 4: 解析——本地 MinerU provider（P2）
+## Task 4: 解析——本地 MinerU provider（P2）✅ 已完成（2026-09-15）
 
 **Files:**
 - Create: `backend/packages/harness/deerflow/knowledge/parse_local.py`（本地服务客户端）
 - Modify: `backend/packages/harness/deerflow/knowledge/parser.py`（`parse_document` 按 `parse_provider` 分流；抽出云端实现为同接口）
 - Create: `backend/tests/knowledge/test_parse_local.py`
 
-- [ ] RED test（httpx mock，**断言真实 multipart 形状**）：`POST /file_parse` 或 `POST /tasks` + 轮询 `GET /tasks/{id}` / `GET /tasks/{id}/result`；产物解析出 markdown + images；**两步归一化被复用**（`_normalize_tables_to_gfm` + `_relocate_trailing_title` —— 构造一个含 HTML 表与文末标题的假产物，断言输出为 GFM 且标题归位）；服务不可用时抛错且文档落 `failed`。
-- [ ] Implement `ParseLocalProvider.parse(path) -> ParsedDocument`：multipart 上传 + 轮询（超时/重试与云端对齐）；`parse_document` 内按 provider 分流，**云端分支一行不动**。
-- [ ] GREEN；revert proof；`ruff` 双净。
-- [ ] Commit: `feat(knowledge): add a local MinerU parse provider`
+- [x] RED test（httpx mock，**断言真实 multipart 形状**）：`POST /file_parse` 或 `POST /tasks` + 轮询 `GET /tasks/{id}` / `GET /tasks/{id}/result`；产物解析出 markdown + images；**两步归一化被复用**（`_normalize_tables_to_gfm` + `_relocate_trailing_title` —— 构造一个含 HTML 表与文末标题的假产物，断言输出为 GFM 且标题归位）；服务不可用时抛错且文档落 `failed`。
+- [x] Implement `ParseLocalProvider.parse(path) -> ParsedDocument`：multipart 上传 + 轮询（超时/重试与云端对齐）；`parse_document` 内按 provider 分流，**云端分支一行不动**。
+- [x] GREEN；revert proof；`ruff` 双净。
+- [x] Commit: `feat(knowledge): add a local MinerU parse provider`
+
+**实现期从上游源码钉出来的四件事**（`mineru/cli/fast_api.py` / `api_request.py` / `backend_options.py`；与 spec §8.1 一致）：
+
+1. **`backend` 的公开取值带后缀**：`pipeline` / `vlm-engine` / `hybrid-engine` / `vlm-http-client` / `hybrid-http-client`，**短名 `vlm` 会被 400 拒** ⇒ 我们的 `parse_backend`（`vlm|hybrid`）下发时补 `-http-client` 后缀（D2-A 的支持面只有这一族），**空则不下发整个字段**（D4-B：由服务端决定）。
+2. **走异步 `POST /tasks` + 轮询**，不用同步 `/file_parse`：解析可能很久，且这样与云端的轮询语义（`poll_interval_seconds` / `timeout_seconds`）逐字对齐。
+3. **结果键是服务端归一化后的 stem**（`normalize_task_stem`）⇒ 用提交响应里的 `file_names[0]` 回查，不从本地路径自己拼（两者可能不同）。
+4. **图片是按 basename 键的 base64 data URI**，而 markdown 引用的是 `images/<basename>` ⇒ `ParsedImage.ref` 拼成 `images/<name>`：captioner 按 ref 换 alt 文本、worker 按 ref 落盘，两处都靠逐字一致。
+
+另外两条实现选择：错误沿用云端的 `MineruError` / `MineruParseFailedError` / `MineruTimeoutError`（另起一套会让 worker 的降级契约分叉）；新增公共入口 `normalize_mineru_markdown`（两步归一化）供两个 provider 共用，云端是**等价搬运**——**未改动的 `test_parser.py` 全绿即证据**。`MineruCloudParseProvider` 的类名/模块由已提交的 allowlist 钉死。
 
 ## Task 5: 重建入口（P4）——换 provider / 换维度的唯一出口
 
