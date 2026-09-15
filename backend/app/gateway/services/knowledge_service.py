@@ -29,6 +29,7 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, cancel_eval_run, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
@@ -704,9 +705,8 @@ class KnowledgeService:
         new_token_count = count_tokens(text)
 
         # Re-embed first (see docstring for the ordering rationale).
-        from deerflow.knowledge.embedder import DashScopeEmbedder
 
-        embeddings = await DashScopeEmbedder().embed([text])
+        embeddings = await build_embedder().embed([text])
 
         # Update in DB (entities unchanged - ID 引用 preserved)
         updated = await self.store.update_chunk_text(
@@ -841,9 +841,8 @@ class KnowledgeService:
             await self._delete_wiki_entries(kb_id, orphaned)
 
         # Step 3: re-extract on the current (possibly manually edited) text
-        from deerflow.knowledge.embedder import DashScopeEmbedder
 
-        embedder = DashScopeEmbedder()
+        embedder = build_embedder()
         new_names = await extract_single_chunk(
             self.store,
             self.graph_store,
@@ -929,9 +928,7 @@ class KnowledgeService:
         """
         embedding = None
         if include_in_wiki_search:
-            from deerflow.knowledge.embedder import DashScopeEmbedder
-
-            embedding = (await DashScopeEmbedder().embed([self._manual_card_embed_text(title, content)]))[0]
+            embedding = (await build_embedder().embed([self._manual_card_embed_text(title, content)]))[0]
 
         card_id = uuid.uuid4().hex
         if embedding is not None:
@@ -1021,9 +1018,7 @@ class KnowledgeService:
         # flag on, no point, and re-PATCHing on never re-upserted.)
         embedding = None
         if needs_vector:
-            from deerflow.knowledge.embedder import DashScopeEmbedder
-
-            embedding = (await DashScopeEmbedder().embed([self._manual_card_embed_text(effective_title, effective_content)]))[0]
+            embedding = (await build_embedder().embed([self._manual_card_embed_text(effective_title, effective_content)]))[0]
 
         if embedding is not None:
             from deerflow.knowledge.vector_store import ManualCardUpsert
@@ -1410,12 +1405,11 @@ class KnowledgeService:
             raise ProjectionNotComputedError("Projection not computed yet; open the vector space tab first")
         if entry.model is None:
             raise ProjectionModelUnavailableError("Query projection requires a PCA model (algo=umap has no stable transform)")
-        from deerflow.knowledge.embedder import DashScopeEmbedder
 
         # embed 返回 EmbeddingResult（dense+sparse 对），query 侧必须 text_type=
         # "query"（对齐检索链路 hybrid/graph/wiki 的用法）；取 .dense 进 transform。
         # 2026-08-19 修复：曾直接 np.asarray(EmbeddingResult) → 生产 500。
-        (query_embedding,) = await DashScopeEmbedder().embed([text], text_type="query")
+        (query_embedding,) = await build_embedder().embed([text], text_type="query")
         coords = entry.model.transform(np.asarray(query_embedding.dense, dtype=np.float64))
         result: dict[str, Any] = {
             "x": float(coords[0]),
@@ -1696,11 +1690,9 @@ class KnowledgeService:
 
     async def _run_wiki_generation(self, kb_id: str, *, only_dirty: bool = True) -> None:
         try:
-            from deerflow.knowledge.embedder import DashScopeEmbedder
-
             # generate_wiki silently skips the vector upsert without an embedder —
             # entries would exist but wiki_search could never find them.
-            await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, embedder=DashScopeEmbedder(), only_dirty=only_dirty)
+            await generate_wiki(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, embedder=build_embedder(), only_dirty=only_dirty)
         except Exception:
             logger.exception("wiki generation failed for kb %s", kb_id)
 
@@ -1733,22 +1725,18 @@ class KnowledgeService:
 
     async def _run_reindex(self, kb_id: str) -> None:
         try:
-            from deerflow.knowledge.embedder import DashScopeEmbedder
-
             # Same embedder wiring as the worker's vector leg: the rebuild must land in
             # the vector space the *current* configuration describes, that being the
             # whole point of the entry.
-            await reindex_kb(self.store, self.vector_store, DashScopeEmbedder(), kb_id=kb_id)
+            await reindex_kb(self.store, self.vector_store, build_embedder(), kb_id=kb_id)
         except Exception:
             logger.exception("reindex failed for kb %s", kb_id)
 
     async def _run_wiki_regeneration(self, kb_id: str, entry_ids: list[str]) -> None:
         try:
-            from deerflow.knowledge.embedder import DashScopeEmbedder
-
             # Same embedder wiring as the library-level run: without it the
             # rewritten entry would keep a stale vector in kb_wiki_entries.
-            await regenerate_wiki_entries(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, entry_ids=entry_ids, embedder=DashScopeEmbedder())
+            await regenerate_wiki_entries(self.store, self.graph_store, self.wiki_store, self.vector_store, kb_id=kb_id, entry_ids=entry_ids, embedder=build_embedder())
         except Exception:
             logger.exception("wiki entry regeneration failed for kb %s", kb_id)
 

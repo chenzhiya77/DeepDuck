@@ -34,7 +34,8 @@ from typing import Any, Protocol
 from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.captioner import apply_captions, caption_images
 from deerflow.knowledge.chunker import chunk_markdown, count_tokens
-from deerflow.knowledge.embedder import DashScopeEmbedder, EmbeddingResult
+from deerflow.knowledge.embedder import EmbeddingResult
+from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.graph.indexer import index_document_graph
 from deerflow.knowledge.graph.resolver import resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
@@ -316,7 +317,7 @@ class KnowledgeIndexWorker:
             await self._require_alive(doc_id)  # checkpoint: before the vector leg
             await self._store.update_document_status(doc_id, "indexing", path_status=legs)
             chunks = await self._store.list_chunks(doc_id, limit=1_000_000)
-            embedder = self._embedder or DashScopeEmbedder()
+            embedder = self._embedder or build_embedder()
             if chunks:
                 index_stats = await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=chunks)
                 # Every batch soft-failed (EmbedderError degradation) → nothing
@@ -749,7 +750,7 @@ class KnowledgeIndexWorker:
 
         await self._require_alive(doc_id)  # checkpoint: before re-embedding
         if changed:
-            embedder = self._embedder or DashScopeEmbedder()
+            embedder = self._embedder or build_embedder()
             # 复用 vector 腿：分批嵌入 + upsert（同 chunk_id → 同点覆盖），保留实体 payload。
             await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=changed)
         if empty_updates:

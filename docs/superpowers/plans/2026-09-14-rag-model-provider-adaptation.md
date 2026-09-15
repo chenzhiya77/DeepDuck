@@ -145,19 +145,30 @@
 5. **同形态可观测**：模块级 `_IN_FLIGHT` / `_LAST_RUN` / `_PROGRESS`（照 `wiki/generator.py`），`GET /{kb_id}/reindex/status` 出 `{in_progress, last_run, progress:{documents_total, documents_done, chunks_indexed}}`；前端 `reindex-status.ts` 只在 `in_progress` 时轮询，并用 mutation 的 pending 弥合 202→首次轮询的空档。
 6. **顺手修掉一条既有红**：`frontend/tests/unit/settings/functional-models.dom.test.tsx` 的保存 payload 断言缺 Task 2 新增的四个 provider 字段（`embedding_provider` / `embedding_sparse_source` / `rerank_provider` / `parse_provider`）。**A/B 证明是预存红**（把我的前端改动全部 checkout 回 HEAD 后，同一文件仍 `1 failed / 12 passed`），非本 Task 引入；按 `config-form.test.ts:423-424` 已钉住的语义（provider 下拉没有空态 ⇒ 未改动的行显式提交生效默认值）补齐期望值。
 
-## Task 6: 嵌入——provider 抽象 + 稀疏补齐（P3）
+## Task 6: 嵌入——provider 抽象 + 稀疏补齐（P3）✅ 已完成（2026-09-15）
 
 **Files:**
 - Modify: `backend/packages/harness/deerflow/knowledge/embedder.py`（抽出接口；`DashScopeEmbedder` 保留为默认实现）
 - Create: `backend/packages/harness/deerflow/knowledge/embedder_openai.py`（通用 dense-only）
 - Create: `backend/packages/harness/deerflow/knowledge/sparse.py`（BM25 实现 + `external` provider 客户端）
 - Create: `backend/tests/knowledge/test_embedder_providers.py`、`test_sparse_backfill.py`
+- Create（实现期补）: `backend/packages/harness/deerflow/knowledge/embedder_factory.py`（唯一构造点）
+- Rename（实现期）: `test_rerank_factory_coverage.py` → `test_provider_construction_sites.py`（守护从「只守重排」扩到嵌入/重排/解析三条腿）
 
-- [ ] RED test：**维度探测**（探测成功取回长度；`embedding_dimension` 覆盖生效）；**非 1024 拒绝启用**；**交叉校验**（`openai-compatible` + `sparse_source=provider` ⇒ 拒绝；改成 `external`/`bm25` ⇒ 通过）；**三条稀疏路**各自产出 `SparseVector(indices, values)`；**query / document 两侧口径一致**（同一 provider 对同一文本、两种 `text_type` 的行为）；**中文分词**处理。
-- [ ] Run focused test 确认 RED。
-- [ ] Implement：`embedder.py` 抽接口 + 默认实现不动；`embedder_openai.py`；`sparse.py` 的 BM25 与 `external` 客户端；「同出」按**接口语义**实现（provider 内部可以打两次 HTTP）。
-- [ ] GREEN；revert proof；`ruff` 双净。
-- [ ] Commit: `feat(knowledge): add pluggable embedding providers with sparse backfill`
+- [x] RED test：**维度探测**（探测成功取回长度；`embedding_dimension` 覆盖生效）；**非 1024 拒绝启用**；**交叉校验**（`openai-compatible` + `sparse_source=provider` ⇒ 拒绝；改成 `external`/`bm25` ⇒ 通过）；**三条稀疏路**各自产出 `SparseVector(indices, values)`；**query / document 两侧口径一致**（同一 provider 对同一文本、两种 `text_type` 的行为）；**中文分词**处理。
+- [x] Run focused test 确认 RED。
+- [x] Implement：`embedder.py` 抽接口 + 默认实现不动；`embedder_openai.py`；`sparse.py` 的 BM25 与 `external` 客户端；「同出」按**接口语义**实现（provider 内部可以打两次 HTTP）。
+- [x] GREEN；revert proof；`ruff` 双净。
+- [x] Commit: `feat(knowledge): add pluggable embedding providers with sparse backfill`
+
+**实现期判断**：
+
+1. **`external` 的形状裁定（甲，2026-09-15）**：spec §4.2 把这条明确留给 P3（allowlist 那行 `path=None`）。摊开三个落法后用户选**甲**：按 **TEI** 实现（`POST /embed_sparse`、请求 `{inputs:[...]}`、响应 `[[{index,value}]]`，从 `huggingface/text-embeddings-inference` 的 `router/src/http/types.rs` + `server.rs` 一手核对），并把 allowlist 的 id 从 `openai-compatible` 改成 `tei-sparse`（类名 `TEISparseEncoder`、`path=/embed_sparse`）—— 唯一有实证、能直接对着 TEI 部署的形状。Task 1 的断言随之更新（`path` 从 `None` 变成已钉值）。
+2. **新增 `embedder_factory.py`（计划外）**：与 Task 3 的重排同因——**构造点散在 14 处**（worker ×2、网关服务 ×8、检索工具 ×3、eval factory ×1），不收敛就会出现「改了 provider 但某条路仍用旧的」那类漏洞（Task 3 的第四处构造点就是这么漏的）。现在唯一入口是 `build_embedder()`，并由守护用例把嵌入/重排/解析三条腿一起钉住（旧的重排守护文件顺势更名）。
+3. **维度认证用「首次真实调用的返回长度」，不额外发合成探测请求**：spec 写的是「启用时先发一次极小的嵌入请求」，实现改为**复用首次真实调用**——证据完全相同（连通性验证顺带完成），少一次往返；结果按 `(provider, base_url, model)` 缓存在进程级，每进程认证一次。**例外两条**：① `dashscope` 在请求里就带 `parameters.dimension` ⇒ 自证，永不探测（默认路径零额外开销）；② `rag.embedding_dimension` 显式声明时**声明优先于测量**（该字段存在的理由就是有些自建服务探测不稳）。
+4. **维度不符抛 `ValueError` 而不是 `EmbedderError`**：后者是 worker 的**软失败**语义（`index_chunks` 逐批标脏后继续）⇒ 配置错误会被埋成「部分切片失败」。断言里专门钉了这一条。
+5. **BM25 无 idf、且中文分词不用 jieba**：索引是逐 chunk 建的、没有语料可算 idf，所以只保留 BM25 的 tf 饱和曲线（这也让 query/document 天然对称，正是 §4.2 的成对一致要求）；分词用**确定性字符二元**而不是仓库 memory 那套可选 jieba——可选依赖会让 indices 空间随运行环境变化，而 §4.2 明确要求稀疏 index 空间统一。
+6. **`pins_dimension` 是自证维度的判据**：`DashScopeEmbedder` 声明 `pins_dimension = True`（它把维度写进请求），其余 provider 由工厂套一层一次性认证。将来新增自证 provider 只需声明这个类属性。
 
 ## Task 7: 文档同步与收尾
 

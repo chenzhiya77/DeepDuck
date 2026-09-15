@@ -146,7 +146,7 @@ def test_sparse_keys_declared_in_yaml_are_carried_by_rag_config():
         ("rerank", "generic-rerank", "deerflow.knowledge.reranker_generic:GenericReranker", "base_url"),
         ("parse", "mineru-cloud", "deerflow.knowledge.parser:MineruCloudParseProvider", "base_url"),
         ("parse", "mineru-local", "deerflow.knowledge.parse_local:MineruLocalParseProvider", "base_url"),
-        ("sparse", "openai-compatible", "deerflow.knowledge.sparse:OpenAICompatibleSparseEncoder", "base_url"),
+        ("sparse", "tei-sparse", "deerflow.knowledge.sparse:TEISparseEncoder", "base_url"),
     ],
 )
 def test_allowlist_resolves_each_supported_provider(leg, provider_id, expected_impl, expected_endpoint_key):
@@ -162,14 +162,15 @@ def test_provider_ids_lists_the_curated_set_per_leg():
     assert provider_ids("embedding") == ("dashscope", "openai-compatible")
     assert provider_ids("rerank") == ("dashscope", "generic-rerank")
     assert provider_ids("parse") == ("mineru-cloud", "mineru-local")
-    assert provider_ids("sparse") == ("openai-compatible",)
+    assert provider_ids("sparse") == ("tei-sparse",)
 
 
-def test_sparse_leg_path_is_deliberately_unpinned():
-    """`embedding_sparse_source=external` targets a sparse-only service whose request
-    shape is not settled yet; P3 fills it in. Pinning a guess here would ship a path
-    nothing validated."""
-    assert resolve_provider("sparse", "openai-compatible").path is None
+def test_sparse_leg_path_is_pinned_to_the_verified_shape():
+    """P3 定的形状：Text Embeddings Inference 的 ``/embed_sparse``（上游源码核对）。
+
+    ``path`` 曾经刻意留空（形状未定）；现在钉住它，客户端按同一常量发请求。
+    """
+    assert resolve_provider("sparse", "tei-sparse").path == "/embed_sparse"
 
 
 def test_allowlist_rejects_an_unknown_provider_id():
@@ -204,7 +205,7 @@ def test_secret_env_var_keeps_the_existing_names_for_dashscope():
 def test_secret_env_var_uses_a_generic_name_for_new_providers():
     assert secret_env_var("embedding", "openai-compatible") == "RAG_EMBEDDING_API_KEY"
     assert secret_env_var("rerank", "generic-rerank") == "RAG_RERANK_API_KEY"
-    assert secret_env_var("sparse", "openai-compatible") == "RAG_SPARSE_API_KEY"
+    assert secret_env_var("sparse", "tei-sparse") == "RAG_SPARSE_API_KEY"
 
 
 def test_local_parse_needs_no_secret():

@@ -25,6 +25,7 @@ import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 import httpx
 from qdrant_client.models import SparseVector
@@ -55,6 +56,52 @@ class EmbeddingResult:
 
     dense: list[float]
     sparse: SparseVector
+
+
+class Embedder(Protocol):
+    """What every embedding provider — and the composition adapter — exposes (spec §4.2).
+
+    Structural on purpose: the worker, the indexer, the retrieval tools and the eval
+    wrappers only ever touch these two members, so a duck-typed object (real or a test
+    stub) keeps working.
+    """
+
+    batch_size: int
+
+    async def embed(self, texts: Sequence[str], *, text_type: str = "document") -> list[EmbeddingResult]: ...
+
+
+class SparseEncoder(Protocol):
+    """The sparse half, when it comes from somewhere other than the dense provider."""
+
+    async def encode(self, texts: Sequence[str], *, text_type: str = "document") -> list[SparseVector]: ...
+
+
+class ComposedEmbedder:
+    """甲 (spec §4.2): hold a dense source and a sparse source, return one pair per text.
+
+    Callers see exactly what they saw before — one ``embed()`` returning
+    ``EmbeddingResult(dense, sparse)`` — which is what keeps the retrieval code, the worker
+    and the eval wrappers unchanged when a deployment splits the two halves. The dense
+    source may well issue its own batching; this layer only pairs the results.
+    """
+
+    def __init__(self, *, dense: Embedder, sparse: SparseEncoder) -> None:
+        self._dense = dense
+        self._sparse = sparse
+
+    @property
+    def batch_size(self) -> int:
+        return self._dense.batch_size
+
+    async def embed(self, texts: Sequence[str], *, text_type: str = "document") -> list[EmbeddingResult]:
+        if not texts:
+            return []
+        dense_results = await self._dense.embed(texts, text_type=text_type)
+        sparse_vectors = await self._sparse.encode(list(texts), text_type=text_type)
+        if len(dense_results) != len(sparse_vectors):
+            raise EmbedderError(f"sparse encoder returned {len(sparse_vectors)} vectors for {len(dense_results)} texts")
+        return [EmbeddingResult(dense=dense.dense, sparse=sparse) for dense, sparse in zip(dense_results, sparse_vectors, strict=True)]
 
 
 class DashScopeEmbedder:

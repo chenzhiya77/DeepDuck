@@ -92,7 +92,7 @@ class RagConfigFile(BaseModel):
     embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
     embedding_dimension: int | None = Field(default=None, ge=1, description="Dense dimension override; None probes the provider at enable time.")
     embedding_sparse_source: Literal["provider", "external", "bm25"] | None = Field(default=None, description="Where the sparse vectors come from; None uses config.yaml.")
-    sparse_provider: Literal["openai-compatible"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
+    sparse_provider: Literal["tei-sparse"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
     sparse_base_url: str | None = Field(default=None, description="Sparse service endpoint; used when embedding_sparse_source=external.")
     sparse_model: str | None = Field(default=None, description="Sparse model name; used when embedding_sparse_source=external.")
     sparse_api_key: str | None = Field(default=None, description="Sparse service API key; masked on read, env is the fallback.")

@@ -34,7 +34,7 @@ export interface RagConfigValues {
   embedding_base_url?: string | null;
   embedding_dimension?: number | null;
   embedding_sparse_source?: "provider" | "external" | "bm25" | null;
-  sparse_provider?: "openai-compatible" | null;
+  sparse_provider?: "tei-sparse" | null;
   sparse_base_url?: string | null;
   sparse_model?: string | null;
   sparse_api_key?: string | null;

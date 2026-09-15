@@ -21,7 +21,7 @@ from langchain.tools import tool
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
 from deerflow.knowledge.citation_counter import claim_citation_range
-from deerflow.knowledge.embedder import DashScopeEmbedder
+from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
 from deerflow.knowledge.wiki.store import WikiStore
@@ -49,7 +49,7 @@ async def _wiki_search_impl(
         return {"entries": [], "message": ACCESS_DENIED_MESSAGE}
     wiki_store = wiki_store or WikiStore(store._sf)
     vector_store = vector_store or get_vector_store()
-    embedder = embedder or DashScopeEmbedder()
+    embedder = embedder or build_embedder()
 
     (query_vector,) = await embedder.embed([query], text_type="query")
     wiki_points = await vector_store.query_wiki_entries(dense=query_vector.dense, kb_id=kb_id, top_k=top_k)

@@ -21,7 +21,7 @@ from langgraph.config import get_stream_writer
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
 from deerflow.knowledge.citation_counter import claim_citation_range
-from deerflow.knowledge.embedder import DashScopeEmbedder
+from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.graph.extractor import _strip_fence, get_extract_llm
 from deerflow.knowledge.graph.normalizer import cosine_similarity
 from deerflow.knowledge.graph.retrieval import Candidate, apply_source_caps, collect_candidates, expand_neighborhood, select_evidence
@@ -191,7 +191,7 @@ async def _graph_search_impl(
         return _empty(ACCESS_DENIED_MESSAGE)
     graph_store = graph_store or GraphStore(store._sf)
     vector_store = vector_store or get_vector_store()
-    embedder = embedder or DashScopeEmbedder()
+    embedder = embedder or build_embedder()
     llm = llm or get_extract_llm()
 
     # 1. Query-side entity/keyword extraction (small model).

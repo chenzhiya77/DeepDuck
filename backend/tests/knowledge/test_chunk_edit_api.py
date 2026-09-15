@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
+from app.gateway.services import knowledge_service as ks_module
 from app.gateway.services.knowledge_service import KnowledgeService
 from deerflow.knowledge.store import KnowledgeStore
 
@@ -194,7 +195,7 @@ class TestPatchChunkEndpoint:
 
         embedder = MagicMock()
         embedder.embed = AsyncMock(return_value=[EmbeddingResult(dense=[0.25] * 1024, sparse=SparseVector(indices=[3], values=[0.7]))])
-        monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+        monkeypatch.setattr(ks_module, "build_embedder", lambda: embedder)
         kb_id, chunk_id = setup_chunk
         client = _client(service)
 
@@ -219,7 +220,7 @@ class TestPatchChunkEndpoint:
 
         embedder = MagicMock()
         embedder.embed = AsyncMock(side_effect=EmbedderError("quota exhausted"))
-        monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+        monkeypatch.setattr(ks_module, "build_embedder", lambda: embedder)
         kb_id, chunk_id = setup_chunk
         client = _client_no_raise(service)
 
@@ -243,7 +244,7 @@ class TestPatchChunkEndpoint:
 
         embedder = MagicMock()
         embedder.embed = AsyncMock(return_value=[EmbeddingResult(dense=[0.25] * 1024, sparse=SparseVector(indices=[3], values=[0.7]))])
-        monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+        monkeypatch.setattr(ks_module, "build_embedder", lambda: embedder)
         service.vector_store.upsert_chunks = AsyncMock(side_effect=RuntimeError("qdrant down"))
         kb_id, chunk_id = setup_chunk
         client = _client_no_raise(service)

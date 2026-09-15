@@ -36,6 +36,10 @@ class ProviderSpec:
     #: Whether one call returns dense *and* sparse. Only such a provider may be paired
     #: with ``embedding_sparse_source=provider`` (spec §4.2 cross-check).
     emits_sparse: bool = False
+    #: Whether the implementation pins the dense width in its own request, so it never
+    #: needs the runtime dimension probe (spec §4.2 维度 #1). DashScope sends
+    #: ``parameters.dimension``; a generic ``/v1/embeddings`` endpoint does not.
+    pins_dimension: bool = False
 
 
 #: leg -> provider id -> spec. Adding a provider means adding a row here, never
@@ -49,6 +53,7 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             path="/api/v1/services/embeddings/text-embedding/text-embedding",
             secret_env_var="DASHSCOPE_EMBEDDING_API_KEY",
             emits_sparse=True,
+            pins_dimension=True,
         ),
         "openai-compatible": ProviderSpec(
             leg="embedding",
@@ -94,14 +99,15 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
     },
     # Not a leg of its own in the retrieval sense — this is the *second* endpoint a
     # deployment may point at when `embedding_sparse_source=external`, i.e. a service
-    # that returns sparse vectors only. Its request shape is not pinned yet (path=None);
-    # the client that consumes it lands with P3.
+    # that returns sparse vectors only. The shape is pinned to Text Embeddings
+    # Inference (`POST /embed_sparse`, `{"inputs": [...]}` → `[[{index, value}]]`,
+    # verified against its router source), the one implementation we could check.
     "sparse": {
-        "openai-compatible": ProviderSpec(
+        "tei-sparse": ProviderSpec(
             leg="sparse",
-            provider_id="openai-compatible",
-            implementation="deerflow.knowledge.sparse:OpenAICompatibleSparseEncoder",
-            path=None,
+            provider_id="tei-sparse",
+            implementation="deerflow.knowledge.sparse:TEISparseEncoder",
+            path="/embed_sparse",
             secret_env_var="RAG_SPARSE_API_KEY",
         ),
     },

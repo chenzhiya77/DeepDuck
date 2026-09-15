@@ -39,7 +39,7 @@ export interface RagConfigFormValues {
   embedding_provider: "dashscope" | "openai-compatible";
   embedding_base_url: string;
   embedding_sparse_source: "provider" | "external" | "bm25";
-  sparse_provider: "openai-compatible" | "";
+  sparse_provider: "tei-sparse" | "";
   sparse_base_url: string;
   sparse_model: string;
   sparse_api_key: string;
@@ -62,7 +62,8 @@ export interface RagConfigFormValues {
  */
 export const EMBEDDING_PROVIDER_OPTIONS = ["dashscope", "openai-compatible"] as const;
 export const EMBEDDING_SPARSE_SOURCE_OPTIONS = ["provider", "external", "bm25"] as const;
-export const SPARSE_PROVIDER_OPTIONS = ["", "openai-compatible"] as const;
+/** The sparse service's id set: one verified shape (TEI's `/embed_sparse`), spec §4.2. */
+export const SPARSE_PROVIDER_OPTIONS = ["", "tei-sparse"] as const;
 export const RERANK_PROVIDER_OPTIONS = ["dashscope", "generic-rerank"] as const;
 export const PARSE_PROVIDER_OPTIONS = ["mineru-cloud", "mineru-local"] as const;
 /** Empty means "let the local MinerU service decide"; `pipeline` is outside the support surface. */

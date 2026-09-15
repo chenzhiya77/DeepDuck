@@ -103,7 +103,7 @@ def build_ragas_evaluator(judge_llm, *, embeddings_cls=None):
     except ImportError:
         return None
 
-    from deerflow.knowledge.embedder import DashScopeEmbedder
+    from deerflow.knowledge.embedder_factory import build_embedder
     from deerflow.knowledge.eval.ragas_eval import compute_ragas_scores
 
     # bypass_n: answer_relevancy's strictness=3 asks the judge for n=3
@@ -112,7 +112,7 @@ def build_ragas_evaluator(judge_llm, *, embeddings_cls=None):
     # separate single-completion calls, which every endpoint supports.
     wrapped_llm = LangchainLLMWrapper(judge_llm, bypass_n=True)
     effective_cls = embeddings_cls or DashScopeLangChainEmbeddings
-    wrapped_embeddings = LangchainEmbeddingsWrapper(effective_cls(DashScopeEmbedder()))
+    wrapped_embeddings = LangchainEmbeddingsWrapper(effective_cls(build_embedder()))
 
     async def evaluator(samples, *, judge_llm, embeddings, on_progress=None):  # protocol-aligned; wrappers are bound at build time
         return await compute_ragas_scores(samples, judge_llm=wrapped_llm, embeddings=wrapped_embeddings, on_progress=on_progress)

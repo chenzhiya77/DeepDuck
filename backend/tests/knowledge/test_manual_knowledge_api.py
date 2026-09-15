@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
+from app.gateway.services import knowledge_service as ks_module
 from app.gateway.services.knowledge_service import KnowledgeService
 from deerflow.knowledge.store import KnowledgeStore
 
@@ -76,15 +77,16 @@ def _cards_url(kb_id: str) -> str:
 
 
 def _mock_embedder(monkeypatch) -> MagicMock:
-    """Patch the DashScope embedder (local import inside the service resolves
-    the module attribute at call time, so patching the module attr works)."""
+    """Patch the embedder factory the service calls (spec 2026-09-14 §4.2: the service
+    builds its embedder through ``build_embedder()``, so the patch target is that name in
+    the service module's namespace — not the provider class it happens to resolve to)."""
     from qdrant_client.models import SparseVector
 
     from deerflow.knowledge.embedder import EmbeddingResult
 
     embedder = MagicMock()
     embedder.embed = AsyncMock(return_value=[EmbeddingResult(dense=[0.25] * 1024, sparse=SparseVector(indices=[3], values=[0.7]))])
-    monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: embedder)
+    monkeypatch.setattr(ks_module, "build_embedder", lambda: embedder)
     return embedder
 
 

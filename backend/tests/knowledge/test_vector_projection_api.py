@@ -19,6 +19,7 @@ from qdrant_client.models import SparseVector
 
 from app.gateway.auth.models import User
 from app.gateway.routers import knowledge_bases
+from app.gateway.services import knowledge_service as ks_module
 from app.gateway.services.knowledge_service import KnowledgeService
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.projection.cache import CachedProjection
@@ -219,8 +220,8 @@ async def test_project_query_after_projection_200(service, monkeypatch) -> None:
         async def embed(self, texts, *, text_type="document"):
             return [EmbeddingResult(dense=[0.5, 0.5, 0.0, 0.0], sparse=SparseVector(indices=[0], values=[1.0])) for _ in texts]
 
-    # knowledge_service imports DashScopeEmbedder locally — patch at source.
-    monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: _FakeEmbedder())
+    # knowledge_service builds its embedder through build_embedder() — patch that seam.
+    monkeypatch.setattr(ks_module, "build_embedder", lambda: _FakeEmbedder())
     client = _client(service)
     kb = _create_kb(client)
     await _seed_chunks(service, kb["id"])
@@ -243,7 +244,7 @@ async def test_project_query_without_cached_projection_409(service, monkeypatch)
         async def embed(self, texts, *, text_type="document"):
             return [EmbeddingResult(dense=[0.5, 0.5, 0.0, 0.0], sparse=SparseVector(indices=[0], values=[1.0])) for _ in texts]
 
-    monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: _FakeEmbedder())
+    monkeypatch.setattr(ks_module, "build_embedder", lambda: _FakeEmbedder())
     client = _client(service)
     kb = _create_kb(client)
 
@@ -259,7 +260,7 @@ async def test_project_query_non_pca_model_409(service, monkeypatch) -> None:
         async def embed(self, texts, *, text_type="document"):
             return [EmbeddingResult(dense=[0.5, 0.5, 0.0, 0.0], sparse=SparseVector(indices=[0], values=[1.0])) for _ in texts]
 
-    monkeypatch.setattr("deerflow.knowledge.embedder.DashScopeEmbedder", lambda: _FakeEmbedder())
+    monkeypatch.setattr(ks_module, "build_embedder", lambda: _FakeEmbedder())
     client = _client(service)
     kb = _create_kb(client)
 

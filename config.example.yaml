@@ -2596,7 +2596,8 @@ rag:
   # embedding_base_url:                  # endpoint; empty uses the provider default
   # embedding_dimension:                 # dense dimension override; empty probes at enable time
   # embedding_sparse_source: provider    # provider | external | bm25
-  # sparse_provider: openai-compatible   # only when embedding_sparse_source=external
+  # sparse_provider: tei-sparse         # only when embedding_sparse_source=external
+  #                                     # tei-sparse = Text Embeddings Inference /embed_sparse
   # sparse_base_url:
   # sparse_model:
   # rerank_provider: dashscope           # dashscope | generic-rerank

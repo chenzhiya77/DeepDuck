@@ -208,7 +208,7 @@ class RagConfig(BaseModel):
     embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
     embedding_dimension: int | None = Field(default=None, ge=1, description="Override for the dense dimension; None probes the provider at enable time. Must be 1024 — the Qdrant collections are created at that size.")
     embedding_sparse_source: Literal["provider", "external", "bm25"] = Field(default="provider", description="Who supplies the sparse vectors: the embedding provider itself, the separate `sparse_*` service, or a local BM25 encoder.")
-    sparse_provider: Literal["openai-compatible"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
+    sparse_provider: Literal["tei-sparse"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
     sparse_base_url: str | None = Field(default=None, description="Sparse service endpoint; used when embedding_sparse_source=external.")
     sparse_model: str | None = Field(default=None, description="Sparse model name; used when embedding_sparse_source=external.")
     sparse_api_key: str | None = Field(default=None, description="Sparse service API key; None falls back to RAG_SPARSE_API_KEY.")
