@@ -17,7 +17,6 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue, SparseVector
 
 from deerflow.knowledge.embedder import (
-    DASHSCOPE_BATCH_LIMIT,
     DashScopeEmbedder,
     EmbedderAuthError,
     EmbedderError,
@@ -63,7 +62,8 @@ def _transport(recorded: list[httpx.Request], handler_fn) -> httpx.MockTransport
 
 
 def _embedder(client: httpx.AsyncClient, **kwargs) -> DashScopeEmbedder:
-    kwargs.setdefault("batch_size", DASHSCOPE_BATCH_LIMIT)
+    # Explicit so the stub never depends on the per-model cap table.
+    kwargs.setdefault("batch_size", 20)
     kwargs.setdefault("retry_backoff_seconds", 0.001)
     return DashScopeEmbedder(model="qwen3.7-text-embedding", api_key="test-key", client=client, **kwargs)
 

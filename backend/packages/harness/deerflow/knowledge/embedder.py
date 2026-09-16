@@ -10,8 +10,9 @@ Contract (verified against the Aliyun Model Studio docs):
 - ``POST {base_url}/api/v1/services/embeddings/text-embedding/text-embedding``
 - body ``{"model", "input": {"texts": [...]}, "parameters": {"dimension",
   "output_type": "dense&sparse", "text_type": "document"|"query"}}``
-- ``qwen3.7-text-embedding`` takes at most 20 rows per call → client-side
-  batching; retrieval tasks distinguish ``query`` vs ``document`` text types.
+- rows per call are capped **per model** (10 for most, 20 for ``qwen3.7-text-embedding``) →
+  client-side batching, defaulting to the lowest measured cap; retrieval tasks distinguish
+  ``query`` vs ``document`` text types.
 - Failures: non-2xx HTTP, or a 2xx body with a non-empty ``code``.
 
 The API key always comes from ``DASHSCOPE_EMBEDDING_API_KEY`` — never from the
@@ -38,8 +39,24 @@ DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
 _EMBEDDING_PATH = "/api/v1/services/embeddings/text-embedding/text-embedding"
 _KEY_ENV_VAR = SECRET_ENV_VARS["embedding_api_key"]
 
-#: qwen3.7-text-embedding accepts at most 20 rows per call (Aliyun docs).
-DASHSCOPE_BATCH_LIMIT = 20
+#: The lowest per-call row cap measured on the platform, and therefore what every model gets by
+#: default. Unknown models stay on the safe side on purpose: the worst case is one extra round trip,
+#: not a batch the platform refuses wholesale (2026-09-17: 20 rows against v3/v4 answers HTTP 400
+#: `batch size is invalid, it should not be larger than 10`). This only affects how many requests an
+#: ingest makes — never correctness, and never retrieval latency (queries are single rows).
+DASHSCOPE_SAFE_BATCH_SIZE = 10
+
+#: Models measured to accept more rows per call than the safe default. The table only ever *raises*
+#: the cap, so adding a model here is an optimisation while omitting one is merely conservative.
+DASHSCOPE_BATCH_SIZES: dict[str, int] = {
+    # 20 rows answered 200 for this model (2026-09-17 probe).
+    "qwen3.7-text-embedding": 20,
+}
+
+
+def dashscope_batch_size(model: str | None) -> int:
+    """Rows per embedding call for this model (see the table above for why this is not one number)."""
+    return DASHSCOPE_BATCH_SIZES.get(str(model or ""), DASHSCOPE_SAFE_BATCH_SIZE)
 
 
 class EmbedderError(Exception):
@@ -133,7 +150,7 @@ class DashScopeEmbedder:
         api_key: str | None = None,
         base_url: str = DASHSCOPE_BASE_URL,
         dimension: int = 1024,
-        batch_size: int = DASHSCOPE_BATCH_LIMIT,
+        batch_size: int | None = None,
         max_retries: int = 3,
         retry_backoff_seconds: float = 0.5,
         client: httpx.AsyncClient | None = None,
@@ -147,7 +164,9 @@ class DashScopeEmbedder:
         self._api_key = api_key  # resolved lazily so env-only usage never passes keys around
         self._base_url = base_url.rstrip("/")
         self._dimension = dimension
-        self.batch_size = batch_size
+        # Rows per call follow the *model*: an explicit value wins (tests, custom transports), and
+        # otherwise the model's own cap decides — see `dashscope_batch_size`.
+        self.batch_size = batch_size if batch_size is not None else dashscope_batch_size(model)
         self._max_retries = max(1, max_retries)
         self._retry_backoff = retry_backoff_seconds
         self._client = client

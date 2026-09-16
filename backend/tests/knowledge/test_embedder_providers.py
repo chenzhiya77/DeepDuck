@@ -18,6 +18,8 @@ The interface stays what it always was — ``embed(texts, text_type) -> list[Emb
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -342,3 +344,39 @@ async def test_a_configured_sparse_source_is_not_judged(monkeypatch):
         results = await build_embedder(client=client).embed(["一段文本"])
 
     assert results[0].sparse.indices, "稀疏来自 BM25，空的那份是稠密 provider 的，被组合层丢掉"
+
+
+# ── per-model row cap: the platform's limit is not one number ────────────────
+
+
+def test_the_row_cap_is_conservative_for_models_nobody_measured():
+    """默认取**已知最低**上限：未知模型最坏是多一次往返，而不是被平台整批拒掉。
+
+    2026-09-17 实测：`text-embedding-v3` / `v4` 一次最多 10 行（20 行 ⇒ 400
+    `batch size is invalid`），`qwen3.7-text-embedding` 能吃 20。
+    """
+    from deerflow.knowledge.embedder import DASHSCOPE_SAFE_BATCH_SIZE, dashscope_batch_size
+
+    assert DASHSCOPE_SAFE_BATCH_SIZE == 10
+    assert dashscope_batch_size("text-embedding-v3") == 10
+    assert dashscope_batch_size("text-embedding-v4") == 10
+    assert dashscope_batch_size("qwen3.7-text-embedding") == 20
+    # A model the table has never heard of keeps the safe value — the table only ever *raises* it.
+    assert dashscope_batch_size("some-model-from-next-year") == 10
+    assert dashscope_batch_size(None) == 10
+
+
+@pytest.mark.asyncio
+async def test_the_embedder_sends_batches_the_model_can_take(monkeypatch):
+    """25 片在 v3 上必须拆成 10 / 10 / 5 三次请求，而不是两次 20 / 5（后者第一批就被拒）。"""
+    recorded: list[httpx.Request] = []
+    _stub_dashscope_config(monkeypatch, embedding_model="text-embedding-v3")
+
+    async with httpx.AsyncClient(transport=_dashscope_transport(recorded)) as client:
+        embedder = build_embedder(client=client)
+        assert embedder.batch_size == 10
+        results = await embedder.embed([f"切片{i}" for i in range(25)])
+
+    rows_per_request = [len(json.loads(request.content.decode())["input"]["texts"]) for request in recorded]
+    assert rows_per_request == [10, 10, 5]
+    assert len(results) == 25, "拆批不影响结果条数与顺序"
