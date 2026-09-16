@@ -51,6 +51,13 @@ rs.mock("@/core/rag/hooks", () => ({
     data: undefined,
     mutate: rs.fn(),
   }),
+  // The sparse-service probe only decorates the address row; these display-rule cases never reach
+  // it, so it stays idle too.
+  useProbeSparseService: () => ({
+    isPending: false,
+    data: undefined,
+    mutate: rs.fn(),
+  }),
 }));
 
 rs.mock("@/core/models/hooks", () => ({

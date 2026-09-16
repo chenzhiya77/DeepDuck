@@ -46,12 +46,16 @@ import {
   RERANK_PROVIDER_OPTIONS,
   resolveSparseCapability,
   SPARSE_PROVIDER_OPTIONS,
+  shouldProbeSparseService,
   sparseProbeKey,
+  sparseServiceProbeKey,
+  sparseServiceVerdictFor,
   visionReferenceOptions,
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
 import {
   useProbeSparseCapability,
+  useProbeSparseService,
   useRagConfig,
   useSaveRagConfig,
 } from "@/core/rag/hooks";
@@ -305,6 +309,7 @@ export function FunctionalModelsView() {
   const { view, isLoading, error } = useRagConfig();
   const save = useSaveRagConfig();
   const probe = useProbeSparseCapability();
+  const sparseServiceProbe = useProbeSparseService();
   const { models } = useModels();
   const { config: modelsConfig } = useModelsConfig();
 
@@ -312,6 +317,8 @@ export function FunctionalModelsView() {
   // The last candidate a probe was actually sent for, so re-rendering (or unrelated typing) does
   // not repeat the same call — and so a *new* candidate always does get one.
   const requestedProbe = useRef<string | null>(null);
+  // Same idea for the sparse-service probe: one call per distinct candidate.
+  const requestedSparseServiceProbe = useRef<string | null>(null);
   // The rebuild entry is library-scoped while this view is app-wide, so the target is picked
   // here (session-only) instead of being derived from wherever the dialog was opened.
   const [reindexKbId, setReindexKbId] = useState("");
@@ -384,6 +391,48 @@ export function FunctionalModelsView() {
     }, PROBE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [probeApplies, values, probe]);
+
+  // The external sparse service gets the same treatment (connectivity spec §3 D4): a wrong port or
+  // a service that is not up used to surface as "some chunks failed" at ingest time, and the whole
+  // point of this probe is that the admin hears about it while still editing. A key counts as
+  // *existing* when the deployment stores one or the environment backs it — reading "the box is
+  // empty" as "no key" would probe without one and call a healthy service unreachable.
+  const sparseServiceHasKey =
+    (values?.sparse_api_key.trim() ?? "") !== "" ||
+    (view?.sources?.sparse_api_key ?? "unset") !== "unset";
+  const sparseServiceApplies = values
+    ? shouldProbeSparseService(values)
+    : false;
+  const sparseServiceVerdict = values
+    ? sparseServiceVerdictFor(
+        values,
+        sparseServiceHasKey,
+        sparseServiceProbe.data ?? null,
+      )
+    : null;
+  const sparseServiceStatus = sparseServiceProbe.isPending
+    ? { text: F.sparseProbing, tone: "text-muted-foreground" }
+    : sparseServiceVerdict?.status === "unreachable"
+      ? { text: F.sparseServiceUnreachable, tone: "text-destructive" }
+      : sparseServiceVerdict?.status === "empty"
+        ? { text: F.sparseServiceEmpty, tone: "text-destructive" }
+        : null;
+
+  useEffect(() => {
+    if (!sparseServiceApplies || !values) return;
+    const key = sparseServiceProbeKey(values, sparseServiceHasKey);
+    if (requestedSparseServiceProbe.current === key) return;
+    const timer = setTimeout(() => {
+      requestedSparseServiceProbe.current = key;
+      sparseServiceProbe.mutate({
+        key,
+        sparse_provider: values.sparse_provider,
+        sparse_base_url: values.sparse_base_url.trim() || null,
+        sparse_api_key: values.sparse_api_key.trim() || null,
+      });
+    }, PROBE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [sparseServiceApplies, sparseServiceHasKey, values, sparseServiceProbe]);
 
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">{t.common.loading}</div>;
@@ -686,14 +735,30 @@ export function FunctionalModelsView() {
                   </div>
                   <div className={ROW}>
                     <RowLabel nested>{F.endpointLabel}</RowLabel>
-                    <Input
-                      value={values.sparse_base_url}
-                      aria-label={F.sparseBaseUrl}
-                      {...AUTOFILL_OFF_INPUT_PROPS}
-                      onChange={(event) =>
-                        update("sparse_base_url", event.target.value)
-                      }
-                    />
+                    <div className="relative">
+                      {/* The mark's room is reserved whether or not there is one, so the visible
+                          address never reflows when a verdict lands. */}
+                      <Input
+                        className="pr-24"
+                        value={values.sparse_base_url}
+                        aria-label={F.sparseBaseUrl}
+                        {...AUTOFILL_OFF_INPUT_PROPS}
+                        onChange={(event) =>
+                          update("sparse_base_url", event.target.value)
+                        }
+                      />
+                      {sparseServiceStatus && (
+                        <span
+                          data-slot="sparse-service-status"
+                          className={cn(
+                            "pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs",
+                            sparseServiceStatus.tone,
+                          )}
+                        >
+                          {sparseServiceStatus.text}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </>
               ) : (

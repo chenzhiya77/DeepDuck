@@ -27,7 +27,10 @@ import {
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
   resolveSparseCapability,
+  shouldProbeSparseService,
   sparseProbeKey,
+  sparseServiceProbeKey,
+  sparseServiceVerdictFor,
   visionReferenceOptions,
 } from "@/core/rag/config-form";
 import type { RagConfigSource, RagConfigView } from "@/core/rag/types";
@@ -703,5 +706,77 @@ describe("isSparseProviderOptionDisabled", () => {
     // point of the third state (a network failure must not lock a working configuration).
     expect(isSparseProviderOptionDisabled("supported")).toBe(false);
     expect(isSparseProviderOptionDisabled("unknown")).toBe(false);
+  });
+});
+
+/**
+ * 外部稀疏服务的连通性探针的前端纯逻辑（spec 2026-09-16 connectivity §3 D4）：**什么时候该探**、
+ * **结论属于谁**。这两件事决定了「地址改一下」会不会带上旧结论、以及会不会对着空地址发请求。
+ */
+describe("sparse service probe", () => {
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(
+      view({
+        embedding_sparse_source: "external",
+        sparse_provider: "tei-sparse",
+        sparse_base_url: "http://127.0.0.1:8081",
+      }),
+    ),
+    ...over,
+  });
+
+  it("asks only when the form actually uses an external service with an address", () => {
+    expect(shouldProbeSparseService(form())).toBe(true);
+    // Nothing to reach yet.
+    expect(shouldProbeSparseService(form({ sparse_base_url: "" }))).toBe(false);
+    expect(shouldProbeSparseService(form({ sparse_base_url: "   " }))).toBe(
+      false,
+    );
+    // No provider chosen: `external` requires one, so there is nothing to call.
+    expect(shouldProbeSparseService(form({ sparse_provider: "" }))).toBe(false);
+    // The other two sources never leave the machine.
+    expect(
+      shouldProbeSparseService(form({ embedding_sparse_source: "provider" })),
+    ).toBe(false);
+    expect(
+      shouldProbeSparseService(form({ embedding_sparse_source: "bm25" })),
+    ).toBe(false);
+  });
+
+  it("binds a verdict to the address it was taken for, and to whether a key exists", () => {
+    const values = form();
+    expect(sparseServiceProbeKey(values, false)).toBe(
+      "tei-sparse|http://127.0.0.1:8081|nokey",
+    );
+    expect(sparseServiceProbeKey(values, true)).toBe(
+      "tei-sparse|http://127.0.0.1:8081|key",
+    );
+    // A trim is not an edit.
+    expect(
+      sparseServiceProbeKey(
+        form({ sparse_base_url: " http://127.0.0.1:8081 " }),
+        false,
+      ),
+    ).toBe(sparseServiceProbeKey(values, false));
+  });
+
+  it("hands back a verdict only for the values it was taken for", () => {
+    const values = form();
+    const key = sparseServiceProbeKey(values, false);
+    expect(
+      sparseServiceVerdictFor(values, false, { key, status: "unreachable" }),
+    ).toEqual({ key, status: "unreachable" });
+    // Another address is another question — and so is "a key appeared".
+    expect(
+      sparseServiceVerdictFor(
+        form({ sparse_base_url: "http://127.0.0.1:8082" }),
+        false,
+        { key, status: "ok" },
+      ),
+    ).toBeNull();
+    expect(
+      sparseServiceVerdictFor(values, true, { key, status: "ok" }),
+    ).toBeNull();
+    expect(sparseServiceVerdictFor(values, false, null)).toBeNull();
   });
 });

@@ -8,11 +8,19 @@ import { toast } from "sonner";
 import {
   loadRagConfig,
   probeEmbeddingCapability,
+  probeSparseService,
   RagConfigRequestError,
   saveRagConfig,
 } from "./api";
-import type { SparseProbeVerdict } from "./config-form";
-import type { RagConfigInput, RagSparseProbeRequest } from "./types";
+import type {
+  SparseProbeVerdict,
+  SparseServiceProbeVerdict,
+} from "./config-form";
+import type {
+  RagConfigInput,
+  RagSparseProbeRequest,
+  RagSparseServiceProbeRequest,
+} from "./types";
 
 /**
  * TanStack Query bindings for the admin RAG functional-model view
@@ -65,6 +73,30 @@ export function useProbeSparseCapability() {
       ...request
     }: SparseProbeInput): Promise<SparseProbeVerdict> => {
       const verdict = await probeEmbeddingCapability(request);
+      return { key, status: verdict.status };
+    },
+  });
+}
+
+/** The sparse-service probe's input: the candidate service, plus the key it was taken for. */
+export type SparseServiceProbeInput = RagSparseServiceProbeRequest & {
+  key: string;
+};
+
+/**
+ * One connectivity probe against the external sparse service (connectivity spec §3 D1/D4).
+ *
+ * Same contract as the capability probe: the verdict carries the values it describes, nothing is
+ * invalidated (nothing was written), and a failure is a state the row renders rather than a toast —
+ * an unreachable service is information, and it never blocks a save.
+ */
+export function useProbeSparseService() {
+  return useMutation({
+    mutationFn: async ({
+      key,
+      ...request
+    }: SparseServiceProbeInput): Promise<SparseServiceProbeVerdict> => {
+      const verdict = await probeSparseService(request);
       return { key, status: verdict.status };
     },
   });

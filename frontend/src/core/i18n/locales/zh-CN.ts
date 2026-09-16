@@ -1706,6 +1706,8 @@ export const zhCN: Translations = {
         "选中「跟随向量模型」会打一次真实嵌入调用（只读、不保存），用来确认所选模型确实给出稀疏向量。",
       sparseProbing: "检测中…",
       sparseUnverified: "未验证",
+      sparseServiceUnreachable: "连不上",
+      sparseServiceEmpty: "没返回词项",
       sparseProviderDenseOnly: "该向量模型只输出稠密向量",
       parseProvider: "解析提供方",
       parseBaseUrl: "本地服务地址",

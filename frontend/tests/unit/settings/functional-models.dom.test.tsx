@@ -19,13 +19,18 @@ import {
 
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import { formValuesFromConfig, sparseProbeKey } from "@/core/rag/config-form";
+import {
+  formValuesFromConfig,
+  sparseProbeKey,
+  sparseServiceProbeKey,
+} from "@/core/rag/config-form";
 import type { RagConfigView } from "@/core/rag/types";
 
 const ragHooksMock = rs.hoisted(() => ({
   useRagConfig: rs.fn(),
   useSaveRagConfig: rs.fn(),
   useProbeSparseCapability: rs.fn(),
+  useProbeSparseService: rs.fn(),
 }));
 const modelHooksMock = rs.hoisted(() => ({
   useModels: rs.fn(),
@@ -52,10 +57,12 @@ const { ModelsSettingsPage } = await import(
 const M = zhCN.settings.models;
 const F = zhCN.settings.functionalModels;
 const MASKED = "********";
+const SPARSE_URL = "http://127.0.0.1:8081";
 
 const saveMock = rs.fn();
 const reindexMock = rs.fn();
 const probeMock = rs.fn();
+const sparseServiceProbeMock = rs.fn();
 
 /** What the embedding allowlist reports: only dashscope can supply the sparse half itself. */
 const EMBEDDING_PROVIDERS = [
@@ -103,6 +110,9 @@ function view(
       extract_model: "config_file",
       judge_model: "config_file",
       mineru_api_token: "ui",
+      // A deployment that has not configured a sparse service has no sparse key anywhere. Stated
+      // explicitly: the probes read "unset" to mean "there is nothing to send".
+      sparse_api_key: "unset",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
       "video.caption_model": "config_file",
@@ -129,7 +139,51 @@ function setRag(
   });
   ragHooksMock.useSaveRagConfig.mockReturnValue({ mutate: saveMock, isPending: false });
   setProbe();
+  setSparseServiceProbe();
   setKnowledge();
+}
+
+/**
+ * The sparse-service probe's stub. Like the capability probe, a verdict only counts for the values
+ * it was taken for, so the key is computed the way the view computes it.
+ */
+function setSparseServiceProbe(
+  over: {
+    status?: "ok" | "empty" | "unreachable";
+    pending?: boolean;
+    /** Set to `false` to hand back a verdict taken for other values. */
+    keyForCurrentValues?: boolean;
+  } = {},
+) {
+  sparseServiceProbeMock.mockReset();
+  const current = formValuesFromConfig(
+    view({
+      embedding_sparse_source: "external",
+      sparse_provider: "tei-sparse",
+      sparse_base_url: SPARSE_URL,
+    }),
+  );
+  const stale = formValuesFromConfig(
+    view({
+      embedding_sparse_source: "external",
+      sparse_provider: "tei-sparse",
+      sparse_base_url: "http://127.0.0.1:9999",
+    }),
+  );
+  ragHooksMock.useProbeSparseService.mockReturnValue({
+    mutate: sparseServiceProbeMock,
+    data:
+      over.status === undefined
+        ? undefined
+        : {
+            key: sparseServiceProbeKey(
+              over.keyForCurrentValues === false ? stale : current,
+              false,
+            ),
+            status: over.status,
+          },
+    isPending: over.pending ?? false,
+  });
 }
 
 /**
@@ -763,6 +817,128 @@ describe("sparse model disclosure", () => {
     // question the row raises, and one TEI instance serving one model is the answer.
     expect(F.sparseModelHint).toContain("TEI");
     expect(F.sparseModelHint).toContain("一个实例只服务一个模型");
+  });
+});
+
+/**
+ * 外部稀疏服务的连通性探针（spec 2026-09-16 connectivity §3 D4）：地址填错 / 服务没起这类问题
+ * 过去要等入库才暴露，现在在编辑期就报。**只报不拦**——服务可能稍后才起，把"暂时连不上"升格成
+ * "不许保存"就是 `unverifiable` 那条教训的重演。
+ */
+describe("sparse service connectivity", () => {
+  const withExternal = (over: Record<string, unknown> = {}) =>
+    setRag({
+      embedding_sparse_source: "external",
+      sparse_provider: "tei-sparse",
+      sparse_base_url: SPARSE_URL,
+      ...over,
+    });
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
+  /** The advanced disclosure is closed — and unmounted — until it is opened. */
+  const openAdvanced = () =>
+    fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
+
+  it("asks the service once the address is there", async () => {
+    withExternal();
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    await waitFor(() => expect(sparseServiceProbeMock).toHaveBeenCalled(), {
+      timeout: 2000,
+    });
+    expect(sparseServiceProbeMock.mock.calls[0]?.[0]).toMatchObject({
+      sparse_provider: "tei-sparse",
+      sparse_base_url: SPARSE_URL,
+    });
+  });
+
+  it("does not ask at all without an address to reach", async () => {
+    withExternal({ sparse_base_url: "" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(sparseServiceProbeMock).not.toHaveBeenCalled();
+  });
+
+  it("does not ask while the sparse half comes from somewhere else", async () => {
+    setRag({ embedding_sparse_source: "bm25" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(sparseServiceProbeMock).not.toHaveBeenCalled();
+  });
+
+  it("warns that the service is unreachable, and still lets the admin save", () => {
+    // The stub has to come *after* the config stub: seeding the view re-registers it.
+    withExternal();
+    setSparseServiceProbe({ status: "unreachable" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    // The address row says so in place…
+    expect(screen.getByText(F.sparseServiceUnreachable)).toBeTruthy();
+    // …and the save is *not* blocked: the service may come up in a minute.
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("warns differently when the service answers with no terms at all", () => {
+    withExternal();
+    setSparseServiceProbe({ status: "empty" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    // Reachable but useless is a different problem from unreachable: the admin should look at the
+    // model it loaded, not at the network.
+    expect(screen.getByText(F.sparseServiceEmpty)).toBeTruthy();
+    expect(screen.queryByText(F.sparseServiceUnreachable)).toBeNull();
+  });
+
+  it("says nothing when the service answered with terms", () => {
+    withExternal();
+    setSparseServiceProbe({ status: "ok" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.queryByText(F.sparseServiceUnreachable)).toBeNull();
+    expect(screen.queryByText(F.sparseServiceEmpty)).toBeNull();
+  });
+
+  it("drops a verdict taken for another address", () => {
+    withExternal();
+    setSparseServiceProbe({
+      status: "unreachable",
+      keyForCurrentValues: false,
+    });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    // Editing the address asks a new question; answering it with the old verdict would report a
+    // service that was never called.
+    expect(screen.queryByText(F.sparseServiceUnreachable)).toBeNull();
+  });
+
+  it("keeps the mark inside the address field", () => {
+    withExternal();
+    setSparseServiceProbe({ status: "unreachable" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const mark = screen.getByText(F.sparseServiceUnreachable);
+    expect(mark.closest('[data-slot="sparse-service-status"]')).not.toBeNull();
   });
 });
 

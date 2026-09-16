@@ -1718,6 +1718,8 @@ export interface Translations {
       sparseProbeHint: string;
       sparseProbing: string;
       sparseUnverified: string;
+      sparseServiceUnreachable: string;
+      sparseServiceEmpty: string;
       sparseProviderDenseOnly: string;
       parseProvider: string;
       parseBaseUrl: string;

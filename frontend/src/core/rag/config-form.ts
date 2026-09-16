@@ -366,6 +366,53 @@ export function isSparseProviderOptionDisabled(
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */
 export const MODEL_REFERENCE_NONE = "__none__";
 
+/** What a connectivity probe learned about the external sparse service (connectivity spec §3 D2). */
+export interface SparseServiceProbeVerdict {
+  key: string;
+  status: "ok" | "empty" | "unreachable";
+}
+
+/**
+ * Whether the form describes a service there is any point in calling (connectivity spec §3 D4).
+ *
+ * Only the `external` source reaches out at all — the provider's own sparse half is asked about by
+ * the capability probe, and BM25 never leaves the machine. An address is required because the
+ * runtime refuses to build without one, so a probe would only report a certainty.
+ */
+export function shouldProbeSparseService(values: RagConfigFormValues): boolean {
+  return (
+    values.embedding_sparse_source === "external" &&
+    values.sparse_provider !== "" &&
+    values.sparse_base_url.trim() !== ""
+  );
+}
+
+/**
+ * The identity a service verdict belongs to (connectivity spec §3 D4): the address it was taken
+ * for, plus whether a key existed at the time — adding one can turn a 401 into an answer, so it is
+ * a different question.
+ */
+export function sparseServiceProbeKey(
+  values: RagConfigFormValues,
+  hasKey: boolean,
+): string {
+  return [
+    values.sparse_provider,
+    values.sparse_base_url.trim(),
+    hasKey ? "key" : "nokey",
+  ].join("|");
+}
+
+/** The verdict for these values, or `null` when it was taken for other ones. */
+export function sparseServiceVerdictFor(
+  values: RagConfigFormValues,
+  hasKey: boolean,
+  probe: SparseServiceProbeVerdict | null | undefined,
+): SparseServiceProbeVerdict | null {
+  if (!probe) return null;
+  return probe.key === sparseServiceProbeKey(values, hasKey) ? probe : null;
+}
+
 export interface ModelReferenceOption {
   value: string;
   label: string;

@@ -7,6 +7,8 @@ import type {
   RagConfigView,
   RagSparseProbeRequest,
   RagSparseProbeResponse,
+  RagSparseServiceProbeRequest,
+  RagSparseServiceProbeResponse,
 } from "./types";
 
 /**
@@ -94,4 +96,30 @@ export async function probeEmbeddingCapability(
     );
   }
   return response.json() as Promise<RagSparseProbeResponse>;
+}
+
+/**
+ * Ask the server whether the configured *external sparse service* answers (connectivity spec §3 D1).
+ *
+ * Read-only like its sibling: one real `/embed_sparse` call, nothing written. The answer says
+ * whether the service is reachable and whether it returned any terms.
+ */
+export async function probeSparseService(
+  input: RagSparseServiceProbeRequest,
+): Promise<RagSparseServiceProbeResponse> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/rag/config/probe-sparse`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    throw new RagConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to probe the sparse service"),
+    );
+  }
+  return response.json() as Promise<RagSparseServiceProbeResponse>;
 }

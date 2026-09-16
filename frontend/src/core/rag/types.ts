@@ -96,3 +96,24 @@ export interface RagSparseProbeResponse {
   status: "supported" | "unsupported" | "unverifiable";
   detail: string;
 }
+
+/**
+ * Body of the *sparse service* connectivity probe (connectivity spec §3 D1): a candidate service,
+ * not a saved one. `sparse_api_key` may be the masking sentinel, which the server reads as "use the
+ * stored or environment key".
+ */
+export interface RagSparseServiceProbeRequest {
+  sparse_provider: string;
+  sparse_base_url?: string | null;
+  sparse_api_key?: string | null;
+}
+
+/**
+ * Whether the service answered, and whether it answered with anything: `empty` means it is up and
+ * shaped right but returned no terms for the probe text — reachable-but-useless, which is a
+ * different problem from unreachable (connectivity spec §3 D2).
+ */
+export interface RagSparseServiceProbeResponse {
+  status: "ok" | "empty" | "unreachable";
+  detail: string;
+}

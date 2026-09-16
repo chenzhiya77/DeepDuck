@@ -1800,6 +1800,8 @@ export const enUS: Translations = {
         "Selecting “Follow the embedding model” runs one real embedding call (read-only, nothing is saved) to confirm the model really returns the sparse half.",
       sparseProbing: "Checking…",
       sparseUnverified: "Unverified",
+      sparseServiceUnreachable: "unreachable",
+      sparseServiceEmpty: "no terms returned",
       sparseProviderDenseOnly: "this embedding model emits dense vectors only",
       parseProvider: "Parsing provider",
       parseBaseUrl: "Local service address",
