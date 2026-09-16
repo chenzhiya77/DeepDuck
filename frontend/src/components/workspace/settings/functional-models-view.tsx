@@ -86,6 +86,13 @@ const PROBE_DEBOUNCE_MS = 400;
  * `disabledReasons` greys out an individual option *and* says why: an option nobody can pick and
  * nobody can explain reads as a broken control, and the reason would otherwise only reach the
  * admin who scrolls to the alert at the bottom of the section.
+ *
+ * `trailing` is a slot inside the trigger, after the value and before the chevron. A mark that
+ * describes the field belongs in the field: the trigger is a fixed-height box, so nothing moves
+ * when the mark appears or goes — whereas the same mark on a line of its own pushed every row
+ * below it down and back on each open. It is deliberately a *sibling* of `SelectValue` and not a
+ * child: Radix mirrors the selected item's text into the trigger, so a child would also be
+ * copied into the option labels.
  */
 function OptionSelect({
   label,
@@ -93,6 +100,7 @@ function OptionSelect({
   options,
   labels,
   disabledReasons,
+  trailing,
   onChange,
 }: {
   label: string;
@@ -100,6 +108,7 @@ function OptionSelect({
   options: readonly string[];
   labels: Record<string, string>;
   disabledReasons?: Partial<Record<string, string>>;
+  trailing?: React.ReactNode;
   onChange: (next: string) => void;
 }) {
   return (
@@ -111,6 +120,11 @@ function OptionSelect({
     >
       <SelectTrigger className="w-full" aria-label={label}>
         <SelectValue />
+        {trailing ? (
+          <span className="text-muted-foreground ml-auto shrink-0 text-xs">
+            {trailing}
+          </span>
+        ) : null}
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => {
@@ -591,35 +605,34 @@ export function FunctionalModelsView() {
                 <RowLabel info={`${F.sparseSourceHint} ${F.sparseProbeHint}`}>
                   {F.embeddingSparseSource}
                 </RowLabel>
-                <div className="space-y-1.5">
-                  <OptionSelect
-                    label={F.embeddingSparseSource}
-                    value={values.embedding_sparse_source}
-                    options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
-                    labels={SPARSE_SOURCE_LABELS}
-                    disabledReasons={
-                      isSparseProviderOptionDisabled(sparseCapability)
-                        ? { provider: F.sparseProviderDenseOnly }
-                        : undefined
-                    }
-                    onChange={(next) =>
-                      update(
-                        "embedding_sparse_source",
-                        next as RagConfigFormValues["embedding_sparse_source"],
-                      )
-                    }
-                  />
-                  {probe.isPending && (
-                    <p className="text-muted-foreground text-xs" role="status">
-                      {F.sparseProbing}
-                    </p>
-                  )}
-                  {!probe.isPending && sparseUnverified && (
-                    <p className="text-muted-foreground text-xs">
-                      {F.sparseUnverified}
-                    </p>
-                  )}
-                </div>
+                <OptionSelect
+                  label={F.embeddingSparseSource}
+                  value={values.embedding_sparse_source}
+                  options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
+                  labels={SPARSE_SOURCE_LABELS}
+                  disabledReasons={
+                    isSparseProviderOptionDisabled(sparseCapability)
+                      ? { provider: F.sparseProviderDenseOnly }
+                      : undefined
+                  }
+                  // The probe's state rides in the field it is about (see `OptionSelect`): 检测中
+                  // while the call is in flight, 未验证 once it came back without an answer. A
+                  // known refusal says nothing here — it is already loud below the card and beside
+                  // Save, and a third copy would be noise.
+                  trailing={
+                    probe.isPending ? (
+                      <span role="status">{F.sparseProbing}</span>
+                    ) : sparseUnverified ? (
+                      <span>{F.sparseUnverified}</span>
+                    ) : null
+                  }
+                  onChange={(next) =>
+                    update(
+                      "embedding_sparse_source",
+                      next as RagConfigFormValues["embedding_sparse_source"],
+                    )
+                  }
+                />
               </div>
 
               {sparseExternal ? (

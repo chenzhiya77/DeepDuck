@@ -645,6 +645,12 @@ describe("sparse capability probe", () => {
     openAdvanced();
 
     expect(screen.getByText(F.sparseUnverified)).toBeTruthy();
+    // Same slot as 检测中, so the row keeps its height when the verdict lands.
+    expect(
+      screen
+        .getByText(F.sparseUnverified)
+        .closest('[data-slot="select-trigger"]'),
+    ).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     editUnrelated();
     expect(saveButton().disabled).toBe(false);
@@ -671,6 +677,21 @@ describe("sparse capability probe", () => {
     expect(screen.getByText(F.sparseProbing)).toBeTruthy();
     // Nothing is claimed while the answer is unknown — and nothing is blocked either.
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the probe mark inside the field, so the row never grows", () => {
+    setProbe({ pending: true });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const mark = screen.getByText(F.sparseProbing);
+    // The trigger is a fixed-height box, so a mark that rides in it cannot push the rows below it
+    // down and back — which is what a line of its own did, on every open and every model edit.
+    expect(mark.closest('[data-slot="select-trigger"]')).not.toBeNull();
+    // …and it is a *sibling* of the value slot, never inside it: Radix mirrors the selected item's
+    // text into the trigger, so anything placed in the value would be copied into the options.
+    expect(mark.closest('[data-slot="select-value"]')).toBeNull();
   });
 
   it("does not ask the server until the question can be asked at all", async () => {

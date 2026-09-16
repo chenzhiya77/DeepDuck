@@ -217,7 +217,12 @@ base_url`), and is only applied when that key still matches the form — editing
   rendered as 「未验证」 and **passes**: only a known `unsupported` greys out 「跟随向量模型」
   (`isSparseProviderOptionDisabled`) and keeps Save blocked, and the admin's own choice of sparse
   source is never silently rewritten. The probe writes nothing (no cache invalidation) and reports
-  no toast — "could not check" is a state that row renders, not an error to dismiss.
+  no toast — "could not check" is a state that row renders, not an error to dismiss. That state
+  rides **inside the sparse-source field** (`OptionSelect`'s `trailing` slot, after the value and
+  before the chevron): the trigger is a fixed-height box, so nothing moves when the mark appears or
+  goes, whereas the same mark on a line of its own pushed every row below it down and back on each
+  open. It is a _sibling_ of `SelectValue` and never a child, because Radix mirrors the selected
+  item's text into the trigger — a child would be copied into the option labels too.
 
   Every explanatory sentence sits behind an ⓘ tooltip — only state (the embedding-change warning, the
   environment-provenance badge, the no-changes hint) stays visible. That badge rides *inside* the
