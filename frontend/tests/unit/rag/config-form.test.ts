@@ -22,6 +22,7 @@ import {
   hasFormChanges,
   isCaptionCapable,
   isEmbeddingChange,
+  isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
   visionReferenceOptions,
@@ -482,5 +483,90 @@ describe("hasFormChanges covers the provider fields", () => {
     expect(hasFormChanges(base, view())).toBe(false);
     expect(hasFormChanges({ ...base, parse_provider: "mineru-local" }, view())).toBe(true);
     expect(hasFormChanges({ ...base, embedding_base_url: "http://x" }, view())).toBe(true);
+  });
+});
+
+/**
+ * 稀疏来源与嵌入提供商能力的交叉判定（spec 2026-09-16 §3 D2）。
+ *
+ * 这一层是纯逻辑，所以「拿表单当前值判定」这条由它来钉：DOM 里驱动 Radix Select 不可靠
+ * （见 functional-models.dom.test.tsx 的注释），而这里可以直接把「表单里的 provider」与
+ * 「已保存的 provider」构造成不同的两个值。
+ */
+describe("isSparseSourceUnsupported", () => {
+  const PROVIDERS = [
+    { provider_id: "dashscope", emits_sparse: true },
+    { provider_id: "openai-compatible", emits_sparse: false },
+  ];
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(
+      view({
+        embedding_provider: "dashscope",
+        embedding_sparse_source: "provider",
+      }),
+    ),
+    ...over,
+  });
+
+  it("only objects to a dense-only provider that is asked for the sparse half", () => {
+    expect(
+      isSparseSourceUnsupported(
+        form({ embedding_provider: "openai-compatible" }),
+        PROVIDERS,
+      ),
+    ).toBe(true);
+    // Same provider, sparse half sourced elsewhere.
+    expect(
+      isSparseSourceUnsupported(
+        form({
+          embedding_provider: "openai-compatible",
+          embedding_sparse_source: "bm25",
+        }),
+        PROVIDERS,
+      ),
+    ).toBe(false);
+    // Provider that can do it.
+    expect(isSparseSourceUnsupported(form(), PROVIDERS)).toBe(false);
+    expect(
+      isSparseSourceUnsupported(
+        form({ embedding_sparse_source: "external" }),
+        PROVIDERS,
+      ),
+    ).toBe(false);
+  });
+
+  it("judges the form's own provider, not the one the response was seeded with", () => {
+    const seeded = formValuesFromConfig(
+      view({
+        embedding_provider: "dashscope",
+        embedding_sparse_source: "provider",
+      }),
+    );
+    expect(seeded.embedding_provider).toBe("dashscope");
+    expect(isSparseSourceUnsupported(seeded, PROVIDERS)).toBe(false);
+
+    // …and the moment the admin switches the picker, the pair is judged as it now stands.
+    expect(
+      isSparseSourceUnsupported(
+        { ...seeded, embedding_provider: "openai-compatible" },
+        PROVIDERS,
+      ),
+    ).toBe(true);
+  });
+
+  it("stays quiet when the capabilities are unknown", () => {
+    const editing = form({ embedding_provider: "openai-compatible" });
+    expect(isSparseSourceUnsupported(editing, undefined)).toBe(false);
+    expect(isSparseSourceUnsupported(editing, [])).toBe(false);
+    // A provider the server did not list is unknown too, not "unsupported".
+    expect(
+      isSparseSourceUnsupported(
+        form({
+          embedding_provider: "dashscope",
+          embedding_sparse_source: "provider",
+        }),
+        [{ provider_id: "openai-compatible", emits_sparse: false }],
+      ),
+    ).toBe(false);
   });
 });

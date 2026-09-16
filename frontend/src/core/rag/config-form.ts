@@ -3,6 +3,7 @@ import type {
   RagConfigValues,
   RagConfigView,
   RagConfigInput,
+  RagEmbeddingProviderCapability,
   RagVideoValues,
 } from "./types";
 
@@ -273,6 +274,27 @@ export function isEmbeddingChange(
     values.embedding_base_url.trim() !== seeded.embedding_base_url.trim() ||
     values.embedding_sparse_source !== seeded.embedding_sparse_source
   );
+}
+
+/**
+ * Whether the form asks the selected embedding provider for a sparse half it cannot produce
+ * (spec 2026-09-16 §3 D2) — the one combination the pipeline refuses to build, so the admin
+ * should hear about it here rather than on the next ingest.
+ *
+ * Judged from the **form's** provider, not the seeded one: switching the picker has to warn
+ * immediately, before anything is saved. `providers` is the server's capability list; missing
+ * data — an older response, or a provider the server did not list — answers `false`, because
+ * an unknown is not a defect and warning about what we cannot know is worse than silence.
+ */
+export function isSparseSourceUnsupported(
+  values: RagConfigFormValues,
+  providers: readonly RagEmbeddingProviderCapability[] | undefined,
+): boolean {
+  if (values.embedding_sparse_source !== "provider") return false;
+  const capability = providers?.find(
+    (provider) => provider.provider_id === values.embedding_provider,
+  );
+  return capability?.emits_sparse === false;
 }
 
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */

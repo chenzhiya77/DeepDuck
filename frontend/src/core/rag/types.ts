@@ -54,10 +54,22 @@ export interface RagConfigValues {
  */
 export type RagConfigSource = "ui" | "config_file" | "env" | "unset";
 
+/**
+ * One embedding provider's declared capability (spec 2026-09-16 §3 D1). Read-only metadata
+ * from the server's curated allowlist: `emits_sparse` says whether that provider can supply
+ * the sparse half itself. Absent entirely on a response from a server that predates the field,
+ * which is why the view treats "unknown" and "cannot" as different answers.
+ */
+export interface RagEmbeddingProviderCapability {
+  provider_id: string;
+  emits_sparse: boolean;
+}
+
 /** GET/PUT response: the effective values plus the flattened per-field origin map. */
 export interface RagConfigView {
   config: RagConfigValues;
   sources: Record<string, RagConfigSource>;
+  embedding_providers?: RagEmbeddingProviderCapability[];
 }
 
 /** PUT body: the whole object, standing in for the new file content. */

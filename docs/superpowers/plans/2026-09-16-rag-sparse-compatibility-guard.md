@@ -128,6 +128,18 @@ except RagConfigurationError as exc:
 
 ## Task 4 — 前端：编辑期拦下并禁用保存（D2）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- 判定抽成纯函数 `core/rag/config-form.ts::isSparseSourceUnsupported(values, providers)`（与 `isEmbeddingChange` 并列）；视图只负责渲染。**这是必须的分解**：plan case 4 要证「拿表单当前值判定」，而 DOM 里驱动 Radix Select 不可靠（该文件既有注释已说明），纯函数层可以直接把「表单里的 provider」与「响应里 seed 的 provider」构造成两个不同的值来钉死。
+- **unknown ≠ unsupported**：`providers` 缺失（旧响应）或列表里没有该 id ⇒ 返回 `false`。理由写进函数 docstring：不知道的事不该报警（后端本来也会拒），报错比沉默更糟。三种情形各有用例（`undefined` / `[]` / 列表缺该 id）。
+- 渲染：检索卡底部的 `role="alert"`（与 `embeddingChangeWarning` 同处，**且在折叠区之外**）+ Save 左侧复用 `noChanges` 位置的同一句；Save 的 `disabled` 并入该规则。
+- **用例 6 条**：node 3 条（规则语义 / 用表单值判定 / 未知不报）+ DOM 3 条（告警 + Save 被挡 + Save 旁给原因 / 换成 `bm25` 后放行 / 旧响应不报）。i18n 三处键名 `sparseProviderUnsupported`（spec §3 D2 的两句话原样落地）。
+- **⚠ 一条自己抓出来的空断言（当场改强，未留到评审）**：最初那条「Save 必须 disabled」在夹具里是**空的**——配置本身非法 ⇒ 表单无可改 ⇒ `hasChanges` 为假时 Save 本来就灰。改成**先做一个普通编辑**（本该让 Save 可点），再断言仍被这条规则挡住；neuter 才因此转红（见下）。
+- **有牙证明**：(a) 把「未知」也算成不支持（`!capability?.emits_sparse`）→ node 与 DOM 两条「未知不报」用例同时红；(b) 去掉 Save 上的 `sparseUnsupported ||` → 那条被改强的 Save 用例红（`expected false to be true`）。
+- **门禁**：`pnpm test` 全量 **238 文件 / 2500 用例全绿**（+6 = 本次新增）；`pnpm check` eslint 干净、tsc 只剩宠物线那条预存红；prettier 逐文件与 HEAD 比对——`config-form.test.ts` 一度 39→44（我那段有 4 处该折行、1 处多余空格），按 prettier 偏好改回 **39 = 39**，其余文件与既有基线持平（`functional-models-view.tsx` 6 / `functional-models.dom.test.tsx` 32 / locales 8/12/1）⇒ **零新增格式债**。
+
 **RED**
 
 - `frontend/tests/unit/settings/functional-models.dom.test.tsx`（及其 isolated 版）加：

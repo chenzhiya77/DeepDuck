@@ -37,6 +37,7 @@ import {
   hasFormChanges,
   isCaptionCapable,
   isEmbeddingChange,
+  isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
   PARSE_BACKEND_OPTIONS,
@@ -285,6 +286,10 @@ export function FunctionalModelsView() {
   const hasChanges = values && view ? hasFormChanges(values, view) : false;
   const embeddingChanged =
     view && values ? isEmbeddingChange(values, view) : false;
+  // Judged from the form's own provider, so switching the picker warns immediately.
+  const sparseUnsupported = values
+    ? isSparseSourceUnsupported(values, view?.embedding_providers)
+    : false;
 
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">{t.common.loading}</div>;
@@ -603,6 +608,14 @@ export function FunctionalModelsView() {
             {F.embeddingChangeWarning}
           </p>
         )}
+
+        {/* Outside the disclosure on purpose: a warning nobody can see while the section is
+            collapsed is not a warning. */}
+        {sparseUnsupported && (
+          <p className="text-destructive mt-3 text-xs" role="alert">
+            {F.sparseProviderUnsupported}
+          </p>
+        )}
       </Group>
 
       <Group title={F.groupExtraction} info={F.extractModelHint}>
@@ -876,10 +889,21 @@ export function FunctionalModelsView() {
       />
 
       <div className="flex items-center justify-end gap-3">
-        {!hasChanges && (
-          <span className="text-muted-foreground text-xs">{F.noChanges}</span>
+        {/* Disabled without a reason reads as a broken button, and the alert above can be
+            scrolled out of sight — so the same sentence rides next to the button it blocks. */}
+        {sparseUnsupported ? (
+          <span className="text-destructive text-xs">
+            {F.sparseProviderUnsupported}
+          </span>
+        ) : (
+          !hasChanges && (
+            <span className="text-muted-foreground text-xs">{F.noChanges}</span>
+          )
         )}
-        <Button onClick={handleSave} disabled={!hasChanges || save.isPending}>
+        <Button
+          onClick={handleSave}
+          disabled={!hasChanges || sparseUnsupported || save.isPending}
+        >
           {save.isPending ? t.common.loading : t.common.save}
         </Button>
       </div>

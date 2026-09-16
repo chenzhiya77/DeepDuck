@@ -1737,6 +1737,7 @@ export interface Translations {
       embeddingModel: string;
       embeddingApiKey: string;
       embeddingChangeWarning: string;
+      sparseProviderUnsupported: string;
       rerankModel: string;
       rerankApiKey: string;
       asrProvider: string;

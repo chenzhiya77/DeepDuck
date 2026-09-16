@@ -1821,6 +1821,8 @@ export const enUS: Translations = {
       embeddingApiKey: "API key (embedding)",
       embeddingChangeWarning:
         "Changing the embedding model, provider, endpoint or sparse source requires re-indexing the knowledge bases already ingested with the previous one, or their retrieval quality will degrade.",
+      sparseProviderUnsupported:
+        "This provider emits dense vectors only, so it cannot supply the sparse half. Set the sparse source to a separate sparse service or local BM25.",
       rerankModel: "Rerank model",
       rerankApiKey: "API key (rerank)",
       asrProvider: "Speech recognition (ASR)",

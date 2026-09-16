@@ -54,8 +54,21 @@ const MASKED = "********";
 const saveMock = rs.fn();
 const reindexMock = rs.fn();
 
-function view(over: Partial<RagConfigView["config"]> = {}): RagConfigView {
+/** What the embedding allowlist reports: only dashscope can supply the sparse half itself. */
+const EMBEDDING_PROVIDERS = [
+  { provider_id: "dashscope", emits_sparse: true },
+  { provider_id: "openai-compatible", emits_sparse: false },
+];
+
+function view(
+  over: Partial<RagConfigView["config"]> = {},
+  opts: { providers?: typeof EMBEDDING_PROVIDERS | null } = {},
+): RagConfigView {
   return {
+    // `null` models a response from a server that predates the capability block.
+    ...(opts.providers === null
+      ? {}
+      : { embedding_providers: opts.providers ?? EMBEDDING_PROVIDERS }),
     config: {
       qdrant_url: "http://qdrant:6333",
       embedding_model: "qwen3.7-text-embedding",
@@ -90,9 +103,16 @@ function view(over: Partial<RagConfigView["config"]> = {}): RagConfigView {
   };
 }
 
-function setRag(over: Partial<RagConfigView["config"]> = {}, opts: { loading?: boolean; error?: unknown } = {}) {
+function setRag(
+  over: Partial<RagConfigView["config"]> = {},
+  opts: {
+    loading?: boolean;
+    error?: unknown;
+    providers?: typeof EMBEDDING_PROVIDERS | null;
+  } = {},
+) {
   ragHooksMock.useRagConfig.mockReturnValue({
-    view: opts.loading ? undefined : view(over),
+    view: opts.loading ? undefined : view(over, { providers: opts.providers }),
     isLoading: opts.loading ?? false,
     error: opts.error ?? null,
   });
@@ -429,6 +449,77 @@ describe("functional-model layout", () => {
     expect(screen.getByLabelText(F.captionModel).textContent).toContain(
       "qwen3.7-flash-legacy",
     );
+  });
+});
+
+/**
+ * 稀疏来源与所选嵌入提供商的能力不匹配（spec 2026-09-16 §3 D2）：编辑期就地拦下，
+ * 而不是等第一次入库/检索时后端拒绝。文案与后端那句同一事实，且 Save 旁也要给出原因——
+ * 只灰按钮不给理由，告警落在视口外的人会卡在「能改不能存、不知道为什么」。
+ */
+describe("sparse source vs provider capability", () => {
+  const unsupported = () =>
+    setRag({
+      embedding_provider: "openai-compatible",
+      embedding_sparse_source: "provider",
+    });
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
+
+  it("refuses a dense-only provider that is asked for the sparse half", () => {
+    unsupported();
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      F.sparseProviderUnsupported,
+    );
+    // An ordinary edit would normally make Save clickable; this pair has to keep it blocked,
+    // which is what makes the assertion below about the rule and not about "nothing changed".
+    fireEvent.change(screen.getByLabelText(F.embeddingModel), {
+      target: { value: "bge-m3" },
+    });
+    expect(saveButton().disabled).toBe(true);
+    // The same sentence rides next to the button it blocks.
+    expect(saveButton().parentElement?.textContent).toContain(
+      F.sparseProviderUnsupported,
+    );
+  });
+
+  it("lets the save through once the sparse source no longer needs the provider", () => {
+    setRag({
+      embedding_provider: "openai-compatible",
+      embedding_sparse_source: "bm25",
+    });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(saveButton().disabled).toBe(true); // nothing edited yet — the usual rule
+    fireEvent.change(screen.getByLabelText(F.embeddingModel), {
+      target: { value: "bge-m3" },
+    });
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("stays quiet when the server reports no capabilities at all", () => {
+    setRag(
+      {
+        embedding_provider: "openai-compatible",
+        embedding_sparse_source: "provider",
+      },
+      { providers: null },
+    );
+    renderPage();
+    openFunctionalView();
+
+    // An older server cannot answer the question, so it must not be answered for it.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(saveButton().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(F.embeddingModel), {
+      target: { value: "bge-m3" },
+    });
+    expect(saveButton().disabled).toBe(false);
   });
 });
 
