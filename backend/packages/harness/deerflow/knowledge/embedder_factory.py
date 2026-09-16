@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 from deerflow.config.app_config import get_app_config
-from deerflow.knowledge.embedder import ComposedEmbedder, Embedder
+from deerflow.knowledge.embedder import ComposedEmbedder, Embedder, RagConfigurationError
 from deerflow.knowledge.providers import resolve_provider
 from deerflow.knowledge.sparse import BM25SparseEncoder
 
@@ -62,7 +62,7 @@ class _DimensionCheckedEmbedder:
             _PROBED_DIMENSIONS[self._key] = measured
             logger.info("embedding provider %s measured at %d dimensions", self._key[0], measured)
             if measured != COLLECTION_DIMENSION:
-                raise ValueError(f"嵌入模型返回 {measured} 维，而向量库集合固定为 {COLLECTION_DIMENSION} 维 ⇒ 拒绝启用。{_REBUILD_HINT}")
+                raise RagConfigurationError(f"嵌入模型返回 {measured} 维，而向量库集合固定为 {COLLECTION_DIMENSION} 维 ⇒ 拒绝启用。{_REBUILD_HINT}")
         return results
 
 
@@ -89,11 +89,11 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
     spec = resolve_provider("embedding", provider_id)
 
     if sparse_source == "provider" and not spec.emits_sparse:
-        raise ValueError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。")
+        raise RagConfigurationError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。")
 
     declared = rag.embedding_dimension
     if declared is not None and declared != COLLECTION_DIMENSION:
-        raise ValueError(f"rag.embedding_dimension 声明的 {declared} 维与向量库集合的 {COLLECTION_DIMENSION} 维不符 ⇒ 拒绝启用。{_REBUILD_HINT}")
+        raise RagConfigurationError(f"rag.embedding_dimension 声明的 {declared} 维与向量库集合的 {COLLECTION_DIMENSION} 维不符 ⇒ 拒绝启用。{_REBUILD_HINT}")
 
     dense = _build_dense(spec, rag, declared, client)
     if sparse_source == "provider":
@@ -119,7 +119,7 @@ def _build_dense(spec, rag, declared: int | None, client: Any | None) -> Embedde
             kwargs["dimension"] = declared
         return _guard(resolve_variable(spec.implementation)(**kwargs), spec, rag)
     if not (rag.embedding_base_url or "").strip():
-        raise ValueError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url（只有 dashscope 有内置地址）")
+        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url（只有 dashscope 有内置地址）")
     kwargs["base_url"] = rag.embedding_base_url
     if rag.embedding_model:
         kwargs["model"] = rag.embedding_model
@@ -144,7 +144,7 @@ def _build_sparse(rag, sparse_source: str, client: Any | None) -> Any:
         return BM25SparseEncoder()
     spec = resolve_provider("sparse", rag.sparse_provider) if rag.sparse_provider else None
     if spec is None:
-        raise ValueError("embedding_sparse_source='external' 需要 rag.sparse_provider（受控 allowlist）")
+        raise RagConfigurationError("embedding_sparse_source='external' 需要 rag.sparse_provider（受控 allowlist）")
     from deerflow.reflection import resolve_variable
 
     kwargs: dict = {"base_url": rag.sparse_base_url, "client": client}

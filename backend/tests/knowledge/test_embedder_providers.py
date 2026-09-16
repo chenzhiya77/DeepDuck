@@ -21,7 +21,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from deerflow.knowledge.embedder import DashScopeEmbedder, EmbedderAuthError, EmbedderError
+from deerflow.knowledge.embedder import DashScopeEmbedder, EmbedderAuthError, EmbedderError, RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.embedder_openai import OpenAICompatibleEmbedder
 from deerflow.knowledge.sparse import BM25SparseEncoder, TEISparseEncoder
@@ -140,7 +140,16 @@ async def test_build_embedder_refuses_dense_only_provider_with_provider_sparse(m
     """交叉校验：通用嵌入只出 dense ⇒ sparse_source 必须改成 external/bm25。"""
     _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="provider")
 
-    with pytest.raises(ValueError, match="sparse"):
+    with pytest.raises(RagConfigurationError, match="sparse"):
+        build_embedder()
+
+
+@pytest.mark.asyncio
+async def test_build_embedder_refuses_a_non_dashscope_provider_without_an_address(monkeypatch):
+    """只有 dashscope 有内置地址，其余 provider 缺 ``embedding_base_url`` 就构不出来。"""
+    _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=None, embedding_sparse_source="bm25")
+
+    with pytest.raises(RagConfigurationError, match="embedding_base_url"):
         build_embedder()
 
 
@@ -182,7 +191,7 @@ async def test_external_sparse_requires_an_endpoint(monkeypatch):
         sparse_base_url=None,
     )
 
-    with pytest.raises(ValueError, match="sparse_base_url"):
+    with pytest.raises(RagConfigurationError, match="sparse_base_url"):
         build_embedder()
 
 
@@ -191,7 +200,7 @@ async def test_declared_dimension_other_than_1024_is_refused(monkeypatch):
     """非 1024 一律拒绝启用，且错误里要给出重建入口这条出路（spec §4.2 维度 #4）。"""
     _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="bm25", embedding_dimension=1536)
 
-    with pytest.raises(ValueError, match="1024"):
+    with pytest.raises(RagConfigurationError, match="1024"):
         build_embedder()
 
 
@@ -246,7 +255,7 @@ async def test_non_pinning_provider_mismatch_is_not_an_embedder_error(monkeypatc
     _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="bm25")
 
     async with httpx.AsyncClient(transport=_openai_transport(recorded, dims=512)) as client:
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(RagConfigurationError) as excinfo:
             await build_embedder(client=client).embed(["文本"])
 
     assert not isinstance(excinfo.value, EmbedderError)

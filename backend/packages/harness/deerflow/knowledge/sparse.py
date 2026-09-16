@@ -35,7 +35,7 @@ from collections.abc import Sequence
 import httpx
 from qdrant_client.models import SparseVector
 
-from deerflow.knowledge.embedder import EmbedderAuthError, EmbedderError
+from deerflow.knowledge.embedder import EmbedderAuthError, EmbedderError, RagConfigurationError
 from deerflow.knowledge.providers import secret_env_var
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class TEISparseEncoder:
         timeout_seconds: float = 60.0,
     ) -> None:
         if not (base_url or "").strip():
-            raise ValueError("external 稀疏来源需要服务地址：请设置 rag.sparse_base_url")
+            raise RagConfigurationError("external 稀疏来源需要服务地址：请设置 rag.sparse_base_url")
         self._base_url = base_url.strip().rstrip("/")
         self._api_key = api_key
         self.batch_size = max(1, batch_size)

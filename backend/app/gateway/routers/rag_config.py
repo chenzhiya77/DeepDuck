@@ -34,6 +34,7 @@ from deerflow.config.rag_config_file import (
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
 
@@ -210,14 +211,11 @@ def _reject_unusable_after_save(config: AppConfig, payload: dict[str, Any]) -> N
       already carries the file being replaced, so a field the admin just cleared would be
       judged at the value that file gave it (and a fix would be refused);
     - it runs **before** the write, so a rejected request leaves the file untouched.
-
-    Catching ``ValueError`` here is deliberately narrow (the one call); Task 3 of the plan
-    narrows it further to the dedicated configuration error once that type exists.
     """
     pending = merge_rag_config(config.yaml_rag, RagConfigFile.model_validate(payload))
     try:
         build_embedder(config, rag=RagConfig.model_validate(pending))
-    except ValueError as exc:
+    except RagConfigurationError as exc:
         raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
 
 

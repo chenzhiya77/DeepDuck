@@ -3,8 +3,9 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.gateway.auth_disabled import warn_if_auth_disabled_enabled
 from app.gateway.auth_middleware import AuthMiddleware
@@ -42,6 +43,7 @@ from app.gateway.routers import (
 from app.gateway.trace_middleware import TraceMiddleware, resolve_trace_enabled
 from deerflow.config import app_config as deerflow_app_config
 from deerflow.config.paths import get_paths
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.logging_config import DEFAULT_LOG_DATE_FORMAT, DEFAULT_LOG_FORMAT, configure_logging
 from deerflow.tracing.monocle import setup_monocle_tracing_if_enabled
 from deerflow.uploads.manager import cleanup_stale_upload_staging_files
@@ -524,6 +526,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Shutting down API Gateway")
 
 
+def _handle_rag_configuration_error(request: Request, exc: Exception) -> JSONResponse:
+    """Answer a configuration-class refusal with its own message (spec 2026-09-16 §3 D4).
+
+    Starlette's default for an unhandled exception is a bare ``500 Internal Server Error``; the
+    message that tells an admin what to change would stay in the log. 400 is the honest status:
+    the request described a configuration the pipeline cannot use.
+    """
+    logger.warning("RAG configuration refused on %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -620,6 +633,12 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
             },
         ],
     )
+
+    # A configuration-class refusal is the caller's to fix, so answer it as a client error with
+    # the actionable message intact instead of a bare 500 whose detail only reaches the server
+    # log (spec 2026-09-16 §3 D4). Registered for that one type on purpose: a handler for
+    # ``ValueError`` would report every unrelated programming error as a 400.
+    app.add_exception_handler(RagConfigurationError, _handle_rag_configuration_error)
 
     # Auth: reject unauthenticated requests to non-public paths (fail-closed safety net)
     app.add_middleware(AuthMiddleware)

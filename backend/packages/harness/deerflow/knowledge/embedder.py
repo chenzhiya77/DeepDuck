@@ -50,6 +50,16 @@ class EmbedderAuthError(EmbedderError):
     """Missing or rejected API key (never retried)."""
 
 
+class RagConfigurationError(ValueError):
+    """The configuration cannot describe a usable leg — refused rather than retried.
+
+    Deliberately a ``ValueError``, not an ``EmbedderError``: ``index_chunks`` treats the
+    latter as a *soft* per-batch failure and would bury a configuration mistake as "some
+    chunks failed". And deliberately its own type so the gateway can map exactly this class
+    to a readable 400 (spec 2026-09-16 §3 D4) without doing the same to every ``ValueError``.
+    """
+
+
 @dataclass(slots=True)
 class EmbeddingResult:
     """One text's dense+sparse vector pair from a single DashScope call."""

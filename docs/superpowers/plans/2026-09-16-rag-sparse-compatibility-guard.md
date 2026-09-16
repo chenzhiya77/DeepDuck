@@ -96,6 +96,18 @@ except RagConfigurationError as exc:
 
 ## Task 3 — 后端：配置类拒绝有可读出口（D4）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- **类型放在 `knowledge/embedder.py`，紧挨 `EmbedderError`**（spec 原话"与 `EmbedderError` 等并列"）：这样只依赖 `EmbedderError` 的模块不用反过来去 import 工厂。docstring 写明为什么继承 `ValueError` 而不是 `EmbedderError`——后者会被 `index_chunks` 当**软失败**吞掉，配置错误就变成"部分切片失败"。
+- **改了 6 处 raise**：工厂里 5 处（稀疏不匹配 / 缺 `embedding_base_url` / 声明维度≠1024 / `external` 缺 `sparse_provider` / **维度探测那次拒绝**），加上 `sparse.py` 的 `TEISparseEncoder` 缺地址那句——最后这处是**用例逼出来的**：把既有断言从 `ValueError` 收紧成专用类型后它当场红，说明它同在构建路径上、同属配置类拒绝。
+- 网关注册**一个**处理器（`JSONResponse(400, {"detail": str(exc)})` + 一条 warning 日志），且在注释里写明为什么只注册这一个类型。
+- **与 plan 的一点偏差（已在计划里登记的验收写法之外）**：plan 写"用 TestClient 直接打一个会触发的端点"，但真栈上没有便宜的此类端点（能触发的路由都要知识库夹具）。改成两件事分开钉：① 真实 `create_app()` 的注册表里**有**该类型、**没有** `ValueError`；② 取出真实处理器挂到裸 app 上走**真实 HTTP**，断言 400 且 detail 原样。
+- **范围不对称（记录在案）**：`parse_local.py` / reranker 的同类拒绝**仍是普通 `ValueError`**（HTTP 上仍是 500）——它们不在 `build_embedder` 路径上，而 spec §5 已把 rerank/parse 的保存期校验排除在本期之外。
+- **有牙证明**：把处理器注册到 `ValueError` 上 → 两条用例立刻红（`ValueError not in handlers` + 按类型取不到处理器）。
+- **门禁**：`test_rag_configuration_error.py` + `test_embedder_providers.py` + `test_rag_config_api.py` = 46 passed；`test_harness_boundary.py` 绿（harness → app 方向未破）；`ruff check` / `ruff format --check` 干净；**全量 144 failed / 12339 passed（+4 即本次新增用例），与 Task 2 那轮逐条比对双向差集为空**。
+
 **RED**
 
 - `RagConfigurationError` 存在且 `isinstance(exc, ValueError)`；
