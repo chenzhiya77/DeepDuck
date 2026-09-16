@@ -1794,6 +1794,11 @@ export const enUS: Translations = {
       sparseSourceBm25: "Local BM25",
       sparseSourceHint:
         "A Bailian embedding model returns dense and sparse in one call. After switching to a dense-only provider you must set this to a separate sparse service or local BM25, or the configuration cannot be enabled.",
+      sparseProbeHint:
+        "Selecting “Follow the embedding model” runs one real embedding call (read-only, nothing is saved) to confirm the model really returns the sparse half.",
+      sparseProbing: "Checking…",
+      sparseUnverified: "Unverified",
+      sparseProviderDenseOnly: "this provider emits dense vectors only",
       parseProvider: "Parsing provider",
       parseBaseUrl: "Local service address",
       parseBaseUrlHint: "The local MinerU service ships without auth, so expose it on an internal network only.",

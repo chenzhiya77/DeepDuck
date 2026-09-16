@@ -2,7 +2,12 @@ import { fetch as authFetch } from "@/core/api/fetcher";
 
 import { getBackendBaseURL } from "../config";
 
-import type { RagConfigInput, RagConfigView } from "./types";
+import type {
+  RagConfigInput,
+  RagConfigView,
+  RagSparseProbeRequest,
+  RagSparseProbeResponse,
+} from "./types";
 
 /**
  * Admin RAG functional-model configuration client (spec 2026-09-10 §4).
@@ -63,4 +68,30 @@ export async function saveRagConfig(
     );
   }
   return response.json() as Promise<RagConfigView>;
+}
+
+/**
+ * Ask the server whether one *candidate* model returns the sparse half (spec 2026-09-16 §3 D3).
+ *
+ * Read-only by design: the call runs one real embedding and writes nothing, so a refusal here is
+ * an answer, not a change. It is admin-gated like the rest of the section.
+ */
+export async function probeEmbeddingCapability(
+  input: RagSparseProbeRequest,
+): Promise<RagSparseProbeResponse> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/rag/config/probe-embedding`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    throw new RagConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to probe the embedding model"),
+    );
+  }
+  return response.json() as Promise<RagSparseProbeResponse>;
 }

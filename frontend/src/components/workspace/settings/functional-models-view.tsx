@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight, Lock } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -37,17 +37,24 @@ import {
   hasFormChanges,
   isCaptionCapable,
   isEmbeddingChange,
+  isSparseProviderOptionDisabled,
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
   PARSE_BACKEND_OPTIONS,
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
+  resolveSparseCapability,
   SPARSE_PROVIDER_OPTIONS,
+  sparseProbeKey,
   visionReferenceOptions,
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
-import { useRagConfig, useSaveRagConfig } from "@/core/rag/hooks";
+import {
+  useProbeSparseCapability,
+  useRagConfig,
+  useSaveRagConfig,
+} from "@/core/rag/hooks";
 import {
   AUTOFILL_OFF_INPUT_PROPS,
   SECRET_INPUT_AUTOFILL_PROPS,
@@ -63,21 +70,36 @@ const AUTO_OPTION_VALUE = "__auto__";
 /** Rows the retrieval group's advanced section holds; its trigger names that count. */
 const ADVANCED_SETTING_COUNT = 5;
 
+/** The credential the capability probe needs before it can call anything. */
+const EMBEDDING_KEY_SOURCE = "embedding_api_key";
+
+/**
+ * How long the form waits before probing a newly typed candidate. Each probe is one real embedding
+ * call against the platform, so the wait is about not billing a call per keystroke.
+ */
+const PROBE_DEBOUNCE_MS = 400;
+
 /**
  * A provider dropdown. Its ids come from the backend's curated allowlist; the empty id means
  * "let the downstream service decide", which is what the wire carries as null.
+ *
+ * `disabledReasons` greys out an individual option *and* says why: an option nobody can pick and
+ * nobody can explain reads as a broken control, and the reason would otherwise only reach the
+ * admin who scrolls to the alert at the bottom of the section.
  */
 function OptionSelect({
   label,
   value,
   options,
   labels,
+  disabledReasons,
   onChange,
 }: {
   label: string;
   value: string;
   options: readonly string[];
   labels: Record<string, string>;
+  disabledReasons?: Partial<Record<string, string>>;
   onChange: (next: string) => void;
 }) {
   return (
@@ -91,14 +113,20 @@ function OptionSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {options.map((option) => (
-          <SelectItem
-            key={option || AUTO_OPTION_VALUE}
-            value={option || AUTO_OPTION_VALUE}
-          >
-            {labels[option] ?? option}
-          </SelectItem>
-        ))}
+        {options.map((option) => {
+          const reason = disabledReasons?.[option];
+          return (
+            <SelectItem
+              key={option || AUTO_OPTION_VALUE}
+              value={option || AUTO_OPTION_VALUE}
+              disabled={Boolean(reason)}
+            >
+              {reason
+                ? `${labels[option] ?? option} · ${reason}`
+                : (labels[option] ?? option)}
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );
@@ -262,10 +290,14 @@ export function FunctionalModelsView() {
   const F = t.settings.functionalModels;
   const { view, isLoading, error } = useRagConfig();
   const save = useSaveRagConfig();
+  const probe = useProbeSparseCapability();
   const { models } = useModels();
   const { config: modelsConfig } = useModelsConfig();
 
   const [values, setValues] = useState<RagConfigFormValues | null>(null);
+  // The last candidate a probe was actually sent for, so re-rendering (or unrelated typing) does
+  // not repeat the same call — and so a *new* candidate always does get one.
+  const requestedProbe = useRef<string | null>(null);
   // The rebuild entry is library-scoped while this view is app-wide, so the target is picked
   // here (session-only) instead of being derived from wherever the dialog was opened.
   const [reindexKbId, setReindexKbId] = useState("");
@@ -286,10 +318,58 @@ export function FunctionalModelsView() {
   const hasChanges = values && view ? hasFormChanges(values, view) : false;
   const embeddingChanged =
     view && values ? isEmbeddingChange(values, view) : false;
+
+  // The sparse half's capability is a three-state answer (spec 2026-09-16 §3 D2): the allowlist
+  // settles the dialect question, a probe settles the model question, and everything unproven
+  // stays `unknown` — which blocks nothing.
+  const probeVerdict = probe.data ?? null;
+  const sparseCapability = values
+    ? resolveSparseCapability(values, view?.embedding_providers, probeVerdict)
+    : "unknown";
   // Judged from the form's own provider, so switching the picker warns immediately.
   const sparseUnsupported = values
-    ? isSparseSourceUnsupported(values, view?.embedding_providers)
+    ? isSparseSourceUnsupported(values, view?.embedding_providers, probeVerdict)
     : false;
+  const sparseUnverified =
+    values?.embedding_sparse_source === "provider" &&
+    probeVerdict?.key === (values ? sparseProbeKey(values) : "") &&
+    probeVerdict.status === "unverifiable";
+
+  // Probe only when the question can actually be asked: the allowlist says this provider *can*
+  // supply the sparse half, the form is asking it for that half, a model is named, and there is a
+  // key to call with. The key test is `sources[...] !== "unset"` and NOT "the input box is not
+  // empty" — an environment-backed key arrives as an empty box, and reading that as "no key" would
+  // leave the feature dead in exactly the deployment that needs it.
+  const probeApplies =
+    view !== undefined &&
+    values !== null &&
+    values.embedding_sparse_source === "provider" &&
+    values.embedding_model.trim() !== "" &&
+    view.sources?.[EMBEDDING_KEY_SOURCE] !== "unset" &&
+    view.embedding_providers?.some(
+      (provider) =>
+        provider.provider_id === values.embedding_provider &&
+        provider.emits_sparse,
+    ) === true;
+
+  useEffect(() => {
+    if (!probeApplies || !values) return;
+    const key = sparseProbeKey(values);
+    if (requestedProbe.current === key) return;
+    // One real (billable) embedding call per candidate: without the pause, a six-character model
+    // id would be six calls, five of them for ids that do not exist.
+    const timer = setTimeout(() => {
+      requestedProbe.current = key;
+      probe.mutate({
+        key,
+        embedding_provider: values.embedding_provider,
+        embedding_model: values.embedding_model.trim(),
+        embedding_base_url: values.embedding_base_url.trim() || null,
+        embedding_api_key: values.embedding_api_key.trim() || null,
+      });
+    }, PROBE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [probeApplies, values, probe]);
 
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">{t.common.loading}</div>;
@@ -508,21 +588,38 @@ export function FunctionalModelsView() {
           <CollapsibleContent className="mt-4">
             <Rows>
               <div className={ROW}>
-                <RowLabel info={F.sparseSourceHint}>
+                <RowLabel info={`${F.sparseSourceHint} ${F.sparseProbeHint}`}>
                   {F.embeddingSparseSource}
                 </RowLabel>
-                <OptionSelect
-                  label={F.embeddingSparseSource}
-                  value={values.embedding_sparse_source}
-                  options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
-                  labels={SPARSE_SOURCE_LABELS}
-                  onChange={(next) =>
-                    update(
-                      "embedding_sparse_source",
-                      next as RagConfigFormValues["embedding_sparse_source"],
-                    )
-                  }
-                />
+                <div className="space-y-1.5">
+                  <OptionSelect
+                    label={F.embeddingSparseSource}
+                    value={values.embedding_sparse_source}
+                    options={EMBEDDING_SPARSE_SOURCE_OPTIONS}
+                    labels={SPARSE_SOURCE_LABELS}
+                    disabledReasons={
+                      isSparseProviderOptionDisabled(sparseCapability)
+                        ? { provider: F.sparseProviderDenseOnly }
+                        : undefined
+                    }
+                    onChange={(next) =>
+                      update(
+                        "embedding_sparse_source",
+                        next as RagConfigFormValues["embedding_sparse_source"],
+                      )
+                    }
+                  />
+                  {probe.isPending && (
+                    <p className="text-muted-foreground text-xs" role="status">
+                      {F.sparseProbing}
+                    </p>
+                  )}
+                  {!probe.isPending && sparseUnverified && (
+                    <p className="text-muted-foreground text-xs">
+                      {F.sparseUnverified}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {sparseExternal ? (

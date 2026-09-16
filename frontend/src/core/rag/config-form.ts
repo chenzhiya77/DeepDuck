@@ -285,16 +285,82 @@ export function isEmbeddingChange(
  * immediately, before anything is saved. `providers` is the server's capability list; missing
  * data — an older response, or a provider the server did not list — answers `false`, because
  * an unknown is not a defect and warning about what we cannot know is worse than silence.
+ *
+ * `probe` adds the model-level answer (see `resolveSparseCapability`), so a model the platform
+ * itself refused is caught the same way as a dense-only dialect.
  */
 export function isSparseSourceUnsupported(
   values: RagConfigFormValues,
   providers: readonly RagEmbeddingProviderCapability[] | undefined,
+  probe?: SparseProbeVerdict | null,
 ): boolean {
   if (values.embedding_sparse_source !== "provider") return false;
+  return resolveSparseCapability(values, providers, probe) === "unsupported";
+}
+
+/**
+ * What a probe learned about one candidate configuration (spec 2026-09-16 §3 D3), carrying the
+ * values it was taken for. The key is not decoration: a verdict without it would be applied to
+ * whatever the form says later, which is exactly how a just-refused model slips through.
+ */
+export interface SparseProbeVerdict {
+  key: string;
+  status: "supported" | "unsupported" | "unverifiable";
+}
+
+/**
+ * The identity a probe verdict belongs to (spec §3 D4.2): the three values that decide what the
+ * call would actually ask. Everything else on the form is a different leg or a different
+ * question — the sparse source *is* the question being asked, so it is deliberately not part of
+ * the key.
+ */
+export function sparseProbeKey(values: RagConfigFormValues): string {
+  return [
+    values.embedding_provider,
+    values.embedding_model.trim(),
+    values.embedding_base_url.trim(),
+  ].join("|");
+}
+
+/** The three-state answer the UI renders (spec §3 D2). */
+export type SparseCapability = "supported" | "unsupported" | "unknown";
+
+/**
+ * Combine the two sources that know something about the sparse half (spec §3 D2).
+ *
+ * The allowlist answers the *dialect* question for free — a provider that cannot emit sparse at
+ * all needs no call. Whether a particular model on a capable provider does is only knowable by
+ * asking it, so that answer is taken from the probe, and **only** when the probe was run for
+ * exactly these values. Anything unproven is `unknown`, which the caller must treat as no worse
+ * than today (see `isSparseProviderOptionDisabled`).
+ */
+export function resolveSparseCapability(
+  values: RagConfigFormValues,
+  providers: readonly RagEmbeddingProviderCapability[] | undefined,
+  probe: SparseProbeVerdict | null | undefined,
+): SparseCapability {
   const capability = providers?.find(
     (provider) => provider.provider_id === values.embedding_provider,
   );
-  return capability?.emits_sparse === false;
+  if (capability?.emits_sparse === false) return "unsupported";
+  if (probe?.key !== sparseProbeKey(values)) return "unknown";
+  if (probe.status === "supported") return "supported";
+  if (probe.status === "unsupported") return "unsupported";
+  // "Could not check" is not "cannot do it".
+  return "unknown";
+}
+
+/**
+ * Whether the 「跟随向量模型」 option has to be picked-but-unselectable (spec §3 D4.1).
+ *
+ * Only a *known* refusal disables it: treating `unknown` as a refusal would lock a working
+ * configuration out the moment the platform is unreachable, which is worse than the silence
+ * this whole line set out to fix.
+ */
+export function isSparseProviderOptionDisabled(
+  capability: SparseCapability,
+): boolean {
+  return capability === "unsupported";
 }
 
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */

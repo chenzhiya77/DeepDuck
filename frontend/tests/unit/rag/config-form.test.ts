@@ -22,9 +22,12 @@ import {
   hasFormChanges,
   isCaptionCapable,
   isEmbeddingChange,
+  isSparseProviderOptionDisabled,
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
+  resolveSparseCapability,
+  sparseProbeKey,
   visionReferenceOptions,
 } from "@/core/rag/config-form";
 import type { RagConfigSource, RagConfigView } from "@/core/rag/types";
@@ -568,5 +571,137 @@ describe("isSparseSourceUnsupported", () => {
         [{ provider_id: "openai-compatible", emits_sparse: false }],
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * 稀疏能力是三态（spec 2026-09-16 §3 D2）：名单答得了「provider 这个方言支不支持」，
+ * 答不了「这个具体模型支不支持」——后者只有一次真实探测能答。合成规则把两个来源并成一个
+ * 结论，且**探测结论只对它被测的那组值有效**（换了 model / provider / 地址就当没测过）：
+ * 沿用旧结论会把一个刚被否掉的值放过去。
+ */
+describe("resolveSparseCapability", () => {
+  const PROVIDERS = [
+    { provider_id: "dashscope", emits_sparse: true },
+    { provider_id: "openai-compatible", emits_sparse: false },
+  ];
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(
+      view({
+        embedding_provider: "dashscope",
+        embedding_sparse_source: "provider",
+        embedding_model: "qwen3.7-text-embedding",
+      }),
+    ),
+    ...over,
+  });
+  const probed = (
+    values: ReturnType<typeof form>,
+    status: "supported" | "unsupported" | "unverifiable",
+  ) => ({ key: sparseProbeKey(values), status });
+
+  it("answers from the allowlist when that is already the whole answer", () => {
+    // A dialect that cannot carry a sparse half needs no call at all.
+    expect(
+      resolveSparseCapability(
+        form({ embedding_provider: "openai-compatible" }),
+        PROVIDERS,
+        null,
+      ),
+    ).toBe("unsupported");
+  });
+
+  it("answers from the probe when the question is model-level", () => {
+    const values = form();
+    expect(
+      resolveSparseCapability(values, PROVIDERS, probed(values, "supported")),
+    ).toBe("supported");
+    expect(
+      resolveSparseCapability(values, PROVIDERS, probed(values, "unsupported")),
+    ).toBe("unsupported");
+    // "Could not check" is not "cannot do it": refusing here would reject working setups.
+    expect(
+      resolveSparseCapability(
+        values,
+        PROVIDERS,
+        probed(values, "unverifiable"),
+      ),
+    ).toBe("unknown");
+  });
+
+  it("does not reuse a verdict taken for other values", () => {
+    const values = form();
+    const stale = probed(values, "supported");
+    expect(
+      resolveSparseCapability(
+        form({ embedding_model: "bge-m3" }),
+        PROVIDERS,
+        stale,
+      ),
+    ).toBe("unknown");
+    expect(
+      resolveSparseCapability(
+        form({ embedding_base_url: "https://elsewhere.example.com" }),
+        PROVIDERS,
+        stale,
+      ),
+    ).toBe("unknown");
+    expect(
+      resolveSparseCapability(
+        form({ embedding_provider: "openai-compatible" }),
+        PROVIDERS,
+        stale,
+      ),
+    ).toBe("unsupported"); // the allowlist still knows; only the probe's half is void
+  });
+
+  it("stays unknown until something has actually been probed", () => {
+    expect(resolveSparseCapability(form(), PROVIDERS, null)).toBe("unknown");
+    // A server that predates the capability block cannot be answered for — and must not be
+    // answered with a guess either.
+    expect(resolveSparseCapability(form(), undefined, null)).toBe("unknown");
+    expect(resolveSparseCapability(form(), [], null)).toBe("unknown");
+  });
+});
+
+describe("sparseProbeKey", () => {
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(view({ embedding_sparse_source: "provider" })),
+    ...over,
+  });
+
+  it("binds a verdict to the provider, the model and the endpoint", () => {
+    expect(sparseProbeKey(form())).toBe("dashscope|qwen3.7-text-embedding|");
+    expect(
+      sparseProbeKey(
+        form({
+          embedding_provider: "openai-compatible",
+          embedding_model: "bge-m3",
+          embedding_base_url: "https://api.example.com",
+        }),
+      ),
+    ).toBe("openai-compatible|bge-m3|https://api.example.com");
+  });
+
+  it("ignores the fields a probe does not depend on", () => {
+    // The verdict is about (provider, model, endpoint) — the sparse source is the question
+    // being asked, and rerank/judge/… are other legs entirely.
+    const base = form();
+    expect(sparseProbeKey({ ...base, embedding_sparse_source: "bm25" })).toBe(
+      sparseProbeKey(base),
+    );
+    expect(sparseProbeKey({ ...base, rerank_model: "other" })).toBe(
+      sparseProbeKey(base),
+    );
+  });
+});
+
+describe("isSparseProviderOptionDisabled", () => {
+  it("disables the follow-the-model option only on a known refusal", () => {
+    expect(isSparseProviderOptionDisabled("unsupported")).toBe(true);
+    // Supported and "could not check" both stay selectable: the second one is the whole
+    // point of the third state (a network failure must not lock a working configuration).
+    expect(isSparseProviderOptionDisabled("supported")).toBe(false);
+    expect(isSparseProviderOptionDisabled("unknown")).toBe(false);
   });
 });

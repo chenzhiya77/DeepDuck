@@ -19,11 +19,13 @@ import {
 
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
+import { formValuesFromConfig, sparseProbeKey } from "@/core/rag/config-form";
 import type { RagConfigView } from "@/core/rag/types";
 
 const ragHooksMock = rs.hoisted(() => ({
   useRagConfig: rs.fn(),
   useSaveRagConfig: rs.fn(),
+  useProbeSparseCapability: rs.fn(),
 }));
 const modelHooksMock = rs.hoisted(() => ({
   useModels: rs.fn(),
@@ -53,6 +55,7 @@ const MASKED = "********";
 
 const saveMock = rs.fn();
 const reindexMock = rs.fn();
+const probeMock = rs.fn();
 
 /** What the embedding allowlist reports: only dashscope can supply the sparse half itself. */
 const EMBEDDING_PROVIDERS = [
@@ -62,7 +65,11 @@ const EMBEDDING_PROVIDERS = [
 
 function view(
   over: Partial<RagConfigView["config"]> = {},
-  opts: { providers?: typeof EMBEDDING_PROVIDERS | null } = {},
+  opts: {
+    providers?: typeof EMBEDDING_PROVIDERS | null;
+    /** Per-field provenance this case needs to restate (e.g. a key that comes from the env). */
+    sources?: Record<string, string>;
+  } = {},
 ): RagConfigView {
   return {
     // `null` models a response from a server that predates the capability block.
@@ -99,6 +106,7 @@ function view(
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
       "video.caption_model": "config_file",
+      ...opts.sources,
     },
   };
 }
@@ -109,15 +117,56 @@ function setRag(
     loading?: boolean;
     error?: unknown;
     providers?: typeof EMBEDDING_PROVIDERS | null;
+    sources?: Record<string, string>;
   } = {},
 ) {
   ragHooksMock.useRagConfig.mockReturnValue({
-    view: opts.loading ? undefined : view(over, { providers: opts.providers }),
+    view: opts.loading
+      ? undefined
+      : view(over, { providers: opts.providers, sources: opts.sources }),
     isLoading: opts.loading ?? false,
     error: opts.error ?? null,
   });
   ragHooksMock.useSaveRagConfig.mockReturnValue({ mutate: saveMock, isPending: false });
+  setProbe();
   setKnowledge();
+}
+
+/**
+ * The probe's own stub. Its verdict is bound to the values it was taken for, so the key is
+ * computed the same way the view computes it — otherwise "the conclusion belongs to these
+ * values" would be asserted against a key the test made up.
+ */
+function setProbe(
+  over: {
+    status?: "supported" | "unsupported" | "unverifiable";
+    /** Defaults to the key of an untouched dashscope / qwen3.7-text-embedding form. */
+    key?: string;
+    pending?: boolean;
+  } = {},
+) {
+  probeMock.mockReset();
+  ragHooksMock.useProbeSparseCapability.mockReturnValue({
+    mutate: probeMock,
+    data:
+      over.status === undefined
+        ? undefined
+        : {
+            key:
+              over.key ??
+              sparseProbeKey(
+                formValuesFromConfig(
+                  view({
+                    embedding_provider: "dashscope",
+                    embedding_sparse_source: "provider",
+                  }),
+                ),
+              ),
+            status: over.status,
+            detail: "",
+          },
+    isPending: over.pending ?? false,
+  });
 }
 
 /** 重建入口的默认桩：一个库、空闲、未在提交。 */
@@ -520,6 +569,160 @@ describe("sparse source vs provider capability", () => {
       target: { value: "bge-m3" },
     });
     expect(saveButton().disabled).toBe(false);
+  });
+});
+
+/**
+ * 模型级能力探测（spec 2026-09-16 §3 D2/D4）：名单说得清「provider 这个方言支不支持」，
+ * 说不清「这个具体模型支不支持」——于是选中后就打一次真实调用（只读、不落盘），
+ * 三态里只有 `unsupported` 拦人；`unverifiable` 放行并标「未验证」，因为"没查成"不是"不支持"。
+ */
+describe("sparse capability probe", () => {
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
+  /** An edit that would otherwise unlock Save without touching what the probe was asked about. */
+  const editUnrelated = () =>
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+  const editModel = () =>
+    fireEvent.change(screen.getByLabelText(F.embeddingModel), {
+      target: { value: "bge-m3" },
+    });
+  /** The advanced disclosure is closed — and unmounted — until it is opened. */
+  const openAdvanced = () =>
+    fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
+
+  it("blocks a model the probe proved cannot supply the sparse half", () => {
+    setProbe({ status: "unsupported" });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      F.sparseProviderUnsupported,
+    );
+    // An ordinary edit would normally make Save clickable; this verdict has to keep it blocked,
+    // which is what makes the assertion below about the rule and not about "nothing changed".
+    editUnrelated();
+    expect(saveButton().disabled).toBe(true);
+    expect(saveButton().parentElement?.textContent).toContain(
+      F.sparseProviderUnsupported,
+    );
+  });
+
+  it("drops that verdict the moment the model it was taken for changes", () => {
+    setProbe({ status: "unsupported" });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      F.sparseProviderUnsupported,
+    );
+    // A different model is a different question: answering it with the old verdict would let a
+    // just-refused candidate through (or refuse one nobody has checked).
+    editModel();
+    expect(screen.queryByText(F.sparseProviderUnsupported)).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("keeps the admin's own choice of sparse source untouched", () => {
+    setProbe({ status: "unsupported" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    // Not silently rewritten to an easier value: showing one thing and sending another is
+    // worse than the refusal, and the admin loses the right to know what was chosen.
+    expect(
+      screen.getByLabelText(F.embeddingSparseSource).textContent,
+    ).toContain(F.sparseSourceProvider);
+  });
+
+  it("lets an unverifiable model through, marked as unverified", () => {
+    setProbe({ status: "unverifiable" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.getByText(F.sparseUnverified)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    editUnrelated();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("says nothing extra when the probe confirmed the model", () => {
+    setProbe({ status: "supported" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.queryByText(F.sparseUnverified)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    editUnrelated();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("shows the probe as in flight while it is running", () => {
+    setProbe({ pending: true });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.getByText(F.sparseProbing)).toBeTruthy();
+    // Nothing is claimed while the answer is unknown — and nothing is blocked either.
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not ask the server until the question can be asked at all", async () => {
+    setRag({
+      embedding_provider: "dashscope",
+      embedding_sparse_source: "provider",
+      embedding_model: "",
+    });
+    renderPage();
+    openFunctionalView();
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(probeMock).not.toHaveBeenCalled();
+  });
+
+  it("does not ask when the sparse half is coming from somewhere else", async () => {
+    setRag({
+      embedding_provider: "dashscope",
+      embedding_sparse_source: "bm25",
+    });
+    renderPage();
+    openFunctionalView();
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(probeMock).not.toHaveBeenCalled();
+  });
+
+  it("asks even though the key arrives from the environment", async () => {
+    // The deployed shape: a stored-or-environment key comes back as an empty input box with
+    // `sources[key] === "env"`. Reading "the box is empty" as "no key" would make the whole
+    // feature dead precisely where it is needed.
+    setRag(
+      {
+        embedding_provider: "dashscope",
+        embedding_sparse_source: "provider",
+        embedding_api_key: "",
+      },
+      { sources: { embedding_api_key: "env" } },
+    );
+    renderPage();
+    openFunctionalView();
+
+    expect(
+      screen.getByLabelText<HTMLInputElement>(F.embeddingApiKey).value,
+    ).toBe("");
+    await waitFor(() => expect(probeMock).toHaveBeenCalled(), {
+      timeout: 2000,
+    });
+    expect(probeMock.mock.calls[0]?.[0]).toMatchObject({
+      embedding_provider: "dashscope",
+      embedding_model: "qwen3.7-text-embedding",
+    });
   });
 });
 

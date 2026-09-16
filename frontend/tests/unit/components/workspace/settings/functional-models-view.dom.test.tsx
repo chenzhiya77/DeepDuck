@@ -44,6 +44,13 @@ rs.mock("@/core/i18n/hooks", () => ({
 rs.mock("@/core/rag/hooks", () => ({
   useRagConfig: () => ({ view: hooks.view, isLoading: false, error: null }),
   useSaveRagConfig: () => ({ isPending: false, mutate: rs.fn() }),
+  // The capability probe only decorates the sparse-source row; these display-rule cases
+  // never reach it, so it stays idle (no verdict, nothing in flight).
+  useProbeSparseCapability: () => ({
+    isPending: false,
+    data: undefined,
+    mutate: rs.fn(),
+  }),
 }));
 
 rs.mock("@/core/models/hooks", () => ({

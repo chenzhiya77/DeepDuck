@@ -97,6 +97,23 @@
 
 ## Task 3 — 前端：三态合成 + 置灰 + 自动探测（D2 / D4）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- **纯函数**（`core/rag/config-form.ts`）：`sparseProbeKey` / `resolveSparseCapability` / `isSparseProviderOptionDisabled`，加两个类型（`SparseCapability`、`SparseProbeVerdict`——后者**带 key**，没有它就会出现"把旧结论套到新值上"）。合成规则：名单 `emits_sparse=false` ⇒ `unsupported`（零次出网）；否则只在**探针的键 == 当前表单值**时才采纳结论；`unverifiable` 与非 `supported/unsupported` 一律折成 `unknown`。
+- **`isSparseSourceUnsupported` 由两段并成一段**（同一文件）：加一个可选第三参 `probe`，内部改为委托 `resolveSparseCapability(...) === "unsupported"`。这样"稀疏来源必须是 provider"这条规则仍只有一处，视图不再自己拼条件；既有三条用例原样通过。
+- **wire + hook**：`api.ts` 加 `probeEmbeddingCapability`（POST 新端点，失败仍抛 `RagConfigRequestError`）；`hooks.ts` 加 `useProbeSparseCapability`——mutation 的**入参**是"候选配置 + key"，**出参**是 `{key, status}`，`key` 在发请求前被解构掉（后端 `extra="forbid"`，多一个字段就是 422）；**不** invalidate 配置查询（没落盘），**不** toast（"没查成"是那一行要渲染的状态，不是给人关的弹窗）。
+- **界面**（`functional-models-view.tsx`）：三态各有落点——`unsupported` ⇒ 复用上一版的卡底告警 + Save 旁同一句 + Save 禁用，并把「跟随向量模型」这一项 `disabled` 且**在标签里带一句原因**；探测中 ⇒ 该行「检测中…」；`unverifiable` ⇒ 该行「未验证」，**可保存**；`supported` ⇒ 无额外话。`OptionSelect` 因此多了一个可选 `disabledReasons`（值 → 原因），只有传了原因的项才灰。
+- **i18n 四处不是三处**（实现期的小偏差，见下）：`sparseProbing` / `sparseUnverified` / `sparseProbeHint`（"会产生一次真实调用"，与既有 `sparseSourceHint` 合成同一个 ⓘ）+ **`sparseProviderDenseOnly`**（置灰项里那句短原因）。三份文件（zh / en / `locales/types.ts` 的形状声明）都补了。
+- **两处实现期决定（plan 没写）**：
+  1. **探测加了 400ms 防抖**。plan 的触发条件（dashscope + model 非空 + key 可用）在"刚敲下 model 的第一个字符"就成立 ⇒ 不防抖就是**一个字符一次真实（计费）调用**，六个字符六次。D7 那句"探测由用户动作触发、频率极低"本身就是防抖的依据。
+  2. **别名新键而非复用长句**：置灰项里的原因若复用 `sparseProviderUnsupported`（60+ 字），下拉项会变成一堵墙；故加了一句短的 `sparseProviderDenseOnly`。真正拦人的那句长文案（卡底告警 + Save 旁）完全复用，没有新造第二套表现。
+- **用例**：纯函数 9 条（三态语义 / 键绑定 / 键的构成 / 置灰判据）+ dom 9 条（`unsupported` 拦人、**换了 model 就丢掉旧结论**、不静默改写已选值、`unverifiable` 放行并标「未验证」、`supported` 无话、探测中、没 model 不发、来源不是 provider 不发、**key 来自环境仍要发**）。另修了第二个 dom 文件（`tests/unit/components/.../functional-models-view.dom.test.tsx`）的 hooks mock——它 mock 了整个 `@/core/rag/hooks`，不补 `useProbeSparseCapability` 会整文件红（这正是全量的价值：我先只跑了自己那两个文件）。
+- **四处 neuter 全有牙**：① 去掉"键必须相等"⇒ `does not reuse a verdict` 与 dom 那条"换 model 丢结论"同时红；② 置灰判据改成 `!== "supported"` ⇒ 纯函数那条红（`unknown` 不再放行）；③ 触发条件里把 `sources[...] !== "unset"` 换成"输入框非空"⇒ **env 那条红**（plan 点名最容易漏的形态）；④ 去掉 `source === "provider"` 条件 ⇒ "来源不是 provider 不发"那条红。
+- **门禁**：`eslint` 干净；`tsc` 只剩**一条既有红**（`tests/unit/components/workspace/pet/pet-sprite.dom.test.tsx:222` 把 `"greet"` 传给了一个还没纳入该联合的类型——**该文件与 `src/core/pet/` 都未被本次改动，属另一条在飞线的预存红**，判据：`git status` 对这两个路径为空）；prettier 逐文件比对**十一个文件全部与 HEAD 同数**（`tr -d '\r'` 后走 stdin 的口径，见 `project-env-test-failures`）⇒ 零新增格式债；**全量前端 `rstest run` = 238 文件 / 2516 用例 / 0 失败（2m40s）**。
+  - ⚠️ 第一遍全量是**带毒的**：我在它跑到一半时补了第二个 dom 文件的 hooks mock，于是那一遍恰好 6 红、全在 `functional-models-view.dom.test.tsx`（= 我补的那 6 条）；补完重跑才是上面的全绿。**这也说明"只跑自己改的两个文件"不够**——那个文件 mock 了整个 `@/core/rag/hooks`，视图新增的 hook 一被调用就整文件红。
+
 **RED**
 
 - `frontend/tests/unit/rag/config-form.test.ts`（node）加三条纯函数用例：

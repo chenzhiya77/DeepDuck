@@ -1700,6 +1700,11 @@ export const zhCN: Translations = {
       sparseSourceBm25: "本地 BM25",
       sparseSourceHint:
         "百炼的向量模型一次调用同时给出稠密与稀疏；换成只出稠密的提供方后，这里必须改成「独立稀疏服务」或「本地 BM25」，否则该配置无法启用。",
+      sparseProbeHint:
+        "选中「跟随向量模型」会打一次真实嵌入调用（只读、不保存），用来确认所选模型确实给出稀疏向量。",
+      sparseProbing: "检测中…",
+      sparseUnverified: "未验证",
+      sparseProviderDenseOnly: "该提供商只输出稠密向量，选不了",
       parseProvider: "解析提供方",
       parseBaseUrl: "本地服务地址",
       parseBaseUrlHint: "本地 MinerU 服务不带鉴权，只应部署在内网。",

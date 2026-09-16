@@ -74,3 +74,25 @@ export interface RagConfigView {
 
 /** PUT body: the whole object, standing in for the new file content. */
 export type RagConfigInput = RagConfigValues;
+
+/**
+ * Body of the model-level capability probe (spec 2026-09-16 §3 D3): a *candidate* configuration,
+ * not a saved one. `embedding_api_key` may be the masking sentinel, which the server reads as
+ * "use the stored or environment key" — the admin never has to retype it.
+ */
+export interface RagSparseProbeRequest {
+  embedding_provider: string;
+  embedding_model: string;
+  embedding_base_url?: string | null;
+  embedding_api_key?: string | null;
+}
+
+/**
+ * The probe's verdict: `unsupported` only when the call succeeded and the sparse half came back
+ * empty. Every other failure — unreachable, refused, timed out — is `unverifiable`, which the UI
+ * must not read as a refusal (spec §3 D2/D3).
+ */
+export interface RagSparseProbeResponse {
+  status: "supported" | "unsupported" | "unverifiable";
+  detail: string;
+}
