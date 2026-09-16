@@ -190,14 +190,36 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   「稀疏」 used to be repeated on every row to say what the indent says once. The sparse-source
   select and the provider above it are one **rule**, not two fields: `GET /api/rag/config` returns
   `embedding_providers` (`[{provider_id, emits_sparse}]`, straight off the backend allowlist), and
-  `isSparseSourceUnsupported` in `core/rag/config-form.ts` warns — and disables Save — when the
-  _form's_ provider cannot supply the sparse half it was asked for. Two rules hold it: it is judged
+  `resolveSparseCapability` in `core/rag/config-form.ts` combines that list with a model-level
+  probe into three states — `supported` / `unsupported` / `unknown` — while
+  `isSparseSourceUnsupported` turns a known refusal into the warning (and the disabled Save) when
+  the _form's_ provider is the one being asked for the sparse half. Rules that hold it: it is judged
   from the form value, so switching the picker warns before anything is saved; and **unknown is not
-  unsupported** — a missing capability list or an unlisted provider answers `false`, because the
-  write is refused server-side anyway and a warning we cannot justify is worse than silence. The
-  alert in the card and the sentence beside Save carry the same copy: a disabled button without a
-  reason reads as a broken button. Every explanatory
+  unsupported** — a missing capability list, an unlisted provider, or a probe that could not answer
+  all leave the configuration alone, because the write is refused server-side anyway and a warning
+  we cannot justify is worse than silence. The alert in the card and the sentence beside Save carry
+  the same copy: a disabled button without a reason reads as a broken button. Every explanatory
   sentence sits behind an ⓘ tooltip — only state (the embedding-change warning, the
+  environment-provenance badge, the no-changes hint) stays visible.
+
+  The model-level half of that answer comes from `POST /api/rag/config/probe-embedding` via
+  `useProbeSparseCapability` (spec 2026-09-16 §3 D4.2). Four things about it are load-bearing:
+  (1) **the verdict carries the values it was taken for** (`sparseProbeKey` = `provider|model|
+base_url`), and is only applied when that key still matches the form — editing the model is
+  asking a _different_ question, so the old answer is dropped rather than reused; (2) it fires only
+  when the question can be asked at all — the allowlist says this provider _can_, the form is
+  actually asking it for the sparse half, a model is named, and `sources.embedding_api_key !==
+"unset"`. That last one is deliberately **not** "the input box is not empty": an
+  environment-backed key arrives as an empty box (`sources[key] === "env"`), and reading it as
+  missing would leave the feature dead in exactly the deployment that uses it; (3) it is debounced
+  (`PROBE_DEBOUNCE_MS`), because each probe is one real, billable embedding call and the trigger
+  conditions are already true after the first keystroke of a model id; (4) `unverifiable` is
+  rendered as 「未验证」 and **passes**: only a known `unsupported` greys out 「跟随向量模型」
+  (`isSparseProviderOptionDisabled`) and keeps Save blocked, and the admin's own choice of sparse
+  source is never silently rewritten. The probe writes nothing (no cache invalidation) and reports
+  no toast — "could not check" is a state that row renders, not an error to dismiss.
+
+  Every explanatory sentence sits behind an ⓘ tooltip — only state (the embedding-change warning, the
   environment-provenance badge, the no-changes hint) stays visible. That badge rides *inside* the
   credential field it describes (`SecretInput`: one positioned wrapper, the field's own padding
   spent on it), because beside

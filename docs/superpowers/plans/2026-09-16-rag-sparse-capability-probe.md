@@ -163,23 +163,39 @@
 
 ## Task 5 — 文档同步与真栈验收
 
-- `backend/AGENTS.md`：RAG 配置一节补探针端点（形状、三态、不落盘、不回显密钥、**非稀疏失败一律 unverifiable**）与运行期兜底（**每次检查、判否定持续抛**、只作用 `provider`、为何**不**沿用维度那条 fail-open 缓存）。
-- `frontend/AGENTS.md`：功能模型一节补三态与置灰规则、自动探测的触发条件（**含 env 形态**）、结论绑定到 `provider|model|base_url`、`unverifiable` 的放行语义。
-- 真栈 —— **先分清它能验什么**：
-  1. **已知不支持**：provider 切成 `openai-compatible` ⇒ 选项置灰 / 告警 + Save 灰；
-  2. **`unverifiable`**：清空 model（或断开探测条件）⇒ 可保存 + 标「未验证」；
-  3. **运行期兜底**：手工把 `rag_config.json` 写成 `source=provider` 且目标只出稠密 ⇒ 打一次会嵌入的接口 ⇒ `RagConfigurationError`（可读 400 或该路的降级说明）。每步之后把 `rag_config.json` **逐字节还原**并用 `GET /api/rag/config` 复核。
-  4. **模型级的 `unsupported` 不加进真栈**：除非用户给出一个**真实存在的单路模型 id**，它只在测试层覆盖——用可控桩跑出来的不算真栈验收，这里如实写明，不冒充。
+**状态：已交付 2026-09-16。**
+
+**交付纪要 —— 文档**
+
+- `backend/AGENTS.md`（RAG 配置一节，**纯新增 29 行、零删改**）：探针端点（形状、`extra="forbid"`、三态、`unsupported` 的**唯一**来路、`unverifiable` 带真实原因且截断、不落盘、不回显密钥、有界 10s、名单已知答案零出网、不替代保存期校验）+ 运行期兜底（`_SparseHalfCheckedEmbedder`、`SparseHalfMissingError` 是子类故复用 400 映射、**为什么这里不能照抄维度守卫的"先缓存后抛"**、只包 `provider` 来源）。
+- `frontend/AGENTS.md`（功能模型一节）：三态合成（`resolveSparseCapability`）、置灰与挡 Save 的规则、`unknown` 不是 `unsupported`、自动探测的**四条**要点（结论带键、触发条件含 **env 形态**、防抖、`unverifiable` 放行 + 不静默改写用户选择）。
+- 两份都按 prettier 口径核过：**worktree 与 HEAD 的比对数字相同**（backend 282 / frontend 16）⇒ 零新增格式债。三处按要求改成 `_强调_`（prettier 的偏好），其余保持文件既有写法。
+
+**交付纪要 —— 真栈（`:3000` 前端 + `:8001` 网关，均用户自己起）**
+
+1. **自动探测真的发了**：打开「设置 → 模型 → 功能模型」后网络里出现 `POST /api/rag/config/probe-embedding [200]`（当前部署形态＝百炼 + **env key**，输入框是空的）。它的模型级答复是 `supported`：「模型 'qwen3.7-text-embedding' 一次调用同时返回稠密与稀疏。」——这一次真实调用也顺带证明了探针"只读、不落盘"。
+2. **名单已知的答案零出网**：同一次脚本里对 `openai-compatible` 直接拿到 `unsupported` + 两句出路文案。
+3. **腿一（已知不支持 ⇒ 编辑期拦下）**：把「提供商」切成 OpenAI 兼容 ⇒ 卡底与 Save 旁**同时**出现同一句「当前提供商只输出稠密向量，无法由它提供稀疏…」，Save 禁用；打开下拉，**「跟随向量模型」这一项 `aria-disabled=true`、`opacity: 0.5`、标签里带原因**，另两项可点；**点它没有任何反应**（列表不关、值不变）。
+   - ⚠️ **一处留给眼睛的观察**：当这个置灰项**正是当前值**时，Radix 会把选中项的文本镜像到触发器，于是折叠状态下那一行读作「跟随向量模型 · 该提供商只输出稠密向量，选不了」。语义上没错（存量非法值就是要被赶走），但"它被选中了却选不了"是否读得别扭，由你定；改法只有一处（原因只留在下拉项里），随时可做。
+4. **腿二（`unverifiable` ⇒ 放行 + 标「未验证」）**：把 Model ID 填成一个不存在的 id ⇒ 探针回 `unverifiable`，`detail` 是「未能验证（EmbedderError）：DashScope embedding failed (HTTP 400): InvalidParameter: Model not exist.」（非稀疏原因的失败**带状态码**，正是 §3 D3 要的形状）；界面该行出现「未验证」、**无告警**、**Save 可点**。
+5. **腿三（运行期兜底）**：临时起一个"只出稠密"的桩（一次性脚本，跑完已删），用**真 PUT** 把 `embedding_base_url` 指到它、`sparse_source=provider` ⇒ 打 `POST /api/knowledge-bases/{id}/manual-knowledge`（该路由 **embed → upsert → 落库**，所以拒绝不留残渣）⇒ **400** +「嵌入 provider 返回了空的稀疏向量 ⇒ …」；**连打三次全部 400**（这就是"每次判、判否定持续抛"，没有 fail-open 缓存——维度守卫那条在这里会第二次就静默）；卡片数前后都是 0。
+6. **逐字节还原**：`rag_config.json` 用备份覆盖回（md5 `15fa768a…` 与备份**逐字节相同**，且就是改动前那个值），`GET /api/rag/config` 复核 `embedding_base_url=null`、各字段 source 回到 `config_file`；桩进程已杀、脚本已删；浏览器里被我改过的表单是**未保存**状态，已重载丢弃（UI 复核：Model ID 回到 `qwen3.7-text-embedding`、无告警、Save 显示"没有需要保存的改动"）。
+7. **腿四如实不入册**：模型级 `unsupported` 需要**一个真实存在的单路模型 id**（且要能过百炼方言），我没有它，也不拿可控桩冒充 ⇒ 该状态只在测试层覆盖（`test_reports_a_model_that_returns_dense_only` 用 MockTransport 桩出"HTTP 200 但无 `sparse_embedding`"）。**你给一个真实单路 id，这一腿几分钟就能补上。**
+
+**门禁**：文档改动不触代码；两份指南与 plan 均过 prettier 且与 HEAD 同数。
 
 ---
 
 ## 提交切分
 
-| 提交 | 内容                                      |
-| ---- | ----------------------------------------- |
-| 1    | Task 1（探针端点）+ 用例                  |
-| 2    | Task 2（运行期兜底）+ 用例                |
-| 3    | Task 3（三态与界面）+ 用例                |
-| 4    | Task 4 + Task 5（交代 + 文档 + 真栈结论） |
+| 提交 | 内容                                |
+| ---- | ----------------------------------- |
+| 1    | Task 1（探针端点）+ 用例            |
+| 2    | Task 2（运行期兜底）+ 用例          |
+| 3    | Task 3（三态与界面）+ 用例          |
+| 4    | Task 4（交代：一行 ⓘ + i18n）       |
+| 5    | Task 5（两份 AGENTS.md + 真栈结论） |
+
+**实际落成 5 笔**（原表把 4、5 并成一笔）：每个 Task 各自有门禁与结论，合在一起那两项的结论就无法单独回看。
 
 不改表、不改 `rag_config.json` schema、不动任何默认值。

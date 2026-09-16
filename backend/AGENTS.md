@@ -685,6 +685,35 @@ signature covers `rag_config.json`; `rag` is not in `STARTUP_ONLY_FIELDS`, so a 
 effect on the next ingest or retrieval without a restart. `make support-bundle` includes a redacted
 `rag-summary.json`.
 
+`POST /api/rag/config/probe-embedding` (admin, spec 2026-09-16 §3 D3) answers the one question the
+allowlist cannot: whether a _particular model_ on a capable provider returns the sparse half. It
+takes a candidate `{embedding_provider, embedding_model, embedding_base_url?, embedding_api_key?}`
+(`extra="forbid"`, so it can never become a second unvalidated way to describe the configuration)
+and makes **one real embedding call** through the same `build_embedder` the runtime uses, with the
+candidate's `embedding_sparse_source` forced to `provider`. `embedding_api_key` accepts the masking
+sentinel, meaning "use the stored or environment key" — the admin never retypes it. It answers
+`{status, detail}` in three states: `supported`, `unsupported` (the call succeeded and the sparse
+half came back empty — the **only** way to get this verdict), and `unverifiable` (unreachable,
+refused, timed out; `detail` carries the real reason, folded and truncated to 200 characters).
+Nothing is persisted, the response never contains a key, and the timeout is bounded at 10s (the
+same constant the models `validate` route uses). A provider the allowlist already rules out
+answers `unsupported` from the list, with **zero** network calls. The probe does not replace the
+save-time check: dimensions and addresses remain the PUT's business.
+
+At run time the same promise is enforced once more (spec §3 D5): with
+`embedding_sparse_source='provider'`, `build_embedder` wraps the dense leg in
+`_SparseHalfCheckedEmbedder`, which refuses a result whose `sparse.indices` is empty and raises
+`SparseHalfMissingError` — a `RagConfigurationError` **subclass**, so the gateway's 400 mapping
+covers it with no second registration, while the probe can catch exactly this type to read the
+empty half as the model's _answer_ (`unsupported`) rather than as "could not check"
+(`unverifiable`). Deliberately **not** modelled on `_DimensionCheckedEmbedder`'s once-per-process
+verdict: that one caches _before_ it raises, which is only safe because a wrong width is refused by
+Qdrant downstream, whereas an empty sparse vector is a legitimate value — letting it through once
+would store it and a cache would then skip the check forever, i.e. shout once and stay silent.
+So the check runs on **every** `embed()` and keeps raising while the answer holds, and it wraps
+**only** the `provider` source (under `external`/`bm25` the dense leg's own sparse is discarded by
+`ComposedEmbedder` anyway).
+
 Operational caveat: the vector collections are fixed at 1024 dimensions
 (`knowledge/vector_store.py`) — that is a **hard gate**, not a default: `build_embedder()` refuses a
 non-1024 provider (§4.2). Embedding model changes invalidate existing vectors, and since
