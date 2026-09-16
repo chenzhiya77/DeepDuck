@@ -138,6 +138,9 @@ def test_reports_a_model_that_returns_dense_only(config_env: Path, monkeypatch: 
     # The admin is told what to do instead, in the same words the UI and the runtime use.
     assert "独立稀疏服务" in body["detail"]
     assert "本地 BM25" in body["detail"]
+    # And the verdict came from the run-time guard itself (spec §3 D5), not from a second,
+    # independently written reading of the response — the two must not drift apart.
+    assert "返回了空的稀疏向量" in body["detail"]
 
 
 def test_an_unreachable_platform_is_unverifiable_not_unsupported(config_env: Path, monkeypatch: pytest.MonkeyPatch):

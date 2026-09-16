@@ -21,7 +21,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from deerflow.knowledge.embedder import DashScopeEmbedder, EmbedderAuthError, EmbedderError, RagConfigurationError
+from deerflow.knowledge.embedder import DashScopeEmbedder, EmbedderAuthError, EmbedderError, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.embedder_openai import OpenAICompatibleEmbedder
 from deerflow.knowledge.sparse import BM25SparseEncoder, TEISparseEncoder
@@ -69,6 +69,38 @@ def _openai_transport(recorded: list[httpx.Request], *, dims: int = 1024, order:
 def _openai_embedder(client: httpx.AsyncClient, **kwargs) -> OpenAICompatibleEmbedder:
     kwargs.setdefault("model", "bge-m3")
     return OpenAICompatibleEmbedder(base_url=OPENAI_BASE, client=client, **kwargs)
+
+
+def _dashscope_transport(recorded: list[httpx.Request], *, sparse: bool = True, dims: int = 1024) -> httpx.MockTransport:
+    """Answer the DashScope embedding call locally.
+
+    ``sparse=False`` reproduces the failure this task exists for: HTTP 200, dense filled,
+    ``sparse_embedding`` absent — which the provider turns into an empty ``SparseVector``
+    without complaining (``embedder.py`` ``or []``).
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        import json
+
+        texts = json.loads(request.content.decode())["input"]["texts"]
+        items: list[dict[str, object]] = []
+        for index in range(len(texts)):
+            item: dict[str, object] = {"text_index": index, "embedding": [0.0] * dims}
+            if sparse:
+                item["sparse_embedding"] = [{"index": 7, "value": 0.5}]
+            items.append(item)
+        return httpx.Response(200, json={"output": {"embeddings": items}})
+
+    return httpx.MockTransport(handler)
+
+
+def _stub_dashscope_config(monkeypatch, **rag_updates):
+    """DashScope with an explicit key, so the outcome never depends on the ambient env."""
+    rag_updates.setdefault("embedding_provider", "dashscope")
+    rag_updates.setdefault("embedding_model", "qwen3.7-text-embedding")
+    rag_updates.setdefault("embedding_api_key", "sk-test")
+    _stub_config(monkeypatch, **rag_updates)
 
 
 # ── OpenAI-compatible dense provider ────────────────────────────────────────
@@ -125,13 +157,16 @@ async def test_openai_embedder_splits_batches_and_reports_auth_failure():
 @pytest.mark.asyncio
 async def test_build_embedder_defaults_to_dashscope_and_keeps_its_sparse(monkeypatch):
     """老配置（什么都不设）⇒ 百炼 + 同出双路，行为与今天一致；且它自证维度、无需探测。"""
+    from deerflow.knowledge import embedder_factory as factory_mod
     from deerflow.knowledge.providers import resolve_provider
 
     _stub_config(monkeypatch)
 
     embedder = build_embedder()
 
-    assert isinstance(embedder, DashScopeEmbedder), "默认仍是百炼实现，不套组合层"
+    # 仍是百炼实现、**没有套组合层（甲）**——外面只有那道「要求了稀疏就必须拿到」的运行期守卫。
+    assert isinstance(embedder, factory_mod._SparseHalfCheckedEmbedder)
+    assert isinstance(embedder._inner, DashScopeEmbedder)
     assert resolve_provider("embedding", "dashscope").pins_dimension is True
 
 
@@ -260,3 +295,50 @@ async def test_non_pinning_provider_mismatch_is_not_an_embedder_error(monkeypatc
 
     assert not isinstance(excinfo.value, EmbedderError)
     assert "重建" in str(excinfo.value), "错误里要指向重建入口这条出路"
+
+
+# ── run-time fallback: a provider that promised sparse and did not deliver ──
+
+
+@pytest.mark.asyncio
+async def test_provider_sparse_that_comes_back_empty_is_refused(monkeypatch):
+    """HTTP 200 但稀疏为空 ⇒ 拒绝启用的那一路，而不是静静建一个没有稀疏的索引。
+
+    ``SparseHalfMissingError`` 而不是基类：探针正是靠这个类型把"模型答复了：不出稀疏"
+    与"没能查成"分开，所以它是契约的一部分，不该只靠消息文本钉住。
+    """
+    recorded: list[httpx.Request] = []
+    _stub_dashscope_config(monkeypatch, embedding_sparse_source="provider")
+
+    async with httpx.AsyncClient(transport=_dashscope_transport(recorded, sparse=False)) as client:
+        with pytest.raises(SparseHalfMissingError, match="bm25"):
+            await build_embedder(client=client).embed(["一段文本"])
+
+    assert len(recorded) == 1, "判定发生在一次真实嵌入之后，不是构造期"
+
+
+@pytest.mark.asyncio
+async def test_the_refusal_repeats_on_every_call(monkeypatch):
+    """每次嵌入都判 —— 不缓存「已判过」（空稀疏是合法值，放过一次就真写进库了）。"""
+    recorded: list[httpx.Request] = []
+    _stub_dashscope_config(monkeypatch, embedding_sparse_source="provider")
+
+    async with httpx.AsyncClient(transport=_dashscope_transport(recorded, sparse=False)) as client:
+        embedder = build_embedder(client=client)
+        for _ in range(2):
+            with pytest.raises(RagConfigurationError):
+                await embedder.embed(["一段文本"])
+
+    assert len(recorded) == 2, "两次调用两次判定，没有「喊一声就永久静默」"
+
+
+@pytest.mark.asyncio
+async def test_a_configured_sparse_source_is_not_judged(monkeypatch):
+    """其它来源下稠密侧那份稀疏本来就被 ComposedEmbedder 丢弃 ⇒ 不该在这里拦。"""
+    recorded: list[httpx.Request] = []
+    _stub_dashscope_config(monkeypatch, embedding_sparse_source="bm25")
+
+    async with httpx.AsyncClient(transport=_dashscope_transport(recorded, sparse=False)) as client:
+        results = await build_embedder(client=client).embed(["一段文本"])
+
+    assert results[0].sparse.indices, "稀疏来自 BM25，空的那份是稠密 provider 的，被组合层丢掉"

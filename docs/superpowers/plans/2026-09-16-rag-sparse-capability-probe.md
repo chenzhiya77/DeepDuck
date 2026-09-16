@@ -4,7 +4,7 @@
 **Status:** 未开工（2026-09-16 起草）
 **前序:** [2026-09-16-rag-sparse-compatibility-guard.md](2026-09-16-rag-sparse-compatibility-guard.md)（已交付：provider 级能力下发 + 编辑期拦截 + 保存期同段判定 + `RagConfigurationError`）
 
-**Architecture:** 把"这个模型能不能自己出稀疏"从**声明**变成**实测**：`dashscope` 保留允许名单那一行（方言支持），但"具体模型支不支持"由一次只读探针（照 `POST /api/models/config/validate` 的先例，不落盘、有界超时）给出**三态**结论；界面把"允许名单 + 探针"合成一个 `sparseCapability`，已知不支持就把「跟随向量模型」置灰，探测不支持就落值报红并挡 Save，探测不到（`unverifiable`）**放行**并标「未验证」。运行期再加一道兜底：`source=provider` 时若真实嵌入拿不到稀疏 ⇒ `RagConfigurationError`（每进程只判一次，与维度认证同模式），让"探不到的角落"也不再有静默降级。**默认值一个都不动。**
+**Architecture:** 把"这个模型能不能自己出稀疏"从**声明**变成**实测**：`dashscope` 保留允许名单那一行（方言支持），但"具体模型支不支持"由一次只读探针（照 `POST /api/models/config/validate` 的先例，不落盘、有界超时）给出**三态**结论；界面把"允许名单 + 探针"合成一个 `sparseCapability`，已知不支持就把「跟随向量模型」置灰，探测不支持就落值报红并挡 Save，探测不到（`unverifiable`）**放行**并标「未验证」。运行期再加一道兜底：`source=provider` 时若真实嵌入拿不到稀疏 ⇒ `RagConfigurationError` 的子类 `SparseHalfMissingError`（**每次嵌入都判、不做 fail-open 缓存**，理由见 Task 2），让"探不到的角落"也不再有静默降级。**默认值一个都不动。**
 
 **依赖顺序**：Task 0（三项核实）→ Task 1（探针）与 Task 2（运行期兜底）可并行但按序提交 → Task 3 依赖 Task 1 → Task 4、Task 5 收尾。
 
@@ -60,18 +60,36 @@
 
 ## Task 2 — 后端：运行期兜底（D5）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- **实现**（`embedder_factory.py`）：`_SparseHalfCheckedEmbedder`，**只在 `source=provider` 时**包在稠密实现外面；每次 `embed()` 拿到结果后判 `results[0].sparse.indices`，空则抛 `SparseHalfMissingError`。类 docstring 写明为什么不照抄 `_DimensionCheckedEmbedder` 的"先缓存后抛"（那个先例之所以安全是因为维度不符会被 Qdrant 拒收，而空稀疏是合法值、写进去就是永久静默）；模块 docstring 由"三件事"改为"四件事"。
+- **新类型**（`embedder.py`）：`SparseHalfMissingError(RagConfigurationError)`——子类，**继承**网关那条 400 映射（无需第二次注册），并让**探针按它给出 `unsupported`**（`rag_config.py` 的 `except SparseHalfMissingError` 排在通用 `except` 之前）。这是**实现期才暴露的跨任务耦合**：探针原先靠自己再读一遍 `results[0].sparse.indices`，守卫先抛之后那条读法永远收不到结果。
+- **用例 3 条**（`tests/knowledge/test_embedder_providers.py`）：空稀疏被拒（且断言那一次真实调用确实发生过，即"判定在调用之后、不是构造期"）、**连续两次都抛**、`source=bm25` + 稠密侧空稀疏**不抛**（控制组）。另有两处既有断言改动：默认路径那条由 `isinstance(embedder, DashScopeEmbedder)` 改成钉住**多出来的一层包装**（`_SparseHalfCheckedEmbedder`，`_inner` 才是 DashScope，且它自证维度）；探针那条补一句"答复来自守卫本身"的断言；`test_rag_configuration_error.py` 补一条子类继承 400 映射的用例。
+- **RED 时 3 红 1 绿**：绿的那条是 bm25 控制组（本来就该绿）。**并且额外逮住一条没预料到的红**：`test_rag_config_probe.py::test_reports_a_model_that_returns_dense_only`——探针把"模型说不支持"错报成 `unverifiable`，正是上面那个耦合。
+- **三次 neuter 全有牙**：① 加一个 fail-open「已判过」缓存 ⇒ **只有**重复那条红；② 把包装无条件套到稠密侧 ⇒ **7 红**（含 bm25 控制组与几条结构断言）；③ 守卫退回抛基类 ⇒ 探针那条红。
+- **门禁**：窄面（`tests/knowledge/` + `test_rag_config_api/probe/configuration_error`）**1194 项 1 failed**（就是上面那条耦合，修好后 58 项全绿）；`ruff check` 干净，`ruff format --check` 干净——**一处既有例外**：`tests/knowledge/tools/test_graph_search.py` 在 HEAD 上就没被当前 ruff 版本格式化过（既非 CRLF 产物、内容也确实需要重排），与本次无关，未动。
+- **全量后端 135 failed / 12360 passed / 109 skipped（17:31）**。与 Task 1 那轮基线（144 / 12347）**双向差集非空**：12 条由红转绿、3 条由绿转红，**15 条全在我没碰过的文件里**（`test_checkpointer` 打包、`test_dev_entrypoint` 元字符、`test_pnpm_script`、`test_thread_id_route_contract`、`test_invoke_acp_agent_tool`）。那 3 条新红的两类机制**都不是本次代码路径**：
+  1. `test_pnpm_script` 两条：子进程 stderr 里带 GBK 字节（cmd.exe 的 AutoRun 把 `DOSKEY` 报错写进 stderr）⇒ `text=True` 的读线程抛 `UnicodeDecodeError` ⇒ `result.stderr` 成了 `None`（失败形态就是 `TypeError: argument of type 'NoneType' is not iterable`，pytest 的 `PytestUnhandledThreadExceptionWarning` 里有完整栈）。
+  2. `test_invoke_acp_agent_tool` 一条：ACP 握手阶段抛了一个**消息为空**的 `TimeoutError`（`conn.initialize` 没有超时包装，`str(TimeoutError())` 就是空串），配置的 2s 超时分支根本没走到——`elapsed < 10` 那条断言是过的。
+     这三个文件在 HEAD 上都是未修改状态，且不被本次改动 import；`test_pnpm_script.py` 只 import `pathlib/json/os/subprocess/sys`。**RAG/嵌入相关用例零新增红**（失败集里 5 条带 knowledge 字样的全部在基线上就红：`local_skill_storage` 的三条 symlink 用例 + `migration_0016` 两条）。
+- **提交**：本笔 `feat(rag): refuse a provider that promises sparse and returns none`（含 spec/plan 同步）。
+
 **RED**
 
 - `backend/tests/knowledge/test_embedder_providers.py` 加：
   1. `source=provider` + 桩"只返 dense" ⇒ `RagConfigurationError`，且消息含两条出路；
   2. **连续两次嵌入都抛**——**不**做 fail-open 缓存（不要照抄维度守卫的"先缓存后抛"：空稀疏是合法值，放过一次就真写进库，此后永久静默）；
   3. `source=bm25` / `external` + 空稀疏 ⇒ **不抛**（那一半本来被 `ComposedEmbedder` 丢弃）。
+- **这一版还会改到一条既有断言**（契约可见的变化，要在提交信息里说明）：`test_build_embedder_defaults_to_dashscope_and_keeps_its_sparse` 现在钉的默认路径外面**多了一层守卫包装**（`_SparseHalfCheckedEmbedder`，里面才是 `DashScopeEmbedder`）——"不套组合层（甲）"这句仍然成立，只是外层不再裸装。
 
 **GREEN**
 
-- `embedder_factory.py` 加一个包装（结构上与 `_DimensionCheckedEmbedder` 相似，但**语义相反**）：`source=provider` 时每次真实嵌入都检查 `results[0].sparse.indices` 是否为空 ⇒ 空则抛 `RagConfigurationError`。
+- `embedder_factory.py` 加一个包装（结构上与 `_DimensionCheckedEmbedder` 相似，但**语义相反**）：`source=provider` 时每次真实嵌入都检查 `results[0].sparse.indices` 是否为空 ⇒ 空则抛 `SparseHalfMissingError`（`RagConfigurationError` 子类）。
 - **不要**加进程级"已判过"缓存；代码注释里写明为什么这里不能沿用维度那条先例（维度不符会被 Qdrant 拒收，空稀疏不会）。
 - 注意**只在 `source=provider` 时包装**（其它来源不走这条）。
+- **实现时发现并补上的一处跨任务耦合**：拒绝类型用 `RagConfigurationError` 的**子类** `SparseHalfMissingError`，并让**探针按它给出 `unsupported`**（`except SparseHalfMissingError` 排在通用 `except` 之前）。原因是探针原先靠自己再读一遍 `results[0].sparse.indices`——加上这道守卫之后，空稀疏**在返回前就抛了**，那条读法永远收不到结果，探针会把"模型说不支持"错报成 `unverifiable`（已由 `test_rag_config_probe.py::test_reports_a_model_that_returns_dense_only` 当场变红逮住）。用子类而不是 `RagConfigurationError` 本身：探针必须把"模型答复了"与"没能查成"分开，两者都以异常形式出现。（提交时这一改动落在 Task 2 那笔，因为它是这道守卫引入的。）
 
 **门禁**：全量（动了共享层）。
 

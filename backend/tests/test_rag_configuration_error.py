@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from deerflow.knowledge.embedder import RagConfigurationError
+from deerflow.knowledge.embedder import RagConfigurationError, SparseHalfMissingError
 
 _MESSAGE = "嵌入 provider 'openai-compatible' 只输出稠密向量 ⇒ 请改为「独立稀疏服务」或「本地 BM25」。"
 
@@ -50,6 +50,22 @@ def test_the_registered_handler_answers_400_with_the_message(gateway_handlers):
     @probe.get("/boom")
     def _boom() -> None:
         raise RagConfigurationError(_MESSAGE)
+
+    with TestClient(probe) as client:
+        response = client.get("/boom")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == _MESSAGE
+
+
+def test_the_empty_sparse_refusal_inherits_that_mapping(gateway_handlers):
+    """The run-time guard's narrower type is answered the same way, with no second registration."""
+    probe = FastAPI()
+    probe.add_exception_handler(RagConfigurationError, gateway_handlers[RagConfigurationError])
+
+    @probe.get("/boom")
+    def _boom() -> None:
+        raise SparseHalfMissingError(_MESSAGE)
 
     with TestClient(probe) as client:
         response = client.get("/boom")

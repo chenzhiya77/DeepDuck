@@ -1,6 +1,6 @@
 """Build the configured embedder — dense provider, sparse route, and their wiring (spec §4.2).
 
-Three things are decided here, and they are the reason this is a module rather than a call
+Four things are decided here, and they are the reason this is a module rather than a call
 to one class:
 
 1. **Who embeds.** ``rag.embedding_provider`` resolves through the curated allowlist (same
@@ -15,6 +15,9 @@ to one class:
    measured once per process — reused from the first real embedding, so the certification
    costs no extra round trip — and a non-1024 width is refused with a pointer at the rebuild
    entry, which is the documented way out (§4.2 维度 #4).
+4. **Whether the sparse half actually arrived.** ``sparse_source=provider`` trusts the
+   allowlist and the model-level probe, but a probe cannot cover every call, so the same
+   build wraps the result in a check that refuses an empty sparse vector (D5).
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import logging
 from typing import Any
 
 from deerflow.config.app_config import get_app_config
-from deerflow.knowledge.embedder import ComposedEmbedder, Embedder, RagConfigurationError
+from deerflow.knowledge.embedder import ComposedEmbedder, Embedder, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.providers import resolve_provider
 from deerflow.knowledge.sparse import BM25SparseEncoder
 
@@ -66,6 +69,36 @@ class _DimensionCheckedEmbedder:
         return results
 
 
+class _SparseHalfCheckedEmbedder:
+    """Refuse a provider that promised the sparse half and returned an empty one.
+
+    Semantically the *opposite* of ``_DimensionCheckedEmbedder``, and deliberately not
+    modelled on its once-per-process verdict. That precedent caches **before** it raises
+    (``_PROBED_DIMENSIONS[key] = measured`` sits above ``if measured != 1024``), which is
+    only safe because a wrong width is refused downstream anyway: Qdrant rejects the write.
+    An empty sparse vector is a *legitimate value* — letting it through once means it is
+    really stored, and a "judged already" cache would skip the check on every later call,
+    i.e. shout once and stay silent forever, which is worse than the silence we started
+    with. So the check runs on every embedding and keeps raising while the answer holds.
+
+    The refusal is a ``SparseHalfMissingError`` so the capability probe can read an empty
+    sparse half as the model's answer (``unsupported``) rather than as "could not check".
+    """
+
+    def __init__(self, inner: Embedder) -> None:
+        self._inner = inner
+
+    @property
+    def batch_size(self) -> int:
+        return self._inner.batch_size
+
+    async def embed(self, texts, *, text_type: str = "document"):
+        results = await self._inner.embed(texts, text_type=text_type)
+        if results and not results[0].sparse.indices:
+            raise SparseHalfMissingError("嵌入 provider 返回了空的稀疏向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。")
+        return results
+
+
 def build_embedder(config: Any | None = None, *, rag: Any | None = None, client: Any | None = None) -> Embedder:
     """Instantiate the configured embedder (dense + sparse route).
 
@@ -97,7 +130,9 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
 
     dense = _build_dense(spec, rag, declared, client)
     if sparse_source == "provider":
-        return dense
+        # The provider was trusted to supply both halves (allowlist + the model-level probe);
+        # this is the fallback for the corners the probe could not reach (D5).
+        return _SparseHalfCheckedEmbedder(dense)
 
     sparse = _build_sparse(rag, sparse_source, client)
     return ComposedEmbedder(dense=dense, sparse=sparse)

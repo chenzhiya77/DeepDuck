@@ -60,6 +60,17 @@ class RagConfigurationError(ValueError):
     """
 
 
+class SparseHalfMissingError(RagConfigurationError):
+    """The provider answered, and the sparse half was empty.
+
+    A distinct type because the capability probe has to tell this apart from every other
+    refusal: here the model has *answered* "I do not do sparse" (``unsupported``), while an
+    unreachable endpoint or a rejected key only means "could not check" (``unverifiable``).
+    Both leave the same call as exceptions, so without a type the probe would have to read
+    the message. Inherits the gateway's 400 mapping unchanged.
+    """
+
+
 @dataclass(slots=True)
 class EmbeddingResult:
     """One text's dense+sparse vector pair from a single DashScope call."""

@@ -35,7 +35,7 @@ from deerflow.config.rag_config_file import (
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
-from deerflow.knowledge.embedder import RagConfigurationError
+from deerflow.knowledge.embedder import RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
 
@@ -371,6 +371,14 @@ async def probe_embedding_capability(
     try:
         embedder = build_embedder(config, rag=candidate)
         results = await asyncio.wait_for(embedder.embed([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+    except SparseHalfMissingError as exc:
+        # The call succeeded and the sparse half was empty: the model has answered. The
+        # run-time guard raises this instead of handing back an empty vector, which is why
+        # the answer arrives as an exception here (spec §3 D5).
+        return RagSparseProbeResponse(
+            status="unsupported",
+            detail=f"模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}（{_probe_detail(str(exc))}）",
+        )
     except Exception as exc:  # noqa: BLE001 — this route's job is to always answer with a status
         logger.warning("embedding capability probe failed for %s/%s", body.embedding_provider, body.embedding_model, exc_info=True)
         return RagSparseProbeResponse(

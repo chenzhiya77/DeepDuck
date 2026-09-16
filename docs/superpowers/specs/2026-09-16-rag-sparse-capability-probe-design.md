@@ -79,8 +79,10 @@
 
 ### D5 —— 运行期兜底（探不到的角落）
 
-`source=provider` 时，若一次真实嵌入的响应里 `sparse_embedding` 为空/缺失 ⇒ 抛 `RagConfigurationError`（复用已建的类型与网关 400 映射），文案给出两条出路（独立稀疏服务 / 本地 BM25）。
+`source=provider` 时，若一次真实嵌入的响应里 `sparse_embedding` 为空/缺失 ⇒ 抛 `SparseHalfMissingError`——`RagConfigurationError` 的**子类**，因此**继承**网关那条 400 映射，不需要第二次注册。文案给出两条出路（独立稀疏服务 / 本地 BM25）。
 
+- **为什么要是单独的类**：探针必须把"模型答复了：我不出稀疏"（⇒ `unsupported`）与"压根没能查成"（⇒ `unverifiable`）分开，而这两者在**同一次调用里都表现为异常**；没有专门类型，探针就只能去读错误消息的文本。
+- **探针复用这道判定，不另写一遍**：探针那侧的 `unsupported` 就**来自这个异常**（不再自己再读一次响应），所以"编辑期的结论"与"运行期的拒绝"由构造保证一致，不可能各自漂移。
 - **每次检查、判否定就持续抛**——**不**照抄 `_DimensionCheckedEmbedder` 的"每进程只判一次"。那个先例是**先缓存后抛**（`_PROBED_DIMENSIONS[key] = measured` 写在 `if measured != 1024: raise` **之前**），它之所以安全：维度不符的向量会被 Qdrant 拒收，写不进去。**空稀疏却是合法值** ⇒ 放过一次就真写进去了，此后每次调用都跳过检查——等于"喊一声然后永久静默"，**比现状更隐蔽**。
 - 因此**不做 fail-open 缓存**：判空是对返回对象的 O(1) 检查，缓存买不到什么；真要缓存也只能缓存**"已验证能出稀疏"**这一侧（判否定必须每次都抛）。
 - 该判定**只作用于 source=provider**：其它来源下 dense 侧的稀疏本来就是被丢弃的（`ComposedEmbedder`），不该管。
@@ -118,7 +120,7 @@
 1. 探针四态：桩**返回稀疏** ⇒ `supported`；桩**只返 dense** ⇒ `unsupported`；**网络失败/超时** ⇒ `unverifiable`；**鉴权被拒（401）**⇒ `unverifiable` 且 `detail` 含状态码（**不是** `unsupported`）。注：维度失败在这条路上不可达，见 §3 D3 的实现更正。
 2. 探针**不落盘**：调用前后 `rag_config.json` 逐字节相同；响应体里**不含**提交的 key。
 3. **名单已知的答案不打电话**：provider 说 `emits_sparse=false` ⇒ 直接 `unsupported`，且**零次**出网调用。
-4. 运行期兜底：`source=provider` + 空稀疏 ⇒ `RagConfigurationError`；**连续两次嵌入都抛**（不做 fail-open 缓存）；`source=bm25/external` 时空稀疏**不抛**（那一半本来就被丢弃）。
+4. 运行期兜底：`source=provider` + 空稀疏 ⇒ `SparseHalfMissingError`（`RagConfigurationError` 子类，仍走 400）；**连续两次嵌入都抛**（不做 fail-open 缓存）；`source=bm25/external` 时空稀疏**不抛**（那一半本来就被丢弃）。探针的 `unsupported` 由**这一个**判定给出（探针不再自己读一遍响应）。
 5. 既有行为不变：`embedding_sparse_source` 的后端默认仍是 `provider`（一条断言钉住）。
 
 **前端**
