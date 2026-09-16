@@ -224,6 +224,17 @@ base_url`), and is only applied when that key still matches the form — editing
   open. It is a _sibling_ of `SelectValue` and never a child, because Radix mirrors the selected
   item's text into the trigger — a child would be copied into the option labels too.
 
+  The external sparse service has its own probe (connectivity spec §3 D4), because a wrong port or a
+  service that is not up used to surface as "some chunks failed" at ingest time. Its state rides in
+  the **address field** (`接口地址`, the one you fix when it is wrong): same in-field slot idea, reserved
+  padding rather than a line of its own. Three states, none of them blocking: `ok` (silent), and
+  `连不上` / `没返回词项` — the second is deliberately _not_ the first, because a reachable service that
+  returns no terms sends the admin to the model, not to the network. It fires when the source is
+  `external` **and** an address is present (debounced, once per `provider|address|has-key`), and a key
+  counts as present when the deployment stores one or the environment backs it. **It only reports** —
+  a service that is down now may be up in a minute, and blocking the save would repeat the mistake the
+  `unverifiable` rule exists to avoid.
+
   Every explanatory sentence sits behind an ⓘ tooltip — only state (the embedding-change warning, the
   environment-provenance badge, the no-changes hint) stays visible. That badge rides *inside* the
   credential field it describes (`SecretInput`: one positioned wrapper, the field's own padding

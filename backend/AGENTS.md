@@ -700,6 +700,18 @@ same constant the models `validate` route uses). A provider the allowlist alread
 answers `unsupported` from the list, with **zero** network calls. The probe does not replace the
 save-time check: dimensions and addresses remain the PUT's business.
 
+`POST /api/rag/config/probe-sparse` (admin, connectivity spec §3 D1–D3) is the same shape pointed at
+the _external sparse service_: one real `/embed_sparse` call, nothing persisted, no key echoed,
+bounded by the same 10s. It answers `{status, detail}` in three states — `ok`, `empty` (reachable and
+shaped right, but no terms came back, which is the silent degradation this whole line exists for),
+and `unreachable` (unreachable, refused, timed out, wrong shape; the reason rides in `detail`). A
+provider outside the `sparse` allowlist — including the empty id — is a 422, because this leg has no
+"let the service decide": `external` requires a concrete provider. Unlike the capability probe it
+calls the allowlist's encoder **directly** rather than `build_embedder`, so the dense leg is not
+dragged into a question it has nothing to do with. **Nothing here blocks a save**: a service that is
+down now may be up in a minute, and refusing the write would repeat the mistake the `unverifiable`
+rule exists to avoid — the probe reports, the admin decides.
+
 At run time the same promise is enforced once more (spec §3 D5): with
 `embedding_sparse_source='provider'`, `build_embedder` wraps the dense leg in
 `_SparseHalfCheckedEmbedder`, which refuses a result whose `sparse.indices` is empty and raises

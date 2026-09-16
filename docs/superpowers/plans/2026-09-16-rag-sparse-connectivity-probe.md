@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-16-rag-sparse-connectivity-probe-design.md](../specs/2026-09-16-rag-sparse-connectivity-probe-design.md)
-**Status:** 未开工（2026-09-16 起草）
+**Status:** 已交付 2026-09-17（Task 1–3 全部完成，含真栈两条腿）
 **Parent:** [2026-09-16-rag-sparse-capability-probe.md](2026-09-16-rag-sparse-capability-probe.md)（模型级能力探针；本计划是它的增量，形状逐条对齐）
 
 **Architecture:** 把嵌入侧探针（`POST /api/rag/config/probe-embedding`）的**同一套形状**补到"外部稀疏服务"这一格：admin、只读不落盘、有界超时、失败返回状态而不是抛。判定**直接构造 allowlist 里那个稀疏 encoder** 并真打一次 `/embed_sparse`（不经过 `build_embedder`，避免连带要求稠密配置完整）。界面沿用刚立的规矩——状态**骑在接口地址字段内**（`trailing` 插槽），**只报不拦**。
@@ -64,19 +64,37 @@
 
 ## Task 3 — 文档同步与真栈
 
-- [ ] `backend/AGENTS.md`：RAG 配置一节补新端点（形状、三态、只读、**只报不拦**、422 条件）。
-- [ ] `frontend/AGENTS.md`：功能模型一节补这条探针（落在接口地址行、触发条件、三态语义、只报不拦）。
-- [ ] 真栈：① 地址指向一个**不存在的端口** ⇒ 编辑期出现「未连通」且 Save 仍可点；② 地址指向一个**真的 TEI 形状桩** ⇒ 状态转为正常（无话）；③ 全程**未保存**，`rag_config.json` 逐字节复核。
-- [ ] **门禁**：文档过 prettier；`rag_config.json` md5 不变。
+**状态：已交付 2026-09-17。**
+
+**交付纪要 —— 文档**
+
+- `backend/AGENTS.md`（RAG 配置一节，**纯新增 12 行**）：新端点与它的每一条（只读不落盘、不回显密钥、同一个 10s、三态、`empty` 为什么单独成态、非 allowlist/空 id ⇒ 422、**直接调 allowlist 的 encoder 而不走 `build_embedder`** 及理由、**只报不拦**）。
+- `frontend/AGENTS.md`（功能模型一节）：状态骑在**接口地址字段**内、三态里两态是警告且**都不拦保存**、触发条件（来源 external + 地址非空，防抖，按 `provider|address|has-key` 只探一次）、key 的判据（存过或环境提供）。
+- 两份都按 prettier 口径核过：worktree 与 HEAD 的比对数字相同（backend 282 / frontend 16）⇒ 零新增格式债。
+
+**交付纪要 —— 真栈（`:3000` 前端 + `:8001` 网关）**
+
+1. **地址指向死端口**（`http://127.0.0.1:8199`）⇒ `接口地址` 字段内出现「**连不上**」，而**Save 仍可点**（探针只报不拦）。
+2. **地址指向一个真的 TEI 形状桩**（本机 `127.0.0.1:8124`，`POST /embed_sparse` → `[[{index,value}]]`，一次性脚本跑完即删）⇒ 标记**消失**（`ok`）。
+3. **两条真实 HTTP 响应**（从页面直接打线上端点）：
+   - 死端口 ⇒ `{"status": "unreachable", "detail": "未能连通（EmbedderError）：sparse service request failed: All connection attempts failed"}`；
+   - 活桩 ⇒ `{"status": "ok", "detail": "稀疏服务已连通，并返回了词项。"}`。
+4. **全程未保存**：`GET /api/rag/config` 复核落盘值仍是 `embedding_sparse_source=provider` / `sparse_base_url=null`，`rag_config.json` md5 **`15fa768a…` 与动手前逐字节相同**（这一整条腿用的都是**表单候选值**——探针的请求体带候选，所以不需要改配置）。桩进程已杀、脚本已删、浏览器里被我改过的表单已重载丢弃。
+5. **一处过程记录**：这段开工时 `:3000` 前端 dev server 已停（用户在跑的用户进程，我不重启），真栈腿因此等用户起回前端后才跑；`:8001` 网关当时仍在跑，且**已加载新端点**（用 `openapi.json` 核过）。
+
+- [x] `backend/AGENTS.md`：RAG 配置一节补新端点（形状、三态、只读、**只报不拦**、422 条件）。
+- [x] `frontend/AGENTS.md`：功能模型一节补这条探针（落在接口地址行、触发条件、三态语义、只报不拦）。
+- [x] 真栈：① 地址指向一个**不存在的端口** ⇒ 编辑期出现「未连通」且 Save 仍可点；② 地址指向一个**真的 TEI 形状桩** ⇒ 状态转为正常（无话）；③ 全程**未保存**，`rag_config.json` 逐字节复核。
+- [x] **门禁**：文档过 prettier；`rag_config.json` md5 不变。
 
 ---
 
 ## 提交切分
 
-| 提交 | 内容 |
-| ---- | ---- |
-| 1    | Task 1（端点 + 用例） |
-| 2    | Task 2（界面 + 用例） |
+| 提交 | 内容                      |
+| ---- | ------------------------- |
+| 1    | Task 1（端点 + 用例）     |
+| 2    | Task 2（界面 + 用例）     |
 | 3    | Task 3（文档 + 真栈结论） |
 
 不改表、不改 `rag_config.json` schema、不动任何默认值。
