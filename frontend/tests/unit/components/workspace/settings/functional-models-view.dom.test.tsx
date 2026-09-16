@@ -129,6 +129,17 @@ describe("provider rows", () => {
     expect(screen.queryByText("lockedExternalOnly")).toBeNull();
   });
 
+  it("explains why the sparse model is asked for but never sent", () => {
+    renderWith({ embedding_sparse_source: "external" });
+    openAdvanced();
+
+    // The value is stored in `rag_config.json` but never reaches the service: TEI serves one model
+    // per instance, so no model field is sent at all (deerflow/knowledge/sparse.py). The row owes
+    // the admin that sentence — an input whose effect nobody can explain is worse than no input.
+    // Exactly one: the note belongs to this row, and 「稀疏」 is not repeated down the gutter.
+    expect(labelCount("sparseModelHint")).toBe(1);
+  });
+
   it("asks the sparse service the same four questions as the embedding one", () => {
     renderWith({ embedding_sparse_source: "external" });
     openAdvanced();

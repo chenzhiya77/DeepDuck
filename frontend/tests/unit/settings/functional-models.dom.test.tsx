@@ -727,6 +727,25 @@ describe("sparse capability probe", () => {
 });
 
 /**
+ * 「稀疏模型」这一行的交代（spec 2026-09-16 §3 D6）：值会落盘，但**从不发给服务**——TEI 一个
+ * 实例只服务一个模型，所以请求里没有 model 字段。本期只补说明、不改行为（字段照存、下发照旧）。
+ */
+describe("sparse model disclosure", () => {
+  it("says the sparse model is stored but never sent", () => {
+    setRag({ embedding_sparse_source: "external" });
+    renderPage();
+    openFunctionalView();
+    fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
+
+    expect(screen.getByLabelText(F.sparseModelHint)).toBeTruthy();
+    // The sentence has to name the reason, not merely exist: "does this field do anything?" is the
+    // question the row raises, and one TEI instance serving one model is the answer.
+    expect(F.sparseModelHint).toContain("TEI");
+    expect(F.sparseModelHint).toContain("一个实例只服务一个模型");
+  });
+});
+
+/**
  * 重建入口（spec 2026-09-14 §5 / P4）：设置页本身没有知识库身份，所以目标库由这一行
  * 选出来，再经确认弹窗点名——重建会把目标库的全部切片重新嵌入，点错代价高。
  */

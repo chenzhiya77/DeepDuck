@@ -1792,6 +1792,8 @@ export const enUS: Translations = {
       sparseSourceProvider: "Follow the embedding model",
       sparseSourceExternal: "A separate sparse service",
       sparseSourceBm25: "Local BM25",
+      sparseModelHint:
+        "This value is stored in the configuration but never sent to the service: a TEI instance serves one model, so the request carries no model field.",
       sparseSourceHint:
         "A Bailian embedding model returns dense and sparse in one call. After switching to a dense-only provider you must set this to a separate sparse service or local BM25, or the configuration cannot be enabled.",
       sparseProbeHint:

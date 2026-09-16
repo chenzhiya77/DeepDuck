@@ -1714,6 +1714,7 @@ export interface Translations {
       sparseSourceExternal: string;
       sparseSourceBm25: string;
       sparseSourceHint: string;
+      sparseModelHint: string;
       sparseProbeHint: string;
       sparseProbing: string;
       sparseUnverified: string;

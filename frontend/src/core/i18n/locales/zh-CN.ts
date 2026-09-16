@@ -1698,6 +1698,8 @@ export const zhCN: Translations = {
       sparseSourceProvider: "跟随向量模型",
       sparseSourceExternal: "独立稀疏服务",
       sparseSourceBm25: "本地 BM25",
+      sparseModelHint:
+        "这一项会被保存到配置里，但从不发给服务：TEI 一个实例只服务一个模型，所以请求里不带 model 字段。",
       sparseSourceHint:
         "百炼的向量模型一次调用同时给出稠密与稀疏；换成只出稠密的提供方后，这里必须改成「独立稀疏服务」或「本地 BM25」，否则该配置无法启用。",
       sparseProbeHint:

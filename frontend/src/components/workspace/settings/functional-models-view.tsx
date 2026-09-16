@@ -644,7 +644,9 @@ export function FunctionalModelsView() {
                     />
                   </div>
                   <div className={ROW}>
-                    <RowLabel nested>{F.modelLabel}</RowLabel>
+                    <RowLabel nested info={F.sparseModelHint}>
+                      {F.modelLabel}
+                    </RowLabel>
                     <Input
                       value={values.sparse_model}
                       aria-label={F.sparseModel}
