@@ -12,9 +12,11 @@
 
 ## Task 0 — 开工前的三项核实（只读）
 
-1. **照抄先例**：读 `POST /api/models/config/validate` 的实现（`app/gateway/routers/models.py`），确认它的鉴权、超时、以及"`detail` 绝不回显密钥"的做法，探针逐条对齐。
-2. **RED 怎么立**：探针要能对着一个"只返 dense"的目标断言 `unsupported`。核实能否用 `httpx.MockTransport` 桩出这种响应（现有 `tests/knowledge/test_embedder_providers.py` 已有 `_openai_transport` 的先例）——**不要**去真找一个平台上的单路模型。
-3. **三态放哪**：确认前端把合成逻辑放 `core/rag/config-form.ts` 的纯函数（可被 node 用例驱动），而不是组件里的 `useState` 派生——这决定 Task 3 的用例能不能立。
+**状态：已核实（2026-09-16），三项都被后续任务按结论落地。**
+
+1. **照抄先例**：读 `POST /api/models/config/validate` 的实现（`app/gateway/routers/models.py`），确认它的鉴权、超时、以及"`detail` 绝不回显密钥"的做法，探针逐条对齐。→ 探针沿用了 `_VALIDATE_TIMEOUT_SECONDS = 10.0`、`_ERROR_BODY_SNIPPET` 的截断折行做法、`_probe_failure` 式"返回而不是抛"；`test_probe_never_echoes_the_key` 钉住不回显（**注**：该用例初稿断言的是 404 响应体不含密钥——**空断言**，实现期改成"先断言成功、再断言答复里没有 key"）。
+2. **RED 怎么立**：探针要能对着一个"只返 dense"的目标断言 `unsupported`。核实能否用 `httpx.MockTransport` 桩出这种响应（现有 `tests/knowledge/test_embedder_providers.py` 已有 `_openai_transport` 的先例）——**不要**去真找一个平台上的单路模型。→ 成立：`test_rag_config_probe.py::_stub_dashscope(sparse=False)` 即此形状。
+3. **三态放哪**：确认前端把合成逻辑放 `core/rag/config-form.ts` 的纯函数（可被 node 用例驱动），而不是组件里的 `useState` 派生——这决定 Task 3 的用例能不能立。→ 成立：`resolveSparseCapability` 等三个纯函数落在该文件，9 条 node 用例直接驱动。
 
 ---
 
