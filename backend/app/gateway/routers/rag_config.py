@@ -303,24 +303,55 @@ class RagSparseProbeResponse(BaseModel):
     detail: str
 
 
-def _probe_api_key(submitted: str | None, config: AppConfig, provider_id: str) -> str | None:
+def _probe_api_key(field_name: str, submitted: str | None, config: AppConfig, provider_id: str) -> str | None:
     """The key to probe with: what was submitted, else what this deployment already has.
 
     The sentinel means "the stored one", exactly as on the PUT; an absent key falls back to
     the file and then to the environment variable *the candidate provider* reads, so a
     deployment whose key lives in the environment can still be probed.
     """
-    stored = getattr(_load_stored(), "embedding_api_key", "") or ""
+    stored = getattr(_load_stored(), field_name, "") or ""
     if submitted and submitted != MASKED_SECRET:
         return submitted
     if stored:
         return stored
-    env_name = _secret_env_name("embedding_api_key", config, {"embedding_provider": provider_id})
+    _, provider_field = _SECRET_LEGS[field_name]
+    env_name = _secret_env_name(field_name, config, {provider_field: provider_id})
     return os.environ.get(env_name) if env_name else None
 
 
 def _probe_detail(text: str) -> str:
     return " ".join(text.split())[:_PROBE_DETAIL_LIMIT]
+
+
+class RagSparseServiceProbeRequest(BaseModel):
+    """A candidate *sparse service* to reach, before anything is saved.
+
+    Distinct from the embedding probe's `RagSparseProbeRequest` (which asks about a *model*):
+    this one asks about a *service*. ``extra="forbid"`` for the same reason: this route must not
+    become a second, unvalidated way to describe the configuration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sparse_provider: str = Field(..., description="Curated allowlist id.")
+    sparse_base_url: str | None = Field(default=None, description="Candidate endpoint; omit to keep the configured one.")
+    sparse_api_key: str | None = Field(
+        default=None,
+        description="Candidate key, or the masking sentinel to reuse the stored/environment one.",
+    )
+
+
+class RagSparseServiceProbeResponse(BaseModel):
+    """Whether the sparse service answered, and whether it answered with anything (D2).
+
+    ``empty`` is its own state because a reachable service that returns no terms for every text
+    silently removes the sparse half from every search — the failure mode this whole line exists
+    for. Neither ``empty`` nor ``unreachable`` blocks a save: the service may come up later.
+    """
+
+    status: Literal["ok", "empty", "unreachable"]
+    detail: str
 
 
 @router.post(
@@ -362,7 +393,7 @@ async def probe_embedding_capability(
             "embedding_provider": body.embedding_provider,
             "embedding_model": body.embedding_model,
             "embedding_base_url": body.embedding_base_url or config.rag.embedding_base_url,
-            "embedding_api_key": _probe_api_key(body.embedding_api_key, config, body.embedding_provider),
+            "embedding_api_key": _probe_api_key("embedding_api_key", body.embedding_api_key, config, body.embedding_provider),
             # The provider's own sparse output is the thing in question, so ask for exactly that.
             "embedding_sparse_source": "provider",
         }
@@ -394,4 +425,64 @@ async def probe_embedding_capability(
     return RagSparseProbeResponse(
         status="unsupported",
         detail=f"模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}",
+    )
+
+
+@router.post(
+    "/rag/config/probe-sparse",
+    response_model=RagSparseServiceProbeResponse,
+    summary="Probe Whether the Sparse Service Answers (admin)",
+    description="Runs one real `/embed_sparse` call against the submitted service and reports whether it answers with terms. Nothing is persisted.",
+)
+async def probe_sparse_service(
+    request: Request,
+    body: RagSparseServiceProbeRequest,
+    config: AppConfig = Depends(get_config),
+) -> RagSparseServiceProbeResponse:
+    """Answer "can we actually reach the sparse service, and does it give us terms" (§3 D1–D3).
+
+    The runtime's own encoder is what gets called, so the request the admin probes with is the
+    request an ingest would make. Deliberately **not** built through `build_embedder`: the dense
+    leg has nothing to do with this question, and an admin who is mid-edit on the sparse settings
+    may not have a complete dense configuration at all.
+
+    Every failure is reported, never raised, and none of them blocks a save — a service that is
+    down now may be up in a minute, and refusing the write would be the same mistake the
+    `unverifiable` rule exists to avoid.
+    """
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+
+    if body.sparse_provider not in provider_ids("sparse"):
+        raise HTTPException(status_code=422, detail=f"Unknown sparse provider {body.sparse_provider!r}.")
+
+    spec = resolve_provider("sparse", body.sparse_provider)
+    base_url = body.sparse_base_url or config.rag.sparse_base_url
+    if not (base_url or "").strip():
+        return RagSparseServiceProbeResponse(status="unreachable", detail="未填写稀疏服务地址。")
+
+    from deerflow.reflection import resolve_variable
+
+    kwargs: dict[str, Any] = {"base_url": base_url.strip()}
+    api_key = _probe_api_key("sparse_api_key", body.sparse_api_key, config, body.sparse_provider)
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    try:
+        encoder = resolve_variable(spec.implementation)(**kwargs)
+        vectors = await asyncio.wait_for(encoder.encode([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+    except Exception as exc:  # noqa: BLE001 — this route's job is to always answer with a status
+        logger.warning("sparse service probe failed for %s", body.sparse_provider, exc_info=True)
+        return RagSparseServiceProbeResponse(
+            status="unreachable",
+            detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}",
+        )
+
+    # No "wrong number of rows" branch here on purpose: the encoder already refuses that
+    # (`TEISparseEncoder._encode_batch` compares the row count to the batch), so it arrives as an
+    # exception above — a second check here would be unreachable code.
+    if vectors[0].indices:
+        return RagSparseServiceProbeResponse(status="ok", detail="稀疏服务已连通，并返回了词项。")
+    return RagSparseServiceProbeResponse(
+        status="empty",
+        detail="稀疏服务已连通，但这段文本没有返回任何词项 ⇒ 请确认它加载的是支持稀疏的模型。",
     )
