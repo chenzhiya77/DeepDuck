@@ -70,10 +70,10 @@
 - **RED 时 3 红 1 绿**：绿的那条是 bm25 控制组（本来就该绿）。**并且额外逮住一条没预料到的红**：`test_rag_config_probe.py::test_reports_a_model_that_returns_dense_only`——探针把"模型说不支持"错报成 `unverifiable`，正是上面那个耦合。
 - **三次 neuter 全有牙**：① 加一个 fail-open「已判过」缓存 ⇒ **只有**重复那条红；② 把包装无条件套到稠密侧 ⇒ **7 红**（含 bm25 控制组与几条结构断言）；③ 守卫退回抛基类 ⇒ 探针那条红。
 - **门禁**：窄面（`tests/knowledge/` + `test_rag_config_api/probe/configuration_error`）**1194 项 1 failed**（就是上面那条耦合，修好后 58 项全绿）；`ruff check` 干净，`ruff format --check` 干净——**一处既有例外**：`tests/knowledge/tools/test_graph_search.py` 在 HEAD 上就没被当前 ruff 版本格式化过（既非 CRLF 产物、内容也确实需要重排），与本次无关，未动。
-- **全量后端 135 failed / 12360 passed / 109 skipped（17:31）**。与 Task 1 那轮基线（144 / 12347）**双向差集非空**：12 条由红转绿、3 条由绿转红，**15 条全在我没碰过的文件里**（`test_checkpointer` 打包、`test_dev_entrypoint` 元字符、`test_pnpm_script`、`test_thread_id_route_contract`、`test_invoke_acp_agent_tool`）。那 3 条新红的两类机制**都不是本次代码路径**：
+- **全量后端 135 failed / 12360 passed / 109 skipped（1051s ≈ 17.5 分钟）**。与 Task 1 那轮基线（144 / 12347）**双向差集非空**：12 条由红转绿、3 条由绿转红，**15 条全在我没碰过的文件里**（`test_checkpointer` 打包、`test_dev_entrypoint` 元字符、`test_pnpm_script`、`test_thread_id_route_contract`、`test_invoke_acp_agent_tool`）。那 3 条新红的两类机制**都不是本次代码路径**：
   1. `test_pnpm_script` 两条：子进程 stderr 里带 GBK 字节（cmd.exe 的 AutoRun 把 `DOSKEY` 报错写进 stderr）⇒ `text=True` 的读线程抛 `UnicodeDecodeError` ⇒ `result.stderr` 成了 `None`（失败形态就是 `TypeError: argument of type 'NoneType' is not iterable`，pytest 的 `PytestUnhandledThreadExceptionWarning` 里有完整栈）。
   2. `test_invoke_acp_agent_tool` 一条：ACP 握手阶段抛了一个**消息为空**的 `TimeoutError`（`conn.initialize` 没有超时包装，`str(TimeoutError())` 就是空串），配置的 2s 超时分支根本没走到——`elapsed < 10` 那条断言是过的。
-     这三个文件在 HEAD 上都是未修改状态，且不被本次改动 import；`test_pnpm_script.py` 只 import `pathlib/json/os/subprocess/sys`。**RAG/嵌入相关用例零新增红**（失败集里 5 条带 knowledge 字样的全部在基线上就红：`local_skill_storage` 的三条 symlink 用例 + `migration_0016` 两条）。
+- 这三个文件在 HEAD 上都是未修改状态，且不被本次改动 import；`test_pnpm_script.py` 只 import `pathlib/json/os/subprocess/sys`。**RAG/嵌入相关用例零新增红**（失败集里 5 条带 knowledge 字样的全部在基线上就红：`local_skill_storage` 的三条 symlink 用例 + `migration_0016` 两条）。
 - **提交**：本笔 `feat(rag): refuse a provider that promises sparse and returns none`（含 spec/plan 同步）。
 
 **RED**
