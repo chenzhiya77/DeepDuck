@@ -160,6 +160,18 @@ except RagConfigurationError as exc:
 
 ## Task 5 — 文档同步与真栈验收
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- 文档：`frontend/AGENTS.md` 功能模型一节补「能力随配置下发 + 编辑期拦截（表单值判定 / 未知不算不支持 / Save 旁给原因）」；`backend/AGENTS.md` 的 RAG 配置一节补 `embedding_providers` 字段、PUT 落盘前用同一段 `build_embedder` 校验与 `提交后的配置仍不可用：` 400、判定基准是 `AppConfig.yaml_rag`（并说明为何不能用 `config.rag`）；`build_embedder` 那段补 `rag=` 覆盖参数与 `RagConfigurationError`（含"网关只映射这一个类型、rerank/parse 仍是普通 `ValueError`"）。两份 .md 的 prettier 债与 HEAD 持平（frontend 8 = 8；backend 115 = 115）。
+- **真栈腿①（界面）**：`?settings=models` 深链 → 功能模型 → 合法态无告警、Save 灰且为「没有需要保存的改动」；把「提供商」切到「OpenAI 兼容」→ **两条 `role="alert"` 并存**（重排索引那条 + 稀疏那条，后者文案逐字符合 spec），Save 仍灰，**那句原因就在 Save 旁**；切回「阿里百炼 (DashScope)」→ 告警清零、Save 回到「没有需要保存的改动」。**全程未保存任何配置**。
+- **真栈腿②（D4 的 400）**：手工把 `rag_config.json` 写成坏组合（含 `embedding_base_url`，确保命中稀疏那条而非缺地址），`POST /api/knowledge-bases/{kb}/manual-knowledge` → **400 + 原样 detail**（`嵌入 provider 'openai-compatible' 只输出稠密向量 ⇒ …请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。`），且**没有写入任何数据**（该路径顺序是 embed → upsert → 落库）。配置随后**逐字节还原**并两次用 `GET /api/rag/config` 复核（`dashscope` / `provider` / `extract_model` 原样）。
+  顺带确认 Task 1 的能力块在真栈上确实返回：`[{dashscope,true},{openai-compatible,false}]`。
+- **⚠️ 真栈推翻了我原先挑的验证端点（spec §6.11 已当场修正）**：`POST /{kb}/recall-test` 返回 **200**，把异常按路降级成「该路检索失败（RagConfigurationError），详情见服务端日志。」——异常到不了处理器。那是该端点"永远产出完整报告"的既有设计（不是缺陷），但也意味着**在那条路上，可读的那句话仍然没到用户眼前**；这是本期范围之外的遗留，已记进 spec §6.11 的告警与我们 §5 的"不做"清单精神一致。
+
+**验收清单**
+
 - `frontend/AGENTS.md` 功能模型一节：补能力随配置下发 + 编辑期拦截 + Save 禁用并给出原因；
 - `backend/AGENTS.md` RAG 配置一节：补 `embedding_providers` 字段、PUT 的 400 语义（含 `提交后的配置仍不可用：` 前缀）、以及 `build_embedder` 新增的 `rag=` 覆盖参数；
 - 真栈（spec §6）：

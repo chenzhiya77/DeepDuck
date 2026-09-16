@@ -134,7 +134,8 @@ harness 侧新增一个**向后兼容**的签名口子：`build_embedder(..., *,
 **真栈**
 
 10. 在 `localhost:3000` 上把 provider 切到 `openai-compatible` 并保持来源为「跟随向量模型」：告警出现、Save 不可点、**Save 旁给出同一句原因**；改回 `dashscope` 后恢复正常。
-11. **D4 的出口（不经前端）**：手工把 `rag_config.json`（gitignored 的运行时文件）写成同一个坏组合，再打一个会用到嵌入的接口——`POST /api/knowledge-bases/{kb_id}/recall-test`（或直接 PUT）——拿到 **400 + 可读 detail**，而不是裸 500。curl 即可，无需界面。
+11. **D4 的出口（不经前端）**：手工把 `rag_config.json`（gitignored 的运行时文件）写成同一个坏组合，再打一个**会让异常冒泡**的接口——`POST /api/knowledge-bases/{kb_id}/manual-knowledge`（`include_in_wiki_search: true`；它的顺序是 embed → upsert → 落库，坏配置在 embed 就失败，**不会写入任何数据**）——拿到 **400 + 可读 detail**，而不是裸 500。
+    ⚠️ **真栈实测（2026-09-16）修正了本条的一个前提**：`POST /{kb_id}/recall-test` **不能用**来验这条——它按路降级（「该路检索失败（RagConfigurationError），详情见服务端日志。」）并返回 **200**，异常到不了处理器。这是该端点"永远产出完整报告"的既有设计，不是缺陷；但它同时意味着**那条路上可读的那句话仍然没到用户眼前**，属于本期之外的遗留（见 §5）。
 
 ## 7. 影响面
 

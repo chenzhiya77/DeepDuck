@@ -187,7 +187,16 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   (`RowLabel nested` → `NESTED_GUTTER`: an indent and a rule, not a prefix): they are asked the
   same four questions as the embedding service, in the same order, so their visible labels are
   the *shared* ones and only their accessible names (`F.sparse*`) tell the two apart out loud —
-  「稀疏」 used to be repeated on every row to say what the indent says once. Every explanatory
+  「稀疏」 used to be repeated on every row to say what the indent says once. The sparse-source
+  select and the provider above it are one **rule**, not two fields: `GET /api/rag/config` returns
+  `embedding_providers` (`[{provider_id, emits_sparse}]`, straight off the backend allowlist), and
+  `isSparseSourceUnsupported` in `core/rag/config-form.ts` warns — and disables Save — when the
+  _form's_ provider cannot supply the sparse half it was asked for. Two rules hold it: it is judged
+  from the form value, so switching the picker warns before anything is saved; and **unknown is not
+  unsupported** — a missing capability list or an unlisted provider answers `false`, because the
+  write is refused server-side anyway and a warning we cannot justify is worse than silence. The
+  alert in the card and the sentence beside Save carry the same copy: a disabled button without a
+  reason reads as a broken button. Every explanatory
   sentence sits behind an ⓘ tooltip — only state (the embedding-change warning, the
   environment-provenance badge, the no-changes hint) stays visible. That badge rides *inside* the
   credential field it describes (`SecretInput`: one positioned wrapper, the field's own padding
