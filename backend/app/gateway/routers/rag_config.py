@@ -16,11 +16,12 @@ for a key) — the submitted object is the new file content, not a patch.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.gateway.deps import get_config, require_admin_user
 from deerflow.config.app_config import AppConfig, RagConfig
@@ -37,6 +38,8 @@ from deerflow.config.runtime_paths import project_root
 from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["rag"])
 
@@ -256,3 +259,131 @@ async def put_rag_config(
 
     await asyncio.to_thread(_write)
     return _build_response(config, payload)
+
+
+#: Mirrors the models-config validate probe: bounded, observational, never persisted.
+_PROBE_TIMEOUT_SECONDS = 10.0
+
+#: One short text is enough to see whether the platform answers with a sparse half at all.
+_PROBE_TEXT = "probe"
+
+#: The two ways out, in the same words the runtime error and the settings copy use.
+_SPARSE_ALTERNATIVES = "请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。"
+
+#: Probe failures carry their own reason, truncated like the models probe's body sample.
+_PROBE_DETAIL_LIMIT = 200
+
+
+class RagSparseProbeRequest(BaseModel):
+    """A candidate embedding configuration to test, before anything is saved.
+
+    ``extra="forbid"`` so this route cannot become a second, unvalidated way to describe
+    the RAG configuration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    embedding_provider: str = Field(..., description="Curated allowlist id.")
+    embedding_model: str = Field(..., min_length=1, description="Candidate model id.")
+    embedding_base_url: str | None = Field(default=None, description="Candidate endpoint; omit to keep the configured one.")
+    embedding_api_key: str | None = Field(
+        default=None,
+        description="Candidate key, or the masking sentinel to reuse the stored/environment one.",
+    )
+
+
+class RagSparseProbeResponse(BaseModel):
+    """Three states, never a boolean (spec 2026-09-16 §3 D3).
+
+    ``unverifiable`` exists because "could not check" and "cannot do it" must not be
+    conflated: a network outage would otherwise refuse a configuration that works.
+    """
+
+    status: Literal["supported", "unsupported", "unverifiable"]
+    detail: str
+
+
+def _probe_api_key(submitted: str | None, config: AppConfig, provider_id: str) -> str | None:
+    """The key to probe with: what was submitted, else what this deployment already has.
+
+    The sentinel means "the stored one", exactly as on the PUT; an absent key falls back to
+    the file and then to the environment variable *the candidate provider* reads, so a
+    deployment whose key lives in the environment can still be probed.
+    """
+    stored = getattr(_load_stored(), "embedding_api_key", "") or ""
+    if submitted and submitted != MASKED_SECRET:
+        return submitted
+    if stored:
+        return stored
+    env_name = _secret_env_name("embedding_api_key", config, {"embedding_provider": provider_id})
+    return os.environ.get(env_name) if env_name else None
+
+
+def _probe_detail(text: str) -> str:
+    return " ".join(text.split())[:_PROBE_DETAIL_LIMIT]
+
+
+@router.post(
+    "/rag/config/probe-embedding",
+    response_model=RagSparseProbeResponse,
+    summary="Probe Whether an Embedding Model Returns the Sparse Half (admin)",
+    description="Runs one real embedding call with the submitted provider and model and reports whether the sparse half comes back. Nothing is persisted.",
+)
+async def probe_embedding_capability(
+    request: Request,
+    body: RagSparseProbeRequest,
+    config: AppConfig = Depends(get_config),
+) -> RagSparseProbeResponse:
+    """Answer "can this provider + model supply the sparse half" — and nothing else (§3 D3).
+
+    The provider-level answer is free: when the allowlist row says the provider emits no
+    sparse, this replies from the list and never touches the network. Otherwise the question
+    is genuinely model-level, so it takes one real call.
+
+    Everything that is not an answer — unreachable, refused, wrong dimension, timeout — is
+    reported as ``unverifiable`` with its own reason: reading "could not check" as "cannot do
+    it" would refuse configurations that work. This route never replaces the save-time check
+    (dimensions and addresses remain the PUT's business).
+    """
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+
+    if body.embedding_provider not in provider_ids("embedding"):
+        raise HTTPException(status_code=422, detail=f"Unknown embedding provider {body.embedding_provider!r}.")
+
+    spec = resolve_provider("embedding", body.embedding_provider)
+    if not spec.emits_sparse:
+        return RagSparseProbeResponse(
+            status="unsupported",
+            detail=f"嵌入 provider {body.embedding_provider!r} 只输出稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}",
+        )
+
+    candidate = config.rag.model_copy(
+        update={
+            "embedding_provider": body.embedding_provider,
+            "embedding_model": body.embedding_model,
+            "embedding_base_url": body.embedding_base_url or config.rag.embedding_base_url,
+            "embedding_api_key": _probe_api_key(body.embedding_api_key, config, body.embedding_provider),
+            # The provider's own sparse output is the thing in question, so ask for exactly that.
+            "embedding_sparse_source": "provider",
+        }
+    )
+
+    try:
+        embedder = build_embedder(config, rag=candidate)
+        results = await asyncio.wait_for(embedder.embed([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+    except Exception as exc:  # noqa: BLE001 — this route's job is to always answer with a status
+        logger.warning("embedding capability probe failed for %s/%s", body.embedding_provider, body.embedding_model, exc_info=True)
+        return RagSparseProbeResponse(
+            status="unverifiable",
+            detail=f"未能验证（{type(exc).__name__}）：{_probe_detail(str(exc))}",
+        )
+
+    if results and results[0].sparse.indices:
+        return RagSparseProbeResponse(
+            status="supported",
+            detail=f"模型 {body.embedding_model!r} 一次调用同时返回稠密与稀疏。",
+        )
+    return RagSparseProbeResponse(
+        status="unsupported",
+        detail=f"模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}",
+    )

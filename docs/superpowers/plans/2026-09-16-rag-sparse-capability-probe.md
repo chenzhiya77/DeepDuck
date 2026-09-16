@@ -20,16 +20,31 @@
 
 ## Task 1 — 后端：只读探针端点（D3）
 
+**状态：已交付 2026-09-16。**
+
+**交付纪要**
+
+- **实现**（`app/gateway/routers/rag_config.py`）：`POST /api/rag/config/probe-embedding`，admin 门控；请求体 `extra="forbid"`；`api_key` 支持掩码哨兵（＝用已存/环境的那把，环境名按**候选 provider** 解析，复用 `_secret_env_name`）；`asyncio.wait_for` 有界超时 10s（沿用 validate 的常量）；`detail` 折叠空白并截断 200 字符（沿用 validate 的 `_ERROR_BODY_SNIPPET` 做法）；**只读不落盘**。
+- **名单已知的答案不打网络**：`emits_sparse=false` 的 provider 直接回 `unsupported`，零次出网——只有真正未知的（`dashscope` + 具体模型）才发那一次真实调用。
+- **用例 8 条**（`backend/tests/test_rag_config_probe.py`）。RED 时 6 红 1 绿：那条"绿"是 `test_probe_never_echoes_the_key`，当时它断言的是**404 的响应体**不含密钥——**空断言**，当场改成"先断言探针成功、再断言答复里没有 key"。
+- **两次 neuter（都有牙）**：① 把失败一律报成 `unsupported`（抹掉三态区分）⇒ `unreachable` 与 `401` 两条红；② 把稀疏判空那步变成空判（任何答复都算支持）⇒ `dense-only` 那条红。
+- **实现期更正了文档两处（spec §3 D3 + §5、本 plan 的 RED 第 4 条已同步）**：
+  1. 初稿的"候选模型维度不是 1024 ⇒ `unverifiable`"**构造上不可达**——探针唯一会真调的 `dashscope` 是 `pins_dimension=True`（`providers/__init__.py:55`）⇒ `build_embedder` 那侧**不包维度守卫**；另一个 provider 是稠密单路、被名单短路。测试改测可达的 **401**（且断言 `detail` 带状态码）。
+  2. 连带一条"探针会顺带写 `_PROBED_DIMENSIONS`"也是错的（同上原因）⇒ 更正为**无副作用**。
+- **门禁**：`test_rag_config_probe.py` 8 passed（与 `test_rag_config_api.py` 同跑 37 passed）；`ruff check` / `ruff format --check` 干净；两份文档 prettier 各 0 脏行；**全量后端 144 failed / 12347 passed（+8 即本轮用例），与守卫那轮（Task 3）逐条比对双向差集为空**。
+
 **RED**
 
 - `backend/tests/test_rag_config_probe.py` 加：
   1. 桩一个**返回稀疏**的响应 ⇒ `200 {status: "supported"}`；
   2. 桩一个**只返 dense**（无 `sparse_embedding`）的响应 ⇒ `{status: "unsupported"}`，`detail` 含两个出路；
   3. 桩**网络失败 / 超时** ⇒ `{status: "unverifiable"}`（**不是** `unsupported`）；
-  4. **非稀疏原因的失败也归 `unverifiable`**：桩一个**维度不是 1024** 的响应（维度守卫在返回前就抛，`embedder_factory.py:60`）⇒ `unverifiable` 且 `detail` 带真实原因——**不是** `unsupported`；
-  5. **不落盘**：调用前后 `rag_config.json` 逐字节相同；
-  6. **不回显密钥**：提交一个明显的假 key，断言响应体与 `detail` 里都不含它；
-  7. 非 admin ⇒ 403。
+  4. **非稀疏原因的失败也归 `unverifiable`**：桩一个 **401**（鉴权被拒，立即抛、不重试）⇒ `unverifiable` 且 `detail` 含 `401`——**不是** `unsupported`；
+     - **实现时更正**：初稿这里写的是"维度不是 1024"，**构造上不可达**——探针唯一会真调的 `dashscope` 把维度钉在请求里（`pins_dimension=True`）⇒ 没有维度守卫；另一个 provider 是稠密单路、被名单短路（见下条）。已改测可达的 401；
+  5. **名单已知的答案不打电话**：`embedding_provider="openai-compatible"` ⇒ 直接 `unsupported`，且 `recorded == []`；
+  6. **不落盘**：调用前后 `rag_config.json` 逐字节相同；
+  7. **不回显密钥**：提交一个明显的假 key，断言**成功响应**的 body 里不含它（不要只断言"没出现"——404 的 body 也不含，那种断言是空的）；
+  8. 非 admin ⇒ 403。
 
 **GREEN**
 

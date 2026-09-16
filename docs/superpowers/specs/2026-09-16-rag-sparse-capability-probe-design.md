@@ -65,9 +65,9 @@
 - **不落盘、不改配置、不返回 key**；`detail` 只带状态码与**截断**的响应片段（照 validate 的做法，绝不回显密钥）；
 - **有界超时**（validate 是 10s，沿用），超时/网络错误 ⇒ `unverifiable`；
 - `unsupported` **只在调用成功且稀疏为空**时给出。
-- **只回答一个问题**：探针只判定"该 provider + model 能否出稀疏"。任何**非稀疏原因**的失败——维度不符、缺地址、鉴权、限流、超时——一律 `unverifiable`，且 `detail` **带上真实原因**（管理员仍要知道为什么没验成）。**探针不替代保存期校验**：维度与地址仍由 PUT 那层（上一版的 `build_embedder` 试构建）管。
-  - 纠缠点写在这里：`build_embedder` 会包一层维度守卫，而它在**返回前**抛（`embedder_factory.py:60`），所以候选模型维度不是 1024 时探针**根本看不到稀疏**——这正是"非稀疏失败一律 unverifiable"必须覆盖的情形。
-- **顺带产物**：探针调用 `embed()` 会写 `_PROBED_DIMENSIONS`（一次合法的维度认证）。不特殊处理，但写明，免得以后有人看到"没保存过却已有认证"而困惑。
+- **只回答一个问题**：探针只判定"该 provider + model 能否出稀疏"。任何**非稀疏原因**的失败——鉴权被拒、限流、HTTP 错误、超时——一律 `unverifiable`，且 `detail` **带上真实原因**（管理员仍要知道为什么没验成）。**探针不替代保存期校验**：维度与地址仍由 PUT 那层（上一版的 `build_embedder` 试构建）管。
+  - **实现时更正（2026-09-16）**：初稿把"维度不符"列进这条规则要覆盖的情形，**那是错的**——探针唯一会真调的 provider 是 `dashscope`，而它 `pins_dimension=True`（`providers/__init__.py:55`）⇒ `build_embedder` 那一侧**根本不包维度守卫**；另一个 provider 是稠密单路，探针按名单短路、连调用都不发。所以这条路上**构造不出**维度失败，规则改为覆盖可达的那几类（鉴权 / HTTP 错误 / 超时 / 连接失败）。
+- **无副作用**：探针**不会**写 `_PROBED_DIMENSIONS`——唯一会被真调的 provider 把维度钉在请求里，`_guard` 因此不包那一层（`embedder_factory.py:132`），所以"没保存过却已有认证"这种情况不会出现（初稿曾把这写成"顺带产物"，实现时更正）。
 
 ### D4 —— 界面表现
 
@@ -115,23 +115,24 @@
 
 **后端**
 
-1. 探针四态：桩**返回稀疏** ⇒ `supported`；桩**只返 dense** ⇒ `unsupported`；**网络失败/超时** ⇒ `unverifiable`；**候选模型维度不是 1024**（维度守卫在返回前就抛）⇒ `unverifiable` 且 `detail` 带真实原因——**不是** `unsupported`。
+1. 探针四态：桩**返回稀疏** ⇒ `supported`；桩**只返 dense** ⇒ `unsupported`；**网络失败/超时** ⇒ `unverifiable`；**鉴权被拒（401）**⇒ `unverifiable` 且 `detail` 含状态码（**不是** `unsupported`）。注：维度失败在这条路上不可达，见 §3 D3 的实现更正。
 2. 探针**不落盘**：调用前后 `rag_config.json` 逐字节相同；响应体里**不含**提交的 key。
-3. 运行期兜底：`source=provider` + 空稀疏 ⇒ `RagConfigurationError`；**连续两次嵌入都抛**（不做 fail-open 缓存）；`source=bm25/external` 时空稀疏**不抛**（那一半本来就被丢弃）。
-4. 既有行为不变：`embedding_sparse_source` 的后端默认仍是 `provider`（一条断言钉住）。
+3. **名单已知的答案不打电话**：provider 说 `emits_sparse=false` ⇒ 直接 `unsupported`，且**零次**出网调用。
+4. 运行期兜底：`source=provider` + 空稀疏 ⇒ `RagConfigurationError`；**连续两次嵌入都抛**（不做 fail-open 缓存）；`source=bm25/external` 时空稀疏**不抛**（那一半本来就被丢弃）。
+5. 既有行为不变：`embedding_sparse_source` 的后端默认仍是 `provider`（一条断言钉住）。
 
 **前端**
 
-5. `emits_sparse=false` ⇒ 「跟随向量模型」不可选：判定落在纯函数 `isSparseProviderOptionDisabled(capability)` 上；渲染层另外钉住 `unsupported` 时该行的可见表现。
-6. **结论绑定**：`probe` 的键与当前表单值不符（换了 model / provider / base_url）⇒ 合成结果是 `unknown`，**不是**沿用旧结论。
-7. 探测返回 `unsupported` ⇒ 落值 + `role="alert"` + Save 禁用（复用上一版的断言）。
-8. 探测返回 `unverifiable` ⇒ **可保存** + 标「未验证」；`supported` ⇒ 无告警。
-9. **触发条件**：没填 model ⇒ **不发**请求（断言 fetch 未被调用）；而**密钥来自环境**（`sources[field] === "env"`、输入框为空）⇒ **仍要发**——这是当前部署的形态，漏掉它功能就形同失效。
+6. `emits_sparse=false` ⇒ 「跟随向量模型」不可选：判定落在纯函数 `isSparseProviderOptionDisabled(capability)` 上；渲染层另外钉住 `unsupported` 时该行的可见表现。
+7. **结论绑定**：`probe` 的键与当前表单值不符（换了 model / provider / base_url）⇒ 合成结果是 `unknown`，**不是**沿用旧结论。
+8. 探测返回 `unsupported` ⇒ 落值 + `role="alert"` + Save 禁用（复用上一版的断言）。
+9. 探测返回 `unverifiable` ⇒ **可保存** + 标「未验证」；`supported` ⇒ 无告警。
+10. **触发条件**：没填 model ⇒ **不发**请求（断言 fetch 未被调用）；而**密钥来自环境**（`sources[field] === "env"`、输入框为空）⇒ **仍要发**——这是当前部署的形态，漏掉它功能就形同失效。
 
 **真栈**
 
-10. 真栈能验的三件（都不需要平台侧配合）：① 已知不支持（provider 切成 `openai-compatible`）⇒ 选项置灰 / 告警；② `unverifiable`（清空 model 等条件）⇒ 可保存 + 标「未验证」；③ 运行期兜底——手工把 `rag_config.json` 写成"`source=provider` + 目标只出稠密"，打一次会嵌入的接口 ⇒ `RagConfigurationError`（可读 400 或该路的降级说明）。每一步之后把 `rag_config.json` **逐字节还原**并用 `GET /api/rag/config` 复核。
-11. **模型级的 `unsupported` 只在测试层覆盖**——除非你提供一个**真实存在的单路模型 id** 供真栈探。用可控桩跑出来的不算真栈验收，这里如实写明，不冒充。
+11. 真栈能验的三件（都不需要平台侧配合）：① 已知不支持（provider 切成 `openai-compatible`）⇒ 选项置灰 / 告警；② `unverifiable`（清空 model 等条件）⇒ 可保存 + 标「未验证」；③ 运行期兜底——手工把 `rag_config.json` 写成"`source=provider` + 目标只出稠密"，打一次会嵌入的接口 ⇒ `RagConfigurationError`（可读 400 或该路的降级说明）。每一步之后把 `rag_config.json` **逐字节还原**并用 `GET /api/rag/config` 复核。
+12. **模型级的 `unsupported` 只在测试层覆盖**——除非你提供一个**真实存在的单路模型 id** 供真栈探。用可控桩跑出来的不算真栈验收，这里如实写明，不冒充。
 
 ## 6. 影响面
 
