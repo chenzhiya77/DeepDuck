@@ -38,6 +38,7 @@ import {
   isCaptionCapable,
   isEmbeddingChange,
   isSparseProviderOptionDisabled,
+  isSparseServiceUnconfigured,
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
@@ -351,6 +352,13 @@ export function FunctionalModelsView() {
   const sparseUnsupported = values
     ? isSparseSourceUnsupported(values, view?.embedding_providers, probeVerdict)
     : false;
+  // Two combinations are refused by the runtime on sight; both say so while editing, and the same
+  // sentence rides next to Save (a disabled button without a reason reads as a broken button).
+  const sparseBlockReason = sparseUnsupported
+    ? F.sparseProviderUnsupported
+    : values && isSparseServiceUnconfigured(values)
+      ? F.sparseServiceUnconfigured
+      : null;
   const sparseUnverified =
     values?.embedding_sparse_source === "provider" &&
     probeVerdict?.key === (values ? sparseProbeKey(values) : "") &&
@@ -470,6 +478,13 @@ export function FunctionalModelsView() {
     provider: F.sparseSourceProvider,
     external: F.sparseSourceExternal,
     bm25: F.sparseSourceBm25,
+  };
+  // The sparse service gets its own label map for the empty id: the shared one borrows the parse
+  // backend's wording ("let the service decide"), which is true there and meaningless here — on
+  // this row `""` is simply "not chosen", and the runtime refuses it.
+  const SPARSE_SERVICE_LABELS: Record<string, string> = {
+    "": F.sparseProviderNone,
+    "tei-sparse": F.providerTeiSparse,
   };
 
   function update<K extends keyof RagConfigFormValues>(
@@ -696,7 +711,7 @@ export function FunctionalModelsView() {
                       label={F.sparseProvider}
                       value={values.sparse_provider}
                       options={SPARSE_PROVIDER_OPTIONS}
-                      labels={PROVIDER_LABELS}
+                      labels={SPARSE_SERVICE_LABELS}
                       onChange={(next) =>
                         update(
                           "sparse_provider",
@@ -788,9 +803,9 @@ export function FunctionalModelsView() {
 
         {/* Outside the disclosure on purpose: a warning nobody can see while the section is
             collapsed is not a warning. */}
-        {sparseUnsupported && (
+        {sparseBlockReason && (
           <p className="text-destructive mt-3 text-xs" role="alert">
-            {F.sparseProviderUnsupported}
+            {sparseBlockReason}
           </p>
         )}
       </Group>
@@ -1068,10 +1083,8 @@ export function FunctionalModelsView() {
       <div className="flex items-center justify-end gap-3">
         {/* Disabled without a reason reads as a broken button, and the alert above can be
             scrolled out of sight — so the same sentence rides next to the button it blocks. */}
-        {sparseUnsupported ? (
-          <span className="text-destructive text-xs">
-            {F.sparseProviderUnsupported}
-          </span>
+        {sparseBlockReason ? (
+          <span className="text-destructive text-xs">{sparseBlockReason}</span>
         ) : (
           !hasChanges && (
             <span className="text-muted-foreground text-xs">{F.noChanges}</span>
@@ -1079,7 +1092,7 @@ export function FunctionalModelsView() {
         )}
         <Button
           onClick={handleSave}
-          disabled={!hasChanges || sparseUnsupported || save.isPending}
+          disabled={!hasChanges || Boolean(sparseBlockReason) || save.isPending}
         >
           {save.isPending ? t.common.loading : t.common.save}
         </Button>

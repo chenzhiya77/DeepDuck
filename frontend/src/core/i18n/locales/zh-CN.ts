@@ -1709,6 +1709,7 @@ export const zhCN: Translations = {
       sparseServiceUnreachable: "连不上",
       sparseServiceEmpty: "没返回词项",
       sparseProviderDenseOnly: "该向量模型只输出稠密向量",
+      sparseProviderNone: "（未选择）",
       parseProvider: "解析提供方",
       parseBaseUrl: "本地服务地址",
       parseBaseUrlHint: "本地 MinerU 服务不带鉴权，只应部署在内网。",
@@ -1737,6 +1738,8 @@ export const zhCN: Translations = {
       embeddingApiKey: "API Key（向量）",
       embeddingChangeWarning:
         "更换向量模型、提供方、接口地址或稀疏来源后，已用旧配置入库的知识库需要重建索引，否则检索质量会下降。",
+      sparseServiceUnconfigured:
+        "「独立稀疏服务」需要一个提供商（TEI 稀疏服务）——未选择时这份配置无法启用。",
       sparseProviderUnsupported:
         "当前选择的向量模型无法提供稀疏向量；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。",
       rerankModel: "重排模型",

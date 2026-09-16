@@ -1721,6 +1721,7 @@ export interface Translations {
       sparseServiceUnreachable: string;
       sparseServiceEmpty: string;
       sparseProviderDenseOnly: string;
+      sparseProviderNone: string;
       parseProvider: string;
       parseBaseUrl: string;
       parseBaseUrlHint: string;
@@ -1745,6 +1746,7 @@ export interface Translations {
       embeddingApiKey: string;
       embeddingChangeWarning: string;
       sparseProviderUnsupported: string;
+      sparseServiceUnconfigured: string;
       rerankModel: string;
       rerankApiKey: string;
       asrProvider: string;

@@ -1803,6 +1803,7 @@ export const enUS: Translations = {
       sparseServiceUnreachable: "unreachable",
       sparseServiceEmpty: "no terms returned",
       sparseProviderDenseOnly: "this embedding model emits dense vectors only",
+      sparseProviderNone: "(not chosen)",
       parseProvider: "Parsing provider",
       parseBaseUrl: "Local service address",
       parseBaseUrlHint: "The local MinerU service ships without auth, so expose it on an internal network only.",
@@ -1830,6 +1831,8 @@ export const enUS: Translations = {
       embeddingApiKey: "API key (embedding)",
       embeddingChangeWarning:
         "Changing the embedding model, provider, endpoint or sparse source requires re-indexing the knowledge bases already ingested with the previous one, or their retrieval quality will degrade.",
+      sparseServiceUnconfigured:
+        "A separate sparse service needs its provider chosen (TEI sparse service) — without one this configuration cannot be enabled.",
       sparseProviderUnsupported:
         "The selected embedding model cannot supply the sparse half. Set the sparse source to a separate sparse service or local BM25.",
       rerankModel: "Rerank model",

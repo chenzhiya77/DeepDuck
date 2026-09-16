@@ -299,6 +299,23 @@ export function isSparseSourceUnsupported(
 }
 
 /**
+ * Whether the form asks for a separate sparse service but never chose one.
+ *
+ * The runtime refuses exactly this pair (`external` requires a concrete `sparse_provider`), and the
+ * empty id is what a fresh external configuration seeds — Radix needs a non-empty option value, so
+ * "not chosen" travels as `""`. Refusing it here rather than at the next save is the same rule the
+ * dense-only check follows: a combination that is *known* to be rejected should not be storable.
+ */
+export function isSparseServiceUnconfigured(
+  values: RagConfigFormValues,
+): boolean {
+  return (
+    values.embedding_sparse_source === "external" &&
+    values.sparse_provider === ""
+  );
+}
+
+/**
  * What a probe learned about one candidate configuration (spec 2026-09-16 §3 D3), carrying the
  * values it was taken for. The key is not decoration: a verdict without it would be applied to
  * whatever the form says later, which is exactly how a just-refused model slips through.

@@ -943,6 +943,69 @@ describe("sparse service connectivity", () => {
 });
 
 /**
+ * 「独立稀疏服务」但没挑提供商（2026-09-17 补）：这一对后端**必定拒绝**，而界面上原来既不提示、
+ * 也能保存——要等那一次 400 才知道。现在与 dense-only 那条走同一套表现：告警 + Save 旁同一句 +
+ * Save 禁用；同时把那个空选项的措辞从"（由服务决定）"（那是解析后端那行的语义）改成「（未选择）」。
+ */
+describe("sparse service with no provider chosen", () => {
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
+  const openAdvanced = () =>
+    fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
+
+  it("says so while editing, and keeps Save blocked", () => {
+    // The wire says "not declared" with null; the form widens it to "" for Radix.
+    setRag({ embedding_sparse_source: "external", sparse_provider: null });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      F.sparseServiceUnconfigured,
+    );
+    // An ordinary edit would normally unlock Save; this pair has to keep it blocked.
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    expect(saveButton().disabled).toBe(true);
+    expect(saveButton().parentElement?.textContent).toContain(
+      F.sparseServiceUnconfigured,
+    );
+  });
+
+  it("lets the save through once a provider is chosen", () => {
+    setRag({
+      embedding_sparse_source: "external",
+      sparse_provider: "tei-sparse",
+      sparse_base_url: SPARSE_URL,
+    });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("calls the empty option what it is, not what the parse row means", () => {
+    // The wire says "not declared" with null; the form widens it to "" for Radix.
+    setRag({ embedding_sparse_source: "external", sparse_provider: null });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    // The label is only reachable inside the listbox (Radix does not open in happy-dom), so pin it
+    // through the trigger's mirrored value — which is where the misleading wording used to show.
+    expect(screen.getByLabelText(F.sparseProvider).textContent).toContain(
+      F.sparseProviderNone,
+    );
+  });
+});
+
+/**
  * 重建入口（spec 2026-09-14 §5 / P4）：设置页本身没有知识库身份，所以目标库由这一行
  * 选出来，再经确认弹窗点名——重建会把目标库的全部切片重新嵌入，点错代价高。
  */

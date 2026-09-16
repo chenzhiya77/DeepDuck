@@ -23,6 +23,7 @@ import {
   isCaptionCapable,
   isEmbeddingChange,
   isSparseProviderOptionDisabled,
+  isSparseServiceUnconfigured,
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
@@ -706,6 +707,42 @@ describe("isSparseProviderOptionDisabled", () => {
     // point of the third state (a network failure must not lock a working configuration).
     expect(isSparseProviderOptionDisabled("supported")).toBe(false);
     expect(isSparseProviderOptionDisabled("unknown")).toBe(false);
+  });
+});
+
+/**
+ * 「独立稀疏服务」但没挑提供商 —— 这份配置后端**必定拒绝**（`external` 需要具体的
+ * `sparse_provider`），而界面上原来既不提示、也能保存，直到那一次 400 才知道。
+ * 这是同一条纪律的最后一个洞：能确定会被拒的组合，编辑期就要说。
+ */
+describe("isSparseServiceUnconfigured", () => {
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(view({ embedding_sparse_source: "external" })),
+    ...over,
+  });
+
+  it("objects to an external service with no provider chosen", () => {
+    // The empty id is what a fresh external config seeds (Radix needs a non-empty value, so
+    // "not chosen" travels as ""), and the runtime refuses exactly that pair.
+    expect(isSparseServiceUnconfigured(form({ sparse_provider: "" }))).toBe(
+      true,
+    );
+    expect(
+      isSparseServiceUnconfigured(form({ sparse_provider: "tei-sparse" })),
+    ).toBe(false);
+  });
+
+  it("leaves the other two sources alone", () => {
+    expect(
+      isSparseServiceUnconfigured(
+        form({ embedding_sparse_source: "provider", sparse_provider: "" }),
+      ),
+    ).toBe(false);
+    expect(
+      isSparseServiceUnconfigured(
+        form({ embedding_sparse_source: "bm25", sparse_provider: "" }),
+      ),
+    ).toBe(false);
   });
 });
 
