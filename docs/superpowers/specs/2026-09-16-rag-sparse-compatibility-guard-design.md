@@ -59,6 +59,7 @@
 - 文案（与后端 `embedder_factory.py:87` 是同一事实，语气对齐，实现时直接落这两个键值）：
   - zh：`当前提供商只输出稠密向量，无法由它提供稀疏；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。`
   - en：`This provider emits dense vectors only, so it cannot supply the sparse half. Set the sparse source to a separate sparse service or local BM25.`
+  - > **2026-09-16 后续修订（主语改中性）**：上面两句的主语是"提供商"，但后续实测证明**支持稀疏的提供商下也有单路模型**（百炼的 `text-embedding-v1` / `v2`）⇒ 主因是模型时会指错对象。现文案已改为「当前选择的向量模型无法提供稀疏向量…」/「该向量模型只输出稠密向量」（i18n 键名不变），后端那两句不动。原文按冻结规矩保留，改动见 [2026-09-16-rag-sparse-capability-probe.md](../plans/2026-09-16-rag-sparse-capability-probe.md) 的 Task 5 第 8 条。
 - **Save 同时禁用，并且必须说明原因**：非法态下在 Save 左侧（复用既有「没有需要保存的改动」的位置）显示同一句。只灰按钮不给理由，会让告警落在视口外的人卡在「能改不能存、不知道为什么」。
 - 理由：这个组合后端必定拒绝，让按钮可点只会换来一次失败往返。
 

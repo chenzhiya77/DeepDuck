@@ -202,7 +202,7 @@
 
    英文同步（`This provider emits dense vectors only, so it cannot supply the sparse half.` → `The selected embedding model cannot supply the sparse half.`；`this provider emits dense vectors only` → `this embedding model emits dense vectors only`）。**用例不需要改**：前端没有一条钉字面文案，全部经 i18n key 引用（`F.sparseProviderUnsupported` / `F.sparseProviderDenseOnly`），改完自动对齐——但仍按规矩跑了窄面 + 全量。
    - **后端那两句不动**：`build_embedder` 那句（`嵌入 provider 'x' 只输出稠密向量 ⇒ …`）出自**构建期交叉校验**，那一支按构造就是**提供商级**（`spec.emits_sparse is False`）⇒ 主语写 provider 是对的；运行期守卫那句（`嵌入 provider 返回了空的稀疏向量 ⇒ …`）**不点元凶**，模型级场景下也成立。
-   - **一处留档提醒**：上一对的 spec（`specs/2026-09-16-rag-sparse-compatibility-guard-design.md` §3）**逐字引用了旧的那句 zh 文案**。那份已交付冻结，按规矩**不原地改**；此处记录它被本节取代（要改就另起一版增量）。
+   - **上一对的 spec 已按方案 B 批注**（用户裁定）：`specs/2026-09-16-rag-sparse-compatibility-guard-design.md` §3 D2 那两句旧引文**原文保留**，其下加了一行「2026-09-16 后续修订（主语改中性）」，说明主因可能是模型、现文案是什么、以及改动指向本 plan。**不原地改正文**——留档与现状各就各位。
 
 - [x] **门禁**：文档改动不触代码；两份指南与 plan 均过 prettier 且与 HEAD 同数。
 
