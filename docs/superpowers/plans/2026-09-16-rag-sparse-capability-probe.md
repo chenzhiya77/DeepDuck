@@ -175,8 +175,8 @@
 
 1. **自动探测真的发了**：打开「设置 → 模型 → 功能模型」后网络里出现 `POST /api/rag/config/probe-embedding [200]`（当前部署形态＝百炼 + **env key**，输入框是空的）。它的模型级答复是 `supported`：「模型 'qwen3.7-text-embedding' 一次调用同时返回稠密与稀疏。」——这一次真实调用也顺带证明了探针"只读、不落盘"。
 2. **名单已知的答案零出网**：同一次脚本里对 `openai-compatible` 直接拿到 `unsupported` + 两句出路文案。
-3. **腿一（已知不支持 ⇒ 编辑期拦下）**：把「提供商」切成 OpenAI 兼容 ⇒ 卡底与 Save 旁**同时**出现同一句「当前提供商只输出稠密向量，无法由它提供稀疏…」，Save 禁用；打开下拉，**「跟随向量模型」这一项 `aria-disabled=true`、`opacity: 0.5`、标签里带原因**，另两项可点；**点它没有任何反应**（列表不关、值不变）。
-   - **观感已修（用户选 C）**：置灰项正好是当前值时，Radix 会把选中项的文本镜像到触发器，折叠行原本读作「跟随向量模型 · 该提供商只输出稠密向量**，选不了**」——"选不了"像命令不像状态。改成只留原因后，折叠行读作「跟随向量模型 · 该提供商只输出稠密向量」（真栈复核过）。只动一个字符串，行为不变。
+3. **腿一（已知不支持 ⇒ 编辑期拦下）**：把「提供商」切成 OpenAI 兼容 ⇒ 卡底与 Save 旁**同时**出现同一句告警（原文见第 8 条，主语当日已改中性），Save 禁用；打开下拉，**「跟随向量模型」这一项 `aria-disabled=true`、`opacity: 0.5`、标签里带原因**，另两项可点；**点它没有任何反应**（列表不关、值不变）。
+   - **观感已修（用户选 C）**：置灰项正好是当前值时，Radix 会把选中项的文本镜像到触发器，折叠行原本读作「跟随向量模型 · 该提供商只输出稠密向量**，选不了**」——"选不了"像命令不像状态。改成只留原因后，折叠行读作「跟随向量模型 · 该向量模型只输出稠密向量」（真栈复核过）。只动文案，行为不变。
 4. **腿二（`unverifiable` ⇒ 放行 + 标「未验证」）**：把 Model ID 填成一个不存在的 id ⇒ 探针回 `unverifiable`，`detail` 是「未能验证（EmbedderError）：DashScope embedding failed (HTTP 400): InvalidParameter: Model not exist.」（非稀疏原因的失败**带状态码**，正是 §3 D3 要的形状）；界面该行出现「未验证」、**无告警**、**Save 可点**。
 5. **腿三（运行期兜底）**：临时起一个"只出稠密"的桩（一次性脚本，跑完已删），用**真 PUT** 把 `embedding_base_url` 指到它、`sparse_source=provider` ⇒ 打 `POST /api/knowledge-bases/{id}/manual-knowledge`（该路由 **embed → upsert → 落库**，所以拒绝不留残渣）⇒ **400** +「嵌入 provider 返回了空的稀疏向量 ⇒ …」；**连打三次全部 400**（这就是"每次判、判否定持续抛"，没有 fail-open 缓存——维度守卫那条在这里会第二次就静默）；卡片数前后都是 0。
 6. **逐字节还原**：`rag_config.json` 用备份覆盖回（md5 `15fa768a…` 与备份**逐字节相同**，且就是改动前那个值），`GET /api/rag/config` 复核 `embedding_base_url=null`、各字段 source 回到 `config_file`；桩进程已杀、脚本已删；浏览器里被我改过的表单是**未保存**状态，已重载丢弃（UI 复核：Model ID 回到 `qwen3.7-text-embedding`、无告警、Save 显示"没有需要保存的改动"）。
@@ -192,13 +192,19 @@
    | `text-embedding-async-v2`      | `unverifiable`    | 另一套接口（要 `input.url`，异步批处理），本客户端调不成 ⇒ 只能"未验证" |
    | `text-embedding-async-v1`      | `unverifiable`    | 同上                                                                    |
 
-   据此把 `text-embedding-v2` 填进表单（**不保存**）⇒ 探针答模型级 `unsupported` ⇒ 卡片出现「当前提供商只输出稠密向量…」的告警、Save 禁用。**这一腿现在算真栈过了**（真模型、真 HTTP，不是桩）。
+   据此把 `text-embedding-v2` 填进表单（**不保存**）⇒ 探针答模型级 `unsupported` ⇒ 卡片出现告警、Save 禁用。**这一腿现在算真栈过了**（真模型、真 HTTP，不是桩）。
    - 附带一条**诚实提醒**：两个 `async` 模型会落到 `unverifiable` ⇒ 编辑期放行，但真正入库时会以平台侧的 `EmbedderError` 失败。这是三态设计的既有代价（"没查成"必须放行，否则断网就锁死配置），不是本轮引入的缺陷。
 
-8. **由腿四暴露的一处文案不准确（待用户裁，未改）**：现在的两句都写"**提供商**只输出稠密向量"，但腿四证明**支持稀疏的提供商下也有单路模型**（`text-embedding-v2` 挂在百炼上）。也就是说这两句在主因是**模型**时会指错对象：
-   - 卡底与 Save 旁那句（`sparseProviderUnsupported`，上一版已上线）：主体写的是"当前提供商"；
-   - 置灰项里那句（`sparseProviderDenseOnly`，本轮新增）：主体同样写"该提供商"。
-     最小改法是把主语改成中性的（例如"当前选择的向量模型不能提供稀疏"或"这个组合拿不到稀疏向量"），**只动文案、不动逻辑**，两处各一句。**未改：这是已上线的对外文案，等你裁。**
+8. **文案主语改中性（用户已裁，已改）**：腿四证明**支持稀疏的提供商下也有单路模型**（`text-embedding-v2` 挂在百炼上），而这两句的主语原本都写"**提供商**" ⇒ 主因是**模型**时会指错对象。改动如下（**4 个字符串、逻辑零改动**）：
+
+   | key                                           | 原文                                                                                                      | 改成                                                                                              |
+   | --------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+   | `sparseProviderUnsupported`（卡底 + Save 旁） | 当前**提供商**只输出稠密向量，无法由它提供稀疏；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。 | 当前选择的**向量模型**无法提供稀疏向量；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。 |
+   | `sparseProviderDenseOnly`（置灰项的原因）     | 该**提供商**只输出稠密向量                                                                                | 该**向量模型**只输出稠密向量                                                                      |
+
+   英文同步（`This provider emits dense vectors only, so it cannot supply the sparse half.` → `The selected embedding model cannot supply the sparse half.`；`this provider emits dense vectors only` → `this embedding model emits dense vectors only`）。**用例不需要改**：前端没有一条钉字面文案，全部经 i18n key 引用（`F.sparseProviderUnsupported` / `F.sparseProviderDenseOnly`），改完自动对齐——但仍按规矩跑了窄面 + 全量。
+   - **后端那两句不动**：`build_embedder` 那句（`嵌入 provider 'x' 只输出稠密向量 ⇒ …`）出自**构建期交叉校验**，那一支按构造就是**提供商级**（`spec.emits_sparse is False`）⇒ 主语写 provider 是对的；运行期守卫那句（`嵌入 provider 返回了空的稀疏向量 ⇒ …`）**不点元凶**，模型级场景下也成立。
+   - **一处留档提醒**：上一对的 spec（`specs/2026-09-16-rag-sparse-compatibility-guard-design.md` §3）**逐字引用了旧的那句 zh 文案**。那份已交付冻结，按规矩**不原地改**；此处记录它被本节取代（要改就另起一版增量）。
 
 **门禁**：文档改动不触代码；两份指南与 plan 均过 prettier 且与 HEAD 同数。
 

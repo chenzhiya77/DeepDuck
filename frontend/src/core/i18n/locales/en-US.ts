@@ -1800,7 +1800,7 @@ export const enUS: Translations = {
         "Selecting “Follow the embedding model” runs one real embedding call (read-only, nothing is saved) to confirm the model really returns the sparse half.",
       sparseProbing: "Checking…",
       sparseUnverified: "Unverified",
-      sparseProviderDenseOnly: "this provider emits dense vectors only",
+      sparseProviderDenseOnly: "this embedding model emits dense vectors only",
       parseProvider: "Parsing provider",
       parseBaseUrl: "Local service address",
       parseBaseUrlHint: "The local MinerU service ships without auth, so expose it on an internal network only.",
@@ -1829,7 +1829,7 @@ export const enUS: Translations = {
       embeddingChangeWarning:
         "Changing the embedding model, provider, endpoint or sparse source requires re-indexing the knowledge bases already ingested with the previous one, or their retrieval quality will degrade.",
       sparseProviderUnsupported:
-        "This provider emits dense vectors only, so it cannot supply the sparse half. Set the sparse source to a separate sparse service or local BM25.",
+        "The selected embedding model cannot supply the sparse half. Set the sparse source to a separate sparse service or local BM25.",
       rerankModel: "Rerank model",
       rerankApiKey: "API key (rerank)",
       asrProvider: "Speech recognition (ASR)",

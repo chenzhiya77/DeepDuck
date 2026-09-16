@@ -1706,7 +1706,7 @@ export const zhCN: Translations = {
         "选中「跟随向量模型」会打一次真实嵌入调用（只读、不保存），用来确认所选模型确实给出稀疏向量。",
       sparseProbing: "检测中…",
       sparseUnverified: "未验证",
-      sparseProviderDenseOnly: "该提供商只输出稠密向量",
+      sparseProviderDenseOnly: "该向量模型只输出稠密向量",
       parseProvider: "解析提供方",
       parseBaseUrl: "本地服务地址",
       parseBaseUrlHint: "本地 MinerU 服务不带鉴权，只应部署在内网。",
@@ -1736,7 +1736,7 @@ export const zhCN: Translations = {
       embeddingChangeWarning:
         "更换向量模型、提供方、接口地址或稀疏来源后，已用旧配置入库的知识库需要重建索引，否则检索质量会下降。",
       sparseProviderUnsupported:
-        "当前提供商只输出稠密向量，无法由它提供稀疏；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。",
+        "当前选择的向量模型无法提供稀疏向量；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。",
       rerankModel: "重排模型",
       rerankApiKey: "API Key（重排）",
       asrProvider: "语音识别 (ASR)",
