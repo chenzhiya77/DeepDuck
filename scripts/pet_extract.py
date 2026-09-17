@@ -69,22 +69,29 @@ def key_filter(cfg: dict) -> str:
     return f"colorkey={k['color']}:{k['similarity']}:{k['blend']}"
 
 
-def mask_filter(cfg: dict, cli_mask: list[int] | None) -> str:
-    """Paint a rectangle in the key colour before keying.
+def mask_filter(cfg: dict, cli_mask: list[list[int]] | None) -> str:
+    """Paint one or more rectangles in the key colour before keying.
 
-    For a generator that burns a watermark into the frame: the mark is not the
-    key colour, so colorkey cannot remove it, and it would both pollute the
-    measured union box and ride into the sheet. Filling its rectangle with the
-    key colour makes the existing key remove it, and keeps every rule below
-    unchanged. Rectangle is x0,y0,x1,y1 in source pixels; CLI wins over config.
+    For a generator that burns marks into the frame: they are not the key
+    colour, so colorkey cannot remove them, and they would both pollute the
+    measured union box and ride into the sheet. Filling their rectangles with
+    the key colour makes the existing key remove them, and keeps every rule
+    below unchanged. Rectangles are x0,y0,x1,y1 in source pixels; CLI wins over
+    config. Either side may carry one rectangle or a list of them, so a clip
+    that picks up a second mark (a corner badge, say) is handled without
+    touching the shared config every other clip shares.
     """
-    rect = cli_mask or cfg.get("mask")
-    if not rect:
+    raw = cli_mask if cli_mask else cfg.get("mask")
+    if not raw:
         return ""
-    x0, y0, x1, y1 = rect
-    if x1 <= x0 or y1 <= y0:
-        fail(f"mask must be x0,y0,x1,y1 with x1>x0 and y1>y0, got {rect}")
-    return f"drawbox=x={x0}:y={y0}:w={x1 - x0}:h={y1 - y0}:color={cfg['key']['color']}@1.0:t=fill"
+    rects = [raw] if isinstance(raw[0], int) else raw
+    boxes = []
+    for rect in rects:
+        x0, y0, x1, y1 = rect
+        if x1 <= x0 or y1 <= y0:
+            fail(f"mask must be x0,y0,x1,y1 with x1>x0 and y1>y0, got {rect}")
+        boxes.append(f"drawbox=x={x0}:y={y0}:w={x1 - x0}:h={y1 - y0}:color={cfg['key']['color']}@1.0:t=fill")
+    return ",".join(boxes)
 
 
 def measure(args: argparse.Namespace) -> None:
@@ -347,8 +354,8 @@ def main() -> None:
     m.add_argument("--video", type=Path, required=True)
     m.add_argument("--config", type=Path, help="optional config supplying key params")
     m.add_argument("--scale-div", type=int, default=10, help="bbox precision divisor (default 10 => ±10px)")
-    m.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
-                   help="paint this rectangle in the key colour before keying (burned-in watermark); overrides config \"mask\"")
+    m.add_argument("--mask", type=int, nargs=4, action="append", metavar=("X0", "Y0", "X1", "Y1"),
+                   help="paint this rectangle in the key colour before keying (burned-in mark); repeat it to mask more than one rectangle. Overrides config \"mask\"")
     m.set_defaults(fn=measure)
     s = sub.add_parser("sheet", help="extract, key, crop, scale and stack one state sheet")
     s.add_argument("--video", type=Path, required=True)
@@ -363,7 +370,7 @@ def main() -> None:
     s.add_argument("--start", type=int, default=0,
                    help="loop only: first frame of the loop (default 0). Use it when the clip opens with a stationary "
                         "hold — starting the loop inside that hold gives every cycle a dead beat")
-    s.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
+    s.add_argument("--mask", type=int, nargs=4, action="append", metavar=("X0", "Y0", "X1", "Y1"),
                    help="paint this rectangle in the key colour before keying (burned-in watermark); overrides config \"mask\"")
     s.add_argument("--out", type=Path, required=True)
     s.set_defaults(fn=sheet)
@@ -376,7 +383,7 @@ def main() -> None:
     fr.add_argument("--window", type=int, nargs=2, metavar=("START", "END"), help="oneshot frame-index window")
     fr.add_argument("--frames", type=int, help="loop only: consider frames [start, N)")
     fr.add_argument("--start", type=int, default=0, help="loop only: first frame of the loop (default 0)")
-    fr.add_argument("--mask", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"),
+    fr.add_argument("--mask", type=int, nargs=4, action="append", metavar=("X0", "Y0", "X1", "Y1"),
                     help="paint this rectangle in the key colour before anything else; overrides config \"mask\"")
     fr.add_argument("--no-scale", action="store_true",
                     help="keep source resolution (crop applied, not resized) so the key is pulled at full res and only "

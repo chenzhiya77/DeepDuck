@@ -4,11 +4,25 @@
   "displaySize": 158,
   "fallback": "idle",
   "states": {
+    "done": {
+      "frames": 31,
+      "fps": 8,
+      "loop": false,
+      "sheetWidth": 15872,
+      "sheetHeight": 512
+    },
     "error": {
       "frames": 31,
       "fps": 8,
       "loop": true,
       "sheetWidth": 15872,
+      "sheetHeight": 512
+    },
+    "greet": {
+      "frames": 30,
+      "fps": 8,
+      "loop": false,
+      "sheetWidth": 15360,
       "sheetHeight": 512
     },
     "idle": {
