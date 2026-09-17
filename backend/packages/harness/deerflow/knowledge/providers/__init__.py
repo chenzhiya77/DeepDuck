@@ -40,6 +40,15 @@ class ProviderSpec:
     #: needs the runtime dimension probe (spec §4.2 维度 #1). DashScope sends
     #: ``parameters.dimension``; a generic ``/v1/embeddings`` endpoint does not.
     pins_dimension: bool = False
+    #: Whether the vendor fixes the endpoint itself, so the settings UI shows the address
+    #: as read-only rather than asking for it (spec 2026-09-17 §3 D1). Always agrees with
+    #: :attr:`default_endpoint` being set — the two are one rule, pinned by a single test.
+    has_fixed_endpoint: bool = False
+    #: The vendor's own endpoint, used when ``rag.embedding_base_url`` is empty. A plain
+    #: string on purpose: importing an implementation module for the constant would defeat
+    #: this module's import-light contract, so a test pins it against the class constant
+    #: instead (see ``test_the_dashscope_default_endpoint_has_not_drifted``).
+    default_endpoint: str | None = None
 
 
 #: leg -> provider id -> spec. Adding a provider means adding a row here, never
@@ -54,6 +63,24 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             secret_env_var="DASHSCOPE_EMBEDDING_API_KEY",
             emits_sparse=True,
             pins_dimension=True,
+            # The platform's address, not the admin's to set — so the UI shows it read-only.
+            has_fixed_endpoint=True,
+            default_endpoint="https://dashscope.aliyuncs.com",
+        ),
+        "volcengine-ark": ProviderSpec(
+            leg="embedding",
+            provider_id="volcengine-ark",
+            implementation="deerflow.knowledge.embedder_ark:ArkEmbedder",
+            # Only the multimodal endpoint exposes the sparse half; the text one
+            # (`/api/v3/embeddings`, OpenAI-shaped and batchable) has no such parameter.
+            path="/api/v3/embeddings/multimodal",
+            secret_env_var="ARK_API_KEY",
+            emits_sparse=True,
+            # The adapter always sends `dimensions` (born at 2048, collections are 1024), so
+            # the width is certified in the request and needs no runtime probe.
+            pins_dimension=True,
+            has_fixed_endpoint=True,
+            default_endpoint="https://ark.cn-beijing.volces.com",
         ),
         "openai-compatible": ProviderSpec(
             leg="embedding",

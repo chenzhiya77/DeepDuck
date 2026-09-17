@@ -74,6 +74,14 @@ class RagEmbeddingProviderCapability(BaseModel):
 
     provider_id: str = Field(..., description="Curated allowlist id, exactly as the PUT accepts it.")
     emits_sparse: bool = Field(..., description="True when 'provider' is a valid embedding_sparse_source for it.")
+    has_fixed_endpoint: bool = Field(
+        ...,
+        description="True when the vendor fixes this provider's endpoint, so the address field is read-only.",
+    )
+    default_endpoint: str | None = Field(
+        ...,
+        description="The vendor's own endpoint, used when rag.embedding_base_url is empty; None when it has none.",
+    )
 
 
 class RagConfigResponse(BaseModel):
@@ -178,14 +186,29 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
     return RagConfigResponse(
         config=RagConfigFile.model_validate(values),
         sources=sources,
-        embedding_providers=[
+        embedding_providers=_embedding_provider_capabilities(),
+    )
+
+
+def _embedding_provider_capabilities() -> list[RagEmbeddingProviderCapability]:
+    """The embedding leg of the allowlist, in its own order — never a second copy of it.
+
+    The address keys ride here rather than being hardcoded in the UI: the "field is read-only
+    because the vendor fixes it" rule has to follow the *row*, not a provider name, or adding a
+    second such provider silently leaves the field editable (spec 2026-09-17 §3 D1).
+    """
+    capabilities: list[RagEmbeddingProviderCapability] = []
+    for provider_id in provider_ids("embedding"):
+        spec = resolve_provider("embedding", provider_id)
+        capabilities.append(
             RagEmbeddingProviderCapability(
                 provider_id=provider_id,
-                emits_sparse=resolve_provider("embedding", provider_id).emits_sparse,
+                emits_sparse=spec.emits_sparse,
+                has_fixed_endpoint=spec.has_fixed_endpoint,
+                default_endpoint=spec.default_endpoint,
             )
-            for provider_id in provider_ids("embedding")
-        ],
-    )
+        )
+    return capabilities
 
 
 @router.get(

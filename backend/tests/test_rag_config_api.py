@@ -432,9 +432,12 @@ def test_get_returns_the_embedding_provider_capabilities(config_env: Path):
 
     # The list mirrors the curated allowlist in its own order — never a second copy of it.
     assert [entry["provider_id"] for entry in body[_CAPABILITY_FIELD]] == list(provider_ids("embedding"))
-    assert {entry["provider_id"]: entry["emits_sparse"] for entry in body[_CAPABILITY_FIELD]} == {
-        "dashscope": True,
-        "openai-compatible": False,
+    # Up to 2026-09-17 the two extra keys travel with the row: the address field is locked by
+    # *capability* (this provider fixes its own endpoint) instead of by a hardcoded provider id.
+    assert {entry["provider_id"]: (entry["emits_sparse"], entry["has_fixed_endpoint"], entry["default_endpoint"]) for entry in body[_CAPABILITY_FIELD]} == {
+        "dashscope": (True, True, "https://dashscope.aliyuncs.com"),
+        "openai-compatible": (False, False, None),
+        "volcengine-ark": (True, True, "https://ark.cn-beijing.volces.com"),
     }
 
 

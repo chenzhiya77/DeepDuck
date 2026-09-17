@@ -141,6 +141,7 @@ def test_sparse_keys_declared_in_yaml_are_carried_by_rag_config():
     ("leg", "provider_id", "expected_impl", "expected_endpoint_key"),
     [
         ("embedding", "dashscope", "deerflow.knowledge.embedder:DashScopeEmbedder", "base_url"),
+        ("embedding", "volcengine-ark", "deerflow.knowledge.embedder_ark:ArkEmbedder", "base_url"),
         ("embedding", "openai-compatible", "deerflow.knowledge.embedder_openai:OpenAICompatibleEmbedder", "base_url"),
         ("rerank", "dashscope", "deerflow.knowledge.reranker:DashScopeReranker", "base_url"),
         ("rerank", "generic-rerank", "deerflow.knowledge.reranker_generic:GenericReranker", "base_url"),
@@ -159,7 +160,9 @@ def test_allowlist_resolves_each_supported_provider(leg, provider_id, expected_i
 
 
 def test_provider_ids_lists_the_curated_set_per_leg():
-    assert provider_ids("embedding") == ("dashscope", "openai-compatible")
+    # Declaration order is what the settings UI renders, and the two dual-path providers sit
+    # together (spec 2026-09-17): both return dense+sparse in one call.
+    assert provider_ids("embedding") == ("dashscope", "volcengine-ark", "openai-compatible")
     assert provider_ids("rerank") == ("dashscope", "generic-rerank")
     assert provider_ids("parse") == ("mineru-cloud", "mineru-local")
     assert provider_ids("sparse") == ("tei-sparse",)

@@ -183,7 +183,7 @@ async def test_build_embedder_refuses_dense_only_provider_with_provider_sparse(m
 
 @pytest.mark.asyncio
 async def test_build_embedder_refuses_a_non_dashscope_provider_without_an_address(monkeypatch):
-    """只有 dashscope 有内置地址，其余 provider 缺 ``embedding_base_url`` 就构不出来。"""
+    """只有自带地址的 provider（dashscope / volcengine-ark）能省掉 ``embedding_base_url``。"""
     _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=None, embedding_sparse_source="bm25")
 
     with pytest.raises(RagConfigurationError, match="embedding_base_url"):

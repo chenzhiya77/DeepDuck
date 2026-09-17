@@ -88,7 +88,7 @@ class RagConfigFile(BaseModel):
     # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Ids are
     # validated against `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`; every field is
     # optional, so an existing file that only sets the models keeps loading unchanged.
-    embedding_provider: Literal["dashscope", "openai-compatible"] | None = Field(default=None, description="Embedding provider id; None uses config.yaml.")
+    embedding_provider: Literal["dashscope", "volcengine-ark", "openai-compatible"] | None = Field(default=None, description="Embedding provider id; None uses config.yaml.")
     embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
     embedding_dimension: int | None = Field(default=None, ge=1, description="Dense dimension override; None probes the provider at enable time.")
     embedding_sparse_source: Literal["provider", "external", "bm25"] | None = Field(default=None, description="Where the sparse vectors come from; None uses config.yaml.")

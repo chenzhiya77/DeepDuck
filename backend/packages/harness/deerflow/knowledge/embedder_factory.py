@@ -139,27 +139,28 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
 
 
 def _build_dense(spec, rag, declared: int | None, client: Any | None) -> Embedder:
+    """Build the dense half. The allowlist row says whether this vendor fixes its own address.
+
+    A stored ``rag.embedding_base_url`` always wins — that is what keeps a workspace-scoped
+    DashScope endpoint usable; ``spec.default_endpoint`` is only the fallback for a row whose
+    vendor supplies one (the settings UI shows that field read-only for exactly those rows).
+    """
     from deerflow.reflection import resolve_variable
 
     kwargs: dict = {"client": client}
-    if spec.provider_id == "dashscope":
-        # DashScope's own client carries the base URL default and reads its key from the env.
-        if rag.embedding_base_url:
-            kwargs["base_url"] = rag.embedding_base_url
-        if rag.embedding_model:
-            kwargs["model"] = rag.embedding_model
-        if rag.embedding_api_key:
-            kwargs["api_key"] = rag.embedding_api_key
-        if declared is not None:
-            kwargs["dimension"] = declared
-        return _guard(resolve_variable(spec.implementation)(**kwargs), spec, rag)
-    if not (rag.embedding_base_url or "").strip():
-        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url（只有 dashscope 有内置地址）")
-    kwargs["base_url"] = rag.embedding_base_url
+    base_url = (rag.embedding_base_url or "").strip() or spec.default_endpoint
+    if not base_url:
+        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url（这一家没有内置地址）")
+    kwargs["base_url"] = base_url
     if rag.embedding_model:
         kwargs["model"] = rag.embedding_model
     if rag.embedding_api_key:
         kwargs["api_key"] = rag.embedding_api_key
+    if spec.pins_dimension:
+        # The width is injected, never inferred by the implementation (spec 2026-09-17 §3 D3):
+        # a vendor whose model is born wider than our collections must be *told* the target,
+        # and the guard that would catch a wrong width only fires on a real call.
+        kwargs["dimension"] = declared if declared is not None else COLLECTION_DIMENSION
     return _guard(resolve_variable(spec.implementation)(**kwargs), spec, rag)
 
 

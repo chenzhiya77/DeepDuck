@@ -204,7 +204,7 @@ class RagConfig(BaseModel):
     # default reproduces today's behaviour, so a config.yaml that only sets the models
     # above keeps resolving to exactly the providers it used before. The ids are
     # validated against `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`.
-    embedding_provider: Literal["dashscope", "openai-compatible"] = Field(default="dashscope", description="Embedding provider id (curated allowlist); `openai-compatible` emits dense only.")
+    embedding_provider: Literal["dashscope", "volcengine-ark", "openai-compatible"] = Field(default="dashscope", description="Embedding provider id (curated allowlist); `openai-compatible` emits dense only.")
     embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
     embedding_dimension: int | None = Field(default=None, ge=1, description="Override for the dense dimension; None probes the provider at enable time. Must be 1024 — the Qdrant collections are created at that size.")
     embedding_sparse_source: Literal["provider", "external", "bm25"] = Field(default="provider", description="Who supplies the sparse vectors: the embedding provider itself, the separate `sparse_*` service, or a local BM25 encoder.")
