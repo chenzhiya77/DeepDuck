@@ -341,6 +341,10 @@ export function FunctionalModelsView() {
   // here (session-only) instead of being derived from wherever the dialog was opened.
   const [reindexKbId, setReindexKbId] = useState("");
   const [reindexOpen, setReindexOpen] = useState(false);
+  // Why the server could not verify the configuration it just saved (spec 2026-09-17 save-time
+  // probe §3 D3). It describes what is *in force*, so it lasts until the next save reports its own
+  // verdict rather than being cleared by the next keystroke.
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const { data: knowledgeBases } = useKnowledgeBases();
   const reindexStatus = useReindexStatus(reindexKbId || null);
   const reindex = useReindexKnowledgeBase(reindexKbId || null);
@@ -539,7 +543,12 @@ export function FunctionalModelsView() {
 
   function handleSave() {
     if (!hasChanges) return;
-    save.mutate(payload, { onSuccess: () => toast.success(F.saved) });
+    save.mutate(payload, {
+      onSuccess: (saved) => {
+        toast.success(F.saved);
+        setSaveWarning(saved.warning ?? null);
+      },
+    });
   }
 
   const libraries = knowledgeBases ?? [];
@@ -1110,6 +1119,14 @@ export function FunctionalModelsView() {
         onConfirm={handleReindexConfirm}
         pending={reindex.isPending}
       />
+
+      {/* A save that *went through* with a caveat — not the alert slot, and not a toast to
+          dismiss: it says what the server could not check about the configuration now in force. */}
+      {saveWarning && (
+        <p className="text-muted-foreground mt-3 text-sm" role="status">
+          {saveWarning}
+        </p>
+      )}
 
       <div className="flex items-center justify-end gap-3">
         {/* Disabled without a reason reads as a broken button, and the alert above can be

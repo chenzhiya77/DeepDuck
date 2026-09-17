@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-save-time-embedding-probe-design.md](../specs/2026-09-17-rag-save-time-embedding-probe-design.md)
-**Status:** Task 0–1 已交付 2026-09-17（Task 2–3 待开工）
+**Status:** Task 0–2 已交付 2026-09-17（Task 3 待开工）
 **Parent:** [2026-09-17-rag-ark-embedding-provider.md](2026-09-17-rag-ark-embedding-provider.md)（那份 plan 的 spec §6 把 G1/G2 判为「同因、合并成独立一条」）
 
 **Architecture:** 把 PUT 从「只做静态判定」变成「**静态判定 → 真打一次 → 才写盘**」，但那一次调用**只在相关字段真的变了时才发**（改 rerank/parse 等一律零延迟）。一次调用同时答两问（宽度 / 稀疏在不在），因为运行期本来就是同一段代码同时判这两件事。平台不可达**不拦**——改配置的动机常常正是"当前这份不能用"，拦住等于堵死出口——而是 200 加一句 `warning`（**始终存在、无话时为 `null`**；刻意**不用** `models/config/validate` 那个 `exclude_none` 的写法——它是递归的，会把嵌套 `config` 里的 null 一并剔掉，理由见 spec D3）。
@@ -93,10 +93,21 @@
 
 ## Task 2 — 前端：把 `warning` 显示出来（D3 的另一半）
 
-- [ ] **RED**：`frontend/tests/unit/settings/functional-models.dom.test.tsx` 加用例：保存成功但响应带 `warning` ⇒ 页面出现那句话（断言文本）；**没有 `warning` ⇒ 什么都不出现**（不是为了显示而显示）。
-- [ ] **GREEN**：`core/rag/types.ts`（PUT 响应类型加 `warning: string | null`——**非可选**，它始终在）、`hooks.ts`/`api.ts` 把它带回来、`functional-models-view.tsx` 用**既有**的提示形态渲染（Task 0 第 4 项定的落点，别新造控件）；i18n 三处按需加键。
-- [ ] **neuter 一条**：去掉渲染 ⇒ 用例红。
-- [ ] **门禁**：`pnpm check`（eslint + tsc；**tsc 的允许集只有宠物线那一条** `pet-sprite.dom.test.tsx` 的 `"greet"`——若它已修，则应为零诊断）；prettier **逐文件与 HEAD 比数字**；**全量前端**。
+**状态：已交付 2026-09-17。**
+
+**交付纪要**
+
+- **RED**：`tests/unit/settings/functional-models.dom.test.tsx` 加一个 describe（2 条），并给该文件的 `view()` 夹具加 `warning` 选参（默认 `null` = 服务端验证过了）。为此加了一个 `saveWillReturn(warning)` 助手：视图的 `onSuccess` 收的就是响应体，所以「保存成功但带警告」要靠它摆出来。RED 两条都红（`findByText` 超时，通知根本没渲染）。
+- **GREEN**：`core/rag/types.ts` 的 `RagConfigView` 加 `warning: string | null`（**非可选**，注释写明「旧后端不发时读作 `undefined`，与 `null` 同义」）；`functional-models-view.tsx` 加一个 `saveWarning` state、在 `handleSave` 的 `onSuccess(saved)` 里 `setSaveWarning(saved.warning ?? null)`，渲染用**既有的**形态（`<p className="text-muted-foreground mt-3 text-sm" role="status">`，照 `models-add-dialog`），落在 Save 那一行**上方自成一行**——不跟 `sparseBlockReason`/`noChanges` 抢同一个槽位。
+- **两处与计划不符（都不需要改，如实记）**：① **`api.ts` / `hooks.ts` 零改动**——`saveRagConfig` 本来就 `Promise<RagConfigView>`，`useMutation` 也本就把响应体递给 `onSuccess`，所以只改类型就够；② **i18n 三处没有加键**——这句措辞由服务端给（`提交后的配置已保存，但未能验证：…`），前端只负责显示，没有新的界面文案（与 400 的 `detail` 走 toast 同一口径）。
+- **一条计划没定的规则，我定了并给了用例**：这条通知**属于它描述的那次保存**，所以「下一次保存报自己的结论」时被替换/清空，而不是被下一次敲键清掉（它说的是**已在生效**的那份配置）。neuter ② 专门钉它。
+- **neuter 两条都有牙**：① 去掉渲染 ⇒ 2 红；② 只在有话说时才赋值（`if (saved.warning)`，即永不清理）⇒ **只有第 2 条红**（第 1 条仍绿）⇒ 证明"属于最后一次保存"这条规则不是顺带的。
+- **门禁**：`pnpm check`（eslint + tsc）**零诊断**（宠物线那条预存红已被 `fc7548f3` 修掉，因此现在是干净零）；prettier 逐文件与 HEAD 比数字：`types.ts` 0/0、`functional-models-view.tsx` 17/17、`functional-models.dom.test.tsx` 129/129、`config-form.test.ts` 194/194 ⇒ **零新增格式债**（其中 `config-form.test.ts` 我第一版写了个内联字面量，prettier 会折成 5 行 ⇒ 当场按它的偏好预折，数字才回到 194）；**全量前端 238 文件 / 2549 用例 / 0 失败**。
+
+- [x] **RED**：`frontend/tests/unit/settings/functional-models.dom.test.tsx` 加用例：保存成功但响应带 `warning` ⇒ 页面出现那句话（断言文本）；**没有 `warning` ⇒ 什么都不出现**（不是为了显示而显示）。
+- [x] **GREEN**：`core/rag/types.ts`（PUT 响应类型加 `warning: string | null`——**非可选**，它始终在）、`hooks.ts`/`api.ts` 把它带回来、`functional-models-view.tsx` 用**既有**的提示形态渲染（Task 0 第 4 项定的落点，别新造控件）；i18n 三处按需加键。
+- [x] **neuter 一条**：去掉渲染 ⇒ 用例红。（另加一条：永不清理 ⇒ 只有「下一次保存」那条红。）
+- [x] **门禁**：`pnpm check`（eslint + tsc；**tsc 的允许集只有宠物线那一条** `pet-sprite.dom.test.tsx` 的 `"greet"`——若它已修，则应为零诊断）；prettier **逐文件与 HEAD 比数字**；**全量前端**。
 
 ## Task 3 — 文档同步与真栈验收
 

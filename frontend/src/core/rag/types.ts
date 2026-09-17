@@ -75,11 +75,20 @@ export interface RagEmbeddingProviderCapability {
   default_endpoint: string | null;
 }
 
-/** GET/PUT response: the effective values plus the flattened per-field origin map. */
+/**
+ * GET/PUT response: the effective values plus the flattened per-field origin map.
+ *
+ * `warning` is the save-time probe's verdict (spec 2026-09-17 save-time probe §3 D3): `null` when
+ * the configuration was verified, and otherwise why it could not be — the write still went
+ * through, because an endpoint that is down now may be up later. It is declared non-optional
+ * because it is always present on this contract; a response that predates it reads as `undefined`,
+ * which the view treats exactly like `null` (nothing to say).
+ */
 export interface RagConfigView {
   config: RagConfigValues;
   sources: Record<string, RagConfigSource>;
   embedding_providers?: RagEmbeddingProviderCapability[];
+  warning: string | null;
 }
 
 /** PUT body: the whole object, standing in for the new file content. */

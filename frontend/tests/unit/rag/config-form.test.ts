@@ -47,6 +47,8 @@ function view(
   sources: Record<string, RagConfigSource> = {},
 ): RagConfigView {
   return {
+    // The form helpers read nothing but `config` / `sources`; the save-time verdict rides along.
+    warning: null,
     config: {
       qdrant_url: "http://qdrant:6333",
       embedding_model: "qwen3.7-text-embedding",
@@ -133,7 +135,11 @@ describe("formValuesFromConfig", () => {
   });
 
   it("falls back to empty strings for an unset view", () => {
-    const values = formValuesFromConfig({ config: {}, sources: {} });
+    const values = formValuesFromConfig({
+      config: {},
+      sources: {},
+      warning: null,
+    });
 
     expect(values.qdrant_url).toBe("");
     expect(values.embedding_api_key).toBe("");

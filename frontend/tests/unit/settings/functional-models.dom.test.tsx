@@ -59,6 +59,10 @@ const F = zhCN.settings.functionalModels;
 const MASKED = "********";
 const SPARSE_URL = "http://127.0.0.1:8081";
 
+/** What the server says when it saved the configuration but could not verify it (server-side copy). */
+const SAVE_WARNING =
+  "提交后的配置已保存，但未能验证：未能连通（EmbedderError）：All connection attempts failed";
+
 const saveMock = rs.fn();
 const reindexMock = rs.fn();
 const probeMock = rs.fn();
@@ -92,9 +96,13 @@ function view(
     providers?: typeof EMBEDDING_PROVIDERS | null;
     /** Per-field provenance this case needs to restate (e.g. a key that comes from the env). */
     sources?: Record<string, string>;
+    /** The save-time probe's verdict (spec 2026-09-17 save-time probe §3 D3). */
+    warning?: string | null;
   } = {},
 ): RagConfigView {
   return {
+    // The probe always reports *something*: `null` means it verified the configuration.
+    warning: opts.warning ?? null,
     // `null` models a response from a server that predates the capability block.
     ...(opts.providers === null
       ? {}
@@ -251,6 +259,19 @@ function setKnowledge(over: { libraries?: Array<{ id: string; name: string }>; s
     mutate: reindexMock,
     isPending: over.pending ?? false,
   });
+}
+
+/**
+ * Make the next save resolve with the server's verdict: the view's `onSuccess` receives the
+ * response body, so this is how a save that *could not be verified* is staged.
+ */
+function saveWillReturn(warning: string | null) {
+  saveMock.mockImplementation(
+    (
+      _payload: unknown,
+      options: { onSuccess?: (saved: RagConfigView) => void },
+    ) => options.onSuccess?.(view({}, { warning })),
+  );
 }
 
 function renderPage() {
@@ -412,6 +433,51 @@ describe("functional-model form", () => {
 
     expect(screen.getByText(M.adminRequired)).toBeTruthy();
     expect(screen.queryByLabelText(F.embeddingModel)).toBeNull();
+  });
+});
+
+/**
+ * The save-time probe's verdict (spec 2026-09-17 save-time probe §3 D3). A 400 is the ordinary
+ * failure path and already reaches the user as a toast; what has no other home is the *successful*
+ * save the server could not verify — it must not read as a clean save, and it must not read as a
+ * refusal either.
+ */
+describe("save-time verification notice", () => {
+  it("shows what the server could not verify about the configuration it saved", async () => {
+    renderPage();
+    openFunctionalView();
+    saveWillReturn(SAVE_WARNING);
+
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    const notice = await screen.findByText(SAVE_WARNING);
+    // Saved, with a caveat — the write went through, so the notice is a status and not an alert.
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    expect(notice.getAttribute("role")).toBe("status");
+  });
+
+  it("says nothing once the server verified a save", async () => {
+    renderPage();
+    openFunctionalView();
+    saveWillReturn(SAVE_WARNING);
+
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+    await screen.findByText(SAVE_WARNING);
+
+    // The notice belongs to the save it describes; the next save reports its own verdict.
+    saveWillReturn(null);
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(screen.queryByText(SAVE_WARNING)).toBeNull());
   });
 });
 
