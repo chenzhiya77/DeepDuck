@@ -223,9 +223,20 @@ describe("AgentPet 数据源(外壳那条薄订阅)", () => {
     expect(spriteUrl(container)).toContain("wait.webp");
   });
 
-  it("没有注册目标时照常渲染 idle,不抛错", () => {
+  it("没有注册目标时照常渲染,不抛错 —— 挂载先播 greet", async () => {
     const { container } = renderPet(null);
 
+    // greet 有真帧之后,挂载时的 sprite 就是它(此前无帧 ⇒ 按回落契约塌成 idle)
+    expect(spriteUrl(container)).toContain("greet.webp");
+
+    // 一次性态播完必须交回 base —— 否则这句问候会一直循环下去。
+    // 换图要过渲染器那道解码门,是异步的,所以断言前先冲一次微任务。
+    const sprite = container.querySelector(".pet-sprite");
+    if (!(sprite instanceof HTMLElement)) throw new Error("no sprite");
+    fireEvent.animationEnd(sprite);
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(spriteUrl(container)).toContain("idle.webp");
   });
 });
