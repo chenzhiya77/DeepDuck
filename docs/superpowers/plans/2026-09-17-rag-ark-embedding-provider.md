@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-ark-embedding-provider-design.md](../specs/2026-09-17-rag-ark-embedding-provider-design.md)
-**Status:** Task 0–2 已交付 2026-09-17（Task 3 文档 + 真栈 待开工）
+**Status:** Task 0–3 已交付 2026-09-17（仅剩真栈的两条 UI 腿待浏览器登录后点击，见 Task 3）
 **Parent:** [2026-09-16-rag-sparse-capability-probe.md](2026-09-16-rag-sparse-capability-probe.md)（模型级能力探针；探针本身**零改动**，本计划只是让它多覆盖一行 provider）
 
 **Architecture:** 把「一次调用同时给稠密+稀疏」这条**已有的机制**（今天只有 `dashscope` 一家）补上第二个实现。落点是三层、全是加法：**allowlist 加一行**（`emits_sparse=True` 就是"第二家双路"的全部声明）、**一个新适配器**（走火山的多模态端点、一次一条、无条件发 `dimensions: 1024`）、**前端那个写死的选项常量加一个值**。保存期交叉校验、能力探针、空稀疏兜底、密钥 env 提示**都已经是 provider 无关的**，不改。
@@ -105,14 +105,28 @@
 
 ## Task 3 — 文档同步与真栈验收
 
-- [ ] `backend/AGENTS.md`（嵌入 provider 段）：补 `volcengine-ark` 一行——**稀疏只在多模态端点、文本端点没有该参数**、**一次一条所以 `batch_size=1`**（代价按**实测 ~1.3 倍**写，不按"请求数 × 20"的直觉）、**无条件发 `dimensions:1024` 的理由**（born 2048 + 维度守卫不在保存期跑）、**`text_type` 收下但不发送**；另补**`has_fixed_endpoint` / `default_endpoint` 这条规则**——地址由提供方固定 ⇒ 界面锁、**存量值仍然生效（workspace 级地址保留）**、界面给「恢复默认」；并记 §6 的 G3（rerank 那行仍写死）。
-- [ ] `frontend/AGENTS.md`（功能模型段）：补新选项，以及"它 `emits_sparse=true` ⇒ 不出现 dense-only 告警"。
-- [ ] **真栈腿 A①（配置与探针）**：设置页选火山（模型 `doubao-embedding-vision-250615`）+ 密钥 ⇒ 保存成功、无告警；`POST /api/rag/config/probe-embedding` 回 **`supported`**（"双路"在真栈上的证据）。
-- [ ] **真栈腿 A②（真调用）**：用真端点跑一次 `build_embedder(...).embed([...])` ⇒ `dense` 非空且 **`sparse.indices` 非空**。
-- [ ] **真栈腿 A③（地址那一行的规则）**：选火山 ⇒ 锁框显示**火山的默认地址**、「恢复默认」**不出现**（没有存量值）；手工在 `rag_config.json` 塞一个**自定义地址**（就用百炼的 workspace 级地址试）⇒ 重载页面后锁框显示**那个自定义地址**、且「恢复默认」**出现** ⇒ 点它，框改回默认，`embedding_base_url` 被清空。**这一步专门证"workspace 级地址没被砍"**（前提：前端**不会**回退/重置这个字段——实现时确认一次）。
-- [ ] **真栈腿 A④（收尾）**：配置**逐字节还原**（md5 与动手前相同）、密钥不落盘、不新建任何文件；「重建索引」入口**只确认在、不实际重建**（重建会改数据）。
-      > 「不切 provider ⇒ 零影响」**不在真栈重复**——它由后端那两条纯加法形状守卫在用例层钉住。原先把它写成真栈的一条是**自相矛盾**的（同一条腿里既要切又要求不切）。
-- [ ] **门禁**：文档过 prettier（worktree 与 HEAD 数字相同）；`rag_config.json` md5 与动手前相同。
+**状态：文档已交付；真栈两条腿已过、两条 UI 腿待登录（2026-09-17）。**
+
+**交付纪要 —— 文档**
+
+- `backend/AGENTS.md`：能力块那一句补上两个新键（`{provider_id, emits_sparse, has_fixed_endpoint, default_endpoint}`）并说明「锁由**能力**而非写死的 provider 名决定」；嵌入 provider 段**新增两段**——「两个厂商现在都给两半」（火山的形状：一次一条 ⇒ `batch_size=1`、实测 ~1.3 倍；`dimensions` 每次都发且由工厂注入、`ArkEmbedder.__init__` 故意不给默认值；`text_type` 收下不发；稀疏只在多模态端点）与「厂商可能固定自己的地址」（`has_fixed_endpoint`/`default_endpoint`、**存量值仍然生效**、`default_endpoint` 是字面量不 import 的理由、**只覆盖嵌入 leg**）。
+- `frontend/AGENTS.md`：能力块字段更新；新增一段「地址行同样按能力块判」——三问（锁不锁 / 显示什么 / 有没有可清的自定义值）、「恢复默认」骑在框内且无存量时不出现、**未知不锁**、rerank 那一列仍写死（已知并记录）。
+- **prettier 逐文件与 HEAD 比**：`backend/AGENTS.md` **282 = 282**、`frontend/AGENTS.md` **16 = 16** ⇒ **零新增格式债**（我第一稿用了 `*row*`，按本仓 prettier 偏好改成 `_row_`）。
+
+**交付纪要 —— 真栈**
+
+- **腿 A②（真调用）✅**：`build_embedder(config, rag=<火山 + sparse_source=provider + 不给地址>)` ⇒ 建出 **`_SparseHalfCheckedEmbedder`**（⇒ 保存期交叉校验确认放行这条路），再真打一次 ⇒ **row0/row1 dense=1024、`sparse_indices=2` 非空**，index `[4428, 11036]` 与早先裸调一致。**这是"第二家双路"的真凭据**（若稀疏回空，那个包装类会抛）。
+- **腿 A①（数据半）✅**：直接调真实的 `_embedding_provider_capabilities()`（网关会下发的同一份）⇒ 三行、四个键齐全：`dashscope`(true/true/dashscope 默认)、`volcengine-ark`(true/true/火山默认)、`openai-compatible`(false/false/null)。
+- **腿 A④（零影响）✅**：本轮**没有发生过任何写入**（我从没调过 PUT）；`rag_config.json` 仍是 `{"extract_model": "qwen3.8-flash"}`，md5 = **`15fa768a0d5d5c388c26b14aa2844abe`**，与上一线记录的"动手前"值逐字节相同。密钥只出现在进程内存里（腿 A② 按形态从会话记录取，未打印、未落盘）。
+- **⚠️ 两条 UI 腿**未点击**（诚实记录）**：腿 A① 的界面半（切到火山 ⇒ 无 dense-only 告警、Save 可点）与腿 A③（锁框显示实际地址、有存量值时出现「恢复默认」、点它清空）**需要浏览器里有登录态**——browser-use 那个会话是空白的，落到的是落地页，`GET /api/rag/config` 直接 401。**目前这两条只有 dom 用例覆盖**（`embedding address row` 四条 + 两个文件里被设计性更新的既有断言）；要真点，需要在该浏览器里登录一次。
+
+- [x] `backend/AGENTS.md`：能力块两键 + 火山的形状 + 固定地址规则（含"只覆盖嵌入 leg"）。
+- [x] `frontend/AGENTS.md`：能力块两键 + 地址行的判据/恢复默认/未知不锁。
+- [x] **真栈腿 A②（真调用）**：真端点跑 `build_embedder(...).embed([...])` ⇒ dense=1024 且 **稀疏非空**。
+- [x] **真栈腿 A①（数据半）**：真实能力块三行四键。
+- [x] 真栈腿 A④：**零写入**，`rag_config.json` md5 与动手前逐字节相同。
+- [ ] **真栈腿 A①（界面半）/ A③**：等浏览器登录后点击（当前由 dom 用例覆盖）。
+- [x] **门禁**：两份 `.md` 的 prettier 与 HEAD 同数（282 / 16）；`rag_config.json` md5 未变。
 
 ---
 

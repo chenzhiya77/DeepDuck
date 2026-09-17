@@ -189,7 +189,8 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   the *shared* ones and only their accessible names (`F.sparse*`) tell the two apart out loud —
   「稀疏」 used to be repeated on every row to say what the indent says once. The sparse-source
   select and the provider above it are one **rule**, not two fields: `GET /api/rag/config` returns
-  `embedding_providers` (`[{provider_id, emits_sparse}]`, straight off the backend allowlist), and
+  `embedding_providers` (`[{provider_id, emits_sparse, has_fixed_endpoint, default_endpoint}]`,
+  straight off the backend allowlist), and
   `resolveSparseCapability` in `core/rag/config-form.ts` combines that list with a model-level
   probe into three states — `supported` / `unsupported` / `unknown` — while
   `isSparseSourceUnsupported` turns a known refusal into the warning (and the disabled Save) when
@@ -239,8 +240,23 @@ base_url`), and is only applied when that key still matches the form — editing
   environment-provenance badge, the no-changes hint) stays visible. That badge rides *inside* the
   credential field it describes (`SecretInput`: one positioned wrapper, the field's own padding
   spent on it), because beside
-  the field it took width from the row — and the retrieval pair has two fields on that row. The same view carries the
-  **rebuild-index entry** (spec 2026-09-14 §5 / P4): because this panel is app-wide while a rebuild is
+  the field it took width from the row — and the retrieval pair has two fields on that row.
+
+  The endpoint row follows the same principle — **decide from the capability block, not from a
+  provider name** (spec 2026-09-17 §3 D1/D5). `resolveFixedEndpointRow` answers three questions for
+  the selected provider: whether it fixes its own address (`has_fixed_endpoint` ⇒ the row is a
+  `LockedBox`), what to show there (a stored `embedding_base_url` when the deployment set one, else
+  that row's `default_endpoint`), and whether there is an override of the admin's own to drop — that
+  last one renders **「恢复默认」 inside the box**, an action that clears the field, and is absent when
+  there is nothing to clear so it never becomes a button that does nothing. A stored address is
+  deliberately **not** ignored: it still wins at runtime, which is what keeps a workspace-scoped
+  DashScope endpoint usable, so the row shows it rather than claiming the vendor's default applies.
+  Two rules hold it: the lock follows the _row_, so a second such provider needs no second hardcoded
+  id (the rerank column is still hardcoded — known and recorded); and **unknown does not lock** — a
+  response predating the capability block leaves the field editable instead of taking it away on a
+  guess.
+
+  The same view carries the **rebuild-index entry** (spec 2026-09-14 §5 / P4): because this panel is app-wide while a rebuild is
   library-scoped, the row picks the target library itself (session-only state) and the confirm dialog
   names it before anything runs — the copy states that source files are not re-parsed. Progress is
   read through `useReindexStatus` (`reindex-status.ts` decides the polling cadence), and the action
