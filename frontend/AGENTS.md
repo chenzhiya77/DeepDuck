@@ -256,6 +256,18 @@ base_url`), and is only applied when that key still matches the form — editing
   response predating the capability block leaves the field editable instead of taking it away on a
   guess.
 
+  Saving can now end three ways (spec 2026-09-17 save-time probe §3 D3), and the view has to tell
+  them apart: a 400 is the ordinary failure path (a toast carrying the server's `detail`, already
+  true before this), a **`null`** `warning` means the server verified what it wrote, and a
+  **non-`null`** one means the write went through but could not be verified. That last case gets its
+  own `<p role="status">` above the Save row — the muted form `models-add-dialog` already uses, on a
+  line of its own so it does not compete with the `sparseBlockReason` / `noChanges` slot that shares
+  that row — and it is **state, not a toast**: the sentence is the server's own, and a notice that
+  dismisses itself is worse than none. It belongs to the save it describes, so the next save
+  replaces it (including with `null`); a keystroke does not, because it describes what is _in force_
+  rather than the unsaved form. A response from a gateway that predates the field reads as `null`
+  (`saved.warning ?? null`) — silence, never an invented warning.
+
   The same view carries the **rebuild-index entry** (spec 2026-09-14 §5 / P4): because this panel is app-wide while a rebuild is
   library-scoped, the row picks the target library itself (session-only state) and the confirm dialog
   names it before anything runs — the copy states that source files are not re-parsed. Progress is

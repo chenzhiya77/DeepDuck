@@ -1,7 +1,7 @@
 # 保存期嵌入探测（G1 + G2 合并） —— 设计
 
 **Parent:** [2026-09-17-rag-ark-embedding-provider-design.md](2026-09-17-rag-ark-embedding-provider-design.md)（那份 spec §6 把 G1/G2 判为「同因、应合并成独立一条增量、本期不治」——本 spec 就是那一条）
-**Status:** 未开工（2026-09-17 起草）
+**Status:** 已交付 2026-09-17（Task 0–3；三条真栈腿全过，配置逐字节还原）
 
 ## 1. 问题
 

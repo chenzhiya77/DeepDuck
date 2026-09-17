@@ -687,6 +687,40 @@ signature covers `rag_config.json`; `rag` is not in `STARTUP_ONLY_FIELDS`, so a 
 effect on the next ingest or retrieval without a restart. `make support-bundle` includes a redacted
 `rag-summary.json`.
 
+**The save also makes one real call** (spec 2026-09-17 save-time probe §3). Building the embedder
+only _wraps_ it — both the dense-width verdict and the empty-sparse verdict used to fire on the
+first ingest — so the PUT now runs `build_embedder(rag=<about to be written>)` **and calls it once**
+with a single probe text, before `atomic_write`. Three outcomes, and the split between them is the
+point:
+
+- **the call answers "this cannot work" ⇒ 400** — a `RagConfigurationError` (a wrong dense width, or
+  `SparseHalfMissingError` when `embedding_sparse_source='provider'` returned an empty half). It is
+  caught **before** the blanket handler below and worded by the runtime's own helpers
+  (`dimension_mismatch_message`, the sparse error's message), so editing shows the same sentence the
+  ingest would have shown days later.
+- **the call cannot answer ⇒ 200 + `warning`** — unreachable, timed out, or credentials refused
+  (`EmbedderAuthError`; the copy says 凭据被拒 rather than blaming the connection). **A save is never
+  blocked by "could not verify"**: configuring is often exactly what an admin does to escape a
+  broken configuration, and refusing the write would close that exit. Same spirit as the probes'
+  "report, never block".
+- **nothing changed ⇒ no call at all.** The probe fires only when one of
+  `embedding_provider` / `embedding_model` / `embedding_base_url` / `embedding_api_key` /
+  `embedding_dimension` / `embedding_sparse_source` **really changed** — compared as _values_ on the
+  merged result, not as "the payload mentioned the key" (a payload re-submits the sentinel for a
+  stored secret, which resolves to the value already in force). Editing rerank / parse / video
+  saves with today's latency; when the probe does fire, the worst case is `_PROBE_TIMEOUT_SECONDS`
+  (10s) on top of the static checks.
+
+Two shapes hold that contract in place. **The width is measured from the vector the probe was
+handed** (`len(results[0].dense)`), never read back from the runtime guard: `_PROBED_DIMENSIONS` is
+a once-per-process verdict whose body sits _inside_ `if results and key not in _PROBED_DIMENSIONS`,
+so a warm key makes later calls return without re-checking — a probe relying on it would pass the
+first refusal and let the second write through. And the response carries **`warning`, always present
+and `null` when there is nothing to say**, deliberately **not** the `response_model_exclude_none`
+idiom the models `validate` route uses: that modifier is **recursive**, so it would also strip every
+`null` inside `config` (`judge_model`, `embedding_base_url`, `parse_*`, …) and hand the frontend
+`undefined` where its types say `null`.
+
 `POST /api/rag/config/probe-embedding` (admin, spec 2026-09-16 §3 D3) answers the one question the
 allowlist cannot: whether a _particular model_ on a capable provider returns the sparse half. It
 takes a candidate `{embedding_provider, embedding_model, embedding_base_url?, embedding_api_key?}`
