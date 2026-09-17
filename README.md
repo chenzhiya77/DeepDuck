@@ -1,4 +1,4 @@
-# Harness RAG
+# DeepDuck · Harness RAG
 
 > 一套**内置本地知识库（RAG）子系统**，构建在 **harness agent** 框架之上：不依赖任何外部 RAG 引擎，从文档 / 表格 / 视频的解析与切分，到实体图谱、百科条目、三路检索、工作区管理与检索质量评测，整条链路都在框架内完成。
 >
@@ -34,6 +34,8 @@
 - **agent 只读**：不存在 agent 侧的写入工具——上传、删除、触发解析、生成百科都是人类操作
 
 ## 🔍 harness RAG 提供什么
+
+<img src="docs/assets/rag/overview.png" width="1000" alt="Harness RAG 全链路概览：摄取 → 加工 → 三路检索 → 引用回答">
 
 ### 摄取与解析
 
@@ -192,7 +194,7 @@ AI 按实体资格自动沉淀「生成条目」；用户自建的「我的条�
 
 桌面上的一只鹦鹉，把 agent 的运行状态变成看得见的动作。它是**纯观察者**——只读线程状态，不发送、不修改内容，且点击穿透，可以理解成"app 的灯"。
 
-五个循环态各有一套逐帧动画，随运行状态自动切换：
+五个**循环态**各有一套逐帧动画，随运行状态自动切换；另有两个**一次性态**——`greet` 在每次挂载时播一次，`done` 在每轮 run 跑完时播一次，播完即回落到 `idle`：
 
 | 状态 | 动作 | 帧数 | 帧率 | 含义 |
 | --- | --- | --- | --- | --- |
@@ -201,8 +203,10 @@ AI 按实体资格自动沉淀「生成条目」；用户自建的「我的条�
 | `wait` | <img src="docs/assets/pet/parrot-wait.gif" width="120" alt="wait"> | 30 | 8 | 等待中 |
 | `work` | <img src="docs/assets/pet/parrot-work.gif" width="120" alt="work"> | 31 | 8 | 工具执行中 |
 | `error` | <img src="docs/assets/pet/parrot-error.gif" width="120" alt="error"> | 31 | 8 | 运行出错 |
+| `greet` | <img src="docs/assets/pet/parrot-greet.gif" width="120" alt="greet"> | 30 | 8 | 问候（一次性） |
+| `done` | <img src="docs/assets/pet/parrot-done.gif" width="120" alt="done"> | 31 | 8 | 完成（一次性） |
 
-- 上表就是产品内的同一套精灵图；5 个循环态都已是真美术，`done` / `greet` 两个一次性态在画
+- 上表就是产品内的同一套精灵图；**7 个状态都已是真美术**（`greet` / `done` 两个一次性态的动图这里是**循环预览**，产品里只播一次）
 - 美术与状态机分离：帧宽 / 帧率 / 显示尺寸由 manifest 声明，换一套图不需要改逻辑
 
 ## 🚀 快速开始
@@ -254,12 +258,12 @@ Docker / Helm / 完整配置参考等文档：[UPSTREAM_README.md](UPSTREAM_READ
 | 部分 | 状态 |
 | --- | --- |
 | harness RAG | 已实现，含上面列出的全部能力 |
-| Agent 观测宠物 | 5 个循环态（`idle` / `think` / `wait` / `work` / `error`）已交付；`done` / `greet` 在画 |
+| Agent 观测宠物 | 7 个状态（5 个循环态 + `greet` / `done` 两个一次性态）已交付 |
 | Harness 可视化 / 组装画布与对外 MCP | 同一分支上在研 |
 
 ## ⚖️ 归属与许可
 
 - 本仓库基于 **DeerFlow**（<https://github.com/bytedance/deer-flow>）构建。上游版权声明为 Copyright (c) 2025 Bytedance Ltd. and/or its affiliates，Copyright (c) 2025-2026 DeerFlow Authors。
 - 上游的完整文档（安装 / Docker / Helm / 配置参考）：[UPSTREAM_README.md](UPSTREAM_README.md)；上游 README 的其它语言版本：[中文](README_zh.md) · [日本語](README_ja.md) · [Français](README_fr.md) · [Русский](README_ru.md)。
-- 以上游的 [MIT 许可](LICENSE)发布；本仓库的新增部分同样以 MIT 发布。计划先以 RFC 议题向上游项目确认方向，再按切片提交 PR。
-- 本仓库为非官方分支，与字节跳动无隶属或背书关系。
+- 以上游的 [MIT 许可](LICENSE)发布；本仓库的新增部分同样以 MIT 发布。
+- 本仓库为独立项目，非上游官方发布。

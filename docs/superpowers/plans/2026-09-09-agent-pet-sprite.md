@@ -236,13 +236,13 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 
 - [x] **Step 1:** `pnpm dev`,开一个线程。验证 `idle` 播放。— **通过**(见下「已验」)。
 - [x] **Step 2(核心验收):** 触发一个 `ask_clarification`(让 agent 需要追问),验证鹦鹉切到 **`wait`**;再发一条普通消息跑完,验证鹦鹉播 **`done` 一次性动画后回 `idle`**(第 1 期 `done` 无帧 → 应回落到 `idle`,这正是要验的回落行为)。**两者视觉上必须分得开** —— 这是本期唯一交付判断。— **通过**(琥珀 `WAIT 2` 与蓝 `IDLE 1/2` 视觉可分,截图 + 程序化序列双证)。
-- [ ] **Step 3:** 触发一个 `error`(断网或配错模型),验证 `error` 态;确认 `error` 压掉 `done`(spec §5.3 不变量 1)。— **未验**:需要断网或改用户模型配置,本机没做。
+- [x] **Step 3:** 触发一个 `error`(断网或配错模型),验证 `error` 态;确认 `error` 压掉 `done`(spec §5.3 不变量 1)。— **已闭环(2026-09-18,用户要求「重跑一次桩验证钉死」)**:既没断网、也没动模型配置,改用**桩** —— `evaluate_script` 覆写 `window.fetch`,只拦 **GET + `/runs/{rid}`**(排除 `/stream` / `/join` / `/events`)并回 `{status:"error", stop_reason, error}`;在 `/workspace/chats/new` 用**原生 setter + `input` 事件**填 `textarea`、**隔一拍**点 `button[aria-label="Submit"]` ⇒ run 跑完(`Stop` 按钮消失)后精灵落在 `url("/pet/parrot/error.webp")`(`3.875s steps(31, jump-none) infinite`),桩被调 **3 次**。该 run **正常收尾** ⇒ `done` 的下降沿闩锁本会点亮、且 manifest 里 `done.webp` **确实存在** ⇒ 「`error` 压 `done`」这次是**活体证据**,不再只是 node 用例(`state.test.ts` 不变量 1)。收尾按纪律做全:`armed=false` + **reload**(patch 随新 JS realm 消失,复查 `window.__runErrStub === undefined`、精灵回 `greet.webp`)。**副作用(已如实告知)**:在他账号里新建线程 `bb7de398-d121-444c-bb37-6d50d0730f9d`(run `7990c8d7-…`,一句「你好」+ 真回复),是否删除待他定。
 - [x] **Step 4:** 在有未回答的 clarification card 时直接发新消息开新 run,验证鹦鹉走 `work`/`think` 而非 `wait`(spec §5.3 不变量 2)。— **通过**(窗口内从未出现 `wait`);局限见下。
 - [x] **Step 5:** 开右侧 artifacts/sidecar 面板并把分隔条拖到最窄,验证窄面板隐藏生效、且**拖拽手感无变化**(没碰到 ResizablePanelGroup 约束)。— **全通过(2026-09-10,用户造出 `hello.txt` 后右侧面板可开)**:分隔条**真拖生效** —— chat 面板 538 → **318**(左移 220px)、side 面板 359 → **579**,拖拽期间库自己的 `data-separator` 从 `inactive` 翻成 **`active`**(说明手势被正常接管、约束没被本线加的 `container-type` 弄坏);chat 落到 318(≤480)时 `.pet-shell` **`display: none` 但节点仍在**(`petExists: true`)⇒ 隐藏是纯 CSS、不是卸载;拖回后 chat=538 / side=359 **与初始完全对称**,`.pet-shell` 自动回到 `display: block`、精灵仍 96×96 且背景仍是 `idle.webp` ⇒ **状态未丢**。全程 console **零报错**;另外单独验了一条副作用:不按 Alt 的分隔条拖拽**不改变宠物偏移**(51/166 → 51/166)。
 - [x] **Step 6:** 系统开启「减少动态效果」,验证停在静态帧。关掉设置开关,验证 DOM 里无残留节点。— **开关关闭通过**(`pet.enabled=false` 刷新后 `.pet-shell`/`.pet-sprite` 各 0 节点);**「减少动态效果」未在浏览器验**:browser-use 未暴露 CDP `Emulation.setEmulatedMedia`,改不了该媒体特性,已由 DOM 测试覆盖(无 animation + 停第 0 帧)。
-- [ ] **Step 7:** 切线程再切回,验证 fatigue 归零、`greet` 不重放。— **两半分开记(2026-09-13 修订)**:
+- [x] **Step 7:** 切线程再切回,验证 fatigue 归零、`greet` 不重放。— **两半分开记(2026-09-13 修订;`greet` 半 2026-09-18 收口)**:
   - **`fatigue` 归零那一半:永久不可观测,不再是待办。** 疲劳轴于 2026-09-12 被用户明确「不做」(spec §17),`FATIGUE_ENABLED` 恒 `false` ⇒ 疲劳永远是 0,没有可观察的差异。这一半**不可能再验**,不要再把它当作「未完成的验证」。
-  - **`greet` 不重放那一半:仍待美术。** 现在 manifest 没声明 `greet` ⇒ `resolveSprite` 回落成 `idle` ⇒ 切线程后看不出放没放。等 `greet` 有真帧之后,这一条才第一次可观测(同时一次性态的 `animationend` 回落链路也才算跑过真帧)。
+  - **`greet` 不重放那一半:前提已满足,且已取得活体证据(2026-09-18)。** ① `greet` 有真帧且**挂载确实会播** —— 三次冷加载 `.pet-sprite` 都是 `greet.webp`(`3.75s steps(30, jump-none) 1 both`);② **一次性态的 `animationend` 回落链路在真栈跑通** —— 派发真 `AnimationEvent('animationend')` ⇒ 翻到 `idle.webp`(`3.875s steps(31) infinite`),**同一 DOM 节点**;③ 随后经命令面板「新对话」触发**一次真 SPA 换页**(正文从会话页换成欢迎页),宠物**仍是同一个 DOM 节点**(探针标记未丢)、精灵全程 `idle` ⇒ **「切走不重放」已直接观测**;④ 「切回来不重放」由「外壳从不重挂」+ `greetActive` 是**挂载作用域**的 `useState(true)`、只由 `animationend` 清掉(`agent-pet.tsx:131-138` 的跨线程重置**故意不动它**)推出。**未直接观测的一项(诚实记录)**:回程那一段 —— 驱动端 0×0 且隐藏,**该页没有可达的导航控件**(无侧栏触发器;`history.back()` 落到我自己早先污染的历史条目上又被 App Router 同步回同一路由;宠物自身的 Alt+单击跳转在新会话页无目标),要**可见窗口**才能补。
 - [x] **Step 8:** `cd frontend && pnpm perf:check` 跑一次确认预算未破。— **已跑,结论是「工具修好了,但这份检查全局红,与本线无关」**。过程:先确认脚本缺陷(裸名 `spawn("pnpm")`,`measure-route-assets.mjs` 里仅两处;Windows 只有 `pnpm`/`pnpm.CMD`/`pnpm.ps1`,Node 不加 shell 不解析 PATHEXT)⇒ 用户在 PowerShell 里复现同一 `spawn pnpm ENOENT`,证明**本机对谁都跑不了**、不是我 shell 的限制(我先前那个归因是错的,已在记忆里订正)。随后按用户确认修掉:改用 `process.execPath` + `node_modules/next/dist/bin/next`(`build`/`start` 两处),**不用 `shell: true`** —— 在 Windows 上 `shell: true` 只能杀掉 `cmd.exe`,会把真正的 `next start` 孤儿留在端口上,而脚本后面靠 `server.kill()` 收尾。修完用户重跑,构建与摘要正常产出(即修复有效)。
 
   **实测结果(用户终端,原始字节)**:六条路由**全部超**——`/en/docs` 与 `/blog/posts` **js +1.43 MB**、css +17.8 KB;`/login` js +30.3 KB、css +14.8 KB;`/` css +13.7 KB;`/workspace/chats` js **+8.9 KB**、css +19.5 KB。两条支撑事实说明这是**阈值失真而非本线回归**:① 这份检查**不在 CI 里**(`.github/` 零引用),是纯手工工具;② 预算表最后一次改动是 `459dd787`(PR #4622),此后应用长了很多功能。**宠物只加载 `/workspace/chats` 一条**,且那条的 css 超支 19.5 KB 与宠物无关(本线 CSS 贡献 < 1 KB:一个 `@keyframes` + 两条类规则);js 那 8.9 KB 里宠物的占比**未实测**——用户明确选择「不再为它花一次构建」(前提是那不改变结论:即便宠物占满 8.9 KB,其余五条仍红线)。
@@ -259,9 +259,9 @@ cd frontend && pnpm dev        # 浏览器实测(Task 7 唯一手段,不可用�
 - **Step 5 隐藏机制**:`#chat` 内联压到 400px ⇒ `.pet-shell` `display:none`;撤掉即 `block` —— 说明 Task 6 的容器上下文 + `globals.css` 的 `@container (max-width: 480px)` 规则在真实应用内成立。
 
 **未验(逐条给出原因,不含推测)**
-- **Step 3 `error` 态**:要断网或改用户模型配置,本机没做 ⇒ **不验**。`error` 压 `done` 因此也只在 node 层有测试(`state.test.ts` 不变量 1)。
+- ~~**Step 3 `error` 态**~~ **已闭环(2026-09-18)**:改用桩法(只拦 GET `/runs/{rid}` 并回 `status:"error"`,在用户的 `:3000` 真栈)验成 —— 精灵落到 `error.webp`,`error` 压 `done` 取得活体证据。详见该 Step 的注文。
 - **Step 6「系统减少动态效果」**:browser-use 未暴露 CDP 媒体特性模拟 ⇒ 浏览器侧无法验;DOM 测试覆盖了同一行为。
-- **Step 7**:第 1 期无 `done`/`greet` 帧、疲劳闸门关闭 ⇒ 效果不可观测。
+- ~~**Step 7**~~ **已收口(2026-09-18)**:`fatigue` 半**因疲劳轴取消而永久不可观测**(不是待办);`greet` 半已取得活体证据(冷加载播 `greet` + 一次真 SPA 换页后**仍是同一 DOM 节点**且精灵 `idle`)⇒ 「切走不重放」已直接观测,「切回来不重放」由「外壳从不重挂 + `greetActive` 是挂载作用域」推出。**唯一未直接观测的是回程那一段**(需可见窗口)。详见该 Step 的注文。
 - **Step 8 之外的预算归属**:`pnpm perf:check` 本身已跑通(见上),但「宠物在 `/workspace/chats` 那 8.9 KB js 超支里占多少」**未实测** —— 用户明确选择不为此再花一次构建,理由是该数字不改变结论。
 
 **两个环境事实(供后来者)**
