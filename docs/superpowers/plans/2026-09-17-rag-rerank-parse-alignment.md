@@ -95,6 +95,7 @@
 | ② 保存期仍只构造嵌入器                  | 用例 3/4 红 | **正是 2 红**（两条 PUT 拒绝）                                                                                                                                                         |
 | ③ 把拒绝吞掉（记 warning 然后照常写盘） | 用例 3/4 红 | **3 红**：两条 + **既有的嵌入那条拒绝用例**（`test_put_validates_against_config_yaml_not_the_payload_alone`）⇒ 证明同一处 `raise` 同时服务三条腿；且**零出网那条仍绿**（不是"一律拒"） |
 
+- [x] **neuter 三条（都必须有牙）**：① 只改解析那半、不改重排 ⇒ 用例 1 红；② 保存期仍只构造嵌入器 ⇒ 用例 3/4 红；③ 保存期把异常吞成 warning ⇒ 用例 3/4 红（且 5 仍绿 ⇒ 证明不是"一律拒"）。⇒ **实测 3 / 2 / 3 红**，见上表。
 - [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/knowledge/` + `tests/test_rag_config_api.py` + 新文件）绿；**全量后端后台跑**，跑完抽全部 FAILED 的 node id 去 HEAD 跑同一批、双向 diff（`xargs -d '\n'`，别 pipe 长跑）。
 
 **交付纪要 —— 门禁**
@@ -163,6 +164,9 @@
 - **全量后端**：**145 failed / 12396 passed / 109 skipped / 0 error**（18:37）。⚠️ **与本轮开工前那次（145 / 12343 / **160 skipped** / 1 error）相比，跳过数少了 51、通过数多了 53** —— 环境在两轮之间变了（**Qdrant 变得可达**）：那 51 条 `requires_qdrant` 用例这次真的跑了、并且全过，上一轮被判 error 的那条也过了。⇒ 两次的 failed **都是 145**，但"145 条红的构成"不能只按数字比，所以下面照旧做集合 diff。
   - 与 HEAD（`b61e88f1` = Task 1 的代码，Task 2 尚未提交）跑同一批 145 id ⇒ **143 failed / 2 passed**，还是那两条、**本轮再次逐条重验**（flake 单跑 1 passed；`test_review_changed_public_skills…` 设成正斜杠 `PYTHONPATH` 后 1 passed ⇒ 就是那个环境条件）。⇒ **Task 2 没有引入任何红**。
   - 收尾：worktree 已删（`git worktree list` 只剩主树）、临时 id 清单与对照日志已删、`.pytest-tmp` 1KB。
+
+- [x] **neuter 三条**：① 重排行改回写死判据 ⇒ dom 用例红；② 能力块不填两个新键 ⇒ 用例 1 红；③ 去掉「恢复默认」的渲染 ⇒ 用例 5 红。⇒ **实测 5 / 2 / 1 红**，见上表（① 连半 revert 只红 1 条的教训也在表里）。
+- [x] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier 逐文件与 HEAD 比数字；**全量前端**；两条 `.md` 的 prettier 同数（Task 3 一起核）。⇒ 零诊断、六个文件同数、前端 238/2557/0；**另按"共享组件"规矩补跑了全量后端**并做了 HEAD 双向 diff。
 
 ## Task 3 — 文档同步与真栈验收
 
