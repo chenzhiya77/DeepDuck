@@ -1,7 +1,7 @@
 # 两条尾巴腿的对齐（G3 + G4 合并） —— 设计
 
 **Parent:** [2026-09-17-rag-save-time-embedding-probe-design.md](2026-09-17-rag-save-time-embedding-probe-design.md)（那份 spec §6 把 G3/G4 判为「本期不治、写在案上」——本 spec 就是那一条）
-**Status:** 未开工（2026-09-17 起草）
+**Status:** 已交付 2026-09-17（Task 0–3；三条真栈腿全过，配置逐字节还原）
 
 ## 1. 问题
 

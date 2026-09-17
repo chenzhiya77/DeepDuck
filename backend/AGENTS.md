@@ -666,20 +666,41 @@ comes back as the masking sentinel (or empty when the environment backs it), plu
 `source` map (`ui` / `config_file` for plain fields, `ui` / `env` / `unset` for secrets, so the UI
 can say "provided by the environment" without seeing a value). It also reports
 `embedding_providers` — one `{provider_id, emits_sparse, has_fixed_endpoint, default_endpoint}` per
-entry of the embedding allowlist, in that allowlist's own order. That is read-only metadata rather
-than configuration (spec 2026-09-16 §3 D1): it exists so the settings UI can refuse a dense-only
-provider paired with `embedding_sparse_source='provider'` while the admin is still editing, instead
-of on the next ingest — and so the address row is locked by **capability** rather than by a
-hardcoded provider id (spec 2026-09-17 §3 D1): `has_fixed_endpoint` is true for a vendor that fixes
-its own endpoint, and `default_endpoint` is where it points. A write replaces the whole object:
+entry of the embedding allowlist, in that allowlist's own order — and `rerank_providers`, the same
+thing for the rerank leg in **its own shape** (spec 2026-09-17 alignment §3 D3): the rerank block has
+no `emits_sparse`, because that leg has no "which half does it supply" question, and the parallel key
+exists so `embedding_providers` keeps its shape for every existing consumer. Both blocks are
+read-only metadata rather than configuration (spec 2026-09-16 §3 D1): the embedding one lets the
+settings UI refuse a dense-only provider paired with `embedding_sparse_source='provider'` while the
+admin is still editing, instead of on the next ingest; both of them let the address row be locked by
+**capability** rather than by a hardcoded provider id (spec 2026-09-17 §3 D1, extended to rerank by
+the alignment spec): `has_fixed_endpoint` is true for a vendor that fixes its own endpoint, and
+`default_endpoint` is where it points. A write replaces the whole object:
 an omitted or emptied field is **removed** from the file (reverting it to `config.yaml`, or to the
 environment for a key), and a submitted sentinel keeps the stored key. **Before anything is
-written** the result is validated by building it once through the pipeline's own `build_embedder`,
-so the save-time verdict cannot drift from the runtime one; a refusal answers 400 with
-`提交后的配置仍不可用：<reason>`. The judgement runs against `config.yaml`'s own `rag:` block
+written** the result is validated by building it once through the pipeline's own construction —
+**all three legs**, `build_embedder` / `build_reranker` / `build_parse_provider`
+(spec 2026-09-17 alignment §3 D2; building only the embedder answered for one half, so a rerank
+provider that needs an address, or a local parser without one, saved happily and blew up on the next
+retrieval or ingest). Every one of those constructions is **offline** — no provider is called — so
+covering three legs costs no network round trip, and `build_reranker` / `build_parse_provider` take
+the same `rag=` override `build_embedder` does so the check judges the configuration it is about to
+write. So the save-time verdict cannot drift from the runtime one; a refusal answers 400 with
+`提交后的配置仍不可用：<reason>`, where the reason is the refusing leg's own sentence — every
+configuration-class refusal on every leg raises `RagConfigurationError` (a `ValueError` subclass),
+which is the single type the gateway maps to a readable 400 (spec 2026-09-17 alignment §3 D1: it used
+to be a bare `ValueError` on rerank/parse, i.e. a 500 on the recall-test route and a wrapped tool
+error in chat). The judgement runs against `config.yaml`'s own `rag:` block
 overlaid with the payload (`AppConfig.yaml_rag`, captured before the API file is merged in) rather
 than the live `config.rag` — the latter already carries the file being replaced, so a field the
 admin just cleared would be judged at that file's value and the fix itself would be refused.
+⚠️ **The widening has one deliberate cost**: because the check runs against `config.yaml` overlaid
+with the payload, a `config.yaml` whose rerank or parse leg is incomplete — exactly two cases,
+`rerank_provider='generic-rerank'` without `rerank_base_url`, and `parse_provider='mineru-local'`
+without `parse_base_url` — now makes **every** subsequent PUT answer 400, even one that only edits
+unrelated rows. The escape hatch is the operator's own file (`config.yaml`, hot-reloaded, no
+restart), and the 400 names the offending leg. (Illegal provider ids or backends cannot reach this:
+those fields are `Literal`s.)
 Writes are atomic and
 lock-serialized (`atomic_write_rag_config` + `rag_config_write_lock`) and off the event loop.
 `RagConfigFile.resolve_config_path` mirrors the models file, and the `get_app_config()` hot-reload

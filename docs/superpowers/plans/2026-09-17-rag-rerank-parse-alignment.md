@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-rerank-parse-alignment-design.md](../specs/2026-09-17-rag-rerank-parse-alignment-design.md)
-**Status:** Task 0–2 已交付 2026-09-17（Task 3 待开工）
+**Status:** 已全部交付 2026-09-17（Task 0–3；三条真栈腿全过，配置逐字节还原）
 **Parent:** [2026-09-17-rag-save-time-embedding-probe.md](2026-09-17-rag-save-time-embedding-probe.md)（那份 spec §6 把 G3/G4 判为「同因、本期不治」；本计划是它的**增量**）
 
 **Architecture:** 把嵌入腿已经立好的两条规矩横向补到**重排 / 解析**两条腿上，全部是"把既有的判断换个出口/换个类型/换个数据来源"，**不新写判断**：
@@ -166,13 +166,37 @@
 
 ## Task 3 — 文档同步与真栈验收
 
-- [ ] `backend/AGENTS.md`（RAG 配置节）：保存期的检查**覆盖面**从"嵌入"改成"三条腿"（**纯离线、不新增网络调用**）、`RagConfigurationError` 的语义扩大、新键 `rerank_providers`（条目形状与嵌入那条不同：**没有 `emits_sparse`**）、以及 §6 **S1** 那条收紧（**确切只有两种**：`generic-rerank` 缺 `rerank_base_url` / `mineru-local` 缺 `parse_base_url`；一旦 `config.yaml` 是那样，此后每次 PUT 都 400 + 逃生口是改 `config.yaml`）。
-- [ ] `frontend/AGENTS.md`（功能模型节）：重排地址行与嵌入同行构（锁/显示实际地址/「恢复默认」/unknown ≠ cannot），并点名 `resolveFixedEndpointRow` 现在是"核心 + 两个薄包装"。
-- [ ] **真栈腿①**：把重排配成「通用重排」但地址留空 ⇒ 保存**当场 400**（可读原因）；补上地址 ⇒ 200。
-- [ ] **真栈腿②**：解析配成「本地 MinerU」但地址留空 ⇒ 保存**当场 400**。
-- [ ] **真栈腿③（界面）**：重排选 `dashscope` ⇒ 锁框显示默认地址；选「通用重排」⇒ 变成可编辑；填一个地址保存成功后回到 `dashscope` ⇒ 出现「恢复默认」（存量值），点它 ⇒ 地址字段被清空。
-- [ ] **收尾**：配置**逐字节还原**（md5 与动手前相同）、密钥不落盘、不新建文件、浏览器里被改过的表单重载丢弃；「重建索引」入口**只确认在、不实际重建**。
-- [ ] **门禁**：两份 `AGENTS.md` 的 prettier 与 HEAD 同数（**量 `frontend/AGENTS.md` 必须在 `frontend/` 里跑**，否则给出假数字）；`rag_config.json` md5 未变。
+**状态：已交付 2026-09-17（三条真栈腿全过，收尾逐字节还原）。**
+
+**交付纪要 —— 文档**
+
+- `backend/AGENTS.md`（RAG 配置节）：把「**Before anything is written** 只 build 嵌入器」改成**三条腿**（`build_embedder` / `build_reranker` / `build_parse_provider`）、写明**每条构造都离线、不增网络开销**、以及两个新入口带 `rag=` 的原因；`RagConfigurationError` 的语义写明扩到"任一条腿"、以及它换来的**一个 400 映射**（重排/解析以前是裸 `ValueError` ⇒ recall-test 500 / 聊天里工具错误）；新键 `rerank_providers`（**形状与嵌入那块不同：没有 `emits_sparse`**）；并补上 **⚠️ 那条收紧的确切两种情形 + 逃生口**（含"非法 provider/backend 到不了这里，它们是 `Literal`"）。
+- `frontend/AGENTS.md`（功能模型节）：`resolveEndpointRow` **一个核心 + 两个薄包装**（并写清"两行可以共享一份判断，但**不能共享一份副本**"）；重排行读 `rerank_providers`、别把两个类型合并；`unknown ≠ cannot`；以及那条**可见后果**：锁定行一旦有地址显示，就不印「由提供方固定」（解析腿那两行还印，因为它们的锁是「模式」而非「厂商地址」）。
+- 过程记录：前端那份我第一次用了两处 `*强调*`，本仓 prettier 要 `_强调_` ⇒ +4 行债；只改我自己那两行后回到 16/16（**没跑 `--write`**）。
+
+**交付纪要 —— 真栈（`:8001` 网关 + `:3000` 前端）**
+
+- **先核代码**：`/openapi.json` 的 `RagConfigResponse` 属性里有 `rerank_providers` ⇒ 运行中的网关已是新代码，不必重启。
+- ⚠️ **真栈上撞到的新操作坑**：内嵌浏览器的 surface 中途消失（`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE … viewport=547x624, visible=false`）⇒ **MCP 的指针动作被拒**。处置：三条腿改用**页面内 JS**（普通 React 按钮的 `.click()` 有效、同源 `fetch` + `X-CSRF-Token` 有效）；只有 **Radix Select（provider 选择器）选不中** ⇒ provider 的各个状态改用「合法 PUT 落盘 + 重载页面」摆出来。**诚实记**：选择器那一次鼠标动作没做成，它的行为由 dom 用例覆盖（本次真栈覆盖的是这些状态**渲染出来的样子**、以及「恢复默认」与「保存」两次点击的真实处理链）。
+- **腿①（重排缺地址）**：`rerank_provider='generic-rerank'` 无地址 ⇒ **400**，正文逐字 `提交后的配置仍不可用：rerank_provider='generic-rerank' requires rag.rerank_base_url; only `dashscope` has a built-in endpoint.`；补上地址 ⇒ **200**。**并且用真实「保存」按钮复现了一次**：表单里清空地址 ⇒ 点保存 ⇒ **错误 toast 逐字**（这就是管理员看到的样子），且没有 status 通知。
+- **腿②（本地解析缺地址）**：`parse_provider='mineru-local'` 无地址 ⇒ **400**，正文逐字 `提交后的配置仍不可用：本地解析需要服务地址：请设置 rag.parse_base_url（parse_provider=mineru-local）`；补上地址 ⇒ **200**。
+- **腿③（界面，四个状态 + 两次点击）**：
+  1. `dashscope` 无存量 ⇒ 重排是**锁框**、框里是默认地址；**两个地址框都显示 `https://dashscope.aliyuncs.com`**，且整个页面里「由提供方固定」出现 **0 次**（正是上面那条"可见后果"）。
+  2. `generic-rerank` + 存量地址 ⇒ 重排行是**可编辑输入框**、值为存量的 `http://localhost:8000`，且**没有**「恢复默认」。
+  3. 切回 `dashscope` + 存量地址（残留值）⇒ 仍**锁着**、框里显示**存量地址**、且「恢复默认」**就在锁框内部**（`resetInsideLockedBox: true`）——这就是 ⑤-4 要的"看得见"。
+  4. **点「恢复默认」** ⇒ 按钮消失、框回到默认地址；再点**「保存」** ⇒ **200** + toast「功能模型配置已保存」、**没有任何 status 通知**（这次改动不涉及那六个嵌入字段 ⇒ 不触发保存期探测）。
+- **收尾**：`rag_config.json` **逐字节还原**（md5 回到 `15fa768a0d5d5c388c26b14aa2844abe`）；文件里**零个 key/token 字段**；**无新建文件**（`.deer-flow/` 只剩原有的 `blocking-io-t8.json`）；页面重载丢弃表单（复核回到 DashScope + 锁框 + 无「恢复默认」+ 解析回到 MinerU 官方云）；「重建索引」入口**只确认在**（目标知识库选择器在、按钮禁用），**没有实际重建**。
+- **⚠️ 一条收尾教训（值得进记忆）**：这次我**只记了 md5 没有先 `cp` 原始字节**，而网关写这个文件在 Windows 上是 **CRLF**（文本模式）⇒ 我按 md5 反推字节形态（`{
+  "extract_model": …
+}`）才还原成功。**以后真栈动手前先 `cp` 一份原始文件**，别只记哈希。
+
+- [x] `backend/AGENTS.md`（RAG 配置一节）：保存期的检查**覆盖面**从"嵌入"改成"三条腿"（**纯离线、不新增网络调用**）、`RagConfigurationError` 的语义扩大、新键 `rerank_providers`（条目形状与嵌入那条不同：**没有 `emits_sparse`**）、以及 §6 **S1** 那条收紧（**确切只有两种**：`generic-rerank` 缺 `rerank_base_url` / `mineru-local` 缺 `parse_base_url`；一旦 `config.yaml` 是那样，此后每次 PUT 都 400 + 逃生口是改 `config.yaml`）。
+- [x] `frontend/AGENTS.md`（功能模型一节）：重排地址行与嵌入同行构（锁/显示实际地址/「恢复默认」/unknown ≠ cannot），并点名 `resolveFixedEndpointRow` 现在是"核心 + 两个薄包装"。
+- [x] **真栈腿①**：把重排配成「通用重排」但地址留空 ⇒ 保存**当场 400**（可读原因）；补上地址 ⇒ 200。
+- [x] **真栈腿②**：解析配成「本地 MinerU」但地址留空 ⇒ 保存**当场 400**。
+- [x] **真栈腿③（界面）**：重排选 `dashscope` ⇒ 锁框显示默认地址；选「通用重排」⇒ 变成可编辑；填一个地址保存成功后回到 `dashscope` ⇒ 出现「恢复默认」（存量值），点它 ⇒ 地址字段被清空。
+- [x] **收尾**：配置**逐字节还原**（md5 与动手前相同）、密钥不落盘、不新建文件、浏览器里被改过的表单重载丢弃；「重建索引」入口**只确认在、不实际重建**。
+- [x] **门禁**：两份 `AGENTS.md` 的 prettier 与 HEAD 同数（backend **282/282**、frontend **16/16**）；`rag_config.json` md5 未变。
 
 ---
 

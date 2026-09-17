@@ -243,18 +243,26 @@ base_url`), and is only applied when that key still matches the form — editing
   the field it took width from the row — and the retrieval pair has two fields on that row.
 
   The endpoint row follows the same principle — **decide from the capability block, not from a
-  provider name** (spec 2026-09-17 §3 D1/D5). `resolveFixedEndpointRow` answers three questions for
-  the selected provider: whether it fixes its own address (`has_fixed_endpoint` ⇒ the row is a
-  `LockedBox`), what to show there (a stored `embedding_base_url` when the deployment set one, else
-  that row's `default_endpoint`), and whether there is an override of the admin's own to drop — that
-  last one renders **「恢复默认」 inside the box**, an action that clears the field, and is absent when
-  there is nothing to clear so it never becomes a button that does nothing. A stored address is
-  deliberately **not** ignored: it still wins at runtime, which is what keeps a workspace-scoped
-  DashScope endpoint usable, so the row shows it rather than claiming the vendor's default applies.
-  Two rules hold it: the lock follows the _row_, so a second such provider needs no second hardcoded
-  id (the rerank column is still hardcoded — known and recorded); and **unknown does not lock** — a
-  response predating the capability block leaves the field editable instead of taking it away on a
-  guess.
+  provider name** (spec 2026-09-17 §3 D1/D5) — and **both endpoint rows now do it** (alignment spec
+  §3 D4). `resolveEndpointRow` answers three questions for one leg: whether the selected provider
+  fixes its own address (`has_fixed_endpoint` ⇒ the row is a `LockedBox`), what to show there (a
+  stored address when the deployment set one, else that row's `default_endpoint`), and whether there
+  is an override of the admin's own to drop — that last one renders **「恢复默认」 inside the box**,
+  an action that clears the field, and is absent when there is nothing to clear so it never becomes a
+  button that does nothing. It is one core with **two thin wrappers** (`resolveFixedEndpointRow` /
+  `resolveRerankEndpointRow`, each handing it that leg's provider value, stored value and capability
+  block): the rows are allowed to share a judgement, and must not share a _copy_ of it — a second
+  copy is exactly how the rerank column ended up hardcoding a provider name while the embedding one
+  read the block. A stored address is deliberately **not** ignored: it still wins at runtime, which
+  is what keeps a workspace-scoped DashScope endpoint usable, so the row shows it rather than
+  claiming the vendor's default applies. The rerank row takes its answer from `rerank_providers`,
+  whose entries carry **no `emits_sparse`** (that leg has no sparse half) — the two blocks are one
+  rule in two shapes, so do not unify their types. Two rules hold it: the lock follows the _row_, so
+  a second such provider needs no second hardcoded id; and **unknown does not lock** — a response
+  predating the capability block leaves the field editable instead of taking it away on a guess. One
+  visible consequence of a locked row printing an address: the 「由提供方固定」 reason only appears
+  where there is nothing to show, so the two endpoint rows no longer carry it (the parse rows do —
+  their lock is about the _mode_, not about a vendor address).
 
   Saving can now end three ways (spec 2026-09-17 save-time probe §3 D3), and the view has to tell
   them apart: a 400 is the ordinary failure path (a toast carrying the server's `detail`, already
