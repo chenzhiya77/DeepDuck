@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-ark-embedding-provider-design.md](../specs/2026-09-17-rag-ark-embedding-provider-design.md)
-**Status:** Task 0–3 已交付 2026-09-17（仅剩真栈的两条 UI 腿待浏览器登录后点击，见 Task 3）
+**Status:** **全部交付 2026-09-17**（Task 0–3 完成，含真栈四条腿；仅"几何观感"未用人眼确认，见 Task 3）
 **Parent:** [2026-09-16-rag-sparse-capability-probe.md](2026-09-16-rag-sparse-capability-probe.md)（模型级能力探针；探针本身**零改动**，本计划只是让它多覆盖一行 provider）
 
 **Architecture:** 把「一次调用同时给稠密+稀疏」这条**已有的机制**（今天只有 `dashscope` 一家）补上第二个实现。落点是三层、全是加法：**allowlist 加一行**（`emits_sparse=True` 就是"第二家双路"的全部声明）、**一个新适配器**（走火山的多模态端点、一次一条、无条件发 `dimensions: 1024`）、**前端那个写死的选项常量加一个值**。保存期交叉校验、能力探针、空稀疏兜底、密钥 env 提示**都已经是 provider 无关的**，不改。
@@ -116,17 +116,23 @@
 **交付纪要 —— 真栈**
 
 - **腿 A②（真调用）✅**：`build_embedder(config, rag=<火山 + sparse_source=provider + 不给地址>)` ⇒ 建出 **`_SparseHalfCheckedEmbedder`**（⇒ 保存期交叉校验确认放行这条路），再真打一次 ⇒ **row0/row1 dense=1024、`sparse_indices=2` 非空**，index `[4428, 11036]` 与早先裸调一致。**这是"第二家双路"的真凭据**（若稀疏回空，那个包装类会抛）。
-- **腿 A①（数据半）✅**：直接调真实的 `_embedding_provider_capabilities()`（网关会下发的同一份）⇒ 三行、四个键齐全：`dashscope`(true/true/dashscope 默认)、`volcengine-ark`(true/true/火山默认)、`openai-compatible`(false/false/null)。
-- **腿 A④（零影响）✅**：本轮**没有发生过任何写入**（我从没调过 PUT）；`rag_config.json` 仍是 `{"extract_model": "qwen3.8-flash"}`，md5 = **`15fa768a0d5d5c388c26b14aa2844abe`**，与上一线记录的"动手前"值逐字节相同。密钥只出现在进程内存里（腿 A② 按形态从会话记录取，未打印、未落盘）。
-- **⚠️ 两条 UI 腿**未点击**（诚实记录）**：腿 A① 的界面半（切到火山 ⇒ 无 dense-only 告警、Save 可点）与腿 A③（锁框显示实际地址、有存量值时出现「恢复默认」、点它清空）**需要浏览器里有登录态**——browser-use 那个会话是空白的，落到的是落地页，`GET /api/rag/config` 直接 401。**目前这两条只有 dom 用例覆盖**（`embedding address row` 四条 + 两个文件里被设计性更新的既有断言）；要真点，需要在该浏览器里登录一次。
+- **腿 A①（数据半）✅**：**走真 HTTP**（登录后从页面同源 `GET /api/rag/config`）拿到三行四键：`dashscope`(true/true/dashscope 默认)、`volcengine-ark`(true/true/火山默认)、`openai-compatible`(false/false/null)；进程内调 `_embedding_provider_capabilities()` 得到同一份。
+- **腿 A④（零影响）✅**：为腿 A①/③ 临时 PUT 过一次（`{extract_model, embedding_provider: volcengine-ark, embedding_base_url: <工作空间级地址>}` ⇒ **200**，顺带证明保存期交叉校验接受「火山 + 跟随向量模型」），随后 PUT 回 `{extract_model}` 还原：`rag_config.json` 逐字节回到 `{"extract_model": "qwen3.8-flash"}`，md5 = **`15fa768a0d5d5c388c26b14aa2844abe`**（与上一线记录的"动手前"值相同）；新鲜 GET 复核 `embedding_provider=dashscope` / `base_url=null` / `sparse_source=provider` / `model=qwen3.7-text-embedding`。密钥全程只在进程内存里（按形态从会话记录取，未打印、未落盘）。浏览器里那份未保存的表单已重载丢弃。
+- **腿 A①（界面半）+ 腿 A③ ✅（真浏览器，2026-09-17 补齐）**：`?settings=models` 深链打开设置 → 切到「功能模型」：
+  - 打开向量提供方那个下拉 ⇒ 选项**恰好三项且顺序对**（阿里百炼 / **火山方舟 (Ark)** / OpenAI 兼容）；
+  - dashscope 时：接口地址那一行显示 **`https://dashscope.aliyuncs.com`**（不再是「由提供方固定」），而「由提供方固定」**只剩 1 处**——就是没动的 rerank 列；无存量值 ⇒ 「恢复默认」**不出现**；
+  - PUT 成火山 + 一个**工作空间级**自定义地址并重载后：trigger = **火山方舟 (Ark)**、那一行显示**那个自定义地址**、「恢复默认」**出现**、`role="alert"` **为空**（Ark 无 dense-only 告警）；
+  - 点「恢复默认」⇒ 框回落到 **`https://ark.cn-beijing.volces.com`**、自定义值从 DOM 消失、按钮自己消失、Save 变为可点（证明表单确实改了）。
+  - ⚠️ **几何没量**：这个内嵌浏览器的视口是 **547×644**（< 768），且 `resizeTo` 无效 ⇒ 「恢复默认」按钮在真实宽度下的观感**仍未用眼睛确认**（结构层已由 dom 用例钉住）。
 
 - [x] `backend/AGENTS.md`：能力块两键 + 火山的形状 + 固定地址规则（含"只覆盖嵌入 leg"）。
 - [x] `frontend/AGENTS.md`：能力块两键 + 地址行的判据/恢复默认/未知不锁。
 - [x] **真栈腿 A②（真调用）**：真端点跑 `build_embedder(...).embed([...])` ⇒ dense=1024 且 **稀疏非空**。
-- [x] **真栈腿 A①（数据半）**：真实能力块三行四键。
-- [x] 真栈腿 A④：**零写入**，`rag_config.json` md5 与动手前逐字节相同。
-- [ ] **真栈腿 A①（界面半）/ A③**：等浏览器登录后点击（当前由 dom 用例覆盖）。
+- [x] **真栈腿 A①（数据半 + 界面半）**：真实能力块三行四键；真浏览器里下拉三项、无告警。
+- [x] **真栈腿 A③**：真浏览器里锁框显示存量地址 + 「恢复默认」出现 ⇒ 点击后回落默认并消失。
+- [x] 真栈腿 A④：**配置逐字节还原**（md5 `15fa768a…` 与动手前相同）、密钥未落盘、未新建文件。
 - [x] **门禁**：两份 `.md` 的 prettier 与 HEAD 同数（282 / 16）；`rag_config.json` md5 未变。
+- **仍开着的一条（不是本 plan 的验收项）**：内嵌浏览器视口 547×644 且不可 resize ⇒ **几何类观感**没有人眼确认。
 
 ---
 
