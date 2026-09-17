@@ -35,8 +35,8 @@ from deerflow.config.rag_config_file import (
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
-from deerflow.knowledge.embedder import RagConfigurationError, SparseHalfMissingError
-from deerflow.knowledge.embedder_factory import build_embedder
+from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
+from deerflow.knowledge.embedder_factory import COLLECTION_DIMENSION, build_embedder, dimension_mismatch_message
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,13 @@ class RagConfigResponse(BaseModel):
 
     ``embedding_providers`` is read-only metadata, not configuration: it lets the settings UI
     refuse a dense-only provider paired with ``sparse_source='provider'`` before the write.
+
+    ``warning`` reports that a save could not be *verified* — the endpoint was unreachable,
+    timed out, or refused the credentials — as opposed to being found unusable, which is a 400.
+    It is deliberately always present and ``null`` when there is nothing to say: the
+    ``exclude_none`` idiom used by the models validate route would have to be applied to this
+    whole response, and it is recursive, so every ``null`` inside ``config`` would disappear
+    too (spec 2026-09-17 save-time probe §3 D3).
     """
 
     config: RagConfigFile = Field(..., description="Effective values; stored secrets are masked, env-backed secrets are empty.")
@@ -101,6 +108,10 @@ class RagConfigResponse(BaseModel):
     embedding_providers: list[RagEmbeddingProviderCapability] = Field(
         default_factory=list,
         description="Capability of every embedding provider in the curated allowlist, in its own order.",
+    )
+    warning: str | None = Field(
+        default=None,
+        description="Why the saved configuration could not be verified (null when it was, or was not probed).",
     )
 
 
@@ -155,7 +166,7 @@ def _load_stored() -> RagConfigFile:
         raise HTTPException(status_code=500, detail=f"rag_config.json is invalid: {exc}") from exc
 
 
-def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None) -> RagConfigResponse:
+def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None, warning: str | None = None) -> RagConfigResponse:
     """Compose the read shape from the file just written plus the current config.
 
     ``written`` is the new file content, so a field it carries is ``ui``-sourced; anything
@@ -187,6 +198,7 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
         config=RagConfigFile.model_validate(values),
         sources=sources,
         embedding_providers=_embedding_provider_capabilities(),
+        warning=warning,
     )
 
 
@@ -226,23 +238,85 @@ async def get_rag_config(
     return _build_response(config, _declared_flat(_load_stored()))
 
 
-def _reject_unusable_after_save(config: AppConfig, payload: dict[str, Any]) -> None:
+def _pending_rag(config: AppConfig, payload: dict[str, Any]) -> RagConfig:
+    """The configuration this write will actually produce.
+
+    The base is ``config.yaml``'s own ``rag:`` block, **not** the live ``config.rag`` — the
+    latter already carries the file being replaced, so a field the admin just cleared would be
+    judged at the value that file gave it (and the fix would be refused).
+    """
+    return RagConfig.model_validate(merge_rag_config(config.yaml_rag, RagConfigFile.model_validate(payload)))
+
+
+def _reject_unusable_after_save(pending: RagConfig) -> None:
     """Refuse a write whose *result* cannot build an embedder (spec 2026-09-16 §3 D3).
 
     The judgement is the pipeline's own construction, run against the configuration the write
-    will actually produce: ``config.yaml``'s ``rag:`` block overlaid with the file about to be
-    persisted. Two things this shape is load-bearing for:
-
-    - the base is ``config.yaml``'s own block, **not** the live ``config.rag`` — the latter
-      already carries the file being replaced, so a field the admin just cleared would be
-      judged at the value that file gave it (and a fix would be refused);
-    - it runs **before** the write, so a rejected request leaves the file untouched.
+    will actually produce, and it runs **before** the write — so a rejected request leaves the
+    file untouched.
     """
-    pending = merge_rag_config(config.yaml_rag, RagConfigFile.model_validate(payload))
     try:
-        build_embedder(config, rag=RagConfig.model_validate(pending))
+        build_embedder(rag=pending)
     except RagConfigurationError as exc:
         raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
+
+
+#: The embedding settings the save-time probe answers for (spec 2026-09-17 save-time probe §3 D2).
+_WATCHED_EMBEDDING_FIELDS: tuple[str, ...] = (
+    "embedding_provider",
+    "embedding_model",
+    "embedding_base_url",
+    "embedding_api_key",
+    "embedding_dimension",
+    "embedding_sparse_source",
+)
+
+_SAVED_BUT_UNVERIFIED = "提交后的配置已保存，但未能验证："
+
+
+def _embedding_signature(rag: RagConfig) -> tuple[Any, ...]:
+    """The watched values, with "unset" spelled one way (blank == absent)."""
+    values: list[Any] = []
+    for name in _WATCHED_EMBEDDING_FIELDS:
+        value = getattr(rag, name, None)
+        values.append(value.strip() or None if isinstance(value, str) else value)
+    return tuple(values)
+
+
+def _unverified_warning(exc: BaseException) -> str:
+    """One sentence saying *why* there is no verdict — never the same words for both causes."""
+    if isinstance(exc, EmbedderAuthError):
+        return f"{_SAVED_BUT_UNVERIFIED}凭据被拒（{_probe_detail(str(exc))}）"
+    if isinstance(exc, TimeoutError):
+        return f"{_SAVED_BUT_UNVERIFIED}探测超时（超过 {_PROBE_TIMEOUT_SECONDS:g} 秒）"
+    return f"{_SAVED_BUT_UNVERIFIED}未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}"
+
+
+async def _probe_after_save(pending: RagConfig) -> str | None:
+    """Make one real embedding call against the configuration about to be written.
+
+    Splitting the two outcomes is the whole point: an **answer** ("this cannot work") is a 400,
+    while *not getting an answer* is a 200 with a ``warning``. Refusing the second case would
+    block the only exit an admin has when the configuration in force is the broken one.
+    """
+    try:
+        embedder = build_embedder(rag=pending)
+        results = await asyncio.wait_for(embedder.embed([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+    except RagConfigurationError as exc:
+        # Caught *before* the blanket handler below and before anything else: a wrong width or an
+        # empty sparse half is the model's answer, and burying it as "could not verify" is exactly
+        # the hole this probe exists to close (spec §3 D4).
+        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — everything else means "no verdict", which never blocks a save
+        logger.warning("embedding probe after save failed for provider %s", pending.embedding_provider, exc_info=True)
+        return _unverified_warning(exc)
+
+    # Measured here rather than read back from the runtime guard: that guard is a once-per-process
+    # verdict keyed by (provider, url, model), so a warm key would let a second save through (D6).
+    measured = len(results[0].dense) if results else 0
+    if measured != COLLECTION_DIMENSION:
+        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{dimension_mismatch_message(measured)}")
+    return None
 
 
 @router.put(
@@ -273,7 +347,13 @@ async def put_rag_config(
             submitted[name] = preserve_secret(submitted[name], getattr(stored, name, "") or "")
 
     payload = _prune_empty(submitted)
-    _reject_unusable_after_save(config, payload)
+    pending = _pending_rag(config, payload)
+    _reject_unusable_after_save(pending)
+    # One real call, but only when one of the watched embedding settings actually changed: an
+    # unrelated edit (rerank, parse, …) must not turn every save into a network round trip.
+    warning = None
+    if _embedding_signature(config.rag) != _embedding_signature(pending):
+        warning = await _probe_after_save(pending)
     target_path = RagConfigFile.resolve_config_path() or (project_root() / "rag_config.json")
 
     def _write() -> None:
@@ -281,7 +361,7 @@ async def put_rag_config(
             atomic_write_rag_config(target_path, payload)
 
     await asyncio.to_thread(_write)
-    return _build_response(config, payload)
+    return _build_response(config, payload, warning=warning)
 
 
 #: Mirrors the models-config validate probe: bounded, observational, never persisted.

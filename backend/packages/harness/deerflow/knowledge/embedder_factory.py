@@ -42,6 +42,16 @@ _PROBED_DIMENSIONS: dict[tuple[str, str, str], int] = {}
 _REBUILD_HINT = "请改用 1024 维的模型，然后到「设置 → 模型 → 功能模型 → 重建索引」重新嵌入现有切片。"
 
 
+def dimension_mismatch_message(measured: int) -> str:
+    """The one wording for a wrong dense width.
+
+    Two callers refuse on this fact — the once-per-process runtime guard here and the save-time
+    probe (``app.gateway.routers.rag_config``) — and they must not word it twice: the admin sees
+    the same sentence while editing as the ingest would have shown days later.
+    """
+    return f"嵌入模型返回 {measured} 维，而向量库集合固定为 {COLLECTION_DIMENSION} 维 ⇒ 拒绝启用。{_REBUILD_HINT}"
+
+
 class _DimensionCheckedEmbedder:
     """Measure the dense width once per process; refuse anything but ``COLLECTION_DIMENSION``.
 
@@ -65,7 +75,7 @@ class _DimensionCheckedEmbedder:
             _PROBED_DIMENSIONS[self._key] = measured
             logger.info("embedding provider %s measured at %d dimensions", self._key[0], measured)
             if measured != COLLECTION_DIMENSION:
-                raise RagConfigurationError(f"嵌入模型返回 {measured} 维，而向量库集合固定为 {COLLECTION_DIMENSION} 维 ⇒ 拒绝启用。{_REBUILD_HINT}")
+                raise RagConfigurationError(dimension_mismatch_message(measured))
         return results
 
 

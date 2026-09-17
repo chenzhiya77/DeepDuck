@@ -84,6 +84,8 @@ exclude_none:   {"config": {"extract_model": "x"}, "sources": {}, "embedding_pro
 
 `build_embedder(config, rag=<将要写入的合并结果>)` ⇒ `await embedder.embed([_PROBE_TEXT])`，外面套 `asyncio.wait_for(..., _PROBE_TIMEOUT_SECONDS)`。
 
+⚠️ **别照抄 `probe-embedding` 的 catch 结构**（按代码核实）：那个端点**只答稀疏那一问**，宽度错会掉进它最后那个兜底 `except Exception` ⇒ 报成 `unverifiable`。而保存期要求「宽度错 ⇒ **400**」⇒ 必须把 `RagConfigurationError` **捕在最前面**、判成 400；否则宽度错会被当成"没能验证"**放行**——那正好是 G1 要治的那个洞。
+
 **与既有 `probe-embedding` 的关系**：那个是**只读探针**（给界面知情权、三态、永不拦）；这个是**保存期门禁**（二元、会拦）。两者判的是同一件事，所以断言逻辑（`SparseHalfMissingError` / 宽度比较）应当**走同一套类型与常量**，只有"怎么处置结论"不同。
 
 ### D5 —— 两条 400 的正文**直接用既有的两个异常文案**，不另写
@@ -93,12 +95,23 @@ exclude_none:   {"config": {"extract_model": "x"}, "sources": {}, "embedding_pro
 
 前缀仍是 `提交后的配置仍不可用：`。**另写一份就会让同一事实有两处措辞**——本线一直在治这个。
 
-### D6 —— **只有被包装的 provider** 会写那张每进程缓存（写进注释，不当承诺）
+### D6 —— 缓存只省一次往返；**它不会替你拒第二次**（按代码核实）
 
-`_PROBED_DIMENSIONS` 只由 `_guard` **包装过的** provider 写：`pins_dimension=True` 的那些（dashscope / ark）**根本不挂那层包装**，保存期探测对它们**不写任何缓存**；`openai-compatible` 那一类才会写。两个方向都要写明：
+`_PROBED_DIMENSIONS` 的键是 `(provider id, base_url, model)`，只由 `_guard` **包装过的** provider 写：`pins_dimension=True` 的那些（dashscope / ark）**根本不挂那层包装**，保存期探测对它们**不写任何缓存**；`openai-compatible` 那一类才会写。
 
-- **量对** ⇒ 运行期第一次 `embed()` 少一次往返（**预热**；这是副作用不是目的，别为它写用例）；
-- **量错也一样会被写进去**（`_DimensionCheckedEmbedder` 是**先缓存再抛**）⇒ 同一进程里拿同一个 key（`provider|base_url|model`）再构建会**立刻拒**、不再打网络。这与它的既有设计一致（那份配置本来就不可用），写在这里免得被当成 bug。
+⚠️ **别指望"同一 key 之后会立刻拒"**——那段判定的写法是：
+
+```python
+if results and self._key not in _PROBED_DIMENSIONS:   # ← 判定体在这个 if 里面
+    _PROBED_DIMENSIONS[self._key] = measured          # 先缓存
+    if measured != COLLECTION_DIMENSION:
+        raise RagConfigurationError(...)              # 再抛
+```
+
+⇒ key 一旦进了缓存，后续调用**直接返回、不再检查宽度**（放过去，靠 Qdrant 拒写兜底）。所以：
+
+- 保存期探测**必须自己看 `dense` 的长度**（这就是 D1 那两问里的一问，不能省，也不能指望包装类）；
+- 缓存带来的只是"少一次往返"，**不是**"第二次会被拒"。
 
 ### D7 —— 不做
 

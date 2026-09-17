@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 import pytest
 import yaml
 from _router_auth_helpers import make_authed_test_app
@@ -90,6 +91,30 @@ def _client(*, system_role: str) -> TestClient:
     )
     app.include_router(rag_config_router.router)
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _no_outbound_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep this file's saves off the network.
+
+    A PUT that changes an embedding setting now makes one real call (spec 2026-09-17 save-time
+    probe), so without a stub these tests would dial whatever address the payload names — the
+    golden payload points at ``localhost:8080``. The stub answers a shape both families can read
+    (OpenAI's ``data``, DashScope's ``output.embeddings``) at 1024 dimensions, with a sparse half
+    so ``sparse_source='provider'`` is satisfied too.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [{"index": 0, "embedding": [0.0] * 1024}],
+                "output": {"embeddings": [{"text_index": 0, "embedding": [0.0] * 1024, "sparse_embedding": [{"index": 7, "value": 0.5}]}]},
+            },
+        )
+
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_async_client(transport=httpx.MockTransport(handler)))
 
 
 # ── admin gate ────────────────────────────────────────────────────────────
@@ -414,16 +439,21 @@ def test_sparse_secret_env_source_uses_the_generic_name(config_env: Path, monkey
 
 _GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "rag_config" / "response_golden.json").read_text(encoding="utf-8"))
 _CAPABILITY_FIELD = "embedding_providers"
+#: The save-time probe's verdict rides every response, GET included — always present, ``null``
+#: when there is nothing to say (spec 2026-09-17 save-time probe §3 D3). Registered here rather
+#: than subtracted ad hoc so the "pure addition" guards keep their teeth.
+_WARNING_FIELD = "warning"
+_ADDED_FIELDS = {_CAPABILITY_FIELD, _WARNING_FIELD}
 
 
 def _assert_pure_addition(body: dict, golden: dict) -> None:
-    """The response may only have *gained* the capability field; nothing else may move.
+    """The response may only have *gained* the registered fields; nothing else may move.
 
     Two ordered assertions on purpose: a shape change names the offending key, a value
     change shows the field-by-field diff.
     """
-    assert set(body) == set(golden) | {_CAPABILITY_FIELD}
-    assert {key: value for key, value in body.items() if key != _CAPABILITY_FIELD} == golden
+    assert set(body) == set(golden) | _ADDED_FIELDS
+    assert {key: value for key, value in body.items() if key not in _ADDED_FIELDS} == golden
 
 
 def test_get_returns_the_embedding_provider_capabilities(config_env: Path):
