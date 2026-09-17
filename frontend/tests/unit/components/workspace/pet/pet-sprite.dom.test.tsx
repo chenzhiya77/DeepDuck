@@ -219,7 +219,7 @@ describe("PetSprite state switch", () => {
 
     // 页面被判为不可见时 Chrome 会推迟解码:既不 resolve 也不 reject。
     // 这里就是那个情形 —— 一次都不调用 settleDecode。
-    rerender(<PetSprite state={petState({ base: "greet" })} manifest={manifest} />);
+    rerender(<PetSprite state={petState({ oneShot: "greet" })} manifest={manifest} />);
     expect(box.style.backgroundImage).toContain("idle.webp");
 
     await act(async () => {
