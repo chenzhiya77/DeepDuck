@@ -1815,7 +1815,7 @@ export const enUS: Translations = {
       groupEvaluationHint:
         "Scores retrieval quality with ragas, independently of the model you chat with. Leave it empty to use the configured primary model.",
       judgeModel: "Judge model",
-      judgeModelNone: "(use the primary model)",
+      judgeModelNone: "(use the configured default)",
       groupMultimodal: "Multimodal & video",
       groupMultimodalHint: "Captions turn images and keyframes into text; speech recognition only serves video ingestion.",
       groupServices: "Services & tokens",
@@ -1823,7 +1823,7 @@ export const enUS: Translations = {
       vlmNoVisionModel: "No configured model declares vision support — add a vision-capable model under Chat models first.",
       extractModelHint:
         "Builds the knowledge graph from documents. Prefer a small, cheap model with stable JSON output.",
-      extractModelNone: "(not configured)",
+      extractModelNone: "(use the configured default)",
       captionModel: "Caption model (VLM)",
       captionModelHint:
         "The endpoint and API key come from the selected model entry; leave it unset to use the configured default VLM. Only vision-capable OpenAI-compatible entries are listed — an Anthropic entry can never serve this leg.",
