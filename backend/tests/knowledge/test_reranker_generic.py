@@ -142,3 +142,25 @@ def test_the_endpoint_is_required():
     """A generic provider has no default address to fall back to."""
     with pytest.raises(TypeError):
         GenericReranker(model="m")
+
+
+def test_the_factory_refuses_a_generic_provider_without_an_address():
+    """Where the *deployment* refusal lives (spec 2026-09-17 alignment §3 D1).
+
+    The class above only refuses a missing kwarg; this is the refusal an admin actually meets,
+    and it has to arrive as `RagConfigurationError` so the gateway's one handler can answer 400
+    (it used to be a bare `ValueError`: a 500 on the recall-test route, a wrapped tool error in
+    chat, and the reason visible only in the server log).
+    """
+    from deerflow.config.app_config import RagConfig
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.reranker_factory import build_reranker
+
+    rag = RagConfig(rerank_provider="generic-rerank")
+    assert rag.rerank_base_url is None
+
+    with pytest.raises(RagConfigurationError, match="rerank_base_url") as caught:
+        build_reranker(rag=rag)
+
+    # Callers that already catch `ValueError` keep working — the new type is a subclass.
+    assert isinstance(caught.value, ValueError)

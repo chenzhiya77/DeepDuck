@@ -135,24 +135,43 @@ rerank_providers: [{provider_id, has_fixed_endpoint, default_endpoint}, …]
 
 （**只有这两种**：`rerank_provider` / `parse_provider` / `parse_backend` 在 `RagConfig` 里都是 `Literal`（`app_config.py:215/217/219`），非法的 provider id 或 backend 取值**根本载不进来**，所以"配置里写了乱七八糟的 provider"不会走到这里。）
 
-逃生口是改 `config.yaml`（operator 文件、热加载、不需重启），且 400 正文点名是哪条腿。**这与嵌入腿今天的处境相同**（嵌入腿早就是这样），本期是把同一处境横向补齐；若日后要改成"只查本次改动的那条腿"，切换点在 `_reject_unusable_after_save` 的入参，不需要改别的。
+逃生口是改 `config.yaml`（operator 文件、热加载、不需重启），且 400 正文点名是哪条腿。
+
+**第一批实际受害者（GREEN 窄跑抓到）**：两处既有测试的 PUT 是**部分**载荷 —— `test_rerank_secret_env_source_follows_the_provider`（`{"rerank_provider": "generic-rerank"}`）与 `test_local_mineru_has_no_secret_fallback`（`{"parse_provider": "mineru-local"}`）—— 它们在这次收紧后从 200 变 400。处置是**给它们补上地址**（它们问的是密钥的环境回退，与地址无关）。⇒ **规律**：任何 PUT 一份「缺地址的重排/解析」的既有测试或夹具都会红，Task 2/3 若再遇到同类夹具，照此处理而不是放宽检查。**这与嵌入腿今天的处境相同**（嵌入腿早就是这样），本期是把同一处境横向补齐；若日后要改成"只查本次改动的那条腿"，切换点在 `_reject_unusable_after_save` 的入参，不需要改别的。
 
 **S2 —— `rerank_providers` 与 `embedding_providers` 的条目形状不同**
 
 前者没有 `emits_sparse`（重排没有稀疏这一半）。两个键的条目形状不一致是**如实**的，不是疏漏；但前端读它时不能复用同一个 TS 接口，要各写一个（Task 2 的 RED 会钉住"重排行不看 `emits_sparse`"）。
 
-**S3 —— 前端有三处既有断言会因 G3 失效（本期必须一并更新，否则 GREEN 后会突然冒红）**
+**S3 —— 前端有两份 dom 文件、六处断言会因 G3 失效（本期必须一并更新，否则 GREEN 后会突然冒红）**
+
+> **Task 0 已核实并修正本表**：起草时我只按 `tests/unit/settings/…` 这一份文件扫，漏掉了**第二份** dom 文件（`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`）。这一处正是「按界面词汇 grep、别按数据字段扫」那条规矩要防的。下面两张表是核实后的完整清单。
 
 `LockedBox` 只有一个文本节点、内容是 `value?.trim() ? value : reason`，而它今天**唯一**在显示原因的就是重排行（嵌入行已经有了 `default_endpoint`）。G3 把重排行也补上地址之后：
 
-| 位置（`tests/unit/settings/functional-models.dom.test.tsx`）     | 今天                         | G3 之后                                                                                                                |
+**A. `tests/unit/settings/functional-models.dom.test.tsx`**
+
+| 位置                                                             | 今天                         | G3 之后                                                                                                                |
 | ---------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `:511` `getByText("https://dashscope.aliyuncs.com")`（**单数**） | 1 个匹配                     | **2 个**（两行同址）⇒ `getByText` 抛 "found multiple elements"，改 `getAllByText` + 断言个数                           |
 | `:512` `getAllByText(F.lockedByProvider).length === 1`           | 1（重排行那句原因）          | **0** ⇒ 改钉"重排行显示的是地址、不是原因"                                                                             |
 | `:600` `getAllByText(F.lockedByProvider)[0]!` 用于比对字形       | 命中重排行那句原因           | `undefined` ⇒ 改钉一种**仍显示原因**的锁（解析腿默认就有 `F.lockedLocalOnly`）                                         |
 | 夹具 `view()`                                                    | 只提供 `embedding_providers` | 必须补一份重排能力块，否则重排行按"unknown ⇒ 不锁"变成输入框，`:514` 的 `queryByLabelText(F.rerankBaseUrl)` 会命中输入 |
 
-Task 0 要求**按界面词汇**（`由提供方固定` / `重排接口地址` / `恢复默认`）把这类断言先 grep 一遍列出来，别只依赖上面这张表。
+**B. `tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`**（这份文件的 i18n 是一个 **KEYS 代理**，所以断言里写的是**键名本身**，如 `"lockedByProvider"`）
+
+| 位置                                                                                        | 今天                          | G3 之后                                           |
+| ------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------- |
+| 夹具 `renderWith()`（`:107-113`）                                                           | 只提供 `embedding_providers`  | 同样要补重排能力块（否则 `:139` 红）              |
+| `:139` `labelCount("rerankBaseUrl")).toBe(0)`                                               | 0（锁框，无输入）             | 无能力块时会变**输入框** ⇒ 红；补了能力块则仍为 0 |
+| `:140` `getByText("https://dashscope.aliyuncs.com")`（**单数**）                            | 1 个匹配                      | **2 个** ⇒ 同 A 的第一条，改 `getAllByText`       |
+| `:141` `getAllByText("lockedByProvider").length === 1`                                      | 1（重排行那句原因）           | **0** ⇒ 同 A 的第二条                             |
+| 注释（`:135-137`）"only the rerank row — untouched this round — still carries the sentence" | 描述现状                      | **随改动一起更新**（它正是本期要推翻的那句话）    |
+| `:148-160`「generic-rerank ⇒ 可编辑」那条                                                   | 两侧都无固定地址 ⇒ 无原因文本 | **不受影响**（补能力块后仍成立）                  |
+
+**不受影响、但要一并看过的一条**：`tests/unit/settings/…:653` 用 `queryByRole("button", { name: F.resetToDefault })`（**单数**）钉嵌入那行的「恢复默认」；重排行在该用例里没有存量值 ⇒ 不会多出第二个按钮。若日后给重排行也造存量值，这条要改成 `getAllByRole`。
+
+Task 0 已按界面词汇（`由提供方固定` / `重排接口地址` / `恢复默认` / `重排提供方`）扫过全部前端测试，**以上即完整清单**；Task 2 动手前仍要求复核一次（界面词汇可能随文案改动而变）。
 
 **G5（新登记，本期不治）—— 另外两条腿仍没有"模型级能力"这一层**
 

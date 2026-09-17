@@ -9,34 +9,42 @@ from __future__ import annotations
 
 from typing import Any
 
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.providers import resolve_provider
 
 
-def build_reranker(config: Any | None = None) -> Any:
+def build_reranker(config: Any | None = None, *, rag: Any | None = None) -> Any:
     """Instantiate the rerank provider the configuration selects.
 
-    Raises ``ValueError`` when the selected provider needs an endpoint the configuration
-    never supplied — only DashScope ships a default address.
+    Raises ``RagConfigurationError`` when the selected provider needs an endpoint the
+    configuration never supplied — only DashScope ships a default address. That type (not a bare
+    ``ValueError``) is what the gateway maps to a readable 400, so the refusal reaches the caller
+    on every path that builds a reranker, including the recall-test route and the eval runner
+    (spec 2026-09-17 alignment §3 D1).
+
+    ``rag`` overrides the RAG section for this call, exactly as ``build_embedder`` does: the
+    save-time check constructs the legs from the configuration it is *about to write*, which is
+    not the live one (spec 2026-09-17 alignment §3 D2).
     """
     if config is None:
         from deerflow.config.app_config import get_app_config
 
         config = get_app_config()
-    rag = config.rag
-    spec = resolve_provider("rerank", rag.rerank_provider)
+    section = config.rag if rag is None else rag
+    spec = resolve_provider("rerank", section.rerank_provider)
 
-    endpoint = rag.rerank_base_url or None
+    endpoint = section.rerank_base_url or None
     if endpoint is None and spec.provider_id != "dashscope":
-        raise ValueError(
+        raise RagConfigurationError(
             f"rerank_provider={spec.provider_id!r} requires rag.rerank_base_url; only `dashscope` has a built-in endpoint.",
         )
 
     from deerflow.reflection import resolve_variable
 
     implementation = resolve_variable(spec.implementation)
-    kwargs: dict[str, Any] = {"model": rag.rerank_model}
+    kwargs: dict[str, Any] = {"model": section.rerank_model}
     if endpoint is not None:
         kwargs["base_url"] = endpoint
-    if rag.rerank_api_key:
-        kwargs["api_key"] = rag.rerank_api_key
+    if section.rerank_api_key:
+        kwargs["api_key"] = section.rerank_api_key
     return implementation(**kwargs)

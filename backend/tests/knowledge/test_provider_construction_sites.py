@@ -59,4 +59,4 @@ def test_no_production_module_constructs_a_provider_directly():
                 if name in _GUARDED_CLASSES:
                     offenders.append(f"{path.relative_to(_BACKEND)}:{node.lineno} -> {name}()")
 
-    assert not offenders, "provider 实现只能经 build_embedder() / build_reranker() / parse_document 构造，直连构造点：" + "; ".join(offenders)
+    assert not offenders, "provider 实现只能经 build_embedder() / build_reranker() / build_parse_provider() 构造，直连构造点：" + "; ".join(offenders)

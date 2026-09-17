@@ -409,7 +409,9 @@ def test_rerank_secret_env_source_follows_the_provider(config_env: Path, monkeyp
     monkeypatch.setenv("DASHSCOPE_RERANK_API_KEY", "env-dashscope")
     with _client(system_role="admin") as client:
         assert client.get("/api/rag/config").json()["sources"]["rerank_api_key"] == "env"
-        client.put("/api/rag/config", json={"rerank_provider": "generic-rerank"})
+        # The address rides along because the write has to be *savable* now: `generic-rerank`
+        # without one is refused at save time (spec 2026-09-17 alignment §3 D2).
+        client.put("/api/rag/config", json={"rerank_provider": "generic-rerank", "rerank_base_url": "http://localhost:8000"})
         assert client.get("/api/rag/config").json()["sources"]["rerank_api_key"] == "unset"
         monkeypatch.setenv("RAG_RERANK_API_KEY", "env-generic")
         assert client.get("/api/rag/config").json()["sources"]["rerank_api_key"] == "env"
@@ -420,7 +422,8 @@ def test_local_mineru_has_no_secret_fallback(config_env: Path, monkeypatch: pyte
     monkeypatch.setenv("MINERU_API_TOKEN", "tok")
     with _client(system_role="admin") as client:
         assert client.get("/api/rag/config").json()["sources"]["mineru_api_token"] == "env"
-        client.put("/api/rag/config", json={"parse_provider": "mineru-local"})
+        # Same reason as the rerank one above: `mineru-local` needs its address to be savable.
+        client.put("/api/rag/config", json={"parse_provider": "mineru-local", "parse_base_url": "http://localhost:30000"})
         assert client.get("/api/rag/config").json()["sources"]["mineru_api_token"] == "unset"
 
 
@@ -558,3 +561,59 @@ def test_put_accepts_clearing_a_field_only_the_previous_file_declared(config_env
 
     assert response.status_code == 200
     assert "embedding_dimension" not in _read_rag_json(config_env)
+
+
+# ── the same check now covers the other two legs (spec 2026-09-17 alignment §3 D2) ──────────
+#
+# Building the embedder only ever answered for the embedding half: a rerank provider that needs
+# an address, or a local parser without one, saved happily and blew up on the next retrieval or
+# ingest. Both constructions are offline, so covering them costs no network call — which is the
+# counterexample below.
+
+
+def test_put_refuses_a_rerank_without_its_address(config_env: Path):
+    target = config_env / "rag_config.json"
+    target.write_text(json.dumps({"rerank_model": "kept"}), encoding="utf-8")
+    before = target.read_bytes()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"rerank_provider": "generic-rerank"})
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail.startswith("提交后的配置仍不可用：")
+    assert "rerank_base_url" in detail
+    assert target.read_bytes() == before
+
+
+def test_put_refuses_a_local_parser_without_its_address(config_env: Path):
+    target = config_env / "rag_config.json"
+    target.write_text(json.dumps({"rerank_model": "kept"}), encoding="utf-8")
+    before = target.read_bytes()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"parse_provider": "mineru-local"})
+
+    assert response.status_code == 400
+    assert "parse_base_url" in response.json()["detail"]
+    assert target.read_bytes() == before
+
+
+def test_a_complete_configuration_saves_without_touching_the_network(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The three-leg check must not become a fourth network hop (spec 2026-09-17 alignment §2 D2).
+
+    Every construction is offline, so *any* outbound attempt here is a defect — the stub fails
+    the test instead of answering, which also means the autouse stub of this module is replaced.
+    """
+
+    def _explode(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"the save-time check went out to the network: {request.url}")
+
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_async_client(transport=httpx.MockTransport(_explode)))
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"rerank_model": "ui-rerank"})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env)["rerank_model"] == "ui-rerank"

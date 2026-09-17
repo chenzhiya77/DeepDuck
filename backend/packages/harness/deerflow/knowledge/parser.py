@@ -40,6 +40,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -714,26 +715,33 @@ class MineruCloudParseProvider:
                 await http.aclose()
 
 
-def _build_parse_provider(
+def build_parse_provider(
     *,
-    client: httpx.AsyncClient | None,
-    model_version: str,
-    poll_interval_seconds: float,
-    timeout_seconds: float,
+    rag: Any | None = None,
+    client: httpx.AsyncClient | None = None,
+    model_version: str = "vlm",
+    poll_interval_seconds: float = 5.0,
+    timeout_seconds: float = 1800.0,
 ) -> object:
     """Resolve ``rag.parse_provider`` through the curated allowlist (spec §4.1).
 
-    Same rule as the rerank factory: the provider id picks the implementation, the
-    caller never supplies a class path. Constructor kwargs differ per provider, so the
-    split lives here — ``mineru-local`` takes the configured address and backend hint,
-    the cloud provider takes ``model_version``.
+    Same rule as the rerank factory: the provider id picks the implementation, the caller never
+    supplies a class path. Constructor kwargs differ per provider, so the split lives here —
+    ``mineru-local`` takes the configured address and backend hint, the cloud provider takes
+    ``model_version``.
+
+    ``rag`` overrides the RAG section for this call, so the save-time check can construct the
+    provider from the configuration it is about to write instead of the live one (spec 2026-09-17
+    alignment §3 D2). Everything else keeps its default: **construction never touches the
+    network** (the cloud client reads its token in ``parse()``), which is what lets that check
+    cover this leg for free.
     """
-    rag = get_app_config().rag
-    spec = resolve_provider("parse", rag.parse_provider)
+    section = get_app_config().rag if rag is None else rag
+    spec = resolve_provider("parse", section.parse_provider)
     kwargs: dict = {"client": client, "poll_interval_seconds": poll_interval_seconds, "timeout_seconds": timeout_seconds}
     if spec.provider_id == "mineru-local":
-        kwargs["base_url"] = rag.parse_base_url
-        kwargs["backend"] = rag.parse_backend
+        kwargs["base_url"] = section.parse_base_url
+        kwargs["backend"] = section.parse_backend
     else:
         kwargs["model_version"] = model_version
     from deerflow.reflection import resolve_variable
@@ -773,7 +781,7 @@ async def parse_document(
     if is_local_suffix(suffix):
         return ParsedDocument(markdown=_read_local_text(path), images=[])
 
-    provider = _build_parse_provider(
+    provider = build_parse_provider(
         client=client,
         model_version=model_version,
         poll_interval_seconds=poll_interval_seconds,

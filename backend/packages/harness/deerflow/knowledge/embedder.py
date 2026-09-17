@@ -70,6 +70,11 @@ class EmbedderAuthError(EmbedderError):
 class RagConfigurationError(ValueError):
     """The configuration cannot describe a usable leg — refused rather than retried.
 
+    Every leg's configuration-class refusal uses this type, not only the embedding half: the
+    rerank factory and the local parser raise it too (spec 2026-09-17 alignment §3 D1). That is
+    what makes one gateway handler enough, and it keeps every refusal readable instead of
+    arriving as a bare 500 or a wrapped tool error.
+
     Deliberately a ``ValueError``, not an ``EmbedderError``: ``index_chunks`` treats the
     latter as a *soft* per-batch failure and would bury a configuration mistake as "some
     chunks failed". And deliberately its own type so the gateway can map exactly this class

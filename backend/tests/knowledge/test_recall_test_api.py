@@ -407,3 +407,43 @@ async def test_recall_test_matches_direct_impl_results(tools_env, monkeypatch, t
         assert "引用编号" not in path["message"], f"model-directed note leaked into the UI message: {path['message']!r}"
     assert "检索到" in result["paths"]["vector"]["message"], "the human-facing summary must survive stripping"
     assert all(isinstance(value, int) for value in result["elapsed_ms"].values())
+
+
+@pytest.fixture(scope="module")
+def gateway_handlers():
+    """The real handlers, so the route is exercised with production's own mapping.
+
+    A bare test app carries none of them, and the point here is exactly that mapping: the same
+    refusal is a readable 400 over HTTP instead of the 500 it used to be.
+    """
+    from app.gateway.app import create_app
+
+    return create_app().exception_handlers
+
+
+async def test_a_bad_rerank_config_answers_400_not_500(service, monkeypatch, gateway_handlers):
+    """The route builds the reranker itself, so its refusal must reach the caller readably.
+
+    ``build_reranker()`` is evaluated as an *argument* to the graph leg, i.e. outside the
+    per-path ``_timed`` degradation wrapper — so a bad rerank provider used to leave this route
+    as an unmapped ``ValueError`` (HTTP 500, reason only in the log). It is now the type the
+    gateway maps to 400 (spec 2026-09-17 alignment §3 D1).
+    """
+    from deerflow.knowledge.embedder import RagConfigurationError
+
+    _vector, _graph, _wiki = _mock_impls(monkeypatch)
+    real_config = app_config_module.get_app_config()
+    bad_rag = real_config.rag.model_copy(update={"graph_rerank": True, "rerank_provider": "generic-rerank", "rerank_base_url": None})
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: real_config.model_copy(update={"rag": bad_rag}))
+
+    app = make_authed_test_app(user_factory=_owner)
+    app.state.knowledge_service = service
+    app.include_router(knowledge_bases.router)
+    app.add_exception_handler(RagConfigurationError, gateway_handlers[RagConfigurationError])
+
+    with TestClient(app) as client:
+        kb = _create_kb(client)
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "x"})
+
+    assert response.status_code == 400
+    assert "rerank_base_url" in response.json()["detail"]

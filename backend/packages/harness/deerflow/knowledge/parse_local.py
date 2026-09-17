@@ -38,6 +38,7 @@ from pathlib import Path
 
 import httpx
 
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.parser import (
     MineruError,
     MineruParseFailedError,
@@ -110,9 +111,9 @@ class MineruLocalParseProvider:
         timeout_seconds: float = 1800.0,
     ) -> None:
         if not (base_url or "").strip():
-            raise ValueError("本地解析需要服务地址：请设置 rag.parse_base_url（parse_provider=mineru-local）")
+            raise RagConfigurationError("本地解析需要服务地址：请设置 rag.parse_base_url（parse_provider=mineru-local）")
         if backend is not None and backend not in _BACKEND_FORM_VALUES:
-            raise ValueError(f"未知的 parse_backend {backend!r}；可选 {sorted(_BACKEND_FORM_VALUES)}")
+            raise RagConfigurationError(f"未知的 parse_backend {backend!r}；可选 {sorted(_BACKEND_FORM_VALUES)}")
         self._base_url = base_url.strip().rstrip("/")
         # 空 = 由服务端决定（D4-B）：不下发 backend 字段，我们不管 MinerU 的档位
         self._backend = _BACKEND_FORM_VALUES[backend] if backend else None

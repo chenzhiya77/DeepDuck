@@ -37,7 +37,9 @@ from deerflow.config.rag_config_file import (
 from deerflow.config.runtime_paths import project_root
 from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import COLLECTION_DIMENSION, build_embedder, dimension_mismatch_message
+from deerflow.knowledge.parser import build_parse_provider
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
+from deerflow.knowledge.reranker_factory import build_reranker
 
 logger = logging.getLogger(__name__)
 
@@ -249,14 +251,22 @@ def _pending_rag(config: AppConfig, payload: dict[str, Any]) -> RagConfig:
 
 
 def _reject_unusable_after_save(pending: RagConfig) -> None:
-    """Refuse a write whose *result* cannot build an embedder (spec 2026-09-16 §3 D3).
+    """Refuse a write whose *result* cannot build the pipeline (spec 2026-09-16 §3 D3).
 
     The judgement is the pipeline's own construction, run against the configuration the write
     will actually produce, and it runs **before** the write — so a rejected request leaves the
     file untouched.
+
+    **All three legs are constructed** (spec 2026-09-17 alignment §3 D2): building only the
+    embedder answered for one half, so a rerank provider that needs an address, or a local parser
+    without one, saved happily and blew up on the next retrieval or ingest. Each construction is
+    offline — no provider is called — so covering the other two legs costs no network round trip
+    (and therefore needs none of the embedding probe's "could not verify" handling).
     """
     try:
         build_embedder(rag=pending)
+        build_reranker(rag=pending)
+        build_parse_provider(rag=pending)
     except RagConfigurationError as exc:
         raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
 

@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-rerank-parse-alignment-design.md](../specs/2026-09-17-rag-rerank-parse-alignment-design.md)
-**Status:** 未开工（2026-09-17 起草）
+**Status:** Task 0–1 已交付 2026-09-17（Task 2–3 待开工）
 **Parent:** [2026-09-17-rag-save-time-embedding-probe.md](2026-09-17-rag-save-time-embedding-probe.md)（那份 spec §6 把 G3/G4 判为「同因、本期不治」；本计划是它的**增量**）
 
 **Architecture:** 把嵌入腿已经立好的两条规矩横向补到**重排 / 解析**两条腿上，全部是"把既有的判断换个出口/换个类型/换个数据来源"，**不新写判断**：
@@ -18,11 +18,28 @@
 
 ## Task 0 — 开工前的五项核实（只读，不改代码）
 
-- [ ] 1. 两处拒绝点的确切位置、文案与**触发路径**（`reranker_factory.py` / `parse_local.py`），以及**有没有既有用例钉住"裸 ValueError"或 500**——按**错误文案 + 界面词汇**两头 grep（别只按字段名扫）。
-- [ ] 2. 两个构造点的签名：`build_reranker(config)` / `parser.py::_build_parse_provider(...)`（它现在连 config 都不收、直接读 `get_app_config().rag`）——补 `rag=` 覆盖要动几处；`parse_document` 怎么给 `model_version`，保存期校验用哪个值（**构造不能出网**，核清 cloud 那家的构造是否纯离线）。
-- [ ] 3. 能力块的两条形状守卫现状（golden 夹具 + 允许集写法）：新键 `rerank_providers` 要登记在哪几行；`provider_ids("rerank")` 的顺序。
-- [ ] 4. 前端重排那一行的现状（写死判据的确切行号）与**会被 G3 动到的既有 dom 断言**：按**界面词汇** grep（`由提供方固定`、`重排接口地址`、`恢复默认`、`重排提供方`），把行号列出来；spec §6 **S3** 已列了四处（`:511` / `:512` / `:600` / 夹具 `view()`），**要独立复核并补充**（别只信那张表）。
-- [ ] 5. `resolveFixedEndpointRow` 的签名与它的 **5 处调用点**（`config-form.test.ts` 内 5 处、视图 1 处使用）——参数化（抽核心 + 两个薄包装）会不会改动嵌入那侧的调用形状；若会，先记清是哪几处。
+**状态：已核实 2026-09-17。**
+
+**核实纪要（五项都核了；**第一项与第四项改进了 spec**）**
+
+1. **两处拒绝点的触发路径与既有覆盖**：`reranker_factory.py:30`（`build_reranker` 内，`endpoint is None and provider != "dashscope"`）、`parse_local.py:113`（`MineruLocalParseProvider.__init__` 内，地址为空的**第一个**校验）。
+   ⚠️ **本项我第一次核错了，RED 期纠正**：我当时按**整句文案** grep（`本地解析需要服务地址` / `requires rag.rerank_base_url`）报「零既有覆盖」——**错的**。按**关键词**扫就命中：`tests/knowledge/test_parse_local.py:242` 的 `test_parse_document_local_without_base_url_fails_loud` 早就钉着 `pytest.raises(ValueError, match="parse_base_url")`（用的是**子串** `parse_base_url`，所以整句 grep 扫不到）。⇒ 结论改成：**解析那侧有一条既有用例**（它断言的是 `ValueError`，D1 之后仍然绿，因为新类型是子类 ⇒ 所以 RED 是把**它的类型收紧**成 `RagConfigurationError`）；**重排工厂那侧确实没有**（隔壁 `test_reranker_generic.py:141` 的 `test_the_endpoint_is_required` 断言的是**类自身**的 `TypeError`，不是工厂的拒绝）⇒ 新增一条。
+   另外 400 的映射本身**有**覆盖（`tests/test_rag_configuration_error.py` 用 `create_app().exception_handlers` 验过），缺的是**"某条真实路由抛出来"**这一层 ⇒ 新增 recall-test 那条。
+2. **两个构造点的签名与调用面**：`build_reranker(config=None)` 共 **4 个调用点**（`knowledge_service.py:1101`、`hybrid_search_tool.py:50`、`graph_search_tool.py:404`、`eval/runner.py:378`），**全部零参调用** ⇒ 加带默认的 `rag=` 不影响它们。`_build_parse_provider` 只有**一个**调用点（`parse_document` 自己，`parser.py:776`）；`parse_document` 的 `model_version: str = "vlm"` 等四个参数**都已有默认值**（`parser.py:744-751`）⇒ 新入口照抄默认值即可。**云 provider 的构造是纯赋值**（`MineruCloudParseProvider.__init__` 只在 `parse()` 里读 token，`parser.py:681-692`）⇒ 保存期扩面确实**零网络**。
+3. **能力块的两条形状守卫**：登记点**只有一处** —— `tests/test_rag_config_api.py:446` 的 `_ADDED_FIELDS`（GET / PUT 两条守卫都走 `_assert_pure_addition`）⇒ 加 `rerank_providers` 是**改一行**。`provider_ids("rerank")` 实测为 **`('dashscope', 'generic-rerank')`**，且 `resolve_provider("rerank","dashscope")` 今天 `has_fixed_endpoint=False` / `default_endpoint=None`（⇒ D3 补两个字段是真实新增，不是"改个值"）。
+4. **前端爆炸半径**：⚠️ **起草时我漏了第二份 dom 文件** —— 按界面词汇扫下来，受影响的是**两份**文件、**六处**断言 + **两个夹具** + **两处注释**（清单已改写进 spec §6 **S3** 的 A/B 两张表）。这正是「按界面词汇 grep、别按数据字段扫」那条规矩要防的（我只按 `settings/` 那份扫过，`components/workspace/settings/` 那份漏了）。**值得单记一条**：第二份文件的 i18n 是 **KEYS 代理**，断言里写的是**键名本身**（`getAllByText("lockedByProvider")`），所以"看起来不像界面词汇"的字符串也可能是界面断言。
+5. **`resolveFixedEndpointRow` 的调用面**：1 处定义 + **视图 1 处使用** + `config-form.test.ts` 内 **5 处调用点**；第二份 dom 文件**不引用它**。⇒「抽核心 + 两个薄包装」只要保住 `(values, providers)` 这个签名，既有 5 处调用点与视图那处**一行都不用改**。
+
+**额外两点（不在五项里，但会影响 Task 1 的写法）**
+
+- **构造点约定测试是按类名守的**：`tests/knowledge/test_provider_construction_sites.py` 只禁"直接 `new` 那个实现类"，守卫名单由 allowlist 表驱动 ⇒ 新增公开的 `build_parse_provider` **不会**触发它（保存期那处必须走工厂函数、不得直连类名）。但它的**断言消息**里写着"只能经 `build_embedder()` / `build_reranker()` / `parse_document` 构造"，`parse_document` 那半随着新入口应当顺手改准（一句话，Task 1 GREEN 里带上）。
+- **`graph_search_tool.py:404` 与 `knowledge_service.py:1101` 都是 `build_reranker() if rag.graph_rerank else None`** ⇒ 重排腿在 `graph_rerank` 关闭时**根本不构造**；而 `hybrid_search_tool.py:50` 是无条件的。所以"坏重排配置"在检索侧**必然**炸（不问开关），这也是 §1 那个 500 的来源。
+
+- [x] 1. 两处拒绝点的确切位置、文案与**触发路径**（`reranker_factory.py` / `parse_local.py`），以及**有没有既有用例钉住"裸 ValueError"或 500**——按**错误文案 + 界面词汇**两头 grep（别只按字段名扫）。⇒ **零既有覆盖**，见上。
+- [x] 2. 两个构造点的签名：`build_reranker(config)` / `parser.py::_build_parse_provider(...)`（它现在连 config 都不收、直接读 `get_app_config().rag`）——补 `rag=` 覆盖要动几处；`parse_document` 怎么给 `model_version`，保存期校验用哪个值（**构造不能出网**，核清 cloud 那家的构造是否纯离线）。⇒ 4 个零参调用点 + 1 个构造调用点；默认值齐备；云构造纯赋值。
+- [x] 3. 能力块的两条形状守卫现状（golden 夹具 + 允许集写法）：新键 `rerank_providers` 要登记在哪几行；`provider_ids("rerank")` 的顺序。⇒ 一行（`:446`）；顺序实测 `('dashscope', 'generic-rerank')`。
+- [x] 4. 前端重排那一行的现状（写死判据的确切行号）与**会被 G3 动到的既有 dom 断言**：按**界面词汇** grep（`由提供方固定`、`重排接口地址`、`恢复默认`、`重排提供方`），把行号列出来；spec §6 **S3** 已列了四处（`:511` / `:512` / `:600` / 夹具 `view()`），**要独立复核并补充**（别只信那张表）。⇒ **查出第二份文件**（B 表），S3 已改写。
+- [x] 5. `resolveFixedEndpointRow` 的签名与它的 **5 处调用点**（`config-form.test.ts` 内 5 处、视图 1 处使用）——参数化（抽核心 + 两个薄包装）会不会改动嵌入那侧的调用形状；若会，先记清是哪几处。⇒ **不会**：保住 `(values, providers)` 签名即可。
 
 **门禁**：无（只读）。
 
@@ -30,21 +47,66 @@
 
 ## Task 1 — G4：异常类型对齐 + 保存期扩到三条腿（D1–D2，D6）
 
-- [ ] **RED**：
+**状态：RED 已完成 2026-09-17。**
+
+**交付纪要 —— RED（6 红 / 1 条按设计恒绿）**
+
+| 用例                                                             | 落在                                                                                      | RED 的失败原因（逐条核过）                                                                                                                                                             |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_the_factory_refuses_a_generic_provider_without_an_address` | `test_reranker_generic.py`（新增）                                                        | `TypeError: build_reranker() got an unexpected keyword argument 'rag'` ⇒ `rag=` 覆盖还不存在                                                                                           |
+| `test_parse_document_local_without_base_url_fails_loud`          | `test_parse_local.py:242`（**把既有断言从 `ValueError` 收紧成 `RagConfigurationError`**） | 抛的仍是裸 `ValueError` ⇒ 未捕获到该类型                                                                                                                                               |
+| `test_an_unknown_backend_is_refused_as_a_configuration_error`    | `test_parse_local.py`（新增，防御性）                                                     | `ValueError: 未知的 parse_backend 'pipeline'…`                                                                                                                                         |
+| `test_put_refuses_a_rerank_without_its_address`                  | `test_rag_config_api.py`（新增）                                                          | `assert 200 == 400`（保存期还不看重排）+ 文件被写了                                                                                                                                    |
+| `test_put_refuses_a_local_parser_without_its_address`            | `test_rag_config_api.py`（新增）                                                          | 同上                                                                                                                                                                                   |
+| `test_a_bad_rerank_config_answers_400_not_500`                   | `test_recall_test_api.py`（新增）                                                         | 路由里抛出的正是那句 `ValueError: rerank_provider='generic-rerank' requires rag.rerank_base_url…` ⇒ **G4 那个 500 在真实路由上被当场复现**（这条 RED 同时是 §1 表格里"500"的一手证据） |
+
+- **`test_a_complete_configuration_saves_without_touching_the_network` 今天就是绿的**（不在红名单里）：它钉的是"保存期零出网"，而**今天保存期只构造嵌入器**、`rerank_model` 的改动不碰那六个嵌入字段 ⇒ 本来就不出网。**这是设计如此**——它的牙由 neuter Ⅱ 给（一旦 GREEN 让保存期多打一次网络，它就红），与上一对「同值不探」那条同一形态。
+- **一处自我纠正**（见 Task 0 第 1 项的 ⚠️）：解析那侧的拒绝**本来就有既有用例**（`test_parse_local.py:242`，用的是子串 `parse_base_url`，所以按整句 grep 扫不到）。因此 RED 不是"新增覆盖"，而是**把既有断言的类型收紧**。
+
+- [x] **RED**：
   1. `build_reranker(rag=<generic-rerank 无地址>)` ⇒ **`RagConfigurationError`**，且 `isinstance(exc, ValueError)` 仍为真；
   2. `MineruLocalParseProvider(base_url="")` ⇒ **`RagConfigurationError`**；未知 `backend` 同理（**防御性**：`parse_backend` 是 `Literal["vlm","hybrid"]`，配置到不了那里，用例只钉类型不钉可达性）；
   3. **保存期**：`PUT` 一份"重排选了通用但没地址"的配置 ⇒ **400**、正文点名重排、**文件未被写**（读回逐字节相同）；同一份在 HEAD 上是 200（用固定对照说明这是**收紧**）；
   4. **保存期**：`PUT` 一份"本地解析但没地址" ⇒ **400**；
   5. **反例**：三条腿都完整 ⇒ **200**，且**保存期零网络调用**（不出网的桩：任何出网即红）；
   6. **网关**（真实路由）：`rerank_provider=generic-rerank` 无地址时经 HTTP 得到 **400 + 可读正文**（而不是 500）。
-- [ ] **GREEN**：
+- [x] **GREEN**：
   - `reranker_factory.build_reranker(config=None, *, rag=None)`：`rag` 覆盖 + 改抛 `RagConfigurationError`；
   - `parse_local.MineruLocalParseProvider.__init__` 的两处改抛 `RagConfigurationError`；
   - `parser.py`：把解析 provider 的构造抽成收 `rag=` 的入口（`_build_parse_provider` 加 `rag=None`，内部 `rag or get_app_config().rag`），`parse_document` 照旧调用；
-  - `rag_config._reject_unusable_after_save(pending)`：三条腿都构造（**判断逻辑一行不重写**），异常仍映射成 `提交后的配置仍不可用：<原因>`；
+  - `rag_config._reject_unusable_after_save(pending)`：三条腿都构造（**判断逻辑一行不重写**），异常仍映射成 `提交后的配置仍不可用：<原因>`；**必须走工厂函数**（`build_reranker` / 新的 `build_parse_provider`），不得直连实现类名 —— 否则 `test_provider_construction_sites.py` 会红；
+  - 顺手把 `test_provider_construction_sites.py` 那条**断言消息**里的 `parse_document` 改准（它现在是"只能经 `build_embedder()` / `build_reranker()` / `parse_document` 构造"，而保存期走的是新入口）；
   - `embedder.py` 里 `RagConfigurationError` 的 docstring：语义从"嵌入腿"改成"任一条腿"。
-- [ ] **neuter 三条（都必须有牙）**：① 只改解析那半、不改重排 ⇒ 用例 1 红；② 保存期仍只构造嵌入器 ⇒ 用例 3/4 红；③ 保存期把异常吞成 warning ⇒ 用例 3/4 红（且 5 仍绿 ⇒ 证明不是"一律拒"）。
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/knowledge/` + `tests/test_rag_config_api.py` + 新文件）绿；**全量后端后台跑**，跑完抽全部 FAILED 的 node id 去 HEAD 跑同一批、双向 diff（`xargs -d '\n'`，别 pipe 长跑）。
+
+**交付纪要 —— GREEN（narrow 69 passed / 1 skipped）**
+
+- 落地形状与计划一致：`build_reranker(config=None, *, rag=None)`（内部 `section = config.rag if rag is None else rag`）、`parse_local` 两处改类型、**`_build_parse_provider` 提升为公开的 `build_parse_provider(*, rag=None, client=None, model_version="vlm", poll_interval_seconds=5.0, timeout_seconds=1800.0)`**（`parse_document` 那一处调用随之改名，行为不变）、`_reject_unusable_after_save` 三条腿都构造。
+- `parser.py` 需要 `from typing import Any`（新签名用到）——ruff F821 当场逮出，已补。
+- ⚠️ **GREEN 的窄跑抓到两处既有测试被这次收紧打红**（Task 0 只按前端词汇扫过，没覆盖后端夹具）：
+  - `test_rerank_secret_env_source_follows_the_provider`：原本 `PUT {"rerank_provider": "generic-rerank"}` —— 现在**不合法**（缺地址）⇒ 该写从 200 变 400，后面的 `sources` 断言全塌；
+  - `test_local_mineru_has_no_secret_fallback`：同理（`{"parse_provider": "mineru-local"}` 缺 `parse_base_url`）。
+    ⇒ 处置：给这两条**补上地址**（它们问的是"密钥的环境回退跟不跟 provider 走"，与地址无关），并在用例里留一行注释说明为什么必须带上地址。**这是 S1 的第一批实际受害者**，已补记进 spec §6 S1。
+
+**交付纪要 —— neuter（三条都有牙，逐条跑过）**
+
+| neuter                                  | 预期        | 实测                                                                                                                                                                                   |
+| --------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ① 只改解析那半，重排仍抛裸 `ValueError` | 用例 1 红   | **3 红**：用例 1 本身 + 保存期重排那条（保存期只捕 `RagConfigurationError`，裸 `ValueError` 逃逸）+ recall-test 那条 400                                                               |
+| ② 保存期仍只构造嵌入器                  | 用例 3/4 红 | **正是 2 红**（两条 PUT 拒绝）                                                                                                                                                         |
+| ③ 把拒绝吞掉（记 warning 然后照常写盘） | 用例 3/4 红 | **3 红**：两条 + **既有的嵌入那条拒绝用例**（`test_put_validates_against_config_yaml_not_the_payload_alone`）⇒ 证明同一处 `raise` 同时服务三条腿；且**零出网那条仍绿**（不是"一律拒"） |
+
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/knowledge/` + `tests/test_rag_config_api.py` + 新文件）绿；**全量后端后台跑**，跑完抽全部 FAILED 的 node id 去 HEAD 跑同一批、双向 diff（`xargs -d '\n'`，别 pipe 长跑）。
+
+**交付纪要 —— 门禁**
+
+- `ruff check` / `ruff format --check`：**10 个文件**干净（实现期 ruff 当场逮出一个 `F821 Undefined name Any`，已补 import）。
+- **窄面**：`tests/knowledge/` + `test_rag_config_api.py` + `test_rag_config_save_probe.py` + `test_rag_configuration_error.py` = **1173 passed / 50 skipped / 1 error**（那个 error 仍是本机 Qdrant 连不上的既有环境项）。
+- **全量后端**：**145 failed / 12343 passed / 160 skipped / 0 error**（15:07）。passed 比上一轮基线（12336）**+7**（本轮新增 6 条 + 他线在飞的文件带来的 1 条）；failed 数与上一轮相同。
+- **与 HEAD 的双向 diff**：把本轮 145 个 FAILED 的 node id 拿去 HEAD（`git worktree add --detach` 到仓外，并按修正过的姿势把 `deerflow` 钉到那棵树）跑同一批 ⇒ **143 failed / 2 passed**，还是那两条、**逐条重验过**（不靠上一轮的结论）：
+  1. `tests/test_delta_channel_state.py::test_merge_message_writes_randomized_differential` —— 记录在案的随机差分 flake，**本轮单独跑两次都过**；
+  2. `tests/test_review_changed_public_skills.py::test_main_exits_nonzero_when_review_cli_reports_error` —— **环境条件**：那条断言要求 `PYTHONPATH` 含**正斜杠**的 `backend/packages/harness`，而 `str(WindowsPath)` 是反斜杠；**本轮把 `PYTHONPATH` 设成正斜杠式当场就绿**。（HEAD 那一轮显示「绿」正是因为要让 worktree 的 `deerflow` 指向它自己而设的那条正斜杠 `PYTHONPATH` —— 一个已知 confound，见 [[project-env-test-failures]]。）
+     ⇒ **没有本改动引入的红**。
+- 收尾：worktree 已删（`git worktree list` 只剩主树）、`.deer-flow/` 的临时 id 清单与对照日志已删、`.pytest-tmp` 1KB。
 
 ## Task 2 — G3：能力块新键 + 重排行改读它（D3–D4）
 

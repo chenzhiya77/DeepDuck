@@ -26,6 +26,7 @@ import httpx
 import pytest
 
 from deerflow.knowledge import parser as parser_mod
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.parse_local import MineruLocalParseProvider
 from deerflow.knowledge.parser import (
     MineruError,
@@ -245,8 +246,17 @@ async def test_parse_document_local_without_base_url_fails_loud(tmp_path, monkey
     pdf.write_bytes(b"%PDF-1.4 fake")
     _stub_config(monkeypatch, parse_provider="mineru-local", parse_base_url=None)
 
-    with pytest.raises(ValueError, match="parse_base_url"):
+    # `RagConfigurationError`, not a bare `ValueError`: the gateway maps exactly this type to a
+    # readable 400 (spec 2026-09-17 alignment §3 D1); it stays a `ValueError` subclass, so this
+    # assertion only *narrows* what the deployment promises.
+    with pytest.raises(RagConfigurationError, match="parse_base_url"):
         await parse_document(pdf, client=httpx.AsyncClient(transport=_transport(recorded, statuses=("completed",))))
+
+
+def test_an_unknown_backend_is_refused_as_a_configuration_error():
+    """Defensive: `RagConfig.parse_backend` is a Literal, so configuration cannot reach this."""
+    with pytest.raises(RagConfigurationError, match="parse_backend"):
+        MineruLocalParseProvider(base_url="http://127.0.0.1:9999", backend="pipeline")
 
 
 @pytest.mark.asyncio
