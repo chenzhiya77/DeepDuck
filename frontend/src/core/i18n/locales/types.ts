@@ -1703,6 +1703,7 @@ export interface Translations {
       embeddingProvider: string;
       rerankProvider: string;
       providerDashscope: string;
+      providerVolcengineArk: string;
       providerOpenAIChat: string;
       providerGenericRerank: string;
       providerMineruCloud: string;
@@ -1781,6 +1782,7 @@ export interface Translations {
       apiKeyLabel: string;
       advancedSettings: (count: number) => string;
       lockedByProvider: string;
+      resetToDefault: string;
       lockedCloudOnly: string;
       lockedLocalOnly: string;
       lockedExternalOnly: string;

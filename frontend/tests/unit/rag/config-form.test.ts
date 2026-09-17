@@ -18,6 +18,7 @@ const { MASKED_RAG_SECRET, loadRagConfig, RagConfigRequestError, saveRagConfig }
   await import("@/core/rag/api");
 import {
   buildRagConfigInput,
+  EMBEDDING_PROVIDER_OPTIONS,
   formValuesFromConfig,
   hasFormChanges,
   isCaptionCapable,
@@ -27,6 +28,7 @@ import {
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
+  resolveFixedEndpointRow,
   resolveSparseCapability,
   shouldProbeSparseService,
   sparseProbeKey,
@@ -502,8 +504,18 @@ describe("hasFormChanges covers the provider fields", () => {
  */
 describe("isSparseSourceUnsupported", () => {
   const PROVIDERS = [
-    { provider_id: "dashscope", emits_sparse: true },
-    { provider_id: "openai-compatible", emits_sparse: false },
+    {
+      provider_id: "dashscope",
+      emits_sparse: true,
+      has_fixed_endpoint: true,
+      default_endpoint: "https://dashscope.aliyuncs.com",
+    },
+    {
+      provider_id: "openai-compatible",
+      emits_sparse: false,
+      has_fixed_endpoint: false,
+      default_endpoint: null,
+    },
   ];
   const form = (over: Record<string, unknown> = {}) => ({
     ...formValuesFromConfig(
@@ -572,7 +584,14 @@ describe("isSparseSourceUnsupported", () => {
           embedding_provider: "dashscope",
           embedding_sparse_source: "provider",
         }),
-        [{ provider_id: "openai-compatible", emits_sparse: false }],
+        [
+          {
+            provider_id: "openai-compatible",
+            emits_sparse: false,
+            has_fixed_endpoint: false,
+            default_endpoint: null,
+          },
+        ],
       ),
     ).toBe(false);
   });
@@ -586,8 +605,18 @@ describe("isSparseSourceUnsupported", () => {
  */
 describe("resolveSparseCapability", () => {
   const PROVIDERS = [
-    { provider_id: "dashscope", emits_sparse: true },
-    { provider_id: "openai-compatible", emits_sparse: false },
+    {
+      provider_id: "dashscope",
+      emits_sparse: true,
+      has_fixed_endpoint: true,
+      default_endpoint: "https://dashscope.aliyuncs.com",
+    },
+    {
+      provider_id: "openai-compatible",
+      emits_sparse: false,
+      has_fixed_endpoint: false,
+      default_endpoint: null,
+    },
   ];
   const form = (over: Record<string, unknown> = {}) => ({
     ...formValuesFromConfig(
@@ -815,5 +844,107 @@ describe("sparse service probe", () => {
       sparseServiceVerdictFor(values, true, { key, status: "ok" }),
     ).toBeNull();
     expect(sparseServiceVerdictFor(values, false, null)).toBeNull();
+  });
+});
+
+/**
+ * 嵌入地址那一行（spec 2026-09-17 §3 D1/D6）：哪些 provider 的地址「由提供方固定」、
+ * 锁框里该显示什么、以及**存量地址仍然生效**（百炼的 workspace 级地址就靠这一条活着）。
+ * 判据来自能力块，不写死 provider 名——加第二家之后就不会漏。
+ */
+describe("embedding provider options and the fixed-endpoint row", () => {
+  const PROVIDERS = [
+    {
+      provider_id: "dashscope",
+      emits_sparse: true,
+      has_fixed_endpoint: true,
+      default_endpoint: "https://dashscope.aliyuncs.com",
+    },
+    {
+      provider_id: "volcengine-ark",
+      emits_sparse: true,
+      has_fixed_endpoint: true,
+      default_endpoint: "https://ark.cn-beijing.volces.com",
+    },
+    {
+      provider_id: "openai-compatible",
+      emits_sparse: false,
+      has_fixed_endpoint: false,
+      default_endpoint: null,
+    },
+  ];
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(view()),
+    ...over,
+  });
+
+  it("offers the Ark dialect alongside the other two", () => {
+    expect(EMBEDDING_PROVIDER_OPTIONS).toContain("volcengine-ark");
+    // The picker renders this order; the two dual-path dialects sit together.
+    expect([...EMBEDDING_PROVIDER_OPTIONS]).toEqual([
+      "dashscope",
+      "volcengine-ark",
+      "openai-compatible",
+    ]);
+  });
+
+  it("locks a provider that fixes its own endpoint and shows where it will call", () => {
+    expect(resolveFixedEndpointRow(form(), PROVIDERS)).toEqual({
+      locked: true,
+      shown: "https://dashscope.aliyuncs.com",
+      overridden: false,
+    });
+    expect(
+      resolveFixedEndpointRow(
+        form({ embedding_provider: "volcengine-ark" }),
+        PROVIDERS,
+      ),
+    ).toEqual({
+      locked: true,
+      shown: "https://ark.cn-beijing.volces.com",
+      overridden: false,
+    });
+  });
+
+  it("keeps a stored address in play and marks it as the admin's own", () => {
+    // ⑤-4：存量值仍然生效（否则百炼的 workspace 级地址就配不了了），只是变成「看得见」。
+    expect(
+      resolveFixedEndpointRow(
+        form({
+          embedding_provider: "volcengine-ark",
+          embedding_base_url: "https://ws-example.cn-beijing.maas.aliyuncs.com",
+        }),
+        PROVIDERS,
+      ),
+    ).toEqual({
+      locked: true,
+      shown: "https://ws-example.cn-beijing.maas.aliyuncs.com",
+      overridden: true,
+    });
+  });
+
+  it("leaves a provider without a fixed endpoint editable", () => {
+    expect(
+      resolveFixedEndpointRow(
+        form({
+          embedding_provider: "openai-compatible",
+          embedding_base_url: "http://127.0.0.1:8080/v1",
+        }),
+        PROVIDERS,
+      ),
+    ).toEqual({
+      locked: false,
+      shown: "http://127.0.0.1:8080/v1",
+      overridden: false,
+    });
+  });
+
+  it("does not lock anything when the server has no capability block", () => {
+    // 旧响应答不了这个问题 ⇒ 不替它答：留成可编辑，而不是猜一个"锁"。
+    expect(resolveFixedEndpointRow(form(), undefined)).toEqual({
+      locked: false,
+      shown: "",
+      overridden: false,
+    });
   });
 });

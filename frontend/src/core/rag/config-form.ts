@@ -37,7 +37,7 @@ export interface RagConfigFormValues {
   extract_model: string;
   judge_model: string;
   mineru_api_token: string;
-  embedding_provider: "dashscope" | "openai-compatible";
+  embedding_provider: "dashscope" | "volcengine-ark" | "openai-compatible";
   embedding_base_url: string;
   embedding_sparse_source: "provider" | "external" | "bm25";
   sparse_provider: "tei-sparse" | "";
@@ -61,7 +61,11 @@ export interface RagConfigFormValues {
  * allowlist (`deerflow.knowledge.providers`), which is the authority: a value outside it
  * is rejected with a 422 rather than silently accepted, so drift shows up loudly.
  */
-export const EMBEDDING_PROVIDER_OPTIONS = ["dashscope", "openai-compatible"] as const;
+export const EMBEDDING_PROVIDER_OPTIONS = [
+  "dashscope",
+  "volcengine-ark",
+  "openai-compatible",
+] as const;
 export const EMBEDDING_SPARSE_SOURCE_OPTIONS = ["provider", "external", "bm25"] as const;
 /** The sparse service's id set: one verified shape (TEI's `/embed_sparse`), spec §4.2. */
 export const SPARSE_PROVIDER_OPTIONS = ["", "tei-sparse"] as const;
@@ -378,6 +382,45 @@ export function isSparseProviderOptionDisabled(
   capability: SparseCapability,
 ): boolean {
   return capability === "unsupported";
+}
+
+/** The embedding address row's state, derived from the allowlist's own declaration. */
+export interface FixedEndpointRow {
+  /** True when this provider fixes its own address, so the row is read-only. */
+  locked: boolean;
+  /** What a locked row shows: the deployment's own address, else the vendor's. */
+  shown: string;
+  /** True when the deployment stored its own address, which it can then drop again. */
+  overridden: boolean;
+}
+
+/**
+ * Decide the embedding address row from the capability block rather than from a provider name
+ * (spec 2026-09-17 §3 D1/D5). Two consequences worth stating:
+ *
+ * - **A stored address is not ignored.** It still wins at runtime, which is what lets a
+ *   DashScope key be pointed at a workspace-scoped endpoint — so the row shows it instead of
+ *   pretending the vendor's default applies, and offers to drop it (§3 D6, ⑤-4).
+ * - **Unknown does not lock.** A server that predates the capability block cannot answer the
+ *   question, and guessing "locked" would take a field away on the strength of a guess.
+ */
+export function resolveFixedEndpointRow(
+  values: RagConfigFormValues,
+  providers: readonly RagEmbeddingProviderCapability[] | undefined,
+): FixedEndpointRow {
+  const capability = providers?.find(
+    (provider) => provider.provider_id === values.embedding_provider,
+  );
+  // A blank stored value is "nothing stored", so it must fall through to the vendor's address —
+  // written as an explicit test rather than `||`, which reads as a truthiness accident here.
+  const stored = values.embedding_base_url.trim();
+  const fallback = capability?.default_endpoint ?? "";
+  const locked = capability?.has_fixed_endpoint === true;
+  return {
+    locked,
+    shown: stored === "" ? fallback : stored,
+    overridden: locked && stored !== "",
+  };
 }
 
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */

@@ -45,6 +45,7 @@ import {
   PARSE_BACKEND_OPTIONS,
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
+  resolveFixedEndpointRow,
   resolveSparseCapability,
   SPARSE_PROVIDER_OPTIONS,
   shouldProbeSparseService,
@@ -220,10 +221,15 @@ const PLACEHOLDER_TEXT = "text-muted-foreground/70 text-sm";
 function LockedBox({
   reason,
   value,
+  onReset,
+  resetLabel,
 }: {
   reason: string;
   /** Only ever a non-secret value; secret rows pass nothing and show the reason alone. */
   value?: string;
+  /** Offered only when there is something of the admin's own to drop (spec 2026-09-17 §3 D6). */
+  onReset?: () => void;
+  resetLabel?: string;
 }) {
   return (
     <div className="border-input bg-muted/40 text-muted-foreground flex h-9 items-center justify-between gap-2 rounded-md border px-3">
@@ -231,6 +237,17 @@ function LockedBox({
       <span className={cn("truncate", !value?.trim() && PLACEHOLDER_TEXT)}>
         {value?.trim() ? value : reason}
       </span>
+      {/* The action rides *inside* the field it acts on, so it costs no layout and cannot be
+          mistaken for a row of its own. */}
+      {onReset && resetLabel ? (
+        <button
+          type="button"
+          onClick={onReset}
+          className="hover:text-foreground shrink-0 text-xs underline underline-offset-2"
+        >
+          {resetLabel}
+        </button>
+      ) : null}
       <Lock className="size-3.5 shrink-0" aria-hidden="true" />
     </div>
   );
@@ -340,6 +357,13 @@ export function FunctionalModelsView() {
   const hasChanges = values && view ? hasFormChanges(values, view) : false;
   const embeddingChanged =
     view && values ? isEmbeddingChange(values, view) : false;
+
+  // Which embedding dialects fix their own address is a property of the *row* (spec 2026-09-17
+  // §3 D1), so it is read off the capability block instead of a provider name — a second such
+  // provider then needs no second hardcoded id, and a stored address stays visible (§3 D6).
+  const endpointRow = values
+    ? resolveFixedEndpointRow(values, view?.embedding_providers)
+    : null;
 
   // The sparse half's capability is a three-state answer (spec 2026-09-16 §3 D2): the allowlist
   // settles the dialect question, a probe settles the model question, and everything unproven
@@ -467,6 +491,7 @@ export function FunctionalModelsView() {
   // Ids come from the backend's curated allowlist; the empty id is "let the service decide".
   const PROVIDER_LABELS: Record<string, string> = {
     dashscope: F.providerDashscope,
+    "volcengine-ark": F.providerVolcengineArk,
     "openai-compatible": F.providerOpenAIChat,
     "generic-rerank": F.providerGenericRerank,
     "tei-sparse": F.providerTeiSparse,
@@ -625,10 +650,16 @@ export function FunctionalModelsView() {
             <RowLabel info={F.retrievalEndpointHint}>
               {F.endpointLabel}
             </RowLabel>
-            {values.embedding_provider === "dashscope" ? (
+            {endpointRow?.locked ? (
               <LockedBox
                 reason={F.lockedByProvider}
-                value={values.embedding_base_url}
+                value={endpointRow.shown}
+                onReset={
+                  endpointRow.overridden
+                    ? () => update("embedding_base_url", "")
+                    : undefined
+                }
+                resetLabel={F.resetToDefault}
               />
             ) : (
               <Input

@@ -30,7 +30,11 @@ export interface RagConfigValues {
    * Provider dimension (spec 2026-09-14 §4.1). Ids mirror the backend's curated
    * allowlist: a value outside it is rejected by the server, not silently accepted.
    */
-  embedding_provider?: "dashscope" | "openai-compatible" | null;
+  embedding_provider?:
+    | "dashscope"
+    | "volcengine-ark"
+    | "openai-compatible"
+    | null;
   embedding_base_url?: string | null;
   embedding_dimension?: number | null;
   embedding_sparse_source?: "provider" | "external" | "bm25" | null;
@@ -57,12 +61,18 @@ export type RagConfigSource = "ui" | "config_file" | "env" | "unset";
 /**
  * One embedding provider's declared capability (spec 2026-09-16 §3 D1). Read-only metadata
  * from the server's curated allowlist: `emits_sparse` says whether that provider can supply
- * the sparse half itself. Absent entirely on a response from a server that predates the field,
- * which is why the view treats "unknown" and "cannot" as different answers.
+ * the sparse half itself, and the two endpoint keys say whether the vendor fixes the address
+ * (spec 2026-09-17 §3 D1) — so the address row is locked by *capability*, not by provider name.
+ * Absent entirely on a response from a server that predates the field, which is why the view
+ * treats "unknown" and "cannot" as different answers.
  */
 export interface RagEmbeddingProviderCapability {
   provider_id: string;
   emits_sparse: boolean;
+  /** True when the vendor fixes this provider's endpoint, so the address row is read-only. */
+  has_fixed_endpoint: boolean;
+  /** The vendor's own endpoint; the address row shows it when the deployment stored none. */
+  default_endpoint: string | null;
 }
 
 /** GET/PUT response: the effective values plus the flattened per-field origin map. */

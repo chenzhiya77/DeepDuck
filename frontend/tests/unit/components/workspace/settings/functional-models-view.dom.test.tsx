@@ -77,9 +77,39 @@ rs.mock("sonner", () => ({
   toast: { success: rs.fn(), info: rs.fn() },
 }));
 
+/**
+ * What the embedding allowlist reports: which dialects fix their own endpoint (so the address
+ * row is read-only) and where they point. Mirrors the real response — the view decides the row
+ * from *this*, not from a provider name (spec 2026-09-17 §3 D1).
+ */
+const EMBEDDING_PROVIDERS = [
+  {
+    provider_id: "dashscope",
+    emits_sparse: true,
+    has_fixed_endpoint: true,
+    default_endpoint: "https://dashscope.aliyuncs.com",
+  },
+  {
+    provider_id: "volcengine-ark",
+    emits_sparse: true,
+    has_fixed_endpoint: true,
+    default_endpoint: "https://ark.cn-beijing.volces.com",
+  },
+  {
+    provider_id: "openai-compatible",
+    emits_sparse: false,
+    has_fixed_endpoint: false,
+    default_endpoint: null,
+  },
+];
+
 /** The file owns nothing, so every value below is the effective config.yaml / env one. */
 function renderWith(config: Partial<RagConfigValues>) {
-  hooks.view = { config: { video: null, ...config }, sources: {} } as RagConfigView;
+  hooks.view = {
+    config: { video: null, ...config },
+    sources: {},
+    embedding_providers: EMBEDDING_PROVIDERS,
+  } as RagConfigView;
   return render(<FunctionalModelsView />);
 }
 
@@ -102,10 +132,13 @@ describe("provider rows", () => {
   it("shows a provider-fixed endpoint locked, with the sparse rows behind the advanced disclosure", () => {
     renderWith({ embedding_provider: "dashscope", rerank_provider: "dashscope" });
 
-    // Locked, not hidden: no endpoint input, and the reason is on screen.
+    // Locked, not hidden: no endpoint input, and the reason is on screen. The embedding row
+    // shows *where it will call* (the vendor's own address, spec 2026-09-17 §3 D5) instead of
+    // the reason, so only the rerank row — untouched this round — still carries the sentence.
     expect(labelCount("embeddingBaseUrl")).toBe(0);
     expect(labelCount("rerankBaseUrl")).toBe(0);
-    expect(screen.getAllByText("lockedByProvider").length).toBe(2);
+    expect(screen.getByText("https://dashscope.aliyuncs.com")).toBeTruthy();
+    expect(screen.getAllByText("lockedByProvider").length).toBe(1);
 
     // Sparse settings defer to the disclosure, and start locked (source = provider).
     expect(labelCount("embeddingSparseSource")).toBe(0);

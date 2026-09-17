@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-ark-embedding-provider-design.md](../specs/2026-09-17-rag-ark-embedding-provider-design.md)
-**Status:** Task 0–1 已交付 2026-09-17（Task 2 前端 / Task 3 文档 + 真栈 待开工）
+**Status:** Task 0–2 已交付 2026-09-17（Task 3 文档 + 真栈 待开工）
 **Parent:** [2026-09-16-rag-sparse-capability-probe.md](2026-09-16-rag-sparse-capability-probe.md)（模型级能力探针；探针本身**零改动**，本计划只是让它多覆盖一行 provider）
 
 **Architecture:** 把「一次调用同时给稠密+稀疏」这条**已有的机制**（今天只有 `dashscope` 一家）补上第二个实现。落点是三层、全是加法：**allowlist 加一行**（`emits_sparse=True` 就是"第二家双路"的全部声明）、**一个新适配器**（走火山的多模态端点、一次一条、无条件发 `dimensions: 1024`）、**前端那个写死的选项常量加一个值**。保存期交叉校验、能力探针、空稀疏兜底、密钥 env 提示**都已经是 provider 无关的**，不改。
@@ -84,14 +84,24 @@
 
 ## Task 2 — 前端：选项加一个值 + 地址那一行改读 allowlist（D5）
 
-- [ ] **RED**：
-  1. `frontend/tests/unit/rag/config-form.test.ts`：`EMBEDDING_PROVIDER_OPTIONS` 含 `volcengine-ark`，且表单值类型可赋值；
-  2. `tests/unit/settings/functional-models.dom.test.tsx`：切到火山 ⇒ **不出现**「只输出稠密」那条 `role="alert"`、**Save 不被拦**（与 `openai-compatible` 的行为做对照）；
-  3. **地址那一行**：火山 **与 dashscope** ⇒ 都是 `LockedBox`，框里显示**实际会用的地址**（无存量值时 = 能力块给的 `default_endpoint`）；`openai-compatible` ⇒ 仍是可编辑 `Input`（对照组，证明改动没有波及它）；
-  4. **「恢复默认」**：造一个**有存量 `embedding_base_url`** 的配置 ⇒ 锁框旁出现该动作；点它 ⇒ 该字段清空、框里改显示该 provider 的默认地址；**无存量值时它不出现**（而不是渲染成一个点了没反应的按钮）。
-- [ ] **GREEN**：`core/rag/types.ts`（能力块类型加 `has_fixed_endpoint` / `default_endpoint`）、`core/rag/config-form.ts`（`EMBEDDING_PROVIDER_OPTIONS` 加值）、`functional-models-view.tsx`（`PROVIDER_LABELS` 加一行 + **地址那一行改读能力块** + **「恢复默认」动作**（清空 `embedding_base_url`））、i18n 三处（`zh-CN` / `en-US` / `types`）加键（含「恢复默认」）、**`tests/unit/settings/functional-models.dom.test.tsx` 的 `EMBEDDING_PROVIDERS` 夹具（补第三项 + 两个新键——Task 0 第 5 项挖出来的，不改它用例 3/4 读不到新键）**。
-- [ ] **neuter 三条**：① 把新值从 `EMBEDDING_PROVIDER_OPTIONS` 撤掉 ⇒ dom 用例红；② 把地址那一行改回写死 `=== "dashscope"` ⇒ 用例 3 的火山那半红；③ 去掉「恢复默认」的渲染 ⇒ 用例 4 红。
-- [ ] **门禁**：`pnpm check`（eslint + tsc，tsc 仅宠物线那条预存红）+ prettier **逐文件与 HEAD 比数字**（别对本来有格式债的文件跑 `--write`）+ **全量前端**。
+**状态：已交付 2026-09-17。**
+
+**交付纪要**
+
+- **RED 9 条**：node 5 条（新 describe：选项 + 五态地址行）＋ dom 4 条（两处既有断言 + 新 describe 的三条里两条）。其中「Ark 不报 dense-only」那条**当时就已经合法通过**（夹具里 ark 的 `emits_sparse` 是 true）——它是回归保护，不是红。
+- **实现落点**：`core/rag/types.ts`（能力块加 `has_fixed_endpoint` / `default_endpoint`，**外加两处 Literal**：wire 的 `RagConfigValues.embedding_provider` 与表单的 `RagConfigFormValues.embedding_provider`）；`core/rag/config-form.ts`（`EMBEDDING_PROVIDER_OPTIONS` 加值 + 新纯函数 `resolveFixedEndpointRow`）；`functional-models-view.tsx`（`PROVIDER_LABELS` 加一行 + 地址行判据改读能力块 + `LockedBox` 新增可选 `onReset`/`resetLabel`，按钮**骑在框内**）；i18n 三处（`providerVolcengineArk` / `resetToDefault`）。
+- **tsc 当场逼出一处漏改**：我只改了**表单**类型的 Literal，漏了 **wire** 类型 `RagConfigValues.embedding_provider` ⇒ 三条用例 `TS2322`。这条值得记：一个 provider id 在前端有**两处** Literal。
+- **eslint 逼出一处写法**：`stored || capability?.default_endpoint || ""` 被 `prefer-nullish-coalescing` 判 error——而那处 `||` 是**故意的**（空串必须落到默认，`??` 会把空串留下）。改成显式 `stored === "" ? fallback : stored`，意图也更清楚。
+- **⚠️ Task 0 只查了一半（诚实记录）**：能力块相关的既有断言其实在**两个** dom 文件里。另一个是 `tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`——它用**代理 i18n**（断言 `getAllByText("lockedByProvider")`），不含 `emits_sparse`，所以我 Task 0 那条 grep 扫不到它。**全量前端跑出 1 条红**，补上能力块夹具 + 把断言从 2 条改 1 条并断言地址在屏上，才绿。**教训：找"会被我改动影响的断言"要按界面词汇 grep（`lockedByProvider` / `embeddingBaseUrl`），不是按数据字段 grep。**
+- **设计变更登记（会改既有断言，故写在这里）**：锁框现在**显示实际会用的地址**（存量值，否则提供方默认），不再显示「由提供方固定」。因此两个既有 dom 用例的 `lockedByProvider` 计数从 2 改成 1，并新增"地址在屏上"的断言。**rerank 那一行不动**（仍显示理由），这是 spec §6 G3 记下的已知不对称。
+- **一条行为变更（有意，且写进注释）**：`providers` 缺失（旧响应）时**不锁**——旧服务答不了这个问题，不替它答。代价是：旧响应 + dashscope 从"锁"变成"可编辑"（更自由，不是更受限）。
+- **revert proof（三条，逐条有牙）**：① 从 `EMBEDDING_PROVIDER_OPTIONS` 撤掉新值 ⇒ **恰好 1 条**红（选项用例）；② 地址行判据改回写死 `=== "dashscope"` ⇒ **恰好 2 条**红（两条 ark 相关）；③ 去掉 `onReset` 的渲染 ⇒ **恰好 1 条**红（「恢复默认」那条）。
+- **门禁**：`eslint` 干净；`tsc` **仅宠物线那条预存红**（`pet-sprite.dom.test.tsx:222` 的 `"greet"`）；**prettier 逐文件与 HEAD 比**——`config-form.test.ts` 194=194、`types.ts` 0=0、`config-form.ts` 58（HEAD 63，把自己碰过的那行按 prettier 收好了）、`functional-models-view.dom.test.tsx` 5（HEAD 10）、其余 4 个文件与 HEAD 同数 ⇒ **零新增格式债**（只改自己的行，没重排历史债）；**全量前端 238 文件 / 2544 用例全绿**（上一轮基线 2535 ⇒ **+9** = 本轮新增的 9 条）。
+
+- [x] **RED**：node 5 条 + dom 4 条（含两处既有断言的设计性更新）。
+- [x] **GREEN**：`types.ts`（能力块两键 + 两处 Literal）、`config-form.ts`（选项 + `resolveFixedEndpointRow`）、视图（标签 + 地址行 + `LockedBox.onReset`）、i18n 三处、dom 夹具两处。
+- [x] **neuter 三条（都必须有牙）**：① 选项值 1 条；② 判据回退 2 条；③ `onReset` 1 条。
+- [x] **门禁**：eslint ✅ / tsc 仅预存红 ✅ / prettier 零新增债 ✅ / **全量前端 238 文件 / 2544 用例全绿**。
 
 ## Task 3 — 文档同步与真栈验收
 

@@ -64,10 +64,26 @@ const reindexMock = rs.fn();
 const probeMock = rs.fn();
 const sparseServiceProbeMock = rs.fn();
 
-/** What the embedding allowlist reports: only dashscope can supply the sparse half itself. */
+/** What the embedding allowlist reports: who can supply the sparse half, and who fixes its own address. */
 const EMBEDDING_PROVIDERS = [
-  { provider_id: "dashscope", emits_sparse: true },
-  { provider_id: "openai-compatible", emits_sparse: false },
+  {
+    provider_id: "dashscope",
+    emits_sparse: true,
+    has_fixed_endpoint: true,
+    default_endpoint: "https://dashscope.aliyuncs.com",
+  },
+  {
+    provider_id: "volcengine-ark",
+    emits_sparse: true,
+    has_fixed_endpoint: true,
+    default_endpoint: "https://ark.cn-beijing.volces.com",
+  },
+  {
+    provider_id: "openai-compatible",
+    emits_sparse: false,
+    has_fixed_endpoint: false,
+    default_endpoint: null,
+  },
 ];
 
 function view(
@@ -423,8 +439,11 @@ describe("functional-model layout", () => {
     renderPage();
     openFunctionalView();
 
-    // DashScope ships its own address: the rows stay visible, say why, and carry no input.
-    expect(screen.getAllByText(F.lockedByProvider).length).toBe(2);
+    // DashScope ships its own address: the row stays visible and carries no input. It now also
+    // says *where* it will call (spec 2026-09-17 §3 D5); the rerank row, untouched this round,
+    // still shows the reason alone.
+    expect(screen.getByText("https://dashscope.aliyuncs.com")).toBeTruthy();
+    expect(screen.getAllByText(F.lockedByProvider).length).toBe(1);
     expect(screen.queryByLabelText(F.embeddingBaseUrl)).toBeNull();
     expect(screen.queryByLabelText(F.rerankBaseUrl)).toBeNull();
   });
@@ -552,6 +571,77 @@ describe("functional-model layout", () => {
     expect(screen.getByLabelText(F.captionModel).textContent).toContain(
       "qwen3.7-flash-legacy",
     );
+  });
+});
+
+/**
+ * 嵌入地址那一行（spec 2026-09-17 §3 D1/D5/D6）：**判据来自能力块**（谁自带地址谁锁），
+ * 锁框里显示**实际会用的地址**；存量值仍然生效（百炼的 workspace 级地址就靠这一条活着），
+ * 但当它偏离提供方默认时，旁边要给一个「恢复默认」把它清掉——否则那个部署会看着一个
+ * 改不掉的框，而请求实际打在残留地址上。
+ */
+describe("embedding address row", () => {
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
+  const resetButton = () =>
+    screen.queryByRole("button", { name: F.resetToDefault });
+
+  it("offers the Ark dialect and saves it without a dense-only complaint", () => {
+    setRag({
+      embedding_provider: "volcengine-ark",
+      embedding_sparse_source: "provider",
+    });
+    renderPage();
+    openFunctionalView();
+
+    // It emits both halves, so the "dense only" refusal must not fire for it.
+    expect(screen.queryByRole("alert")).toBeNull();
+    // An ordinary edit still has to unlock Save — proof the rule is not just "nothing changed".
+    fireEvent.change(screen.getByLabelText(F.embeddingModel), {
+      target: { value: "doubao-embedding-vision-250615" },
+    });
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("locks the address for a provider that fixes its own endpoint", () => {
+    setRag({ embedding_provider: "volcengine-ark" });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByText("https://ark.cn-beijing.volces.com")).toBeTruthy();
+    expect(screen.queryByLabelText(F.embeddingBaseUrl)).toBeNull();
+    // No stored address ⇒ nothing to reset.
+    expect(resetButton()).toBeNull();
+  });
+
+  it("leaves a provider without a fixed endpoint editable", () => {
+    setRag({
+      embedding_provider: "openai-compatible",
+      embedding_base_url: "http://127.0.0.1:8080/v1",
+    });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.embeddingBaseUrl)).toBeTruthy();
+    expect(resetButton()).toBeNull();
+  });
+
+  it("shows a stored override and lets the admin drop it", () => {
+    setRag({
+      embedding_provider: "volcengine-ark",
+      embedding_base_url: "https://ws-example.cn-beijing.maas.aliyuncs.com",
+    });
+    renderPage();
+    openFunctionalView();
+
+    expect(
+      screen.getByText("https://ws-example.cn-beijing.maas.aliyuncs.com"),
+    ).toBeTruthy();
+    fireEvent.click(resetButton()!);
+
+    // The box falls back to the vendor's own address, and the action has nothing left to do.
+    expect(screen.getByText("https://ark.cn-beijing.volces.com")).toBeTruthy();
+    expect(resetButton()).toBeNull();
   });
 });
 
