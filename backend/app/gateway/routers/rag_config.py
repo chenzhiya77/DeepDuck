@@ -111,9 +111,33 @@ class RagConfigResponse(BaseModel):
         default_factory=list,
         description="Capability of every embedding provider in the curated allowlist, in its own order.",
     )
+    rerank_providers: list[RerankProviderCapability] = Field(
+        default_factory=list,
+        description="Capability of every rerank provider in the curated allowlist, in its own order.",
+    )
     warning: str | None = Field(
         default=None,
         description="Why the saved configuration could not be verified (null when it was, or was not probed).",
+    )
+
+
+class RerankProviderCapability(BaseModel):
+    """One rerank provider's declared capability (spec 2026-09-17 alignment §3 D3).
+
+    The same address rule as the embedding block, and deliberately a *different shape*: the
+    rerank leg has no sparse half, so there is no ``emits_sparse`` here. Naming it
+    ``rerank_providers`` rather than generalising ``embedding_providers`` keeps that key intact
+    for every existing consumer.
+    """
+
+    provider_id: str = Field(..., description="Curated allowlist id, exactly as the PUT accepts it.")
+    has_fixed_endpoint: bool = Field(
+        ...,
+        description="True when the vendor fixes this provider's endpoint, so the address field is read-only.",
+    )
+    default_endpoint: str | None = Field(
+        ...,
+        description="The vendor's own endpoint, used when rag.rerank_base_url is empty; None when it has none.",
     )
 
 
@@ -200,6 +224,7 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
         config=RagConfigFile.model_validate(values),
         sources=sources,
         embedding_providers=_embedding_provider_capabilities(),
+        rerank_providers=_rerank_provider_capabilities(),
         warning=warning,
     )
 
@@ -218,6 +243,25 @@ def _embedding_provider_capabilities() -> list[RagEmbeddingProviderCapability]:
             RagEmbeddingProviderCapability(
                 provider_id=provider_id,
                 emits_sparse=spec.emits_sparse,
+                has_fixed_endpoint=spec.has_fixed_endpoint,
+                default_endpoint=spec.default_endpoint,
+            )
+        )
+    return capabilities
+
+
+def _rerank_provider_capabilities() -> list[RerankProviderCapability]:
+    """The rerank leg of the allowlist, in its own order — the same rule, its own block.
+
+    Shape differs from the embedding block on purpose: a rerank provider has no sparse half to
+    declare (spec 2026-09-17 alignment §3 D3).
+    """
+    capabilities: list[RerankProviderCapability] = []
+    for provider_id in provider_ids("rerank"):
+        spec = resolve_provider("rerank", provider_id)
+        capabilities.append(
+            RerankProviderCapability(
+                provider_id=provider_id,
                 has_fixed_endpoint=spec.has_fixed_endpoint,
                 default_endpoint=spec.default_endpoint,
             )

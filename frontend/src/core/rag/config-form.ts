@@ -4,6 +4,7 @@ import type {
   RagConfigView,
   RagConfigInput,
   RagEmbeddingProviderCapability,
+  RagRerankProviderCapability,
   RagVideoValues,
 } from "./types";
 
@@ -395,25 +396,27 @@ export interface FixedEndpointRow {
 }
 
 /**
- * Decide the embedding address row from the capability block rather than from a provider name
- * (spec 2026-09-17 §3 D1/D5). Two consequences worth stating:
+ * Decide _any_ leg's address row from that leg's capability block rather than from a provider name
+ * (spec 2026-09-17 §3 D1/D5, extended to rerank by §3 D4). Two consequences worth stating:
  *
  * - **A stored address is not ignored.** It still wins at runtime, which is what lets a
  *   DashScope key be pointed at a workspace-scoped endpoint — so the row shows it instead of
  *   pretending the vendor's default applies, and offers to drop it (§3 D6, ⑤-4).
  * - **Unknown does not lock.** A server that predates the capability block cannot answer the
  *   question, and guessing "locked" would take a field away on the strength of a guess.
+ *
+ * The core takes the three values it needs so both legs share one judgement; a second copy per
+ * leg is how the rerank row ended up hardcoding a provider name in the first place.
  */
-export function resolveFixedEndpointRow(
-  values: RagConfigFormValues,
-  providers: readonly RagEmbeddingProviderCapability[] | undefined,
+function resolveEndpointRow(
+  provider: string,
+  storedValue: string,
+  providers: readonly EndpointCapability[] | undefined,
 ): FixedEndpointRow {
-  const capability = providers?.find(
-    (provider) => provider.provider_id === values.embedding_provider,
-  );
+  const capability = providers?.find((entry) => entry.provider_id === provider);
   // A blank stored value is "nothing stored", so it must fall through to the vendor's address —
   // written as an explicit test rather than `||`, which reads as a truthiness accident here.
-  const stored = values.embedding_base_url.trim();
+  const stored = storedValue.trim();
   const fallback = capability?.default_endpoint ?? "";
   const locked = capability?.has_fixed_endpoint === true;
   return {
@@ -421,6 +424,37 @@ export function resolveFixedEndpointRow(
     shown: stored === "" ? fallback : stored,
     overridden: locked && stored !== "",
   };
+}
+
+/** The two keys both capability blocks carry; the rerank one has nothing else (no sparse half). */
+interface EndpointCapability {
+  provider_id: string;
+  has_fixed_endpoint: boolean;
+  default_endpoint: string | null;
+}
+
+/** The embedding address row (spec 2026-09-17 §3 D1/D5). */
+export function resolveFixedEndpointRow(
+  values: RagConfigFormValues,
+  providers: readonly RagEmbeddingProviderCapability[] | undefined,
+): FixedEndpointRow {
+  return resolveEndpointRow(
+    values.embedding_provider,
+    values.embedding_base_url,
+    providers,
+  );
+}
+
+/** The rerank address row — the same rule, read from the rerank block (§3 D4). */
+export function resolveRerankEndpointRow(
+  values: RagConfigFormValues,
+  providers: readonly RagRerankProviderCapability[] | undefined,
+): FixedEndpointRow {
+  return resolveEndpointRow(
+    values.rerank_provider,
+    values.rerank_base_url,
+    providers,
+  );
 }
 
 /** Radix Select rejects an empty item value, so "not configured" gets its own token. */

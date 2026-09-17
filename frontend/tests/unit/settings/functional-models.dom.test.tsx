@@ -90,6 +90,20 @@ const EMBEDDING_PROVIDERS = [
   },
 ];
 
+/** The rerank allowlist's own block: the same rule, its own shape — no `emits_sparse` there. */
+const RERANK_PROVIDERS = [
+  {
+    provider_id: "dashscope",
+    has_fixed_endpoint: true,
+    default_endpoint: "https://dashscope.aliyuncs.com",
+  },
+  {
+    provider_id: "generic-rerank",
+    has_fixed_endpoint: false,
+    default_endpoint: null,
+  },
+];
+
 function view(
   over: Partial<RagConfigView["config"]> = {},
   opts: {
@@ -103,10 +117,14 @@ function view(
   return {
     // The probe always reports *something*: `null` means it verified the configuration.
     warning: opts.warning ?? null,
-    // `null` models a response from a server that predates the capability block.
+    // `null` models a response from a server that predates the capability block — both blocks
+    // ship together, so the opt-out drops both (spec 2026-09-17 alignment §3 D3).
     ...(opts.providers === null
       ? {}
-      : { embedding_providers: opts.providers ?? EMBEDDING_PROVIDERS }),
+      : {
+          embedding_providers: opts.providers ?? EMBEDDING_PROVIDERS,
+          rerank_providers: RERANK_PROVIDERS,
+        }),
     config: {
       qdrant_url: "http://qdrant:6333",
       embedding_model: "qwen3.7-text-embedding",
@@ -505,11 +523,13 @@ describe("functional-model layout", () => {
     renderPage();
     openFunctionalView();
 
-    // DashScope ships its own address: the row stays visible and carries no input. It now also
-    // says *where* it will call (spec 2026-09-17 §3 D5); the rerank row, untouched this round,
-    // still shows the reason alone.
-    expect(screen.getByText("https://dashscope.aliyuncs.com")).toBeTruthy();
-    expect(screen.getAllByText(F.lockedByProvider).length).toBe(1);
+    // Both rows ship a vendor address now, and a locked row prints *where it will call* instead of
+    // the reason it is locked (spec 2026-09-17 alignment §3 D4) — the reason copy only appears
+    // where there is nothing to show, which is how the parse rows still use it.
+    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
+      2,
+    );
+    expect(screen.queryAllByText(F.lockedByProvider).length).toBe(0);
     expect(screen.queryByLabelText(F.embeddingBaseUrl)).toBeNull();
     expect(screen.queryByLabelText(F.rerankBaseUrl)).toBeNull();
   });
@@ -596,8 +616,11 @@ describe("functional-model layout", () => {
 
     // Two cells that both say "you do not type this here", so they read the same: same size,
     // same tint, and both lead their field. They used to differ in all three (2026-09-16).
+    // Re-pointed at the parse rows: both endpoint rows now print an address instead of the
+    // reason (spec 2026-09-17 alignment §3 D4), while these still say *why* they are locked
+    // (the field belongs to the other parse mode).
     const chip = screen.getByText(F.secretFromEnvBadge);
-    const reason = screen.getAllByText(F.lockedByProvider)[0]!;
+    const reason = screen.getAllByText(F.lockedLocalOnly)[0]!;
 
     for (const element of [chip, reason]) {
       expect(element.className).toContain("text-sm");
@@ -708,6 +731,69 @@ describe("embedding address row", () => {
     // The box falls back to the vendor's own address, and the action has nothing left to do.
     expect(screen.getByText("https://ark.cn-beijing.volces.com")).toBeTruthy();
     expect(resetButton()).toBeNull();
+  });
+});
+
+/**
+ * 重排地址那一行与嵌入那行**同构**（spec 2026-09-17 alignment §3 D4）：判据同样来自能力块，
+ * 只是读重排自己那块（条目形状不同：那边没有 `emits_sparse`）。存量 `rerank_base_url` 在运行期
+ * 同样优先（`build_reranker` 只在有值时才把它传给实现），所以同样要给「恢复默认」。
+ */
+describe("rerank address row", () => {
+  const resetButton = () =>
+    screen.queryByRole("button", { name: F.resetToDefault });
+
+  it("locks the row and shows the vendor's own address", () => {
+    setRag({ rerank_provider: "dashscope" });
+    renderPage();
+    openFunctionalView();
+
+    // 两行都是同一个默认端点，所以这句话出现两次；重排行没有输入框、也没有可清的东西。
+    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
+      2,
+    );
+    expect(screen.queryByLabelText(F.rerankBaseUrl)).toBeNull();
+    expect(resetButton()).toBeNull();
+  });
+
+  it("leaves the row editable for a provider that brings its own address", () => {
+    setRag({
+      rerank_provider: "generic-rerank",
+      rerank_base_url: "http://localhost:8000",
+    });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.rerankBaseUrl)).toBeTruthy();
+    expect(resetButton()).toBeNull();
+  });
+
+  it("shows a stored rerank override and lets the admin drop it", () => {
+    setRag({
+      rerank_provider: "dashscope",
+      rerank_base_url: "http://127.0.0.1:9999",
+    });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByText("http://127.0.0.1:9999")).toBeTruthy();
+    fireEvent.click(resetButton()!);
+
+    // 存量值被清掉了 ⇒ 框里回到提供方的默认地址，动作也没有可做的事。
+    expect(screen.queryByText("http://127.0.0.1:9999")).toBeNull();
+    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
+      2,
+    );
+    expect(resetButton()).toBeNull();
+  });
+
+  it("stays editable when the server sends no rerank capability block", () => {
+    // `unknown ≠ cannot`：旧的网关答不了这个问题，就不要替它把框锁上。
+    setRag({ rerank_provider: "dashscope" }, { providers: null });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.rerankBaseUrl)).toBeTruthy();
   });
 });
 

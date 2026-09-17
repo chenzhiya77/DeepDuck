@@ -46,6 +46,7 @@ import {
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
   resolveFixedEndpointRow,
+  resolveRerankEndpointRow,
   resolveSparseCapability,
   SPARSE_PROVIDER_OPTIONS,
   shouldProbeSparseService,
@@ -368,6 +369,10 @@ export function FunctionalModelsView() {
   const endpointRow = values
     ? resolveFixedEndpointRow(values, view?.embedding_providers)
     : null;
+  // Its rerank twin: same judgement, its own capability block (spec 2026-09-17 alignment §3 D4).
+  const rerankEndpointRow = values
+    ? resolveRerankEndpointRow(values, view?.rerank_providers)
+    : null;
 
   // The sparse half's capability is a three-state answer (spec 2026-09-16 §3 D2): the allowlist
   // settles the dialect question, a probe settles the model question, and everything unproven
@@ -680,10 +685,19 @@ export function FunctionalModelsView() {
                 }
               />
             )}
-            {values.rerank_provider === "dashscope" ? (
+            {/* The same rule, from the rerank leg's own block (spec 2026-09-17 alignment §3 D4):
+                a vendor that fixes its address locks the row, a stored one still wins at runtime
+                and can be dropped from here. */}
+            {rerankEndpointRow?.locked ? (
               <LockedBox
                 reason={F.lockedByProvider}
-                value={values.rerank_base_url}
+                value={rerankEndpointRow.shown}
+                onReset={
+                  rerankEndpointRow.overridden
+                    ? () => update("rerank_base_url", "")
+                    : undefined
+                }
+                resetLabel={F.resetToDefault}
               />
             ) : (
               <Input

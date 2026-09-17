@@ -97,6 +97,12 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             implementation="deerflow.knowledge.reranker:DashScopeReranker",
             path="/compatible-api/v1/reranks",
             secret_env_var="DASHSCOPE_RERANK_API_KEY",
+            # The same rule as the embedding rows (spec 2026-09-17 alignment §3 D3): this vendor
+            # fixes its own endpoint, so the settings row is locked by *capability*, not by name.
+            # The literal is kept equal to `reranker.DASHSCOPE_RERANK_BASE_URL` by a test, because
+            # this module is deliberately import-light.
+            has_fixed_endpoint=True,
+            default_endpoint="https://dashscope.aliyuncs.com",
         ),
         "generic-rerank": ProviderSpec(
             leg="rerank",

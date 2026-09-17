@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-17-rag-rerank-parse-alignment-design.md](../specs/2026-09-17-rag-rerank-parse-alignment-design.md)
-**Status:** Task 0–1 已交付 2026-09-17（Task 2–3 待开工）
+**Status:** Task 0–2 已交付 2026-09-17（Task 3 待开工）
 **Parent:** [2026-09-17-rag-save-time-embedding-probe.md](2026-09-17-rag-save-time-embedding-probe.md)（那份 spec §6 把 G3/G4 判为「同因、本期不治」；本计划是它的**增量**）
 
 **Architecture:** 把嵌入腿已经立好的两条规矩横向补到**重排 / 解析**两条腿上，全部是"把既有的判断换个出口/换个类型/换个数据来源"，**不新写判断**：
@@ -110,7 +110,21 @@
 
 ## Task 2 — G3：能力块新键 + 重排行改读它（D3–D4）
 
-- [ ] **RED**：
+**状态：RED 已完成 2026-09-17。**
+
+**交付纪要 —— RED（后端 4 红 / 前端 8 红，逐条核过原因）**
+
+后端（`tests/test_rag_config_api.py`）：
+
+1. `test_get_returns_the_rerank_provider_capabilities` ⇒ `KeyError: 'rerank_providers'`；
+2. `test_the_rerank_default_endpoint_is_the_clients_own_constant` ⇒ allowlist 行还是 `None`；
+3. **两条既有形状守卫**（GET / PUT）⇒ 我把新键**先**登记进 `_ADDED_FIELDS`，它们于是要求响应里真有这个键 ⇒ **红**（这正是"纯加法"该有的证明方式：先收紧允许集，再看代码是否补上）。
+
+前端：4. `config-form.test.ts` 新增的 4 条纯函数用例 ⇒ `resolveRerankEndpointRow is not a function`（包装函数还不存在）；5. `functional-models.dom.test.tsx`：「labels a provider-fixed endpoint…」与新增的「rerank address row > locks the row and shows **2**」⇒ `expected 1 to be 2`（今天只有嵌入那一行印地址）；「shows a stored rerank override and lets the admin drop it」⇒ **`resetButton()` 是 null**（重排的锁框还没有 `onReset`，点它会 TypeError）；「stays editable when the server sends no rerank capability block」⇒ 今天写死的判据照样把 dashscope 锁住，没有输入框；6. **第二份 dom 文件**（`components/workspace/settings/functional-models-view.dom.test.tsx`，Task 0 才查出来的那份）⇒ 同一条 `expected 1 to be 2`。
+
+- **两条按设计今天就绿**（不在红名单里，它们的牙由 neuter 给）：纯函数里的「leaves a provider without a fixed endpoint editable」（今天写死的判据恰好给出正确答案——**这正是 G3 的性质：答案对、来源错**），以及样式那条「paints a credential chip and a locked row's reason identically」（它被我改钉到解析腿的 `lockedLocalOnly`，今天本来就渲染，改的是"钉哪一处"）。
+
+- [x] **RED**：
   1. `GET /api/rag/config` 的 `rerank_providers` 与 `provider_ids("rerank")` 同序、两个键逐条正确（`dashscope` = `True` + 默认地址、`generic-rerank` = `False` + `None`）；
   2. **防漂移**：`spec("rerank","dashscope").default_endpoint == reranker.DASHSCOPE_RERANK_BASE_URL`；
   3. 两条既有形状守卫按新契约**显式登记**新键后仍绿（改动即"加键"，不是改值）；
@@ -118,15 +132,37 @@
   5. dom：重排选 `dashscope` ⇒ 锁框显示**实际会用的地址**（无存量值时 = 默认地址）；选 `generic-rerank` ⇒ 可编辑 `Input`；有存量值时给「恢复默认」，点它清空；
   6. dom：**嵌入那两行行为不变**（参数化重构的回归保护）；
   7. **既有断言按新契约更新**（spec §6 S3 那四处：`:511` 单数 `getByText` 改 `getAllByText` + 个数、`:512` 的 chip 计数 1→0 改钉"重排行显示地址"、`:600` 的字形比对改钉一种**仍显示原因**的锁如 `F.lockedLocalOnly`、夹具 `view()` 补一份重排能力块）——**先按 Task 0 第 4 项的 grep 结果核对/补充这张表，再动手**。
-- [ ] **GREEN**：
+- [x] **GREEN**：
   - `providers/__init__.py`：rerank 的 `dashscope` 行补 `has_fixed_endpoint=True` + `default_endpoint="https://dashscope.aliyuncs.com"`；
   - `rag_config.py`：新增 `RerankProviderCapability`（`provider_id` / `has_fixed_endpoint` / `default_endpoint`，**无 `emits_sparse`**）与 `rerank_providers` 的填充函数（与 `_embedding_provider_capabilities` 同形，读 `provider_ids("rerank")`）；
   - `types.ts`：能力块类型加一个重排版；
   - `config-form.ts`：`resolveFixedEndpointRow` 拆成**一个核心 + 两个薄包装**（嵌入 / 重排），嵌入那侧**签名与 5 处调用点形状都不变**；
   - `functional-models-view.tsx`：重排那一行改读能力块（含「恢复默认」），删掉写死的 `=== "dashscope"`；
   - `functional-models.dom.test.tsx`：按 S3 更新那三处断言 + 夹具补 `RERANK_PROVIDERS`（与 `EMBEDDING_PROVIDERS` 同形，**不带 `emits_sparse`**）。
-- [ ] **neuter 三条**：① 重排行改回写死判据 ⇒ dom 用例红；② 能力块不填两个新键 ⇒ 用例 1 红；③ 去掉「恢复默认」的渲染 ⇒ 用例 5 红。
-- [ ] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier 逐文件与 HEAD 比数字；**全量前端**；两条 `.md` 的 prettier 同数（Task 3 一起核）。
+
+**交付纪要 —— GREEN**
+
+- 后端：rerank allowlist 的 `dashscope` 行补两键；`RagConfigResponse` 新开 `rerank_providers`（`RerankProviderCapability`，**条目形状与嵌入那块不同：没有 `emits_sparse`**），填充函数与嵌入那块同形、读 `provider_ids("rerank")`。
+- 前端：`config-form.ts` 把判据收成**一个核心 `resolveEndpointRow(provider, storedValue, capabilities)` + 两个薄包装**（`resolveFixedEndpointRow` 签名与 5 处调用点**一字未动**，新增 `resolveRerankEndpointRow`）；`types.ts` 加 `RagRerankProviderCapability`；视图里重排那一行改读 `view?.rerank_providers`，并**同款带上 `onReset`（清空 `rerank_base_url`）**，写死的 `=== "dashscope"` 删掉。
+- 两个夹具（两份 dom 文件）各补一份 `RERANK_PROVIDERS`；`view()` 的"旧响应"开关改成**两块一起摘掉**（两块是同一批上线的）。
+
+**交付纪要 —— neuter（三条都有牙）**
+
+| neuter                                       | 预期       | 实测                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ① 重排行改回写死判据                         | dom 用例红 | **5 红**（两份 dom 文件：三条 rerank 用例 + 两处被更新的既有断言）。⚠️ **第一次我做的是"半 revert"**——只把分支条件换回写死、`value` 仍取能力块的 `shown` ⇒ 只有 **1 红**（因为显示值仍来自能力块，看着像对的一样）。**教训：neuter 要回到"旧行为整体"，不能只还原一半**——半还原的 neuter 没牙。 |
+| ② 能力块不填两个新键（allowlist 行退回默认） | 用例 1 红  | **2 红**（能力块用例 + 防漂移用例）                                                                                                                                                                                                                                                             |
+| ③ 去掉重排行「恢复默认」的渲染               | 用例 5 红  | **1 红**（只有重排那条；嵌入那条覆盖用例仍绿 ⇒ 这条 neuter 是**重排专属**的）                                                                                                                                                                                                                   |
+
+**交付纪要 —— 门禁**
+
+- `pnpm check`（eslint + tsc）：**零诊断**。
+- **prettier 逐文件与 HEAD 同数**：`types.ts` 0/0、`config-form.ts` 58/58、`functional-models-view.tsx` 17/17、`config-form.test.ts` 194/194、`functional-models.dom.test.tsx` 129/129、`functional-models-view.dom.test.tsx` 5/5 ⇒ **零新增格式债**。
+  ⚠️ 第一遍我有**四个文件**带新债，逐条都是"我这行超宽"：`getAllByText("https://dashscope.aliyuncs.com").length` 那句要折成三行、纯函数用例的调用点要一参一行。**处置**：用「把 prettier 的输出按 hunk 比对、只重排我自己那几行」的办法对齐（**不跑 `--write`**，否则会翻掉这些文件里的历史债）。
+- **全量前端**：**238 文件 / 2557 用例 / 0 失败**（+8 = 本轮新增的 4 条纯函数 + 4 条 dom）。
+- **全量后端**：**145 failed / 12396 passed / 109 skipped / 0 error**（18:37）。⚠️ **与本轮开工前那次（145 / 12343 / **160 skipped** / 1 error）相比，跳过数少了 51、通过数多了 53** —— 环境在两轮之间变了（**Qdrant 变得可达**）：那 51 条 `requires_qdrant` 用例这次真的跑了、并且全过，上一轮被判 error 的那条也过了。⇒ 两次的 failed **都是 145**，但"145 条红的构成"不能只按数字比，所以下面照旧做集合 diff。
+  - 与 HEAD（`b61e88f1` = Task 1 的代码，Task 2 尚未提交）跑同一批 145 id ⇒ **143 failed / 2 passed**，还是那两条、**本轮再次逐条重验**（flake 单跑 1 passed；`test_review_changed_public_skills…` 设成正斜杠 `PYTHONPATH` 后 1 passed ⇒ 就是那个环境条件）。⇒ **Task 2 没有引入任何红**。
+  - 收尾：worktree 已删（`git worktree list` 只剩主树）、临时 id 清单与对照日志已删、`.pytest-tmp` 1KB。
 
 ## Task 3 — 文档同步与真栈验收
 

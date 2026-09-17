@@ -76,6 +76,20 @@ export interface RagEmbeddingProviderCapability {
 }
 
 /**
+ * One rerank provider's declared capability (spec 2026-09-17 alignment §3 D3). Same address rule
+ * as the embedding block, deliberately a different shape: the rerank leg has no sparse half, so
+ * there is no `emits_sparse` here. Absent entirely on a response from a server that predates the
+ * field, which the rerank row reads exactly like the embedding row does: unknown ≠ cannot.
+ */
+export interface RagRerankProviderCapability {
+  provider_id: string;
+  /** True when the vendor fixes this provider's endpoint, so the address row is read-only. */
+  has_fixed_endpoint: boolean;
+  /** The vendor's own endpoint; the address row shows it when the deployment stored none. */
+  default_endpoint: string | null;
+}
+
+/**
  * GET/PUT response: the effective values plus the flattened per-field origin map.
  *
  * `warning` is the save-time probe's verdict (spec 2026-09-17 save-time probe §3 D3): `null` when
@@ -88,6 +102,7 @@ export interface RagConfigView {
   config: RagConfigValues;
   sources: Record<string, RagConfigSource>;
   embedding_providers?: RagEmbeddingProviderCapability[];
+  rerank_providers?: RagRerankProviderCapability[];
   warning: string | null;
 }
 

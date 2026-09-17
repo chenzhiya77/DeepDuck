@@ -103,12 +103,27 @@ const EMBEDDING_PROVIDERS = [
   },
 ];
 
+/** The rerank leg's own block: same rule as above, its own shape (no `emits_sparse` there). */
+const RERANK_PROVIDERS = [
+  {
+    provider_id: "dashscope",
+    has_fixed_endpoint: true,
+    default_endpoint: "https://dashscope.aliyuncs.com",
+  },
+  {
+    provider_id: "generic-rerank",
+    has_fixed_endpoint: false,
+    default_endpoint: null,
+  },
+];
+
 /** The file owns nothing, so every value below is the effective config.yaml / env one. */
 function renderWith(config: Partial<RagConfigValues>) {
   hooks.view = {
     config: { video: null, ...config },
     sources: {},
     embedding_providers: EMBEDDING_PROVIDERS,
+    rerank_providers: RERANK_PROVIDERS,
   } as RagConfigView;
   return render(<FunctionalModelsView />);
 }
@@ -132,13 +147,15 @@ describe("provider rows", () => {
   it("shows a provider-fixed endpoint locked, with the sparse rows behind the advanced disclosure", () => {
     renderWith({ embedding_provider: "dashscope", rerank_provider: "dashscope" });
 
-    // Locked, not hidden: no endpoint input, and the reason is on screen. The embedding row
-    // shows *where it will call* (the vendor's own address, spec 2026-09-17 §3 D5) instead of
-    // the reason, so only the rerank row — untouched this round — still carries the sentence.
+    // Locked, not hidden: no endpoint input, and each row says *where it will call* — the vendor's
+    // own address for both rows now (spec 2026-09-17 alignment §3 D4), so the reason copy is not
+    // printed anywhere on these two rows.
     expect(labelCount("embeddingBaseUrl")).toBe(0);
     expect(labelCount("rerankBaseUrl")).toBe(0);
-    expect(screen.getByText("https://dashscope.aliyuncs.com")).toBeTruthy();
-    expect(screen.getAllByText("lockedByProvider").length).toBe(1);
+    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
+      2,
+    );
+    expect(screen.queryAllByText("lockedByProvider").length).toBe(0);
 
     // Sparse settings defer to the disclosure, and start locked (source = provider).
     expect(labelCount("embeddingSparseSource")).toBe(0);

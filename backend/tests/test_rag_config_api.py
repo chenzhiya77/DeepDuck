@@ -442,11 +442,14 @@ def test_sparse_secret_env_source_uses_the_generic_name(config_env: Path, monkey
 
 _GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "rag_config" / "response_golden.json").read_text(encoding="utf-8"))
 _CAPABILITY_FIELD = "embedding_providers"
+#: The rerank leg's own capability block (spec 2026-09-17 alignment §3 D3): the address row is
+#: locked by *row capability* there too, so the frontend must stop naming the provider.
+_RERANK_CAPABILITY_FIELD = "rerank_providers"
 #: The save-time probe's verdict rides every response, GET included — always present, ``null``
 #: when there is nothing to say (spec 2026-09-17 save-time probe §3 D3). Registered here rather
 #: than subtracted ad hoc so the "pure addition" guards keep their teeth.
 _WARNING_FIELD = "warning"
-_ADDED_FIELDS = {_CAPABILITY_FIELD, _WARNING_FIELD}
+_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _WARNING_FIELD}
 
 
 def _assert_pure_addition(body: dict, golden: dict) -> None:
@@ -472,6 +475,35 @@ def test_get_returns_the_embedding_provider_capabilities(config_env: Path):
         "openai-compatible": (False, False, None),
         "volcengine-ark": (True, True, "https://ark.cn-beijing.volces.com"),
     }
+
+
+def test_get_returns_the_rerank_provider_capabilities(config_env: Path):
+    """The rerank row needs the same *row capability* answer the embedding one gets (§3 D3).
+
+    Its entry has no ``emits_sparse`` — the rerank leg has no "which half" question — so the two
+    blocks are deliberately different shapes rather than one generic list.
+    """
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    assert [entry["provider_id"] for entry in body[_RERANK_CAPABILITY_FIELD]] == list(provider_ids("rerank"))
+    assert {entry["provider_id"]: (entry["has_fixed_endpoint"], entry["default_endpoint"]) for entry in body[_RERANK_CAPABILITY_FIELD]} == {
+        "dashscope": (True, "https://dashscope.aliyuncs.com"),
+        "generic-rerank": (False, None),
+    }
+    assert all("emits_sparse" not in entry for entry in body[_RERANK_CAPABILITY_FIELD])
+
+
+def test_the_rerank_default_endpoint_is_the_clients_own_constant():
+    """Anti-drift: the allowlist literal and the client's constant must not move apart.
+
+    Same rule the embedding rows follow — the literal lives in the import-light allowlist module,
+    so a test keeps the two equal instead (spec 2026-09-17 alignment §3 D3).
+    """
+    from deerflow.knowledge.providers import resolve_provider
+    from deerflow.knowledge.reranker import DASHSCOPE_RERANK_BASE_URL
+
+    assert resolve_provider("rerank", "dashscope").default_endpoint == DASHSCOPE_RERANK_BASE_URL
 
 
 def test_get_response_only_gained_the_capability_field(config_env: Path):

@@ -29,6 +29,7 @@ import {
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
   resolveFixedEndpointRow,
+  resolveRerankEndpointRow,
   resolveSparseCapability,
   shouldProbeSparseService,
   sparseProbeKey,
@@ -948,6 +949,90 @@ describe("embedding provider options and the fixed-endpoint row", () => {
   it("does not lock anything when the server has no capability block", () => {
     // 旧响应答不了这个问题 ⇒ 不替它答：留成可编辑，而不是猜一个"锁"。
     expect(resolveFixedEndpointRow(form(), undefined)).toEqual({
+      locked: false,
+      shown: "",
+      overridden: false,
+    });
+  });
+});
+
+/**
+ * The rerank row answers the *same* question as the embedding one, from its own block
+ * (spec 2026-09-17 alignment §3 D4). Kept as a separate wrapper over one core so the two rows
+ * cannot drift into two copies of the judgement — which is exactly how the rerank row ended up
+ * hardcoding a provider name in the first place.
+ */
+describe("rerank endpoint row reads its own capability block", () => {
+  const RERANK_PROVIDERS = [
+    {
+      provider_id: "dashscope",
+      has_fixed_endpoint: true,
+      default_endpoint: "https://dashscope.aliyuncs.com",
+    },
+    {
+      provider_id: "generic-rerank",
+      has_fixed_endpoint: false,
+      default_endpoint: null,
+    },
+  ];
+  const form = (over: Record<string, unknown> = {}) => ({
+    ...formValuesFromConfig(view()),
+    ...over,
+  });
+
+  it("locks a provider that fixes its own endpoint and shows where it will call", () => {
+    expect(
+      resolveRerankEndpointRow(
+        form({ rerank_provider: "dashscope" }),
+        RERANK_PROVIDERS,
+      ),
+    ).toEqual({
+      locked: true,
+      shown: "https://dashscope.aliyuncs.com",
+      overridden: false,
+    });
+  });
+
+  it("keeps a stored address in play and marks it as the admin's own", () => {
+    expect(
+      resolveRerankEndpointRow(
+        form({
+          rerank_provider: "dashscope",
+          rerank_base_url: "http://127.0.0.1:9999",
+        }),
+        RERANK_PROVIDERS,
+      ),
+    ).toEqual({
+      locked: true,
+      shown: "http://127.0.0.1:9999",
+      overridden: true,
+    });
+  });
+
+  it("leaves a provider without a fixed endpoint editable", () => {
+    expect(
+      resolveRerankEndpointRow(
+        form({
+          rerank_provider: "generic-rerank",
+          rerank_base_url: "http://localhost:8000",
+        }),
+        RERANK_PROVIDERS,
+      ),
+    ).toEqual({
+      locked: false,
+      shown: "http://localhost:8000",
+      overridden: false,
+    });
+  });
+
+  it("does not lock anything when the server has no rerank capability block", () => {
+    // `unknown ≠ cannot`，与嵌入那行同一条规矩：旧的网关答不了这个问题，就别替它猜。
+    expect(
+      resolveRerankEndpointRow(
+        form({ rerank_provider: "dashscope" }),
+        undefined,
+      ),
+    ).toEqual({
       locked: false,
       shown: "",
       overridden: false,
