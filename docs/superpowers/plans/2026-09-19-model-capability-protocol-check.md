@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-19-model-capability-protocol-check-design.md](../specs/2026-09-19-model-capability-protocol-check-design.md)
-**Status:** 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
+**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；Task 2–4 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
 **Parent:** [2026-09-10-model-capability-config-design.md](../specs/2026-09-10-model-capability-config-design.md)（能力声明层；本计划补它缺的第二道：**声明必须与协议对账**）
 
 **Architecture:** 三处**纯收紧**，都在既有机制上：**写入口**加一条 422（只针对 `provider=anthropic` + 推理档位三件套）、**工厂**加一条只查 `reasoning_effort` 的**针对性 lint**（只记日志；**不**做通用未知键表，那会误报 `frequency_penalty` 这类合法透传名）、**界面**按 provider 决定那两格渲不渲染并在**提交时清空**（编辑旧条目等于顺手修数据）。`openai-compatible` / `deepseek` 的行为**一字不改**；`config.yaml` 手写条目只警告不阻断。
@@ -33,15 +33,24 @@
 
 ## Task 1 — 写入期拒绝 `anthropic` + 推理档位三件套（D1）
 
-- [ ] **RED**（写进 `backend/tests/test_models_config_api.py`，挨着既有 `:542` 那条参数化校验用例、风格照抄）：
+- [x] **RED**（写进 `backend/tests/test_models_config_api.py`，挨着既有 `:542` 那条参数化校验用例、风格照抄）：
   1. `provider="anthropic"` + `supports_reasoning_effort: true` ⇒ **422** 且 `detail` 同时含条目名与该句"这条协议的名字是 `output_config.effort`"（**不是**"这家没有 effort 参数"——2026-09-19 第二次核实已更正，见 spec §1/§6）；
   2. 同一 PUT 换成只带 `supported_reasoning_efforts`（布尔为假）⇒ **422**；
   3. 同一 PUT 换成只带 `reasoning_effort` ⇒ **422**（三条分开测，证明规则看的是**三个字段各自**，不是只看布尔）；
   4. **对照组**：`provider="openai-compatible"` 与 `provider="deepseek"` + 同样的三字段 ⇒ **200**（不误伤）；
   5. **放行**：anthropic 条目不带这三字段 ⇒ **200**，且写回文件里这三个键**不出现**。
-- [ ] **GREEN**：在 `put_models_config` 的条目循环里、`_validate_capabilities(...)` 之后加一条 `_reject_anthropic_effort_levels(item.name, item.provider, stored_entry)`（`provider == "anthropic"` 时检查那三个键）。⚠️ **判据是"真值/非空"，不是"键存在"**：`stored_entry` 里 `supports_reasoning_effort` **恒存在**（输入模型默认 `False`，只有 `None` 会被剔），写成 `in` 会把每条 anthropic 条目都拒掉。文案按 spec §2 D1（点名条目 + 原因 + 下一步）。
-- [ ] **neuter 两条（都必须有牙）**：① 把 anthropic 分支整个去掉 ⇒ 用例 1/2/3 全红；② 把判断写成"只看 `supports_reasoning_effort`"（漏掉另两个字段）⇒ **用例 2/3 红**（证明三条字段各有牙，而不是一条覆盖三条）。
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/test_models_config_api.py` + `tests/test_model_factory.py` + `models/` 相关）绿；**先在门禁前扫一遍既有夹具的载荷**（已核：`_CAPABILITY_MODEL`（`:490`）是 `openai-compatible`、`_seed`/`deepseek` 那些也不带这三字段 ⇒ **8 条既有参数化用例不受影响**；若实地发现别的夹具带这三字段，**给它补值而不是放宽检查**）；**全量后端后台跑**，跑完抽全部 FAILED+ERROR 的 node id 去 HEAD 跑同一批、**双向 diff**（`xargs -d '\n'`，别 pipe 长跑；HEAD 那棵树要先 `cp` 仓库根本地环境文件进去，否则 4 条环境红会假报成本轮新红）。
+     **实测 RED = 4 红 / 37 绿**：四条失败全是 `assert 200 == 422`（正是"今天不拦"这件事）。新增两组对照**首跑即绿**：`openai-compatible` / `deepseek` + 同样三字段 ⇒ 200（**控制组**，证明规则只按 provider 生效），以及"清干净就放行 + 写回不含这三键"（后者是"修法本身能通过"的正向锚）。
+     ⚠️ **RED 期自己抓到一个前提错了的用例（已改）**：最初把单字段用例建在"完整三件套"的基底上 ⇒ 只改子集那一档会被**既有**的"默认档必须属于子集"规则先 422 掉，于是那个用例**红得对、理由错**（断言 `output_config.effort` 才把它拦下来）。改成**干净基底 + 单字段覆盖**，并补了第 4 档"三件套一起"（真实世界的那副样子）。
+- [x] **GREEN**：在 `put_models_config` 的条目循环里、`_validate_capabilities(...)` 之后加一条 `_reject_anthropic_effort_levels(item.name, item.provider, stored_entry)`（`provider == "anthropic"` 时检查那三个键）。⚠️ **判据是"真值/非空"，不是"键存在"**：`stored_entry` 里 `supports_reasoning_effort` **恒存在**（输入模型默认 `False`，只有 `None` 会被剔），写成 `in` 会把每条 anthropic 条目都拒掉。文案按 spec §2 D1（点名条目 + 原因 + 下一步）。
+      **实测**：新函数落在 `_validate_capabilities` 旁边（`routers/models.py`），调用点在 **`:658` 之后**；**41 passed**（0 failed）、`ruff check` + `format --check` 干净。窄面 `test_models_config_api.py + test_model_factory.py + test_models_config.py` = **166 passed / 1 failed**，那一条是**已知环境条件红** `test_models_config.py::test_missing_models_file_falls_back_to_config_yaml`（仓库根真实 `models_config.json`，属基线 145）。
+- [x] **neuter 两条（都必须有牙）**：① 把 anthropic 分支整个去掉 ⇒ 用例 1/2/3 全红；② 把判断写成"只看 `supports_reasoning_effort`"（漏掉另两个字段）⇒ **用例 2/3 红**（证明三条字段各有牙，而不是一条覆盖三条）。
+      **实测**：① 注释掉调用点 ⇒ **4 红**（四档全中）；② 判据收成只看布尔 ⇒ **2 红**（正是"只带子集""只带默认档"那两档，第 4 档"三件套一起"因含布尔仍被拦 ⇒ 绿）——两条都**回退后复跑确认回到 41 绿**。
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/test_models_config_api.py` + `tests/test_model_factory.py` + `models/` 相关）绿；**先在门禁前扫一遍既有夹具的载荷**（已核：`_CAPABILITY_MODEL`（`:490`）是 `openai-compatible`、`_seed`/`deepseek` 那些也不带这三字段 ⇒ **8 条既有参数化用例不受影响**；若实地发现别的夹具带这三字段，**给它补值而不是放宽检查**）；**全量后端后台跑**，跑完抽全部 FAILED+ERROR 的 node id 去 HEAD 跑同一批、**双向 diff**（`xargs -d '\n'`，别 pipe 长跑；HEAD 那棵树要先 `cp` 仓库根本地环境文件进去，否则 4 条环境红会假报成本轮新红）。
+      **实测（本轮零回归）**：全量 = **144 failed / 12413 passed / 109 skipped**（17m22s）。抽 144 个 node id ⇒ `git worktree add --detach` 出一棵 HEAD 树（`cp` 进 `config.yaml`/`models_config.json`/`extensions_config.json`/`rag_config.json` 四个本地环境文件）、跑同一批 = **130 红**。**双向 diff 结果：`只在 HEAD 红` = 空**；`只在工作树红` 14 条，逐条落实：
+      - **13 条是"全量顺序"假象**——单独跑（工作树与 HEAD 两侧各跑一次）**都 13 passed**（`test_dev_entrypoint.py` 的 7 个 metacharacters 档、`test_checkpointer.py` 两条打包、`test_pnpm_script.py`、`test_extension_api_contracts.py`、`test_thread_id_route_contract.py`、`test_delta_channel_state.py::…randomized…` 等）。
+      - **1 条是已知 PYTHONPATH 形态条件红** `test_review_changed_public_skills.py::test_main_exits_nonzero_when_review_cli_reports_error`（断言要正斜杠 `PYTHONPATH`）——用 `PYTHONPATH=.` 在 **HEAD 树上同样红**，与本轮改动无关。⚠️ 这里踩了一个 confound：首次 HEAD 跑我用的是**绝对正斜杠** `PYTHONPATH`，那一条便是绿的、差点被读成"我的改动把它弄红了"；两侧必须用**同一个** `PYTHONPATH` 才有可比性。
+      - **我改的两个文件无一命中**（144 条里与 `models` 相关只有 3 条，都是仓库根真实 `models_config.json` 造成的老环境红）。
+      ⇒ **Task 1 无新增红**。收尾：worktree 已 `remove`、`.pytest-tmp` 与 `/tmp/t1-*` 已删。
 
 ## Task 2 — 工厂：`anthropic` 家族的**针对性 lint**（D2，**不是**通用未知键表）
 

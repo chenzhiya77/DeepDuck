@@ -256,6 +256,31 @@ def _validate_capabilities(model_name: str, entry: dict) -> None:
         raise HTTPException(status_code=422, detail=f"Model '{model_name}' has an invalid capability configuration: {message}") from None
 
 
+def _reject_anthropic_effort_levels(model_name: str, provider: str, entry: dict) -> None:
+    """Refuse reasoning-effort levels on a protocol that names them differently.
+
+    The Anthropic Messages protocol does have an effort parameter — it is
+    ``output_config.effort``, and ``reasoning_effort`` is merely OpenAI's name for the same
+    idea (spec 2026-09-19 §1). An entry declaring the OpenAI vocabulary is forwarded
+    verbatim by the model factory and rejected by the SDK before the request is sent, so it
+    is refused while it is still a payload rather than left to fail on the first run.
+    """
+    if provider != "anthropic":
+        return
+    # Truthiness, not key presence: the input model defaults the flag to False, so the key
+    # is always there.
+    if not (entry.get("supports_reasoning_effort") or entry.get("supported_reasoning_efforts") or entry.get("reasoning_effort")):
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"Model '{model_name}' cannot declare reasoning-effort levels: this protocol names effort "
+            "`output_config.effort`, not `reasoning_effort`, so the value would be forwarded into every request "
+            "and rejected by the SDK before it is sent. Clear 可用推理深度 / 默认推理深度 for this entry."
+        ),
+    )
+
+
 #: Bounded probe budget (spec §5.3.2): an admin ringing a dead endpoint must get
 #: an answer, not a hung request.
 _VALIDATE_TIMEOUT_SECONDS = 10.0
@@ -656,6 +681,7 @@ async def put_models_config(
             entry[endpoint_key] = item.endpoint
         stored_entry = {key: value for key, value in entry.items() if value is not None}
         _validate_capabilities(item.name, stored_entry)
+        _reject_anthropic_effort_levels(item.name, item.provider, stored_entry)
         entries.append(stored_entry)
 
         responses.append(

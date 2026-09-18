@@ -552,6 +552,83 @@ def test_put_rejects_invalid_capability_combinations(config_env: Path, override:
     assert (config_env / "models_config.json").read_bytes() == before
 
 
+# ── write: the protocol has to be able to send what the entry declares ─────
+# (spec 2026-09-19 §2 D1) The protocol names effort `output_config.effort`, not
+# `reasoning_effort`; an entry that declares the OpenAI vocabulary on an Anthropic entry is
+# forwarded verbatim and rejected by the SDK before the request leaves the process.
+
+
+_ANTHROPIC_BASE = {
+    "provider": "anthropic",
+    "name": "claude-model",
+    "model": "claude-x",
+    "api_key": "sk-ant",
+}
+
+#: The shape a real entry arrived in: all three fields together.
+_ANTHROPIC_EFFORT_FIELDS = {
+    "supports_reasoning_effort": True,
+    "supported_reasoning_efforts": ["low", "medium", "high"],
+    "reasoning_effort": "medium",
+}
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"supports_reasoning_effort": True},  # the flag on its own
+        {"supported_reasoning_efforts": ["low", "high"]},  # the subset on its own
+        {"reasoning_effort": "low"},  # the default on its own
+        dict(_ANTHROPIC_EFFORT_FIELDS),  # and the shape they actually arrive in
+    ],
+)
+def test_put_rejects_effort_levels_on_a_protocol_that_cannot_send_them(config_env: Path, override: dict):
+    """Each field is enough on its own: the rule reads them individually, not just the flag.
+
+    Built on a clean base on purpose — carrying the full set into the single-field cases would
+    let the *existing* subset/default consistency rule reject them first, and the case would
+    pass for the wrong reason.
+    """
+    _seed(config_env)
+    before = (config_env / "models_config.json").read_bytes()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/models/config", json={"models": [{**_ANTHROPIC_BASE, **override}]})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "claude-model" in detail
+    assert "output_config.effort" in detail
+    assert (config_env / "models_config.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("provider", ["openai-compatible", "deepseek"])
+def test_put_keeps_accepting_effort_levels_on_protocols_that_can_send_them(config_env: Path, provider: str):
+    """The guard is per protocol: the same three fields stay legal for the OpenAI-shaped ones."""
+    _seed(config_env)
+
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/models/config",
+            json={"models": [{**_CAPABILITY_MODEL, "provider": provider, "name": f"{provider}-model"}]},
+        )
+
+    assert response.status_code == 200
+
+
+def test_put_accepts_an_anthropic_entry_without_effort_levels(config_env: Path):
+    """Clearing them is the fix, so the same entry without them has to go through cleanly."""
+    _seed(config_env)
+
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [dict(_ANTHROPIC_BASE)]}).status_code == 200
+
+    stored = {item["name"]: item for item in _read_models_json(config_env)}["claude-model"]
+    assert stored["supports_reasoning_effort"] is False
+    assert "supported_reasoning_efforts" not in stored
+    assert "reasoning_effort" not in stored
+
+
 def test_public_models_expose_effort_capabilities(config_env: Path):
     """The chat UI reads the model's effort subset/defaults from the public list."""
     _seed(config_env)
