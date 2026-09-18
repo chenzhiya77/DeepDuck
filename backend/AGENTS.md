@@ -650,11 +650,20 @@ client reads cannot drift). `configured_rag_secret()` deliberately fails open to
 config cannot be resolved, so env-only callers keep working without a config file.
 
 **Caption target resolution** (`knowledge/vlm_target.py::resolve_vlm_target`): the two caption legs
-are raw OpenAI-compatible calls (not LangChain models), so they need a `(wire model, endpoint, key)`
-triple. When `vlm_model` names a `models:` entry, all three come from that entry — the wire id from
+are raw HTTP calls (not LangChain models), so they need a `(wire model, endpoint, key)` triple — plus
+the protocol to speak, which is no longer always OpenAI's (spec 2026-09-18). When `vlm_model` names
+a `models:` entry, all three come from that entry — the wire id from
 `entry.model`, the endpoint from the entry's `base_url` / `api_base` (falling back to
 `rag.vlm_base_url` when the entry declares none), the key from the entry's `api_key` (already
-`$ENV`-resolved at load), then the rag file key, then the environment. A value that names no entry is
+`$ENV`-resolved at load), then the rag file key, then the environment. The dialect comes from the
+entry's `use:` class through the same allowlist `/api/models` reports (`reverse_lookup_provider`),
+and the protocol is written once in `knowledge/caption_client.py` — the one outbound entry point both
+legs call: an Anthropic entry posts to `{base_url}/v1/messages` with `X-Api-Key` and
+`anthropic-version` and reads the text blocks, everything else keeps `POST {base_url}/chat/completions`
+with `Authorization` byte for byte. An entry whose class the allowlist cannot place, and the legacy
+bare-id path below, keep the OpenAI shape — an unrecognized class is not evidence of a third one. The
+`base_url` join mirrors the SDK the chat leg uses (raw path concatenation), so a trailing `/v1`
+doubles on both legs rather than being silently repaired here. A value that names no entry is
 a legacy bare model id and keeps the old path (`rag.vlm_base_url` plus the file key or the
 environment), which is what lets a deployment that only ever set `rag.vlm_model` in `config.yaml`
 caption unchanged. This is also why the settings form asks for no endpoint and no key on that row:
@@ -794,10 +803,10 @@ out — it re-embeds the stored chunks and never re-parses (v1 still does not re
 raw HTTP clients, not LangChain models, so they never appear in a `models:` picker and do not
 inherit that mechanism's provider set (Anthropic included): they resolve their own curated
 allowlist in `knowledge/providers/__init__.py`. Conversely, a `models:` entry's usability differs
-per *leg* — the two caption legs (image captions, video shots) are plain OpenAI-compatible
-`base_url + /chat/completions` calls, so an entry that works for graph extraction and the eval
-judge (both LangChain) may not work there. That asymmetry is why the settings view labels the
-caption rows as OpenAI-compatible only.
+per *leg* — whether an entry can serve a caption leg now depends on its `use:` class saying a
+protocol we implement (OpenAI's shape or Anthropic's Messages, spec 2026-09-18), not on the entry
+being OpenAI-compatible. Both are implemented, so the settings view lists every vision-capable entry
+and lets the entry decide the protocol.
 
 ### Gateway API (`app/gateway/`)
 

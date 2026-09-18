@@ -171,7 +171,9 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   model-reference rows (graph extraction, eval judge, caption VLM) are all plain pickers over
   the configured `models:` entries via `modelReferenceOptions` / `visionReferenceOptions`; the
   backend resolves what each role needs from the named entry, so none of them asks for an endpoint or
-  a key of its own. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
+  a key of its own. The caption row's candidates are every vision-capable entry — the entry's `use:`
+  class decides which protocol the caption call speaks (spec 2026-09-18), so nothing is filtered out
+  by provider. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
   they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and
   the embedding row also carries the sparse-source select — the field that decides whether a
   dense-only provider is usable at all. Every provider-driven row is **always rendered**: a row the

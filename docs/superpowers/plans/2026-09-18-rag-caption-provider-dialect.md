@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-18-rag-caption-provider-dialect-design.md](../specs/2026-09-18-rag-caption-provider-dialect-design.md)
-**Status:** Task 0 完成（五项核实，两项修正已写回 spec：SDK 的 `base_url` 拼接是"原始路径相接"⇒ 定甲；形状断言清单补 `test_parser.py`）· **Task 1 完成**（RED 8 红→GREEN→neuter 四条 8/1/1/2 红→ruff 双净 + 全量 146 红对照 HEAD 145 重合、唯一差集是 flake）· Task 2 待开工（2026-09-18）
+**Status:** Task 0 完成（五项核实，两项修正已写回 spec：SDK 的 `base_url` 拼接是"原始路径相接"⇒ 定甲；形状断言清单补 `test_parser.py`）· **Task 1 完成**（RED 8 红→GREEN→neuter 四条 8/1/1/2 红→ruff 双净 + 全量 146 红对照 HEAD 145 重合、唯一差集是 flake；提交 `a02fe455`）· **Task 2 完成**（RED 5 红→GREEN→neuter 两条 4/1 红→`pnpm check` exit 0 + prettier 五文件全部 ≤HEAD + 全量前端 238/2563/0；提交 `7bff8c61`）· **Task 3 完成**（两份 AGENTS.md 三处 + 真栈两腿过、桩验过未打真端点；**文档与记录待提交**，2026-09-18）
 **Parent:** [2026-09-14-rag-model-provider-adaptation.md](2026-09-14-rag-model-provider-adaptation.md)（那条线把 caption 腿的模型/端点/密钥收进"条目三元组"；本计划补上**第三个问题：这条腿说哪种协议**）
 
 **Architecture:** 这条腿是**手写 HTTP**（不是 LangChain），所以协议得自己实现。三处**纯加法**：**方言从条目的 `use` 推**（复用现成的 `reverse_lookup_provider`，**不新增任何配置字段**）、**一个共用的出网入口**（顺手消掉今天两条腿各抄一份的同一段请求）、**前端拿掉 anthropic 的候选排除**（后端能跑了，界面就不用再挡）。`openai` 方言**逐字节不变**；认不出的 `use`（`config.yaml` 里的自研类）**沿用 `openai`**，不报错。
@@ -59,24 +59,32 @@
 
 ## Task 2 — 前端：拿掉 anthropic 的排除 + 改文案（D4）
 
-- [ ] **RED**：
+- [x] **RED**：
   1. 纯函数：`isCaptionCapable({supports_vision: true, provider: "anthropic"})` ⇒ **`true`**（旧断言 `config-form.test.ts:428` 由 `false` 改 `true`）；并补一条"不支持视觉的仍被排除"（证明不是"一律放行"）；
   2. **既有断言要翻面（三处，不是两处）**：`config-form.test.ts:404-411` 的 `toEqual` 列表（`claude` 会插进 `vl` 与 `legacy` 之间）、`:413-418` 的反向断言 `expect(values).not.toContain("claude")`（连同注释 `// Anthropic is not OpenAI-compatible` 与用例名里的"could never call"）**都必须先红**——别只改 `:428` 那条布尔就以为改完了；
   3. `visionReferenceOptions`：anthropic 条目**出现在候选里**（列表内容断言，不只断言布尔）；
   4. **文案**：渲染出的那句不再含"Anthropic 条目无法用于这条腿"（中英各一条）；
   5. **行为面**（`hasVisionModel` / `vlmNoVisionModel`，今天零覆盖）：只有 anthropic 视觉模型时**不再**提示"还没配置支持视觉的模型"。
-- [ ] **GREEN**：`config-form.ts` 的 `isCaptionCapable` 去掉 `provider !== "anthropic"` 并改 docstring；`zh-CN.ts` / `en-US.ts` 那句改措辞（**键名 `captionModelHint` 不动**；`types.ts` 只在键名/结构变化时才动）。
-- [ ] **neuter 两条**：① 把 `!== "anthropic"` 加回去 ⇒ 用例 1/2/3/5 红；② 文案改回旧句 ⇒ 用例 4 红。
-- [ ] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier **逐文件与 HEAD 比数字**（别对本来有格式债的文件跑 `--write`）；**全量前端**。
+     **实测 RED = 5 红**：`config-form.test.ts` 3 条（列表 / 翻面 / 谓词）+ dom 2 条（文案、anthropic 不再触发无视觉提示）。⚠️ 首版 dom 那条文案用例里我多写了一句 `getByLabelText(F.captionModel)` 含 "Claude X" —— **前提是错的**（触发器显示的是**已存值** `vlm_model`，不是候选），当场删掉只留行为面。对照组（`[TEXT_MODEL]` ⇒ 提示仍在）**首跑即绿**，说明它是控制组而不是待修的断言。
+- [x] **GREEN**：`config-form.ts` 的 `isCaptionCapable` 去掉 `provider !== "anthropic"` 并改 docstring；`zh-CN.ts` / `en-US.ts` 那句改措辞（**键名 `captionModelHint` 不动**；`types.ts` 只在键名/结构变化时才动）。
+      **新文案**：zh = "…仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 形状。"；en = "…Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry keeps the OpenAI shape."
+- [x] **neuter 两条**：① 把 `!== "anthropic"` 加回去 ⇒ **实测 4 红**（config-form 3 + dom 的 `vlmNoVisionModel` 1）；② 文案改回旧句 ⇒ **实测 1 红**（中英一起断言的那条）。两条都回退后复跑确认回到绿。
+- [x] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier **逐文件与 HEAD 比数字**（别对本来有格式债的文件跑 `--write`）；**全量前端**。
+      **实测**：`pnpm check` **exit 0、零诊断**；prettier 五个文件与 HEAD 比 = `config-form.ts` 58/58、`zh-CN.ts` 24/24、`en-US.ts` 36/36、`config-form.test.ts` **180/194**（修完自己那几行后**低于** HEAD，零新增债）、`functional-models.dom.test.tsx` 129/129；**全量前端 238 文件 / 2563 用例 / 0 失败**。
+      ⚠️ 本轮我自己的新行有两批超宽（`isCaptionCapable({…4 字段…})` 与两条 `expect(enUS…).toContain(…)`，prettier `printWidth` 默认 80）⇒ 按规矩**不跑 `--write`**，只把那几行改成 prettier 会产出的写法（抽出 `anthropic` / `textOnly` / `openaiVision` 三个局部常量后每行 ≤80）。**判据仍是「工作树数字 == 同一文件 HEAD 的数字」**，别背绝对值——这个 dom 文件的 HEAD 值已是 129（历史债），我改前一度到 145。
 
 ## Task 3 — 文档同步与真栈验收
 
-- [ ] `backend/AGENTS.md` **两处**：① `:653` 那句 "the two caption legs are raw OpenAI-compatible calls (not LangChain models), so they need a `(wire model, endpoint, key)`" ⇒ 改成"**两种方言**（OpenAI 形状 / Anthropic Messages），方言从条目的 `use` 推、认不出沿用 OpenAI"；并在 caption target 那一节补一句"协议不再恒为 OpenAI"。② `:800` 那句 "That asymmetry is why the settings view labels the caption rows as OpenAI-compatible only." ⇒ **界面不再这样标了**，改成"条目能跑哪条腿取决于它的 `use` 说的是哪种协议（两种都实现了）"这一类说法。
-- [ ] `frontend/AGENTS.md`：先核 `:171` 那处（"caption VLM … all plain pickers over the configured `models:` entries"）——**本处没有"排除 anthropic"的措辞，大概率不用动**；要补的话只补一句"这条腿的候选 = 支持视觉的条目，协议由条目决定"。
-- [ ] **真栈腿①（桩）**：起一个**一次性本地桩**假装 Anthropic 端点（跑完即删）⇒ 加/改一个指向它的 anthropic 条目 ⇒ 这一行**能选到它**、保存成功；用桩回显**实际收到的请求形状**（路径/头/body）来证明方言生效。
-- [ ] **真栈腿②（取回文本）**：让桩返回 Anthropic 形状的 caption ⇒ 走一次真实 caption 调用 ⇒ 拿到**非占位**的 caption 文本。**触发路径要点名（caption 只在 ingest 流水线里跑，不是随手一个请求）**：**首选文档腿**——往可写库上传一个**带小图的 `.docx`**，让 worker 走 parse → `caption_images`（`worker.py:443`）⇒ 桩收到请求；**备选视频腿**——对已有视频文档调 `POST /{kb_id}/documents/{doc_id}/video/recaption`（202）。**两条都有前提**（前者 MinerU 可达、后者该库已有一份到 `video_shots` 的视频），动手前先确认前提，别临场找路。
-- [ ] **收尾**：配置**逐字节还原**（md5 与动手前相同；**动手前先 `cp` 一份原始字节**——网关写这个文件在 Windows 上是 CRLF）、密钥不落盘、不新建文件（桩脚本已删）、页面重载丢弃表单；「重建索引」入口**只确认在、不实际重建**。
-- [ ] **门禁**：两份 `AGENTS.md` 的 prettier 与 HEAD 同数（**量 `frontend/AGENTS.md` 必须在 `frontend/` 里跑**）；`rag_config.json` md5 未变。
+- [x] `backend/AGENTS.md` **两处**：① `:653` 那句 "the two caption legs are raw OpenAI-compatible calls (not LangChain models), so they need a `(wire model, endpoint, key)`" ⇒ 改成"**两种方言**（OpenAI 形状 / Anthropic Messages），方言从条目的 `use` 推、认不出沿用 OpenAI"；并在 caption target 那一节补一句"协议不再恒为 OpenAI"。② `:800` 那句 "That asymmetry is why the settings view labels the caption rows as OpenAI-compatible only." ⇒ **界面不再这样标了**，改成"条目能跑哪条腿取决于它的 `use` 说的是哪种协议（两种都实现了）"这一类说法。
+- [x] `frontend/AGENTS.md`：先核 `:171` 那处（"caption VLM … all plain pickers over the configured `models:` entries"）——**本处没有"排除 anthropic"的措辞，大概率不用动**；要补的话只补一句"这条腿的候选 = 支持视觉的条目，协议由条目决定"。
+      **实测**：那处原文没有排除措辞（只有"all plain pickers"），所以按计划补了**一句**候选规则（"The caption row's candidates are every vision-capable entry — the entry's `use:` class decides which protocol…"）。prettier 两份都与 HEAD 同数：`backend/AGENTS.md` **282/282**、`frontend/AGENTS.md` **16/16**（后者**必须在 `frontend/` 里量**，否则插件解析失败给假数字）。
+- [x] **真栈腿①（桩）**：起一个**一次性本地桩**假装 Anthropic 端点（跑完即删）⇒ 加/改一个指向它的 anthropic 条目 ⇒ 这一行**能选到它**、保存成功；用桩回显**实际收到的请求形状**（路径/头/body）来证明方言生效。
+      **实测**（栈由他起：网关 :8001 + 前端 :3000，都在 200）：`PUT /api/models/config` 加 `claude-stub`（`provider: "anthropic"`、`base_url: http://127.0.0.1:8765`、`supports_vision: true`）⇒ 200；`PUT /api/rag/config`（`{extract_model, vlm_model:"claude-stub"}`）⇒ **200 + `warning: null`**；设置页那一行**候选列表里就有 `Claude (local stub)`**（合成 `pointerdown` 打开 Radix Select 读到 6 个选项，含"（使用配置默认）"），且**不支持视觉的 `deepseek-v4-flash` 被排除**（真栈里的天然对照组）；行上那句提示（`uid=2_59`）逐字就是新文案。
+- [x] **真栈腿②（取回文本）**：让桩返回 Anthropic 形状的 caption ⇒ 走一次真实 caption 调用 ⇒ 拿到**非占位**的 caption 文本。**触发路径要点名（caption 只在 ingest 流水线里跑，不是随手一个请求）**：**首选文档腿**——往可写库上传一个**带小图的 `.docx`**，让 worker 走 parse → `caption_images`（`worker.py:443`）⇒ 桩收到请求；**备选视频腿**——对已有视频文档调 `POST /{kb_id}/documents/{doc_id}/video/recaption`（202）。**两条都有前提**（前者 MinerU 可达、后者该库已有一份到 `video_shots` 的视频），动手前先确认前提，别临场找路。
+      **实测（走文档腿，且换了文件格式）**：`.pptx` 也在上传白名单里、本机有 `python-pptx`（`.docx` 没有 `python-docx`）⇒ 造了「一页文字 + 一张小图」的 pptx，走**应用自己的上传接口**进「测试2」⇒ 文档 `ready`（1 切片，vector/graph/wiki 三腿全 done）⇒ **桩收到的是真实管线发出的请求**：路径 `/v1/messages`、有 `X-Api-Key`（len 8）**无 `Authorization`**、`anthropic-version: 2023-06-01`、body 键 `[max_tokens, messages, model, temperature]`、`model: claude-x`、块序 `[image, text]`、**真图 12912 字节 base64**、prompt 是文档腿自己的中文串；切片正文 = `## Caption dialect verification` + `![STUB-ANTHROPIC-CAPTION-OK](images/…jpg)` ⇒ **取回的是真 caption 不是占位**（占位会长成「图片 xxx.jpg」），且桩故意把 `thinking` 块放最前、**非文本块确实被跳过**。**视频腿没走**：`recaption` 会覆写他现有文档的 caption（测试1 那两份带 shots 的），是对他数据的破坏。
+- [x] **收尾**：配置**逐字节还原**（md5 与动手前相同；**动手前先 `cp` 一份原始字节**——网关写这个文件在 Windows 上是 CRLF）、密钥不落盘、不新建文件（桩脚本已删）、页面重载丢弃表单；「重建索引」入口**只确认在、不实际重建**。
+      **实测**：上传的测试文档已 `DELETE`（204，库回到原有两份；按 `doc_id` 扫全部表 **0 残留**）；`rag_config.json` **15fa768a…** 与 `models_config.json` **543846d5…** 都按动手前字节还原、md5 逐字相同（含 CRLF 形态）；桩/夹具/日志与 `/tmp` 快照全删；页面重载后 `vlm_model` 回到 `qwen3.7-flash`、UI 条目仍是原来两条、全仓搜不到 `claude-stub`；设置页快照里「重建索引」按钮**在且为禁用态**（未选库），表单态是"没有需要保存的改动"。**结论：桩验过、未打真端点**（本机没有真 Anthropic key）。密钥处理：桩只记 `X-Api-Key` 的**有无与长度**、不记值；条目里用的是假 key `stub-key`；`/tmp` 下那三个 `rag_config.*.json` 是**更早会话**的遗留，未动。
+- [x] **门禁**：两份 `AGENTS.md` 的 prettier 与 HEAD 同数（**量 `frontend/AGENTS.md` 必须在 `frontend/` 里跑**）；`rag_config.json` md5 未变。
 
 ---
 
