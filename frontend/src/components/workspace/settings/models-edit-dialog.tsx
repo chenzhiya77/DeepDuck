@@ -15,7 +15,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
 import { MASKED_API_KEY } from "@/core/models/api";
 import {
+  canSendEffortLevels,
   capabilityInputFromValue,
+  capabilityValueForProvider,
   capabilityValueFromModel,
   emptyCapabilityValue,
   type ModelCapabilityValue,
@@ -70,6 +72,10 @@ export function ModelsEditDialog({
 
   if (!model) return null;
 
+  // The provider is read-only here (identity is frozen), so this is a property of the row,
+  // not of a control: an anthropic row simply has no effort axis to edit or to submit.
+  const canSendEffort = canSendEffortLevels(model.provider);
+
   function handleSubmit() {
     if (!model) return;
     const parsedMaxTokens = maxTokens.trim() ? Number(maxTokens) : undefined;
@@ -82,7 +88,11 @@ export function ModelsEditDialog({
       endpoint: endpoint.trim() || undefined,
       max_tokens:
         parsedMaxTokens && parsedMaxTokens > 0 ? parsedMaxTokens : undefined,
-      ...capabilityInputFromValue(capability),
+      // Hiding the rows does not clear what a stored row already carries: saving this dialog
+      // unchanged is how an admin repairs a row written before the guard existed.
+      ...capabilityInputFromValue(
+        capabilityValueForProvider(capability, model.provider),
+      ),
     });
     onOpenChange(false);
   }
@@ -153,7 +163,11 @@ export function ModelsEditDialog({
               {/* Its own label, not the wizard's step-2 title — reusing that one leaked a
                   "2." into a dialog that has no step 1. */}
               <p className="text-sm font-medium">{M.capabilities}</p>
-              <ModelCapabilityEditor value={capability} onChange={setCapability} />
+              <ModelCapabilityEditor
+                value={capability}
+                onChange={setCapability}
+                canSendEffortLevels={canSendEffort}
+              />
 
               <div className="space-y-1.5">
                 <span className="text-sm font-medium">{M.maxTokens}</span>

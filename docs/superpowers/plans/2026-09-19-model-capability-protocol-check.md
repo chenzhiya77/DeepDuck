@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-19-model-capability-protocol-check-design.md](../specs/2026-09-19-model-capability-protocol-check-design.md)
-**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；**Task 2 已交付**（RED 1 红 / 1 绿 → GREEN 89 绿 → neuter 1 红 / 1 红 → 窄面 168 绿 → 全量 136 红全为基线、**双向 diff 零新增**）；Task 3–4 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
+**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；**Task 2 已交付**（RED 1 红 / 1 绿 → GREEN 89 绿 → neuter 1 红 / 1 红 → 窄面 168 绿 → 全量 136 红全为基线、**双向 diff 零新增**）；**Task 3 已交付**（RED 4 红其中 2 条前提有误已重做 → `pnpm check` 零诊断 → neuter 2 / 2 / 0（另补测两洞同开 = 1 红）→ **全量前端 238 文件 / 2569 用例 / 0 失败**、prettier 零新增区块）；Task 4 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
 **Parent:** [2026-09-10-model-capability-config-design.md](../specs/2026-09-10-model-capability-config-design.md)（能力声明层；本计划补它缺的第二道：**声明必须与协议对账**）
 
 **Architecture:** 三处**纯收紧**，都在既有机制上：**写入口**加一条 422（只针对 `provider=anthropic` + 推理档位三件套）、**工厂**加一条只查 `reasoning_effort` 的**针对性 lint**（只记日志；**不**做通用未知键表，那会误报 `frequency_penalty` 这类合法透传名）、**界面**按 provider 决定那两格渲不渲染并在**提交时清空**（编辑旧条目等于顺手修数据）。`openai-compatible` / `deepseek` 的行为**一字不改**；`config.yaml` 手写条目只警告不阻断。
@@ -75,15 +75,30 @@
 
 ## Task 3 — 界面：`anthropic` 时那两格不渲染，**且提交时强制清空**（D3）
 
-- [ ] **RED**（`frontend/tests/unit/settings/models-capability-wizard.dom.test.tsx` 与 `models-settings-page.dom.test.tsx`）：
+- [x] **RED**（`frontend/tests/unit/settings/models-capability-wizard.dom.test.tsx` 与 `models-settings-page.dom.test.tsx`）：
   1. `provider="anthropic"` 时「可用推理深度」「默认推理深度」**不在 DOM**（按**界面词汇**取 aria-label/label 文案，别按数据字段名扫）；
   2. **payload 用例**：从 `openai-compatible`（已选好四档）**切到** `anthropic` 后提交 ⇒ 提交的 `ManagedModelInput` 里这三个键**被清空**；
   3. **修旧数据用例（本 task 的核心）**：加载一条**已经带三件套**的 anthropic 条目 ⇒ **什么都不改直接保存** ⇒ 提交的 payload 里这三个键**为空**（后端因此能 200，旧条目被顺手修好）；
   4. **对照组**：`provider="openai-compatible"` 时那两格**在**、且选了能提交上去；
   5. **向导建议**：新增向导里 `provider=anthropic` 时**不给** effort 建议（对照组：`openai-compatible` 照旧给）。
-- [ ] **GREEN**：`ModelCapabilityEditor` 增一个入参（语义=**"这条腿能不能正确发送这套字段"**——⚠️ **不是**"这家协议能不能表达 effort"：协议能，缺的是我们没做那步翻译，见 spec §2 D3）；两个对话框按 provider 传值；为假时**不渲染**那两格，**并在组 payload 时把这三个字段清空**（不是只在切 provider 时清——编辑对话框的 provider 只读，只隐藏会让旧条目永远清不掉）；新增向导里**切 provider 到 anthropic 时清空表单值**；`capability-registry.ts`（或调用处）**按 provider 过滤建议**。**不动 i18n**（422 文案走服务端 `detail`，前端 toast 已经在用它）。
-- [ ] **neuter 三条**：① 把"不渲染"改回"总是渲染" ⇒ 用例 1 红；② **只隐藏、不在 payload 里清空** ⇒ 用例 2/3 红（neuter 只回退"清空"这一半，别连隐藏一起还原，否则分不清哪半有牙）；③ 取消向导的建议过滤 ⇒ 用例 5 红。
-- [ ] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier **逐文件与 HEAD 比数字**（别对本来有格式债的文件跑 `--write`；新写的行自己控制在 80 列内）；**全量前端**。
+      **实测首轮 = 4 红 / 2 绿**，但**其中 2 条的「红」不成立（前提错了，当场处置）**：向导那两条（用例 1 的向导半 + 用例 2）红在 `pickProvider` 找不到 `role="option"` —— **Radix Select 在这套环境里根本打不开**，所以它们红的是我驱动不了控件，而不是功能缺失。**查明真因后重做驱动**（见下）并用 neuter 取回**有效的**红证。另 2 条红是对的那两条：编辑弹窗的 DOM 缺席（用例 1）与页面级 payload（用例 3 的近亲）。
+      ⚠️ **Radix Select 的驱动方式（本轮新知识，与 `pointerdown` 那条既有笔记相反）**：`@radix-ui/react-select` 的 trigger 上，`onPointerDown` **只在 `event.pointerType === "mouse"` 时才开**（`react-select/dist/index.mjs:191`），而 happy-dom 的合成事件**不带 `pointerType`**；同一文件里 `onClick` 是 `if (pointerTypeRef.current !== "mouse") handleOpen()` 的兜底，item 也按同一条门选值 ⇒ **纯 `fireEvent.click` 就能开、能选**（已用一次性探针逐项验过：开→`data-state="open"`、候选 `["OpenAI 兼容","Anthropic","DeepSeek"]`、选完 `data-state="closed"` 且 trigger 显示 `Anthropic`）。探针文件已删。
+      ⚠️ **另外两条「对照组首跑即绿」要标明**：向导那条 `openai-compatible` 的「仍然给 effort 建议」、编辑弹窗那条「能发的一侧那两格还在」——它们是**控制组**，不是本轮实现的功能。
+- [x] **GREEN**：`ModelCapabilityEditor` 增一个入参（语义=**"这条腿能不能正确发送这套字段"**——⚠️ **不是**"这家协议能不能表达 effort"：协议能，缺的是我们没做那步翻译，见 spec §2 D3）；两个对话框按 provider 传值；为假时**不渲染**那两格，**并在组 payload 时把这三个字段清空**（不是只在切 provider 时清——编辑对话框的 provider 只读，只隐藏会让旧条目永远清不掉）；新增向导里**切 provider 到 anthropic 时清空表单值**；`capability-registry.ts`（或调用处）**按 provider 过滤建议**。**不动 i18n**（422 文案走服务端 `detail`，前端 toast 已经在用它）。
+      **实测**：`core/models/capability.ts` 加**一条判据 + 两个纯函数**——`canSendEffortLevels(provider)`: `provider !== "anthropic"`（**命名即语义**：叫 "supports effort levels" 会在翻译落地那天变成假话，因为缺的从来不是协议那侧）、`withoutEffortAxis(value)`（只清 effort 轴，窗口与能力对不动）、`capabilityValueForProvider(value, provider)`（payload 期总入口）。写入点四处：编辑器 `canSendEffortLevels` 为假时**不渲染**（新增**必需**入参，两个调用点都传）；编辑弹窗 `handleSubmit` 走 `capabilityValueForProvider`；向导 `handleSubmit` 同上、`handleNext` 的种子**按 provider 过滤**（**`setSuggested` 也改读过滤后的值**——否则「建议值」会靠一组表单里已经不存在的东西自称建议）、provider `onValueChange` 切到不可发的一侧时清空；**`models-settings-page.tsx::toManagedInput` 也清**。
+      ⚠️ **最后那处是计划外但必需的**（我自己核出来的，见下"一处比计划更大的面"）：`toManagedInput` 是"改写没打开的那一行"的唯一路径，不清它 ⇒ 编辑任何别的行都会把 anthropic 行原样发上去 ⇒ D1 直接 422 整包，**在修好那行之前谁都存不了任何东西**（连删除都会 422）。用例 3 的"后端因此能 200"要成立就必须带这一处。
+      **一处比计划更大的面（要你知道）**：计划只写了"两个对话框"。实际必需的是**三条 payload 路径**（编辑弹窗 / 向导 / 页面 `toManagedInput`）。第 3 条我已按计划外补齐，并另加一条用例（见 RED 的页面级那条）。
+- [x] **neuter 三条**：① 把"不渲染"改回"总是渲染" ⇒ 用例 1 红；② **只隐藏、不在 payload 里清空** ⇒ 用例 2/3 红（neuter 只回退"清空"这一半，别连隐藏一起还原，否则分不清哪半有牙）；③ 取消向导的建议过滤 ⇒ 用例 5 红。
+      **实测（三条都与计划的预测有出入，逐条如实记）**：
+      ① `{canSendEffortLevels &&` → `{true &&` ⇒ **2 红**（向导「offers no effort rows」的 DOM 断言 + 编辑弹窗「clears a stored anthropic entry」的 DOM 断言），与计划一致。
+      ② 三个清空点同时退回 ⇒ **2 红**：编辑弹窗「clears a stored anthropic entry…」（计划用例 3）**与**页面级那条；**向导那条（计划用例 2）不红**。
+      ③ 去掉种子过滤（其余全留）⇒ **0 红**。
+      ⇒ **核查结论：向导那条用例的"清空"与"种子过滤"是互为冗余的两道保险**。因为进入 step 2 的唯一路径 `handleNext` 总会重新播种，删掉任一保独都不改变结果；再补测 **②+③ 同时关掉**（两个洞一起开）= **1 红**，红的正是向导那条的 **payload 断言**。所以"清空那一半"的**独立证据在用例 3（编辑弹窗）与页面级那条**，向导那条只钉"这一对合起来有效"。
+      ⚠️ 按"neuter 不转红=用例无牙"的规矩，我**如实报告而不是再造一条测试**：向导那条仍保留为**端到端护栏**（它防的是两个机制一起被移除），但它**没有**独立牙；能独立取证的是编辑弹窗与页面那两条。
+- [x] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier **逐文件与 HEAD 比数字**（别对本来有格式债的文件跑 `--write`；新写的行自己控制在 80 列内）；**全量前端**。
+      **实测**：`pnpm check` = **零诊断**（eslint + tsc 都过，rg 无输出）。**全量前端 = 238 文件 / 2569 用例 / 0 失败**（2m27s）。
+      **prettier（方法本身要更正一句）**：直接比"与 prettier 输出的差异**行数**"**不成立** —— 这几个文件**本来就有债**（`capability.ts` 在 HEAD 就有 64 行、向导测试 591 行），而且这个数**会随文件体量增长**，加了行就一定"变大"，看不出是不是我写坏的。改用**偏离区块数（unified-diff 的 `@@` 个数）与 HEAD 比**：7 个文件**全部 same-or-better，零新增区块**（`capability.ts` 1→1、编辑器 0→0、编辑弹窗 3→2、添加弹窗 6→6、设置页 1→0、向导测试 17→17、页面测试 11→11）。长行**注释**不追（prettier 从不重排注释，且 HEAD 本来就有 14–21 行这种，是新债的假象）。
+      ⚠️ **顺带抓到并回退了我自己造的一处历史 churn**：我第一版把新写的 `expect(...)` 长行折成三行时，脚本把**三处既有的一行式 `expect(...).toBeDefined(),`（85 列）也一起折了**——那是 HEAD 本来就有的债。用 `git diff` 的"被移除行"清单抓到（只剩那 3 条同形状的行），**逐行还原**，现在该文件的 diff 里**被移除行 = 0**（纯追加）。
 
 ## Task 4 — 文档同步与真栈验收
 

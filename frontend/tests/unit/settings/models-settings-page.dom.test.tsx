@@ -216,6 +216,37 @@ describe("ModelsSettingsPage capability round trip", () => {
       reasoning_effort: "medium",
     });
   });
+
+  it("clears an untouched anthropic row's effort levels on the same save", async () => {
+    // The collection is written wholesale, so an anthropic row the admin never opened is on
+    // the wire too. Its declaration is refused by the write-time guard (spec 2026-09-19 §2 D1),
+    // so re-serializing a neighbour's edit without clearing it 422s the whole PUT — editing an
+    // unrelated model would be impossible until that row is repaired.
+    setConfig([
+      uiModel({
+        name: "legacy-anthropic",
+        provider: "anthropic",
+        supports_reasoning_effort: true,
+        supported_reasoning_efforts: ["low", "medium", "high"],
+        reasoning_effort: "medium",
+      }),
+      uiModel({ name: "plain" }),
+    ]);
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: M.edit })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const payload = (saveMock.mock.calls[0]?.[0] ?? []) as ManagedModelInput[];
+    expect(payload.map((model) => model.name)).toEqual([
+      "legacy-anthropic",
+      "plain",
+    ]);
+    expect(payload[0]?.supports_reasoning_effort).toBe(false);
+    expect(payload[0]?.supported_reasoning_efforts).toBeUndefined();
+    expect(payload[0]?.reasoning_effort).toBeUndefined();
+  });
 });
 
 describe("ModelsSettingsPage batch add", () => {

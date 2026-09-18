@@ -32,6 +32,13 @@ import { cn } from "@/lib/utils";
 interface ModelCapabilityEditorProps {
   value: ModelCapabilityValue;
   onChange: (next: ModelCapabilityValue) => void;
+  /**
+   * Whether this leg can be handed the effort fields at all (spec 2026-09-19 §2 D3). False
+   * hides both effort rows: the protocol names effort differently and our translation is not
+   * built yet, so offering the control would only produce a save the guard refuses. Deliberately
+   * worded as "can send" rather than "supports effort" — see `canSendEffortLevels`.
+   */
+  canSendEffortLevels: boolean;
   /** True when the value came from the curated registry, so it is labelled a suggestion. */
   suggested?: boolean;
 }
@@ -49,6 +56,7 @@ interface ModelCapabilityEditorProps {
 export function ModelCapabilityEditor({
   value,
   onChange,
+  canSendEffortLevels,
   suggested = false,
 }: ModelCapabilityEditorProps) {
   const { t } = useI18n();
@@ -163,62 +171,66 @@ export function ModelCapabilityEditor({
         </div>
       )}
 
-      <div className="space-y-1.5">
-        <span className="text-sm font-medium">{M.supportedEfforts}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              aria-label={M.supportedEfforts}
-              className="w-full justify-between font-normal"
-            >
-              {M.subsetSelected(value.supportedEfforts.length)}
-              <ChevronDown className="size-4 opacity-50" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-[var(--radix-dropdown-menu-trigger-width)]"
-          >
-            {REASONING_EFFORT_LEVELS.map((level) => (
-              <DropdownMenuCheckboxItem
-                key={level}
-                checked={value.supportedEfforts.includes(level)}
-                onCheckedChange={() => onChange(toggleEffort(value, level))}
-                onSelect={(event) => event.preventDefault()}
+      {canSendEffortLevels && (
+        <>
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium">{M.supportedEfforts}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label={M.supportedEfforts}
+                  className="w-full justify-between font-normal"
+                >
+                  {M.subsetSelected(value.supportedEfforts.length)}
+                  <ChevronDown className="size-4 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-[var(--radix-dropdown-menu-trigger-width)]"
               >
-                {effortLabel(level)}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+                {REASONING_EFFORT_LEVELS.map((level) => (
+                  <DropdownMenuCheckboxItem
+                    key={level}
+                    checked={value.supportedEfforts.includes(level)}
+                    onCheckedChange={() => onChange(toggleEffort(value, level))}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {effortLabel(level)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-      {value.supportedEfforts.length > 0 && (
-        <div className="space-y-1.5">
-          <span className="text-sm font-medium">{M.defaultEffort}</span>
-          <Select
-            value={value.defaultEffort ?? ""}
-            onValueChange={(next) =>
-              onChange({
-                ...value,
-                defaultEffort: next as ReasoningEffortLevel,
-              })
-            }
-          >
-            <SelectTrigger className="w-full" aria-label={M.defaultEffort}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {value.supportedEfforts.map((level) => (
-                <SelectItem key={level} value={level}>
-                  {effortLabel(level)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          {value.supportedEfforts.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium">{M.defaultEffort}</span>
+              <Select
+                value={value.defaultEffort ?? ""}
+                onValueChange={(next) =>
+                  onChange({
+                    ...value,
+                    defaultEffort: next as ReasoningEffortLevel,
+                  })
+                }
+              >
+                <SelectTrigger className="w-full" aria-label={M.defaultEffort}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {value.supportedEfforts.map((level) => (
+                    <SelectItem key={level} value={level}>
+                      {effortLabel(level)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

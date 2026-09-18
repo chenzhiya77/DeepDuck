@@ -113,6 +113,21 @@ function closeWindowMenu() {
   fireEvent.keyDown(document, { key: "Escape" });
 }
 
+/**
+ * The provider is a Radix *Select*, not a dropdown menu, and it opens on **click** here rather
+ * than on pointerdown. Radix gates its own `onPointerDown` on `event.pointerType === "mouse"`,
+ * which a happy-dom synthetic event never carries; its `onClick`/`onPointerUp` fallback fires
+ * whenever that ref is not `"mouse"`, which is the path available in this environment. The same
+ * gate decides item selection. Step 1 owns the select, so it can only be driven before「下一步」.
+ */
+function openProviderSelect() {
+  fireEvent.click(screen.getByRole("combobox", { name: M.provider }));
+}
+
+async function pickProvider(label: string) {
+  fireEvent.click(await screen.findByRole("option", { name: label }));
+}
+
 async function pickWindow(label: string) {
   fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: label }));
 }
@@ -364,6 +379,112 @@ describe("ModelsAddDialog two-step wizard", () => {
     expect(screen.getByDisplayValue("model-a")).toBeDefined();
     expect(screen.getByLabelText(M.apiKey)).toHaveProperty("value", "sk-shared");
   });
+
+  // ── The protocol decides whether the effort rows exist (spec 2026-09-19 §2 D3) ──
+  // An anthropic entry cannot be handed the OpenAI effort vocabulary yet, so the rows go away
+  // and nothing may be submitted through them. `o3-mini` is curated WITH an effort subset, so
+  // a seed that ignored the provider would put four levels into a state whose rows no longer
+  // render them — invisible on screen and still in the payload.
+
+  it("offers no effort rows on an anthropic entry, and submits none", async () => {
+    const onAdd = rs.fn();
+    renderAddDialog(onAdd);
+    openProviderSelect();
+    await pickProvider(M.providerAnthropic);
+    fillIdentity({ ids: ["o3-mini"] });
+
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: M.supportedWindows }),
+      ).toBeDefined(),
+    );
+    // The two rows are gone …
+    expect(
+      screen.queryByRole("button", { name: M.supportedEfforts }),
+    ).toBeNull();
+    expect(screen.queryByLabelText(M.defaultEffort)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
+
+    // … and so is anything that could have ridden in through the seed. Hiding alone leaves
+    // the value in the payload, where the write-time guard refuses the whole collection.
+    const entries = onAdd.mock.calls[0]?.[0] as ManagedModelInput[];
+    expect(entries[0]?.supports_reasoning_effort).toBe(false);
+    expect(entries[0]?.supported_reasoning_efforts).toBeUndefined();
+    expect(entries[0]?.reasoning_effort).toBeUndefined();
+  });
+
+  it("still offers the curated effort suggestion when the provider can send it", async () => {
+    // Control for the case above: the same curated id on the default provider keeps both
+    // rows, prefilled — so the rule is the provider's, not the model id's.
+    const onAdd = rs.fn();
+    renderAddDialog(onAdd);
+    fillIdentity({ ids: ["o3-mini"] });
+
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: M.supportedWindows }),
+      ).toBeDefined(),
+    );
+    expect(
+      screen.getByRole("button", { name: M.supportedEfforts }),
+    ).toBeDefined();
+    openEffortMenu();
+    await screen.findByRole("menuitemcheckbox", {
+      name: EFFORT.reasoningEffortMedium,
+    });
+    expect(effortChecked(EFFORT.reasoningEffortMedium)).toBe("true");
+    closeWindowMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
+
+    const entries = onAdd.mock.calls[0]?.[0] as ManagedModelInput[];
+    expect(entries[0]?.supports_reasoning_effort).toBe(true);
+    expect(entries[0]?.supported_reasoning_efforts).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+  });
+
+  it("drops the effort picks when the provider is switched away from them", async () => {
+    // The identity step is where a provider changes, so picks made on a previous pass through
+    // step 2 can outlive the provider that allowed them.
+    const onAdd = rs.fn();
+    renderAddDialog(onAdd);
+    fillIdentity({ ids: ["model-a"] });
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: M.supportedWindows }),
+      ).toBeDefined(),
+    );
+    openEffortMenu();
+    await pickEffort(EFFORT.reasoningEffortLow);
+    await pickEffort(EFFORT.reasoningEffortMedium);
+    closeWindowMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: M.back }));
+    openProviderSelect();
+    await pickProvider(M.providerAnthropic);
+    fireEvent.click(screen.getByRole("button", { name: M.next }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: M.supportedWindows }),
+      ).toBeDefined(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
+
+    const entries = onAdd.mock.calls[0]?.[0] as ManagedModelInput[];
+    expect(entries[0]?.supports_reasoning_effort).toBe(false);
+    expect(entries[0]?.supported_reasoning_efforts).toBeUndefined();
+    expect(entries[0]?.reasoning_effort).toBeUndefined();
+  });
 });
 
 describe("ModelsEditDialog capability editor", () => {
@@ -441,6 +562,10 @@ describe("ModelsEditDialog capability editor", () => {
         open
         onOpenChange={() => undefined}
         model={model({
+          // The subject here is the effort axis itself, which an anthropic entry can no
+          // longer carry (spec 2026-09-19 §2 D3) — so the fixture has to name a provider
+          // that can. The anthropic path has its own case below.
+          provider: "openai-compatible",
           supported_context_windows: [200_000],
           context_window: 200_000,
           supported_reasoning_efforts: ["low", "high"],
@@ -491,6 +616,49 @@ describe("ModelsEditDialog capability editor", () => {
     expect(screen.getByText(M.defaultWindow)).toBeDefined();
     // The windows dropdown summarises its subset instead of listing every option.
     expect(windowsSummary()).toContain(M.subsetSelected(1));
+  });
+
+  it("clears a stored anthropic entry's effort levels on an untouched save", async () => {
+    // The core case (spec 2026-09-19 §2 D3): a row written before the guard existed still
+    // carries the three fields, and the provider is read-only here — so hiding the rows and
+    // saving unchanged is the only way an admin can repair it, and the payload is the only
+    // place the repair shows.
+    const onSave = rs.fn();
+    renderEditDialog(onSave, {
+      provider: "anthropic",
+      supports_reasoning_effort: true,
+      supported_reasoning_efforts: ["low", "medium", "high"],
+      reasoning_effort: "medium",
+    });
+
+    expect(
+      screen.queryByRole("button", { name: M.supportedEfforts }),
+    ).toBeNull();
+    expect(screen.queryByLabelText(M.defaultEffort)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    const input = onSave.mock.calls[0]?.[0] as ManagedModelInput;
+    expect(input.supports_reasoning_effort).toBe(false);
+    expect(input.supported_reasoning_efforts).toBeUndefined();
+    expect(input.reasoning_effort).toBeUndefined();
+    // The window axis is untouched by this rule.
+    expect(input.name).toBe("claude-sonnet-4");
+  });
+
+  it("keeps the effort rows for a provider that can send them", () => {
+    // Control: the same dialog, one provider over, still edits the axis.
+    renderEditDialog(rs.fn(), {
+      provider: "openai-compatible",
+      supports_reasoning_effort: true,
+      supported_reasoning_efforts: ["low", "high"],
+      reasoning_effort: "high",
+    });
+
+    expect(
+      screen.getByRole("button", { name: M.supportedEfforts }),
+    ).toBeDefined();
+    expect(screen.getByLabelText(M.defaultEffort)).toBeDefined();
   });
 });
 
