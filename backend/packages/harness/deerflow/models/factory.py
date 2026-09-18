@@ -73,6 +73,14 @@ def _normalize_openai_base_url(model_class: type, model_settings_from_config: di
     logger.debug("Normalized model config key 'api_base' -> 'base_url' for OpenAI-compatible client.")
 
 
+#: What LangChain does with a constructor kwarg the client does not declare, worded once.
+#: The key is moved into ``model_kwargs``, which the client spreads into every request body,
+#: so the provider SDK rejects it at *request* time rather than at construction. Both family
+#: guards below embed this exact sentence: the behavior belongs to the mechanism, not to the
+#: family that tripped it, and a single copy cannot drift into two descriptions of one thing.
+_KWARG_DIVERT_CONSEQUENCE = "LangChain moves such keys into `model_kwargs`, which it spreads into every request body, and the provider SDK rejects them at request time."
+
+
 def _warn_unknown_model_settings(model_class, model_name: str, model_settings_from_config: dict) -> None:
     """Warn about config keys the OpenAI client will silently divert into ``model_kwargs``.
 
@@ -88,9 +96,11 @@ def _warn_unknown_model_settings(model_class, model_name: str, model_settings_fr
     ``issubclass(model_class, BaseChatOpenAI)``: the divert is implemented in that base class, so
     every subclass inherits it. Other providers (e.g. ``ChatAnthropic``) route extra kwargs
     differently and would false-positive against this allow-list, so they are intentionally left
-    alone. Best-effort and non-fatal: it only fires when the class exposes a pydantic
-    ``model_fields`` schema, treats both field names and their aliases as valid, and allow-lists the
-    standard passthrough kwargs the factory injects and the OpenAI client accepts.
+    alone: the one Anthropic key this repo can actually produce has its own targeted lint below
+    (``_warn_anthropic_reasoning_effort``). Best-effort and non-fatal: it only fires when the class
+    exposes a pydantic ``model_fields`` schema, treats both field names and their aliases as valid,
+    and allow-lists the standard passthrough kwargs the factory injects and the OpenAI client
+    accepts.
     """
     if not issubclass(model_class, BaseChatOpenAI):
         return
@@ -116,11 +126,46 @@ def _warn_unknown_model_settings(model_class, model_name: str, model_settings_fr
     unknown = sorted(k for k in model_settings_from_config if k not in valid_names)
     if unknown:
         logger.warning(
-            "Model '%s' (%s): config key(s) %s are not recognized parameters of the model class and will be forwarded as-is; this may raise at request time. Check for typos (e.g. 'maxx_tokens' -> 'max_tokens').",
+            "Model '%s' (%s): config key(s) %s are not recognized parameters of the model class. %s Check for typos (e.g. 'maxx_tokens' -> 'max_tokens').",
             model_name,
             getattr(model_class, "__name__", "?"),
             unknown,
+            _KWARG_DIVERT_CONSEQUENCE,
         )
+
+
+def _warn_anthropic_reasoning_effort(model_class, model_name: str, model_settings_from_config: dict) -> None:
+    """Warn when an Anthropic client is handed ``reasoning_effort`` — the one key that reaches it.
+
+    ``_warn_unknown_model_settings`` is deliberately scoped away from this family (see its
+    docstring), which left ChatAnthropic with no guard at all. There is exactly one key this repo
+    can put into that constructor which the protocol will not take: the entry's own
+    ``reasoning_effort``. The Anthropic Messages protocol names effort ``output_config.effort``
+    (spec 2026-09-19 §1), so the OpenAI spelling arrives as an undeclared kwarg, lands in
+    ``model_kwargs``, and the SDK raises ``unexpected keyword argument 'reasoning_effort'`` before
+    the request is sent — the same mechanism the OpenAI guard above describes, on a family that
+    guard does not reach.
+
+    Keyed on that one key rather than on a second allow-list on purpose: the allow-list has no
+    accurate membership for this family, and running the OpenAI table here is exactly the
+    false-positive its regression test pins (``frequency_penalty`` on ``ChatAnthropic``).
+
+    Log-only, and the key is still forwarded. A UI-managed entry is refused earlier, at write time
+    (``PUT /api/models/config``); a ``config.yaml`` entry is the operator's to fix, and this line is
+    the only signal it ever gets.
+    """
+    from langchain_anthropic import ChatAnthropic
+
+    if not issubclass(model_class, ChatAnthropic):
+        return
+    if "reasoning_effort" not in model_settings_from_config:
+        return
+    logger.warning(
+        "Model '%s' (%s): config key 'reasoning_effort' is not a parameter this protocol accepts. %s This protocol names effort `output_config.effort`; remove 'reasoning_effort' from the entry.",
+        model_name,
+        getattr(model_class, "__name__", "?"),
+        _KWARG_DIVERT_CONSEQUENCE,
+    )
 
 
 # Default chunk-gap budget for OpenAI-compatible streaming responses.
@@ -328,6 +373,7 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
         model_settings_from_config.pop("reasoning_effort", None)
 
     _warn_unknown_model_settings(model_class, name, model_settings_from_config)
+    _warn_anthropic_reasoning_effort(model_class, name, model_settings_from_config)
 
     model_instance = model_class(**kwargs, **model_settings_from_config)
 

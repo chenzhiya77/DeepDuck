@@ -1497,6 +1497,72 @@ def test_no_unknown_key_warning_for_non_openai_class(monkeypatch, caplog):
 
 
 # ---------------------------------------------------------------------------
+# A targeted lint for the Anthropic family (spec 2026-09-19 §2 D2)
+#
+# The generic guard above is scoped to the OpenAI family on purpose, which left the
+# Anthropic family with no guard at all. There is exactly one key this repo can put into
+# a ChatAnthropic constructor that the protocol will not take: the entry's own
+# `reasoning_effort`. Targeting that one key — rather than running the OpenAI allow-list
+# against a second family — is what keeps ChatAnthropic's legitimate passthrough names
+# (`frequency_penalty`, `extra_body`, …) unwarned, which is what
+# `test_no_unknown_key_warning_for_non_openai_class` above pins.
+# ---------------------------------------------------------------------------
+
+
+def test_reasoning_effort_on_anthropic_emits_a_warning(monkeypatch, caplog):
+    """An Anthropic entry declaring `reasoning_effort` must be flagged before the first run.
+
+    `supports_reasoning_effort: true` is what keeps the key alive to the constructor (the
+    factory drops it otherwise) and no caller-supplied level is present, so this is the
+    shape that shipped and crashed: ChatAnthropic diverts the key into `model_kwargs` and
+    the Anthropic SDK raises `unexpected keyword argument 'reasoning_effort'` before the
+    request leaves the process.
+    """
+    import logging
+
+    from langchain_anthropic import ChatAnthropic
+
+    cfg = _make_app_config([_make_model("claude", use="langchain_anthropic:ChatAnthropic", supports_reasoning_effort=True, reasoning_effort="medium")])
+    captured: dict = {}
+    _patch_factory(monkeypatch, cfg, model_class=_capturing_class(ChatAnthropic, captured))
+
+    with caplog.at_level(logging.WARNING, logger=factory_module.__name__):
+        # Construction must still succeed: this is a heads-up, not a refusal.
+        factory_module.create_chat_model(name="claude")
+
+    warnings = [rec.message for rec in caplog.records if "reasoning_effort" in rec.message]
+    assert len(warnings) == 1
+    assert "claude" in warnings[0]
+    # The warning has to say what actually happens to the key, not just name it.
+    assert "model_kwargs" in warnings[0]
+    # And it is log-only: the key is still forwarded, so the message is the only signal a
+    # `config.yaml` entry (which no write-time guard covers) ever gets.
+    assert captured.get("reasoning_effort") == "medium"
+
+
+def test_reasoning_effort_on_openai_emits_no_anthropic_lint(monkeypatch, caplog):
+    """The new lint is family-scoped: the same entry on ChatOpenAI must not produce it.
+
+    A lint keyed on the key alone would warn here too, so this is the control that keeps
+    the family gate honest. `reasoning_effort` is a real ChatOpenAI field, so the generic
+    OpenAI guard stays quiet as well — nothing at all should be logged for this entry.
+    """
+    import logging
+
+    from langchain_openai import ChatOpenAI
+
+    cfg = _make_app_config([_make_model("gpt", supports_reasoning_effort=True, reasoning_effort="medium")])
+    captured: dict = {}
+    _patch_factory(monkeypatch, cfg, model_class=_capturing_class(ChatOpenAI, captured))
+
+    with caplog.at_level(logging.WARNING, logger=factory_module.__name__):
+        factory_module.create_chat_model(name="gpt")
+
+    assert not any("reasoning_effort" in rec.message for rec in caplog.records)
+    assert captured.get("reasoning_effort") == "medium"
+
+
+# ---------------------------------------------------------------------------
 # The OpenAI-compatible family is issubclass(BaseChatOpenAI), not a class-path allowlist
 # (regression: six in-repo BaseChatOpenAI subclasses were excluded from api_base
 #  normalization and from the unknown-key warning)

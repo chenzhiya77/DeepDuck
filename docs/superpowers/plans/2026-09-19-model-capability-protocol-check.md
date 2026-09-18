@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-19-model-capability-protocol-check-design.md](../specs/2026-09-19-model-capability-protocol-check-design.md)
-**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；Task 2–4 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
+**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；**Task 2 已交付**（RED 1 红 / 1 绿 → GREEN 89 绿 → neuter 1 红 / 1 红 → 窄面 168 绿 → 全量 136 红全为基线、**双向 diff 零新增**）；Task 3–4 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
 **Parent:** [2026-09-10-model-capability-config-design.md](../specs/2026-09-10-model-capability-config-design.md)（能力声明层；本计划补它缺的第二道：**声明必须与协议对账**）
 
 **Architecture:** 三处**纯收紧**，都在既有机制上：**写入口**加一条 422（只针对 `provider=anthropic` + 推理档位三件套）、**工厂**加一条只查 `reasoning_effort` 的**针对性 lint**（只记日志；**不**做通用未知键表，那会误报 `frequency_penalty` 这类合法透传名）、**界面**按 provider 决定那两格渲不渲染并在**提交时清空**（编辑旧条目等于顺手修数据）。`openai-compatible` / `deepseek` 的行为**一字不改**；`config.yaml` 手写条目只警告不阻断。
@@ -18,6 +18,7 @@
      **核实结果**：循环在 **`:623`**（`for item in body.models:`），`use = resolve_provider_use(item.provider)` 在 **`:631`**（⇒ `item.provider` 就在手边），`stored_entry` 在 **`:657`**、`_validate_capabilities(item.name, stored_entry)` 在 **`:658`** ⇒ **新检查插在 `:658` 之后、另传 `item.provider`**（不要塞进只收 `(name, entry)` 的那个函数）。422 由 `_validate_capabilities` 自己抛，形状与上面一致。
 - [x] 2. **工厂守卫的门与判据**：`_warn_unknown_model_settings` 的签名与"家族门"，以及它拼 `valid_names` 的三步。
      **核实结果**：`def _warn_unknown_model_settings(model_class, model_name, model_settings_from_config)` 在 **`:76`**，家族门 `if not issubclass(model_class, BaseChatOpenAI): return` 在 **`:95`**；`valid_names = model_fields 键 ∪ 别名 ∪ {model, model_kwargs, extra_body, default_headers, default_query, stream_usage, stream_chunk_timeout, reasoning_effort}`；警告措辞是 _"config key(s) %s are not recognized parameters of the model class and will be forwarded as-is; this may raise at request time. Check for typos…"_。**控制组**：`test_model_factory.py:1473`（`ChatAnthropic` + `frequency_penalty` + `api_base`）断言**无**该警告且 `api_base` 原样透传 ⇒ 本对的 lint **不许破它**。
+     ⚠️ **本条记的是 T0 开工那一刻的行号与措辞**（行号本就随改动漂移，别当现状）。其中**那句措辞已被 Task 2 改掉**：`…and will be forwarded as-is; this may raise at request time.` 现为共享常量 `_KWARG_DIVERT_CONSEQUENCE`（`…moved into `model_kwargs`…rejected at request time.`）——**要引用现状请读 Task 2 的 GREEN 纪要，别照这条 grep**。
 - [x] 3. **前端：编辑对话框的提交路径**：`models-edit-dialog.tsx` 的 `capability` 初值、`onSave` 组装处、provider 是否只读。
      **核实结果**：初值在 **`:62-68`**（`useEffect` → `setCapability(capabilityValueFromModel(model))`）；**提交组装在 `:76`**，其中 `provider: (model.provider ?? "openai-compatible")` **直接取自条目、界面无切换控件 ⇒ provider 确认只读**。⇒ **"提交时清空那三个字段"的最小落点就是这个 `onSave` 组装处**（不必改编辑器内部）。
 - [x] 4. **前端：向导那一侧**：`models-add-dialog.tsx` 的 provider 状态与切 provider 的 handler、`suggested` 的来源、建议按什么匹配。
@@ -54,13 +55,23 @@
 
 ## Task 2 — 工厂：`anthropic` 家族的**针对性 lint**（D2，**不是**通用未知键表）
 
-- [ ] **RED**（写进 `backend/tests/test_model_factory.py`，挨着 `:1410` / `:1429` / `:1473` / `:1540` 那一族）：
+- [x] **RED**（写进 `backend/tests/test_model_factory.py`，挨着 `:1410` / `:1429` / `:1473` / `:1540` 那一族）：
   1. `ChatAnthropic` 类 + 条目里带 `reasoning_effort` ⇒ **一条**警告，且**不抛**（构造期成功）；
   2. **对照组**：同一条目换成 `ChatOpenAI` ⇒ **不**打这条（证明它是**分家族**的，不是"一律警告"）；
   3. **控制组（既有断言，不许破）**：`test_no_unknown_key_warning_for_non_openai_class`（`:1473`，`ChatAnthropic` + `frequency_penalty`）**逐字不变且保持绿**——它就是"不许退化成通用未知键表"的看门人。
-- [ ] **GREEN**：在 `_warn_unknown_model_settings`（或它旁边）加一条只对 `issubclass(model_class, ChatAnthropic)` 生效的 lint：`model_settings_from_config` 里出现 `reasoning_effort` ⇒ 打**一条**警告，措辞与 OpenAI 家族那条**同源**（同一件事只留一处措辞 ⇒ 提共享常量/同一句模板），内容点明"该键会被转进 `model_kwargs`、并在请求期被 SDK 拒绝"。**不做**通用白名单表、**只记日志、不改任何行为**。
-- [ ] **neuter 两条**：① 去掉这条 lint（回到完全不管 Anthropic 家族）⇒ 用例 1 红；② 把它写成"对 Anthropic 也跑 OpenAI 那套通用表" ⇒ **控制组（用例 3）红**（`frequency_penalty` 被误报）——这正是本轮 review 抓出的那个坑。
-- [ ] **门禁**：同 Task 1（ruff 双净 + 窄面 + 全量对照 HEAD）。
+      **实测 RED = 1 红 / 1 绿**：用例 1 红在 `assert 0 == 1`（今天一条都不打），用例 2 **首跑即绿**（**控制组**，不是"已通过的功能"）。用例 1 的条目形状是关键：`supports_reasoning_effort: True` 才让键活到构造期（`factory.py:278` 否则就 pop 了），且调用方不传 level（`:325` 会 pop）——正是 `minimax-m3` 那副样子。
+      **题目（真实客户端实测，非桩）**：`ChatAnthropic(model='claude-x', api_key=…, reasoning_effort='medium')` ⇒ `model_kwargs == {'reasoning_effort': 'medium'}`、`_get_request_payload` 的键 = `['max_tokens','messages','model','reasoning_effort']`、LangChain 自己只打了 `WARNING! reasoning_effort is not default parameter` ⇒ 前提逐字成立。
+- [x] **GREEN**：在 `_warn_unknown_model_settings`（或它旁边）加一条只对 `issubclass(model_class, ChatAnthropic)` 生效的 lint：`model_settings_from_config` 里出现 `reasoning_effort` ⇒ 打**一条**警告，措辞与 OpenAI 家族那条**同源**（同一件事只留一处措辞 ⇒ 提共享常量/同一句模板），内容点明"该键会被转进 `model_kwargs`、并在请求期被 SDK 拒绝"。**不做**通用白名单表、**只记日志、不改任何行为**。
+      **实测**：新增 `_warn_anthropic_reasoning_effort`（`factory.py`），调用点紧挨既有那条（`:375`）；**共享常量为 `_KWARG_DIVERT_CONSEQUENCE`**（"…moved into `model_kwargs`, which it spreads into every request body, and the provider SDK rejects them at request time."），**两条警告都嵌这一句** ⇒ 同一事实只有一处措辞。家族门用**函数内 lazy import** `langchain_anthropic`（照 Codex 那处既有写法，不给 `factory` 的模块加载路径加重量）；`ChatAnthropic` 与 `ClaudeChatModel` **都不声明** `reasoning_effort` 字段（实测），所以"看键在不在"这条规则在本仓不存在误报面。**全文件 89 passed / 0 failed**（87 + 2）。
+      ⚠️ **一处用户可见的文案变更（有意，不是顺带改）**：OpenAI 家族那条警告的正文从 `…are not recognized parameters of the model class and will be forwarded as-is; this may raise at request time.` 变成 `…of the model class. <共享常量> `（多了 `model_kwargs` 那半句，少了 `forwarded as-is` 那半句）——因为"同源"要求两句嵌同一个机制句。两条既有断言的子串（`not recognized parameters`、键名）都保留，仓库内除该文件与那两条断言外**无人逐字引用**这句（已全仓 grep）。
+- [x] **neuter 两条**：① 去掉这条 lint（回到完全不管 Anthropic 家族）⇒ 用例 1 红；② 把它写成"对 Anthropic 也跑 OpenAI 那套通用表" ⇒ **控制组（用例 3）红**（`frequency_penalty` 被误报）——这正是本轮 review 抓出的那个坑。
+      **实测**：① 注释掉调用点 ⇒ **1 红**（只有用例 1；对照组仍绿）；② 把通用守卫的家族门放宽成 `(BaseChatOpenAI, ChatAnthropic)` ⇒ **1 红**，红的正是既有那条 `test_no_unknown_key_warning_for_non_openai_class`（`frequency_penalty` 被误报）⇒ **那条既有断言就是"不许退化成通用表"的看门人**，与 plan 的预测逐字吻合。两条都**回退后复跑确认回到 89 绿**。
+- [x] **门禁**：同 Task 1（ruff 双净 + 窄面 + 全量对照 HEAD）。
+      **实测（本轮零回归）**：`ruff check` + `format --check` 双净；窄面 = **168 passed / 1 failed**（`test_models_config_file_falls_back_to_config_yaml`，已知环境红，属基线）；全量 = **136 failed / 12423 passed / 109 skipped**（18m43s）。
+      抽 136 个 node id ⇒ `git worktree add --detach` 出 HEAD 树（**这次 HEAD = `56ebec1d`，已含 Task 1**；`cp` 进四个本地环境文件），跑同一批 = **135 红 / 1 绿**。**两侧 `PYTHONPATH` 都是 `.`**（Task 1 那个 confound 已按纪要规避；`UV_PROJECT_ENVIRONMENT` 指主仓 `.venv`，worktree 不再新建空 venv）。
+      **双向 diff**：`只在 HEAD 红` 看似 2 条，逐行核出**两条都不是 node id**（`comm` 出来的行首是空格、没有 `::`，是失败摘要的**换行续行**被我的 `grep ^(FAILED|ERROR) ` 之外的 sed 残留；我漏了 `^` 的锚定这一点与 Task 1 同源，已当场人眼核过）⇒ **实质为空**。`只在工作树红` **1 条** = `test_delta_channel_state.py::test_merge_message_writes_randomized_differential`——正是 Task 1 那 13 条"全量顺序假象"里的同一条（名字里就写着 randomized），**两侧单独复跑都 1 passed** ⇒ 顺序假象，与本轮改动无关。
+      ⇒ **Task 2 无新增红**。收尾：worktree 已 `remove`、`.pytest-tmp` 与 `/tmp/t2-*` 已删。
+      ⚠️ **两次全量的失败数不同（Task 1 = 144、Task 2 = 136）不是回归也不是修复**：两次跑的是同一棵树 + 同一批改动之外的代码，差异全部落在"顺序假象"这一类上（13 条那种）。**所以"这轮全量比上轮少 8 条"不能读成改好了什么**，判据只能是"抽 id 去 HEAD 双向 diff"。
 
 ## Task 3 — 界面：`anthropic` 时那两格不渲染，**且提交时强制清空**（D3）
 
