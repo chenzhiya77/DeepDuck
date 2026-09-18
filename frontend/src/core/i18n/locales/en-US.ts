@@ -1826,7 +1826,7 @@ export const enUS: Translations = {
       extractModelNone: "(use the configured default)",
       captionModel: "Caption model (VLM)",
       captionModelHint:
-        "The endpoint and API key come from the selected model entry; leave it unset to use the configured default VLM. Only vision-capable OpenAI-compatible entries are listed — an Anthropic entry can never serve this leg.",
+        "The endpoint and API key come from the selected model entry; leave it unset to use the configured default VLM. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry keeps the OpenAI shape.",
       vlmModelDefault: "(use the configured default)",
       embeddingModel: "Embedding model",
       embeddingApiKey: "API key (embedding)",

@@ -1733,7 +1733,7 @@ export const zhCN: Translations = {
       extractModelNone: "（使用配置默认）",
       captionModel: "图片描述模型 (VLM)",
       captionModelHint:
-        "接口地址与 API Key 取自所选模型条目；留空则用配置里的默认 VLM。仅列出支持视觉的 OpenAI 兼容条目——Anthropic 条目无法用于这条腿。",
+        "接口地址与 API Key 取自所选模型条目；留空则用配置里的默认 VLM。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 形状。",
       vlmModelDefault: "（使用配置默认）",
       embeddingModel: "向量模型",
       embeddingApiKey: "API Key（向量）",

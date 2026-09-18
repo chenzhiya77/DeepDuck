@@ -567,12 +567,14 @@ export interface VisionModelSource {
 }
 
 /**
- * Whether an entry can serve as the caption VLM. The caption legs post to an
- * OpenAI-compatible `/chat/completions`, so an Anthropic entry could never work however it is
- * configured.
+ * Whether an entry can serve as the caption VLM: it has to declare vision support.
+ *
+ * The provider decides the *protocol*, not the eligibility — the caption client speaks both
+ * the OpenAI shape and Anthropic's Messages shape, choosing by the entry's `use:` class
+ * (spec 2026-09-18). So an Anthropic entry is listed here like any other.
  */
 export function isCaptionCapable(model: VisionModelSource): boolean {
-  return Boolean(model.supports_vision) && model.provider !== "anthropic";
+  return Boolean(model.supports_vision);
 }
 
 /**

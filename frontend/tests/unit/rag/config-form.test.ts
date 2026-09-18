@@ -400,20 +400,21 @@ describe("caption model picker", () => {
     { name: "legacy", model: "m", display_name: "Legacy", supports_vision: true },
   ];
 
-  it("lists the entries that can serve the caption call after the default entry", () => {
+  it("lists every vision-capable entry after the default entry", () => {
     expect(visionReferenceOptions(MODELS, "gpt-5", "(默认)")).toEqual([
       { value: MODEL_REFERENCE_NONE, label: "(默认)" },
       { value: "gpt-5", label: "GPT-5" },
       // A blank display name falls back to the registry name.
       { value: "vl", label: "vl" },
+      { value: "claude", label: "Claude X" },
       { value: "legacy", label: "Legacy" },
     ]);
   });
 
-  it("drops an entry the caption legs could never call, and non-vision entries", () => {
+  it("keeps an Anthropic entry — the caption client speaks its protocol too — and drops non-vision entries", () => {
     const values = visionReferenceOptions(MODELS, "", "(默认)").map((option) => option.value);
 
-    expect(values).not.toContain("claude"); // Anthropic is not OpenAI-compatible
+    expect(values).toContain("claude");
     expect(values).not.toContain("text-only");
   });
 
@@ -424,10 +425,16 @@ describe("caption model picker", () => {
     });
   });
 
-  it("requires both vision support and an OpenAI-compatible provider", () => {
-    expect(isCaptionCapable({ name: "a", model: "a", supports_vision: true, provider: "anthropic" })).toBe(false);
+  it("requires vision support, whichever provider serves the entry", () => {
+    const anthropic = { name: "a", model: "a", supports_vision: true };
+    const textOnly = { ...anthropic, supports_vision: false };
+    const openaiVision = { ...anthropic, provider: "openai-compatible" };
+
+    expect(isCaptionCapable({ ...anthropic, provider: "anthropic" })).toBe(true);
+    // Dropping the provider test turns nothing loose: no vision still means no candidacy.
+    expect(isCaptionCapable(textOnly)).toBe(false);
     expect(isCaptionCapable({ name: "b", model: "b" })).toBe(false);
-    expect(isCaptionCapable({ name: "c", model: "c", supports_vision: true, provider: "openai-compatible" })).toBe(true);
+    expect(isCaptionCapable(openaiVision)).toBe(true);
   });
 });
 

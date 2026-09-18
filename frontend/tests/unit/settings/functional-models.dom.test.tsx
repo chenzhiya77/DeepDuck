@@ -18,6 +18,7 @@ import {
 } from "@testing-library/react";
 
 import { I18nContext } from "@/core/i18n/context";
+import { enUS } from "@/core/i18n/locales/en-US";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import {
   formValuesFromConfig,
@@ -292,7 +293,38 @@ function saveWillReturn(warning: string | null) {
   );
 }
 
-function renderPage() {
+const VL_MODEL = {
+  name: "vl-model",
+  model: "Qwen/Qwen3-VL-30B",
+  display_name: "Qwen3 VL",
+  supports_vision: true,
+  api_key: "********",
+  source: "ui",
+  editable: true,
+};
+const TEXT_MODEL = {
+  name: "text-model",
+  model: "deepseek-chat",
+  display_name: "DeepSeek Chat",
+  supports_vision: false,
+  api_key: "********",
+  source: "ui",
+  editable: true,
+};
+const ANTHROPIC_MODEL = {
+  name: "claude-model",
+  model: "claude-x",
+  display_name: "Claude X",
+  supports_vision: true,
+  provider: "anthropic",
+  api_key: "********",
+  source: "ui",
+  editable: true,
+};
+
+function renderPage(
+  models: Array<Record<string, unknown>> = [VL_MODEL, TEXT_MODEL],
+) {
   modelHooksMock.useModels.mockReturnValue({
     models: [
       { id: "deepseek-chat", name: "deepseek-chat", model: "deepseek-chat", display_name: "DeepSeek Chat" },
@@ -303,28 +335,7 @@ function renderPage() {
     error: null,
   });
   modelHooksMock.useModelsConfig.mockReturnValue({
-    config: {
-      models: [
-        {
-          name: "vl-model",
-          model: "Qwen/Qwen3-VL-30B",
-          display_name: "Qwen3 VL",
-          supports_vision: true,
-          api_key: "********",
-          source: "ui",
-          editable: true,
-        },
-        {
-          name: "text-model",
-          model: "deepseek-chat",
-          display_name: "DeepSeek Chat",
-          supports_vision: false,
-          api_key: "********",
-          source: "ui",
-          editable: true,
-        },
-      ],
-    },
+    config: { models },
     isLoading: false,
     error: null,
   });
@@ -650,6 +661,39 @@ describe("functional-model layout", () => {
     // The endpoint and the key come from that entry, so the row has no inputs at all.
     expect(captionRow?.querySelector("input")).toBeNull();
     expect(screen.getByLabelText(F.captionModelHint)).toBeTruthy();
+  });
+
+  it("does not claim an Anthropic entry can never serve this leg", () => {
+    // The old sentence is what made the picker hide those entries; both locales drop it.
+    expect(F.captionModelHint).not.toContain("Anthropic 条目无法用于这条腿");
+    expect(enUS.settings.functionalModels.captionModelHint).not.toContain(
+      "Anthropic entry can never serve this leg",
+    );
+    // Anchors, so deleting the sentence would fail too: the row still says where the
+    // endpoint and key come from, and that the protocol follows the entry.
+    expect(F.captionModelHint).toContain("接口地址与 API Key");
+    expect(F.captionModelHint).toContain("Anthropic");
+    expect(enUS.settings.functionalModels.captionModelHint).toContain(
+      "endpoint and API key",
+    );
+    expect(enUS.settings.functionalModels.captionModelHint).toContain(
+      "Anthropic",
+    );
+  });
+
+  it("stops warning about a missing vision model when an Anthropic entry can serve the leg", () => {
+    renderPage([ANTHROPIC_MODEL, TEXT_MODEL]);
+    openFunctionalView();
+
+    // The old filter left this picker with no vision-capable entry at all, and the row said so.
+    expect(screen.queryByText(F.vlmNoVisionModel)).toBeNull();
+  });
+
+  it("still warns when no entry declares vision support", () => {
+    renderPage([TEXT_MODEL]);
+    openFunctionalView();
+
+    expect(screen.getByText(F.vlmNoVisionModel)).toBeTruthy();
   });
 
   it("keeps a stored caption model that names no configured entry", () => {
