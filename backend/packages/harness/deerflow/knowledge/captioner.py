@@ -13,7 +13,6 @@ degrades that image to a filename placeholder without aborting the document.
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import re
 from collections.abc import Mapping, Sequence
@@ -23,8 +22,9 @@ import httpx
 
 from deerflow.config.app_config import get_app_config
 from deerflow.config.rag_config_file import SECRET_ENV_VARS
+from deerflow.knowledge.caption_client import request_caption
 from deerflow.knowledge.parser import ParsedImage
-from deerflow.knowledge.vlm_target import resolve_vlm_target
+from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
 
 logger = logging.getLogger(__name__)
 
@@ -40,32 +40,8 @@ def _placeholder(ref: str) -> str:
     return f"图片 {Path(ref).name}"
 
 
-async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, model: str, base_url: str, api_key: str) -> str:
-    image_b64 = base64.b64encode(image.content).decode("ascii")
-    response = await client.post(
-        base_url.rstrip("/") + "/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:{image.media_type};base64,{image_b64}"}},
-                        {"type": "text", "text": _CAPTION_PROMPT},
-                    ],
-                }
-            ],
-            "max_tokens": 1024,  # Task 15: room for full-page transcription
-            "temperature": 0.15,  # Task 16: slightly lower for more stable OCR
-        },
-    )
-    response.raise_for_status()
-    payload = response.json()
-    caption = (payload.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
-    if not caption:
-        raise ValueError(f"VLM returned an empty caption for {image.ref}")
-    return caption
+async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, target: VlmTarget) -> str:
+    return await request_caption(client, target=target, prompt=_CAPTION_PROMPT, images=[(image.content, image.media_type)])
 
 
 async def caption_images(
@@ -94,8 +70,6 @@ async def caption_images(
         logger.warning("%s is not set; degrading %d image(s) to filename placeholders", api_key_env, len(images))
         return {image.ref: _placeholder(image.ref) for image in images}
 
-    model = target.model
-
     own_client = client is None
     # Task 16: timeout raised to 180s for long-form transcription
     timeout = httpx.Timeout(cfg.rag.vlm_timeout or 180.0, connect=cfg.rag.vlm_connect_timeout or 15.0)
@@ -108,7 +82,7 @@ async def caption_images(
     async def caption_with_semaphore(img: ParsedImage) -> tuple[str, str]:
         async with semaphore:
             try:
-                result = await _caption_one(http, img, model=model, base_url=target.base_url, api_key=api_key)
+                result = await _caption_one(http, img, target=target)
                 return img.ref, result
             except Exception as exc:
                 logger.warning("VLM caption failed for %s (%s); using filename placeholder", img.ref, exc)

@@ -9,8 +9,8 @@ caption 腿：给每镜头的关键帧序列（≤3 帧，来自 ``frames.extrac
 失败 → 该镜头空、计入 failed；failed/total > 30% → degraded（对齐 graph 30% 规则）。
 caption 缺失时镜头卡仍含 asr+ocr（三路并列，幻觉/缺失可被原文对冲，spec §9）。
 
-VLM 目标（模型 id / endpoint / key）由 ``resolve_vlm_target`` 解析：``vlm_model`` 命名
-``models:`` 条目时三者都取自该条目，命名不到条目则回退 ``rag.vlm_base_url`` + rag 文件密钥
+VLM 目标（模型 id / endpoint / key / 方言）由 ``resolve_vlm_target`` 解析：``vlm_model`` 命名
+``models:`` 条目时四者都取自该条目，命名不到条目则回退 ``rag.vlm_base_url`` + rag 文件密钥
 /env。``httpx.AsyncClient`` 可注入（测试用 MockTransport）；Semaphore 按
 ``worker_concurrency`` 限流并发。
 """
@@ -18,7 +18,6 @@ VLM 目标（模型 id / endpoint / key）由 ``resolve_vlm_target`` 解析：``
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -27,7 +26,8 @@ import httpx
 
 from deerflow.config.app_config import get_app_config
 from deerflow.config.rag_config_file import SECRET_ENV_VARS
-from deerflow.knowledge.vlm_target import resolve_vlm_target
+from deerflow.knowledge.caption_client import request_caption
+from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
 
 logger = logging.getLogger(__name__)
 
@@ -53,21 +53,9 @@ class CaptionOutcome:
     degraded: bool = False
 
 
-async def _caption_one_shot(client: httpx.AsyncClient, frames: Sequence[bytes], *, model: str, api_key: str, base_url: str) -> str:
-    """多帧 → 单 caption（一个 message 含 ≤3 个 image_url + 双模式 prompt）。"""
-    content: list[dict] = [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(frame).decode('ascii')}"}} for frame in frames]
-    content.append({"type": "text", "text": _SHOT_CAPTION_PROMPT})
-    response = await client.post(
-        base_url.rstrip("/") + "/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={"model": model, "messages": [{"role": "user", "content": content}], "max_tokens": 1024, "temperature": 0.15},
-    )
-    response.raise_for_status()
-    payload = response.json()
-    caption = (payload.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
-    if not caption:
-        raise ValueError("VLM 返回空 caption")
-    return caption
+async def _caption_one_shot(client: httpx.AsyncClient, frames: Sequence[bytes], *, target: VlmTarget) -> str:
+    """多帧 → 单 caption（一个 message 含 ≤3 个图片块 + 双模式 prompt）。"""
+    return await request_caption(client, target=target, prompt=_SHOT_CAPTION_PROMPT, images=[(frame, "image/jpeg") for frame in frames])
 
 
 async def caption_shots(
@@ -94,7 +82,7 @@ async def caption_shots(
     if model is None:
         model = cfg.rag.video.caption_model or cfg.rag.vlm_model
     target = resolve_vlm_target(cfg, model)
-    model, api_key = target.model, target.api_key
+    api_key = target.api_key
 
     total = len(shot_frames)
     if not api_key:
@@ -113,7 +101,7 @@ async def caption_shots(
             return index, ""  # 无帧镜头：空 caption，不计 failed
         async with semaphore:
             try:
-                return index, await _caption_one_shot(http, frames, model=model, api_key=api_key, base_url=target.base_url)
+                return index, await _caption_one_shot(http, frames, target=target)
             except Exception as exc:
                 logger.warning("镜头 %d caption 失败（%s）；降级空", index, exc)
                 failed += 1
