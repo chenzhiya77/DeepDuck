@@ -616,22 +616,33 @@ Invariants the code has to keep true:
 - **The resolved effort chain is `request > agent > model > None`** (`lead_agent`'s
   `_resolve_runtime_option`), so a non-UI caller (IM channel, scheduler) that supplies no effort still
   gets the model's declared default instead of a bare `None`.
-- **A declaration has to clear the write-time reconciliation** (spec 2026-09-19). `PUT
-  /api/models/config` refuses an `anthropic` entry carrying any of the reasoning-effort trio
-  (`supports_reasoning_effort` / `supported_reasoning_efforts` / `reasoning_effort`), naming the entry
-  in the 422: the protocol names effort `output_config.effort`, so until that translation exists the
-  OpenAI spelling would be forwarded verbatim and rejected by the SDK before the request is sent. This
-  is deliberately temporary — the probe-and-translation spec relaxes it. Two things about the shape:
-  the judgement is **truthiness, not key presence** (the input model defaults the flag to `False`, so
-  the key is always there), and a `config.yaml` entry is the operator's own file, so it is only
-  warned about at build time (next bullet), never blocked.
+- **An effort level is sent under the name its own protocol uses** (spec 2026-09-19). `reasoning_effort`
+  is OpenAI's spelling; the Anthropic Messages protocol carries the same idea as
+  `output_config.effort` — a declared field of `ChatAnthropic`, unlike `reasoning_effort`, which is
+  precisely why an anthropic entry carrying the OpenAI name used to be diverted into `model_kwargs` and
+  rejected by the SDK before the request left the process. `create_chat_model` translates the level
+  **once**, after the two sources are reconciled (so exactly one of `kwargs` /
+  `model_settings_from_config` holds it), and writes `output_config` as a **top-level constructor
+  kwarg** — routing it through `model_kwargs` draws a warning asking for exactly that — **merging**
+  into an `output_config` the entry already declared rather than replacing it, because `format` lives
+  there too. Only our four level names are translated, so the Codex path's `none` passes through
+  untouched, and the `openai` leg is an identity: byte for byte what it always was. The write-time 422
+  that refused an `anthropic` entry carrying the reasoning-effort trio was **removed** in the same
+  change — the fields are translated now, no longer forwarded verbatim, so there is nothing left for
+  that refusal to protect.
+- **A level outside the entry's declared subset falls back to the closest declared one**, and an entry
+  that declares no subset is left alone. The editor and the composer only ever offer the declared
+  subset, so an out-of-range level can only arrive from a request-level override or an agent's own
+  `config.yaml` — neither should be able to produce a request the endpoint would refuse. An empty
+  declaration means "every level is fine", which is what the OpenAI leg has always done; do not turn it
+  into a refusal.
 - **The Anthropic family's generic passthrough table stays intentionally empty.** The OpenAI family's
   unknown-key guard is scoped to `BaseChatOpenAI` on purpose and would false-positive against this
-  family's legitimate passthrough names (`frequency_penalty` and friends), so the factory instead
-  carries a lint **targeted at `reasoning_effort` alone** — the one key this repo can actually put into
-  a `ChatAnthropic` constructor that the protocol will not take. It logs and changes no behaviour.
-  Both warnings embed one shared sentence for what LangChain does with an undeclared kwarg, so the same
-  fact has a single wording.
+  family's legitimate passthrough names (`frequency_penalty` and friends). The one key this repo can
+  actually put into a `ChatAnthropic` constructor that the protocol will not take — `reasoning_effort` —
+  is now translated before it gets there, so this family needs neither the generic table nor the
+  targeted lint that stood in for it until the translation landed. The OpenAI guard still embeds the
+  shared sentence for what LangChain does with an undeclared kwarg.
 
 `POST /api/models/config/validate` (admin-gated, **never persisted**) is the wizard's step-1 probe:
 body `{provider, endpoint, api_key, model}`, response `{ok, model_present, detail}`. The URL is the

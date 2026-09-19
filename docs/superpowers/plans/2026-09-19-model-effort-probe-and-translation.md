@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-19-model-effort-probe-and-translation-design.md](../specs/2026-09-19-model-effort-probe-and-translation-design.md)
-**Status:** 未开工（2026-09-19 起草；**同日两轮改动**：
+**Status:** ✅ **本对三个 Task 全部交付（2026-09-19）** —— Task 1 翻译（`bb137237`）/ Task 2 前端（`8849dc9c`）/ Task 3 文档 + 真栈（本笔）。**起草时**（2026-09-19；**同日两轮改动**：
 **第三轮＝一次对当前代码的审查**（8 处，已全部落进 spec 与本计划）：①"可用集合"有两种、原稿混成了一个 ⇒ 后来只剩**声明子集**一个（见第四轮）；② 上一对那条 422 **不是"换成另一条"而是整条删除**（替代判据"值不在可译集合里"恒真）；③ 上一对刚落地的两个东西原稿没提 —— 工厂那条 anthropic lint（翻译后会变**假警告**）与界面 **9 处 / 5 个文件**的清空落点（原稿影响面漏了 `models-settings-page.tsx::toManagedInput` 与 `core/models/capability.ts`）；④ D3 的"探测优先"只在向导成立；⑤ composer 拿不到探测结果（原稿把它列进影响面是错的）；⑥ 探测在本机端点实测零收益；⑦ 补了两处边界（声明子集为空 / 交集为空≠探不到）；⑧ §4 编号理顺并记下**快照被临时目录清理**的教训。
 **第四轮＝按"先翻译、后探测"拆**：实测本机所有可用端点都拿不到 `capabilities`（见 spec §6 的实测表），而翻译**不依赖探测、单独成立** ⇒ **探测（原 D1）整段摘出本对、登记在 spec §6**，等拿到会填能力块的端点再另起一对。本计划随之收成**三个 Task**（翻译 / 前端 / 文档+真栈），原来的"Task 1 探针"整条去掉。**文件名保留旧名**（`probe` 已名不副实）——已交付的上一对 spec 里有一条链接指向它。
 **Task 2 已交付（2026-09-19）**：那两格恢复 + 按 5 文件撤回上一对（入参整个删掉）。RED 4 红 / 2 绿 → 全量 **238 文件 / 2570 用例 / 0 失败**、`pnpm check` 零诊断、prettier 零新增区块 → neuter **4 / 4**（独有受害者不同，两半可分辨）；编辑器已与上一对之前**逐字节一致**。
@@ -91,14 +91,22 @@
 
 ## Task 3 — 文档同步与真栈验收
 
-- [ ] `backend/AGENTS.md`：记"**档位按协议翻译**（`output_config.effort` / `reasoning_effort`）、越界按**声明子集**回退"。
+- [x] `backend/AGENTS.md`：记"**档位按协议翻译**（`output_config.effort` / `reasoning_effort`）、越界按**声明子集**回退"。
       ⚠️ **同时要改掉上一对写下的两处**（否则文档自相矛盾）：① 那条"写入期对账"的 invariant 里写着"**这条拒绝是暂时的** ⇒ 后续那对会放开"——本对已把它**删掉**，这句要改成过去式或直接删；② 那条"Anthropic 家族通用表有意留空 + 工厂那条只查 `reasoning_effort` 的 lint"——**lint 本对已撤**（翻译之后它没有理由存在），这条要重写。
-- [ ] `frontend/AGENTS.md`：那两格**按声明子集渲染**；**同时改掉上一对写下的**"两格由 provider 决定渲不渲染、提交时清空"（本对已撤回）。
-- [ ] **真栈验收**：起真栈 ⇒ 给一条 `use=langchain_anthropic:ChatAnthropic` 的条目填上档位 ⇒ 保存 ⇒ 打一次真实调用，确认请求体是 `output_config.effort` 且**不出现** `reasoning_effort`。⚠️ **口径按 Task 0 的核实收口（甲案）**：本机唯一那条 anthropic 条目缺 `x-opencode-session` ⇒ "模型正常回话"这一句**做不到**（会 400，那是另一件已登记的事）⇒ 本对真栈**只验请求体形状**（不出网的 MockTransport 或抓请求体），**不声称回话**；**写清用的是哪个端点、未打 `api.anthropic.com`**。
+      **实测**：上一对那条"写入期对账"整条**换成**两条新 invariant（翻译 + 回退），拒绝那句写成过去式（"was **removed** in the same change — the fields are translated now, so there is nothing left for that refusal to protect"）；"家族通用表留空"那条**重写**成"表仍留空、但**不再需要**那条针对性 lint"（并说明理由：唯一能进这个构造器的坏键现在被翻译走了），末尾那句"两条警告共用一句机制措辞"随之收成"OpenAI 那条仍嵌着它"。**该文件没有 prettier 门禁**（上一对 Task 4 已查实：仓库根无 prettier 配置），所以只核内容。
+- [x] `frontend/AGENTS.md`：那两格**按声明子集渲染**；**同时改掉上一对写下的**"两格由 provider 决定渲不渲染、提交时清空"（本对已撤回）。
+      **实测**：整段重写成"**按声明渲染、不按 provider**"，并写清那条容易搞反的边界（**可用那一行恒在**——它是唯一声明入口；只有默认档那行等非空子集）；上一对的三条 helper 名字、三条 payload 路径清空、`"can send"` 措辞**全部删掉**，代之以"撤回"的过去式一句 + 后端会翻译这条理由。`prettier` **HEAD 7 → 工作树 7 个偏离区块**（零新增；且 7 条全是我没碰的既有 `*x*` 强调行）。
+- [x] **真栈验收**：起真栈 ⇒ 给一条 `use=langchain_anthropic:ChatAnthropic` 的条目填上档位 ⇒ 保存 ⇒ 打一次真实调用，确认请求体是 `output_config.effort` 且**不出现** `reasoning_effort`。⚠️ **口径按 Task 0 的核实收口（甲案）**：本机唯一那条 anthropic 条目缺 `x-opencode-session` ⇒ "模型正常回话"这一句**做不到**（会 400，那是另一件已登记的事）⇒ 本对真栈**只验请求体形状**（不出网的 MockTransport 或抓请求体），**不声称回话**；**写清用的是哪个端点、未打 `api.anthropic.com`**。
       ⚠️ 若用本机现成的 `minimax-m3`（opencode Go），它**另有**缺 `x-opencode-session` 头导致的 400 —— 那是**另一个已登记的问题**，别混进本对的结论（见 Task 0#3）。
       ⚠️ 探测那一半**不在本对验收范围**（已摘出，见 spec §6）。
-- [ ] **收尾**：配置**逐字节还原**（动手前 `cp` 过原始字节；网关在 Windows 上写 **CRLF + 2 空格**；**快照别只放系统临时目录**——上一轮我的那份被清理过，见 spec §6）、密钥不落盘、不新建残留文件。
-- [ ] **门禁**：`frontend/AGENTS.md` 的 prettier 与 HEAD 同数（**必须在 `frontend/` 里跑**）；`models_config.json` md5 未变。
+      **实测（甲案，零出网、零改动他的配置）**：**没有**用他 :8001 上那条 `minimax-m3`，而是**另起一个隔离实例**跑当前工作树代码——`DEER_FLOW_PROJECT_ROOT` / `DEER_FLOW_CONFIG_PATH` / `DEER_FLOW_MODELS_CONFIG_PATH` 三个环境变量全指向仓库外的一个 scratch 根（`E:\app\python\agent\_snapshots\t3root`，`config.yaml` 由他的那份派生但**删掉 `models:` 块**、`sqlite_dir` 改到 scratch 里），`DEER_FLOW_AUTH_DISABLED=1` + `:8099`；条目 `t3-anthropic-probe`（`use=langchain_anthropic:ChatAnthropic`、声明 `[low, medium, high]` / 默认 `medium`）。**端点是一个本机 recorder**（`127.0.0.1:8098`，Anthropic 形状应答 + 落盘请求体）⇒ **未打 `api.anthropic.com`，也未打任何云端点**，全程不出网。
+      - **腿①（写入期，就是上一对被 422 的那份载荷）**：`PUT /api/models/config` **200**（首次漏了 `provider` 字段 ⇒ 被 Pydantic 以 `missing provider` 挡回，补上即 200——**那不是本对的规矩**，是输入模型的必填项）；重读文件：三件套**原样落盘**（`supports_reasoning_effort=true` / `['low','medium','high']` / `medium`）、**CRLF**。⇒ **上一对那条 422 确实已经放开**。
+      - **腿②（发送期）**：`POST /api/input-polish` ⇒ **200**（`{"rewritten_text":"ok","changed":true}`，回话来自 recorder）。recorder 抓到的请求体：**`output_config: {"effort": "medium"}`**、**无 `reasoning_effort`**、**无 `model_kwargs`**；顶层键 `['max_tokens','messages','model','output_config','system']`，路径 `/v1/messages`。⇒ 与 spec §4#3 逐字对应。
+      - **对照组（同一份声明换 OpenAI 腿）**：另加一条 `t3-openai-control`（`use=langchain_openai:ChatOpenAI`，声明与默认**逐字相同**）⇒ 请求体是 **`reasoning_effort='medium'`**、**无 `output_config`**。⚠️ 这一格第一版**跑错了**：我先在内存里改 `cfg.models[0].use`，但 `AppConfig` 的**名字索引在载入时就建好了**（`get_model_config` 仍返回旧条目）⇒ 两次都造的 `ChatAnthropic`、两格都显示 `output_config`。**判据：要换腿就换文件再重新载入，别改内存里那份的 `use`**。
+- [x] **收尾**：配置**逐字节还原**（动手前 `cp` 过原始字节；网关在 Windows 上写 **CRLF + 2 空格**；**快照别只放系统临时目录**——上一轮我的那份被清理过，见 spec §6）、密钥不落盘、不新建残留文件。
+      **实测**：**他的 `models_config.json` 从头到尾没被碰过** —— md5 仍是 **`b8b729ddd624e7ea1587efb6466e70b6`**（与 Task 0 那份快照一致），因为本轮的写入全落在 scratch 根里；**不欠还原**。他的 `:8001`（PID 9368）与 `:3000` 全程未动、验收结束时仍在听。隔离实例与 recorder 均已 `taskkill /T`（`:8098`/`:8099` 已释放）；**密钥不落盘**：scratch 的 `config.yaml` / `models_config.json` 里那把是**我现造的假值**（`t3-local-key`），真实密钥一个字节都没复制出去。⚠️ 一条**已知副作用**：那个 scratch 实例启动时连了本机 `:6333` 的 Qdrant（`config.yaml` 里 `rag.qdrant_url` 指向它），只做了**既有的** `GET collections` 与 `PUT …/index`（索引创建，幂等）；它的集合清单与他的实例共用，**没有新建集合、没有写入点**。
+- [x] **门禁**：`frontend/AGENTS.md` 的 prettier 与 HEAD 同数（**必须在 `frontend/` 里跑**）；`models_config.json` md5 未变。
+      **实测**：`frontend/AGENTS.md` **HEAD 7 → 工作树 7** 个偏离区块（零新增；7 条全是既有的 `*x*` 强调行，**我新写的段落一条都不在里面**）；`models_config.json` md5 未变（见上）。
       ⚠️ **`backend/AGENTS.md` 没有 prettier 门禁**（上一对 Task 4 已查实：仓库根没有 prettier 配置；pre-commit 那条只管 `frontend/` 且 `types_or` 不含 markdown）⇒ 它的"与 HEAD 同数"只能看内容、不能用 prettier 数字衡量。
 
 ---
