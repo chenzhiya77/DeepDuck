@@ -6,6 +6,7 @@
 **Status:** 未开工（2026-09-19 起草；**同日两轮改动**：
 **第三轮＝一次对当前代码的审查**（8 处，已全部落进 spec 与本计划）：①"可用集合"有两种、原稿混成了一个 ⇒ 后来只剩**声明子集**一个（见第四轮）；② 上一对那条 422 **不是"换成另一条"而是整条删除**（替代判据"值不在可译集合里"恒真）；③ 上一对刚落地的两个东西原稿没提 —— 工厂那条 anthropic lint（翻译后会变**假警告**）与界面 **9 处 / 5 个文件**的清空落点（原稿影响面漏了 `models-settings-page.tsx::toManagedInput` 与 `core/models/capability.ts`）；④ D3 的"探测优先"只在向导成立；⑤ composer 拿不到探测结果（原稿把它列进影响面是错的）；⑥ 探测在本机端点实测零收益；⑦ 补了两处边界（声明子集为空 / 交集为空≠探不到）；⑧ §4 编号理顺并记下**快照被临时目录清理**的教训。
 **第四轮＝按"先翻译、后探测"拆**：实测本机所有可用端点都拿不到 `capabilities`（见 spec §6 的实测表），而翻译**不依赖探测、单独成立** ⇒ **探测（原 D1）整段摘出本对、登记在 spec §6**，等拿到会填能力块的端点再另起一对。本计划随之收成**三个 Task**（翻译 / 前端 / 文档+真栈），原来的"Task 1 探针"整条去掉。**文件名保留旧名**（`probe` 已名不副实）——已交付的上一对 spec 里有一条链接指向它。
+**Task 2 已交付（2026-09-19）**：那两格恢复 + 按 5 文件撤回上一对（入参整个删掉）。RED 4 红 / 2 绿 → 全量 **238 文件 / 2570 用例 / 0 失败**、`pnpm check` 零诊断、prettier 零新增区块 → neuter **4 / 4**（独有受害者不同，两半可分辨）；编辑器已与上一对之前**逐字节一致**。
 **Task 1 已交付（2026-09-19）**：翻译落地 + 删掉上一对那条 422 + 撤掉它那条 lint。RED **4 红 / 1 绿**（第 5 条是控制组）→ GREEN 窄面 **130 绿** → neuter **1 红 / 13 红**（都回退后复跑回 130 绿）→ 全量 **136 红全为基线**、双向 diff **零新增**。
 **第五轮＝Task 0 三项核实已完成（2026-09-19）**，结论写回下方 Task 0，并**就地更正了 5 处**：① **翻译的落点是顶层构造参数、不是 `model_kwargs`**（`output_config` 是 `ChatAnthropic` 的声明字段；实测顶层写法**无警告**，走 `model_kwargs` 会打一句 should be specified explicitly）；② 补 **合并而非覆盖**（`output_config` 里还有 `format`）；③ 补 **翻译表只认我们那四档**（Codex 写 `none`，认不出的原样放过）；④ 界面那个入参**可以直接删掉**（新判据＝`value.supportedEfforts.length > 0`，编辑器手上就有 `value`）⇒ Task 2 从"换语义"变成"删入参 + 删三处传参"；⑤ §5 正文那个不准的"9 处"改成 **12 个使用点**（与其表格逐项计数一致）。）
 
@@ -73,13 +74,20 @@
 
 ## Task 2 — 前端：那两格恢复 + 撤回上一对（D3）
 
-- [ ] **RED**（`frontend/tests/unit/settings/models-capability-wizard.dom.test.tsx` / `models-settings-page.dom.test.tsx`）：
+- [x] **RED**（`frontend/tests/unit/settings/models-capability-wizard.dom.test.tsx` / `models-settings-page.dom.test.tsx`）：
   1. anthropic 条目那两格**重新出现**，候选就是**声明子集**（对照组：声明子集为空时不出现）；
   2. **撤回清空**：一条 anthropic 条目带三件套 ⇒ 保存后这三个字段**照旧是提交上去的值**（不再被清空）；
-  3. **对照组**：`openai-compatible` 那条腿一字未变（既有"改能力子集"用例仍绿）。
-- [ ] **GREEN**：**删掉 `ModelCapabilityEditor` 的 `canSendEffortLevels` 入参**（Task 0 核实：新判据＝`value.supportedEfforts.length > 0`，编辑器手上就有 `value`），渲染条件改成看 `value`；三个调用点不再传这个 prop；**按 spec §5 那张表逐处撤回上一对**（**5 个文件、12 个使用点**）——`core/models/capability.ts` 的三个 helper、编辑器入参、编辑弹窗 2 处、添加弹窗 5 处（含种子过滤与 provider 切换时的清空）、**`models-settings-page.tsx::toManagedInput`**（最容易漏：整集合 PUT 的必经之路）。`reasoning-effort.ts`（composer）**不动**。
-- [ ] **neuter 两条**：① 把判据改回"provider 是不是 anthropic"（anthropic ⇒ 不渲染）⇒ 用例 1 红；② **只恢复渲染、不撤回提交时的清空** ⇒ 用例 2 红（neuter 只回退"清空"这一半，别连渲染一起还原，否则分不清哪半有牙）。
-- [ ] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier **逐文件与 HEAD 比"偏离区块数"**（不是行数——这些文件本来就有债、行数会随体量涨）；**全量前端**。
+  3. **对照组**：`openai-compatible` 那条腿一字未变（既有“改能力子集”用例仍绿）。
+      **实测 RED = 4 红 / 2 绿**：四条红的正是“上一对留下、现在必须翻过来”的那几条（两条断言那两格**找不到**、两条断言 payload 被清成 `false`）；两条控制组（向导的建议、编辑弹窗里 openai 那侧）**首跑即绿**，且在新旧两界都成立。
+      ⚠️ **计划里 RED case 1 的控制组写错了（就地更正）**：原文写“对照组：声明子集为空时**不出现**”。**那条不成立** —— 「可用推理深度」那一行是**唯一的声明入口**，藏掉它等于让“没有预填建议的模型”**永远填不上档位**；空声明只让**默认档那一行**消失（既有行为）。**依据**：`git show bf6fd39e^:…/model-capability-editor.tsx` 显示上一对**之前**就是“可用那一行不设门、只有默认档那行按子集判”。⇒ 用例改成“**空声明时可用那一行在、默认那一行不在**”，它同时成了“撤回是否到位”的一条正向断言。
+- [x] **GREEN**：**删掉 `ModelCapabilityEditor` 的 `canSendEffortLevels` 入参**（Task 0 核实：新判据＝`value.supportedEfforts.length > 0`，编辑器手上就有 `value`），渲染条件改成看 `value`；三个调用点不再传这个 prop；**按 spec §5 那张表逐处撤回上一对**（**5 个文件、12 个使用点**）——`core/models/capability.ts` 的三个 helper、编辑器入参、编辑弹窗 2 处、添加弹窗 5 处（含种子过滤与 provider 切换时的清空）、**`models-settings-page.tsx::toManagedInput`**（最容易漏：整集合 PUT 的必经之路）。`reasoning-effort.ts`（composer）**不动**。
+      **实测**：编辑器**去掉外层包裹**、三个调用点不再传 prop（入参整个删掉，判据由 `value.supportedEfforts.length > 0` 承担）；`capability.ts` 的三个 helper 与 `ProviderId` 导入一并删除（`src/` 里三个名字 grep 归零）；编辑弹窗、添加弹窗、设置页各自撤回。**编辑器与上一对之前那份逐字节一致**（`git diff acc23f4f -- <编辑器>` 为空 ⇒ “撤回”是可验证的，不是“看起来像”）。`pnpm check` 零诊断；全量前端 **238 文件 / 2570 用例 / 0 失败**。
+- [x] **neuter 两条**：① 把判据改回"provider 是不是 anthropic"（anthropic ⇒ 不渲染）⇒ 用例 1 红；② **只恢复渲染、不撤回提交时的清空** ⇒ 用例 2 红（neuter 只回退“清空”这一半，别连渲染一起还原，否则分不清哪半有牙）。
+      **实测：两条各 4 红，且“独有的那一条”互不相同** ⇒ 两半**可分辨**（不会互相顶替）：① 把判据改回“看 provider”（`canSendEffortLevels` 重新传进编辑器）⇒ 4 红，**独有**的是 `keeps the axis declarable…`（一条**渲染**断言）；② 只把清空放回来（编辑器保持正确、三个 payload 路径重新清）⇒ 4 红，**独有**的是页面那条 payload 用例。两条都**回退后复跑确认回到 2570 绿**。
+- [x] **门禁**：`pnpm check`（eslint + tsc，**应为零诊断**）；prettier **逐文件与 HEAD 比"偏离区块数"**（不是行数——这些文件本来就有债、行数会随体量涨）；**全量前端**。
+      **实测**：`pnpm check` **零诊断**；prettier **逐文件与 HEAD 比“偏离区块数”零新增**（`capability.ts` 1→1、编辑器 0→0、编辑弹窗 **2→0**、添加弹窗 6→6、设置页 0→0、两份测试 17→17 / 11→11）；**全量前端 238 文件 / 2570 用例 / 0 失败**。
+      ⚠️ **prettier 这关拦住了我的第一版**：照抄“上一对之前的原形”会把**它自带的格式债**一起搬回来（`models-edit-dialog.tsx` 的 import 与 `useState` 折行、`models-settings-page.tsx` 那一行的折法、`capability.ts` 末尾多一个空行）⇒ 三个文件各多 1 个区块。**按 prettier 的排法写回同样的赋值/标签**（纯格式、零行为变化）后归零。
+      ⚠️⚠️ **我在这一轮两次自己删多了，都记在这**：① 计划外的一次是把编辑器**外层包裹去掉后忘了“可用那行本来不设门”**（当时我按“集合为空才不渲染”改，那会破坏可声明性）⇒ 已按 `bf6fd39e^` 的原形纠正；② **回退 neuter ① 时我“按行名过滤”（把每一行 `      )}` 都删掉）**，把 `{suggested && (` 与 `cn(` 的闭合一起删了 ⇒ swc 直接拒绝该模块，报的是**文件级失败**（连无关的 `functional-models` 也挂）⇒ 只好**用 `acc23f4f` 那份整体覆盖**编辑器（它本来就该一模一样）。**教训：回退别按“行内容”过滤**（同一行在别处会合法地重复出现）；改用**小锚点替换 + 断言锚点唯一**，并且**长跑前先跑一次 tsc**（这次它 2 秒就指出了问题）。
 
 ## Task 3 — 文档同步与真栈验收
 

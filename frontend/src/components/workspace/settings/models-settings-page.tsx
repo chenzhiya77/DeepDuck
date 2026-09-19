@@ -16,7 +16,6 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useI18n } from "@/core/i18n/hooks";
 import { MASKED_API_KEY, ModelsConfigRequestError } from "@/core/models/api";
-import { canSendEffortLevels } from "@/core/models/capability";
 import { useModelsConfig, useSaveModelsConfig } from "@/core/models/hooks";
 import type {
   ManagedModel,
@@ -37,13 +36,8 @@ import { SettingsSection } from "./settings-section";
  * field dropped here is erased from the stored model on the next save of any
  * other model.
  *
- * The effort fields are the one exception, and they are cleared rather than carried
- * (spec 2026-09-19 §2 D3): a row whose provider cannot be handed them is refused by the
- * write-time guard, so re-serializing an untouched row would 422 the whole payload and make
- * saving any *other* row impossible. The window axis and the capability pair are untouched.
  */
 function toManagedInput(model: ManagedModel): ManagedModelInput {
-  const canSendEffort = canSendEffortLevels(model.provider);
   return {
     provider: (model.provider ?? "openai-compatible") as ProviderId,
     name: model.name,
@@ -54,16 +48,10 @@ function toManagedInput(model: ManagedModel): ManagedModelInput {
     endpoint: model.endpoint ?? undefined,
     supports_thinking: model.supports_thinking,
     supports_vision: model.supports_vision,
-    supports_reasoning_effort: canSendEffort
-      ? model.supports_reasoning_effort
-      : false,
+    supports_reasoning_effort: model.supports_reasoning_effort,
     supported_context_windows: model.supported_context_windows ?? undefined,
-    supported_reasoning_efforts: canSendEffort
-      ? (model.supported_reasoning_efforts ?? undefined)
-      : undefined,
-    reasoning_effort: canSendEffort
-      ? (model.reasoning_effort ?? undefined)
-      : undefined,
+    supported_reasoning_efforts: model.supported_reasoning_efforts ?? undefined,
+    reasoning_effort: model.reasoning_effort ?? undefined,
     context_window: model.context_window ?? undefined,
   };
 }

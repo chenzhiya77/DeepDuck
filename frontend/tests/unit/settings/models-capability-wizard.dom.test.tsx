@@ -380,13 +380,13 @@ describe("ModelsAddDialog two-step wizard", () => {
     expect(screen.getByLabelText(M.apiKey)).toHaveProperty("value", "sk-shared");
   });
 
-  // ── The protocol decides whether the effort rows exist (spec 2026-09-19 §2 D3) ──
-  // An anthropic entry cannot be handed the OpenAI effort vocabulary yet, so the rows go away
-  // and nothing may be submitted through them. `o3-mini` is curated WITH an effort subset, so
-  // a seed that ignored the provider would put four levels into a state whose rows no longer
-  // render them — invisible on screen and still in the payload.
+  // ── The declaration decides whether the effort rows exist (spec 2026-09-19 §2 D3) ──
+  // The factory translates a declared level into whatever the protocol calls it, so a provider
+  // no longer gates the rows: an entry that declares levels edits them, and one that declares
+  // none shows no axis. `o3-mini` is curated WITH an effort subset, so the seed exercises the
+  // first half on a provider that used to be refused.
 
-  it("offers no effort rows on an anthropic entry, and submits none", async () => {
+  it("offers the declared effort levels on an anthropic entry, and submits them", async () => {
     const onAdd = rs.fn();
     renderAddDialog(onAdd);
     openProviderSelect();
@@ -400,25 +400,26 @@ describe("ModelsAddDialog two-step wizard", () => {
         screen.getByRole("button", { name: M.supportedWindows }),
       ).toBeDefined(),
     );
-    // The two rows are gone …
+    // `o3-mini` is curated with an effort subset, so both rows are back: what decides is the
+    // entry's own declaration — the factory translates the level for whichever protocol.
     expect(
-      screen.queryByRole("button", { name: M.supportedEfforts }),
-    ).toBeNull();
-    expect(screen.queryByLabelText(M.defaultEffort)).toBeNull();
+      screen.getByRole("button", { name: M.supportedEfforts }),
+    ).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
 
-    // … and so is anything that could have ridden in through the seed. Hiding alone leaves
-    // the value in the payload, where the write-time guard refuses the whole collection.
     const entries = onAdd.mock.calls[0]?.[0] as ManagedModelInput[];
-    expect(entries[0]?.supports_reasoning_effort).toBe(false);
-    expect(entries[0]?.supported_reasoning_efforts).toBeUndefined();
-    expect(entries[0]?.reasoning_effort).toBeUndefined();
+    expect(entries[0]?.supports_reasoning_effort).toBe(true);
+    expect(entries[0]?.supported_reasoning_efforts).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
   });
 
-  it("still offers the curated effort suggestion when the provider can send it", async () => {
+  it("still offers the curated effort suggestion when the entry declares levels", async () => {
     // Control for the case above: the same curated id on the default provider keeps both
-    // rows, prefilled — so the rule is the provider's, not the model id's.
+    // rows, prefilled — so the rule is the declaration, not the model id and not the provider.
     const onAdd = rs.fn();
     renderAddDialog(onAdd);
     fillIdentity({ ids: ["o3-mini"] });
@@ -451,22 +452,18 @@ describe("ModelsAddDialog two-step wizard", () => {
     ]);
   });
 
-  it("drops the effort picks when the provider is switched away from them", async () => {
-    // The identity step is where a provider changes, so picks made on a previous pass through
-    // step 2 can outlive the provider that allowed them.
+  it("keeps the effort rows when the provider is switched", async () => {
+    // Switching providers changes nothing about the axis: the rows are gated on the
+    // declaration, not on the protocol, so the same id edits the same way on either side.
     const onAdd = rs.fn();
     renderAddDialog(onAdd);
-    fillIdentity({ ids: ["model-a"] });
+    fillIdentity({ ids: ["o3-mini"] });
     fireEvent.click(screen.getByRole("button", { name: M.next }));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: M.supportedWindows }),
       ).toBeDefined(),
     );
-    openEffortMenu();
-    await pickEffort(EFFORT.reasoningEffortLow);
-    await pickEffort(EFFORT.reasoningEffortMedium);
-    closeWindowMenu();
 
     fireEvent.click(screen.getByRole("button", { name: M.back }));
     openProviderSelect();
@@ -478,12 +475,22 @@ describe("ModelsAddDialog two-step wizard", () => {
       ).toBeDefined(),
     );
 
+    // Both rows are still there after the switch …
+    expect(
+      screen.getByRole("button", { name: M.supportedEfforts }),
+    ).toBeDefined();
+    expect(screen.getByLabelText(M.defaultEffort)).toBeDefined();
+
     fireEvent.click(screen.getByRole("button", { name: M.addSubmit }));
 
+    // … and the seeded declaration is submitted as-is.
     const entries = onAdd.mock.calls[0]?.[0] as ManagedModelInput[];
-    expect(entries[0]?.supports_reasoning_effort).toBe(false);
-    expect(entries[0]?.supported_reasoning_efforts).toBeUndefined();
-    expect(entries[0]?.reasoning_effort).toBeUndefined();
+    expect(entries[0]?.supports_reasoning_effort).toBe(true);
+    expect(entries[0]?.supported_reasoning_efforts).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
   });
 });
 
@@ -618,11 +625,10 @@ describe("ModelsEditDialog capability editor", () => {
     expect(windowsSummary()).toContain(M.subsetSelected(1));
   });
 
-  it("clears a stored anthropic entry's effort levels on an untouched save", async () => {
-    // The core case (spec 2026-09-19 §2 D3): a row written before the guard existed still
-    // carries the three fields, and the provider is read-only here — so hiding the rows and
-    // saving unchanged is the only way an admin can repair it, and the payload is the only
-    // place the repair shows.
+  it("keeps a stored anthropic entry's effort levels on an untouched save", async () => {
+    // The declaration is the only thing that gates these rows, so an anthropic entry that
+    // declares levels edits them like any other, and saving it unchanged carries exactly what
+    // was declared — nothing is cleared on the way out.
     const onSave = rs.fn();
     renderEditDialog(onSave, {
       provider: "anthropic",
@@ -632,18 +638,34 @@ describe("ModelsEditDialog capability editor", () => {
     });
 
     expect(
-      screen.queryByRole("button", { name: M.supportedEfforts }),
-    ).toBeNull();
-    expect(screen.queryByLabelText(M.defaultEffort)).toBeNull();
+      screen.getByRole("button", { name: M.supportedEfforts }),
+    ).toBeDefined();
+    expect(screen.getByLabelText(M.defaultEffort)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
 
     const input = onSave.mock.calls[0]?.[0] as ManagedModelInput;
-    expect(input.supports_reasoning_effort).toBe(false);
-    expect(input.supported_reasoning_efforts).toBeUndefined();
-    expect(input.reasoning_effort).toBeUndefined();
+    expect(input.supports_reasoning_effort).toBe(true);
+    expect(input.supported_reasoning_efforts).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(input.reasoning_effort).toBe("medium");
     // The window axis is untouched by this rule.
     expect(input.name).toBe("claude-sonnet-4");
+  });
+
+  it("keeps the axis declarable on an entry that declares no levels", () => {
+    // An empty declaration hides the *default* row — there is nothing to pick a default from —
+    // but never the subset row: that dropdown is the only way to declare levels at all, so
+    // hiding it would leave an uncurated model permanently undeclarable.
+    renderEditDialog(rs.fn(), { provider: "anthropic" });
+
+    expect(
+      screen.getByRole("button", { name: M.supportedEfforts }),
+    ).toBeDefined();
+    expect(screen.queryByLabelText(M.defaultEffort)).toBeNull();
   });
 
   it("keeps the effort rows for a provider that can send them", () => {

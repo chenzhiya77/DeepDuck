@@ -15,15 +15,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/core/i18n/hooks";
 import { MASKED_API_KEY } from "@/core/models/api";
 import {
-  canSendEffortLevels,
   capabilityInputFromValue,
-  capabilityValueForProvider,
   capabilityValueFromModel,
   emptyCapabilityValue,
   type ModelCapabilityValue,
 } from "@/core/models/capability";
-import type { ManagedModel, ManagedModelInput, ProviderId } from "@/core/models/types";
-import { AUTOFILL_OFF_INPUT_PROPS, SECRET_INPUT_AUTOFILL_PROPS } from "@/lib/input-autofill";
+import type {
+  ManagedModel,
+  ManagedModelInput,
+  ProviderId,
+} from "@/core/models/types";
+import {
+  AUTOFILL_OFF_INPUT_PROPS,
+  SECRET_INPUT_AUTOFILL_PROPS,
+} from "@/lib/input-autofill";
 
 import { InfoTip } from "./info-tip";
 import { ModelCapabilityEditor } from "./model-capability-editor";
@@ -56,9 +61,8 @@ export function ModelsEditDialog({
   const [apiKey, setApiKey] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [maxTokens, setMaxTokens] = useState("");
-  const [capability, setCapability] = useState<ModelCapabilityValue>(
-    emptyCapabilityValue,
-  );
+  const [capability, setCapability] =
+    useState<ModelCapabilityValue>(emptyCapabilityValue);
   const displayNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -72,10 +76,6 @@ export function ModelsEditDialog({
 
   if (!model) return null;
 
-  // The provider is read-only here (identity is frozen), so this is a property of the row,
-  // not of a control: an anthropic row simply has no effort axis to edit or to submit.
-  const canSendEffort = canSendEffortLevels(model.provider);
-
   function handleSubmit() {
     if (!model) return;
     const parsedMaxTokens = maxTokens.trim() ? Number(maxTokens) : undefined;
@@ -88,11 +88,7 @@ export function ModelsEditDialog({
       endpoint: endpoint.trim() || undefined,
       max_tokens:
         parsedMaxTokens && parsedMaxTokens > 0 ? parsedMaxTokens : undefined,
-      // Hiding the rows does not clear what a stored row already carries: saving this dialog
-      // unchanged is how an admin repairs a row written before the guard existed.
-      ...capabilityInputFromValue(
-        capabilityValueForProvider(capability, model.provider),
-      ),
+      ...capabilityInputFromValue(capability),
     });
     onOpenChange(false);
   }
@@ -166,7 +162,6 @@ export function ModelsEditDialog({
               <ModelCapabilityEditor
                 value={capability}
                 onChange={setCapability}
-                canSendEffortLevels={canSendEffort}
               />
 
               <div className="space-y-1.5">

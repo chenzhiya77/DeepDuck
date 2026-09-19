@@ -3,7 +3,6 @@ import type { CapabilitySuggestion } from "./capability-registry";
 import type {
   ManagedModel,
   ManagedModelInput,
-  ProviderId,
   ReasoningEffortLevel,
 } from "./types";
 
@@ -212,39 +211,4 @@ export function capabilityInputFromValue(
     supports_reasoning_effort: value.supportedEfforts.length > 0,
     ...capabilityFieldsFromShared(capabilityValueToShared(value)),
   };
-}
-
-/**
- * Whether this leg can be handed OpenAI-style effort levels at all (spec 2026-09-19 §2 D3).
- *
- * This is about *our* ability to send the fields, not the protocol's ability to express
- * effort: the Anthropic Messages protocol names effort `output_config.effort`, and the
- * translation step is not built yet, so an Anthropic entry must declare none rather than
- * declare them and be refused at write time. The name says "can send" for exactly that
- * reason — a predicate called "supports effort levels" would turn into a lie the day the
- * translation lands, because the protocol was never the thing that was missing.
- */
-export function canSendEffortLevels(
-  provider: ProviderId | string | null | undefined,
-): boolean {
-  return provider !== "anthropic";
-}
-
-/** The same value with the whole effort axis emptied; windows and the capability pair stay. */
-export function withoutEffortAxis(
-  value: ModelCapabilityValue,
-): ModelCapabilityValue {
-  return { ...value, supportedEfforts: [], defaultEffort: undefined };
-}
-
-/**
- * What to serialize for one provider. Every payload path goes through this, because hiding the
- * rows is not enough: a value the editor no longer shows still rides out in the payload, and
- * the write-time guard refuses the whole collection over one such entry.
- */
-export function capabilityValueForProvider(
-  value: ModelCapabilityValue,
-  provider: ProviderId | string | null | undefined,
-): ModelCapabilityValue {
-  return canSendEffortLevels(provider) ? value : withoutEffortAxis(value);
 }

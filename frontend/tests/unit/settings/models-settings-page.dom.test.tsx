@@ -217,14 +217,13 @@ describe("ModelsSettingsPage capability round trip", () => {
     });
   });
 
-  it("clears an untouched anthropic row's effort levels on the same save", async () => {
+  it("keeps an untouched anthropic row's effort levels on the same save", async () => {
     // The collection is written wholesale, so an anthropic row the admin never opened is on
-    // the wire too. Its declaration is refused by the write-time guard (spec 2026-09-19 §2 D1),
-    // so re-serializing a neighbour's edit without clearing it 422s the whole PUT — editing an
-    // unrelated model would be impossible until that row is repaired.
+    // the wire too. Its declaration is carried through as-is: the level is translated for that
+    // protocol at build time, so nothing here needs to strip it.
     setConfig([
       uiModel({
-        name: "legacy-anthropic",
+        name: "declared-anthropic",
         provider: "anthropic",
         supports_reasoning_effort: true,
         supported_reasoning_efforts: ["low", "medium", "high"],
@@ -240,12 +239,16 @@ describe("ModelsSettingsPage capability round trip", () => {
     await waitFor(() => expect(saveMock).toHaveBeenCalled());
     const payload = (saveMock.mock.calls[0]?.[0] ?? []) as ManagedModelInput[];
     expect(payload.map((model) => model.name)).toEqual([
-      "legacy-anthropic",
+      "declared-anthropic",
       "plain",
     ]);
-    expect(payload[0]?.supports_reasoning_effort).toBe(false);
-    expect(payload[0]?.supported_reasoning_efforts).toBeUndefined();
-    expect(payload[0]?.reasoning_effort).toBeUndefined();
+    expect(payload[0]?.supports_reasoning_effort).toBe(true);
+    expect(payload[0]?.supported_reasoning_efforts).toEqual([
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(payload[0]?.reasoning_effort).toBe("medium");
   });
 });
 

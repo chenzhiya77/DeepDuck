@@ -24,12 +24,9 @@ import { useI18n } from "@/core/i18n/hooks";
 import { validateModelsConfig } from "@/core/models/api";
 import { expandBatchToEntries } from "@/core/models/batch";
 import {
-  canSendEffortLevels,
-  capabilityValueForProvider,
   capabilityValueFromSuggestion,
   capabilityValueToShared,
   emptyCapabilityValue,
-  withoutEffortAxis,
   type ModelCapabilityValue,
 } from "@/core/models/capability";
 import { suggestCapabilities } from "@/core/models/capability-registry";
@@ -146,19 +143,12 @@ export function ModelsAddDialog({
     const seed = capabilityValueFromSuggestion(
       suggestCapabilities(ids[0] ?? ""),
     );
-    // The curated table matches on the model id alone, so it can suggest an effort subset for
-    // an entry whose provider cannot be handed one (spec 2026-09-19 §2 D3). Seeding it anyway
-    // would leave levels in state with no row left to show or clear them — and would still
-    // label the form "suggested" on the strength of values it no longer holds.
-    const seeded = canSendEffortLevels(provider)
-      ? seed
-      : withoutEffortAxis(seed);
-    setCapability(seeded);
+    setCapability(seed);
     setSuggested(
-      seeded.supportedWindows.length > 0 ||
-        seeded.supportedEfforts.length > 0 ||
-        seeded.supportsThinking ||
-        seeded.supportsVision,
+      seed.supportedWindows.length > 0 ||
+        seed.supportedEfforts.length > 0 ||
+        seed.supportsThinking ||
+        seed.supportsVision,
     );
     setWarning(advice);
     setStep("capabilities");
@@ -171,9 +161,7 @@ export function ModelsAddDialog({
         endpoint: endpoint.trim() || undefined,
         apiKey: apiKey || undefined,
         apiType,
-        ...capabilityValueToShared(
-          capabilityValueForProvider(capability, provider),
-        ),
+        ...capabilityValueToShared(capability),
       },
       modelIds,
       existingNames,
@@ -213,18 +201,7 @@ export function ModelsAddDialog({
                   <span className="text-sm font-medium">{M.provider}</span>
                   <Select
                     value={provider}
-                    onValueChange={(value) => {
-                      const next = value as ProviderId;
-                      setProvider(next);
-                      // Picks made on an earlier pass through step 2 outlive the provider that
-                      // allowed them: switching away from it clears the axis here rather than
-                      // leaving values in a state whose rows no longer render them.
-                      if (!canSendEffortLevels(next)) {
-                        setCapability((previous) =>
-                          withoutEffortAxis(previous),
-                        );
-                      }
-                    }}
+                    onValueChange={(value) => setProvider(value as ProviderId)}
                   >
                     <SelectTrigger className="w-full" aria-label={M.provider}>
                       <SelectValue />
@@ -357,7 +334,6 @@ export function ModelsAddDialog({
                 <ModelCapabilityEditor
                   value={capability}
                   onChange={setCapability}
-                  canSendEffortLevels={canSendEffortLevels(provider)}
                   suggested={suggested}
                 />
               </div>
