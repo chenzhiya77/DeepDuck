@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-19-model-capability-protocol-check-design.md](../specs/2026-09-19-model-capability-protocol-check-design.md)
-**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；**Task 2 已交付**（RED 1 红 / 1 绿 → GREEN 89 绿 → neuter 1 红 / 1 红 → 窄面 168 绿 → 全量 136 红全为基线、**双向 diff 零新增**）；**Task 3 已交付**（RED 4 红其中 2 条前提有误已重做 → `pnpm check` 零诊断 → neuter 2 / 2 / 0（另补测两洞同开 = 1 红）→ **全量前端 238 文件 / 2569 用例 / 0 失败**、prettier 零新增区块）；Task 4 未开工（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
+**Status:** 进行中 —— **Task 1 已交付**（RED 4 红 → GREEN 41 绿 → neuter 4 红 / 2 红 → 窄面 166 绿 → 全量 144 红全为基线、**双向 diff 零新增**）；**Task 2 已交付**（RED 1 红 / 1 绿 → GREEN 89 绿 → neuter 1 红 / 1 红 → 窄面 168 绿 → 全量 136 红全为基线、**双向 diff 零新增**）；**Task 3 已交付**（RED 4 红其中 2 条前提有误已重做 → `pnpm check` 零诊断 → neuter 2 / 2 / 0（另补测两洞同开 = 1 红）→ **全量前端 238 文件 / 2569 用例 / 0 失败**、prettier 零新增区块）；**Task 4 已交付**（两份 `AGENTS.md` 同步 + 真栈真 PUT **两条腿都过**、配置**逐字节还原** md5 未变）—— ⚠️ **唯一开着的一项是"浏览器那一步"**：腿② 是用**编辑对话框会提交的那份载荷**跑的 API，不是点 UI（你的 dev 栈当时关着、且需要你登录一次）；功能面无缺口，对话框提交什么由 Task 3 的 dom 用例逐字段钉住（2026-09-19 起草；**同日两轮更正**：① 按 10 条审查意见——D2 从"通用未知键表"收窄成"只查 `reasoning_effort` 的针对性 lint"（原方案会推翻 `test_model_factory.py:1473` 那条带回归注释的既有断言）、D3 从"切换时清空"改成"**提交时强制清空**"（原方案会让带旧数据的 anthropic 条目在编辑对话框里被永久锁死）、四个测试载体点名、删掉不必要的 i18n 项、补上"向导建议按 provider 过滤"与"界面填不了预算"两处缺口；② **第二次核实推翻了一个前提**：Anthropic 协议**有** effort 档位，名字是 `output_config.effort`（`anthropic` 0.97.0 稳定版 `message_create_params.py:138`，值域 `low/medium/high/xhigh/max`），`reasoning_effort` 只是 **OpenAI 的名字** ⇒ D1 的**结论不变、理由与文案已改**；"丁"从"包 thinking 预算"改成"**档位→`output_config.effort` 的映射**"（本机实测这条路今天就是通的））
 **Parent:** [2026-09-10-model-capability-config-design.md](../specs/2026-09-10-model-capability-config-design.md)（能力声明层；本计划补它缺的第二道：**声明必须与协议对账**）
 
 **Architecture:** 三处**纯收紧**，都在既有机制上：**写入口**加一条 422（只针对 `provider=anthropic` + 推理档位三件套）、**工厂**加一条只查 `reasoning_effort` 的**针对性 lint**（只记日志；**不**做通用未知键表，那会误报 `frequency_penalty` 这类合法透传名）、**界面**按 provider 决定那两格渲不渲染并在**提交时清空**（编辑旧条目等于顺手修数据）。`openai-compatible` / `deepseek` 的行为**一字不改**；`config.yaml` 手写条目只警告不阻断。
@@ -102,11 +102,24 @@
 
 ## Task 4 — 文档同步与真栈验收
 
-- [ ] `backend/AGENTS.md`：在能力声明/模型配置那一节补一句"**声明要过写入期对账**"（`anthropic` 条目不许带推理档位三件套，`config.yaml` 手写条目只**警告**不阻断）；并记一句"工厂另有一条**只针对 `reasoning_effort`** 的 lint——它**不是**通用未知键守卫，Anthropic 家族那条通用表仍是**有意留空**的（`frequency_penalty` 那类合法透传名不许被误报）"。
-- [ ] `frontend/AGENTS.md`：模型能力那一段补一句"那两格由 provider 决定渲不渲染，**并在提交时清空**（编辑旧条目时等于顺手修数据）；向导的建议也按 provider 过滤"。
-- [ ] **真栈验收（真 PUT，两条路）**：起真栈（网关 + 前端，PUT 是 admin-gated）⇒ ① 一条**带三件套的 anthropic 条目** ⇒ 保存被 **422** 明确拒绝（读 `detail` 原文）；② 在**编辑对话框**里对那条旧条目**什么都不改直接保存** ⇒ **200**，重读配置文件确认那三个键**消失**；既有 OpenAI 兼容条目**一字未变**。
-- [ ] **收尾**：配置**逐字节还原**（动手前 `cp` 过原始字节；网关写这个文件在 Windows 上是 CRLF）、页面重载丢弃表单、不新建残留文件；`models_config.json` md5 与动手前相同。
-- [ ] **门禁**：两份 `AGENTS.md` 的 prettier 与 HEAD 同数（**量 `frontend/AGENTS.md` 必须在 `frontend/` 里跑**）；`models_config.json` md5 未变。
+- [x] `backend/AGENTS.md`：在能力声明/模型配置那一节补一句"**声明要过写入期对账**"（`anthropic` 条目不许带推理档位三件套，`config.yaml` 手写条目只**警告**不阻断）；并记一句"工厂另有一条**只针对 `reasoning_effort`** 的 lint——它**不是**通用未知键守卫，Anthropic 家族那条通用表仍是**有意留空**的（`frequency_penalty` 那类合法透传名不许被误报）"。
+      **实测**：落在既有那段 "Two invariants the code has to keep true" 上 —— 开头改成**不带计数的 "Invariants the code has to keep true:"**（避免以后再改计数），并**新增两条**：①写入期对账（点名三字段、truthiness 判据、`config.yaml` 只警告、**并写明这条是暂时的**，后续那对会放开）；②Anthropic 家族的通用表**有意留空**、工厂那条 lint 只查 `reasoning_effort`、两条警告共用一句机制措辞。
+      ⚠️ **该文件没有 prettier 门禁**（见门禁那条的实测），所以它的"与 HEAD 同数"只能看内容、不能看 prettier 数字。
+- [x] `frontend/AGENTS.md`：模型能力那一段补一句"那两格由 provider 决定渲不渲染，**并在提交时清空**（编辑旧条目时等于顺手修数据）；向导的建议也按 provider 过滤"。
+      **实测**：接在 step 2 那段 `model-capability-editor.tsx` 的说明后面，写清三件事：两格由 `canSendEffortLevels` 决定、**三条 payload 路径都清空**（含"页面改写没打开的那行"）、**判据措辞是 "can send" 不是 "supports"**（协议有 effort，缺的是翻译）；并把"向导的种子与 suggested 标注都按 provider 过滤"一起写进去。
+- [x] **真栈验收（真 PUT，两条路）**：起真栈（网关 + 前端，PUT 是 admin-gated）⇒ ① 一条**带三件套的 anthropic 条目** ⇒ 保存被 **422** 明确拒绝（读 `detail` 原文）；② 在**编辑对话框**里对那条旧条目**什么都不改直接保存** ⇒ **200**，重读配置文件确认那三个键**消失**；既有 OpenAI 兼容条目**一字未变**。
+      **实测（用私有端口的免登录实例跑，`DEER_FLOW_AUTH_DISABLED=1` + `:8099`，跑的是当前工作树代码；判据 `/api/threads` 回 405 而非 401、`/api/models/config` 回 200）**：
+      - **腿①：HTTP 422**，`detail` 原文 = _`Model 'minimax-m3' cannot declare reasoning-effort levels: this protocol names effort `output_config.effort`, not `reasoning_effort`, so the value would be forwarded into every request and rejected by the SDK before it is sent. Clear 可用推理深度 / 默认推理深度 for this entry.`_ ⇒ 点名条目 + 写清**协议的名字** + 给下一步。**且被拒后配置文件 md5 未变**（拒绝发生在 `atomic_write` 之前）。
+      - **腿②：HTTP 200**；重读文件：`minimax-m3` 的 `supported_reasoning_efforts` / `reasoning_effort` **两键消失**、`supports_reasoning_effort` = `False`；**其余三条 OpenAI 兼容条目逐字段**且**逐键序**均未变。
+      - ⚠️ **这一腿是用"编辑对话框会提交的那份载荷"跑的，不是浏览器**：你的 dev 栈（`:8001` / `:3000`）当时**是关的**，而驱动真 UI 需要你启栈 + 登录一次（我拿不到凭据）。对话框提交什么由 Task 3 的 dom 用例逐字段钉住（那条用例断言的就是 `ManagedModelInput` 的那三个键为空），服务端这一侧已由本次真 PUT 验证 ⇒ **缺口是"浏览器那一步"，不是功能**。
+      ⚠️ **验收载荷踩了一个坑（值得记住）**：我第一版把 `GET /api/models/config` 返回的**全部 7 条**发回去 —— 而 `GET` 返回的是 **`config.yaml` ∪ `models_config.json` 的合并集**，PUT 又是**整集合替换** ⇒ 那三条只在 `config.yaml` 里、本来是 `source=config_file / editable=false` 的条目被**写进了 UI 文件**（前端不会犯这个错：它只发 `uiModels`，即 `editable` 的那些）。**判据：PUT 的载荷只能取自 `editable === true` 的条目**。已按快照逐字节还原并重跑。
+- [x] **收尾**：配置**逐字节还原**（动手前 `cp` 过原始字节；网关写这个文件在 Windows 上是 CRLF）、页面重载丢弃表单、不新建残留文件；`models_config.json` md5 与动手前相同。
+      **实测**：**md5 = `e17ad9984f2c081361837d8809e5e39d`，与动手前相同**（也与 Task 0 记的那份相同 ⇒ 这条线全程没动过他的配置）。私有实例已停（`taskkill /T`，8099 已释放、无孤儿监听）；仓库里无新增文件；文件里仍是原 4 条。
+      ⚠️ **过程里出过一次险（如实记）**：我把原始字节 `cp` 到了系统临时目录，**它中途被清理掉了**，而工作树当时正处在"被改过"的状态。救回来靠的是：那条 anthropic 条目提交时用的是**哨兵 `********`**，所以服务端把原密钥留在了文件里 ⇒ 我按"删掉多写的三条 + 还原三件套 + 用**应用自己的 `json.dump(indent=2)` + CRLF** 重放"重建，**逐字节验到 md5 相符**才落盘（第一次重建只差 `minimax-m3` 的**键序**——三件套被我追加到了末尾，原位置在窗口之后、`context_window` 之前）。**教训：原始字节别只放系统临时目录；或先验证重建配方再动手改配置。**
+- [x] **门禁**：两份 `AGENTS.md` 的 prettier 与 HEAD 同数（**量 `frontend/AGENTS.md` 必须在 `frontend/` 里跑**）；`models_config.json` md5 未变。
+      **实测**：`frontend/AGENTS.md` **HEAD 7 → work 7 个偏离区块**（零新增）；`models_config.json` md5 未变（见上）。
+      ⚠️ **`backend/AGENTS.md` 没有 prettier 门禁 —— 这条要更正计划的前提**：仓库根**没有** `package.json` / `.prettierrc` / prettier 脚本；唯一的配置是 `frontend/prettier.config.js`；`.pre-commit-config.yaml` 里 `frontend-prettier` 的 `files: ^frontend/` **且 `types_or: [javascript, tsx, ts, json, css]`（不含 markdown）** ⇒ 两份 `AGENTS.md` 都不在 pre-commit 的 prettier 里，`frontend/AGENTS.md` 只被前端自己的 `pnpm format`（`prettier --check .`，无类型限制）覆盖。拿 prettier 默认参数去量 `backend/AGENTS.md` 会得到**假数字**（HEAD 就已 103 个偏离区块、输出还长 52 行＝它从来不是 prettier 干净的）。
+      ⚠️ **踩了一次"新债"误报并修掉**：我在 `frontend/AGENTS.md` 里写了 `_other_` 做强调，**prettier 把它与同一 bullet 里更早的 `api_key` 配对**了（输出变成 `api*key` … `\_other*`），多出 2 个区块。同一文件里 `*provider*` / `*shared*` 那几处是**既有**行（HEAD 就有）。⇒ **`_x_` 单下划线强调在含 `api_key` 这类下划线词的段落里不要用**，改成不强调即可（已改，回到 7→7）。另外我第一版还写过一处 `*other*`，按本仓既定口径（新写的强调用 `_x_`）也一并去掉了。
 
 ---
 

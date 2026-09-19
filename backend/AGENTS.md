@@ -602,7 +602,7 @@ invalid combination fails loudly there instead of surfacing as a broken settings
 (`deerflow.config.model_config`) is the four-level vocabulary; the backend's agent-level enum stays a
 separate three-level one and unifying them is deliberately out of scope.
 
-Two invariants the code has to keep true:
+Invariants the code has to keep true:
 
 - **Provider-kwarg isolation.** `create_chat_model` excludes the capability-*subset* fields from the
   provider constructor kwargs, next to the existing `context_window` / `pricing` exclusions. The
@@ -616,6 +616,22 @@ Two invariants the code has to keep true:
 - **The resolved effort chain is `request > agent > model > None`** (`lead_agent`'s
   `_resolve_runtime_option`), so a non-UI caller (IM channel, scheduler) that supplies no effort still
   gets the model's declared default instead of a bare `None`.
+- **A declaration has to clear the write-time reconciliation** (spec 2026-09-19). `PUT
+  /api/models/config` refuses an `anthropic` entry carrying any of the reasoning-effort trio
+  (`supports_reasoning_effort` / `supported_reasoning_efforts` / `reasoning_effort`), naming the entry
+  in the 422: the protocol names effort `output_config.effort`, so until that translation exists the
+  OpenAI spelling would be forwarded verbatim and rejected by the SDK before the request is sent. This
+  is deliberately temporary — the probe-and-translation spec relaxes it. Two things about the shape:
+  the judgement is **truthiness, not key presence** (the input model defaults the flag to `False`, so
+  the key is always there), and a `config.yaml` entry is the operator's own file, so it is only
+  warned about at build time (next bullet), never blocked.
+- **The Anthropic family's generic passthrough table stays intentionally empty.** The OpenAI family's
+  unknown-key guard is scoped to `BaseChatOpenAI` on purpose and would false-positive against this
+  family's legitimate passthrough names (`frequency_penalty` and friends), so the factory instead
+  carries a lint **targeted at `reasoning_effort` alone** — the one key this repo can actually put into
+  a `ChatAnthropic` constructor that the protocol will not take. It logs and changes no behaviour.
+  Both warnings embed one shared sentence for what LangChain does with an undeclared kwarg, so the same
+  fact has a single wording.
 
 `POST /api/models/config/validate` (admin-gated, **never persisted**) is the wizard's step-1 probe:
 body `{provider, endpoint, api_key, model}`, response `{ok, model_present, detail}`. The URL is the

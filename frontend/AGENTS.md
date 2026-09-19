@@ -290,9 +290,19 @@ base_url`), and is only applied when that key still matches the form — editing
   as a `role="status"` note instead of blocking, because the probe tolerates that value while the
   runtime does not. Step 2 is
   `model-capability-editor.tsx`: supported context windows (200K/400K/1M) plus the default, the
-  vision/thinking chips, and the supported reasoning-effort levels plus the default.
-  `core/models/capability-registry.ts` prefills a **suggested** set for known model ids, and the UI
-  labels it as a suggestion rather than a detected fact — never claim a probe that does not exist.
+  vision/thinking chips, and the supported reasoning-effort levels plus the default. The two effort
+  rows are **provider-driven** (`canSendEffortLevels` / `withoutEffortAxis` /
+  `capabilityValueForProvider` in `core/models/capability.ts`): an entry whose leg cannot be handed
+  those fields does not render them, and **every payload path empties that axis** — the edit dialog,
+  the wizard, and the page's re-serialization of rows the admin never opened. Hiding alone is not
+  enough: a stored value the editor no longer shows still rides out in the wholesale PUT and is refused
+  there, so re-serializing an untouched row would block saving every other row. The upshot is that
+  saving an old such entry unchanged repairs it. The predicate is worded "can send", never "supports",
+  because the protocol has an effort parameter — what is missing is the translation.
+  `core/models/capability-registry.ts` prefills a **suggested** set for known model ids, and both the
+  wizard's seed and its suggested label are filtered by the provider, since that table matches on the
+  model id alone; the UI labels it as a suggestion rather than a detected fact — never claim a probe
+  that does not exist.
 
 - `src/core/models/reasoning-effort.ts` owns the composer's model-capability gating as pure rules
   (`offeredModes` / `isModeOffered`, `resolveMode`, `reasoningEffortLevels`, `resolveReasoningEffort`,
