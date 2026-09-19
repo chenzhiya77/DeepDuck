@@ -13,6 +13,64 @@ REASONING_EFFORT_LEVELS: list[str] = ["minimal", "low", "medium", "high"]
 ReasoningEffort = Literal["minimal", "low", "medium", "high"]
 
 
+def nearest_declared_effort(level: str, declared: list[str]) -> str:
+    """The declared level closest to *level*: the same one, else the highest one below it.
+
+    Mirrors the fallback a reference client applies to an out-of-range level. When the whole
+    declaration sits above *level* there is nothing below to fall back to, so the lowest
+    declared level is the closest thing there is.
+
+    Only meaningful for a level in :data:`REASONING_EFFORT_LEVELS`: the ranking is a direct
+    lookup, so anything else raises rather than guessing. Callers reach this through
+    :func:`resolve_effective_effort`, which filters first.
+    """
+    rank = {name: index for index, name in enumerate(REASONING_EFFORT_LEVELS)}
+    if level in declared:
+        return level
+    at_or_below = [name for name in declared if rank.get(name, -1) <= rank[level]]
+    if at_or_below:
+        return max(at_or_below, key=lambda name: rank[name])
+    return min(declared, key=lambda name: rank.get(name, len(rank)))
+
+
+def effort_substitution_note(model_name: str, requested: str, effective: str, declared: list[str]) -> str:
+    """The sentence every caller logs when a level is replaced, worded once.
+
+    Both callers of :func:`resolve_effective_effort` — the resolution site and the model
+    factory — announce the same substitution, and a second copy of this sentence would be a
+    second description of one fact.
+    """
+    return f"Model '{model_name}' does not declare reasoning effort '{requested}'; sending '{effective}' instead. Declared levels: {declared}."
+
+
+def resolve_effective_effort(model_config: "ModelConfig", level: str | None) -> tuple[str | None, bool]:
+    """The level a call will actually use, and whether that differs from the one asked for.
+
+    Two things can change the level between the caller and the wire, and both are decided
+    here so that whoever *records* the level can ask instead of re-deriving it:
+
+    * the coarse gate — an entry that does not support effort sends none at all, whatever the
+      caller asked for;
+    * the declared subset — a level the entry does not declare is replaced by the closest one
+      it does. The editor and the composer only ever offer that subset, so an out-of-range
+      value can only arrive from a request-level override or an agent's own config, and
+      neither should be able to make the endpoint refuse the request.
+
+    An entry that declares no subset means "every level is fine" and is passed through
+    untouched, which is what the OpenAI leg has always done. A level outside
+    :data:`REASONING_EFFORT_LEVELS` is passed through too: the Codex path writes ``none``,
+    which this repo never declares, and the ranking has no entry for it.
+    """
+    if not model_config.supports_reasoning_effort:
+        return None, False
+    if level is None or level not in REASONING_EFFORT_LEVELS:
+        return level, False
+    declared = list(model_config.supported_reasoning_efforts or [])
+    if not declared or level in declared:
+        return level, False
+    return nearest_declared_effort(level, declared), True
+
+
 class ModelConfig(BaseModel):
     """Config section for a model"""
 

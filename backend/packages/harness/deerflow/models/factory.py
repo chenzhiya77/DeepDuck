@@ -5,7 +5,7 @@ from langchain_openai.chat_models.base import BaseChatOpenAI
 
 from deerflow.config import get_app_config
 from deerflow.config.app_config import AppConfig
-from deerflow.config.model_config import REASONING_EFFORT_LEVELS
+from deerflow.config.model_config import effort_substitution_note, resolve_effective_effort
 from deerflow.reflection import resolve_class
 from deerflow.tracing import build_tracing_callbacks
 
@@ -95,23 +95,38 @@ _ANTHROPIC_EFFORT_NAMES: dict[str, str] = {
 }
 
 
-def _nearest_declared_effort(level: str, declared: list[str]) -> str:
-    """The declared level closest to *level*: the same one, else the highest one below it.
+def _effort_holder(kwargs: dict, model_settings_from_config: dict) -> dict:
+    """The one dict holding ``reasoning_effort``, which the reconcile guarantees is unique."""
+    return kwargs if "reasoning_effort" in kwargs else model_settings_from_config
 
-    Mirrors the fallback a reference client applies to an out-of-range level (spec §2 D2). When
-    the whole declaration sits above *level* there is nothing below to fall back to, so the
-    lowest declared level is the closest thing there is.
+
+def _apply_declared_effort(model_name: str, model_config, kwargs: dict, model_settings_from_config: dict) -> None:
+    """Replace an out-of-subset level with the closest declared one, for *every* protocol.
+
+    Both legs read the entry's declared subset here. The Anthropic leg used to be the only one
+    that did, which meant one declaration and one out-of-range level behaved differently
+    depending on which protocol the entry spoke — an asymmetry with no principle behind it.
+
+    Runs *after* the reconcile, so exactly one of *kwargs* and *model_settings_from_config*
+    holds the level. The substitution is announced: the level a caller asked for is not the one
+    that goes out, and a silent swap would leave whoever reads the log believing the request
+    said something it did not.
     """
-    rank = {name: index for index, name in enumerate(REASONING_EFFORT_LEVELS)}
-    if level in declared:
-        return level
-    at_or_below = [name for name in declared if rank.get(name, -1) <= rank[level]]
-    if at_or_below:
-        return max(at_or_below, key=lambda name: rank[name])
-    return min(declared, key=lambda name: rank.get(name, len(rank)))
+    holder = _effort_holder(kwargs, model_settings_from_config)
+    level = holder.get("reasoning_effort")
+    if not isinstance(level, str):
+        return
+    effective, substituted = resolve_effective_effort(model_config, level)
+    if not substituted:
+        return
+    holder["reasoning_effort"] = effective
+    logger.warning(
+        "%s",
+        effort_substitution_note(model_name, level, effective, list(model_config.supported_reasoning_efforts or [])),
+    )
 
 
-def _translate_reasoning_effort(model_class, model_config, kwargs: dict, model_settings_from_config: dict) -> None:
+def _translate_reasoning_effort(model_class, kwargs: dict, model_settings_from_config: dict) -> None:
     """Send a declared level under the name this protocol actually uses.
 
     ``reasoning_effort`` is OpenAI's parameter. The Anthropic Messages protocol carries the same
@@ -120,17 +135,14 @@ def _translate_reasoning_effort(model_class, model_config, kwargs: dict, model_s
     that client does not accept, diverted into ``model_kwargs``, and rejected by the SDK before
     the request left the process (spec 2026-09-19 §1).
 
-    Runs *after* the two sources have been reconciled, so exactly one of *kwargs* and
-    *model_settings_from_config* holds the level. Two values pass through untouched: a level
-    that is not one of ours (the Codex path writes ``none``), and any client outside the
+    Runs *after* the two sources have been reconciled and after :func:`_apply_declared_effort`,
+    so the level here is already the one that will be sent. Two values pass through untouched:
+    a level that is not one of ours (the Codex path writes ``none``), and any client outside the
     Anthropic family — for those the name is already right.
 
-    A level outside the entry's declared subset falls back to the closest declared one instead
-    of being sent as-is: the editor and the composer only ever offer the declared subset, so an
-    out-of-range value can only arrive from a request-level override or an agent's own config,
-    and neither should be able to produce a request the endpoint would refuse. An entry that
-    declares no subset is left alone — that means "every level is fine", which is what the
-    OpenAI leg has always done.
+    The family gate lives here and only here: this step renames a parameter, and only this
+    family names it differently. Deciding *which* level to send is :func:`_apply_declared_effort`,
+    which is deliberately outside the gate.
     """
     from langchain_anthropic import ChatAnthropic
 
@@ -142,9 +154,6 @@ def _translate_reasoning_effort(model_class, model_config, kwargs: dict, model_s
     translated = _ANTHROPIC_EFFORT_NAMES.get(level)
     if translated is None:
         return
-    declared = list(model_config.supported_reasoning_efforts or [])
-    if declared and level not in declared:
-        translated = _ANTHROPIC_EFFORT_NAMES[_nearest_declared_effort(level, declared)]
     kwargs.pop("reasoning_effort", None)
     model_settings_from_config.pop("reasoning_effort", None)
     # `output_config` carries more than effort (`format`, for one), so merge into whichever side
@@ -414,8 +423,10 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
         model_settings_from_config.pop("reasoning_effort", None)
 
     # Past the reconcile, so the level sits in exactly one of the two — the one place a
-    # translation has to look.
-    _translate_reasoning_effort(model_class, model_config, kwargs, model_settings_from_config)
+    # decision about *which* level to send has to look. This step is protocol-blind on
+    # purpose: the subset is the entry's own declaration, whatever dialect it speaks.
+    _apply_declared_effort(name, model_config, kwargs, model_settings_from_config)
+    _translate_reasoning_effort(model_class, kwargs, model_settings_from_config)
 
     _warn_unknown_model_settings(model_class, name, model_settings_from_config)
 

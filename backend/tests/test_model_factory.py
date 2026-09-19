@@ -1818,10 +1818,98 @@ def test_anthropic_effort_with_no_declared_subset_is_not_falled_back(monkeypatch
 
 
 def test_openai_effort_is_still_sent_under_its_own_name(monkeypatch):
-    """Control: the OpenAI-shaped leg is untouched, byte for byte."""
+    """Control: an in-subset level on the OpenAI-shaped leg is untouched, byte for byte.
+
+    This leg never translated the name — the parameter is already called what OpenAI calls
+    it — so this case only ever covered the in-range half. The out-of-range half is below.
+    """
     entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "medium", "high"], default="medium")
 
     payload = _built_payload(monkeypatch, entry)
 
     assert payload["reasoning_effort"] == "medium"
     assert "output_config" not in payload
+
+
+def test_openai_effort_outside_the_declared_subset_falls_back(monkeypatch):
+    """The OpenAI leg reads the declared subset too, so both legs degrade the same way.
+
+    Before this, only the Anthropic leg consulted the subset: one declaration and one
+    out-of-range caller level left this leg sending the value verbatim.
+    """
+    entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "high"], default="low")
+
+    payload = _built_payload(monkeypatch, entry, reasoning_effort="medium")
+
+    assert payload["reasoning_effort"] == "low"
+    assert "output_config" not in payload
+
+
+def test_both_legs_fall_back_to_the_same_level(monkeypatch):
+    """One declaration and one out-of-range level land on one level, whatever the protocol."""
+    openai_payload = _built_payload(
+        monkeypatch,
+        _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "high"], default="low"),
+        reasoning_effort="medium",
+    )
+    anthropic_payload = _built_payload(
+        monkeypatch,
+        _effort_entry("claude-effort", use=_ANTHROPIC_USE, efforts=["low", "high"], default="low"),
+        reasoning_effort="medium",
+    )
+
+    assert openai_payload["reasoning_effort"] == "low"
+    assert anthropic_payload["output_config"] == {"effort": "low"}
+
+
+def test_effort_outside_our_vocabulary_is_passed_through(monkeypatch):
+    """A level that is not one of our four is left alone even when a subset is declared.
+
+    The Codex path writes `none`, which this repo never declares; the fallback must not try
+    to place it in the subset, because the ranking table has no entry for it.
+
+    The entry declares a subset on purpose. With none declared the fallback is skipped
+    outright, and this case would pass while proving nothing.
+    """
+    entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "high"], default="low")
+
+    payload = _built_payload(monkeypatch, entry, reasoning_effort="none")
+
+    assert payload["reasoning_effort"] == "none"
+
+
+def test_openai_effort_with_no_declared_subset_is_not_falled_back(monkeypatch):
+    """No declared subset means "every level is fine" on this leg too."""
+    entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=None, default=None)
+
+    payload = _built_payload(monkeypatch, entry, reasoning_effort="medium")
+
+    assert payload["reasoning_effort"] == "medium"
+
+
+def test_effort_fallback_emits_one_warning(monkeypatch, caplog):
+    """The substitution is announced once, naming the level asked for and the subset used."""
+    import logging
+
+    entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "high"], default="low")
+
+    with caplog.at_level(logging.WARNING, logger=factory_module.__name__):
+        _built_payload(monkeypatch, entry, reasoning_effort="medium")
+
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "medium" in message  # the level the caller asked for
+    assert "high" in message  # the declared subset: the only place this name comes from
+
+
+def test_effort_within_the_declared_subset_emits_no_warning(monkeypatch, caplog):
+    """A declared level is the normal case; announcing it would drown the signal."""
+    import logging
+
+    entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "medium", "high"], default="medium")
+
+    with caplog.at_level(logging.WARNING, logger=factory_module.__name__):
+        _built_payload(monkeypatch, entry, reasoning_effort="medium")
+
+    assert not [record for record in caplog.records if record.levelno == logging.WARNING]
