@@ -4,6 +4,8 @@
 
 **Status:** 未开工（2026-09-19 起草；**同日第四轮：按"先翻译、后探测"把本对收成「翻译」一期**。原稿把 D1（配置期探测）与 D2（按协议翻译）装在同一份 spec 里；实测发现**探测在本机所有可用端点上都拿不到数据**（见 §6 的登记），而**翻译不依赖探测、单独就能成立**（手填的档位照样会被正确翻译并发出）⇒ **D1 摘出本对**，它的全部发现（`capabilities.effort` 的形状、回落顺序、三种"探不到"、空交集的分辨、以及实测数字）**原样登记在 §6**，等拿到会填能力块的端点（官方 `api.anthropic.com`，或纯转发它的端点）再另起一对。**文件名保留旧名**（里面那个 "probe" 已名不副实）——因为已交付的上一对 spec 里有一条链接指向它，改名要去动那份已交付文档；判断依据：内容准确 > 文件名准确。）
 
+**Task 0 已核实（2026-09-19）**：三项只读核实做完，结论就地更正本文件 3 处 —— D2 的**实现落点**（顶层构造参数、非 `model_kwargs`，并补"合并而非覆盖"与"只认我们那四档"）；D3 的**入参可直接删掉**；§5 正文计数改成 **12 个使用点**。详见同名 plan 的 Task 0。
+
 **Parent:** [2026-09-10-model-capability-config-design.md](2026-09-10-model-capability-config-design.md)（声明层）· [2026-09-19-model-capability-protocol-check-design.md](2026-09-19-model-capability-protocol-check-design.md)（**它已落地**：把"发错名字"的组合挡在写入口；本 spec 把那条拒绝**删掉**、并撤掉它那条 lint，因为字段从此会被翻译而不是原样转发）
 
 ## 1. 问题
@@ -45,13 +47,24 @@
   - ⚠️ **声明子集为空时怎么办**：语义是"未声明"（`supported_reasoning_efforts` 缺省 ⇒ 既有兜底"每个档都可用"）。此时**不做任何回退**、按名翻译即可——这正是今天 OpenAI 路径的行为，不要在这里新造一种"拒绝发送"。
   - **默认档本来就在子集内**（`ModelConfig._validate_capability_subsets` 在载入期就保证了），所以回退只由上面那两条外部入口触发。
 - **`openai` 方言逐字节不变**（名字相同 ⇒ 翻译是恒等映射）；认不出的 `use` 仍按 OpenAI 形状走（既有兜底不变）。
-- 实现落点：`knowledge/` 之外的那条模型工厂（`models/factory.py` 的 `reasoning_effort` 处理处）——**一处翻译，两条腿共用**（与 caption 腿共用一个出网入口同思路）；`output_config` 经 `model_kwargs` 进入请求体（本机实测可通）。
+- 实现落点：`knowledge/` 之外的那条模型工厂（`models/factory.py` 的 `reasoning_effort` 处理处）——**一处翻译，两条腿共用**（与 caption 腿共用一个出网入口同思路）。**位置 = `:370-373` 那处 reconcile 之后、两条警告之前**：reconcile 之后 `reasoning_effort` **只剩一处**持有（要么 `kwargs`、要么 `model_settings_from_config`），所以一处就够。
+- **翻译的落点是"顶层构造参数"，不是 `model_kwargs`**（Task 0 实测更正）：`output_config` **本来就是 `ChatAnthropic` 的声明字段**（`langchain-anthropic` 1.4.1，`dict[str, Any] | None`）—— 对照 `reasoning_effort` **不是**字段（这正是上一对那场崩的根）。三种写法实测：
+
+  | 写法 | 请求体里有 `output_config` | LangChain 警告 |
+  | --- | --- | --- |
+  | **顶层 `output_config={...}`** | ✅ | **无** ← 选它 |
+  | `model_kwargs={"output_config": …}` | ✅ | ⚠️ 有（"should be specified explicitly"） |
+  | 只给别的 `model_kwargs` 键 | — | 无 |
+
+- ⚠️ **合并而非覆盖**：`output_config` 里除 `effort` 还有 **`format`**（`OutputConfigParam = {effort, format}`，都 optional）⇒ 条目若已声明 `format`，翻译必须**并进同一个 dict**，不能整体替换。
+- ⚠️ **翻译表只认我们那四档**：Codex 分支会写 `"none"`（不是我们的档名）⇒ 认不出的一律**原样放过**。Codex 走 Responses API、按协议算 `openai` ⇒ 恒等，翻译不碰它（用一条回归用例钉住）。
 
 ### D3 —— 界面：那两格对 anthropic **恢复显示**，候选 = 声明子集
 
 - **依赖上一对 spec 的 D3 反向**：上一对落地后是"anthropic ⇒ 不渲染 + 提交时清空"，本对要**撤掉**（因为字段从此发得出去了）；改回按**声明子集**渲染（集合为空才不渲染）。
-  - ⚠️ **"撤掉"要撤干净：上一对落了 9 处、5 个文件**（`canSendEffortLevels` / `withoutEffortAxis` / `capabilityValueForProvider`）。逐处清单见 §5，**其中两处最容易漏**：`models-settings-page.tsx::toManagedInput`（整集合 PUT 的必经之路，漏了就等于"清空"没撤掉）与 `core/models/capability.ts`（三个 helper 的归宿）。
+  - ⚠️ **"撤掉"要撤干净：上一对落了 12 个使用点、5 个文件**（`canSendEffortLevels` / `withoutEffortAxis` / `capabilityValueForProvider`）。逐处清单见 §5，**其中两处最容易漏**：`models-settings-page.tsx::toManagedInput`（整集合 PUT 的必经之路，漏了就等于"清空"没撤掉）与 `core/models/capability.ts`（三个 helper 的归宿）。
   - **判据从"这条腿能不能发"换成"声明子集是不是空"**——注意不是"provider 是不是 anthropic"。
+  - ⚠️ **那个入参可以直接删掉（Task 0 核实结论）**：编辑器**已经拿到 `value`**，而新判据恰恰就是 `value.supportedEfforts.length > 0` ⇒ 不必"换成另一个布尔"，**删掉入参**改成纯由 `value` 驱动即可（少 1 处声明、1 处解构、3 处传参）。
 - **候选就是声明子集**，**本期没有"来源标注"**（那是探测那一侧才有的事，见 §6）：没有第二个来源，标注一个恒定的"来自声明"没有信息量。
 - **本对里界面没有回退场景**：候选即声明子集 ⇒ 用户选不出越界值（D2 那条回退的触发面在界面之外）。别为它写界面逻辑，也别在文案里承诺"会自动纠正你的选择"。
   - 唯一的边界情形是**声明子集变窄之后**（如从四档改成 `{low}`）：那时旧的默认档会被载入期校验拒绝，属于既有行为，不是本对新增。
@@ -110,12 +123,12 @@
 - `backend/tests/test_models_config_api.py`（**删掉**上一对那 4 条"必须 422"的参数化用例，保留控制组与"清干净就放行"）
 - `backend/tests/test_model_factory.py`（翻译逐行 + 回退 + OpenAI 回归；**改掉**上一对那条"anthropic 的 `reasoning_effort` 会警告"的用例）
 
-**前端（撤回上一对要动 5 个文件、9 处，逐处点名；漏一处就等于没撤干净）**
+**前端（撤回上一对要动 5 个文件、12 个使用点，逐处点名；漏一处就等于没撤干净）**
 
 | 文件 | 落点 | 本对要做什么 |
 | --- | --- | --- |
 | `core/models/capability.ts` | `canSendEffortLevels` / `withoutEffortAxis` / `capabilityValueForProvider` | 三个 helper 的归宿：判据从"provider 是不是 anthropic"换成"**声明子集是不是空**" |
-| `components/.../model-capability-editor.tsx` | 入参 `canSendEffortLevels`（**必填**） | 换成"声明子集（为空才不渲染）" |
+| `components/.../model-capability-editor.tsx` | 入参 `canSendEffortLevels`（**必填**） | **直接删掉它**（新判据 = `value.supportedEfforts.length > 0`，编辑器手上就有 `value`），渲染条件改成看 `value` |
 | `components/.../models-edit-dialog.tsx` | 传参 + payload 里的 `capabilityValueForProvider` | 撤回清空（候选本来就只有声明子集） |
 | `components/.../models-add-dialog.tsx` | 传参 + payload + **种子过滤** + **provider 切换时清空** + `setSuggested` 读过滤后的值（共 5 处） | 撤回清空与种子过滤（种子本就是"模型 id 的建议"，不再需要按 provider 抹掉） |
 | **`components/.../models-settings-page.tsx`** | **`toManagedInput`**（上一对在这里按 provider 清空三个字段） | **最容易漏的一处**：它是整集合 PUT 的必经之路，撤回后这里要回到"原样带上字段" |
