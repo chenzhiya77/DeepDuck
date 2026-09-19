@@ -1496,56 +1496,11 @@ def test_no_unknown_key_warning_for_non_openai_class(monkeypatch, caplog):
     assert "base_url" not in captured
 
 
-# ---------------------------------------------------------------------------
-# A targeted lint for the Anthropic family (spec 2026-09-19 §2 D2)
-#
-# The generic guard above is scoped to the OpenAI family on purpose, which left the
-# Anthropic family with no guard at all. There is exactly one key this repo can put into
-# a ChatAnthropic constructor that the protocol will not take: the entry's own
-# `reasoning_effort`. Targeting that one key — rather than running the OpenAI allow-list
-# against a second family — is what keeps ChatAnthropic's legitimate passthrough names
-# (`frequency_penalty`, `extra_body`, …) unwarned, which is what
-# `test_no_unknown_key_warning_for_non_openai_class` above pins.
-# ---------------------------------------------------------------------------
+def test_reasoning_effort_on_openai_draws_no_warning(monkeypatch, caplog):
+    """`reasoning_effort` is a real ChatOpenAI field, so nothing has anything to say about it.
 
-
-def test_reasoning_effort_on_anthropic_emits_a_warning(monkeypatch, caplog):
-    """An Anthropic entry declaring `reasoning_effort` must be flagged before the first run.
-
-    `supports_reasoning_effort: true` is what keeps the key alive to the constructor (the
-    factory drops it otherwise) and no caller-supplied level is present, so this is the
-    shape that shipped and crashed: ChatAnthropic diverts the key into `model_kwargs` and
-    the Anthropic SDK raises `unexpected keyword argument 'reasoning_effort'` before the
-    request leaves the process.
-    """
-    import logging
-
-    from langchain_anthropic import ChatAnthropic
-
-    cfg = _make_app_config([_make_model("claude", use="langchain_anthropic:ChatAnthropic", supports_reasoning_effort=True, reasoning_effort="medium")])
-    captured: dict = {}
-    _patch_factory(monkeypatch, cfg, model_class=_capturing_class(ChatAnthropic, captured))
-
-    with caplog.at_level(logging.WARNING, logger=factory_module.__name__):
-        # Construction must still succeed: this is a heads-up, not a refusal.
-        factory_module.create_chat_model(name="claude")
-
-    warnings = [rec.message for rec in caplog.records if "reasoning_effort" in rec.message]
-    assert len(warnings) == 1
-    assert "claude" in warnings[0]
-    # The warning has to say what actually happens to the key, not just name it.
-    assert "model_kwargs" in warnings[0]
-    # And it is log-only: the key is still forwarded, so the message is the only signal a
-    # `config.yaml` entry (which no write-time guard covers) ever gets.
-    assert captured.get("reasoning_effort") == "medium"
-
-
-def test_reasoning_effort_on_openai_emits_no_anthropic_lint(monkeypatch, caplog):
-    """The new lint is family-scoped: the same entry on ChatOpenAI must not produce it.
-
-    A lint keyed on the key alone would warn here too, so this is the control that keeps
-    the family gate honest. `reasoning_effort` is a real ChatOpenAI field, so the generic
-    OpenAI guard stays quiet as well — nothing at all should be logged for this entry.
+    Doubles as the control for the guard above being family-scoped: an OpenAI entry carrying a
+    level warns neither from the unknown-key guard nor from anywhere else.
     """
     import logging
 
@@ -1765,3 +1720,108 @@ def test_caller_none_lets_the_model_default_stand(monkeypatch):
     factory_module.create_chat_model(name="defaulted", thinking_enabled=True, reasoning_effort=None)
 
     assert captured.get("reasoning_effort") == "high"
+
+
+# ---------------------------------------------------------------------------
+# The declared level is translated into the protocol's own parameter
+# (spec 2026-09-19 §2 D2 — the pair that made the protocol check relaxable)
+#
+# `reasoning_effort` is OpenAI's name for the idea; the Anthropic Messages protocol
+# spells it `output_config.effort`, and `output_config` is a declared field of
+# ChatAnthropic (unlike `reasoning_effort`, which is what used to be diverted into
+# `model_kwargs` and crash at request time). These cases read the real request body, so
+# they pin what the provider would actually receive rather than what reached the
+# constructor.
+# ---------------------------------------------------------------------------
+
+
+def _effort_entry(name: str, *, use: str, efforts=None, default=None, supports: bool = True):
+    """A model entry that declares effort levels, with a real (dummy) credential.
+
+    Built by hand rather than through ``_make_model`` because the real provider classes
+    need a key to construct, and building them for real is the point: the assertions below
+    inspect the request payload, not the constructor kwargs.
+    """
+    return ModelConfig(
+        name=name,
+        display_name=name,
+        description=None,
+        use=use,
+        model=name,
+        api_key="sk-dummy",
+        base_url="https://endpoint.invalid/v1",
+        supports_thinking=False,
+        supports_vision=False,
+        supports_reasoning_effort=supports,
+        supported_reasoning_efforts=efforts,
+        reasoning_effort=default,
+    )
+
+
+def _built_payload(monkeypatch, entry, **caller_kwargs):
+    """Build the real client from *entry* and return the body it would send."""
+    from langchain_anthropic import ChatAnthropic
+    from langchain_openai import ChatOpenAI
+
+    model_class = ChatAnthropic if entry.use.endswith("ChatAnthropic") else ChatOpenAI
+    _patch_factory(monkeypatch, _make_app_config([entry]), model_class=model_class)
+    instance = factory_module.create_chat_model(name=entry.name, **caller_kwargs)
+    # The real body the client would post: `_get_request_payload` is what the SDK call is
+    # built from, so asserting here pins the wire, not the constructor.
+    return instance._get_request_payload([], stop=None)
+
+
+_ANTHROPIC_USE = "langchain_anthropic:ChatAnthropic"
+
+
+def test_anthropic_effort_is_sent_as_output_config(monkeypatch):
+    """The declared default reaches the wire under this protocol's own name."""
+    entry = _effort_entry("claude-effort", use=_ANTHROPIC_USE, efforts=["low", "medium", "high"], default="medium")
+
+    payload = _built_payload(monkeypatch, entry)
+
+    assert payload["output_config"] == {"effort": "medium"}
+    # And the OpenAI spelling must no longer ride along: that is the crash this replaces.
+    assert "reasoning_effort" not in payload
+
+
+def test_anthropic_minimal_maps_to_the_lowest_level_it_knows(monkeypatch):
+    """`minimal` has no counterpart, so the table maps it to the lowest one that exists."""
+    entry = _effort_entry("claude-effort", use=_ANTHROPIC_USE, efforts=["minimal"], default="minimal")
+
+    payload = _built_payload(monkeypatch, entry)
+
+    assert payload["output_config"] == {"effort": "low"}
+
+
+def test_anthropic_effort_outside_the_declared_subset_falls_back(monkeypatch):
+    """A caller-supplied level outside the entry's own subset falls back, and does not raise.
+
+    The caller is the only way to produce an out-of-range value here — the editor and the
+    composer both list the declared subset, so a level outside it can only arrive from a
+    request-level override or a custom agent's config.
+    """
+    entry = _effort_entry("claude-effort", use=_ANTHROPIC_USE, efforts=["low", "high"], default="low")
+
+    payload = _built_payload(monkeypatch, entry, reasoning_effort="medium")
+
+    assert payload["output_config"] == {"effort": "low"}
+
+
+def test_anthropic_effort_with_no_declared_subset_is_not_falled_back(monkeypatch):
+    """No declared subset means "every level is fine", so only the name table applies."""
+    entry = _effort_entry("claude-effort", use=_ANTHROPIC_USE, efforts=None, default=None)
+
+    payload = _built_payload(monkeypatch, entry, reasoning_effort="minimal")
+
+    assert payload["output_config"] == {"effort": "low"}
+
+
+def test_openai_effort_is_still_sent_under_its_own_name(monkeypatch):
+    """Control: the OpenAI-shaped leg is untouched, byte for byte."""
+    entry = _effort_entry("gpt-effort", use="langchain_openai:ChatOpenAI", efforts=["low", "medium", "high"], default="medium")
+
+    payload = _built_payload(monkeypatch, entry)
+
+    assert payload["reasoning_effort"] == "medium"
+    assert "output_config" not in payload

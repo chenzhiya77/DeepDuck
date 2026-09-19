@@ -6,6 +6,7 @@
 **Status:** 未开工（2026-09-19 起草；**同日两轮改动**：
 **第三轮＝一次对当前代码的审查**（8 处，已全部落进 spec 与本计划）：①"可用集合"有两种、原稿混成了一个 ⇒ 后来只剩**声明子集**一个（见第四轮）；② 上一对那条 422 **不是"换成另一条"而是整条删除**（替代判据"值不在可译集合里"恒真）；③ 上一对刚落地的两个东西原稿没提 —— 工厂那条 anthropic lint（翻译后会变**假警告**）与界面 **9 处 / 5 个文件**的清空落点（原稿影响面漏了 `models-settings-page.tsx::toManagedInput` 与 `core/models/capability.ts`）；④ D3 的"探测优先"只在向导成立；⑤ composer 拿不到探测结果（原稿把它列进影响面是错的）；⑥ 探测在本机端点实测零收益；⑦ 补了两处边界（声明子集为空 / 交集为空≠探不到）；⑧ §4 编号理顺并记下**快照被临时目录清理**的教训。
 **第四轮＝按"先翻译、后探测"拆**：实测本机所有可用端点都拿不到 `capabilities`（见 spec §6 的实测表），而翻译**不依赖探测、单独成立** ⇒ **探测（原 D1）整段摘出本对、登记在 spec §6**，等拿到会填能力块的端点再另起一对。本计划随之收成**三个 Task**（翻译 / 前端 / 文档+真栈），原来的"Task 1 探针"整条去掉。**文件名保留旧名**（`probe` 已名不副实）——已交付的上一对 spec 里有一条链接指向它。
+**Task 1 已交付（2026-09-19）**：翻译落地 + 删掉上一对那条 422 + 撤掉它那条 lint。RED **4 红 / 1 绿**（第 5 条是控制组）→ GREEN 窄面 **130 绿** → neuter **1 红 / 13 红**（都回退后复跑回 130 绿）→ 全量 **136 红全为基线**、双向 diff **零新增**。
 **第五轮＝Task 0 三项核实已完成（2026-09-19）**，结论写回下方 Task 0，并**就地更正了 5 处**：① **翻译的落点是顶层构造参数、不是 `model_kwargs`**（`output_config` 是 `ChatAnthropic` 的声明字段；实测顶层写法**无警告**，走 `model_kwargs` 会打一句 should be specified explicitly）；② 补 **合并而非覆盖**（`output_config` 里还有 `format`）；③ 补 **翻译表只认我们那四档**（Codex 写 `none`，认不出的原样放过）；④ 界面那个入参**可以直接删掉**（新判据＝`value.supportedEfforts.length > 0`，编辑器手上就有 `value`）⇒ Task 2 从"换语义"变成"删入参 + 删三处传参"；⑤ §5 正文那个不准的"9 处"改成 **12 个使用点**（与其表格逐项计数一致）。）
 
 **Parent:** [2026-09-19-model-capability-protocol-check-design.md](../specs/2026-09-19-model-capability-protocol-check-design.md)（**已经落地**（四个提交）——它把"发错名字"的组合挡在写入口；本对**删掉**那条 422、并**撤掉**它那条 lint，因为字段开始被翻译而不是原样转发）
@@ -46,18 +47,29 @@
 
 ## Task 1 — 翻译：按协议的名字发出去 + 对声明子集回退 + 删掉那条 422 + 撤掉那条 lint（D2）
 
-- [ ] **RED**（`backend/tests/test_model_factory.py`）：
+- [x] **RED**（`backend/tests/test_model_factory.py`）：
   1. `ChatAnthropic` + 声明 `[low, medium, high]` ⇒ 请求体里 **`output_config: {effort: "medium"}`**，且**不出现** `reasoning_effort`；
   2. **`minimal` 那一行**：声明 `minimal` ⇒ `output_config: {effort: "low"}`；
   3. **回退（触发面在界面之外）**：条目**声明** `{low, high}`、调用方从**请求层**传入 `medium` ⇒ 发出去的是回退值 `low`，**不抛**。⚠️ 原稿写的"声明的默认档不在可用集合里"**不可能发生**（载入期校验保证默认档属于子集）；真正能造出越界值的只有**请求层**与**自定义 agent 的 `config.yaml`**（界面上选不出来，因为候选就是声明子集）；
   3b. **声明子集缺省时不回退**：条目没声明 `supported_reasoning_efforts` ⇒ 每个档都按名翻译、**不做任何回退**（这是既有 OpenAI 路径的行为，别在这里新造"拒绝发送"）；
   4. **对照组**：同一份声明换 `ChatOpenAI` ⇒ `reasoning_effort: "medium"`（**逐字节等于今天**）。
-- [ ] **GREEN**：在 `models/factory.py` 的 `reasoning_effort` 处理处加**一处**翻译（协议 → 名字/字段 + 映射表 + 对**声明子集**的回退），两条腿共用；认不出的 `use` 仍走 OpenAI 形状。
-- [ ] **删掉上一对那条 422（不是"改成另一条"）**：`_reject_anthropic_effort_levels`（`routers/models.py:259`）与它的调用点（`:684`）**一齐删**；`tests/test_models_config_api.py` 里那 4 条参数化用例（`:585`）**删除**，而**控制组**（`:606`，`openai-compatible` / `deepseek` + 同样三字段 ⇒ 200）与**"清干净就放行"**（`:619`）**保留**——它们验的是别的规矩。
+      **实测 RED = 4 红 / 1 绿**：四条全红在 `assert payload["output_config"] == {...}`（今天既没有 `output_config`、`reasoning_effort` 还被旁移进 `model_kwargs`——测试日志里那句 `reasoning_effort was transferred to model_kwargs` 就是要替换掉的那条路）；第 4 条对照组**首跑即绿**（**控制组**，不是本轮实现的功能）。
+      **观测口径**：不是看构造参数，而是看**真实请求体**——用真实 `ChatAnthropic`/`ChatOpenAI`（entry 自带 dummy `api_key`）构造后读 `instance._get_request_payload([], stop=None)`，与 spec §4#3「请求体里出现 `output_config`」逐字对应。为此加了两个本地 helper：`_effort_entry(...)`（手搭一条带凭据、带档位声明的条目——`_make_model` 不收 `api_key`/`base_url`，而真实 provider 类必须有 key 才能构造）与 `_built_payload(...)`。
+- [x] **GREEN**：在 `models/factory.py` 的 `reasoning_effort` 处理处加**一处**翻译（协议 → 名字/字段 + 映射表 + 对**声明子集**的回退），两条腿共用；认不出的 `use` 仍走 OpenAI 形状。
+      **实测**：新增 `_ANTHROPIC_EFFORT_NAMES`（`minimal→low`、其余同名）+ `_nearest_declared_effort`（同强度优先，否则取不高于它的最高档；全都高于它时取最低的那档）+ `_translate_reasoning_effort`；调用点**落在 reconcile 之后、`_warn_unknown_model_settings` 之前**（Task 0 定的唯一落点）。写出去的是**顶层 `output_config`**（Task 0 实测：无警告），且**合并**进已有对象而不是覆盖（`output_config` 里还有 `format`）。**窄面 130 passed / 0 failed**；`ruff check` + `format --check` 双净。
+- [x] **删掉上一对那条 422（不是"改成另一条"）**：`_reject_anthropic_effort_levels`（`routers/models.py:259`）与它的调用点（`:684`）**一齐删**；`tests/test_models_config_api.py` 里那 4 条参数化用例（`:585`）**删除**，而**控制组**（`:606`，`openai-compatible` / `deepseek` + 同样三字段 ⇒ 200）与**"清干净就放行"**（`:619`）**保留**——它们验的是别的规矩。
       ⚠️ **为什么不换成"值必须在可译集合里"**（spec §3 已写明）：我们四档**全都可译** ⇒ 那条判据恒真、什么都不拦；而"默认档属于子集"早由载入期校验管着。**提交信息里要写明这是有意放开**（理由：字段开始被翻译，不再原样转发）。
-- [ ] **同批撤掉上一对那条 lint**：`_warn_anthropic_reasoning_effort`（`factory.py:137`）在翻译落地后不能再对"会被翻译走的 `reasoning_effort`"报警 ⇒ **删掉它**（首选：那条警告存在的唯一理由是"这个键会被原样转发进 `model_kwargs`"，翻译之后理由消失），并同步改掉 `tests/test_model_factory.py:1512` 那条用例；连带 `_KWARG_DIVERT_CONSEQUENCE` 若因此只剩一处使用者，说明原委后再决定留不留。
-- [ ] **neuter 两条（都要有牙）**：① 把 `openai` 也走新翻译（例如强行把 `minimal` 也改写成别的）⇒ 用例 4 红；② 把回退去掉（原样发越界值）⇒ 用例 3 红。
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/test_model_factory.py` + `tests/test_models_config_api.py`）绿；**全量后端后台跑** + 抽 FAILED/ERROR 的 node id 去 HEAD 跑同一批、**双向 diff**（`xargs -d '\n'`，别 pipe 长跑；HEAD 那棵树要先 `cp` 仓库根本地环境文件进去 —— 四个 gitignored 文件：`config.yaml` / `models_config.json` / `extensions_config.json` / `rag_config.json`）。
+      **实测**：函数与调用点连同那 4 条参数化用例一齐删；**控制组与"清干净就放行"两条保留且仍绿**（`test_models_config_api.py` 现 4 条参数化 + 1 条 = 少 4 条）。⚠️ **删的时候踩了一个坑**：按区间切片时**把控制组自己的 `@pytest.mark.parametrize("provider", …)` 装饰器一起切掉了**，它当场以「缺 `provider` 形参」报 ERROR ⇒ 已补齐；**教训：按区间删除后要跑一遍窄面，别只看残留名字数**。
+- [x] **同批撤掉上一对那条 lint**：`_warn_anthropic_reasoning_effort`（`factory.py:137`）在翻译落地后不能再对"会被翻译走的 `reasoning_effort`"报警 ⇒ **删掉它**（首选：那条警告存在的唯一理由是"这个键会被原样转发进 `model_kwargs`"，翻译之后理由消失），并同步改掉 `tests/test_model_factory.py:1512` 那条用例；连带 `_KWARG_DIVERT_CONSEQUENCE` 若因此只剩一处使用者，说明原委后再决定留不留。
+      **实测**：删掉 `_warn_anthropic_reasoning_effort` 与它的调用点；它那条用例（"anthropic 的 `reasoning_effort` 会警告"）随之删除，而**同一段里那条"OpenAI + 档位不警告"的断言保留下来**、只把名字与 docstring 从"针对 anthropic 的 lint 的对照"改成实话（`test_reasoning_effort_on_openai_draws_no_warning`）——它钉的是**OpenAI 那条守卫的静默**，那是活的规矩，不是被删的行为。`_KWARG_DIVERT_CONSEQUENCE` **保留**（OpenAI 那条警告仍在用）。
+      ⚠️ **又一次删多**：区间删除把 `_DEFAULT_STREAM_CHUNK_TIMEOUT_SECONDS` 常量连带它的注释块一起切了 ⇒ `ruff F821` 当场抓到，已按原文补回（**这是本轮第二次"切片切多了"，都与"删到下一个 def 为止"这个手法有关**）。
+- [x] **neuter 两条（都要有牙）**：① 把 `openai` 也走新翻译（例如强行把 `minimal` 也改写成别的）⇒ 用例 4 红；② 把回退去掉（原样发越界值）⇒ 用例 3 红。
+      **实测**：② 把回退那三行短路 ⇒ **1 红**，红的正是 `..._falls_back`（与计划逐字一致，无附带损伤）。① 去掉家族门（让翻译作用于所有 client）⇒ **13 红**，其中**包括计划点名的 `test_openai_effort_is_still_sent_under_its_own_name`**，另外 12 条也全是 OpenAI/Codex 那条腿的档位用例 ⇒ **这条 neuter 有牙、但牙比预期宽**：家族门护的是**整条 OpenAI 腿**，拆掉它不止倒一条。两条都**回退后复跑确认回到 130 绿**。
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`tests/test_model_factory.py` + `tests/test_models_config_api.py`）绿；**全量后端后台跑**
+      **实测（本轮零回归）**：ruff 双净；窄面 **130 passed / 0 failed**；全量 = **136 failed / 12423 passed / 109 skipped**（16m54s）。抽 136 个 node id ⇒ `git worktree add --detach` 出 HEAD 树（**HEAD = `b1e88cea`，已含本对 Task 0 的文档提交**；`cp` 进四个本地环境文件），跑同一批 = **135 红 / 1 绿**。**两侧 `PYTHONPATH` 都是 `.`**（照上一对的纪要规避 confound；`UV_PROJECT_ENVIRONMENT` 指主仓 `.venv`，worktree 不新建空 venv）。
+      **双向 diff**：`只在 HEAD 红` 看似 2 条，逐行核出**两条都不是 node id**（行首是空格、无 `::` —— 失败摘要的**换行续行**）⇒ **实质为空**；`只在工作树红` **1 条** = `test_delta_channel_state.py::test_merge_message_writes_randomized_differential`（上一对已定性的**同一条**顺序假象），**两侧单独复跑都 1 passed** ⇒ 与改动无关。
+      ⇒ **Task 1 无新增红**。收尾：worktree 已 `remove`、`.pytest-tmp` 与四份日志/清单已删（**`models_config` 那份快照保留** —— Task 3 的收尾还要用）。
+      ⚠️ **全量数字与上一对那次逐字相同**（136 failed / 12423 passed）—— 那是基线，**别读成"这轮又修好了什么"**。 + 抽 FAILED/ERROR 的 node id 去 HEAD 跑同一批、**双向 diff**（`xargs -d '\n'`，别 pipe 长跑；HEAD 那棵树要先 `cp` 仓库根本地环境文件进去 —— 四个 gitignored 文件：`config.yaml` / `models_config.json` / `extensions_config.json` / `rag_config.json`）。
 
 ## Task 2 — 前端：那两格恢复 + 撤回上一对（D3）
 

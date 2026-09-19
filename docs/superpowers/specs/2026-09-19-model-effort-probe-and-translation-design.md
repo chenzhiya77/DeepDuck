@@ -4,6 +4,8 @@
 
 **Status:** 未开工（2026-09-19 起草；**同日第四轮：按"先翻译、后探测"把本对收成「翻译」一期**。原稿把 D1（配置期探测）与 D2（按协议翻译）装在同一份 spec 里；实测发现**探测在本机所有可用端点上都拿不到数据**（见 §6 的登记），而**翻译不依赖探测、单独就能成立**（手填的档位照样会被正确翻译并发出）⇒ **D1 摘出本对**，它的全部发现（`capabilities.effort` 的形状、回落顺序、三种"探不到"、空交集的分辨、以及实测数字）**原样登记在 §6**，等拿到会填能力块的端点（官方 `api.anthropic.com`，或纯转发它的端点）再另起一对。**文件名保留旧名**（里面那个 "probe" 已名不副实）——因为已交付的上一对 spec 里有一条链接指向它，改名要去动那份已交付文档；判断依据：内容准确 > 文件名准确。）
 
+**Task 1 已交付（2026-09-19）**：翻译（`_ANTHROPIC_EFFORT_NAMES` + `_nearest_declared_effort` + `_translate_reasoning_effort`，落点在 reconcile 之后）+ 删掉上一对那条 422 + 撤掉它那条 lint；窄面 130 绿、全量对 HEAD 零新增红。
+
 **Task 0 已核实（2026-09-19）**：三项只读核实做完，结论就地更正本文件 3 处 —— D2 的**实现落点**（顶层构造参数、非 `model_kwargs`，并补"合并而非覆盖"与"只认我们那四档"）；D3 的**入参可直接删掉**；§5 正文计数改成 **12 个使用点**。详见同名 plan 的 Task 0。
 
 **Parent:** [2026-09-10-model-capability-config-design.md](2026-09-10-model-capability-config-design.md)（声明层）· [2026-09-19-model-capability-protocol-check-design.md](2026-09-19-model-capability-protocol-check-design.md)（**它已落地**：把"发错名字"的组合挡在写入口；本 spec 把那条拒绝**删掉**、并撤掉它那条 lint，因为字段从此会被翻译而不是原样转发）

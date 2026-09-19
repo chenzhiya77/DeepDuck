@@ -573,35 +573,6 @@ _ANTHROPIC_EFFORT_FIELDS = {
 }
 
 
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"supports_reasoning_effort": True},  # the flag on its own
-        {"supported_reasoning_efforts": ["low", "high"]},  # the subset on its own
-        {"reasoning_effort": "low"},  # the default on its own
-        dict(_ANTHROPIC_EFFORT_FIELDS),  # and the shape they actually arrive in
-    ],
-)
-def test_put_rejects_effort_levels_on_a_protocol_that_cannot_send_them(config_env: Path, override: dict):
-    """Each field is enough on its own: the rule reads them individually, not just the flag.
-
-    Built on a clean base on purpose — carrying the full set into the single-field cases would
-    let the *existing* subset/default consistency rule reject them first, and the case would
-    pass for the wrong reason.
-    """
-    _seed(config_env)
-    before = (config_env / "models_config.json").read_bytes()
-
-    with _client(system_role="admin") as client:
-        response = client.put("/api/models/config", json={"models": [{**_ANTHROPIC_BASE, **override}]})
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert "claude-model" in detail
-    assert "output_config.effort" in detail
-    assert (config_env / "models_config.json").read_bytes() == before
-
-
 @pytest.mark.parametrize("provider", ["openai-compatible", "deepseek"])
 def test_put_keeps_accepting_effort_levels_on_protocols_that_can_send_them(config_env: Path, provider: str):
     """The guard is per protocol: the same three fields stay legal for the OpenAI-shaped ones."""

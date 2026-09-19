@@ -5,6 +5,7 @@ from langchain_openai.chat_models.base import BaseChatOpenAI
 
 from deerflow.config import get_app_config
 from deerflow.config.app_config import AppConfig
+from deerflow.config.model_config import REASONING_EFFORT_LEVELS
 from deerflow.reflection import resolve_class
 from deerflow.tracing import build_tracing_callbacks
 
@@ -81,6 +82,79 @@ def _normalize_openai_base_url(model_class: type, model_settings_from_config: di
 _KWARG_DIVERT_CONSEQUENCE = "LangChain moves such keys into `model_kwargs`, which it spreads into every request body, and the provider SDK rejects them at request time."
 
 
+#: Our level names as the Anthropic Messages protocol spells them. Only the Anthropic client
+#: needs a table: OpenAI's parameter is already called ``reasoning_effort``, so that leg is an
+#: identity and stays byte for byte what it was. ``minimal`` has no counterpart on the other
+#: side (its lowest is ``low``), so it maps to the closest level that exists rather than
+#: inventing a value the protocol would reject.
+_ANTHROPIC_EFFORT_NAMES: dict[str, str] = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+}
+
+
+def _nearest_declared_effort(level: str, declared: list[str]) -> str:
+    """The declared level closest to *level*: the same one, else the highest one below it.
+
+    Mirrors the fallback a reference client applies to an out-of-range level (spec §2 D2). When
+    the whole declaration sits above *level* there is nothing below to fall back to, so the
+    lowest declared level is the closest thing there is.
+    """
+    rank = {name: index for index, name in enumerate(REASONING_EFFORT_LEVELS)}
+    if level in declared:
+        return level
+    at_or_below = [name for name in declared if rank.get(name, -1) <= rank[level]]
+    if at_or_below:
+        return max(at_or_below, key=lambda name: rank[name])
+    return min(declared, key=lambda name: rank.get(name, len(rank)))
+
+
+def _translate_reasoning_effort(model_class, model_config, kwargs: dict, model_settings_from_config: dict) -> None:
+    """Send a declared level under the name this protocol actually uses.
+
+    ``reasoning_effort`` is OpenAI's parameter. The Anthropic Messages protocol carries the same
+    idea as ``output_config.effort`` — a declared field of ``ChatAnthropic``, not an unknown
+    kwarg — so an Anthropic entry declaring a level would otherwise be forwarded under a name
+    that client does not accept, diverted into ``model_kwargs``, and rejected by the SDK before
+    the request left the process (spec 2026-09-19 §1).
+
+    Runs *after* the two sources have been reconciled, so exactly one of *kwargs* and
+    *model_settings_from_config* holds the level. Two values pass through untouched: a level
+    that is not one of ours (the Codex path writes ``none``), and any client outside the
+    Anthropic family — for those the name is already right.
+
+    A level outside the entry's declared subset falls back to the closest declared one instead
+    of being sent as-is: the editor and the composer only ever offer the declared subset, so an
+    out-of-range value can only arrive from a request-level override or an agent's own config,
+    and neither should be able to produce a request the endpoint would refuse. An entry that
+    declares no subset is left alone — that means "every level is fine", which is what the
+    OpenAI leg has always done.
+    """
+    from langchain_anthropic import ChatAnthropic
+
+    if not issubclass(model_class, ChatAnthropic):
+        return
+    level = kwargs.get("reasoning_effort") or model_settings_from_config.get("reasoning_effort")
+    if not isinstance(level, str):
+        return
+    translated = _ANTHROPIC_EFFORT_NAMES.get(level)
+    if translated is None:
+        return
+    declared = list(model_config.supported_reasoning_efforts or [])
+    if declared and level not in declared:
+        translated = _ANTHROPIC_EFFORT_NAMES[_nearest_declared_effort(level, declared)]
+    kwargs.pop("reasoning_effort", None)
+    model_settings_from_config.pop("reasoning_effort", None)
+    # `output_config` carries more than effort (`format`, for one), so merge into whichever side
+    # already holds it rather than replacing the object. Writing it as a top-level kwarg is what
+    # the client declares; routing it through `model_kwargs` would draw a warning asking for
+    # exactly this.
+    holder = kwargs if "output_config" in kwargs else model_settings_from_config
+    holder["output_config"] = {**(holder.get("output_config") or {}), "effort": translated}
+
+
 def _warn_unknown_model_settings(model_class, model_name: str, model_settings_from_config: dict) -> None:
     """Warn about config keys the OpenAI client will silently divert into ``model_kwargs``.
 
@@ -96,8 +170,9 @@ def _warn_unknown_model_settings(model_class, model_name: str, model_settings_fr
     ``issubclass(model_class, BaseChatOpenAI)``: the divert is implemented in that base class, so
     every subclass inherits it. Other providers (e.g. ``ChatAnthropic``) route extra kwargs
     differently and would false-positive against this allow-list, so they are intentionally left
-    alone: the one Anthropic key this repo can actually produce has its own targeted lint below
-    (``_warn_anthropic_reasoning_effort``). Best-effort and non-fatal: it only fires when the class
+    alone — the one key this repo can put into that family is translated before it gets here
+    (``_translate_reasoning_effort``), so there is nothing left for this guard to catch.
+    Best-effort and non-fatal: it only fires when the class
     exposes a pydantic ``model_fields`` schema, treats both field names and their aliases as valid,
     and allow-lists the standard passthrough kwargs the factory injects and the OpenAI client
     accepts.
@@ -132,40 +207,6 @@ def _warn_unknown_model_settings(model_class, model_name: str, model_settings_fr
             unknown,
             _KWARG_DIVERT_CONSEQUENCE,
         )
-
-
-def _warn_anthropic_reasoning_effort(model_class, model_name: str, model_settings_from_config: dict) -> None:
-    """Warn when an Anthropic client is handed ``reasoning_effort`` — the one key that reaches it.
-
-    ``_warn_unknown_model_settings`` is deliberately scoped away from this family (see its
-    docstring), which left ChatAnthropic with no guard at all. There is exactly one key this repo
-    can put into that constructor which the protocol will not take: the entry's own
-    ``reasoning_effort``. The Anthropic Messages protocol names effort ``output_config.effort``
-    (spec 2026-09-19 §1), so the OpenAI spelling arrives as an undeclared kwarg, lands in
-    ``model_kwargs``, and the SDK raises ``unexpected keyword argument 'reasoning_effort'`` before
-    the request is sent — the same mechanism the OpenAI guard above describes, on a family that
-    guard does not reach.
-
-    Keyed on that one key rather than on a second allow-list on purpose: the allow-list has no
-    accurate membership for this family, and running the OpenAI table here is exactly the
-    false-positive its regression test pins (``frequency_penalty`` on ``ChatAnthropic``).
-
-    Log-only, and the key is still forwarded. A UI-managed entry is refused earlier, at write time
-    (``PUT /api/models/config``); a ``config.yaml`` entry is the operator's to fix, and this line is
-    the only signal it ever gets.
-    """
-    from langchain_anthropic import ChatAnthropic
-
-    if not issubclass(model_class, ChatAnthropic):
-        return
-    if "reasoning_effort" not in model_settings_from_config:
-        return
-    logger.warning(
-        "Model '%s' (%s): config key 'reasoning_effort' is not a parameter this protocol accepts. %s This protocol names effort `output_config.effort`; remove 'reasoning_effort' from the entry.",
-        model_name,
-        getattr(model_class, "__name__", "?"),
-        _KWARG_DIVERT_CONSEQUENCE,
-    )
 
 
 # Default chunk-gap budget for OpenAI-compatible streaming responses.
@@ -372,8 +413,11 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
     else:
         model_settings_from_config.pop("reasoning_effort", None)
 
+    # Past the reconcile, so the level sits in exactly one of the two — the one place a
+    # translation has to look.
+    _translate_reasoning_effort(model_class, model_config, kwargs, model_settings_from_config)
+
     _warn_unknown_model_settings(model_class, name, model_settings_from_config)
-    _warn_anthropic_reasoning_effort(model_class, name, model_settings_from_config)
 
     model_instance = model_class(**kwargs, **model_settings_from_config)
 
