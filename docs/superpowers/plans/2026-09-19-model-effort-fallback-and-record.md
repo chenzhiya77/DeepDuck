@@ -63,7 +63,7 @@
 
 > 动到的文件：`config/model_config.py`（新增函数 + 搬入 `_nearest_declared_effort`）、`models/factory.py`（拆两段）、`tests/test_model_factory.py`（新增用例 + 改一条 docstring）。
 
-- [ ] **RED**（`backend/tests/test_model_factory.py`，挨着上一对那 5 条 effort 用例）：
+- [x] **RED**（`backend/tests/test_model_factory.py`，挨着上一对那 5 条 effort 用例）：
   1. **openai 腿现在会回退**：`ChatOpenAI` + 声明 `['low','high']` + 调用方传 `medium` ⇒ 请求体 **`reasoning_effort == 'low'`**，且**无 `output_config`**；
   2. **openai 腿未越界时逐字节不变**（控制组）：声明 `['low','medium','high']` + 传 `medium` ⇒ `reasoning_effort == 'medium'`、**无 `output_config`**（**首跑即绿 = 控制组**，不是本对的功能）；
   3. **两条腿落到同一个档**：同一份声明、同一个越界输入 ⇒ anthropic 出 `output_config: {'effort': 'low'}`、openai 出 `reasoning_effort: 'low'`；
@@ -79,24 +79,33 @@
   5. **边界：声明缺省 ⇒ 两条腿都不回退**；
   6. **warning 只在替换时出现**：越界 ⇒ **恰好一条**且含**请求档 / 实发档 / 声明子集**三件；未越界 ⇒ **零**（照 `test_reasoning_effort_on_openai_draws_no_warning` 的 caplog 写法）。
       ⚠️ **观测口径照上一对**：不看构造参数，看**真实请求体** —— 真实 `ChatAnthropic` / `ChatOpenAI`（entry 自带 dummy `api_key`）+ `instance._get_request_payload([], stop=None)`；helper 沿用 `_effort_entry(...)` / `_built_payload(...)`。
-      **实测 RED =**：
-- [ ] **GREEN**：
-  - `config/model_config.py` 新增 **`resolve_effective_effort(model_config, level) -> tuple[str | None, bool]`**（闸 → 回退 → 原样；**"只认四档"的前置判断**），`_nearest_declared_effort` 从 `factory.py` 搬来；
+      **实测 RED = 3 红 / 96 绿**（**整文件**，`--basetemp=.pytest-tmp`）：
+      - `test_openai_effort_outside_the_declared_subset_falls_back` ⇒ `assert 'medium' == 'low'`（`:1844`）
+      - `test_both_legs_fall_back_to_the_same_level` ⇒ `assert 'medium' == 'low'`（`:1861`）
+      - `test_effort_fallback_emits_one_warning` ⇒ `assert 0 == 1`（`:1900`）
+      **三条都是 `assert`、不是 `Unable to find`** ⇒ 按判据是**真功能红**，不是驱动问题。
+      ⚠️ **踩坑**：首次用 `-k "effort or codex"` 跑得到"2 红"，**漏了 `test_both_legs_...`**（名字里既没 `effort` 也没 `codex`）⇒ **窄面取证要跑整文件**，别按词过滤。
+      ⚠️ **两条"绿"要标性质**：`test_effort_outside_our_vocabulary_is_passed_through` 与 `test_openai_effort_with_no_declared_subset_is_not_falled_back` 现在绿**只是因为回退还不存在** ⇒ 它们的牙由 **neuter ②** 提供，不是本轮功能。
+- [x] **GREEN**：
+  - `config/model_config.py` 新增 **`resolve_effective_effort(model_config, level) -> tuple[str | None, bool]`**（闸 → 回退 → 原样；**"只认四档"的前置判断**），`_nearest_declared_effort` 从 `factory.py` 搬来（改名 `nearest_declared_effort`，去掉 `_`）；
       ⚠️ **连带一处**（Task 0#1 查出）：`factory.py:8` 的 `REASONING_EFFORT_LEVELS` **搬走后会变 unused**（全文件只被 `:105` 用）⇒ 那行 import 要一起改，否则 **ruff F401**。
   - `factory.py`：`_translate_reasoning_effort` **拆两段** —— 回退段（两条腿共用，调新函数）与翻译段（**家族门保留**）；**这里不打 warning**。
       ⚠️⚠️ **回退段的落点要点名，这是本对最容易做错的地方**：它必须在**家族门之外**、且在 **`:364` 那道闸之后**（`:364` 是 `if not model_config.supports_reasoning_effort: pop(...)`，**保留不动**）。**别把回退段塞进 `_translate_reasoning_effort` 里** —— 那样它就在家族门之内，**openai 腿永远拿不到回退，用例 1 会一直红**。
-      ⚠️ **最容易写崩的一处**：`rank[level]` 是直接下标（`factory.py:108`），`"none"` / `"xhigh"` / `"max"` 会 **`KeyError` 当场崩**。今天不崩只是因为翻译段先筛了一道 —— **提成共用函数就绕过去了** ⇒ 前置判断必须在**进 `_nearest_declared_effort` 之前**。
-      **实测 GREEN =**：
-- [ ] **neuter 两条（都要有牙）**：① 把回退段的家族门加回去（只让 anthropic 回退）⇒ 用例 1、3 红；② 去掉 `"none"` 的前置判断 ⇒ 用例 4 红（**并且是 `KeyError`**，如实记失败形态）。
-      **实测**：
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_model_factory.py`）绿。
-      **实测**：
+      ⚠️ **最容易写崩的一处**：`rank[level]` 是直接下标（搬过去后在 `model_config.py:30`），`"none"` / `"xhigh"` / `"max"` 会 **`KeyError` 当场崩**。今天不崩只是因为翻译段先筛了一道 —— **提成共用函数就绕过去了** ⇒ 前置判断必须在**进 `nearest_declared_effort` 之前**。
+      **实测 GREEN = 窄面 99 绿 / 0 红**；`ruff check` + `format --check` 双净。
+      ⚠️ **就地更正计划的一处措辞（如实记）**：上面写的"**这里不打 warning**"**不准确**。按 spec §D2 甲，`resolve_effective_effort` 的**每个调用方**都按 `substituted` 打日志；工厂的回退段**也是调用方**，所以它**要打**（只是正常路径上 `substituted` 恒为 `False`、不会重复）。真正不许打的是**翻译段**（spec 原话"不能是工厂的翻译段"）。**这条 RED 用例 6 就住在 `test_model_factory.py`** ⇒ 不这样读它永远绿不了。
+      ⚠️ **warning 的写法**：初版写成**相邻 f-string 拼接**（两行），`ruff format` 要求**并成一行 192 字符**；改用本文件既有的 **%-style + 参数**（同 `:775` 那条 `logger.info`）⇒ 既过 formatter 又是惰性求值。
+- [x] **neuter 两条（都要有牙）**：① 把回退段的家族门加回去（只让 anthropic 回退）⇒ 用例 1、3 红；② 去掉 `"none"` 的前置判断 ⇒ 用例 4 红（**并且是 `KeyError`**，如实记失败形态）。
+      **实测**：① **3 红**（计划预测 2）—— 多的是 `test_effort_fallback_emits_one_warning`，**它本身也跑在 openai 腿上**，所以家族门一并把它打红（三条都仍是有牙的真红）。② **1 红**，失败形态**正是预测的 `KeyError: 'none'`**（`model_config.py:30`），**无附带损伤**。两条都**回退后复跑确认回到 99 绿**，且 `grep NEUTER` 归零。
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_model_factory.py`）绿。
+      **实测**：ruff 双净；窄面 **99 passed**。**加跑更宽面**（`test_model_factory` + `test_lead_agent_model_resolution` + `test_constitution_record` + `test_models_config`）= **231 例**：首跑 **219 passed / 12 errors**，12 个 ERROR 全是**已知环境条件**（`PermissionError: [WinError 5] … Temp\pytest-of-h7242`，即记忆里的"第六形态"）⇒ 换 `--basetemp=.pytest-tmp` 后 **ERROR 归零**，只剩 **1 红** = `test_models_config.py::test_missing_models_file_falls_back_to_config_yaml`（**已知环境红**，仓库根真实 `models_config.json`）。⇒ **本轮零回归**。`.pytest-tmp` 已删。
+      ⚠️ **全量后端仍留给 Task 2**（计划的分工）：Task 1 改的 `factory.py` 行为面已由窄面覆盖，但 `model_config.py` 是共享模块 ⇒ **Task 2 的全量门禁要照跑、别省**。
 
 ## Task 2 — 记录跟随实发值 + 补传引导腿参数（D3 / D4）
 
 > 动到的文件：`agents/lead_agent/agent.py`（`:773` 后调纯函数 + 打 warning、`:874` 补传参数）、`tests/test_lead_agent_model_resolution.py`、`tests/test_constitution_record.py`。
 
-- [ ] **RED**（`backend/tests/test_lead_agent_model_resolution.py` + `test_constitution_record.py`）：
+- [x] **RED**（`backend/tests/test_lead_agent_model_resolution.py` + `test_constitution_record.py`）：
   1. **四格"记录 == 实发"**（spec §1.2 那张表就是要断言的东西）：
      - **A 引导腿**：请求传 `high`、条目默认 `low` ⇒ 记录 `high`、**实发 `high`**（今天记录 `high`、实发 `low`）；
      - **B 闸关**：`supports_reasoning_effort=false` + 条目手写默认档 ⇒ 记录 `None`、**实发 `None`**（今天记录 `medium`、实发 `None`）；
@@ -113,17 +122,37 @@
   2. **三处记录都跟着走**：logger / trace metadata / constitution record **读同一个值**（按上表：caplog + constitution 各一条实断言，metadata 用代码核对收口）。
   3. **D4 那一处例外要被钉住**：声明 `['minimal','low','high']` + 请求 `minimal`（anthropic）⇒ **记录写 `minimal`**、**线上是 `output_config: {'effort': 'low'}`** ⇒ 断言两件事**同时成立**（用例名与注释写明"**有意的拼写差异，不是记录不准**"）。
       ⚠️ `test_constitution_record.py` 现有两条（`:190` / `:310`）钉的是 `reasoning_effort: None` 的**字面值**，**不覆盖回退路径** ⇒ 它们会**保持绿**但**证明不了本对**，新用例必须另写。
-      **实测 RED =**：
-- [ ] **GREEN**：
+      **实测 RED = 3 红 / 50 绿**（`test_lead_agent_model_resolution.py`，`--basetemp=.pytest-tmp`）：
+      - **A** `test_bootstrap_records_the_level_it_hands_to_the_model` ⇒ `assert None == 'high'`（工厂收到的就是 `None`：引导腿没传参）
+      - **B** `test_gated_entry_records_no_level_because_it_sends_none` ⇒ `assert 'medium' is None`（记录 `medium`、实发 `None`）
+      - **C** `test_out_of_subset_level_is_recorded_as_the_one_that_is_sent` ⇒ `assert 'medium' == 'low'`
+      **两个对照组首跑即绿**（`-k` 单独复跑确认 **2 passed**、不是被跳过）：**D** `test_declared_level_is_recorded_unchanged`；**D4 守卫** `test_anthropic_level_is_recorded_in_our_vocabulary_not_the_protocol_spelling`（它**今天是绿的**，因为它钉的是"记录用我们的档名"——那条今天本来就成立；**它的价值是防将来被改成线上拼写**，不是本轮的功能红）。
+      ⚠️ **观测载体落成三件**（照上面那张表）：
+      - 桩 `_fake_create_chat_model` ⇒ `captured["sent"]`（**传给工厂的值**）；
+      - `caplog` + `_logged_effort()` 解析 `Create Agent(...)` 那条 ⇒ `captured["logged"]`（**logger 记的值**）；
+      - **`monkeypatch.setattr(lead_agent_module, "publish_constitution", …)`** ⇒ `captured["constitution"]`（**constitution 记的值**）—— 它是**模块级导入**（`agent.py:36`）所以可截，**比计划里"去 `test_constitution_record.py` 断言"更直接**（后者只测记录器本身、测不到 `lead_agent` 传了什么）。
+      ⚠️ `config["metadata"]`（LangSmith 标签）**仍无便宜观测口** ⇒ 用"它读的是同一个局部变量"收口，**不假装测过**（Task 0#2 已核五处读同一变量）。
+      ⚠️ **夹具扩了两个参数**（保留默认值 = 今天的行为，不动既有用例）：`_make_model` 新增 `supports_reasoning_effort: bool = False` 与 `use: str = "langchain_openai:ChatOpenAI"`。
+      ⚠️ **7 条既有用例此刻还没红**（实现未落地）—— 它们会在 GREEN 落地后红，**那正是 Task 0#4 预判的面**，修法见 GREEN。
+- [x] **GREEN**：
   - `lead_agent/agent.py`：`:773` 之后调一次 `resolve_effective_effort` ⇒ 三处记录自动拿到实发值；**`substituted` 为真时在这里打 warning**（措辞照 `:762` 那条的形状，见 Task 0#3）；
   - **`:874`（引导腿）补传 `reasoning_effort=reasoning_effort`**。
   - ⚠️⚠️ **给 7 条既有夹具补 `supports_reasoning_effort=True`**（Task 0#4 查出来的面，**不做这一步 Task 2 会多 6 条红**）：`test_lead_agent_model_resolution.py` 的 `_make_model` 从不设那个布尔（默认 `False`），而它的桩**整个替换掉工厂** ⇒ 今天闸不可见；D3 把闸搬进 `lead_agent` 后闸突然生效。补的是**夹具**（那 7 条用例的意图是解析链、不是闸），**不是放宽断言**。
-      **实测 GREEN =**：
-- [ ] **neuter 两条（都要有牙）**：① 去掉 `:874` 的补传 ⇒ **A 格红**；② 把 `lead_agent` 那次调用去掉（只留工厂那处）⇒ **B、C 两格红**（工厂那次看到的是已解析值 / 被闸后的值，记录又变回解析值）。
+      **实测 GREEN = 53 绿 / 0 红**（`test_lead_agent_model_resolution.py`，从 RED 的 3 红 / 50 绿 转来）；`ruff check` + `format --check` 双净。
+      **实现形态**：`agent.py` 在 `:773` 之后取 `requested_effort = reasoning_effort` 再 `reasoning_effort, substituted = resolve_effective_effort(...)`，`substituted` 时打一条 warning；`:874` 补传参数。**五处读的仍是同一个局部变量**（Task 0#2 已核）⇒ 三处记录一起变准，**没有分别改三处**。
+      ⚠️ **7 条夹具的补法是显式逐条**（`_make_model` 的 `supports_reasoning_effort` 默认仍是 `False`，**既有用例一行未动**）：`context-model` / `agent-model`（`:1241` 那条）/ 两条 `reasoning-model` / `plain-model`（带默认档那条）/ `agent-model`（带默认档那条）/ `plain-model`（无默认档那条）。
+      ⚠️ **同一条句子只写一处**：工厂与解析点都要打这条 warning（D2 甲），所以措辞抽成 `model_config.py::effort_substitution_note(...)`，两处都 `logger.warning("%s", note)`。**顺带一个 lint 三角**：相邻 f-string 拼接 → `ruff format` 要并成一行；改 `%`-style → `ruff check` 报 **UP031**；**最终落成单行 f-string**（与 `:762` 同形，177 字符 —— 那是 formatter 自己的输出，它不拆字符串字面量）。
+- [x] **neuter 两条（都要有牙）**：① 去掉 `:874` 的补传 ⇒ **A 格红**；② 把 `lead_agent` 那次调用去掉（只留工厂那处）⇒ **B、C 两格红**（工厂那次看到的是已解析值 / 被闸后的值，记录又变回解析值）。
       ⚠️ **判据**：neuter ① 与 ② 的受害者**必须不同**（一个治漏传、一个治记录），否则说明两半互相顶替。
-      **实测**：
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_lead_agent_model_resolution.py` + `test_constitution_record.py` + `test_model_factory.py` + `test_models_config.py`）绿；**全量后端后台跑** + 抽 FAILED/ERROR 的 node id 去 HEAD 跑同一批、**双向 diff**（`xargs -d '\n'`，别 pipe 长跑；HEAD 那棵树要先 `cp` 仓库根本地环境文件进去 —— 四个 gitignored 文件：`config.yaml` / `models_config.json` / `extensions_config.json` / `rag_config.json`；**两侧同一个 `PYTHONPATH`**）。
-      **实测**：
+      **实测**：① **1 红** = `test_bootstrap_records_the_level_it_hands_to_the_model`（正是 A 格，与计划逐字一致）；② **2 红** = `test_gated_entry_records_no_level_because_it_sends_none`（B）+ `test_out_of_subset_level_is_recorded_as_the_one_that_is_sent`（C）。⇒ **两条的受害者集合互不相交**（① 只打 A、② 只打 B/C）⇒ **两半可分辨**，没有互相顶替。两条都**回退后复跑确认回到 53 绿**，`grep NEUTER` 归零。
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_lead_agent_model_resolution.py` + `test_constitution_record.py` + `test_model_factory.py` + `test_models_config.py`）绿；**全量后端后台跑** + 抽 FAILED/ERROR 的 node id 去 HEAD 跑同一批、**双向 diff**（`xargs -d '\n'`，别 pipe 长跑；HEAD 那棵树要先 `cp` 仓库根本地环境文件进去 —— 四个 gitignored 文件：`config.yaml` / `models_config.json` / `extensions_config.json` / `rag_config.json`；**两侧同一个 `PYTHONPATH`**）。
+      **实测（本轮零回归）**：ruff 双净；窄面（4 文件）**236 例 → 235 passed / 1 failed**，那 1 条是**已知环境红** `test_models_config.py::test_missing_models_file_falls_back_to_config_yaml`（仓库根真实 `models_config.json`，属基线）。
+      **全量**：**145 failed / 12425 passed / 109 skipped**（17m28s，后台跑）。抽 **145 个 node id**（`tr -d '\r'`，**这次全是合法 node id、无续行垃圾**）⇒ `git worktree add --detach` 出 HEAD 树（**HEAD = `3ecee352`，不含本轮代码改动**；`cp` 进四个本地环境文件；`UV_PROJECT_ENVIRONMENT` 指主仓 `.venv`，worktree 不新建空 venv）⇒ 跑同一批 = **144 failed / 1 passed**。
+      **双向 diff**：先得到 `只在工作树红` **1 条** = `test_detector_repo_root.py::test_unmarked_location_raises_instead_of_scanning_nothing`，`只在 HEAD 红` 2 条（**逐行核出两条都不是 node id** —— `lark_broker` / `invoke_acp_agent_tool` 的失败摘要续行，老问题）⇒ 实质只有那 1 条。
+      ⚠️⚠️ **那 1 条是 basetemp 造成的，不是回归**（**双向都验过**）：该用例的 `tmp_path` 断言"探测器被搬到 repo 外时报错"，而我全量跑用的是**仓内** `--basetemp=.pytest-tmp` ⇒ `tmp_path` 落在 `backend/.pytest-tmp`、**向上能找到 `.git`** ⇒ 不抛 ⇒ 红；HEAD 那批用的是**仓外** basetemp ⇒ 绿。**判据**：`工作树 + 仓外 basetemp ⇒ passed`、`HEAD + 仓内 basetemp ⇒ failed`，两个方向都复现 ⇒ **与代码无关**。
+      ⇒ **改用一个统一的仓外 basetemp 重跑工作树那一批 = 144 failed / 1 passed**，与 HEAD **逐行一致** ⇒ **双向 diff 为空**。
+      **⇒ Task 2 无新增红。** 收尾：worktree 已 `remove`、`_t2` 与 `.pytest-tmp` 已删、仓库里无新增残留。
+      ⚠️ **两条留给后来者的判据**：① **`--basetemp` 的位置会改变结果** —— 仓内 basetemp 会让 `test_detector_repo_root` 这类"往上找 `.git`"的用例变红；**两侧对比必须用同一个仓外 basetemp**，否则会误报一条回归。② 抽 id 出来的清单**仍可能混进失败摘要的续行**（行首无 `::`）⇒ diff 完要**逐行核是不是 node id**。
 
 ## Task 3 — 文档同步与真栈验收
 

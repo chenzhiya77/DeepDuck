@@ -57,6 +57,7 @@ from deerflow.authz.tool_filter import apply_tool_authorization
 from deerflow.config.agents_config import load_agent_config, validate_agent_name
 from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.config.memory_config import should_use_memory_tools
+from deerflow.config.model_config import effort_substitution_note, resolve_effective_effort
 from deerflow.config.subagents_config import DEFAULT_MAX_TOTAL_SUBAGENTS_PER_RUN
 from deerflow.models import create_chat_model
 from deerflow.runtime.checkpoint_mode import (
@@ -772,6 +773,18 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
     if reasoning_effort is None:
         reasoning_effort = getattr(model_config, "reasoning_effort", None)
 
+    # The level the request will actually carry. The coarse gate can drop it and the entry's
+    # declared subset can rewrite it, and everything downstream — the log line, the trace
+    # metadata, the constitution snapshot, and the model call itself — reads this one
+    # variable, so deciding here is what keeps the record and the wire saying the same thing.
+    requested_effort = reasoning_effort
+    reasoning_effort, substituted = resolve_effective_effort(model_config, reasoning_effort)
+    if substituted:
+        logger.warning(
+            "%s",
+            effort_substitution_note(model_name, requested_effort, reasoning_effort, list(model_config.supported_reasoning_efforts or [])),
+        )
+
     logger.info(
         "Create Agent(%s) -> thinking_enabled: %s, reasoning_effort: %s, model_name: %s, is_plan_mode: %s, subagent_enabled: %s, max_concurrent_subagents: %s, max_total_subagents: %s",
         agent_name or "default",
@@ -871,7 +884,7 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             mode,
         )
         graph = create_agent(
-            model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, app_config=resolved_app_config, attach_tracing=False),
+            model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=resolved_app_config, attach_tracing=False),
             tools=final_tools,
             middleware=middlewares,
             system_prompt=apply_prompt_template(

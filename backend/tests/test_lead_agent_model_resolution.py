@@ -103,15 +103,18 @@ def _make_model(
     supports_thinking: bool,
     reasoning_effort: str | None = None,
     supported_reasoning_efforts: list[str] | None = None,
+    supports_reasoning_effort: bool = False,
+    use: str = "langchain_openai:ChatOpenAI",
 ) -> ModelConfig:
     return ModelConfig(
         name=name,
         display_name=name,
         description=None,
-        use="langchain_openai:ChatOpenAI",
+        use=use,
         model=name,
         supports_thinking=supports_thinking,
         supports_vision=False,
+        supports_reasoning_effort=supports_reasoning_effort,
         reasoning_effort=reasoning_effort,
         supported_reasoning_efforts=supported_reasoning_efforts,
     )
@@ -479,7 +482,7 @@ def test_make_lead_agent_reads_runtime_options_from_context(monkeypatch):
     app_config = _make_app_config(
         [
             _make_model("default-model", supports_thinking=False),
-            _make_model("context-model", supports_thinking=True),
+            _make_model("context-model", supports_thinking=True, supports_reasoning_effort=True),
         ]
     )
 
@@ -1235,7 +1238,7 @@ def test_make_lead_agent_applies_agent_model_settings(monkeypatch):
     """A custom agent's model_settings flow into create_chat_model as
     model_overrides, and its thinking/reasoning defaults apply when the request
     omits them (issue #4336)."""
-    app_config = _make_app_config([_make_model("agent-model", supports_thinking=True)])
+    app_config = _make_app_config([_make_model("agent-model", supports_thinking=True, supports_reasoning_effort=True)])
     agent_config = _make_agent_config(
         model="agent-model",
         model_settings={"temperature": 0.2, "max_tokens": 12000},
@@ -1348,6 +1351,7 @@ def test_model_declared_default_reasoning_effort_applies(monkeypatch):
             _make_model(
                 "reasoning-model",
                 supports_thinking=True,
+                supports_reasoning_effort=True,
                 reasoning_effort="high",
                 supported_reasoning_efforts=["low", "high"],
             )
@@ -1366,6 +1370,7 @@ def test_request_reasoning_effort_beats_the_model_default(monkeypatch):
             _make_model(
                 "reasoning-model",
                 supports_thinking=True,
+                supports_reasoning_effort=True,
                 reasoning_effort="high",
                 supported_reasoning_efforts=["low", "high"],
             )
@@ -1383,7 +1388,7 @@ def test_request_reasoning_effort_beats_the_model_default(monkeypatch):
 
 def test_model_default_applies_without_a_declared_subset(monkeypatch):
     """A default declared on its own (no subset) is still honoured."""
-    app_config = _make_app_config([_make_model("plain-model", supports_thinking=False, reasoning_effort="medium")])
+    app_config = _make_app_config([_make_model("plain-model", supports_thinking=False, supports_reasoning_effort=True, reasoning_effort="medium")])
 
     captured = _capture_reasoning_effort(monkeypatch, app_config, context={"model_name": "plain-model"})
 
@@ -1392,7 +1397,7 @@ def test_model_default_applies_without_a_declared_subset(monkeypatch):
 
 def test_agent_default_reasoning_effort_beats_the_model_default(monkeypatch):
     """agent > model: a custom agent's default is the closer ring."""
-    app_config = _make_app_config([_make_model("agent-model", supports_thinking=True, reasoning_effort="high")])
+    app_config = _make_app_config([_make_model("agent-model", supports_thinking=True, supports_reasoning_effort=True, reasoning_effort="high")])
     agent_config = _make_agent_config(model="agent-model", reasoning_effort="medium")
 
     captured = _capture_reasoning_effort(
@@ -1406,8 +1411,201 @@ def test_agent_default_reasoning_effort_beats_the_model_default(monkeypatch):
 
 
 def test_model_without_a_default_leaves_reasoning_effort_unset(monkeypatch):
-    app_config = _make_app_config([_make_model("plain-model", supports_thinking=False)])
+    app_config = _make_app_config([_make_model("plain-model", supports_thinking=False, supports_reasoning_effort=True)])
 
     captured = _capture_reasoning_effort(monkeypatch, app_config, context={"model_name": "plain-model"})
 
     assert captured["reasoning_effort"] is None
+
+
+# ---------------------------------------------------------------------------
+# What is recorded equals what is sent
+#
+# Three places record the effort — the log line, the LangSmith trace metadata, and the
+# constitution snapshot — and all three read one local variable, so what has to hold is that
+# the variable itself carries the level the request will use. Three cases make that untrue
+# today, for three unrelated reasons: the bootstrap path never hands the level to the model,
+# the coarse gate strips it before anything can translate it, and the declared-subset
+# fallback rewrites it. Each is asserted at every recording point that can be observed.
+# ---------------------------------------------------------------------------
+
+
+def _logged_effort(caplog) -> str | None:
+    """The effort named by the agent-construction log line, or None when it said None."""
+    for record in reversed(caplog.records):
+        message = record.getMessage()
+        if "Create Agent(" in message:
+            value = message.split("reasoning_effort: ", 1)[1].split(",", 1)[0].strip()
+            return None if value == "None" else value
+    raise AssertionError("the agent-construction log line never ran")
+
+
+def _capture_every_recorded_effort(monkeypatch, caplog, app_config, *, context, agent_config=None) -> dict[str, object]:
+    """Run the lead-agent factory and capture the effort where it is recorded and where it is used."""
+    import logging
+
+    import deerflow.tools as tools_module
+
+    if agent_config is not None:
+        monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda name, *, user_id=None: agent_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "build_middlewares", lambda config, model_name, agent_name=None, **kwargs: [])
+
+    captured: dict[str, object] = {}
+
+    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None, app_config=None, attach_tracing=True, model_overrides=None):
+        captured["sent"] = reasoning_effort
+        return object()
+
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+    monkeypatch.setattr(
+        lead_agent_module,
+        "publish_constitution",
+        lambda graph, record: captured.update({"constitution": record["model"]["reasoning_effort"]}),
+    )
+
+    with caplog.at_level(logging.INFO, logger=lead_agent_module.__name__):
+        lead_agent_module._make_lead_agent({"context": context or {}}, app_config=app_config)
+
+    captured["logged"] = _logged_effort(caplog)
+    return captured
+
+
+def test_bootstrap_records_the_level_it_hands_to_the_model(monkeypatch, caplog):
+    """The bootstrap path used to record a level it never passed on.
+
+    Its `create_chat_model` call omits the argument, so the model's own default is what went
+    out while the record named whatever the request asked for.
+    """
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "bootstrap-model",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                reasoning_effort="low",
+            )
+        ]
+    )
+
+    captured = _capture_every_recorded_effort(
+        monkeypatch,
+        caplog,
+        app_config,
+        context={"model_name": "bootstrap-model", "reasoning_effort": "high", "is_bootstrap": True},
+    )
+
+    assert captured["sent"] == "high"
+    assert captured["logged"] == "high"
+    assert captured["constitution"] == "high"
+
+
+def test_gated_entry_records_no_level_because_it_sends_none(monkeypatch, caplog):
+    """An entry that cannot declare effort sends none, so the record must not name one.
+
+    The entry carries a hand-written default, which is reachable from `config.yaml` (the
+    loader only checks the default against a subset when a subset is declared) but not from
+    the settings UI, where the flag is derived from a non-empty subset.
+    """
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "gated-model",
+                supports_thinking=True,
+                supports_reasoning_effort=False,
+                reasoning_effort="medium",
+            )
+        ]
+    )
+
+    captured = _capture_every_recorded_effort(monkeypatch, caplog, app_config, context={"model_name": "gated-model"})
+
+    assert captured["sent"] is None
+    assert captured["logged"] is None
+    assert captured["constitution"] is None
+
+
+def test_out_of_subset_level_is_recorded_as_the_one_that_is_sent(monkeypatch, caplog):
+    """The fallback rewrites the level, so the record has to name the rewritten one."""
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "subset-model",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                reasoning_effort="low",
+                supported_reasoning_efforts=["low", "high"],
+            )
+        ]
+    )
+
+    captured = _capture_every_recorded_effort(
+        monkeypatch,
+        caplog,
+        app_config,
+        context={"model_name": "subset-model", "reasoning_effort": "medium"},
+    )
+
+    assert captured["sent"] == "low"
+    assert captured["logged"] == "low"
+    assert captured["constitution"] == "low"
+
+
+def test_declared_level_is_recorded_unchanged(monkeypatch, caplog):
+    """Control: a level the entry declares is the same before and after, so nothing moves."""
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "subset-model",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                reasoning_effort="low",
+                supported_reasoning_efforts=["low", "high"],
+            )
+        ]
+    )
+
+    captured = _capture_every_recorded_effort(
+        monkeypatch,
+        caplog,
+        app_config,
+        context={"model_name": "subset-model", "reasoning_effort": "high"},
+    )
+
+    assert captured["sent"] == "high"
+    assert captured["logged"] == "high"
+    assert captured["constitution"] == "high"
+
+
+def test_anthropic_level_is_recorded_in_our_vocabulary_not_the_protocol_spelling(monkeypatch, caplog):
+    """Guard for the one deliberate exception: the record keeps our name, the wire does not.
+
+    `minimal` is spelled `low` on the Anthropic leg, and the record says `minimal` — the level
+    this run used. Recording `low` instead would read as "the fallback fired", because `low`
+    need not be in the declared subset. The wire half of this pair lives in
+    `test_model_factory.py::test_anthropic_minimal_maps_to_the_lowest_level_it_knows`.
+    """
+    app_config = _make_app_config(
+        [
+            _make_model(
+                "claude-minimal",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                reasoning_effort="minimal",
+                supported_reasoning_efforts=["minimal", "low", "high"],
+                use="langchain_anthropic:ChatAnthropic",
+            )
+        ]
+    )
+
+    captured = _capture_every_recorded_effort(
+        monkeypatch,
+        caplog,
+        app_config,
+        context={"model_name": "claude-minimal", "reasoning_effort": "minimal"},
+    )
+
+    assert captured["sent"] == "minimal"
+    assert captured["logged"] == "minimal"
+    assert captured["constitution"] == "minimal"
