@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-19-model-effort-fallback-and-record-design.md](../specs/2026-09-19-model-effort-fallback-and-record-design.md)
-**Status:** **Task 0 已核实（2026-09-20）** —— 四项只读核实做完，**其中第 4 项查出一个计划没预料到的面**（`test_lead_agent_model_resolution.py` 有 **7 条**既有用例会受 D3 影响，因为该文件的 `_make_model` 从不设 `supports_reasoning_effort`、而它的桩整个替换掉工厂 ⇒ 闸今天对这些用例不可见）；结论已写回下方 Task 0，并**并入 Task 1/Task 2 的 GREEN**。**Task 1–3 未开工。**（2026-09-20 起草；**同日经两轮审查定稿**——① 初稿有两处事实错误（记录点位置、D3 覆盖不到 A/B 两格），② 终审又查出**两条设计级问题**：**D2 的 warning 在 D3 之后是死代码**、**D4 与"记录必须等于实发值"这条约束直接冲突**。两条均已按他裁的**①甲 / ②甲**落进 spec。）
+**Status:** ✅ **本对三个 Task 全部交付（2026-09-20）** —— Task 1 `7414eeb1`（纯函数 + 两条腿回退 + warning，窄面 99 绿）/ Task 2 `0725463d`（记录跟随实发值 + 补传引导腿参数，53 绿）/ Task 3（文档 + 真栈，本笔）。**关键门禁**：ruff 双净；窄面 4 文件 236 例（1 条已知环境红）；**全量 145 failed / 12425 passed / 109 skipped、对 HEAD 双向 diff 为空**；真栈隔离实例两腿 + 对照组 4 条全过、**零出网**、他的 `models_config.json` md5 未变。**起草时**（2026-09-20；**同日经两轮审查定稿**——① 初稿有两处事实错误（记录点位置、D3 覆盖不到 A/B 两格），② 终审又查出**两条设计级问题**：**D2 的 warning 在 D3 之后是死代码**、**D4 与"记录必须等于实发值"这条约束直接冲突**。两条均已按他裁的**①甲 / ②甲**落进 spec。）
 
 **Parent:** [2026-09-19-model-effort-probe-and-translation-design.md](../specs/2026-09-19-model-effort-probe-and-translation-design.md)（那一对把档位**按协议翻译**并给 anthropic 腿加了**对声明子集的回退**；本对处理它留下的不对称。**翻译本身不动**。）
 
@@ -158,18 +158,30 @@
 
 > 动到的文件：`backend/AGENTS.md`（那条回退 invariant 改成两条腿 + 补"记录的是实发值"）；真栈**不动仓库里任何文件**（隔离实例 + 本机 recorder，全在仓库外）。
 
-- [ ] `backend/AGENTS.md`：那条 "**A level outside the entry's declared subset falls back to the closest declared one**" 今天写的是通用语气，但**实现只在 anthropic 腿** ⇒ 改成**两条腿都回退**；并补一句"**记录的是实发值**"（含 `minimal` 那处拼写例外的说明）。
-      **实测**：
-- [ ] **真栈验收（口径照上一对：只验请求体形状，不声称回话）**：**隔离实例**（`DEER_FLOW_PROJECT_ROOT` / `DEER_FLOW_CONFIG_PATH` / `DEER_FLOW_MODELS_CONFIG_PATH` 三个环境变量指向**仓库外 scratch 根** + `DEER_FLOW_AUTH_DISABLED=1` + `:8099`）+ **本机 recorder 端点**（Anthropic/OpenAI 形状应答 + 落盘请求体）⇒ **零出网、未打任何云端点**。两条腿各建一条**声明了子集**的条目 ⇒ 请求层传一个**越界档** ⇒ 断言 recorder 抓到的请求体是**回退值**。
+- [x] `backend/AGENTS.md`：那条 "**A level outside the entry's declared subset falls back to the closest declared one**" 今天写的是通用语气，但**实现只在 anthropic 腿** ⇒ 改成**两条腿都回退**；并补一句"**记录的是实发值**"（含 `minimal` 那处拼写例外的说明）。
+      **实测**：那条 invariant 改成 **"…on every leg"**，并写清**为什么必须在家族门之外**（读在门内**正是**当年让 openai 腿原样发的原因）+ 补了 `none` 那条边界；**新增一条** **"What is recorded equals what is sent"**（三处记录读同一个变量、变量在解析点解析、三个成因、`minimal` 那处**有意例外**及理由）。
+      ⚠️ **计划没点名、我核出来的第三处**（**必须一起改，否则文档自相矛盾**）：同一条 invariant 里的 **"the `openai` leg is an identity: byte for byte what it always was"** —— 本对之后**不再成立**（名字仍是恒等，但**值会被回退改写**）⇒ 改成 "needs no table at all … **an in-range level** on that leg is byte for byte what it always was"。
+      ⚠️ **两处自查出来的错**：① 我初稿写 **"Two of the three disagreed with the wire"** —— 读作"三处记录里两处"，**事实错**（三处**彼此始终一致**，不一致的是**记录 vs 线上**）⇒ 改成 **"Three of the four cases disagreed with the wire"**（A/B/C 三格）；② 我新写的行 **108–110 字符**、而**邻居 bullet 是 102–103** ⇒ 重新折行到 **102–105**。
+      **逐条对着代码核过**：`_apply_declared_effort` 里 `issubclass` **出现 0 次**（协议无关 ✓）；家族门只在 `_translate_reasoning_effort`（`:149` ✓）；三处记录读同一变量（Task 0#2 ✓）；`minimal` 例外由 Task 2 的专属守卫用例钉住 ✓。全文 grep 过，**无其它地方**还说"回退只在 anthropic 腿"或"记录的是请求值"。
+- [x] **真栈验收（口径照上一对：只验请求体形状，不声称回话）**：**隔离实例**（`DEER_FLOW_PROJECT_ROOT` / `DEER_FLOW_CONFIG_PATH` / `DEER_FLOW_MODELS_CONFIG_PATH` 三个环境变量指向**仓库外 scratch 根** + `DEER_FLOW_AUTH_DISABLED=1` + `:8099`）+ **本机 recorder 端点**（Anthropic/OpenAI 形状应答 + 落盘请求体）⇒ **零出网、未打任何云端点**。两条腿各建一条**声明了子集**的条目 ⇒ 请求层传一个**越界档** ⇒ 断言 recorder 抓到的请求体是**回退值**。
       ⚠️ **触发路径要点名**（上一对的教训）：**越界档从 run 请求的 `context.reasoning_effort` 传** —— `cfg = dict(config.get("configurable", {}))`（`agent.py:122`），**gateway 的 `context` 是自由 dict、全链路不做 Literal 校验**（已核）⇒ 条目声明 `['low','high']` 而请求传 `"medium"` 即构成越界。**别指望从界面传**：界面只列声明子集，选不出越界值（spec §1.1）。
       ⚠️ **启动隔离实例前把 `rag.qdrant_url` 也改到 scratch 或指向空**（上一对实测：它会连本机 `:6333` 做幂等的 `PUT …/index`；虽无害，但没必要碰共享服务）。
-      **实测**：
-- [ ] **收尾**：**零改动他的配置**（写入全落 scratch 根 ⇒ `models_config.json` md5 与动手前相同，**不欠还原**）、密钥不落盘（scratch 用现造的假值）、隔离实例与 recorder 停掉（`taskkill /T`，确认端口释放）、**scratch 目录删净**。
-      **实测**：
-- [ ] **门禁**：`backend/AGENTS.md` **没有 prettier 门禁**（上一对已查实：仓库根无 prettier 配置；pre-commit 那条只管 `frontend/` 且 `types_or` 不含 markdown）⇒ 只核内容；`models_config.json` md5 未变。
-      **实测**：
-- [ ] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），并把各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。
-      **实测**：
+      **实测**：**触发路径落成** `POST /api/threads`（建线程）→ `POST /api/threads/{id}/runs/wait`，body 带 `context: {model_name: <条目>, reasoning_effort: "medium"}`；两条条目都**声明 `['low','high']`、默认 `low`**，端点 `127.0.0.1:8098`。**零出网**（recorder 应答）、**未打 `api.anthropic.com` 或任何云端点**。
+      | 腿 | 路径 | 请求层传 | 抓到的请求体 |
+      | --- | --- | --- | --- |
+      | anthropic | `/v1/messages` | `medium` | **`output_config: {'effort': 'low'}`** |
+      | openai | `/v1/chat/completions` | `medium` | **`reasoning_effort: 'low'`** |
+      | 对照 anthropic | `/v1/messages` | `high`（子集内） | `output_config: {'effort': 'high'}` |
+      | 对照 openai | `/v1/chat/completions` | `high`（子集内） | `reasoning_effort: 'high'` |
+
+      ⚠️⚠️ **第一版不具区分度，是补了对照组才有意义的**：条目**默认档也是 `low`** ⇒ "发出 `low`"**也可能是"请求层被完全忽略"**。对照组（传 `high` ⇒ 线上 `high`）证明**请求层值确实被采纳** ⇒ 前面那个 `low` **只能是回退**。**这是本腿的关键判据，别省对照组。**
+      ⭐ **顺带在真栈验到了记录侧**（计划只要求验请求体形状）：日志里 **warning 恰好 2 条**（`'medium'` → `'low'`，Declared levels `['low', 'high']`）⇒ **每次替换一条、不重复**（正是 D2 甲的设计）；`Create Agent(...)` 那条 info 对越界那两次记 **`low`（实发值）**、对对照组记 `high` ⇒ **记录 == 实发** 在真栈成立。
+- [x] **收尾**：**零改动他的配置**（写入全落 scratch 根 ⇒ `models_config.json` md5 与动手前相同，**不欠还原**）、密钥不落盘（scratch 用现造的假值）、隔离实例与 recorder 停掉（`taskkill /T`，确认端口释放）、**scratch 目录删净**。
+      **实测**：他的 `models_config.json` **md5 = `b8b729ddd624e7ea1587efb6466e70b6` 未变**；**共享 Qdrant 仍 18 collections**（`rag.qdrant_url` 已改到死端口 `127.0.0.1:6399` ⇒ 启动时只记了一条连接异常，**没碰共享服务**）；他的 `:8001`（PID 80924）仍在听；我的 gateway + recorder 已 `taskkill /T`，`:8098`/`:8099` 已释放；`_t3` scratch **已删净**；**密钥不落盘**（scratch 里那把是现造的假值 `t3-local-key`）。
+- [x] **门禁**：`backend/AGENTS.md` **没有 prettier 门禁**（上一对已查实：仓库根无 prettier 配置；pre-commit 那条只管 `frontend/` 且 `types_or` 不含 markdown）⇒ 只核内容；`models_config.json` md5 未变。
+      **实测**：内容已逐条对代码核过（见上）；`models_config.json` md5 未变（见收尾）。⚠️ **`frontend/AGENTS.md` 本对不动**（constitution 那个字段前端零渲染）⇒ 无需量它的 prettier。
+- [x] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），并把各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。
+      **实测**：本文件的 `Status` 与 spec 的 `Status` 已改成"**三个 Task 全部交付**"并带上提交号与关键数字；Task 0–3 的 `实测` 行**全部回填**（`grep '实测 = *$'` 归零）。
 
 ---
 

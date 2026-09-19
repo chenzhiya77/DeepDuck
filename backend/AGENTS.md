@@ -626,16 +626,32 @@ Invariants the code has to keep true:
   kwarg** — routing it through `model_kwargs` draws a warning asking for exactly that — **merging**
   into an `output_config` the entry already declared rather than replacing it, because `format` lives
   there too. Only our four level names are translated, so the Codex path's `none` passes through
-  untouched, and the `openai` leg is an identity: byte for byte what it always was. The write-time 422
+  untouched, and the `openai` leg needs no table at all — its parameter is already named what OpenAI
+  calls it — so an in-range level on that leg is byte for byte what it always was. The write-time 422
   that refused an `anthropic` entry carrying the reasoning-effort trio was **removed** in the same
   change — the fields are translated now, no longer forwarded verbatim, so there is nothing left for
   that refusal to protect.
-- **A level outside the entry's declared subset falls back to the closest declared one**, and an entry
-  that declares no subset is left alone. The editor and the composer only ever offer the declared
+- **A level outside the entry's declared subset falls back to the closest declared one, on every leg.**
+  The subset is the entry's own statement about itself rather than a property of the dialect, so the step
+  that reads it is protocol-blind and sits _outside_ the family gate that only the renaming needs —
+  reading it inside that gate is exactly what once left the OpenAI leg sending an out-of-range value
+  verbatim while the Anthropic leg degraded. The editor and the composer only ever offer the declared
   subset, so an out-of-range level can only arrive from a request-level override or an agent's own
-  `config.yaml` — neither should be able to produce a request the endpoint would refuse. An empty
-  declaration means "every level is fine", which is what the OpenAI leg has always done; do not turn it
-  into a refusal.
+  `config.yaml` — neither should be able to produce a request the endpoint would refuse. An entry that
+  declares no subset means "every level is fine" and is left alone, which is what the OpenAI leg has
+  always done; an empty declaration is not a refusal. A level that is not one of our four is passed
+  through rather than ranked: the Codex path writes `none`, and the ranking is a direct lookup, so
+  ranking it would raise instead of forwarding it.
+- **What is recorded equals what is sent.** Three places record the level — the agent-construction log
+  line, the LangSmith trace metadata, and the constitution snapshot — and all three read one local
+  variable, so the variable is resolved at the resolution site, after the caller's value and the model's
+  default are reconciled and before anything records it. Three of the four cases disagreed with the wire
+  before this, for three unrelated reasons: the bootstrap path never handed its level to the model at
+  all, the coarse `supports_reasoning_effort` gate stripped it without the record noticing, and the
+  declared-subset fallback rewrote it. **One deliberate exception**: the record keeps our own name for
+  the level, so an Anthropic entry declaring `minimal` records `minimal` while the wire carries `low` —
+  recording the protocol's spelling instead would read as the fallback having fired, because `low` need
+  not be in that entry's declared subset.
 - **The Anthropic family's generic passthrough table stays intentionally empty.** The OpenAI family's
   unknown-key guard is scoped to `BaseChatOpenAI` on purpose and would false-positive against this
   family's legitimate passthrough names (`frequency_penalty` and friends). The one key this repo can
