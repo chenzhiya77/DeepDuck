@@ -20,6 +20,12 @@ import {
   emptyCapabilityValue,
   type ModelCapabilityValue,
 } from "@/core/models/capability";
+import {
+  thinkingRecipeFor,
+  thinkingShapeFromEntry,
+  type ThinkingRecipeFields,
+  type ThinkingShape,
+} from "@/core/models/thinking-shape";
 import type {
   ManagedModel,
   ManagedModelInput,
@@ -63,6 +69,10 @@ export function ModelsEditDialog({
   const [maxTokens, setMaxTokens] = useState("");
   const [capability, setCapability] =
     useState<ModelCapabilityValue>(emptyCapabilityValue);
+  const [thinkingShape, setThinkingShape] = useState<ThinkingShape>("none");
+  const [preservedRecipe, setPreservedRecipe] = useState<
+    ThinkingRecipeFields | undefined
+  >(undefined);
   const displayNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -72,15 +82,29 @@ export function ModelsEditDialog({
     setEndpoint(model.endpoint ?? "");
     setMaxTokens("");
     setCapability(capabilityValueFromModel(model));
+    const reading = thinkingShapeFromEntry(model);
+    setThinkingShape(reading.shape);
+    // A hand-written recipe matches no literal: the row shows "not set", so saving has
+    // to carry the original dicts back rather than write over them (spec 2026-09-21 D6).
+    setPreservedRecipe(
+      reading.preserve
+        ? {
+            when_thinking_enabled: model.when_thinking_enabled ?? undefined,
+            when_thinking_disabled: model.when_thinking_disabled ?? undefined,
+          }
+        : undefined,
+    );
   }, [model]);
 
   if (!model) return null;
+
+  const provider = (model.provider ?? "openai-compatible") as ProviderId;
 
   function handleSubmit() {
     if (!model) return;
     const parsedMaxTokens = maxTokens.trim() ? Number(maxTokens) : undefined;
     onSave({
-      provider: (model.provider ?? "openai-compatible") as ProviderId,
+      provider,
       name: model.name,
       model: model.model,
       display_name: displayName.trim() || undefined,
@@ -89,6 +113,7 @@ export function ModelsEditDialog({
       max_tokens:
         parsedMaxTokens && parsedMaxTokens > 0 ? parsedMaxTokens : undefined,
       ...capabilityInputFromValue(capability),
+      ...thinkingRecipeFor(provider, thinkingShape, preservedRecipe),
     });
     onOpenChange(false);
   }
@@ -162,6 +187,9 @@ export function ModelsEditDialog({
               <ModelCapabilityEditor
                 value={capability}
                 onChange={setCapability}
+                provider={provider}
+                thinkingShape={thinkingShape}
+                onThinkingShapeChange={setThinkingShape}
               />
 
               <div className="space-y-1.5">

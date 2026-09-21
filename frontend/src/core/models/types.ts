@@ -31,6 +31,12 @@ export type ProviderId = "openai-compatible" | "anthropic" | "deepseek";
 /** Reasoning-effort levels, in enum order; mirrors the backend `REASONING_EFFORT_LEVELS`. */
 export type ReasoningEffortLevel = "minimal" | "low" | "medium" | "high";
 
+/**
+ * A request-body recipe: what an entry sends when thinking is on / off. Its *shape* is
+ * decided by the client class behind the entry, not by us (see `thinking-shape.ts`).
+ */
+export type ThinkingRecipe = Record<string, unknown>;
+
 export type ModelSource = "config_file" | "ui";
 
 /** Admin view of one model returned by `GET /api/models/config`. */
@@ -56,6 +62,10 @@ export interface ManagedModel {
   /** Default effort level; the backend requires it to be a member of the subset. */
   reasoning_effort?: ReasoningEffortLevel | null;
   context_window?: number | null;
+  /** Recipe sent when thinking is on; null/undefined = never declared. */
+  when_thinking_enabled?: ThinkingRecipe | null;
+  /** Recipe sent when thinking is off; null/undefined = never declared. */
+  when_thinking_disabled?: ThinkingRecipe | null;
   source: ModelSource;
   editable: boolean;
 }
@@ -82,6 +92,8 @@ export interface ManagedModelInput {
   context_window?: number;
   max_tokens?: number;
   use_responses_api?: boolean;
+  when_thinking_enabled?: ThinkingRecipe;
+  when_thinking_disabled?: ThinkingRecipe;
 }
 
 /** Body of `POST /api/models/config/validate` (spec §5.3.2). */

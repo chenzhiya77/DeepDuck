@@ -1659,6 +1659,10 @@ export interface Translations {
       apiType: string;
       apiTypeChat: string;
       apiTypeResponses: string;
+      thinkingShape: string;
+      thinkingShapeNone: string;
+      thinkingShapeGateway: string;
+      thinkingShapeVllm: string;
       endpoint: string;
       apiKey: string;
       apiKeyToggle: string;

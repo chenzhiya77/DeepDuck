@@ -3,7 +3,8 @@
  * 一把凭证 + N 个 Model ID → N 条扁平 entry（客户端展开，后端契约不变）。
  * 钉死：命名=Model ID、display_name 默认=Model ID、重名 -2/-3 去重、
  * 共享 api_key/endpoint/provider/能力、空 Model ID 跳过、
- * use_responses_api 仅 openai-compatible + Responses 时为 true。
+ * use_responses_api 仅 openai-compatible + Responses 时为 true、
+ * 思考配方按 provider 生成（anthropic / deepseek 自动推，「不设置」⇒ 两个键都不写）。
  */
 import { describe, expect, it } from "@rstest/core";
 
@@ -95,6 +96,51 @@ describe("expandBatchToEntries", () => {
       expect(entry.supports_vision).toBe(true);
       expect(entry.context_window).toBe(128000);
     }
+  });
+
+  it("writes the thinking shape the provider decides on its own", () => {
+    const anthropic = expandBatchToEntries(
+      { provider: "anthropic", apiKey: "k" },
+      ["m"],
+      [],
+    );
+    expect(anthropic[0]!.when_thinking_enabled).toEqual({
+      thinking: { type: "enabled", budget_tokens: 4096 },
+    });
+    expect(anthropic[0]!.when_thinking_disabled).toEqual({
+      thinking: { type: "disabled" },
+    });
+
+    const deepseek = expandBatchToEntries(
+      { provider: "deepseek", apiKey: "k" },
+      ["m"],
+      [],
+    );
+    expect(deepseek[0]!.when_thinking_enabled).toEqual({
+      extra_body: { thinking: { type: "enabled" } },
+    });
+  });
+
+  it("writes the picked shape for openai-compatible and nothing for 不设置", () => {
+    const picked = expandBatchToEntries(
+      { provider: "openai-compatible", apiKey: "k", thinkingShape: "vllm" },
+      ["m"],
+      [],
+    );
+    expect(picked[0]!.when_thinking_enabled).toEqual({
+      extra_body: { chat_template_kwargs: { enable_thinking: true } },
+    });
+    expect(picked[0]!.when_thinking_disabled).toEqual({
+      extra_body: { chat_template_kwargs: { enable_thinking: false } },
+    });
+
+    const unset = expandBatchToEntries(
+      { provider: "openai-compatible", apiKey: "k" },
+      ["m"],
+      [],
+    );
+    expect("when_thinking_enabled" in unset[0]!).toBe(false);
+    expect("when_thinking_disabled" in unset[0]!).toBe(false);
   });
 
   it("passes the endpoint through unchanged for every provider", () => {

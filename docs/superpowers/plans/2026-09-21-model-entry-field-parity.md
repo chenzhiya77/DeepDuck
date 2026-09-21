@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)
-**Status:** 🚧 **Task 0 已完成（2026-09-21，只读核实 6/6、结果已回填）** —— **实现从 Task 1 开始、尚未动工**。spec 已定稿（**经多轮审查修订**：必改×3 / 应改×4 / 缺口×2 / 可选×2 / **范围×1** 全部落进两份文档，验收编号 1–19）。
+**Status:** 🚧 **Task 0 / Task 1 / Task 2 已完成（2026-09-21 ~ 09-22）** —— Task 0 只读核实 6/6；**Task 1 后端契约已交付并提交 `6d65264a`**（RED 4 红 → GREEN 42 绿 → 形状取证 102 绿首跑即绿 → neuter ×3 受害者不相交 → 窄面 144 绿 / ruff 双净 → 全量 146 failed / 12432 passed、双向 A/B 为空）；**Task 2 前端形状已交付**（纯函数 16 绿 + 接线层 8 绿 + dom 3 绿 → neuter 4 红 → `pnpm check` 净 → 全量前端 **240 文件 / 2591 例 0 失败**；代码**未提交**，等指令）。⚠️ Task 2 有两处已披露的偏差（`thinking-shape.ts` 多拆一个导出、**编辑腿接线提前到 Task 2** ⇒ Task 3 RED 第 ④ 条降级为取证钉子）。下一步 Task 3（请求头两个弹窗 + 「API 类型」+ `max_tokens` 预填 + `toManagedInput` +5）。spec 已定稿（**经多轮审查修订**：必改×3 / 应改×4 / 缺口×2 / 可选×2 / **范围×1** 全部落进两份文档，验收编号 1–19）。
 
 > **2026-09-21 范围扩一次（他裁甲）**：`max_tokens` / `use_responses_api` **从"既有受害者"升为交付项** —— 它们**写侧早已完整**（`ManagedModelInput:206-207`、`entry:652-653`、`types.ts:83-84`、编辑弹窗真有 `max_tokens` 那格），缺的**只有读侧** ⇒ 归 D6 一并接上。**Task 1 多一个 RED 项（读回这两个）、Task 3 多两条 RED（`toManagedInput` 往返 + 编辑弹窗补「API 类型」与 `max_tokens` 预填）、Task 4 多一条真栈**；验收重排为 **1–19**。⚠️ **唯一新控件**=「API 类型」进编辑弹窗（文案 key 复用添加弹窗那三个，**不新增 i18n**）；⚠️ **一条新规则**=`use_responses_api` 的**假值归一**（Chat ⇒ 不写键；显式 `false` 会被归一成缺键，且**任何界面动作都不许把"缺键"变成 `false`**）。
 
@@ -87,26 +87,42 @@
 
 **验收对应**：spec §4 的第 1 / 2 / 3 / 4（读路径）/ 5（两个既有字段的读路径）/ 6 / 7 条。
 
-- [ ] **RED**：在 `test_models_config_api.py` 加用例，**先红**：
+- [x] **RED**：在 `test_models_config_api.py` 加用例，**先红**：
       1. `PUT` 带 `when_thinking_enabled` + `when_thinking_disabled` + `default_headers` ⇒ **`models_config.json` 里逐字出现**（今天会 422 ⇒ 红）。
       2. **只填其中一个** ⇒ 另外两个**键不存在**（不是 `null`）—— 钉住 `stored_entry = {k: v for k, v in entry.items() if v is not None}` 那条过滤。
       3. **未知键仍被拒**：带一个清单外的键 ⇒ **422**（钉住 `extra="forbid"` 没被放宽）。
       4. **读得回来（D6 读侧）**：`PUT` 这条条目之后 `GET /api/models/config` ⇒ 三个字段**原样返回**。今天 PUT 就 422 ⇒ 红；**只做完写路径时它仍然红** —— 这正是它守的东西。
       5. **两个既有字段也读得回来**（甲扩的那两个）：`PUT` 一个带 `max_tokens: 8192` + `use_responses_api: true` 的条目 ⇒ `GET` 响应里 `max_tokens == 8192`、`use_responses_api is True`；**没设过的条目** ⇒ 两个都是 `None`（不是 `False` / `0`）。今天这两条恒红（响应模型没这两个字段，值取不到）。
-      **实测**：
-- [ ] **GREEN**：`ManagedModelInput` 加 3 个字段（`when_thinking_enabled: dict | None = None` / `when_thinking_disabled: dict | None = None` / `default_headers: dict[str, str] | None = None`）；路由的 `entry: dict = {...}` 加 3 行；**`ManagedModelResponse` 加 5 个字段**（3 新 + `max_tokens: int | None` / `use_responses_api: bool | None`）、`_managed_response` 加 5 个参数、**`get_models_config` 与 `put_models_config` 的响应各传一次**（D6 读侧；GET 那侧两个既有字段从 `dumped = model.model_dump()` 取）。窄面转绿。
-      **实测**：
-- [ ] **形状对齐取证 —— ⚠️ 首跑即绿，不是 RED**（spec §4 的第 6 / 7 条）：在 `test_model_factory.py` 加用例 —— 把 spec §3.3 那张表的**三个形状**各构造一次，喂给 `create_chat_model`，断言 `factory.py:357-370` 三段 `elif` 各自命中（形状① ⇒ `extra_body.thinking.type`；形状② ⇒ `chat_template_kwargs`；形状③ ⇒ `thinking`）。用现有 `test_model_factory.py` 的 `_patch_factory` 桩法。
+      **实测（2026-09-21，RED 4 红 / 38 绿）**：插在 `test_public_models_expose_effort_capabilities` 与 support-bundle 一节之间（新分区 `# ── write/read: thinking recipes + default headers (spec 2026-09-21)`）。
+      - 第 1 / 2 / 4 条 = `assert 422 == 200`（`ManagedModelInput` 的 `extra="forbid"` 当场拒掉三个新键）；第 5 条 = **`KeyError: 'max_tokens'`**（响应模型确实没这两个键）。
+      - ⚠️ **第 3 条首跑即绿**（`422` 照旧）—— 它守的是"`extra="forbid"` 没被放宽"，**不是 RED**，是防回归的钉子（同第 3 项取证的待遇）。
+      - ⚠️ **第 4 / 5 条比 plan 原文多断言一处（按 spec 补齐）**：spec §4 第 4 条写的是「`GET /api/models/config`（**以及 `PUT` 的响应**）」⇒ 两条用例都改成**对 PUT / GET 两个响应各断言一遍**（设置页保存后正是拿 PUT 的响应刷新列表 ⇒ 那里缺字段同样会被下一次保存抹掉）。
+      - ⚠️ 顺带验了一条**读侧前提**：`ModelConfig` 只**声明** `use_responses_api` / `when_thinking_*`，`max_tokens` / `default_headers` 是 `extra="allow"` 的**额外键** ⇒ 两者都进 `model_dump()`（探针：设值 ⇒ 原值、未设 ⇒ `None`；`AppConfig.from_file` 的 yaml+json 合并后同样在）⇒ `dumped.get(...)` 取得到，**读侧不需要改配置层**。
+- [x] **GREEN**：`ManagedModelInput` 加 3 个字段（`when_thinking_enabled: dict | None = None` / `when_thinking_disabled: dict | None = None` / `default_headers: dict[str, str] | None = None`）；路由的 `entry: dict = {...}` 加 3 行；**`ManagedModelResponse` 加 5 个字段**（3 新 + `max_tokens: int | None` / `use_responses_api: bool | None`）、`_managed_response` 加 5 个参数、**`get_models_config` 与 `put_models_config` 的响应各传一次**（D6 读侧；GET 那侧两个既有字段从 `dumped = model.model_dump()` 取）。窄面转绿。
+      **实测（2026-09-21，GREEN 42 passed / 0 failed）**：`routers/models.py` **+31 行、−0 行**（插入点照 Task 0 第 4 项：`ManagedModelInput` 追加在 `use_responses_api` 之后 **16→19**、`entry` 追加在 `"use_responses_api"` 之后、`if item.endpoint:` 条件行之前 **15→18**）。
+      读侧取值分两种写法（已核，缺一不可）：`when_thinking_enabled` / `when_thinking_disabled` / `use_responses_api` 走**声明字段**（`model.…`），`default_headers` / `max_tokens` 是 `extra="allow"` 的额外键 ⇒ 走 **`dumped.get(...)`**（`dumped` 那行本来就在，给端点取值用的）。
+- [x] **形状对齐取证 —— ⚠️ 首跑即绿，不是 RED**（spec §4 的第 6 / 7 条）：在 `test_model_factory.py` 加用例 —— 把 spec §3.3 那张表的**三个形状**各构造一次，喂给 `create_chat_model`，断言 `factory.py:357-370` 三段 `elif` 各自命中（形状① ⇒ `extra_body.thinking.type`；形状② ⇒ `chat_template_kwargs`；形状③ ⇒ `thinking`）。用现有 `test_model_factory.py` 的 `_patch_factory` 桩法。
       ⚠️⚠️ **工厂一个字都不改**（见 Architecture）⇒ **这三条必然首跑就绿**，它们**不是 RED、也不构成回归防线** —— 它们回答的是「**我们选的形状对不对**」（**取证**）。**别为了让它红去改工厂。**
-      **实测**：
-- [ ] **neuter（带 revert proof）**：把 `entry` 里新加的一行**改回不写**（模拟"只改了入参没改写盘"）⇒ 第 1 条用例必须**转红**（证明它守的是"真进了文件"，不是"入参收了"）。改回。
-      **实测**：
-- [ ] **neuter（读路径 · 带 revert proof）**：把 `ManagedModelResponse` 的三个字段（或 `_managed_response` 的传参）删掉 ⇒ **第 4 条必须转红**。改回。
-      **实测**：
-- [ ] **neuter（两个既有字段 · 带 revert proof）**：把 `ManagedModelResponse` 里 `max_tokens` / `use_responses_api` 两行（或它们的传参）删掉 ⇒ **第 5 条必须转红**。改回。⚠️ **与上一条不同点**：这两行的写侧今天就在（`entry` 里早有两行）⇒ 这条 neuter **只可能**打红读侧断言；若它把第 1 条也打红了，说明改错了地方。
-      **实测**：
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_models_config_api.py` + `test_model_factory.py`）绿。
-      **实测**：
+      **实测（2026-09-21，✅ 首跑即绿，102 passed）**：写成**一条 parametrize × 3**（`_THINKING_SHAPES`：`gateway-extra-body` / `vllm-chat-template` / `anthropic-native`），**每条两个腿都断言** —— 开思考 ⇒ 配方**逐字透传**；关思考 ⇒ **归属它的那段 `elif` 合成的形状**；并各补一条"**没声明档位 ⇒ `reasoning_effort` 一个键都不发**"（这正是真栈"四个模式收敛成两个请求体"的前提）。
+      ⚠️ 顺带核出**仓内已有覆盖**：三个形状的**关思考腿**各自早有用例（`:245` 形状①、`:906`/`:933` 形状②、`:277` 形状③）⇒ 新增这条的增量在**开思考腿的逐字透传 + 两条腿的"不发档位"**，以及把三个形状**收在一处**当契约看。
+- [x] **neuter（带 revert proof）**：把 `entry` 里新加的一行**改回不写**（模拟"只改了入参没改写盘"）⇒ 第 1 条用例必须**转红**（证明它守的是"真进了文件"，不是"入参收了"）。改回。
+      **实测（2026-09-21）**：删掉 `entry` 里那三行 ⇒ **3 红**（第 1 / 2 / 4 条 —— 都依赖真写进文件），第 3 条（防回归钉子）与第 5 条（与三个新键无关）**保持绿** ⇒ 受害者集合与预期一致。改回后用 `git diff` 核对：**+31 行、−0 行**，无残留。
+- [x] **neuter（读路径 · 带 revert proof）**：把 `ManagedModelResponse` 的三个字段（或 `_managed_response` 的传参）删掉 ⇒ **第 4 条必须转红**。改回。
+      **实测（2026-09-21）**：把三个新字段从 `ManagedModelResponse` / `_managed_response` 参数与返回 / GET·PUT 两处调用里删净 ⇒ **1 红，正是第 4 条**；第 1 条（写侧）**照旧绿** ⇒ 读侧 neuter 只打读侧断言。改回。
+- [x] **neuter（两个既有字段 · 带 revert proof）**：把 `ManagedModelResponse` 里 `max_tokens` / `use_responses_api` 两行（或它们的传参）删掉 ⇒ **第 5 条必须转红**。改回。⚠️ **与上一条不同点**：这两行的写侧今天就在（`entry` 里早有两行）⇒ 这条 neuter **只可能**打红读侧断言；若它把第 1 条也打红了，说明改错了地方。
+      **实测（2026-09-21）**：把这两个 kwargs 从 `_managed_response` 的返回里删掉 ⇒ **1 红，正是第 5 条**（第 1 条写侧绿、第 3 条绿）⇒ 与实际一致：**这条 neuter 只可能打红读侧**。改回。
+      ⇒ **三条 neuter 的受害者互不相交**（{1,2,4} / {4} / {5}）—— 每条守的是自己那一段。
+      ⚠️ **三条 neuter 都复跑过一遍**：上面第一轮跑在"第 4 / 5 条补了 PUT 响应断言"**之前**的版本上；补完后**逐条重跑**（A ⇒ 3 红 {1,2,4}、B ⇒ 1 红 {4}、C ⇒ 1 红 {5}），**结论不变** —— 新增的断言与原有断言**同受害者**。
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_models_config_api.py` + `test_model_factory.py`）绿。
+      **实测（2026-09-21）**：`ruff check` **All checks passed**；`ruff format --check` **3 files already formatted**（首跑曾报 `test_model_factory.py` 待格式化 —— 是我自己那条 parametrize 的签名被拆成三行，**并回一行即净**）。窄面 **144 passed / 0 failed**（`test_models_config_api.py` 42 + `test_model_factory.py` 102）。
+      更宽面（顺带跑）：`test_models_config.py` + `test_models_authorization.py` + `test_model_config.py` + `test_doctor_models.py` ⇒ **73 passed / 1 failed**，那 1 条是 **`test_missing_models_file_falls_back_to_config_yaml` = 已知环境条件红**（本机仓库根真实 `models_config.json` 泄进搜索模式；该文件根本不 import 路由 ⇒ 与本改无关，属基线）。
+      **全量 + 双向 A/B（2026-09-21）**：`pytest -m "not live" tests/ -q`（后台，22m35s）⇒ **146 failed / 12432 passed / 109 skipped / 0 error**。抽那 146 个 node id，两侧**同一个仓外 basetemp**（`E:/app/python/agent/df-ab/basetemp`）+ 同一 `PYTHONPATH=packages/harness:.`：
+      - 工作树（本改）⇒ **144 failed / 2 passed**
+      - HEAD（`git worktree add --detach` 3e300fa0、仓外、另 `cp` 进 4 个 gitignored 文件）⇒ **144 failed / 2 passed**
+      - **双向 diff 为空**（`comm -23` 与 `comm -13` 都无输出）⇒ **零新增红、零消失红**。
+      ⚠️ **146 → 144 那 2 条是 basetemp「位置」造成的，不是本改**：`test_detector_repo_root.py::test_unmarked_location_raises_instead_of_scanning_nothing` + `test_delta_channel_state.py::test_merge_message_writes_randomized_differential` —— 仓内 basetemp 下必红、换仓外 basetemp 两侧都绿（与既有记录一致）。⇒ **本对的全量基线口径=仓外 basetemp 的 144**。
+      ⚠️ 一次教训：**跑全量时别再并发跑窄面** —— 两次前台窄面与后台全量**共用 `.pytest-tmp`**，`--basetemp` 会在会话开始时清掉那个目录（本次没造成假红，但属不该有的风险）。
+      ⚠️ A/B 前先核过 import 落点：`uv` 的 editable 是 **`.pth` 形式**（`_editable_impl_deerflow_harness.pth`），`PYTHONPATH=.` **压不住**它（worktree 里 `import deerflow` 会指回主树）⇒ 两侧都显式写 `PYTHONPATH=packages/harness:.` 才让 worktree 真正用自己的 harness。
 
 ---
 
@@ -126,34 +142,47 @@
       5. **「不设置」⇒ 两个字段都不生成**（不是生成 `null`）。
       6. **反推（D6 读侧）**：给定文件里的 dict ⇒ 得到下拉的当前值（形状①/②/③ 各一条）；**未命中三个字面量 ⇒ 落「不设置」且标记"原样保留"**（保存时必须把它带回去，不能推成 `undefined` ⇒ 那等于删）。
       ⚠️ **推导规则写成一张表**（`ChatAnthropic` 系含 `ClaudeChatModel` ⇒ ③；`VllmChatModel` ⇒ ②；**其余** ⇒ ①）——**别散在 if/else 里**。
-      **实测**：
-- [ ] **GREEN（纯函数）**：实现 `thinking-shape.ts`。窄面绿。
-      **实测**：
-- [ ] **neuter（纯函数）**：把 `budget_tokens` 从 `4096` 改成别的值 ⇒ 第 3 条必须**转红**。改回。
-      **实测**：
+      ⚠️ **三个形状的字面量要与 Task 1 的工厂侧钉子逐字节相同**：`backend/tests/test_model_factory.py::_THINKING_SHAPES`（Task 1 已交付）把三个 dict 钉成「工厂认得的形状」⇒ 这里生成的必须是**同一份拼写**（`{"extra_body": {"thinking": {"type": …}}}` / `{"extra_body": {"chat_template_kwargs": {"enable_thinking": …}}}` / `{"thinking": {"type": …, "budget_tokens": 4096}}`）。两边拼写漂了，**只有真栈能发现** —— 单测各绿。
+      **实测（2026-09-22）**：新建 `frontend/tests/unit/models/thinking-shape.test.ts`（**node project**，16 例）。**RED = 模块不存在**（`Cannot find module '@/core/models/thinking-shape'`，`Test Files 1 failed`、`Tests no tests`）。
+      ⚠️ **实现比 plan 原文多拆了导出**：plan 写的是「① `thinkingRecipeFor` 做**生成 + 反推**」，实际是**三个导出** —— 生成 `thinkingRecipeFor(provider, picked, existing?)`、反推 `thinkingShapeFromEntry(entry) → { shape, preserve }`、表 `autoThinkingShape(provider)` + `THINKING_SHAPE_OPTIONS`。一个函数同时做两个方向会让「保存」与「回显」两条路纠缠（反推还要额外回一个 `preserve` 标记）。
+      ⚠️ **反推的判据写死成一句话**：「条目声明了几个字段，就按这几个字段匹配同一行，且**至少声明一个**」⇒ 两个都写 / 只写一半 / 字段是 `null` 三种都落得对；一个字段都没有 ⇒「不设置」且**无物可保**（`preserve: false`，保存时什么也不写）。
+- [x] **GREEN（纯函数）**：实现 `thinking-shape.ts`。窄面绿。
+      **实测（2026-09-22）**：**16 passed**（`Test Files 1 passed`）。
+- [x] **neuter（纯函数）**：把 `budget_tokens` 从 `4096` 改成别的值 ⇒ 第 3 条必须**转红**。改回。
+      **实测（2026-09-22）**：`4096 → 8192` ⇒ **4 红**，其中 plan 点名的第 3 条在列，另 3 条是同一个字面量的另外几个侧面（`pins anthropic / deepseek…` / `recognises the anthropic literal` / `reads an entry from the admin API…`）⇒ **同一批次受害、无意外受伤者**。改回后 16 绿。
 - [ ] **RED（接线层 —— 验收 9 / 10 的真正落点）**：`capability.ts` / `batch.ts` 的测试（node project），**先红**：**给定一个 `anthropic` 条目 ⇒ 展开出来的 entry 里带形状③的两个字段；给定「不设置」⇒ entry 里这两个键不存在**。**编辑腿这条不在这里做**（Task 0 第 3 项 (b) 已裁）：弹窗**能渲染**（Task 0 第 2 项）⇒ 编辑腿的接线断言**落在 Task 3 的 dom 用例**（渲染编辑弹窗 → 保存 → 断言 `onSave` 的 payload）—— 直测真接线，比在 node 层做代理断言强。**本 Task 只做添加腿**（`expandBatchToEntries`）。
       ⚠️ **为什么必须单独做这一条**：纯函数层只证明「给定类生成什么 dict」，**证不了「它真的被带进 PUT payload」**。spec §4 第 9 条写的是「**保存后，文件里的配方是…**」—— **那需要接线**。
-      **实测**：
-- [ ] **GREEN（接线层）**：`capability.ts` / `batch.ts` 把两个配方字段带进 entry。
-      **实测**：
+      **实测（2026-09-22）**：`tests/unit/models/batch.test.ts` 加两条（`anthropic` / `deepseek` 自动推、`openai-compatible` 选形状 + 不设置）⇒ **RED 2 红**（`expected undefined to deeply equal {…}`），其余 6 条绿。
+- [x] **GREEN（接线层）**：`capability.ts` / `batch.ts` 把两个配方字段带进 entry。
+      **实测（2026-09-22）**：只动 `batch.ts` —— `BatchSharedFields` +`thinkingShape?`、`expandBatchToEntries` 里按 `thinkingRecipeFor(shared.provider, shared.thinkingShape ?? "none")` 采两个键（沿用既有"有值才写"的写法）⇒ **8 passed**。⚠️ **`capability.ts` 一个字未改**（Task 0 第 3 项 (b) 已裁：配方属"连接 / 请求体组"，不塞进能力组）。
 - [ ] **RED（UI · `dom` project）**：⚠️ **落点是 `*.dom.test.tsx`** —— `rstest.config.ts` 把测试分在两个 project（`node` 匹配 `tests/unit/**/*.test.ts(x)` 但**排除** `*.dom.test.*`；`dom` 只收 `*.dom.test.(ts|tsx)`，happy-dom）。
       **渲染目标 = 直接 `render(<ModelCapabilityEditor provider="…" value={…} onChange={…} />)`，不经过弹窗** —— 环比 **`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`**（渲染视图组件本身，注释写明"**instead of driving the Radix dropdown** … keeps the test about the rule rather than about Radix's portal behavior"；`tool-settings-page.dom.test.tsx` 同形态）⇒ **这条用例不依赖 Task 0 第 2 项**（Radix `Dialog` 能不能渲染是 Task 3 的事）。
       先例另照 **`tests/unit/components/workspace/composer-reasoning-controls.dom.test.tsx`** —— 同类的「模式 + 推理深度」控件，用 `@testing-library/react` 的 `render` / `fireEvent` / `screen`，测三种观察形态。
       ⚠️ **断言只钉"那一行在不在"，不要去开 `Select` 的候选列表** —— 新控件照「API 类型」的 gate 形态（`models-add-dialog.tsx:219-237`：`<span className="text-sm font-medium">{M.…}</span>` + `<Select>`）⇒ **span 是内联渲染的**，`queryByText` / `getByText` 就够；happy-dom 下 Portal 的挂载时机不可靠，开列表属于自找 flake。
       ⚠️ **i18n 要 mock**（照上面那条先例的 `KEYS` proxy：`rs.mock("@/core/i18n/hooks", …)`）—— 否则新 key 解析成 `undefined`，按文案断言会**假红**。
       用例钉住（spec §4 第 8 条）：**下拉只在 `provider === "openai-compatible"` 时出现 —— `provider="anthropic"` / `"deepseek"` 时它不在**（**每个假设各渲一次**，别驱动切换 —— 同先例的"renders the view once with a different stored provider"）。
-      **实测**：
-- [ ] **GREEN（UI）**：`model-capability-editor.tsx` **新增 `provider` prop**（两个弹窗的调用点各传一次），并在「思考模式」**下面**挂下拉（spec §3.4：**只当 `provider === "openai-compatible"` 时渲染**，复用同弹窗里「API 类型」那个 `provider === ... &&` 的 gate 形态，`models-add-dialog.tsx:220`）。三个选项 =「不设置」/「OpenAI 兼容网关」/「vLLM / SGLang」，初始值走**反推**（D6），推不出落「不设置」。
+      **实测（2026-09-22）**：新建 `tests/unit/components/workspace/settings/model-capability-editor.dom.test.tsx`。**RED = 1 红**（`openai-compatible` 那条：`Unable to find an element with the text: thinkingShape`）+ **2 条"空绿"** —— ⚠️ **负向断言在实现之前必然绿**（那一行本来就还没渲染）⇒ 它们**不是 RED**，是实现之后**防"过度渲染"**的守卫。断言取两处：label `<span>`（`getByText`）+ 触发器的 `aria-label`（`getByLabelText`），**没有开候选列表**（happy-dom 下 Portal 时机不可靠）。`subsetSelected` 那个收参数的 key 在 mock 里单独答成函数（否则 `KEYS` proxy 给字符串、组件一调用就抛）。
+- [x] **GREEN（UI）**：`model-capability-editor.tsx` **新增 `provider` prop**（两个弹窗的调用点各传一次），并在「思考模式」**下面**挂下拉（spec §3.4：**只当 `provider === "openai-compatible"` 时渲染**，复用同弹窗里「API 类型」那个 `provider === ... &&` 的 gate 形态，`models-add-dialog.tsx:220`）。三个选项 =「不设置」/「OpenAI 兼容网关」/「vLLM / SGLang」，初始值走**反推**（D6），推不出落「不设置」。
       ⚠️ **两格自动推要落在前端**（spec D3 已裁）—— 保存时按 `use:` 类算出配方，**不是**让后端按 provider 补；**且不碰 `supports_thinking` chip**（spec D3 第 4 行）。
-      **实测**：
-- [ ] **neuter（自动推）**：把「`anthropic` ⇒ 形状③」那一行**从推导表里删掉** ⇒ 接线层那条必须**转红**。改回。
+      **实测（2026-09-22）**：`model-capability-editor.tsx` 加 `provider` / `thinkingShape` / `onThinkingShapeChange` 三个 prop（都必填 ⇒ 漏传调用点 `tsc` 当场红，正是我们要的），那一行挂在「思考模式」**下面**、gate 用 **`autoThinkingShape(provider) === null`**（**不是**内联的 `provider === "openai-compatible"` —— 让推导表自己说"这一格推不出"，两者在当前 3 个 id 下等价）；三个选项走 `THINKING_SHAPE_OPTIONS`（`none` / `gateway` / `vllm`，**`anthropic` 不在下拉里**）。**3 passed**。
+      **文案**：`thinkingShape` / `thinkingShapeNone` / `thinkingShapeGateway` / `thinkingShapeVllm` 四个 key 进 `locales/{types,en-US,zh-CN}.ts`（紧挨 `apiType` 那一组，措辞照 spec §3.4 的 mock：思考开关写法 / 不设置 / OpenAI 兼容网关 / vLLM / SGLang）。
+      ⚠️ **`supports_thinking` chip 一个字未动**（spec D3 第 4 行）：配方与能力声明各管一半。
+      ⚠️ **本 Task 多落了一处（已披露，见本节末尾「两处偏差」）**：编辑弹窗的 `provider` / 形状初始值（反推）/ 保存时的配方也在本 Task 接上，不是 Task 3。
+- [x] **neuter（自动推）**：把「`anthropic` ⇒ 形状③」那一行**从推导表里删掉** ⇒ 接线层那条必须**转红**。改回。
       ⚠️ **先确认实现选的是哪种兜底**，两种都能让这条 neuter 有牙、但红的理由不同：
       - 按 spec D3 的「**其余 ⇒ ①**」⇒ 删掉 `anthropic` 后会**落到形状①**（不是"不生成"）⇒ 断言形状③自然红；
       - 若实现是"查不到就返回 `undefined`" ⇒ 删掉后**不生成** ⇒ 也红。
       **把实际是哪种写进 `**实测**`** —— 否则下一个人重跑时会以为行为变了。
-      **实测**：
-- [ ] **门禁**：`cd frontend && pnpm check`（lint + type check）干净；`pnpm test` 窄面绿 —— ⚠️ **两个 project 都要跑到**（只跑 node 会漏掉 Task 3 的 dom 用例）。
-      **实测**：
+      **实测（2026-09-22）**：删掉 `PINNED_SHAPES` 里的 `anthropic: "anthropic"` ⇒ **4 红 / 三处**：**接线层那条**（plan 点名，`writes the thinking shape the provider decides on its own`）✅ + 纯函数 2 条（`pins anthropic / deepseek…`、`autoThinkingShape > names the shape…`）+ **dom 1 条**（`is absent for anthropic` —— 那一格会重新出现下拉，**这是设计上正确的连带反应**）。改回。
+      ⚠️ **兜底是哪种（plan 要求点名）**：实现是「**查不到 ⇒ 返回 `null` ⇒ 两个键都不生成**」，**不是** spec D3 表里的「其余 ⇒ ①」。理由：那张表是**按客户端类**写的，而前端只看得见 3 个 curated id（`use:` 类由 allowlist 一一对应）⇒ 表里只钉 `anthropic` / `deepseek` 两行；`openai-compatible` 这一格 D3 自己判"背后可能是任何东西 ⇒ 要用户选"。⇒ 删掉 `anthropic` 后的红是「**什么都不发**」，不是「落成形状①」。
+- [x] **门禁**：`cd frontend && pnpm check`（lint + type check）干净；`pnpm test` 窄面绿 —— ⚠️ **两个 project 都要跑到**（只跑 node 会漏掉 Task 3 的 dom 用例）。
+      **实测（2026-09-22）**：`pnpm check` **干净**（首跑 3 个 lint 错 + 1 个 tsc 错，全是我自己新写的：dom 用例里两个空箭头函数 ⇒ 换 `rs.fn()`；`thinking-shape.test.ts` 的 `import/order` ⇒ 值导入提到类型导入之前；`matches[0]` 可能 undefined ⇒ 改解构 + 三元）。窄面 **3 文件 / 27 例绿**（node 16 + 8、dom 3，**两个 project 都跑到**）；邻面（所有 import 这批模块的测试：`capability.test.ts` / `models-settings-page.dom` / `models-capability-wizard.dom` / `functional-models.dom`）⇒ **4 文件 / 125 例绿，零回归**；**全量 `pnpm test` ⇒ 240 文件 / 2591 例全绿、0 失败**（3m09s；基线是 238 文件 ⇒ 本次 +2 = 新建的两个用例文件）。
+      ⚠️ **顺手核了 `prettier`（不在本 Task 的门禁里，但 CI 有）**：`pnpm format` 对**整仓**报红是既有环境条件（CRLF）＋既有债，用「`tr -d '\r'` 后与 prettier 输出比对」法逐文件判：**我自己新写的 3 个文件有 3 处真问题**（两个缺行尾换行、一条超宽断言）⇒ 已修；**其余红全是既有**（`models-add-dialog.tsx` 的两处与 `locales/{en,zh-CN,types}.ts` 的 `logFail`/`tableRecallAtK` 在 HEAD 上同样被 flag ⇒ 按规矩不动历史行）。
+
+> **Task 2 的两处偏差（已披露）**
+> ① **`thinking-shape.ts` 多拆一个导出**（生成 / 反推 / 表，见上）；plan 原文是一个函数管两个方向。
+> ② **编辑腿的接线提前到本 Task**：plan 把它整个放在 Task 3（Task 0 第 3 项 (b) 只把**断言**挪过去），但**只渲染一个不会保存的控件 = 半成品** —— 两个弹窗之间的这段时间里，编辑弹窗的下拉是死的。⇒ 本 Task 一并接上（`models-edit-dialog.tsx`：`provider` + 反推初始值 + `preservedRecipe` + `handleSubmit` 里 `...thinkingRecipeFor(...)`）。
+> ⚠️ **后果**：Task 3 RED 的第 ④ 条（"编辑既有 `anthropic` 条目 ⇒ `onSave` payload 带形状③"）**到 Task 3 时是首跑即绿**，它降级为**取证/防回归的钉子**，不是 RED —— Task 3 的 实测 会照 Task 1 第 3 项那个格式标注，**别为了让它红去拆掉这里的接线**。
 
 ---
 
@@ -166,7 +195,7 @@
 ⚠️ **为什么是两个文件** —— `models-edit-dialog.tsx` **也有「接口地址」那一组**（已核：`M.endpoint` 在 `:149`、`M.apiKey` 在 `:137`），所以请求头**两处都要有**，否则已存在的条目改不了头。（这正是第一轮审查的必改第 1 条。）
 
 - [ ] **RED**：⚠️ **先按 Task 0 第 2 项的核实结果二选一** —— Radix `Dialog` 能不能在 `dom` project 里渲染：
-      ✅ **Task 0 第 2 项已答：能渲染** ⇒ 在 `tests/unit/components/workspace/settings/*.dom.test.tsx` 里**直接 `render(<ModelsEditDialog open model={…} onSave={…} … />)`**（`open`/`onOpenChange` 是受控 prop、mount 时零网络；只需 mock `@/core/i18n/hooks`），钉住 ① 添加弹窗第一步能填 `default_headers`；② **编辑弹窗也能填**；③ **打开编辑弹窗时显示已存的头**（D6 读侧）；④ **编辑腿接线**：给定一个 `anthropic` 条目 ⇒ 保存 ⇒ `onSave` 的 payload **带形状③的两个字段**（= Task 0 第 3 项 (b) 从 Task 2 移过来的那条）。⛔「不能渲染 ⇒ 退回接线层」的 contingency 已作废（Task 0 第 2 项），别再写第二套。
+      ✅ **Task 0 第 2 项已答：能渲染** ⇒ 在 `tests/unit/components/workspace/settings/*.dom.test.tsx` 里**直接 `render(<ModelsEditDialog open model={…} onSave={…} … />)`**（`open`/`onOpenChange` 是受控 prop、mount 时零网络；只需 mock `@/core/i18n/hooks`），钉住 ① 添加弹窗第一步能填 `default_headers`；② **编辑弹窗也能填**；③ **打开编辑弹窗时显示已存的头**（D6 读侧）；④ **编辑腿接线**：给定一个 `anthropic` 条目 ⇒ 保存 ⇒ `onSave` 的 payload **带形状③的两个字段**（= Task 0 第 3 项 (b) 从 Task 2 移过来的那条）。⚠️ **2026-09-22 改判**：这条接线**已在 Task 2 落地**（理由：只渲染不保存 = 半成品）⇒ **本条的 RED 降级为"首跑即绿的取证钉子"**（照 Task 1 第 3 项的格式标注），**别为了让它红去拆 Task 2 的接线**。⛔「不能渲染 ⇒ 退回接线层」的 contingency 已作废（Task 0 第 2 项），别再写第二套。
       ⚠️⚠️ **不要让 neuter 去守一个它测不到的分支** —— 如果 RED 落在接线层、而 neuter 却去删编辑弹窗里的控件，**那条 neuter 会静默失效**（接线层的用例照样绿）。**这是本 plan 第一轮审查查出的必改 1。**
       - **必须做（与弹窗能不能渲染无关）**：`models-settings-page.tsx` 的 `toManagedInput` **往返用例**（node project）—— 给定一个带 `default_headers` / 配方 / `max_tokens` / `use_responses_api` 的 `ManagedModel`（GET 形状）⇒ 投影出的 `ManagedModelInput` **仍带这 5 个字段**。**这条是 D6 的防线**（既有的 `max_tokens` / `use_responses_api` 今天就是在这里丢的 ⇒ **同一条用例把它们一起钉上**：`max_tokens: 8192` 与 `use_responses_api: true` 都要原样带过去）。
       - **必须做（两个既有字段的界面侧）** —— 若弹窗能渲染 ⇒ dom 用例钉住 ① 打开一个 `max_tokens: 8192` 的条目时那一格**显示 8192**（今天恒空）；② 「API 类型」显示 Responses、改成 Chat 保存 ⇒ payload 里**没有** `use_responses_api`（**不是 `false`**）；③ **防呆**：从没设过该键的条目保存后**仍不带**这个键。（弹窗**能**渲染 —— Task 0 第 2 项已验证 ⇒ 这三条**都落在 dom 用例里**，不需要纯函数回落；⚠️ 但 `apiTypeToUseResponsesApi` 的规则本身仍放在 `thinking-shape.ts`（Task 0 第 3 项 (b)），node 层另有一条纯函数用例守着它 ⇒ **「不写成 false」在两层都有牙**。）

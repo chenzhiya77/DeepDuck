@@ -1,5 +1,7 @@
 import { capabilityFieldsFromShared } from "./capability";
 import type { CapabilitySharedFields } from "./capability";
+import { thinkingRecipeFor } from "./thinking-shape";
+import type { ThinkingShape } from "./thinking-shape";
 import type { ManagedModelInput, ProviderId } from "./types";
 
 /**
@@ -19,6 +21,8 @@ export interface BatchSharedFields extends CapabilitySharedFields {
   apiKey?: string;
   /** "chat" (default) or "responses"; only meaningful for openai-compatible. */
   apiType?: "chat" | "responses";
+  /** Which thinking recipe to write; only meaningful for openai-compatible. */
+  thinkingShape?: ThinkingShape;
 }
 
 /**
@@ -41,6 +45,8 @@ export function uniqueModelName(desired: string, taken: Set<string>): string {
  * - `use_responses_api` is set only for openai-compatible + "responses".
  * - Capability subsets/defaults are carried per entry with the shared gating
  *   rules (`capabilityFieldsFromShared`).
+ * - `when_thinking_*` follows the shape the provider's class pins, or the picked
+ *   one where it does not decide (spec 2026-09-21); "not set" writes neither key.
  */
 export function expandBatchToEntries(
   shared: BatchSharedFields,
@@ -52,6 +58,10 @@ export function expandBatchToEntries(
   const useResponsesApi =
     shared.provider === "openai-compatible" && shared.apiType === "responses";
   const capability = capabilityFieldsFromShared(shared);
+  const recipe = thinkingRecipeFor(
+    shared.provider,
+    shared.thinkingShape ?? "none",
+  );
 
   for (const rawId of modelIds) {
     const modelId = rawId.trim();
@@ -85,6 +95,12 @@ export function expandBatchToEntries(
     }
     if (capability.reasoning_effort !== undefined) {
       entry.reasoning_effort = capability.reasoning_effort;
+    }
+    if (recipe.when_thinking_enabled) {
+      entry.when_thinking_enabled = recipe.when_thinking_enabled;
+    }
+    if (recipe.when_thinking_disabled) {
+      entry.when_thinking_disabled = recipe.when_thinking_disabled;
     }
     if (useResponsesApi) entry.use_responses_api = true;
     entries.push(entry);

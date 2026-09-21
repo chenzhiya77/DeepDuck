@@ -30,6 +30,7 @@ import {
   type ModelCapabilityValue,
 } from "@/core/models/capability";
 import { suggestCapabilities } from "@/core/models/capability-registry";
+import type { ThinkingShape } from "@/core/models/thinking-shape";
 import type { ManagedModelInput, ProviderId } from "@/core/models/types";
 import { AUTOFILL_OFF_INPUT_PROPS, SECRET_INPUT_AUTOFILL_PROPS } from "@/lib/input-autofill";
 
@@ -71,6 +72,7 @@ export function ModelsAddDialog({
   const [capability, setCapability] = useState<ModelCapabilityValue>(
     emptyCapabilityValue,
   );
+  const [thinkingShape, setThinkingShape] = useState<ThinkingShape>("none");
   const [suggested, setSuggested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export function ModelsAddDialog({
     setShowKey(false);
     setModelIds([""]);
     setCapability(emptyCapabilityValue());
+    setThinkingShape("none");
     setSuggested(false);
     setError(null);
     setWarning(null);
@@ -161,6 +164,7 @@ export function ModelsAddDialog({
         endpoint: endpoint.trim() || undefined,
         apiKey: apiKey || undefined,
         apiType,
+        thinkingShape,
         ...capabilityValueToShared(capability),
       },
       modelIds,
@@ -335,6 +339,9 @@ export function ModelsAddDialog({
                   value={capability}
                   onChange={setCapability}
                   suggested={suggested}
+                  provider={provider}
+                  thinkingShape={thinkingShape}
+                  onThinkingShapeChange={setThinkingShape}
                 />
               </div>
             )}

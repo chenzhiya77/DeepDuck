@@ -26,6 +26,11 @@ import {
   toggleWindow,
   type ModelCapabilityValue,
 } from "@/core/models/capability";
+import {
+  THINKING_SHAPE_OPTIONS,
+  autoThinkingShape,
+  type ThinkingShape,
+} from "@/core/models/thinking-shape";
 import type { ReasoningEffortLevel } from "@/core/models/types";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +39,14 @@ interface ModelCapabilityEditorProps {
   onChange: (next: ModelCapabilityValue) => void;
   /** True when the value came from the curated registry, so it is labelled a suggestion. */
   suggested?: boolean;
+  /**
+   * The curated provider id the entry will be saved with. It decides whether the
+   * thinking-shape row is needed at all — see `thinking-shape.ts`.
+   */
+  provider: string | null | undefined;
+  /** Which thinking recipe the entry will carry; ignored where the provider pins one. */
+  thinkingShape: ThinkingShape;
+  onThinkingShapeChange: (next: ThinkingShape) => void;
 }
 
 /**
@@ -50,9 +63,28 @@ export function ModelCapabilityEditor({
   value,
   onChange,
   suggested = false,
+  provider,
+  thinkingShape,
+  onThinkingShapeChange,
 }: ModelCapabilityEditorProps) {
   const { t } = useI18n();
   const M = t.settings.models;
+  // The class behind the entry decides the shape; only a provider that can be
+  // anything has to ask (spec 2026-09-21 D3).
+  const asksForShape = autoThinkingShape(provider) === null;
+
+  function shapeLabel(shape: ThinkingShape): string {
+    switch (shape) {
+      case "none":
+        return M.thinkingShapeNone;
+      case "gateway":
+        return M.thinkingShapeGateway;
+      case "vllm":
+        return M.thinkingShapeVllm;
+      case "anthropic":
+        return M.providerAnthropic;
+    }
+  }
 
   function windowLabel(size: number): string {
     switch (size) {
@@ -104,6 +136,29 @@ export function ModelCapabilityEditor({
           }
         />
       </div>
+
+      {asksForShape && (
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium">{M.thinkingShape}</span>
+          <Select
+            value={thinkingShape}
+            onValueChange={(next) =>
+              onThinkingShapeChange(next as ThinkingShape)
+            }
+          >
+            <SelectTrigger className="w-full" aria-label={M.thinkingShape}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THINKING_SHAPE_OPTIONS.map((shape) => (
+                <SelectItem key={shape} value={shape}>
+                  {shapeLabel(shape)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <span className="text-sm font-medium">{M.supportedWindows}</span>
