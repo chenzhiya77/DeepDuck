@@ -205,6 +205,9 @@ class ManagedModelInput(BaseModel):
     context_window: int | None = Field(default=None, gt=0, description="Total context window in tokens (prompt + completion).")
     max_tokens: int | None = Field(default=None, gt=0, description="Per-call output cap.")
     use_responses_api: bool | None = Field(default=None, description="Route OpenAI-compatible calls through /v1/responses.")
+    when_thinking_enabled: dict | None = Field(default=None, description="Request-body recipe applied when thinking is on.")
+    when_thinking_disabled: dict | None = Field(default=None, description="Request-body recipe applied when thinking is off.")
+    default_headers: dict[str, str] | None = Field(default=None, description="Extra HTTP headers sent with every call to this model.")
 
 
 class ModelsConfigUpdateRequest(BaseModel):
@@ -233,6 +236,11 @@ class ManagedModelResponse(BaseModel):
     supported_reasoning_efforts: list[ReasoningEffort] | None = None
     reasoning_effort: ReasoningEffort | None = None
     context_window: int | None = None
+    when_thinking_enabled: dict | None = Field(default=None, description="Request-body recipe applied when thinking is on.")
+    when_thinking_disabled: dict | None = Field(default=None, description="Request-body recipe applied when thinking is off.")
+    default_headers: dict[str, str] | None = Field(default=None, description="Extra HTTP headers sent with every call to this model.")
+    max_tokens: int | None = Field(default=None, description="Per-call output cap; None when never set.")
+    use_responses_api: bool | None = Field(default=None, description="Route OpenAI-compatible calls through /v1/responses; None when never set.")
     source: str = Field(default="config_file", description="Origin: 'ui' (models_config.json) or 'config_file' (config.yaml).")
     editable: bool = Field(default=False, description="True only for UI-managed models.")
 
@@ -388,6 +396,11 @@ def _managed_response(
     supported_reasoning_efforts: list[ReasoningEffort] | None,
     reasoning_effort: ReasoningEffort | None,
     context_window: int | None,
+    when_thinking_enabled: dict | None,
+    when_thinking_disabled: dict | None,
+    default_headers: dict[str, str] | None,
+    max_tokens: int | None,
+    use_responses_api: bool | None,
     source: str,
 ) -> ManagedModelResponse:
     return ManagedModelResponse(
@@ -406,6 +419,11 @@ def _managed_response(
         supported_reasoning_efforts=supported_reasoning_efforts,
         reasoning_effort=reasoning_effort,
         context_window=context_window,
+        when_thinking_enabled=when_thinking_enabled,
+        when_thinking_disabled=when_thinking_disabled,
+        default_headers=default_headers,
+        max_tokens=max_tokens,
+        use_responses_api=use_responses_api,
         source=source,
         editable=(source == "ui"),
     )
@@ -451,6 +469,11 @@ async def get_models_config(
                 supported_reasoning_efforts=model.supported_reasoning_efforts,
                 reasoning_effort=model.reasoning_effort,
                 context_window=model.context_window,
+                when_thinking_enabled=model.when_thinking_enabled,
+                when_thinking_disabled=model.when_thinking_disabled,
+                default_headers=dumped.get("default_headers"),
+                max_tokens=dumped.get("max_tokens"),
+                use_responses_api=model.use_responses_api,
                 source=source,
             )
         )
@@ -651,6 +674,9 @@ async def put_models_config(
             "context_window": item.context_window,
             "max_tokens": item.max_tokens,
             "use_responses_api": item.use_responses_api,
+            "when_thinking_enabled": item.when_thinking_enabled,
+            "when_thinking_disabled": item.when_thinking_disabled,
+            "default_headers": item.default_headers,
         }
         if item.endpoint:
             entry[endpoint_key] = item.endpoint
@@ -674,6 +700,11 @@ async def put_models_config(
                 supported_reasoning_efforts=item.supported_reasoning_efforts,
                 reasoning_effort=item.reasoning_effort,
                 context_window=item.context_window,
+                when_thinking_enabled=item.when_thinking_enabled,
+                when_thinking_disabled=item.when_thinking_disabled,
+                default_headers=item.default_headers,
+                max_tokens=item.max_tokens,
+                use_responses_api=item.use_responses_api,
                 source="ui",
             )
         )

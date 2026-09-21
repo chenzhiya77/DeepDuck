@@ -961,6 +961,70 @@ def test_thinking_disabled_vllm_enable_thinking_format(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# The three thinking-recipe shapes the settings UI writes
+# (spec 2026-09-21 model-entry-field-parity §3.3)
+# ---------------------------------------------------------------------------
+
+#: (use class, when_thinking_enabled recipe, expected kwargs when thinking is on,
+#: expected kwargs when thinking is off). These are the literal shapes the settings UI
+#: generates, so the test is *forensic*: it answers "is this the shape the factory
+#: recognizes", not "did someone break the factory" — the factory is unchanged here.
+_THINKING_SHAPES = [
+    pytest.param(
+        "langchain_openai:ChatOpenAI",
+        {"extra_body": {"thinking": {"type": "enabled"}}},
+        {"extra_body": {"thinking": {"type": "enabled"}}},
+        {"extra_body": {"thinking": {"type": "disabled"}}},
+        id="gateway-extra-body",
+    ),
+    pytest.param(
+        "deerflow.models.vllm_provider:VllmChatModel",
+        {"extra_body": {"chat_template_kwargs": {"enable_thinking": True}}},
+        {"extra_body": {"chat_template_kwargs": {"enable_thinking": True}}},
+        {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}},
+        id="vllm-chat-template",
+    ),
+    pytest.param(
+        "langchain_anthropic:ChatAnthropic",
+        {"thinking": {"type": "enabled", "budget_tokens": 4096}},
+        {"thinking": {"type": "enabled", "budget_tokens": 4096}},
+        {"thinking": {"type": "disabled"}},
+        id="anthropic-native",
+    ),
+]
+
+
+@pytest.mark.parametrize("use, recipe, on_enable, on_disable", _THINKING_SHAPES)
+def test_the_shapes_the_settings_ui_writes_land_on_their_factory_branch(monkeypatch, use: str, recipe: dict, on_enable: dict, on_disable: dict):
+    """Both legs: enabling forwards the recipe verbatim, disabling is synthesized by its branch."""
+    cfg = _make_app_config([_make_model("shape-model", use=use, supports_thinking=True, when_thinking_enabled=recipe)])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class CapturingModel(FakeChatModel):
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            BaseChatModel.__init__(self, **kwargs)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda path, base: CapturingModel)
+
+    factory_module.create_chat_model(name="shape-model", thinking_enabled=True)
+    for key, value in on_enable.items():
+        assert captured.get(key) == value
+    # No effort declared on the entry ⇒ nothing to send (the four modes stay on two bodies).
+    assert captured.get("reasoning_effort") is None
+
+    captured.clear()
+    factory_module.create_chat_model(name="shape-model", thinking_enabled=False)
+    for key, value in on_disable.items():
+        assert captured.get(key) == value
+    for absent in {"extra_body", "thinking"} - set(on_disable):
+        assert absent not in captured
+    assert captured.get("reasoning_effort") is None
+
+
+# ---------------------------------------------------------------------------
 # stream_usage injection
 # ---------------------------------------------------------------------------
 

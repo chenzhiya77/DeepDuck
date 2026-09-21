@@ -612,6 +612,104 @@ def test_public_models_expose_effort_capabilities(config_env: Path):
     assert entry["reasoning_effort"] == "medium"
 
 
+# ── write/read: thinking recipes + default headers (spec 2026-09-21) ───────
+# D6: a field the response model does not carry is erased by the next whole-collection
+# PUT, because the UI can only round-trip what GET handed it. `max_tokens` and
+# `use_responses_api` were writable from day one and unreadable until now.
+
+_RECIPE_MODEL = {
+    "provider": "openai-compatible",
+    "name": "recipe-model",
+    "model": "gpt-5",
+    "api_key": "k",
+    "when_thinking_enabled": {"extra_body": {"thinking": {"type": "enabled"}}},
+    "when_thinking_disabled": {"extra_body": {"thinking": {"type": "disabled"}}},
+    "default_headers": {"x-opencode-session": "sess-1"},
+}
+
+
+def test_put_persists_thinking_recipes_and_headers(config_env: Path):
+    """The recipes and headers land in the file verbatim, not just in the request model."""
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [_RECIPE_MODEL]}).status_code == 200
+
+    stored = {entry["name"]: entry for entry in _read_models_json(config_env)}["recipe-model"]
+    assert stored["when_thinking_enabled"] == {"extra_body": {"thinking": {"type": "enabled"}}}
+    assert stored["when_thinking_disabled"] == {"extra_body": {"thinking": {"type": "disabled"}}}
+    assert stored["default_headers"] == {"x-opencode-session": "sess-1"}
+
+
+def test_put_omits_undeclared_recipes_and_headers(config_env: Path):
+    """Absent means absent: a written `null` would be a declaration, not a silence."""
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert (
+            client.put(
+                "/api/models/config",
+                json={"models": [{"provider": "openai-compatible", "name": "headers-only", "model": "gpt-5", "api_key": "k", "default_headers": {"x-a": "1"}}]},
+            ).status_code
+            == 200
+        )
+
+    stored = {entry["name"]: entry for entry in _read_models_json(config_env)}["headers-only"]
+    assert stored["default_headers"] == {"x-a": "1"}
+    for key in ("when_thinking_enabled", "when_thinking_disabled"):
+        assert key not in stored
+
+
+def test_put_rejects_a_field_outside_the_managed_list(config_env: Path):
+    """`extra="forbid"` is what keeps arbitrary keys out of the file — adding three must not widen it."""
+    _seed(config_env)
+    before = (config_env / "models_config.json").read_bytes()
+
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/models/config",
+            json={"models": [{**_RECIPE_MODEL, "default_header": {"x-a": "1"}}]},
+        )
+
+    assert response.status_code == 422
+    assert (config_env / "models_config.json").read_bytes() == before
+
+
+def test_get_round_trips_recipes_and_headers(config_env: Path):
+    """D6 read side: only what the responses carry can survive the next save.
+
+    The PUT response matters as much as GET's — the settings page refreshes its list from it,
+    so a field missing there is dropped by the very next save.
+    """
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        put_body = client.put("/api/models/config", json={"models": [_RECIPE_MODEL]}).json()
+        get_body = client.get("/api/models/config").json()
+
+    for body in (put_body, get_body):
+        read = {model["name"]: model for model in body["models"]}["recipe-model"]
+        assert read["when_thinking_enabled"] == {"extra_body": {"thinking": {"type": "enabled"}}}
+        assert read["when_thinking_disabled"] == {"extra_body": {"thinking": {"type": "disabled"}}}
+        assert read["default_headers"] == {"x-opencode-session": "sess-1"}
+
+
+def test_get_returns_the_two_write_only_fields(config_env: Path):
+    """`max_tokens` / `use_responses_api` were writable from day one and unreadable — same D6 trap."""
+    _seed(config_env)
+    payload = [
+        {"provider": "openai-compatible", "name": "capped", "model": "gpt-5", "api_key": "k", "max_tokens": 8192, "use_responses_api": True},
+        {"provider": "openai-compatible", "name": "uncapped", "model": "gpt-5", "api_key": "k"},
+    ]
+    with _client(system_role="admin") as client:
+        put_body = client.put("/api/models/config", json={"models": payload}).json()
+        get_body = client.get("/api/models/config").json()
+
+    for body in (put_body, get_body):
+        read = {model["name"]: model for model in body["models"]}
+        assert read["capped"]["max_tokens"] == 8192
+        assert read["capped"]["use_responses_api"] is True
+        assert read["uncapped"]["max_tokens"] is None
+        assert read["uncapped"]["use_responses_api"] is None
+
+
 # ── support bundle redacts the models file ────────────────────────────────
 
 
