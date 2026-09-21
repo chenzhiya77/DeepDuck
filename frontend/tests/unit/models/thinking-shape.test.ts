@@ -11,6 +11,7 @@ import { describe, expect, it } from "@rstest/core";
 
 import {
   THINKING_SHAPE_OPTIONS,
+  apiTypeToUseResponsesApi,
   autoThinkingShape,
   thinkingRecipeFor,
   thinkingShapeFromEntry,
@@ -153,5 +154,20 @@ describe("thinkingShapeFromEntry", () => {
 describe("THINKING_SHAPE_OPTIONS", () => {
   it("offers exactly the three shapes a user can pick", () => {
     expect(THINKING_SHAPE_OPTIONS).toEqual(["none", "gateway", "vllm"]);
+  });
+});
+
+describe("apiTypeToUseResponsesApi", () => {
+  it("writes true for Responses and nothing at all for Chat", () => {
+    expect(apiTypeToUseResponsesApi("responses")).toBe(true);
+    expect(apiTypeToUseResponsesApi("chat")).toBeUndefined();
+  });
+
+  it("never produces false — an absent key and an explicit false are different files", () => {
+    // `false is not None` on the backend, so a false here would be written into the
+    // file and the entry would stop being byte-stable (spec 2026-09-21 D6).
+    for (const picked of ["chat", "responses", undefined] as const) {
+      expect(apiTypeToUseResponsesApi(picked)).not.toBe(false);
+    }
   });
 });

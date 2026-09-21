@@ -22,7 +22,11 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/core/i18n/hooks";
 import { validateModelsConfig } from "@/core/models/api";
-import { expandBatchToEntries } from "@/core/models/batch";
+import {
+  expandBatchToEntries,
+  headersToRecord,
+  type HeaderRow,
+} from "@/core/models/batch";
 import {
   capabilityValueFromSuggestion,
   capabilityValueToShared,
@@ -67,6 +71,7 @@ export function ModelsAddDialog({
   const [apiType, setApiType] = useState<"chat" | "responses">("chat");
   const [endpoint, setEndpoint] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [headers, setHeaders] = useState<HeaderRow[]>([]);
   const [showKey, setShowKey] = useState(false);
   const [modelIds, setModelIds] = useState<string[]>([""]);
   const [capability, setCapability] = useState<ModelCapabilityValue>(
@@ -82,12 +87,19 @@ export function ModelsAddDialog({
     setModelIds((prev) => prev.map((v, i) => (i === index ? value : v)));
   }
 
+  function updateHeader(index: number, patch: Partial<HeaderRow>) {
+    setHeaders((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }
+
   function reset() {
     setStep("identity");
     setProvider("openai-compatible");
     setApiType("chat");
     setEndpoint("");
     setApiKey("");
+    setHeaders([]);
     setShowKey(false);
     setModelIds([""]);
     setCapability(emptyCapabilityValue());
@@ -165,6 +177,7 @@ export function ModelsAddDialog({
         apiKey: apiKey || undefined,
         apiType,
         thinkingShape,
+        defaultHeaders: headersToRecord(headers),
         ...capabilityValueToShared(capability),
       },
       modelIds,
@@ -252,6 +265,61 @@ export function ModelsAddDialog({
                     placeholder="https://api.example.com/v1"
                     onChange={(e) => setEndpoint(e.target.value)}
                   />
+                </div>
+
+                {/* Request headers (repeatable) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">
+                      {M.defaultHeaders}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setHeaders((prev) => [...prev, { name: "", value: "" }])
+                      }
+                    >
+                      <PlusIcon className="size-4" />
+                      {M.addHeader}
+                    </Button>
+                  </div>
+                  {headers.map((row, index) => (
+                    <div className="flex items-center gap-2" key={index}>
+                      <Input
+                        className="min-w-0 flex-1"
+                        {...AUTOFILL_OFF_INPUT_PROPS}
+                        value={row.name}
+                        placeholder={M.headerNamePlaceholder}
+                        onChange={(e) =>
+                          updateHeader(index, { name: e.target.value })
+                        }
+                      />
+                      <Input
+                        className="min-w-0 flex-1"
+                        {...AUTOFILL_OFF_INPUT_PROPS}
+                        value={row.value}
+                        placeholder={M.headerValuePlaceholder}
+                        onChange={(e) =>
+                          updateHeader(index, { value: e.target.value })
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={M.removeHeader}
+                        onClick={() =>
+                          setHeaders((prev) =>
+                            prev.filter((_, i) => i !== index),
+                          )
+                        }
+                      >
+                        <TrashIcon className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
 
                 {/* API key */}

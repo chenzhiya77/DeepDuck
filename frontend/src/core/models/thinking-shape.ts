@@ -129,3 +129,15 @@ export function thinkingRecipeFor(
   if (shape === "none") return existing ? { ...existing } : {};
   return { ...SHAPE_RECIPES[shape] };
 }
+
+/**
+ * The API type as the field the backend stores (spec 2026-09-21 D6): Responses is
+ * `true`, Chat writes nothing. `false` is never produced — the two are different
+ * files, since an absent key means "never set" while an explicit `false` is a value
+ * the UI cannot express and must not invent.
+ */
+export function apiTypeToUseResponsesApi(
+  apiType: "chat" | "responses" | undefined,
+): true | undefined {
+  return apiType === "responses" ? true : undefined;
+}

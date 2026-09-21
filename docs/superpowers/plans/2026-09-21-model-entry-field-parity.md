@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)
-**Status:** 🚧 **Task 0 / Task 1 / Task 2 已完成（2026-09-21 ~ 09-22）** —— Task 0 只读核实 6/6；**Task 1 后端契约已交付并提交 `6d65264a`**（RED 4 红 → GREEN 42 绿 → 形状取证 102 绿首跑即绿 → neuter ×3 受害者不相交 → 窄面 144 绿 / ruff 双净 → 全量 146 failed / 12432 passed、双向 A/B 为空）；**Task 2 前端形状已交付**（纯函数 16 绿 + 接线层 8 绿 + dom 3 绿 → neuter 4 红 → `pnpm check` 净 → 全量前端 **240 文件 / 2591 例 0 失败**；代码**未提交**，等指令）。⚠️ Task 2 有两处已披露的偏差（`thinking-shape.ts` 多拆一个导出、**编辑腿接线提前到 Task 2** ⇒ Task 3 RED 第 ④ 条降级为取证钉子）。下一步 Task 3（请求头两个弹窗 + 「API 类型」+ `max_tokens` 预填 + `toManagedInput` +5）。spec 已定稿（**经多轮审查修订**：必改×3 / 应改×4 / 缺口×2 / 可选×2 / **范围×1** 全部落进两份文档，验收编号 1–19）。
+**Status:** 🚧 **Task 0 / 1 / 2 / 3 已完成（2026-09-21 ~ 09-22）** —— Task 0 只读核实 6/6；**Task 1 后端契约已交付并提交 `6d65264a`**（RED 4 红 → GREEN 42 绿 → 形状取证 102 绿首跑即绿 → neuter ×3 受害者不相交 → 窄面 144 绿 / ruff 双净 → 全量 146 failed / 12432 passed、双向 A/B 为空）；**Task 2 前端形状已交付并提交 `644ab8dd`**（纯函数 16 绿 + 接线层 8 绿 + dom 3 绿 → neuter 4 红 → `pnpm check` 净 → 全量前端 **240 文件 / 2591 例 0 失败**）；**Task 3 请求头 + 读侧回填已交付（代码未提交，等指令）**（RED 11 红 / 39 绿 → GREEN 50 绿 → neuter 4 条受害者互不相交（plan 的两支都跑了 + 多补接线层一条）→ `pnpm check` 净 → 邻面 16 文件 / 196 绿 → 全量前端 **242 文件 / 2604 例 0 失败**）。⚠️ Task 2 两处已披露偏差（`thinking-shape.ts` 多拆一个导出、**编辑腿接线提前到 Task 2** ⇒ Task 3 RED 第 ④ 条降级为取证钉子）；**Task 3 三处偏差见其节末 blockquote**。下一步 Task 4（`backend/AGENTS.md` 一句 + 真栈隔离实例五条）。spec 已定稿（**经多轮审查修订**：必改×3 / 应改×4 / 缺口×2 / 可选×2 / **范围×1** 全部落进两份文档，验收编号 1–19）。
 
 > **2026-09-21 范围扩一次（他裁甲）**：`max_tokens` / `use_responses_api` **从"既有受害者"升为交付项** —— 它们**写侧早已完整**（`ManagedModelInput:206-207`、`entry:652-653`、`types.ts:83-84`、编辑弹窗真有 `max_tokens` 那格），缺的**只有读侧** ⇒ 归 D6 一并接上。**Task 1 多一个 RED 项（读回这两个）、Task 3 多两条 RED（`toManagedInput` 往返 + 编辑弹窗补「API 类型」与 `max_tokens` 预填）、Task 4 多一条真栈**；验收重排为 **1–19**。⚠️ **唯一新控件**=「API 类型」进编辑弹窗（文案 key 复用添加弹窗那三个，**不新增 i18n**）；⚠️ **一条新规则**=`use_responses_api` 的**假值归一**（Chat ⇒ 不写键；显式 `false` 会被归一成缺键，且**任何界面动作都不许把"缺键"变成 `false`**）。
 
@@ -194,22 +194,39 @@
 
 ⚠️ **为什么是两个文件** —— `models-edit-dialog.tsx` **也有「接口地址」那一组**（已核：`M.endpoint` 在 `:149`、`M.apiKey` 在 `:137`），所以请求头**两处都要有**，否则已存在的条目改不了头。（这正是第一轮审查的必改第 1 条。）
 
-- [ ] **RED**：⚠️ **先按 Task 0 第 2 项的核实结果二选一** —— Radix `Dialog` 能不能在 `dom` project 里渲染：
+- [x] **RED**：⚠️ **先按 Task 0 第 2 项的核实结果二选一** —— Radix `Dialog` 能不能在 `dom` project 里渲染：
       ✅ **Task 0 第 2 项已答：能渲染** ⇒ 在 `tests/unit/components/workspace/settings/*.dom.test.tsx` 里**直接 `render(<ModelsEditDialog open model={…} onSave={…} … />)`**（`open`/`onOpenChange` 是受控 prop、mount 时零网络；只需 mock `@/core/i18n/hooks`），钉住 ① 添加弹窗第一步能填 `default_headers`；② **编辑弹窗也能填**；③ **打开编辑弹窗时显示已存的头**（D6 读侧）；④ **编辑腿接线**：给定一个 `anthropic` 条目 ⇒ 保存 ⇒ `onSave` 的 payload **带形状③的两个字段**（= Task 0 第 3 项 (b) 从 Task 2 移过来的那条）。⚠️ **2026-09-22 改判**：这条接线**已在 Task 2 落地**（理由：只渲染不保存 = 半成品）⇒ **本条的 RED 降级为"首跑即绿的取证钉子"**（照 Task 1 第 3 项的格式标注），**别为了让它红去拆 Task 2 的接线**。⛔「不能渲染 ⇒ 退回接线层」的 contingency 已作废（Task 0 第 2 项），别再写第二套。
       ⚠️⚠️ **不要让 neuter 去守一个它测不到的分支** —— 如果 RED 落在接线层、而 neuter 却去删编辑弹窗里的控件，**那条 neuter 会静默失效**（接线层的用例照样绿）。**这是本 plan 第一轮审查查出的必改 1。**
       - **必须做（与弹窗能不能渲染无关）**：`models-settings-page.tsx` 的 `toManagedInput` **往返用例**（node project）—— 给定一个带 `default_headers` / 配方 / `max_tokens` / `use_responses_api` 的 `ManagedModel`（GET 形状）⇒ 投影出的 `ManagedModelInput` **仍带这 5 个字段**。**这条是 D6 的防线**（既有的 `max_tokens` / `use_responses_api` 今天就是在这里丢的 ⇒ **同一条用例把它们一起钉上**：`max_tokens: 8192` 与 `use_responses_api: true` 都要原样带过去）。
       - **必须做（两个既有字段的界面侧）** —— 若弹窗能渲染 ⇒ dom 用例钉住 ① 打开一个 `max_tokens: 8192` 的条目时那一格**显示 8192**（今天恒空）；② 「API 类型」显示 Responses、改成 Chat 保存 ⇒ payload 里**没有** `use_responses_api`（**不是 `false`**）；③ **防呆**：从没设过该键的条目保存后**仍不带**这个键。（弹窗**能**渲染 —— Task 0 第 2 项已验证 ⇒ 这三条**都落在 dom 用例里**，不需要纯函数回落；⚠️ 但 `apiTypeToUseResponsesApi` 的规则本身仍放在 `thinking-shape.ts`（Task 0 第 3 项 (b)），node 层另有一条纯函数用例守着它 ⇒ **「不写成 false」在两层都有牙**。）
-      **实测**：
-- [ ] **GREEN**：两个弹窗各加一个键/值两列的重复行控件（+ 增/删），**编辑弹窗用 GET 读回来的值预填**（D6：头、`max_tokens`、以及**新增的「API 类型」**）；`types.ts`（`ManagedModel` **+5**、`ManagedModelInput` +`default_headers`）、`batch.ts`、**`models-settings-page.tsx` 的 `toManagedInput` 补满 5 个**。
-      **实测**：
-- [ ] **neuter**：⚠️ **落点必须与 RED 一致** —— 若 RED 在 dom 层，删编辑弹窗那处控件；若 RED 在接线层，删 `batch.ts` 里 `default_headers` 那一行。**无论哪种，那条 RED 必须转红**；不红就说明这条 neuter 选错了对象。改回。
-      **实测**：
-- [ ] **neuter（`toManagedInput` · 带 revert proof）**：把 `toManagedInput` 里的 `default_headers` 那一行删掉 ⇒ 上面那条往返用例**转红**。改回。
-      **实测**：
-- [ ] **neuter（两个既有字段 · 带 revert proof）**：把 `toManagedInput` 里 `max_tokens` 那一行删掉 ⇒ 往返用例**转红**（同一批断言里就该有一条专门盯它）。改回。⚠️ **不要**用"删编辑弹窗的「API 类型」"来当这条的 neuter —— 它与"不写成 false"那条的受害者不是同一批（照 plan 的老规矩：neuter 只能打它 RED 守的那一条）。
-      **实测**：
-- [ ] **门禁**：`cd frontend && pnpm check` 干净；`pnpm test` 窄面绿（**两个 project 都要跑到**）。
-      **实测**：
+      **实测（2026-09-22，RED 11 红 / 39 绿）**：五个文件一起跑 —— 两个新建的 dom 用例（`tests/unit/components/workspace/settings/models-{add,edit}-dialog.dom.test.tsx`）+ 既有的 `tests/unit/settings/models-settings-page.dom.test.tsx`（加一条往返用例）+ 两条 node 面（`tests/unit/models/{thinking-shape,batch}.test.ts`）：
+      - **node 面 5 红**：`headersToRecord` 未导出（2 条当场 `is not a function`）、`apiTypeToUseResponsesApi` 同（2 条）、`expandBatchToEntries` 收了 `defaultHeaders` 却不落 entry（1 条 `expected undefined to deeply equal {…}`）。
+      - **dom 面 6 红**：添加弹窗"头进 payload"1 条；编辑弹窗 4 条（头回显、改头、API 类型回显与带回、防呆"不凭空多出 `use_responses_api`"）；页面那条第 5 个字段不齐（`expected {provider: 'deepseek', …(13)} to match object {default_headers…}`）。
+      - ⚠️ **两条"首跑即绿"**（照 Task 1 第 3 项的格式标注；**不是 RED，也不算新增防线**）：① 添加弹窗"一行没填 ⇒ 不带 `default_headers`"（今天压根没这个字段 ⇒ 真绿但**空转**，实现后才成真守）；② 编辑弹窗"只改显示名也让 anthropic 带上形状③"（= **Task 2 提前接的那条线**，本条按 plan 已改判为"取证钉子"，**别为了让它们红去拆实现**）。
+      - ⚠️ **落点偏差（已披露）**：`toManagedInput` 的往返用例**落在既有的 `models-settings-page.dom.test.tsx`（dom、页面层）而不是新建 node 用例** —— 它没导出，node 层要它就得把整个页面模块（Radix / React 组件图）拉进无 DOM 环境；而这条断言**本来就不经弹窗**（点另一行的删除按钮 ⇒ `handleDelete` → `toManagedInput` → PUT payload），完全满足 plan 原意"与弹窗能不能渲染无关"，且先例就是**同一文件里同型的 capability 往返用例**。⇒ 与 plan 原文的差 = 从 node 挪到 dom，理由如上。
+      - ⚠️ **验收 12② 的"切到 Chat"腿不驱动 Radix 列表**（仓内先例写明 happy-dom 下 `Select` 开合不可靠，见 `models-settings-page.dom.test.tsx` 自己的注释）：规则本身由 node 层 `apiTypeToUseResponsesApi` 的用例守着、"Chat 态保存不带键"由 dom 层（"从未设过"那条）钉住 ⇒ **两层都有牙**，只省掉"下拉点一下"那一步。
+- [x] **GREEN**：两个弹窗各加一个键/值两列的重复行控件（+ 增/删），**编辑弹窗用 GET 读回来的值预填**（D6：头、`max_tokens`、以及**新增的「API 类型」**）；`types.ts`（`ManagedModel` **+5**、`ManagedModelInput` +`default_headers`）、`batch.ts`、**`models-settings-page.tsx` 的 `toManagedInput` 补满 5 个**。
+      **实测（2026-09-22，GREEN 50 passed / 0 failed）**：改动面 12 改 + 2 新 / +348 / −8 —— `thinking-shape.ts` +12（`apiTypeToUseResponsesApi` = "永不 `false`"的唯一起点）、`batch.ts` +33（`HeaderRow` / `headersToRecord` / `BatchSharedFields.defaultHeaders` / `entry.default_headers` / `use_responses_api` 改走同一个 helper）、`types.ts` +7（读侧 +3、写侧 +`default_headers`）、`models-add-dialog.tsx` +70（第一步的请求头组）、`models-edit-dialog.tsx` +119（请求头组 + **「API 类型」** + 三处预填）、`models-settings-page.tsx` +7（`toManagedInput` +5 行）、i18n ×3 各 +5 key（`defaultHeaders` / `headerNamePlaceholder` / `headerValuePlaceholder` / `addHeader` / `removeHeader`；**「API 类型」零新 key**，复用 `M.apiType*`）。
+      ⚠️ **三个控件决定（都可当场改）**：① 头行**从 0 起、删除按钮不设"至少一行"**（可选字段，不像 Model ID 那样至少一个）；② 行内两个输入各 `min-w-0 flex-1` + `AUTOFILL_OFF_INPUT_PROPS`（它就插在 API Key 那个 password 框前 ⇒ 防浏览器把站点登录凭证填进来，先例 = `lib/input-autofill.ts` 自己的注释）；③ 两个弹窗都插在**接口地址之后**（spec D4「紧挨接口地址」），编辑弹窗的「API 类型」插在接口地址**之前**（"哪种 API 形状"贴着"地址"一起读）。
+      ⚠️ **实现先被自己的防呆断言抓了一次（值得记）**：写成 `use_responses_api: apiTypeToUseResponsesApi(apiType)` 时，wire 上 `JSON.stringify` 会把这个 `undefined` 掉没错，但**键在对象里是存在的** ⇒ `"use_responses_api" in input` 为真、dom 用例当场红。改成 `if (responsesApi) input.use_responses_api = responsesApi;`（`default_headers` 同款）—— **"从未设过"必须由"键不存在"拼写**，与后端 `stored_entry` 的 `is not None` 过滤同构。
+      ⚠️ **`toManagedInput` 对两个既有字段走原样带回**（`model.max_tokens ?? undefined` / `model.use_responses_api ?? undefined`）⇒ 未被编辑的行里**显式 `false` 也逐字保留**；"归一成缺键"只发生在**被编辑的那一条**（弹窗路径）—— spec D6 那句副作用按此口径实现（对"不动它的行"更保真）。
+- [x] **neuter**：⚠️ **落点必须与 RED 一致** —— 若 RED 在 dom 层，删编辑弹窗那处控件；若 RED 在接线层，删 `batch.ts` 里 `default_headers` 那一行。**无论哪种，那条 RED 必须转红**；不红就说明这条 neuter 选错了对象。改回。
+      **实测（2026-09-22）**：**两支都跑了**（本 Task 的 RED 同时覆盖 dom 层与接线层，plan 的二选一按"两支都成立"处理）：
+      - 删**编辑弹窗那处控件**（整个请求头组）⇒ **2 红，正是编辑弹窗的两条头用例**；同文件另 3 条（API 类型回显 / 防呆 / anthropic 钉子）**照旧绿** ⇒ 打的正是它守的那两条，**没有静默失效**（第一轮审查的必改 1 在此闭环）。
+      - 删 **`batch.ts` 里 `if (shared.defaultHeaders) entry.default_headers = …` 那一行** ⇒ **2 红**（node 的 `expandBatchToEntries` + 添加弹窗那条 dom）⇒ 添加腿的**接线层**有独立受害者（这条是 plan 没点名的第 4 条 neuter，顺带补上）。
+      - 两支都用**字节级备份还原**（`cp` + 事后 `md5sum` 双验：`batch.ts` 32b8b0ce / 编辑弹窗 922e08e4 / 设置页 1d61b0f9）。
+- [x] **neuter（`toManagedInput` · 带 revert proof）**：把 `toManagedInput` 里的 `default_headers` 那一行删掉 ⇒ 上面那条往返用例**转红**。改回。
+      **实测（2026-09-22）**：删掉 `default_headers: model.default_headers ?? undefined` ⇒ **1 红**，正是那条往返用例（同文件其余 13 条绿）。改回后 md5 与备份一致。
+- [x] **neuter（两个既有字段 · 带 revert proof）**：把 `toManagedInput` 里 `max_tokens` 那一行删掉 ⇒ 往返用例**转红**（同一批断言里就该有一条专门盯它）。改回。⚠️ **不要**用"删编辑弹窗的「API 类型」"来当这条的 neuter —— 它与"不写成 false"那条的受害者不是同一批（照 plan 的老规矩：neuter 只能打它 RED 守的那一条）。
+      **实测（2026-09-22）**：删掉 `max_tokens: model.max_tokens ?? undefined` ⇒ **1 红**，仍是**同一条**往返用例 —— 它就是按"5 个字段一起钉"设计的（`toMatchObject` 里有专门的 `max_tokens: 8192`）；受害者与上一条同一条**符合预期**（plan 要求"同一批断言里就该有一条专门盯它"）。⚠️ 没有动编辑弹窗的「API 类型」。
+- [x] **门禁**：`cd frontend && pnpm check` 干净；`pnpm test` 窄面绿（**两个 project 都要跑到**）。
+      **实测（2026-09-22）**：`pnpm check` **干净**（首跑 1 个 lint 错：我新写的 `as HTMLInputElement` 被 `no-unnecessary-type-assertion` 判掉 ⇒ 改用仓内既有先例的泛型写法 `getByLabelText<HTMLInputElement>(…)`，见 `tests/unit/settings/functional-models.dom.test.tsx:1078`）。窄面 **5 文件 / 50 passed**（node + dom 两个 project 都跑到）。邻面（`tests/unit/models/` + `tests/unit/settings/` + `tests/unit/components/workspace/settings/`）**16 文件 / 196 passed**。**全量前端 242 文件 / 2604 passed / 0 failed**（2m48s；上一条基线 240 文件 / 2591 例 ⇒ 本 Task 净 **+2 文件 / +13 例**）。
+      ⚠️ **prettier（不在门禁里但 CI 有）**：照 `tr -d '\r'` 法逐文件核过 —— **我新写的两个 dom 用例文件有真债**（`@testing-library/react` 的 import 单行 82 列、`await import(…)` 折行、断言换行），已 `prettier --write` 修净（**新文件无历史，直接写不翻旧账**）；`models-edit-dialog.tsx` 有我写超宽的一行（`<span className="text-sm font-medium">{M.defaultHeaders}</span>`，81 列）⇒ 拆开修净。**留下的是既有债**（逐一核过不是我这次动的行，按老规矩不动）：`models-add-dialog.tsx`（import-autofill 单行、`capability` 状态 3 行、两个 `SelectItem` 折行）、三个 locale 文件（`logFail` / `tableRecallAtK` / `columnRecallNote` 等**别的分节**）、既有的 `models-settings-page.dom.test.tsx`（import 单行）。
+
+> **Task 3 的三处偏差（已披露）**
+> ① **`toManagedInput` 往返用例的落点 = dom 页面层**（plan 写的是 node）—— 理由与先例见 RED 那条实测；断言本身**不经弹窗**，plan 的"与弹窗能不能渲染无关"仍然成立。
+> ② **验收 12② 的"切到 Chat"不驱动 Radix 列表** —— 规则（node 纯函数）+ Chat 态保存（dom）两层都有牙，只省掉"点下拉"那一步。
+> ③ **`toManagedInput` 原样带回两个既有字段**（未编辑行里显式 `false` 不被归一）—— 归一只发生在被编辑的那一条；比 spec 那句副作用**更保真**，方向安全。
 
 ---
 

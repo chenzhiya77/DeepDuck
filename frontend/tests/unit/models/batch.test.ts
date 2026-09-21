@@ -4,11 +4,12 @@
  * 钉死：命名=Model ID、display_name 默认=Model ID、重名 -2/-3 去重、
  * 共享 api_key/endpoint/provider/能力、空 Model ID 跳过、
  * use_responses_api 仅 openai-compatible + Responses 时为 true、
- * 思考配方按 provider 生成（anthropic / deepseek 自动推，「不设置」⇒ 两个键都不写）。
+ * 思考配方按 provider 生成（anthropic / deepseek 自动推，「不设置」⇒ 两个键都不写）、
+ * 请求头逐条进 entry（没填 ⇒ 键不存在，不是 `{}`）。
  */
 import { describe, expect, it } from "@rstest/core";
 
-import { expandBatchToEntries } from "@/core/models/batch";
+import { expandBatchToEntries, headersToRecord } from "@/core/models/batch";
 
 describe("expandBatchToEntries", () => {
   it("expands two model ids sharing one credential into two entries", () => {
@@ -150,5 +151,41 @@ describe("expandBatchToEntries", () => {
       [],
     );
     expect(entries[0]!.endpoint).toBe("https://ds.example");
+  });
+
+  it("carries the request headers into every entry, and omits the key when unset", () => {
+    const shared = { "x-opencode-session": "sess-1" };
+    const withHeaders = expandBatchToEntries(
+      { provider: "deepseek", apiKey: "k", defaultHeaders: shared },
+      ["model-a", "model-b"],
+      [],
+    );
+    expect(withHeaders[0]!.default_headers).toEqual(shared);
+    expect(withHeaders[1]!.default_headers).toEqual(shared);
+
+    const without = expandBatchToEntries(
+      { provider: "deepseek", apiKey: "k" },
+      ["m"],
+      [],
+    );
+    expect("default_headers" in without[0]!).toBe(false);
+  });
+});
+
+describe("headersToRecord", () => {
+  it("turns trimmed rows into the stored record", () => {
+    expect(
+      headersToRecord([
+        { name: " x-opencode-session ", value: " sess-1 " },
+        { name: "X-Trace", value: "" },
+      ]),
+    ).toEqual({ "x-opencode-session": "sess-1", "X-Trace": "" });
+  });
+
+  it("drops nameless rows and returns undefined when nothing is left", () => {
+    // `undefined` rather than `{}`: the backend drops unset keys, while `{}` would be
+    // written into the file as an empty object.
+    expect(headersToRecord([{ name: "  ", value: "orphan" }])).toBeUndefined();
+    expect(headersToRecord([])).toBeUndefined();
   });
 });

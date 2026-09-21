@@ -53,6 +53,13 @@ function toManagedInput(model: ManagedModel): ManagedModelInput {
     supported_reasoning_efforts: model.supported_reasoning_efforts ?? undefined,
     reasoning_effort: model.reasoning_effort ?? undefined,
     context_window: model.context_window ?? undefined,
+    when_thinking_enabled: model.when_thinking_enabled ?? undefined,
+    when_thinking_disabled: model.when_thinking_disabled ?? undefined,
+    default_headers: model.default_headers ?? undefined,
+    // Carried verbatim: the edit dialog is what normalizes an explicit `false` away,
+    // and only for the row it rewrites (spec 2026-09-21 D6).
+    max_tokens: model.max_tokens ?? undefined,
+    use_responses_api: model.use_responses_api ?? undefined,
   };
 }
 

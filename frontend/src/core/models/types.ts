@@ -66,6 +66,12 @@ export interface ManagedModel {
   when_thinking_enabled?: ThinkingRecipe | null;
   /** Recipe sent when thinking is off; null/undefined = never declared. */
   when_thinking_disabled?: ThinkingRecipe | null;
+  /** Extra HTTP headers sent with every call; null/undefined = never declared. */
+  default_headers?: Record<string, string> | null;
+  /** Per-call output cap; null/undefined = never declared. */
+  max_tokens?: number | null;
+  /** Route OpenAI-compatible calls through /v1/responses; null = never declared. */
+  use_responses_api?: boolean | null;
   source: ModelSource;
   editable: boolean;
 }
@@ -94,6 +100,7 @@ export interface ManagedModelInput {
   use_responses_api?: boolean;
   when_thinking_enabled?: ThinkingRecipe;
   when_thinking_disabled?: ThinkingRecipe;
+  default_headers?: Record<string, string>;
 }
 
 /** Body of `POST /api/models/config/validate` (spec §5.3.2). */

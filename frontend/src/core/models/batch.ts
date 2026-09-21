@@ -1,6 +1,6 @@
 import { capabilityFieldsFromShared } from "./capability";
 import type { CapabilitySharedFields } from "./capability";
-import { thinkingRecipeFor } from "./thinking-shape";
+import { apiTypeToUseResponsesApi, thinkingRecipeFor } from "./thinking-shape";
 import type { ThinkingShape } from "./thinking-shape";
 import type { ManagedModelInput, ProviderId } from "./types";
 
@@ -23,6 +23,31 @@ export interface BatchSharedFields extends CapabilitySharedFields {
   apiType?: "chat" | "responses";
   /** Which thinking recipe to write; only meaningful for openai-compatible. */
   thinkingShape?: ThinkingShape;
+  /** Extra headers every entry should send; undefined = write no such key. */
+  defaultHeaders?: Record<string, string>;
+}
+
+/** One editable request-header row, as both dialogs collect it. */
+export interface HeaderRow {
+  name: string;
+  value: string;
+}
+
+/**
+ * The rows as the field the backend stores. Nameless rows are dropped, and a list with
+ * nothing usable becomes `undefined` — not `{}`, which the backend would write into the
+ * file as an empty object instead of leaving the key out.
+ */
+export function headersToRecord(
+  rows: readonly HeaderRow[],
+): Record<string, string> | undefined {
+  const record: Record<string, string> = {};
+  for (const row of rows) {
+    const name = row.name.trim();
+    if (!name) continue;
+    record[name] = row.value.trim();
+  }
+  return Object.keys(record).length > 0 ? record : undefined;
 }
 
 /**
@@ -47,6 +72,7 @@ export function uniqueModelName(desired: string, taken: Set<string>): string {
  *   rules (`capabilityFieldsFromShared`).
  * - `when_thinking_*` follows the shape the provider's class pins, or the picked
  *   one where it does not decide (spec 2026-09-21); "not set" writes neither key.
+ * - `default_headers` is copied onto every entry; unset writes no key.
  */
 export function expandBatchToEntries(
   shared: BatchSharedFields,
@@ -56,7 +82,9 @@ export function expandBatchToEntries(
   const taken = new Set(existingNames);
   const entries: ManagedModelInput[] = [];
   const useResponsesApi =
-    shared.provider === "openai-compatible" && shared.apiType === "responses";
+    shared.provider === "openai-compatible"
+      ? apiTypeToUseResponsesApi(shared.apiType)
+      : undefined;
   const capability = capabilityFieldsFromShared(shared);
   const recipe = thinkingRecipeFor(
     shared.provider,
@@ -102,6 +130,7 @@ export function expandBatchToEntries(
     if (recipe.when_thinking_disabled) {
       entry.when_thinking_disabled = recipe.when_thinking_disabled;
     }
+    if (shared.defaultHeaders) entry.default_headers = shared.defaultHeaders;
     if (useResponsesApi) entry.use_responses_api = true;
     entries.push(entry);
   }

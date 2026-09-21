@@ -1,5 +1,6 @@
 "use client";
 
+import { PlusIcon, TrashIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,16 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useI18n } from "@/core/i18n/hooks";
 import { MASKED_API_KEY } from "@/core/models/api";
+import { headersToRecord, type HeaderRow } from "@/core/models/batch";
 import {
   capabilityInputFromValue,
   capabilityValueFromModel,
@@ -21,6 +30,7 @@ import {
   type ModelCapabilityValue,
 } from "@/core/models/capability";
 import {
+  apiTypeToUseResponsesApi,
   thinkingRecipeFor,
   thinkingShapeFromEntry,
   type ThinkingRecipeFields,
@@ -66,6 +76,8 @@ export function ModelsEditDialog({
   const [displayName, setDisplayName] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [endpoint, setEndpoint] = useState("");
+  const [headers, setHeaders] = useState<HeaderRow[]>([]);
+  const [apiType, setApiType] = useState<"chat" | "responses">("chat");
   const [maxTokens, setMaxTokens] = useState("");
   const [capability, setCapability] =
     useState<ModelCapabilityValue>(emptyCapabilityValue);
@@ -75,12 +87,28 @@ export function ModelsEditDialog({
   >(undefined);
   const displayNameRef = useRef<HTMLInputElement>(null);
 
+  function updateHeader(index: number, patch: Partial<HeaderRow>) {
+    setHeaders((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }
+
   useEffect(() => {
     if (!model) return;
     setDisplayName(model.display_name ?? "");
     setApiKey("");
     setEndpoint(model.endpoint ?? "");
-    setMaxTokens("");
+    // Stored values come back so a save rewrites them unchanged: the collection is
+    // written wholesale and a field this dialog cannot show is erased on the next save
+    // of any row (spec 2026-09-21 D6).
+    setHeaders(
+      Object.entries(model.default_headers ?? {}).map(([name, value]) => ({
+        name,
+        value,
+      })),
+    );
+    setApiType(model.use_responses_api === true ? "responses" : "chat");
+    setMaxTokens(model.max_tokens != null ? String(model.max_tokens) : "");
     setCapability(capabilityValueFromModel(model));
     const reading = thinkingShapeFromEntry(model);
     setThinkingShape(reading.shape);
@@ -103,7 +131,7 @@ export function ModelsEditDialog({
   function handleSubmit() {
     if (!model) return;
     const parsedMaxTokens = maxTokens.trim() ? Number(maxTokens) : undefined;
-    onSave({
+    const input: ManagedModelInput = {
       provider,
       name: model.name,
       model: model.model,
@@ -114,7 +142,15 @@ export function ModelsEditDialog({
         parsedMaxTokens && parsedMaxTokens > 0 ? parsedMaxTokens : undefined,
       ...capabilityInputFromValue(capability),
       ...thinkingRecipeFor(provider, thinkingShape, preservedRecipe),
-    });
+    };
+    // Set only when there is something to set: an `undefined` value still makes the key
+    // exist, and "never set" is spelled by absence — not by `{}` or by `false`
+    // (spec 2026-09-21 D6).
+    const headerRecord = headersToRecord(headers);
+    if (headerRecord) input.default_headers = headerRecord;
+    const responsesApi = apiTypeToUseResponsesApi(apiType);
+    if (responsesApi) input.use_responses_api = responsesApi;
+    onSave(input);
     onOpenChange(false);
   }
 
@@ -170,6 +206,30 @@ export function ModelsEditDialog({
                 />
               </div>
 
+              {/* Same gate the add wizard uses: the field only means something for the
+                  one provider whose class can route through /v1/responses. */}
+              {provider === "openai-compatible" && (
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium">{M.apiType}</span>
+                  <Select
+                    value={apiType}
+                    onValueChange={(value) =>
+                      setApiType(value as "chat" | "responses")
+                    }
+                  >
+                    <SelectTrigger className="w-full" aria-label={M.apiType}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="chat">{M.apiTypeChat}</SelectItem>
+                      <SelectItem value="responses">
+                        {M.apiTypeResponses}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <span className="text-sm font-medium">{M.endpoint}</span>
                 <Input
@@ -179,6 +239,59 @@ export function ModelsEditDialog({
                   aria-label={M.endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
                 />
+              </div>
+
+              {/* Request headers (repeatable) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">
+                    {M.defaultHeaders}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setHeaders((prev) => [...prev, { name: "", value: "" }])
+                    }
+                  >
+                    <PlusIcon className="size-4" />
+                    {M.addHeader}
+                  </Button>
+                </div>
+                {headers.map((row, index) => (
+                  <div className="flex items-center gap-2" key={index}>
+                    <Input
+                      className="min-w-0 flex-1"
+                      {...AUTOFILL_OFF_INPUT_PROPS}
+                      value={row.name}
+                      placeholder={M.headerNamePlaceholder}
+                      onChange={(e) =>
+                        updateHeader(index, { name: e.target.value })
+                      }
+                    />
+                    <Input
+                      className="min-w-0 flex-1"
+                      {...AUTOFILL_OFF_INPUT_PROPS}
+                      value={row.value}
+                      placeholder={M.headerValuePlaceholder}
+                      onChange={(e) =>
+                        updateHeader(index, { value: e.target.value })
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={M.removeHeader}
+                      onClick={() =>
+                        setHeaders((prev) => prev.filter((_, i) => i !== index))
+                      }
+                    >
+                      <TrashIcon className="size-4" />
+                    </Button>
+                  </div>
+                ))}
               </div>
 
               {/* Its own label, not the wizard's step-2 title — reusing that one leaked a

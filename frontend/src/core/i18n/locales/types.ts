@@ -1666,6 +1666,11 @@ export interface Translations {
       endpoint: string;
       apiKey: string;
       apiKeyToggle: string;
+      defaultHeaders: string;
+      headerNamePlaceholder: string;
+      headerValuePlaceholder: string;
+      addHeader: string;
+      removeHeader: string;
       modelIds: string;
       modelIdPlaceholder: string;
       addModelId: string;

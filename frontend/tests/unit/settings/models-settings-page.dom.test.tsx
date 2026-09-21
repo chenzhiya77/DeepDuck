@@ -250,6 +250,42 @@ describe("ModelsSettingsPage capability round trip", () => {
     ]);
     expect(payload[0]?.reasoning_effort).toBe("medium");
   });
+
+  it("keeps the five field-parity fields on a row nobody touched", async () => {
+    // `toManagedInput` is the projector every *other* row travels through (spec 2026-09-21
+    // D6): `default_headers` / the thinking recipes are new, `max_tokens` and
+    // `use_responses_api` were already being dropped here. Delete-driven on purpose — the
+    // row that must survive is never opened, so no dialog is involved.
+    setConfig([
+      uiModel({
+        name: "with-parity",
+        default_headers: { "x-opencode-session": "sess-1" },
+        when_thinking_enabled: { extra_body: { thinking: { type: "enabled" } } },
+        when_thinking_disabled: {
+          extra_body: { thinking: { type: "disabled" } },
+        },
+        max_tokens: 8192,
+        use_responses_api: true,
+      }),
+      uiModel({ name: "victim" }),
+    ]);
+    renderPage();
+
+    fireEvent.click(screen.getAllByRole("button", { name: M.delete })[1]!);
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const payload = (saveMock.mock.calls[0]?.[0] ?? []) as ManagedModelInput[];
+    expect(payload.map((model) => model.name)).toEqual(["with-parity"]);
+    expect(payload[0]).toMatchObject({
+      default_headers: { "x-opencode-session": "sess-1" },
+      when_thinking_enabled: { extra_body: { thinking: { type: "enabled" } } },
+      when_thinking_disabled: {
+        extra_body: { thinking: { type: "disabled" } },
+      },
+      max_tokens: 8192,
+      use_responses_api: true,
+    });
+  });
 });
 
 describe("ModelsSettingsPage batch add", () => {
