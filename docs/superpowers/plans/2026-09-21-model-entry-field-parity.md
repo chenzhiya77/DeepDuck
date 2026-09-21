@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)
-**Status:** 🚧 **Task 0 / 1 / 2 / 3 已完成（2026-09-21 ~ 09-22）** —— Task 0 只读核实 6/6；**Task 1 后端契约已交付并提交 `6d65264a`**（RED 4 红 → GREEN 42 绿 → 形状取证 102 绿首跑即绿 → neuter ×3 受害者不相交 → 窄面 144 绿 / ruff 双净 → 全量 146 failed / 12432 passed、双向 A/B 为空）；**Task 2 前端形状已交付并提交 `644ab8dd`**（纯函数 16 绿 + 接线层 8 绿 + dom 3 绿 → neuter 4 红 → `pnpm check` 净 → 全量前端 **240 文件 / 2591 例 0 失败**）；**Task 3 请求头 + 读侧回填已交付（代码未提交，等指令）**（RED 11 红 / 39 绿 → GREEN 50 绿 → neuter 4 条受害者互不相交（plan 的两支都跑了 + 多补接线层一条）→ `pnpm check` 净 → 邻面 16 文件 / 196 绿 → 全量前端 **242 文件 / 2604 例 0 失败**）。⚠️ Task 2 两处已披露偏差（`thinking-shape.ts` 多拆一个导出、**编辑腿接线提前到 Task 2** ⇒ Task 3 RED 第 ④ 条降级为取证钉子）；**Task 3 三处偏差见其节末 blockquote**。下一步 Task 4（`backend/AGENTS.md` 一句 + 真栈隔离实例五条）。spec 已定稿（**经多轮审查修订**：必改×3 / 应改×4 / 缺口×2 / 可选×2 / **范围×1** 全部落进两份文档，验收编号 1–19）。
+**Status:** 🚧 **Task 0 / 1 / 2 / 3 / 4 全部交付（2026-09-21 ~ 09-22）** —— Task 0 只读核实 6/6；**Task 1 后端契约已交付并提交 `6d65264a`**（RED 4 红 → GREEN 42 绿 → 形状取证 102 绿首跑即绿 → neuter ×3 受害者不相交 → 窄面 144 绿 / ruff 双净 → 全量 146 failed / 12432 passed、双向 A/B 为空）；**Task 2 前端形状已交付并提交 `644ab8dd`**（纯函数 16 绿 + 接线层 8 绿 + dom 3 绿 → neuter 4 红 → `pnpm check` 净 → 全量前端 **240 文件 / 2591 例 0 失败**）；**Task 3 请求头 + 读侧回填已交付并提交 `f0e4cf2f`**（RED 11 红 / 39 绿 → GREEN 50 绿 → neuter 4 条受害者互不相交（plan 的两支都跑了 + 多补接线层一条）→ `pnpm check` 净 → 邻面 16 文件 / 196 绿 → 全量前端 **242 文件 / 2604 例 0 失败**）；**Task 4 文档 + 真栈验收已交付（代码未提交，等指令）**（文档 = 安全边界一句 + 相邻句扫描实测免改；真栈隔离实例**五条全过**：模型参数收敛 2 形状 / 对照组 1 形状 / 请求头 8/8 / anthropic 条目 9→11 键 / 两既有字段不丢且读侧原样；门禁：后端全量 **146 failed / 12432 passed**、HEAD 双向 diff 净空（差集仅 2 条全量 flake，两侧各复跑 2/2 绿）、ruff 双净、前端全量 **242 文件 / 2604 例 0 失败**）。⚠️ Task 2 两处已披露偏差（`thinking-shape.ts` 多拆一个导出、**编辑腿接线提前到 Task 2** ⇒ Task 3 RED 第 ④ 条降级为取证钉子）；**Task 3 三处偏差见其节末 blockquote**；**Task 4 两处口径更正见其节末**（"逐字节相同"收窄到**模型参数**那一维；配方是**前端**派生 ⇒ 真栈只证写腿）。spec 已定稿（**经多轮审查修订**：必改×3 / 应改×4 / 缺口×2 / 可选×2 / **范围×1** 全部落进两份文档，验收编号 1–19）。
 
 > **2026-09-21 范围扩一次（他裁甲）**：`max_tokens` / `use_responses_api` **从"既有受害者"升为交付项** —— 它们**写侧早已完整**（`ManagedModelInput:206-207`、`entry:652-653`、`types.ts:83-84`、编辑弹窗真有 `max_tokens` 那格），缺的**只有读侧** ⇒ 归 D6 一并接上。**Task 1 多一个 RED 项（读回这两个）、Task 3 多两条 RED（`toManagedInput` 往返 + 编辑弹窗补「API 类型」与 `max_tokens` 预填）、Task 4 多一条真栈**；验收重排为 **1–19**。⚠️ **唯一新控件**=「API 类型」进编辑弹窗（文案 key 复用添加弹窗那三个，**不新增 i18n**）；⚠️ **一条新规则**=`use_responses_api` 的**假值归一**（Chat ⇒ 不写键；显式 `false` 会被归一成缺键，且**任何界面动作都不许把"缺键"变成 `false`**）。
 
@@ -236,13 +236,14 @@
 
 **验收对应**：spec §4 的第 15 / 16 / 17 / 19 条（第 18 条含可选的回显观察）+ **第 13 条的真栈形态**（真栈第 4 项；其验不了的那半见 spec §6 第 8 条）。
 
-- [ ] **文档**（**按 Task 0 第 5 项的核实结果**决定动作）：若 `backend/AGENTS.md` 的 **Models Configuration** 一节确实列了 `models_config.json` 的字段集 ⇒ **同步更新**（本对加 3 个）。⚠️ **顺手扫同段相邻句**（上一对的教训：计划点名的两处之外还查出了第三处）。**若该节根本没列字段清单 ⇒ 明确记一句「无需改动」**，别硬加。
-      **实测**：
-- [ ] **真栈（口径照前两对：只验请求体形状，不声称回话）**：**隔离实例**（`DEER_FLOW_PROJECT_ROOT` / `DEER_FLOW_CONFIG_PATH` / `DEER_FLOW_MODELS_CONFIG_PATH` 三个环境变量指向**仓库外 scratch 根** + `DEER_FLOW_AUTH_DISABLED=1` + `:8099`）+ **本机 recorder 端点** ⇒ **零出网**。
+- [x] **文档**（**按 Task 0 第 5 项的核实结果**决定动作）：若 `backend/AGENTS.md` 的 **Models Configuration** 一节确实列了 `models_config.json` 的字段集 ⇒ **同步更新**（本对加 3 个）。⚠️ **顺手扫同段相邻句**（上一对的教训：计划点名的两处之外还查出了第三处）。**若该节根本没列字段清单 ⇒ 明确记一句「无需改动」**，别硬加。
+      **实测**（2026-09-22）：该节**没有逐字段清单**（只有 allowlist / 掩码 / 解析顺序 / `ModelConfig` 的能力子集）⇒ **不硬加字段表**；但**安全边界那段正好被本对改动**（`default_headers` 是唯一不过掩码的字段、读端点与写同敏感）⇒ 只加这一句（+4 行，插在 "sentinel means keep the stored key" 之后）。**顺手扫同段相邻句**（上一对的教训）：唯一受影响的是 `make support-bundle` 那句（`models-summary.json`）—— **实测已自动覆盖**：`redact_data` 的 `HEADER_KEY_RE = re.compile(r"(?i)header")` 命中 `default_headers` ⇒ 值变 `<redacted>`、键保留 ⇒ **无需改动**。
+- [x] **真栈（口径照前两对：只验请求体形状，不声称回话）**：**隔离实例**（`DEER_FLOW_PROJECT_ROOT` / `DEER_FLOW_CONFIG_PATH` / `DEER_FLOW_MODELS_CONFIG_PATH` 三个环境变量指向**仓库外 scratch 根** + `DEER_FLOW_AUTH_DISABLED=1` + `:8099`）+ **本机 recorder 端点** ⇒ **零出网**。
       ⚠️ **启动隔离实例前把 `rag.qdrant_url` 也改到 scratch 或指向空**（前两对的实测：它会连本机 `:6333`）。
       ⚠️ **触发路径要点名**：配方的差异**只体现在请求体**，所以断言点是 **recorder 抓到的 body**，不是界面。
-      **实测**：
-- [ ] **真栈五条**：
+      **实测**（2026-09-22）：scratch 根 `E:\app\python\agent\_snapshots\t4root`（**仓外**，收尾已删）；`config.yaml` 由 `backend/tests/_replay_fixture.build_config_yaml` 生成（`models: []`、本地 sandbox、空 skills、memory / summarization 关、sqlite 落 scratch）+ `prepare_hermetic_extras`；四个 `DEER_FLOW_*` 环境变量 + `DEER_FLOW_AUTH_DISABLED=1`；recorder 在 `127.0.0.1:8098`（OpenAI + Anthropic 两种形状都答），gateway 在 `127.0.0.1:8099`；四个条目端点全指向 recorder、key = 假值 ⇒ **零出网**。
+      ⚠️ **第一版踩到计划点名的坑**：`build_config_yaml` **不含 rag 段** ⇒ 走默认 `localhost:6333`，启动时连到了他本机共享的 Qdrant（8 条 GET/PUT `index?wait=true`；集合数 18 → 18 未变）⇒ 停实例、scratch 配置补 `rag: {qdrant_url: http://127.0.0.1:6399}`（死端口）重启 ⇒ **0 条 Qdrant 日志**，其余全绿。
+- [x] **真栈五条**：
       1. 建一个**勾了「思考模式」**、**不勾档位能力**、带「OpenAI 兼容网关」形状的条目 ⇒ 四个模式**收敛成两个请求体**：flash ⇒ `extra_body.thinking.type == "disabled"`、thinking / pro / ultra ⇒ `"enabled"`，同组内逐字节相同 —— **本对的核心验收**。
          ⚠️ **两条前提都要照做**：① D3 的自动推**不碰 `supports_thinking` chip**，chip 不勾时开思考那条在界面上不可达（composer 只给 Flash）⇒ 条目会**验不出差异**，那不是配方的错；② **档位那一维必须先关**（`supports_reasoning_effort` 不勾、`supported_reasoning_efforts` 空）—— 否则 flash `undefined` / thinking `low` / pro `medium` / ultra `high` 四个请求体**收敛不了**；关掉后 `factory.py:373-375` 会把 `reasoning_effort` 整个 pop 掉（`offeredModes` 只看思考 chip，四个模式照样能选）。
       2. **对照组**：同一条目把形状设回「不设置」⇒ **四个**模式的请求体**逐字节相同**（前提同上：档位那一维已关）—— 证明差异来自配方，不是别的东西。
@@ -253,11 +254,25 @@
          ⚠️ **这一项只验到"写进去了"为止**：`opencode.ai/zen/go` 那个代理**收不收原生 Anthropic 形状的 `thinking`**，隔离实例答不了（recorder 只证明发得出去）—— 而他本机两条 `opencode.ai` 条目（`deepseek-v4.1-flash` / `minimax-m3`）此前实测都 400 `MissingSessionID`（缺 `x-opencode-session` 头）⇒ 真要验接受度得先补 `default_headers` + 一个真 key，**那是另一条线**（spec §6 第 8 条登记）。
       5. **两个既有字段在真栈上不丢**（验收 18）：scratch 里造一个带 `max_tokens: 8192` + `use_responses_api: true` 的条目 ⇒ 在设置页**动另一个条目**（新增或删除）后保存 ⇒ 前者这两个键**仍在 scratch 文件里**；顺带（可选）重开它的编辑弹窗 ⇒ 头 / 形状 / **最大输出**显示为**已存值**（D6 读侧在真栈上的样子）。⚠️ **判据是"没被抹"**，不是"能被改" —— 保存前后逐字比对那两个键即可。
       ⚠️ **区分度检查**（上一对的教训）：如果那条目的**默认档恰好等于回退目标**，观测值就无法解释 ⇒ **先确认两个假设预测出不同结果**。本对按上面第 1 条的"**不勾档位能力**"造样本，这条自动满足。
-      **实测**：
-- [ ] **收尾**：**零改动他的配置**（写入全落 scratch 根 ⇒ `models_config.json` / `config.yaml` md5 与动手前相同，**不欠还原**；**动手前先把两本的 md5 记下来**，收尾逐个比对）；隔离实例与 recorder 停掉（`taskkill /T`，确认端口释放）；**scratch 目录删净**。
-      **实测**：
-- [ ] **门禁**：后端 **全量 `cd backend && make test` 后台跑** ⇒ 抽 FAILED 的 node id 去 HEAD（`git worktree add --detach`、**仓外 basetemp**、HEAD 那棵树先 `cp` 进去那 4 个 gitignored 文件）跑同一批 ⇒ **双向 diff**；`ruff` 双净；`cd frontend && pnpm check` + `pnpm test` 全量。
+      **实测**（2026-09-22）：
+      1. `t4-gateway`（`supports_thinking: true`、`supports_reasoning_effort` 关且子集空、配方 = 形状 ① × 2）⇒ 四个模式**模型参数收敛成 2 个形状**：`{"model": "t4-model", "stream": false, "thinking": {"type": "disabled"}}`（flash）与 `…"enabled"`（thinking / pro / ultra）；脚本口径 `# distinct model-parameter shapes (messages/tools excluded): 2`，`thinking=enabled: ['pro','thinking','ultra'] | disabled: ['flash']`。⚠️ **口径更正（第一处）**：spec §4 第 15 条那句"同组内逐字节相同"**只在"模型参数"这一维成立** —— 同一批请求里 pro / ultra 的 `tools` 本就比 flash / thinking 多（`tools_n` = 4 / 4 / 5 / 6，`tools_sha` = `97f38cd93cbb` / `97f38cd93cbb` / `2cd9f2778b24` / `8bdbfcc61759`，pro 起多 `write_todos`）、`messages` 也逐模式不同（`messages_sha` = `0f3717f96da1` / `1a2abd3f3069` / `a1ccda7c4f29` / `b54147a1eced`）⇒ 那是**模式自己的差异**（计划模式 / 子代理），不是配方；"差异来自配方"正由第 2 条钉住。
+      2. 同一条目把两个配方键整个去掉再整集合 PUT（同设置页的写法）⇒ 四个模式**只剩 1 个**模型参数形状 `{"model": "t4-model", "stream": false}`（`thinking` 键整体消失），而**逐模式的 tools / messages 哈希与第 1 条逐位相同** ⇒ 唯一变量就是配方键。
+      3. `default_headers: {"x-t4-header": "t4-header-value"}`（同 PUT）⇒ recorder 侧 `shaped | calls: 4 | x-t4-header: {'t4-header-value'} | authorization: {'Bearer t4-fake-key'} | path: {'/v1/chat/completions'}`，对照组一行同值（`control | calls: 4 | …`）⇒ 八个请求**全部**带上，没有一条漏。
+      4. 编辑 `t4-anthropic`（scratch 里手写复刻 `minimax-m3` 的形态：`use: langchain_anthropic:ChatAnthropic` + recorder 端点 + 假 key，**起点 9 键、零配方**）⇒ 改名 + 弹窗会派生的形状 ③ 一起 PUT ⇒ 该条目变 **11 键**（+`when_thinking_enabled` = `{"thinking": {"type": "enabled", "budget_tokens": 4096}}`、+`when_thinking_disabled` = `{"thinking": {"type": "disabled"}}`）。⚠️ **口径更正（第二处，即第四处偏差）**：**配方是前端派生的**（编辑弹窗的 `thinkingRecipeFor`），后端不派生 —— 第一次只 PUT 显示名时文件**一个键都没多**（9 键不变），照弹窗的实际载荷补上两个键才到 11 键 ⇒ 真栈只证明**写腿**，派生规则由 node / dom 用例钉（验收 13 在真栈上天然只有"写"这一半）。
+      5. 动 `t4-other`（改名 + 整集合 PUT）后 ⇒ `t4-parity` 的 `max_tokens: 8192` / `use_responses_api: true` **仍在**文件里（`BEFORE` / `AFTER` 键清单逐字相同）；`GET /api/models/config` 四个条目五字段全在（没设过的 = `null` 不是 `false` / `0`），且 `t4-gateway.default_headers` **原样回显** `{"x-t4-header": "t4-header-value"}`（掩码只吃 `api_key`）⇒ 验收 15 / 16 / 17 / 18 的真栈侧齐（第 18 条那句"重开编辑弹窗显示已存值"由 `models-edit-dialog.dom.test.tsx` 的预填用例钉，本次没开浏览器）。
+- [x] **收尾**：**零改动他的配置**（写入全落 scratch 根 ⇒ `models_config.json` / `config.yaml` md5 与动手前相同，**不欠还原**；**动手前先把两本的 md5 记下来**，收尾逐个比对）；隔离实例与 recorder 停掉（`taskkill /T`，确认端口释放）；**scratch 目录删净**。
+      **实测**（2026-09-22）：动手前记下的 md5（`models_config.json` = `1fbfd8019d45ea317a07c81aa1494972`、`config.yaml` = `96af3c540c67cd32093bbb57490eb254`）收尾逐个比对 ⇒ **两份逐字节相同**（写入全落 scratch 根，不欠还原）；隔离 gateway 与 recorder 已停、`:8098` / `:8099` 无监听（他的 `:3000` / `:8001` 全程未动）；`_snapshots\t4root` 与空掉的 `_snapshots` **已删净**。
+- [x] **门禁**：后端 **全量 `cd backend && make test` 后台跑** ⇒ 抽 FAILED 的 node id 去 HEAD（`git worktree add --detach`、**仓外 basetemp**、HEAD 那棵树先 `cp` 进去那 4 个 gitignored 文件）跑同一批 ⇒ **双向 diff**；`ruff` 双净；`cd frontend && pnpm check` + `pnpm test` 全量。
       ⚠️ **跨树 A/B 两侧必须用同一个仓外 basetemp**（否则凭空多一条"回归"，双向已证）。
-      **实测**：
-- [ ] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），并把各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。
-      **实测**：
+      **实测**（2026-09-22）：
+      - **后端全量**（`make test` 口径，仓外 basetemp `E:\app\python\agent\_bt-t4\bt`）：**146 failed / 12432 passed / 109 skipped**（19:02）—— 与 Task 1 那次全量**逐数字相同**（同一批环境条件红：仓库根真实 `models_config.json` 等）。
+      - **HEAD 双向 A/B**：抽 146 个 node id（`tr -d '\r'` 后取 `^FAILED`）⇒ 仓外 detached worktree（`git worktree add --detach`、先把 5 个 gitignored 根文件 `cp` 进去、同一个 basetemp、同一个解释器）跑同一批 ⇒ **144 failed / 2 passed**；`comm` 双向 diff 的差集**只有那 2 条**：`test_delta_channel_state.py::test_merge_message_writes_randomized_differential` 与 `test_multi_worker_run_ownership.py::test_hung_renewal_is_bounded_by_confirmed_lease_deadline[asyncio]`。两侧各**单独复跑 2 次 = 2/2 全绿**（WT 15.5s ×2 / HEAD 15.6s ×2）⇒ **全量跑才偶发**的 flake（时间/租约类），**双向 diff 净空**、无回归。
+      - **ruff**：`ruff check` 两侧**都净**；`ruff format --check` 两侧**都红同一个文件**（`tests/knowledge/tools/test_graph_search.py`，别线历史债、HEAD 同样被 flag ⇒ 非本对引入；其余 1287 文件 formatted）。
+      - **前端**：`pnpm check` 净；`pnpm test` 全量 **242 文件 / 2604 例 / 0 失败**（与 Task 3 后的基线同数）。
+      - ⚠️ **踩坑**：`--basetemp` 会**清空它指向的目录** —— 第一次把 `full.log` 写进 basetemp，进程一起来日志就被删、整跑输出全丢 ⇒ **日志与 basetemp 必须分家**（重跑一次才拿到数字）。
+- [x] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），并把各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。
+      **实测**（2026-09-22）：本文件的 `**Status:**` 已改（六个 Task 全交付 + Task 4 门禁数字）；spec 的 `**Status:**` 同步改（见 spec 首行）；Task 4 的 6 个复选框与 6 段 `**实测**` 全填。⚠️ **提交号待补**：本对尚未提交（等指令）⇒ Status 里 Task 4 那句先按"代码未提交"写；提交后按 Task 2 的先例把提交号补进 Status（同一棵树里的后续提交）。
+
+> **Task 4 的两处口径更正（已披露）**
+> ① **「同组内逐字节相同」收窄到"模型参数"那一维** —— spec §4 第 15 / 16 条的原话在真栈上**逐字节比整个请求体时并不成立**：同一批四个模式里 `tools`（`tools_n` 4/4/5/6、pro 起多 `write_todos`）与 `messages` 本来就逐模式不同，那是**模式自己的差异**（计划模式 / 子代理），不是配方造成的；配方的作用面就是**模型参数**（`model` / `stream` / `thinking`），这一维上四条收敛成 2 形状（第 2 条对照组：1 形状）。spec 正文未改（属叙述收窄、非结论变化），口径以本节实测为准。
+> ② **形状 ③ 是前端派生的** —— 编辑弹窗的 `thinkingRecipeFor` 负责把 `anthropic` 类条目自动写成 `{"thinking": {"type": "enabled", "budget_tokens": 4096}}` / `{"thinking": {"type": "disabled"}}`，**后端不派生**（第一次只 PUT 显示名 ⇒ 文件一个键都没多）⇒ Task 4 的第 4 项在真栈上只能证明**写腿**（"多出来的键被写进文件"），派生规则由 node / dom 用例钉（验收 13 天然只有真栈这一半）。

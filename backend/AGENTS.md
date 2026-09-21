@@ -578,7 +578,10 @@ free-text `use:` class path — that is a dynamic-import / code-execution vector
 (`deerflow.config.models_config.PROVIDER_ALLOWLIST`) maps to a concrete `use:` class path and the
 correct endpoint key (`base_url` for OpenAI-compatible / Anthropic, `api_base` for the patched
 DeepSeek adapter). API keys live in the gitignored file, are masked behind a sentinel on read, and
-a submitted sentinel means "keep the stored key". Writes are atomic and lock-serialized
+a submitted sentinel means "keep the stored key". `default_headers` is the one field that does
+**not** go through that masking (spec 2026-09-21): its values come back verbatim on read, because the
+settings UI has to show the stored header to re-save it — and a header value can be a session token,
+so a read of this endpoint is as sensitive as a write. Writes are atomic and lock-serialized
 (`atomic_write_models_config` + `models_config_write_lock`), mirroring `extensions_config.json`.
 
 Resolution mirrors `extensions_config.json`: explicit `config_path`, then
