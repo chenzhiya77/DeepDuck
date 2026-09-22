@@ -139,8 +139,8 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
   ④单元格字面 `|` 转义 + 空白折叠 → 保证输出恒为单行合法 GFM（Task 4 表检测与前端 streamdown 渲染
   前提）；⑤嵌套/畸形表原样残留 HTML，交 chunker 原子块防御（Task 4，spec §6），归一器只吃 T0 两形态。
 - **fixture 来源**：形态 A 两条（含 rowspan/colspan 的 plain + 底纹全空表头的 shaded）**逐字内嵌**
-  `pr-build/t0-mineru-table-gate/t0_mineru_full{_plain,}.md` 实测输出（`pr-build/` 被 gitignore，故
-  内嵌而非读盘，保 CI 自足）；形态 B（`<thead><th>` + 嵌套 `<p><strong>` + 单格多 `<p>` + 隐式空
+  `pr-build/t0-mineru-table-gate/t0_mineru_full{_plain,}.md` 实测输出（**2026-09-23 更正：`pr-build/` 并未被
+  gitignore**——该目录在册（59 份证据）；内嵌而非读盘的真实理由只是保 CI 自足）；形态 B（`<thead><th>` + 嵌套 `<p><strong>` + 单格多 `<p>` + 隐式空
   `<td>`）无 fixture 文件（源自 live DB docx 路观测），按 spec §5 实测样例构造。
 - **顺手修的过时用例**：`test_parse_csv_local_read_gbk` 原钉「CSV 逐字直读」（`assert "苹果,3" in`）
   ——正是本任务升级的旧行为，已改钉 GFM 输出（GBK 回退仍生效）。`test_api.py` 两条 `.csv` 用例只验
@@ -370,12 +370,16 @@ shell 管道符的散文），无第三方 PDF 库、纯字节手写；走生产
       test_graph_search.py` 的 format 漂移为 acabd069/2026-09-05 预存、非本特性，同 test_rag_config 漂移例，未动）。
       前端 knowledge 套件 **999 passed / 1 failed**（唯一失败 = chat-panel model selector，aa02a307/2026-09-08
       预存、plan 已预言的基线）；`pnpm check`（eslint+tsc）**EXITCODE=0** 双净。
-- [ ] 浏览器实测：上传真实 `.xlsx`（多 sheet）+ `.csv` + 一份含表格的 PDF（补验 Task 0 实测门）
+- [x] 浏览器实测：上传真实 `.xlsx`（多 sheet）+ `.csv` + 一份含表格的 PDF（补验 Task 0 实测门）
       → 五态到 ready → 切片抽屉行卡**渲染为真表格且每块含表头** → 对话检索命中正确行 →
       检索测试命中行卡 → 评测跑一轮表格 KB；核对 chunk_count 合理（无行爆炸）。截图落 `pr-build/`。
       —— **延后（环境未就绪，用户选定先提交文档+回归）**：探测得 nginx:2026 未起（仅 gateway:8001 在跑）、
       `config.yaml rag.table.enabled=false`、`python-calamine` 未装；真实入库到 ready 还需 embedding/MinerU
       keys + Qdrant:6333。待环境就绪作为独立步骤补，届时 commit 补 smoke evidence。
+      —— **2026-09-23 已补做（用户本机真栈，KB「测试2」）**：三件全部 `ready 100%`；抽屉 3 张真 `<table>`、
+      行组重复表头（31 行 + 9 行同表头）；对话「SKU-1001 → 128 / 399」、召回面板向量通道 #1 = 该行卡 0.938；
+      完整评测一轮（事实 n=2 全 100%）；chunk_count xlsx=3 / csv=2 / pdf=1 无行爆炸。
+      证据落 `pr-build/table-smoke-2026-09-23/`（窗口隐藏 ⇒ 截图不可用，以 DOM/JSON 快照替代，口径见其 `notes.md`）。
 - [x] Modify: `backend/AGENTS.md`（`### Knowledge Base / RAG` 小节补「表格入库」段：门控
       `rag.table.enabled` + `TABLE_UPLOAD_SUFFIXES` / parser 归一 CSV-TSV-Excel-MinerU 表格 → GFM /
       chunker 行组 + 重复表头 + card_mode 消融 / 无新 store 表无新腿 / chunk_id 扁平序进 L1）。
