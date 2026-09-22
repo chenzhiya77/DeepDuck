@@ -1,6 +1,6 @@
 # RAG 评测 Tab 二期设计（题库管理 · 运行触发 · 历史列表）
 
-> 状态：ready-for-agent（plan `../plans/2026-08-27-rag-eval-tab-phase2.md` 已就绪） · 日期：2026-08-27 · 范围：父 spec §9（P5 二期）契约意图的正式落地——题库 CRUD、评测运行触发（202 + 轮询）、历史运行列表、召回测试面板「存为考题」与复现联动；冻结分段三视图布局与全部新增 API 契约 · 关联：父 spec `2026-08-23-rag-retrieval-evaluation-design.md`（指标体系、后端实现、§9 契约意图）；可视化子 spec `2026-08-24-rag-evaluation-metrics-visualization-design.md`（指标总览 + 趋势图 + drawer 壳，已落地 2026-08-26）
+> 状态：✅ 已落地（2026-09-23；Task 1–8 实现 + E2E/回归/真栈冒烟五项收尾，见 plan `../plans/2026-08-27-rag-eval-tab-phase2.md`） · 日期：2026-08-27 · 范围：父 spec §9（P5 二期）契约意图的正式落地——题库 CRUD、评测运行触发（202 + 轮询）、历史运行列表、召回测试面板「存为考题」与复现联动；冻结分段三视图布局与全部新增 API 契约 · 关联：父 spec `2026-08-23-rag-retrieval-evaluation-design.md`（指标体系、后端实现、§9 契约意图）；可视化子 spec `2026-08-24-rag-evaluation-metrics-visualization-design.md`（指标总览 + 趋势图 + drawer 壳，已落地 2026-08-26）
 >
 > **布局定案（2026-08-27 用户决策）**：双栏工作台方案**明确放弃**——中栏宽度有限，左右分栏下题库表格与趋势图互相挤压。采用**分段三视图**（总览 / 题库 / 历史）：总览视图保持已落地实现一个像素不动，新内容作为平级视图共享全宽。
 >

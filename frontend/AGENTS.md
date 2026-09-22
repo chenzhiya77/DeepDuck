@@ -382,9 +382,11 @@ base_url`), and is only applied when that key still matches the form — editing
   destructive 「确认终止?」 with a 3s timeout, second click fires
   `useCancelEvalRun`). Narrow panels put the same two-step cancel inside the
   ⋯ menu (`onSelect preventDefault` keeps the menu open). Progress polling
-  is `useEvalRunProgress` gated by the pure function
-  `evalRunProgressRefetchInterval(data) = in_progress ? 1500 : false` in
-  `eval-run-status.ts`. Phase labels are 4-character Chinese (`检索评测` /
+  is the history query `useEvalRuns` gated by the pure function
+  `evalRunsRefetchInterval(data) = in_flight ? 3000 : false` in
+  `eval-run-status.ts`; the drain edge (`in_flight` true→false) invalidates
+  the latest/trend/history queries so the idle summary and the tables converge
+  without a view switch. Phase labels are 4-character Chinese (`检索评测` /
   `答题评测` / `质量评估`) with an `n/3` counter shown only when
   `tier === "l1_l2"` or `step > 1` — a quick-tier run never shows `1/3`
   because it cannot reach `3/3`. Cancelled runs render in history with a

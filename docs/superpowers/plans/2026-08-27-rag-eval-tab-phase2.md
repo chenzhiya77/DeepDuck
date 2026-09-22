@@ -234,19 +234,19 @@
 - Modify: `docs/superpowers/specs/2026-08-27-rag-eval-tab-phase2-design.md`（状态行更新为已落地）
 - Create: `frontend/tests/e2e/eval-tab-phase2.spec.ts`（Playwright page.route mock：切题库视图见表格；触发按钮 mock 202 后进 running 态——`eval-metrics.spec.ts` 先例）
 
-- [ ] E2E 用例落地并跑通。
-- [ ] 全量回归：`cd backend && uv run pytest tests/knowledge -q` 全绿 + `cd frontend && pnpm test` 全绿（既有 chat-panel 失败基线见 frontend AGENTS，非本 plan 回归）+ `ruff check` / `ruff format --check` / `pnpm check` 双净。
-- [ ] Live 冒烟（`make dev` 实跑）：① 题库空态 → 手动添加一题 → 表格出现；② 运行评测按钮 → running 态 → drain 后总览/趋势/历史自动刷新；③ 召回面板勾选 chunk 存为考题 → 题库出现该题且锚定列正确；④ 题库行 ↗ → 跳召回 tab 且 query 预填；⑤ 历史行点击 → drawer 打开。截图归档 `pr-build/`。
-- [ ] Commit: `docs(rag): sync agent guides and spec status for eval tab phase 2`
+- [x] E2E 用例落地并跑通。—— 新增 `frontend/tests/e2e/eval-tab-phase2.spec.ts`，**2 passed**（12.4s）：①题库表格渲染；②202 触发 → running 态（进度变体 + 终止按钮）→ **drain 边**回落为空闲摘要并刷出历史行——第②条正是真栈测不到的那一环（隐藏窗口 ⇒ TanStack v5 暂停轮询）。本机首次装 Playwright Chromium（`playwright install chromium`，1217 + headless shell）；因本机 dev server 开着鉴权、`/workspace/*` 有**服务端**守卫（`page.route` 拦不到），照 `tests/e2e-real-backend` 先例注册一次性账号取真会话（CI 侧鉴权关闭且无网关，注册失败被容忍）。
+- [x] 全量回归：`cd backend && uv run pytest tests/knowledge -q` 全绿 + `cd frontend && pnpm test` 全绿（既有 chat-panel 失败基线见 frontend AGENTS，非本 plan 回归）+ `ruff check` / `ruff format --check` / `pnpm check` 双净。—— 后端 **1184 passed / 2 skipped / 0 error**（复跑；首轮 `test_vector_store.py::test_init_collections_idempotent` 单条 ERROR 为顺序性 flake，单跑与该文件重跑均绿）；前端 **242 文件 / 2604 例 / 0 失败**；`ruff check` All checks passed；`pnpm check`（eslint+tsc）零诊断；`ruff format --check` 唯一非净项是 `tests/knowledge/tools/test_graph_search.py` 的 **预存漂移**（acabd069/2026-09-05 起，Task 7 已记，非本线）。
+- [x] Live 冒烟（`make dev` 实跑）：① 题库空态 → 手动添加一题 → 表格出现；② 运行评测按钮 → running 态 → drain 后总览/趋势/历史自动刷新；③ 召回面板勾选 chunk 存为考题 → 题库出现该题且锚定列正确；④ 题库行 ↗ → 跳召回 tab 且 query 预填；⑤ 历史行点击 → drawer 打开。截图归档 `pr-build/`。—— **2026-09-23 用户本机真栈（KB「测试2」）五项全过**，证据 `pr-build/eval-smoke-2026-09-23/`。两处环境口径：窗口隐藏 ⇒ 截图不可用（以 DOM/文本快照替代）；TanStack v5 失焦暂停轮询 ⇒「drain 原地自动收敛」改为由新 E2E 覆盖。
+- [x] Commit: `docs(rag): sync agent guides and spec status for eval tab phase 2` —— 内容已落（spec 状态行翻「已落地」；`backend/AGENTS.md` 修 `/eval-runs/progress` 旧句、`frontend/AGENTS.md` 修轮询 hook 名）；提交按用户裁定**按线拆三笔**，本框随 eval 笔（`docs(rag): close eval tab phase 2 with E2E and live smoke evidence`）落地。
 
 ---
 
 ## Final verification
 
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全绿。
-- [ ] `cd frontend && pnpm test` 全绿（chat-panel 既有失败除外）。
-- [ ] `ruff check` + `ruff format --check` + `pnpm check` 双净。
-- [ ] Live 冒烟五项全过，截图归档。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全绿。—— **1184 passed / 2 skipped**（复跑）。
+- [x] `cd frontend && pnpm test` 全绿（chat-panel 既有失败除外）。—— **242 文件 / 2604 例 / 0 失败**（既有失败已由 `d8f5e8f7` 修掉，本次无需除外）。
+- [x] `ruff check` + `ruff format --check` + `pnpm check` 双净。—— `ruff check` 通过、`pnpm check` 零诊断；`ruff format --check` 唯一非净项为上述预存漂移（非本线）。
+- [x] Live 冒烟五项全过，截图归档。—— 五项全过（见 Task 9）；截图以 `pr-build/eval-smoke-2026-09-23/` 的 DOM/文本快照替代（口径同 Task 9）。
 
 ---
 
