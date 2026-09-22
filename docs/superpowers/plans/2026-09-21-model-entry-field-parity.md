@@ -136,7 +136,7 @@
 
 - [x] **RED（纯函数 · `node` project）**：新建 `frontend/tests/unit/models/thinking-shape.test.ts`（**node project** —— 纯函数不需要 DOM），**先红**。要钉住的规则（spec §3.3 那张表 + D3）：
       1. **形状①**（`openai-compatible` 选「OpenAI 兼容网关」）⇒ 生成 `{"extra_body": {"thinking": {"type": "enabled"}}}` / `{... "type": "disabled"}`。
-      2. **形状②**（选 vLLM / SGLang）⇒ 生成 `{"extra_body": {"chat_template_kwargs": {"enable_thinking": True}}}` / `{... False}`。
+      2. **形状②**（选 `chat_template_kwargs（vLLM / SGLang）` —— 2026-09-22 前叫「vLLM / SGLang」）⇒ 生成 `{"extra_body": {"chat_template_kwargs": {"enable_thinking": True}}}` / `{... False}`。
       3. **形状③**（`anthropic` 自动）⇒ 生成 `{"thinking": {"type": "enabled", "budget_tokens": 4096}}` / `{"thinking": {"type": "disabled"}}`，⚠️ **`budget_tokens` 恰为 `4096`**（spec §4 第 9 条点名那个值）。
       4. **`anthropic` / `deepseek` 自动推**：给定 `use:` 类 ⇒ 直接得到两个字段（不需要用户操作）。**`deepseek` ⇒ 形状①**。
       5. **「不设置」⇒ 两个字段都不生成**（不是生成 `null`）。

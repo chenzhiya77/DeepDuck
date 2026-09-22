@@ -1738,7 +1738,7 @@ export const enUS: Translations = {
       thinkingShape: "Thinking switch format",
       thinkingShapeNone: "Not set",
       thinkingShapeGateway: "OpenAI-compatible gateway",
-      thinkingShapeVllm: "vLLM / SGLang",
+      thinkingShapeVllm: "chat_template_kwargs (vLLM / SGLang)",
       endpoint: "Endpoint",
       apiKey: "API key",
       apiKeyToggle: "Toggle API key visibility",

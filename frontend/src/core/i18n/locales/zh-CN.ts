@@ -1644,7 +1644,7 @@ export const zhCN: Translations = {
       thinkingShape: "思考开关写法",
       thinkingShapeNone: "不设置",
       thinkingShapeGateway: "OpenAI 兼容网关",
-      thinkingShapeVllm: "vLLM / SGLang",
+      thinkingShapeVllm: "chat_template_kwargs（vLLM / SGLang）",
       endpoint: "接口地址",
       apiKey: "API Key",
       apiKeyToggle: "显示/隐藏 API Key",

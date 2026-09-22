@@ -1,6 +1,6 @@
 # 设置页「提供商」下拉分组（协议 / 厂商） —— 设计
 
-**Status:** ✅ **已定稿（2026-09-22；随带三项 2026-09-23 并入）** —— **待拍清零：D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲**；**按指令暂不开工**。本对两件事：**① 分组** —— 把**添加模型弹窗**的「提供商」下拉分成两组（**协议组 / 厂商组**），并把 `deepseek` 从"协议那列"挪进厂商组；**② 随带三处界面修复**（2026-09-23，见 §1.4 / D5–D7）—— 视图切换不再抖、两处占位文案、三项提供商文案规范化。除这三处**明示**的文案与布局改动外，**行为零变化**（还是那 3 个 provider id，提交 payload 一字不差）。配套 plan：[2026-09-22-provider-grouping.md](../plans/2026-09-22-provider-grouping.md)（同批成对）。
+**Status:** ✅ **已定稿（2026-09-22；随带三项 2026-09-23 并入）** —— **待拍清零：D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲（**已在开工前落地 2026-09-22**）**；**按指令暂不开工**。本对两件事：**① 分组** —— 把**添加模型弹窗**的「提供商」下拉分成两组（**协议组 / 厂商组**），并把 `deepseek` 从"协议那列"挪进厂商组；**② 随带三处界面修复**（2026-09-23，见 §1.4 / D5–D7）—— 视图切换不再抖、两处占位文案、三项提供商文案规范化。除这三处**明示**的文案与布局改动外，**行为零变化**（还是那 3 个 provider id，提交 payload 一字不差）。配套 plan：[2026-09-22-provider-grouping.md](../plans/2026-09-22-provider-grouping.md)（同批成对）。
 
 **相关记录**：
 
@@ -163,6 +163,19 @@ flowchart LR
 - 连带见 §1.4 ③：列表行小字与能力编辑器的 anthropic 形状标签一起变成新词 —— 这正是"统一"，不是副作用。
 - ⚠️ 本 D **作废了旧验收 6 的"三项 `provider*` 原文一字不动"**（已在 §4 改写）。
 
+### D8 —— 形状② 文案改名（**已裁：甲 · 已在开工前落地**，2026-09-22）
+
+| key | 原文 | 改成 |
+| --- | --- | --- |
+| `thinkingShapeVllm`（zh） | 「vLLM / SGLang」 | **`chat_template_kwargs（vLLM / SGLang）`** |
+| `thinkingShapeVllm`（en） | `vLLM / SGLang` | **`chat_template_kwargs (vLLM / SGLang)`**（半角括号 + 空格） |
+
+- **为什么**：那一项描述的**不是厂商**，是"**这一支拼写**"（`extra_body.chat_template_kwargs.enable_thinking`）；旧名读起来像"选厂商"。**别家对照**：pi 血统的 `thinkingFormat` 把同一支叫 **`qwen-chat-template`**（同一件事、按模板血统命名）⇒ 改名后自述拼写。
+- ⚠️ **与 D7 的区分**：D7 改 `providerOpenaiCompatible`（提供商三项 + 其连带），**D8 改 `thinkingShapeVllm`** —— **不同的 key、同一批文件**（`locales/{zh-CN,en-US}.ts`）⇒ 两处改值要对得上、别互相覆盖。
+- ✅ **已落地（2026-09-22，本对开工前）**：`locales/zh-CN.ts:1647` / `locales/en-US.ts:1741` 各 1 行（`types.ts` 只声明类型、无值 ⇒ 不动）；**零断言改动**（`grep thinkingShapeVllm frontend/tests` **0 命中**）；门禁 `pnpm check` 净、前端全量 **242 文件 / 2604 例 / 0 失败**（与基线同数）。
+- **旧文案逐字引用处（4 处，已列全）**：① field-parity 的 **plan**（验收 2 那句"（选 vLLM / SGLang）"）**已同步并注明旧名** ② field-parity 的 **spec** §3.4 界面 mock **已同步** ③ 同一 spec 的形状表 / 其余框图（**形状代号，未改**；表下补了"界面文案改名"注）④ `thinking-shape.ts:8` 头注释 + `thinking-shape.test.ts:27/:50` 用例名（**散文，未改**）。
+- ⇒ **本对开工时不必再做**；验收 12 只做"值仍是新文案"的核对（防被改回或覆盖）。
+
 ## 3. 接口契约（前端）
 
 ### 3.1 新的分组表文件
@@ -224,6 +237,8 @@ export const PROVIDER_GROUPS: readonly ProviderGroup[] = [
 10. **两处占位（D6）**：添加弹窗的 API Key 框 = 「请输入API Key」、Model ID 框 = 「请输入模型ID名称」（dom 用例 `getByPlaceholderText` 钉；en 镜像）。
 11. **切换行不留抖动（D5）**：结构 —— 切换行有 `min-h-9`、「添加模型」按钮 `size="sm"`（dom 用例钉，先例 = 同文件那条"按钮与切换器同一父元素"）；几何 —— 真浏览器下两视图的**行高与内容顶坐标一致**（改动前实测 = 34 / 30、485 / 482）。
 
+12. **形状② 文案（D8，已在开工前落地）**：`M.thinkingShapeVllm` = `chat_template_kwargs（vLLM / SGLang）`（zh）/ `chat_template_kwargs (vLLM / SGLang)`（en）—— **开工时只核对、不改**；`thinkingShapeNone` / `thinkingShapeGateway` / `thinkingShapeAnthropic` 与 `customProvider` **不动**（防被改回）。
+
 ## 5. 影响面
 
 | 文件 | 性质 |
@@ -231,18 +246,19 @@ export const PROVIDER_GROUPS: readonly ProviderGroup[] = [
 | `core/models/provider-groups.ts` | **新增**：分组表 |
 | `components/workspace/settings/models-add-dialog.tsx` | 「提供商」Select 改为按表渲染两组（+1 行 import）+ API Key 框加占位（D6） |
 | `components/workspace/settings/models-settings-page.tsx` | 切换行 `min-h-9` + 按钮 `size="sm"`（D5，两处） |
-| `locales/types.ts` / `locales/zh-CN.ts` / `locales/en-US.ts` | 各 **+3 个 key**（2 组名 + 1 占位）+ **2 处改值**（D6 / D7） |
+| `locales/types.ts` / `locales/zh-CN.ts` / `locales/en-US.ts` | 各 **+3 个 key**（2 组名 + 1 占位）+ **2 处改值**（D6 / D7）+ **1 处改值（D8，已提前落地）** |
 | `tests/unit/models/provider-groups.test.ts` | **新增**：表 + 穷尽性（node） |
 | `tests/unit/components/workspace/settings/models-add-dialog.dom.test.tsx` | +3~4 条（提交回归 / 分组结构：组标题 + 分割线 + 归属 / 文案钉子 / 占位钉子） |
 | `tests/unit/settings/models-settings-page.dom.test.tsx` | +1~2 条（切换行 `min-h-9` / 按钮 `sm`，D5） |
 
-**不动**：后端全部 · `routers/models.py` · `ProviderId` · 编辑弹窗 · `providerLabel`/`customProvider` 的**代码**（其显示的 `provider*` 值随 D7 变）· 「添加模型」按钮的可见性逻辑 · endpoint 占位（`example.com` 原样）· `ui/select.tsx` · `thinking-shape.ts`（形状下拉与本下拉是**两个**控件，互不影响）。
+**不动**：后端全部 · `routers/models.py` · `ProviderId` · 编辑弹窗 · `providerLabel`/`customProvider` 的**代码**（其显示的 `provider*` 值随 D7 变）· 「添加模型」按钮的可见性逻辑 · endpoint 占位（`example.com` 原样）· `ui/select.tsx` · `thinking-shape.ts` 的**代码**（形状下拉与本下拉是**两个**控件，互不影响；其**文案** `thinkingShapeVllm` 由 **D8** 改、已提前落地 ⇒ 本对只核对不改）。
 
 **净行为影响**：
 
 | 谁 | 变化 |
 | --- | --- |
 | 添加模型的人 | 下拉里多两个组标题 + 一条分割线；三项文案按 D7 规范化；两个输入框有了占位（D6）；能选的东西、写出去的东西**完全一样** |
+| 看「思考开关写法」的人 | 形状② 文案 → **`chat_template_kwargs（vLLM / SGLang）`**（D8，**已提前落地**；值与行为不变） |
 | 看模型列表的人 | 每行小字里的「OpenAI 兼容」→「OpenAI-compatible」（D7 连带，含能力编辑器的 anthropic 形状标签） |
 | 在两个视图之间切换的人 | 不再有 4px 上下位移（D5）；这一行的高度归行所有 |
 | 已有条目 / 编辑 / 保存 / 反查 | **零变化** |

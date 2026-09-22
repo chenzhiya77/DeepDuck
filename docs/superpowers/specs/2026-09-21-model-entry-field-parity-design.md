@@ -254,6 +254,8 @@ flowchart LR
 | ② vLLM / SGLang | `{extra_body: {chat_template_kwargs: {enable_thinking: bool}}}` | 自部署 vLLM / SGLang | vLLM 预设内联（`scripts/wizard/providers.py:470`） |
 | ③ 原生 Anthropic | `{thinking: {type: enabled, budget_tokens: N}}` / `{thinking: {type: disabled}}` | Anthropic 官方 | `ANTHROPIC_THINKING_CONFIG` |
 
+> ⚠️ **界面文案改名（2026-09-22）**：形状② 的选项在界面上写作 **`chat_template_kwargs（vLLM / SGLang）`**（自述拼写；本表与代码注释里仍用简称「vLLM / SGLang」）。原文案是「vLLM / SGLang」—— 它读起来像"选厂商"，实际是"这一支拼写"的名字（对照：pi 血统的 `thinkingFormat` 把同一支叫 `qwen-chat-template`）。
+
 ⚠️ **默认值是"不设置"，不是"预填一份配方"** —— 形状填错比不填更糟（给 Anthropic 条目预填 OpenAI 形状 ⇒ 直接 400）。今天"没配方"只是开关无效，**预填错是连不上**。
 
 ⚠️ **`budget_tokens` 用 `4096`**（与向导一致），v1 不暴露控件。
@@ -303,7 +305,7 @@ flowchart LR
 思考开关写法  [ 不设置 ▼ ]
                不设置
                OpenAI 兼容网关
-               vLLM / SGLang
+               chat_template_kwargs（vLLM / SGLang）
 ```
 
 ⚠️ **`Anthropic` 那一格不在下拉里出现** —— 它的形状由类决定，用户选不了也不该选。
