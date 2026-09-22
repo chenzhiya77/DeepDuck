@@ -192,16 +192,21 @@
 ## Final verification
 
 - [ ] `cd backend && make test` 全量绿（含新增 6 个测试文件）
-- [ ] `cd frontend && pnpm check` 双净
+- [x] `cd frontend && pnpm check` 双净。—— **2026-09-23 实测零诊断**（eslint + tsc 无输出；宠物线 `greet` 预存红已由 `fc7548f3` 修掉，非本线）。
 - [x] 老配置回归：只用 `config.yaml` 原有字段启动，三条腿行为与改造前一致（**守护测试**：`test_rag_provider_config.py` 的「老配置只写 `embedding_model` ⇒ provider 全取默认」等用例；**手工起栈未做**）
-- [ ] 三条腿各接一次真实本地/外部服务（重排用任一 OpenAI 兼容 rerank；解析用本地 MinerU 服务；嵌入用 1024 维的兼容端点），确认端到端可用
-- [ ] 换 provider → 触发重建 → 检索结果正常的完整链路走通一次
+- [ ] 三条腿各接一次真实本地/外部服务（重排用任一 OpenAI 兼容 rerank；解析用本地 MinerU 服务；嵌入用 1024 维的兼容端点），确认端到端可用。—— **2026-09-23 进度**：**腿1 已接**（`generic-rerank` ← `jina-reranker-v2-base-multilingual` @ `https://api.jina.ai/v1`；Jina 形状预打 200、界面切换保存 200、召回 1094 ms 命中该行卡、网关日志 `api.jina.ai/v1/rerank 200`——三处证据齐）；**腿3 已接**（`openai-compatible` ← `text-embedding-v4` @ DashScope 兼容面，真探测 200/1024 维 + 重建 + 检索三步全过）。⚠️ 途中记录：`.env` 原 `JINA_API_KEY` 与 `DASHSCOPE_API_KEY`/`JUDGE` 三把**已失效**（401 实测），有效的是 `DASHSCOPE_EMBEDDING_API_KEY`/`RERANK`；**进程 env 是启动快照**（dotenv `override=False`）⇒ 新 key 走 `rag_config.json` 文件层即生效、无需重启；DashScope 兼容 rerank 是复数路径 `/reranks` 与 generic 固定的 `/rerank` 不匹配（实测 404），顶不上。**腿2（本地 MinerU）挂起**（用户裁定先挂）。证据 `pr-build/adaptation-smoke-2026-09-23/`。
+- [x] 换 provider → 触发重建 → 检索结果正常的完整链路走通一次。—— **2026-09-23**：界面切 `openai-compatible` + 稀疏 `bm25` → 保存 200 → 界面「重建索引」（目标=测试2）`202` → `compatible-mode/v1/embeddings` 一串 200、`last_run: succeeded` → 召回向量通道 #1 命中该行卡、对话答「128 / 399」带引用。⚠️ 同一条实测登记了一个范围问题：`reindex.py` 只重嵌**切片**，entity/wiki 向量不重嵌 ⇒ 换 provider 后图谱腿跨空间（本查询证据 6→0）、百科腿分数 ~0.29→0.04（向量腿正常）；设置页那句"重建索引，否则检索质量会下降"的承诺比实现宽，见 `pr-build/adaptation-smoke-2026-09-23/notes.md`。
 
 > **上面两条未勾的是「需要真实服务」的端到端验收**：本机没有可用的 OpenAI 兼容重排 / 1024 维嵌入端点、也没有自建 MinerU 服务，且这类验收要用户在自己的部署里做。其余三条按下列口径收：① 后端全量在本机**永远不会全绿**（存量环境红 144 条，与本次改动无关，判据是失败集合逐行 diff 不变）；② 前端 `pnpm check` 唯一残留是宠物线既有的 `greet` 类型错误（非本线文件）；③ 老配置回归已由守护测试覆盖，「手工起栈」留给真实部署。
+>
+> —— **2026-09-23 修订**：本机**确有**可用的 1024 维兼容嵌入端点（DashScope 兼容面 `text-embedding-v4`，实测 200/1024 维）⇒ ② 已可双净、④ 已走通（上表勾）；重排一侧卡在**凭据**而非端点存在（Jina 可达、key 失效）；MinerU 本地服务仍无（腿2 挂起）。
 
 ## 运行期遗留（不属本 plan 交付，供后续决策）
 
 - **本地 MinerU 的并发配合策略**：服务端 semaphore 默认 3（macOS 1），我们的 `rag.worker_concurrency` 默认 2 ⇒ 默认不撞闸；谁高谁低、撞闸时排队还是超时，本 plan 只保持默认，不引入新配置。
 - `openai-compatible` 嵌入的 `/v1/embeddings` 路径是**通用约定、未逐字核**（spec §4.1 已标注）——接入真实服务时按实际文档校正。
+- **换 provider 后 entity/wiki 向量不重嵌（2026-09-23 真栈登记）**：`reindex.py` 只重嵌切片 ⇒ 图谱腿跨空间（同一查询证据 6→0）、百科腿分数 ~0.29→0.04。要么给重建入口补 entity/wiki 重嵌，要么把设置页那句"重建索引，否则检索质量会下降"的承诺说窄。
+- **召回面板分数来源标签写死（2026-09-23 真栈登记）**：`knowledge_service.py:1064` `_RECALL_SCORE_TYPES["vector"] = "qwen3-rerank relevance"` ⇒ 换重排 provider 后界面标签失真（实测跑的是 Jina、标签仍写 qwen3-rerank）；建议按当前 `rag.rerank_model` 派生。
+- **重排下拉文案里的 "TEI 形状" 待核（2026-09-23）**：标签写「Cohere / Jina / TEI 形状」，而客户端读的是 `results[].relevance_score`（Jina/Cohere 系）；TEI 的 `/rerank` 若回裸 `[{index, score}]` 则该标签误导（待对 TEI 文档核一次）。
 - `sparse_source=external` 与 `bm25` 的质量差异需要评测集回归才有结论（仓库已有 Layer-1 门禁，可作工具）。
 - 非 1024 维的支持（集合命名带维度 / 换维度自动建集合）明确留二期。

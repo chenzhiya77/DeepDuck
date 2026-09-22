@@ -1,0 +1,8 @@
+{
+  "embedding_model": "text-embedding-v4",
+  "extract_model": "qwen3.8-flash",
+  "embedding_provider": "openai-compatible",
+  "embedding_base_url": "https://dashscope.aliyuncs.com/compatible-mode",
+  "embedding_sparse_source": "bm25",
+  "embedding_api_key": "<masked len=117>"
+}

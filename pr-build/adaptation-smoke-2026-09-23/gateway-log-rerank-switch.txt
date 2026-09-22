@@ -1,0 +1,6 @@
+765:2026-09-23 00:33:34 - httpx - INFO - HTTP Request: POST https://dashscope.aliyuncs.com/compatible-api/v1/reranks "HTTP/1.1 200 OK"
+780:2026-09-23 00:33:38 - httpx - INFO - HTTP Request: POST https://dashscope.aliyuncs.com/compatible-api/v1/reranks "HTTP/1.1 200 OK"
+1303:2026-09-23 03:36:02 - httpx - INFO - HTTP Request: POST https://dashscope.aliyuncs.com/compatible-api/v1/reranks "HTTP/1.1 200 OK"
+1320:2026-09-23 03:36:17 - httpx - INFO - HTTP Request: POST https://dashscope.aliyuncs.com/compatible-api/v1/reranks "HTTP/1.1 200 OK"
+1359:2026-09-23 03:37:15 - httpx - INFO - HTTP Request: POST https://dashscope.aliyuncs.com/compatible-api/v1/reranks "HTTP/1.1 200 OK"
+1423:2026-09-23 03:48:23 - httpx - INFO - HTTP Request: POST https://api.jina.ai/v1/rerank "HTTP/1.1 200 OK"

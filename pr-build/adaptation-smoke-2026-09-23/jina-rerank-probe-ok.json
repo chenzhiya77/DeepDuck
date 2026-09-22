@@ -1,0 +1,1 @@
+{"model":"jina-reranker-v2-base-multilingual","object":"list","usage":{"total_tokens":31},"results":[{"index":0,"relevance_score":0.85195285,"document":"wireless mechanical keyboard, 128 units in stock"},{"index":1,"relevance_score":0.06278921,"document":"printer, 5 units in stock"}]}
