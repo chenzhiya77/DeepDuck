@@ -202,9 +202,9 @@
 **Files:**
 - Modify: `backend/AGENTS.md` RAG 小节（补 recall-test 端点、path_status、白名单/formats 端点）、`docs/superpowers/specs/2026-08-11-rag-phase2-batch1-design.md`（状态：待评审 → 已落地，标注日期）、主 spec 交叉引用处如有措辞偏差顺手修正
 
-- [ ] spec 状态翻转 + AGENTS.md 同步。
-- [ ] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净；`cd frontend && pnpm test && pnpm check` 干净。
-- [ ] Commit: `docs(rag): sync agent guides and spec status for phase-2 batch-1`。
+- [x] spec 状态翻转 + AGENTS.md 同步。—— 已由 `0ea14d97`（2026-08-15）完成：spec 状态改「✅ 已落地」、`backend/AGENTS.md` 补 recall-test 端点与 path_status。
+- [x] `cd backend && uv run pytest tests/knowledge -q` 全量 GREEN；`make lint && make format` 干净；`cd frontend && pnpm test && pnpm check` 干净。—— 同 plan 收官节记录：后端 **261 passed + 2 skipped**、前端 **1190 passed**、ruff 与 `pnpm check` 净。
+- [x] Commit: `docs(rag): sync agent guides and spec status for phase-2 batch-1`。—— 即 `0ea14d97`（2026-08-15）。
 
 ## Task 8: wiki 条目资格制 + 材料束批量生成（2026-08-12 插入，独立于 Task 6/7 先行实施） ✅ 已完成（2026-08-12）
 
