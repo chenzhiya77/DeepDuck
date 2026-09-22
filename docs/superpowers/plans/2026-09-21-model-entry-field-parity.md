@@ -134,7 +134,7 @@
 
 **验收对应**：spec §4 的第 8 / 9 / 10 / 13 / 14 条。
 
-- [ ] **RED（纯函数 · `node` project）**：新建 `frontend/tests/unit/models/thinking-shape.test.ts`（**node project** —— 纯函数不需要 DOM），**先红**。要钉住的规则（spec §3.3 那张表 + D3）：
+- [x] **RED（纯函数 · `node` project）**：新建 `frontend/tests/unit/models/thinking-shape.test.ts`（**node project** —— 纯函数不需要 DOM），**先红**。要钉住的规则（spec §3.3 那张表 + D3）：
       1. **形状①**（`openai-compatible` 选「OpenAI 兼容网关」）⇒ 生成 `{"extra_body": {"thinking": {"type": "enabled"}}}` / `{... "type": "disabled"}`。
       2. **形状②**（选 vLLM / SGLang）⇒ 生成 `{"extra_body": {"chat_template_kwargs": {"enable_thinking": True}}}` / `{... False}`。
       3. **形状③**（`anthropic` 自动）⇒ 生成 `{"thinking": {"type": "enabled", "budget_tokens": 4096}}` / `{"thinking": {"type": "disabled"}}`，⚠️ **`budget_tokens` 恰为 `4096`**（spec §4 第 9 条点名那个值）。
@@ -150,12 +150,12 @@
       **实测（2026-09-22）**：**16 passed**（`Test Files 1 passed`）。
 - [x] **neuter（纯函数）**：把 `budget_tokens` 从 `4096` 改成别的值 ⇒ 第 3 条必须**转红**。改回。
       **实测（2026-09-22）**：`4096 → 8192` ⇒ **4 红**，其中 plan 点名的第 3 条在列，另 3 条是同一个字面量的另外几个侧面（`pins anthropic / deepseek…` / `recognises the anthropic literal` / `reads an entry from the admin API…`）⇒ **同一批次受害、无意外受伤者**。改回后 16 绿。
-- [ ] **RED（接线层 —— 验收 9 / 10 的真正落点）**：`capability.ts` / `batch.ts` 的测试（node project），**先红**：**给定一个 `anthropic` 条目 ⇒ 展开出来的 entry 里带形状③的两个字段；给定「不设置」⇒ entry 里这两个键不存在**。**编辑腿这条不在这里做**（Task 0 第 3 项 (b) 已裁）：弹窗**能渲染**（Task 0 第 2 项）⇒ 编辑腿的接线断言**落在 Task 3 的 dom 用例**（渲染编辑弹窗 → 保存 → 断言 `onSave` 的 payload）—— 直测真接线，比在 node 层做代理断言强。**本 Task 只做添加腿**（`expandBatchToEntries`）。
+- [x] **RED（接线层 —— 验收 9 / 10 的真正落点）**：`capability.ts` / `batch.ts` 的测试（node project），**先红**：**给定一个 `anthropic` 条目 ⇒ 展开出来的 entry 里带形状③的两个字段；给定「不设置」⇒ entry 里这两个键不存在**。**编辑腿这条不在这里做**（Task 0 第 3 项 (b) 已裁）：弹窗**能渲染**（Task 0 第 2 项）⇒ 编辑腿的接线断言**落在 Task 3 的 dom 用例**（渲染编辑弹窗 → 保存 → 断言 `onSave` 的 payload）—— 直测真接线，比在 node 层做代理断言强。**本 Task 只做添加腿**（`expandBatchToEntries`）。
       ⚠️ **为什么必须单独做这一条**：纯函数层只证明「给定类生成什么 dict」，**证不了「它真的被带进 PUT payload」**。spec §4 第 9 条写的是「**保存后，文件里的配方是…**」—— **那需要接线**。
       **实测（2026-09-22）**：`tests/unit/models/batch.test.ts` 加两条（`anthropic` / `deepseek` 自动推、`openai-compatible` 选形状 + 不设置）⇒ **RED 2 红**（`expected undefined to deeply equal {…}`），其余 6 条绿。
 - [x] **GREEN（接线层）**：`capability.ts` / `batch.ts` 把两个配方字段带进 entry。
       **实测（2026-09-22）**：只动 `batch.ts` —— `BatchSharedFields` +`thinkingShape?`、`expandBatchToEntries` 里按 `thinkingRecipeFor(shared.provider, shared.thinkingShape ?? "none")` 采两个键（沿用既有"有值才写"的写法）⇒ **8 passed**。⚠️ **`capability.ts` 一个字未改**（Task 0 第 3 项 (b) 已裁：配方属"连接 / 请求体组"，不塞进能力组）。
-- [ ] **RED（UI · `dom` project）**：⚠️ **落点是 `*.dom.test.tsx`** —— `rstest.config.ts` 把测试分在两个 project（`node` 匹配 `tests/unit/**/*.test.ts(x)` 但**排除** `*.dom.test.*`；`dom` 只收 `*.dom.test.(ts|tsx)`，happy-dom）。
+- [x] **RED（UI · `dom` project）**：⚠️ **落点是 `*.dom.test.tsx`** —— `rstest.config.ts` 把测试分在两个 project（`node` 匹配 `tests/unit/**/*.test.ts(x)` 但**排除** `*.dom.test.*`；`dom` 只收 `*.dom.test.(ts|tsx)`，happy-dom）。
       **渲染目标 = 直接 `render(<ModelCapabilityEditor provider="…" value={…} onChange={…} />)`，不经过弹窗** —— 环比 **`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`**（渲染视图组件本身，注释写明"**instead of driving the Radix dropdown** … keeps the test about the rule rather than about Radix's portal behavior"；`tool-settings-page.dom.test.tsx` 同形态）⇒ **这条用例不依赖 Task 0 第 2 项**（Radix `Dialog` 能不能渲染是 Task 3 的事）。
       先例另照 **`tests/unit/components/workspace/composer-reasoning-controls.dom.test.tsx`** —— 同类的「模式 + 推理深度」控件，用 `@testing-library/react` 的 `render` / `fireEvent` / `screen`，测三种观察形态。
       ⚠️ **断言只钉"那一行在不在"，不要去开 `Select` 的候选列表** —— 新控件照「API 类型」的 gate 形态（`models-add-dialog.tsx:219-237`：`<span className="text-sm font-medium">{M.…}</span>` + `<Select>`）⇒ **span 是内联渲染的**，`queryByText` / `getByText` 就够；happy-dom 下 Portal 的挂载时机不可靠，开列表属于自找 flake。
