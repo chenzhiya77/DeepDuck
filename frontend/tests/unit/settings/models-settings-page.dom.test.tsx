@@ -130,6 +130,27 @@ describe("ModelsSettingsPage three states", () => {
     );
   });
 
+  it("gives the view-switch row a floor of its own, so views do not shift it", () => {
+    // D5 甲 (spec 2026-09-22 §3.2): the functional view's header ran taller than this line,
+    // so switching views moved everything below it by 4px (measured 34/30). The row owns the
+    // floor instead of inheriting whatever height its children happen to have.
+    setConfig([]);
+    renderPage();
+
+    const toggle = screen.getByRole("group", { name: M.viewSwitchLabel });
+    expect(toggle.parentElement?.className).toContain("min-h-9");
+  });
+
+  it("renders the add button small, so the row does not outgrow its floor", () => {
+    // D5 乙: the default `h-9` would push the row past `min-h-9` and bring the jump back.
+    setConfig([]);
+    renderPage();
+
+    expect(screen.getByRole("button", { name: M.add }).className).toContain(
+      "h-8",
+    );
+  });
+
   it("still hides the add action when the admin cannot manage models", () => {
     setConfig([], { error: new ModelsConfigRequestError(403, "forbidden") });
     renderPage();

@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-22-provider-grouping-design.md](../specs/2026-09-22-provider-grouping-design.md)
-**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付、Task 2 已交付；Task 3 待开工**。
+**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付、Task 2 已交付、Task 3 已交付（2026-09-24）；Task 4 待开工**。
 **Parent:** [2026-09-22-reasoning-replay-default-design.md](../specs/2026-09-22-reasoning-replay-default-design.md)（**类层**：`openai-compatible` 那格*背后*的类；本对只动**前端呈现/文案/布局**、**零文件重叠** ⇒ 可与它并行）· 相关：[2026-09-23-default-model-design.md](../specs/2026-09-23-default-model-design.md)（**同文件 ⇒ 串行、本对先交付**：`models-settings-page.tsx` + locales 三文件 + 它的 dom 用例）· [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)（同表面、已交付）
 
 **Architecture:** 四件事 —— **① 分组表**（`core/models/provider-groups.ts`，node 用例钉"表 + 穷尽性"）**② 接线 + 文案**（添加弹窗的 `SelectContent` 改按表渲染 `SelectGroup` / `SelectLabel`（含两组之间的 `SelectSeparator`）+ i18n 三文件：2 个组名新 key、1 个占位新 key、**7 处改值**（D6 / D7 / D9 / D10 / D11）；分组结构由 **dom 用例驱动候选**钉住，配方 = `tests/unit/settings/models-capability-wizard.dom.test.tsx:123-129`）**③ 切换行不带抖动**（行自持 `min-h-9` + 按钮 `size="sm"`；结构 dom 钉、几何真浏览器量）**④ 真浏览器复核**（分组结构 / 两视图切换不位移 / 观感）。
@@ -113,13 +113,21 @@
 > 动到的文件：`models-settings-page.tsx`（**两处**：切换行 `min-h-9`、「添加模型」按钮 `size="sm"`）；`tests/unit/settings/models-settings-page.dom.test.tsx`（+1~2 条）。
 > **验收对应**：spec §4 的 11（结构部分）；几何部分在 Task 4。
 
-- [ ] **RED**：dom 用例放在同文件既有那条 `keeps the add button on the view-switch row`（`:122-131`）**旁边**、同一写法（`toggle.parentElement`）钉两条：① 切换行有 `min-h-9`；② 「添加模型」按钮 `size="sm"`（渲染类含 `h-8`，出处 `ui/button.tsx:26`）⇒ 此刻两条都红（行没有 `min-h-9`、按钮是 default 的 `h-9`）。
-- [ ] **GREEN**：`models-settings-page.tsx` 两处按 D5 改（行加 `min-h-9`、按钮加 `size="sm"`）；按钮可见性逻辑原样。窄面转绿。
-- [ ] **neuter ①（行高）**：去掉 `min-h-9` ⇒ ① 红、② 保持绿。
-- [ ] **neuter ②（按钮）**：按钮还原 default ⇒ ② 红、① 保持绿（**受害者不相交**）。
-- [ ] **门禁**：`pnpm check` 净；窄面（`tests/unit/settings/` 全目录）绿。
+- [x] **RED**：dom 用例放在同文件既有那条 `keeps the add button on the view-switch row`（`:122-131`）**旁边**、同一写法（`toggle.parentElement`）钉两条：① 切换行有 `min-h-9`；② 「添加模型」按钮 `size="sm"`（渲染类含 `h-8`，出处 `ui/button.tsx:26`）⇒ 此刻两条都红（行没有 `min-h-9`、按钮是 default 的 `h-9`）。
+- [x] **GREEN**：`models-settings-page.tsx` 两处按 D5 改（行加 `min-h-9`、按钮加 `size="sm"`）；按钮可见性逻辑原样。窄面转绿。
+- [x] **neuter ①（行高）**：去掉 `min-h-9` ⇒ ① 红、② 保持绿。
+- [x] **neuter ②（按钮）**：按钮还原 default ⇒ ② 红、① 保持绿（**受害者不相交**）。
+- [x] **门禁**：`pnpm check` 净；窄面（`tests/unit/settings/` 全目录）绿。
 
-**实测（待回填）**：
+**实测（2026-09-24，Task 3 完成）**：
+
+- **RED**：同文件 `:133-152` 新增两条（沿用既有那条的 `toggle.parentElement` 写法）⇒ **2 红 / 14 绿** —— ① 实收行 class = `mb-4 flex items-center justify-between gap-3`（无 `min-h-9`）；② 按钮 class 尾部为 default 的 `h-9 px-4 py-2 has-[>svg]:px-3`（无 `h-8`）。8.66s。
+- **GREEN**：源码两处 = 行 `mb-4 flex min-h-9 items-center justify-between gap-3`、按钮 `size="sm"`（保持 `view === "chat" && !adminRequired && !error` 原样）⇒ 窄面 **16/16 绿**（14 旧 + 2 新）；`tests/unit/settings/` 全目录 **5 文件 / 104 例 / 0 失败**（21.3s）。
+- **neuter ①（去掉 `min-h-9`）**：只 `gives the view-switch row a floor of its own…` 红，按钮那条保持绿。
+- **neuter ②（按钮还原 default）**：只 `renders the add button small…` 红，行高那条保持绿 ⇒ **受害者不相交，双向各验一次**（每次 neuter 后均已回退并复跑）。
+- **门禁**：`pnpm check`（eslint + tsc）**净**（零输出）；**前端全量套件 243 文件 / 2619 例 / 0 失败**（3m29s，后台跑；09-23 基线 242/2604 ⇒ +1 文件 +15 例）。
+- **格式债判别**（两文件均被 `prettier --check` flag）：`tr -d '\r'` 后内容比对 —— ① 源码文件**内容干净**（flag 全来自 CRLF 环境）；② dom 用例文件 **12 处差异，与 HEAD 逐 hunk 相同**（后六个 hunk 全按 +21 行平移 = 本 Task 插入的行数；`:133-152` 新区间零差异）⇒ **纯既有债、不 `--write`**（按既有纪律：只重排自己的行，不在历史行上翻格式）。
+- ⚠️ **工具坑（新记）**：`scripts/pnpm.py` 的 stdin **只认管道（FIFO）**；用 `< 文件` 重定向喂输入会被当"无输入" ⇒ prettier 静默产出 0 字节（exit 0）＝假阴性。判定内容合规必须走 `cat f | … prettier --stdin-filepath <真路径>`。
 
 ---
 
@@ -145,9 +153,9 @@
 - [x] **文案已改**：`thinkingShapeVllm`：zh = `chat_template_kwargs（vLLM / SGLang）`、en = `chat_template_kwargs (vLLM / SGLang)`（旧名「vLLM / SGLang」；2026-09-22）。
 - [x] **零断言改动**：`grep thinkingShapeVllm frontend/tests` **0 命中**（旧文案没有用例钉过）。
 - [x] **门禁**：`pnpm check` 净；前端全量 **242 文件 / 2604 例 / 0 失败**（与基线同数）。
-- [ ] **核对（开工时做一次）**：Task 2 动 locales 后，`thinkingShapeVllm` 的**值仍是新文案**（防被覆盖/回退）；另确认 `thinkingShapeNone` / `thinkingShapeAnthropic` **原样**、而 ① 与 ② 都是新文案（① 由 **D10** 改、② 由 D8 改）—— ⚠️ 本条原写"只有 ② 改过"，已随 D10 作废。
+- [x] **核对（开工时做一次）**：Task 2 动 locales 后，`thinkingShapeVllm` 的**值仍是新文案**（防被覆盖/回退）；另确认 `thinkingShapeNone` / `thinkingShapeAnthropic` **原样**、而 ① 与 ② 都是新文案（① 由 **D10** 改、② 由 D8 改）—— ⚠️ 本条原写"只有 ② 改过"，已随 D10 作废。
 
-**实测**：见上方三条 —— 落地时的数字（2026-09-22）；开工时的核对结果回填到本行。
+**实测**：见上方三条 —— 落地时的数字（2026-09-22）；**开工核对（2026-09-24，Task 3 后顺带做）**：`thinkingShapeVllm` zh `chat_template_kwargs（vLLM / SGLang）` / en `chat_template_kwargs (vLLM / SGLang)` **未被回退**（D8 新文案仍在，`zh-CN.ts:1649` / `en-US.ts:1743`）；`thinkingShapeGateway` = **D10 新文案**（`zh-CN.ts:1648` / `en-US.ts:1742`）；`thinkingShapeNone` 原样（`:1647` / `:1741`）。⚠️ **措辞更正**：**`thinkingShapeAnthropic` 这个 key 并不存在** —— 用户可选项只有三支（`THINKING_SHAPE_OPTIONS = none / gateway / vllm`，渲染点 `model-capability-editor.tsx:79-83`），anthropic 形状按类自动推导、没有界面标签，故三份 locales 里都无此 key（`types.ts:1665-1667` 同）。
 
 ---
 
