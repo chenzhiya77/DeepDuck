@@ -1652,6 +1652,8 @@ export interface Translations {
       sourceConfigFile: string;
       sourceUi: string;
       provider: string;
+      providerGroupGeneric: string;
+      providerGroupVendor: string;
       providerOpenaiCompatible: string;
       providerAnthropic: string;
       providerDeepseek: string;
@@ -1665,6 +1667,7 @@ export interface Translations {
       thinkingShapeVllm: string;
       endpoint: string;
       apiKey: string;
+      apiKeyPlaceholder: string;
       apiKeyToggle: string;
       defaultHeaders: string;
       headerNamePlaceholder: string;

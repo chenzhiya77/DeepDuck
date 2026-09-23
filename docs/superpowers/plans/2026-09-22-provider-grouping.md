@@ -3,16 +3,16 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-22-provider-grouping-design.md](../specs/2026-09-22-provider-grouping-design.md)
-**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付；Task 2 待开工**。
+**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付、Task 2 已交付；Task 3 待开工**。
 **Parent:** [2026-09-22-reasoning-replay-default-design.md](../specs/2026-09-22-reasoning-replay-default-design.md)（**类层**：`openai-compatible` 那格*背后*的类；本对只动**前端呈现/文案/布局**、**零文件重叠** ⇒ 可与它并行）· 相关：[2026-09-23-default-model-design.md](../specs/2026-09-23-default-model-design.md)（**同文件 ⇒ 串行、本对先交付**：`models-settings-page.tsx` + locales 三文件 + 它的 dom 用例）· [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)（同表面、已交付）
 
 **Architecture:** 四件事 —— **① 分组表**（`core/models/provider-groups.ts`，node 用例钉"表 + 穷尽性"）**② 接线 + 文案**（添加弹窗的 `SelectContent` 改按表渲染 `SelectGroup` / `SelectLabel`（含两组之间的 `SelectSeparator`）+ i18n 三文件：2 个组名新 key、1 个占位新 key、**7 处改值**（D6 / D7 / D9 / D10 / D11）；分组结构由 **dom 用例驱动候选**钉住，配方 = `tests/unit/settings/models-capability-wizard.dom.test.tsx:123-129`）**③ 切换行不带抖动**（行自持 `min-h-9` + 按钮 `size="sm"`；结构 dom 钉、几何真浏览器量）**④ 真浏览器复核**（分组结构 / 两视图切换不位移 / 观感）。
 
 **硬约束（spec 已裁，实现时不许自行放松）**：
 
-- **已拍：D1 甲（组标题 + 分割线）/ D2 甲（「通用协议」/「厂商」；en = `Generic protocol` / `Vendors`）** —— 实现按这个写，**不许自行换词、不许省掉分割线**。
+- **已拍：D1 甲（组标题 + 分割线）/ D2 甲（「通用协议」/「厂商」；en = `Generic protocol` / `Vendors`，**en 两条已拍 2026-09-23**）** —— 实现按这个写，**不许自行换词、不许省掉分割线**。
 - **已拍：D5 甲+乙都做** —— 切换行加 `min-h-9` **且**「添加模型」按钮改 `size="sm"`。**两条都要**（只做乙也能消抖，但会把 chat 视图今天的样子整体上移 4px；甲让行高归行所有，保住既有间距）。
-- **已拍：D6 用户给定词** —— 新增 `apiKeyPlaceholder` = 「请输入API Key」；`modelIdPlaceholder` = 「请输入模型ID名称」。en（`Enter API key` / `Enter the model ID`）是我拟的译法、**未单独拍** ⇒ 开工前一句话可换。
+- **已拍：D6 用户给定词** —— 新增 `apiKeyPlaceholder` = 「请输入API Key」；`modelIdPlaceholder` = 「请输入模型ID名称」；en = `Enter API key` / `Enter the model ID`（**en 四条已拍 2026-09-23**，与 D2 的两条同批）。
 - **已拍：D7 甲** —— `providerOpenaiCompatible` = **`OpenAI-compatible`**（zh 与 en 同值）；`providerAnthropic` / `providerDeepseek` / `customProvider` **不动**。改的是**文案**不是契约（三项 `value` = id 仍不动）。
 - **已落地：D8（形状② 文案）** —— `thinkingShapeVllm`：zh = **`chat_template_kwargs（vLLM / SGLang）`**、en = **`chat_template_kwargs (vLLM / SGLang)`**，**2026-09-22 已改**（2 个 i18n 各 1 行、零断言改动、全量 242/2604/0）⇒ **开工时不得再改这个 key**（只做核对，见 Task 5）。
 - **已拍：D9 甲 / D10 乙 / D11 甲（2026-09-23，随带修复第二批）** —— `addHeader` / `addModelId` 去掉文案里的 `+`（**保留 `PlusIcon`**，D9）；`thinkingShapeGateway` = **`extra_body.thinking（OpenAI 兼容）`**（en `extra_body.thinking (OpenAI-compatible)`，D10）；`headerNamePlaceholder` / `headerValuePlaceholder` = **「Header 名称」/「Header 值」**（en `Header name` / `Header value`，D11）。**行标签 `defaultHeaders`（「请求头」）不动**。用例面已扫（Task 0.8）：**零断言改动**。
@@ -84,13 +84,27 @@
 > 动到的文件：`models-add-dialog.tsx`（import + `SelectContent` 按表渲染 + API Key 框加 `placeholder={M.apiKeyPlaceholder}`）；`locales/types.ts` / `zh-CN.ts` / `en-US.ts` 各 **+3 key、7 处改值**（D6 / D7 / D9 / D10 / D11）+ **D8 已提前落地（别动、只核对）**；`models-add-dialog.dom.test.tsx`（+4~6 条）+ `models-edit-dialog.dom.test.tsx`（+2~3 条 —— D9/D11 的**编辑腿**：同一批 i18n 值在那边也渲染）。
 > **验收对应**：spec §4 的 3 / 4（dom 层驱动候选钉结构）· 5 / 6 / 10 / 13 / 14 / 15（dom 层钉）；8 的观感复核在 Task 4。
 
-- [ ] **RED**：dom 用例加 ① **提交回归**：走 `addOneModel()` ⇒ payload 的 `provider` 仍是 `openai-compatible`，且 `SelectTrigger` 文案随选择变化（驱动候选，配方见下）；② **分组结构**：驱动候选 ⇒ 两个组标题（`M.providerGroupGeneric` / `M.providerGroupVendor`）都在、`data-slot="select-separator"` 存在、`[role=option]` 的顺序与归属（协议组两项在前、厂商组一项在后）；③ **文案钉子**：`M.customProvider` **原文**逐字断言 + 三项 `provider*` = **D7 新值**逐字断言（含"zh 与 en 同值"一条）；④ **占位钉子**：`getByPlaceholderText(M.apiKeyPlaceholder)` 与 `getByPlaceholderText(M.modelIdPlaceholder)` 各一条；⑤ **加号钉子（D9）**：两个弹窗的「添加请求头 / 添加 Model ID」按钮 —— `textContent` 不含 `+`、且按钮内有 `svg`（添加腿在 add-dialog、编辑腿在 edit-dialog 各一条）；⑥ **形状①文案（D10）**：`M.thinkingShapeGateway` 逐字断言 = `extra_body.thinking（OpenAI 兼容）`（zh）/ `extra_body.thinking (OpenAI-compatible)`（en）；⑦ **请求头占位（D11）**：`getByPlaceholderText(M.headerNamePlaceholder)` / `M.headerValuePlaceholder`（两个弹窗各一条）。⚠️ 驱动候选用 `models-capability-wizard.dom.test.tsx:123-129` 的配方（`fireEvent.click` 开、`findByRole("option")` 选），**不要**用 pointerdown；另有两处为稳定性主动绕开 Radix Select（`functional-models.dom.test.tsx:402` / `models-settings-page.dom.test.tsx:339-341`）—— 本对**显式选择驱动**（配方已实测可跑）。
-- [ ] **GREEN**：i18n 三文件按 D2 甲加 `providerGroupGeneric`（「通用协议」/`Generic protocol`）与 `providerGroupVendor`（「厂商」/`Vendors`）、按 D6 加 `apiKeyPlaceholder`（「请输入API Key」/`Enter API key`）并把 `modelIdPlaceholder` 改成「请输入模型ID名称」/`Enter the model ID`、按 D7 把 `providerOpenaiCompatible` 改成 `OpenAI-compatible`（zh 与 en 同值）、按 **D9** 把 `addHeader` / `addModelId` 去掉文案里的 `+`、按 **D10** 把 `thinkingShapeGateway` 改成 `extra_body.thinking（OpenAI 兼容）` / `extra_body.thinking (OpenAI-compatible)`、按 **D11** 把 `headerNamePlaceholder` / `headerValuePlaceholder` 改成「Header 名称」/「Header 值」（en `Header name` / `Header value`）；`models-add-dialog.tsx` 的 `SelectContent` 改为 `PROVIDER_GROUPS.map(...)` ⇒ `SelectGroup`（`SelectLabel` + `SelectItem value={id}` + `{M[PROVIDER_LABEL_KEYS[id]]}`），**两组之间加 `SelectSeparator`**（⚠️ `SelectGroup` 直接子节点只能是 `SelectLabel`/`SelectItem`，不要包 `div`）；API Key 框加 `placeholder={M.apiKeyPlaceholder}`。⚠️ **不要碰 `thinkingShapeVllm`**（D8 已落地，见 Task 5 —— 它同在这两个文件里，改错就会把新文案覆盖回旧词）。窄面转绿。
-- [ ] **neuter ①（接线）**：把弹窗改回平铺三项（不读表）⇒ ② 的组标题 / 分割线断言应转红（"表→渲染"有牙）；若**无红**，说明 dom 用例没真开到候选 ⇒ 按上面的配方修好再重验。
-- [ ] **neuter ②（文案）**：把组名换成错词 ⇒ ② 红；把 `providerOpenaiCompatible` 改回「OpenAI 兼容」⇒ ③ 红；删掉 key 框的 `placeholder` ⇒ ④ 红；把 `addHeader` 改回带 `+` ⇒ ⑤ 红；把 `thinkingShapeGateway` 改回「OpenAI 兼容网关」⇒ ⑥ 红（据实记录受害者集合）。
-- [ ] **门禁**：`pnpm check` 净（含 tsc：i18n 三文件缺一即红）；窄面（`models-add-dialog.dom.test.tsx` + `provider-groups.test.ts`）绿；更宽面（`tests/unit/components/workspace/settings/` 全目录 + `tests/unit/settings/`）绿。
+- [x] **RED**：dom 用例加 ① **提交回归**：走 `addOneModel()` ⇒ payload 的 `provider` 仍是 `openai-compatible`，且 `SelectTrigger` 文案随选择变化（驱动候选，配方见下）；② **分组结构**：驱动候选 ⇒ 两个组标题（`M.providerGroupGeneric` / `M.providerGroupVendor`）都在、`data-slot="select-separator"` 存在、`[role=option]` 的顺序与归属（协议组两项在前、厂商组一项在后）；③ **文案钉子**：`M.customProvider` **原文**逐字断言 + 三项 `provider*` = **D7 新值**逐字断言（含"zh 与 en 同值"一条）；④ **占位钉子**：`getByPlaceholderText(M.apiKeyPlaceholder)` 与 `getByPlaceholderText(M.modelIdPlaceholder)` 各一条；⑤ **加号钉子（D9）**：两个弹窗的「添加请求头 / 添加 Model ID」按钮 —— `textContent` 不含 `+`、且按钮内有 `svg`（添加腿在 add-dialog、编辑腿在 edit-dialog 各一条）；⑥ **形状①文案（D10）**：`M.thinkingShapeGateway` 逐字断言 = `extra_body.thinking（OpenAI 兼容）`（zh）/ `extra_body.thinking (OpenAI-compatible)`（en）；⑦ **请求头占位（D11）**：`getByPlaceholderText(M.headerNamePlaceholder)` / `M.headerValuePlaceholder`（两个弹窗各一条）。⚠️ 驱动候选用 `models-capability-wizard.dom.test.tsx:123-129` 的配方（`fireEvent.click` 开、`findByRole("option")` 选），**不要**用 pointerdown；另有两处为稳定性主动绕开 Radix Select（`functional-models.dom.test.tsx:402` / `models-settings-page.dom.test.tsx:339-341`）—— 本对**显式选择驱动**（配方已实测可跑）。
+- [x] **GREEN**：i18n 三文件按 D2 甲加 `providerGroupGeneric`（「通用协议」/`Generic protocol`）与 `providerGroupVendor`（「厂商」/`Vendors`）、按 D6 加 `apiKeyPlaceholder`（「请输入API Key」/`Enter API key`）并把 `modelIdPlaceholder` 改成「请输入模型ID名称」/`Enter the model ID`、按 D7 把 `providerOpenaiCompatible` 改成 `OpenAI-compatible`（zh 与 en 同值）、按 **D9** 把 `addHeader` / `addModelId` 去掉文案里的 `+`、按 **D10** 把 `thinkingShapeGateway` 改成 `extra_body.thinking（OpenAI 兼容）` / `extra_body.thinking (OpenAI-compatible)`、按 **D11** 把 `headerNamePlaceholder` / `headerValuePlaceholder` 改成「Header 名称」/「Header 值」（en `Header name` / `Header value`）；`models-add-dialog.tsx` 的 `SelectContent` 改为 `PROVIDER_GROUPS.map(...)` ⇒ `SelectGroup`（`SelectLabel` + `SelectItem value={id}` + `{M[PROVIDER_LABEL_KEYS[id]]}`），**两组之间加 `SelectSeparator`**（⚠️ `SelectGroup` 直接子节点只能是 `SelectLabel`/`SelectItem`，不要包 `div`）；API Key 框加 `placeholder={M.apiKeyPlaceholder}`。⚠️ **不要碰 `thinkingShapeVllm`**（D8 已落地，见 Task 5 —— 它同在这两个文件里，改错就会把新文案覆盖回旧词）。窄面转绿。
+- [x] **neuter ①（接线）**：把弹窗改回平铺三项（不读表）⇒ ② 的组标题 / 分割线断言应转红（"表→渲染"有牙）；若**无红**，说明 dom 用例没真开到候选 ⇒ 按上面的配方修好再重验。
+- [x] **neuter ②（文案）**：把组名换成错词 ⇒ ② 红；把 `providerOpenaiCompatible` 改回「OpenAI 兼容」⇒ ③ 红；删掉 key 框的 `placeholder` ⇒ ④ 红；把 `addHeader` 改回带 `+` ⇒ ⑤ 红；把 `thinkingShapeGateway` 改回「OpenAI 兼容网关」⇒ ⑥ 红（据实记录受害者集合）。
+- [x] **门禁**：`pnpm check` 净（含 tsc：i18n 三文件缺一即红）；窄面（`models-add-dialog.dom.test.tsx` + `provider-groups.test.ts`）绿；更宽面（`tests/unit/components/workspace/settings/` 全目录 + `tests/unit/settings/`）绿。
 
-**实测（待回填）**：
+**实测（2026-09-23，Task 2 完成）**：
+
+- **RED**：add-dialog 腿 **6 红 / 3 绿**（9 例：两条既有 + 提交回归绿；分组结构与五条文案钉红）；edit-dialog 腿 **2 红 / 5 绿**（7 例）⇒ 合计 **8 红 / 8 绿**。
+- **GREEN**：两条腿 **17/17 绿**（add 10 + edit 7 —— RED 后 add 腿又补 1 条，见"偏差"）；门禁 `pnpm check` 净。
+- **neuter 受害者集合（六支，逐支跑）**：
+  - 接线改回平铺 ⇒ **只 {分组结构} 红** ⇒ "表→渲染"有牙；
+  - 组名换错词（`providerGroupGeneric` → 「协议组」）⇒ **只 {组名字面量钉子} 红** —— ⚠️ 常量驱动的"分组结构"**不会红**，这正是补那条字面量钉子的原因（见"偏差"）；
+  - `providerOpenaiCompatible` 改回「OpenAI 兼容」⇒ **只 {文案钉子} 红**；
+  - `addHeader` 加回 `+` ⇒ **{add 加号, edit 加号} 两条红**（两条腿各一）；
+  - `thinkingShapeGateway` 改回「OpenAI 兼容网关」⇒ **只 {形状①钉子} 红**；
+  - 删掉 Key 框的 `placeholder` ⇒ **只 {占位钉子} 红**。
+  - ⇒ 六支的受害者**两两不相交**（每组都只在对应断言的范围内）。
+- **还原证明**：六支全部还原后 17/17 绿。
+- **门禁细节**：`pnpm check` 先抓到**我一个真错**（`import/order`：`provider-groups` 应排在 `capability-registry` 之后）⇒ 修完复跑净；prettier：两个用例文件绿；**4 个被 flag 的文件（弹窗 + 三个 locale）HEAD 版同样被 flag = 既有格式债**（逐文件核过：我的改动行**都不在** prettier 的差异 hunk 里）⇒ 按惯例不 `--write`。
+- **偏差（据实记录）**：计划写 add 腿 "+4~6 条"，实落 **+8**（7 条计划内 + 1 条"两条组标题的字面量钉子"）—— 后者是为让"组名换错词"那支 neuter 能咬（只靠 `M.*` 常量喂查询时，改值会静默通过）。
 
 ---
 

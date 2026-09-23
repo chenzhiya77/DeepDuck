@@ -18,6 +18,7 @@ import {
 } from "@testing-library/react";
 
 import { I18nContext } from "@/core/i18n/context";
+import { enUS } from "@/core/i18n/locales/en-US";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import type { ManagedModelInput } from "@/core/models/types";
 
@@ -108,5 +109,118 @@ describe("ModelsAddDialog request headers", () => {
     await waitFor(() => expect(onAdd).toHaveBeenCalled());
     const [entries] = onAdd.mock.calls[0] as [ManagedModelInput[]];
     expect("default_headers" in (entries[0] ?? {})).toBe(false);
+  });
+});
+
+/**
+ * 分组（spec 2026-09-22 provider-grouping §3.3 / D1–D3）与随带文案（D6–D11）。
+ *
+ * 候选列表的配方 = `models-capability-wizard.dom.test.tsx:123-129`（`fireEvent.click` 开、
+ * `findByRole("option")` 选）—— happy-dom 下 Radix Select 走 click 这条 fallback 路。
+ */
+function openProviderSelect() {
+  fireEvent.click(screen.getByRole("combobox", { name: M.provider }));
+}
+
+async function pickProvider(label: string) {
+  fireEvent.click(await screen.findByRole("option", { name: label }));
+}
+
+describe("ModelsAddDialog provider dropdown", () => {
+  it("groups the ids under two headings, with a separator between them", async () => {
+    renderDialog(rs.fn());
+    openProviderSelect();
+
+    expect(await screen.findByText(M.providerGroupGeneric)).toBeDefined();
+    expect(screen.getByText(M.providerGroupVendor)).toBeDefined();
+    expect(
+      document.querySelector('[data-slot="select-separator"]'),
+    ).not.toBeNull();
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual([
+      M.providerOpenaiCompatible,
+      M.providerAnthropic,
+      M.providerDeepseek,
+    ]);
+  });
+
+  it("moves the trigger with the pick but submits the id, not the label", async () => {
+    const onAdd = rs.fn();
+    renderDialog(onAdd);
+
+    const trigger = () => screen.getByRole("combobox", { name: M.provider });
+    expect(trigger().textContent).toBe(M.providerOpenaiCompatible);
+
+    openProviderSelect();
+    await pickProvider(M.providerDeepseek);
+
+    expect(trigger().textContent).toBe(M.providerDeepseek);
+    await addOneModel();
+
+    await waitFor(() => expect(onAdd).toHaveBeenCalled());
+    const [entries] = onAdd.mock.calls[0] as [ManagedModelInput[]];
+    expect(entries[0]?.provider).toBe("deepseek");
+  });
+});
+
+describe("ModelsAddDialog copy", () => {
+  it("keeps the row label and the three curated provider spellings", () => {
+    expect(M.customProvider).toBe("自定义");
+    expect(M.providerOpenaiCompatible).toBe("OpenAI-compatible");
+    expect(M.providerAnthropic).toBe("Anthropic");
+    expect(M.providerDeepseek).toBe("DeepSeek");
+    // D7: 那一格 zh 与 en 同值 —— 单边改词会在这里红。
+    expect(M.providerOpenaiCompatible).toBe(
+      enUS.settings.models.providerOpenaiCompatible,
+    );
+  });
+
+  it("keeps the two group headings", () => {
+    expect(M.providerGroupGeneric).toBe("通用协议");
+    expect(M.providerGroupVendor).toBe("厂商");
+    expect(enUS.settings.models.providerGroupGeneric).toBe("Generic protocol");
+    expect(enUS.settings.models.providerGroupVendor).toBe("Vendors");
+  });
+
+  it("asks for the key and the model id with the agreed placeholders", () => {
+    renderDialog(rs.fn());
+
+    expect(screen.getByPlaceholderText(M.apiKeyPlaceholder)).toBeDefined();
+    expect(screen.getByPlaceholderText(M.modelIdPlaceholder)).toBeDefined();
+    expect(M.apiKeyPlaceholder).toBe("请输入API Key");
+    expect(M.modelIdPlaceholder).toBe("请输入模型ID名称");
+    expect(enUS.settings.models.apiKeyPlaceholder).toBe("Enter API key");
+    expect(enUS.settings.models.modelIdPlaceholder).toBe("Enter the model ID");
+  });
+
+  it("renders exactly one plus per add button", () => {
+    renderDialog(rs.fn());
+
+    for (const name of [M.addHeader, M.addModelId]) {
+      const button = screen.getByRole("button", { name });
+
+      expect(button.textContent ?? "").not.toContain("+");
+      expect(button.querySelector("svg")).not.toBeNull();
+    }
+  });
+
+  it("calls the gateway thinking shape by the path it writes", () => {
+    expect(M.thinkingShapeGateway).toBe("extra_body.thinking（OpenAI 兼容）");
+    expect(enUS.settings.models.thinkingShapeGateway).toBe(
+      "extra_body.thinking (OpenAI-compatible)",
+    );
+  });
+
+  it("labels the header row fields generically", () => {
+    renderDialog(rs.fn());
+    fireEvent.click(screen.getByRole("button", { name: M.addHeader }));
+
+    expect(screen.getByPlaceholderText(M.headerNamePlaceholder)).toBeDefined();
+    expect(screen.getByPlaceholderText(M.headerValuePlaceholder)).toBeDefined();
+    expect(M.headerNamePlaceholder).toBe("Header 名称");
+    expect(M.headerValuePlaceholder).toBe("Header 值");
+    expect(enUS.settings.models.headerNamePlaceholder).toBe("Header name");
+    expect(enUS.settings.models.headerValuePlaceholder).toBe("Header value");
   });
 });

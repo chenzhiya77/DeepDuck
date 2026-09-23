@@ -7,7 +7,9 @@
  * ③ 「API 类型」按 `use_responses_api === true` 显示 Responses、保存原样带回；
  * ④ 防呆：从没设过该键的条目**不许凭空多出** `use_responses_api`（更不许是 `false`）；
  * ⑤ 取证钉子（首跑即绿）：只改显示名也让 anthropic 条目带上形状③的配方 —— Task 2 的接线，
- *    这里只是防止将来被当成 bug 拆掉（plan Task 3 RED 第 ④ 条，2026-09-22 改判）。
+ *    这里只是防止将来被当成 bug 拆掉（plan Task 3 RED 第 ④ 条，2026-09-22 改判）；
+ * ⑥ 另含随带文案的**编辑腿**（spec 2026-09-22 provider-grouping D9 / D11）：加号只一个 +
+ *    请求头两个占位词（照字面量查 ⇒ 旧文案会红）。
  *
  * 直接渲染弹窗（`open` 是受控 prop、mount 零网络）。⚠️ 不开 Radix `Select` 的候选列表 ——
  * 仓内先例（`models-settings-page.dom.test.tsx`）写着 happy-dom 下它的开合不可靠；
@@ -71,6 +73,25 @@ function clickSave() {
 
 afterEach(() => {
   cleanup();
+});
+
+describe("ModelsEditDialog copy", () => {
+  it("renders exactly one plus on the header add button", () => {
+    renderDialog(managedModel(), rs.fn());
+
+    const button = screen.getByRole("button", { name: M.addHeader });
+
+    expect(button.textContent ?? "").not.toContain("+");
+    expect(button.querySelector("svg")).not.toBeNull();
+  });
+
+  it("labels the header row fields generically", () => {
+    renderDialog(managedModel(), rs.fn());
+    fireEvent.click(screen.getByRole("button", { name: M.addHeader }));
+
+    expect(screen.getByPlaceholderText("Header 名称")).toBeDefined();
+    expect(screen.getByPlaceholderText("Header 值")).toBeDefined();
+  });
 });
 
 describe("ModelsEditDialog read side", () => {

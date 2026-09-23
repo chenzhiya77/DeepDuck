@@ -1,7 +1,7 @@
 "use client";
 
 import { EyeIcon, EyeOffIcon, PlusIcon, TrashIcon } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -34,6 +37,10 @@ import {
   type ModelCapabilityValue,
 } from "@/core/models/capability";
 import { suggestCapabilities } from "@/core/models/capability-registry";
+import {
+  PROVIDER_GROUPS,
+  PROVIDER_LABEL_KEYS,
+} from "@/core/models/provider-groups";
 import type { ThinkingShape } from "@/core/models/thinking-shape";
 import type { ManagedModelInput, ProviderId } from "@/core/models/types";
 import { AUTOFILL_OFF_INPUT_PROPS, SECRET_INPUT_AUTOFILL_PROPS } from "@/lib/input-autofill";
@@ -224,11 +231,19 @@ export function ModelsAddDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="openai-compatible">
-                        {M.providerOpenaiCompatible}
-                      </SelectItem>
-                      <SelectItem value="anthropic">{M.providerAnthropic}</SelectItem>
-                      <SelectItem value="deepseek">{M.providerDeepseek}</SelectItem>
+                      {PROVIDER_GROUPS.map((group, index) => (
+                        <Fragment key={group.labelKey}>
+                          {index > 0 && <SelectSeparator />}
+                          <SelectGroup>
+                            <SelectLabel>{M[group.labelKey]}</SelectLabel>
+                            {group.ids.map((id) => (
+                              <SelectItem key={id} value={id}>
+                                {M[PROVIDER_LABEL_KEYS[id]]}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </Fragment>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -331,6 +346,7 @@ export function ModelsAddDialog({
                       {...SECRET_INPUT_AUTOFILL_PROPS}
                       value={apiKey}
                       aria-label={M.apiKey}
+                      placeholder={M.apiKeyPlaceholder}
                       className="pr-10"
                       onChange={(e) => setApiKey(e.target.value)}
                     />
