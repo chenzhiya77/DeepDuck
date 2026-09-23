@@ -60,14 +60,26 @@ def test_graph_message_notes_pool_exhaustion_when_evidence_below_limit():
     from deerflow.tools.builtins.graph_search_tool import format_graph_message
 
     exhausted = format_graph_message(
-        matched=3, seen=4, relations=1, evidence=3, pool_size=3, evidence_limit=4, span="[1]-[3]",
+        matched=3,
+        seen=4,
+        relations=1,
+        evidence=3,
+        pool_size=3,
+        evidence_limit=4,
+        span="[1]-[3]",
     )
     assert "3 条切片证据" in exhausted
     assert "候选池共 3 片" in exhausted and "已全量返回" in exhausted
     assert "引用编号 [1]-[3]" in exhausted
 
     full = format_graph_message(
-        matched=3, seen=4, relations=1, evidence=4, pool_size=6, evidence_limit=4, span="[1]-[4]",
+        matched=3,
+        seen=4,
+        relations=1,
+        evidence=4,
+        pool_size=6,
+        evidence_limit=4,
+        span="[1]-[4]",
     )
     assert "候选池" not in full
 
