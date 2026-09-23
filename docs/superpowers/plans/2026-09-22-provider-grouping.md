@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-22-provider-grouping-design.md](../specs/2026-09-22-provider-grouping-design.md)
-**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**、按指令其余暂不开工**。
+**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付；Task 2 待开工**。
 **Parent:** [2026-09-22-reasoning-replay-default-design.md](../specs/2026-09-22-reasoning-replay-default-design.md)（**类层**：`openai-compatible` 那格*背后*的类；本对只动**前端呈现/文案/布局**、**零文件重叠** ⇒ 可与它并行）· 相关：[2026-09-23-default-model-design.md](../specs/2026-09-23-default-model-design.md)（**同文件 ⇒ 串行、本对先交付**：`models-settings-page.tsx` + locales 三文件 + 它的 dom 用例）· [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)（同表面、已交付）
 
 **Architecture:** 四件事 —— **① 分组表**（`core/models/provider-groups.ts`，node 用例钉"表 + 穷尽性"）**② 接线 + 文案**（添加弹窗的 `SelectContent` 改按表渲染 `SelectGroup` / `SelectLabel`（含两组之间的 `SelectSeparator`）+ i18n 三文件：2 个组名新 key、1 个占位新 key、**7 处改值**（D6 / D7 / D9 / D10 / D11）；分组结构由 **dom 用例驱动候选**钉住，配方 = `tests/unit/settings/models-capability-wizard.dom.test.tsx:123-129`）**③ 切换行不带抖动**（行自持 `min-h-9` + 按钮 `size="sm"`；结构 dom 钉、几何真浏览器量）**④ 真浏览器复核**（分组结构 / 两视图切换不位移 / 观感）。
@@ -61,13 +61,21 @@
 > 动到的文件：`src/core/models/provider-groups.ts`（**新增**）、`tests/unit/models/provider-groups.test.ts`（**新增**）。
 > **验收对应**：spec §4 的 1 / 2。
 
-- [ ] **RED**：先建新用例文件（三条断言）：① 表 = spec §3.1 的两组（**顺序 + 成员**逐项）；② **穷尽性** —— `ProviderId` 的三个值在表里**各恰好一次**（用 `flatMap` + 去重 + 集合比较）；③ **文案 key 表** —— `PROVIDER_LABEL_KEYS` 对三个 id 各给一个 `provider*` key（值集合 = 三个）。此刻实现文件不存在 ⇒ 红。
-- [ ] **GREEN**：写 `provider-groups.ts`（`ProviderGroup` 接口 + `PROVIDER_GROUPS` 常量 + **`PROVIDER_LABEL_KEYS: Record<ProviderId, …>`**；两个 key 都收窄成字面量联合 ⇒ i18n 缺 key / 新增 id 时 tsc 红）。窄面转绿。
-- [ ] **neuter ①（归属）**：把 `deepseek` 从厂商组挪进协议组 ⇒ ① 转红、② 保持绿（**受害者不相交**）。
-- [ ] **neuter ②（穷尽）**：删掉表里 `anthropic` 一项 ⇒ **② 转红**（① 也红 ⇒ 据实记录两支的受害者集合）。
-- [ ] **门禁**：`pnpm check` 净；窄面（`tests/unit/models/provider-groups.test.ts`）绿。
+- [x] **RED**：先建新用例文件（三条断言）：① 表 = spec §3.1 的两组（**顺序 + 成员**逐项）；② **穷尽性** —— `ProviderId` 的三个值在表里**各恰好一次**（用 `flatMap` + 去重 + 集合比较）；③ **文案 key 表** —— `PROVIDER_LABEL_KEYS` 对三个 id 各给一个 `provider*` key（值集合 = 三个）。此刻实现文件不存在 ⇒ 红。
+- [x] **GREEN**：写 `provider-groups.ts`（`ProviderGroup` 接口 + `PROVIDER_GROUPS` 常量 + **`PROVIDER_LABEL_KEYS: Record<ProviderId, …>`**；两个 key 都收窄成字面量联合 ⇒ i18n 缺 key / 新增 id 时 tsc 红）。窄面转绿。
+- [x] **neuter ①（归属）**：把 `deepseek` 从厂商组挪进协议组 ⇒ ① 转红、② 保持绿（**受害者不相交**）。
+- [x] **neuter ②（穷尽）**：删掉表里 `anthropic` 一项 ⇒ **② 转红**（① 也红 ⇒ 据实记录两支的受害者集合）。
+- [x] **门禁**：`pnpm check` 净；窄面（`tests/unit/models/provider-groups.test.ts`）绿。
 
-**实测（待回填）**：
+**实测（2026-09-23，Task 1 完成）**：
+
+- **RED**：用例文件就位、实现文件未建 ⇒ **1 文件红 / 0 例**（`Cannot find module '@/core/models/provider-groups'`，987ms）。
+- **GREEN**：写好 `provider-groups.ts` ⇒ 窄面 **3/3 绿**（243ms）。
+- **neuter ①（`deepseek` 挪进协议组、厂商组留空）**：**① 红、②③ 绿** ⇒ 受害者 = **{①}**，与 ② 不相交（与计划预测一致）。
+- **neuter ②（删掉 `anthropic`）**：**①② 红、③ 绿** ⇒ 受害者 = **{①②}**（计划已预告"① 也红"，据实记录）。
+- **还原证明**：原表恢复后窄面复跑 **3/3 绿**。
+- **门禁**：`pnpm check`（eslint + tsc）**净**（零输出）；两个新文件 `prettier --check` 全绿（用例文件被 prettier 重排 **1 处** = 末条断言换行；实现文件零改动）。
+- **两道网的分工（写清，免得后人误判）**：新增第 4 个 `ProviderId` 时**第一道网是 `PROVIDER_LABEL_KEYS` 的 `Record`（tsc 当场红）**；用例 ② 是**第二道网**（抓"表里删了/多了一个 id"）—— 与 spec §3.1 的说法一致。
 
 ---
 
