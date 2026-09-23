@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-22-provider-grouping-design.md](../specs/2026-09-22-provider-grouping-design.md)
-**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付、Task 2 已交付、Task 3 已交付（2026-09-24）；Task 4 待开工**。
+**Status:** ✅ **已定稿（2026-09-22；随带修复两批 2026-09-23 并入）—— 待拍清零（D1 甲 / D2 甲 / D5 甲+乙 / D6 用户给定词 / D7 甲 / D8 甲 / D9 甲 / D10 乙 / D11 甲）；其中 **D8（形状② 文案）已在开工前落地（2026-09-22）**。**进行中（2026-09-23 开工）：Task 0 已核、Task 1 已交付、Task 2 已交付、Task 3 已交付（`b10de00f`）、Task 4 已完成并回填（2026-09-24）；**✅ 交付收官（2026-09-24）** —— 五个 Task 全部落地、门禁 = `pnpm check` 净 + 前端全量 243 文件 / 2619 例 / 0 失败；spec 的 `**Status:**` 已同步为「已交付」**。
 **Parent:** [2026-09-22-reasoning-replay-default-design.md](../specs/2026-09-22-reasoning-replay-default-design.md)（**类层**：`openai-compatible` 那格*背后*的类；本对只动**前端呈现/文案/布局**、**零文件重叠** ⇒ 可与它并行）· 相关：[2026-09-23-default-model-design.md](../specs/2026-09-23-default-model-design.md)（**同文件 ⇒ 串行、本对先交付**：`models-settings-page.tsx` + locales 三文件 + 它的 dom 用例）· [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)（同表面、已交付）
 
 **Architecture:** 四件事 —— **① 分组表**（`core/models/provider-groups.ts`，node 用例钉"表 + 穷尽性"）**② 接线 + 文案**（添加弹窗的 `SelectContent` 改按表渲染 `SelectGroup` / `SelectLabel`（含两组之间的 `SelectSeparator`）+ i18n 三文件：2 个组名新 key、1 个占位新 key、**7 处改值**（D6 / D7 / D9 / D10 / D11）；分组结构由 **dom 用例驱动候选**钉住，配方 = `tests/unit/settings/models-capability-wizard.dom.test.tsx:123-129`）**③ 切换行不带抖动**（行自持 `min-h-9` + 按钮 `size="sm"`；结构 dom 钉、几何真浏览器量）**④ 真浏览器复核**（分组结构 / 两视图切换不位移 / 观感）。
@@ -136,12 +136,19 @@
 > 用户已在跑的 `:3000` 上直开设置页（`?settings=models`）；**只读** —— 不保存、不删除、不提交。
 > **验收对应**：spec §4 的 8（观感 / 几何）· 11（几何部分）；3 / 4 已由 Task 2 的 dom 断言钉住，这里在真渲染下再复核一眼。
 
-- [ ] 打开添加模型弹窗 ⇒ 用合成 `pointerdown` 打开「提供商」候选（先例：09-18 的三条浏览器操作要点）⇒ 读 `[role=option]` 的顺序、两个组标题（`data-slot="select-label"`）、以及 `data-slot="select-separator"` 是否存在（D1 甲）。
-- [ ] 三项仍可选：选 `deepseek` ⇒ `SelectTrigger` 文案随之变化（看一眼即可，**不提交**）；顺带确认三项文案已按 D7 显示为 `OpenAI-compatible` / `Anthropic` / `DeepSeek`。
-- [ ] **切换行几何（D5）**：切到「功能模型」再切回「对话模型」⇒ 读切换行高度与其下内容顶坐标，**两视图应一致**（改动前实测：行高 34 / 30、内容顶 485 / 482，差 4px）——若仍是这两个数，说明 D5 没生效。
-- [ ] 记录观感（组标题小字够不够辨认、分割线是否过重、切换时是否还有跳动、按钮变 sm 后是否仍显眼）—— 观感结论**只写进实测**，不进用例。
+- [x] 打开添加模型弹窗 ⇒ 用合成 `pointerdown` 打开「提供商」候选（先例：09-18 的三条浏览器操作要点）⇒ 读 `[role=option]` 的顺序、两个组标题（`data-slot="select-label"`）、以及 `data-slot="select-separator"` 是否存在（D1 甲）。
+- [x] 三项仍可选：选 `deepseek` ⇒ `SelectTrigger` 文案随之变化（看一眼即可，**不提交**）；顺带确认三项文案已按 D7 显示为 `OpenAI-compatible` / `Anthropic` / `DeepSeek`。
+- [x] **切换行几何（D5）**：切到「功能模型」再切回「对话模型」⇒ 读切换行高度与其下内容顶坐标，**两视图应一致**（改动前实测：行高 34 / 30、内容顶 485 / 482，差 4px）——若仍是这两个数，说明 D5 没生效。
+- [x] 记录观感（组标题小字够不够辨认、分割线是否过重、切换时是否还有跳动、按钮变 sm 后是否仍显眼）—— 观感结论**只写进实测**，不进用例。
 
-**实测（待回填）**：
+**实测（2026-09-24，Task 4 完成；驱动用户**正在跑的** `:3000`、只读、未保存）**：
+
+- **入口（措辞更正）**：`/workspace?settings=models` **会被 `/workspace → /workspace/chats/new` 的跳转吃掉查询参数**（弹窗不开、地址栏参数也没了）⇒ 直开要用**终态路由** `http://localhost:3000/workspace/chats/new?settings=models`（深链组件打开弹窗后自行把参数从地址栏清掉，弹窗保持打开）。
+- **① 候选结构（D1 甲）**：合成 `pointerdown` 打开 `[data-slot="select-content"]` 后，按 DOM 顺序读到的节点 = `select-label「通用协议」` → `option OpenAI-compatible` → `option Anthropic` → `select-separator` → `select-label「厂商」` → `option DeepSeek`（labels = 2 / separators = 1 / options = 3）—— **与分组表逐项一致**；`SelectLabel` / `SelectSeparator` 在真渲染里也确实没有 role（与 Task 0 ② 的判据一致）。
+- **② 可选性与文案（D7）**：点 `DeepSeek` ⇒ 触发器文案 `OpenAI-compatible` → `DeepSeek`、列表收起（`data-state` 回 `closed`）；重开后该项 `data-state="checked"`、另两项 `unchecked`。**未保存、未提交**。附带核到：选中 DeepSeek 后「API 类型」下拉消失（仍只有 openai-compatible 显示该控件）。
+- **③ 切换行几何（D5）**：同一脚本内 chat → functional → chat → functional → chat **五点测量**：**行高恒 36、行→内容间距恒 52（含 `mb-4` = 16）、行顶恒 392.33、滚动位恒 0**（改前 34 / 30、内容顶 485 / 482）⇒ **零位移**。⚠️ 首帧曾读到行顶 503.33 / 内容顶 555.33 —— 是**弹窗入场动画**期间的瞬时值（同一数值在两种视图都出现、稳定后消失），非视图差异；判据 = 同脚本连测五点全部相同。
+- **④ 观感（截图，940×790 设备像素）**：组标题是灰色小字、与选项层级清楚；分割线是极细浅色线、不抢视线；选中项右侧的 ✓ 仍在；按钮改 `sm` 后仍是深色实心、在一行里依旧显眼；功能模型视图按规则不显示它，且**两张截图里标题与切换行的 y 坐标逐像素相同（543 / 574）** —— 视觉上再次印证「不跳」。
+- **状态还原**：收尾切回对话模型、关闭设置弹窗（`[role="dialog"]` 计数 0）；全程**未保存、未删除、未提交**。
 
 ---
 
@@ -159,5 +166,5 @@
 
 ---
 
-- [ ] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），并把各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。
-      **实测**：
+- [x] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），并把各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。
+      **实测**：**2026-09-24 完成** —— spec 与 plan 的 `**Status:**` 均已改为「已交付」（写入代码三笔 `448fa421` / `ead8c43b` / `b10de00f`，门禁 = `pnpm check` 净 + 前端全量 243 文件 / 2619 例 / 0 失败）；Task 0–4 的 `**实测**` 行全部有内容，**本文件零空框**。两处措辞更正已就地写入：Task 4 的入口要带终态路由（`?settings=models` 会被跳转吃掉）、Task 5 的 `thinkingShapeAnthropic` 这个 key 并不存在（见各自 `**实测**`）。
