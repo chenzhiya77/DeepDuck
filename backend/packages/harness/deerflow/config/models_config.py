@@ -41,12 +41,20 @@ MASKED_API_KEY = "********"
 #: endpoint key). The endpoint key differs per adapter: ``PatchedChatDeepSeek``
 #: declares ``api_base`` as its canonical endpoint field (see
 #: ``models/factory._declares_api_base``), while OpenAI-compatible and Anthropic
-#: clients take ``base_url``.
+#: clients take ``base_url``. The OpenAI-compatible cell defaults to the replaying
+#: client (spec 2026-09-22): it captures the non-standard reasoning fields an
+#: endpoint emits and echoes the wire name it actually used back on later turns.
 PROVIDER_ALLOWLIST: dict[str, tuple[str, str]] = {
-    "openai-compatible": ("langchain_openai:ChatOpenAI", "base_url"),
+    "openai-compatible": ("deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI", "base_url"),
     "anthropic": ("langchain_anthropic:ChatAnthropic", "base_url"),
     "deepseek": ("deerflow.models.patched_deepseek:PatchedChatDeepSeek", "api_base"),
 }
+
+#: The class the OpenAI-compatible cell used before the default swap. Kept so a
+#: hand-written entry (``config.yaml``, or a ``models_config.json`` edited by hand)
+#: still reports its provider to ``/api/models`` and keeps the caption dialect it
+#: always had.
+_LEGACY_USE_TO_PROVIDER: dict[str, str] = {"langchain_openai:ChatOpenAI": "openai-compatible"}
 
 _USE_TO_PROVIDER: dict[str, str] = {use: provider for provider, (use, _endpoint) in PROVIDER_ALLOWLIST.items()}
 
@@ -65,7 +73,25 @@ def endpoint_key_for(provider: str) -> str | None:
 
 def reverse_lookup_provider(use: str) -> str | None:
     """Map a stored ``use:`` class path back to its provider id; ``None`` when not allowlisted."""
-    return _USE_TO_PROVIDER.get(use)
+    return _USE_TO_PROVIDER.get(use) or _LEGACY_USE_TO_PROVIDER.get(use)
+
+
+def _normalize_legacy_use(entry: Any) -> Any:
+    """Point an entry still on the pre-swap OpenAI-compatible class at the new one.
+
+    Applied in memory while loading the UI file, so entries written before the
+    default swap pick up replay without being edited by hand; the file on disk is
+    rewritten the next time the settings UI saves. Entries from ``config.yaml``
+    never come through here (``merge_ui_models`` passes them straight through), so
+    a hand-written ``use:`` stays exactly as the operator wrote it.
+    """
+    if not isinstance(entry, dict) or entry.get("use") not in _LEGACY_USE_TO_PROVIDER:
+        return entry
+    replacement = resolve_provider_use(_LEGACY_USE_TO_PROVIDER[entry["use"]])
+    if replacement is None or replacement == entry["use"]:
+        return entry
+    logger.info("Upgrading model %s from the legacy OpenAI-compatible client to %s", entry.get("name", "<unnamed>"), replacement)
+    return {**entry, "use": replacement}
 
 
 def preserve_api_key(submitted: str, stored: str) -> str:
@@ -154,7 +180,8 @@ class ModelsConfig(BaseModel):
             raise ValueError(f"Models config file at {resolved_path} must be a JSON object with a `models` list")
         try:
             resolved_models = cls.resolve_env_variables(raw.get("models") or [])
-            return cls.model_validate({"models": resolved_models})
+            normalized_models = [_normalize_legacy_use(entry) for entry in resolved_models] if isinstance(resolved_models, list) else resolved_models
+            return cls.model_validate({"models": normalized_models})
         except ValueError:
             raise
         except Exception as e:

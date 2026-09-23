@@ -97,15 +97,24 @@
 > 动到的文件：`backend/packages/harness/deerflow/config/models_config.py`；测试 `backend/tests/test_models_config.py` / `test_models_config_api.py`。
 > **验收对应**：spec §4 的 7 / 8 / 9。
 
-- [ ] **RED**：更新/新增断言，先红：
+- [x] **RED**：更新/新增断言，先红：
       1. allowlist（验收 7）：`resolve_provider_use("openai-compatible")` == 新类；`reverse_lookup_provider(新类)` == `"openai-compatible"`；**旧路径**（`langchain_openai:ChatOpenAI`）反查仍 == `"openai-compatible"`（别名）。
       2. 载入归一（验收 8）：含普通类的 `models_config.json` 经 `ModelsConfig.from_file` ⇒ `use` 变新类（每载入一条 `logger.info` 一次）；**未知类不动**；`config.yaml` 条目不经此路（`merge_ui_models` 直通）。
       3. PUT 落盘（验收 9）：界面建条 ⇒ 文件里 `use:` == 新类。
-- [ ] **GREEN**：三处按 spec §3.3 落；模块 docstring「provider id → 类路径」那句跟着改。窄面（`test_models_config.py` + `test_models_config_api.py`）转绿。
-- [ ] **neuter（归一）**：把 `from_file` 的归一段删掉 ⇒ 验收 8 转红、7/9 保持绿。改回。
-- [ ] **门禁**：ruff 双净；更宽面（`test_model_config.py` + `test_doctor_models.py` 等既有消费者）跑一遍无新增红（已知环境红 `test_missing_models_file_falls_back_to_config_yaml` 除外）。
+- [x] **GREEN**：三处按 spec §3.3 落；模块 docstring「provider id → 类路径」那句跟着改。窄面（`test_models_config.py` + `test_models_config_api.py`）转绿。
+- [x] **neuter（归一）**：把 `from_file` 的归一段删掉 ⇒ 验收 8 转红、7/9 保持绿。改回。
+- [x] **门禁**：ruff 双净；更宽面（`test_model_config.py` + `test_doctor_models.py` 等既有消费者）跑一遍无新增红（已知环境红 `test_missing_models_file_falls_back_to_config_yaml` 除外）。
 
-**实测（待回填）**：
+**实测（2026-09-23，Task 2 已交付代码、未提交）**：
+
+- **RED**：改/加断言后跑两文件 ⇒ **4 红**（`test_resolve_provider_use_allowlist[openai-compatible-…]`、`test_reverse_lookup_provider[新类行]`、**新增** `test_from_file_normalizes_the_legacy_openai_class`、`test_put_maps_endpoint_key_per_provider`）+ 1 条已知环境红（`test_missing_models_file_falls_back_to_config_yaml` —— **在源码未改的首跑里就红**）。另外两条新用例（未知类不动 / `merge_ui_models` 直通）**首跑即绿** ⇒ 它们是**钉子**、不是红。
+- **GREEN**：两文件 **84 绿 / 1 环境红** ⇒ 扩到 **10 个消费者文件 235 绿 / 4 环境红**（见门禁）。
+- **neuter（归一）**：把 `from_file` 的归一段换成直通 ⇒ **恰好 1 红**（`test_from_file_normalizes_the_legacy_openai_class`）+ 那条环境红；**allowlist / 反查 / PUT 三组保持绿** —— 与计划预测一致。改回。
+- **门禁**：`ruff check` **All checks passed** + `ruff format --check` 净（3 文件）。更宽面 4 条红**全是环境条件、零回归**：
+  - 3 条**已登记**（`test_missing_models_file_falls_back_to_config_yaml` + `test_app_config_reload` 两条 —— 本机仓库根真实 `models_config.json` 所致）；
+  - 第 4 条 `test_doctor.py::TestCheckModelsConfigured::test_no_models`（**同族、此前未登记**）—— **A/B 证明**：把 `DEER_FLOW_MODELS_CONFIG_PATH` 指向一个**空的** UI 文件后，doctor 与 reload 两条**齐变绿**（`1 failed, 3 passed`）；它读的是**合并后**的 AppConfig，真文件让集合非空 ⇒ 与本次改动无关。
+- **落地形态**：allowlist 换行（`reasoning_replay:ReasoningReplayChatOpenAI`）+ `_LEGACY_USE_TO_PROVIDER` 别名（`reverse_lookup_provider` = 新表 `.get()` **或** 旧表 `.get()`）+ `from_file` 内 `_normalize_legacy_use()`（内存里改 `use`、每条 `logger.info` 一次；**非 dict / 未知类原样通过** ⇒ 既有「形状非法 ⇒ ValueError」行为不变）。
+- ⚠️ **环境红新增一员**（已记进记忆）：`test_doctor.py::TestCheckModelsConfigured::test_no_models` 也属「本机真文件」族。
 
 ---
 
@@ -146,11 +155,16 @@
 > 动到的文件：`backend/AGENTS.md`（模型工厂 / 适配器段 + allowlist 段）、`backend/docs/CONFIGURATION.md`（OpenAI 兼容段）。
 > ⚠️ **与 field-parity 线串行**（同文件）——动手前先确认那边已落笔（它已交付 `46b69ea5` + `27267d91`）。
 
-- [ ] 1. `backend/AGENTS.md`：allowlist 段补「`openai-compatible` 默认类是通用回放类（捕获 + 同名回放）；旧类路径保留在反查别名里」；~~模型工厂段补 guard 一句~~（**已取消 2026-09-22**：工厂零改动）；**vLLM Provider 段**那句「accepting the older `thinking` alias」补一句：归一同一个函数，现在**两个类共用**（2026-09-23 六补）。
-- [ ] 2. `backend/docs/CONFIGURATION.md`：OpenAI 兼容段写明「界面默认走新类；手写旧类仍可用（无回放）；**旧拼写 `chat_template_kwargs.thinking` 仍被归一成 `enable_thinking`**（发送前改写）」；~~`off` 的写法~~（**已取消 2026-09-22**：逃生舱不做）。
-- [ ] 3. **相邻句扫描**：改完把两处前后相邻句读一遍（防与既有描述矛盾），有矛盾就修。
+- [x] 1. `backend/AGENTS.md`：allowlist 段补「`openai-compatible` 默认类是通用回放类（捕获 + 同名回放）；旧类路径保留在反查别名里」；~~模型工厂段补 guard 一句~~（**已取消 2026-09-22**：工厂零改动）；**vLLM Provider 段**那句「accepting the older `thinking` alias」补一句：归一同一个函数，现在**两个类共用**（2026-09-23 六补）。
+- [x] 2. `backend/docs/CONFIGURATION.md`：OpenAI 兼容段写明「界面默认走新类；手写旧类仍可用（无回放）；**旧拼写 `chat_template_kwargs.thinking` 仍被归一成 `enable_thinking`**（发送前改写）」；~~`off` 的写法~~（**已取消 2026-09-22**：逃生舱不做）。
+- [x] 3. **相邻句扫描**：改完把两处前后相邻句读一遍（防与既有描述矛盾），有矛盾就修。
 
-**实测（待回填）**：
+**实测（2026-09-23，Task 5 已交付、未提交）**：
+
+- **改了三处（计划点名两处 + 扫描查出的一处）**：① `AGENTS.md` allowlist 段 —— 补「默认类 = `reasoning_replay:ReasoningReplayChatOpenAI`（捕获 + 同名回放）、换默认前的条目**载入时在内存里升级**、旧类路径留在 `reverse_lookup_provider` 的别名表里」；② `AGENTS.md` **vLLM Provider 段** —— 「accepting the older `thinking` alias」后补：该归一是 `_normalize_vllm_chat_template_kwargs`，现在被 `ReasoningReplayChatOpenAI` **原样复用** ⇒ 两个类都收旧拼写；③ `docs/CONFIGURATION.md` OpenAI 兼容段（OpenRouter 示例之后、`**Thinking Models**` 之前）加一段 **Reasoning replay** 注：界面建的条目走新类 / 手写条目**保留**它写的类（普通类 = 无回放，要回放就把 `use:` 指过去）/ 两个类都仍把旧拼写改写成 `enable_thinking`。
+- **相邻句扫描（逐处读了前后文，并全文件 grep 了 `langchain_openai:ChatOpenAI` 与「Settings → Models」）**：查出**一处会变成矛盾** —— `AGENTS.md:545` 原写「`use_responses_api` / `output_version` … 让 responses 腿能**仍用 `langchain_openai:ChatOpenAI`**」；界面那格现在指向回放子类 ⇒ 改成「仍用 **一个 `ChatOpenAI` 客户端** —— 界面那格用回放子类，它的 responses 腿与普通类**逐字节相同**（无 `messages` 可回放、两个捕获钩子都不被调用）」。
+- **未改（读过判为不矛盾）**：`CONFIGURATION.md` 的各处 `use: langchain_openai:ChatOpenAI` 示例（**手写条目**本来就不换类，示例仍有效）、「For Gemini … the plain `langchain_openai:ChatOpenAI` … is sufficient」、`AGENTS.md` 的 `VllmChatModel subclasses langchain_openai:ChatOpenAI` 一句（局部类名描述）。
+- **门禁**：本 Task 只动两个 md ⇒ 按惯例**不跑**测试套件（纯文档）。
 
 ---
 

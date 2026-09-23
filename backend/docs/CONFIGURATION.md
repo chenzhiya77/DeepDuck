@@ -144,6 +144,15 @@ models:
 
 If your OpenRouter key lives in a different environment variable name, point `api_key` at that variable explicitly (for example `api_key: $OPENROUTER_API_KEY`).
 
+> **Reasoning replay (2026-09-22):** an entry the web **Settings → Models** UI creates for the
+> `openai-compatible` provider id does **not** get `langchain_openai:ChatOpenAI` — the allowlist maps
+> that id to `deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI`, which captures the
+> non-standard reasoning fields an endpoint emits (`reasoning_content` / `reasoning` /
+> `reasoning_text`) and echoes the name it actually used back on later turns. A hand-written entry
+> here keeps exactly the class it names — the plain class means no replay, so point `use:` at the same
+> replaying class when you want that behavior for it. Both classes still rewrite the legacy
+> `extra_body.chat_template_kwargs.thinking` spelling to `enable_thinking` before the request goes out.
+
 **Thinking Models**:
 Some models support "thinking" mode for complex reasoning:
 

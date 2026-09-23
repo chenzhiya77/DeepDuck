@@ -10,6 +10,7 @@ api_key-sentinel pure helpers.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from deerflow.config.models_config import (
     ModelsConfig,
     atomic_write_models_config,
     endpoint_key_for,
+    merge_ui_models,
     models_config_write_lock,
     preserve_api_key,
     resolve_provider_use,
@@ -221,7 +223,7 @@ def test_concurrent_writes_under_lock_do_not_corrupt(tmp_path: Path):
 @pytest.mark.parametrize(
     ("provider", "expected_use"),
     [
-        ("openai-compatible", "langchain_openai:ChatOpenAI"),
+        ("openai-compatible", "deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI"),
         ("anthropic", "langchain_anthropic:ChatAnthropic"),
         ("deepseek", "deerflow.models.patched_deepseek:PatchedChatDeepSeek"),
     ],
@@ -250,6 +252,7 @@ def test_endpoint_key_per_provider(provider, expected_key):
 @pytest.mark.parametrize(
     ("use", "expected_provider"),
     [
+        ("deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI", "openai-compatible"),
         ("langchain_openai:ChatOpenAI", "openai-compatible"),
         ("langchain_anthropic:ChatAnthropic", "anthropic"),
         ("deerflow.models.patched_deepseek:PatchedChatDeepSeek", "deepseek"),
@@ -258,6 +261,37 @@ def test_endpoint_key_per_provider(provider, expected_key):
 )
 def test_reverse_lookup_provider(use, expected_provider):
     assert reverse_lookup_provider(use) == expected_provider
+
+
+def test_from_file_normalizes_the_legacy_openai_class(env_paths, caplog):
+    """A stored ``langchain_openai:ChatOpenAI`` entry upgrades in memory on load."""
+    _config_yaml, models_json = env_paths
+    _write_models_json(models_json, [_model("legacy-oa", api_key="k1")])
+
+    with caplog.at_level(logging.INFO, logger="deerflow.config.models_config"):
+        config = ModelsConfig.from_file()
+
+    assert config.models[0].use == "deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI"
+    assert "legacy-oa" in caplog.text
+
+
+def test_from_file_leaves_unknown_classes_untouched(env_paths):
+    _config_yaml, models_json = env_paths
+    _write_models_json(models_json, [{"name": "custom", "use": "some.custom:Class", "model": "custom"}])
+
+    config = ModelsConfig.from_file()
+
+    assert config.models[0].use == "some.custom:Class"
+
+
+def test_merge_ui_models_never_normalizes_config_yaml_entries():
+    """Only the UI file is normalized; hand-written ``config.yaml`` entries pass through."""
+    merged = merge_ui_models(
+        [{"name": "yaml-legacy", "use": "langchain_openai:ChatOpenAI", "model": "yaml-legacy"}],
+        ModelsConfig(models=[]),
+    )
+
+    assert merged[0]["use"] == "langchain_openai:ChatOpenAI"
 
 
 def test_preserve_api_key_sentinel_keeps_stored():

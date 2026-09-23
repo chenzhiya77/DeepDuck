@@ -191,7 +191,7 @@ def test_put_maps_endpoint_key_per_provider(config_env: Path):
     assert stored["ds"]["use"] == "deerflow.models.patched_deepseek:PatchedChatDeepSeek"
     assert stored["ds"]["api_base"] == "https://ds.example"
     assert "base_url" not in stored["ds"]
-    assert stored["oa"]["use"] == "langchain_openai:ChatOpenAI"
+    assert stored["oa"]["use"] == "deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI"
     assert stored["oa"]["base_url"] == "https://oa.example/v1"
     assert "api_base" not in stored["oa"]
 

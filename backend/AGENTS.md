@@ -542,7 +542,7 @@ Configuration priority:
 4. `config.yaml` in parent directory (project root - **recommended location**)
 
 Config values starting with `$` are resolved as environment variables (e.g., `$OPENAI_API_KEY`).
-`ModelConfig` also declares `use_responses_api` and `output_version` so OpenAI `/v1/responses` can be enabled explicitly while still using `langchain_openai:ChatOpenAI`.
+`ModelConfig` also declares `use_responses_api` and `output_version` so OpenAI `/v1/responses` can be enabled explicitly while still using a `ChatOpenAI` client — the UI's `openai-compatible` cell uses the replaying subclass, whose responses leg is byte-for-byte a plain client's (no `messages` key to replay into, and neither capture hook is called).
 
 **Extensions Configuration** (`extensions_config.json`):
 
@@ -577,7 +577,12 @@ free-text `use:` class path — that is a dynamic-import / code-execution vector
 `plugins:`. Callers submit a curated *provider id* that a fixed allowlist
 (`deerflow.config.models_config.PROVIDER_ALLOWLIST`) maps to a concrete `use:` class path and the
 correct endpoint key (`base_url` for OpenAI-compatible / Anthropic, `api_base` for the patched
-DeepSeek adapter). API keys live in the gitignored file, are masked behind a sentinel on read, and
+DeepSeek adapter). The `openai-compatible` cell defaults to
+`deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI` (spec 2026-09-22): it captures the
+non-standard reasoning fields an endpoint emits and echoes the wire name it actually used back on
+later turns. Entries stored before that swap are upgraded in memory while the UI file loads, and the
+pre-swap `langchain_openai:ChatOpenAI` path stays in `reverse_lookup_provider`'s alias table so a
+hand-written `use:` still reports itself as `openai-compatible`. API keys live in the gitignored file, are masked behind a sentinel on read, and
 a submitted sentinel means "keep the stored key". `default_headers` is the one field that does
 **not** go through that masking (spec 2026-09-21): its values come back verbatim on read, because the
 settings UI has to show the stored header to re-save it — and a header value can be a session token,
@@ -1300,7 +1305,7 @@ Lets a caller pass per-request, short-lived end-user credentials (e.g. an ERP to
 
 - `VllmChatModel` subclasses `langchain_openai:ChatOpenAI` for vLLM 0.19.0 OpenAI-compatible endpoints
 - Preserves vLLM's non-standard assistant `reasoning` field on full responses, streaming deltas, and follow-up tool-call turns
-- Designed for configs that enable thinking through `extra_body.chat_template_kwargs.enable_thinking` on vLLM 0.19.0 Qwen reasoning models, while accepting the older `thinking` alias
+- Designed for configs that enable thinking through `extra_body.chat_template_kwargs.enable_thinking` on vLLM 0.19.0 Qwen reasoning models, while accepting the older `thinking` alias. That alias normalization is `_normalize_vllm_chat_template_kwargs`, reused as-is by `ReasoningReplayChatOpenAI` (spec 2026-09-22), so both clients accept the older spelling.
 - `cumulative_stream_usage` is an opt-in model setting (default `false`) for endpoints that repeat cumulative token totals on each streaming chunk. The provider converts snapshots to deltas only when a stable completion id is present, isolates interleaved streams by id, and leaves the original usage untouched otherwise. Per-model tracking is lock-protected and cleared on the trailing empty-`choices` frame whether or not that frame carries usage. A soft cap of 1024 ids evicts only entries idle for at least one hour; active streams may temporarily exceed the cap so eviction cannot corrupt their deltas. Regression coverage lives in `tests/test_vllm_provider.py`.
 
 ### IM Channels System (`app/channels/`)
