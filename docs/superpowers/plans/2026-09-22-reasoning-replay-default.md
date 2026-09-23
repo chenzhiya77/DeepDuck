@@ -3,15 +3,16 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-22-reasoning-replay-default-design.md](../specs/2026-09-22-reasoning-replay-default-design.md)
-**Status:** 📝 **起草（2026-09-22）—— 未开工**。spec 已定稿（**D1–D8 全部已裁**：**D5 乙**（2026-09-22 改判 —— 向导不进本对）/ D6 甲 / D8 甲 且进本对；见 spec 文首）。
+**Status:** 📝 **起草（2026-09-22）—— 未开工**。spec 已定稿（**D1–D8 全部已裁**：**D5 乙**（2026-09-22 改判 —— 向导不进本对）/ D6 甲 / D8 甲 且进本对；**逃生舱已整体取消 —— 五补**；**缺口 5 的 vLLM 请求侧归一并入通用类（复用同一函数）—— 六补，2026-09-23**；**名表加第三个名字 `reasoning_text`（照 pi 抄全）—— 七补，2026-09-23**；见 spec 文首）。
 **Parent:** [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)（同表面、已交付；唯一接触点是 `backend/AGENTS.md` 同文件 ⇒ **串行落笔**）· [2026-09-10-web-model-provider-config-design.md](../specs/2026-09-10-web-model-provider-config-design.md)（界面模型管理与 `PROVIDER_ALLOWLIST` 的出处）。
 
-**Architecture:** 四件事 —— **① 新通用类** `deerflow/models/reasoning_replay.py`（三个钩子全部「包一层 super()」：捕获两条路（流式 delta / 非流式整包）+ 回放（D8 甲：按捕获记录的名字同名回放）+ 展示键固定 `reasoning_content`）；**② 共享助手** `assistant_payload_replay.py` 收编 `_restore_tool_call_signatures`（`patched_openai.py` 改为 import，行为零变化；D7）；**③ `models_config.py` 三处**（allowlist 换行 / `_LEGACY_USE_TO_PROVIDER` 别名 / `from_file` 载入归一；D2/D3）；~~**④ 工厂 guard**~~（**已取消 2026-09-22**：逃生舱不做 ⇒ 键不存在）；**⑤ 文档 + 真栈隔离实例**（`backend/AGENTS.md` + `docs/CONFIGURATION.md`；验收 12–17）。向导**不在内**（D5 乙）。
+**Architecture:** 四件事 —— **① 新通用类** `deerflow/models/reasoning_replay.py`（三个钩子全部「包一层 super()」：捕获两条路（流式 delta / 非流式整包）+ 回放（D8 甲：按捕获记录的名字同名回放）+ 展示键固定 `reasoning_content`；**外加归一一行** —— **复用** `vllm_provider._normalize_vllm_chat_template_kwargs`，2026-09-23 并入、该文件一个字节不改）；**② 共享助手** `assistant_payload_replay.py` 收编 `_restore_tool_call_signatures`（`patched_openai.py` 改为 import，行为零变化；D7）；**③ `models_config.py` 三处**（allowlist 换行 / `_LEGACY_USE_TO_PROVIDER` 别名 / `from_file` 载入归一；D2/D3）；~~**④ 工厂 guard**~~（**已取消 2026-09-22**：逃生舱不做 ⇒ 键不存在）；**⑤ 文档 + 真栈隔离实例**（`backend/AGENTS.md` + `docs/CONFIGURATION.md`；验收 12–17b）。向导**不在内**（D5 乙）。
 
 **硬约束（spec 已裁，实现时不许自行放松）**：
-- **回放名 = 捕获时记录的实际用过的名字**（D8 甲：逐 chunk「首个非空」，`("reasoning_content", "reasoning")` 序）。**展示别名（派生副本）永不外发**；**没见过的字段什么都不发**（⇒ 对无推理端点出站与普通类**逐字节等价** —— 这是验收 3/14 的判定线）。
+- **回放名 = 捕获时记录的实际用过的名字**（D8 甲：逐 chunk「首个非空」，名表 `("reasoning_content", "reasoning", "reasoning_text")` 序 —— **三个名字：第三个照 pi 抄全，七补 2026-09-23**）。**展示别名（派生副本）永不外发**；**没见过的字段什么都不发**（⇒ 对无推理端点出站与普通类**逐字节等价** —— 这是验收 3/14 的判定线）。
 - ~~**`off` = 捕获仍做（展示不变）、回放不做** ⇒ 出站与普通类逐字节相同（验收 4/15）。不造第三档。~~ **已取消（2026-09-22：不做逃生舱，spec D4）**
 - **别名与真收的分开靠捕获时记来源**：消息上记 `_wire_reasoning_field`（wire 真收的名字）；只有它参与回放。
+- **请求侧归一并入（2026-09-23 六补）**：通用类在 `_get_request_payload` 的 `super()` 之后调 `vllm_provider._normalize_vllm_chat_template_kwargs(payload)` —— **复用同一个函数、不复制**，`vllm_provider.py` **一个字节不改**（函数 self-guard：无旧键时早退、连 `extra_body` 容器都不重建）。判定线：旧拼写 `chat_template_kwargs.thinking` ⇒ 出站变 `enable_thinking`（已有 `enable_thinking` 时**不覆盖**）；新拼写 / 无该键 ⇒ **逐字节不变**（验收 3b）。
 - **responses 腿（`use_responses_api: true`）零改动**（两条已核事实：payload 无 `messages` ⇒ 回放取空表；该模式不走 `_create_chat_result` / `_convert_chunk_to_generation_chunk`）。
 - **provider id 不变** ⇒ 前端、`routers/models.py` 一个字节不动（D2）。
 - **7 个厂商补丁类的行为一个字不变** —— `patched_openai` 只换 import（共享助手提升后行为零变化，由既有用例钉住）。
@@ -22,13 +23,13 @@
 - **后端窄面命令**：`cd backend && PYTHONPATH=. PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run --no-sync pytest tests/<file>.py -q`；**全量** `cd backend && make test`（≈23 分钟 ⇒ **后台跑**）。跨树 A/B 两侧用**同一个仓外 basetemp**（自己新建一个**仓外**目录即可、两侧共用；别落仓内 —— 否则凭空多一条 `test_detector_repo_root` 类红；跑完删净）。
 - **不碰真实密钥**：真栈=隔离实例（三个 `DEER_FLOW_*` 指向仓外 scratch 根 + 本机 recorder、假 key、零出网）；跑完 `models_config.json` / `config.yaml` **md5 必须与动手前相同**。
 - **每个 Task 的 `**实测**` 行必须回填**（RED 几条红 / GREEN 几条绿 / neuter 受害者 / 门禁数字）——未回写的 plan 不算交付。
-- **scope fence（明确不做）**：不加界面控件，**逃生舱 `off` 整体取消（2026-09-22 五补）**（缺口 6；判据见 spec D4）· 不并 MiniMax / vLLM 请求侧（缺口 4/5）· 不剥内联标签（缺口 3）· 不做 MindIE / Codex / Claude（缺口 7）· 不加 vLLM 格（缺口 9）· 不清理 `is_lc_serializable` 库存不一致。
+- **scope fence（明确不做）**：不加界面控件，**逃生舱 `off` 整体取消（2026-09-22 五补）**（缺口 6；判据见 spec D4）· 不并 MiniMax 请求侧两件（缺口 4）· **vLLM 请求侧归一经裁「已并」（2026-09-23 六补）**、只剩累计 usage 换算不并（缺口 5 剩余）· 不剥内联标签（缺口 3）· 不做 MindIE / Codex / Claude（缺口 7）· 不加 vLLM 格（缺口 9）· 不清理 `is_lc_serializable` 库存不一致。
 
 **依赖顺序**：Task 0（只读核实）→ Task 1（通用类）→ Task 2（models_config）→ ~~Task 3（工厂 guard，已取消）~~ → ~~Task 4（向导，已取消）~~ → Task 5（文档）→ Task 6（真栈）。
 
 ---
 
-## Task 0 — 开工前的七项核实（只读）· **其中第 1 / 6 项已取消（2026-09-22：不做逃生舱）**
+## Task 0 — 开工前的核实（只读）· **第 1 / 6 项已取消（2026-09-22：不做逃生舱）；⑧ 追加于 2026-09-23**
 
 > 动到的文件：**无**。第 7 项允许一次性探针，跑完即删、仓里无残留。
 
@@ -39,6 +40,7 @@
 - [x] 5. ~~**向导 8 处行号核实**~~ —— **已取消（2026-09-22 D5 改判乙：向导不进本对）**，原核实点留档：`scripts/wizard/providers.py` 的 `openai` / `openai_responses` / `novita` / `minimax` / `minimax_cn` / `openrouter` / `orcarouter` / `other` 各处的 `use=` 行号（计划写的是 `182/199/359/378/401/424/441/537`，逐处核对；⚠️ 同文件还有 gemini/mimo/deepseek 等**不换**的预设，别误伤）。
 - [x] 6. ~~**工厂 guard 的插入点核实**~~ —— **已取消（2026-09-22：不做逃生舱，Task 3 一并取消）**，原核实点留档：`factory.py:379-380`（两个 normalizer 调用点）与 `_warn_unknown_model_settings`（`:431`）之间；核 `model_settings_from_config` 那个 local dict 的生命周期（pop 要改到它、且在被 dump/排除之前或之后的位置关系）。
 - [x] 7. **（一次性探针，跑完即删）签名回放无回归**：把 `_restore_tool_call_signatures` 提升到 `assistant_payload_replay.py` 之后，`patched_openai` 的既有用例仍绿（探针 = 先只做 import 调整跑既有用例；确实绿则不留探针文件）。
+- [x] 8. **（一次性探针，2026-09-23）归一函数可复用且 self-guard**（六补的前置核实）：`from deerflow.models.vllm_provider import _normalize_vllm_chat_template_kwargs` 在**独立进程**里可导入（`vllm_provider.py` 顶层只 import `openai` / `langchain_core` / `langchain_openai` / `pydantic`，**零 `deerflow.*` ⇒ 无循环风险**）；四例行为见实测 ⑧。
 
 **实测（2026-09-23，四项逐条）**：
 
@@ -50,29 +52,43 @@
 
 - **⑦ 签名回放搬家探针（一次性，已删）**：把 `_restore_tool_call_signatures` 临时搬进 `assistant_payload_replay.py`（改名 `restore_tool_call_signatures`）+ 改 `patched_openai.py` 的 import 与调用点 + 改测试 import ⇒ **`tests/test_patched_openai.py` 8 passed**、**`tests/test_model_factory.py` 102 passed**（零回归）。**产出（计划没点名的改动面）**：`tests/test_patched_openai.py:13` **直接 import 了私有名** ⇒ 搬家必须**连这一行一起改**（其余 8 处是同文件内的调用点、用本地名不用改）。**还原证据**：三个文件复原后 `git status` / `git diff --stat` 均空、复跑 `test_patched_openai.py` 8 passed（对照组）。
 
+- **⑧ 归一函数可复用（一次性探针，2026-09-23，独立进程，`uv run --no-sync`）**：导入成功 ⇒ 并入条件成立。**四例实测**：`{"thinking": False}` ⇒ `{"enable_thinking": False}`（旧键删、值搬过去）；`{"enable_thinking": True, "thinking": True}` ⇒ `{"enable_thinking": True}`（**`setdefault` 语义：已有新键不被覆盖**）；`{"enable_thinking": True}` ⇒ **原样**（无旧键 ⇒ 早退）；`{"messages": []}` ⇒ **原样**。⇒ Task 1 的 RED 第 8 条按这四例写、neuter ⑤ 按"删掉归一调用"做。
+
 ---
 
 ## Task 1 — 通用类本体（新文件 + 新测试文件）
 
 > 动到的文件：`backend/packages/harness/deerflow/models/reasoning_replay.py`（**新增**）、`backend/packages/harness/deerflow/models/assistant_payload_replay.py`（+`_restore_tool_call_signatures` / `restore_tool_call_signatures` 提升）、`backend/packages/harness/deerflow/models/patched_openai.py`（改 import）、测试 `backend/tests/test_reasoning_replay.py`（**新增**）、`backend/tests/test_patched_openai.py`（**+1 行 import** —— 它直接 `from …patched_openai import _restore_tool_call_signatures`，搬家必须连这行一起改；见 Task 0-⑦ 实测）。
-> **验收对应**：spec §4 的 1 / 2 / 3 / 5 / 10 / 11（~~4~~ 随逃生舱取消 —— 2026-09-22）。
+> ⚠️ **`backend/packages/harness/deerflow/models/vllm_provider.py` 只被 import、不进改动面**（2026-09-23 六补：归一函数原地复用 —— `git diff` 里不该出现这个文件）。
+> **验收对应**：spec §4 的 1 / 2 / 3 / **3b** / 5 / 10 / 11（~~4~~ 随逃生舱取消 —— 2026-09-22）。
 
-- [ ] **RED**：新建 `test_reasoning_replay.py`，先红：
-      1. **捕获两条路**（验收 1）：流式 delta 与非流式 message 各喂 `reasoning_content` / `reasoning` ⇒ ak 里**原名存原值**、文本落 `additional_kwargs["reasoning_content"]`、**空串保留**、`_wire_reasoning_field` == 实际名。
-      2. **回放按记录名**（验收 2 + D8 甲）：wire=`reasoning_content` ⇒ 出站 payload 是 `reasoning_content`；wire=`reasoning` ⇒ 是 `reasoning` 且**不多出** `reasoning_content`；**双名同现**（同 chunk 两名非空）⇒ 回放名 = 记录名（首非空）。
+- [x] **RED**：新建 `test_reasoning_replay.py`，先红：
+      1. **捕获两条路**（验收 1）：流式 delta 与非流式 message 各喂 `reasoning_content` / `reasoning` / `reasoning_text`（**三个名字**，七补）⇒ ak 里**原名存原值**、文本落 `additional_kwargs["reasoning_content"]`、**空串保留**、`_wire_reasoning_field` == 实际名。
+      2. **回放按记录名**（验收 2 + D8 甲）：wire=`reasoning_content` ⇒ 出站 payload 是 `reasoning_content`；wire=`reasoning` ⇒ 是 `reasoning`；wire=`reasoning_text` ⇒ 是 `reasoning_text`；三者都**不多出** `reasoning_content`（展示别名不外发）；**双名同现**（同 chunk 两名非空）⇒ 回放名 = 记录名（首非空）。
       3. **没见过的字段不发 / 对照组**（验收 3）：端点没回推理字段 ⇒ 出站 payload 与普通 `ChatOpenAI` **逐字节相同**（同一输入两模型各 dump 比对）。
       4. ~~**`off`**（验收 4）：出站与普通类逐字节相同；捕获仍在（ak 仍有 `reasoning_content` 与记录键）；⚠️ **并钉住 tool-call 签名也不回放** —— 喂一条带 `thought_signature` 的消息 ⇒ 断言 payload 的 tool-call 里**没有**它。~~ **已取消（2026-09-22：不做逃生舱，验收 4 作废）**
       5. **responses 腿零改动**（验收 5）：`use_responses_api=True` 的 payload 过 `_get_request_payload` 逐字节不变；该模式下另外两个钩子**不被调用**（桩钉住）。
       6. **`reasoning_details` 展示变体**（验收 10）：非流式列表 → `ak["reasoning_content"]` 文本（空行拼接）、**不被回放**。
       7. **tool-call 级签名**（验收 11）：`thought_signature` 回填（沿用 `patched_openai` 既有用例，提升后行为不变）。
-- [ ] **GREEN**：实现三个钩子（全部「包 super()」）+ `_WIRE_FIELD_KEY` 记录 + `_restore_assistant_fields`（spec §3.1 草案语义，D8 甲）。实现注：记录键**每条消息一个名字**（首见即定 —— pi 是每块 signature，这里简化为每条消息；多 chunk 混合名时以**首个非空**为准）。⚠️ **Task 0-③ 的硬事实**：LangChain 的 chunk 合并对**字符串做 concat**、对**列表做 extend** ⇒ **记录键必须"首见即写、之后不再写"**（每 chunk 都写会把它拼成 `reasoning_contentreasoning_content`）；展示/原名键沿用补丁类现状"**值没变就不写**"（`_with_reasoning_content` 的写法），**累加交给合并语义**。窄面转绿。
-- [ ] **neuter ①（回放名记录）**：把回放改回"有 `reasoning` 就回 `reasoning`"（旧写法）⇒ **双名用例必须红**、单名两条保持绿。改回。
+      8. **请求侧归一**（验收 3b，2026-09-23 六补）：payload 带旧拼写 `extra_body.chat_template_kwargs.thinking` ⇒ 出站 `enable_thinking`（旧键删、值搬过去）；**已有 `enable_thinking` 时不覆盖**（`setdefault`）；新拼写 / 无该键 ⇒ **逐字节不变**（含 `extra_body` 容器）。四例的字面量见 Task 0-⑧ 实测。
+- [x] **GREEN**：实现三个钩子（全部「包 super()」）+ `_WIRE_FIELD_KEY` 记录 + `_restore_assistant_fields`（spec §3.1 草案语义，D8 甲）。实现注：记录键**每条消息一个名字**（首见即定 —— pi 是每块 signature，这里简化为每条消息；多 chunk 混合名时以**首个非空**为准）。⚠️ **Task 0-③ 的硬事实**：LangChain 的 chunk 合并对**字符串做 concat**、对**列表做 extend** ⇒ **记录键必须"首见即写、之后不再写"**（每 chunk 都写会把它拼成 `reasoning_contentreasoning_content`）；展示/原名键沿用补丁类现状"**值没变就不写**"（`_with_reasoning_content` 的写法），**累加交给合并语义**。**归一**：`_get_request_payload` 里 `super()` 之后、回放之前调 `_normalize_vllm_chat_template_kwargs(payload)`（从 `deerflow.models.vllm_provider` import —— **复用不复制**；位置与 `vllm_provider.py:230` 一致）。窄面转绿。
+- [x] **neuter ①（回放名记录）**：把回放改回"有 `reasoning` 就回 `reasoning`"（旧写法）⇒ **双名用例必须红**、单名两条保持绿。改回。
 - [x] ~~**neuter ②（off 短路）**：删掉 `reasoning_replay == "off"` 早退 ⇒ 验收 4 转红。改回。~~ **已取消（2026-09-22：不做逃生舱）**
-- [ ] **neuter ③（别名不外发）**：把回放源从"记录名"改成"总是 `reasoning_content`" ⇒ wire=`reasoning` 用例转红（别名外发）。改回。
+- [x] **neuter ③（别名不外发）**：把回放源从"记录名"改成"总是 `reasoning_content`" ⇒ wire=`reasoning` 用例转红（别名外发）。改回。
+- [x] **neuter ⑤（归一）**：删掉归一调用 ⇒ **第 8 条转红**、其余保持绿。改回。
 - [x] ~~**neuter ④（early return 位置）**：把 `off` 的早退挪到 `restore_assistant_payloads(...)` **之后**（即"只关推理字段、签名照回"）⇒ 第 4 条里**签名那一钉转红**（证明它咬得住）。改回。~~ **已取消（2026-09-22：不做逃生舱 —— 第 4 条与 early return 一并取消）**
-- [ ] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_reasoning_replay.py` + `patched_openai` 既有用例所在文件）绿。
+- [x] **门禁**：`ruff check` + `ruff format --check` 干净；窄面（`test_reasoning_replay.py` + `patched_openai` 既有用例所在文件）绿。
 
-**实测（待回填）**：
+**实测（2026-09-23，Task 1 已交付代码、未提交）**：
+
+- **RED**：新建 `test_reasoning_replay.py`（当时 21 例）⇒ `ModuleNotFoundError: No module named 'deerflow.models.reasoning_replay'` ⇒ **整文件 1 error**（采集期红，符合"新模块"预期）。
+- **GREEN**：窄面 **30 绿**（新文件 22 + `test_patched_openai.py` 8 —— 含搬家后的 import/调用改名）⇒ 扩到 **7 个相关文件 83 绿**（另含 mimo / stepfun / minimax / vllm / `test_assistant_payload_replay`）；`test_model_factory.py` **102 绿**（零回归）。
+- **neuter ①（回放名记录）**：回放改回"有 `reasoning` 就回 `reasoning`" ⇒ **5 红 / 17 绿**。受害者：`[reasoning_text]`、"display 别名不外发"、**双名同现**、"多轮回放"、**`reasoning_details` 不外发**（它靠"未记录 ⇒ 不外发"兜底，旧写法会把展示键发出去）；**单名 `[reasoning]` / `[reasoning_content]` 两条保持绿** —— 与计划预测一致。改回。
+- **neuter ③（别名不外发）**：回放源改成"总是 `reasoning_content`" ⇒ **4 红 / 18 绿**（`[reasoning]`、`[reasoning_text]`、合并那条、多轮那条；`[reasoning_content]` 保持绿）。改回。
+- **neuter ⑤（归一）**：注掉归一调用 ⇒ **2 红 / 20 绿**（两条 `chat_template_kwargs` 用例），**无其他受害者**。改回。
+- **门禁**：`ruff check` **All checks passed**；`ruff format --check` 净（对两个新文件跑过一次 `ruff format` —— 只补末行换行 + 折叠一行，无逻辑改动）；窄面 83 绿、工厂 102 绿。
+- ⚠️ **与 Task 0-③ 预案的偏差（重要，已在代码里注释）**：预案"记录键首见即写、之后不再写"**挡不住分块转换** —— 每次 `_convert_chunk_to_generation_chunk` 都从**新消息**起步 ⇒ 每块都会写一次，合并后键值被拼成 `reasoningreasoning`（首跑 **1 failed** 正是这条；已核 `merge_dicts`：**字符串一律 `+=`**，非字符串等值才保留）。落法改为**读侧容忍**：新增 `_recorded_wire_name()` —— 只接受"**单一名字的整次重复**"，其余（含混名、半截）视为**未记录、不外发**；相应用例从"断言只写一次"改成"**合并后仍能正确回放**"（合并结果里键值确实是 `reasoningreasoning`，断言照实记录）。
+- **改动面**：新 `reasoning_replay.py` **222 行** + 新 `test_reasoning_replay.py` **311 行**；`assistant_payload_replay.py` **+37**（`restore_tool_call_signatures` 提升为公开助手）；`patched_openai.py` **−46/+3**（本地 def 删、改 import；顺带删掉不再使用的 `AIMessage` import）；`test_patched_openai.py` **22 行改写**（import + 8 处调用改名 + 散文一句）。`vllm_provider.py` 未被触碰（`git diff` 里没有它）。
 
 ---
 
@@ -130,15 +146,15 @@
 > 动到的文件：`backend/AGENTS.md`（模型工厂 / 适配器段 + allowlist 段）、`backend/docs/CONFIGURATION.md`（OpenAI 兼容段）。
 > ⚠️ **与 field-parity 线串行**（同文件）——动手前先确认那边已落笔（它已交付 `46b69ea5` + `27267d91`）。
 
-- [ ] 1. `backend/AGENTS.md`：allowlist 段补「`openai-compatible` 默认类是通用回放类（捕获 + 同名回放）；旧类路径保留在反查别名里」；~~模型工厂段补 guard 一句~~（**已取消 2026-09-22**：工厂零改动）。
-- [ ] 2. `backend/docs/CONFIGURATION.md`：OpenAI 兼容段写明「界面默认走新类；手写旧类仍可用（无回放）」；~~`off` 的写法~~（**已取消 2026-09-22**：逃生舱不做）。
+- [ ] 1. `backend/AGENTS.md`：allowlist 段补「`openai-compatible` 默认类是通用回放类（捕获 + 同名回放）；旧类路径保留在反查别名里」；~~模型工厂段补 guard 一句~~（**已取消 2026-09-22**：工厂零改动）；**vLLM Provider 段**那句「accepting the older `thinking` alias」补一句：归一同一个函数，现在**两个类共用**（2026-09-23 六补）。
+- [ ] 2. `backend/docs/CONFIGURATION.md`：OpenAI 兼容段写明「界面默认走新类；手写旧类仍可用（无回放）；**旧拼写 `chat_template_kwargs.thinking` 仍被归一成 `enable_thinking`**（发送前改写）」；~~`off` 的写法~~（**已取消 2026-09-22**：逃生舱不做）。
 - [ ] 3. **相邻句扫描**：改完把两处前后相邻句读一遍（防与既有描述矛盾），有矛盾就修。
 
 **实测（待回填）**：
 
 ---
 
-## Task 6 — 真栈隔离实例（验收 12–14 / 16–17；~~15~~ 已取消 2026-09-22）
+## Task 6 — 真栈隔离实例（验收 12–14 / 16–17 + 17b；~~15~~ 已取消 2026-09-22）
 
 > 动到的文件：**无仓库文件**（scratch 根在仓外）。三个 `DEER_FLOW_*` 环境变量指向 scratch 根 + 本机 recorder（假 key、零出网）。
 
@@ -148,6 +164,7 @@
 - [x] ~~15. **`off` 组**：带 `reasoning_replay: off` 的 **`config.yaml` 条目**（⚠️ 界面写不进这个键 —— 缺口 6；UI 条目做不了这一组）⇒ 与基线逐字节相同。~~ **已取消（2026-09-22：不做逃生舱，验收 15 作废）**
 - [ ] 16. **迁移与落盘**：预置一条普通类的旧 `models_config.json` 条目 ⇒ 载入后 GET `provider` 仍 `openai-compatible`（**归一后的新类命中 allowlist**；"别名"只兜手写旧类那一格）、行为已切到通用类（recorder 可见捕获/回放）；新条目 PUT 后文件里是新类。
 - [ ] 17. **两格回归**：`anthropic` / `deepseek` 条目请求体不变。
+- [ ] 17b. **旧拼写归一**（验收 3b 的真栈面，2026-09-23 六补）：scratch 的 `config.yaml` 放一条**指向新类**、配方写**旧拼写** `extra_body.chat_template_kwargs.thinking: false` 的条目 ⇒ recorder 抓到的请求体里是 **`enable_thinking: false`**（旧键不出现）—— unit 已钉住，这条只证"真请求体上也是它"。
 - [ ] **收尾**：进程 `taskkill /T`、scratch 删净；`models_config.json` / `config.yaml` md5 与动手前相同。
 
 **实测（待回填）**：

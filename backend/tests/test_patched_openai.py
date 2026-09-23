@@ -1,6 +1,6 @@
 """Tests for deerflow.models.patched_openai.PatchedChatOpenAI.
 
-These tests verify that _restore_tool_call_signatures correctly re-injects
+These tests verify that restore_tool_call_signatures correctly re-injects
 ``thought_signature`` onto tool-call objects stored in
 ``additional_kwargs["tool_calls"]``, covering id-based matching, positional
 fallback, camelCase keys, and several edge-cases.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage
 
-from deerflow.models.patched_openai import _restore_tool_call_signatures
+from deerflow.models.assistant_payload_replay import restore_tool_call_signatures
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,7 +56,7 @@ def test_tool_call_signature_restored_by_id():
     payload_msg = {"role": "assistant", "content": None, "tool_calls": [PAYLOAD_TC_1.copy()]}
     orig = _ai_msg_with_raw_tool_calls([RAW_TC_SIGNED])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert payload_msg["tool_calls"][0]["thought_signature"] == "SIG_A=="
 
@@ -70,7 +70,7 @@ def test_tool_call_signature_for_parallel_calls():
     }
     orig = _ai_msg_with_raw_tool_calls([RAW_TC_SIGNED, RAW_TC_UNSIGNED])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert payload_msg["tool_calls"][0]["thought_signature"] == "SIG_A=="
     assert "thought_signature" not in payload_msg["tool_calls"][1]
@@ -87,7 +87,7 @@ def test_tool_call_signature_camel_case():
     payload_msg = {"role": "assistant", "content": None, "tool_calls": [PAYLOAD_TC_1.copy()]}
     orig = _ai_msg_with_raw_tool_calls([raw_camel])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert payload_msg["tool_calls"][0]["thought_signature"] == "SIG_CAMEL=="
 
@@ -107,7 +107,7 @@ def test_tool_call_signature_positional_fallback():
     payload_msg = {"role": "assistant", "content": None, "tool_calls": [payload_tc]}
     orig = _ai_msg_with_raw_tool_calls([raw_no_id])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert payload_tc["thought_signature"] == "SIG_POS=="
 
@@ -122,7 +122,7 @@ def test_tool_call_no_raw_tool_calls_is_noop():
     payload_msg = {"role": "assistant", "content": None, "tool_calls": [PAYLOAD_TC_1.copy()]}
     orig = AIMessage(content="", additional_kwargs={})
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert "thought_signature" not in payload_msg["tool_calls"][0]
 
@@ -132,7 +132,7 @@ def test_tool_call_no_payload_tool_calls_is_noop():
     payload_msg = {"role": "assistant", "content": "just text"}
     orig = _ai_msg_with_raw_tool_calls([RAW_TC_SIGNED])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert "tool_calls" not in payload_msg
 
@@ -142,7 +142,7 @@ def test_tool_call_unsigned_raw_entries_is_noop():
     payload_msg = {"role": "assistant", "content": None, "tool_calls": [PAYLOAD_TC_2.copy()]}
     orig = _ai_msg_with_raw_tool_calls([RAW_TC_UNSIGNED])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert "thought_signature" not in payload_msg["tool_calls"][0]
 
@@ -166,11 +166,11 @@ def test_tool_call_multiple_sequential_signatures():
     payload_msg = {"role": "assistant", "content": None, "tool_calls": [payload_tc_a, payload_tc_b]}
     orig = _ai_msg_with_raw_tool_calls([raw_tc_a, raw_tc_b])
 
-    _restore_tool_call_signatures(payload_msg, orig)
+    restore_tool_call_signatures(payload_msg, orig)
 
     assert payload_tc_a["thought_signature"] == "SIG_STEP1=="
     assert payload_tc_b["thought_signature"] == "SIG_STEP2=="
 
 
 # Integration behavior for PatchedChatOpenAI is validated indirectly via
-# _restore_tool_call_signatures unit coverage above.
+# restore_tool_call_signatures unit coverage above.

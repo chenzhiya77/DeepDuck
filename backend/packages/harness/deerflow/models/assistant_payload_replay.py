@@ -51,6 +51,43 @@ def restore_reasoning_content(payload_msg: dict[str, Any], orig_msg: AIMessage) 
     restore_additional_kwargs_field(payload_msg, orig_msg, "reasoning_content")
 
 
+def restore_tool_call_signatures(payload_msg: dict[str, Any], orig_msg: AIMessage) -> None:
+    """Re-inject ``thought_signature`` onto tool-call objects in *payload_msg*.
+
+    Some OpenAI-compatible gateways (Gemini via a proxy) return a
+    ``thought_signature`` on each tool-call object and require it back verbatim.
+    LangChain stores the raw tool-call dicts in
+    ``additional_kwargs["tool_calls"]`` but serializes only the standard fields
+    (``id``, ``type``, ``function``), silently dropping the signature.
+
+    Raw entries are matched by ``id`` first, falling back to positional order.
+    """
+    raw_tool_calls: list[dict] = orig_msg.additional_kwargs.get("tool_calls") or []
+    payload_tool_calls: list[dict] = payload_msg.get("tool_calls") or []
+
+    if not raw_tool_calls or not payload_tool_calls:
+        return
+
+    raw_by_id: dict[str, dict] = {}
+    for raw_tc in raw_tool_calls:
+        tc_id = raw_tc.get("id")
+        if tc_id:
+            raw_by_id[tc_id] = raw_tc
+
+    for idx, payload_tc in enumerate(payload_tool_calls):
+        raw_tc = raw_by_id.get(payload_tc.get("id", ""))
+        if raw_tc is None and idx < len(raw_tool_calls):
+            raw_tc = raw_tool_calls[idx]
+
+        if raw_tc is None:
+            continue
+
+        # The gateway may use either snake_case or camelCase.
+        signature = raw_tc.get("thought_signature") or raw_tc.get("thoughtSignature")
+        if signature:
+            payload_tc["thought_signature"] = signature
+
+
 def _match_ai_message(
     payload_msg: dict[str, Any],
     ai_messages: Sequence[AIMessage],

@@ -24,10 +24,9 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
-from deerflow.models.assistant_payload_replay import restore_assistant_payloads
+from deerflow.models.assistant_payload_replay import restore_assistant_payloads, restore_tool_call_signatures
 
 
 class PatchedChatOpenAI(ChatOpenAI):
@@ -77,47 +76,6 @@ class PatchedChatOpenAI(ChatOpenAI):
         # Obtain the base payload from the parent implementation.
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
 
-        restore_assistant_payloads(payload.get("messages", []), original_messages, _restore_tool_call_signatures)
+        restore_assistant_payloads(payload.get("messages", []), original_messages, restore_tool_call_signatures)
 
         return payload
-
-
-def _restore_tool_call_signatures(payload_msg: dict, orig_msg: AIMessage) -> None:
-    """Re-inject ``thought_signature`` onto tool-call objects in *payload_msg*.
-
-    When the Gemini OpenAI-compatible gateway returns a response with function
-    calls, each tool-call object may carry a ``thought_signature``.  LangChain
-    stores the raw tool-call dicts in ``additional_kwargs["tool_calls"]`` but
-    only serialises the standard fields (``id``, ``type``, ``function``) into
-    the outgoing payload, silently dropping the signature.
-
-    This function matches raw tool-call entries (by ``id``, falling back to
-    positional order) and copies the signature back onto the serialised
-    payload entries.
-    """
-    raw_tool_calls: list[dict] = orig_msg.additional_kwargs.get("tool_calls") or []
-    payload_tool_calls: list[dict] = payload_msg.get("tool_calls") or []
-
-    if not raw_tool_calls or not payload_tool_calls:
-        return
-
-    # Build an id → raw_tc lookup for efficient matching.
-    raw_by_id: dict[str, dict] = {}
-    for raw_tc in raw_tool_calls:
-        tc_id = raw_tc.get("id")
-        if tc_id:
-            raw_by_id[tc_id] = raw_tc
-
-    for idx, payload_tc in enumerate(payload_tool_calls):
-        # Try matching by id first, then fall back to positional.
-        raw_tc = raw_by_id.get(payload_tc.get("id", ""))
-        if raw_tc is None and idx < len(raw_tool_calls):
-            raw_tc = raw_tool_calls[idx]
-
-        if raw_tc is None:
-            continue
-
-        # The gateway may use either snake_case or camelCase.
-        sig = raw_tc.get("thought_signature") or raw_tc.get("thoughtSignature")
-        if sig:
-            payload_tc["thought_signature"] = sig
