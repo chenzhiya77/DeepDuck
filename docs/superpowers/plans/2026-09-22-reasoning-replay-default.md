@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-22-reasoning-replay-default-design.md](../specs/2026-09-22-reasoning-replay-default-design.md)
-**Status:** 📝 **起草（2026-09-22）—— 未开工**。spec 已定稿（**D1–D8 全部已裁**：**D5 乙**（2026-09-22 改判 —— 向导不进本对）/ D6 甲 / D8 甲 且进本对；**逃生舱已整体取消 —— 五补**；**缺口 5 的 vLLM 请求侧归一并入通用类（复用同一函数）—— 六补，2026-09-23**；**名表加第三个名字 `reasoning_text`（照 pi 抄全）—— 七补，2026-09-23**；见 spec 文首）。
+**Status:** ✅ **已交付（2026-09-23）** —— Task 1 `69601777`（通用类 + D7 搬家）/ Task 2 + Task 5 `dcdcdb09`（config 三处 + 文档）/ Task 6 **真栈全过**（12–14 / 16–17b，**零代码改动**，随设计文档本笔一并提交）/ **门禁全量（2026-09-24）**：ruff 净、A/B 双向仅差 1 条（已归因环境，见文末）。spec 已定稿（**D1–D8 全部已裁**：**D5 乙**（2026-09-22 改判 —— 向导不进本对）/ D6 甲 / D8 甲 且进本对；**逃生舱已整体取消 —— 五补**；**缺口 5 的 vLLM 请求侧归一并入通用类（复用同一函数）—— 六补，2026-09-23**；**名表加第三个名字 `reasoning_text`（照 pi 抄全）—— 七补，2026-09-23**；见 spec 文首）。
 **Parent:** [2026-09-21-model-entry-field-parity-design.md](../specs/2026-09-21-model-entry-field-parity-design.md)（同表面、已交付；唯一接触点是 `backend/AGENTS.md` 同文件 ⇒ **串行落笔**）· [2026-09-10-web-model-provider-config-design.md](../specs/2026-09-10-web-model-provider-config-design.md)（界面模型管理与 `PROVIDER_ALLOWLIST` 的出处）。
 
 **Architecture:** 四件事 —— **① 新通用类** `deerflow/models/reasoning_replay.py`（三个钩子全部「包一层 super()」：捕获两条路（流式 delta / 非流式整包）+ 回放（D8 甲：按捕获记录的名字同名回放）+ 展示键固定 `reasoning_content`；**外加归一一行** —— **复用** `vllm_provider._normalize_vllm_chat_template_kwargs`，2026-09-23 并入、该文件一个字节不改）；**② 共享助手** `assistant_payload_replay.py` 收编 `_restore_tool_call_signatures`（`patched_openai.py` 改为 import，行为零变化；D7）；**③ `models_config.py` 三处**（allowlist 换行 / `_LEGACY_USE_TO_PROVIDER` 别名 / `from_file` 载入归一；D2/D3）；~~**④ 工厂 guard**~~（**已取消 2026-09-22**：逃生舱不做 ⇒ 键不存在）；**⑤ 文档 + 真栈隔离实例**（`backend/AGENTS.md` + `docs/CONFIGURATION.md`；验收 12–17b）。向导**不在内**（D5 乙）。
@@ -172,23 +172,44 @@
 
 > 动到的文件：**无仓库文件**（scratch 根在仓外）。三个 `DEER_FLOW_*` 环境变量指向 scratch 根 + 本机 recorder（假 key、零出网）。
 
-- [ ] 12. 假端点回 `reasoning_content`（流式 + 非流式各一遍）⇒ 第二轮请求体里**同名字段原样出现**（recorder 抓两次请求比对）。
-- [ ] 13. 假端点回 `reasoning` ⇒ 第二轮回放 `reasoning`、**无** `reasoning_content`。
-- [ ] 14. **对照组**：假端点从不回推理字段 ⇒ 请求体与「普通类基线」逐字节相同。
+- [x] 12. 假端点回 `reasoning_content`（流式 + 非流式各一遍）⇒ 第二轮请求体里**同名字段原样出现**（recorder 抓两次请求比对）。
+- [x] 13. 假端点回 `reasoning` ⇒ 第二轮回放 `reasoning`、**无** `reasoning_content`。
+- [x] 14. **对照组**：假端点从不回推理字段 ⇒ 请求体与「普通类基线」逐字节相同。
 - [x] ~~15. **`off` 组**：带 `reasoning_replay: off` 的 **`config.yaml` 条目**（⚠️ 界面写不进这个键 —— 缺口 6；UI 条目做不了这一组）⇒ 与基线逐字节相同。~~ **已取消（2026-09-22：不做逃生舱，验收 15 作废）**
-- [ ] 16. **迁移与落盘**：预置一条普通类的旧 `models_config.json` 条目 ⇒ 载入后 GET `provider` 仍 `openai-compatible`（**归一后的新类命中 allowlist**；"别名"只兜手写旧类那一格）、行为已切到通用类（recorder 可见捕获/回放）；新条目 PUT 后文件里是新类。
-- [ ] 17. **两格回归**：`anthropic` / `deepseek` 条目请求体不变。
-- [ ] 17b. **旧拼写归一**（验收 3b 的真栈面，2026-09-23 六补）：scratch 的 `config.yaml` 放一条**指向新类**、配方写**旧拼写** `extra_body.chat_template_kwargs.thinking: false` 的条目 ⇒ recorder 抓到的请求体里是 **`enable_thinking: false`**（旧键不出现）—— unit 已钉住，这条只证"真请求体上也是它"。
-- [ ] **收尾**：进程 `taskkill /T`、scratch 删净；`models_config.json` / `config.yaml` md5 与动手前相同。
+- [x] 16. **迁移与落盘**：预置一条普通类的旧 `models_config.json` 条目 ⇒ 载入后 GET `provider` 仍 `openai-compatible`（**归一后的新类命中 allowlist**；"别名"只兜手写旧类那一格）、行为已切到通用类（recorder 可见捕获/回放）；新条目 PUT 后文件里是新类。
+- [x] 17. **两格回归**：`anthropic` / `deepseek` 条目请求体不变。
+- [x] 17b. **旧拼写归一**（验收 3b 的真栈面，2026-09-23 六补）：scratch 的 `config.yaml` 放一条**指向新类**、配方写**旧拼写** `extra_body.chat_template_kwargs.thinking: false` 的条目 ⇒ recorder 抓到的请求体里是 **`enable_thinking: false`**（旧键不出现）—— unit 已钉住，这条只证"真请求体上也是它"。
+- [x] **收尾**：进程 `taskkill /T`、scratch 删净；`models_config.json` / `config.yaml` md5 与动手前相同。
 
-**实测（待回填）**：
+**实测（2026-09-23，Task 6 已交付）**：
+
+- **装置**：仓外 scratch `E:/app/python/agent/df-t6`（**已删净**）＝ `config.yaml`（7 条条目，全部指向 `127.0.0.1:8098`；`rag.qdrant_url` 指向死端口 `:6399`，不碰共享 Qdrant）+ `models_config.json`（**预置一条旧类条目** `t6-ui-legacy`）+ `extensions_config.json` + `recorder.py`（OpenAI/Anthropic 双形状应答 + 逐条落盘请求体）+ `legs.py`（模型级两轮腿）。**假 key `t6-local-key`**。
+- **12（两条捕获路各有真请求体）**：`t6-rc` 两轮。捕获侧 ak = `{reasoning_content: "think-rc", _wire_reasoning_field: "reasoning_content"}`（非流式与流式**各一遍**，流式那遍是**真 chunk 合并**出来的）；**第二轮请求体的 assistant 带 `reasoning_content: "think-rc"`、无 `reasoning`**。
+- **13**：捕获侧 ak = `{refusal, reasoning_content: "think-r", reasoning: "think-r", _wire_reasoning_field: "reasoning"}` ⇒ **第二轮只回 `reasoning`（`reasoning_content` 不出现）** —— 展示别名不外发，在真请求体上成立。
+- **14（对照组）**：`t6-plain`（普通类）与 `t6-replay-control`（回放类，**同 model / 同端点**）各两轮 ⇒ **第一轮两份请求体逐字节相同、第二轮也逐字节相同**（`turn1_identical=True, turn2_identical=True`）。
+- **16（迁移与落盘，三格）**：① 盘上文件仍是 `langchain_openai:ChatOpenAI`，而 `ModelsConfig.from_file()` 出来的 `use` 已是 `deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI`、`reverse_lookup_provider` = `openai-compatible`；② **网关**（隔离实例 `:8099`）`GET /api/models/config` 该条目 `provider = openai-compatible`、`source = ui`、`editable = True`，且**两轮真 agent run**（`POST /api/threads` → `/runs/wait`，`context.model_name = t6-ui-legacy`）的第二轮请求体里 assistant 带 `reasoning_content: "think-ui"` ⇒ **行为确实切到了通用类**；③ `PUT /api/models/config` 后盘上 `"use": "deerflow.models.reasoning_replay:ReasoningReplayChatOpenAI"`。
+- **17**：`t6-anthropic`（`langchain_anthropic:ChatAnthropic`）请求体 = `{max_tokens, messages, model}`、`t6-deepseek`（`PatchedChatDeepSeek`）= `{messages, model, stream}` ⇒ **两轮键集合稳定、全文无 `_wire_reasoning_field` / `reasoning` / `reasoning_content`**（判据从"逐字节相同"改成"键集合稳定 + 无回放痕迹"：两轮**本来就**该差在 messages 上，原口径写错了）。
+- **17b**：条目 `t6-legacy-spelling`（指向新类 + `extra_body.chat_template_kwargs.thinking: false`）⇒ 出站请求体是**顶层** `chat_template_kwargs: {"enable_thinking": false}`、`thinking` 不出现（⚠️ 记一处口径：该键在**真实 HTTP 体里是顶层**，不是嵌套在 `extra_body` 下 —— 归一发生在嵌套阶段，随后由 SDK 摊平）。
+- **零出网证据**：网关日志里**没有任何外部主机**（`api.openai.com` / `api.anthropic.com` / `dashscope*` / `openrouter.ai` / `minimax.io` 全 0 命中），模型调用只出现 `127.0.0.1:8098/v1/chat/completions`。
+- **收尾**：他的 `models_config.json` md5 = `1fbfd8019d45ea317a07c81aa1494972`、`config.yaml` = `96af3c540c67cd32093bbb57490eb254` —— **均与动手前相同**；他的 `:8001` 仍在听（200）；我的 `:8098` / `:8099` 已释放；scratch **已删净**；`backend/.deer-flow` 未新增用户记忆/线程文件。
+- ⚠️ **一处如实登记的残留（不是漏删）**：隔离实例用的是共享 `backend/.deer-flow/data/deerflow.db`（我的 scratch `config.yaml` **没覆盖 `database:` 段**，所以 SQLite 落回仓库默认路径）⇒ 我建的那 1 个线程经 `DELETE /api/threads/{id}` 清掉后：`threads_meta` / `checkpoints` / `run_events` **均 0 行**，但 `runs` 里**还剩 2 条** —— **这是删除路由的自身契约**（它只删线程目录 + checkpoint + thread_meta，**从不碰 `runs`**，见 `routers/threads.py:620-659`）⇒ 未做裸 SQL 删除，留档。**下次真栈要在 scratch `config.yaml` 里把 `database:` 指到 scratch**（本条已记进记忆）。
 
 ---
 
 ## 门禁（全量）
 
-- [ ] `ruff check` + `ruff format --check` 干净；全量后端 `cd backend && make test`（后台）对 HEAD 双向 A/B diff 为空（两侧同一仓外 basetemp）。
-- [ ] 前端**不跑**（provider id 不变、零改动；按惯例纯后端线不跑前端全量）。
-- [ ] 全部 `**实测**` 行已回填；三个 commit 按线拆分（类本体 / config 三处 / 文档 + 真栈），设计文档（spec+plan）跟最后一笔或按线归位。
+- [x] `ruff check` + `ruff format --check` 干净；全量后端 `cd backend && make test`（后台）双向 A/B 已跑 —— **判据口径就地更正**：本对代码**已提交**，对照当前 HEAD 是空转，参照物取**配对前一笔 `d9aebc48`**；两侧同一仓外 basetemp。
+- [x] 前端**不跑**（provider id 不变、零改动；按惯例纯后端线不跑前端全量）。
+- [x] 全部 `**实测**` 行已回填；三个 commit 按线拆分（`69601777` 类本体 + D7 搬家 / `dcdcdb09` config 三处 + 两处文档 / **本笔** spec + plan 回填），设计文档（spec+plan）跟最后一笔。
 
-**实测（待回填）**：
+**实测（2026-09-24，门禁已跑）**：
+
+- **ruff**：`ruff check .` = All checks passed；`ruff format --check .` 唯一非净项 = `tests/knowledge/tools/test_graph_search.py`（**配对前就在**：`acabd069` 2026-09-05，属知识库线；A/B 两侧一致，未动）。本对 8 个文件单独 `--check` = **8 files already formatted**。
+- **全量 A/B**（同一仓外 basetemp `E:/app/python/agent/df-gate-tmp`；命令 = `PYTHONPATH=. … pytest -m "not live" tests/ -q --tb=short -rfE`）：
+  - A 侧（工作树，含本对）：**148 failed / 12456 passed / 109 skipped / 0 error（1354s）**。
+  - B 侧（`d9aebc48`，仓外 worktree `E:/app/python/agent/df-gate-head` + **该树自己的 venv**）：**149 failed / 12429 passed / 109 skipped / 0 error（1331s）**。
+  - **双向 diff：A-only 0；B-only 1** = `tests/knowledge/test_rag_agent_assembly.py::test_builtin_rag_config_loads_with_rag_tool_group`（**B 红 / A 绿**）。
+- **那 1 条的归因（环境性，不是本对）**：worktree 少了**被 gitignore 的内置资产** `deerflow/agents/assets/rag/config.yaml`（`backend/.gitignore:22` 的 `config.yaml` 通配把它挡在版本控制外；同目录 `SOUL.md` 是 tracked）⇒ `_load_builtin_agent_asset` 返回 None、兜底 re-raise（`agents_config.py:32-37` / `:336`）。**把该文件镜像进 worktree 后**两侧同文件各跑一遍：**B 9 passed、A 9 passed** ⇒ 差集完全解释。
+- **环境红两侧一致**：4 条 models/config 类（本机仓库根真件 `models_config.json`）＋ 1 条 PYTHONPATH 正斜杠类都在**两侧**；`test_detector_repo_root` 类**两侧都无**（仓外 basetemp）；本对新增用例（`test_reasoning_replay.py` 22 条 + `test_models_config.py` 新增等）在 A 侧**全绿**。
+- **两侧环境对齐证据**：Python 3.12.13；`uv pip freeze` 剔除两个 deerflow editable 后 **288 包逐条版本相同**（B 侧 venv 由 `uv sync --inexact` 新建后，按 A 侧版本补装 15 个非 lock 包 + 6 个降版）；A/B 之间不同步的那批 gitignored 根配置文件（`config.yaml` / `models_config.json` / `extensions_config.json` / `rag_config.json` / 两个 `.env`）已 `cp` 进 worktree（跑完随 worktree 一并删）。
+- **前端不跑**：provider id 不变、零前端改动（按惯例纯后端线不跑前端全量）。
