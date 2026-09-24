@@ -138,7 +138,7 @@ export function ModelsSettingsPage() {
           line holding only a button left the header half empty. The row carries a floor of
           its own and the action stays `sm`, so the functional view's taller header no longer
           shifts this line when the view changes (2026-09-23). */}
-      <div className="mb-4 flex min-h-9 items-center justify-between gap-3">
+      <div className="mb-4 flex min-h-9 flex-wrap items-center justify-between gap-3">
         <ToggleGroup
           type="single"
           variant="outline"

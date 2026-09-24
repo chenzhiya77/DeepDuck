@@ -141,6 +141,16 @@ describe("ModelsSettingsPage three states", () => {
     expect(toggle.parentElement?.className).toContain("min-h-9");
   });
 
+  it("lets the view-switch row wrap instead of squeezing its controls", () => {
+    // D4 甲 (spec 2026-09-24 §3.3): at extreme narrowness the action moves to a second
+    // line rather than crushing the switch — one class, the row keeps its own floor.
+    setConfig([]);
+    renderPage();
+
+    const toggle = screen.getByRole("group", { name: M.viewSwitchLabel });
+    expect(toggle.parentElement?.className).toContain("flex-wrap");
+  });
+
   it("renders the add button small, so the row does not outgrow its floor", () => {
     // D5 乙: the default `h-9` would push the row past `min-h-9` and bring the jump back.
     setConfig([]);
