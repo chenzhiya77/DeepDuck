@@ -40,6 +40,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import func, select
 
+from deerflow.knowledge.embed_texts import wiki_entry_embed_text
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.normalizer import is_low_quality_entity_name
 from deerflow.knowledge.graph.store import GraphStore
@@ -58,8 +59,6 @@ BATCH_BUNDLE_SIZE = 7
 BATCH_JACCARD_THRESHOLD = 0.5
 #: Fraction of documents that must be ready before auto-triggering (spec §3.7).
 DEFAULT_TRIGGER_THRESHOLD = 0.9
-#: Characters of entry content folded into the embedding text.
-EMBED_CONTENT_CHARS = 500
 
 #: In-flight generation runs per KB (single-process asyncio counter). Feeds the
 #: library-level ``wiki: generating`` sub-status on the documents endpoint —
@@ -292,7 +291,7 @@ async def _persist_entry(
     status = "dirty" if await _direction_moved_since_snapshot(wiki_store, kb_id, row["name"], guidance) else "ready"
     entry = await wiki_store.upsert_entry(kb_id, title=row["name"], content=content, source_chunk_ids=list(row.get("source_chunk_ids") or []), status=status)
     if vector_store is not None and embedder is not None:
-        (embedding,) = await embedder.embed([f"{row['name']}\n{content[:EMBED_CONTENT_CHARS]}"])
+        (embedding,) = await embedder.embed([wiki_entry_embed_text(row["name"], content)])
         await vector_store.upsert_wiki_entries([WikiEntryUpsert(entry_id=entry["id"], kb_id=kb_id, title=row["name"], dense=embedding.dense)])
     stats.generated += 1
     stats.titles.append(row["name"])

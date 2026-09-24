@@ -38,6 +38,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Protocol
 
+from deerflow.knowledge.embed_texts import entity_embed_text
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.normalizer import cluster_alias_groups
 from deerflow.knowledge.graph.store import GraphStore
@@ -113,7 +114,7 @@ async def resolve_entity_aliases(
         # ③ kb_entities: drop alias vectors, re-embed the representative.
         await vector_store.delete_entities(kb_id, aliases)
         if merged is not None and embedder is not None:
-            (embedding,) = await embedder.embed([f"{representative}\n{merged['description']}"])
+            (embedding,) = await embedder.embed([entity_embed_text(representative, merged["description"])])
             await vector_store.upsert_entities([EntityUpsert(name=representative, kb_id=kb_id, type=merged["type"], description=merged["description"], dense=embedding.dense)])
         # ④ Chunk entity tags: business-DB column first, then the payload
         #    mirror read back from the rewritten rows.

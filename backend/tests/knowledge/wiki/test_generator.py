@@ -34,7 +34,7 @@ from deerflow.knowledge.wiki.generator import (
 )
 from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 
-from ..conftest import requires_qdrant
+from ..conftest import requires_qdrant, spy_embed_text
 
 
 class _WikiLLM:
@@ -163,11 +163,12 @@ async def test_wiki_trigger_ready_threshold(wiki_db_env):
 @requires_qdrant
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_generate_wiki_writes_entry_and_vector(wiki_env):
+async def test_generate_wiki_writes_entry_and_vector(wiki_env, monkeypatch):
     store, graph_store = wiki_env["store"], wiki_env["graph_store"]
     vector_store, client, kb_id = wiki_env["vector_store"], wiki_env["client"], wiki_env["kb_id"]
     wiki_store = WikiStore(store._sf)
     llm, embedder = _WikiLLM(), _StubEmbedder()
+    helper_calls = spy_embed_text(monkeypatch, "deerflow.knowledge.wiki.generator", "wiki_entry_embed_text")
     # Gateway joins the eligible set once a second chunk references it (freq 2).
     await _add_entity(graph_store, kb_id, "Gateway", ["doc-w-c1"])
 
@@ -203,6 +204,8 @@ async def test_generate_wiki_writes_entry_and_vector(wiki_env):
     assert payload["kb_id"] == kb_id
     assert "content" not in payload  # full text stays in the business DB
     assert embedder.calls, "entry vectors must go through the embedder"
+    # Same-source pin (spec 2026-09-24 §4.1): entry vectors embed via the shared helper.
+    assert sorted(call[0] for call in helper_calls) == ["DeerFlow", "Gateway"], "entry vectors must embed through the shared helper"
 
 
 @requires_qdrant

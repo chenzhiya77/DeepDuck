@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import AsyncIterator
 
@@ -9,6 +10,28 @@ import pytest
 import pytest_asyncio
 
 QDRANT_TEST_URL = os.environ.get("QDRANT_TEST_URL", "http://127.0.0.1:6333")
+
+
+def spy_embed_text(monkeypatch, module_path: str, name: str) -> list[tuple]:
+    """Spy on a consumer module's *own* embed-text helper and return its call log.
+
+    Recipe precedent: ``test_worker.py:525``. ``raising=False`` keeps the
+    pre-switch state (callers inline the f-string, the module has no such
+    name) a clean RED — the call log simply stays empty. Post-switch the spy
+    delegates to the module's real helper, so the existing text assertions
+    keep holding (spec 2026-09-24 §4.1 同源钉子, 2026-09-25).
+    """
+    module = importlib.import_module(module_path)
+    real = getattr(module, name, None)
+    calls: list[tuple] = []
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        assert real is not None, f"{module_path}.{name} is not the shared helper yet"
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, spy, raising=False)
+    return calls
 
 
 def _qdrant_available() -> bool:

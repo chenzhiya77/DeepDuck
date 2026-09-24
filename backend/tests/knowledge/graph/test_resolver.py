@@ -22,7 +22,7 @@ from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.vector_store import ChunkUpsert, EntityUpsert, WikiEntryUpsert
 from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 
-from ..conftest import requires_qdrant
+from ..conftest import requires_qdrant, spy_embed_text
 
 
 class _TableEmbedder:
@@ -78,7 +78,7 @@ def _resolver_env(graph_env) -> dict:
 @requires_qdrant
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_merges_surface_aliases_and_rewrites_everything(graph_env):
+async def test_merges_surface_aliases_and_rewrites_everything(graph_env, monkeypatch):
     env = _resolver_env(graph_env)
     store, graph_store, vector_store, wiki_store, client = env["store"], env["graph_store"], env["vector_store"], env["wiki_store"], env["client"]
     kb_id, doc_id = env["kb_id"], env["doc_id"]
@@ -110,6 +110,7 @@ async def test_merges_surface_aliases_and_rewrites_everything(graph_env):
         ]
     )
     embedder = _TableEmbedder()
+    helper_calls = spy_embed_text(monkeypatch, "deerflow.knowledge.graph.resolver", "entity_embed_text")
 
     stats = await resolve_entity_aliases(store, graph_store, vector_store, wiki_store, embedder, kb_id=kb_id, touched_entities={"Model", "Models"})
 
@@ -135,6 +136,8 @@ async def test_merges_surface_aliases_and_rewrites_everything(graph_env):
     )
     assert sorted(p.payload["name"] for p in epoints) == ["Model", "Trainer"]
     assert embedder.calls[-1][0].startswith("Model\n")
+    # Same-source pin (spec 2026-09-24 §4.1): the representative re-embed goes through the shared helper.
+    assert [call[0] for call in helper_calls] == ["Model"], "representative re-embed must use the shared helper"
     # ④ Dual write: business-DB column and Qdrant payload both rewritten.
     rows = {c["chunk_id"]: c for c in await store.list_chunks(doc_id, limit=10)}
     assert sorted(rows[c0]["entities"]) == ["Model", "Trainer"]

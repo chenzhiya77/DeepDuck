@@ -17,6 +17,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from deerflow.knowledge.embed_texts import entity_embed_text
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.extractor import ExtractionError, extract_graph
 from deerflow.knowledge.graph.normalizer import normalize_extraction
@@ -184,7 +185,7 @@ async def index_document_graph(
         rows = await graph_store.list_entities(kb_id)
         targets = [row for row in rows if row["name"] in touched_entities]
         if targets:
-            embeddings = await embedder.embed([f"{row['name']}\n{row.get('description') or ''}" for row in targets])
+            embeddings = await embedder.embed([entity_embed_text(row["name"], row.get("description")) for row in targets])
             await vector_store.upsert_entities(
                 [
                     EntityUpsert(

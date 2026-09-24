@@ -29,6 +29,7 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.embed_texts import manual_card_embed_text
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.eval import question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
@@ -901,11 +902,6 @@ class KnowledgeService:
 
     # ── manual knowledge cards (Phase-3 Batch-1 P6, spec §8) ─────────────
 
-    @staticmethod
-    def _manual_card_embed_text(title: str, content: str) -> str:
-        """Embedding input for a card — same ``name\\ndescription`` shape as entities."""
-        return f"{title}\n{content}"
-
     async def create_manual_card(
         self,
         *,
@@ -928,7 +924,7 @@ class KnowledgeService:
         """
         embedding = None
         if include_in_wiki_search:
-            embedding = (await build_embedder().embed([self._manual_card_embed_text(title, content)]))[0]
+            embedding = (await build_embedder().embed([manual_card_embed_text(title, content)]))[0]
 
         card_id = uuid.uuid4().hex
         if embedding is not None:
@@ -1018,7 +1014,7 @@ class KnowledgeService:
         # flag on, no point, and re-PATCHing on never re-upserted.)
         embedding = None
         if needs_vector:
-            embedding = (await build_embedder().embed([self._manual_card_embed_text(effective_title, effective_content)]))[0]
+            embedding = (await build_embedder().embed([manual_card_embed_text(effective_title, effective_content)]))[0]
 
         if embedding is not None:
             from deerflow.knowledge.vector_store import ManualCardUpsert

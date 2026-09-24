@@ -20,7 +20,7 @@ from deerflow.knowledge.graph.indexer import GraphIndexStats, index_document_gra
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.vector_store import ChunkUpsert
 
-from ..conftest import requires_qdrant
+from ..conftest import requires_qdrant, spy_embed_text
 
 
 def _payload(entities: list[dict], relations: list[dict] | None = None) -> str:
@@ -109,13 +109,14 @@ async def _seed_chunk_points(vector_store, kb_id: str, doc_id: str, chunks: list
 @requires_qdrant
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_end_to_end_status_backfill_and_entity_vectors(graph_env):
+async def test_end_to_end_status_backfill_and_entity_vectors(graph_env, monkeypatch):
     env = graph_env
     store, vector_store, client = env["store"], env["vector_store"], env["client"]
     kb_id, doc_id = env["kb_id"], env["doc_id"]
     graph_store = GraphStore(store._sf)
     llm = _RoutingLLM(_HAPPY_ROUTES, default=_payload([], []))
     embedder = _StubEmbedder()
+    helper_calls = spy_embed_text(monkeypatch, "deerflow.knowledge.graph.indexer", "entity_embed_text")
     chunks = await store.list_chunks(doc_id, limit=10)
     await _seed_chunk_points(vector_store, kb_id, doc_id, chunks)
 
@@ -164,6 +165,8 @@ async def test_end_to_end_status_backfill_and_entity_vectors(graph_env):
     )
     assert sorted(p.payload["name"] for p in epoints) == ["DeerFlow", "Gateway", "Parser"]
     assert embedder.calls, "entity embedding should go through the embedder"
+    # Same-source pin (spec 2026-09-24 §4.1): the entity-vector pass embeds via the shared helper.
+    assert sorted(call[0] for call in helper_calls) == ["DeerFlow", "Gateway", "Parser"], "entity vectors must embed through the shared helper"
 
 
 @requires_qdrant

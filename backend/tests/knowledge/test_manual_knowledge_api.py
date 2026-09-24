@@ -23,6 +23,8 @@ from app.gateway.services import knowledge_service as ks_module
 from app.gateway.services.knowledge_service import KnowledgeService
 from deerflow.knowledge.store import KnowledgeStore
 
+from .conftest import spy_embed_text
+
 pytestmark = pytest.mark.asyncio
 
 OWNER_ID = str(UUID(int=1234567890))
@@ -126,6 +128,7 @@ async def test_create_card_defaults_flag_off_and_skips_vector(service, monkeypat
 
 async def test_create_card_with_flag_on_embeds_and_upserts(service, monkeypatch):
     embedder = _mock_embedder(monkeypatch)
+    helper_calls = spy_embed_text(monkeypatch, "app.gateway.services.knowledge_service", "manual_card_embed_text")
     client = _client(service)
     kb = _create_kb(client)
 
@@ -137,6 +140,8 @@ async def test_create_card_with_flag_on_embeds_and_upserts(service, monkeypatch)
     assert response.status_code == 201, response.text
     embedder.embed.assert_awaited_once_with(["线上禁令\n周五不发布"])
     service.vector_store.upsert_manual_cards.assert_awaited_once()
+    # Same-source pin (spec 2026-09-24 §4.1): the card embed text comes from the shared helper.
+    assert helper_calls == [("线上禁令", "周五不发布")], "card embedding must use the shared helper"
     upserted = list(service.vector_store.upsert_manual_cards.call_args[0][0])
     assert [c.card_id for c in upserted] == [response.json()["id"]]
     assert upserted[0].kb_id == kb["id"]
@@ -213,6 +218,7 @@ async def test_get_card_detail_and_404(service):
 
 async def test_update_card_toggle_drives_vector_lifecycle(service, monkeypatch):
     embedder = _mock_embedder(monkeypatch)
+    helper_calls = spy_embed_text(monkeypatch, "app.gateway.services.knowledge_service", "manual_card_embed_text")
     client = _client(service)
     kb = _create_kb(client)
     url = _cards_url(kb["id"])
@@ -245,6 +251,8 @@ async def test_update_card_toggle_drives_vector_lifecycle(service, monkeypatch):
     service.vector_store.delete_manual_cards.assert_awaited_once_with([card["id"]])
 
     assert client.patch(f"{url}/nonexistent", json={"title": "x"}).status_code == 404
+    # Same-source pin (spec 2026-09-24 §4.1): both update-path embeds ride the shared helper.
+    assert helper_calls == [("新标题", "v1"), ("新标题", "v2")], "card re-embed must use the shared helper"
 
 
 async def test_delete_card_removes_row_and_point(service, monkeypatch):
