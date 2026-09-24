@@ -1698,7 +1698,7 @@ export const zhCN: Translations = {
       rerankProvider: "重排提供方",
       providerDashscope: "阿里百炼 (DashScope)",
       providerVolcengineArk: "火山方舟 (Ark)",
-      providerOpenAIChat: "OpenAI 兼容",
+      providerOpenAIChat: "OpenAI-compatible",
       providerGenericRerank: "通用重排 (Cohere / Jina / TEI 形状)",
       providerMineruCloud: "MinerU 官方云",
       providerMineruLocal: "本地 MinerU 服务",
