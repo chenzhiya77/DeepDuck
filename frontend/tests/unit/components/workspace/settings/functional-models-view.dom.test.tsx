@@ -291,3 +291,56 @@ describe("shrinkable rows", () => {
     ).toContain("min-w-0");
   });
 });
+
+/**
+ * Narrow stacking (spec 2026-09-24 settings-responsive-layout §3.2, D1/D2/D3 甲):
+ * below `lg` a two-value row stacks two self-describing lines — bold role short name
+ * (the wide column heading's own word) + the shared label + the value. The shared gutter
+ * label hides there and the role-heading row hides with it. At `lg` and up nothing moves.
+ */
+describe("narrow stacking", () => {
+  const rowOf = (el: HTMLElement) =>
+    el.closest<HTMLElement>('div[class*="grid-cols-[8rem_"]')!;
+
+  it("pair rows stack below lg: copies carry role + label, the shared gutter hides", () => {
+    renderWith({});
+
+    const row = rowOf(screen.getByLabelText("embeddingModel"));
+    expect(row.className).toContain("max-lg:grid-cols-1");
+
+    const [gutter, cellA, cellB] = Array.from(row.children) as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ];
+    expect(gutter.className).toContain("max-lg:hidden");
+
+    for (const [cell, role] of [
+      [cellA, "embeddingModel"],
+      [cellB, "rerankModel"],
+    ] as const) {
+      expect(cell.className).toContain("lg:contents");
+      const copy = cell.firstElementChild as HTMLElement;
+      expect(copy.className).toContain("lg:hidden");
+      expect(copy.textContent).toContain(role);
+      expect(copy.textContent).toContain("modelLabel");
+    }
+  });
+
+  it("single rows stack label-above-value below lg", () => {
+    renderWith({ embedding_sparse_source: "external" });
+    openAdvanced();
+
+    expect(rowOf(screen.getByLabelText("sparseModel")).className).toContain(
+      "max-lg:grid-cols-1",
+    );
+  });
+
+  it("the role-heading row hides below lg", () => {
+    renderWith({});
+
+    const heading =
+      screen.getByText("roleTagEmbedding").parentElement!.parentElement!;
+    expect(heading.className).toContain("max-lg:hidden");
+  });
+});

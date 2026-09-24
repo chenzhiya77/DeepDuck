@@ -157,9 +157,10 @@ function OptionSelect({
  * One row of the form: the label sits in a fixed gutter, so every value column lines up no
  * matter how long the labels are. Two values = the two retrieval roles, one = an ordinary row.
  */
-const ROW = "grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-x-4 py-3";
+const ROW =
+  "grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-x-4 py-3 max-lg:grid-cols-1 max-lg:gap-y-1";
 const ROW_PAIR =
-  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3";
+  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3 max-lg:grid-cols-1 max-lg:gap-y-2";
 
 /** Hairlines between rows; with the shared gutter they are what makes a group read as one form. */
 function Rows({ children }: { children: React.ReactNode }) {
@@ -176,10 +177,12 @@ const NESTED_GUTTER = "ml-3 border-l border-border pl-3";
 /** The gutter cell: the visible label, plus an ⓘ when there is a sentence for it. */
 function RowLabel({
   children,
+  className,
   info,
   nested,
 }: {
   children: React.ReactNode;
+  className?: string;
   info?: string;
   nested?: boolean;
 }) {
@@ -188,11 +191,38 @@ function RowLabel({
       className={cn(
         "text-muted-foreground flex items-center gap-1 text-xs",
         nested && NESTED_GUTTER,
+        className,
       )}
     >
       {children}
       {info && <InfoTip text={info} />}
     </span>
+  );
+}
+
+/**
+ * One value cell of a two-value row. Below `lg` the wrapper stacks its own "role + label"
+ * line above the control (spec 2026-09-24 §3.2, D3 甲: the bold role short name rides to the
+ * line head, reusing the wide column heading's own word); at `lg` and up the wrapper is
+ * `contents`, so the wide grid still sees the bare control and the wide layout is unchanged.
+ */
+function PairCell({
+  label,
+  role,
+  children,
+}: {
+  label: string;
+  role: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 lg:contents">
+      <span className="text-xs lg:hidden">
+        <span className="font-semibold">{role}</span>{" "}
+        <span className="text-muted-foreground">{label}</span>
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -581,135 +611,156 @@ export function FunctionalModelsView() {
     <div className="flex w-full flex-col gap-4">
       <Group title={F.groupRetrieval} info={F.groupRetrievalHint}>
         <Rows>
-          <div className={`${ROW_PAIR} pt-0 pb-2`}>
+          <div className={`${ROW_PAIR} pt-0 pb-2 max-lg:hidden`}>
             <span />
             <RoleHeading label={F.embeddingModel} tag={F.roleTagEmbedding} />
             <RoleHeading label={F.rerankModel} tag={F.roleTagRerank} />
           </div>
 
           <div className={ROW_PAIR}>
-            <RowLabel>{F.providerLabel}</RowLabel>
-            <OptionSelect
-              label={F.embeddingProvider}
-              value={values.embedding_provider}
-              options={EMBEDDING_PROVIDER_OPTIONS}
-              labels={PROVIDER_LABELS}
-              onChange={(next) =>
-                update(
-                  "embedding_provider",
-                  next as RagConfigFormValues["embedding_provider"],
-                )
-              }
-            />
-            <OptionSelect
-              label={F.rerankProvider}
-              value={values.rerank_provider}
-              options={RERANK_PROVIDER_OPTIONS}
-              labels={PROVIDER_LABELS}
-              onChange={(next) =>
-                update(
-                  "rerank_provider",
-                  next as RagConfigFormValues["rerank_provider"],
-                )
-              }
-            />
+            <RowLabel className="max-lg:hidden">{F.providerLabel}</RowLabel>
+            <PairCell label={F.providerLabel} role={F.embeddingModel}>
+              <OptionSelect
+                label={F.embeddingProvider}
+                value={values.embedding_provider}
+                options={EMBEDDING_PROVIDER_OPTIONS}
+                labels={PROVIDER_LABELS}
+                onChange={(next) =>
+                  update(
+                    "embedding_provider",
+                    next as RagConfigFormValues["embedding_provider"],
+                  )
+                }
+              />
+            </PairCell>
+            <PairCell label={F.providerLabel} role={F.rerankModel}>
+              <OptionSelect
+                label={F.rerankProvider}
+                value={values.rerank_provider}
+                options={RERANK_PROVIDER_OPTIONS}
+                labels={PROVIDER_LABELS}
+                onChange={(next) =>
+                  update(
+                    "rerank_provider",
+                    next as RagConfigFormValues["rerank_provider"],
+                  )
+                }
+              />
+            </PairCell>
           </div>
 
           <div className={ROW_PAIR}>
-            <RowLabel>{F.modelLabel}</RowLabel>
-            <Input
-              value={values.embedding_model}
-              aria-label={F.embeddingModel}
-              {...AUTOFILL_OFF_INPUT_PROPS}
-              onChange={(event) =>
-                update("embedding_model", event.target.value)
-              }
-            />
-            <Input
-              value={values.rerank_model}
-              aria-label={F.rerankModel}
-              {...AUTOFILL_OFF_INPUT_PROPS}
-              onChange={(event) => update("rerank_model", event.target.value)}
-            />
+            <RowLabel className="max-lg:hidden">{F.modelLabel}</RowLabel>
+            <PairCell label={F.modelLabel} role={F.embeddingModel}>
+              <Input
+                value={values.embedding_model}
+                aria-label={F.embeddingModel}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+                onChange={(event) =>
+                  update("embedding_model", event.target.value)
+                }
+              />
+            </PairCell>
+            <PairCell label={F.modelLabel} role={F.rerankModel}>
+              <Input
+                value={values.rerank_model}
+                aria-label={F.rerankModel}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+                onChange={(event) => update("rerank_model", event.target.value)}
+              />
+            </PairCell>
           </div>
 
           <div className={ROW_PAIR}>
             <RowLabel
+              className="max-lg:hidden"
               info={secretHintFor("embedding_api_key", "rerank_api_key")}
             >
               {F.apiKeyLabel}
             </RowLabel>
-            <SecretInput
-              badge={
-                isEnvBacked("embedding_api_key")
-                  ? F.secretFromEnvBadge
-                  : undefined
-              }
-              value={values.embedding_api_key}
-              aria-label={F.embeddingApiKey}
-              onChange={(event) =>
-                update("embedding_api_key", event.target.value)
-              }
-            />
-            <SecretInput
-              badge={
-                isEnvBacked("rerank_api_key") ? F.secretFromEnvBadge : undefined
-              }
-              value={values.rerank_api_key}
-              aria-label={F.rerankApiKey}
-              onChange={(event) => update("rerank_api_key", event.target.value)}
-            />
+            <PairCell label={F.apiKeyLabel} role={F.embeddingModel}>
+              <SecretInput
+                badge={
+                  isEnvBacked("embedding_api_key")
+                    ? F.secretFromEnvBadge
+                    : undefined
+                }
+                value={values.embedding_api_key}
+                aria-label={F.embeddingApiKey}
+                onChange={(event) =>
+                  update("embedding_api_key", event.target.value)
+                }
+              />
+            </PairCell>
+            <PairCell label={F.apiKeyLabel} role={F.rerankModel}>
+              <SecretInput
+                badge={
+                  isEnvBacked("rerank_api_key")
+                    ? F.secretFromEnvBadge
+                    : undefined
+                }
+                value={values.rerank_api_key}
+                aria-label={F.rerankApiKey}
+                onChange={(event) =>
+                  update("rerank_api_key", event.target.value)
+                }
+              />
+            </PairCell>
           </div>
 
           <div className={ROW_PAIR}>
-            <RowLabel info={F.retrievalEndpointHint}>
+            <RowLabel className="max-lg:hidden" info={F.retrievalEndpointHint}>
               {F.endpointLabel}
             </RowLabel>
-            {endpointRow?.locked ? (
-              <LockedBox
-                reason={F.lockedByProvider}
-                value={endpointRow.shown}
-                onReset={
-                  endpointRow.overridden
-                    ? () => update("embedding_base_url", "")
-                    : undefined
-                }
-                resetLabel={F.resetToDefault}
-              />
-            ) : (
-              <Input
-                value={values.embedding_base_url}
-                aria-label={F.embeddingBaseUrl}
-                {...AUTOFILL_OFF_INPUT_PROPS}
-                onChange={(event) =>
-                  update("embedding_base_url", event.target.value)
-                }
-              />
-            )}
+            <PairCell label={F.endpointLabel} role={F.embeddingModel}>
+              {endpointRow?.locked ? (
+                <LockedBox
+                  reason={F.lockedByProvider}
+                  value={endpointRow.shown}
+                  onReset={
+                    endpointRow.overridden
+                      ? () => update("embedding_base_url", "")
+                      : undefined
+                  }
+                  resetLabel={F.resetToDefault}
+                />
+              ) : (
+                <Input
+                  value={values.embedding_base_url}
+                  aria-label={F.embeddingBaseUrl}
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  onChange={(event) =>
+                    update("embedding_base_url", event.target.value)
+                  }
+                />
+              )}
+            </PairCell>
             {/* The same rule, from the rerank leg's own block (spec 2026-09-17 alignment §3 D4):
                 a vendor that fixes its address locks the row, a stored one still wins at runtime
                 and can be dropped from here. */}
-            {rerankEndpointRow?.locked ? (
-              <LockedBox
-                reason={F.lockedByProvider}
-                value={rerankEndpointRow.shown}
-                onReset={
-                  rerankEndpointRow.overridden
-                    ? () => update("rerank_base_url", "")
-                    : undefined
-                }
-                resetLabel={F.resetToDefault}
-              />
-            ) : (
-              <Input
-                value={values.rerank_base_url}
-                aria-label={F.rerankBaseUrl}
-                {...AUTOFILL_OFF_INPUT_PROPS}
-                onChange={(event) =>
-                  update("rerank_base_url", event.target.value)
-                }
-              />
-            )}
+            <PairCell label={F.endpointLabel} role={F.rerankModel}>
+              {rerankEndpointRow?.locked ? (
+                <LockedBox
+                  reason={F.lockedByProvider}
+                  value={rerankEndpointRow.shown}
+                  onReset={
+                    rerankEndpointRow.overridden
+                      ? () => update("rerank_base_url", "")
+                      : undefined
+                  }
+                  resetLabel={F.resetToDefault}
+                />
+              ) : (
+                <Input
+                  value={values.rerank_base_url}
+                  aria-label={F.rerankBaseUrl}
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  onChange={(event) =>
+                    update("rerank_base_url", event.target.value)
+                  }
+                />
+              )}
+            </PairCell>
           </div>
         </Rows>
 

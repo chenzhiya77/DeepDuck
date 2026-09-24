@@ -377,7 +377,11 @@ describe("Models section view switch", () => {
     openFunctionalView();
 
     expect(screen.getByText(F.extractModel)).toBeTruthy();
-    expect(screen.getByText(F.embeddingModel)).toBeTruthy();
+    // The role heading is the wide-layout one; below `lg` each value cell also carries the
+    // role name as its stacking line head (spec 2026-09-24 §3.2), so pin the heading itself.
+    expect(
+      screen.getByText(F.embeddingModel, { selector: ".text-sm.font-semibold" }),
+    ).toBeTruthy();
   });
 });
 
@@ -559,7 +563,8 @@ describe("functional-model layout", () => {
     openFunctionalView();
 
     // The two roles share one label gutter (2026-09-15): each of the pair's four rows is
-    // labelled a single time, while the credentials keep their per-column accessible names.
+    // labelled a single time **in the wide layout** — below `lg` every value cell carries its
+    // own copy of the label as a stacking line head (spec 2026-09-24 §3.2), hidden above `lg`.
     // Scoped to the retrieval card: 「模型」 is also the section's own title.
     const card = screen
       .getByText(F.groupRetrieval)
@@ -569,7 +574,12 @@ describe("functional-model layout", () => {
       F.modelLabel,
       F.apiKeyLabel,
       F.endpointLabel,
-    ].map((shared) => [shared, within(card).getAllByText(shared).length]);
+    ].map((shared) => [
+      shared,
+      within(card)
+        .getAllByText(shared)
+        .filter((el) => !el.closest(".lg\\:hidden")).length,
+    ]);
     expect(Object.fromEntries(counts)).toEqual({
       [F.providerLabel]: 1,
       [F.modelLabel]: 1,
