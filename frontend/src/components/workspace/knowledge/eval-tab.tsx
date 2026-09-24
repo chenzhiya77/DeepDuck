@@ -726,7 +726,9 @@ export function EvalTab({ kbId, enabled, onReproduce }: EvalTabProps) {
                     <TrendingUp className="text-muted-foreground size-3.5 shrink-0" />
                     <span className="whitespace-nowrap shrink-0">{tk.trendTitle}</span>
                   </button>
-                  {trendQuery.data?.baseline && (
+                  {/* 阈值芯片是宽档专属（spec 2026-09-24 §7.3 乙）：窄档它会压住表名，
+                      隐藏之；图内阈值虚线仍在（数值标注的补救路见 spec §6.5）。 */}
+                  {toolbarTier === 0 && trendQuery.data?.baseline && (
                     <Badge
                       className="shrink-0 tabular-nums"
                       data-testid="eval-threshold-chip"

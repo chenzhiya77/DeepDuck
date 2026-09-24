@@ -489,6 +489,34 @@ describe("EvalTab 数据联通", () => {
       }
     }
   });
+
+  it("窄面板降档：阈值红芯片不渲染（spec 2026-09-24 §7.3 乙）", async () => {
+    // 同款 scrollWidth 配方：tier 1 时芯片随宽档专属控件一起退场——图内虚线仍在，
+    // 阈值信息在窄档的可读性代价已登记（spec §6.5，补救路 = 给虚线恢复数值标注）。
+    const original = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "eval-trend-toolbar" ? 999 : 0;
+      },
+    });
+    try {
+      renderEvalTab();
+      await screen.findByTestId("eval-trend-chart-mock");
+      await waitFor(() => {
+        expect(screen.queryByTestId("eval-threshold-chip")).toBeNull();
+      });
+    } finally {
+      if (original) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", original);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+    }
+  });
 });
 
 // ── 二期工具栏与三视图（2026-08-27 spec §3/§5，plan Task 5）──────────────
