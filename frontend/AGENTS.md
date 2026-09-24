@@ -184,7 +184,12 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   gutter on the left, values on the right, hairline-separated rows. The two retrieval roles are the
   one **two-value** form — they share four rows (provider / model / API key / endpoint), so each of
   those labels is written **once** in the gutter instead of once per column, and the columns are told
-  apart by the bold role heading above them, whose English tag rides in a muted pill. The sparse
+  apart by the bold role heading above them, whose English tag rides in a muted pill. Below `lg` the
+  pair **stacks** instead of squeezing (spec 2026-09-24): each value cell is a `PairCell` whose own
+  line head — the bold role short name (the column heading's word) plus the shared label — shows
+  only under `lg` (`lg:contents` keeps the wide grid seeing the bare control, so the wide layout is
+  unchanged), while the gutter label and the role-heading row hide there. Row tracks are
+  `minmax(0,1fr)` so a squeezed column collapses instead of overflowing the card. The sparse
   settings live behind an advanced disclosure, **nested** under the sparse-source select
   (`RowLabel nested` → `NESTED_GUTTER`: an indent and a rule, not a prefix): they are asked the
   same four questions as the embedding service, in the same order, so their visible labels are
