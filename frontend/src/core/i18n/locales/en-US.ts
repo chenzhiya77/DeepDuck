@@ -531,9 +531,6 @@ export const enUS: Translations = {
       "All documents, chunks, vectors, graph data and wiki entries will be cascade-deleted. This cannot be undone.",
     statsDocuments: "Documents",
     statsChunks: "Chunks",
-    statsReady: "Ready",
-    statsIndexing: "Indexing",
-    statsFailed: "Failed",
     // Video-row badge (spec 2026-09-08 §5): duration as title/aria (shot count removed — duplicates the chunks column).
     videoDuration: "Duration",
     table: {

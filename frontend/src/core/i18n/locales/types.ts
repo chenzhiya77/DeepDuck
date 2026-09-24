@@ -442,9 +442,6 @@ export interface Translations {
     deleteKbConfirmDescription: string;
     statsDocuments: string;
     statsChunks: string;
-    statsReady: string;
-    statsIndexing: string;
-    statsFailed: string;
     /** Video-row badge (spec 2026-09-08 §5): duration title/aria (shot count removed). */
     videoDuration: string;
     table: {

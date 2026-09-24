@@ -618,6 +618,28 @@ describe("DocumentPanel stats row and upload", () => {
     expect(statsRow.textContent).toContain("5");
   });
 
+  it("splits the stats row into volume + status segments, hiding zero counts", () => {
+    // Spec 2026-09-24 settings-responsive-layout §7.2 甲: two nowrap segments (volume left,
+    // status right) wrap as wholes, and a zero count stays silent instead of shouting "0".
+    renderPanel({
+      documents: [
+        doc({ id: "a", status: "ready", size_bytes: 1024, chunk_count: 5 }),
+        doc({ id: "b", status: "failed", size_bytes: 2048, chunk_count: null }),
+      ],
+    });
+    const row = screen.getByTestId("document-stats-row");
+
+    const statusSegment = row.lastElementChild as HTMLElement;
+    expect(statusSegment.className).toContain("ml-auto");
+
+    // Zero counts stay silent; non-zero ones show with the status column's own dots.
+    expect(row.textContent).not.toContain("索引中");
+    expect(row.textContent).toContain("就绪");
+    expect(row.textContent).toContain("失败");
+    expect(statusSegment.querySelector(".bg-emerald-500\\/45")).toBeTruthy();
+    expect(statusSegment.querySelector(".bg-destructive")).toBeTruthy();
+  });
+
   it("uploads via drag-drop on the panel", () => {
     const { onUpload } = renderPanel();
     const zone = screen.getByTestId("document-dropzone");

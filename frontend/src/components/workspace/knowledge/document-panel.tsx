@@ -1179,14 +1179,35 @@ export function DocumentPanel({
         </ScrollArea>
       </div>
 
-      {/* Bottom stats row (spec §3.6, aggregated client-side) */}
+      {/* Bottom stats row (spec §3.6, aggregated client-side). Two nowrap segments
+          (spec 2026-09-24 §7.2 甲): volume on the left, status counts on the right with
+          the status column's own dots; a zero count stays silent instead of shouting "0". */}
       <div
-        className="text-muted-foreground border-t px-4 py-2 text-xs"
+        className="text-muted-foreground flex flex-wrap gap-x-3 border-t px-4 py-2 text-xs"
         data-testid="document-stats-row"
       >
-        {tk.statsDocuments} {stats.total} · {tk.statsChunks} {stats.totalChunks}{" "}
-        · {formatBytes(stats.totalBytes)} · {tk.statsReady} {stats.ready} ·{" "}
-        {tk.statsIndexing} {stats.inProgress} · {tk.statsFailed} {stats.failed}
+        <span className="flex items-center gap-1 whitespace-nowrap">
+          {tk.statsDocuments} {stats.total} · {tk.statsChunks}{" "}
+          {stats.totalChunks} · {formatBytes(stats.totalBytes)}
+        </span>
+        <span className="ml-auto flex items-center gap-2 whitespace-nowrap">
+          {(
+            [
+              ["ready", stats.ready],
+              ["indexing", stats.inProgress],
+              ["failed", stats.failed],
+            ] as const
+          ).map(([key, count]) =>
+            count > 0 ? (
+              <span key={key} className="flex items-center gap-1">
+                <span
+                  className={cn("size-1.5 rounded-full", STATUS_DOT_CLASS[key])}
+                />
+                {tk.status[key]} {count}
+              </span>
+            ) : null,
+          )}
+        </span>
       </div>
 
       {/* Document delete confirm */}

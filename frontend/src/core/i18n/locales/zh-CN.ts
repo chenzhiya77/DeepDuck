@@ -487,9 +487,6 @@ export const zhCN: Translations = {
       "将同时删除全部文档、切片、向量、图谱与百科条目，且不可恢复。",
     statsDocuments: "文档",
     statsChunks: "切片",
-    statsReady: "就绪",
-    statsIndexing: "索引中",
-    statsFailed: "失败",
     // 视频行时长徽章（spec 2026-09-08 §5）：时长作 title/aria（镜头数与切片列重复已移除）。
     videoDuration: "视频时长",
     table: {
