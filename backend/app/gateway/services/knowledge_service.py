@@ -1724,7 +1724,7 @@ class KnowledgeService:
             # Same embedder wiring as the worker's vector leg: the rebuild must land in
             # the vector space the *current* configuration describes, that being the
             # whole point of the entry.
-            await reindex_kb(self.store, self.vector_store, build_embedder(), kb_id=kb_id)
+            await reindex_kb(self.store, self.vector_store, build_embedder(), kb_id=kb_id, graph_store=self.graph_store, wiki_store=self.wiki_store)
         except Exception:
             logger.exception("reindex failed for kb %s", kb_id)
 
