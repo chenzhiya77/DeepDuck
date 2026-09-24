@@ -223,6 +223,21 @@ describe("KnowledgeChatPanel", () => {
     expect(menu.querySelector("[data-slot='scroll-area']")).toBeTruthy();
   });
 
+  it("caps the history list height so it cannot grow to the full interface", () => {
+    // Spec 2026-09-24 §7.4: the old ceiling was Radix's *available* height — the trigger
+    // sits at the very top of the right column, so that ceiling is the whole interface and
+    // the menu stretched floor to ceiling. A fixed pixel cap (min(300px, available)) keeps
+    // the low-viewport guarantee while ending the stretch.
+    renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), {
+      key: "ArrowDown",
+    });
+    const scroll = screen
+      .getByRole("menu")
+      .querySelector("[data-slot='scroll-area']")!;
+    expect(scroll.className).toContain("min(300px");
+  });
+
   it("loads the selected conversation from the history popover", () => {
     renderPanel();
     fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });

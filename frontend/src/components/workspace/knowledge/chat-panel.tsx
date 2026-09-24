@@ -540,10 +540,11 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
               /* 历史会话清单（2026-09-08 隐式滑条化）：DropdownMenuContent 基类
                  overflow-y-auto 的老原生竖滑条退役——内容改 overflow-hidden，
                  清单沉进 overlay ScrollArea（type="scroll"、停 2s 淡出）；高度
-                 上限复用 Radix 可用高变量减 content 的 p-1 上下内边距，低视口
-                 自适应不溢出屏幕。 */
+                 上限 = min(300px 封顶, Radix 可用高减 content p-1 内边距)——
+                 触发钮在右栏最顶端，纯可用高上限≈整个界面高（2026-09-25 审查
+                 实测 ⇒ 加固定封顶），低视口仍自适应不溢出屏幕（spec §7.4）。 */
               <ScrollArea
-                className="max-h-[calc(var(--radix-dropdown-menu-content-available-height)-0.5rem)]"
+                className="max-h-[min(300px,calc(var(--radix-dropdown-menu-content-available-height)-0.5rem))]"
                 scrollHideDelay={2000}
                 type="scroll"
               >
