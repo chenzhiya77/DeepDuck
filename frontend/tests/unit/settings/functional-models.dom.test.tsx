@@ -1231,7 +1231,7 @@ describe("sparse service connectivity", () => {
 /**
  * 「独立稀疏服务」但没挑提供商（2026-09-17 补）：这一对后端**必定拒绝**，而界面上原来既不提示、
  * 也能保存——要等那一次 400 才知道。现在与 dense-only 那条走同一套表现：告警 + Save 旁同一句 +
- * Save 禁用；同时把那个空选项的措辞从"（由服务决定）"（那是解析后端那行的语义）改成「（未选择）」。
+ * Save 禁用；同时把那个空选项的措辞从"（由服务决定）"（那是解析档位那行的语义）改成「（未选择）」。
  */
 describe("sparse service with no provider chosen", () => {
   const saveButton = () =>

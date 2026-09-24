@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-24-mineru-4x-parse-adaptation-design.md](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)
-**Status:** 📝 **草稿（2026-09-24）** —— **代码已开工**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付，三项均已完成；Task 3–5 未开工）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
+**Status:** 📝 **草稿（2026-09-24）** —— **代码已开工**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付、Task 3 = 前端交付，四项均已完成；Task 4–5 未开工）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。✅ **Task 3 已交付（2026-09-24）** —— 前端 9 文件（6 源 + 3 测试）：RED 4 红 → GREEN 69 绿、neuter 2 红、`pnpm check` 净、前端全量 243 文件 / 2621 例 0 失败、前端面旧键零残留、prettier 新债 0。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
 **Parent:** [2026-09-14-rag-model-provider-adaptation.md](2026-09-14-rag-model-provider-adaptation.md)（本对收它的**腿2**；该 plan :197 的挂起行已加本对注记）
 
 **Architecture:** 一条腿四块 —— **① 客户端 + 配置面（Task 2，一个提交）**（`parse_local.py`：三步上传 → `POST /v1/parse/jobs` → 轮询 → 文件注册表取 zip → `_unpack_zip` → 归一化；`parse_backend` → `parse_tier`：`RagConfig` / `RagConfigFile` / 工厂 / allowlist 行，旧键剥离不建模）**② 前端**（表单字段/选项/「解析档位」行/i18n 三文件）**③ 文档**（README / backend AGENTS / example yaml / 研究档）**④ 部署 + 验收**（Task 1：本机起 4.x 服务 + 原始 curl 契约实证；Task 5：应用级端到端 + 两条负向）。
@@ -111,13 +111,19 @@
 > 动到的文件：`src/core/rag/config-form.ts`、`src/core/rag/types.ts`、`src/components/workspace/settings/functional-models-view.tsx`、`src/core/i18n/locales/{types,zh-CN,en-US}.ts`、`tests/unit/rag/config-form.test.ts`、`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`、`tests/unit/settings/functional-models.dom.test.tsx`（**顺手**：`:1234` 注释里的「解析后端」措辞改「解析档位」，非断言）。
 > **验收对应**：spec §5 的 4。
 
-- [ ] **RED**：① `config-form.test.ts` 换键（seed 空值 / 提交 `parse_tier` / **断言 `PARSE_TIER_OPTIONS` = 5 项、顺序 `""` + `flash|basic|standard|advanced`**）；② dom 用例 `labelCount("parseTier")`（`:236/:246` 改成新 key）；③ i18n 三文件加 `parseTier` / `parseTierAuto` / `parseTierHint`（zh 值按 spec §4.6 表）——`types.ts` 缺 key 时 tsc 当场红。
-- [ ] **GREEN**：`config-form.ts`（字段类型 / `PARSE_TIER_OPTIONS = ["", "flash", "basic", "standard", "advanced"]` / `SELECT_FIELDS` / seed）、`types.ts`、`functional-models-view.tsx`（`PROVIDER_LABELS[""] = F.parseTierAuto`、行标签 `F.parseTier` + `info={F.parseTierHint}`、`update("parse_tier", …)`）、locale 三文件。
-- [ ] **neuter（行条件）**：把档位行的条件渲染反转为「只在 mineru-cloud 下显示」⇒ dom 用例 :236/:246 红。
-- [ ] **门禁**：`pnpm check` 净；前端全量 `pnpm test` 0 失败；全仓前端面 `parse_backend` 零残留（`Grep` 复核）。
-- [ ] **Commit**：`feat(rag): expose the MinerU parse tier in the functional-model settings`
+- [x] **RED**：① `config-form.test.ts` 换键（seed 空值 / 提交 `parse_tier` / **断言 `PARSE_TIER_OPTIONS` = 5 项、顺序 `""` + `flash|basic|standard|advanced`**）；② dom 用例 `labelCount("parseTier")`（`:236/:246` 改成新 key）；③ i18n 三文件加 `parseTier` / `parseTierAuto` / `parseTierHint`（zh 值按 spec §4.6 表）——`types.ts` 缺 key 时 tsc 当场红。
+- [x] **GREEN**：`config-form.ts`（字段类型 / `PARSE_TIER_OPTIONS = ["", "flash", "basic", "standard", "advanced"]` / `SELECT_FIELDS` / seed）、`types.ts`、`functional-models-view.tsx`（`PROVIDER_LABELS[""] = F.parseTierAuto`、行标签 `F.parseTier` + `info={F.parseTierHint}`、`update("parse_tier", …)`）、locale 三文件。
+- [x] **neuter（行条件）**：把档位行的条件渲染反转为「只在 mineru-cloud 下显示」⇒ dom 用例 :236/:246 红。
+- [x] **门禁**：`pnpm check` 净；前端全量 `pnpm test` 0 失败；全仓前端面 `parse_backend` 零残留（`Grep` 复核）。
+- [x] **Commit**：`feat(rag): expose the MinerU parse tier in the functional-model settings`
 
-**实测（开工时回填）：**
+**实测（2026-09-24 逐条回填；9 文件：6 源 + 3 测试）：**
+
+- **RED**：两文件同跑 = **`Test Files 2 failed / Tests 4 failed | 65 passed (69)`**（可见的两条：`config-form.test.ts` 的提交断言 `input.parse_tier` 得 `undefined`、dom 本地支 `labelCount("parseTier")` 得 0）；i18n 三文件的 key 在 RED 阶段就先加齐。
+- **GREEN**：同两文件 = **69 passed**。除上面五项，另有两点落在实现里：`PROVIDER_LABELS[""]` 是**改 key 名不改值**（那个 map 被 5 个下拉共用——Task 0 记的风险点）；`PARSE_TIER_OPTIONS` 的位置带一段注释，写明退役的 `vlm`/`hybrid` 为什么没有 4.x 对应物（spec D2）。
+- **neuter（行条件）**：把档位行的条件渲染反转为「只在 mineru-cloud 下显示」⇒ dom 文件 **`Tests 2 failed | 5 passed (7)`**，正是计划预测的 `:236`/`:246` 那一对；还原后复绿。
+- **门禁**：`pnpm check` 净（eslint + tsc，exit 0）；前端全量 `pnpm test` = **`Test Files 243 passed / Tests 2621 passed`，0 失败**（2m24s）；`frontend/src` + `frontend/tests` 里 `parse_backend|parseBackend|PARSE_BACKEND` **零命中**。
+- **prettier 内容合规**（本机 `pnpm format` 受 autocrlf CRLF 恒红，故用「`tr -d '\r'` 归一后与 prettier 输出逐行比、再与 HEAD 做 A/B」法）：我新写的两行超 80 列（`config-form.ts` 的单行 `PARSE_TIER_OPTIONS`、`config-form.test.ts` 的单行 `toEqual([...])`）已按 prettier 输出折行 ⇒ **9 文件新债 = 0**（`config-form.ts` HEAD 10 → WT 10 行、`config-form.test.ts` 38 → 38 行，其余 7 个文件的偏离计数逐字未变）。
 
 ---
 

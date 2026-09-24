@@ -49,7 +49,7 @@ export interface RagConfigFormValues {
   rerank_base_url: string;
   parse_provider: "mineru-cloud" | "mineru-local";
   parse_base_url: string;
-  parse_backend: "vlm" | "hybrid" | "";
+  parse_tier: "flash" | "basic" | "standard" | "advanced" | "";
   video: {
     asr_provider: "funasr" | "whisper";
     asr_model: string;
@@ -72,8 +72,18 @@ export const EMBEDDING_SPARSE_SOURCE_OPTIONS = ["provider", "external", "bm25"] 
 export const SPARSE_PROVIDER_OPTIONS = ["", "tei-sparse"] as const;
 export const RERANK_PROVIDER_OPTIONS = ["dashscope", "generic-rerank"] as const;
 export const PARSE_PROVIDER_OPTIONS = ["mineru-cloud", "mineru-local"] as const;
-/** Empty means "let the local MinerU service decide"; `pipeline` is outside the support surface. */
-export const PARSE_BACKEND_OPTIONS = ["", "vlm", "hybrid"] as const;
+/**
+ * The 4.x service tiers (spec 2026-09-24 §4.3); the empty option means "let the local MinerU
+ * service decide". The retired `vlm` / `hybrid` pair has no 4.x equivalent — the backend choice
+ * became a service startup flag, so there is nothing to translate it to (D2).
+ */
+export const PARSE_TIER_OPTIONS = [
+  "",
+  "flash",
+  "basic",
+  "standard",
+  "advanced",
+] as const;
 
 const SECRET_FIELDS = [
   "embedding_api_key",
@@ -105,7 +115,7 @@ const SELECT_FIELDS = [
   "sparse_provider",
   "rerank_provider",
   "parse_provider",
-  "parse_backend",
+  "parse_tier",
 ] as const;
 
 const VIDEO_SOURCES: Record<string, string> = {
@@ -150,7 +160,7 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     rerank_base_url: asText(config.rerank_base_url),
     parse_provider: asEnum(config.parse_provider, PARSE_PROVIDER_OPTIONS, "mineru-cloud"),
     parse_base_url: asText(config.parse_base_url),
-    parse_backend: asEnum(config.parse_backend, PARSE_BACKEND_OPTIONS, ""),
+    parse_tier: asEnum(config.parse_tier, PARSE_TIER_OPTIONS, ""),
     video: {
       asr_provider: video.asr_provider === "whisper" ? "whisper" : "funasr",
       asr_model: asText(video.asr_model),

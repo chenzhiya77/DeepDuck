@@ -28,6 +28,7 @@ import {
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
+  PARSE_TIER_OPTIONS,
   resolveFixedEndpointRow,
   resolveRerankEndpointRow,
   resolveSparseCapability,
@@ -73,7 +74,7 @@ function view(
       rerank_base_url: "",
       parse_provider: "mineru-cloud",
       parse_base_url: "",
-      parse_backend: null,
+      parse_tier: null,
       video: { asr_provider: "funasr", asr_model: "paraformer-zh", caption_model: "" },
       ...over,
     },
@@ -100,7 +101,7 @@ function view(
       rerank_base_url: "config_file",
       parse_provider: "config_file",
       parse_base_url: "config_file",
-      parse_backend: "config_file",
+      parse_tier: "config_file",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
       "video.caption_model": "config_file",
@@ -446,8 +447,27 @@ describe("provider dimension (spec 2026-09-14 §4.1)", () => {
     expect(values.embedding_sparse_source).toBe("provider");
     expect(values.rerank_provider).toBe("dashscope");
     expect(values.parse_provider).toBe("mineru-cloud");
-    expect(values.parse_backend).toBe("");
+    expect(values.parse_tier).toBe("");
     expect(values.embedding_base_url).toBe("");
+  });
+
+  it("offers the four service tiers plus the empty option, in order", () => {
+    // Mirrors the backend's `parse_tier` Literal (spec 2026-09-24 §4.6); the empty option means
+    // "let the service decide", and the retired `vlm` / `hybrid` pair must not come back.
+    expect(PARSE_TIER_OPTIONS).toEqual([
+      "",
+      "flash",
+      "basic",
+      "standard",
+      "advanced",
+    ]);
+  });
+
+  it("submits the parse tier the admin picked", () => {
+    const base = formValuesFromConfig(view());
+    const input = buildRagConfigInput({ ...base, parse_tier: "flash" }, view());
+
+    expect(input.parse_tier).toBe("flash");
   });
 
   it("submits the provider and endpoint the admin picked, and nothing else", () => {

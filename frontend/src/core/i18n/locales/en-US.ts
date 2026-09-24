@@ -1820,8 +1820,10 @@ export const enUS: Translations = {
       parseProvider: "Parsing provider",
       parseBaseUrl: "Local service address",
       parseBaseUrlHint: "The local MinerU service ships without auth, so expose it on an internal network only.",
-      parseBackend: "Parsing backend",
-      parseBackendAuto: "(let the service decide)",
+      parseTier: "Parsing tier",
+      parseTierAuto: "(let the service decide)",
+      parseTierHint:
+        "Tiers are defined by the MinerU service: flash / basic are light; standard / advanced need its torch extra. Empty lets the service decide (default: standard).",
       groupExtraction: "Graph extraction",
       groupEvaluation: "Evaluation judge",
       groupEvaluationHint:

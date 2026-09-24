@@ -46,7 +46,7 @@ export interface RagConfigValues {
   rerank_base_url?: string | null;
   parse_provider?: "mineru-cloud" | "mineru-local" | null;
   parse_base_url?: string | null;
-  parse_backend?: "vlm" | "hybrid" | null;
+  parse_tier?: "flash" | "basic" | "standard" | "advanced" | null;
   video?: RagVideoValues | null;
 }
 

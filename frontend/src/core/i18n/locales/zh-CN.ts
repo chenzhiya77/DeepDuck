@@ -1726,8 +1726,10 @@ export const zhCN: Translations = {
       parseProvider: "解析提供方",
       parseBaseUrl: "本地服务地址",
       parseBaseUrlHint: "本地 MinerU 服务不带鉴权，只应部署在内网。",
-      parseBackend: "解析后端",
-      parseBackendAuto: "（由服务决定）",
+      parseTier: "解析档位",
+      parseTierAuto: "（由服务决定）",
+      parseTierHint:
+        "档位由 MinerU 服务端定义：flash / basic 轻量，standard / advanced 需要服务端装 torch。空 = 由服务端决定（默认 standard）。",
       groupExtraction: "图谱抽取",
       groupEvaluation: "评测裁判",
       groupEvaluationHint:

@@ -233,7 +233,7 @@ describe("provider rows", () => {
     expect(labelCount("mineruToken")).toBeGreaterThan(0);
     // The local-service rows are shown locked: "local service only".
     expect(labelCount("parseBaseUrl")).toBe(0);
-    expect(labelCount("parseBackend")).toBe(0);
+    expect(labelCount("parseTier")).toBe(0);
     expect(screen.getAllByText("lockedLocalOnly").length).toBe(2);
   });
 
@@ -243,7 +243,7 @@ describe("provider rows", () => {
 
     expect(labelCount("mineruToken")).toBe(0);
     expect(labelCount("parseBaseUrl")).toBeGreaterThan(0);
-    expect(labelCount("parseBackend")).toBeGreaterThan(0);
+    expect(labelCount("parseTier")).toBeGreaterThan(0);
     expect(screen.getByText("lockedCloudOnly")).toBeTruthy();
   });
 });

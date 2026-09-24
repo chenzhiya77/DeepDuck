@@ -1738,8 +1738,9 @@ export interface Translations {
       parseProvider: string;
       parseBaseUrl: string;
       parseBaseUrlHint: string;
-      parseBackend: string;
-      parseBackendAuto: string;
+      parseTier: string;
+      parseTierAuto: string;
+      parseTierHint: string;
       groupExtraction: string;
       groupEvaluation: string;
       groupEvaluationHint: string;

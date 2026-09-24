@@ -42,7 +42,7 @@ import {
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
-  PARSE_BACKEND_OPTIONS,
+  PARSE_TIER_OPTIONS,
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
   resolveFixedEndpointRow,
@@ -506,7 +506,7 @@ export function FunctionalModelsView() {
     "tei-sparse": F.providerTeiSparse,
     "mineru-cloud": F.providerMineruCloud,
     "mineru-local": F.providerMineruLocal,
-    "": F.parseBackendAuto,
+    "": F.parseTierAuto,
   };
   const SPARSE_SOURCE_LABELS: Record<string, string> = {
     provider: F.sparseSourceProvider,
@@ -514,7 +514,7 @@ export function FunctionalModelsView() {
     bm25: F.sparseSourceBm25,
   };
   // The sparse service gets its own label map for the empty id: the shared one borrows the parse
-  // backend's wording ("let the service decide"), which is true there and meaningless here — on
+  // tier's wording ("let the service decide"), which is true there and meaningless here — on
   // this row `""` is simply "not chosen", and the runtime refuses it.
   const SPARSE_SERVICE_LABELS: Record<string, string> = {
     "": F.sparseProviderNone,
@@ -1028,16 +1028,16 @@ export function FunctionalModelsView() {
                 />
               </div>
               <div className={ROW}>
-                <RowLabel>{F.parseBackend}</RowLabel>
+                <RowLabel info={F.parseTierHint}>{F.parseTier}</RowLabel>
                 <OptionSelect
-                  label={F.parseBackend}
-                  value={values.parse_backend}
-                  options={PARSE_BACKEND_OPTIONS}
+                  label={F.parseTier}
+                  value={values.parse_tier}
+                  options={PARSE_TIER_OPTIONS}
                   labels={PROVIDER_LABELS}
                   onChange={(next) =>
                     update(
-                      "parse_backend",
-                      next as RagConfigFormValues["parse_backend"],
+                      "parse_tier",
+                      next as RagConfigFormValues["parse_tier"],
                     )
                   }
                 />
@@ -1054,7 +1054,7 @@ export function FunctionalModelsView() {
                 <LockedBox reason={F.lockedLocalOnly} />
               </div>
               <div className={ROW}>
-                <RowLabel>{F.parseBackend}</RowLabel>
+                <RowLabel>{F.parseTier}</RowLabel>
                 <LockedBox reason={F.lockedLocalOnly} />
               </div>
               <div className={ROW}>
