@@ -1,0 +1,49 @@
+{
+  "kb": {
+    "id": "5f532d371666482886453c62c4f13c1a",
+    "name": "测试2"
+  },
+  "note": "Captured from GET /api/knowledge-bases/{kb}/documents after the run. `error` is the document record's own field (the worker truncates it to 500 chars).",
+  "documents": [
+    {
+      "id": "3e03842cf5e24fbbae53706da8c06498",
+      "name": "acceptance-4x-small-2026-09-24.pdf",
+      "role": "positive fixture (trimmed page: table + figure)",
+      "status": "failed",
+      "path_status": { "graph": "failed", "vector": "done", "wiki": "ready" },
+      "error": "embedding endpoint HTTP 400: {\"error\":{\"message\":\"<400> InternalError.Algo.InvalidParameter: Value error, batch size is invalid, it should not be larger than 10.: input.contents\",\"type\":\"InvalidParameter\",\"param\":null,\"code\":\"Inv",
+      "comment": "parse leg + chunking + chunk embedding all succeeded (vector done, 3 chunks with the GFM table and the image reference); the failure is the graph leg's embedding call, see notes.md."
+    },
+    {
+      "id": "09d812f0866942628807122e9719e4b6",
+      "name": "acceptance-4x-2026-09-24.pdf",
+      "role": "first positive attempt (rich page)",
+      "status": "failed",
+      "path_status": { "graph": "failed", "vector": "done", "wiki": "ready" },
+      "error": "embedding endpoint HTTP 400: {\"error\":{\"message\":\"<400> InternalError.Algo.InvalidParameter: Value error, batch size is invalid, it should not be larger than 10.: input.contents\",\"type\":\"InvalidParameter\",\"param\":null,\"code\":\"Inv"
+    },
+    {
+      "id": "988169b711574bfdbe7f805e0816e4f0",
+      "name": "acceptance-tier-standard.pdf",
+      "role": "negative 2 (parse_tier=standard against a --tier flash server)",
+      "status": "failed",
+      "path_status": { "graph": "failed", "vector": "failed", "wiki": "ready" },
+      "error": "本地 MinerU HTTP 400: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"invalid_request\",\"message\":\"Tier 'standard' not available in this server\",\"param\":null}}"
+    },
+    {
+      "id": "650432ccc7ca4afe9624506177317e3b",
+      "name": "acceptance-service-down.pdf",
+      "role": "negative 1 (local 4.x service stopped)",
+      "status": "failed",
+      "path_status": { "graph": "failed", "vector": "failed", "wiki": "ready" },
+      "error": "本地 MinerU 服务不可达（http://127.0.0.1:8000/v1/uploads）：All connection attempts failed"
+    }
+  ],
+  "pre_existing_ready_documents": [
+    "季度采购汇总.pdf — ready, ingested 2026/09/23 00:16",
+    "员工花名册.csv — ready, ingested 2026/09/23 00:16",
+    "产品库存台账.xlsx — ready, ingested 2026/09/23 00:16",
+    "lanjing-platform.md — ready, ingested 2026/09/13 01:41",
+    "lanjing-doc.md — ready, ingested 2026/09/13 01:41"
+  ]
+}

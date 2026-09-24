@@ -1,0 +1,44 @@
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51862 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51872 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51873 - "POST /v1/uploads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51874 - "PUT /v1/uploads/upload_d1eeb3c5437769ddcd3721ee/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51875 - "POST /v1/uploads/upload_d1eeb3c5437769ddcd3721ee/complete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51876 - "POST /v1/parse/jobs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51878 - "GET /v1/parse/jobs/job_99874c018ba44a4cb3154a0e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51879 - "GET /v1/parse/jobs/job_99874c018ba44a4cb3154a0e HTTP/1.1" 200 OK
+[32m2026-09-24 20:53:18.826[0m | [1mINFO    [0m | [36mmineru.backend.analyze[0m:[36m_log_infer_performance[0m:[36m26[0m - [1mmodel_list infer finished, file_suffix=pdf, pages=1, cost=2.090195s, speed=0.478 page/s[0m
+INFO:     127.0.0.1:51883 - "GET /v1/parse/jobs/job_99874c018ba44a4cb3154a0e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51885 - "GET /v1/parse/jobs/job_99874c018ba44a4cb3154a0e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51887 - "GET /v1/files/file-56c9ffab2001bee5efa873b6/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52024 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52025 - "POST /v1/uploads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52026 - "PUT /v1/uploads/upload_75fc655a09e8f56fb89ee197/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52029 - "POST /v1/uploads/upload_75fc655a09e8f56fb89ee197/complete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52032 - "POST /v1/parse/jobs HTTP/1.1" 202 Accepted
+[32m2026-09-24 20:55:04.042[0m | [1mINFO    [0m | [36mmineru.backend.analyze[0m:[36m_log_infer_performance[0m:[36m26[0m - [1mmodel_list infer finished, file_suffix=pdf, pages=1, cost=0.127689s, speed=7.832 page/s[0m
+INFO:     127.0.0.1:52041 - "GET /v1/parse/jobs/job_760fae31abd899beb663d3a9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52042 - "GET /v1/files/file-5af7448a20f04bcc0d2d79bd/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56629 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57795 - "POST /v1/uploads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57795 - "PUT /v1/uploads/upload_2702f6634b45fd84f336c41c/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57795 - "POST /v1/uploads/upload_2702f6634b45fd84f336c41c/complete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57795 - "POST /v1/parse/jobs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:57795 - "GET /v1/parse/jobs/job_0cd4523bdb46c47f001fb922 HTTP/1.1" 200 OK
+[32m2026-09-24 22:48:29.232[0m | [1mINFO    [0m | [36mmineru.backend.analyze[0m:[36m_log_infer_performance[0m:[36m26[0m - [1mmodel_list infer finished, file_suffix=pdf, pages=1, cost=0.297196s, speed=3.365 page/s[0m
+INFO:     127.0.0.1:57800 - "GET /v1/parse/jobs/job_0cd4523bdb46c47f001fb922 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57800 - "GET /v1/files/file-7115d4b5884d69eceb77ffb0/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58137 - "POST /v1/uploads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58137 - "PUT /v1/uploads/upload_bda3f9dd02039b24cb5a479f/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58137 - "POST /v1/uploads/upload_bda3f9dd02039b24cb5a479f/complete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58137 - "POST /v1/parse/jobs HTTP/1.1" 400 Bad Request
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58536 - "GET /v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58549 - "POST /v1/uploads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58549 - "PUT /v1/uploads/upload_a43b36e458d1f6641dae1005/content HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58549 - "POST /v1/uploads/upload_a43b36e458d1f6641dae1005/complete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58549 - "POST /v1/parse/jobs HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58549 - "GET /v1/parse/jobs/job_3f55a1c1bc352c22164f8399 HTTP/1.1" 200 OK
+[32m2026-09-24 22:55:54.671[0m | [1mINFO    [0m | [36mmineru.backend.analyze[0m:[36m_log_infer_performance[0m:[36m26[0m - [1mmodel_list infer finished, file_suffix=pdf, pages=1, cost=1.602498s, speed=0.624 page/s[0m
+INFO:     127.0.0.1:58558 - "GET /v1/parse/jobs/job_3f55a1c1bc352c22164f8399 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58558 - "GET /v1/files/file-7f6e33fc65e2a177189b0658/content HTTP/1.1" 200 OK

@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-24-mineru-4x-parse-adaptation-design.md](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)
-**Status:** 📝 **草稿（2026-09-24）** —— **代码与文档均已开工**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付、Task 3 = 前端交付、Task 4 = 文档同步，五项均已完成；**Task 5 = 应用级端到端验收未开工**）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。✅ **Task 3 已交付（2026-09-24）** —— 前端 9 文件（6 源 + 3 测试）：RED 4 红 → GREEN 69 绿、neuter 2 红、`pnpm check` 净、前端全量 243 文件 / 2621 例 0 失败、前端面旧键零残留、prettier 新债 0。✅ **Task 4 已交付（2026-09-24）** —— 文档 3 文件（README 两处 / backend AGENTS 一段 / example yaml 一行）+ 未提交研究档四处引用（不入本笔）：`frontend/AGENTS.md` 复核＝无需改、全仓文档面三类残留之外的旧键已归零。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
+**Status:** 📝 **草稿（2026-09-24）** —— **代码与文档已开工；Task 5 已跑，半条待裁**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付、Task 3 = 前端交付、Task 4 = 文档同步，五项均已完成；**Task 5 = 应用级端到端验收已跑**：设置页三行 + 保存 200、两条负向取到原文、解析腿端到端全过（GFM 表 / 图片落盘并可就地渲染 / 服务端日志完整六步）；**未达成的那半条 = 文档状态没到 `ready`**——倒在 graph 腿的**嵌入批上限**这条既有、与本线无关的条件上，三选项待裁）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。✅ **Task 3 已交付（2026-09-24）** —— 前端 9 文件（6 源 + 3 测试）：RED 4 红 → GREEN 69 绿、neuter 2 红、`pnpm check` 净、前端全量 243 文件 / 2621 例 0 失败、前端面旧键零残留、prettier 新债 0。✅ **Task 4 已交付（2026-09-24）** —— 文档 3 文件（README 两处 / backend AGENTS 一段 / example yaml 一行）+ 未提交研究档四处引用（不入本笔）：`frontend/AGENTS.md` 复核＝无需改、全仓文档面三类残留之外的旧键已归零。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
 **Parent:** [2026-09-14-rag-model-provider-adaptation.md](2026-09-14-rag-model-provider-adaptation.md)（本对收它的**腿2**；该 plan :197 的挂起行已加本对注记）
 
 **Architecture:** 一条腿四块 —— **① 客户端 + 配置面（Task 2，一个提交）**（`parse_local.py`：三步上传 → `POST /v1/parse/jobs` → 轮询 → 文件注册表取 zip → `_unpack_zip` → 归一化；`parse_backend` → `parse_tier`：`RagConfig` / `RagConfigFile` / 工厂 / allowlist 行，旧键剥离不建模）**② 前端**（表单字段/选项/「解析档位」行/i18n 三文件）**③ 文档**（README / backend AGENTS / example yaml / 研究档）**④ 部署 + 验收**（Task 1：本机起 4.x 服务 + 原始 curl 契约实证；Task 5：应用级端到端 + 两条负向）。
@@ -155,14 +155,23 @@
 > 服务应在 Task 1 已起好；**若 Task 1 回落**（本机装不动）⇒ 按 Task 1 的口径先在本机或 operator 环境部署再走本任务。**无鉴权 ⇒ 只绑回环/内网**。
 > **验收对应**：spec §5 的 6。
 
-- [ ] 前提：`GET /v1/health` 通（Task 1 的服务仍在跑；版本号 / 启动命令 / 模型来源沿用 Task 1 记录）。
-- [ ] 设置页切 `mineru-local` + `parse_base_url` + `tier=flash`（终态路由 `/workspace/chats/new?settings=models`）→ 保存 200。
-- [ ] 端到端：上传一份 PDF → 文档状态 `ready` → 图片落盘并就地渲染 → HTML 表归一 GFM（切片抽屉里看行卡/正文）。
-- [ ] 负向 ①：服务停掉再上传 ⇒ 错误里带服务地址（`MineruError`）。
-- [ ] 负向 ②：把设置页的 `parse_tier` 切到 `standard`（服务端是 `--tier flash`）→ 上传 PDF ⇒ 服务端 400 原文 `Tier 'standard' not available in this server`（Task 0.2 实测更正：**没有**「档位×扩展名」那条 400——那是 CLI 的规则，API 侧对 flash-only 扩展名是**静默归一到 flash**）。
-- [ ] 证据落 `pr-build/mineru-4x-smoke-2026-09-24/`（本任务的日志片段 / 结果快照 / 负向输出；版本与命令沿用 Task 1 证据；按 `jina_`/`sk-` 正则做泄漏自检）。
+- [x] 前提：`GET /v1/health` 通（Task 1 的服务仍在跑；版本号 / 启动命令 / 模型来源沿用 Task 1 记录）。
+- [x] 设置页切 `mineru-local` + `parse_base_url` + `tier=flash`（终态路由 `/workspace/chats/new?settings=models`）→ 保存 200。
+- [ ] 端到端：上传一份 PDF → 文档状态 `ready` → 图片落盘并就地渲染 → HTML 表归一 GFM（切片抽屉里看行卡/正文）。**（⚠ 半条未达成：解析腿逐条全过——切片含 GFM 表、图片落盘且应用端点回 200、服务端日志有完整 4.x 序列；但文档状态没到 `ready`，倒在 graph 腿的嵌入批上限这条既有、与本线无关的条件上。根因与三个选项见下面 `实测`。）**
+- [x] 负向 ①：服务停掉再上传 ⇒ 错误里带服务地址（`MineruError`）。
+- [x] 负向 ②：把设置页的 `parse_tier` 切到 `standard`（服务端是 `--tier flash`）→ 上传 PDF ⇒ 服务端 400 原文 `Tier 'standard' not available in this server`（Task 0.2 实测更正：**没有**「档位×扩展名」那条 400——那是 CLI 的规则，API 侧对 flash-only 扩展名是**静默归一到 flash**）。
+- [x] 证据落 `pr-build/mineru-4x-smoke-2026-09-24/`（本任务的日志片段 / 结果快照 / 负向输出；版本与命令沿用 Task 1 证据；按 `jina_`/`sk-` 正则做泄漏自检）。
 
-**实测（开工时回填）：**
+**实测（2026-09-24 逐条回填；证据落 `pr-build/mineru-4x-smoke-2026-09-24/task5/`：`notes.md` + `doc-records.json` + `ui-snapshots.txt` + `service-log-excerpt.txt` + 两个脚本）：**
+
+- **前提**：`/v1/health` = 200 / `4.0.7`；目标库 = 可写库 **测试2**（`5f532d37…`，测试1 未触碰）。负向①停服务、取完错误后按原命令重启，收尾时仍在运行。
+- **设置页 → 保存**：终态路由 `/workspace/chats/new?settings=models`。隐藏窗口下真实点击不可用（`click` 报 `NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`，视口 0x0），全程用 `evaluate_script` 合成事件；Radix 的条目要「pointerover→pointerenter→pointermove→pointerdown→pointerup + click」并**先把条目 focus 到、再对该元素发 Enter** 才落值（这条已记进 `ui-snapshots.txt`）。`PUT /api/rag/config` 三次保存（`flash` → `standard` → `flash`）**均 200**，文件精确新增三键、原十键逐字未动，重载页面回读与文件一致。
+- **正样本（解析腿）**：夹具 `acceptance-small.pdf`（表 + 图同页）；服务端日志留下我们客户端的完整六步（`POST /v1/uploads` → `PUT` → `…/complete` → `POST /v1/parse/jobs 202` → `GET /v1/parse/jobs/{id}` → `GET /v1/files/{id}/content`）；切片 3 条，含 **GFM 管道表**（表头 + 分隔 + 数据行）与 `![](images/page_0_image_6.jpg)`；图片落盘 134109 B 且应用文件端点回 `200 / image/jpeg / 134109 B`。⇒ **spec §5-6 的「解析成功、图片落盘/就地渲染、HTML 表归一 GFM」三项在解析面上全部达成。**
+- **⚠ 未达成的那半条（`ready`）**：`path_status = {vector: done, graph: failed}`，`error` = `embedding endpoint HTTP 400: … batch size is invalid, it should not be larger than 10.`。**根因（实测钉死）**：本机 `embedding_provider = openai-compatible` 的 `OpenAICompatibleEmbedder` 默认 **20 行/批**（`embedder_openai.py:42`，无配置旋钮），而 `text-embedding-v4` 在 DashScope **兼容端点**硬上限 **10 行**——拿它自己的 key 直打实测：**10 行 → 200（1024 维）/ 11 行 → 400 / 20 行 → 400**；graph 腿一次调用就嵌整批实体（`graph/indexer.py:92`/`:163` 一次嵌一组抽取结果、`:187` 一次嵌本次触达的全部实体）⇒ 必然 >10 行 ⇒ `worker.py:396-401` 把文档判 `failed`，而 `rag.graph` 没有可跳过的开关。**与本线无关**：本对一行未碰嵌入面；KB 里 5 份 `ready` 文档的摄入时间（09-23 00:16 / 09-13）都早于 `rag_config.json` 的 mtime（**09-23 03:47**）⇒ 换到 openai-compatible 之后这套配置还没成功跑过一次摄入。**三个选项（待裁）**：甲 = 临时把 `embedding_provider` 切 `dashscope`（原生腿按 `dashscope_batch_size` 走 10 行/批）把 `ready` 跑出来再逐字节还原；乙 = 就此登记为既有缺口（openai-compatible 腿的批上限对 DashScope 端点是错的），`ready` 半条留待该缺口修好；丙 = 把「按端点声明/探测批上限」另起一对做掉（本对不动）。
+- **负向 ①（服务不可达）**：`error` = `本地 MinerU 服务不可达（http://127.0.0.1:8000/v1/uploads）：All connection attempts failed` ⇒ **带地址**；服务停时端口实测 `000`、日志无新行。
+- **负向 ②（档位服务不了）**：`error` = `本地 MinerU HTTP 400: {"error":{…"message":"Tier 'standard' not available in this server"…}}` ⇒ **服务端原文**；服务端日志同时有 `POST /v1/parse/jobs … 400 Bad Request`。
+- **收尾**：`rag_config.json` 按原十键重写并**逐字节核验** = `622 B / md5 b0cc81b51c409225e26a737ee78f50b8`（与首次保存前读到的一致）；4.x 服务保持运行；KB 测试2 里留了四份验收文档当现场证据（未删）；`jina_`/`sk-`/`csrf_token=` 泄漏自检**零命中**；两个夹具 PDF 按 Task 1 先例放仓外 `E:\app-mode\mineru-4x\evidence\task5\`，仓内只留脚本 + 文本证据，sha256 记在 `notes.md`。
+- **UI 观察（顺手记，另线决定）**：失败文档在界面上只有「失败」徽章 + hover 卡片 `处理失败，请重试 | 重试`，**不显示原始原因**（地址 / 服务端 400 只在文档记录的 `error` 里）；点行打开的抽屉在解析失败时是 `0 个切片`。
 
 ---
 

@@ -1,0 +1,87 @@
+# Task 5 UI/fixture evidence (DOM reads, 2026-09-24)
+
+The browser window is hidden (viewport 0x0) in this environment, so real clicks and
+screenshots are unavailable; everything below is read out of the live DOM via
+`evaluate_script` and out of the app's own same-origin API from the page.
+
+## Settings page — before the switch
+
+`http://localhost:3000/workspace/chats/new?settings=models` → 功能模型 tab:
+
+```
+解析提供方 = MinerU 官方云            (local rows not rendered)
+```
+
+## Settings page — local rows after choosing 本地 MinerU 服务
+
+```
+解析提供方 = 本地 MinerU 服务
+本地服务地址 = (empty input, aria-label 本地服务地址)
+解析档位 = （由服务决定）  aria-label 解析档位   (5 options: （由服务决定） / flash / basic / standard / advanced)
+```
+
+## Settings page — the saved state, re-read after a page reload
+
+```
+解析提供方 = 本地 MinerU 服务
+本地服务地址 = http://127.0.0.1:8000
+解析档位 = flash
+```
+
+`PUT /api/rag/config` → **200** (three times: save with `flash`, save with `standard`,
+save back to `flash`). On disk `rag_config.json` gained exactly three keys
+(`parse_provider` / `parse_base_url` / `parse_tier`) and kept its ten original ones.
+
+## Knowledge-base page (`/workspace/knowledge`, KB 测试2)
+
+```
+acceptance-4x-small-2026-09-24.pdf | 索引中 66% | 我 | 2026/09/24 22:55 | 152 KB | 3
+acceptance-service-down.pdf        | 失败       | 我 | 2026/09/24 22:52 | 197 KB | —
+acceptance-tier-standard.pdf       | 失败       | 我 | 2026/09/24 22:51 | 197 KB | —
+acceptance-4x-2026-09-24.pdf       | 失败       | 我 | 2026/09/24 22:48 | 197 KB | 3
+季度采购汇总.pdf / 员工花名册.csv / 产品库存台账.xlsx / lanjing-*.md | 就绪
+文档 9 · 切片 18 · 836.8 KB · 就绪 5 · 索引中 1 · 失败 3
+```
+
+The 「失败」 badge is a hover card whose content is generic — `处理失败，请重试 | 重试` —
+so the raw reason (the address / the server's 400) is visible in the document record
+(`error`), not in the UI. Clicking the row opens the slice drawer, which on a failed parse
+says `0 个切片 / 该文档还没有切片`.
+
+## Positive fixture — what the live app produced
+
+Chunks (`GET .../documents/3e03842c.../chunks`, 3 chunks):
+
+```
+2026/9/24 22:55
+
+## 采购汇总（小样本）
+
+表格与配图同页。
+
+| 季度 | 采购品类 | 数量 | 金额(万元) | 负责人 |
+| --- | --- | --- | --- | --- |
+| 2026-Q1 | 边缘网关 | 45 | 21.1 | 周砚 |
+
+![](images/page_0_image_6.jpg)
+```
+
+Image served by the app (`GET .../files/images/page_0_image_6.jpg`):
+
+```
+HTTP 200, Content-Type: image/jpeg, 134109 bytes
+```
+
+On disk (`backend/.deer-flow/data/knowledge/5f532d371666482886453c62c4f13c1a/3e03842c.../`):
+
+```
+acceptance-4x-small-2026-09-24.pdf   155505 bytes
+images/page_0_image_6.jpg            134109 bytes   <- the figure in the markdown above
+images/page_0_table_4.jpg             85074 bytes   <- the table crop MinerU emits alongside
+```
+
+## Restore
+
+`rag_config.json` was rewritten from its ten original keys and verified byte-for-byte:
+`622 bytes / md5 b0cc81b51c409225e26a737ee78f50b8` (the md5 read from the file before the
+first save).
