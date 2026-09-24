@@ -26,7 +26,7 @@
       "rerank_base_url": null,
       "parse_provider": "mineru-cloud",
       "parse_base_url": null,
-      "parse_backend": null,
+      "parse_tier": null,
       "video": {
         "asr_provider": "funasr",
         "asr_model": "yaml-asr",
@@ -57,7 +57,7 @@
       "rerank_base_url": "config_file",
       "parse_provider": "config_file",
       "parse_base_url": "config_file",
-      "parse_backend": "config_file",
+      "parse_tier": "config_file",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
       "video.caption_model": "config_file"
@@ -74,7 +74,7 @@
       "rerank_model": "ui-rerank",
       "parse_provider": "mineru-local",
       "parse_base_url": "http://localhost:30000",
-      "parse_backend": "hybrid",
+      "parse_tier": "flash",
       "judge_model": "judge-entry",
       "video": {
         "asr_model": "ui-asr"
@@ -105,7 +105,7 @@
         "rerank_base_url": "http://localhost:8000",
         "parse_provider": "mineru-local",
         "parse_base_url": "http://localhost:30000",
-        "parse_backend": "hybrid",
+        "parse_tier": "flash",
         "video": {
           "asr_provider": "funasr",
           "asr_model": "ui-asr",
@@ -136,7 +136,7 @@
         "rerank_base_url": "ui",
         "parse_provider": "ui",
         "parse_base_url": "ui",
-        "parse_backend": "ui",
+        "parse_tier": "ui",
         "video.asr_provider": "config_file",
         "video.asr_model": "ui",
         "video.caption_model": "config_file"

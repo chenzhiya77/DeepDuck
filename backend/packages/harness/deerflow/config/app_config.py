@@ -216,9 +216,9 @@ class RagConfig(BaseModel):
     rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
     parse_provider: Literal["mineru-cloud", "mineru-local"] = Field(default="mineru-cloud", description="Document-parsing provider: the MinerU cloud API, or a local MinerU service.")
     parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local. That service ships without auth, so expose it on an internal network only.")
-    parse_backend: Literal["vlm", "hybrid"] | None = Field(
+    parse_tier: Literal["flash", "basic", "standard", "advanced"] | None = Field(
         default=None,
-        description="Optional backend hint for the local MinerU service; None lets the service decide. `pipeline` is deliberately absent (spec §6): it has no http-client variant, so it is outside the supported deployment shape.",
+        description="Optional tier for the local MinerU 4.x service; None lets the service decide (its own default is standard). A flash-only service needs an explicit tier: with none it answers 503 for PDFs.",
     )
 
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")

@@ -342,14 +342,14 @@ def test_put_round_trips_the_provider_fields_and_marks_them_ui(config_env: Path)
                 "rerank_base_url": "http://localhost:8000",
                 "parse_provider": "mineru-local",
                 "parse_base_url": "http://localhost:30000",
-                "parse_backend": "hybrid",
+                "parse_tier": "flash",
             },
         )
         assert response.status_code == 200
         body = response.json()
 
     assert body["config"]["embedding_provider"] == "openai-compatible"
-    assert body["config"]["parse_backend"] == "hybrid"
+    assert body["config"]["parse_tier"] == "flash"
     assert body["sources"]["parse_provider"] == "ui"
     stored = _read_rag_json(config_env)
     assert stored["parse_base_url"] == "http://localhost:30000"
@@ -361,10 +361,11 @@ def test_put_rejects_a_provider_outside_the_allowlist(config_env: Path):
         assert client.put("/api/rag/config", json={"embedding_provider": "some-vendor"}).status_code == 422
 
 
-def test_put_rejects_the_pipeline_backend(config_env: Path):
-    """D2 supports the http-client deployment shape; `pipeline` has no such variant."""
+def test_put_rejects_the_retired_backend_key(config_env: Path):
+    """`parse_backend` 已退役：载荷里带它 ⇒ 422（extra_forbidden），而不是被静默忽略。"""
     with _client(system_role="admin") as client:
-        assert client.put("/api/rag/config", json={"parse_backend": "pipeline"}).status_code == 422
+        assert client.put("/api/rag/config", json={"parse_backend": "hybrid"}).status_code == 422
+        assert client.put("/api/rag/config", json={"parse_tier": "vlm"}).status_code == 422
 
 
 def test_sparse_api_key_is_treated_as_a_secret(config_env: Path):

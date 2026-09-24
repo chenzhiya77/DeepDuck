@@ -124,7 +124,7 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             leg="parse",
             provider_id="mineru-local",
             implementation="deerflow.knowledge.parse_local:MineruLocalParseProvider",
-            path="/file_parse",
+            path="/v1/parse/jobs",
             # The local MinerU service ships without auth (spec §8.2), so there is no
             # environment fallback to fall back to.
             secret_env_var=None,

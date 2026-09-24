@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-24-mineru-4x-parse-adaptation-design.md](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)
-**Status:** 📝 **草稿（2026-09-24）** —— 未开工；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
+**Status:** 📝 **草稿（2026-09-24）** —— **代码已开工**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付，三项均已完成；Task 3–5 未开工）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
 **Parent:** [2026-09-14-rag-model-provider-adaptation.md](2026-09-14-rag-model-provider-adaptation.md)（本对收它的**腿2**；该 plan :197 的挂起行已加本对注记）
 
 **Architecture:** 一条腿四块 —— **① 客户端 + 配置面（Task 2，一个提交）**（`parse_local.py`：三步上传 → `POST /v1/parse/jobs` → 轮询 → 文件注册表取 zip → `_unpack_zip` → 归一化；`parse_backend` → `parse_tier`：`RagConfig` / `RagConfigFile` / 工厂 / allowlist 行，旧键剥离不建模）**② 前端**（表单字段/选项/「解析档位」行/i18n 三文件）**③ 文档**（README / backend AGENTS / example yaml / 研究档）**④ 部署 + 验收**（Task 1：本机起 4.x 服务 + 原始 curl 契约实证；Task 5：应用级端到端 + 两条负向）。
@@ -59,13 +59,21 @@
 > **有副作用的一步**（已裁「甲」＝部署提前）：独立 venv 或 Docker，**不动主 venv、不碰 `config.yaml`**。约 **2 GB±** 下载（pip 依赖 + 小模型包；ONNX ≈858 MB / torch ≈895 MB，ModelScope 实测）。**本机实测（Task 0.5）：HuggingFace 不通（HTTP 000）、ModelScope 通（200/0.2s）、PyPI 通** ⇒ 必须 `MINERU_MODEL_SOURCE=modelscope`；**C: 仅余 4.8 GB、E: 27 GB ⇒ venv / `UV_CACHE_DIR` / `MINERU_HOME`（模型落 `$MINERU_HOME/models`）一律放 E:**。**若本机装不动 ⇒ 回落到 Task 5 由 operator 环境部署，Task 2–4 不受影响。**
 > **验收对应**：spec §4.4 的实证答案（zip 布局）＋ §5 的 6 的前置条件。
 
-- [ ] 装：`uv pip install "mineru>=4.0,<5"`（独立 venv，路径在**仓外** scratch，且**放 E:**——Task 0.5 实测 C: 仅余 4.8 GB；`UV_CACHE_DIR` 也指到 E:）；或 Docker（`docker/global/Dockerfile`）；**记下版本号与实际路径**。
-- [ ] 起：`MINERU_MODEL_SOURCE=modelscope MINERU_HOME=E:\… mineru-api --host 127.0.0.1 --port 8000 --tier flash`（基础包必须带 `--tier`；`--tier` 只收 `flash|basic|standard`，`advanced` 由 `--tier standard` 一并服务）；`GET /v1/health` 通。**建议先 `mineru-kit models download --tier basic --source modelscope` 预热再起**（Task 0.5：`--tier flash` 免预检、模型落 `$MINERU_HOME/models`）。
-- [ ] **原始 curl 六步**（完全不经我们的代码）：① `POST /v1/uploads`（JSON `{filename, bytes, mime_type, purpose:"parse"}`）→ ② `PUT` 上传内容（**记下 `upload_headers` 的实际形态**）→ ③ `POST …/complete` → ④ `POST /v1/parse/jobs`（`source.type=file_id` + `output_formats:["zip"]` + `tier:"flash"`）→ ⑤ 轮询到终态（记下 `output_files.zip.file_id`）→ ⑥ 下载 zip。
-- [ ] **看 zip 内容**：确认 `markdown.md` 在、图片在 `images/` 前缀下（与 Task 0.1 的源码结论交叉验证）——**这是 spec §4.4 的实证答案**。
-- [ ] 服务**保持运行**（供 Task 2 的客户端 smoke 与 Task 5 用）；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`（版本/命令/health/六步请求响应片段/zip 清单）。
+- [x] 装：`uv pip install "mineru>=4.0,<5"`（独立 venv，路径在**仓外** scratch，且**放 E:**——Task 0.5 实测 C: 仅余 4.8 GB；`UV_CACHE_DIR` 也指到 E:）；或 Docker（`docker/global/Dockerfile`）；**记下版本号与实际路径**。
+- [x] 起：`MINERU_MODEL_SOURCE=modelscope MINERU_HOME=E:\… mineru-api --host 127.0.0.1 --port 8000 --tier flash`（基础包必须带 `--tier`；`--tier` 只收 `flash|basic|standard`，`advanced` 由 `--tier standard` 一并服务）；`GET /v1/health` 通。**建议先 `mineru-kit models download --tier basic --source modelscope` 预热再起**（Task 0.5：`--tier flash` 免预检、模型落 `$MINERU_HOME/models`）。
+- [x] **原始 curl 六步**（完全不经我们的代码）：① `POST /v1/uploads`（JSON `{filename, bytes, mime_type, purpose:"parse"}`）→ ② `PUT` 上传内容（**记下 `upload_headers` 的实际形态**）→ ③ `POST …/complete` → ④ `POST /v1/parse/jobs`（`source.type=file_id` + `output_formats:["zip"]` + `tier:"flash"`）→ ⑤ 轮询到终态（记下 `output_files.zip.file_id`）→ ⑥ 下载 zip。
+- [x] **看 zip 内容**：确认 `markdown.md` 在、图片在 `images/` 前缀下（与 Task 0.1 的源码结论交叉验证）——**这是 spec §4.4 的实证答案**。
+- [x] 服务**保持运行**（供 Task 2 的客户端 smoke 与 Task 5 用）；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`（版本/命令/health/六步请求响应片段/zip 清单）。
 
-**实测（开工时回填）：**
+**实测（2026-09-24 逐条回填；全部在仓外 `E:\app-mode\mineru-4x`，不动主 venv、未碰 `config.yaml`）：**
+
+- **装**：`uv pip install "mineru>=4.0,<5"` → `E:\app-mode\mineru-4x\venv`（CPython **3.12.13**，uv 托管；`UV_CACHE_DIR` 同根）⇒ **mineru `4.0.7` + docvortex `0.4.25`**。
+- **模型**：`MINERU_HOME=E:\app-mode\mineru-4x\home` + `MINERU_MODEL_SOURCE=modelscope`，`mineru-kit models download --tier basic --source modelscope` ⇒ **819 MB** 落 `home\models\MinerU-4_models_onnx`（`models verify --tier basic` = 正常）；`models show` 实测 `model.base_dir = $MINERU_HOME/models`、小模型后端 auto→**onnx**（省掉 torch ≈895 MB）。⚠️ 模型侧档位只收 `basic|standard`（`DEPLOYMENT_TIERS`）⇒ flash 服务端用 `--tier basic` 预热。
+- **起**：`mineru-api --host 127.0.0.1 --port 8000 --tier flash --upload-dir …\uploads` ⇒ `GET /v1/health` = `{"status":"ok","version":"4.0.7",…,"sources":["file_id","url","inline"]}`。
+- **六步**（`pr-build/mineru-4x-smoke-2026-09-24/smoke.sh`，零我们代码）：① `POST /v1/uploads` ⇒ `status:"pending"`、`upload_url={base}/v1/uploads/{id}/content`、`upload_method:"PUT"`、**`upload_headers={"Content-Type":"application/pdf"}`**（= Task 0.6 预言）、`file:null`；② `PUT` 该 url 带该头 ⇒ **200**；③ `POST …/complete`（body `{}`）⇒ `completed` + `file.id`（服务端回填 `sha256sum`）；④ `POST /v1/parse/jobs`（`file_id` + `["zip"]` + `tier:"flash"`）⇒ **202** `queued`；⑤ 轮询 4 次约 8 s ⇒ `completed`（`duration_ms=7827`、`parser_version=4.0.7`），取 `output_files.zip.file_id`；⑥ `GET /v1/files/{zip}/content` ⇒ 149,849 B。
+- **看 zip**：`markdown.md` 在 ✓；图片条目在 **`images/`** 前缀下（`images/page_0_table_2.jpg`）✓ ⇒ **spec §4.4 的实证答案落地，`_unpack_zip` 零改动**。**新增两个非预期但无害的成员**：根级 `model_output.json`（121 KB）与 `middle_json.json` / `structured_content.json`——我们只认 `.md` 与 `images/` 前缀，全部忽略。
+- **补一个带真图的样本**（`figure.pdf`：文字 + 栅格图，Chrome headless 印成）：markdown 里 `![](images/page_0_image_3.jpg)` **与 zip 条目名逐字一致**（`identity-check.txt` 的 `identity = True`）⇒ `ParsedImage.ref` 与 markdown 引用同源，解包后链接不会 404。**第一个样本没有图片引用（表格被渲染成 GFM 管道表、那张 jpg 是内部裁片），验不到这条，故补第二个样本。**
+- 服务**保持运行**（`127.0.0.1:8000`），供 Task 2 的客户端 smoke 与 Task 5；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`（`notes.md` + `sample/` + `figure/` + `identity-check.txt` + 两个脚本）。
 
 ---
 
@@ -76,18 +84,25 @@
 >
 > ⚠️ **为什么客户端与配置面必须是同一个提交**：工厂 `build_parse_provider` 传下去的 kwarg 与客户端的构造签名是**一条链**：客户端改收 `tier` 而工厂还传 `backend`（或反过来），保存期构造检查（`_reject_unusable_after_save` → `build_parse_provider`）当场 `TypeError`，`test_rag_config_api.py:343/:426` 两条 PUT 用例立刻红。拆两个提交就必然留一个**已知红的中间提交**；合并是一个用户可见行为变更（「这条腿按 4.x 说话、按档位配置」）的原子切法。RED/GREEN 在任务内部仍**分两波**做。
 
-- [ ] **RED（波 A · 客户端契约）**：按 spec §4.2 的序列写契约用例（MockTransport）：① 上传三步（JSON 字段集 = `filename/bytes/mime_type/purpose`、**无 `sha256sum`**；PUT 带 `upload_headers`；complete 路径）；② job 请求体（`files[0].source == {"type":"file_id","file_id":…}`、`output_formats == ["zip"]`、**`tier` 仅在配置非空时出现**）；③ 轮询序列 queued → running → completed；④ zip 解包（`markdown.md` 被 `.md` 兜底接住、`images/*` → `ParsedImage`、ref 逐字一致）；⑤ 归一化两步仍在（文末标题搬迁 + HTML 表→GFM）；⑥ 错误面（不可达带地址 / `failed` 带原文 / `partial` 判失败 / 超时 / 缺 zip 或缺 markdown 报错 / 401 带 status）；⑦ 防御：未知 tier ⇒ `RagConfigurationError`；⑧ **两个照抄官方客户端的防御分支**——create 响应已是 `status:"completed"` 时短路取 `file.id`、`upload_url` 以 `/` 开头时前缀 `base_url`（我们不发 sha256sum，前者大概率不触发，但照抄更稳）。此刻实现还是 3.4.5 形状 ⇒ 红。
-- [ ] **RED（波 B · 配置面）**：① 新用例 —— 含旧键的 `rag_config.json`（`{"parse_backend": "hybrid", …}`）**仍可载**且 `caplog` 里有 warning（剥离而非报错）；② `parse_tier` 收四值 + 空、拒 `vlm`/`hybrid`/`pipeline`；③ `PUT /api/rag/config` 带 `parse_tier: "flash"` round-trip 且 `sources` 标 `ui`；④ PUT 带旧键 `parse_backend` ⇒ **422**（extra_forbidden）；⑤ golden 夹具换键。此刻模型还是旧字段 ⇒ 红。
-- [ ] **GREEN**：重写 provider（构造参数：`base_url` 必填、`tier` 可选、`client` / `poll_interval_seconds` / `timeout_seconds`；`_request` 的 JSON 包法沿用，二进制下载另走一条）；改 `RagConfig`（删 `parse_backend`、加 `parse_tier`）、`RagConfigFile`（同上 + `from_file()` 剥离旧键并 `logger.warning`）、`build_parse_provider` 传 `tier=`、allowlist 行 `path` 改 `/v1/parse/jobs`；同步 `response_golden.json`（该夹具是**「纯增」守卫**（`test_rag_config_api.py:443-470` 的 `_assert_pure_addition`）——**字段改名属有意的形状变更、不是违规**，夹具按新键更新即可）。
-- [ ] **neuter ①（zip）**：把 `output_formats` 改回 `["markdown"]` ⇒ 波 A 的 zip 解包那组断言红。
-- [ ] **neuter ②（tier）**：`tier` 无条件写进 job 体（空值也发）⇒ 波 A 的「仅配置时出现」红。
-- [ ] **neuter ③（终态）**：终态判定放宽成「非 failed 即成功」⇒ 波 A 的 `partial` 那条红。
-- [ ] **neuter ④（剥离）**：`from_file()` 去掉剥离步骤 ⇒ 波 B ① 转红（`extra_forbidden` 把文件判死）。
-- [ ] **neuter ⑤（值域）**：`parse_tier` 的 Literal 加回 `"vlm"` ⇒ 波 B ② 转红。
-- [ ] **门禁**：`cd backend && uv run pytest tests/knowledge/test_parse_local.py tests/knowledge/test_rag_provider_config.py tests/test_rag_config_api.py` 全绿；`make lint` 双净。
-- [ ] **Commit**：`feat(rag): retarget the local MinerU client to 4.x and retire parse_backend`
+- [x] **RED（波 A · 客户端契约）**：按 spec §4.2 的序列写契约用例（MockTransport）：① 上传三步（JSON 字段集 = `filename/bytes/mime_type/purpose`、**无 `sha256sum`**；PUT 带 `upload_headers`；complete 路径）；② job 请求体（`files[0].source == {"type":"file_id","file_id":…}`、`output_formats == ["zip"]`、**`tier` 仅在配置非空时出现**）；③ 轮询序列 queued → running → completed；④ zip 解包（`markdown.md` 被 `.md` 兜底接住、`images/*` → `ParsedImage`、ref 逐字一致）；⑤ 归一化两步仍在（文末标题搬迁 + HTML 表→GFM）；⑥ 错误面（不可达带地址 / `failed` 带原文 / `partial` 判失败 / 超时 / 缺 zip 或缺 markdown 报错 / 401 带 status）；⑦ 防御：未知 tier ⇒ `RagConfigurationError`；⑧ **两个照抄官方客户端的防御分支**——create 响应已是 `status:"completed"` 时短路取 `file.id`、`upload_url` 以 `/` 开头时前缀 `base_url`（我们不发 sha256sum，前者大概率不触发，但照抄更稳）。此刻实现还是 3.4.5 形状 ⇒ 红。
+- [x] **RED（波 B · 配置面）**：① 新用例 —— 含旧键的 `rag_config.json`（`{"parse_backend": "hybrid", …}`）**仍可载**且 `caplog` 里有 warning（剥离而非报错）；② `parse_tier` 收四值 + 空、拒 `vlm`/`hybrid`/`pipeline`；③ `PUT /api/rag/config` 带 `parse_tier: "flash"` round-trip 且 `sources` 标 `ui`；④ PUT 带旧键 `parse_backend` ⇒ **422**（extra_forbidden）；⑤ golden 夹具换键。此刻模型还是旧字段 ⇒ 红。
+- [x] **GREEN**：重写 provider（构造参数：`base_url` 必填、`tier` 可选、`client` / `poll_interval_seconds` / `timeout_seconds`；`_request` 的 JSON 包法沿用，二进制下载另走一条）；改 `RagConfig`（删 `parse_backend`、加 `parse_tier`）、`RagConfigFile`（同上 + `from_file()` 剥离旧键并 `logger.warning`）、`build_parse_provider` 传 `tier=`、allowlist 行 `path` 改 `/v1/parse/jobs`；同步 `response_golden.json`（该夹具是**「纯增」守卫**（`test_rag_config_api.py:443-470` 的 `_assert_pure_addition`）——**字段改名属有意的形状变更、不是违规**，夹具按新键更新即可）。
+- [x] **neuter ①（zip）**：把 `output_formats` 改回 `["markdown"]` ⇒ 波 A 的 zip 解包那组断言红。
+- [x] **neuter ②（tier）**：`tier` 无条件写进 job 体（空值也发）⇒ 波 A 的「仅配置时出现」红。
+- [x] **neuter ③（终态）**：终态判定放宽成「非 failed 即成功」⇒ 波 A 的 `partial` 那条红。
+- [x] **neuter ④（剥离）**：`from_file()` 去掉剥离步骤 ⇒ 波 B ① 转红（`extra_forbidden` 把文件判死）。
+- [x] **neuter ⑤（值域）**：`parse_tier` 的 Literal 加回 `"vlm"` ⇒ 波 B ② 转红。
+- [x] **门禁**：`cd backend && uv run pytest tests/knowledge/test_parse_local.py tests/knowledge/test_rag_provider_config.py tests/test_rag_config_api.py` 全绿；`make lint` 双净。
+- [x] **Commit**：`feat(rag): retarget the local MinerU client to 4.x and retire parse_backend`
 
-**实测（开工时回填）：**
+**实测（2026-09-24 逐条回填；9 文件：5 源 + 4 测试/夹具）：**
+
+- **RED**：三文件同跑 = **27 failed / 55 passed**（波 A 19 红、波 B 8 红；含 golden 的两条「纯增」守卫——字段改名正是它们的形状变更）。
+- **GREEN**：同三文件 = **82 passed**。`parse_local.py` 整体重写（三步上传 → `POST /v1/parse/jobs` → 轮询 → 文件注册表取 zip → `_unpack_zip` → 归一化）；`parser.py` 工厂改传 `tier=`；两处 Literal 换 `parse_tier`；`build_parse_provider` 的 kwarg 与客户端构造签名同步落地（这就是合并成一个提交的理由）。
+- **neuter（5/5 均有红，均还原后复绿）**：① `output_formats:["markdown"]` ⇒ 大契约用例 1 failed；② `tier` 无条件下发 ⇒ 1 failed（未配置时那条精确体断言）；③ 终态放宽成只认 `failed` ⇒ `partial`/`canceled` **2 failed**；④ 去掉旧键剥离 ⇒ 剥离用例 1 failed（`extra_forbidden` 把文件判死——计划预测的那条）；⑤ Literal 放回 `vlm` ⇒ 值域用例 1 failed。
+- **门禁**：`uv run pytest`（三文件）= **82 passed**；**`make lint` 双净**——首次 `ruff format --check` 逮到两个新文件**文末缺换行**，就地 `ruff format` 后 1290 文件全净；`--basetemp=.pytest-tmp` 用完即删。
+- **更宽面 sweep**（`tests/knowledge` + `test_rag_config_api` + 两个 probe 文件）= **1195 passed / 50 skipped / 3 failed / 1 error**。那 3 failed 与 1 error **全是环境性预存红**：**路径限定 A/B 证明**（把那 5 个源文件 `git stash push -- <paths>` 回到 HEAD 跑同样三条 ⇒ **同样 3 failed**，随即 `stash pop` 还原并核过 diff 无行尾 churn）；Qdrant 那条是「本机 Qdrant 没起」（setup 期 `httpx.ConnectError`）。
+- **顺手钉住的两条既有事实**：`RagConfig` 对旧键是 pydantic 默认忽略（config.yaml 侧静默，新增用例钉住）、`RagConfigFile` 是 `extra="forbid"` ⇒ PUT 带旧键 **422**（用例钉住）；`/file_parse` 全仓**无代码消费者**（只有 allowlist 一行 + 文档），改 `path` 零副作用。
 
 ---
 

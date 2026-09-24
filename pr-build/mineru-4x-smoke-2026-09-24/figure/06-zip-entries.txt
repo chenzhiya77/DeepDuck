@@ -1,0 +1,5 @@
+      347  markdown.md
+     3731  middle_json.json
+     2673  structured_content.json
+   173840  model_output.json
+   127162  images/page_0_image_3.jpg

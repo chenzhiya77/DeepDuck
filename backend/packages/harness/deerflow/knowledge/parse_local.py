@@ -1,38 +1,37 @@
-"""Local MinerU service client (spec 2026-09-14 §4.4 / §8.1).
+"""Local MinerU service client (spec 2026-09-24, contract pinned at upstream 4.0.7).
 
 The local service is MinerU's own FastAPI app (``mineru-api``), driven as a **thin
-client** (D2-A): we upload the file over multipart and poll, while the engine choice
-(``vlm`` / ``hybrid``) and every model-management concern stay on the service side.
+client** (D2-A): we upload the file, submit one parse job and poll it, while the engine
+choice and every model-management concern stay on the service side. The contract is pinned
+from upstream source (``mineru/parser/api_server.py``; the call sequence mirrors the
+official client ``mineru/parser/api_client.py``):
 
-Contract, pinned from upstream source (``mineru/cli/fast_api.py``,
-``mineru/cli/api_request.py``, ``mineru/cli/backend_options.py``):
+1. ``POST /v1/uploads`` declares the file (JSON, no ``sha256sum`` — D4) and answers with
+   ``{id, status, upload_url, upload_headers}``;
+2. ``PUT`` that URL with the raw bytes and the response's own ``upload_headers``;
+3. ``POST /v1/uploads/{id}/complete`` turns the upload into a File object;
+4. ``POST /v1/parse/jobs`` with ``files[0].source = {type: "file_id", file_id}``,
+   ``output_formats: ["zip"]`` and — when configured — ``tier``;
+5. ``GET /v1/parse/jobs/{id}`` until a terminal status
+   (``completed`` / ``partial`` / ``failed`` / ``canceled``);
+6. ``GET /v1/files/{zip_file_id}/content`` → the zip, unpacked by the cloud leg's own
+   ``_unpack_zip`` (``markdown.md`` + ``images/*``; Task 0 pinned that the sidecar prefix
+   and the markdown links agree, so nothing here rescales the refs).
 
-1. ``POST /tasks`` (multipart) → 202 with ``task_id`` and ``file_names``;
-2. ``GET /tasks/{id}`` → ``pending`` / ``processing`` / ``completed`` / ``failed``;
-3. ``GET /tasks/{id}/result`` → ``{results: {<stem>: {md_content, images}}}``.
+``tier`` is the only per-request quality knob left in 4.x: the old ``backend``
+(``vlm`` / ``hybrid``) became a *service startup* flag, so this client does not translate
+it (D2). The tier rules themselves belong to the service — an unavailable tier comes back
+as the service's own 4xx/5xx, which we report verbatim rather than mirror (D8).
 
-Three upstream shapes drive the code here:
-
-- the result key is the **service's** normalized stem, so it is read back from
-  ``file_names`` instead of being recomputed from the local path;
-- images arrive as data URIs keyed by basename while the markdown references them as
-  ``images/<basename>`` — that is the ``ParsedImage.ref`` handed downstream (the
-  captioner rewrites alt text by ref and the worker writes the file at that path);
-- ``backend`` takes the ``*-engine`` / ``*-http-client`` family, so our short ids gain
-  the ``-http-client`` suffix (D2-A puts the other members out of scope).
-
-The service ships without authentication (spec §8.2) — it belongs on an internal
-network, so no token is ever sent. Failures reuse the parser's error taxonomy so the
-worker's degradation contract stays identical across providers.
+The service ships without authentication (spec §8.2) — it belongs on an internal network,
+so no token is ever sent. Failures reuse the parser's error taxonomy so the worker's
+degradation contract stays identical across providers.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 import logging
-import re
 import time
 from pathlib import Path
 
@@ -44,18 +43,53 @@ from deerflow.knowledge.parser import (
     MineruParseFailedError,
     MineruTimeoutError,
     ParsedDocument,
-    ParsedImage,
+    _unpack_zip,
     normalize_mineru_markdown,
 )
 
 logger = logging.getLogger(__name__)
 
-#: ``rag.parse_backend`` → the service's own backend ids. Only the http-client family is
-#: in the support surface (D2-A): the engine variants would mean running models locally.
-_BACKEND_FORM_VALUES = {"vlm": "vlm-http-client", "hybrid": "hybrid-http-client"}
-#: Non-terminal task statuses (upstream: pending / processing, both non-terminal).
-_PENDING_STATUSES = frozenset({"pending", "processing"})
-_DATA_URI_RE = re.compile(r"^data:(?P<mime>[^;,]+);base64,(?P<payload>.*)$", re.DOTALL)
+#: The 4.x service tiers. Configuration is a Literal, so this check is defensive only —
+#: same posture as the retired ``backend`` check it replaces.
+_TIERS = ("flash", "basic", "standard", "advanced")
+#: Non-terminal job statuses (upstream: queued / running).
+_PENDING_STATUSES = frozenset({"queued", "running"})
+#: Terminal statuses other than ``completed`` (D5): a partial job is a failed one here,
+#: because our jobs carry exactly one file.
+_FAILED_STATUSES = frozenset({"partial", "failed", "canceled"})
+#: Suffix → MIME for the upload declaration (D4), mirroring the extensions the service
+#: declares parseable. Anything else declares ``application/octet-stream``.
+_MIME_TYPES = {
+    "pdf": "application/pdf",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "ppt": "application/vnd.ms-powerpoint",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "rtf": "application/rtf",
+    "odt": "application/vnd.oasis.opendocument.text",
+    "ods": "application/vnd.oasis.opendocument.spreadsheet",
+    "odp": "application/vnd.oasis.opendocument.presentation",
+    "csv": "text/csv",
+    "tsv": "text/tab-separated-values",
+    "epub": "application/epub+zip",
+    "ofd": "application/ofd",
+    "html": "text/html",
+    "htm": "text/html",
+    "mhtml": "multipart/related",
+    "mht": "multipart/related",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+    "tiff": "image/tiff",
+    "txt": "text/plain",
+    "md": "text/markdown",
+    "markdown": "text/markdown",
+}
 
 
 def _check_http(response: httpx.Response) -> None:
@@ -73,50 +107,42 @@ def _json_object(response: httpx.Response) -> dict:
     return payload
 
 
-def _decode_image(name: str, value: object) -> ParsedImage:
-    """One ``images`` entry (a base64 data URI keyed by basename) → ``ParsedImage``."""
-    match = _DATA_URI_RE.match(value) if isinstance(value, str) else None
-    if match is None:
-        raise MineruError(f"本地 MinerU 返回的图片 {name!r} 不是 data URI")
-    try:
-        content = base64.b64decode(match.group("payload"), validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise MineruError(f"本地 MinerU 返回的图片 {name!r} base64 解码失败") from exc
-    return ParsedImage(ref=f"images/{name}", content=content, media_type=match.group("mime"))
+def _mime_type(path: Path) -> str:
+    return _MIME_TYPES.get(path.suffix.lower().lstrip("."), "application/octet-stream")
 
 
-def _decode_result(payload: dict, key: str) -> ParsedDocument:
-    """Unwrap ``{results: {<stem>: {md_content, images}}}`` for the uploaded file."""
-    results = payload.get("results") or {}
-    entry = results.get(key)
-    if not isinstance(entry, dict):
-        raise MineruError(f"本地 MinerU 结果里没有 {key!r}（实际键：{sorted(results)}）")
-    markdown = entry.get("md_content")
-    if not isinstance(markdown, str):
-        raise MineruError(f"本地 MinerU 结果缺少 md_content（{key}）")
-    images = [_decode_image(name, value) for name, value in (entry.get("images") or {}).items()]
-    return ParsedDocument(markdown=markdown, images=images)
+def _failure_message(payload: dict, job_id: str) -> str:
+    """The service's own words when the file carries them; the job status otherwise."""
+    files = payload.get("files") or []
+    entry = files[0] if files and isinstance(files[0], dict) else {}
+    error = entry.get("error")
+    if isinstance(error, dict) and error.get("message"):
+        return str(error["message"])
+    if isinstance(error, str) and error:
+        return error
+    return f"本地 MinerU 解析未完成（job {job_id}，状态 {payload.get('status')}）"
 
 
 class MineruLocalParseProvider:
-    """``ParseProvider`` for a self-hosted MinerU service (multipart submit + poll)."""
+    """``ParseProvider`` for a self-hosted MinerU 4.x service (upload + job + poll + zip)."""
 
     def __init__(
         self,
         *,
         base_url: str | None,
-        backend: str | None = None,
+        tier: str | None = None,
         client: httpx.AsyncClient | None = None,
         poll_interval_seconds: float = 5.0,
         timeout_seconds: float = 1800.0,
     ) -> None:
         if not (base_url or "").strip():
             raise RagConfigurationError("本地解析需要服务地址：请设置 rag.parse_base_url（parse_provider=mineru-local）")
-        if backend is not None and backend not in _BACKEND_FORM_VALUES:
-            raise RagConfigurationError(f"未知的 parse_backend {backend!r}；可选 {sorted(_BACKEND_FORM_VALUES)}")
+        if tier is not None and tier not in _TIERS:
+            raise RagConfigurationError(f"未知的 parse_tier {tier!r}；可选 {list(_TIERS)}")
         self._base_url = base_url.strip().rstrip("/")
-        # 空 = 由服务端决定（D4-B）：不下发 backend 字段，我们不管 MinerU 的档位
-        self._backend = _BACKEND_FORM_VALUES[backend] if backend else None
+        # 空 = 由服务端决定（D2）：不下发 tier 字段。注意 flash-only 服务端没有默认质量档，
+        # 空档位会被它 503 拒（服务端事实，不镜像——D8），那种部署要显式给档。
+        self._tier = tier
         self._client = client
         self._poll_interval_seconds = poll_interval_seconds
         self._timeout_seconds = timeout_seconds
@@ -126,52 +152,93 @@ class MineruLocalParseProvider:
         own_client = self._client is None
         http = self._client or httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
         try:
-            task_id, key = await self._submit(http, path)
-            await self._await_terminal(http, task_id)
-            parsed = _decode_result(await self._request(http, "GET", f"{self._base_url}/tasks/{task_id}/result"), key)
+            file_id = await self._upload(http, path)
+            job_id = await self._submit(http, file_id)
+            payload = await self._await_terminal(http, job_id)
+            parsed = _unpack_zip(await self._download_zip(http, payload))
             return ParsedDocument(markdown=normalize_mineru_markdown(parsed.markdown), images=parsed.images)
         finally:
             if own_client:
                 await http.aclose()
 
-    async def _request(self, http: httpx.AsyncClient, method: str, url: str, **kwargs) -> dict:
+    async def _send(self, http: httpx.AsyncClient, method: str, url: str, **kwargs) -> httpx.Response:
         """One call to the local service: transport failures become ``MineruError``."""
         try:
             response = await http.request(method, url, **kwargs)
         except httpx.HTTPError as exc:
             raise MineruError(f"本地 MinerU 服务不可达（{url}）：{exc}") from exc
         _check_http(response)
-        return _json_object(response)
+        return response
 
-    async def _submit(self, http: httpx.AsyncClient, path: Path) -> tuple[str, str]:
-        data = {"lang_list": "ch", "return_md": "true", "return_images": "true"}
-        if self._backend is not None:
-            data["backend"] = self._backend
+    async def _request(self, http: httpx.AsyncClient, method: str, url: str, **kwargs) -> dict:
+        return _json_object(await self._send(http, method, url, **kwargs))
+
+    async def _upload(self, http: httpx.AsyncClient, path: Path) -> str:
+        """The three-step upload (D4): declare → PUT bytes → complete. Returns the File id."""
         payload = await self._request(
             http,
             "POST",
-            f"{self._base_url}/tasks",
-            data=data,
-            files={"files": (path.name, path.read_bytes())},
+            f"{self._base_url}/v1/uploads",
+            json={"filename": path.name, "bytes": path.stat().st_size, "mime_type": _mime_type(path), "purpose": "parse"},
         )
-        task_id = payload.get("task_id")
-        if not task_id:
-            raise MineruError(f"本地 MinerU 未返回 task_id：{payload!r}")
-        # 结果键是服务端归一化后的 stem；用 file_names 而不是本地路径拼（两者可能不同）
-        key = (payload.get("file_names") or [path.stem])[0]
-        return str(task_id), str(key)
+        upload_id = payload.get("id")
+        if not upload_id:
+            raise MineruError(f"本地 MinerU 未返回 upload id：{payload!r}")
+        # 服务端里已有同 sha256 的文件时 create 直接是终态，没有 PUT/complete 可走
+        # （照抄官方客户端；我们不发 sha256sum ⇒ 一般命不中，但这分支照抄更稳）
+        if payload.get("status") == "completed":
+            return self._file_id(payload)
+        upload_url = payload.get("upload_url")
+        if not upload_url:
+            raise MineruError(f"本地 MinerU 未返回 upload_url：{payload!r}")
+        if upload_url.startswith("/"):  # 相对地址按 base_url 解析（照抄官方客户端）
+            upload_url = f"{self._base_url}{upload_url}"
+        await self._send(
+            http,
+            "PUT",
+            upload_url,
+            headers=payload.get("upload_headers") or {},
+            content=path.read_bytes(),
+        )
+        return self._file_id(await self._request(http, "POST", f"{self._base_url}/v1/uploads/{upload_id}/complete"))
 
-    async def _await_terminal(self, http: httpx.AsyncClient, task_id: str) -> None:
+    @staticmethod
+    def _file_id(payload: dict) -> str:
+        file_id = (payload.get("file") or {}).get("id")
+        if not file_id:
+            raise MineruError(f"本地 MinerU 未返回 file id：{payload!r}")
+        return str(file_id)
+
+    async def _submit(self, http: httpx.AsyncClient, file_id: str) -> str:
+        body: dict = {"files": [{"source": {"type": "file_id", "file_id": file_id}}], "output_formats": ["zip"]}
+        if self._tier is not None:
+            body["tier"] = self._tier
+        payload = await self._request(http, "POST", f"{self._base_url}/v1/parse/jobs", json=body)
+        job_id = payload.get("job_id")
+        if not job_id:
+            raise MineruError(f"本地 MinerU 未返回 job_id：{payload!r}")
+        return str(job_id)
+
+    async def _await_terminal(self, http: httpx.AsyncClient, job_id: str) -> dict:
         deadline = time.monotonic() + self._timeout_seconds
         while True:
-            payload = await self._request(http, "GET", f"{self._base_url}/tasks/{task_id}")
+            payload = await self._request(http, "GET", f"{self._base_url}/v1/parse/jobs/{job_id}")
             status = payload.get("status")
             if status == "completed":
-                return
-            if status == "failed":
-                raise MineruParseFailedError(payload.get("error") or "本地 MinerU 解析失败")
+                return payload
+            if status in _FAILED_STATUSES:
+                raise MineruParseFailedError(_failure_message(payload, job_id))
             if status not in _PENDING_STATUSES:
-                logger.warning("Unknown local MinerU task status %r; continuing to poll", status)
+                logger.warning("Unknown local MinerU job status %r; continuing to poll", status)
             if time.monotonic() >= deadline:
-                raise MineruTimeoutError(f"本地 MinerU 解析超时（{self._timeout_seconds:.0f}s，task {task_id}）")
+                raise MineruTimeoutError(f"本地 MinerU 解析超时（{self._timeout_seconds:.0f}s，job {job_id}）")
             await asyncio.sleep(self._poll_interval_seconds)
+
+    async def _download_zip(self, http: httpx.AsyncClient, payload: dict) -> bytes:
+        files = payload.get("files") or []
+        entry = files[0] if files and isinstance(files[0], dict) else {}
+        output_files = entry.get("output_files") or {}
+        zip_file_id = (output_files.get("zip") or {}).get("file_id")
+        if not zip_file_id:
+            raise MineruError(f"本地 MinerU 结果里没有 zip 输出（job {payload.get('job_id')}）：{output_files!r}")
+        return (await self._send(http, "GET", f"{self._base_url}/v1/files/{zip_file_id}/content")).content

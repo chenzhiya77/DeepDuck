@@ -15,6 +15,7 @@ Covers the config-layer half of the adaptation:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -93,7 +94,7 @@ def test_legacy_yaml_only_sets_models_and_keeps_provider_defaults(env_paths):
     assert rag.embedding_dimension is None
     assert rag.rerank_base_url is None
     assert rag.parse_base_url is None
-    assert rag.parse_backend is None
+    assert rag.parse_tier is None
 
 
 def test_legacy_rag_json_without_new_fields_still_loads(env_paths):
@@ -110,6 +111,29 @@ def test_legacy_rag_json_without_new_fields_still_loads(env_paths):
     assert ui.parse_provider is None
 
 
+def test_a_retired_parse_backend_key_is_stripped_with_a_warning(env_paths, caplog):
+    """3.4.5 的 `parse_backend` 已退役：老文件仍可载，但键被剥掉（不是把文件判死）。"""
+    _, rag_json = env_paths
+    _write_rag_json(
+        rag_json,
+        {"parse_provider": "mineru-local", "parse_base_url": "http://localhost:30000", "parse_backend": "hybrid"},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="deerflow.config.rag_config_file"):
+        ui = RagConfigFile.from_file()
+
+    assert ui.parse_provider == "mineru-local"
+    assert ui.parse_tier is None, "旧值不做映射：vlm / hybrid 在 4.x 没有对应语义（D2）"
+    assert "parse_backend" in caplog.text
+
+
+def test_a_retired_parse_backend_key_in_yaml_is_ignored():
+    """config.yaml 侧静默忽略（pydantic 未知键的默认行为；登记为知情选择）—— 文档要写这句。"""
+    rag = RagConfig.model_validate({"parse_backend": "hybrid"})
+
+    assert rag.parse_tier is None
+
+
 def test_sparse_keys_declared_in_yaml_are_carried_by_rag_config():
     rag = RagConfig.model_validate(
         {
@@ -121,7 +145,7 @@ def test_sparse_keys_declared_in_yaml_are_carried_by_rag_config():
             "rerank_base_url": "http://localhost:8000",
             "parse_provider": "mineru-local",
             "parse_base_url": "http://localhost:30000",
-            "parse_backend": "hybrid",
+            "parse_tier": "advanced",
         }
     )
 
@@ -131,7 +155,7 @@ def test_sparse_keys_declared_in_yaml_are_carried_by_rag_config():
     assert rag.embedding_sparse_source == "bm25"
     assert rag.rerank_provider == "generic-rerank"
     assert rag.parse_provider == "mineru-local"
-    assert rag.parse_backend == "hybrid"
+    assert rag.parse_tier == "advanced"
 
 
 # ── the provider allowlist ────────────────────────────────────────────────
@@ -242,13 +266,13 @@ def test_parse_provider_rejects_an_unknown_value():
         RagConfig.model_validate({"parse_provider": "mineru-remote"})
 
 
-def test_parse_backend_accepts_only_the_light_client_backends():
-    """D2 supports the http-client deployment shape, which only vlm / hybrid have —
-    `pipeline` has no such variant, so the field must not accept it."""
-    for backend in ("vlm", "hybrid"):
-        assert RagConfig.model_validate({"parse_backend": backend}).parse_backend == backend
-    with pytest.raises(ValidationError):
-        RagConfig.model_validate({"parse_backend": "pipeline"})
+def test_parse_tier_accepts_the_four_service_tiers():
+    """4.x 的档位是 flash|basic|standard|advanced；3.4.5 的 vlm/hybrid 不再接受。"""
+    for tier in ("flash", "basic", "standard", "advanced"):
+        assert RagConfig.model_validate({"parse_tier": tier}).parse_tier == tier
+    for retired in ("vlm", "hybrid", "pipeline"):
+        with pytest.raises(ValidationError):
+            RagConfig.model_validate({"parse_tier": retired})
 
 
 def test_sparse_source_rejects_an_unknown_value():

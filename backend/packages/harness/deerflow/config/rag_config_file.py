@@ -48,6 +48,13 @@ SECRET_ENV_VARS: dict[str, str] = {
     "mineru_api_token": "MINERU_API_TOKEN",
 }
 
+#: Keys retired by a later contract. Their files must keep loading (the module's promise:
+#: an existing ``rag_config.json`` keeps working), but the value cannot be carried across —
+#: ``parse_backend``'s ``vlm`` / ``hybrid`` have no 4.x equivalent, because the backend
+#: choice moved to the service's own startup flags (spec 2026-09-24 D2). Dropped with a
+#: warning rather than silently reinterpreted as a tier.
+_RETIRED_KEYS = ("parse_backend",)
+
 
 class RagVideoFileConfig(BaseModel):
     """The video-ingestion fields the settings UI may override.
@@ -100,7 +107,7 @@ class RagConfigFile(BaseModel):
     rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
     parse_provider: Literal["mineru-cloud", "mineru-local"] | None = Field(default=None, description="Document-parsing provider; None uses config.yaml.")
     parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local.")
-    parse_backend: Literal["vlm", "hybrid"] | None = Field(default=None, description="Optional backend hint for the local MinerU service; None lets the service decide.")
+    parse_tier: Literal["flash", "basic", "standard", "advanced"] | None = Field(default=None, description="Optional tier for the local MinerU 4.x service; None lets the service decide.")
     video: RagVideoFileConfig | None = Field(default=None, description="Video-ingestion model choices.")
 
     @classmethod
@@ -159,6 +166,14 @@ class RagConfigFile(BaseModel):
             raw = {}
         if not isinstance(raw, dict):
             raise ValueError(f"Rag config file at {resolved_path} must be a JSON object")
+        for key in _RETIRED_KEYS:
+            if key in raw:
+                raw.pop(key)
+                logger.warning(
+                    "Dropped retired key %r from %s: the local MinerU leg speaks the 4.x contract now (use parse_tier).",
+                    key,
+                    resolved_path,
+                )
         try:
             return cls.model_validate(raw)
         except Exception as e:

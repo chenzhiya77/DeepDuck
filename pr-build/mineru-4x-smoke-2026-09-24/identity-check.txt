@@ -1,0 +1,4 @@
+figure run: refs = ['images/page_0_image_3.jpg']
+figure run: entries = ['markdown.md', 'middle_json.json', 'structured_content.json', 'model_output.json', 'images/page_0_image_3.jpg']
+figure run: ref-in-entry identity = True
+sample run: entries = ['markdown.md', 'middle_json.json', 'structured_content.json', 'model_output.json', 'images/page_0_table_2.jpg']

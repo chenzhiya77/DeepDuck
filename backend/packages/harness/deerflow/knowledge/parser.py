@@ -727,7 +727,7 @@ def build_parse_provider(
 
     Same rule as the rerank factory: the provider id picks the implementation, the caller never
     supplies a class path. Constructor kwargs differ per provider, so the split lives here —
-    ``mineru-local`` takes the configured address and backend hint, the cloud provider takes
+    ``mineru-local`` takes the configured address and tier hint, the cloud provider takes
     ``model_version``.
 
     ``rag`` overrides the RAG section for this call, so the save-time check can construct the
@@ -741,7 +741,7 @@ def build_parse_provider(
     kwargs: dict = {"client": client, "poll_interval_seconds": poll_interval_seconds, "timeout_seconds": timeout_seconds}
     if spec.provider_id == "mineru-local":
         kwargs["base_url"] = section.parse_base_url
-        kwargs["backend"] = section.parse_backend
+        kwargs["tier"] = section.parse_tier
     else:
         kwargs["model_version"] = model_version
     from deerflow.reflection import resolve_variable
