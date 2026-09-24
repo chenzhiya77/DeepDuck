@@ -125,7 +125,7 @@ function OptionSelect({
         onChange(next === AUTO_OPTION_VALUE ? "" : next)
       }
     >
-      <SelectTrigger className="w-full" aria-label={label}>
+      <SelectTrigger className="w-full min-w-0" aria-label={label}>
         <SelectValue />
         {trailing ? (
           <span className="text-muted-foreground ml-auto shrink-0 text-xs">
@@ -157,8 +157,9 @@ function OptionSelect({
  * One row of the form: the label sits in a fixed gutter, so every value column lines up no
  * matter how long the labels are. Two values = the two retrieval roles, one = an ordinary row.
  */
-const ROW = "grid grid-cols-[8rem_1fr] items-center gap-x-4 py-3";
-const ROW_PAIR = "grid grid-cols-[8rem_1fr_1fr] items-center gap-x-4 py-3";
+const ROW = "grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-x-4 py-3";
+const ROW_PAIR =
+  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3";
 
 /** Hairlines between rows; with the shared gutter they are what makes a group read as one form. */
 function Rows({ children }: { children: React.ReactNode }) {
@@ -277,7 +278,7 @@ function SecretInput({
   const showBadge = Boolean(badge) && !focused && !value;
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative w-full min-w-0", className)}>
       <Input
         type="password"
         className={showBadge ? "pl-32" : undefined}
@@ -804,7 +805,7 @@ export function FunctionalModelsView() {
                   </div>
                   <div className={ROW}>
                     <RowLabel nested>{F.endpointLabel}</RowLabel>
-                    <div className="relative">
+                    <div className="relative w-full min-w-0">
                       {/* The mark's room is reserved whether or not there is one, so the visible
                           address never reflows when a verdict lands. */}
                       <Input
@@ -873,7 +874,10 @@ export function FunctionalModelsView() {
               update("extract_model", next === MODEL_REFERENCE_NONE ? "" : next)
             }
           >
-            <SelectTrigger className="w-full" aria-label={F.extractModel}>
+            <SelectTrigger
+              className="w-full min-w-0"
+              aria-label={F.extractModel}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -900,7 +904,7 @@ export function FunctionalModelsView() {
               update("judge_model", next === MODEL_REFERENCE_NONE ? "" : next)
             }
           >
-            <SelectTrigger className="w-full" aria-label={F.judgeModel}>
+            <SelectTrigger className="w-full min-w-0" aria-label={F.judgeModel}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -929,7 +933,10 @@ export function FunctionalModelsView() {
                   update("vlm_model", next === MODEL_REFERENCE_NONE ? "" : next)
                 }
               >
-                <SelectTrigger className="w-full" aria-label={F.captionModel}>
+                <SelectTrigger
+                  className="w-full min-w-0"
+                  aria-label={F.captionModel}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1081,7 +1088,10 @@ export function FunctionalModelsView() {
         <div className={ROW}>
           <RowLabel>{F.reindexKbLabel}</RowLabel>
           <Select value={reindexKbId} onValueChange={setReindexKbId}>
-            <SelectTrigger className="w-full" aria-label={F.reindexKbLabel}>
+            <SelectTrigger
+              className="w-full min-w-0"
+              aria-label={F.reindexKbLabel}
+            >
               <SelectValue placeholder={F.reindexKbPlaceholder} />
             </SelectTrigger>
             <SelectContent>

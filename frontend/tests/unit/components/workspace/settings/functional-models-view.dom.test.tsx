@@ -247,3 +247,47 @@ describe("provider rows", () => {
     expect(screen.getByText("lockedCloudOnly")).toBeTruthy();
   });
 });
+
+/**
+ * Shrinkable-row rules (spec 2026-09-24 settings-responsive-layout §4 1-2):
+ *
+ * 1. Row tracks are `minmax(0,1fr)`, so a squeezed column collapses instead of pushing its
+ *    sibling out of the card (a bare `1fr` track floors at the child's min-content width).
+ * 2. Every wrapper that sits directly on a row may collapse (`min-w-0`) — the input's own
+ *    `min-w-0` cannot save a wrapper that still reports min-content.
+ */
+describe("shrinkable rows", () => {
+  const rowOf = (el: HTMLElement) =>
+    el.closest<HTMLElement>('div[class*="grid-cols-[8rem_"]')!;
+  const trackCount = (row: HTMLElement) =>
+    row.className.match(/minmax\(0,1fr\)/g)?.length ?? 0;
+
+  it("pair rows carry two shrinkable tracks, single rows one", () => {
+    renderWith({
+      embedding_provider: "openai-compatible",
+      rerank_provider: "generic-rerank",
+      embedding_sparse_source: "external",
+    });
+
+    expect(trackCount(rowOf(screen.getByLabelText("embeddingModel")))).toBe(2);
+
+    openAdvanced();
+    expect(trackCount(rowOf(screen.getByLabelText("sparseModel")))).toBe(1);
+  });
+
+  it("grid children may collapse: secret wrapper, address wrapper, select triggers", () => {
+    renderWith({ embedding_sparse_source: "external" });
+
+    expect(
+      screen.getByLabelText("embeddingApiKey").parentElement!.className,
+    ).toContain("min-w-0");
+    expect(
+      screen.getByRole("combobox", { name: "embeddingProvider" }).className,
+    ).toContain("min-w-0");
+
+    openAdvanced();
+    expect(
+      screen.getByLabelText("sparseBaseUrl").parentElement!.className,
+    ).toContain("min-w-0");
+  });
+});
