@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ChevronDown,
   LibraryBig,
   PanelLeftClose,
   Plus,
@@ -93,10 +92,11 @@ export function KbListPanel({
     <div className="flex h-full flex-col" data-testid="kb-list-panel">
       <div className="flex items-center gap-0.5 px-3 pt-3 pb-2">
         {/* 分组标题点击折叠（2026-09-10）：标题本身即开关（hover 变色给点击
-            暗示、chevron 跟折叠态旋转），与右侧「+」/收列按钮互不干扰。 */}
+            暗示）。chevron 已删（2026-09-25，spec §7.1）：折叠在整行上，箭头纯
+           装饰，而它占宽把「个人知识库」挤折行。 */}
         <button
           aria-expanded={personalOpen}
-          className="text-muted-foreground hover:text-foreground -ml-1 mr-auto flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium transition-colors"
+          className="text-muted-foreground hover:text-foreground -ml-1 mr-auto flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium whitespace-nowrap transition-colors"
           data-testid="kb-personal-toggle"
           type="button"
           onClick={() => setPersonalOpen((open) => !open)}
@@ -105,12 +105,6 @@ export function KbListPanel({
               （text-X-600 dark:text-X-500，同 document-panel 的 amber 用法）。 */}
           <UserRound className="text-sky-600 dark:text-sky-500 size-3.5 shrink-0" />
           {tk.personalKBs}
-          <ChevronDown
-            className={cn(
-              "size-3.5 shrink-0 transition-transform",
-              !personalOpen && "-rotate-90",
-            )}
-          />
         </button>
         <Button
           aria-label={tk.createKB}
@@ -224,19 +218,13 @@ export function KbListPanel({
           <div className="flex items-center gap-1.5 px-2 pb-1">
             <button
               aria-expanded={sharedOpen}
-              className="text-muted-foreground hover:text-foreground -ml-1 mr-auto flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium transition-colors"
+              className="text-muted-foreground hover:text-foreground -ml-1 mr-auto flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium whitespace-nowrap transition-colors"
               data-testid="kb-shared-toggle"
               type="button"
               onClick={() => setSharedOpen((open) => !open)}
             >
               <Users className="text-violet-600 dark:text-violet-500 size-3.5 shrink-0" />
               {tk.sharedKBs}
-              <ChevronDown
-                className={cn(
-                  "size-3.5 shrink-0 transition-transform",
-                  !sharedOpen && "-rotate-90",
-                )}
-              />
             </button>
           </div>
           {sharedOpen && (
