@@ -2604,7 +2604,7 @@ rag:
   # rerank_base_url:
   # parse_provider: mineru-cloud         # mineru-cloud | mineru-local
   # parse_base_url:                      # required when parse_provider=mineru-local
-  # parse_backend:                       # vlm | hybrid; empty lets the local service decide
+  # parse_tier:                          # flash | basic | standard | advanced; empty lets the local service decide
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
   # Requests/second cap for graph-extraction LLM calls during indexing.

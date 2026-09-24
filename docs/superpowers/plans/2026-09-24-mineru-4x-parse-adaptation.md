@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-24-mineru-4x-parse-adaptation-design.md](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)
-**Status:** 📝 **草稿（2026-09-24）** —— **代码已开工**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付、Task 3 = 前端交付，四项均已完成；Task 4–5 未开工）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。✅ **Task 3 已交付（2026-09-24）** —— 前端 9 文件（6 源 + 3 测试）：RED 4 红 → GREEN 69 绿、neuter 2 红、`pnpm check` 净、前端全量 243 文件 / 2621 例 0 失败、前端面旧键零残留、prettier 新债 0。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
+**Status:** 📝 **草稿（2026-09-24）** —— **代码与文档均已开工**（Task 0 = 只读核实、Task 1 = 部署与原始实证、Task 2 = 后端交付、Task 3 = 前端交付、Task 4 = 文档同步，五项均已完成；**Task 5 = 应用级端到端验收未开工**）；三项已裁（D1 替换 / D2 `parse_tier` / D3 新起一对），**两项同日改判：① 部署 + 原始 curl 契约实证提前到 Task 1（甲）；② 客户端重写与配置面合并为 Task 2 的单个提交**（工厂 kwarg 与客户端构造签名是同一条链，拆开必留已知红的中间提交）。**✅ Task 0 已核（2026-09-24）——六项全勾、`实测` 已回填；两处更正：zip 图片前缀定案（`images/`，`_unpack_zip` 零改动）、API 侧没有「档位×扩展名」校验（真规则见 spec D8）。✅ Task 1 已实测（2026-09-24）——本机起 4.0.7（`127.0.0.1:8000 --tier flash`，**保持运行**），原始 curl 六步全通，zip 图片前缀与「引用名 == 条目名」两项在真 zip 上验到；证据落 `pr-build/mineru-4x-smoke-2026-09-24/`。✅ **Task 2 已交付（2026-09-24）** —— 后端 9 文件（5 源 + 4 测试/夹具）：RED 27 红 → GREEN 82 绿、neuter 5/5 均有红、`make lint` 双净；更宽面 sweep 的 3 红为环境性预存（A/B 已证）。✅ **Task 3 已交付（2026-09-24）** —— 前端 9 文件（6 源 + 3 测试）：RED 4 红 → GREEN 69 绿、neuter 2 红、`pnpm check` 净、前端全量 243 文件 / 2621 例 0 失败、前端面旧键零残留、prettier 新债 0。✅ **Task 4 已交付（2026-09-24）** —— 文档 3 文件（README 两处 / backend AGENTS 一段 / example yaml 一行）+ 未提交研究档四处引用（不入本笔）：`frontend/AGENTS.md` 复核＝无需改、全仓文档面三类残留之外的旧键已归零。** 开工顺序：Task 0 → 1 → 2 → 3 → 4 → 5。
 **Parent:** [2026-09-14-rag-model-provider-adaptation.md](2026-09-14-rag-model-provider-adaptation.md)（本对收它的**腿2**；该 plan :197 的挂起行已加本对注记）
 
 **Architecture:** 一条腿四块 —— **① 客户端 + 配置面（Task 2，一个提交）**（`parse_local.py`：三步上传 → `POST /v1/parse/jobs` → 轮询 → 文件注册表取 zip → `_unpack_zip` → 归一化；`parse_backend` → `parse_tier`：`RagConfig` / `RagConfigFile` / 工厂 / allowlist 行，旧键剥离不建模）**② 前端**（表单字段/选项/「解析档位」行/i18n 三文件）**③ 文档**（README / backend AGENTS / example yaml / 研究档）**④ 部署 + 验收**（Task 1：本机起 4.x 服务 + 原始 curl 契约实证；Task 5：应用级端到端 + 两条负向）。
@@ -132,14 +132,21 @@
 > 动到的文件：`README.md`（:46 / :113）、`backend/AGENTS.md`（:1176「Parse provider dimension」段）、`frontend/AGENTS.md`（核 :266 一带是否引旧字段）、`config.example.yaml`（:2607）、`docs/PRE_RELEASE_HARDCODE_INVENTORY.md`（未提交档，:167/:305/:343，顺手）。
 > **验收对应**：spec §5 的 7。
 
-- [ ] README 两处：轻客户端形态仍成立；补「上游 4.x」与 `parse_tier`（档位）口径。
-- [ ] `backend/AGENTS.md:1176`：把「`POST /tasks` multipart → poll → `/result`」与 `parse_backend` 换掉，改成 4.x 序列（上传三步 / `/v1/parse/jobs` / 文件注册表 zip）+ `parse_tier`。
-- [ ] `config.example.yaml:2607`：`# parse_tier:   # flash | basic | standard | advanced; empty lets the local service decide`。
-- [ ] `frontend/AGENTS.md`：核一遍，如需改则改。
-- [ ] `docs/PRE_RELEASE_HARDCODE_INVENTORY.md`：三处引用同步（该档未提交，属于顺手，不做阻塞）。
-- [ ] **Commit**：`docs(rag): document the MinerU 4.x local parser`
+- [x] README 两处：轻客户端形态仍成立；补「上游 4.x」与 `parse_tier`（档位）口径。
+- [x] `backend/AGENTS.md:1176`：把「`POST /tasks` multipart → poll → `/result`」与 `parse_backend` 换掉，改成 4.x 序列（上传三步 / `/v1/parse/jobs` / 文件注册表 zip）+ `parse_tier`。
+- [x] `config.example.yaml:2607`：`# parse_tier:   # flash | basic | standard | advanced; empty lets the local service decide`。
+- [x] `frontend/AGENTS.md`：核一遍，如需改则改。
+- [x] `docs/PRE_RELEASE_HARDCODE_INVENTORY.md`：三处引用同步（该档未提交，属于顺手，不做阻塞）。
+- [x] **Commit**：`docs(rag): document the MinerU 4.x local parser`
 
-**实测（开工时回填）：**
+**实测（2026-09-24 逐条回填；本提交 3 文件：`README.md` / `backend/AGENTS.md` / `config.example.yaml`，研究档未提交不入本笔）：**
+
+- **README 两处**（`:46` 摄取段 / `:113` provider 段）：轻客户端形态一字未动，补的是「对接上游 4.x 的 HTTP 契约（本仓按 4.0.7 验证）」与 `rag.parse_tier` 四档 + 留空 = 服务端定（服务端自身默认 `standard`；`standard`/`advanced` 要服务端装 torch）。两处口径同源，`:113` 只留一句指针。`README_zh/fr/ja/ru.md` 都不含 MinerU 内容（grep 零命中）⇒ 无需跟随。
+- **`backend/AGENTS.md:1176`**：`POST /tasks` 那一串换成 4.x 序列，**逐条对 `parse_local.py` 核过**（`:181` `/v1/uploads` → `:203` `/v1/uploads/{id}/complete` → `:216` `/v1/parse/jobs` → `:225` `GET /v1/parse/jobs/{id}` → `:244` `GET /v1/files/{file_id}/content`；中间的原始 `PUT` 用服务返回的 `upload_url` + `upload_headers`），`*-http-client` backend ids 那句随 3.x 一起删（4.x 没有这族 id），`parse_backend` → **`parse_tier` 作为 job 的 `tier` 下发**。
+- **`config.example.yaml:2607`**：注释行换键换值域；**注释列仍对齐**（第二列 `#` 与相邻 `parse_provider` / `parse_base_url` 两行同列，实测三行一致）。
+- **`frontend/AGENTS.md`：已核＝无需改**（与 spec `:206` 结论一致，本轮复核成立）：`:266` 那句讲的是解析行**锁的是模式、不是厂商地址**，不含字段名也不含旧契约；该文件对 `parse_backend` / `解析后端` 均零命中。
+- **`docs/PRE_RELEASE_HARDCODE_INVENTORY.md`（未提交档，顺手）**：**计划写的「三处」与行号 `:167/:305/:343` 都已漂移**——实际是 **4 处实质引用**（`:171` A-5 对照行 / `:269` §4 第 7 条 / `:312` §5「第二版→第三版」表 / `:361` §6.2 附录「文档解析（云）」行）+ **3 处说明性提及**（`:175` 自指、`:370` 相关记录，加上本轮在 `:171` 补的「原名」注记），四处实质引用一次性改名 `parse_tier`（四档 + 空 = 服务端定）；`:175` 那条「等那一对落地后一次性改名、现在不预先改」的待办**按它自己写的前提（代码已交付）改成「已于 2026-09-24 同步」**；`:171` 的字段描述改写成现行文字（原「`pipeline` 有意排除」随 3.x 退役，换成 flash-only 服务端 503 那半句），`app_config.py:219-222` 的**行号范围恰好未变**。该档 untracked ⇒ **不进本笔提交**（与 Task 2 同一处置）。
+- **门禁（两层核：模板可加载性 + 旧键残留 grep）**：① **配置模板的「cp 后能起」由既有用例守着**——`backend/tests/test_rag_config.py` + `test_app_config_reload.py` + `test_config_version.py` = **69 passed / 3 failed**，三条**逐条读出成因、均与本次改动无关**：两条断言 `config.models == []` / caplog 里 “No models are configured”，而本机仓库根有真实的 `config.yaml` + `models_config.json`（5 条模型）⇒ 长期存在的环境红；第三条是 `bash` 在本机不可达（`WSL … execvpe(/bin/bash) failed`，`scripts/config-upgrade.sh` 根本没跑起来）⇒ 同为环境条件。我改的是 `rag:` 段里**一行注释**，而这三条用例在 `config.example.yaml` 上断言的是 `rag.table` 与 `version` 两处（后者断言已通过）。`--basetemp=.pytest-tmp` 用完即删。② `*.md` + `*.yaml` 全仓残留 `parse_backend` 只剩三类——**① 本对 spec/plan（18 + 13 处，都是「退役」这一事实的设计叙述）；② 冻结的已交付档**（spec `:209` 点名三份：0814 spec 3 处 / 0817 spec 2 处 / 0817 plan 2 处；同类还有**母 plan 0814 的 3 处**——它记的是 3.4.5 时代的 D2/D4-B 决策，按「已交付文档冻结、修订另起新版」的既定做法**不原地改**，本对就是它的新版）；**③ 本档的 3 处说明性提及**。**除这三类外零残留**（`backend/AGENTS.md` 与 `config.example.yaml` 已各自归零）。
 
 ---
 
