@@ -6,6 +6,15 @@
   "note": "Captured from GET /api/knowledge-bases/{kb}/documents after the run. `error` is the document record's own field (the worker truncates it to 500 chars).",
   "documents": [
     {
+      "id": "9d171cb3bd2540c5affb9db9bd61d587",
+      "name": "acceptance-4x-ready-2026-09-24.pdf",
+      "role": "positive fixture, uploaded after switching the embedding leg to the dashscope native one (option 甲)",
+      "status": "ready",
+      "path_status": { "graph": "done", "vector": "done", "wiki": "ready" },
+      "error": null,
+      "comment": "100% / ready. 3 chunks (6-row GFM table; chunk 3 carries the image reference with the VLM caption as alt text); its chunks cite 27 entities, which the native leg embeds in batches of 10 — the same call the compatible leg killed with its 20-row batch."
+    },
+    {
       "id": "3e03842cf5e24fbbae53706da8c06498",
       "name": "acceptance-4x-small-2026-09-24.pdf",
       "role": "positive fixture (trimmed page: table + figure)",

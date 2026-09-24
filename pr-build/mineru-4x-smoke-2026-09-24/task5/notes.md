@@ -53,12 +53,28 @@
 
 服务端日志同时留下 `POST /v1/parse/jobs HTTP/1.1" 400 Bad Request`。随后把档位切回 `flash` 并保存 200。
 
+## 甲：切 dashscope 原生腿，把 `ready` 跑出来（同日追加）
+
+写进上面「未达成的那半条」的那条路，用户裁定后执行。**这条只动「向量提供方」一格**（原生腿的批大小按模型查表、默认 10），解析三行照旧，跑完逐字节还原。
+
+| 步 | 实测 |
+|---|---|
+| 切提供方 | 设置页「向量提供方」`OpenAI 兼容 → 阿里百炼 (DashScope)`；`PUT` 200 |
+| ⚠ 陷阱（**本轮新发现**） | 切完那一格里仍带着文件里存的旧地址，而 `embedder_factory.py:161` 的规则是 **`embedding_base_url` 非空就永远优先**（连厂商固定端点的行也一样）⇒ 原生腿会把自家路由拼到 `https://dashscope.aliyuncs.com/compatible-mode/api/v1/services/…` 上（必 404）。处置：点那一行的「恢复默认」把覆盖清掉（行内显示变回厂商地址 `https://dashscope.aliyuncs.com`），再存 ⇒ 文件里 `embedding_base_url` 消失、`embedding_provider` = `dashscope` |
+| 空间一致性（动手前实测） | 同模型（`text-embedding-v4`）同文本，两路向量 **cosine = 1.00000000** ⇒ 换腿不换空间、**不用重建索引**；同一把 key 在原生路也通（200） |
+| 正样本 | 上传 `acceptance.pdf`（富样本，sha256 `ef85f5f5…c55e`）为 `acceptance-4x-ready-2026-09-24.pdf` ⇒ **`status: ready` / `progress 100%` / `path_status = {vector: done, graph: done, wiki: ready}`** |
+| 机制闭环 | 这份文档的切片引用 **27 个实体**（DB 里数的）⇒ 兼容腿的 20 行/批正是死因；原生腿按 `dashscope_batch_size("text-embedding-v4")` = **10** 行/批 ⇒ 3 批全过 |
+| 内容复核 | 3 个切片；chunk 2 = 6 行 **GFM 管道表**（表头 + 分隔 + 4 数据行）；chunk 3 带 `![图片 page_0_image_6.jpg](images/page_0_image_6.jpg)`（alt 文本 = VLM 生成的说明）；`images/page_0_image_6.jpg` 落盘 134109 B，应用端点回 `200 / image/jpeg / 134109 B` |
+| 还原 | 用动手前的备份 `rag_config.original.json`（sha256 `e7269ef4…6c23`）覆盖回去 ⇒ **622 B / md5 `b0cc81b51c409225e26a737ee78f50b8`**，与首次保存前逐字节一致 |
+
+**给之后的人**：那一格「恢复默认」不是可选项——由「兼容」切「原生」（或反向）而不同时清/填地址，存的地址会把新腿指错地方，症状是 404 而不是配置错误。
+
 ## 还原与收尾
 
-- `rag_config.json` 按原十键重写并**逐字节核验**：622 B / md5 `b0cc81b51c409225e26a737ee78f50b8`（= 首次保存前读到的 md5）。
+- `rag_config.json` 按原十键重写并**逐字节核验**：622 B / md5 `b0cc81b51c409225e26a737ee78f50b8`（= 首次保存前读到的 md5；甲那一轮直接用动手前备份覆盖，结果同上）。
 - 4.x 服务按原命令重启并保持运行（`/v1/health` 200）。
-- Launcher 桩（`serve_fixture.py`，`127.0.0.1:8791`）在验收期间提供夹具字节，跑完仍在后台；它只读夹具目录。
-- KB 测试2 里留了四份验收文档（三份 `failed` + 一份 `failed` 但切片齐），未删——它们是本任务的现场证据，用户可随时在「知识库 → 测试2」里删。
+- Launcher 桩（`serve_fixture.py`，`127.0.0.1:8791`）在验收期间提供夹具字节；两轮跑完各自 `TaskStop`。
+- KB 测试2 里留了五份验收文档（四份 `failed` + 一份 `ready`），未删——它们是本任务的现场证据，用户可随时在「知识库 → 测试2」里删。
 
 ## 文件
 

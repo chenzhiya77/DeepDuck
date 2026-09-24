@@ -1,6 +1,6 @@
 # 本地 MinerU 解析腿:迁到上游 4.x HTTP 契约 —— 设计
 
-**Status:** 📝 **草稿（2026-09-24）** —— 未开工；**五项已裁（2026-09-24）：D1 换法=替换（甲）/ D2 `parse_backend` 退役为可选 `parse_tier`（甲）/ D3 落点=新起一对（甲）/ 排序=部署提前（甲）/ 后端客户端与配置面合并为一个提交（同日）**。**✅ Task 0 已核（2026-09-24）：zip 图片前缀定案（`images/`、`_unpack_zip` 零改动，§4.4）+ API 侧档位规则更正（D8 重写）**。本对收 [2026-09-14 provider 适配 plan](../plans/2026-09-14-rag-model-provider-adaptation.md) 的**腿2**（该 plan :197，2026-09-23 挂起）：operator 2026-09-24 裁定「**跟进最新版**」⇒ 把 `mineru-local` 从 3.4.5 代形状迁到上游 4.x。配套 plan：[2026-09-24-mineru-4x-parse-adaptation](../plans/2026-09-24-mineru-4x-parse-adaptation.md)（**排序已裁：部署 + 原始 curl 契约实证提前到 Task 1**）。
+**Status:** ✅ **已交付（2026-09-24）** —— Task 0–5 全部达成（配套 plan 的 `Status` 与 `实测` 是收口的逐条账本）；**五项已裁（2026-09-24）：D1 换法=替换（甲）/ D2 `parse_backend` 退役为可选 `parse_tier`（甲）/ D3 落点=新起一对（甲）/ 排序=部署提前（甲）/ 后端客户端与配置面合并为一个提交（同日）**。**✅ Task 0 已核（2026-09-24）：zip 图片前缀定案（`images/`、`_unpack_zip` 零改动，§4.4）+ API 侧档位规则更正（D8 重写）**。本对收 [2026-09-14 provider 适配 plan](../plans/2026-09-14-rag-model-provider-adaptation.md) 的**腿2**（该 plan :197，2026-09-23 挂起）：operator 2026-09-24 裁定「**跟进最新版**」⇒ 把 `mineru-local` 从 3.4.5 代形状迁到上游 4.x。配套 plan：[2026-09-24-mineru-4x-parse-adaptation](../plans/2026-09-24-mineru-4x-parse-adaptation.md)（**排序已裁：部署 + 原始 curl 契约实证提前到 Task 1**）。
 
 **Parent:**
 

@@ -80,6 +80,37 @@ images/page_0_image_6.jpg            134109 bytes   <- the figure in the markdow
 images/page_0_table_4.jpg             85074 bytes   <- the table crop MinerU emits alongside
 ```
 
+## Option 甲 — switching the embedding leg (2026-09-24, later the same evening)
+
+```
+向量提供方            = 阿里百炼 (DashScope)      (set via the same Radix technique)
+接口地址              = https://dashscope.aliyuncs.com/compatible-mode   / 恢复默认
+   ↑ the row keeps the *stored* URL after the provider switch; clearing it needs 「恢复默认」,
+     because a stored `embedding_base_url` always wins (embedder_factory.py:161) — the native
+     leg would otherwise append its own route to `…/compatible-mode` and 404.
+after 「恢复默认」 + save: row reads https://dashscope.aliyuncs.com
+file after save: embedding_provider = dashscope, NO embedding_base_url key
+解析提供方 = 本地 MinerU 服务 / 本地服务地址 = http://127.0.0.1:8000 / 解析档位 = flash
+```
+
+Space check before the switch (one call per leg, same model, same text):
+
+```
+compatible leg: dim 1024
+native leg    : dim 1024
+cosine(same text, two legs, same model) = 1.00000000
+```
+
+Upload of `acceptance.pdf` as `acceptance-4x-ready-2026-09-24.pdf` → **ready**:
+
+```
+status: ready | progress 100% | path_status {vector: done, graph: done, wiki: ready}
+chunks: 3   (chunk 1 = 6-row GFM table, chunk 2 = the image reference)
+chunk 2: **二、金额分布图** / ![图片 page_0_image_6.jpg](images/page_0_image_6.jpg) / 图 1 …
+  GET …/files/images/page_0_image_6.jpg -> 200 / image/jpeg / 134109 bytes
+entities cited by this document's chunks: 27  (graph_entities, read-only sqlite)
+```
+
 ## Restore
 
 `rag_config.json` was rewritten from its ten original keys and verified byte-for-byte:
