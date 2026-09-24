@@ -84,13 +84,22 @@
 > 动到的文件：`app/gateway/services/knowledge_service.py`（删 :1063-1067 常量、新增 `_recall_score_types(...)`、:1216 改用）、`packages/harness/deerflow/tools/builtins/graph_search_tool.py`（`_score_candidates` :125-159 回报尺子、payload :320-334 加 `score_source`、docstring :140 顺带）、`tools/builtins/hybrid_search_tool.py`（docstring :3-4 顺带）、`tests/knowledge/test_recall_test_api.py`（:174-179 钉死断言改口径 + 新用例）、`tests/knowledge/tools/test_graph_search.py`（+尺子用例）。
 > **验收对应**：spec §5 的 7 / 8。
 
-- [ ] **RED**：① `test_recall_test_api.py` 加四格 —— 默认 dashscope → `qwen3-rerank relevance`；`generic-rerank` + Jina 模型名 → `jina-reranker-v2-base-multilingual relevance`；impl 回报 `rerank` → 模型名；回报 `cosine` / **缺键** → `embedding cosine`（缺键 = 既有 mock 形态，走配置兜底）；② `test_graph_search.py` 加三格 —— 小池（≤ `graph_rerank_threshold`）回报 `cosine`、大池回报 `rerank`、重排抛错回报 `cosine`。此刻常量写死、payload 无该键 ⇒ 红。
-- [ ] **GREEN**：`_score_candidates` 返回 `(scores, "rerank"|"cosine")`；`_graph_search_impl` payload 加 `"score_source"`；服务层 `_recall_score_types(rag, graph_source)` 按硬约束 D2 的映射拼三路标签（TEI 格渲染配置模型名）；旧钉死断言改成按配置断言。⚠️ 调用点**唯一** = `graph_search_tool.py:270`（其返回值马上喂 `apply_source_caps` / `select_evidence`）⇒ 就地解包取 `score_source`，别把 tuple 当 scores 传下去。窄面转绿。
-- [ ] **neuter ①（派生）**：把 vector 标签改回写死 `"qwen3-rerank relevance"` ⇒ 四格里 Jina 格红。
-- [ ] **neuter ②（尺子）**：让 `_graph_search_impl` 恒写 `"cosine"` ⇒ 大池格红（小池格保持绿 —— 受害者不相交）。
-- [ ] **门禁**：ruff 双净；窄面（`test_recall_test_api.py` + `tests/knowledge/tools/`）绿；`tests/knowledge` 全量绿。
+- [x] **RED**：① `test_recall_test_api.py` 加四格 —— 默认 dashscope → `qwen3-rerank relevance`；`generic-rerank` + Jina 模型名 → `jina-reranker-v2-base-multilingual relevance`；impl 回报 `rerank` → 模型名；回报 `cosine` / **缺键** → `embedding cosine`（缺键 = 既有 mock 形态，走配置兜底）；② `test_graph_search.py` 加三格 —— 小池（≤ `graph_rerank_threshold`）回报 `cosine`、大池回报 `rerank`、重排抛错回报 `cosine`。此刻常量写死、payload 无该键 ⇒ 红。
+- [x] **GREEN**：`_score_candidates` 返回 `(scores, "rerank"|"cosine")`；`_graph_search_impl` payload 加 `"score_source"`；服务层 `_recall_score_types(rag, graph_source)` 按硬约束 D2 的映射拼三路标签（TEI 格渲染配置模型名）；旧钉死断言改成按配置断言。⚠️ 调用点**唯一** = `graph_search_tool.py:270`（其返回值马上喂 `apply_source_caps` / `select_evidence`）⇒ 就地解包取 `score_source`，别把 tuple 当 scores 传下去。窄面转绿。
+- [x] **neuter ①（派生）**：把 vector 标签改回写死 `"qwen3-rerank relevance"` ⇒ 四格里 Jina 格红。
+- [x] **neuter ②（尺子）**：让 `_graph_search_impl` 恒写 `"cosine"` ⇒ 大池格红（小池格保持绿 —— 受害者不相交）。
+- [x] **门禁**：ruff 双净；窄面（`test_recall_test_api.py` + `tests/knowledge/tools/`）绿；`tests/knowledge` 全量绿。
 
-**实测（待回填）**：
+**实测（2026-09-25）**：
+- **RED 8 红**（两文件同跑 62.8s）：标签格 5 红（②③④⑤⑥ —— ① 默认档三条字面量与旧常量恰好同值，按设计保持绿）+ 尺子格 3 红（全是 `KeyError: 'score_source'`）；同批 34 绿。
+- **GREEN 窄面 42 绿**：`_score_candidates` → `tuple[dict[str, float], str]`（成功 `"rerank"`、其余含降级 `"cosine"`，两处 return）；唯一调用点（现 :274）就地解包 —— tuple 没流进 `apply_source_caps`/`select_evidence`；payload（:331）加 `"score_source"`；`_recall_score_types(rag, graph_source)` 静态方法替掉常量（:1215 调用，`isinstance(graph_raw, dict)` 守卫 ⇒ 失败腿/老 stub 走配置兜底）。
+- **标签四格做成 6 行参数化**（多出的 2 行都钉 spec §4.2 表里的既有分支）：①默认 dashscope；②Jina 模型名；③impl 回报 `rerank`；④impl 回报 `cosine`（配置开着重排也算「这一跑没跑」）；⑤**缺键 × `graph_rerank` 开 → 模型名**（兜底另一支）；⑥**模型串为空 → `rerank relevance`**。⚠️ 用例自带输入（`_pin_rag` 把 rag 钉死）—— 本机 `rag_config.json` 是 generic-rerank + Jina，照它断言 = 把操作员的机器写进用例。
+- **`:174-179` 旧钉死断言改口径**：同一 `_pin_rag` 钉 dashscope 默认档再断言三条字面量（不再是「常量 == 常量」的同义反复）；`_mock_impls` 缺键 ⇒ 图路走配置兜底（关 → cosine）。
+- **TEI 格无需专门代码**：vector 标签恒 `{rag.rerank_model} relevance`，Task 4 接上 `tei-rerank` 后自动渲染配置里的模型名 —— 计划的「TEI 格渲染配置模型名」由同一条规则满足。
+- **neuter ①（派生）**：`rerank_label` 改回写死 `"qwen3-rerank relevance"` ⇒ **4 红**（②③④⑥）、①⑤ 保持绿；md5 `9a5a6f68…` →（neuter）`f4fe1f65…` →（还原）`9a5a6f68…`。
+- **neuter ②（尺子）**：payload 恒写 `"cosine"` ⇒ **1 红**（只有大池格；小池/降级两格保持绿 —— 受害者不相交，与计划一致）；md5 `f30cf5d6…` → `18e8f110…` → `f30cf5d6…`。
+- **门禁**：ruff `check` + `format --check` 双净（1292 files）；`tests/knowledge` 全量 **1210 passed / 2 skipped / 3 failed（环境）**；3 红逐条复核 = 本机真 `rag_config.json` 供 key 使 `monkeypatch.delenv` 失效（`test_embedder_providers` / `test_indexer` / `test_reranker` 各一），A/B（`DEER_FLOW_RAG_CONFIG_PATH` 指仓外空文件）⇒ 那 3 条 **3 passed**。
+- 顺带：`graph_search_tool.py:140` 与 `hybrid_search_tool.py:3-4` 的 docstring 去点名（改「the configured rerank model / embedding model」）。⚠️ `_empty()` **不带** `score_source`（诚实空答案没有打分这回事）⇒ 由服务层兜底；前端面（`recall-test-panel.tsx:567` 与前端用例 mock）只渲染字符串，零改动。
 
 ---
 

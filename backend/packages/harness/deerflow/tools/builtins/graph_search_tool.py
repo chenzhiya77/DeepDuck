@@ -132,15 +132,19 @@ async def _score_candidates(
     reranker: Any,
     graph_rerank: bool,
     rerank_threshold: int,
-) -> dict[str, float]:
+) -> tuple[dict[str, float], str]:
     """Score every candidate chunk against the query — one global ruler.
+
+    Returns the scores plus **the ruler that was actually used** ("rerank" or
+    "cosine", spec 2026-09-24 §4.2): the recall panel renders that word, so it
+    must describe this run rather than the configuration's capability.
 
     Default: embedding cosine against the stored chunk vectors (one batched
     retrieve, zero extra embedding calls). With ``graph_rerank`` enabled and
-    a pool above ``rerank_threshold``, qwen3-rerank takes over (texts fetched
-    from the business DB, candidates fed in chunk-id order for a
-    deterministic index mapping); any ``RerankerError`` degrades back to the
-    embedding order.
+    a pool above ``rerank_threshold``, the configured rerank model takes over
+    (texts fetched from the business DB, candidates fed in chunk-id order for
+    a deterministic index mapping); any ``RerankerError`` degrades back to the
+    embedding order — and back to the "cosine" ruler with it.
     """
     chunk_ids = list(candidates)
     if graph_rerank and reranker is not None and len(chunk_ids) > rerank_threshold:
@@ -154,9 +158,9 @@ async def _score_candidates(
             for index, score in pairs:
                 if 0 <= index < len(rows):
                     scores[rows[index]["chunk_id"]] = float(score)
-            return scores
+            return scores, "rerank"
     vectors = await vector_store.get_chunk_vectors(chunk_ids)
-    return {chunk_id: (cosine_similarity(query_dense, vectors[chunk_id]) if chunk_id in vectors else 0.0) for chunk_id in chunk_ids}
+    return {chunk_id: (cosine_similarity(query_dense, vectors[chunk_id]) if chunk_id in vectors else 0.0) for chunk_id in chunk_ids}, "cosine"
 
 
 async def _graph_search_impl(
@@ -267,7 +271,7 @@ async def _graph_search_impl(
     # 5. Evidence (D1): the graph defines the pool, semantics decides —
     # dedupe → per-source caps → hop-0 guarantee → pure-score competition.
     candidates = collect_candidates(graph, hop_by_node)
-    scores = await _score_candidates(
+    scores, score_source = await _score_candidates(
         query,
         query_dense,
         candidates,
@@ -321,6 +325,10 @@ async def _graph_search_impl(
         "entities": entities,
         "relations": relations,
         "evidence": evidence,
+        # Which ruler produced the scores above (spec 2026-09-24 §4.2): the
+        # recall panel renders it verbatim as the path's badge. Absent on the
+        # honest-empty returns — the caller then falls back to the config.
+        "score_source": score_source,
         "trace": trace,
         "message": format_graph_message(
             matched=len(matched_names),

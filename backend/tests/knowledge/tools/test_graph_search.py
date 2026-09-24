@@ -640,3 +640,59 @@ async def test_graph_search_empty_response_carries_empty_trace(session_factory):
     )
 
     assert result["trace"] == {"seed_entities": [], "expanded_nodes": [], "evidence_entities": []}
+
+
+# ── Task 3（spec 2026-09-24 §4.2，D2 乙）：图谱路回报这一跑的尺子 ─────────────
+# 召回面板的徽标渲染「实际参与打分的那个东西」——只有 impl 知道这一跑真跑了
+# 重排没有（小池不触发、RerankerError 降级都落回余弦序），所以由它回报。
+
+
+@pytest.mark.asyncio
+async def test_graph_search_reports_cosine_ruler_for_small_pool(trace_env):
+    """池子够不到阈值 ⇒ 根本没跑重排，尺子回报 "cosine"（不是配置的能力）。"""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        reranker=_FixedReranker([(1, 0.99), (0, 0.5)]),
+        graph_rerank=True,
+        rerank_threshold=99,
+        neighbor_min_score=0.0,
+    )
+
+    assert result["evidence"], "fixture 必须有证据切片，否则池子为空、结论无意义"
+    assert result["score_source"] == "cosine"
+
+
+@pytest.mark.asyncio
+async def test_graph_search_reports_rerank_ruler_when_it_reranked(trace_env):
+    """池子超过阈值且重排成功 ⇒ 尺子回报 "rerank"（服务层据此渲染模型名）。"""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        reranker=_FixedReranker([(1, 0.99), (0, 0.5)]),
+        graph_rerank=True,
+        rerank_threshold=1,
+        neighbor_min_score=0.0,
+    )
+
+    assert result["evidence"]
+    assert result["score_source"] == "rerank"
+
+
+@pytest.mark.asyncio
+async def test_graph_search_reports_cosine_ruler_after_rerank_degradation(trace_env):
+    """重排抛 RerankerError ⇒ 回落余弦序，尺子也必须如实回报 "cosine"。"""
+    result = await _graph_search_impl(
+        "Gateway 和哪些组件交互？",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_trace_impl_args(trace_env, _QueryLLM(["Gateway"])),
+        reranker=_FailingReranker(),
+        graph_rerank=True,
+        rerank_threshold=1,
+        neighbor_min_score=0.0,
+    )
+
+    assert result["evidence"]
+    assert result["score_source"] == "cosine"

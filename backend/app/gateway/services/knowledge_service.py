@@ -1052,15 +1052,18 @@ class KnowledgeService:
 
     # ── recall test (P1, phase-2 batch-1) ────────────────────────────────
 
-    #: Score semantics differ per path — never compare across paths.
-    #: graph 与 wiki 同串（2026-09-05 去「（当次可比）」补注）：两路分数确实都
-    #: 由 embedding cosine 产出（图谱证据/百科条目对 query 的余弦），但语料与
-    #: 归一不同，跨路仍不可比。
-    _RECALL_SCORE_TYPES = {
-        "vector": "qwen3-rerank relevance",
-        "graph": "embedding cosine",
-        "wiki": "embedding cosine",
-    }
+    @staticmethod
+    def _recall_score_types(rag: Any, graph_source: str | None) -> dict[str, str]:
+        """召回面板徽标（spec 2026-09-24 §4.2，D2 乙）：渲染这一跑实际参与打分的那个东西。
+
+        vector 恒为配置的重排模型（该路每次必过重排；重排降级时分数为 null、徽标
+        不变）；graph 以 impl 回报的尺子为准，缺键（老 stub / 未升级调用方）才按
+        配置兜底；wiki 恒余弦。分数语义逐路不同——跨路永不可比，标签只说明
+        「这些数字是什么」。
+        """
+        rerank_label = f"{rag.rerank_model} relevance" if rag.rerank_model else "rerank relevance"
+        source = graph_source if graph_source is not None else ("rerank" if rag.graph_rerank else "cosine")
+        return {"vector": rerank_label, "graph": rerank_label if source == "rerank" else "embedding cosine", "wiki": "embedding cosine"}
 
     async def recall_test(self, *, kb_id: str, user_id: str, query: str, top_k: int) -> dict[str, Any]:
         """Fan one query out to the three retrieval paths (spec P1).
@@ -1209,7 +1212,7 @@ class KnowledgeService:
         return {
             "query": query,
             "paths": {"vector": vector_path, "graph": graph_path, "wiki": wiki_path},
-            "score_type": dict(self._RECALL_SCORE_TYPES),
+            "score_type": self._recall_score_types(rag, graph_raw.get("score_source") if isinstance(graph_raw, dict) else None),
             "elapsed_ms": {"vector": vector_ms, "graph": graph_ms, "wiki": wiki_ms},
         }
 

@@ -95,6 +95,22 @@ def _create_kb(client: TestClient, name: str = "产品资料") -> dict:
     return response.json()
 
 
+#: 非原生 provider 的模型名（操作员机器上的真实形态）——标签必须逐字跟它走。
+JINA_RERANK_MODEL = "jina-reranker-v2-base-multilingual"
+JINA_RAG = {"rerank_provider": "generic-rerank", "rerank_model": JINA_RERANK_MODEL, "rerank_base_url": "https://api.jina.ai/v1"}
+
+
+def _pin_rag(monkeypatch, **updates) -> None:
+    """把 rag 配置钉死在此处再断言标签。
+
+    标签是配置的函数，用例必须自带输入：本机仓库根的 rag_config.json 是
+    generic-rerank + Jina，照它断言等于把操作员的机器写进用例（换台机器就红）。
+    """
+    real = app_config_module.get_app_config()
+    rag = real.rag.model_copy(update={"rerank_provider": "dashscope", "rerank_model": "qwen3-rerank", "graph_rerank": False, **updates})
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: real.model_copy(update={"rag": rag}))
+
+
 def _mock_impls(monkeypatch) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
     vector = AsyncMock(
         return_value={
@@ -133,6 +149,7 @@ def _mock_impls(monkeypatch) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
 
 async def test_recall_test_assembles_three_paths(service, monkeypatch):
     vector, graph, wiki = _mock_impls(monkeypatch)
+    _pin_rag(monkeypatch)
     client = _client(service)
     kb = _create_kb(client)
 
@@ -171,9 +188,10 @@ async def test_recall_test_assembles_three_paths(service, monkeypatch):
     assert whits[0]["source_chunk_ids"] == []
     assert "source_chunk_ids" not in whits[1]
 
+    # 徽标随配置派生（spec 2026-09-24 §4.2）：配置已钉在 dashscope 默认档 ⇒ 三条字面量。
+    # mock 缺 score_source ⇒ 图路走配置兜底（graph_rerank 关 → cosine）。
     assert body["score_type"] == {
         "vector": "qwen3-rerank relevance",
-        # 2026-09-05：图谱路胶囊去掉「（当次可比）」补注——与 wiki 路同串。
         "graph": "embedding cosine",
         "wiki": "embedding cosine",
     }
@@ -346,6 +364,48 @@ async def test_recall_test_graph_rerank_resolves_through_the_factory(service, mo
     assert client.post(url, json={"query": "x"}).status_code == 200
     assert graph.call_args.kwargs["reranker"] is None
     assert built == [], "graph_rerank 关闭时不应构造重排器"
+
+
+# ── 召回标签随配置（spec 2026-09-24 §4.2，D2 乙）─────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("rag_updates", "graph_source", "expected_vector", "expected_graph"),
+    [
+        # ① 默认档（dashscope + qwen3-rerank）——mock 缺 score_source，配置兜底（graph_rerank 关 ⇒ cosine）
+        ({}, None, "qwen3-rerank relevance", "embedding cosine"),
+        # ② 换 provider + 模型名 ⇒ 标签跟着换（写死 "qwen3-rerank relevance" 的旧形态在此格红）
+        (JINA_RAG, None, f"{JINA_RERANK_MODEL} relevance", "embedding cosine"),
+        # ③ impl 回报 rerank ⇒ 图路渲染同一把重排模型名
+        ({**JINA_RAG, "graph_rerank": True}, "rerank", f"{JINA_RERANK_MODEL} relevance", f"{JINA_RERANK_MODEL} relevance"),
+        # ④ impl 回报 cosine ⇒ 以 impl 为准（配置开着重排，这一跑实际没跑）
+        ({**JINA_RAG, "graph_rerank": True}, "cosine", f"{JINA_RERANK_MODEL} relevance", "embedding cosine"),
+        # ⑤ 缺键的另一支：graph_rerank 开着 ⇒ 配置兜底给出模型名
+        ({"graph_rerank": True}, None, "qwen3-rerank relevance", "qwen3-rerank relevance"),
+        # ⑥ 模型串为空 ⇒ 退化文案（spec §4.2 表：模型串为空 → "rerank relevance"）
+        ({"rerank_model": ""}, None, "rerank relevance", "embedding cosine"),
+    ],
+)
+async def test_recall_score_labels_follow_the_configured_ruler(service, monkeypatch, rag_updates, graph_source, expected_vector, expected_graph):
+    """徽标 = 「这一跑实际参与打分的那个东西」（spec 2026-09-24 §4.2）。
+
+    服务端每次请求现算：vector 恒为配置的重排模型；graph 以 impl 回报的尺子为准
+    （缺键才回落配置）；wiki 恒余弦。配置由 ``_pin_rag`` 钉死——用例自带输入，
+    断言字面量，不做「实现等于实现」的同义反复。
+    """
+    _vector, graph, _wiki = _mock_impls(monkeypatch)
+    if graph_source is not None:
+        graph.return_value = {**graph.return_value, "score_source": graph_source}
+    # graph_rerank 开着时服务层会先构造重排器（本用例只验标签；工厂解析另有专测）。
+    monkeypatch.setattr(ks_module, "build_reranker", lambda: object())
+    _pin_rag(monkeypatch, **rag_updates)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "x"})
+    assert response.status_code == 200, response.text
+
+    assert response.json()["score_type"] == {"vector": expected_vector, "graph": expected_graph, "wiki": "embedding cosine"}
 
 
 # ── integration: real impls against the seeded tools_env ─────────────────

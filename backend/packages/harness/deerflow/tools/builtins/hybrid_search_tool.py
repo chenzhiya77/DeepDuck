@@ -1,11 +1,11 @@
 """hybrid_search — the vector path (spec §4.1).
 
-Chain: query → qwen3.7-text-embedding (dense+sparse in one call) → Qdrant
-prefetch top-20 per path → RRF fusion (coarse) → qwen3-rerank → top-k.
-Chunk text is fetched from the business-DB ``chunks`` table by ``chunk_id``;
-the Qdrant payload supplies only citation metadata (doc_name/page/
-heading_path). A reranker outage degrades to RRF order — the vector path
-never hard-fails on the precision stage (spec §4.4).
+Chain: query → the configured embedding model (dense+sparse in one call) →
+Qdrant prefetch top-20 per path → RRF fusion (coarse) → the configured
+rerank model → top-k. Chunk text is fetched from the business-DB ``chunks``
+table by ``chunk_id``; the Qdrant payload supplies only citation metadata
+(doc_name/page/heading_path). A reranker outage degrades to RRF order — the
+vector path never hard-fails on the precision stage (spec §4.4).
 """
 
 from __future__ import annotations
