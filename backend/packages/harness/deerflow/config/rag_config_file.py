@@ -103,7 +103,7 @@ class RagConfigFile(BaseModel):
     sparse_base_url: str | None = Field(default=None, description="Sparse service endpoint; used when embedding_sparse_source=external.")
     sparse_model: str | None = Field(default=None, description="Sparse model name; used when embedding_sparse_source=external.")
     sparse_api_key: str | None = Field(default=None, description="Sparse service API key; masked on read, env is the fallback.")
-    rerank_provider: Literal["dashscope", "generic-rerank"] | None = Field(default=None, description="Rerank provider id; None uses config.yaml.")
+    rerank_provider: Literal["dashscope", "generic-rerank", "tei-rerank"] | None = Field(default=None, description="Rerank provider id; None uses config.yaml.")
     rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
     parse_provider: Literal["mineru-cloud", "mineru-local"] | None = Field(default=None, description="Document-parsing provider; None uses config.yaml.")
     parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local.")

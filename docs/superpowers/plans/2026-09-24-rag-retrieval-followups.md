@@ -108,14 +108,21 @@
 > 动到的文件：`packages/harness/deerflow/knowledge/reranker_tei.py`（**新增**）、`tests/knowledge/test_reranker_tei.py`（**新增**）、`knowledge/providers/__init__.py`（rerank leg +1 行）、`config/app_config.py:215` 与 `config/rag_config_file.py:106`（`Literal` +1）、`tests/knowledge/test_rag_provider_config.py:190`（元组断言同步；`:166` 是 parametrize 表）；`tests/test_rag_config_api.py` **补一条** `tei-rerank` 缺 `rerank_base_url` → 400（现有 :607 那条点名 `generic-rerank`，不覆盖新行）。
 > **验收对应**：spec §5 的 10 / 11 / 13（13 的真栈腿在 Task 6）。
 
-- [ ] **RED**：新建 `test_reranker_tei.py`：① **载荷逐字** —— `{"query", "texts", "raw_scores": False}`（**无** `model`/`documents`/`top_n`）；② 裸数组 `[{"index":1,"score":0.2},{"index":0,"score":0.9}]` 解析成 `[(0,0.9),(1,0.2)]`；③ **`top_n` 本地截断**（发 8 条、`top_n=3` → 3 对）；④ 非数组（dict / 字符串）→ `RerankerError`；⑤ 401 → `RerankerAuthError`；⑥ 429 → 重试（第 2 次 200 成功）、500 耗尽 → `RerankerError`；⑦ **无 key 不发 `Authorization`**（有 key 才发）。另加 allowlist/工厂：`resolve_provider("rerank","tei-rerank")` 命中、`build_reranker` 缺 `base_url` → `RagConfigurationError`。此刻模块与表行都不存在 ⇒ 红。
-- [ ] **GREEN**：写 `reranker_tei.py`（`TEIReranker`，无 `model` 参数；`_read_api_key` 可选三级：显式 → `configured_rag_secret("rerank_api_key")` → `RAG_RERANK_API_KEY`；响应必须为数组、行缺 `index|score` → `RerankerError`）；allowlist 加行（`path="/rerank"`、`secret_env_var="RAG_RERANK_API_KEY"`、**无内置地址**）；两处 `Literal` +1；元组断言同步。窄面转绿。
-- [ ] **neuter ①（载荷）**：载荷带上 `"model": 配置值` ⇒ ① 红（TEI 会 422）。
-- [ ] **neuter ②（截断）**：`top_n` 不本地截 ⇒ ③ 红。
-- [ ] **neuter ③（鉴权）**：无 key 时也发 `Authorization: Bearer ""` ⇒ ⑦ 红。
-- [ ] **门禁**：ruff 双净；窄面（`test_reranker_tei.py` + `test_rag_provider_config.py` + `test_rag_config_api.py`）绿；`tests/knowledge` 全量绿。
+- [x] **RED**：新建 `test_reranker_tei.py`：① **载荷逐字** —— `{"query", "texts", "raw_scores": False}`（**无** `model`/`documents`/`top_n`）；② 裸数组 `[{"index":1,"score":0.2},{"index":0,"score":0.9}]` 解析成 `[(0,0.9),(1,0.2)]`；③ **`top_n` 本地截断**（发 8 条、`top_n=3` → 3 对）；④ 非数组（dict / 字符串）→ `RerankerError`；⑤ 401 → `RerankerAuthError`；⑥ 429 → 重试（第 2 次 200 成功）、500 耗尽 → `RerankerError`；⑦ **无 key 不发 `Authorization`**（有 key 才发）。另加 allowlist/工厂：`resolve_provider("rerank","tei-rerank")` 命中、`build_reranker` 缺 `base_url` → `RagConfigurationError`。此刻模块与表行都不存在 ⇒ 红。
+- [x] **GREEN**：写 `reranker_tei.py`（`TEIReranker`，无 `model` 参数；`_read_api_key` 可选三级：显式 → `configured_rag_secret("rerank_api_key")` → `RAG_RERANK_API_KEY`；响应必须为数组、行缺 `index|score` → `RerankerError`）；allowlist 加行（`path="/rerank"`、`secret_env_var="RAG_RERANK_API_KEY"`、**无内置地址**）；两处 `Literal` +1；元组断言同步。窄面转绿。
+- [x] **neuter ①（载荷）**：载荷带上 `"model": 配置值` ⇒ ① 红（TEI 会 422）。
+- [x] **neuter ②（截断）**：`top_n` 不本地截 ⇒ ③ 红。
+- [x] **neuter ③（鉴权）**：无 key 时也发 `Authorization: Bearer ""` ⇒ ⑦ 红。
+- [x] **门禁**：ruff 双净；窄面（`test_reranker_tei.py` + `test_rag_provider_config.py` + `test_rag_config_api.py`）绿；`tests/knowledge` 全量绿。
 
-**实测（待回填）**：
+**实测（2026-09-25）**：
+- **RED**：新文件整文件 **1 collection error**（`ModuleNotFoundError: deerflow.knowledge.reranker_tei`）+ 另两文件 **4 红 / 27 绿**（`test_rag_provider_config`：parametrize 行 / `provider_ids` 元组 / 新钉的 `tei-rerank` 行形状；`test_rag_config_api`：`tei-rerank` 缺地址 ⇒ 实得 **422** 而非 400 —— Literal 未收该 id）。
+- **GREEN 窄面 78 绿**：`reranker_tei.py`（载荷逐字 `{"query","texts","raw_scores":False}`；裸数组解析 + 本地 `top_n` 截断；非数组/行缺 `index|score`（含不可强转）→ `RerankerError`；401/403 → `RerankerAuthError` 且**不重试**；429/5xx 指数退避重试后抛；**无 key 不发 Authorization**）；allowlist 补行；`app_config.py:215` + `rag_config_file.py:106` 两处 Literal +1。新文件有 4 个 malformed 行参数格（非数组 dict / 字符串 + 缺 `index` + 缺 `score`）——「绝不静默空榜」逐支钉住。
+- **⚠️ 计划外但必需（发现即修）**：`reranker_factory.build_reranker` 原本**无条件**传 `model=`，与「`TEIReranker` 无 model 参数」当场撞（`TypeError`）。落法 = `ProviderSpec` 新增能力位 **`takes_model: bool = True`**（其余行原样；`tei-rerank` 置 False），工厂按**能力**判而非 provider id（与 `has_fixed_endpoint` 同一条规矩）；两条工厂用例钉住（能造出 `TEIReranker` / 缺地址 → `RagConfigurationError`）。**顺手把 `tei-sparse` 行也置 `takes_model=False`**（同一件事的既有格：其请求 `{"inputs":…}` 也没有 model 字段，1 行）。
+- **另一处计划没点名的消费面**：`test_rag_config_api.py::test_get_returns_the_rerank_provider_capabilities` 对整块 rerank 能力表做**全等**断言 ⇒ 行 +1 必红，已补 `"tei-rerank": (False, None)`。另两条面确认**自动**跟上：`_assert_pure_addition` 只看顶层键（列表内新增不触金标）；`test_provider_construction_sites` 由 allowlist 表驱动 ⇒ `TEIReranker` 自动进「禁直接构造」集合。
+- **neuter ①（载荷）/②（截断）/③（鉴权）**：各 **恰好 1 红**、受害者不相交（形状格 / 截断格 / 无-key 格）；md5 `63e52f0a…` →（各 neuter）`5e244abc…` / `8bad53df…` / `4f0e704c…` → **还原 `63e52f0a…`**；随后 ruff format 折行 ⇒ 现 `cb32df1e…`（测试文件 `f4693dd9…`）。
+- **⚠️ 门禁插曲（环境，两段）**：① 首跑 `tests/knowledge` 里 **48 条 Qdrant 用例从 passed 变 skipped + 1 error**（`test_generator.py::test_only_dirty_prune_removes_vector_point`，异常 `qdrant_client … ResponseHandlingException: All connection attempts failed`）—— 本机 **Docker Desktop 未运行**、6333 拒连（Task 3 那轮还开着）；② 用户启动 Docker 后**立即**重跑仍是 48 skip：`conftest._qdrant_available()` 在 **collection 期**探测且超时只有 **1.0s**，刚 `docker start` 的容器冷启（30 个集合）答不完 ⇒ 整 session 静默降级为 skip（**exit code 仍 0，只有 skip 数会说话**）；③ 容器热了（端口 + `get_collections()` 实测通）再跑 ⇒ 与 Task 3 同口径。
+- **门禁（Qdrant 恢复后）**：ruff `check` + `format --check` 双净（1294 files）；窄面 **78 绿**；`tests/knowledge` + `tests/test_rag_config_api.py` 全量 **1260 passed / 2 skipped / 3 failed（环境）** —— 3 红与 Task 3 逐条同名（本机真 `rag_config.json` 供 key，A/B 已证）；计数对得上：Task 3 的 `tests/knowledge` 1210 + 本任务新增 15 条（新文件 13 + 表行 1 + 形状钉 1）+ `test_rag_config_api` 35 = **1260**。
 
 ---
 

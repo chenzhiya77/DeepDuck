@@ -42,7 +42,12 @@ def build_reranker(config: Any | None = None, *, rag: Any | None = None) -> Any:
     from deerflow.reflection import resolve_variable
 
     implementation = resolve_variable(spec.implementation)
-    kwargs: dict[str, Any] = {"model": section.rerank_model}
+    kwargs: dict[str, Any] = {}
+    if spec.takes_model:
+        # The row says whether this client accepts a model at all: TEI's rerank service serves
+        # one model per instance and its request has no model field, so handing it one would be
+        # a `TypeError` before the first call (spec 2026-09-24 §4.3).
+        kwargs["model"] = section.rerank_model
     if endpoint is not None:
         kwargs["base_url"] = endpoint
     if section.rerank_api_key:

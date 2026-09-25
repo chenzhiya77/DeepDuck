@@ -40,6 +40,11 @@ class ProviderSpec:
     #: needs the runtime dimension probe (spec §4.2 维度 #1). DashScope sends
     #: ``parameters.dimension``; a generic ``/v1/embeddings`` endpoint does not.
     pins_dimension: bool = False
+    #: Whether the implementation takes (and sends) a model name at all. A TEI service serves
+    #: exactly one model per instance and has no ``model`` field in its request, so its clients
+    #: take no such argument — the leg's factory reads this flag instead of matching on the
+    #: provider id (spec 2026-09-24 §4.3).
+    takes_model: bool = True
     #: Whether the vendor fixes the endpoint itself, so the settings UI shows the address
     #: as read-only rather than asking for it (spec 2026-09-17 §3 D1). Always agrees with
     #: :attr:`default_endpoint` being set — the two are one rule, pinned by a single test.
@@ -111,6 +116,16 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             path="/rerank",
             secret_env_var="RAG_RERANK_API_KEY",
         ),
+        "tei-rerank": ProviderSpec(
+            leg="rerank",
+            provider_id="tei-rerank",
+            implementation="deerflow.knowledge.reranker_tei:TEIReranker",
+            # The one route TEI mounts; its request has no model field either (one instance
+            # serves one model), hence the flag below.
+            path="/rerank",
+            secret_env_var="RAG_RERANK_API_KEY",
+            takes_model=False,
+        ),
     },
     "parse": {
         "mineru-cloud": ProviderSpec(
@@ -142,6 +157,9 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             implementation="deerflow.knowledge.sparse:TEISparseEncoder",
             path="/embed_sparse",
             secret_env_var="RAG_SPARSE_API_KEY",
+            # Same rule as the TEI rerank row: one instance serves one model, and the request
+            # (`{"inputs": [...]}`) carries no model field.
+            takes_model=False,
         ),
     },
 }

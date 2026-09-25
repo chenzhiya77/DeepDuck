@@ -491,6 +491,7 @@ def test_get_returns_the_rerank_provider_capabilities(config_env: Path):
     assert {entry["provider_id"]: (entry["has_fixed_endpoint"], entry["default_endpoint"]) for entry in body[_RERANK_CAPABILITY_FIELD]} == {
         "dashscope": (True, "https://dashscope.aliyuncs.com"),
         "generic-rerank": (False, None),
+        "tei-rerank": (False, None),
     }
     assert all("emits_sparse" not in entry for entry in body[_RERANK_CAPABILITY_FIELD])
 
@@ -611,6 +612,27 @@ def test_put_refuses_a_rerank_without_its_address(config_env: Path):
 
     with _client(system_role="admin") as client:
         response = client.put("/api/rag/config", json={"rerank_provider": "generic-rerank"})
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail.startswith("提交后的配置仍不可用：")
+    assert "rerank_base_url" in detail
+    assert target.read_bytes() == before
+
+
+def test_put_refuses_a_tei_rerank_without_its_address(config_env: Path):
+    """The TEI row ships no address either (spec 2026-09-24 §4.3 D3 甲).
+
+    Same refusal as the generic row, and it has to be the same one: the save-time construction
+    check builds whatever the payload selects, so a new provider that skipped that check would
+    save happily and only blow up on the next retrieval.
+    """
+    target = config_env / "rag_config.json"
+    target.write_text(json.dumps({"rerank_model": "kept"}), encoding="utf-8")
+    before = target.read_bytes()
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"rerank_provider": "tei-rerank"})
 
     assert response.status_code == 400
     detail = response.json()["detail"]

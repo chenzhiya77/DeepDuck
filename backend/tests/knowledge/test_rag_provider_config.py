@@ -169,6 +169,7 @@ def test_sparse_keys_declared_in_yaml_are_carried_by_rag_config():
         ("embedding", "openai-compatible", "deerflow.knowledge.embedder_openai:OpenAICompatibleEmbedder", "base_url"),
         ("rerank", "dashscope", "deerflow.knowledge.reranker:DashScopeReranker", "base_url"),
         ("rerank", "generic-rerank", "deerflow.knowledge.reranker_generic:GenericReranker", "base_url"),
+        ("rerank", "tei-rerank", "deerflow.knowledge.reranker_tei:TEIReranker", "base_url"),
         ("parse", "mineru-cloud", "deerflow.knowledge.parser:MineruCloudParseProvider", "base_url"),
         ("parse", "mineru-local", "deerflow.knowledge.parse_local:MineruLocalParseProvider", "base_url"),
         ("sparse", "tei-sparse", "deerflow.knowledge.sparse:TEISparseEncoder", "base_url"),
@@ -187,7 +188,7 @@ def test_provider_ids_lists_the_curated_set_per_leg():
     # Declaration order is what the settings UI renders, and the two dual-path providers sit
     # together (spec 2026-09-17): both return dense+sparse in one call.
     assert provider_ids("embedding") == ("dashscope", "volcengine-ark", "openai-compatible")
-    assert provider_ids("rerank") == ("dashscope", "generic-rerank")
+    assert provider_ids("rerank") == ("dashscope", "generic-rerank", "tei-rerank")
     assert provider_ids("parse") == ("mineru-cloud", "mineru-local")
     assert provider_ids("sparse") == ("tei-sparse",)
 
@@ -198,6 +199,20 @@ def test_sparse_leg_path_is_pinned_to_the_verified_shape():
     ``path`` 曾经刻意留空（形状未定）；现在钉住它，客户端按同一常量发请求。
     """
     assert resolve_provider("sparse", "tei-sparse").path == "/embed_sparse"
+
+
+def test_tei_rerank_row_is_pinned_to_the_verified_shape():
+    """D3 甲（spec 2026-09-24 §4.3）：TEI 只有一条 ``/rerank`` 路由，且没有内置地址。
+
+    ``takes_model=False`` 是这一行与另两行的真差别：请求里没有 ``model`` 字段，客户端也就
+    不该收这个参数 —— 工厂按**能力**决定要不要把它交下去，不按 provider id。
+    """
+    spec = resolve_provider("rerank", "tei-rerank")
+
+    assert spec.path == "/rerank"
+    assert spec.secret_env_var == "RAG_RERANK_API_KEY"
+    assert spec.has_fixed_endpoint is False and spec.default_endpoint is None
+    assert spec.takes_model is False
 
 
 def test_allowlist_rejects_an_unknown_provider_id():
