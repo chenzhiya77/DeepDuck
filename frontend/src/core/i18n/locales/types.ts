@@ -1798,8 +1798,6 @@ export interface Translations {
       lockedLocalOnly: string;
       lockedExternalOnly: string;
       secretFromEnvBadge: string;
-      roleTagEmbedding: string;
-      roleTagRerank: string;
       providerTeiSparse: string;
       sparseProvider: string;
       sparseBaseUrl: string;

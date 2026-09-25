@@ -1796,8 +1796,6 @@ export const zhCN: Translations = {
       lockedLocalOnly: "仅本地服务需要",
       lockedExternalOnly: "仅「独立稀疏服务」时可用",
       secretFromEnvBadge: "环境变量已提供",
-      roleTagEmbedding: "Embedding",
-      roleTagRerank: "Rerank",
       providerTeiSparse: "TEI 稀疏服务",
       sparseProvider: "稀疏服务提供方",
       sparseBaseUrl: "稀疏服务地址",

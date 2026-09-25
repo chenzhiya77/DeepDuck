@@ -302,32 +302,39 @@ describe("narrow stacking", () => {
   const rowOf = (el: HTMLElement) =>
     el.closest<HTMLElement>('div[class*="grid-cols-[8rem_"]')!;
 
-  it("pair rows stack below lg: copies carry role + label, the shared gutter hides", () => {
+  it("regroups into one role block per column below md", () => {
     renderWith({});
 
+    // The four rows go `contents` so their cells regroup under the block heads via `order`.
     const row = rowOf(screen.getByLabelText("embeddingModel"));
-    expect(row.className).toContain("max-md:grid-cols-1");
+    expect(row.className).toContain("max-md:contents");
 
-    const [gutter, cellA, cellB] = Array.from(row.children) as [
-      HTMLElement,
-      HTMLElement,
-      HTMLElement,
-    ];
-    expect(gutter.className).toContain("max-md:hidden");
+    // One bold block head per role (the wide heading's own word), narrow-only.
+    for (const role of ["embeddingModel", "rerankModel"] as const) {
+      const heads = screen
+        .getAllByText(role)
+        .filter((el) => el.className.includes("md:hidden"));
+      expect(heads.length).toBe(1);
+    }
 
-    for (const [cell, role] of [
-      [cellA, "embeddingModel"],
-      [cellB, "rerankModel"],
-    ] as const) {
+    // Exactly one divider between the two blocks.
+    const dividers = document.querySelectorAll<HTMLElement>(
+      'div[class*="border-t"][class*="md:hidden"]',
+    );
+    expect(dividers.length).toBe(1);
+
+    // Each cell's line head is the shared field label only — no role prefix per line.
+    const cells = Array.from(row.children).slice(1) as HTMLElement[];
+    expect(cells[0]!.className).toContain("order-3");
+    expect(cells[1]!.className).toContain("order-9");
+    for (const cell of cells) {
       expect(cell.className).toContain("md:contents");
       const copy = cell.firstElementChild as HTMLElement;
-      expect(copy.className).toContain("md:hidden");
-      expect(copy.textContent).toContain(role);
-      expect(copy.textContent).toContain("modelLabel");
+      expect(copy.textContent).toBe("modelLabel");
     }
   });
 
-  it("single rows stack label-above-value below lg", () => {
+  it("single rows stack label-above-value below md", () => {
     renderWith({ embedding_sparse_source: "external" });
     openAdvanced();
 
@@ -336,11 +343,16 @@ describe("narrow stacking", () => {
     );
   });
 
-  it("the role-heading row hides below lg", () => {
+  it("keeps the wide role-heading row hidden below md and drops the English pills", () => {
     renderWith({});
 
-    const heading =
-      screen.getByText("roleTagEmbedding").parentElement!.parentElement!;
-    expect(heading.className).toContain("max-md:hidden");
+    const heading = screen.getByText("embeddingModel", {
+      selector: "span.text-sm.font-semibold",
+    });
+    expect(heading.parentElement!.className).toContain("max-md:hidden");
+
+    // 乙 (spec §3.2 revision): the pills are gone everywhere, wide included.
+    expect(screen.queryByText("roleTagEmbedding")).toBeNull();
+    expect(screen.queryByText("roleTagRerank")).toBeNull();
   });
 });

@@ -1889,8 +1889,6 @@ export const enUS: Translations = {
       lockedLocalOnly: "Local service only",
       lockedExternalOnly: "Only when using a separate sparse service",
       secretFromEnvBadge: "From env",
-      roleTagEmbedding: "Embedding",
-      roleTagRerank: "Rerank",
       providerTeiSparse: "TEI sparse service",
       sparseProvider: "Sparse provider",
       sparseBaseUrl: "Sparse service endpoint",

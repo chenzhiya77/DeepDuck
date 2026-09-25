@@ -160,11 +160,31 @@ function OptionSelect({
 const ROW =
   "grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-x-4 py-3 max-md:grid-cols-1 max-md:gap-y-1";
 const ROW_PAIR =
-  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3 max-md:grid-cols-1 max-md:gap-y-2";
+  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3";
 
-/** Hairlines between rows; with the shared gutter they are what makes a group read as one form. */
-function Rows({ children }: { children: React.ReactNode }) {
-  return <div className="divide-y">{children}</div>;
+/**
+ * Hairlines between rows; with the shared gutter they are what makes a group read as one form.
+ * `stacked` marks the two-value group: below `md` its rows go `contents` and the cells regroup
+ * into one block per role (spec 2026-09-24 §3.2 revision — 整列分组), so the wrapper must lay
+ * them out in one column and give up the per-row hairlines (one divider lives in the group).
+ */
+function Rows({
+  children,
+  stacked,
+}: {
+  children: React.ReactNode;
+  stacked?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "divide-y",
+        stacked && "max-md:flex max-md:flex-col max-md:gap-2 max-md:divide-y-0",
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -201,41 +221,31 @@ function RowLabel({
 }
 
 /**
- * One value cell of a two-value row. Below `lg` the wrapper stacks its own "role + label"
- * line above the control (spec 2026-09-24 §3.2, D3 甲: the bold role short name rides to the
- * line head, reusing the wide column heading's own word); at `lg` and up the wrapper is
- * `contents`, so the wide grid still sees the bare control and the wide layout is unchanged.
+ * One value cell of a two-value row. Below `md` the wrapper stacks the shared field label above
+ * the control and the group's cells regroup under one role heading per block (spec 2026-09-24
+ * §3.2 revision: 整列分组 — one heading and one divider per role block, not per row); at `md`
+ * and up the wrapper is `contents`, so the wide grid still sees the bare control unchanged.
  */
 function PairCell({
   label,
-  role,
+  order,
   children,
 }: {
   label: string;
-  role: string;
+  order: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 md:contents">
-      <span className="text-xs md:hidden">
-        <span className="font-semibold">{role}</span>{" "}
-        <span className="text-muted-foreground">{label}</span>
-      </span>
+    <div className={cn("flex min-w-0 flex-col gap-1 md:contents", order)}>
+      <span className="text-muted-foreground text-xs md:hidden">{label}</span>
       {children}
     </div>
   );
 }
 
-/** A role heading: the role name carries the weight, its English tag is a quiet pill. */
-function RoleHeading({ label, tag }: { label: string; tag: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm font-semibold">{label}</span>
-      <span className="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[10px]">
-        {tag}
-      </span>
-    </div>
-  );
+/** A role heading: the bold role name. The English pill is gone (spec §3.2 revision, 乙). */
+function RoleHeading({ label }: { label: string }) {
+  return <span className="text-sm font-semibold">{label}</span>;
 }
 
 /**
@@ -611,16 +621,28 @@ export function FunctionalModelsView() {
   return (
     <div className="flex w-full flex-col gap-4">
       <Group title={F.groupRetrieval} info={F.groupRetrievalHint}>
-        <Rows>
+        <Rows stacked>
           <div className={`${ROW_PAIR} pt-0 pb-2 max-md:hidden`}>
             <span />
-            <RoleHeading label={F.embeddingModel} tag={F.roleTagEmbedding} />
-            <RoleHeading label={F.rerankModel} tag={F.roleTagRerank} />
+            <RoleHeading label={F.embeddingModel} />
+            <RoleHeading label={F.rerankModel} />
           </div>
 
-          <div className={ROW_PAIR}>
+          {/* Below `md` the pair regroups into one block per role (spec 2026-09-24 §3.2
+              revision — 整列分组): the bold role heading sits at each block head (the wide
+              column heading's own word, pill removed) and a single divider separates the two
+              blocks instead of a hairline per row. */}
+          <div className="order-1 text-sm font-semibold md:hidden">
+            {F.embeddingModel}
+          </div>
+          <div className="order-6 my-1 border-t border-border md:hidden" />
+          <div className="order-7 text-sm font-semibold md:hidden">
+            {F.rerankModel}
+          </div>
+
+          <div className={`${ROW_PAIR} max-md:contents`}>
             <RowLabel className="max-md:hidden">{F.providerLabel}</RowLabel>
-            <PairCell label={F.providerLabel} role={F.embeddingModel}>
+            <PairCell label={F.providerLabel} order="order-2">
               <OptionSelect
                 label={F.embeddingProvider}
                 value={values.embedding_provider}
@@ -634,7 +656,7 @@ export function FunctionalModelsView() {
                 }
               />
             </PairCell>
-            <PairCell label={F.providerLabel} role={F.rerankModel}>
+            <PairCell label={F.providerLabel} order="order-8">
               <OptionSelect
                 label={F.rerankProvider}
                 value={values.rerank_provider}
@@ -650,9 +672,9 @@ export function FunctionalModelsView() {
             </PairCell>
           </div>
 
-          <div className={ROW_PAIR}>
+          <div className={`${ROW_PAIR} max-md:contents`}>
             <RowLabel className="max-md:hidden">{F.modelLabel}</RowLabel>
-            <PairCell label={F.modelLabel} role={F.embeddingModel}>
+            <PairCell label={F.modelLabel} order="order-3">
               <Input
                 value={values.embedding_model}
                 aria-label={F.embeddingModel}
@@ -662,7 +684,7 @@ export function FunctionalModelsView() {
                 }
               />
             </PairCell>
-            <PairCell label={F.modelLabel} role={F.rerankModel}>
+            <PairCell label={F.modelLabel} order="order-9">
               <Input
                 value={values.rerank_model}
                 aria-label={F.rerankModel}
@@ -672,14 +694,14 @@ export function FunctionalModelsView() {
             </PairCell>
           </div>
 
-          <div className={ROW_PAIR}>
+          <div className={`${ROW_PAIR} max-md:contents`}>
             <RowLabel
               className="max-md:hidden"
               info={secretHintFor("embedding_api_key", "rerank_api_key")}
             >
               {F.apiKeyLabel}
             </RowLabel>
-            <PairCell label={F.apiKeyLabel} role={F.embeddingModel}>
+            <PairCell label={F.apiKeyLabel} order="order-4">
               <SecretInput
                 badge={
                   isEnvBacked("embedding_api_key")
@@ -693,7 +715,7 @@ export function FunctionalModelsView() {
                 }
               />
             </PairCell>
-            <PairCell label={F.apiKeyLabel} role={F.rerankModel}>
+            <PairCell label={F.apiKeyLabel} order="order-10">
               <SecretInput
                 badge={
                   isEnvBacked("rerank_api_key")
@@ -709,11 +731,11 @@ export function FunctionalModelsView() {
             </PairCell>
           </div>
 
-          <div className={ROW_PAIR}>
+          <div className={`${ROW_PAIR} max-md:contents`}>
             <RowLabel className="max-md:hidden" info={F.retrievalEndpointHint}>
               {F.endpointLabel}
             </RowLabel>
-            <PairCell label={F.endpointLabel} role={F.embeddingModel}>
+            <PairCell label={F.endpointLabel} order="order-5">
               {endpointRow?.locked ? (
                 <LockedBox
                   reason={F.lockedByProvider}
@@ -739,7 +761,7 @@ export function FunctionalModelsView() {
             {/* The same rule, from the rerank leg's own block (spec 2026-09-17 alignment §3 D4):
                 a vendor that fixes its address locks the row, a stored one still wins at runtime
                 and can be dropped from here. */}
-            <PairCell label={F.endpointLabel} role={F.rerankModel}>
+            <PairCell label={F.endpointLabel} order="order-11">
               {rerankEndpointRow?.locked ? (
                 <LockedBox
                   reason={F.lockedByProvider}

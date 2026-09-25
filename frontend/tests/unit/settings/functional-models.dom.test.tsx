@@ -398,11 +398,13 @@ describe("Models section view switch", () => {
     openFunctionalView();
 
     expect(screen.getByText(F.extractModel)).toBeTruthy();
-    // The role heading is the wide-layout one; below `lg` each value cell also carries the
-    // role name as its stacking line head (spec 2026-09-24 §3.2), so pin the heading itself.
-    expect(
-      screen.getByText(F.embeddingModel, { selector: ".text-sm.font-semibold" }),
-    ).toBeTruthy();
+    // The role heading is the wide-layout one; below `md` each role block also carries the
+    // role name as its block head (spec 2026-09-24 §3.2 revision), so pin the wide-visible
+    // instance.
+    const wideHeadings = screen
+      .getAllByText(F.embeddingModel, { selector: ".text-sm.font-semibold" })
+      .filter((el) => !el.closest(".md\\:hidden"));
+    expect(wideHeadings.length).toBe(1);
   });
 });
 
