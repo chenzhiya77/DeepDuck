@@ -1,6 +1,6 @@
 # 检索面三处收口:重建覆盖、召回标签、TEI 重排形状 —— 设计
 
-**Status:** 📝 **已定稿（2026-09-24）—— 未开工**；**三项已裁（2026-09-24）：D1 甲 / D2 乙 / D3 甲**；**开工前审查已过（2026-09-25，逐条对着现状核完）**。本 spec 只收 [2026-09-14 provider 适配 plan](../plans/2026-09-14-rag-model-provider-adaptation.md)「运行期遗留」里的**三条**（该段 :208-216，三条分别在 :212 / :213 / :214）；其余遗留由 operator 逐步完善，不在此列。配套 plan：[2026-09-24-rag-retrieval-followups.md](../plans/2026-09-24-rag-retrieval-followups.md)（Task 0–7；两份**均未提交**）。
+**Status:** ✅ **已交付（2026-09-25）**；**三项已裁（2026-09-24）：D1 甲 / D2 乙 / D3 甲**；**开工前审查已过（2026-09-25，逐条对着现状核完）**。交付轨迹 = plan Task 0–7：首笔 `ea7f6ffc`（spec+plan 成对）→ 五笔 Task → 验收途中修掉一条真缺陷（`3f248276`：通用客户端批上限 20→10）→ 验收记录 `5b94dcb9` → Task 7 文档同步收官。本 spec 只收 [2026-09-14 provider 适配 plan](../plans/2026-09-14-rag-model-provider-adaptation.md)「运行期遗留」里的**三条**（该段 :208-216，三条分别在 :212 / :213 / :214）；其余遗留由 operator 逐步完善，不在此列。配套 plan：[2026-09-24-rag-retrieval-followups.md](../plans/2026-09-24-rag-retrieval-followups.md)（Task 0–7；**均已提交**，轨迹见上）。
 
 **Parent:**
 

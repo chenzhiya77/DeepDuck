@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-24-rag-retrieval-followups-design.md](../specs/2026-09-24-rag-retrieval-followups-design.md)
-**Status:** 📝 **已定稿（2026-09-24）—— 未开工**。三项已裁：**D1 甲**（四集合全补，含 `kb_manual_cards`）/ **D2 乙**（按配置派生 + 图谱 impl 回报 `score_source`）/ **D3 甲**（allowlist 新增独立一格 `tei-rerank`）。Task 0–7；spec 与 plan 本轮**均未提交**。
+**Status:** ✅ **已交付（2026-09-25）—— Task 0–7 全勾**。三项已裁：**D1 甲**（四集合全补，含 `kb_manual_cards`）/ **D2 乙**（按配置派生 + 图谱 impl 回报 `score_source`）/ **D3 甲**（allowlist 新增独立一格 `tei-rerank`）。**交付轨迹**：`ea7f6ffc`（spec+plan 成对）→ `66670d97` T1 / `648123ab` T2 / `e7fa594f` T3 / `3c353ca6` T4 / `69ca4600` T5 → **`3f248276`（Task 6 验收途中修掉的真实缺陷：通用客户端批上限 20→10，端点 20 行即 400）** → `5b94dcb9` T6 → 本笔 T7。**收官门禁**：ruff 双净（`All checks passed!` + `1294 files already formatted`）；后端 `tests/knowledge` **1226 passed / 2 skipped / 3 failed**（3 红 = **环境条件**，A/B 已证）；前端 `pnpm check` 零诊断、窄面 **65 绿** / 更宽面 **234 绿**；真栈三节全过（重建窗口 44×200 零 400 / 三路徽标 / TEI 200 对 422）。
 **审查后修订已并入（2026-09-25，对着现状逐条核完）**：① 文案提示条**已裁甲 ⇒ 取消 `rerankModelTeiHint`**（无专属落点，见硬约束）；② i18n 行号/目录、`rag_config_file.py`、`test_rag_provider_config.py` 坐标已刷新；③ **串行矩阵已更正**（三线共享 view 文件，见 Global Constraints）；④ **Task 0 八项已核完并回填**（结论见各行）。
 **Parent:** [2026-09-14-rag-model-provider-adaptation-design.md](../specs/2026-09-14-rag-model-provider-adaptation-design.md)（provider 维度 + §5 重建入口；本对的三项都是它跑完后的运行期遗留）· [2026-09-14-rag-model-provider-adaptation.md](2026-09-14-rag-model-provider-adaptation.md)（其「运行期遗留」段 :208-216 逐条登记，三条分别在 :212 / :213 / :214）
 
@@ -177,9 +177,16 @@
 
 > 动到的文件：`README.md:115`、`backend/AGENTS.md:876`（+ `:757-763` 的"恰好两个案例"名单）、`frontend/AGENTS.md`（仅措辞受影响时）；spec 与 plan 的 `**Status:**`。
 
-- [ ] **README.md:115**：重建索引那句"重新嵌入现有切片" → 全部向量（切片/实体/百科条目/人工卡片），并补"不重跑图谱抽取"。
-- [ ] **backend/AGENTS.md:876**：`POST /{kb_id}/reindex` 的描述同步（三条集合 + 三键进度）；`:757-763`：保存期检查"恰好两个案例"的措辞跟上（`generic-rerank` 缺地址那条此后是一族，`tei-rerank` 同规则）；**`:851`**（RAG 配置段末句 "it re-embeds the stored chunks and never re-parses" ⇒ 改成四类向量；2026-09-25 审查新发现的一处）。
-- [ ] **frontend/AGENTS.md**：仅当重建状态/轮询说明的措辞受影响时改（初核：`:284` 一带只讲轮询节奏 ⇒ 大概率不动，据实）。
-- [ ] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。另：**开头"未提交"一句随之更新**（spec+plan 的第一笔提交号）。
+- [x] **README.md:115**：重建索引那句"重新嵌入现有切片" → 全部向量（切片/实体/百科条目/人工卡片），并补"不重跑图谱抽取"。
+- [x] **backend/AGENTS.md:876**：`POST /{kb_id}/reindex` 的描述同步（三条集合 + 三键进度）；`:757-763`：保存期检查"恰好两个案例"的措辞跟上（`generic-rerank` 缺地址那条此后是一族，`tei-rerank` 同规则）；**`:851`**（RAG 配置段末句 "it re-embeds the stored chunks and never re-parses" ⇒ 改成四类向量；2026-09-25 审查新发现的一处）。
+- [x] **frontend/AGENTS.md**：仅当重建状态/轮询说明的措辞受影响时改（初核：`:284` 一带只讲轮询节奏 ⇒ 大概率不动，据实）。
+- [x] **交付后回写**：spec 的 `**Status:**` 与 plan 本文件的 `**Status:**` 一起更新（交付的提交号 + 关键门禁数字），各 Task 的 `**实测**` 行补齐 —— **未回写的 plan 不算交付**。另：**开头"未提交"一句随之更新**（spec+plan 的第一笔提交号）。
 
-**实测（待回填）**：
+**实测（2026-09-25）**：
+
+- **README（计划点名 `:115` + 计划没点名的 `:113`）**：`:115` 重建索引句 ⇒ 「按库重新嵌入**全部向量**——切片、实体、百科条目与人工卡片一起换到新的向量空间。它只重嵌入、**不重解析**源文件，也**不重跑图谱抽取**」；`:113` 的 provider 枚举只列了「重排可走百炼，或通用 `/rerank`」，而本对新增了 `tei-rerank` ⇒ 补成「通用 `/rerank`（Cohere / Jina 形状），或自建 Text Embeddings Inference 的 `/rerank`」（用户可见能力，按仓库口径 README 要跟上）。其余语言版本无「重建」字样（`grep -ln 重建 README*.md` 只命中 `README.md`）⇒ 不动。
+- **backend/AGENTS.md（计划点名 3 处 + 本对自身新增的 1 处）**：① `:757` 保存期检查的「exactly two cases」⇒ 改成 rerank 侧**一族**（只有一个 `dashscope` 自带端点，`generic-rerank` 与 `tei-rerank` 都需 `rerank_base_url`）+ parse 侧一条；② `:851` 段末句 ⇒ 「re-embeds every vector collection from the stored rows (chunks, entities, wiki entries, manual cards) and never re-parses nor re-runs graph extraction」；③ `:876` 路由表 `POST /{kb_id}/reindex` ⇒ 四集合（chunks → entities → wiki entries → manual cards）+ 进度四键（`documents_done` 与 `chunks_indexed` / `entities_indexed` / `wiki_entries_indexed` / `cards_indexed`）；④ **计划没点名的第四处 `:1180`** —— 那段「Rows per embedding call are capped **per model**, not by one constant」只讲了百炼原生腿的 `DASHSCOPE_*`，而 Task 6 修掉的正是通用客户端的单一常量 ⇒ 补一句（通用客户端没有逐模型表，固定 `DEFAULT_BATCH_LIMIT` = 10，2026-09-25 真栈实测：20 行同样 400，297 行的重建页曾被一次拒掉、零写入，而 run 仍报 `succeeded`）。
+- **frontend/AGENTS.md：据实不动**。`:283-287` 的断言是「the copy states that source files are not re-parsed」—— 两个 locale 的现行文案逐字仍写着「不重解析源文件」/「source files are not re-parsed」⇒ 断言未失真；该段不枚举集合、也不点名 provider（`:176` 的规则本来就说「the lock follows the _row_」，`tei-rerank` 的加入不需要改文档）。旁证：全文 `tei-rerank` / `score_type` / `召回测试` **零命中** ⇒ 无第二处待同步。
+- **Status 回写**：spec 与 plan 的 `**Status:**` 均改为「✅ 已交付（2026-09-25）」并写入交付轨迹（首笔 `ea7f6ffc`（spec+plan 成对）→ `66670d97` T1 / `648123ab` T2 / `e7fa594f` T3 / `3c353ca6` T4 / `69ca4600` T5 → `3f248276`（验收途中修的真缺陷）→ `5b94dcb9` T6 → 本笔 T7）与收官门禁；spec 尾部「两份均未提交」⇒「**均已提交**，轨迹见上」。
+- **文档门禁**：plan 与 spec 的 prettier「偏离区块数」HEAD 4 → work **4**、HEAD 11 → work **11**（`printWidth` 默认；prose 段落 prettier 不重排 ⇒ 新增行零新债）。README / `backend/AGENTS.md` **不在 prettier 门禁内**（本仓唯一配置在 `frontend/`，pre-commit 的 `files: ^frontend/` 不含它们）⇒ 据实不量、也不 `--write`。
+- **本 Task 无代码改动**（纯文档）⇒ 不跑代码门禁；已核 `git status` 只含本 Task 的四个文档 + 别线文件（`docs/superpowers/specs/2026-09-12-harness-run-status-failure-design.md` 属他线，未动）。
