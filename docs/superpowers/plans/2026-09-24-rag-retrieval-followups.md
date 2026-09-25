@@ -157,11 +157,19 @@
 > 用户已在跑的 `:3000` + 可写库**「测试2」**（或新库）；后端重建是**写动作**（这正是验收内容），**不改 `config.yaml`**；改 `rag_config.json` 前逐字节备份、收尾还原。
 > **验收对应**：spec §5 的 6 / 9 / 13。
 
-- [ ] **① 重建链路（§5.6）**：记录重建前同一查询的三路读数（图谱证据数 / 百科最高分 / 向量命中）⇒ 触发「重建索引」202→`succeeded`；重建后复测 —— **图谱证据恢复（对照登记值 6）、百科分数量级恢复、向量腿不变或更好**；对照组 = 重建前。⚠️ 若库已被重建过不止一次，如实记录"当前空间 + 两次重建之间"的差，别把"本来就正常"当成修复证据（先造出跨空间状态：换一次嵌入 provider/模型 → 旧读数为 0/0.04 → 本对重建 → 恢复）。
-- [ ] **② 召回徽标（§5.9）**：召回测试面板三路徽标 —— vector 显示**当前配置的模型名**（operator 现配 Jina）、graph/wiki = `embedding cosine`；若这轮把 `graph_rerank` 打开且池 > 阈值，graph 应显示模型名（改回后复原）。
-- [ ] **③ TEI docker 腿（§5.13，operator 定）**：`docker run --rm -p 8080:80 ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id BAAI/bge-reranker-base` → 配置 `tei-rerank`（地址 `http://127.0.0.1:8080`）→ 召回出分 + 网关日志 `POST /rerank 200`；**对照组** = `generic-rerank` 指同一地址 ⇒ 422 / 空榜（证明两种形状确实不同）。收尾：容器 `docker rm`、`rag_config.json` 逐字节还原。
+- [x] **① 重建链路（§5.6）**：记录重建前同一查询的三路读数（图谱证据数 / 百科最高分 / 向量命中）⇒ 触发「重建索引」202→`succeeded`；重建后复测 —— **图谱证据恢复（对照登记值 6）、百科分数量级恢复、向量腿不变或更好**；对照组 = 重建前。⚠️ 若库已被重建过不止一次，如实记录"当前空间 + 两次重建之间"的差，别把"本来就正常"当成修复证据（先造出跨空间状态：换一次嵌入 provider/模型 → 旧读数为 0/0.04 → 本对重建 → 恢复）。
+- [x] **② 召回徽标（§5.9）**：召回测试面板三路徽标 —— vector 显示**当前配置的模型名**（operator 现配 Jina）、graph/wiki = `embedding cosine`；若这轮把 `graph_rerank` 打开且池 > 阈值，graph 应显示模型名（改回后复原）。
+- [x] **③ TEI docker 腿（§5.13，operator 定）**：`docker run --rm -p 8080:80 ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id BAAI/bge-reranker-base` → 配置 `tei-rerank`（地址 `http://127.0.0.1:8080`）→ 召回出分 + 网关日志 `POST /rerank 200`；**对照组** = `generic-rerank` 指同一地址 ⇒ 422 / 空榜（证明两种形状确实不同）。收尾：容器 `docker rm`、`rag_config.json` 逐字节还原。
 
-**实测（待回填）**：
+**实测（2026-09-25）**：
+
+⚠️ **首轮未通过并发现真缺陷（operator 裁「甲：默认批上限 20→10」+「修完复验」）**：走通用客户端的百炼兼容端点每次最多 **10 行**（20 行 ⇒ 400 `batch size is invalid`），而 `embedder_openai.py` 的 `DEFAULT_BATCH_LIMIT` 是 20 ⇒ 重建的实体/百科/卡片三遍按 `DEFAULT_PAGE_SIZE=500` 整页发（本机 297 实体 / 51 百科各一页）**整批被拒、零写入**，而 run 仍报 `succeeded`（遍内 `except` 记账继续）。修复 = `DEFAULT_BATCH_LIMIT 20→10`（连同新用例 `test_the_generic_embedder_sends_batches_the_endpoint_can_take`：**默认**批上限下 25 片必须拆 10/10/5）。**RED** 1 红（`assert 20 == 10`）→ **GREEN** 19 passed → **neuter** 常量回 20 ⇒ 恰好该 1 红、revert 后 md5 回 `acf8e628…`；ruff 双净；宽面 `tests/knowledge` **1226 passed / 2 skipped / 3 failed**，3 红是**环境条件**（本机真实 `config.yaml` + `rag_config.json` 的 rag 块让「什么都不设 ⇒ 默认百炼」「缺 key ⇒ 须抛」两个前提失效），**A/B**：`DEER_FLOW_CONFIG_PATH`（干净 `config.example.yaml`）+ `DEER_FLOW_RAG_CONFIG_PATH`（`{}`）同指**仓外**文件后 3 passed。
+
+**① 复验读数**（同一查询 `SKU-1001、无线机械键盘、库存数量、单价`，库=「测试2」，三路 = 向量最高分 / 百科最高分 / 图谱腿）：修后 v4 **未重建**（对照组）= `0.754915` / `0.047743645`（任务队列）/ 12 节点·14 关系·5 证据 → 造跨空间（`embedding_model` → `text-embedding-v3`）= `0.754915` / **`0.039683253`** / **0 实体**（「未找到相关的实体。」）→ 触发重建（202 → `succeeded`；窗口 **44 次 embeddings 全 200、零 400**，`kb_chunks` / `kb_entities` / `kb_wiki_entries` 三集合均有写入）= **恢复** `0.754915` / **`0.8633182`** / 25 节点·10 关系（`top_k=6` 时 **6 条证据 = 登记值 6**）→ 还原 v4 + 重建 ⇒ 终态 `0.754915` / `0.8412111` / 25 节点·14 关系·5 证据（k=6 时 message 注明「候选池共 5 片，已全量返回」）。**向量腿全程不变**（`0.754915`）⇒「不变或更好」成立。**⭐ 附带发现**：修前那次「对照组」本身就是旧的跨空间态 —— 同一条查询、同一个 v4 空间，重建前后 wiki `0.0477 → 0.8412`、图谱节点 `12 → 25` ⇒ 「重建只重嵌切片」留下的历史陈旧向量在本修复后**被真正修掉**（plan 那句「别把『本来就正常』当修复证据」反向命中：修前的"正常读数"并不正常）。
+
+**② 面板级 + 载荷级都过**：`/workspace/knowledge` →「测试2」→「检索测试」三路徽标 = 向量通道 `jina-reranker-v2-base-multilingual relevance`、图谱通道 `embedding cosine`（证据 5 / 实体 25）、百科通道 `embedding cosine`，与载荷 `score_type` 一致。可选腿（临时开 `graph_rerank`）未做。⚠️ 同刻 `api.jina.ai` 变为**外网不可达**（DNS 被污染、直连与 `127.0.0.1:7897` 代理两条路都 `000`）⇒ 面板后两次运行 `degrade to RRF order`，**徽标不变**（徽标是配置口径、非本跑口径 —— 与 Task 3 用例④同一条设计）。
+
+**③ TEI docker 腿**：镜像与模型下载撞上同一时段的外网故障（`ghcr.io` / `huggingface.co` / `registry-1.docker.io` 全 `000`）⇒ 镜像走 `ghcr.nju.edu.cn` 镜像、模型走 ModelScope 直下（TEI 自带下载器吃不了 hf-mirror：`Header content-range is missing`），`--model-id /data/model` 绑挂载（⚠️ Git Bash 会把 `/data/model` 改写成 Windows 路径 ⇒ 必须 `MSYS_NO_PATHCONV=1`）。起服日志 `Ready`；**裸探两形状**：TEI `{"query","texts","raw_scores"}` ⇒ 200（`0.0012680654` / `0.000037307`），通用 `{"model","query","documents","top_n"}` 打同一地址 ⇒ **422 `missing field 'texts'`**。配 `tei-rerank`（地址 `http://127.0.0.1:8080`、`rerank_model=BAAI/bge-reranker-base` 只当徽标、不进请求）后：网关 `POST http://127.0.0.1:8080/rerank 200`，向量腿 5 条**带分** `[0.99493295, 0.35044152, 0.321558, 0.321558, 0.20433685]`、榜首仍是「产品库存台账.xlsx」、徽标 `BAAI/bge-reranker-base relevance`；graph/wiki 两腿不动。**对照组** `generic-rerank` 指同一地址 ⇒ 网关 `422` + `rerank unavailable, degrading to RRF order`（向量腿 5 条**无分**、`rank` 1..5）—— 与计划预期「422 / 空榜」差在**不空**：走的是既有降级路径。收尾：容器 `docker rm -f`、`rag_config.json` 逐字节还原（md5 回 `b0cc81b51c409225e26a737ee78f50b8`），应用侧 `GET /api/rag/config` 复核一致（密钥只报「已设」）。证据全文与探针脚本：`pr-build/rag-retrieval-followups-2026-09-25/notes.md`。
 
 ---
 
