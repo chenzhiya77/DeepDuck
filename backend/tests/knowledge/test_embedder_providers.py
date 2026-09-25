@@ -153,6 +153,25 @@ async def test_openai_embedder_splits_batches_and_reports_auth_failure():
             await _openai_embedder(client, max_retries=2, retry_backoff_seconds=0).embed(["a"])
 
 
+@pytest.mark.asyncio
+async def test_the_generic_embedder_sends_batches_the_endpoint_can_take():
+    """默认批上限就得是「已知最低」：25 片拆成 10 / 10 / 5，而不是 20 / 5。
+
+    2026-09-25 真栈实测（这是本用例的由来）：走这个客户端的百炼兼容端点每次最多 10 行
+    （20 行 ⇒ 400 `batch size is invalid`）。默认 20 时重建的实体/百科页各是一次整页请求
+    （297 行、51 行）⇒ 整批被拒、零写入，而运行状态照样报 succeeded。
+    """
+    recorded: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=_openai_transport(recorded)) as client:
+        embedder = _openai_embedder(client)
+        assert embedder.batch_size == 10
+        results = await embedder.embed([f"切片{i}" for i in range(25)])
+
+    rows_per_request = [len(json.loads(request.content.decode())["input"]) for request in recorded]
+    assert rows_per_request == [10, 10, 5]
+    assert len(results) == 25, "拆批不影响结果条数与顺序"
+
+
 # ── build_embedder: resolution, cross-check, dimension ──────────────────────
 
 

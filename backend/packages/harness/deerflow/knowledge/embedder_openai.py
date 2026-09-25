@@ -38,8 +38,10 @@ logger = logging.getLogger(__name__)
 _EMBEDDINGS_PATH = "/v1/embeddings"
 _KEY_ENV_VAR = secret_env_var("embedding", "openai-compatible")
 
-#: Conservative default: generic endpoints vary wildly in what they accept per call.
-DEFAULT_BATCH_LIMIT = 20
+#: Conservative default: generic endpoints vary wildly in what they accept per call. Ten is
+#: the lowest cap actually measured (DashScope compatible-mode refuses 20 with HTTP 400
+#: ``batch size is invalid``); picking the known-lowest only ever costs an extra round trip.
+DEFAULT_BATCH_LIMIT = 10
 
 
 class OpenAICompatibleEmbedder:
