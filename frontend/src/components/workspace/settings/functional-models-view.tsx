@@ -534,6 +534,7 @@ export function FunctionalModelsView() {
     "volcengine-ark": F.providerVolcengineArk,
     "openai-compatible": F.providerOpenAIChat,
     "generic-rerank": F.providerGenericRerank,
+    "tei-rerank": F.providerTeiRerank,
     "tei-sparse": F.providerTeiSparse,
     "mineru-cloud": F.providerMineruCloud,
     "mineru-local": F.providerMineruLocal,
@@ -1158,7 +1159,7 @@ export function FunctionalModelsView() {
           {reindexRunning && (
             <span className="text-muted-foreground text-xs" role="status">
               {reindexProgress
-                ? `${F.reindexRunning} ${reindexProgress.documents_done}/${reindexProgress.documents_total} · ${F.reindexChunksWritten} ${reindexProgress.chunks_indexed}`
+                ? `${F.reindexRunning} ${reindexProgress.documents_done}/${reindexProgress.documents_total} · ${F.reindexChunksWritten} ${reindexProgress.chunks_indexed + reindexProgress.entities_indexed + reindexProgress.wiki_entries_indexed + reindexProgress.cards_indexed}`
                 : F.reindexRunning}
             </span>
           )}

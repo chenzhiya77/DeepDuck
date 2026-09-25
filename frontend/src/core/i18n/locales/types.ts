@@ -1715,6 +1715,7 @@ export interface Translations {
       providerVolcengineArk: string;
       providerOpenAIChat: string;
       providerGenericRerank: string;
+      providerTeiRerank: string;
       providerMineruCloud: string;
       providerMineruLocal: string;
       embeddingBaseUrl: string;

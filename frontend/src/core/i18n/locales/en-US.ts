@@ -1793,7 +1793,8 @@ export const enUS: Translations = {
       providerDashscope: "Aliyun Bailian (DashScope)",
       providerVolcengineArk: "Volcengine Ark",
       providerOpenAIChat: "OpenAI-compatible",
-      providerGenericRerank: "Generic rerank (Cohere / Jina / TEI shape)",
+      providerGenericRerank: "Generic rerank (Cohere / Jina shape)",
+      providerTeiRerank: "TEI rerank",
       providerMineruCloud: "MinerU cloud API",
       providerMineruLocal: "Local MinerU service",
       embeddingBaseUrl: "Embedding endpoint",
@@ -1862,7 +1863,7 @@ export const enUS: Translations = {
       noChanges: "No changes to save",
       reindexTitle: "Rebuild index",
       reindexHint:
-        "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here. This reads the library's existing chunks and never re-parses the source files.",
+        "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here: chunks, entities, wiki entries and manual cards all move to the new vector space. This reads the library's existing text and never re-parses source files or re-runs graph extraction.",
       reindexKbLabel: "Target library",
       reindexKbPlaceholder: "Choose a library",
       reindexNoKb: "No library to rebuild yet.",
@@ -1874,7 +1875,8 @@ export const enUS: Translations = {
       reindexEnqueued: "Rebuild started",
       reindexAlreadyRunning: "A rebuild is already running",
       reindexConfirmTitle: "Rebuild the index?",
-      reindexConfirmDescription: "Every chunk of this library will be re-embedded (source files are not re-parsed), and retrieval may be unstable while it runs. Target library:",
+      reindexConfirmDescription:
+        "Every vector in this library will be re-embedded — chunks, entities, wiki entries and manual cards (source files are not re-parsed) — and retrieval may be unstable while it runs. Target library:",
       reindexConfirmAction: "Start rebuild",
       providerLabel: "Provider",
       modelLabel: "Model ID",

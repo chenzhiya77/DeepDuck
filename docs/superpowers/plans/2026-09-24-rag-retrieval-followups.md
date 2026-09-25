@@ -132,13 +132,23 @@
 > ⚠️ **三个既有用例文件各自带一份 `RERANK_PROVIDERS` 局部夹具**（写死的，不从服务端派生）：`tests/unit/settings/functional-models.dom.test.tsx:95-104`（:127 挂进 view）、`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx:107-118`（:126 挂进 view）、`tests/unit/rag/config-form.test.ts:993-1004`（专测 `resolveRerankEndpointRow`）—— 夹具里都只有 dashscope / generic-rerank ⇒ **选项表 +1 不会自动让它们红**；但 RED ④ 要在 `tei-rerank` 上断言端点行，须在所用文件的夹具里**补一行 `{ provider_id: "tei-rerank", has_fixed_endpoint: false, default_endpoint: null }`**（否则落到「未知不锁」分支，断言打不到目标）。
 > **验收对应**：spec §5 的 4（界面部分）/ 12；文案 before→after 见 spec §4.3。
 
-- [ ] **RED**：dom 用例加四条：① **进度求和** —— 假 `progress = {documents_done:3, documents_total:3, chunks_indexed:100, entities_indexed:20, wiki_entries_indexed:7, cards_indexed:1}` ⇒ 运行行文案含 `已写入向量 128`；② **重建文案** —— `reindexHint` / `reindexConfirmDescription` 按新文案逐字断言；③ **下拉三项** —— 驱动候选（先例配方 `models-capability-wizard.dom.test.tsx:123-129`）⇒ `[role=option]` 三项、第三项文案 = `TEI 重排`；④ **端点行** —— 选 `tei-rerank` 后端点行按 capability 出现（`has_fixed_endpoint=False`；需给所用夹具补一行 `tei-rerank`，见上文 ⚠️）；**无任何条件提示**（`rerankModelTeiHint` 已裁甲取消，spec §4.3 表下有取消条）。此刻全红。
-- [ ] **GREEN**：运行行改四键求和（`reindexChunksWritten` 文案不动）；`PROVIDER_LABELS` 加 `"tei-rerank": F.providerTeiRerank`；`RERANK_PROVIDER_OPTIONS` / 两处联合类型 +1；i18n 三文件按 spec §4.3 表改/加（**缺 `types.ts` 即 tsc 红**）。窄面转绿。
-- [ ] **neuter ①（求和）**：运行行只显示 `chunks_indexed` ⇒ ① 红。
-- [ ] **neuter ②（下拉）**：`RERANK_PROVIDER_OPTIONS` 漏 `tei-rerank` ⇒ ③ 红。
-- [ ] **门禁**：`pnpm check` 净（eslint + tsc）；窄面（`tests/unit/settings/functional-models.dom.test.tsx`）绿；更宽面（`tests/unit/settings/` 全目录 + `tests/unit/components/workspace/settings/`）绿。
+- [x] **RED**：dom 用例加四条：① **进度求和** —— 假 `progress = {documents_done:3, documents_total:3, chunks_indexed:100, entities_indexed:20, wiki_entries_indexed:7, cards_indexed:1}` ⇒ 运行行文案含 `已写入向量 128`；② **重建文案** —— `reindexHint` / `reindexConfirmDescription` 按新文案逐字断言；③ **下拉三项** —— 驱动候选（先例配方 `models-capability-wizard.dom.test.tsx:123-129`）⇒ `[role=option]` 三项、第三项文案 = `TEI 重排`；④ **端点行** —— 选 `tei-rerank` 后端点行按 capability 出现（`has_fixed_endpoint=False`；需给所用夹具补一行 `tei-rerank`，见上文 ⚠️）；**无任何条件提示**（`rerankModelTeiHint` 已裁甲取消，spec §4.3 表下有取消条）。此刻全红。
+- [x] **GREEN**：运行行改四键求和（`reindexChunksWritten` 文案不动）；`PROVIDER_LABELS` 加 `"tei-rerank": F.providerTeiRerank`；`RERANK_PROVIDER_OPTIONS` / 两处联合类型 +1；i18n 三文件按 spec §4.3 表改/加（**缺 `types.ts` 即 tsc 红**）。窄面转绿。
+- [x] **neuter ①（求和）**：运行行只显示 `chunks_indexed` ⇒ ① 红。
+- [x] **neuter ②（下拉）**：`RERANK_PROVIDER_OPTIONS` 漏 `tei-rerank` ⇒ ③ 红。
+- [x] **门禁**：`pnpm check` 净（eslint + tsc）；窄面（`tests/unit/settings/functional-models.dom.test.tsx`）绿；更宽面（`tests/unit/settings/` 全目录 + `tests/unit/components/workspace/settings/`）绿。
 
-**实测（待回填）**：
+**实测（2026-09-25）**：
+- **RED**：同文件 **5 红 / 60 绿（65 总）**。5 红 = 四条新用例（① 实得 `已写入向量 100`；② 新文案两条都找不到；③ 实得两项；④ 端点行是锁态、无输入框）+ **既有的 `ReindexDialog` 用例**（失败点正是新加的那行描述逐字断言）——"加四条"实际惊动 5 条，第五条的失败面就是它自己新增的断言。
+- **GREEN 窄面 65 绿**：运行行四键求和；`PROVIDER_LABELS` + `"tei-rerank": F.providerTeiRerank`；选项常量 / `config-form.ts:48` 联合 / `core/rag/types.ts:45` 三处 +1；`ReindexProgress` +3 键；i18n 三文件按 spec §4.3 表（zh / en 各 3 处改值 + 1 个新 key，`locales/types.ts` +1 行）。
+- **⚠️ 两处计划没点名的既有夹具（tsc / 运行期各抓一处，发现即修）**：① `tests/unit/knowledge/reindex-status.test.ts:23` —— 那里的 `ReindexStatus` 是**强类型**夹具，`ReindexProgress` 加三键后 **tsc 当场红**（`pnpm check` 首跑逮到），补三键（0 = 还没走到那三遍）；② 同套件既有的「renders live counters」夹具只有 `chunks_indexed` ⇒ 四键求和后渲染成 **`已写入向量 NaN`**，补齐四类键后该用例的 `42` 保持绿。
+- **neuter ①（求和）**：运行行只显示 `chunks_indexed` ⇒ **恰好 1 红**（只有新的求和用例；既有 counters 用例仍绿，因其三键为 0）；md5 `5ccdcea0…` →（neuter）→ **还原 `5ccdcea0…`**。
+- **neuter ②（下拉）**：`RERANK_PROVIDER_OPTIONS` 漏 `tei-rerank` ⇒ **2 红**（计划预测 ③ 一条）：③ 下拉 **与** ④ 存量格 —— 这正是"一个常量驱动两路"（渲染 + `asEnum` 载入归一）的直接证据，④ 的独立价值由它自证；与 neuter ① 的受害者不相交。md5 `14087f7c…` →（neuter）→ **还原 `14087f7c…`**。
+- **门禁**：`pnpm check` **净**（eslint + tsc）；窄面 **65 绿**；更宽面（`tests/unit/settings/` + `tests/unit/components/workspace/settings/` + 受影响的 `tests/unit/knowledge/{reindex-status,api}.test.ts` + `tests/unit/rag/`）**15 文件 / 234 绿**。
+- **prettier 新债核（行号交集法）**：7 个改动文件 NOW ≤ HEAD（`en-US.ts` 36→33、dom 用例 133→127，其余持平）⇒ **零新债**；顺手把 en 的 `reindexConfirmDescription` 从单行断成两行（与 zh 同形）。本机 `pnpm format` 恒红是 CRLF 环境条件（既有口径），故按交集法判。
+- **文案落法**：三条改值 + 一条新 key **逐字抄进用例常量**（`REINDEX_HINT_ZH` / `REINDEX_CONFIRM_ZH` / `REINDEX_HINT_EN` / `REINDEX_CONFIRM_EN`）而不是引用字典 —— 避免"常量 == 常量"的同义反复；`F.reindexHint` 走 ⓘ 的可及名断言（等于同时钉住"挂在页面上"）。
+- **④ 的口径**：用**存量配置**（`setRag({ rerank_provider: "tei-rerank" })`）而非在弹层里点选 —— 它钉的是**载入归一**那一路（漏加 ⇒ 被静默读成 dashscope、端点行锁死），与 ③ 的渲染路径互补；夹具补的 `tei-rerank` 行让"可编辑"归因于能力块，而不是"未知 provider 不锁"那条兜底。
+- **未加任何条件提示**：按同日裁定（spec §4.3 表下取消条）不动模型行；用例只在 tei-rerank 上钉端点行 + 模型行仍在。
 
 ---
 

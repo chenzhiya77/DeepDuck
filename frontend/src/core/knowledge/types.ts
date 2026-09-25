@@ -144,6 +144,9 @@ export interface ReindexProgress {
   documents_total: number;
   documents_done: number;
   chunks_indexed: number;
+  entities_indexed: number;
+  wiki_entries_indexed: number;
+  cards_indexed: number;
 }
 
 /**

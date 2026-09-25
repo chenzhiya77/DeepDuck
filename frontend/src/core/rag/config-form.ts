@@ -45,7 +45,7 @@ export interface RagConfigFormValues {
   sparse_base_url: string;
   sparse_model: string;
   sparse_api_key: string;
-  rerank_provider: "dashscope" | "generic-rerank";
+  rerank_provider: "dashscope" | "generic-rerank" | "tei-rerank";
   rerank_base_url: string;
   parse_provider: "mineru-cloud" | "mineru-local";
   parse_base_url: string;
@@ -70,7 +70,11 @@ export const EMBEDDING_PROVIDER_OPTIONS = [
 export const EMBEDDING_SPARSE_SOURCE_OPTIONS = ["provider", "external", "bm25"] as const;
 /** The sparse service's id set: one verified shape (TEI's `/embed_sparse`), spec §4.2. */
 export const SPARSE_PROVIDER_OPTIONS = ["", "tei-sparse"] as const;
-export const RERANK_PROVIDER_OPTIONS = ["dashscope", "generic-rerank"] as const;
+export const RERANK_PROVIDER_OPTIONS = [
+  "dashscope",
+  "generic-rerank",
+  "tei-rerank",
+] as const;
 export const PARSE_PROVIDER_OPTIONS = ["mineru-cloud", "mineru-local"] as const;
 /**
  * The 4.x service tiers (spec 2026-09-24 §4.3); the empty option means "let the local MinerU

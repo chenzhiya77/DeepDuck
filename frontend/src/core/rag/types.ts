@@ -42,7 +42,7 @@ export interface RagConfigValues {
   sparse_base_url?: string | null;
   sparse_model?: string | null;
   sparse_api_key?: string | null;
-  rerank_provider?: "dashscope" | "generic-rerank" | null;
+  rerank_provider?: "dashscope" | "generic-rerank" | "tei-rerank" | null;
   rerank_base_url?: string | null;
   parse_provider?: "mineru-cloud" | "mineru-local" | null;
   parse_base_url?: string | null;

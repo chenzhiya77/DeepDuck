@@ -64,6 +64,19 @@ const SPARSE_URL = "http://127.0.0.1:8081";
 const SAVE_WARNING =
   "提交后的配置已保存，但未能验证：未能连通（EmbedderError）：All connection attempts failed";
 
+/**
+ * 重建文案（spec 2026-09-24 §4.3 表）。逐字抄在用例里而不是引用字典：重建现在换的是四类向量
+ * （切片 / 实体 / 百科条目 / 人工卡片），源文件与图谱抽取都不重跑，句子必须说全。
+ */
+const REINDEX_HINT_ZH =
+  "换嵌入 provider / 维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一起换到新的向量空间。只读库中现有文本，不重解析源文件、不重跑图谱抽取。";
+const REINDEX_CONFIRM_ZH =
+  "将重新嵌入该知识库的全部向量（切片、实体、百科条目、人工卡片；不重解析源文件），期间检索结果可能不稳。目标知识库：";
+const REINDEX_HINT_EN =
+  "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here: chunks, entities, wiki entries and manual cards all move to the new vector space. This reads the library's existing text and never re-parses source files or re-runs graph extraction.";
+const REINDEX_CONFIRM_EN =
+  "Every vector in this library will be re-embedded — chunks, entities, wiki entries and manual cards (source files are not re-parsed) — and retrieval may be unstable while it runs. Target library:";
+
 const saveMock = rs.fn();
 const reindexMock = rs.fn();
 const probeMock = rs.fn();
@@ -100,6 +113,14 @@ const RERANK_PROVIDERS = [
   },
   {
     provider_id: "generic-rerank",
+    has_fixed_endpoint: false,
+    default_endpoint: null,
+  },
+  // TEI fixes no address either (spec 2026-09-24 §4.3). The row matters even though it renders
+  // like the fallback: with it, "editable" means the capability block said so, not "unknown
+  // provider ⇒ don't take the field away".
+  {
+    provider_id: "tei-rerank",
     has_fixed_endpoint: false,
     default_endpoint: null,
   },
@@ -852,6 +873,42 @@ describe("rerank address row", () => {
 });
 
 /**
+ * 重排的第三种形状 TEI（spec 2026-09-24 §4.3）：下拉多一格，端点行照旧按能力块判；模型行
+ * 不加任何条件提示（同日已裁——请求里不带 model 字段这件事由既有 `sparseModelHint` 先例覆盖）。
+ */
+describe("TEI rerank provider", () => {
+  it("offers the TEI shape as a third rerank provider", async () => {
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.click(screen.getByRole("combobox", { name: F.rerankProvider }));
+
+    // 三项，顺序即形状的次序；「通用重排」的标签同时瘦身——TEI 不再算进它的形状里。
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent?.trim())).toEqual([
+      "阿里百炼 (DashScope)",
+      "通用重排 (Cohere / Jina 形状)",
+      "TEI 重排",
+    ]);
+    expect(enUS.settings.functionalModels.providerTeiRerank).toBe("TEI rerank");
+    expect(enUS.settings.functionalModels.providerGenericRerank).toBe(
+      "Generic rerank (Cohere / Jina shape)",
+    );
+  });
+
+  it("keeps the address row editable for a stored TEI provider", () => {
+    // 存量的 `tei-rerank` 要活过载入归一（`asEnum` 与渲染共用同一个选项常量，spec §4.3 ⚠️）：
+    // 漏加一格就会被静默读成 dashscope，端点行随即锁死、存量地址再也改不动。
+    setRag({ rerank_provider: "tei-rerank" });
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.rerankBaseUrl)).toBeTruthy();
+    expect(screen.getByLabelText(F.rerankModel)).toBeTruthy();
+  });
+});
+
+/**
  * 稀疏来源与所选嵌入提供商的能力不匹配（spec 2026-09-16 §3 D2）：编辑期就地拦下，
  * 而不是等第一次入库/检索时后端拒绝。文案与后端那句同一事实，且 Save 旁也要给出原因——
  * 只灰按钮不给理由，告警落在视口外的人会卡在「能改不能存、不知道为什么」。
@@ -1331,7 +1388,19 @@ describe("rebuild entry", () => {
   it("renders live counters while a rebuild runs and disables the action", () => {
     setRag();
     setKnowledge({
-      status: { in_progress: true, last_run: null, progress: { documents_total: 7, documents_done: 3, chunks_indexed: 42 } },
+      status: {
+        in_progress: true,
+        last_run: null,
+        progress: {
+          documents_total: 7,
+          documents_done: 3,
+          chunks_indexed: 42,
+          // 三键自 run 起手就存在于线上（后端恒发），0 = 还没走到那三遍。
+          entities_indexed: 0,
+          wiki_entries_indexed: 0,
+          cards_indexed: 0,
+        },
+      },
     });
     renderPage();
     openFunctionalView();
@@ -1340,6 +1409,46 @@ describe("rebuild entry", () => {
     expect(status.textContent).toContain("3/7");
     expect(status.textContent).toContain("42");
     expect(screen.getByRole<HTMLButtonElement>("button", { name: F.reindexAction }).disabled).toBe(true);
+  });
+
+  it("counts every vector collection in the running line", () => {
+    setRag();
+    setKnowledge({
+      status: {
+        in_progress: true,
+        last_run: null,
+        progress: {
+          documents_total: 3,
+          documents_done: 3,
+          chunks_indexed: 100,
+          entities_indexed: 20,
+          wiki_entries_indexed: 7,
+          cards_indexed: 1,
+        },
+      },
+    });
+    renderPage();
+    openFunctionalView();
+
+    // 四类向量之和（spec 2026-09-24 §5.4 / §4.3）：重建换的是切片 + 实体 + 百科条目 +
+    // 人工卡片；只报 chunks_indexed 会把另外三遍的成果藏起来——而它们正是跨空间坏掉的那批。
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("3/3");
+    expect(status.textContent).toContain("已写入向量 128");
+  });
+
+  it("spells out that a rebuild moves every vector collection", () => {
+    renderPage();
+    openFunctionalView();
+
+    // ⓘ 的可及名就是那句话本身，所以钉住它等于同时钉住"文案对"与"它真的挂在页面上"。
+    expect(screen.getByLabelText(REINDEX_HINT_ZH)).toBeTruthy();
+    // 确认句与 en 两侧没有 DOM 可钉（本套件只渲染 zh-CN），逐字对字典。
+    expect(F.reindexConfirmDescription).toBe(REINDEX_CONFIRM_ZH);
+    expect(enUS.settings.functionalModels.reindexHint).toBe(REINDEX_HINT_EN);
+    expect(enUS.settings.functionalModels.reindexConfirmDescription).toBe(
+      REINDEX_CONFIRM_EN,
+    );
   });
 
   it("reports the previous run's verdict when idle", () => {
@@ -1374,6 +1483,8 @@ describe("ReindexDialog", () => {
     // 目标必须点名：设置页没有库身份，确认框是最后一道「点错库」的防线
     expect(screen.getByText(F.reindexConfirmTitle)).toBeTruthy();
     expect(screen.getByText("产品资料")).toBeTruthy();
+    // 范围也要点名（spec 2026-09-24 §4.3）：换的是四类向量，不只是切片。
+    expect(screen.getByText(REINDEX_CONFIRM_ZH)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: F.reindexConfirmAction }));
     expect(onConfirm).toHaveBeenCalledTimes(1);

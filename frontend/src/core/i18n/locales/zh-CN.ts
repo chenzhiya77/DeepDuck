@@ -1699,7 +1699,8 @@ export const zhCN: Translations = {
       providerDashscope: "阿里百炼 (DashScope)",
       providerVolcengineArk: "火山方舟 (Ark)",
       providerOpenAIChat: "OpenAI-compatible",
-      providerGenericRerank: "通用重排 (Cohere / Jina / TEI 形状)",
+      providerGenericRerank: "通用重排 (Cohere / Jina 形状)",
+      providerTeiRerank: "TEI 重排",
       providerMineruCloud: "MinerU 官方云",
       providerMineruLocal: "本地 MinerU 服务",
       embeddingBaseUrl: "向量接口地址",
@@ -1769,7 +1770,7 @@ export const zhCN: Translations = {
       noChanges: "没有需要保存的改动",
       reindexTitle: "重建索引",
       reindexHint:
-        "换嵌入 provider / 维度后，已有向量全部失效——用这里的入口重新嵌入。只读库中现有切片，不重解析源文件。",
+        "换嵌入 provider / 维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一起换到新的向量空间。只读库中现有文本，不重解析源文件、不重跑图谱抽取。",
       reindexKbLabel: "目标知识库",
       reindexKbPlaceholder: "选择知识库",
       reindexNoKb: "还没有知识库可重建。",
@@ -1782,7 +1783,7 @@ export const zhCN: Translations = {
       reindexAlreadyRunning: "已有重建正在进行",
       reindexConfirmTitle: "确认重建索引？",
       reindexConfirmDescription:
-        "将重新嵌入该知识库的全部切片（不重解析源文件），期间检索结果可能不稳。目标知识库：",
+        "将重新嵌入该知识库的全部向量（切片、实体、百科条目、人工卡片；不重解析源文件），期间检索结果可能不稳。目标知识库：",
       reindexConfirmAction: "开始重建",
       providerLabel: "提供商",
       modelLabel: "Model ID",

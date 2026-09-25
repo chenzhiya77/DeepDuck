@@ -20,7 +20,15 @@ const IDLE: ReindexStatus = {
 const RUNNING: ReindexStatus = {
   in_progress: true,
   last_run: null,
-  progress: { documents_total: 7, documents_done: 3, chunks_indexed: 42 },
+  // 四类向量的计数自 run 起手就都在线上（spec 2026-09-24 §5.4）：0 = 还没走到那三遍。
+  progress: {
+    documents_total: 7,
+    documents_done: 3,
+    chunks_indexed: 42,
+    entities_indexed: 0,
+    wiki_entries_indexed: 0,
+    cards_indexed: 0,
+  },
 };
 
 describe("reindexRefetchInterval", () => {
