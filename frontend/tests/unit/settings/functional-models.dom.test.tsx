@@ -599,7 +599,7 @@ describe("functional-model layout", () => {
       shared,
       within(card)
         .getAllByText(shared)
-        .filter((el) => !el.closest(".lg\\:hidden")).length,
+        .filter((el) => !el.closest(".md\\:hidden")).length,
     ]);
     expect(Object.fromEntries(counts)).toEqual({
       [F.providerLabel]: 1,

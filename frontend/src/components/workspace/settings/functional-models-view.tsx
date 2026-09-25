@@ -158,9 +158,9 @@ function OptionSelect({
  * matter how long the labels are. Two values = the two retrieval roles, one = an ordinary row.
  */
 const ROW =
-  "grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-x-4 py-3 max-lg:grid-cols-1 max-lg:gap-y-1";
+  "grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-x-4 py-3 max-md:grid-cols-1 max-md:gap-y-1";
 const ROW_PAIR =
-  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3 max-lg:grid-cols-1 max-lg:gap-y-2";
+  "grid grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 py-3 max-md:grid-cols-1 max-md:gap-y-2";
 
 /** Hairlines between rows; with the shared gutter they are what makes a group read as one form. */
 function Rows({ children }: { children: React.ReactNode }) {
@@ -216,8 +216,8 @@ function PairCell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 lg:contents">
-      <span className="text-xs lg:hidden">
+    <div className="flex min-w-0 flex-col gap-1 md:contents">
+      <span className="text-xs md:hidden">
         <span className="font-semibold">{role}</span>{" "}
         <span className="text-muted-foreground">{label}</span>
       </span>
@@ -612,14 +612,14 @@ export function FunctionalModelsView() {
     <div className="flex w-full flex-col gap-4">
       <Group title={F.groupRetrieval} info={F.groupRetrievalHint}>
         <Rows>
-          <div className={`${ROW_PAIR} pt-0 pb-2 max-lg:hidden`}>
+          <div className={`${ROW_PAIR} pt-0 pb-2 max-md:hidden`}>
             <span />
             <RoleHeading label={F.embeddingModel} tag={F.roleTagEmbedding} />
             <RoleHeading label={F.rerankModel} tag={F.roleTagRerank} />
           </div>
 
           <div className={ROW_PAIR}>
-            <RowLabel className="max-lg:hidden">{F.providerLabel}</RowLabel>
+            <RowLabel className="max-md:hidden">{F.providerLabel}</RowLabel>
             <PairCell label={F.providerLabel} role={F.embeddingModel}>
               <OptionSelect
                 label={F.embeddingProvider}
@@ -651,7 +651,7 @@ export function FunctionalModelsView() {
           </div>
 
           <div className={ROW_PAIR}>
-            <RowLabel className="max-lg:hidden">{F.modelLabel}</RowLabel>
+            <RowLabel className="max-md:hidden">{F.modelLabel}</RowLabel>
             <PairCell label={F.modelLabel} role={F.embeddingModel}>
               <Input
                 value={values.embedding_model}
@@ -674,7 +674,7 @@ export function FunctionalModelsView() {
 
           <div className={ROW_PAIR}>
             <RowLabel
-              className="max-lg:hidden"
+              className="max-md:hidden"
               info={secretHintFor("embedding_api_key", "rerank_api_key")}
             >
               {F.apiKeyLabel}
@@ -710,7 +710,7 @@ export function FunctionalModelsView() {
           </div>
 
           <div className={ROW_PAIR}>
-            <RowLabel className="max-lg:hidden" info={F.retrievalEndpointHint}>
+            <RowLabel className="max-md:hidden" info={F.retrievalEndpointHint}>
               {F.endpointLabel}
             </RowLabel>
             <PairCell label={F.endpointLabel} role={F.embeddingModel}>

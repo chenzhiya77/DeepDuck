@@ -306,22 +306,22 @@ describe("narrow stacking", () => {
     renderWith({});
 
     const row = rowOf(screen.getByLabelText("embeddingModel"));
-    expect(row.className).toContain("max-lg:grid-cols-1");
+    expect(row.className).toContain("max-md:grid-cols-1");
 
     const [gutter, cellA, cellB] = Array.from(row.children) as [
       HTMLElement,
       HTMLElement,
       HTMLElement,
     ];
-    expect(gutter.className).toContain("max-lg:hidden");
+    expect(gutter.className).toContain("max-md:hidden");
 
     for (const [cell, role] of [
       [cellA, "embeddingModel"],
       [cellB, "rerankModel"],
     ] as const) {
-      expect(cell.className).toContain("lg:contents");
+      expect(cell.className).toContain("md:contents");
       const copy = cell.firstElementChild as HTMLElement;
-      expect(copy.className).toContain("lg:hidden");
+      expect(copy.className).toContain("md:hidden");
       expect(copy.textContent).toContain(role);
       expect(copy.textContent).toContain("modelLabel");
     }
@@ -332,7 +332,7 @@ describe("narrow stacking", () => {
     openAdvanced();
 
     expect(rowOf(screen.getByLabelText("sparseModel")).className).toContain(
-      "max-lg:grid-cols-1",
+      "max-md:grid-cols-1",
     );
   });
 
@@ -341,6 +341,6 @@ describe("narrow stacking", () => {
 
     const heading =
       screen.getByText("roleTagEmbedding").parentElement!.parentElement!;
-    expect(heading.className).toContain("max-lg:hidden");
+    expect(heading.className).toContain("max-md:hidden");
   });
 });
