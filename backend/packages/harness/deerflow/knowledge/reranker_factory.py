@@ -33,10 +33,10 @@ def build_reranker(config: Any | None = None, *, rag: Any | None = None) -> Any:
     section = config.rag if rag is None else rag
     spec = resolve_provider("rerank", section.rerank_provider)
 
-    endpoint = section.rerank_base_url or None
-    if endpoint is None and spec.provider_id != "dashscope":
+    endpoint = (section.rerank_base_url or "").strip()
+    if not endpoint:
         raise RagConfigurationError(
-            f"rerank_provider={spec.provider_id!r} requires rag.rerank_base_url; only `dashscope` has a built-in endpoint.",
+            f"rerank_provider={spec.provider_id!r} requires rag.rerank_base_url",
         )
 
     from deerflow.reflection import resolve_variable
@@ -48,8 +48,7 @@ def build_reranker(config: Any | None = None, *, rag: Any | None = None) -> Any:
         # one model per instance and its request has no model field, so handing it one would be
         # a `TypeError` before the first call (spec 2026-09-24 §4.3).
         kwargs["model"] = section.rerank_model
-    if endpoint is not None:
-        kwargs["base_url"] = endpoint
+    kwargs["base_url"] = endpoint
     if section.rerank_api_key:
         kwargs["api_key"] = section.rerank_api_key
     return implementation(**kwargs)

@@ -80,6 +80,25 @@ def config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     reset_app_config()
 
 
+_ENDPOINT_FIXTURE = {
+    "embedding_base_url": "http://localhost:8080/v1",
+    "rerank_base_url": "http://localhost:8000",
+}
+
+
+class _EndpointSeededClient(TestClient):
+    """Both endpoints are required (spec 2026-09-25 rag-endpoint-unlock D1/D3).
+
+    Cases that do not care about them get both seeded; a case about the empty state passes a
+    key explicitly (an explicit ``""`` wins here and then fails the save on purpose).
+    """
+
+    def put(self, url, json=None, **kwargs):
+        if url == "/api/rag/config" and isinstance(json, dict):
+            json = {**_ENDPOINT_FIXTURE, **json}
+        return super().put(url, json=json, **kwargs)
+
+
 def _client(*, system_role: str) -> TestClient:
     app = make_authed_test_app(
         user_factory=lambda: User(
@@ -90,7 +109,7 @@ def _client(*, system_role: str) -> TestClient:
         )
     )
     app.include_router(rag_config_router.router)
-    return TestClient(app)
+    return _EndpointSeededClient(app)
 
 
 @pytest.fixture(autouse=True)
@@ -247,7 +266,10 @@ def test_judge_model_round_trips_as_a_regular_field(config_env: Path):
         response = client.put("/api/rag/config", json={"judge_model": "judge-entry"})
 
     assert response.status_code == 200
-    assert _read_rag_json(config_env) == {"judge_model": "judge-entry"}
+    assert _read_rag_json(config_env) == {
+        **_ENDPOINT_FIXTURE,
+        "judge_model": "judge-entry",
+    }
     body = response.json()
     assert body["config"]["judge_model"] == "judge-entry"
     assert body["sources"]["judge_model"] == "ui"
@@ -611,7 +633,10 @@ def test_put_refuses_a_rerank_without_its_address(config_env: Path):
     before = target.read_bytes()
 
     with _client(system_role="admin") as client:
-        response = client.put("/api/rag/config", json={"rerank_provider": "generic-rerank"})
+        response = client.put(
+            "/api/rag/config",
+            json={"rerank_provider": "generic-rerank", "rerank_base_url": ""},
+        )
 
     assert response.status_code == 400
     detail = response.json()["detail"]
@@ -632,7 +657,10 @@ def test_put_refuses_a_tei_rerank_without_its_address(config_env: Path):
     before = target.read_bytes()
 
     with _client(system_role="admin") as client:
-        response = client.put("/api/rag/config", json={"rerank_provider": "tei-rerank"})
+        response = client.put(
+            "/api/rag/config",
+            json={"rerank_provider": "tei-rerank", "rerank_base_url": ""},
+        )
 
     assert response.status_code == 400
     detail = response.json()["detail"]
@@ -672,3 +700,27 @@ def test_a_complete_configuration_saves_without_touching_the_network(config_env:
 
     assert response.status_code == 200
     assert _read_rag_json(config_env)["rerank_model"] == "ui-rerank"
+
+
+def test_put_requires_the_embedding_endpoint(config_env: Path):
+    # Spec 2026-09-25 rag-endpoint-unlock D1/D3: with no silent vendor fallback, a save that
+    # would leave the embedding endpoint empty is refused with a readable reason.
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/rag/config",
+            json={"rerank_base_url": "http://localhost:8000", "embedding_base_url": ""},
+        )
+
+    assert response.status_code == 400
+    assert "embedding_base_url" in response.json()["detail"]
+
+
+def test_put_requires_the_rerank_endpoint(config_env: Path):
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/rag/config",
+            json={"embedding_base_url": "http://localhost:8080/v1", "rerank_base_url": ""},
+        )
+
+    assert response.status_code == 400
+    assert "rerank_base_url" in response.json()["detail"]

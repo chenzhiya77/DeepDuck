@@ -4,7 +4,6 @@ import type {
   RagConfigView,
   RagConfigInput,
   RagEmbeddingProviderCapability,
-  RagRerankProviderCapability,
   RagVideoValues,
 } from "./types";
 
@@ -399,75 +398,24 @@ export function isSparseProviderOptionDisabled(
   return capability === "unsupported";
 }
 
-/** The embedding address row's state, derived from the allowlist's own declaration. */
-export interface FixedEndpointRow {
-  /** True when this provider fixes its own address, so the row is read-only. */
-  locked: boolean;
-  /** What a locked row shows: the deployment's own address, else the vendor's. */
-  shown: string;
-  /** True when the deployment stored its own address, which it can then drop again. */
-  overridden: boolean;
-}
+/** Grey placeholder for an endpoint row with no vendor default (never a real value). */
+export const ENDPOINT_PLACEHOLDER_FALLBACK = "https://api.example.com/v1";
 
 /**
- * Decide _any_ leg's address row from that leg's capability block rather than from a provider name
- * (spec 2026-09-17 §3 D1/D5, extended to rerank by §3 D4). Two consequences worth stating:
- *
- * - **A stored address is not ignored.** It still wins at runtime, which is what lets a
- *   DashScope key be pointed at a workspace-scoped endpoint — so the row shows it instead of
- *   pretending the vendor's default applies, and offers to drop it (§3 D6, ⑤-4).
- * - **Unknown does not lock.** A server that predates the capability block cannot answer the
- *   question, and guessing "locked" would take a field away on the strength of a guess.
- *
- * The core takes the three values it needs so both legs share one judgement; a second copy per
- * leg is how the rerank row ended up hardcoding a provider name in the first place.
+ * The endpoint rows are always editable (spec 2026-09-25 rag-endpoint-unlock): the same vendor
+ * may serve different addresses (a DashScope workspace-scoped endpoint is the standing example),
+ * so there is no lock and no restore-to-default. The capability block's `default_endpoint` is
+ * only the grey placeholder hint — never a value, never a runtime fallback.
  */
-function resolveEndpointRow(
-  provider: string,
-  storedValue: string,
-  providers: readonly EndpointCapability[] | undefined,
-): FixedEndpointRow {
-  const capability = providers?.find((entry) => entry.provider_id === provider);
-  // A blank stored value is "nothing stored", so it must fall through to the vendor's address —
-  // written as an explicit test rather than `||`, which reads as a truthiness accident here.
-  const stored = storedValue.trim();
-  const fallback = capability?.default_endpoint ?? "";
-  const locked = capability?.has_fixed_endpoint === true;
-  return {
-    locked,
-    shown: stored === "" ? fallback : stored,
-    overridden: locked && stored !== "",
-  };
-}
-
-/** The two keys both capability blocks carry; the rerank one has nothing else (no sparse half). */
-interface EndpointCapability {
-  provider_id: string;
-  has_fixed_endpoint: boolean;
-  default_endpoint: string | null;
-}
-
-/** The embedding address row (spec 2026-09-17 §3 D1/D5). */
-export function resolveFixedEndpointRow(
-  values: RagConfigFormValues,
-  providers: readonly RagEmbeddingProviderCapability[] | undefined,
-): FixedEndpointRow {
-  return resolveEndpointRow(
-    values.embedding_provider,
-    values.embedding_base_url,
-    providers,
-  );
-}
-
-/** The rerank address row — the same rule, read from the rerank block (§3 D4). */
-export function resolveRerankEndpointRow(
-  values: RagConfigFormValues,
-  providers: readonly RagRerankProviderCapability[] | undefined,
-): FixedEndpointRow {
-  return resolveEndpointRow(
-    values.rerank_provider,
-    values.rerank_base_url,
-    providers,
+export function endpointPlaceholderFor(
+  providers:
+    | readonly { provider_id: string; default_endpoint: string | null }[]
+    | undefined,
+  providerId: string,
+): string {
+  return (
+    providers?.find((entry) => entry.provider_id === providerId)
+      ?.default_endpoint ?? ENDPOINT_PLACEHOLDER_FALLBACK
   );
 }
 

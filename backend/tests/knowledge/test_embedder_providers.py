@@ -177,11 +177,16 @@ async def test_the_generic_embedder_sends_batches_the_endpoint_can_take():
 
 @pytest.mark.asyncio
 async def test_build_embedder_defaults_to_dashscope_and_keeps_its_sparse(monkeypatch):
-    """老配置（什么都不设）⇒ 百炼 + 同出双路，行为与今天一致；且它自证维度、无需探测。"""
+    """百炼 + 同出双路（地址必填后夹具自带端点；spec 2026-09-25 rag-endpoint-unlock）；且它自证维度、无需探测。"""
     from deerflow.knowledge import embedder_factory as factory_mod
     from deerflow.knowledge.providers import resolve_provider
 
-    _stub_config(monkeypatch)
+    _stub_config(
+        monkeypatch,
+        embedding_provider="dashscope",
+        embedding_base_url="https://dashscope.aliyuncs.com",
+        embedding_sparse_source="provider",
+    )
 
     embedder = build_embedder()
 
@@ -399,3 +404,15 @@ async def test_the_embedder_sends_batches_the_model_can_take(monkeypatch):
     rows_per_request = [len(json.loads(request.content.decode())["input"]["texts"]) for request in recorded]
     assert rows_per_request == [10, 10, 5]
     assert len(results) == 25, "拆批不影响结果条数与顺序"
+
+
+@pytest.mark.asyncio
+async def test_build_embedder_refuses_an_empty_endpoint_even_for_dashscope(monkeypatch):
+    """Spec 2026-09-25 rag-endpoint-unlock D1 乙: the vendor's built-in fallback is gone —
+    an empty ``rag.embedding_base_url`` is a construction error whatever the provider."""
+    from deerflow.knowledge.embedder import RagConfigurationError
+
+    _stub_config(monkeypatch, embedding_provider="dashscope", embedding_base_url=None)
+
+    with pytest.raises(RagConfigurationError, match="embedding_base_url"):
+        build_embedder()

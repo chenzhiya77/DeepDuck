@@ -164,3 +164,16 @@ def test_the_factory_refuses_a_generic_provider_without_an_address():
 
     # Callers that already catch `ValueError` keep working — the new type is a subclass.
     assert isinstance(caught.value, ValueError)
+
+
+def test_the_factory_refuses_dashscope_without_an_address_too():
+    """Spec 2026-09-25 rag-endpoint-unlock D1 乙: no built-in endpoint fallback any more —
+    the address is required whatever the provider (the old message promised one)."""
+    from deerflow.config.app_config import RagConfig
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.reranker_factory import build_reranker
+
+    rag = RagConfig(rerank_provider="dashscope", rerank_base_url=None)
+    with pytest.raises(RagConfigurationError, match="rerank_base_url") as caught:
+        build_reranker(rag=rag)
+    assert "built-in endpoint" not in str(caught.value)

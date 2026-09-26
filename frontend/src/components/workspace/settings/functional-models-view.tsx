@@ -37,6 +37,7 @@ import {
   hasFormChanges,
   isCaptionCapable,
   isEmbeddingChange,
+  endpointPlaceholderFor,
   isSparseProviderOptionDisabled,
   isSparseServiceUnconfigured,
   isSparseSourceUnsupported,
@@ -45,8 +46,6 @@ import {
   PARSE_TIER_OPTIONS,
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
-  resolveFixedEndpointRow,
-  resolveRerankEndpointRow,
   resolveSparseCapability,
   SPARSE_PROVIDER_OPTIONS,
   shouldProbeSparseService,
@@ -263,15 +262,10 @@ const PLACEHOLDER_TEXT = "text-muted-foreground/70 text-sm";
 function LockedBox({
   reason,
   value,
-  onReset,
-  resetLabel,
 }: {
   reason: string;
   /** Only ever a non-secret value; secret rows pass nothing and show the reason alone. */
   value?: string;
-  /** Offered only when there is something of the admin's own to drop (spec 2026-09-17 §3 D6). */
-  onReset?: () => void;
-  resetLabel?: string;
 }) {
   return (
     <div className="border-input bg-muted/40 text-muted-foreground flex h-9 items-center justify-between gap-2 rounded-md border px-3">
@@ -279,17 +273,6 @@ function LockedBox({
       <span className={cn("truncate", !value?.trim() && PLACEHOLDER_TEXT)}>
         {value?.trim() ? value : reason}
       </span>
-      {/* The action rides *inside* the field it acts on, so it costs no layout and cannot be
-          mistaken for a row of its own. */}
-      {onReset && resetLabel ? (
-        <button
-          type="button"
-          onClick={onReset}
-          className="hover:text-foreground shrink-0 text-xs underline underline-offset-2"
-        >
-          {resetLabel}
-        </button>
-      ) : null}
       <Lock className="size-3.5 shrink-0" aria-hidden="true" />
     </div>
   );
@@ -404,16 +387,18 @@ export function FunctionalModelsView() {
   const embeddingChanged =
     view && values ? isEmbeddingChange(values, view) : false;
 
-  // Which embedding dialects fix their own address is a property of the *row* (spec 2026-09-17
-  // §3 D1), so it is read off the capability block instead of a provider name — a second such
-  // provider then needs no second hardcoded id, and a stored address stays visible (§3 D6).
-  const endpointRow = values
-    ? resolveFixedEndpointRow(values, view?.embedding_providers)
-    : null;
-  // Its rerank twin: same judgement, its own capability block (spec 2026-09-17 alignment §3 D4).
-  const rerankEndpointRow = values
-    ? resolveRerankEndpointRow(values, view?.rerank_providers)
-    : null;
+  // The endpoint rows are always editable (spec 2026-09-25 rag-endpoint-unlock): the same vendor
+  // may serve different addresses (Bailian workspace-scoped endpoints), so no lock and no
+  // restore-to-default — the capability block's default endpoint is only the grey placeholder
+  // hint (never a value, never a runtime fallback).
+  const embeddingEndpointPlaceholder = endpointPlaceholderFor(
+    view?.embedding_providers,
+    values?.embedding_provider ?? "",
+  );
+  const rerankEndpointPlaceholder = endpointPlaceholderFor(
+    view?.rerank_providers,
+    values?.rerank_provider ?? "",
+  );
 
   // The sparse half's capability is a three-state answer (spec 2026-09-16 §3 D2): the allowlist
   // settles the dialect question, a probe settles the model question, and everything unproven
@@ -433,6 +418,14 @@ export function FunctionalModelsView() {
     : values && isSparseServiceUnconfigured(values)
       ? F.sparseServiceUnconfigured
       : null;
+  // Endpoint addresses are required (spec 2026-09-25 rag-endpoint-unlock D3): there is no silent
+  // default to fall back on, so an empty address stops the save with its own sentence.
+  const endpointRequiredReason =
+    values &&
+    (!values.embedding_base_url.trim() || !values.rerank_base_url.trim())
+      ? F.endpointRequired
+      : null;
+  const saveBlockReason = sparseBlockReason ?? endpointRequiredReason;
   const sparseUnverified =
     values?.embedding_sparse_source === "provider" &&
     probeVerdict?.key === (values ? sparseProbeKey(values) : "") &&
@@ -736,53 +729,28 @@ export function FunctionalModelsView() {
               {F.endpointLabel}
             </RowLabel>
             <PairCell label={F.endpointLabel} order="order-5">
-              {endpointRow?.locked ? (
-                <LockedBox
-                  reason={F.lockedByProvider}
-                  value={endpointRow.shown}
-                  onReset={
-                    endpointRow.overridden
-                      ? () => update("embedding_base_url", "")
-                      : undefined
-                  }
-                  resetLabel={F.resetToDefault}
-                />
-              ) : (
-                <Input
-                  value={values.embedding_base_url}
-                  aria-label={F.embeddingBaseUrl}
-                  {...AUTOFILL_OFF_INPUT_PROPS}
-                  onChange={(event) =>
-                    update("embedding_base_url", event.target.value)
-                  }
-                />
-              )}
+              <Input
+                value={values.embedding_base_url}
+                aria-label={F.embeddingBaseUrl}
+                placeholder={embeddingEndpointPlaceholder}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+                onChange={(event) =>
+                  update("embedding_base_url", event.target.value)
+                }
+              />
             </PairCell>
-            {/* The same rule, from the rerank leg's own block (spec 2026-09-17 alignment §3 D4):
-                a vendor that fixes its address locks the row, a stored one still wins at runtime
-                and can be dropped from here. */}
+            {/* The rerank leg mirrors it (spec 2026-09-25 rag-endpoint-unlock): same rule, its
+                own capability block supplies the placeholder hint. */}
             <PairCell label={F.endpointLabel} order="order-11">
-              {rerankEndpointRow?.locked ? (
-                <LockedBox
-                  reason={F.lockedByProvider}
-                  value={rerankEndpointRow.shown}
-                  onReset={
-                    rerankEndpointRow.overridden
-                      ? () => update("rerank_base_url", "")
-                      : undefined
-                  }
-                  resetLabel={F.resetToDefault}
-                />
-              ) : (
-                <Input
-                  value={values.rerank_base_url}
-                  aria-label={F.rerankBaseUrl}
-                  {...AUTOFILL_OFF_INPUT_PROPS}
-                  onChange={(event) =>
-                    update("rerank_base_url", event.target.value)
-                  }
-                />
-              )}
+              <Input
+                value={values.rerank_base_url}
+                aria-label={F.rerankBaseUrl}
+                placeholder={rerankEndpointPlaceholder}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+                onChange={(event) =>
+                  update("rerank_base_url", event.target.value)
+                }
+              />
             </PairCell>
           </div>
         </Rows>
@@ -1229,8 +1197,8 @@ export function FunctionalModelsView() {
       <div className="flex items-center justify-end gap-3">
         {/* Disabled without a reason reads as a broken button, and the alert above can be
             scrolled out of sight — so the same sentence rides next to the button it blocks. */}
-        {sparseBlockReason ? (
-          <span className="text-destructive text-xs">{sparseBlockReason}</span>
+        {saveBlockReason ? (
+          <span className="text-destructive text-xs">{saveBlockReason}</span>
         ) : (
           !hasChanges && (
             <span className="text-muted-foreground text-xs">{F.noChanges}</span>
@@ -1238,7 +1206,7 @@ export function FunctionalModelsView() {
         )}
         <Button
           onClick={handleSave}
-          disabled={!hasChanges || Boolean(sparseBlockReason) || save.isPending}
+          disabled={!hasChanges || Boolean(saveBlockReason) || save.isPending}
         >
           {save.isPending ? t.common.loading : t.common.save}
         </Button>

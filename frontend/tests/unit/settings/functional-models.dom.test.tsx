@@ -150,8 +150,12 @@ function view(
     config: {
       qdrant_url: "http://qdrant:6333",
       embedding_model: "qwen3.7-text-embedding",
+      // Endpoint addresses are required (spec 2026-09-25 rag-endpoint-unlock D3), so the fixture
+      // seeds both — the probe keys include them; cases about the empty state pass "".
+      embedding_base_url: "http://127.0.0.1:8080/v1",
       embedding_api_key: MASKED,
       rerank_model: "qwen3-rerank",
+      rerank_base_url: "http://127.0.0.1:8000",
       rerank_api_key: "",
       vlm_model: "vl-model",
       vlm_base_url: "https://api.siliconflow.cn/v1",
@@ -194,6 +198,9 @@ function setRag(
     sources?: Record<string, string>;
   } = {},
 ) {
+  // Endpoint addresses are required (spec 2026-09-25 rag-endpoint-unlock D3); the fixture's
+  // `view()` seeds both unless a case is about the empty state itself.
+  over = { ...over };
   ragHooksMock.useRagConfig.mockReturnValue({
     view: opts.loading
       ? undefined
@@ -557,19 +564,15 @@ describe("functional-model layout", () => {
     expect(screen.getByLabelText(F.groupServicesHint)).toBeTruthy();
   });
 
-  it("labels a provider-fixed endpoint as locked instead of hiding it", () => {
+  it("leaves no provider-fixed lock copy on the endpoint rows", () => {
+    // Spec 2026-09-25 rag-endpoint-unlock §4.7/§5: the unlock is endpoint-only — other locked
+    // rows keep their own reason copies (their lock is about the *mode*, not a vendor address).
     renderPage();
     openFunctionalView();
 
-    // Both rows ship a vendor address now, and a locked row prints *where it will call* instead of
-    // the reason it is locked (spec 2026-09-17 alignment §3 D4) — the reason copy only appears
-    // where there is nothing to show, which is how the parse rows still use it.
-    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
-      2,
-    );
-    expect(screen.queryAllByText(F.lockedByProvider).length).toBe(0);
-    expect(screen.queryByLabelText(F.embeddingBaseUrl)).toBeNull();
-    expect(screen.queryByLabelText(F.rerankBaseUrl)).toBeNull();
+    expect(screen.getByLabelText(F.embeddingBaseUrl)).toBeTruthy();
+    expect(screen.getByLabelText(F.rerankBaseUrl)).toBeTruthy();
+    expect(screen.queryByText("由提供方固定")).toBeNull();
   });
 
   it("picks a configured chat model as the eval judge", () => {
@@ -660,9 +663,9 @@ describe("functional-model layout", () => {
 
     // Two cells that both say "you do not type this here", so they read the same: same size,
     // same tint, and both lead their field. They used to differ in all three (2026-09-16).
-    // Re-pointed at the parse rows: both endpoint rows now print an address instead of the
-    // reason (spec 2026-09-17 alignment §3 D4), while these still say *why* they are locked
-    // (the field belongs to the other parse mode).
+    // Re-pointed at the parse rows: the endpoint rows are plain inputs now
+    // (spec 2026-09-25 rag-endpoint-unlock), while these still say *why* they
+    // are locked (the field belongs to the other parse mode).
     const chip = screen.getByText(F.secretFromEnvBadge);
     const reason = screen.getAllByText(F.lockedLocalOnly)[0]!;
 
@@ -741,21 +744,22 @@ describe("functional-model layout", () => {
 });
 
 /**
- * 嵌入地址那一行（spec 2026-09-17 §3 D1/D5/D6）：**判据来自能力块**（谁自带地址谁锁），
- * 锁框里显示**实际会用的地址**；存量值仍然生效（百炼的 workspace 级地址就靠这一条活着），
- * 但当它偏离提供方默认时，旁边要给一个「恢复默认」把它清掉——否则那个部署会看着一个
- * 改不掉的框，而请求实际打在残留地址上。
+ * 接口地址行（spec 2026-09-25 rag-endpoint-unlock）：永远可编辑——同一家厂商可能有不同地址
+ * （百炼 workspace 级端点）；「恢复默认」与"厂商固定"的锁都退役；厂商默认只作灰字占位
+ * （不落值、不回落）；地址必填（缺 ⇒ Save 禁用 + 一句话原因）。
  */
 describe("embedding address row", () => {
   const saveButton = () =>
     screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
   const resetButton = () =>
-    screen.queryByRole("button", { name: F.resetToDefault });
+    screen.queryByRole("button", { name: "恢复默认" });
 
   it("offers the Ark dialect and saves it without a dense-only complaint", () => {
     setRag({
       embedding_provider: "volcengine-ark",
       embedding_sparse_source: "provider",
+      embedding_base_url: "https://ark.cn-beijing.volces.com",
+      rerank_base_url: "https://dashscope.aliyuncs.com",
     });
     renderPage();
     openFunctionalView();
@@ -769,18 +773,40 @@ describe("embedding address row", () => {
     expect(saveButton().disabled).toBe(false);
   });
 
-  it("locks the address for a provider that fixes its own endpoint", () => {
-    setRag({ embedding_provider: "volcengine-ark" });
+  it("keeps the row editable even for a provider that fixes its own endpoint", () => {
+    setRag({
+      embedding_provider: "volcengine-ark",
+      embedding_base_url: "",
+      rerank_base_url: "",
+    });
     renderPage();
     openFunctionalView();
 
-    expect(screen.getByText("https://ark.cn-beijing.volces.com")).toBeTruthy();
-    expect(screen.queryByLabelText(F.embeddingBaseUrl)).toBeNull();
-    // No stored address ⇒ nothing to reset.
+    const input = screen.getByLabelText<HTMLInputElement>(F.embeddingBaseUrl);
+    // The vendor default is only the grey hint — never the value.
+    expect(
+      screen.getByPlaceholderText("https://ark.cn-beijing.volces.com"),
+    ).toBeTruthy();
+    expect(input.value).toBe("");
     expect(resetButton()).toBeNull();
   });
 
-  it("leaves a provider without a fixed endpoint editable", () => {
+  it("keeps a stored override editable and offers no reset", () => {
+    setRag({
+      embedding_provider: "volcengine-ark",
+      embedding_base_url: "https://ws-example.cn-beijing.maas.aliyuncs.com",
+    });
+    renderPage();
+    openFunctionalView();
+
+    const input = screen.getByLabelText<HTMLInputElement>(F.embeddingBaseUrl);
+    expect(input.value).toBe(
+      "https://ws-example.cn-beijing.maas.aliyuncs.com",
+    );
+    expect(resetButton()).toBeNull();
+  });
+
+  it("shows the example placeholder for a provider without a default endpoint", () => {
     setRag({
       embedding_provider: "openai-compatible",
       embedding_base_url: "http://127.0.0.1:8080/v1",
@@ -789,63 +815,56 @@ describe("embedding address row", () => {
     openFunctionalView();
 
     expect(screen.getByLabelText(F.embeddingBaseUrl)).toBeTruthy();
+    expect(screen.getByPlaceholderText("https://api.example.com/v1")).toBeTruthy();
     expect(resetButton()).toBeNull();
   });
 
-  it("shows a stored override and lets the admin drop it", () => {
+  it("blocks Save while either endpoint is empty and says why", () => {
     setRag({
       embedding_provider: "volcengine-ark",
-      embedding_base_url: "https://ws-example.cn-beijing.maas.aliyuncs.com",
+      embedding_base_url: "",
+      rerank_base_url: "https://dashscope.aliyuncs.com",
     });
     renderPage();
     openFunctionalView();
 
-    expect(
-      screen.getByText("https://ws-example.cn-beijing.maas.aliyuncs.com"),
-    ).toBeTruthy();
-    fireEvent.click(resetButton()!);
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.getByText("请填写接口地址")).toBeTruthy();
 
-    // The box falls back to the vendor's own address, and the action has nothing left to do.
-    expect(screen.getByText("https://ark.cn-beijing.volces.com")).toBeTruthy();
-    expect(resetButton()).toBeNull();
+    fireEvent.change(screen.getByLabelText(F.embeddingBaseUrl), {
+      target: { value: "https://ark.cn-beijing.volces.com" },
+    });
+    expect(saveButton().disabled).toBe(false);
+    expect(screen.queryByText("请填写接口地址")).toBeNull();
   });
 });
 
 /**
- * 重排地址那一行与嵌入那行**同构**（spec 2026-09-17 alignment §3 D4）：判据同样来自能力块，
- * 只是读重排自己那块（条目形状不同：那边没有 `emits_sparse`）。存量 `rerank_base_url` 在运行期
- * 同样优先（`build_reranker` 只在有值时才把它传给实现），所以同样要给「恢复默认」。
+ * 重排地址那一行与嵌入那行**同构**（spec 2026-09-25 rag-endpoint-unlock）：同样永远可编辑、
+ * 无「恢复默认」、默认端点只作灰字占位。存量 `rerank_base_url` 在运行期仍然优先。
  */
 describe("rerank address row", () => {
   const resetButton = () =>
-    screen.queryByRole("button", { name: F.resetToDefault });
+    screen.queryByRole("button", { name: "恢复默认" });
 
-  it("locks the row and shows the vendor's own address", () => {
-    setRag({ rerank_provider: "dashscope" });
+  it("keeps the row editable and hints the vendor default", () => {
+    setRag({ rerank_provider: "dashscope", rerank_base_url: "" });
     renderPage();
     openFunctionalView();
 
-    // 两行都是同一个默认端点，所以这句话出现两次；重排行没有输入框、也没有可清的东西。
-    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
-      2,
+    const input = screen.getByLabelText<HTMLInputElement>(F.rerankBaseUrl);
+    expect(input).toBeTruthy();
+    // Both legs share the same default endpoint as their hint; the hint is not a value.
+    expect(
+      screen.getAllByPlaceholderText("https://dashscope.aliyuncs.com").length,
+    ).toBe(2);
+    expect(screen.queryAllByText("https://dashscope.aliyuncs.com").length).toBe(
+      0,
     );
-    expect(screen.queryByLabelText(F.rerankBaseUrl)).toBeNull();
     expect(resetButton()).toBeNull();
   });
 
-  it("leaves the row editable for a provider that brings its own address", () => {
-    setRag({
-      rerank_provider: "generic-rerank",
-      rerank_base_url: "http://localhost:8000",
-    });
-    renderPage();
-    openFunctionalView();
-
-    expect(screen.getByLabelText(F.rerankBaseUrl)).toBeTruthy();
-    expect(resetButton()).toBeNull();
-  });
-
-  it("shows a stored rerank override and lets the admin drop it", () => {
+  it("keeps a stored rerank override editable and offers no reset", () => {
     setRag({
       rerank_provider: "dashscope",
       rerank_base_url: "http://127.0.0.1:9999",
@@ -853,24 +872,21 @@ describe("rerank address row", () => {
     renderPage();
     openFunctionalView();
 
-    expect(screen.getByText("http://127.0.0.1:9999")).toBeTruthy();
-    fireEvent.click(resetButton()!);
-
-    // 存量值被清掉了 ⇒ 框里回到提供方的默认地址，动作也没有可做的事。
-    expect(screen.queryByText("http://127.0.0.1:9999")).toBeNull();
-    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
-      2,
-    );
+    const input = screen.getByLabelText<HTMLInputElement>(F.rerankBaseUrl);
+    expect(input.value).toBe("http://127.0.0.1:9999");
     expect(resetButton()).toBeNull();
   });
 
   it("stays editable when the server sends no rerank capability block", () => {
-    // `unknown ≠ cannot`：旧的网关答不了这个问题，就不要替它把框锁上。
+    // `unknown ≠ cannot`：旧的网关答不了这个问题，就不要替它把框锁上（占位退 example.com）。
     setRag({ rerank_provider: "dashscope" }, { providers: null });
     renderPage();
     openFunctionalView();
 
     expect(screen.getByLabelText(F.rerankBaseUrl)).toBeTruthy();
+    expect(
+      screen.getAllByPlaceholderText("https://api.example.com/v1").length,
+    ).toBe(2);
   });
 });
 

@@ -44,7 +44,9 @@ SANDBOX = {"use": "deerflow.sandbox.local:LocalSandboxProvider"}
 YAML_RAG = {
     "qdrant_url": "http://qdrant:6333",
     "embedding_model": "yaml-embedding",
+    "embedding_base_url": "http://127.0.0.1:8123/v1",
     "rerank_model": "yaml-rerank",
+    "rerank_base_url": "http://127.0.0.1:8124",
     "vlm_model": "yaml-vlm",
     "worker_concurrency": 4,
     "video": {"enabled": False, "asr_model": "yaml-asr"},
@@ -346,4 +348,4 @@ def test_warning_is_always_present_and_never_strips_null_fields(config_env: Path
 
     assert "warning" in body and body["warning"] is None
     assert "judge_model" in body["config"] and body["config"]["judge_model"] is None
-    assert "embedding_base_url" in body["config"] and body["config"]["embedding_base_url"] is None
+    assert body["config"]["embedding_base_url"] == "http://127.0.0.1:8123/v1"

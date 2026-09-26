@@ -78,9 +78,10 @@ rs.mock("sonner", () => ({
 }));
 
 /**
- * What the embedding allowlist reports: which dialects fix their own endpoint (so the address
- * row is read-only) and where they point. Mirrors the real response — the view decides the row
- * from *this*, not from a provider name (spec 2026-09-17 §3 D1).
+ * What the embedding allowlist reports: which dialects ship a default endpoint (the grey
+ * placeholder hint now, never a lock — spec 2026-09-25 rag-endpoint-unlock) and where they
+ * point. Mirrors the real response — the view reads the hint from *this*, not from a
+ * provider name.
  */
 const EMBEDDING_PROVIDERS = [
   {
@@ -144,27 +145,34 @@ afterEach(() => {
 });
 
 describe("provider rows", () => {
-  it("shows a provider-fixed endpoint locked, with the sparse rows behind the advanced disclosure", () => {
+  it("keeps both endpoint rows editable and offers the vendor default as a placeholder only", () => {
+    // Spec 2026-09-25 rag-endpoint-unlock: no lock and no restore-to-default — the same vendor
+    // may serve different addresses (Bailian workspace-scoped endpoints), so the rows are always
+    // editable and the default endpoint is only a grey hint (never a value).
     renderWith({ embedding_provider: "dashscope", rerank_provider: "dashscope" });
 
-    // Locked, not hidden: no endpoint input, and each row says *where it will call* — the vendor's
-    // own address for both rows now (spec 2026-09-17 alignment §3 D4), so the reason copy is not
-    // printed anywhere on these two rows.
-    expect(labelCount("embeddingBaseUrl")).toBe(0);
-    expect(labelCount("rerankBaseUrl")).toBe(0);
-    expect(screen.getAllByText("https://dashscope.aliyuncs.com").length).toBe(
-      2,
-    );
+    expect(labelCount("embeddingBaseUrl")).toBe(1);
+    expect(labelCount("rerankBaseUrl")).toBe(1);
     expect(screen.queryAllByText("lockedByProvider").length).toBe(0);
+    expect(
+      screen.getAllByPlaceholderText("https://dashscope.aliyuncs.com").length,
+    ).toBe(2);
+    expect(screen.queryAllByText("https://dashscope.aliyuncs.com").length).toBe(
+      0,
+    );
+    expect(
+      screen.queryAllByRole("button", { name: "resetToDefault" }).length,
+    ).toBe(0);
 
-    // Sparse settings defer to the disclosure, and start locked (source = provider).
+    // Sparse settings defer to the disclosure, and start locked (source = provider) —
+    // the endpoint unlock leaves the other locked rows alone.
     expect(labelCount("embeddingSparseSource")).toBe(0);
     openAdvanced();
     expect(labelCount("embeddingSparseSource")).toBeGreaterThan(0);
     expect(screen.getAllByText("lockedExternalOnly").length).toBe(4);
   });
 
-  it("unlocks the endpoint once the selected provider has no built-in default", () => {
+  it("shows the example placeholder for a provider without a default endpoint", () => {
     renderWith({
       embedding_provider: "openai-compatible",
       rerank_provider: "generic-rerank",
@@ -174,6 +182,9 @@ describe("provider rows", () => {
     expect(labelCount("rerankBaseUrl")).toBeGreaterThan(0);
     // No locked endpoint row remains once both providers need an address.
     expect(screen.queryByText("lockedByProvider")).toBeNull();
+    expect(
+      screen.getAllByPlaceholderText("https://api.example.com/v1").length,
+    ).toBe(2);
   });
 
   it("unlocks the sparse rows when the source is a separate service", () => {

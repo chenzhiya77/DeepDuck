@@ -29,8 +29,8 @@ import {
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
   PARSE_TIER_OPTIONS,
-  resolveFixedEndpointRow,
-  resolveRerankEndpointRow,
+  ENDPOINT_PLACEHOLDER_FALLBACK,
+  endpointPlaceholderFor,
   resolveSparseCapability,
   shouldProbeSparseService,
   sparseProbeKey,
@@ -882,11 +882,11 @@ describe("sparse service probe", () => {
 });
 
 /**
- * 嵌入地址那一行（spec 2026-09-17 §3 D1/D6）：哪些 provider 的地址「由提供方固定」、
- * 锁框里该显示什么、以及**存量地址仍然生效**（百炼的 workspace 级地址就靠这一条活着）。
- * 判据来自能力块，不写死 provider 名——加第二家之后就不会漏。
+ * 嵌入侧的提供商选项与地址占位（spec 2026-09-25 rag-endpoint-unlock）：能力块的
+ * `default_endpoint` 只作灰字占位（不落值、不回落），没有默认的 provider 退
+ * `https://api.example.com/v1`。判据来自能力块，不写死 provider 名——加第二家之后就不会漏。
  */
-describe("embedding provider options and the fixed-endpoint row", () => {
+describe("embedding provider options and the endpoint placeholder", () => {
   const PROVIDERS = [
     {
       provider_id: "dashscope",
@@ -907,10 +907,6 @@ describe("embedding provider options and the fixed-endpoint row", () => {
       default_endpoint: null,
     },
   ];
-  const form = (over: Record<string, unknown> = {}) => ({
-    ...formValuesFromConfig(view()),
-    ...over,
-  });
 
   it("offers the Ark dialect alongside the other two", () => {
     expect(EMBEDDING_PROVIDER_OPTIONS).toContain("volcengine-ark");
@@ -922,74 +918,31 @@ describe("embedding provider options and the fixed-endpoint row", () => {
     ]);
   });
 
-  it("locks a provider that fixes its own endpoint and shows where it will call", () => {
-    expect(resolveFixedEndpointRow(form(), PROVIDERS)).toEqual({
-      locked: true,
-      shown: "https://dashscope.aliyuncs.com",
-      overridden: false,
-    });
-    expect(
-      resolveFixedEndpointRow(
-        form({ embedding_provider: "volcengine-ark" }),
-        PROVIDERS,
-      ),
-    ).toEqual({
-      locked: true,
-      shown: "https://ark.cn-beijing.volces.com",
-      overridden: false,
-    });
-  });
-
-  it("keeps a stored address in play and marks it as the admin's own", () => {
-    // ⑤-4：存量值仍然生效（否则百炼的 workspace 级地址就配不了了），只是变成「看得见」。
-    expect(
-      resolveFixedEndpointRow(
-        form({
-          embedding_provider: "volcengine-ark",
-          embedding_base_url: "https://ws-example.cn-beijing.maas.aliyuncs.com",
-        }),
-        PROVIDERS,
-      ),
-    ).toEqual({
-      locked: true,
-      shown: "https://ws-example.cn-beijing.maas.aliyuncs.com",
-      overridden: true,
-    });
-  });
-
-  it("leaves a provider without a fixed endpoint editable", () => {
-    expect(
-      resolveFixedEndpointRow(
-        form({
-          embedding_provider: "openai-compatible",
-          embedding_base_url: "http://127.0.0.1:8080/v1",
-        }),
-        PROVIDERS,
-      ),
-    ).toEqual({
-      locked: false,
-      shown: "http://127.0.0.1:8080/v1",
-      overridden: false,
-    });
-  });
-
-  it("does not lock anything when the server has no capability block", () => {
-    // 旧响应答不了这个问题 ⇒ 不替它答：留成可编辑，而不是猜一个"锁"。
-    expect(resolveFixedEndpointRow(form(), undefined)).toEqual({
-      locked: false,
-      shown: "",
-      overridden: false,
-    });
+  it("offers the vendor default as the placeholder hint and falls back to example.com", () => {
+    // Spec 2026-09-25 rag-endpoint-unlock: the default endpoint is only a grey hint —
+    // never a value, never a runtime fallback.
+    expect(endpointPlaceholderFor(PROVIDERS, "dashscope")).toBe(
+      "https://dashscope.aliyuncs.com",
+    );
+    expect(endpointPlaceholderFor(PROVIDERS, "volcengine-ark")).toBe(
+      "https://ark.cn-beijing.volces.com",
+    );
+    expect(endpointPlaceholderFor(PROVIDERS, "openai-compatible")).toBe(
+      ENDPOINT_PLACEHOLDER_FALLBACK,
+    );
+    expect(endpointPlaceholderFor(undefined, "dashscope")).toBe(
+      ENDPOINT_PLACEHOLDER_FALLBACK,
+    );
   });
 });
 
 /**
- * The rerank row answers the *same* question as the embedding one, from its own block
- * (spec 2026-09-17 alignment §3 D4). Kept as a separate wrapper over one core so the two rows
- * cannot drift into two copies of the judgement — which is exactly how the rerank row ended up
- * hardcoding a provider name in the first place.
+ * The rerank leg answers the *same* question as the embedding one, from its own block
+ * (spec 2026-09-25 rag-endpoint-unlock). Both legs read one shared helper
+ * (`endpointPlaceholderFor`) so the judgement cannot drift into two copies — which is
+ * exactly how the rerank row once ended up hardcoding a provider name.
  */
-describe("rerank endpoint row reads its own capability block", () => {
+describe("rerank placeholder reads its own capability block", () => {
   const RERANK_PROVIDERS = [
     {
       provider_id: "dashscope",
@@ -1002,67 +955,18 @@ describe("rerank endpoint row reads its own capability block", () => {
       default_endpoint: null,
     },
   ];
-  const form = (over: Record<string, unknown> = {}) => ({
-    ...formValuesFromConfig(view()),
-    ...over,
-  });
 
-  it("locks a provider that fixes its own endpoint and shows where it will call", () => {
-    expect(
-      resolveRerankEndpointRow(
-        form({ rerank_provider: "dashscope" }),
-        RERANK_PROVIDERS,
-      ),
-    ).toEqual({
-      locked: true,
-      shown: "https://dashscope.aliyuncs.com",
-      overridden: false,
-    });
-  });
-
-  it("keeps a stored address in play and marks it as the admin's own", () => {
-    expect(
-      resolveRerankEndpointRow(
-        form({
-          rerank_provider: "dashscope",
-          rerank_base_url: "http://127.0.0.1:9999",
-        }),
-        RERANK_PROVIDERS,
-      ),
-    ).toEqual({
-      locked: true,
-      shown: "http://127.0.0.1:9999",
-      overridden: true,
-    });
-  });
-
-  it("leaves a provider without a fixed endpoint editable", () => {
-    expect(
-      resolveRerankEndpointRow(
-        form({
-          rerank_provider: "generic-rerank",
-          rerank_base_url: "http://localhost:8000",
-        }),
-        RERANK_PROVIDERS,
-      ),
-    ).toEqual({
-      locked: false,
-      shown: "http://localhost:8000",
-      overridden: false,
-    });
-  });
-
-  it("does not lock anything when the server has no rerank capability block", () => {
-    // `unknown ≠ cannot`，与嵌入那行同一条规矩：旧的网关答不了这个问题，就别替它猜。
-    expect(
-      resolveRerankEndpointRow(
-        form({ rerank_provider: "dashscope" }),
-        undefined,
-      ),
-    ).toEqual({
-      locked: false,
-      shown: "",
-      overridden: false,
-    });
+  it("hints the rerank block's own default and falls back to example.com", () => {
+    // Spec 2026-09-25 rag-endpoint-unlock: the rerank leg mirrors the embedding one —
+    // its own capability block supplies the hint, and there is no lock any more.
+    expect(endpointPlaceholderFor(RERANK_PROVIDERS, "dashscope")).toBe(
+      "https://dashscope.aliyuncs.com",
+    );
+    expect(endpointPlaceholderFor(RERANK_PROVIDERS, "generic-rerank")).toBe(
+      ENDPOINT_PLACEHOLDER_FALLBACK,
+    );
+    expect(endpointPlaceholderFor(undefined, "dashscope")).toBe(
+      ENDPOINT_PLACEHOLDER_FALLBACK,
+    );
   });
 });

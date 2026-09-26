@@ -149,18 +149,18 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
 
 
 def _build_dense(spec, rag, declared: int | None, client: Any | None) -> Embedder:
-    """Build the dense half. The allowlist row says whether this vendor fixes its own address.
+    """Build the dense half. The allowlist row says whether this vendor ships a default hint.
 
-    A stored ``rag.embedding_base_url`` always wins — that is what keeps a workspace-scoped
-    DashScope endpoint usable; ``spec.default_endpoint`` is only the fallback for a row whose
-    vendor supplies one (the settings UI shows that field read-only for exactly those rows).
+    A stored ``rag.embedding_base_url`` is the one and only address (spec 2026-09-25
+    rag-endpoint-unlock D1 乙: the silent ``spec.default_endpoint`` fallback is gone — the
+    settings UI shows the default as a grey hint and requires an address).
     """
     from deerflow.reflection import resolve_variable
 
     kwargs: dict = {"client": client}
-    base_url = (rag.embedding_base_url or "").strip() or spec.default_endpoint
+    base_url = (rag.embedding_base_url or "").strip()
     if not base_url:
-        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url（这一家没有内置地址）")
+        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url")
     kwargs["base_url"] = base_url
     if rag.embedding_model:
         kwargs["model"] = rag.embedding_model

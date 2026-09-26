@@ -197,7 +197,7 @@ async def test_an_empty_sparse_half_is_refused_by_the_shell_that_wraps_it(monkey
     _stub_config(
         monkeypatch,
         embedding_provider="volcengine-ark",
-        embedding_base_url=None,
+        embedding_base_url=ARK_BASE_URL,
         embedding_model="doubao-embedding-vision-250615",
         embedding_sparse_source="provider",
     )
@@ -247,7 +247,7 @@ async def test_build_embedder_builds_the_ark_provider_and_injects_the_width(monk
     _stub_config(
         monkeypatch,
         embedding_provider="volcengine-ark",
-        embedding_base_url=None,
+        embedding_base_url=ARK_BASE_URL,
         embedding_model="doubao-embedding-vision-250615",
         embedding_dimension=None,
         embedding_sparse_source="provider",
