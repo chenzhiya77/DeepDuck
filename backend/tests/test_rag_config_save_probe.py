@@ -306,6 +306,29 @@ def test_an_unrelated_change_probes_nothing(config_env: Path, monkeypatch: pytes
     assert response.json()["warning"] is None
 
 
+def test_changing_only_the_rag_default_probes_nothing(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The RAG default is a model *reference*, not an embedding setting (D2's watched six).
+
+    Paired with a positive control on the same stub: a real embedding change must still make
+    it record a call, otherwise `recorded == []` would only prove the stub swallowed
+    everything.
+    """
+    recorded = _stub(monkeypatch, _healthy())
+
+    with _client() as client:
+        picked = client.put(_PUT, json={"default_model": "rag-default"})
+
+    assert picked.status_code == 200
+    assert picked.json()["warning"] is None
+    assert _read_rag_json(config_env)["default_model"] == "rag-default"
+    assert recorded == []
+
+    with _client() as client:
+        assert client.put(_PUT, json={**_INVALID_WIDTH_PAYLOAD, "default_model": "rag-default"}).status_code == 200
+
+    assert recorded != [], "the positive control must reach the network"
+
+
 def test_resubmitting_the_same_embedding_settings_probes_nothing(config_env: Path, monkeypatch: pytest.MonkeyPatch):
     """The judgement is on *values*, not on which keys the payload carried — and a masking
     sentinel resolves to the stored key, which is the value already in force (D2)."""

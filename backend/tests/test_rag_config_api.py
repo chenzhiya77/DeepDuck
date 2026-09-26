@@ -349,6 +349,55 @@ def test_blank_rag_default_withdraws_the_ui_override(config_env: Path, blank: st
     assert response.json()["sources"]["default_model"] == "config_file"
 
 
+def _seed_two_models(root: Path) -> None:
+    (root / "models_config.json").write_text(
+        json.dumps(
+            {
+                "models": [
+                    {"name": "A", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key"},
+                    {"name": "B", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_the_saved_default_reaches_the_extraction_role(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The join of the two earlier tasks: what the admin saves is what the role builds with.
+
+    Task 1 pinned the resolver and Task 2 the wiring; neither went through the API. This one
+    does the whole path — PUT, file, config reload, the extraction entry — and the factory is
+    spied so no client is constructed.
+    """
+    from deerflow.knowledge.graph.extractor import get_extract_llm
+
+    _seed_two_models(config_env)
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        "deerflow.models.factory.create_chat_model",
+        lambda name=None, **kwargs: seen.setdefault("name", name) or object(),
+    )
+
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"default_model": "B"}).status_code == 200
+
+    get_extract_llm()
+
+    assert seen["name"] == "B"
+
+
+def test_saving_the_rag_default_touches_no_other_configuration_file(config_env: Path):
+    """The save writes `rag_config.json` and nothing else, byte for byte."""
+    names = ("config.yaml", "models_config.json", "extensions_config.json")
+    before = {name: (config_env / name).read_bytes() for name in names}
+
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"default_model": "rag-default"}).status_code == 200
+
+    assert {name: (config_env / name).read_bytes() for name in names} == before
+
+
 # ── hot reload through the shared config singleton ────────────────────────
 
 

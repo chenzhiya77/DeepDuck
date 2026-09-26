@@ -236,15 +236,42 @@
 > 文件：`backend/app/gateway/routers/rag_config.py`、必要的 RAG 配置字段元数据；`frontend/src/core/rag/{types,config-form,hooks}.ts` 按实际所需修改。测试 RAG API／reload／golden、`unit/rag/config-form.test.ts` 和现有 hook 测试。本 Task 不改公共模型 API、管理 API、`core/settings` 或聊天模型偏好。
 > **验收对应**：spec §4 的 1 / 4 / 5 / 6（表单状态）/ 13。
 
-- [ ] **RED：RAG 往返与整对象语义**：PUT 新名称→落盘→GET 的 `config` / `sources` 可见；省略／null／空串／纯空白撤销 UI 默认，分别验证 YAML 有／无同名 RAG 默认。空白归一由 **Task 1 的 validator** 承重，本 Task 只验端到端结果（文件里不落该键、`sources` 不报 `ui`），不在 router 里另加一层 strip。PUT 后真实冷加载、只改 RAG 文件后的自动热加载均通过 Task 1 resolver／Task 2 入口观察目标；字段不会出现在模型配置文件中。
-- [ ] **RED：来源带回与清空**：`formValuesFromConfig()` 读取新字段；编辑另一个 RAG 设置保留 UI 所有的默认，但不固化未编辑 YAML 默认。**`{}` 那条要按 Task 0 核到的机制写准，别写成"清空就发 `{}`"**：`buildRagConfigInput()` 的 TEXT 循环（`config-form.ts:200-213`）在 `:210-212` 是 `if (next !== "" || owned(view, key)) input[key] = next` ⇒ **只有当没有任何字段是 UI 覆盖时载荷才是 `{}`**；还有覆盖时，被清空的那个字段会以 `""` 送出（靠空串撤销覆盖），不是靠省略。所以两条断言分开写：① 唯一那个 UI 覆盖被清空 ⇒ 载荷是 `{}`；② 还有其他 UI 覆盖时被清空的那个 ⇒ 载荷含 `key: ""` 且不含其他未编辑字段。能否保存用 `hasFormChanges()`（`:506-520`，判据在 `:513-518`），不拿 `{}` 直接判未编辑。覆盖“清 UI 默认后重新继承 YAML”与“清角色 UI 值后 YAML 角色仍优先”，不把空选择器等同最终空角色。
-- [ ] **守卫：权限、形状与钥匙**：复用 Task 1 已增加默认字段及来源的 golden，本 Task 不再增加响应键，**也不提前删 Task 9 的三个退役键**（两个顶层 VLM 键＋嵌套的 `video.caption_model`）。RAG admin 权限不变；公共／管理模型 API 形状不新增默认字段。复跑原秘密掩码保留，载荷不新增钥匙或模型数组；本期不保证修复宿主模型保存的 `$VAR` 引用问题。
-- [ ] **RED／守卫：文件与网络隔离**：临时模型配置／YAML／扩展配置在 RAG 保存前后字节不变；默认变更不改 embedding 签名，探针和 SDK 构造计数为零。以真实嵌入字段变更触发既有探针作正向对照，不用全局空桩吞掉探针。新增目标检查留 Task 9，届时复跑零新增网络守卫。
-- [ ] **GREEN**：把默认字段接入 RAG wire／form 的明确字段列表、加载映射、来源带回和原保存链；复用 RAG 原子写入、锁、掩码与刷新机制，不新建即时保存 mutation 或改造模型目录事务。仅在新字段确实需要处调整 hook。
-- [ ] **neuter：保存语义**：把省略字段改成保留旧 UI 默认、遗漏默认的 carry-forward、把未编辑 YAML 值写成 UI、把 `{}` 一律当无变化，分别令对应断言转红；让默认被错误列入 embedding 签名时零探针守卫转红。逐个还原并复跑。
-- [ ] **门禁**：后端 ruff 双净、RAG router／reload 窄面；前端 `check`、RAG form／hook 窄面及全量。涉及共享配置路径的后端全量零新增失败；响应形状维持 Task 1 基线。
+- [x] **RED：RAG 往返与整对象语义**：PUT 新名称→落盘→GET 的 `config` / `sources` 可见；省略／null／空串／纯空白撤销 UI 默认，分别验证 YAML 有／无同名 RAG 默认。空白归一由 **Task 1 的 validator** 承重，本 Task 只验端到端结果（文件里不落该键、`sources` 不报 `ui`），不在 router 里另加一层 strip。PUT 后真实冷加载、只改 RAG 文件后的自动热加载均通过 Task 1 resolver／Task 2 入口观察目标；字段不会出现在模型配置文件中。
+- [x] **RED：来源带回与清空**：`formValuesFromConfig()` 读取新字段；编辑另一个 RAG 设置保留 UI 所有的默认，但不固化未编辑 YAML 默认。**`{}` 那条要按 Task 0 核到的机制写准，别写成"清空就发 `{}`"**：`buildRagConfigInput()` 的 TEXT 循环（`config-form.ts:200-213`）在 `:210-212` 是 `if (next !== "" || owned(view, key)) input[key] = next` ⇒ **只有当没有任何字段是 UI 覆盖时载荷才是 `{}`**；还有覆盖时，被清空的那个字段会以 `""` 送出（靠空串撤销覆盖），不是靠省略。所以两条断言分开写：① 唯一那个 UI 覆盖被清空 ⇒ 载荷是 `{}`；② 还有其他 UI 覆盖时被清空的那个 ⇒ 载荷含 `key: ""` 且不含其他未编辑字段。能否保存用 `hasFormChanges()`（`:506-520`，判据在 `:513-518`），不拿 `{}` 直接判未编辑。覆盖“清 UI 默认后重新继承 YAML”与“清角色 UI 值后 YAML 角色仍优先”，不把空选择器等同最终空角色。
+- [x] **守卫：权限、形状与钥匙**：复用 Task 1 已增加默认字段及来源的 golden，本 Task 不再增加响应键，**也不提前删 Task 9 的三个退役键**（两个顶层 VLM 键＋嵌套的 `video.caption_model`）。RAG admin 权限不变；公共／管理模型 API 形状不新增默认字段。复跑原秘密掩码保留，载荷不新增钥匙或模型数组；本期不保证修复宿主模型保存的 `$VAR` 引用问题。
+- [x] **RED／守卫：文件与网络隔离**：临时模型配置／YAML／扩展配置在 RAG 保存前后字节不变；默认变更不改 embedding 签名，探针和 SDK 构造计数为零。以真实嵌入字段变更触发既有探针作正向对照，不用全局空桩吞掉探针。新增目标检查留 Task 9，届时复跑零新增网络守卫。
+- [x] **GREEN**：把默认字段接入 RAG wire／form 的明确字段列表、加载映射、来源带回和原保存链；复用 RAG 原子写入、锁、掩码与刷新机制，不新建即时保存 mutation 或改造模型目录事务。仅在新字段确实需要处调整 hook。
+- [x] **neuter：保存语义**：把省略字段改成保留旧 UI 默认、遗漏默认的 carry-forward、把未编辑 YAML 值写成 UI、把 `{}` 一律当无变化，分别令对应断言转红；让默认被错误列入 embedding 签名时零探针守卫转红。逐个还原并复跑。
+- [x] **门禁**：后端 ruff 双净、RAG router／reload 窄面；前端 `check`、RAG form／hook 窄面及全量。涉及共享配置路径的后端全量零新增失败；响应形状维持 Task 1 基线。
 
-**实测（待回填）**：
+**实测（2026-09-27 完成，RED→GREEN→五条 neuter→门禁）**：
+
+**性质与基线**：实施 Task，数字全部来自实际运行。基线 HEAD `0bcc818d`。**本 Task 的红只在前端**：后端那半在 Task 1／2 之后已经通了（字段早在响应里、PUT 早就能收、入口早就能读），所以后端的两条是**纯守卫、初始即绿**（按本 plan 的口径如实记载，牙由 neuter 5 给）。工作树同样带着别线的 ` M docs/superpowers/specs/2026-09-12-…`（未纳入）。
+
+**RED（前端 7 红／1 绿，红因全是"字段不在表单里"）**：`tests/unit/rag/config-form.test.ts` 新增 `describe("RAG default model")` 8 条：7 条红（`formValuesFromConfig` 不映射该字段、不在 `TEXT_FIELDS` ⇒ 取值 `undefined`、提交载荷缺键、`hasFormChanges` 看不见它），1 条**天然绿**（"不固化 YAML 来源的默认"——该字段根本不在循环里，所以"什么都不做"恰好等于期望；它的牙由 neuter 3／4 给）。
+
+**GREEN**：生产改动 3 个文件、共 4 处——`types.ts` 的 `RagConfigValues.default_model`、`config-form.ts` 的 `RagConfigFormValues.default_model` ＋ **`TEXT_FIELDS` 一项** ＋ `formValuesFromConfig` 一行。**只有这些**：进 `TEXT_FIELDS` 之后，"新建覆盖／带出文件覆盖／空串撤销覆盖／`hasFormChanges` 判改动"四条全部由既有循环自动获得（spec D2 的 R4 结论），本 Task **没有**为它另写一套保存逻辑，也没碰 hook 与视图。前端 `config-form.test.ts` **64 passed**；后端 `test_rag_config_api.py` ＋ `test_rag_config_save_probe.py` **55 passed**。
+
+**neuter（五条，逐条独立还原；每次还原后用 md5 证明三个文件逐字节回到 GREEN 态）**：
+
+| # | 还原的旧行为 | 转红条数 |
+| --- | --- | --- |
+| 1 | 清空写成"省略该键"（＝后端读作保留旧 UI 默认） | 4（含我两条撤销用例与既有两条清空用例） |
+| 2 | 丢掉文件自有覆盖的 carry-forward | 4 |
+| 3 | 把未编辑的 YAML 值也写成 UI 覆盖（carry-forward 不再看 `owned`） | 14（最宽的一条，连"什么也没改就不该有载荷"都红） |
+| 4 | 只写文件拥有的字段（`owned` 之外的挑选被丢掉） | 8（含"为操作者字段挑一个值"与"不固化 YAML 默认"） |
+| 5 | 把 `default_model` 错列进 `_WATCHED_EMBEDDING_FIELDS` | 1（**正是那条零探针守卫**） |
+
+**门禁**：后端 ruff `check`＋`format --check` 双净、RAG router／reload 窄面绿（`test_rag_config_api.py`／`test_rag_config_save_probe.py` 55 passed，响应形状维持 Task 1 基线）。前端 `pnpm check` **零诊断**；RAG form／hook 窄面 **129 passed**；**前端全量 243 文件／2636 passed**。
+
+**发现（本轮新出，三条）**：
+- **plan 这条 RED 的 ① 写错了**：「唯一那个 UI 覆盖被清空 ⇒ 载荷是 `{}`」——代码不是这样，**既有用例**（`clears a file-owned field explicitly` 断言 `{ rerank_model: "" }`）、**Task 0 自己的结论**（"只有**没有任何 UI 覆盖字段**时载荷才是 `{}`；有覆盖时被清空的字段会以 `""` 送出"）与它三处冲突。按实况写用例：撤销唯一的文件覆盖 ⇒ `{ default_model: "" }`；`{}` 只出现在"什么也没改且文件什么都不拥有"。**本条 RED 的其余部分（`{key: ""}` 那条分法）是对的**，所以只错在 ①。
+- **prettier 的 printWidth 是默认 80**（`prettier.config.js` 只挂 tailwind 插件、无覆盖），而这两个源文件与测试文件的历史行是按 ~100 手写的 ⇒ 文件本身有预存格式债（**HEAD 版本就被 flag**）。按纪律**只重排我自己新写的 6 处**（`git show HEAD:` 取出的副本作对照，确认剩余 flag 全部落在历史行），历史行一处未动。
+- **`_WATCHED_EMBEDDING_FIELDS` 不含 `default_model`** 这件事本来就是对的，所以"改默认不出网"这条守卫初始即绿——但它值得留着：neuter 5 证明它一旦被加进去就会红。
+
+**全量：152 failed／12578 passed／109 skipped（22 分 20 秒）**。判据是**集合**不是条数：与 Task 2 那次的 152 条失败**逐条相同**（双向 diff 皆空）⇒ **零新增真失败**；passed +4（本轮新增 3 条用例，另 1 条差额未定位——两次运行与 `--collect-only` 之间 collected 数在 **12834／12835／12839** 间浮动，而 collect-only 连跑三次都是 12834、失败集合又完全一致，所以这条差额既不是新增缺陷也不是缺失用例，**原因未查明、留待观察**）。
+
+**遗留（不属本 Task）**：① **plan 那条 RED 的 ① 措辞待改**（见发现一：`{}` 与 `{key: ""}` 的分法写反了一处）；② collected 数的浮动（12834／12835／12839）原因未查明。
 
 ---
 

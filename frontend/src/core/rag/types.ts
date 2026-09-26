@@ -25,6 +25,12 @@ export interface RagConfigValues {
   vlm_api_key?: string | null;
   extract_model?: string | null;
   judge_model?: string | null;
+  /**
+   * The RAG-wide default (spec 2026-09-23 D2): the model every RAG role falls back to when it
+   * declares none of its own. A plain `models:` entry name — the backend resolves what to do
+   * with it, so this row asks for no endpoint and no key.
+   */
+  default_model?: string | null;
   mineru_api_token?: string | null;
   /**
    * Provider dimension (spec 2026-09-14 §4.1). Ids mirror the backend's curated

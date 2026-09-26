@@ -36,6 +36,7 @@ export interface RagConfigFormValues {
   vlm_api_key: string;
   extract_model: string;
   judge_model: string;
+  default_model: string;
   mineru_api_token: string;
   embedding_provider: "dashscope" | "volcengine-ark" | "openai-compatible";
   embedding_base_url: string;
@@ -104,6 +105,7 @@ const TEXT_FIELDS = [
   "vlm_base_url",
   "extract_model",
   "judge_model",
+  "default_model",
   "embedding_base_url",
   "sparse_base_url",
   "sparse_model",
@@ -151,6 +153,7 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     vlm_api_key: asText(config.vlm_api_key),
     extract_model: asText(config.extract_model),
     judge_model: asText(config.judge_model),
+    default_model: asText(config.default_model),
     mineru_api_token: asText(config.mineru_api_token),
     embedding_provider: asEnum(config.embedding_provider, EMBEDDING_PROVIDER_OPTIONS, "dashscope"),
     embedding_base_url: asText(config.embedding_base_url),

@@ -354,6 +354,106 @@ describe("judge model", () => {
   });
 });
 
+describe("RAG default model", () => {
+  it("seeds the effective value and reports no change for it", () => {
+    const current = view({ default_model: "yaml-default" });
+
+    const values = formValuesFromConfig(current);
+
+    expect(values.default_model).toBe("yaml-default");
+    expect(hasFormChanges(values, current)).toBe(false);
+    expect(buildRagConfigInput(values, current)).toEqual({});
+  });
+
+  it("seeds an empty string when nothing declares a default", () => {
+    expect(formValuesFromConfig(view()).default_model).toBe("");
+  });
+
+  it("submits a newly picked value for an operator-owned default", () => {
+    const current = view();
+    const values = {
+      ...formValuesFromConfig(current),
+      default_model: "qwen3.7-max",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({
+      default_model: "qwen3.7-max",
+    });
+  });
+
+  it("withdraws the last file-owned override with an explicit empty string", () => {
+    // The whole object is replaced, so "clear it" has to be *said*: an omitted key would be
+    // read as a carry-forward. Cleared ⇒ `""`, which the server prunes into an absent key.
+    const current = view(
+      { default_model: "file-default" },
+      { default_model: "ui" },
+    );
+    const values = {
+      ...formValuesFromConfig(current),
+      default_model: "",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({ default_model: "" });
+  });
+
+  it("withdraws one override while carrying the others", () => {
+    const current = view(
+      { default_model: "file-default", judge_model: "file-judge" },
+      { default_model: "ui", judge_model: "ui" },
+    );
+    const values = {
+      ...formValuesFromConfig(current),
+      default_model: "",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({
+      judge_model: "file-judge",
+      default_model: "",
+    });
+  });
+
+  it("carries a file-owned default forward while another setting is edited", () => {
+    const current = view(
+      { default_model: "file-default" },
+      { default_model: "ui" },
+    );
+    const values = {
+      ...formValuesFromConfig(current),
+      embedding_model: "ui-embedding",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({
+      default_model: "file-default",
+      embedding_model: "ui-embedding",
+    });
+  });
+
+  it("does not freeze an operator-owned default while another setting is edited", () => {
+    // Editing a *different* row must not turn config.yaml's value into a UI override.
+    const current = view({ default_model: "yaml-default" });
+    const values = {
+      ...formValuesFromConfig(current),
+      embedding_model: "ui-embedding",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({
+      embedding_model: "ui-embedding",
+    });
+  });
+
+  it("counts picking a default as a change, and reverting it as none", () => {
+    const current = view({ default_model: "yaml-default" });
+    const seeded = formValuesFromConfig(current);
+
+    expect(hasFormChanges({ ...seeded, default_model: "other" }, current)).toBe(
+      true,
+    );
+    expect(
+      hasFormChanges({ ...seeded, default_model: "  yaml-default  " }, current),
+    ).toBe(false);
+  });
+});
+
 describe("hasFormChanges", () => {
   it("is false right after seeding, even when the file owns fields", () => {
     const current = viewWithStoredKey();
