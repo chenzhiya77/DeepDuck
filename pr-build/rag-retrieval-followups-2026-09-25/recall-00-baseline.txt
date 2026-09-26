@@ -1,0 +1,27 @@
+查询：「SKU-1001、无线机械键盘、库存数量、单价」 · 库：测试2（5f532d37…）
+配置（现状）：embedding = openai-compatible / text-embedding-v4 / compatible-mode / sparse=bm25；
+              rerank = generic-rerank / jina-reranker-v2-base-multilingual
+
+徽标（score_type）
+  vector  jina-reranker-v2-base-multilingual relevance
+  graph   embedding cosine
+  wiki    embedding cosine
+
+读数（POST /{kb}/recall-test, top_k=5）
+  向量通道  5 命中 · 3889 ms
+    #1 产品库存台账.xlsx  0.754915
+    #2 (无文档名)        0.40215731
+    #3 (无文档名)        0.40215731
+    #4 (无文档名)        0.40074939
+    #5 (无文档名)        0.28378138
+  图谱通道  命中 6 个实体，扩展出 12 个节点、14 条关系、5 条切片证据 · 4015 ms
+  百科通道  5 命中 · 921 ms
+    #1 任务队列  0.047743645
+    #2 …        0.046536528
+    #3 …        0.045573550
+    #4 …        0.043557905
+    #5 …        0.042634210
+
+判读（落在 notes.md 里复述）：**wiki 腿是跨空间状态（0.047 ≈ 09-23 登记的 0.04）**，
+graph 腿今天健康（6 = 对照登记值）—— 后者属"本来就正常"，按 plan ⚠️ **不算修复证据**，
+故下一步先换一次嵌入模型把三路都推进跨空间，再重建。

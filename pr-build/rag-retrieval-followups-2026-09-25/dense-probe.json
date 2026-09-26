@@ -1,0 +1,72 @@
+{
+  "text-embedding-v4": {
+    "dense_only_top5": [
+      "产品库存台账.xlsx|库存明细",
+      "产品库存台账.xlsx|库存明细",
+      "acceptance-4x-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "acceptance-4x-ready-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "季度采购汇总.pdf|2026 年季度采购汇总"
+    ],
+    "dense_top20_first10": [
+      "产品库存台账.xlsx|库存明细",
+      "产品库存台账.xlsx|库存明细",
+      "acceptance-4x-ready-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "acceptance-4x-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "季度采购汇总.pdf|2026 年季度采购汇总",
+      "产品库存台账.xlsx|补货计划",
+      "acceptance-4x-small-2026-09-24.pdf|采购汇总（小样本）",
+      "员工花名册.csv|",
+      "acceptance-4x-ready-2026-09-24.pdf|",
+      "acceptance-4x-2026-09-24.pdf|"
+    ],
+    "fused_top5": [
+      "产品库存台账.xlsx|库存明细",
+      "产品库存台账.xlsx|库存明细",
+      "acceptance-4x-ready-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "季度采购汇总.pdf|2026 年季度采购汇总",
+      "acceptance-4x-2026-09-24.pdf|2026 年季度采购汇总（验收样本）"
+    ],
+    "fused_top5_ids": [
+      "8a75b858-1596-59a3-8dfd-3f5eb8364e7e",
+      "e0b2a46d-43c9-5c68-b6be-3bbfdd241657",
+      "644a4377-72b4-521c-9858-c9ab9f3e1bca",
+      "a9bb1fc8-2874-55ad-9553-9facf6e8be0c",
+      "e3efd981-b29d-594d-a6e2-25c0f2b0226e"
+    ]
+  },
+  "text-embedding-v3": {
+    "dense_only_top5": [
+      "产品库存台账.xlsx|补货计划",
+      "lanjing-platform.md|蓝鲸平台技术说明 > 调度中心",
+      "员工花名册.csv|",
+      "lanjing-platform.md|蓝鲸平台技术说明 > 平台概述",
+      "acceptance-4x-ready-2026-09-24.pdf|2026 年季度采购汇总（验收样本）"
+    ],
+    "dense_top20_first10": [
+      "产品库存台账.xlsx|补货计划",
+      "lanjing-platform.md|蓝鲸平台技术说明 > 调度中心",
+      "员工花名册.csv|",
+      "lanjing-platform.md|蓝鲸平台技术说明 > 平台概述",
+      "acceptance-4x-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "acceptance-4x-ready-2026-09-24.pdf|2026 年季度采购汇总（验收样本）",
+      "acceptance-4x-small-2026-09-24.pdf|采购汇总（小样本）",
+      "产品库存台账.xlsx|库存明细",
+      "lanjing-platform.md|蓝鲸平台技术说明 > 运维与告警",
+      "产品库存台账.xlsx|库存明细"
+    ],
+    "fused_top5": [
+      "产品库存台账.xlsx|补货计划",
+      "产品库存台账.xlsx|库存明细",
+      "产品库存台账.xlsx|库存明细",
+      "lanjing-platform.md|蓝鲸平台技术说明 > 调度中心",
+      "季度采购汇总.pdf|2026 年季度采购汇总"
+    ],
+    "fused_top5_ids": [
+      "53fe8ca6-d8b4-5628-b451-b4b0a31f0bb2",
+      "8a75b858-1596-59a3-8dfd-3f5eb8364e7e",
+      "e0b2a46d-43c9-5c68-b6be-3bbfdd241657",
+      "853b0066-d5b7-5924-9ea9-92ac1951864d",
+      "a9bb1fc8-2874-55ad-9553-9facf6e8be0c"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "embedding_model": "text-embedding-v4",
+  "embedding_api_key": "<masked>",
+  "rerank_model": "jina-reranker-v2-base-multilingual",
+  "rerank_api_key": "<masked>",
+  "extract_model": "qwen3.8-flash",
+  "embedding_provider": "openai-compatible",
+  "embedding_base_url": "https://dashscope.aliyuncs.com/compatible-mode",
+  "embedding_sparse_source": "bm25",
+  "rerank_provider": "generic-rerank",
+  "rerank_base_url": "https://api.jina.ai/v1"
+}
