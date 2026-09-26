@@ -3,11 +3,11 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-26-rag-endpoint-dedup-design.md](../specs/2026-09-26-rag-endpoint-dedup-design.md)
-**Status:** 🟡 **实现完成（2026-09-26）、hold 提交** —— **D1 乙 / D2 乙 / D3（仅 ⓘ）/ D4 甲 / D5 甲** 全裁、Task 0–4 全做完、实测回填；门禁 = 后端相关面 **148 passed** + `make lint` 净；前端 `pnpm check` 净（全量不跑、理由注明）；真栈桩腿两腿全过（证据 `pr-build/rag-endpoint-dedup-2026-09-26/`）。**不提交**——等他验收发话。
+**Status:** ✅ **已提交（2026-09-26）** —— `3fd320b8`（docs：spec+plan+真栈证据）+ `085d8dc7`（code：Task 1+2+3 文档句+4，10 文件；不按 Task 拆笔、按文件边界成两笔、`config.example.yaml` 做了文件内切分）；**D1 乙 / D2 乙 / D3（仅 ⓘ）/ D4 甲 / D5 甲** 全裁、Task 0–4 全做完、实测回填（Task 2 的勾选为 2026-09-26 审计后补齐）；门禁 = 后端相关面 **148 passed** + `make lint` 净；前端 `pnpm check` 净（全量不跑、理由注明）；真栈桩腿两腿全过（证据 `pr-build/rag-endpoint-dedup-2026-09-26/`）。**未推送。**
 
 **硬约束**：去重只作用于**两个通用腿**的 URL 拼装（`openai-compatible` 嵌入 / `generic-rerank` 重排）；**不写回存值**、UI 除 ⓘ 两行外不动（示例/必填/探针一律不动）；厂商腿（dashscope 两腿 / volcengine-ark / tei-rerank / tei-sparse / mineru 两腿）与 parse-local 零触碰；**对今天能用的地址拼接结果逐字不变**。
 
-**Global Constraints:** 分支 `feat/rag-knowledge-base`；每 Task RED→GREEN→neuter→门禁（**不 commit**）；后端 `cd backend && make test`（相关面）+ `make lint`；**前端只改 i18n 两行 ⇒ 跑 `pnpm check`（tsc 抓 zh/en 对称），前端全量不跑**（零断言影响，交付说明里注明）；pytest 的 `--basetemp` 只用既有 `.pytest-tmp`（跑完即删）。
+**Global Constraints:** 分支 `feat/rag-knowledge-base`；每 Task RED→GREEN→neuter→门禁；后端 `cd backend && make test`（相关面）+ `make lint`；**前端只改 i18n 两行 ⇒ 跑 `pnpm check`（tsc 抓 zh/en 对称），前端全量不跑**（零断言影响，交付说明里注明）；pytest 的 `--basetemp` 只用既有 `.pytest-tmp`（跑完即删）。
 
 **依赖顺序**：Task 0 → Task 1（纯函数）→ Task 2（两腿接线）→ Task 3（文档 + 真栈 + 门禁）→ Task 4（ⓘ 文案 + example 三行）。
 
@@ -50,13 +50,21 @@
 
 > 动到的文件：`embedder_openai.py:110`、`reranker_generic.py:97` + `test_embedder_providers.py` / `test_reranker_generic.py` 各补钉子。**验收对应**：spec §4 的 2/3/5/6。
 
-- [ ] **RED**：两腿各补一条"照文档填也能打对"的钉子——嵌入：夹具地址 `f"{OPENAI_BASE}/v1"` ⇒ 期望 `str(request.url) == f"{OPENAI_BASE}/v1/embeddings"`（此刻拼成 `/v1/v1/embeddings` ⇒ 红）；重排：地址 `…/v1` 与整端点两种形态 ⇒ 期望各自的 URL（整端点此刻拼成 `/rerank/rerank` ⇒ 红）。
-- [ ] **GREEN**：两处调用点改用 `join_endpoint(self._base_url, <path 常量>)`。
-- [ ] **neuter**：把嵌入腿改回旧拼接 ⇒ 只有嵌入钉红、重排钉绿；反之亦然（受害者不相交）。
-- [ ] **回归（零影响证明）**：既有断言**零改动**全绿——点名 `test_embedder_providers.py:118`（主机名夹具 ⇒ 拼接结果逐字不变）；厂商腿（dashscope / ark / tei）用例零改动全绿。
-- [ ] **门禁**：`make test` 相关面（`tests/knowledge/` 下与两腿/工厂有关的文件 + `test_rag_provider_config.py` 一带）。
+- [x] **RED**：两腿各补一条"照文档填也能打对"的钉子——嵌入：夹具地址 `f"{OPENAI_BASE}/v1"` ⇒ 期望 `str(request.url) == f"{OPENAI_BASE}/v1/embeddings"`（此刻拼成 `/v1/v1/embeddings` ⇒ 红）；重排：地址 `…/v1` 与整端点两种形态 ⇒ 期望各自的 URL（整端点此刻拼成 `/rerank/rerank` ⇒ 红）。
+- [x] **GREEN**：两处调用点改用 `join_endpoint(self._base_url, <path 常量>)`。
+- [x] **neuter**：把嵌入腿改回旧拼接 ⇒ 只有嵌入钉红、重排钉绿；反之亦然（受害者不相交）。
+- [x] **回归（零影响证明）**：既有断言**零改动**全绿——点名 `test_embedder_providers.py:118`（主机名夹具 ⇒ 拼接结果逐字不变）；厂商腿（dashscope / ark / tei）用例零改动全绿。
+- [x] **门禁**：`make test` 相关面（`tests/knowledge/` 下与两腿/工厂有关的文件 + `test_rag_provider_config.py` 一带）。
 
-**实测（待回填）**：
+**实测（2026-09-26，Task 2；补齐 2026-09-26 他审计发现漏勾）**：
+
+- **RED**：三条新钉首跑 **2 红 / 1 绿**——嵌入"生态 base"红、重排"整端点"红；**重排 `/v1` 本来就是通的（绿）**，与 spec §1 表"本表唯一本来就通的"逐字一致。⚠️ 首跑还暴露一个**测试自身**的搭法：`_openai_embedder` 硬编码 `base_url=OPENAI_BASE` ⇒ 新钉直接构造 `OpenAICompatibleEmbedder` 传入 `f"{OPENAI_BASE}/v1"`。
+- **GREEN**：两腿改用 `join_endpoint`（含字母序 import）⇒ 三文件 **37/37**。
+- **neuter ①（嵌入腿回退旧拼接）**：**仅嵌入钉红**、重排两钉绿（两文件面 1 failed / 32 passed）⇒ 受害者不相交。
+- **neuter ②（重排腿回退）**：**仅"整端点"钉红**（1 failed / 32 passed）。
+- **还原证明**：两腿复原 ⇒ 全绿（并入下方的 107 面）。
+- **回归（零影响证明）**：既有断言**零改动全绿**——`test_embedder_providers.py:118` 逐字不变 ✓；厂商腿（dashscope / ark / tei）用例零改 ✓；另 `test_rag_config_save_probe.py` 的 4 处 `/v1` 夹具零改全绿（MockTransport 不看路径），印证 Task 0 的"不冲突"判定 ✓。
+- **门禁**：更宽回归面 **107 passed**（endpoint_url + embedder_providers + embedder_ark + reranker_generic + reranker_tei + provider_construction_sites + rag_provider_config + save_probe）；Task 3 时并入 `test_rag_config_api.py` 达 **148 passed**；`ruff check` 净。三条钉子按计划落在**两腿各自的既有测试文件**（未另建文件）✓。
 
 ---
 

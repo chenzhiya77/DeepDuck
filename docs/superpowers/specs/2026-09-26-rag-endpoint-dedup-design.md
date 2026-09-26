@@ -1,6 +1,6 @@
 # 通用腿接口地址去重（重复的路径段不再重复拼） —— 设计
 
-**Status:** 🟡 **实现完成（2026-09-26）、hold 提交** —— **D1 乙 / D2 乙（作用域，parse-local 理由已写实）/ D3（前端仅 ⓘ） / D4 甲（ⓘ 并入）/ D5 甲（example 三行顺手修）** 全裁、Task 0–4 全做完；门禁 = 后端相关面 148 passed + `make lint` 净、前端 `pnpm check` 净、真栈桩腿两腿全过（证据 `pr-build/rag-endpoint-dedup-2026-09-26/`）。**本对修 2026-09-25 endpoint-unlock 对留下的一处自相矛盾**：灰字示例 `https://api.example.com/v1` 是生态形态（把 `/v1` 算进 base），而通用腿的拼接会在后面再补一段 `/v1`。厂商腿（dashscope / 火山方舟 / TEI / MinerU）地址是主机名、路径是专有整段，不受影响、不在本对。
+**Status:** ✅ **已提交（2026-09-26）** —— `3fd320b8`（docs：本 spec+plan+真栈证据）+ `085d8dc7`（code，10 文件）。**D1 乙 / D2 乙（作用域，parse-local 理由已写实）/ D3（前端仅 ⓘ） / D4 甲（ⓘ 并入）/ D5 甲（example 三行顺手修）** 全裁、Task 0–4 全做完；门禁 = 后端相关面 148 passed + `make lint` 净、前端 `pnpm check` 净、真栈桩腿两腿全过（证据 `pr-build/rag-endpoint-dedup-2026-09-26/`）。**未推送。** 本对修 2026-09-25 endpoint-unlock 对留下的一处自相矛盾：灰字示例 `https://api.example.com/v1` 是生态形态（把 `/v1` 算进 base），而通用腿的拼接会在后面再补一段 `/v1`。厂商腿（dashscope / 火山方舟 / TEI / MinerU）地址是主机名、路径是专有整段，不受影响、不在本对。
 
 ## 1. 问题
 
