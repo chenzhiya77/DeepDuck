@@ -186,7 +186,7 @@ RAG 默认模型  ⓘ  [模型条目 ▾]
 - 裁判参数为空时按 D3 先取角色配置，再取 RAG 默认；CLI 的答题模型参数与按需评测的答题 agent 不改变。
 - 不改公共 `models/factory.py` 或 ragas 的传输实现；可选 ragas 依赖的合法跳过语义保留。
 - 历史设计文档留档；`nightly.yaml` 的上游专用 job 本期不改，其旧参数适配等真正拆分时处理，不以本仓不执行为由声称上游已兼容。
-- **`backend/AGENTS.md:1211` 随本项同批改（R20）**：那一整段 Layer 2 说明里逐字写着 `--judge-model dashscope:<model>` talks to the DashScope OpenAI-compatible endpoint using `DASHSCOPE_JUDGE_API_KEY` (falling back to `DASHSCOPE_API_KEY`)，正是本项删掉的分支。**同一句还有第二处过期**：它说按需评测 "passes `None` when it is unset, which falls back to the config primary model"，而本期之后是"RAG 默认 → 首项"（D3）。两句都要改，且这属 Task 7 的交接面、不属 B-2（B-2 只接环境变量名单）。附带登记：`nightly.yaml:266/280/290` 传的 `DASHSCOPE_JUDGE_API_KEY` 在本项之后成为死配置，但因 nightly 本期不改而保留，归 §6.1。**nightly 的问题不止死配置**：`:303` 还实际传着 `--judge-model dashscope:qwen3.8-max` 这个被退役的前缀本身，失效链与处置见 §5.2 的 R26 行。
+- **`backend/AGENTS.md:1211` 随本项同批改（R20）**：那一整段 Layer 2 说明里逐字写着 `--judge-model dashscope:<model>` talks to the DashScope OpenAI-compatible endpoint using `DASHSCOPE_JUDGE_API_KEY` (falling back to `DASHSCOPE_API_KEY`)，正是本项删掉的分支。**同一句还有第二处过期**：它说按需评测 "passes `None` when it is unset, which falls back to the config primary model"，而本期之后是"RAG 默认 → 首项"（D3）——**这半句已提前改掉**（它从 Task 2 起就是假话，2026-09-27 随 Task 3 的收尾批落地，不是本项做的），所以本项只剩 `dashscope:` 那半句。这属 Task 7 的交接面、不属 B-2（B-2 只接环境变量名单）。附带登记：`nightly.yaml:266/280/290` 传的 `DASHSCOPE_JUDGE_API_KEY` 在本项之后成为死配置，但因 nightly 本期不改而保留，归 §6.1。**nightly 的问题不止死配置**：`:303` 还实际传着 `--judge-model dashscope:qwen3.8-max` 这个被退役的前缀本身，失效链与处置见 §5.2 的 R26 行。
 
 ### D10 —— VLM 退役与 RAG 目标检查（从原跨全站校验中拆出）
 
@@ -324,7 +324,7 @@ VLM 仍必须能得到 HTTP 目标：显式地址永远优先；缺地址时按 
 | locales 的 `types.ts` / `zh-CN.ts` / `en-US.ts` | D5 标签／说明及相关角色解释，不动全站聊天文案 |
 | RAG 配置／角色／worker／API／form／功能视图测试与 golden | 按 §4；公共模型／聊天测试仅作隔离守卫 |
 | `rag_config.example.json`、`config.example.yaml` 的 rag 段 | 实施时同步 RAG 使用说明与退役字段，版本规则按模块指南；不修改真实配置。`config.example.yaml` 具体两处见 §5.2（R16） |
-| `backend/AGENTS.md` 的 “Caption target resolution” 段（`:703-723`）**与 Layer 2 评测段（`:1211`）**、`UPSTREAM_README.md` 的 rag 配置样例（`:957-958`） | **随退役同批改，不推给发布前清单（R11 / R15 / R20）**：`:703-723` 逐字描述了将被删掉的 `rag.vlm_base_url` 兜底、rag 文件钥匙／环境变量兜底与裸 id legacy 路径（归 Task 9）；`:1211` 描述了 `--judge-model dashscope:<model>` 直连与 `DASHSCOPE_JUDGE_API_KEY` 回退，且说按需评测 unset 时 "falls back to the config primary model"（本期后是 RAG 默认→首项），**两句都过期**（归 Task 7）；`UPSTREAM_README.md:957-958` 那句 `or a bare model id to use rag.vlm_base_url with the caption API key` 同批失效。根 `AGENTS.md` 的文档更新约定本身就要求架构改动**在同一个变更集里**改对应模块指南 |
+| `backend/AGENTS.md` 的 “Caption target resolution” 段（`:703-723`）**与 Layer 2 评测段（`:1211`）**、`UPSTREAM_README.md` 的 rag 配置样例（`:957-958`） | **随退役同批改，不推给发布前清单（R11 / R15 / R20）**：`:703-723` 逐字描述了将被删掉的 `rag.vlm_base_url` 兜底、rag 文件钥匙／环境变量兜底与裸 id legacy 路径（归 Task 9）；`:1211` 描述了 `--judge-model dashscope:<model>` 直连与 `DASHSCOPE_JUDGE_API_KEY` 回退，且说按需评测 unset 时 "falls back to the config primary model"（本期后是 RAG 默认→首项）——**后一句已提前改掉**（2026-09-27 随 Task 3 收尾批，因为它从 Task 2 起就已是假话），**只剩前一句过期**（归 Task 7）；`UPSTREAM_README.md:957-958` 那句 `or a bare model id to use rag.vlm_base_url with the caption API key` 同批失效。根 `AGENTS.md` 的文档更新约定本身就要求架构改动**在同一个变更集里**改对应模块指南 |
 
 **明确不改生产文件**：`config/models_config.py`、`models/factory.py`、`routers/models.py`、模型 add/edit 弹窗、`core/models` 的管理契约、`core/settings` 偏好系统、input-box／sidecar／knowledge chat、agent／memory／channels／scheduler 的选模逻辑；`models-settings-page.tsx` 的全局标题结构不改。**`tools/builtins/graph_search_tool.py` 也不改**（新形参可选，`:199` 原样可用），但它经 `get_extract_llm()` 共享抽取角色，行为变化登记在 D6 与 §6.2，不因为“没改文件”就当作隔离面（R12）。需要 read-only 复用的类型／函数不算扩大修改范围。
 
