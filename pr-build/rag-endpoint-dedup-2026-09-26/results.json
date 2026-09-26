@@ -1,0 +1,52 @@
+embedding probe after save failed for provider openai-compatible
+Traceback (most recent call last):
+  File "E:\app\python\agent\deer-flow\backend\app\gateway\routers\rag_config.py", line 360, in _probe_after_save
+    results = await asyncio.wait_for(embedder.embed([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\h7242\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "E:\app\python\agent\deer-flow\backend\packages\harness\deerflow\knowledge\embedder.py", line 143, in embed
+    dense_results = await self._dense.embed(texts, text_type=text_type)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\app\python\agent\deer-flow\backend\packages\harness\deerflow\knowledge\embedder_factory.py", line 72, in embed
+    results = await self._inner.embed(texts, text_type=text_type)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\app\python\agent\deer-flow\backend\packages\harness\deerflow\knowledge\embedder_openai.py", line 91, in embed
+    results.extend(await self._embed_batch(batch))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\app\python\agent\deer-flow\backend\packages\harness\deerflow\knowledge\embedder_openai.py", line 96, in _embed_batch
+    body = await self._post_with_retry(payload)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\app\python\agent\deer-flow\backend\packages\harness\deerflow\knowledge\embedder_openai.py", line 141, in _post_with_retry
+    raise EmbedderError(f"embedding endpoint HTTP {response.status_code}: {response.text[:200]}")
+deerflow.knowledge.embedder.EmbedderError: embedding endpoint HTTP 404: 
+{
+  "probe__eco_base_v1": {
+    "warning": null
+  },
+  "probe__whole_endpoint": {
+    "warning": null
+  },
+  "probe__control_doubled": {
+    "warning": "\u63d0\u4ea4\u540e\u7684\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u4f46\u672a\u80fd\u9a8c\u8bc1\uff1a\u672a\u80fd\u8fde\u901a\uff08EmbedderError\uff09\uff1aembedding endpoint HTTP 404:"
+  },
+  "rerank__eco_base_v1": {
+    "pairs": [
+      [
+        0,
+        0.9
+      ]
+    ],
+    "expected_path": "/v1/rerank"
+  },
+  "rerank__whole_endpoint": {
+    "pairs": [
+      [
+        0,
+        0.9
+      ]
+    ],
+    "expected_path": "/rerank"
+  }
+}
