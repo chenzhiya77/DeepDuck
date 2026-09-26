@@ -9,6 +9,7 @@
   "vlm_api_key": "",
   "extract_model": "deepseek-v4-flash",
   "judge_model": "",
+  "default_model": "",
   "mineru_api_token": "",
   "video": {
     "asr_provider": "funasr",

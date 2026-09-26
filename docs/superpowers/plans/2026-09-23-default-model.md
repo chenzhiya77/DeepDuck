@@ -128,15 +128,45 @@
 > 文件：`backend/packages/harness/deerflow/config/app_config.py` 的 `RagConfig`、`config/rag_config_file.py`、新增 `knowledge/model_target.py`；测试就近放 `test_rag_config*.py` / `test_app_config_reload.py` 与 RAG 模型目标测试，另含 `tests/fixtures/rag_config/response_golden.json`。现有 router 按 `RagConfigFile.model_fields` 自动生成响应，新增字段及来源的 golden 必须同批更新，不能留到 Task 3 让中途全量门禁失败。配置模板按 Task 0 核实的规则同步。本 Task 不改 `config/models_config.py`、公共模型工厂或顶层默认字段。
 > **验收对应**：spec §4 的 1 / 2（解析单测）/ 3 / 13；PUT 冷热加载归 Task 3。
 
-- [ ] **RED：字段与加载**：无 RAG 文件、旧文件、空字段得到无 UI 覆盖；临时 YAML 的 `rag.default_model=A` 与临时 JSON 的 B 经真实加载得到 B，撤销 UI 覆盖得到 A，两者都无则为 None。显式 null／空串／**纯空白**都按 D2 归一为未声明：落盘文件里不出现该键，GET 的 `sources` 不报 `ui`、`config` 不回显空白值；不只构造 `AppConfig(...)` 验证。同一条 validator 对**三个**既有角色字段生效（`extract_model` / `judge_model` / `vlm_model`；`extract_model: " "` 视为未设置，不再炸成 `Model   not found in config`。**R18 后不含 `video.caption_model`**）。模型列表顺序及顶层模型配置不变。
-- [ ] **RED：响应形状**：以 Task 0 捕获的 RAG golden 为基线，GET／PUT 的 `config` / `sources` 仅新增默认字段，其余形状不变；测试默认值、UI／YAML 来源。新字段会随 schema 自动暴露，本条随字段落地，不等前端接线；VLM 删键仍归 Task 9。
-- [ ] **RED：resolver**：`resolve_rag_model_name(config, name=None, *, rag=None)` 接受明确角色名；有显式名则原样交下游检查，不用默认替换。无角色时依次取有效 RAG 默认／首项；仅默认失效回首项并 warning 点名，无模型返回 None 留 RAG 入口报错。`rag=` 对照使用 pending 而非旧 `config.rag`；helper 不构造 SDK／不出网。
-- [ ] **RED：自动热加载**：仅改变临时 RAG 默认字段及文件签名，`get_app_config()` 返回新配置，经真实 resolver 得到 B；用 loader 增次／新对象和 RAG 变更日志证明，不以强制 reload 代替。未改文件命中缓存；避开 ContextVar／custom 配置短路。其他模型配置文件不变。
-- [ ] **GREEN**：两层 RAG 模型声明字段；**空白归一用 `RagConfigFile` 上的字段 validator（空白→`None`），一处实现覆盖四个模型引用字段**（`default_model` / `extract_model` / `judge_model` / `vlm_model`，全在同一个类上，用同一个共享 validator／注解类型；**R18 后不含 `video.caption_model`**），在 `_prune_empty()` 之前生效，因此 PUT 不落键、GET 不报 `ui`；只在 resolver 里 strip 不算达标。实现 RAG resolver，同批更新默认字段与来源的响应 golden（**R19：`_ADDED_FIELDS` 是顶层白名单，嵌套新键只能改 golden，加名字进白名单不管用**），不改变原模型列表合并或宿主的 `create_chat_model(name=None)` 行为。缺省 YAML 无该项时为 None，不写用户文件。
-- [ ] **neuter：解析与加载**：依次还原为首项优先、忽略 `rag=`、丢弃 JSON 默认字段、去掉失效 warning，各有对应断言转红；把显式错名改成自动回落时，显式优先守卫转红；响应遗漏默认字段或来源时，形状守卫转红；**把 validator 换成 resolver 内的 strip**（文件仍存 `" "`、`sources` 仍报 `ui`）时，空白归一断言转红。每次独立还原并证明 GREEN 恢复，不以结构删除冒充旧行为。
-- [ ] **门禁**：ruff 双净；RAG 配置／API 形状／resolver／自动热加载窄面。配置共享加载路径有改动时跑后端全量，零新增失败。
+- [x] **RED：字段与加载**：无 RAG 文件、旧文件、空字段得到无 UI 覆盖；临时 YAML 的 `rag.default_model=A` 与临时 JSON 的 B 经真实加载得到 B，撤销 UI 覆盖得到 A，两者都无则为 None。显式 null／空串／**纯空白**都按 D2 归一为未声明：落盘文件里不出现该键，GET 的 `sources` 不报 `ui`、`config` 不回显空白值；不只构造 `AppConfig(...)` 验证。同一条 validator 对**三个**既有角色字段生效（`extract_model` / `judge_model` / `vlm_model`；`extract_model: " "` 视为未设置，不再炸成 `Model   not found in config`。**R18 后不含 `video.caption_model`**）。模型列表顺序及顶层模型配置不变。
+- [x] **RED：响应形状**：以 Task 0 捕获的 RAG golden 为基线，GET／PUT 的 `config` / `sources` 仅新增默认字段，其余形状不变；测试默认值、UI／YAML 来源。新字段会随 schema 自动暴露，本条随字段落地，不等前端接线；VLM 删键仍归 Task 9。
+- [x] **RED：resolver**：`resolve_rag_model_name(config, name=None, *, rag=None)` 接受明确角色名；有显式名则原样交下游检查，不用默认替换。无角色时依次取有效 RAG 默认／首项；仅默认失效回首项并 warning 点名，无模型返回 None 留 RAG 入口报错。`rag=` 对照使用 pending 而非旧 `config.rag`；helper 不构造 SDK／不出网。
+- [x] **RED：自动热加载**：仅改变临时 RAG 默认字段及文件签名，`get_app_config()` 返回新配置，经真实 resolver 得到 B；用 loader 增次／新对象和 RAG 变更日志证明，不以强制 reload 代替。未改文件命中缓存；避开 ContextVar／custom 配置短路。其他模型配置文件不变。
+- [x] **GREEN**：两层 RAG 模型声明字段；**空白归一用 `RagConfigFile` 上的字段 validator（空白→`None`），一处实现覆盖四个模型引用字段**（`default_model` / `extract_model` / `judge_model` / `vlm_model`，全在同一个类上，用同一个共享 validator／注解类型；**R18 后不含 `video.caption_model`**），在 `_prune_empty()` 之前生效，因此 PUT 不落键、GET 不报 `ui`；只在 resolver 里 strip 不算达标。实现 RAG resolver，同批更新默认字段与来源的响应 golden（**R19：`_ADDED_FIELDS` 是顶层白名单，嵌套新键只能改 golden，加名字进白名单不管用**），不改变原模型列表合并或宿主的 `create_chat_model(name=None)` 行为。缺省 YAML 无该项时为 None，不写用户文件。
+- [x] **neuter：解析与加载**：依次还原为首项优先、忽略 `rag=`、丢弃 JSON 默认字段、去掉失效 warning，各有对应断言转红；把显式错名改成自动回落时，显式优先守卫转红；响应遗漏默认字段或来源时，形状守卫转红；**把 validator 换成 resolver 内的 strip**（文件仍存 `" "`、`sources` 仍报 `ui`）时，空白归一断言转红。每次独立还原并证明 GREEN 恢复，不以结构删除冒充旧行为。
+- [x] **门禁**：ruff 双净；RAG 配置／API 形状／resolver／自动热加载窄面。配置共享加载路径有改动时跑后端全量，零新增失败。
 
-**实测（待回填）**：
+**实测（2026-09-26 完成，RED→GREEN→七条 neuter→门禁）**：
+
+**性质与基线**：实施 Task，数字全部来自实际运行。基线 HEAD `54815ad6`（`feat/rag-knowledge-base`，2026-09-26）。**工作树并不干净**：`config.example.yaml` 的 provider 清单 3 行、`knowledge/endpoint_url.py`／`embedder_openai.py` 等属另一条线（rag-endpoint-dedup）的未提交改动，本轮门禁在那棵共享树上跑，**一处都没纳入本 Task**（提交时按 hunk 分开）。环境：Windows 10＋`uv run --no-sync`；`--basetemp=.pytest-tmp`（默认 `%TEMP%\pytest-of-h7242` 对本用户拒访、凡用 `tmp_path` 的用例成批 ERROR——既有环境条件），跑完即删。
+
+**RED（新用例 26 条，红因三类、全部是"字段／模块不存在"而不是别的）**：`test_rag_config_file.py` 16 条红——`extra="forbid"` 拒未知键（加载直接 `ValueError`），且三个既有角色字段的空白当时也未归一（文件里的 `" "` 覆盖了 YAML 值）；`test_rag_config_api.py` 6 条红——4 条新用例的 PUT 收 422，另两条是**既有形状守卫**（`test_get_response_only_gained_the_capability_field` / `test_put_response_only_gained_the_capability_field`）被 golden 的嵌套新键翻红，这正是 R19 的设计（顶层白名单管不到嵌套键，只能改 golden；改完守卫仍能证明"其余字段一格没动"）；`test_model_target.py` 收集期 `ModuleNotFoundError`。
+
+**GREEN**：三份测试文件 85 passed。生产改动＝`RagConfig.default_model`、`RagConfigFile.default_model` ＋ 单类 validator（`MODEL_REFERENCE_FIELDS` 四字段、`mode="before"`，在 `_prune_empty()` 之前生效）、新模块 `knowledge/model_target.py`（`resolve_rag_model_name` ＋ `_declared()` 空白判定；`rag=` 同时接受对象与 Mapping，因为保存期 pending 是 dict）、`response_golden.json` 四处嵌套注册、模板两处（`config.example.yaml` 的注释行与 `config_version` 38→39、`rag_config.example.json` 一行）。
+
+**neuter（七条，逐条独立还原；每次还原后用 md5 证明四个文件逐字节回到 GREEN 态，跑完 grep 无 `NEUTER-` 残留）**：
+
+| # | 还原的旧行为 | 转红条数 |
+| --- | --- | --- |
+| 1 | 链上不看 RAG 默认（回到首项优先） | 6（resolver 5＋加载 1） |
+| 2 | 忽略 `rag=` | 2（两条快照用例） |
+| 3 | `merge_rag_config` 丢掉文件里的默认字段 | 2（合并侧；API 侧走 payload 路径**不该红、也没红**） |
+| 4 | 去掉失效默认的 warning | 1 |
+| 5 | 显式错名自动回落 | 1（`…is_not_replaced_even_when_it_names_no_entry`） |
+| 6 | 响应遗漏默认字段／来源 | 6（4 条新用例＋2 条形状守卫） |
+| 7 | 去掉 validator、只留 resolver 内 strip | 14（12 个空白参数化＋无 YAML 兜底＋API 空白） |
+
+第 7 条里 **`""` 那个参数保持绿**，正好佐证 `""` 由 `_prune_empty()` 兜住、纯空白才是 validator 的活。
+
+**门禁**：ruff `check` 与 `format --check` 双净（7 个文件）。窄面（`tests/knowledge` ＋ `test_rag_config*` ＋ `test_app_config_reload`）**8 failed／1409 passed／2 skipped**，8 条**全部**证明为既有红、零新增——`test_app_config_reload` 的 2 条＝仓库根真实 `models_config.json`（把 `DEER_FLOW_MODELS_CONFIG_PATH` 指向空文件后转绿）；`test_indexer`／`test_reranker` 的 missing-key 2 条＝仓库根真实 `rag_config.json` 供了钥匙（`monkeypatch.delenv` 挡不住，隔离 `DEER_FLOW_RAG_CONFIG_PATH` 后转绿）；`test_rag_config_probe.py` 的 4 条**不是环境红**，用隔离法排除环境后又在 **detached 工作树（只有已提交代码）** 上复现同样 4 红——是上游 `090bbcbc` 把地址改为必填后该文件没跟上。（工作树那次对照第一次是**无效**的：venv 里 `_editable_impl_deerflow_harness.pth` 指向主仓，必须把工作树的 `packages/harness` 放到 `PYTHONPATH` 最前并先验 `deerflow.__file__`。）**全量：151 failed／12540 passed／109 skipped（18 分 19 秒）＝既有基线 145 ＋ 6 条仓库根配置条件红，零新增。** 方法是「抽 node id → HEAD 跑同一批 → 双向 diff 集合」：把 151 个 id 在 detached 工作树上复跑，**145 个在 HEAD 上同样红**（反向 diff 为空，即没有一条是"HEAD 红而我不红"）；剩下 6 条全属本机仓库根真实配置文件那一族，工作树里因为没有那些 gitignored 文件而通过——`test_app_config_reload` ×2／`test_doctor` ×1／`test_models_config` ×1＝根 `models_config.json`（前三条把 `DEER_FLOW_MODELS_CONFIG_PATH` 指向空文件即转绿；第四条自己 **删掉**该环境变量 ⇒ `resolve_config_path()` 走项目根搜索、绕不过去，只能靠工作树对照），`test_indexer`／`test_reranker` 的 missing-key ×2＝根 `rag_config.json` 供了钥匙（隔离后转绿）。这一族在历史记录里是 3 条，随 HEAD 前进长到 6 条。
+
+**发现（本轮新出，四条）**：
+- **PUT 响应里 `config` 与 `sources` 会自相矛盾**（既有、非本期引入）：`rag_config.py:418` 把 `Depends(get_config)` 的**写入前**快照交给 `_build_response`，于是载荷省略的字段回落成旧值，而 `sources` 已按新文件报 `config_file`。**不是用户可见缺陷**：唯一消费者 `useSaveRagConfig` 的 `onSuccess` 只 `invalidateQueries(["ragConfig"])`（`core/rag/hooks.ts:49-50`），表单从 GET 重新播种。影响所有字段、不止新字段；**未改**（超出本 Task）。
+- **空白脚枪的覆盖面要分开说**：spec §6.2 把"炸成 `Model   not found in config`"的修复记在 validator 名下——**对 `rag_config.json` 成立**；直接写在 `config.yaml` 里的 `" "` 要等 Task 2／6／9 把 resolver 接上才成立（`_declared()` 把纯空白当未声明）。两个载体、同一结局，单独看本 Task 时 YAML 侧那条仍会炸。
+- **`config_version` 38→39，连带查出一条既有红**：`scripts/check_config_version.sh` **今天就是红的**（chart `deploy/helm/deer-flow/values.yaml:243` 停在 37，而 example 已是 38）——`03d10dca` 升 example 时漏了 chart（chart 与 chart README 两处）。本轮升到 39 不改变该门禁的判定（仍同一处、同一个修法：chart 一并升）。**未动 chart**：它不在本期任何 Task 的文件清单里。
+- **本 Task 只交付 resolver，尚无消费者**：抽取／裁判在 Task 2 接、配文在 Task 6 接，所以"改 RAG 默认真的换来换目标"要到那两个 Task 才可验；本轮能验的是 resolver 本身的七条行为。
+
+**遗留（不属本 Task）**：① 发现①（PUT 响应回显旧值）与发现③（chart 版本落后）待裁定归属；② `test_rag_config_probe.py` 的 4 条预存红需要归属——上游 rag-endpoint-dedup 线正在改 `embedder_openai.py`／`endpoint_url.py`，可能正是它的收尾面；③ 本机新增一条环境条件红 `test_config_version.py::test_version_26_config_upgrades_to_checkpoint_channel_mode`（`bash` 被解析到 WSL 空壳、`execvpe(/bin/bash) failed`；在 HEAD 工作树上同样红），已计入全量的 145。
 
 ---
 
@@ -281,7 +311,7 @@
 | **零模型条目夹具 ⇒ 既有 200 会变 400（R22，最容易漏的一条）** | `config_env`（`test_rag_config_api.py:55-81`）写的是 `models_config.json = {"models": []}`、`_write_config_yaml()`（`:39-43`）也写 `"models": []` ⇒ **夹具里一个模型条目都没有**。而 golden 的 `put.payload` 与 `test_judge_model_round_trips_as_a_regular_field`（`:264-280`，PUT `{"judge_model": "judge-entry"}` 期待 200）都声明了一个不存在的条目名 ⇒ **本 Task 的保存期错名映射会把这些既有的 200 打成 400**。**修法是给夹具补条目、不是放宽检查**：照今天刚落地的先例 `_EndpointSeededClient`（`:90-101`，docstring 写明 "Both endpoints are required (spec 2026-09-25 rag-endpoint-unlock D1/D3)"）——它就是为了同一类"新校验打掉旧夹具"而加的。同批要核的还有 `test_judge_model_falls_back_to_config_yaml`（`:284-289`）与所有走 `config_env` 的 PUT 用例；**别把这条当成"新校验有 bug"去改生产代码** |
 | 旧变量说明 | `config.example.yaml:2564` 的独立 `SILICONFLOW_VLM_API_KEY` 注释删行；`app_config.py:184`／`backend/AGENTS.md:1188` 的名单只删该项和分隔符，保留其他变量；不改名为另一厂商专属变量 |
 | **`config.example.yaml:2578-2584`（R16）** | 与上一条是**同一文件的两个不同段**，别只改一处：`vlm_model` 上方注释里的 `A bare model id keeps the legacy path: rag.vlm_base_url (DashScope's compatible endpoint by default) plus DASHSCOPE_API_KEY`（`:2578-2581`），以及注释掉的 `# vlm_base_url: …` 与其引导句 `Endpoint used when vlm_model names no models: entry`（`:2583-2584`）。`:2582` 的出厂值 `vlm_model: qwen3.7-flash` 随字面量默认一起处理 |
-| **模块指南与上游说明（R11 / R15）** | `backend/AGENTS.md:703-723` 的 “Caption target resolution” 整段重写：删掉 `falling back to rag.vlm_base_url when the entry declares none`（`:707-708`）、`then the rag file key, then the environment`（`:709`）、`the legacy bare-id path below, keep the OpenAI shape`（`:714-715`）、`A value that names no entry is a legacy bare model id and keeps the old path (…)`（`:717-720`）、`rag.vlm_base_url as the only two endpoint sources`（`:721-723`），改成“条目提供三元组；条目缺地址时按 provider 惰性取该 SDK 自己的默认值；命名不到条目即配置错”。`UPSTREAM_README.md:957-958` 删掉 `or a bare model id to use rag.vlm_base_url with the caption API key` 那半句。**这两处不属 B-2**：根 `AGENTS.md` 的文档更新约定要求架构改动在同一个变更集里改对应模块指南 |
+| **模块指南与上游说明（R11 / R15）** | `backend/AGENTS.md:703-723` 的 “Caption target resolution” 整段重写：删掉 `falling back to rag.vlm_base_url when the entry declares none`（`:707-708`）、`then the rag file key, then the environment`（`:709`）、`the legacy bare-id path below, keep the OpenAI shape`（`:714-715`）、`A value that names no entry is a legacy bare model id and keeps the old path (…)`（`:717-720`）、`rag.vlm_base_url as the only two endpoint sources`（`:721-723`），改成“条目提供三元组；条目缺地址时按 provider 惰性取该 SDK 自己的默认值；命名不到条目即配置错”。`UPSTREAM_README.md:957-958` 删掉 `or a bare model id to use rag.vlm_base_url with the caption API key` 那半句。**这两处不属 B-2**：根 `AGENTS.md` 的文档更新约定要求架构改动在同一个变更集里改对应模块指南。**另补一段 RAG 默认模型（2026-09-26 用户裁定并进本 Task）**：`rag.default_model` 的语义、D3 的四条角色链、`knowledge/model_target.py` 的 resolver 与"只有默认本身失效才回首项并 warning"、以及空白即未声明的归一规则——`knowledge/` 的模块描述里今天没有这层，Task 1 交付后一直没写；并进本 Task 是为了与上面那段同文件同批改，避开与在飞那条线三方相撞 |
 | parser／原始 JSON | `test_parser.py` 改模块说明、去掉旧变量的无效 setenv，保留用例及有效断言，夹具改条目；support-bundle 对旧原始 JSON 的脱敏仍保留。返回形状的适配已归 Task 6（R13），两件事不要混在一处改 |
 | 外部交接 | B-2 的 `.env.example`、README／UPSTREAM_README 中的**旧环境变量名单**和 e2e smoke live 门禁清理仍归发布前清单，不在本 Task 冒领；本功能的新使用说明按模块指南同步。**边界（R11 / R15）**：B-2 接的是 `SILICONFLOW_VLM_API_KEY` 这类**环境变量名**，`rag.vlm_base_url` 是本 Task 删掉的**配置字段**——描述它的模块指南段落与上游说明那半句归本 Task，不因“也在 README 里”就顺延，否则交付后指南会描述一条已不存在的路径 |
 

@@ -289,6 +289,66 @@ def test_judge_model_falls_back_to_config_yaml(config_env: Path):
     assert body["sources"]["judge_model"] == "config_file"
 
 
+# ── the RAG default model (spec 2026-09-23 default model D2) ──────────────
+#
+# A plain field on the existing whole-object PUT: naming it writes a UI override,
+# omitting it withdraws one, and the response reports which of the two happened.
+
+
+def test_rag_default_model_round_trips_and_reports_its_source(config_env: Path):
+    with _client(system_role="admin") as client:
+        initial = client.get("/api/rag/config").json()
+        assert initial["config"]["default_model"] is None
+        assert initial["sources"]["default_model"] == "config_file"
+
+        put = client.put("/api/rag/config", json={"default_model": "default-entry"})
+        assert put.status_code == 200
+        assert _read_rag_json(config_env) == {**_ENDPOINT_FIXTURE, "default_model": "default-entry"}
+        assert put.json()["config"]["default_model"] == "default-entry"
+        assert put.json()["sources"]["default_model"] == "ui"
+
+        read = client.get("/api/rag/config").json()
+
+    assert read["config"]["default_model"] == "default-entry"
+    assert read["sources"]["default_model"] == "ui"
+
+
+def test_rag_default_model_falls_back_to_config_yaml(config_env: Path):
+    _write_config_yaml(config_env, {**YAML_RAG, "default_model": "yaml-default"})
+
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    assert body["config"]["default_model"] == "yaml-default"
+    assert body["sources"]["default_model"] == "config_file"
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_rag_default_withdraws_the_ui_override(config_env: Path, blank: str):
+    """Blank is "undeclared", never a name: it must reach neither the file nor `sources`.
+
+    ``""`` already survives ``_prune_empty()``; the whitespace spelling is the one that needs
+    the field validator, because without it the string is written to disk and reported as a
+    UI override that the operator never made.
+    """
+    _write_config_yaml(config_env, {**YAML_RAG, "default_model": "yaml-default"})
+
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"default_model": "ui-default"}).status_code == 200
+        assert _read_rag_json(config_env)["default_model"] == "ui-default"
+
+        response = client.put("/api/rag/config", json={"default_model": blank})
+
+    assert response.status_code == 200
+    assert "default_model" not in _read_rag_json(config_env)
+    # Withdrawn, not forced to None: config.yaml's own value is what takes over again.
+    # Asserted on a fresh read, not on the PUT response's `config`: that snapshot is the
+    # pre-write one for any field the payload omits (pre-existing; the settings UI refetches).
+    assert get_app_config().rag.default_model == "yaml-default"
+    # `sources` *is* computed from what was written, so it is already right in that response.
+    assert response.json()["sources"]["default_model"] == "config_file"
+
+
 # ── hot reload through the shared config singleton ────────────────────────
 
 

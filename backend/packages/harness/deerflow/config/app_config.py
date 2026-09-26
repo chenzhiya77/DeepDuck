@@ -198,6 +198,7 @@ class RagConfig(BaseModel):
     vlm_connect_timeout: float = Field(default=15.0, description="Connection timeout for VLM requests (seconds).")
     extract_model: str | None = Field(default=None, description="Name of the config `models:` entry used for graph extraction (small, cheap, stable JSON output); None uses the first configured model.")
     judge_model: str | None = Field(default=None, description="Name of the config `models:` entry used as the ragas eval judge; None uses the first configured model.")
+    default_model: str | None = Field(default=None, description="Name of the config `models:` entry every RAG role falls back to when it declares none of its own; None uses the first configured model.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token from rag_config.json; None falls back to MINERU_API_TOKEN.")
 
     # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Every

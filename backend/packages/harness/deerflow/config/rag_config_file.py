@@ -26,7 +26,7 @@ import threading
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from deerflow.config.models_config import MASKED_API_KEY
 from deerflow.config.runtime_paths import existing_project_file
@@ -54,6 +54,20 @@ SECRET_ENV_VARS: dict[str, str] = {
 #: choice moved to the service's own startup flags (spec 2026-09-24 D2). Dropped with a
 #: warning rather than silently reinterpreted as a tier.
 _RETIRED_KEYS = ("parse_backend",)
+
+#: The fields that name a ``config.yaml`` ``models:`` entry rather than carrying a value.
+#: A *blank* declaration in any of them is not a name — it is the absence of one, which is
+#: why they share one validator (spec 2026-09-23 default model D2). ``_prune_empty()`` only
+#: drops ``None`` / ``""``, so without this the whitespace spelling would be written to the
+#: file, reported as ``ui`` by ``sources`` and echoed back by GET.
+MODEL_REFERENCE_FIELDS = ("default_model", "extract_model", "judge_model", "vlm_model")
+
+
+def _blank_to_none(value: Any) -> Any:
+    """Whitespace-only strings mean "not declared"; every other value passes through."""
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
 
 
 class RagVideoFileConfig(BaseModel):
@@ -91,6 +105,7 @@ class RagConfigFile(BaseModel):
     vlm_api_key: str | None = Field(default=None, description="Caption VLM API key; masked on read, env is the fallback.")
     extract_model: str | None = Field(default=None, description="Name of a config `models:` entry used for graph extraction.")
     judge_model: str | None = Field(default=None, description="Name of a config `models:` entry used as the ragas eval judge; None uses the config primary model.")
+    default_model: str | None = Field(default=None, description="Name of a config `models:` entry used by every RAG role that declares none of its own; None uses the first configured model.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token; masked on read, env is the fallback.")
     # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Ids are
     # validated against `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`; every field is
@@ -109,6 +124,16 @@ class RagConfigFile(BaseModel):
     parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local.")
     parse_tier: Literal["flash", "basic", "standard", "advanced"] | None = Field(default=None, description="Optional tier for the local MinerU 4.x service; None lets the service decide.")
     video: RagVideoFileConfig | None = Field(default=None, description="Video-ingestion model choices.")
+
+    @field_validator(*MODEL_REFERENCE_FIELDS, mode="before")
+    @classmethod
+    def _blank_model_reference_is_undeclared(cls, value: Any) -> Any:
+        """One implementation for all four model-reference fields (spec 2026-09-23 D2).
+
+        Applied *before* ``_prune_empty()`` sees the payload, which is what makes a cleared
+        field mean "withdraw the override" instead of "declare an empty name".
+        """
+        return _blank_to_none(value)
 
     @classmethod
     def resolve_config_path(cls, config_path: str | None = None) -> Path | None:

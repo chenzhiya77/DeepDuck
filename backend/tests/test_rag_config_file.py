@@ -10,6 +10,7 @@ the ingestion clients rely on.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,93 @@ def test_changing_only_the_rag_file_reloads_app_config(env_paths):
     _write_rag_json(rag_json, {"rerank_model": "second"})
 
     assert get_app_config().rag.rerank_model == "second"
+
+
+# ── RAG default model: the field, its blank normalisation, its hot reload ──
+# Spec 2026-09-23 default model D2/D3 (revisions R1-R28). The field is the merge
+# target the RAG resolver reads; the blank rule is what makes "clear it in the
+# UI" mean "withdraw the override" rather than "declare an empty name".
+
+MODEL_REFERENCE_FIELDS = ("default_model", "extract_model", "judge_model", "vlm_model")
+
+
+def test_default_model_file_overrides_config_yaml_then_undoes(env_paths):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml, {**dict(YAML_RAG), "default_model": "yaml-default"})
+    _write_rag_json(rag_json, {"default_model": "ui-default"})
+    assert get_app_config().rag.default_model == "ui-default"
+
+    # Withdrawing the UI override falls back to config.yaml -- it does not force None.
+    _write_rag_json(rag_json, {})
+    assert get_app_config().rag.default_model == "yaml-default"
+
+
+def test_default_model_defaults_to_none(env_paths):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {})
+
+    assert get_app_config().rag.default_model is None
+
+
+@pytest.mark.parametrize("field", MODEL_REFERENCE_FIELDS)
+@pytest.mark.parametrize("blank", ["", " ", "\t\n "])
+def test_blank_model_reference_withdraws_the_override_instead_of_declaring_it(env_paths, field: str, blank: str):
+    """``RagConfigFile``'s field validator turns blank into ``None`` for all four fields.
+
+    Normalising here rather than in the resolver is what makes the *file* side honest:
+    ``_prune_empty()`` only drops ``None``/``""``, so without this the whitespace string
+    would be written to disk, reported as ``ui`` by ``sources`` and echoed back by GET.
+    """
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml, {**dict(YAML_RAG), field: f"yaml-{field}"})
+    _write_rag_json(rag_json, {field: blank})
+
+    # The blank declaration is not an override, so config.yaml's own value stands.
+    assert getattr(get_app_config().rag, field) == f"yaml-{field}"
+    # ... and it is not carried as a declared value either.
+    assert field not in RagConfigFile.from_file().model_dump(exclude_none=True)
+
+
+def test_blank_default_model_with_no_yaml_counterpart_is_none(env_paths):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {"default_model": "   "})
+
+    assert get_app_config().rag.default_model is None
+
+
+def test_changing_only_the_rag_default_reloads_through_the_resolver(env_paths):
+    """Auto hot reload: the signature covers the rag file, so a default change applies.
+
+    Proven through the *real* resolver rather than by reading the field back, because the
+    field alone cannot show whether the next ingest would actually pick the new target.
+    """
+    from deerflow.knowledge.model_target import resolve_rag_model_name
+
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    models_json = Path(os.environ["DEER_FLOW_MODELS_CONFIG_PATH"])
+    models_json.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {"name": "A", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test"},
+                    {"name": "B", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_rag_json(rag_json, {"default_model": "A"})
+    before = get_app_config()
+    assert resolve_rag_model_name(before) == "A"
+
+    _write_rag_json(rag_json, {"default_model": "B"})
+    after = get_app_config()
+
+    assert after is not before
+    assert resolve_rag_model_name(after) == "B"
 
 
 # ── atomic write + sentinel ───────────────────────────────────────────────

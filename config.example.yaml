@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 38
+config_version: 39
 
 # ============================================================================
 # Logging
@@ -2588,6 +2588,10 @@ rag:
   # Name of the `models:` entry used as the eval judge (grades retrieval quality
   # in the RAGAS eval). Omit to use the first configured model.
   # judge_model: deepseek-v4-flash
+  # Name of the `models:` entry every RAG role falls back to when it declares none of
+  # its own (graph extraction, eval judge, image/video captions). Omit to use the first
+  # configured model. Also editable in Settings → Models → Functional models.
+  # default_model: deepseek-v4-flash
   # --- Provider selection (spec 2026-09-14, §4.1) ---
   # Curated ids from `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`. Every default
   # reproduces the behaviour of a config that sets only the models above; the fields
