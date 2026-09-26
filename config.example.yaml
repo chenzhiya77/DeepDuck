@@ -2592,15 +2592,15 @@ rag:
   # Curated ids from `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`. Every default
   # reproduces the behaviour of a config that sets only the models above; the fields
   # are listed here for discoverability, uncomment to override.
-  # embedding_provider: dashscope        # dashscope | openai-compatible (dense only)
-  # embedding_base_url:                  # endpoint; empty uses the provider default
+  # embedding_provider: dashscope        # dashscope | volcengine-ark | openai-compatible (dense only)
+  # embedding_base_url:                  # endpoint; required (no provider fallback)
   # embedding_dimension:                 # dense dimension override; empty probes at enable time
   # embedding_sparse_source: provider    # provider | external | bm25
   # sparse_provider: tei-sparse         # only when embedding_sparse_source=external
   #                                     # tei-sparse = Text Embeddings Inference /embed_sparse
   # sparse_base_url:
   # sparse_model:
-  # rerank_provider: dashscope           # dashscope | generic-rerank
+  # rerank_provider: dashscope           # dashscope | generic-rerank | tei-rerank
   # rerank_base_url:
   # parse_provider: mineru-cloud         # mineru-cloud | mineru-local
   # parse_base_url:                      # required when parse_provider=mineru-local

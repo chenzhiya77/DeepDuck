@@ -31,6 +31,7 @@ import httpx
 from qdrant_client.models import SparseVector
 
 from deerflow.knowledge.embedder import EmbedderAuthError, EmbedderError, EmbeddingResult
+from deerflow.knowledge.endpoint_url import join_endpoint
 from deerflow.knowledge.providers import secret_env_var
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ class OpenAICompatibleEmbedder:
         return results
 
     async def _post_with_retry(self, payload: dict) -> dict:
-        url = f"{self._base_url}{_EMBEDDINGS_PATH}"
+        url = join_endpoint(self._base_url, _EMBEDDINGS_PATH)
         headers = {"Content-Type": "application/json"}
         api_key = self._read_api_key()
         if api_key:

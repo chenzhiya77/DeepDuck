@@ -416,3 +416,19 @@ async def test_build_embedder_refuses_an_empty_endpoint_even_for_dashscope(monke
 
     with pytest.raises(RagConfigurationError, match="embedding_base_url"):
         build_embedder()
+
+
+@pytest.mark.asyncio
+async def test_openai_embedder_accepts_an_ecosystem_base_with_v1():
+    """照文档填（把 /v1 算进 base）也打得出门（spec 2026-09-26 rag-endpoint-dedup）。"""
+    recorded: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=_openai_transport(recorded)) as client:
+        embedder = OpenAICompatibleEmbedder(
+            base_url=f"{OPENAI_BASE}/v1",
+            model="bge-m3",
+            api_key="sk-test",
+            client=client,
+        )
+        await embedder.embed(["甲"], text_type="document")
+
+    assert str(recorded[0].url) == f"{OPENAI_BASE}/v1/embeddings"

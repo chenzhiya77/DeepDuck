@@ -1693,7 +1693,7 @@ export const zhCN: Translations = {
       groupRetrieval: "检索",
       groupRetrievalHint: "查询时使用：向量化 + 重排。",
       retrievalEndpointHint:
-        "留空 = 用该提供方的默认地址；换成百炼以外的提供方后需要填写。百炼走自有协议，地址由客户端固定。",
+        "必填。填法随意：主机名（https://host）、带 /v1 的 base（https://host/v1）或整段端点（https://host/v1/embeddings）都能用——与固定段重复的那节不会重复拼。",
       embeddingProvider: "向量提供方",
       rerankProvider: "重排提供方",
       providerDashscope: "阿里百炼 (DashScope)",

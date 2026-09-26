@@ -177,3 +177,35 @@ def test_the_factory_refuses_dashscope_without_an_address_too():
     with pytest.raises(RagConfigurationError, match="rerank_base_url") as caught:
         build_reranker(rag=rag)
     assert "built-in endpoint" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_rerank_accepts_an_ecosystem_base_with_v1():
+    """Jina 惯例：base 自带 /v1 ⇒ 结果与今天逐字相同（spec 2026-09-26 rag-endpoint-dedup）。"""
+    recorded: list[httpx.Request] = []
+    body = {"results": [{"index": 0, "relevance_score": 0.9}]}
+    reranker = GenericReranker(
+        model="bge-reranker",
+        base_url=f"{BASE_URL}/v1",
+        api_key="sk-rerank",
+        client=_client(recorded, lambda _request: httpx.Response(200, json=body)),
+    )
+    await reranker.rerank("q", ["a"], top_n=1)
+
+    assert str(recorded[0].url) == f"{BASE_URL}/v1/rerank"
+
+
+@pytest.mark.asyncio
+async def test_rerank_accepts_a_whole_endpoint():
+    """整端点形态（照文档把 /rerank 也填上）不再被拼成 /rerank/rerank。"""
+    recorded: list[httpx.Request] = []
+    body = {"results": [{"index": 0, "relevance_score": 0.9}]}
+    reranker = GenericReranker(
+        model="bge-reranker",
+        base_url=f"{BASE_URL}/rerank",
+        api_key="sk-rerank",
+        client=_client(recorded, lambda _request: httpx.Response(200, json=body)),
+    )
+    await reranker.rerank("q", ["a"], top_n=1)
+
+    assert str(recorded[0].url) == f"{BASE_URL}/rerank"

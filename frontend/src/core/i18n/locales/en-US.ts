@@ -1787,7 +1787,7 @@ export const enUS: Translations = {
       groupRetrieval: "Retrieval",
       groupRetrievalHint: "Used at query time: vectorisation and reranking.",
       retrievalEndpointHint:
-        "Empty means the provider's own default endpoint; fill it in after switching away from DashScope, whose address is fixed by the client.",
+        "Required. Any of these work: the host (https://host), a base ending in /v1 (https://host/v1) or the full endpoint (https://host/v1/embeddings) — a segment repeated by the leg's fixed path is not joined twice.",
       embeddingProvider: "Embedding provider",
       rerankProvider: "Rerank provider",
       providerDashscope: "Aliyun Bailian (DashScope)",

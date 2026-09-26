@@ -30,6 +30,7 @@ from collections.abc import Sequence
 import httpx
 
 from deerflow.config.rag_config_file import configured_rag_secret
+from deerflow.knowledge.endpoint_url import join_endpoint
 from deerflow.knowledge.providers import secret_env_var
 from deerflow.knowledge.reranker import RerankerAuthError, RerankerError
 
@@ -94,7 +95,7 @@ class GenericReranker:
         return pairs
 
     async def _post_with_retry(self, payload: dict) -> dict:
-        url = f"{self._base_url}{RERANK_PATH}"
+        url = join_endpoint(self._base_url, RERANK_PATH)
         headers = {"Authorization": f"Bearer {self._read_api_key()}", "Content-Type": "application/json"}
         close_client = False
         client = self._client
