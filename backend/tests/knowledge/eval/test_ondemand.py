@@ -91,7 +91,7 @@ def test_generate_run_id_format_matches_cli_contract() -> None:
 
 
 async def test_layer2_deps_judges_with_the_configured_judge_model(monkeypatch) -> None:
-    """按需评测的 judge 读 ``rag.judge_model``（与 CLI ``--judge-model`` 同源），未配置为 None → 主模型。"""
+    """按需评测的 judge 读 ``rag.judge_model``（与 CLI ``--judge-model`` 同源），未配置为 None → RAG 默认 → 首项。"""
     from types import SimpleNamespace
 
     from deerflow.config import app_config as app_config_module

@@ -142,14 +142,25 @@ class TestJudgeModelSelection:
         cli._build_judge_llm("qwen3.7-flash", config=object())
         assert seen["name"] == "qwen3.7-flash"
 
-    def test_default_none_uses_primary_model(self, monkeypatch):
+    def test_default_none_falls_back_to_the_rag_default(self, monkeypatch):
+        """Same contract as the factory's own test (spec 2026-09-23 D3).
+
+        ``None`` resolves through RAG's order before the factory is called, so the delegate
+        receives a concrete entry name instead of ``None``.
+        """
+        from types import SimpleNamespace
+
         import deerflow.models.factory as factory
 
         seen = {}
         monkeypatch.setattr(factory, "create_chat_model", lambda name=None, **kwargs: seen.setdefault("name", name) or object())
+        config = SimpleNamespace(
+            models=[SimpleNamespace(name="A"), SimpleNamespace(name="B")],
+            rag=SimpleNamespace(judge_model=None, default_model="B"),
+        )
 
-        cli._build_judge_llm(None, config=object())
-        assert seen["name"] is None
+        cli._build_judge_llm(None, config=config)
+        assert seen["name"] == "B"
 
     def test_missing_judge_key_maps_to_skipped_before_engine(self, monkeypatch, tmp_path):
         import deerflow.config.app_config as app_config_module

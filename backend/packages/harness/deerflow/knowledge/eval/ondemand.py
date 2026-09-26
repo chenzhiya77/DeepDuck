@@ -397,7 +397,7 @@ async def run_full_eval_for_kb(
 async def _build_layer2_deps(kb_id: str, run_id: str):
     """生产装配（与 CLI 口径一致）：lead-agent runner + ``rag.judge_model`` judge + ragas 评估器。
 
-    judge 未配置时传 ``None``，由工厂回退到 config 主模型（既有行为）。
+    judge 未配置时传 ``None``；工厂按 RAG 自己的顺序（D3）取 ``rag.judge_model`` → RAG 默认 → 首项。
     """
     from deerflow.config.app_config import get_app_config
     from deerflow.knowledge.eval.factory import build_judge_llm, build_ragas_evaluator

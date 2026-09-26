@@ -109,12 +109,20 @@ def _merge(base: ExtractionResult, extra: ExtractionResult) -> ExtractionResult:
     return base
 
 
-def get_extract_llm():
-    """Small extraction model: config ``rag.extract_model``, else the first model."""
+def get_extract_llm(app_config: Any = None):
+    """Small extraction model: ``rag.extract_model`` → the RAG default → the first model.
+
+    ``app_config`` stays optional so both existing callers keep working untouched — the
+    ingestion path (``extract_graph``) and the retrieval-time ``graph_search`` tool, which
+    takes no config of its own. Passing it hands the factory the same snapshot the name was
+    resolved from, so a check and its construction cannot disagree.
+    """
     from deerflow.config.app_config import get_app_config
+    from deerflow.knowledge.model_target import require_rag_model_name
     from deerflow.models.factory import create_chat_model
 
-    return create_chat_model(get_app_config().rag.extract_model)
+    config = app_config if app_config is not None else get_app_config()
+    return create_chat_model(require_rag_model_name(config, config.rag.extract_model, role="图谱抽取"), app_config=config)
 
 
 async def extract_graph(text: str, *, llm: Any = None, gleaning_rounds: int = 1) -> ExtractionResult:

@@ -70,3 +70,20 @@ def resolve_rag_model_name(config: Any, name: str | None = None, *, rag: Any = N
         names[0],
     )
     return names[0]
+
+
+def require_rag_model_name(config: Any, name: str | None = None, *, rag: Any = None, role: str) -> str:
+    """Resolve one RAG role's target, or refuse when there is no model to name.
+
+    ``resolve_rag_model_name`` returns ``None`` so the "who reports this" decision stays with
+    the caller; a RAG entry point turns it into a configuration error here rather than
+    handing ``None`` to the factory, which would index an empty model list (D3). The error
+    type is the RAG layer's one readable-configuration-failure signal, which the gateway
+    already maps to a 400.
+    """
+    resolved = resolve_rag_model_name(config, name, rag=rag)
+    if resolved is None:
+        from deerflow.knowledge.embedder import RagConfigurationError
+
+        raise RagConfigurationError(f"RAG 未配置可用模型：{role} 需要 config.models 里至少有一个条目，或为 rag.default_model 指定一个。")
+    return resolved

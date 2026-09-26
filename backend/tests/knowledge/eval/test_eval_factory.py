@@ -54,14 +54,26 @@ class TestBuildJudgeLlm:
         factory.build_judge_llm("qwen3.7-flash", config=object())
         assert seen["name"] == "qwen3.7-flash"
 
-    def test_default_none_uses_primary_model(self, monkeypatch):
+    def test_default_none_falls_back_to_the_rag_default(self, monkeypatch):
+        """``None`` no longer means "let the factory pick the first model".
+
+        The delegate is pinned here rather than the fallback: D3 resolves the name before
+        the factory sees it, so what reaches the factory is a concrete entry name.
+        """
+        from types import SimpleNamespace
+
         import deerflow.models.factory as models_factory
 
         seen = {}
         monkeypatch.setattr(models_factory, "create_chat_model", lambda name=None, **kwargs: seen.setdefault("name", name) or object())
+        config = SimpleNamespace(
+            models=[SimpleNamespace(name="A"), SimpleNamespace(name="B")],
+            rag=SimpleNamespace(judge_model=None, default_model="B"),
+        )
 
-        factory.build_judge_llm(None, config=object())
-        assert seen["name"] is None
+        factory.build_judge_llm(None, config=config)
+
+        assert seen["name"] == "B"
 
 
 class TestBuildRagasEvaluator:

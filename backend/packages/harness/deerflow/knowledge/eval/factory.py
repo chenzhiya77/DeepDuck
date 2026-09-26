@@ -5,7 +5,7 @@ Judge LLM 与 ragas 评估器的构建从 CLI 脚本提升到本模块：
 - **judge 独立性**：judge 与答题 Agent 的模型刻意可分离（自评偏差是真实
   失败模式）；``dashscope:<model>`` 直连 DashScope OpenAI 兼容端点（key 从
   环境读取，judge 永远不需要 config.yaml 条目），其余走 config 模型白名单，
-  ``None`` 用 config 主模型。
+  ``None`` 按 RAG 自己的顺序（D3）取 ``rag.judge_model`` → RAG 默认 → 首项。
 - **ragas 可选**：未安装时评估器返回 ``None``，``run_layer2_evaluation``
   把标准指标标记为显式跳过（绝不伪绿）。
 """
@@ -68,8 +68,10 @@ def build_judge_llm(judge_model: str | None, *, config):
 
     ``dashscope:<model>`` constructs a DashScope OpenAI-compatible client
     directly (key from env — the judge never needs a config.yaml entry);
-    anything else resolves through the config model allowlist; ``None`` uses
-    the config primary model.
+    anything else resolves through the config model allowlist, in RAG's own order (D3):
+    the explicit name, then ``rag.judge_model``, then the RAG default, then the first
+    configured model. An explicit name is never replaced — a wrong one reaches the factory
+    and fails loudly rather than quietly grading with a model nobody asked for.
     """
 
     if judge_model and judge_model.startswith("dashscope:"):
@@ -81,9 +83,11 @@ def build_judge_llm(judge_model: str | None, *, config):
 
         return ChatOpenAI(model=model, base_url=DASHSCOPE_COMPATIBLE_BASE_URL, api_key=api_key, timeout=600.0, max_retries=2)
 
+    from deerflow.knowledge.model_target import require_rag_model_name
     from deerflow.models.factory import create_chat_model
 
-    return create_chat_model(name=judge_model, app_config=config, attach_tracing=False)
+    target = require_rag_model_name(config, judge_model or config.rag.judge_model, role="评测裁判")
+    return create_chat_model(name=target, app_config=config, attach_tracing=False)
 
 
 def build_ragas_evaluator(judge_llm, *, embeddings_cls=None):

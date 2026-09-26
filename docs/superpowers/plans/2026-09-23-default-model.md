@@ -175,16 +175,59 @@
 > 文件：`knowledge/graph/extractor.py`、`knowledge/eval/factory.py` 及确有需要的 RAG 调用接缝；测试抽取／评测及非 RAG 隔离，**含既有的 `tests/knowledge/eval/test_ondemand.py`（R25，见下）**。公共 factory、聊天组件、agent、IM／scheduler、memory／摘要／goal 生产文件不改；**`knowledge/wiki/generator.py` 与 `knowledge/eval/synthesis.py` 也不改**（R20，它们是两个"无名选模点"，只作隔离对照）。VLM 继承归 Task 6，judge 直连删除归 Task 7，严格缺项检查归 Task 9。
 > **验收对应**：spec §4 的 2 / 3 / 7，以及 9 的答题模型隔离。
 
-- [ ] **RED：抽取／裁判真实入口**：模型列表首项 A、RAG 默认 B、角色 C、显式裁判参数 D 互不相同。经 `get_extract_llm()` 与 `build_judge_llm()` 验证 D3 各层优先级、默认失效和无模型；普通未知条目名不被回落掩盖。观察传入真实工厂的名称与配置，桩放 SDK 边界，不把 resolver 整体换常量。暂保留的 `dashscope:` 直连例外由 Task 7 单独反转。**既有用例 `test_ondemand.py:93-123 test_layer2_deps_judges_with_the_configured_judge_model` 是本 Task 的受害者（R25）**：它用 `SimpleNamespace(rag=SimpleNamespace(judge_model=None))`（`:119`）断言"未配置 → 主模型"、docstring `:94` 逐字写着 `未配置为 None → 主模型`，而 D3 之后是 RAG 默认 → 首项 ⇒ 同批改断言与 docstring；`:116`（有 `judge_model`）仍有效，`:123`（空串）要连同 D2 的 validator 一起核。别等 RED 写完才发现它红。
-- [ ] **RED：检索期第二个消费者（R12）**：经 `graph_search` 的核心实现（`tools/builtins/graph_search_tool.py:199` 的 `llm = llm or get_extract_llm()`）验证同一套优先级——A→B 后它拿到 B，且**该文件一行未改**（形参可选即生效，用源码级钉子或 diff 断言）。它不在 `knowledge/` 下，最容易被漏；不能只测 `extract_graph()` 就宣称抽取角色已全覆盖。桩放 SDK 边界与检索 IO，不跑真实向量库。
-- [ ] **RED：配置快照与后续任务**：默认 A→B 后新构建的 RAG 角色用 B，已构建调用目标不变；检查和构建使用同一配置快照，不让工厂自行重读全局配置。不新增跨任务缓存、不自动重跑旧文档或评测。
-- [ ] **守卫：答题与宿主隔离**：只改变 RAG 默认、其他配置完全相同，RAG 目标必须改变；配对检查普通聊天、知识库聊天**主模型**、sidecar、引导、IM／定时任务、记忆、摘要／goal、能力判断的实际选择接缝保持 Task 0 基线。**基线已按点数清为 7 处（R24），逐点断言、不笼统写"聊天不变"**：`lead_agent/agent.py:133`（`_resolve_model_name`）、`summarization_middleware.py:162`（`_default_model_name`）与 `:716`、`tool_error_handling_middleware.py:361`、`client.py:301`、`models/factory.py:299`（`name is None` 分支）、`runtime/context_compaction.py:88`；另 `tools/tools.py:114` 也读 `config.models[0].name`。可在隔离测试中用同一配置快照驱动入口，不需要真实 IM 或定时执行；明确记录各断言覆盖的调用点，不把只测工厂说成已测完所有入口。已知旧差异不在本 Task 修复。**`graph_search` 的内部小模型不属这份隔离清单（R12）**：它走 `get_extract_llm()`，属上一条的正向生效面；把它写进“聊天不变”会钉死一个假断言，Task 9 的严格检查一上线就自相矛盾。
-- [ ] **守卫：其他功能模型隔离**：同一 A→B 场景下，embedding／sparse／rerank／parse／ASR 的目标与参数保持不变；评测中 judge 改变而答题 agent／CLI 答题模型不变。**R20 另点名两个"无名的 RAG 内部选模点"，各一条负向断言（A→B 后它们的构建目标不变）**：`knowledge/wiki/generator.py:210-212` 的 `_default_llm()` 与 `knowledge/eval/synthesis.py:141-143` 的 `_default_llm_factory()`，都是 `create_chat_model()` **不带 name** ⇒ 落到 `models[0]`，注释自称 "uses the main model (first configured)"。本期**不接** RAG 默认，但没有这两条断言，D6 那句"其他未列 RAG 调用保留各自行为"就无法验证——而它们在 `knowledge/` 里，最容易被当成"已经接了"。各负向对照与一个真实 RAG 正向断言配对，不只断言“调用次数为零”。
-- [ ] **GREEN**：抽取用有效 `extract_model`，裁判先取显式参数再取 `judge_model`，随后由 RAG resolver 选定明确名称，处理无模型后传原工厂与同一配置。**`get_extract_llm()` 今天不接参数**（`graph/extractor.py:112-117` 内部自己 `get_app_config()`），为把同一快照交给工厂需新增**可选**形参（默认 `None` → `get_app_config()`）并透传 `create_chat_model(app_config=…)`；`extract_graph(llm=None)`（`:120-123`）与 `index_document_graph(llm=…)` 的既有调用点／用例因此不必改，**`tools/builtins/graph_search_tool.py:199` 同样不必改但会跟着变（R12）**——不改它是形参可选的结果，不是它被排除在本期之外。`build_judge_llm(judge_model, *, config)` 已有该形参，不动签名。只改 RAG 角色调用链，不接线其他消费者。
-- [ ] **neuter：接线与隔离**：分别恢复抽取／裁判旧首项回落、让显式参数被 RAG 默认覆盖、让构建重新读另一份配置，记录各自受害者。仅在临时行为变异中让一个宿主选择接缝误吃 RAG 默认，配对隔离测试必须转红，随后完整还原；不能把这类变异当作扩大实施范围的许可。
-- [ ] **门禁**：ruff 双净；抽取／评测／配置及隔离窄面、后端全量零新增失败。前端无生产改动，相关聊天 dom 守卫按 Task 0 实际测试入口执行。
+- [x] **RED：抽取／裁判真实入口**：模型列表首项 A、RAG 默认 B、角色 C、显式裁判参数 D 互不相同。经 `get_extract_llm()` 与 `build_judge_llm()` 验证 D3 各层优先级、默认失效和无模型；普通未知条目名不被回落掩盖。观察传入真实工厂的名称与配置，桩放 SDK 边界，不把 resolver 整体换常量。暂保留的 `dashscope:` 直连例外由 Task 7 单独反转。**既有用例 `test_ondemand.py:93-123 test_layer2_deps_judges_with_the_configured_judge_model` 是本 Task 的受害者（R25）**：它用 `SimpleNamespace(rag=SimpleNamespace(judge_model=None))`（`:119`）断言"未配置 → 主模型"、docstring `:94` 逐字写着 `未配置为 None → 主模型`，而 D3 之后是 RAG 默认 → 首项 ⇒ 同批改断言与 docstring；`:116`（有 `judge_model`）仍有效，`:123`（空串）要连同 D2 的 validator 一起核。别等 RED 写完才发现它红。
+- [x] **RED：检索期第二个消费者（R12）**：经 `graph_search` 的核心实现（`tools/builtins/graph_search_tool.py:199` 的 `llm = llm or get_extract_llm()`）验证同一套优先级——A→B 后它拿到 B，且**该文件一行未改**（形参可选即生效，用源码级钉子或 diff 断言）。它不在 `knowledge/` 下，最容易被漏；不能只测 `extract_graph()` 就宣称抽取角色已全覆盖。桩放 SDK 边界与检索 IO，不跑真实向量库。
+- [x] **RED：配置快照与后续任务**：默认 A→B 后新构建的 RAG 角色用 B，已构建调用目标不变；检查和构建使用同一配置快照，不让工厂自行重读全局配置。不新增跨任务缓存、不自动重跑旧文档或评测。
+- [x] **守卫：答题与宿主隔离**：只改变 RAG 默认、其他配置完全相同，RAG 目标必须改变；配对检查普通聊天、知识库聊天**主模型**、sidecar、引导、IM／定时任务、记忆、摘要／goal、能力判断的实际选择接缝保持 Task 0 基线。**基线已按点数清为 7 处（R24），逐点断言、不笼统写"聊天不变"**：`lead_agent/agent.py:133`（`_resolve_model_name`）、`summarization_middleware.py:162`（`_default_model_name`）与 `:716`、`tool_error_handling_middleware.py:361`、`client.py:301`、`models/factory.py:299`（`name is None` 分支）、`runtime/context_compaction.py:88`；另 `tools/tools.py:114` 也读 `config.models[0].name`。可在隔离测试中用同一配置快照驱动入口，不需要真实 IM 或定时执行；明确记录各断言覆盖的调用点，不把只测工厂说成已测完所有入口。已知旧差异不在本 Task 修复。**`graph_search` 的内部小模型不属这份隔离清单（R12）**：它走 `get_extract_llm()`，属上一条的正向生效面；把它写进“聊天不变”会钉死一个假断言，Task 9 的严格检查一上线就自相矛盾。
+- [x] **守卫：其他功能模型隔离**：同一 A→B 场景下，embedding／sparse／rerank／parse／ASR 的目标与参数保持不变；评测中 judge 改变而答题 agent／CLI 答题模型不变。**R20 另点名两个"无名的 RAG 内部选模点"，各一条负向断言（A→B 后它们的构建目标不变）**：`knowledge/wiki/generator.py:210-212` 的 `_default_llm()` 与 `knowledge/eval/synthesis.py:141-143` 的 `_default_llm_factory()`，都是 `create_chat_model()` **不带 name** ⇒ 落到 `models[0]`，注释自称 "uses the main model (first configured)"。本期**不接** RAG 默认，但没有这两条断言，D6 那句"其他未列 RAG 调用保留各自行为"就无法验证——而它们在 `knowledge/` 里，最容易被当成"已经接了"。各负向对照与一个真实 RAG 正向断言配对，不只断言“调用次数为零”。
+- [x] **GREEN**：抽取用有效 `extract_model`，裁判先取显式参数再取 `judge_model`，随后由 RAG resolver 选定明确名称，处理无模型后传原工厂与同一配置。**`get_extract_llm()` 今天不接参数**（`graph/extractor.py:112-117` 内部自己 `get_app_config()`），为把同一快照交给工厂需新增**可选**形参（默认 `None` → `get_app_config()`）并透传 `create_chat_model(app_config=…)`；`extract_graph(llm=None)`（`:120-123`）与 `index_document_graph(llm=…)` 的既有调用点／用例因此不必改，**`tools/builtins/graph_search_tool.py:199` 同样不必改但会跟着变（R12）**——不改它是形参可选的结果，不是它被排除在本期之外。`build_judge_llm(judge_model, *, config)` 已有该形参，不动签名。只改 RAG 角色调用链，不接线其他消费者。
+- [x] **neuter：接线与隔离**：分别恢复抽取／裁判旧首项回落、让显式参数被 RAG 默认覆盖、让构建重新读另一份配置，记录各自受害者。仅在临时行为变异中让一个宿主选择接缝误吃 RAG 默认，配对隔离测试必须转红，随后完整还原；不能把这类变异当作扩大实施范围的许可。
+- [x] **门禁**：ruff 双净；抽取／评测／配置及隔离窄面、后端全量零新增失败。前端无生产改动，相关聊天 dom 守卫按 Task 0 实际测试入口执行。
 
-**实测（待回填）**：
+**实测（2026-09-26 完成，RED→GREEN→五条 neuter→门禁）**：
+
+**性质与基线**：实施 Task，数字全部来自实际运行。基线 HEAD `bfed5529`（`feat/rag-knowledge-base`，Task 1 那笔）。工作树同样带着别线的 ` M docs/superpowers/specs/2026-09-12-…`（未纳入）。环境同 Task 1（`--basetemp=.pytest-tmp`，跑完即删）。**本 Task 落地前先跑了 7 个入口的探针**（`AppConfig(models=[A,B])` ＋ `rag.default_model` 合成快照），确认哪些能便宜地直接驱动——结论见「隔离覆盖表」，这条不做的话隔离守卫会写成一片猜。
+
+**RED（13 条红，全部是"接线不存在"）**：`tests/knowledge/test_rag_model_wiring.py` 的优先层级、同快照、无模型拒绝对（抽取 4＋裁判 4＋快照 2＋拒绝 2）全红，红因是 `get_extract_llm()` 当时**完全忽略传入的配置**（内部自己 `get_app_config()`）、`build_judge_llm(None)` 把 `None` 直接交给工厂。同期新建的 `tests/test_default_model_isolation.py` **初始即绿**（14 条）——按本 plan 的口径，纯守卫初始为绿如实记载，牙由 neuter N5 给。
+
+**GREEN**：`tests/knowledge/test_rag_model_wiring.py`（17 条）＋ `tests/test_default_model_isolation.py`（15 条）＋ `tests/knowledge/eval/` ＋ `tests/knowledge/graph/` 共 **445 passed**。生产改动＝`model_target.py` 新增 `require_rag_model_name()`（无模型 → `RagConfigurationError`，类型从 `embedder.py` 惰性导入以保持本模块纯净）、`get_extract_llm(app_config=None)` 接可选快照并透传 `create_chat_model(app_config=…)`、`build_judge_llm` 改走 resolver（`dashscope:` 直连分支原样保留给 Task 7）、外加**三处 docstring**（见发现②）。
+
+**neuter（五条，逐条独立还原；每次还原后用 md5 证明五个文件逐字节回到 GREEN 态，跑完 grep 无 `NEUTER-` 残留）**：
+
+| # | 还原的旧行为 | 转红条数 |
+| --- | --- | --- |
+| 1 | 抽取回到旧首项回落（拿掉 resolver） | 5（4 个优先级里除显式名外的 3 个＋快照＋拒绝） |
+| 2 | 裁判回到旧首项回落 | 6（含**刚修好的那两条**受害者用例 ⇒ 修复不是化妆） |
+| 3 | RAG 默认盖过显式参数 | 3（`[D-C-B-D]` ＋ 两条既有 `test_config_model_name_delegates_to_factory`） |
+| 4 | 构建重读全局而非传入快照（两个入口都变异） | 14（快照断言＋所有依赖传入配置的期望） |
+| 5 | **宿主接缝误吃 RAG 默认**（`_resolve_model_name`） | 1（**正是配对的那条隔离断言**） |
+
+第 1 条里"显式名"两个参数保持绿——它们本来就不经过回落，这正好说明断言是按层分开的。**一条过程教训（记下来免得下次再踩）**：N1 的还原我图快用了 Python 文本往返（`read_text`／`write_text`），而 `extractor.py` 在工作树里是 **CRLF** ⇒ 往返把它静默归一成 LF，md5 基线当场对不上。判定方式是**从 HEAD 重建**（HEAD 字节 ＋ 我预期的三处替换）再逐字节比对：重建结果与当前文件完全相同 ⇒ 内容没问题、没有残留 neuter，差的只是换行。**结论：neuter 的还原一律用 Edit 工具，别用 Python 文本往返**（`.gitattributes` 是 `eol=lf`，提交时 git 反正会归一，所以这只是一次不影响产物的绕路）。
+
+**隔离覆盖表（`tests/test_default_model_isolation.py`，15 条）**：两份快照只差 `rag.default_model`，模型 `[A(视觉), B]` 且 A 是首项，于是每个接缝"有没有被 RAG 默认带跑"都是一行比较。
+
+| 点 | 驱动方式 | 观测 | 结果 |
+| --- | --- | --- | --- |
+| `lead_agent/agent.py:133` | `_resolve_model_name(None, app_config=…)` | 返回值 | 两份都快照 → `A` |
+| `models/factory.py:299` | `create_chat_model(name=None, app_config=…)` | 客户端 `model_name` | 都是 `A-wire` |
+| `tools/tools.py:114` | `get_available_tools(None, False, None, False, app_config=…)` | `view_image` 是否在表里 | 都在 |
+| `tool_error_handling_middleware.py:361` | `build_subagent_runtime_middlewares(app_config=…)` | 链里有无 `ViewImageMiddleware` | 都有 |
+| `summarization_middleware.py:162` | 未绑定调用 `_default_model_name(SimpleNamespace(_app_config=…))` | 返回值 | 两份都 → `A` |
+| `runtime/context_compaction.py:88` | `asyncio.run(_aresolve_thread_model_name(None, None, None, …))` | 返回值 | 两份都 → `A` |
+| `summarization_middleware.py:716`、`client.py:301` | **源码钉子**（无法便宜驱动：前者要 enabled 的摘要配置走完整工厂、后者要构造活客户端） | 两文件都有 `models[0].name` 且**不出现 `default_model` 字段** | 通过 |
+| embedding／sparse／rerank／parse／ASR | 5 个文件的源码钉子（`embedder_factory` / `reranker_factory` / `providers/__init__` / `parse_local` / `video/asr`） | 不出现 `default_model` 字段 | 通过 |
+
+两点措辞更正：**`tool_error_handling_middleware.py:361` 在 `build_subagent_runtime_middlewares` 里**（:307 起），即**subagent 链**的能力判断，不是 lead 链（lead 的那份在别处）；钉子的正则必须用 `\bdefault_model\b`，因为 `_default_model_name` 含该子串，纯 `grep default_model` 会把 3＋5 处变量名当成泄漏。
+
+**发现（本轮新出，四条）**：
+- **R25 把两条受害者归错了 Task**：`test_eval_factory.py::test_default_none_uses_primary_model` 与 `test_ragas_eval_cli.py::test_default_none_uses_primary_model` 在 R25 里记作 **Task 7** 的受害者，但它们的红因是"D3 之后 `judge_model=None` 要读 `config.rag`"——那是**本 Task** 的改动（Task 7 只退役 `dashscope:` 分支）。已在本 Task 按 R25 预写的修法修掉（换成带 `.rag`/`.models` 的临时配置、改名为 `…_falls_back_to_the_rag_default`），并用 N2／N3 证明修好的用例真的有牙。
+- **三处 docstring 在本 Task 之后就成假话，已同批改**：`eval/factory.py` 模块头的 ``None`` 用 config 主模型、`eval/ondemand.py:400` 的"由工厂回退到 config 主模型（既有行为）"、`tests/knowledge/eval/test_ondemand.py:94` 的"未配置为 None → 主模型"。**但 `backend/AGENTS.md:1211` 的同款句子没有改**——plan 把它排在 **Task 7**（R20），而它从本 Task 起就已过期；Task 7 实施时要知道它是**现在已经错**，不是"届时才失效"。
+- **`test_ondemand.py:93-123` 的机械断言不用改**：它断言 `seen == ["judge-entry", None, None]`（角色声明被原样转交），本 Task 之后照样成立——真正过期的是那句话的**含义**（docstring），不是 `seen` 的内容。R25 说"同批改断言与 docstring"，落地时只有后者需要动。
+- **`graph_search` 的第二消费者按 R12 零改动成立**：驱动 `_graph_search_impl(..., llm=None)`（检索 IO 全打桩、查询实体那步抛哨兵）证明它取的 llm 来自 `get_extract_llm()`，且**调用时不带任何参数**；再加一条源码钉子钉住 `llm = llm or get_extract_llm()` 与"该文件不出现 `default_model`"。
+
+**门禁**：ruff `check` 与 `format --check` 双净（`knowledge/` 全树 ＋ 两处测试面）。窄面（`tests/knowledge` ＋ 隔离 ＋ lead/compaction/summarization/view-image）**2 failed／1393 passed／3 skipped**——两条都是 Task 1 已定性的仓库根 `rag_config.json` 条件红（`test_indexer`／`test_reranker` 的 missing-key），零新增。**全量：152 failed／12574 passed／109 skipped（19 分 29 秒）**。passed 比 Task 1 那次 +34 ＝本 Task 新增 32 条（17 接线 ＋ 15 隔离）＋修好的那两条受害者；failed 152 ＝ Task 1 的 151 条集合**逐条不变**＋**1 条随机化 flake**（`test_delta_channel_state.py::test_merge_message_writes_randomized_differential`，差分随机数测试，与模型选择无关；连跑 3 次全过。**这条是"老熟人"**：本线之前两次全量也各撞到它一次，本机 failed 数在两者间浮动）⇒ **零新增真失败**。
+
+**遗留（不属本 Task）**：① `backend/AGENTS.md:1211` 的句子归属与时机待裁（见发现②）；② RED ⑤ 的"评测中 judge 改变而答题模型不变"由**点 1**（`_resolve_model_name` 两份快照都选 A）＋ CLI 的 `--agent-model` 是操作者显式字符串共同覆盖，没有单独驱动一次完整评测运行。
 
 ---
 
