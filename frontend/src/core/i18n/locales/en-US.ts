@@ -1825,7 +1825,7 @@ export const enUS: Translations = {
       groupExtraction: "Graph extraction",
       groupEvaluation: "Evaluation judge",
       groupEvaluationHint:
-        "Scores retrieval quality with ragas, independently of the model you chat with. Leave it empty to use the configured primary model.",
+        "Scores retrieval quality with ragas, independently of the model you chat with. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
       judgeModel: "Judge model",
       judgeModelNone: "(use the configured default)",
       groupMultimodal: "Multimodal & video",
@@ -1834,12 +1834,16 @@ export const enUS: Translations = {
       groupServicesHint: "Only change these when Qdrant or MinerU is not at its default location.",
       vlmNoVisionModel: "No configured model declares vision support — add a vision-capable model under Chat models first.",
       extractModelHint:
-        "Builds the knowledge graph from documents. Prefer a small, cheap model with stable JSON output.",
+        "Builds the knowledge graph from documents. Prefer a small, cheap model with stable JSON output. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
       extractModelNone: "(use the configured default)",
       captionModel: "Caption model (VLM)",
       captionModelHint:
-        "The endpoint and API key come from the selected model entry; leave it unset to use the configured default VLM. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry keeps the OpenAI shape.",
+        "The endpoint and API key come from the selected model entry; leaving it empty withdraws this row's override, so a value set for it in the configuration still applies, and only when neither is set does the RAG default model take over. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry keeps the OpenAI shape.",
       vlmModelDefault: "(use the configured default)",
+      defaultModel: "RAG default model",
+      defaultModelNone: "(config default)",
+      defaultModelHint:
+        "Used when graph extraction, evaluation judging, image captioning or video captioning has no separate model selection. It does not affect chat models or other features. Leave this unset to inherit the configured RAG default, or the first model in the list if none is configured.",
       embeddingModel: "Embedding model",
       embeddingApiKey: "API key (embedding)",
       embeddingChangeWarning:

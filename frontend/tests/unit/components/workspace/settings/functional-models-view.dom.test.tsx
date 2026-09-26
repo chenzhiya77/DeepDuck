@@ -16,13 +16,23 @@
  * about the rule rather than about Radix's portal behavior.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { FunctionalModelsView } from "@/components/workspace/settings/functional-models-view";
 import type { RagConfigValues, RagConfigView } from "@/core/rag/types";
 
+const FRONTEND_ROOT = path.resolve(__dirname, "../../../../..");
+
 const hooks = rs.hoisted(() => ({ view: null as RagConfigView | null }));
+/** Per-test model catalogues: the two sources the view may pick candidates from differ. */
+const catalogues = rs.hoisted(() => ({
+  models: [] as Array<Record<string, unknown>>,
+  managed: [] as Array<Record<string, unknown>>,
+}));
 
 /**
  * Every label resolves to its own key, so an assertion can name the i18n key directly. The
@@ -61,8 +71,8 @@ rs.mock("@/core/rag/hooks", () => ({
 }));
 
 rs.mock("@/core/models/hooks", () => ({
-  useModels: () => ({ models: [] }),
-  useModelsConfig: () => ({ config: { models: [] } }),
+  useModels: () => ({ models: catalogues.models }),
+  useModelsConfig: () => ({ config: { models: catalogues.managed } }),
 }));
 
 // The rebuild entry is library-scoped and its hooks poll; these display-rule cases only
@@ -141,7 +151,105 @@ function openAdvanced() {
 
 afterEach(() => {
   hooks.view = null;
+  catalogues.models = [];
+  catalogues.managed = [];
   cleanup();
+});
+
+/**
+ * The RAG default row (spec 2026-09-23 default model D4/D5).
+ *
+ * Two things are structural rather than cosmetic, and this is the file that can pin them
+ * cheaply: the row lives *inside* the functional view (there is no second control on the
+ * section title), and its candidates come from the same catalogue the extraction and judge
+ * rows use — `useModels()` over `modelReferenceOptions()` — not from the vision-filtered
+ * managed list the caption row reads.
+ */
+describe("RAG default row", () => {
+  /** A functional view seeding one stored default, with both catalogues pointing elsewhere. */
+  function renderDefaultRow(value: string | null) {
+    return renderWith({ default_model: value } as Partial<RagConfigValues>);
+  }
+
+  it("offers the chat catalogue's entries, vision declared or not", () => {
+    // The default feeds all four roles, and extraction/judge never filter by vision — so
+    // neither may this row. The labelled entry declares no vision at all: under the caption
+    // row's source it would be filtered out, and the stored value would survive only as the
+    // raw string `modelReferenceOptions` keeps for an unknown name.
+    catalogues.models = [
+      { name: "deepseek-chat", display_name: "DeepSeek Chat" },
+      { name: "qwen-max", display_name: "Qwen Max" },
+    ];
+
+    renderDefaultRow("qwen-max");
+
+    expect(screen.getByLabelText("defaultModel").textContent).toContain("Qwen Max");
+  });
+
+  it("labels a configured entry by its display name, not by the raw id", () => {
+    // The discriminator: `modelReferenceOptions` labels a *configured* entry with its
+    // display name and labels an unknown stored value with the raw string. The managed
+    // catalogue below holds a different set, so a row reading it would print the id.
+    catalogues.models = [
+      { name: "deepseek-chat", display_name: "DeepSeek Chat" },
+    ];
+    catalogues.managed = [
+      { name: "claude-model", display_name: "Claude X", supports_vision: true },
+    ];
+
+    renderDefaultRow("deepseek-chat");
+
+    expect(screen.getByLabelText("defaultModel").textContent).toContain(
+      "DeepSeek Chat",
+    );
+  });
+
+  it("keeps a stored value that names no entry instead of clearing it", () => {
+    catalogues.models = [{ name: "deepseek-chat", display_name: "DeepSeek Chat" }];
+
+    renderDefaultRow("gone-model");
+
+    // Opening the form must not silently drop a value the admin saved earlier.
+    expect(screen.getByLabelText("defaultModel").textContent).toContain(
+      "gone-model",
+    );
+  });
+
+  it("shows the none label when nothing declares a default and no model exists", () => {
+    renderDefaultRow(null);
+
+    expect(screen.getByLabelText("defaultModel").textContent).toContain(
+      "defaultModelNone",
+    );
+  });
+
+  it("sits above the role rows, under its own label", () => {
+    catalogues.models = [{ name: "deepseek-chat", display_name: "DeepSeek Chat" }];
+
+    renderDefaultRow("deepseek-chat");
+
+    // D4's sketch puts it first, before the existing settings — so it must precede every
+    // role row in document order, and carry its own label rather than borrowing one.
+    const row = screen.getByLabelText("defaultModel");
+    const extraction = screen.getByLabelText("extractModel");
+    expect(labelCount("defaultModel")).toBe(1);
+    expect(
+      row.compareDocumentPosition(extraction) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("only drafts the pick — saving stays the Save button's job", () => {
+    // The Radix dropdown cannot be driven under happy-dom (the other view tests pin the
+    // trigger's text for the same reason), so this rule is pinned where it lives: the row's
+    // handler writes the draft, and the view keeps exactly one save call site.
+    const source = readFileSync(
+      path.join(FRONTEND_ROOT, "src/components/workspace/settings/functional-models-view.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain('update("default_model"');
+    expect(source.match(/save\.mutate\(/g)).toHaveLength(1);
+  });
 });
 
 describe("provider rows", () => {

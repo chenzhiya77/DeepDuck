@@ -38,6 +38,8 @@ const modelHooksMock = rs.hoisted(() => ({
   useModelsConfig: rs.fn(),
   useSaveModelsConfig: rs.fn(),
 }));
+/** Named so a case can prove the RAG save never reaches the model-management mutation. */
+const saveModelsMock = rs.hoisted(() => rs.fn());
 const knowledgeHooksMock = rs.hoisted(() => ({
   useKnowledgeBases: rs.fn(),
   useReindexStatus: rs.fn(),
@@ -367,7 +369,7 @@ function renderPage(
     isLoading: false,
     error: null,
   });
-  modelHooksMock.useSaveModelsConfig.mockReturnValue({ mutate: rs.fn(), isPending: false });
+  modelHooksMock.useSaveModelsConfig.mockReturnValue({ mutate: saveModelsMock, isPending: false });
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -386,6 +388,7 @@ function openFunctionalView() {
 
 beforeEach(() => {
   saveMock.mockReset();
+  saveModelsMock.mockReset();
   reindexMock.mockReset();
   setRag();
 });
@@ -496,6 +499,102 @@ describe("functional-model form", () => {
 
     expect(screen.getByText(M.adminRequired)).toBeTruthy();
     expect(screen.queryByLabelText(F.embeddingModel)).toBeNull();
+  });
+});
+
+/**
+ * The RAG default row (spec 2026-09-23 default model D4/D5).
+ *
+ * The copy is frozen by D5 and asserted here against the real locale files; the candidate
+ * catalogue and the none/unknown-value handling are pinned in the view's own dom file, and
+ * the payload semantics (`{}` vs `{key: ""}`) in the node suite. What is left for this file
+ * is where the row lives, that its field joins the *existing* save, and that a failed save
+ * does not roll the draft back.
+ */
+describe("RAG default row", () => {
+  it("appears in the functional view only, as the sole control of its kind", () => {
+    renderPage();
+
+    expect(screen.queryByLabelText(F.defaultModel)).toBeNull();
+
+    openFunctionalView();
+
+    // Exactly one: the section title carries no second control (D4).
+    expect(screen.getAllByLabelText(F.defaultModel).length).toBe(1);
+    expect(screen.getByText(F.defaultModel)).toBeTruthy();
+    // The explanation rides the row's ⓘ, like every other explanatory sentence here.
+    expect(screen.getByLabelText(F.defaultModelHint)).toBeTruthy();
+  });
+
+  it("states the D3 fallback where the roles are explained", () => {
+    // D5's alignment rule: a role's hint says what an empty value means now — the UI
+    // override goes away first, the RAG default only takes over when the merged role is
+    // still empty. The old "or the configured primary model" claim predates that.
+    for (const hint of [F.extractModelHint, F.groupEvaluationHint, F.captionModelHint]) {
+      expect(hint).toContain(F.defaultModel);
+      expect(hint).not.toContain("主模型");
+      expect(hint).not.toContain("primary model");
+    }
+  });
+
+  it("ships D5's copy verbatim in both locales", () => {
+    // The row's three strings are frozen by the spec's D5 table; hard-coding them here is
+    // what makes an edit to either locale file visible as a test failure.
+    expect(F.defaultModel).toBe("RAG 默认模型");
+    expect(F.defaultModelNone).toBe("（使用配置默认）");
+    expect(F.defaultModelHint).toBe(
+      "用于图谱抽取、评测裁判、图片与视频配文未单独指定模型时的选择，不影响聊天主模型及其他功能；此项留空时使用配置中的 RAG 默认，配置也未指定则使用模型列表第一项。",
+    );
+
+    const FE = enUS.settings.functionalModels;
+    expect(FE.defaultModel).toBe("RAG default model");
+    expect(FE.defaultModelNone).toBe("(config default)");
+    expect(FE.defaultModelHint).toBe(
+      "Used when graph extraction, evaluation judging, image captioning or video captioning has no separate model selection. It does not affect chat models or other features. Leave this unset to inherit the configured RAG default, or the first model in the list if none is configured.",
+    );
+  });
+
+  it("carries the file's own default into the RAG payload, never a model catalogue", async () => {
+    setRag(
+      { default_model: "qwen-max" },
+      { sources: { default_model: "ui" } },
+    );
+    renderPage();
+    openFunctionalView();
+
+    // The row itself is untouched; editing another field is what makes the save reachable.
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    const payload = saveMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.default_model).toBe("qwen-max");
+    expect(payload).not.toHaveProperty("models");
+    // The model catalogue has its own endpoint and its own save; the RAG save must not touch it.
+    expect(saveModelsMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft when the save never succeeds", () => {
+    setRag({ default_model: "qwen-max" }, { sources: { default_model: "ui" } });
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    // Nothing in the view resets the form on a save attempt: a rejected write leaves the
+    // admin's edits in place (the failure itself surfaces as the hook's toast, not in here).
+    expect(screen.getByLabelText(F.rerankModel)).toHaveProperty(
+      "value",
+      "qwen3-rerank-v2",
+    );
+    expect(
+      screen.getByRole("button", { name: zhCN.common.save }),
+    ).toHaveProperty("disabled", false);
   });
 });
 

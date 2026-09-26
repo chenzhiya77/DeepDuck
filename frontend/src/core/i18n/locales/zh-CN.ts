@@ -1731,7 +1731,7 @@ export const zhCN: Translations = {
       groupExtraction: "图谱抽取",
       groupEvaluation: "评测裁判",
       groupEvaluationHint:
-        "用 ragas 给检索质量打分，与对话里选的模型无关；留空则用配置里的主模型。",
+        "用 ragas 给检索质量打分，与对话里选的模型无关。留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手。",
       judgeModel: "裁判模型",
       judgeModelNone: "（使用配置默认）",
       groupMultimodal: "多模态与视频",
@@ -1741,12 +1741,16 @@ export const zhCN: Translations = {
       vlmNoVisionModel:
         "还没有配置支持视觉的模型——先到「对话模型」里加一个带视觉能力的模型。",
       extractModelHint:
-        "用于从文档构建知识图谱，建议选小、便宜、输出稳定 JSON 的模型。",
+        "用于从文档构建知识图谱，建议选小、便宜、输出稳定 JSON 的模型。留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手。",
       extractModelNone: "（使用配置默认）",
       captionModel: "图片描述模型 (VLM)",
       captionModelHint:
-        "接口地址与 API Key 取自所选模型条目；留空则用配置里的默认 VLM。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 形状。",
+        "接口地址与 API Key 取自所选模型条目；留空先撤掉本行的覆盖，配置里为它指定的值仍然生效，两边都空才由 RAG 默认模型接手。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 形状。",
       vlmModelDefault: "（使用配置默认）",
+      defaultModel: "RAG 默认模型",
+      defaultModelNone: "（使用配置默认）",
+      defaultModelHint:
+        "用于图谱抽取、评测裁判、图片与视频配文未单独指定模型时的选择，不影响聊天主模型及其他功能；此项留空时使用配置中的 RAG 默认，配置也未指定则使用模型列表第一项。",
       embeddingModel: "向量模型",
       embeddingApiKey: "API Key（向量）",
       embeddingChangeWarning:

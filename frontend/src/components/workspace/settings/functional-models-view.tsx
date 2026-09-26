@@ -613,6 +613,32 @@ export function FunctionalModelsView() {
 
   return (
     <div className="flex w-full flex-col gap-4">
+      {/* The RAG-wide default (spec 2026-09-23 D4): above the role settings because it is the
+          fallback every one of them reads, and in the same card + title + ⓘ shape they use. */}
+      <Group title={F.defaultModel} info={F.defaultModelHint}>
+        <Select
+          value={values.default_model || MODEL_REFERENCE_NONE}
+          onValueChange={(next) =>
+            update("default_model", next === MODEL_REFERENCE_NONE ? "" : next)
+          }
+        >
+          <SelectTrigger className="w-full min-w-0" aria-label={F.defaultModel}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {modelReferenceOptions(
+              models,
+              values.default_model,
+              F.defaultModelNone,
+            ).map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Group>
+
       <Group title={F.groupRetrieval} info={F.groupRetrievalHint}>
         <Rows stacked>
           <div className={`${ROW_PAIR} pt-0 pb-2 max-md:hidden`}>

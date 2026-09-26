@@ -280,14 +280,53 @@
 > 文件：`frontend/src/components/workspace/settings/functional-models-view.tsx`、locales `types.ts` / `zh-CN.ts` / `en-US.ts`；测试 **两份** dom 文件——`tests/unit/settings/functional-models.dom.test.tsx`（1533 行／65 例）与 **`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`（369 行／12 例，R20：直接渲染该视图、i18n 用 Proxy mock，此前两份文档都漏了它）**——及现有模型页组合测试。`models-settings-page.tsx` 的全局标题结构与模型管理保存逻辑不改。
 > **验收对应**：spec §4 的 6；几何归 Task 5 / 9 真浏览器。
 
-- [ ] **RED：位置与候选**：功能视图内部顶部有“RAG 默认模型”；切到对话视图后不存在，总标题没有第二个控件。**候选源钉死**：用 `useModels()` 的 `models` + `modelReferenceOptions()`，与抽取行 `modelReferenceOptions(models, values.extract_model, F.extractModelNone)`、裁判行 `modelReferenceOptions(models, values.judge_model, F.judgeModelNone)` 同源；**不是**配文行的 `managedModels` + `visionReferenceOptions(managedModels, values.vlm_model, F.vlmModelDefault)`。断言按符号定位，不按行号（HEAD `090bbcbc` 刚重排过该文件，行号为 `:926` / `:953` vs `:527-532`）。断言含只读（config.yaml）条目、含不声明视觉的条目，即不按视觉过滤。现有 VLM 选择器过滤不变；从宽列表选出的默认不出现在配文行候选里时，配文行仍显示“（使用配置默认）”。无模型、加载、无权限、未知已存名称均沿用表单处理，不隐瞒未知值或扩大权限。**这里不需要新造"无模型空态"（R24，已撤回的待裁点）**：`modelReferenceOptions()`（`config-form.ts:483-500`）**永远**先塞一个空选项（`:489` 的 `{value: MODEL_REFERENCE_NONE, label: noneLabel}`），且把一个指不到任何条目的已存值保留成额外一项（`:496-498`，注释写明 "so opening the form cannot silently clear it"）⇒ 无模型时候选里就是那一个空选项，未知已存值也不会被打开表单悄悄清掉。所以"沿用表单处理"的字面意思就是**一行生产代码都不加**；不要新增空态组件、不要新增 i18n key。视图已有的三态处理核过位置：loading `:512-514`、无权限 `:515-517`、error `:518-520`。
-- [ ] **RED：草稿与原保存按钮**：改选只改草稿、未点击保存不发 PUT；点击既有保存后仅发 RAG 整对象载荷，带 `default_model` 和其他 UI 覆盖，不带 `models` 数组，不调用模型管理 API。重开读回；清空按 D2 继承；无变化／保存中不能重复提交，失败仍保留草稿与错误。**"失败"的呈现机制已核实（R20）**：保存失败**不在视图里渲染**，而是 `core/rag/hooks.ts:52-53` 的 `useSaveRagConfig` `onError: toast.error(error.message)`；视图侧只有保存前的 warning／阻断文案（`functional-models-view.tsx:1191-1195` 的 save-warning、`:1200-1202` 的 block reason、`:1203-1205` 的 no-changes hint、`:1209/1211` 的 saving 态）。所以"失败保留草稿"要断言**草稿状态没被回滚**＋ mutation 进了 error 态，不要去视图里找一句错误文本。
-- [ ] **RED：i18n 与角色解释**：三条默认行文案逐字按 spec D5 表，中英文与类型齐全；相关角色说明写明“有效角色为空才继承”，**视频与图片是同一条链（R18）**——都写 `vlm_model → RAG 默认 → 首项`，**不要再写"视频先图片 VLM 再 RAG 默认"**（那句话依赖已退役的 `video.caption_model`）。原“（使用配置默认）”保持（现有三处：`extractModelNone` / `judgeModelNone` / `vlmModelDefault`，三份 locale 各 99 键、键集相同，**没有 `video.caption_model` 的键**，所以退役它不产生 i18n 缺口）；不改聊天选择器用词，不修改历史已交付文档。
-- [ ] **GREEN**：复用功能视图原标签／值布局、Select 与提示组件，接 Task 3 的草稿字段和既有保存状态。新增默认文案及必要角色说明同步三份 locale，不另建服务或编辑入口。
-- [ ] **neuter：位置／保存／隔离**：把控件移出功能视图或让两个视图常驻、改回即时 PUT、改发模型管理载荷、过滤掉非视觉默认候选、**把候选源换成 `managedModels`／`visionReferenceOptions()`**，各有对应结构／行为断言转红；D5 文案改动使相关文本断言转红。不得用像素断言代替这些行为。
-- [ ] **门禁**：`check`、RAG form 窄面、**两份功能视图 dom 文件都要跑**（`tests/unit/settings/functional-models.dom.test.tsx` 与 `tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`，R20：只跑前一份会漏掉直接渲染视图的那 12 例）、模型页组合窄面、前端全量通过。后端无新增改动，不以重复后端门禁代替浏览器验收。
+- [x] **RED：位置与候选**：功能视图内部顶部有“RAG 默认模型”；切到对话视图后不存在，总标题没有第二个控件。**候选源钉死**：用 `useModels()` 的 `models` + `modelReferenceOptions()`，与抽取行 `modelReferenceOptions(models, values.extract_model, F.extractModelNone)`、裁判行 `modelReferenceOptions(models, values.judge_model, F.judgeModelNone)` 同源；**不是**配文行的 `managedModels` + `visionReferenceOptions(managedModels, values.vlm_model, F.vlmModelDefault)`。断言按符号定位，不按行号（HEAD `090bbcbc` 刚重排过该文件，行号为 `:926` / `:953` vs `:527-532`）。断言含只读（config.yaml）条目、含不声明视觉的条目，即不按视觉过滤。现有 VLM 选择器过滤不变；从宽列表选出的默认不出现在配文行候选里时，配文行仍显示“（使用配置默认）”。无模型、加载、无权限、未知已存名称均沿用表单处理，不隐瞒未知值或扩大权限。**这里不需要新造"无模型空态"（R24，已撤回的待裁点）**：`modelReferenceOptions()`（`config-form.ts:483-500`）**永远**先塞一个空选项（`:489` 的 `{value: MODEL_REFERENCE_NONE, label: noneLabel}`），且把一个指不到任何条目的已存值保留成额外一项（`:496-498`，注释写明 "so opening the form cannot silently clear it"）⇒ 无模型时候选里就是那一个空选项，未知已存值也不会被打开表单悄悄清掉。所以"沿用表单处理"的字面意思就是**一行生产代码都不加**；不要新增空态组件、不要新增 i18n key。视图已有的三态处理核过位置：loading `:512-514`、无权限 `:515-517`、error `:518-520`。
+- [x] **RED：草稿与原保存按钮**：改选只改草稿、未点击保存不发 PUT；点击既有保存后仅发 RAG 整对象载荷，带 `default_model` 和其他 UI 覆盖，不带 `models` 数组，不调用模型管理 API。重开读回；清空按 D2 继承；无变化／保存中不能重复提交，失败仍保留草稿与错误。**"失败"的呈现机制已核实（R20）**：保存失败**不在视图里渲染**，而是 `core/rag/hooks.ts:52-53` 的 `useSaveRagConfig` `onError: toast.error(error.message)`；视图侧只有保存前的 warning／阻断文案（`functional-models-view.tsx:1191-1195` 的 save-warning、`:1200-1202` 的 block reason、`:1203-1205` 的 no-changes hint、`:1209/1211` 的 saving 态）。所以"失败保留草稿"要断言**草稿状态没被回滚**＋ mutation 进了 error 态，不要去视图里找一句错误文本。
+- [x] **RED：i18n 与角色解释**：三条默认行文案逐字按 spec D5 表，中英文与类型齐全；相关角色说明写明“有效角色为空才继承”，**视频与图片是同一条链（R18）**——都写 `vlm_model → RAG 默认 → 首项`，**不要再写"视频先图片 VLM 再 RAG 默认"**（那句话依赖已退役的 `video.caption_model`）。原“（使用配置默认）”保持（现有三处：`extractModelNone` / `judgeModelNone` / `vlmModelDefault`，三份 locale 各 99 键、键集相同，**没有 `video.caption_model` 的键**，所以退役它不产生 i18n 缺口）；不改聊天选择器用词，不修改历史已交付文档。
+- [x] **GREEN**：复用功能视图原标签／值布局、Select 与提示组件，接 Task 3 的草稿字段和既有保存状态。新增默认文案及必要角色说明同步三份 locale，不另建服务或编辑入口。
+- [x] **neuter：位置／保存／隔离**：把控件移出功能视图或让两个视图常驻、改回即时 PUT、改发模型管理载荷、过滤掉非视觉默认候选、**把候选源换成 `managedModels`／`visionReferenceOptions()`**，各有对应结构／行为断言转红；D5 文案改动使相关文本断言转红。不得用像素断言代替这些行为。
+- [x] **门禁**：`check`、RAG form 窄面、**两份功能视图 dom 文件都要跑**（`tests/unit/settings/functional-models.dom.test.tsx` 与 `tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`，R20：只跑前一份会漏掉直接渲染视图的那 12 例）、模型页组合窄面、前端全量通过。后端无新增改动，不以重复后端门禁代替浏览器验收。
 
-**实测（待回填）**：
+**实测（2026-09-27 完成，RED→GREEN→七条 neuter→门禁）**：
+
+**性质与基线**：实施 Task，数字全部来自实际运行。基线 HEAD `1cbc340e`。前端首次动到"用户看得见"的层：`functional-models-view.tsx` ＋ 三份 locale（`types.ts` / `zh-CN.ts` / `en-US.ts`）。**后端零改动、也没跑后端门禁**（本 Task 没有后端面）。
+
+**RED（8 红／2 绿，红因全是"行或键不存在"）**：新增 11 条用例——小文件（Proxy i18n，结构类）6 条、大文件（真 locale，文案与保存类）5 条。红的 8 条是"找不到 label `defaultModel`"与"D5 键是 `undefined`"；**两条初始即绿**：大文件的"保存失败不回收草稿"（它只用既有字段，属守卫）与小文件的"只改草稿"（源码钉子，见下）。
+
+**GREEN**：`functional-models-view.tsx` 在视图根部（既有 Groups 之前）插入一个 **`Group`**——`title={F.defaultModel}` ＋ `info={F.defaultModelHint}`，内容区放 `Select`（候选 `modelReferenceOptions(models, values.default_model, F.defaultModelNone)`、`onValueChange` 只 `update("default_model", …)`）。**形态由用户当场改过一次**：初版照 D4 草图做成裸 `ROW`（标签＋ⓘ＋控件一行），用户裁定「先包 Card 再看观感」⇒ 改成与其他分区同款的 `Group`（Card ＋ 标题 ＋ ⓘ），冻结的三条文案一条没变（标签成了卡片标题、说明成了它的 ⓘ）。三份 locale 加 `defaultModel` / `defaultModelNone` / `defaultModelHint`（D5 逐字）**并把三条角色说明改成 D3 口径**（原文→改成见下）。两份 dom 文件 **88 passed**。
+
+**D5 文案（逐字落盘，测试硬编码钉住）**：`RAG 默认模型`／`（使用配置默认）`／"用于图谱抽取、评测裁判、图片与视频配文未单独指定模型时的选择，不影响聊天主模型及其他功能；此项留空时使用配置中的 RAG 默认，配置也未指定则使用模型列表第一项。"（en 对应 `RAG default model` / `(config default)` / D5 英文句）。
+
+**三条角色说明的改动（D5 第 142 行要求"就近说明须对齐 D3"，措辞由本轮起草、可撤）**：
+
+| key | 原文（zh，节选） | 改成（zh，节选） |
+| --- | --- | --- |
+| `groupEvaluationHint` | "…与对话里选的模型无关；**留空则用配置里的主模型**。" | "…与对话里选的模型无关。**留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手**。" |
+| `captionModelHint` | "…取自所选模型条目；**留空则用配置里的默认 VLM**。仅列出支持视觉的条目…" | "…取自所选模型条目；**留空先撤掉本行的覆盖，配置里为它指定的值仍然生效，两边都空才由 RAG 默认模型接手**。仅列出支持视觉的条目…" |
+| `extractModelHint` | "…建议选小、便宜、输出稳定 JSON 的模型。"（**未说明留空行为**） | 原文 ＋ "**留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手。**" |
+
+en 三处同批（同句式）。判据：`groupEvaluationHint` 的旧句从 **Task 2** 起就是假话（那是一句"留空 → 主模型"的断言）；另两处是补上 D3 的先后关系。
+
+**neuter（七条，逐条独立还原；每次还原后用 md5 证明五个文件逐字节回到 GREEN 态）**：
+
+| # | 还原的旧行为 | 转红条数 |
+| --- | --- | --- |
+| 1 | 把整行从功能视图里删掉 | 7（6 条 DOM ＋ 那条源码钉子）；**包 Card 之后重放过一次，仍是 7** |
+| 2 | 让功能视图常驻（`view === "functional" \|\| true`） | 2（我的"仅功能视图"＋既有视图切换用例） |
+| 3 | 改选即保存（`onValueChange` 里调 `save.mutate`） | 1（**正是那条源码钉子**） |
+| 4 | 保存时改发模型目录（`save.mutate({ models })`） | 2（我的载荷用例＋既有保存用例） |
+| 5 | 候选按视觉过滤 | 2（两条候选用例） |
+| 6 | 候选源换成 `managedModels` ＋ `visionReferenceOptions()` | 2（同上） |
+| 7 | 改 D5 文案（label 少一个字） | 1（逐字钉子） |
+
+**门禁**：`pnpm check` **零诊断**；窄面（两份功能视图 dom ＋ 模型页组合）**3 文件／105 passed**；**前端全量 243 文件／2647 passed**（比 Task 3 的 2636 多 11，正是本轮新增用例数——这次 collected 数与新增数对得上）。
+
+**发现（本轮新出，三条）**：
+- **Radix Select 在 dom 里驱动不了 ⇒ 两条规则改用别的锚**：仓库约定是"候选列表在 node 侧钉、dom 侧只断言 trigger 文本"（既有用例的注释就这么写），所以"改选只改草稿、未点击保存不发 PUT"这条**没有行为锚**——happy-dom 下打不开那个下拉。加了一条**源码钉子**（`update("default_model"` 存在 ＋ `save.mutate(` 只出现一次），neuter 3 证明它有牙。这是本轮唯一一条以源码钉替代行为断言的规则，理由记在这里。
+- **"不按视觉过滤"要用 `display_name` 判别，不能只看"值在不在"**：`modelReferenceOptions` 会把"指不到条目的已存值"保留成一项（R24／D4），所以一个被视觉过滤掉的值**仍然显示**——只是显示原始 id 而不是 display name。最初那条用例用 `display_name: null` 的条目 ⇒ 抓不到差别；改成给条目真实 `display_name` 并断言它出现，neuter 5／6 才转红。
+- **既有注释里有个不存在的符号**：`functional-models.dom.test.tsx:438` 写"the option list itself is pinned by **extractionModelOptions** in the node suite"，而全仓没有 `extractionModelOptions`（实际是 `modelReferenceOptions`）。属陈旧注释，未改（不在本 Task 面内），登记备查。
+
+**遗留（不属本 Task）**：① 视觉观感与几何**归 Task 5／9 真浏览器**（包装形态已按用户裁定落成 `Group`，剩下的是"看着顺不顺眼"）；② `functional-models.dom.test.tsx:438` 的陈旧注释待改。
 
 ---
 
