@@ -1,0 +1,20 @@
+key loaded: True (value never printed)
+
+== target model (what the probe must classify) ==
+qwen3.7-text-embedding-flash dimension=no-param  status=      200  width=1024
+qwen3.7-text-embedding-flash dimension=     128  status=      400  <400> InternalError.Algo.InvalidParameter: Value error, dimension for embedding is invalid, its value should be in [256, 512, 768, 1024, 1536, 2048, 2
+qwen3.7-text-embedding-flash dimension=     256  status=      200  width=256
+qwen3.7-text-embedding-flash dimension=     333  status=      400  <400> InternalError.Algo.InvalidParameter: Value error, dimension for embedding is invalid, its value should be in [256, 512, 768, 1024, 1536, 2048, 2
+qwen3.7-text-embedding-flash dimension=     512  status=      200  width=512
+qwen3.7-text-embedding-flash dimension=     768  status=      200  width=768
+qwen3.7-text-embedding-flash dimension=    1024  status=      200  width=1024
+qwen3.7-text-embedding-flash dimension=    1536  status=      200  width=1024
+qwen3.7-text-embedding-flash dimension=    2048  status=      200  width=1024
+qwen3.7-text-embedding-flash dimension=    2560  status=      200  width=1024
+qwen3.7-text-embedding-flash dimension=    3072  status=      400  <400> InternalError.Algo.InvalidParameter: Value error, dimension for embedding is invalid, its value should be in [256, 512, 768, 1024, 1536, 2048, 2
+
+== control: same key, same endpoint, other models ==
+qwen3.7-text-embedding       dimension=    1536  status=      200  width=1536
+qwen3.7-text-embedding       dimension=    2048  status=      200  width=2048
+text-embedding-v4            dimension=    1536  status=      200  width=1536
+text-embedding-v4            dimension=    2048  status=      200  width=2048
