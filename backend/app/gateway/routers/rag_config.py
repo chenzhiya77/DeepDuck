@@ -24,16 +24,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.gateway.deps import get_config, require_admin_user
+from app.gateway.services.rag_migration import migration_running, migration_status, start_migration
 from deerflow.config.app_config import AppConfig, RagConfig
 from deerflow.config.rag_config_file import (
     MASKED_SECRET,
     RagConfigFile,
-    atomic_write_rag_config,
     merge_rag_config,
     preserve_secret,
-    rag_config_write_lock,
+    write_rag_config,
 )
-from deerflow.config.runtime_paths import project_root
 from deerflow.knowledge.dimension_probe import CANDIDATE_DIMENSIONS, DimensionProbeError, probe_dimensions
 from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import build_embedder, dimension_mismatch_message, effective_dimension
@@ -121,6 +120,25 @@ class RagConfigResponse(BaseModel):
         default=None,
         description="Why the saved configuration could not be verified (null when it was, or was not probed).",
     )
+    migration: RagMigrationStatus | None = Field(
+        default=None,
+        description="The width migration this save started or the last one's verdict (null when none ever ran).",
+    )
+
+
+class RagMigrationStatus(BaseModel):
+    """Where the width migration stands (spec 2026-09-26 D5-7).
+
+    ``running`` is the only state a save can leave behind: the written file still declares
+    the *old* width, and the switch is an atomic replace inside the background task. So a
+    reader must treat ``config.embedding_dimension`` as "what is in force", and
+    ``target_dimension`` as what becomes true when this turns ``succeeded``.
+    """
+
+    state: Literal["running", "succeeded", "failed"]
+    target_dimension: int
+    detail: str | None = None
+    progress: dict[str, int] | None = None
 
 
 class RerankProviderCapability(BaseModel):
@@ -192,7 +210,7 @@ def _load_stored() -> RagConfigFile:
         raise HTTPException(status_code=500, detail=f"rag_config.json is invalid: {exc}") from exc
 
 
-def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None, warning: str | None = None) -> RagConfigResponse:
+def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None, warning: str | None = None, migration: dict[str, Any] | None = None) -> RagConfigResponse:
     """Compose the read shape from the file just written plus the current config.
 
     ``written`` is the new file content, so a field it carries is ``ui``-sourced; anything
@@ -226,6 +244,7 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
         embedding_providers=_embedding_provider_capabilities(),
         rerank_providers=_rerank_provider_capabilities(),
         warning=warning,
+        migration=migration,
     )
 
 
@@ -432,19 +451,65 @@ async def put_rag_config(
     pending = _pending_rag(config, payload)
     _reject_unusable_role_targets(config, pending)
     _reject_unusable_after_save(pending)
+
+    # A width change is not a field edit: every stored vector belongs to the old space, so
+    # the save starts a rebuild and the new width only takes effect when it finishes
+    # (spec 2026-09-26 D5-7). Refused while one is already running — a second migration
+    # would race the first one's flip.
+    live_width = effective_dimension(config.rag)
+    target_width = effective_dimension(pending)
+    migrating = target_width != live_width
+    if migrating and migration_running():
+        raise HTTPException(status_code=409, detail="已有一次维度迁移正在进行；等它结束再改这一格。")
+
     # One real call, but only when one of the watched embedding settings actually changed: an
     # unrelated edit (rerank, parse, …) must not turn every save into a network round trip.
     warning = None
     if _embedding_signature(config.rag) != _embedding_signature(pending):
         warning = await _probe_after_save(pending)
-    target_path = RagConfigFile.resolve_config_path() or (project_root() / "rag_config.json")
 
-    def _write() -> None:
-        with rag_config_write_lock:
-            atomic_write_rag_config(target_path, payload)
+    written = payload
+    service = None
+    if migrating:
+        # Everything else lands now; the width stays at its old value until the rebuild is
+        # complete, which is what keeps the running deployment on the generation that holds
+        # its vectors. The service is resolved first: a 503 must not leave a half-applied save.
+        service = getattr(request.app.state, "knowledge_service", None)
+        if service is None:  # pragma: no cover - the gateway always wires it
+            raise HTTPException(status_code=503, detail="维度迁移需要知识库服务在线，本次保存没有写入。")
+        written = dict(payload)
+        stored_dimension = getattr(stored, "embedding_dimension", None)
+        if stored_dimension is None:
+            written.pop("embedding_dimension", None)
+        else:
+            written["embedding_dimension"] = stored_dimension
 
-    await asyncio.to_thread(_write)
-    return _build_response(config, payload, warning=warning)
+    await asyncio.to_thread(write_rag_config, written)
+    if migrating:
+        start_migration(
+            store=service.store,
+            graph_store=service.graph_store,
+            wiki_store=service.wiki_store,
+            url=config.rag.qdrant_url,
+            old_width=live_width,
+            target_width=target_width,
+            target_payload=payload,
+            embedder=build_embedder(rag=pending),
+        )
+    return _build_response(config, written, warning=warning, migration=migration_status())
+
+
+@router.get(
+    "/rag/config/migration",
+    response_model=RagMigrationStatus | None,
+    summary="Read the vector-library width migration status (admin)",
+    description="Where the migration this deployment started stands; null when none ever ran.",
+)
+async def get_rag_migration_status(request: Request) -> RagMigrationStatus | None:
+    """Poll payload for the settings entry while a width change works through the library."""
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+    status = migration_status()
+    return None if status is None else RagMigrationStatus.model_validate(status)
 
 
 #: Mirrors the models-config validate probe: bounded, observational, never persisted.

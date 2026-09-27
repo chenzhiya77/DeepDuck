@@ -36,6 +36,7 @@ const ragHooksMock = rs.hoisted(() => ({
   useProbeSparseService: rs.fn(),
   useProbeDimensions: rs.fn(),
   useProbeConnectivity: rs.fn(),
+  useRagMigrationStatus: rs.fn(),
 }));
 const modelHooksMock = rs.hoisted(() => ({
   useModels: rs.fn(),
@@ -212,6 +213,7 @@ function setRag(
     error: opts.error ?? null,
   });
   ragHooksMock.useSaveRagConfig.mockReturnValue({ mutate: saveMock, isPending: false });
+  setMigration();
   // 维度探测与两腿连通点：这些用例不碰它们，保持空闲（结论由各自的行渲染）。
   ragHooksMock.useProbeDimensions.mockReturnValue({
     mutate: dimensionProbeMock,
@@ -228,6 +230,20 @@ function setRag(
   setProbe();
   setSparseServiceProbe();
   setKnowledge();
+}
+
+/** 宽度迁移的状态面（spec 2026-09-26 D5-7）：默认"从没跑过"，需要时给一个在飞/已定的结论。 */
+function setMigration(
+  status: {
+    state: "running" | "succeeded" | "failed";
+    target_dimension: number;
+    detail?: string | null;
+    progress?: Record<string, number> | null;
+  } | null = null,
+) {
+  ragHooksMock.useRagMigrationStatus.mockReturnValue({
+    data: status ? { detail: null, progress: null, ...status } : undefined,
+  });
 }
 
 /**
@@ -1840,5 +1856,106 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     });
     expect(ok.getAttribute("data-state")).toBe("ok");
     expect(ok.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-emerald-500");
+  });
+});
+
+
+describe("宽度迁移：保存前的确认 + 在飞状态面 (spec 2026-09-26 D5-7)", () => {
+  const openAdvanced = () =>
+    fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
+
+  /** 维度的输入框住在高级设置里；改它 = 触发迁移的那一次保存。 */
+  function changeDimension(value: string) {
+    openAdvanced();
+    fireEvent.change(screen.getByLabelText(F.dimensionLabel), {
+      target: { value },
+    });
+  }
+
+  it("asks before a width change instead of saving straight away", async () => {
+    renderPage();
+    openFunctionalView();
+    changeDimension("1536");
+
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    // 还没保存：先问。对话框给的是"这么做会重建全库"这件事本身。
+    expect(saveMock).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(F.dimensionConfirmTitle)).toBeTruthy();
+    expect(within(dialog).getByText(F.dimensionConfirmDescription)).toBeTruthy();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: F.dimensionConfirmAction }),
+    );
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(saveMock.mock.calls[0]?.[0]).toMatchObject({ embedding_dimension: 1536 });
+  });
+
+  it("still saves without asking when the width is not what changed", async () => {
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("treats typing the width already in force as no change", async () => {
+    renderPage();
+    openFunctionalView();
+    changeDimension("1024");
+
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("reports the running migration and blocks a second save until it settles", () => {
+    setMigration({
+      state: "running",
+      target_dimension: 1536,
+      progress: { kbs_done: 1, kbs_total: 2 },
+    });
+    renderPage();
+    openFunctionalView();
+    changeDimension("1536");
+
+    const line = document.querySelector('[data-slot="migration-status"]')!;
+    expect(line.textContent).toContain(F.migrationRunning);
+    expect(line.textContent).toContain("1/2");
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save })
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("reports how a settled migration ended", () => {
+    setMigration({ state: "succeeded", target_dimension: 1536 });
+    renderPage();
+    openFunctionalView();
+
+    expect(
+      document.querySelector('[data-slot="migration-status"]')!.textContent,
+    ).toBe(F.migrationSucceeded);
+  });
+
+  it("says why a failed migration left the width alone", () => {
+    setMigration({
+      state: "failed",
+      target_dimension: 1536,
+      detail: "RuntimeError: 向量库连不上",
+    });
+    renderPage();
+    openFunctionalView();
+
+    const line = document.querySelector('[data-slot="migration-status"]')!;
+    expect(line.textContent).toContain(F.migrationFailed);
+    expect(line.textContent).toContain("向量库连不上");
   });
 });

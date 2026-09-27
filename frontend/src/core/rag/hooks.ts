@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import {
   loadRagConfig,
+  loadRagMigrationStatus,
   probeEmbeddingCapability,
   probeEmbeddingDimensions,
   probeLegConnectivity,
@@ -20,6 +21,7 @@ import type {
   SparseProbeVerdict,
   SparseServiceProbeVerdict,
 } from "./config-form";
+import { migrationRefetchInterval } from "./migration-status";
 import type {
   RagConfigInput,
   RagConnectivityProbeRequest,
@@ -54,10 +56,27 @@ export function useSaveRagConfig() {
     mutationFn: (input: RagConfigInput) => saveRagConfig(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["ragConfig"] });
+      // A save that changed the width started a rebuild: pick its verdict up at once instead
+      // of waiting for the next poll tick.
+      void queryClient.invalidateQueries({ queryKey: ["ragMigration"] });
     },
     onError: (error: Error) => {
       toast.error(error.message);
     },
+  });
+}
+
+/**
+ * Where the width migration stands (spec 2026-09-26 D5-7): polls only while one runs, so an
+ * idle deployment asks once per mount. Its verdict is what the settings view shows next to
+ * the save button — the row keeps rendering the width that is *in force* until the switch.
+ */
+export function useRagMigrationStatus({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["ragMigration"],
+    queryFn: () => loadRagMigrationStatus(),
+    enabled,
+    refetchInterval: (query) => migrationRefetchInterval(query.state.data),
   });
 }
 

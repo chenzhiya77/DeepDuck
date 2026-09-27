@@ -31,6 +31,7 @@ import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
   buildRagConfigInput,
+  changesEmbeddingDimension,
   connectivityProbeKey,
   dimensionProbeKey,
   EMBEDDING_PROVIDER_OPTIONS,
@@ -63,14 +64,17 @@ import {
   useProbeSparseCapability,
   useProbeSparseService,
   useRagConfig,
+  useRagMigrationStatus,
   useSaveRagConfig,
 } from "@/core/rag/hooks";
+import { isMigrationRunning } from "@/core/rag/migration-status";
 import {
   AUTOFILL_OFF_INPUT_PROPS,
   SECRET_INPUT_AUTOFILL_PROPS,
 } from "@/lib/input-autofill";
 import { cn } from "@/lib/utils";
 
+import { DimensionMigrationDialog } from "./dimension-migration-dialog";
 import { InfoTip } from "./info-tip";
 import { ReindexDialog } from "./reindex-dialog";
 
@@ -411,6 +415,9 @@ export function FunctionalModelsView() {
   const F = t.settings.functionalModels;
   const { view, isLoading, error } = useRagConfig();
   const save = useSaveRagConfig();
+  const migration = useRagMigrationStatus();
+  const migrationRunning = isMigrationRunning(migration.data);
+  const migrationProgress = migration.data?.progress;
   const probe = useProbeSparseCapability();
   const sparseServiceProbe = useProbeSparseService();
   const dimensionProbe = useProbeDimensions();
@@ -429,6 +436,7 @@ export function FunctionalModelsView() {
   // here (session-only) instead of being derived from wherever the dialog was opened.
   const [reindexKbId, setReindexKbId] = useState("");
   const [reindexOpen, setReindexOpen] = useState(false);
+  const [dimensionConfirmOpen, setDimensionConfirmOpen] = useState(false);
   // Why the server could not verify the configuration it just saved (spec 2026-09-17 save-time
   // probe §3 D3). It describes what is *in force*, so it lasts until the next save reports its own
   // verdict rather than being cleared by the next keystroke.
@@ -748,12 +756,27 @@ export function FunctionalModelsView() {
 
   function handleSave() {
     if (!hasChanges) return;
+    // A width change rebuilds every library before it can take effect (spec 2026-09-26 D5-7),
+    // so it asks first — the rest of the save lands immediately either way.
+    if (view && values && changesEmbeddingDimension(values, view)) {
+      setDimensionConfirmOpen(true);
+      return;
+    }
+    submitSave();
+  }
+
+  function submitSave() {
     save.mutate(payload, {
       onSuccess: (saved) => {
         toast.success(F.saved);
         setSaveWarning(saved.warning ?? null);
       },
     });
+  }
+
+  function handleDimensionConfirm() {
+    setDimensionConfirmOpen(false);
+    submitSave();
   }
 
   const libraries = knowledgeBases ?? [];
@@ -1446,6 +1469,13 @@ export function FunctionalModelsView() {
         pending={reindex.isPending}
       />
 
+      <DimensionMigrationDialog
+        open={dimensionConfirmOpen}
+        onOpenChange={setDimensionConfirmOpen}
+        onConfirm={handleDimensionConfirm}
+        pending={save.isPending}
+      />
+
       {/* A save that *went through* with a caveat — not the alert slot, and not a toast to
           dismiss: it says what the server could not check about the configuration now in force. */}
       {saveWarning && (
@@ -1454,10 +1484,35 @@ export function FunctionalModelsView() {
         </p>
       )}
 
+      {/* The width migration outlives the save that started it: the row keeps showing the width
+          in force, and this line is where the admin learns when the switch actually happened. */}
+      {migration.data && (
+        <p
+          className={cn(
+            "mt-3 text-sm",
+            migration.data.state === "failed"
+              ? "text-destructive"
+              : "text-muted-foreground",
+          )}
+          role="status"
+          data-slot="migration-status"
+        >
+          {migrationRunning
+            ? `${F.migrationRunning} ${migrationProgress ? `${migrationProgress.kbs_done}/${migrationProgress.kbs_total}` : ""}`
+            : migration.data.state === "succeeded"
+              ? F.migrationSucceeded
+              : `${F.migrationFailed}${migration.data.detail ?? ""}`}
+        </p>
+      )}
+
       <div className="flex items-center justify-end gap-3">
         {/* Disabled without a reason reads as a broken button, and the alert above can be
             scrolled out of sight — so the same sentence rides next to the button it blocks. */}
-        {saveBlockReason ? (
+        {migrationRunning ? (
+          <span className="text-muted-foreground text-xs">
+            {F.migrationRunning}
+          </span>
+        ) : saveBlockReason ? (
           <span className="text-destructive text-xs">{saveBlockReason}</span>
         ) : (
           !hasChanges && (
@@ -1466,7 +1521,12 @@ export function FunctionalModelsView() {
         )}
         <Button
           onClick={handleSave}
-          disabled={!hasChanges || Boolean(saveBlockReason) || save.isPending}
+          disabled={
+            !hasChanges ||
+            Boolean(saveBlockReason) ||
+            save.isPending ||
+            migrationRunning
+          }
         >
           {save.isPending ? t.common.loading : t.common.save}
         </Button>

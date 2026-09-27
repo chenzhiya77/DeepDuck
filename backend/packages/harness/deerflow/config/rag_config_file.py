@@ -29,7 +29,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from deerflow.config.models_config import MASKED_API_KEY
-from deerflow.config.runtime_paths import existing_project_file
+from deerflow.config.runtime_paths import existing_project_file, project_root
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +280,19 @@ def _fsync_directory_best_effort(directory: Path) -> None:
             os.close(directory_fd)
         except OSError:
             logger.debug("Could not close rag config directory fd: %s", directory, exc_info=True)
+
+
+def write_rag_config(data: dict[str, Any]) -> Path:
+    """Replace the API-writable RAG config file, atomically and under the module's lock.
+
+    Two writers share this one policy (spec 2026-09-26 D5-7): the settings save, and the
+    dimension migration's switch — the latter lands *after* the new vector generation is
+    complete, which is what makes "the switch is one atomic file replace" true.
+    """
+    target_path = RagConfigFile.resolve_config_path() or (project_root() / "rag_config.json")
+    with rag_config_write_lock:
+        atomic_write_rag_config(target_path, data)
+    return target_path
 
 
 def atomic_write_rag_config(path: Path, data: dict[str, Any]) -> None:

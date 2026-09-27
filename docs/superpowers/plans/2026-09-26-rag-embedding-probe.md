@@ -4,7 +4,7 @@
 
 **Spec:** [2026-09-26-rag-embedding-probe-design.md](../specs/2026-09-26-rag-embedding-probe-design.md)
 **证据物:** [pr-build/rag-embedding-probe-2026-09-27/](../../../pr-build/rag-embedding-probe-2026-09-27/notes.md)——真接口实测（脚本 + 原始输出），spec §3.1 引用它
-**Status:** 🟡 **进行中（2026-09-26 立；同日按 spec 定稿镜像重写 + 依「按现有项目情况审查」的 1–8 条修订；**2026-09-27 续**：§3.1 证据物入仓、四轮自审（1–9 / 1–11 / 1–5）已并入。**进度：Task 0–3 已提交（`63f3c448` 文档+证据 · `f9ac82dc` Task 1 · `4f1456c4` Task 2 · `2badc356` Task 3）；Task 4 已按 Task 0 的结论拆成 4a/4b —— 4a（生效宽度/命名/守门/尺寸检测）代码已改、未提交；4b（迁移编排）未开工，开工前两件待拍**）** —— **四点全裁**（D1 乙 / D2 甲a / D3 甲′ / D4 甲）+ **D5 五条细节**（作用域部署级 / 先建后切 / 默认 1024 / 界面位置=高级设置第一行 / 连通点=两标题变按钮+四态）。落法 = 后端为主 + 设置页「维度」控件（**自动探、无按钮**）+ 两个角色标题的连通点。
+**Status:** 🟡 **进行中（2026-09-26 立；同日按 spec 定稿镜像重写 + 依「按现有项目情况审查」的 1–8 条修订；**2026-09-27 续**：§3.1 证据物入仓、四轮自审（1–9 / 1–11 / 1–5）已并入。**进度：Task 0–3 已提交（`63f3c448` 文档+证据 · `f9ac82dc` Task 1 · `4f1456c4` Task 2 · `2badc356` Task 3）；Task 4 已按 Task 0 的结论拆成 4a/4b —— 4a（生效宽度/命名/守门/尺寸检测）已提交 `9aec8521`；**4b（迁移编排）已实现、未提交**；余 Task 5（文档 + 真栈 + 门禁）**）** —— **四点全裁**（D1 乙 / D2 甲a / D3 甲′ / D4 甲）+ **D5 五条细节**（作用域部署级 / 先建后切 / 默认 1024 / 界面位置=高级设置第一行 / 连通点=两标题变按钮+四态）。落法 = 后端为主 + 设置页「维度」控件（**自动探、无按钮**）+ 两个角色标题的连通点。
 
 **硬约束**：**通用嵌入腿**（`openai-compatible`）的请求构造 + 集合命名与生命周期 + 保存期探针 + 设置页嵌入行；**厂商腿（dashscope / ark）的入库请求零触碰**（新增的只是探测路径——按各家请求形状真发请求，但那是探针自己的请求）；rerank / parse / 稀疏腿的既有行为、检索三路逻辑零触碰（**新增**：重排腿一发连通测试 · 探测纳三腿）；**默认 1024 ⇒ 不迁移时请求与结果逐字节不变**；探针族规范（真实调用 / 只读不落盘 / 有界超时 / 三态 / 只报不拦）。
 
@@ -172,13 +172,27 @@
 
 > 动到的文件：迁移函数（遍历所有库四路重嵌 + 先建后切 + 差量补嵌）+ 触发入口（保存期/路由/服务）+ 前端确认 + 用例。**验收对应**：spec §4 的 5（后半：遍历所有库 / 完成才翻配置 / 失败回滚 / 中断不撞残留 / 窗口内新文档不丢）。**两件已裁（2026-09-27）**：① 窗口内新入库的文档 = **结束前扫差量**（spec D5-6，开工记 `id`/`updated_at`、翻配置前再枚举补嵌）；② 跑法 = **后台任务 + 状态面**（spec D5-7，PUT 只启动、完成才由后台翻配置、前端轮询）。
 
-- [ ] **RED（建代与切换）**：生效宽度变了 ⇒ 建新代（`create_collections()`）→ **遍历所有库**四路重嵌（切片/实体/wiki/卡片，复用 `reindex_kb`，注意它是**按库**的）→ **全绿才翻配置** → best-effort 删旧代。
-- [ ] **RED（差量补嵌）**：迁移窗口内新入库的文档 ⇒ 翻配置前被补进新代（D5-6：开工记 `id`/`updated_at`，翻配置前再枚举一次）。
-- [ ] **RED（失败回滚）**：中途失败 ⇒ 配置文件从未写过新宽度、旧代原样、检索照常（回滚＝什么都没发生）。
-- [ ] **RED（先删后建）**：同名新代有残留（上次中断）⇒ 先删后建，不撞半成品。
-- [ ] **GREEN**：迁移函数 + 后台任务 + 状态/进度端点（复用 `trigger_reindex` 的 fire-and-forget + 轮询形态）+ PUT **只启动、不写新宽度** + 前端「改维度＝全库重建」确认（保存时确认，不在行内弹）。
-- [ ] **neuter**：① 删差量那一遍 ⇒ 只红差量那条；② 把"完成才翻"改成"先翻" ⇒ 只红回滚那条。
-- [ ] **回归 + 门禁**：默认 1024 既有面零改动全绿；`make test` 相关面（含 qdrant 标记集成面）+ `make lint` + `pnpm check` + 前端迁移确认的 dom。
+- [x] **RED（建代与切换）**：生效宽度变了 ⇒ 建新代（`create_collections()`）→ **遍历所有库**四路重嵌（切片/实体/wiki/卡片，复用 `reindex_kb`，注意它是**按库**的）→ **全绿才翻配置** → best-effort 删旧代。
+- [x] **RED（差量补嵌）**：迁移窗口内新入库的文档 ⇒ 翻配置前被补进新代（D5-6：开工记 `id`/`updated_at`，翻配置前再枚举一次）。
+- [x] **RED（失败回滚）**：中途失败 ⇒ 配置文件从未写过新宽度、旧代原样、检索照常（回滚＝什么都没发生）。
+- [x] **RED（先删后建）**：同名新代有残留（上次中断）⇒ 先删后建，不撞半成品。
+- [x] **GREEN**：迁移函数 + 后台任务 + 状态/进度端点（复用 `trigger_reindex` 的 fire-and-forget + 轮询形态）+ PUT **只启动、不写新宽度** + 前端「改维度＝全库重建」确认（保存时确认，不在行内弹）。
+- [x] **neuter**：① 删差量那一遍 ⇒ 只红差量那条；② 把"完成才翻"改成"先翻" ⇒ 只红回滚那条。
+- [x] **回归 + 门禁**：默认 1024 既有面零改动全绿；`make test` 相关面（含 qdrant 标记集成面）+ `make lint` + `pnpm check` + 前端迁移确认的 dom。
+
+**实测（2026-09-27/28，Task 4b 完成 · 未提交）**：
+
+- **改动面**：
+  - **后端 7 文件**：新增 `knowledge/dimension_migration.py`（编排 + 进程内状态）与 `app/gateway/services/rag_migration.py`（启动 / 翻配置 / 清旧代 / 状态面）；`knowledge/store.py`（+`list_all_kbs()` 跨所有者）、`knowledge/vector_store.py`（+`drop_collections()`）、`knowledge/reindex.py`（+`include_non_terminal`）、`config/rag_config_file.py`（+`write_rag_config()` 唯一写入策略）、`routers/rag_config.py`（PUT 拆分写 + 启动迁移 + `GET /rag/config/migration` + 响应新增 `migration`）。
+  - **后端用例**：新增 `tests/knowledge/test_dimension_migration.py`（7 例）；`tests/test_rag_config_api.py` +6 例（另改 2 例 4a 时代的用例吸收新语义）。
+  - **前端 9 文件**：`core/rag/{types,api,hooks}.ts` + 新增 `migration-status.ts` + `config-form.ts`（+`changesEmbeddingDimension`）+ 视图（确认弹窗 / 在飞状态行 / 在飞时禁保存）+ 新增 `dimension-migration-dialog.tsx` + i18n ×3；用例：两份 dom（+6、并补 hook 桩）+ `config-form.test.ts`（+4）+ 新增 `migration-status.test.ts`（+3）。
+- **⚠️ 对 D5-6 的一处实现更正（已补进 spec）**：**差量以"库"为单位，不是"逐文档"** —— 判据 = 复用 `get_kb_content_stats` 的内容签名（chunks `count+max(last_edited_at)` / wiki / cards / entities）+ 文档 id 集；**库动过 ⇒ 该库整遍重来**（`include_non_terminal=True`），库没动过一次都不跑（常见情形零成本）。两个原因：① **`documents` 表没有 `updated_at`**（先前说"两个时间戳现成"是错的：它只有 `created_at`；`updated_at` 只在 wiki / manual 两表）⇒ 按文档判"变过"只能看 `status`/`chunk_count`，**chunk 被编辑就漏**，按库签名能看见；② 实体/wiki/卡片三路没有逐文档归属，按库重跑才**完整**（同一文档的实体向量不会落在旧代）。
+- **⭐ 非终态文档必须补嵌**：`reindex_kb` 故意跳过"还在管线里"的文档（普通重建里是对的——它的后续腿会读当前配置），但迁移期间"当前配置"仍是旧代 ⇒ 那类文档恰是最会被落下的。故差量遍用 `include_non_terminal=True`（默认 `False`，既有调用零改动）。
+- **其余实现决定**：① 窗口内**被删**的文档 ⇒ 在新代清掉它的点（否则新代留孤儿、检索指向已删切片）；② **PUT 拆分写**：只把宽度留在旧值，同一次保存的其它字段立刻落盘（否则迁移失败会连带丢掉用户同一次的其它编辑）；③ **失败语义**：跑级异常（Qdrant 连不上 / 构建炸）⇒ 不翻配置、状态 `failed` 带原因；**逐文档失败仍翻配置**（与 `reindex_kb` 既有软失败契约一致），`documents_failed` 进状态面；④ 迁移在飞时第二次改宽度 ⇒ **409**；⑤ 前端在飞时禁保存并显示 `kbs_done/kbs_total`。
+- **neuter（三组）**：① 关掉差量那一遍 ⇒ **3 红**（新到文档 / 在飞文档 / 窗口内被删文档）✓；② 翻配置挪到重建**之前** ⇒ **2 红**（`test_a_width_change_defers_the_width_and_starts_the_rebuild`、`test_a_migration_that_fails_never_flips_the_width`）；③ PUT 立刻写新宽度（deferral 整块去掉）⇒ **同 2 红**。**⚠️ ②③ 受害者相同、如实记**：两者破坏的是**同一个可观测性质**（"宽度只在成功之后才生效"），差别只在"谁先写"，钉子上分不开。
+- **三处自纠（如实记）**：⚠️ neuter ③ 第一版是**空操作**（我只把 `written = payload` 写了一半，后面几行又把旧宽度塞回去）⇒ 测试全绿、差点当成"neuter 无效"；**判据：neuter 跑绿先怀疑 neuter 本身**。⚠️ 差量钉子第一版与后台任务**竞态**（桩立即返回 ⇒ 翻配置可能先于"文件仍是旧宽度"的断言）⇒ 改用 `threading.Event` 闸门 + `_settled` 轮询。⚠️ 闸门第一版**无上界**（`gate.wait()`）⇒ 断言先失败时 app 的 loop 卡在 `to_thread`、整轮 pytest 不返回（实测挂 40 分钟被迫 kill）⇒ 定稿 `gate.wait(10)` 并在用例里写明为什么要有界。
+- **回归**：宽面 `tests/knowledge/` + `tests/test_rag_config_api.py` + 两份 rag_config 文件 ⇒ **1458 passed / 2 skipped / 6 failed**，6 条全是已登记的环境条件红（2 条缺 key + 4 条 `test_rag_config_probe.py` 的"dashscope 需要地址"，均早于本轮就红）⇒ **零新增红**；Qdrant 集成面 13 例全绿 ✓。前端：两份 dom（85 + 18）与两份 node 全绿。
+- **门禁**：`make lint` 绿（1307 files already formatted）；`pnpm check`（eslint + tsc）零诊断。
 
 ---
 

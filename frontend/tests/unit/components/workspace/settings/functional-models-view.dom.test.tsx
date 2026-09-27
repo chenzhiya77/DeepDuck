@@ -54,6 +54,8 @@ rs.mock("@/core/i18n/hooks", () => ({
 rs.mock("@/core/rag/hooks", () => ({
   useRagConfig: () => ({ view: hooks.view, isLoading: false, error: null }),
   useSaveRagConfig: () => ({ isPending: false, mutate: rs.fn() }),
+  // 宽度迁移的状态面：这些用例不碰它，保持"从没跑过"（没有状态行、也不挡保存）。
+  useRagMigrationStatus: () => ({ data: undefined }),
   // The capability probe only decorates the sparse-source row; these display-rule cases
   // never reach it, so it stays idle (no verdict, nothing in flight).
   useProbeSparseCapability: () => ({

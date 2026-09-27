@@ -329,6 +329,35 @@ export function isEmbeddingChange(
   );
 }
 
+/** The width every deployment starts at; a blank declaration keeps it (spec 2026-09-26 D1 乙). */
+export const DEFAULT_EMBEDDING_DIMENSION = 1024;
+
+function effectiveDimension(raw: string | number | null | undefined): number {
+  const text = typeof raw === "number" ? String(raw) : (raw ?? "").trim();
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_EMBEDDING_DIMENSION;
+}
+
+/**
+ * Whether this save moves the vector library's *width* — the one edit that cannot take effect
+ * on its own: the server rebuilds every library into a new generation first and switches only
+ * when that is complete (spec 2026-09-26 D5-7), so the view confirms it before saving.
+ *
+ * Compared as effective widths, so typing `1024` over a blank field is not a change (the same
+ * rule the server applies), while clearing a declaration *is* one.
+ */
+export function changesEmbeddingDimension(
+  values: RagConfigFormValues,
+  view: RagConfigView,
+): boolean {
+  return (
+    effectiveDimension(values.embedding_dimension) !==
+    effectiveDimension(view.config.embedding_dimension)
+  );
+}
+
 /**
  * Whether the form asks the selected embedding provider for a sparse half it cannot produce
  * (spec 2026-09-16 §3 D2) — the one combination the pipeline refuses to build, so the admin

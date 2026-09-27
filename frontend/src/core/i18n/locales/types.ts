@@ -1747,6 +1747,13 @@ export interface Translations {
       legDotProbing: string;
       legDotOk: string;
       legDotUnreachable: string;
+      dimensionConfirmTitle: string;
+      dimensionConfirmDescription: string;
+      dimensionConfirmAction: string;
+      migrationRunning: string;
+      migrationSucceeded: string;
+      migrationFailed: string;
+      migrationCannotStart: string;
       legDotDimension: string;
       legDotNeedsConfig: string;
       sparseProviderDenseOnly: string;

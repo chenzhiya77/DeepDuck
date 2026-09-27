@@ -8,7 +8,9 @@ writes the whole set back to the API-writable ``rag_config.json`` only — never
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from pathlib import Path
 from uuid import uuid4
 
@@ -768,7 +770,10 @@ _RERANK_CAPABILITY_FIELD = "rerank_providers"
 #: when there is nothing to say (spec 2026-09-17 save-time probe §3 D3). Registered here rather
 #: than subtracted ad hoc so the "pure addition" guards keep their teeth.
 _WARNING_FIELD = "warning"
-_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _WARNING_FIELD}
+#: The width migration's verdict (spec 2026-09-26 D5-7), same contract: always present, ``null``
+#: until a save with a width change starts one.
+_MIGRATION_FIELD = "migration"
+_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _WARNING_FIELD, _MIGRATION_FIELD}
 
 
 def _assert_pure_addition(body: dict, golden: dict) -> None:
@@ -901,18 +906,23 @@ def test_put_validates_against_config_yaml_not_the_payload_alone(config_env: Pat
     assert "openai-compatible" in response.json()["detail"]
 
 
-def test_put_accepts_clearing_a_field_only_the_previous_file_declared(config_env: Path):
+def test_put_accepts_clearing_a_field_only_the_previous_file_declared(config_env: Path, monkeypatch: pytest.MonkeyPatch):
     """The mirror image: a field the *replaced* file declared must not be judged at its old
-    value. ``512`` loads (only the build refuses it), so a check based on the live ``config.rag``
-    — which still carries that file — would keep seeing 512 and reject a write that is fine."""
+    value. ``512`` loads, so a check based on the live ``config.rag`` — which still carries
+    that file — would keep seeing 512 and reject a write that is fine. Clearing the
+    declaration is itself a width change (512 → the default), so the save starts a
+    migration and the file keeps the old value until that finishes."""
     _write_rag_json(config_env, {"embedding_dimension": 512})
     reset_app_config()
+    _stub_runner(monkeypatch)
 
     with _client(system_role="admin") as client:
+        _attach_service(client)
         response = client.put("/api/rag/config", json={"embedding_model": "ui-embedding"})
+        assert response.status_code == 200, response.text
+        assert _settled(client)["state"] == "succeeded"
 
-    assert response.status_code == 200
-    assert "embedding_dimension" not in _read_rag_json(config_env)
+    assert "embedding_dimension" not in _read_rag_json(config_env), "迁移完成后声明才被清掉"
 
 
 def _answer_with(monkeypatch: pytest.MonkeyPatch, *, dims: int, recorded: list[httpx.Request]) -> None:
@@ -936,19 +946,21 @@ def test_put_judges_a_declared_width_against_the_declaration_not_1024(config_env
     """选 1536 ⇒ 保存期探针按 1536 判（spec 2026-09-26 §4 验收 4）：模型真能给到这个宽度就该放行。
 
     "放行" 必须靠那一发真调用证明：``warning=null`` 说明探针拿到了答案（"没能验证"也会 200）。
+    宽度本身还没生效 —— 那是后台迁移跑完之后的事（见下面的迁移一节）。
     """
     _write_rag_json(config_env, {"embedding_api_key": "sk-probe"})
     reset_app_config()
     recorded: list[httpx.Request] = []
     _answer_with(monkeypatch, dims=1536, recorded=recorded)
+    _stub_runner(monkeypatch)
 
     with _client(system_role="admin") as client:
+        _attach_service(client)
         response = client.put("/api/rag/config", json={"embedding_dimension": 1536})
 
     assert response.status_code == 200, response.text
     assert response.json()[_WARNING_FIELD] is None
     assert json.loads(recorded[0].content)["parameters"]["dimension"] == 1536, "问的就是所选的那个宽度"
-    assert _read_rag_json(config_env)["embedding_dimension"] == 1536
 
 
 def test_put_refuses_a_declared_width_the_model_does_not_return(config_env: Path, monkeypatch: pytest.MonkeyPatch):
@@ -1072,3 +1084,176 @@ def test_put_requires_the_rerank_endpoint(config_env: Path):
 
     assert response.status_code == 400
     assert "rerank_base_url" in response.json()["detail"]
+
+
+# ── the width migration (spec 2026-09-26 D5-6 / D5-7) ─────────────────────
+
+
+class _Recorder:
+    """Stands in for the new generation's store: records what the runner did to it."""
+
+    def __init__(self) -> None:
+        self.dropped: list[int] = []
+
+    async def drop_collections(self) -> list[str]:
+        self.dropped.append(self.dims)
+        return ["kb_chunks_1536"]
+
+    async def create_collections(self) -> None:
+        return None
+
+
+def _stub_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fail: str | None = None,
+    calls: list[tuple] | None = None,
+    gate: threading.Event | None = None,
+) -> _Recorder:
+    """Patch the migration's two heavy ends: the rebuild itself, and the Qdrant store it builds.
+
+    ``gate`` holds the rebuild open so a case can look at the state a *running* migration
+    leaves behind without racing the flip; release it to let the run finish.
+    """
+    from app.gateway.services import rag_migration as migration_module
+
+    recorder = _Recorder()
+
+    async def _migrate(store, *, vector_store, embedder, graph_store, wiki_store, page_size=None):
+        if calls is not None:
+            calls.append((store, vector_store))
+        if gate is not None:
+            # Bounded on purpose: a failing assertion before the release must not leave the
+            # app's loop waiting on this thread at teardown.
+            await asyncio.to_thread(gate.wait, 10)
+        if fail is not None:
+            raise RuntimeError(fail)
+        return None
+
+    def _store(url, *, dense_size):
+        recorder.dims = dense_size
+        return recorder
+
+    monkeypatch.setattr(migration_module.dimension_migration, "migrate_collections", _migrate)
+    monkeypatch.setattr(migration_module, "KnowledgeVectorStore", _store)
+    return recorder
+
+
+def _attach_service(client: TestClient) -> None:
+    """The gateway always wires this; the test app has no knowledge stack of its own."""
+    from types import SimpleNamespace
+
+    client.app.state.knowledge_service = SimpleNamespace(store=object(), graph_store=object(), wiki_store=object())
+
+
+def _migration_of(client: TestClient) -> dict | None:
+    response = client.get("/api/rag/config/migration")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _settled(client: TestClient, *, tries: int = 100) -> dict | None:
+    """The background task runs on the app's loop; give it a beat to leave ``running``."""
+    import time
+
+    state = _migration_of(client)
+    for _ in range(tries):
+        if state is None or state["state"] != "running":
+            return state
+        time.sleep(0.02)
+        state = _migration_of(client)
+    raise AssertionError(f"migration never settled: {state}")
+
+
+@pytest.fixture(autouse=True)
+def _clean_migration_state():
+    from app.gateway.services import rag_migration as migration_module
+
+    migration_module.reset_state()
+    yield
+    migration_module.reset_state()
+
+
+def test_migration_status_is_null_until_a_width_change_starts_one(config_env: Path):
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        assert _migration_of(client) is None
+        body = client.get("/api/rag/config").json()
+    assert body[_MIGRATION_FIELD] is None
+
+
+def test_a_width_change_defers_the_width_and_starts_the_rebuild(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """改宽度的那一次保存：其余字段立刻落地，宽度等重建完成后由后台翻（D5-7）。"""
+    import threading
+
+    _answer_with(monkeypatch, dims=1536, recorded=[])
+    calls: list[tuple] = []
+    gate = threading.Event()
+    recorder = _stub_runner(monkeypatch, calls=calls, gate=gate)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        response = client.put("/api/rag/config", json={"embedding_dimension": 1536, "embedding_model": "ui-embedding"})
+
+        assert response.status_code == 200, response.text
+        started = response.json()[_MIGRATION_FIELD]
+        assert started["state"] == "running"
+        assert started["target_dimension"] == 1536
+        # 迁移还卡在闸里 ⇒ 宽度一定还没生效：文件里仍是旧的（未声明 ⇒ 1024），其余字段已经落盘。
+        stored = _read_rag_json(config_env)
+        assert "embedding_dimension" not in stored
+        assert stored["embedding_model"] == "ui-embedding"
+        assert len(calls) == 1, "重建必须已经启动"
+
+        gate.set()
+        finished = _settled(client)
+
+    assert finished["state"] == "succeeded", finished
+    assert _read_rag_json(config_env)["embedding_dimension"] == 1536, "重建完成后才翻配置"
+    assert recorder.dropped == [1024], "旧代最后被清掉（best-effort）"
+
+
+def test_a_migration_that_fails_never_flips_the_width(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """回滚＝什么都没发生：配置仍是旧宽度、旧代还在（D5-2）。"""
+    _answer_with(monkeypatch, dims=1536, recorded=[])
+    recorder = _stub_runner(monkeypatch, fail="向量库连不上")
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        assert client.put("/api/rag/config", json={"embedding_dimension": 1536}).status_code == 200
+        failed = _settled(client)
+
+    assert failed["state"] == "failed"
+    assert "向量库连不上" in failed["detail"]
+    assert "embedding_dimension" not in _read_rag_json(config_env), "没跑完就不许翻"
+    assert recorder.dropped == [], "不许删旧代"
+
+
+def test_a_second_width_change_mid_migration_is_refused(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    _answer_with(monkeypatch, dims=1536, recorded=[])
+    _stub_runner(monkeypatch)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        assert client.put("/api/rag/config", json={"embedding_dimension": 1536}).status_code == 200
+        # 第一次的迁移还在跑（桩里没让它结束）—— 第二次改宽度必须被挡在门外。
+        from app.gateway.services import rag_migration as migration_module
+
+        migration_module._STATE.state = "running"
+        again = client.put("/api/rag/config", json={"embedding_dimension": 768})
+
+    assert again.status_code == 409
+    assert "迁移" in again.json()["detail"]
+
+
+def test_an_unrelated_edit_does_not_start_a_migration(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    calls: list[tuple] = []
+    _stub_runner(monkeypatch, calls=calls)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        response = client.put("/api/rag/config", json={"rerank_model": "ui-rerank"})
+
+    assert response.status_code == 200
+    assert response.json()[_MIGRATION_FIELD] is None
+    assert calls == [], "没改宽度就不该有迁移"

@@ -85,6 +85,18 @@ class KnowledgeStore:
             result = await session.execute(stmt)
             return [self._row_to_dict(row) for row in result.scalars().all()]
 
+    async def list_all_kbs(self) -> list[dict[str, Any]]:
+        """Every library, across owners.
+
+        The vector collections are deployment-wide, so an operation that rewrites them
+        (the width migration, spec 2026-09-26 D5-2) must cover every owner's libraries —
+        the owner-scoped ``list_kbs`` would silently leave the rest behind.
+        """
+        stmt = select(KnowledgeBaseRow).order_by(KnowledgeBaseRow.created_at, KnowledgeBaseRow.id)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return [self._row_to_dict(row) for row in result.scalars().all()]
+
     async def update_kb(self, kb_id: str, *, name: str | None = None, description: str | None = None) -> dict[str, Any] | None:
         """Rename / re-describe a KB; ``None`` leaves a field unchanged."""
         async with self._sf() as session:

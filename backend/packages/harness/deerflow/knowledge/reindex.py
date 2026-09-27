@@ -107,6 +107,7 @@ async def reindex_kb(
     graph_store: GraphStore,
     wiki_store: WikiStore,
     page_size: int = DEFAULT_PAGE_SIZE,
+    include_non_terminal: bool = False,
 ) -> ReindexReport:
     """Re-embed every live chunk of every terminal document in ``kb_id``.
 
@@ -114,6 +115,13 @@ async def reindex_kb(
     three other collections a provider switch also invalidates (spec §4.1). Both
     stores are required on purpose: making them optional would silently skip three
     collections — the exact defect this rebuild exists to fix.
+
+    ``include_non_terminal`` exists for one caller: the width migration's delta pass
+    (spec 2026-09-26 D5-6). Skipping a document that is still moving is right when the
+    library stays where it is — its later legs read the current configuration anyway —
+    and wrong during a switch, because until the switch "the current configuration" is
+    still the old generation, so that document is exactly the one that would be left
+    behind.
     """
     documents = await store.list_documents(kb_id)
     report = ReindexReport(
@@ -132,7 +140,7 @@ async def reindex_kb(
         for document in documents:
             doc_id = document["id"]
             try:
-                if document["status"] not in _TERMINAL_STATUSES:
+                if not include_non_terminal and document["status"] not in _TERMINAL_STATUSES:
                     report.documents_skipped += 1
                 else:
                     indexed = await _reindex_document(store, vector_store, embedder, kb_id=kb_id, doc_id=doc_id, page_size=page_size)

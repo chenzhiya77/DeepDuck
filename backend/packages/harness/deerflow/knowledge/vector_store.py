@@ -232,9 +232,23 @@ class KnowledgeVectorStore:
                     raise DimensionMigrationRequired(existing=legacy, existing_size=existing_size, expected=self._dense_size)
         await self.create_collections()
 
+    async def drop_collections(self) -> list[str]:
+        """Delete this store's four collections (the ones that exist), returning their names.
+
+        Two callers, both about generations: the migration drops a leftover from an
+        interrupted run before building the new one, and drops the *old* generation once
+        the switch is done (spec 2026-09-26 D5-2 — best-effort, the vectors are already
+        served by the new one).
+        """
+        dropped: list[str] = []
+        for name in self.collection_names:
+            if await self._client.collection_exists(name):
+                await self._client.delete_collection(name)
+                dropped.append(name)
+        return dropped
+
     async def create_collections(self) -> None:
         """Create the collections + payload indexes at this store's width, idempotently.
-
         No judgement about older generations: this is also the migration's own entry — it is
         the migration's job to build the new generation while the old one still answers.
         """

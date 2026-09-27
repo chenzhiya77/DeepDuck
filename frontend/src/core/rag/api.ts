@@ -9,6 +9,7 @@ import type {
   RagConnectivityProbeResponse,
   RagDimensionProbeRequest,
   RagDimensionProbeResponse,
+  RagMigrationStatus,
   RagSparseProbeRequest,
   RagSparseProbeResponse,
   RagSparseServiceProbeRequest,
@@ -74,6 +75,23 @@ export async function saveRagConfig(
     );
   }
   return response.json() as Promise<RagConfigView>;
+}
+
+/**
+ * Where the width migration stands (spec 2026-09-26 D5-7): `null` means none ever ran, which
+ * is the normal state of a deployment that never touched the width.
+ */
+export async function loadRagMigrationStatus(): Promise<RagMigrationStatus | null> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/rag/config/migration`,
+  );
+  if (!response.ok) {
+    throw new RagConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to load the migration status"),
+    );
+  }
+  return response.json() as Promise<RagMigrationStatus | null>;
 }
 
 /**

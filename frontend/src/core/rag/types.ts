@@ -107,6 +107,21 @@ export interface RagConfigView {
   embedding_providers?: RagEmbeddingProviderCapability[];
   rerank_providers?: RagRerankProviderCapability[];
   warning: string | null;
+  /**
+   * Where the width migration stands (spec 2026-09-26 D5-7). A save that changes the width
+   * returns it `running` while `config.embedding_dimension` still holds the *old* value: the
+   * switch is an atomic replace inside the background rebuild, so the row must read
+   * `target_dimension` for what is coming and `config` for what is in force.
+   */
+  migration?: RagMigrationStatus | null;
+}
+
+/** The width migration's verdict (spec 2026-09-26 D5-7). */
+export interface RagMigrationStatus {
+  state: "running" | "succeeded" | "failed";
+  target_dimension: number;
+  detail: string | null;
+  progress: Record<string, number> | null;
 }
 
 /** PUT body: the whole object, standing in for the new file content. */

@@ -18,6 +18,7 @@ const { MASKED_RAG_SECRET, loadRagConfig, RagConfigRequestError, saveRagConfig }
   await import("@/core/rag/api");
 import {
   buildRagConfigInput,
+  changesEmbeddingDimension,
   connectivityProbeKey,
   dimensionProbeKey,
   EMBEDDING_PROVIDER_OPTIONS,
@@ -1147,5 +1148,39 @@ describe("probe keys for the dimension row and the leg dots (spec 2026-09-26 §3
     ).not.toBe(embedding);
     // 重排腿没有维度这一问（spec §3）。
     expect(connectivityProbeKey("rerank", withWidth, true)).not.toContain("embedding");
+  });
+});
+
+
+describe("改宽度 = 迁移的那一次保存 (spec 2026-09-26 D5-7)", () => {
+  it("compares the effective widths, so a blank declaration equals 1024", () => {
+    const live = view({ embedding_dimension: null });
+    const values = { ...formValuesFromConfig(live), embedding_dimension: "1024" };
+
+    expect(changesEmbeddingDimension(values, live)).toBe(false);
+  });
+
+  it("sees a real move as a change, however it was typed", () => {
+    const live = view({ embedding_dimension: null });
+
+    expect(
+      changesEmbeddingDimension(
+        { ...formValuesFromConfig(live), embedding_dimension: "1536" },
+        live,
+      ),
+    ).toBe(true);
+  });
+
+  it("treats clearing a declaration as a change back to the default", () => {
+    const live = view({ embedding_dimension: 1536 });
+    const values = { ...formValuesFromConfig(live), embedding_dimension: "" };
+
+    expect(changesEmbeddingDimension(values, live)).toBe(true);
+  });
+
+  it("treats an untouched width as no change at all", () => {
+    const live = view({ embedding_dimension: 1536 });
+
+    expect(changesEmbeddingDimension(formValuesFromConfig(live), live)).toBe(false);
   });
 });
