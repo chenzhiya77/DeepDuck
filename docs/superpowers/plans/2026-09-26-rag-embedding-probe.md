@@ -4,13 +4,13 @@
 
 **Spec:** [2026-09-26-rag-embedding-probe-design.md](../specs/2026-09-26-rag-embedding-probe-design.md)
 **证据物:** [pr-build/rag-embedding-probe-2026-09-27/](../../../pr-build/rag-embedding-probe-2026-09-27/notes.md)——真接口实测（脚本 + 原始输出），spec §3.1 引用它
-**Status:** 🟡 **进行中（2026-09-26 立；同日按 spec 定稿镜像重写 + 依「按现有项目情况审查」的 1–8 条修订；**2026-09-27 续**：§3.1 证据物入仓、四轮自审（1–9 / 1–11 / 1–5）已并入。**进度：Task 0–3 已提交（`63f3c448` 文档+证据 · `f9ac82dc` Task 1 · `4f1456c4` Task 2 · `2badc356` Task 3）；Task 4–5 未开工**）** —— **四点全裁**（D1 乙 / D2 甲a / D3 甲′ / D4 甲）+ **D5 五条细节**（作用域部署级 / 先建后切 / 默认 1024 / 界面位置=高级设置第一行 / 连通点=两标题变按钮+四态）。落法 = 后端为主 + 设置页「维度」控件（**自动探、无按钮**）+ 两个角色标题的连通点。
+**Status:** 🟡 **进行中（2026-09-26 立；同日按 spec 定稿镜像重写 + 依「按现有项目情况审查」的 1–8 条修订；**2026-09-27 续**：§3.1 证据物入仓、四轮自审（1–9 / 1–11 / 1–5）已并入。**进度：Task 0–3 已提交（`63f3c448` 文档+证据 · `f9ac82dc` Task 1 · `4f1456c4` Task 2 · `2badc356` Task 3）；Task 4 已按 Task 0 的结论拆成 4a/4b —— 4a（生效宽度/命名/守门/尺寸检测）代码已改、未提交；4b（迁移编排）未开工，开工前两件待拍**）** —— **四点全裁**（D1 乙 / D2 甲a / D3 甲′ / D4 甲）+ **D5 五条细节**（作用域部署级 / 先建后切 / 默认 1024 / 界面位置=高级设置第一行 / 连通点=两标题变按钮+四态）。落法 = 后端为主 + 设置页「维度」控件（**自动探、无按钮**）+ 两个角色标题的连通点。
 
 **硬约束**：**通用嵌入腿**（`openai-compatible`）的请求构造 + 集合命名与生命周期 + 保存期探针 + 设置页嵌入行；**厂商腿（dashscope / ark）的入库请求零触碰**（新增的只是探测路径——按各家请求形状真发请求，但那是探针自己的请求）；rerank / parse / 稀疏腿的既有行为、检索三路逻辑零触碰（**新增**：重排腿一发连通测试 · 探测纳三腿）；**默认 1024 ⇒ 不迁移时请求与结果逐字节不变**；探针族规范（真实调用 / 只读不落盘 / 有界超时 / 三态 / 只报不拦）。
 
 **Global Constraints:** 分支 `feat/rag-knowledge-base`；每 Task RED→GREEN→neuter（带 revert proof）→门禁（**提交时机听他发话**）；后端 `cd backend && make test`（相关面）+ `make lint`；前端 `cd frontend && PYTHONIOENCODING=utf-8 python ../scripts/pnpm.py check` + 相关 dom 用例；pytest 的 `--basetemp` 只用既有 `.pytest-tmp`（跑完即删）；真栈桩零出网。
 
-**依赖顺序**：Task 0（只读核实）→ Task 1（探测纯函数，三腿分派）→ Task 2（两个端点 + 维度行 + 两标题连通点）→ Task 3（发参 + 批量阶梯）→ Task 4（维度可配：集合命名与迁移，**最重的一段**）→ Task 5（文档 + 真栈 + 门禁）。
+**依赖顺序**：Task 0（只读核实）→ Task 1（探测纯函数，三腿分派）→ Task 2（两个端点 + 维度行 + 两标题连通点）→ Task 3（发参 + 批量阶梯）→ Task 4a（生效宽度 + 集合命名 + 守门 + 尺寸检测）→ Task 4b（迁移编排，**最重的一段**）→ Task 5（文档 + 真栈 + 门禁）。
 
 ---
 
@@ -141,19 +141,44 @@
 
 ---
 
-## Task 4 — 维度可配：集合命名 + 守门 + 迁移（**最重的一段**）
+## Task 4a — 生效宽度 + 集合命名 + 守门跟宽度 + 尺寸检测
 
-> 动到的文件：`vector_store.py`、`embedder_factory.py`、`reindex.*` 与新的迁移函数 + 路由 + 用例。**验收对应**：spec §4 的 5 / 6。⚠️ 本 Task 开工前按 Task 0 的 1/2/3/7 结果**可能再拆**（命名变更 vs 迁移流程）。
+> 动到的文件：`embedder_factory.py`（生效宽度 + 守门）、`vector_store.py`（命名 + 尺寸检测）、`rag_config.py`（保存期探针按生效宽度判）+ 三处用例。**验收对应**：spec §4 的 6（默认零迁移）+ 4（保存期三态）+ 5 的前半（命名这一半）。**2026-09-27 开工前按 Task 0 的 1/2/3/7 结果从原 Task 4 拆出**：本段是"读/写路径跟宽度"，迁移编排留在 Task 4b。
 
-- [ ] **RED（守门跟配置）**：声明 1536 ⇒ 工厂放行（不再"≠1024 直接拒"）；声明 1536 但实测返回 1536 ⇒ 建 store 时按 1536；未声明 ⇒ 仍按 1024（逐字节不变）。
-- [ ] **RED（集合命名）**：生效宽度 1536 ⇒ 四个集合名带后缀（`kb_chunks_1536` 等）；`init_collections` 在**已有 1024 集合**且声明 1536 时**不硬报错**，走迁移判定。
-- [ ] **RED（迁移）**：桩/本机 Qdrant——建新集合 → **遍历所有库**四路重嵌（切片/实体/wiki/卡片）→ **全部完成后**配置才指向新集合 → 旧集合被清；**中途失败 ⇒ 旧集合与旧配置原样可用**（回滚证据：失败后检索照常）；**迁移期间新入库的文档不丢**；**中断后重试不撞残留**（半成品新集合清理或复用，二选一写实）。⚠️ 集合是全局一套而 `reindex_kb` 是按库的 ⇒ 遍历这一层是本 Task 的核心，不是"调一下现有函数"。
-- [ ] **GREEN**：`vector_store` 命名与尺寸检测；`get_vector_store()` 接生效宽度；**迁移触发判据 = "生效宽度变了"（与值从哪来无关；填同值不触发）**；迁移函数（**遍历所有库** + 复用 `reindex_kb` + **开始前检测同名新集合、存在则先删后建**）+ 入口（复用/扩展重建索引路由）+ **保存期探针那两处一起改**（`rag_config.py:370-372` 的 `measured != COLLECTION_DIMENSION`、`embedder_factory.py:45-52` 的 `dimension_mismatch_message`/`_REBUILD_HINT`——**文案按新语义重写**："请改用该模型支持的维度（到「高级设置 → 维度」改，改值会触发全库重建），或换模型"）+ 界面「改维度＝全库重建」确认。
-- [ ] **neuter**：① 删尺寸检测 ⇒ 迁移用例红；② 把"完成才翻配置"改成"先翻" ⇒ 回滚证据那条红（失败后检索坏掉）。**受害者不相交**。
-- [ ] **回归**：默认 1024 路径的既有用例零改动全绿（含 Qdrant 集成面的检索/写读）。
-- [ ] **门禁**：`make test` 相关面（含 qdrant 标记的集成面）+ `make lint` + `pnpm check` + 前端迁移确认的 dom。
+- [x] **RED（守门跟配置）**：声明 1536 ⇒ 工厂放行（不再"≠1024 直接拒"）；未声明 ⇒ 仍按 1024（逐字节不变）。
+- [x] **RED（命名）**：非默认宽度 ⇒ 四个集合名带后缀（`kb_chunks_1536` 等）；默认宽度 ⇒ **仍是今天这四个无后缀名**（否则存量部署的向量当场"消失"）。
+- [x] **RED（尺寸检测）**：声明宽度 ≠ 默认且旧代（无后缀）还在 ⇒ `init_collections` **不建空代**、抛 `DimensionMigrationRequired` 并给迁移出路；`create_collections()` 作为迁移自己的入口跳过分代判定。
+- [x] **GREEN**：`effective_dimension(rag)` 一个读数点（store 命名 / 运行时守卫 / 保存期探针同源）；守门改"实测 vs 生效宽度"；保存期探针改按 `pending` 的生效宽度判 + 文案重写；`get_vector_store()` 接生效宽度。
+- [x] **neuter**：四组（见实测），并列明一条不满足"不相交"的组合。
+- [x] **回归**：`tests/knowledge/` + `tests/test_rag_config_api.py` 宽面；默认 1024 路径的既有断言零改动全绿。
+- [x] **门禁**：`make lint` + 相关面。
 
-**实测（待回填）**：
+**实测（2026-09-27，Task 4a 完成 · 未提交）**：
+
+- **改动面**：3 源 + 3 用例 = **6 文件**（`embedder_factory.py` / `vector_store.py` / `rag_config.py` + 新增 `tests/knowledge/test_vector_store_dimensions.py`(6 例) / `test_embedder_providers.py` / `test_rag_config_api.py`）。
+- **⭐ 后缀规则（对 spec §3 措辞的一处修正）**：**后缀只在非默认宽度上出现** —— 1024 仍用 `kb_chunks` 等原名，1536 才是 `kb_chunks_1536`。理由：acceptance 6 要求"不动维度时行为与请求逐字节不变"，若 1024 也加后缀，存量部署的向量会当场读不到（§5 存量账"不迁移就完全不碰"同理）。⇒ 建议把 spec §3「存储」行的 `{prefix}_chunks_{size}` 补一句"（默认宽度不带后缀，保持存量名）"。
+- **一个读数点**：`effective_dimension(rag)` = `rag.embedding_dimension or 1024`，被三处共用（store 命名、`_DimensionCheckedEmbedder` 的期望值、保存期探针），避免"写的人按一个宽度、判的人按另一个宽度"。
+- **守门**：删掉 `declared != 1024 ⇒ 直接拒`（那正是 F2/F3 无解的原因）；保存期探针改为 **实测 vs 生效宽度**（选 1536 时就按 1536 判）。文案重写为「嵌入模型返回 N 维，而当前生效宽度是 M 维 ⇒ 拒绝启用。请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。」
+- **尺寸检测**：`init_collections` 在"生效宽度 ≠ 默认 **且** 旧代（无后缀集合）还在"时抛 `DimensionMigrationRequired`（`ValueError`，不是 `EmbedderError`——`index_chunks` 会把后者当软失败吞掉），**一个空集合都不建**；`create_collections()` 无分代判定，供 4b 的迁移建新代用。新增 `collection_size(name)` 读回现有集合宽度（`get_collection().config.params.vectors["dense"].size`）。
+- **neuter（四组，可复跑）**：① `_name` 去掉后缀 ⇒ **4 红**（`a_declared_width_carries_the_suffix`、`init_creates_the_new_generation_at_the_declared_width`、`init_creates_a_fresh_generation_when_no_other_one_exists`、`create_collections_is_the_migration_entry…`）；② 把拒绝降级为"什么都不做"⇒ **1 红**（`init_refuses_to_create_an_empty_generation…`，机制已核＝`DID NOT RAISE`）；③ 恢复"声明≠1024 直接拒"⇒ **2 红**（`the_declared_dimension_is_the_live_width`、`put_judges_a_declared_width_against_the_declaration_not_1024`）；④ 保存期探针改回按默认宽度判 ⇒ **2 红**（同上那条 + `put_refuses_a_declared_width_the_model_does_not_return`）。每次还原后全绿 ✓。
+- **⚠️ 一处不满足"受害者不相交"（如实记）**：③∩④ = {`put_judges_a_declared_width_against_the_declaration_not_1024`} —— 它同时依赖"工厂放行 1536"（③）与"探针按 1536 判"（④），是端到端那条钉子，无法只属一边。其余三组两两不相交。
+- **两处自纠（如实记）**：⚠️ 两条"建代"钉子最初写成与 `store.collection_names` 自比（自洽的假判据）⇒ neuter ① 只红 2 条；改成钉**字面名字**后才红 4 条。⚠️ `put_refuses…` 最初只断言文案含两种宽度 ⇒ 被 neuter ③ 漏过（旧守卫的报错也含这两个数），补 `"返回" in detail` 后成为 ③ 的真受害者。
+- **回归**：宽面 `tests/knowledge/` + `tests/test_rag_config_api.py` ⇒ **2 failed / 1400 passed / 2 skipped**，两条失败仍是 09-25 登记的环境红（本机 `rag_config.json` 带 key；阳性对照同 Task 3）⇒ 零新增红。补钉子后单跑 `tests/test_rag_config_api.py` = **61 passed**。
+- **门禁**：`make lint` 绿（1304 files already formatted）。
+
+---
+
+## Task 4b — 迁移编排 + 触发入口 + 前端「改维度＝全库重建」确认（**未开工**）
+
+> 动到的文件：迁移函数（遍历所有库四路重嵌 + 先建后切 + 差量补嵌）+ 触发入口（保存期/路由/服务）+ 前端确认 + 用例。**验收对应**：spec §4 的 5（后半：遍历所有库 / 完成才翻配置 / 失败回滚 / 中断不撞残留 / 窗口内新文档不丢）。**两件已裁（2026-09-27）**：① 窗口内新入库的文档 = **结束前扫差量**（spec D5-6，开工记 `id`/`updated_at`、翻配置前再枚举补嵌）；② 跑法 = **后台任务 + 状态面**（spec D5-7，PUT 只启动、完成才由后台翻配置、前端轮询）。
+
+- [ ] **RED（建代与切换）**：生效宽度变了 ⇒ 建新代（`create_collections()`）→ **遍历所有库**四路重嵌（切片/实体/wiki/卡片，复用 `reindex_kb`，注意它是**按库**的）→ **全绿才翻配置** → best-effort 删旧代。
+- [ ] **RED（差量补嵌）**：迁移窗口内新入库的文档 ⇒ 翻配置前被补进新代（D5-6：开工记 `id`/`updated_at`，翻配置前再枚举一次）。
+- [ ] **RED（失败回滚）**：中途失败 ⇒ 配置文件从未写过新宽度、旧代原样、检索照常（回滚＝什么都没发生）。
+- [ ] **RED（先删后建）**：同名新代有残留（上次中断）⇒ 先删后建，不撞半成品。
+- [ ] **GREEN**：迁移函数 + 后台任务 + 状态/进度端点（复用 `trigger_reindex` 的 fire-and-forget + 轮询形态）+ PUT **只启动、不写新宽度** + 前端「改维度＝全库重建」确认（保存时确认，不在行内弹）。
+- [ ] **neuter**：① 删差量那一遍 ⇒ 只红差量那条；② 把"完成才翻"改成"先翻" ⇒ 只红回滚那条。
+- [ ] **回归 + 门禁**：默认 1024 既有面零改动全绿；`make test` 相关面（含 qdrant 标记集成面）+ `make lint` + `pnpm check` + 前端迁移确认的 dom。
 
 ---
 

@@ -1,7 +1,8 @@
 """Qdrant vector store for the RAG knowledge base.
 
 Four collections (spec §3.3–§3.5 + Phase-3 P6), all with named vectors ``dense``
-(1024-dim COSINE) + ``sparse`` (Qdrant sparse vectors always score by dot
+(1024-dim COSINE by default — the width is a deployment setting since
+spec 2026-09-26 D1 乙) + ``sparse`` (Qdrant sparse vectors always score by dot
 product, giving the DOT path):
 
 - ``kb_chunks``       — chunk vectors; payload carries the ``chunk_id``
@@ -13,6 +14,12 @@ product, giving the DOT path):
 - ``kb_manual_cards`` — manual knowledge card vectors (Phase-3 P6; payload:
   card pointer + title). Only cards with ``include_in_wiki_search`` on hold a
   point here (spec §8 可选混合).
+
+A non-default width appends it to every name (``kb_chunks_1536``): the width is part of
+the identity of a vector space, so a rebuild into a new width writes a *new* generation
+and the old one keeps answering until the switch (spec 2026-09-26 D5-2). The default
+width keeps the unsuffixed names, which are what every deployment created before the
+width became configurable — an untouched deployment must be byte-for-byte unchanged.
 
 The async client keeps the offline indexing worker and the online retrieval
 tools off the event loop's blocking path.
@@ -44,9 +51,32 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+from deerflow.knowledge.embedder_factory import DEFAULT_COLLECTION_DIMENSION, effective_dimension
+
 #: Payload fields that get a KEYWORD index on ``kb_chunks`` (spec §3.3) —
 #: only filter conditions are indexed; display metadata stays unindexed.
 _CHUNKS_PAYLOAD_INDEXES: tuple[str, ...] = ("kb_id", "doc_id", "entities")
+
+#: The four logical collections, in the order they are created.
+_KINDS: tuple[str, ...] = ("chunks", "entities", "wiki_entries", "manual_cards")
+
+#: Named-vector key of the dense half (the sparse half is the other).
+_DENSE_VECTOR_NAME = "dense"
+
+
+class DimensionMigrationRequired(ValueError):
+    """The live generation is not the one this configuration writes, and no migration ran.
+
+    Raised instead of quietly creating an empty collection: the new one would answer every
+    query with nothing, which the user reads as "my library was wiped". A ``ValueError``,
+    not an ``EmbedderError``, so the indexer never buries it as a soft per-batch failure.
+    """
+
+    def __init__(self, *, existing: str, existing_size: int, expected: int) -> None:
+        self.existing = existing
+        self.existing_size = existing_size
+        self.expected = expected
+        super().__init__(f"向量库集合 {existing} 是 {existing_size} 维，而当前生效宽度是 {expected} 维 ⇒ 拒绝启用，需要先完成维度迁移（到「设置 → 模型 → 功能模型」保存该维度以触发全库重建，重建完成后配置才会切过去）。")
 
 
 @dataclass(slots=True)
@@ -119,7 +149,7 @@ class KnowledgeVectorStore:
         *,
         client: AsyncQdrantClient | None = None,
         collection_prefix: str = "kb",
-        dense_size: int = 1024,
+        dense_size: int = DEFAULT_COLLECTION_DIMENSION,
     ) -> None:
         if client is None:
             if url is None:
@@ -129,25 +159,29 @@ class KnowledgeVectorStore:
         self._prefix = collection_prefix
         self._dense_size = dense_size
 
+    def _name(self, kind: str) -> str:
+        suffix = "" if self._dense_size == DEFAULT_COLLECTION_DIMENSION else f"_{self._dense_size}"
+        return f"{self._prefix}_{kind}{suffix}"
+
     @property
     def chunks_collection(self) -> str:
-        return f"{self._prefix}_chunks"
+        return self._name("chunks")
 
     @property
     def entities_collection(self) -> str:
-        return f"{self._prefix}_entities"
+        return self._name("entities")
 
     @property
     def wiki_entries_collection(self) -> str:
-        return f"{self._prefix}_wiki_entries"
+        return self._name("wiki_entries")
 
     @property
     def manual_cards_collection(self) -> str:
-        return f"{self._prefix}_manual_cards"
+        return self._name("manual_cards")
 
     @property
     def collection_names(self) -> tuple[str, ...]:
-        return (self.chunks_collection, self.entities_collection, self.wiki_entries_collection, self.manual_cards_collection)
+        return tuple(self._name(kind) for kind in _KINDS)
 
     @staticmethod
     def _point_id(chunk_id: str) -> str:
@@ -169,14 +203,47 @@ class KnowledgeVectorStore:
         """Deterministic UUID per manual card so re-embeds overwrite in place."""
         return uuid.uuid5(uuid.NAMESPACE_URL, f"deerflow:kb-manual-card:{card_id}").hex
 
+    async def collection_size(self, name: str) -> int | None:
+        """The dense width a collection was created at; ``None`` when it does not exist.
+
+        The width is readable off the collection, which is what lets the runtime tell a
+        finished migration from one that never ran (spec 2026-09-26 D1 乙 / 验收 5).
+        """
+        if not await self._client.collection_exists(name):
+            return None
+        info = await self._client.get_collection(name)
+        vectors = info.config.params.vectors
+        params = vectors.get(_DENSE_VECTOR_NAME) if isinstance(vectors, dict) else vectors
+        return getattr(params, "size", None)
+
     async def init_collections(self) -> None:
-        """Create the collections + payload indexes, idempotently."""
+        """Create the live generation's collections, unless that would hide an older one.
+
+        The hand-off is the point: with a declared width and no migration behind it, the
+        declaration's collections do not exist yet while the vectors are all in the older
+        generation. Creating them here would make the library read as empty, so this refuses
+        and names the migration instead (``DimensionMigrationRequired``).
+        """
+        if self._dense_size != DEFAULT_COLLECTION_DIMENSION:
+            for kind in _KINDS:
+                legacy = f"{self._prefix}_{kind}"
+                existing_size = await self.collection_size(legacy)
+                if existing_size is not None:
+                    raise DimensionMigrationRequired(existing=legacy, existing_size=existing_size, expected=self._dense_size)
+        await self.create_collections()
+
+    async def create_collections(self) -> None:
+        """Create the collections + payload indexes at this store's width, idempotently.
+
+        No judgement about older generations: this is also the migration's own entry — it is
+        the migration's job to build the new generation while the old one still answers.
+        """
         for name in self.collection_names:
             if await self._client.collection_exists(name):
                 continue
             await self._client.create_collection(
                 collection_name=name,
-                vectors_config={"dense": VectorParams(size=self._dense_size, distance=Distance.COSINE)},
+                vectors_config={_DENSE_VECTOR_NAME: VectorParams(size=self._dense_size, distance=Distance.COSINE)},
                 sparse_vectors_config={"sparse": SparseVectorParams()},
             )
         # create_payload_index is itself idempotent (same name+schema → ok).
@@ -499,7 +566,8 @@ class KnowledgeVectorStore:
 
 
 def get_vector_store() -> KnowledgeVectorStore:
-    """Build the store from the ``rag.qdrant_url`` app config section."""
+    """Build the store from ``rag`` — its address, and the width it writes at."""
     from deerflow.config.app_config import get_app_config
 
-    return KnowledgeVectorStore(get_app_config().rag.qdrant_url)
+    rag = get_app_config().rag
+    return KnowledgeVectorStore(rag.qdrant_url, dense_size=effective_dimension(rag))

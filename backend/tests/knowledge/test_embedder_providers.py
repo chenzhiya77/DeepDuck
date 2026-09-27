@@ -6,11 +6,13 @@ Two things are load-bearing here and are what these tests pin:
    both halves. A generic OpenAI-compatible endpoint returns dense only, so pairing it with
    ``provider`` must be refused at build time — otherwise the deployment discovers at
    retrieval time that it silently lost a whole route.
-2. **The dimension rule.** The Qdrant collections are fixed at 1024, so a non-1024 provider
-   must be refused loudly, and the refusal must tell the user which exit to take (the
-   rebuild entry). DashScope pins its dimension *in the request* (`parameters.dimension`),
-   so it needs no probe; a generic endpoint cannot self-certify, so it is probed once —
-   the probe also serves as a connectivity check (spec §4.2 维度 #1).
+2. **The dimension rule.** The width is a deployment setting (spec 2026-09-26 D1 乙): the
+   declared one is authoritative, blank means the historical 1024. What stays fixed is that
+   the *pipeline's* width and the *collections'* width must agree, so an undeclared provider
+   is still measured once against the default and refused loudly if it disagrees — with the
+   exit (the rebuild entry) named in the message. DashScope pins its dimension *in the
+   request* (`parameters.dimension`), so it needs no probe; a generic endpoint cannot
+   self-certify, so it is probed once — the probe also serves as a connectivity check.
 
 The interface stays what it always was — ``embed(texts, text_type) -> list[EmbeddingResult]``
 — so callers are unchanged (甲: a composition adapter, spec §4.2).
@@ -24,7 +26,7 @@ import httpx
 import pytest
 
 from deerflow.knowledge.embedder import DashScopeEmbedder, EmbedderAuthError, EmbedderError, RagConfigurationError, SparseHalfMissingError
-from deerflow.knowledge.embedder_factory import build_embedder
+from deerflow.knowledge.embedder_factory import build_embedder, effective_dimension
 from deerflow.knowledge.embedder_openai import OpenAICompatibleEmbedder
 from deerflow.knowledge.sparse import BM25SparseEncoder, TEISparseEncoder
 
@@ -262,13 +264,23 @@ async def test_external_sparse_requires_an_endpoint(monkeypatch):
         build_embedder()
 
 
-@pytest.mark.asyncio
-async def test_declared_dimension_other_than_1024_is_refused(monkeypatch):
-    """非 1024 一律拒绝启用，且错误里要给出重建入口这条出路（spec §4.2 维度 #4）。"""
+def test_the_declared_dimension_is_the_live_width(monkeypatch):
+    """声明就是这一部署的生效宽度（spec 2026-09-26 D1 乙）：1536 不再被拒。
+
+    拒绝的权力交给保存期探针那一发实测（它比这里凭空多一次真调用更有资格），这里只负责
+    让配置立起来 —— 曾经的守卫把「模型返回几维」和「库有多宽」绑死成 1024。
+    """
     _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="bm25", embedding_dimension=1536)
 
-    with pytest.raises(RagConfigurationError, match="1024"):
-        build_embedder()
+    assert effective_dimension() == 1536
+    assert build_embedder() is not None
+
+
+def test_an_undeclared_width_is_still_the_historical_default(monkeypatch):
+    """留空 = 1024：不改这一格的老部署，生效宽度与集合名都逐字节不变。"""
+    _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="bm25", embedding_dimension=None)
+
+    assert effective_dimension() == 1024
 
 
 @pytest.mark.asyncio
@@ -287,8 +299,8 @@ async def test_declared_dimension_overrides_the_measured_length(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_probe_reads_the_real_length_and_refuses_non_1024(monkeypatch):
-    """未声明 ⇒ 用首次真实调用的返回长度认证；非 1024 当场拒绝（不再多打一次探测请求）。"""
+async def test_probe_reads_the_real_length_and_refuses_another_width(monkeypatch):
+    """未声明 ⇒ 用首次真实调用的返回长度认证；与生效宽度不符当场拒绝（不再多打一次探测请求）。"""
     recorded: list[httpx.Request] = []
     _stub_config(monkeypatch, embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="bm25")
 

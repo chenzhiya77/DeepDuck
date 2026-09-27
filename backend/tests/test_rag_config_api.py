@@ -26,6 +26,10 @@ from deerflow.knowledge.providers import provider_ids
 
 SANDBOX = {"use": "deerflow.sandbox.local:LocalSandboxProvider"}
 
+#: Captured before any fixture patches it, so a test that needs its own transport can build on
+#: the real class instead of chaining onto whatever stub ran first.
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
+
 YAML_RAG = {
     "qdrant_url": "http://qdrant:6333",
     "embedding_model": "yaml-embedding",
@@ -909,6 +913,58 @@ def test_put_accepts_clearing_a_field_only_the_previous_file_declared(config_env
 
     assert response.status_code == 200
     assert "embedding_dimension" not in _read_rag_json(config_env)
+
+
+def _answer_with(monkeypatch: pytest.MonkeyPatch, *, dims: int, recorded: list[httpx.Request]) -> None:
+    """Override the file's autouse stub with one that answers a specific dense width.
+
+    Built on ``_REAL_ASYNC_CLIENT``: the autouse fixture has already replaced ``httpx.AsyncClient``,
+    so capturing it here would chain onto that patch and silently re-answer at 1024 dimensions.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(
+            200,
+            json={"output": {"embeddings": [{"text_index": 0, "embedding": [0.0] * dims, "sparse_embedding": [{"index": 7, "value": 0.5}]}]}},
+        )
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler)))
+
+
+def test_put_judges_a_declared_width_against_the_declaration_not_1024(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """选 1536 ⇒ 保存期探针按 1536 判（spec 2026-09-26 §4 验收 4）：模型真能给到这个宽度就该放行。
+
+    "放行" 必须靠那一发真调用证明：``warning=null`` 说明探针拿到了答案（"没能验证"也会 200）。
+    """
+    _write_rag_json(config_env, {"embedding_api_key": "sk-probe"})
+    reset_app_config()
+    recorded: list[httpx.Request] = []
+    _answer_with(monkeypatch, dims=1536, recorded=recorded)
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"embedding_dimension": 1536})
+
+    assert response.status_code == 200, response.text
+    assert response.json()[_WARNING_FIELD] is None
+    assert json.loads(recorded[0].content)["parameters"]["dimension"] == 1536, "问的就是所选的那个宽度"
+    assert _read_rag_json(config_env)["embedding_dimension"] == 1536
+
+
+def test_put_refuses_a_declared_width_the_model_does_not_return(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """被忽略/被拒的那一半：实测不是所选值 ⇒ 400，且文案里两种宽度都在（用户要知道谁对不上谁）。"""
+    _write_rag_json(config_env, {"embedding_api_key": "sk-probe"})
+    reset_app_config()
+    _answer_with(monkeypatch, dims=1024, recorded=[])
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"embedding_dimension": 1536})
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "1024" in detail and "1536" in detail
+    assert "返回" in detail, "判的是那一发实测回来的宽度，不是声明与默认不符"
+    assert _read_rag_json(config_env).get("embedding_dimension") is None, "被拒的写不能落盘"
 
 
 # ── the same check now covers the other two legs (spec 2026-09-17 alignment §3 D2) ──────────

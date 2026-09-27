@@ -36,7 +36,7 @@ from deerflow.config.rag_config_file import (
 from deerflow.config.runtime_paths import project_root
 from deerflow.knowledge.dimension_probe import CANDIDATE_DIMENSIONS, DimensionProbeError, probe_dimensions
 from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
-from deerflow.knowledge.embedder_factory import COLLECTION_DIMENSION, build_embedder, dimension_mismatch_message
+from deerflow.knowledge.embedder_factory import build_embedder, dimension_mismatch_message, effective_dimension
 from deerflow.knowledge.model_target import model_not_found_message, rag_target_missing
 from deerflow.knowledge.parser import build_parse_provider
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
@@ -392,9 +392,12 @@ async def _probe_after_save(pending: RagConfig) -> str | None:
 
     # Measured here rather than read back from the runtime guard: that guard is a once-per-process
     # verdict keyed by (provider, url, model), so a warm key would let a second save through (D6).
+    # Judged against the width *this save* would put in force, not against 1024 (spec 2026-09-26
+    # D1 乙): with the declaration authoritative, the question is "can the model do the declared N".
     measured = len(results[0].dense) if results else 0
-    if measured != COLLECTION_DIMENSION:
-        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{dimension_mismatch_message(measured)}")
+    expected = effective_dimension(pending)
+    if measured != expected:
+        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{dimension_mismatch_message(measured, expected)}")
     return None
 
 
@@ -793,7 +796,7 @@ async def probe_leg_connectivity(
         raise HTTPException(status_code=422, detail=f"{body.leg} 腿不认识 provider {body.provider!r}（受控 allowlist）。")
 
     if body.leg == "embedding":
-        requested = body.embedding_dimension if body.embedding_dimension is not None else (config.rag.embedding_dimension or COLLECTION_DIMENSION)
+        requested = body.embedding_dimension if body.embedding_dimension is not None else effective_dimension(config.rag)
         candidate = config.rag.model_copy(
             update={
                 "embedding_provider": body.provider,

@@ -32,37 +32,52 @@ from deerflow.knowledge.sparse import BM25SparseEncoder
 
 logger = logging.getLogger(__name__)
 
-#: Every Qdrant collection in this project is created at this width (vector_store §3.3).
-COLLECTION_DIMENSION = 1024
+#: The width every deployment starts at, and the one the unsuffixed collections were built
+#: with. A declaration replaces it per deployment (spec 2026-09-26 D1 乙); an undeclared one
+#: keeps it, which is what makes an untouched deployment byte-for-byte what it always was.
+DEFAULT_COLLECTION_DIMENSION = 1024
 
 #: (provider id, base_url, model) → measured dense width. Process-local on purpose: it
 #: certifies *this* deployment's endpoint, and a config change alters the key anyway.
 _PROBED_DIMENSIONS: dict[tuple[str, str, str], int] = {}
 
-_REBUILD_HINT = "请改用 1024 维的模型，然后到「设置 → 模型 → 功能模型 → 重建索引」重新嵌入现有切片。"
+_REBUILD_HINT = "请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。"
 
 
-def dimension_mismatch_message(measured: int) -> str:
+def effective_dimension(rag: Any | None = None) -> int:
+    """The width this deployment's vectors are written at: the declared one, else the default.
+
+    One reader for the whole runtime — the store's collection names, the guards below and the
+    save-time probe all have to answer "how wide is the library" the same way, or a save would
+    be judged against a width the writer never uses.
+    """
+    if rag is None:
+        rag = get_app_config().rag
+    return rag.embedding_dimension or DEFAULT_COLLECTION_DIMENSION
+
+
+def dimension_mismatch_message(measured: int, expected: int) -> str:
     """The one wording for a wrong dense width.
 
     Two callers refuse on this fact — the once-per-process runtime guard here and the save-time
     probe (``app.gateway.routers.rag_config``) — and they must not word it twice: the admin sees
     the same sentence while editing as the ingest would have shown days later.
     """
-    return f"嵌入模型返回 {measured} 维，而向量库集合固定为 {COLLECTION_DIMENSION} 维 ⇒ 拒绝启用。{_REBUILD_HINT}"
+    return f"嵌入模型返回 {measured} 维，而当前生效宽度是 {expected} 维 ⇒ 拒绝启用。{_REBUILD_HINT}"
 
 
 class _DimensionCheckedEmbedder:
-    """Measure the dense width once per process; refuse anything but ``COLLECTION_DIMENSION``.
+    """Measure the dense width once per process; refuse anything but the deployment's width.
 
     The refusal is a ``ValueError``, never an ``EmbedderError``: ``index_chunks`` treats
     ``EmbedderError`` as a soft, per-batch failure and would otherwise bury a configuration
     mistake as "some chunks failed".
     """
 
-    def __init__(self, inner: Embedder, *, key: tuple[str, str, str]) -> None:
+    def __init__(self, inner: Embedder, *, key: tuple[str, str, str], expected: int) -> None:
         self._inner = inner
         self._key = key
+        self._expected = expected
 
     @property
     def batch_size(self) -> int:
@@ -74,8 +89,8 @@ class _DimensionCheckedEmbedder:
             measured = len(results[0].dense)
             _PROBED_DIMENSIONS[self._key] = measured
             logger.info("embedding provider %s measured at %d dimensions", self._key[0], measured)
-            if measured != COLLECTION_DIMENSION:
-                raise RagConfigurationError(dimension_mismatch_message(measured))
+            if measured != self._expected:
+                raise RagConfigurationError(dimension_mismatch_message(measured, self._expected))
         return results
 
 
@@ -121,7 +136,8 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
 
     Raises ``ValueError`` when the configuration cannot describe a usable embedder: a
     dense-only provider paired with ``sparse_source=provider``, a missing sparse endpoint,
-    or a declared dimension other than the collection's.
+    a missing address, or a declared dimension the model cannot honour (caught on the first
+    real call, not here).
     """
     if config is None:
         config = get_app_config()
@@ -134,11 +150,8 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
     if sparse_source == "provider" and not spec.emits_sparse:
         raise RagConfigurationError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。")
 
-    declared = rag.embedding_dimension
-    if declared is not None and declared != COLLECTION_DIMENSION:
-        raise RagConfigurationError(f"rag.embedding_dimension 声明的 {declared} 维与向量库集合的 {COLLECTION_DIMENSION} 维不符 ⇒ 拒绝启用。{_REBUILD_HINT}")
-
-    dense = _build_dense(spec, rag, declared, client)
+    expected = effective_dimension(rag)
+    dense = _build_dense(spec, rag, expected, client)
     if sparse_source == "provider":
         # The provider was trusted to supply both halves (allowlist + the model-level probe);
         # this is the fallback for the corners the probe could not reach (D5).
@@ -148,7 +161,7 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
     return ComposedEmbedder(dense=dense, sparse=sparse)
 
 
-def _build_dense(spec, rag, declared: int | None, client: Any | None) -> Embedder:
+def _build_dense(spec, rag, expected: int, client: Any | None) -> Embedder:
     """Build the dense half. The allowlist row says whether this vendor ships a default hint.
 
     A stored ``rag.embedding_base_url`` is the one and only address (spec 2026-09-25
@@ -170,16 +183,16 @@ def _build_dense(spec, rag, declared: int | None, client: Any | None) -> Embedde
         # The width is injected, never inferred by the implementation (spec 2026-09-17 §3 D3):
         # a vendor whose model is born wider than our collections must be *told* the target,
         # and the guard that would catch a wrong width only fires on a real call.
-        kwargs["dimension"] = declared if declared is not None else COLLECTION_DIMENSION
-    elif declared is not None:
+        kwargs["dimension"] = expected
+    elif rag.embedding_dimension is not None:
         # A declaration is also *sent* on the generic leg (spec 2026-09-26 D2 甲a): asking for
         # the width is what makes a model whose default is not 1024 usable at all. Undeclared
         # stays undeclared — that request body is byte for byte what it always was.
-        kwargs["dimension"] = declared
-    return _guard(resolve_variable(spec.implementation)(**kwargs), spec, rag)
+        kwargs["dimension"] = rag.embedding_dimension
+    return _guard(resolve_variable(spec.implementation)(**kwargs), spec, rag, expected=expected)
 
 
-def _guard(embedder: Embedder, spec, rag) -> Embedder:
+def _guard(embedder: Embedder, spec, rag, *, expected: int) -> Embedder:
     """Wrap a provider that cannot self-certify its width in the one-shot probe.
 
     The judgement comes from the allowlist row, not from the constructed object: a test
@@ -187,7 +200,7 @@ def _guard(embedder: Embedder, spec, rag) -> Embedder:
     """
     if spec.pins_dimension or rag.embedding_dimension is not None:
         return embedder
-    return _DimensionCheckedEmbedder(embedder, key=(spec.provider_id, str(rag.embedding_base_url or ""), str(rag.embedding_model or "")))
+    return _DimensionCheckedEmbedder(embedder, key=(spec.provider_id, str(rag.embedding_base_url or ""), str(rag.embedding_model or "")), expected=expected)
 
 
 def _build_sparse(rag, sparse_source: str, client: Any | None) -> Any:
