@@ -216,6 +216,7 @@ VERDICT: hook fired with a numeric status 0 time(s)
 5. **本项与 §12 第 6 项(实时脉冲)的分工**:脉冲讲"正在走到哪",本项讲"结局如何"。两者都在 run 作用域内,**若都选内联锚点,要注意不要互相抢位**(建议:脉冲在头部触发器上给一个小状态,本项在内联)。**待第 6 项时确认**。
 6. **`getStreamErrorMessage` 是"丢信息"的那一跳,但它不是落点** —— **2026-09-12 Task 3 实测更正**:它现在只有 **2** 个调用点(`hooks.ts:1879` 的 `onError` 与 `:2413` 的 `submitPreparedReplay`),不是初稿写的 4 个;而且**run 创建失败根本不在 `:2413`** —— 所有提交路径(send/regenerate/edit)都走 `thread.submit`,SDK 的 `StreamManager.start` 不 await 队列、`enqueue` 也在 catch 里调 `options.onError` 后不 rethrow,`await thread.submit(...)` **永不 reject** ⇒ 真实落点是**一个共享的 `onError`**。**不要改动 `getStreamErrorMessage` 的既有行为**(`:2413` 依赖"总能返回一句话"),而是新增 `describeStartFailure` 做分类,由 `onError` 组合两者。
    ⇒ 由此还带出一条必须写死的实现约束:**那条用户消息在失败时会被清掉**(`onError` 第一行的 `setOptimisticMessages([])`),而 §4.1 的 pre-stream 锚点正是它。**用户 2026-09-12 裁定:保留它**(只对 plain send 保留;replay 路径的乐观消息是服务端替换副本,保留会出现重影)。详见 Task 3 的 Step 4 与交付纪要。
+7. **「看详情」的展开内容 = 后端原文(英文、开发者档) —— 2026-09-24 定性为知情选择(登记,非缺陷)**:展开区显示的就是后端 `error` 原样(英文),触发面只有 run 终态 `error` / `timeout`;与 §5 那句"原样展示属于开发者档"同一条纪律,不做中文化、不额外加工。
 
 ## 9. 依赖排序与规模
 
