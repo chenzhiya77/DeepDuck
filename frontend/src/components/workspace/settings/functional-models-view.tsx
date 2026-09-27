@@ -31,6 +31,8 @@ import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
   buildRagConfigInput,
+  connectivityProbeKey,
+  dimensionProbeKey,
   EMBEDDING_PROVIDER_OPTIONS,
   EMBEDDING_SPARSE_SOURCE_OPTIONS,
   formValuesFromConfig,
@@ -56,6 +58,8 @@ import {
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
 import {
+  useProbeConnectivity,
+  useProbeDimensions,
   useProbeSparseCapability,
   useProbeSparseService,
   useRagConfig,
@@ -74,7 +78,7 @@ import { ReindexDialog } from "./reindex-dialog";
 const AUTO_OPTION_VALUE = "__auto__";
 
 /** Rows the retrieval group's advanced section holds; its trigger names that count. */
-const ADVANCED_SETTING_COUNT = 5;
+const ADVANCED_SETTING_COUNT = 6;
 
 /** The credential the capability probe needs before it can call anything. */
 const EMBEDDING_KEY_SOURCE = "embedding_api_key";
@@ -243,8 +247,64 @@ function PairCell({
 }
 
 /** A role heading: the bold role name. The English pill is gone (spec §3.2 revision, 乙). */
-function RoleHeading({ label }: { label: string }) {
-  return <span className="text-sm font-semibold">{label}</span>;
+/** The four states one leg's dot can be in (spec 2026-09-26 D5-5). */
+type LegDotState = "untested" | "probing" | "ok" | "bad-dimension" | "bad";
+
+const LEG_DOT_TONE: Record<LegDotState, string> = {
+  untested: "bg-muted-foreground/40",
+  probing: "bg-muted-foreground/40 animate-pulse",
+  ok: "bg-emerald-500",
+  // 橙是他定的：与「没答案」的灰分开，也与既有失败色 destructive 分开。
+  "bad-dimension": "bg-amber-500",
+  bad: "bg-amber-500",
+};
+
+/**
+ * A role heading that doubles as its leg's connectivity button (D5-5).
+ *
+ * The dot after the title carries the state and the whole title is the control: one real call per
+ * click, nothing persisted. The hover sentence is the server's own `detail` when there is one, so
+ * the row never paraphrases a reason it did not receive.
+ */
+function LegHeading({
+  label,
+  status,
+  reason,
+  disabled,
+  onProbe,
+}: {
+  label: string;
+  status: LegDotState;
+  reason: string;
+  disabled: boolean;
+  onProbe: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-slot="leg-heading"
+      data-state={status}
+      aria-label={`${label} · ${reason}`}
+      title={reason}
+      disabled={disabled}
+      onClick={onProbe}
+      className={cn(
+        "text-sm font-semibold",
+        !disabled && "hover:text-foreground/80 cursor-pointer",
+        disabled && "cursor-not-allowed",
+      )}
+    >
+      {label}
+      <span
+        aria-hidden
+        data-slot="leg-dot"
+        className={cn(
+          "ml-1.5 inline-block size-2 rounded-full align-middle",
+          LEG_DOT_TONE[status],
+        )}
+      />
+    </button>
+  );
 }
 
 /**
@@ -353,6 +413,9 @@ export function FunctionalModelsView() {
   const save = useSaveRagConfig();
   const probe = useProbeSparseCapability();
   const sparseServiceProbe = useProbeSparseService();
+  const dimensionProbe = useProbeDimensions();
+  const connectivityProbe = useProbeConnectivity();
+  const requestedDimension = useRef<string | null>(null);
   const { models } = useModels();
   const { config: modelsConfig } = useModelsConfig();
 
@@ -509,6 +572,108 @@ export function FunctionalModelsView() {
     return () => clearTimeout(timer);
   }, [sparseServiceApplies, sparseServiceHasKey, values, sparseServiceProbe]);
 
+  // ── 维度探测 + 两腿的连通点 (spec 2026-09-26 §3 / D5-5) ────────────────────
+  // 有钥匙 = 存的或环境变量（判据同稀疏探针）——空输入框不算「没有」，否则 env 部署会死在
+  // 这里。维度探测不读 sparse_source：它问的是模型吃哪些宽度。
+  const embeddingKeyPresent = view?.sources?.[EMBEDDING_KEY_SOURCE] !== "unset";
+  const rerankKeyPresent = view?.sources?.rerank_api_key !== "unset";
+  const dimensionKey = values ? dimensionProbeKey(values) : "";
+  const dimensionVerdict =
+    dimensionProbe.data && dimensionProbe.data.key === dimensionKey
+      ? dimensionProbe.data
+      : null;
+  const dimensionProbing =
+    dimensionProbe.isPending && dimensionProbe.variables?.key === dimensionKey;
+  const dimensionApplies =
+    values !== null &&
+    values.embedding_model.trim() !== "" &&
+    values.embedding_base_url.trim() !== "" &&
+    embeddingKeyPresent;
+
+  useEffect(() => {
+    if (!dimensionApplies || !values) return;
+    const key = dimensionProbeKey(values);
+    if (requestedDimension.current === key) return;
+    // 真实调用、按 key 只发生一次（改 provider / Model / 地址才换 key）。
+    const timer = setTimeout(() => {
+      requestedDimension.current = key;
+      dimensionProbe.mutate({
+        key,
+        embedding_provider: values.embedding_provider,
+        embedding_model: values.embedding_model.trim(),
+        embedding_base_url: values.embedding_base_url.trim() || null,
+        embedding_api_key: null,
+      });
+    }, PROBE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [dimensionApplies, values, dimensionProbe]);
+
+  /** 一条腿的连通点：坐标齐了才可点；结论只认「点过的那一发」。 */
+  const legProps = (form: RagConfigFormValues, leg: "embedding" | "rerank") => {
+    const provider =
+      leg === "embedding" ? form.embedding_provider : form.rerank_provider;
+    const model = (
+      leg === "embedding" ? form.embedding_model : form.rerank_model
+    ).trim();
+    const baseUrl = (
+      leg === "embedding" ? form.embedding_base_url : form.rerank_base_url
+    ).trim();
+    const hasKey = leg === "embedding" ? embeddingKeyPresent : rerankKeyPresent;
+    const ready = model !== "" && baseUrl !== "" && hasKey;
+    const key = connectivityProbeKey(leg, form, hasKey);
+    const verdict =
+      connectivityProbe.data && connectivityProbe.data.key === key
+        ? connectivityProbe.data
+        : null;
+    const probing =
+      connectivityProbe.isPending && connectivityProbe.variables?.key === key;
+    const status: LegDotState = probing
+      ? "probing"
+      : !ready || verdict === null
+        ? "untested"
+        : verdict.status === "ok"
+          ? "ok"
+          : verdict.status === "dimension_unavailable"
+            ? "bad-dimension"
+            : "bad";
+    const reason = probing
+      ? F.legDotProbing
+      : !ready
+        ? F.legDotNeedsConfig
+        : verdict
+          ? verdict.detail
+          : F.legDotUntested;
+    return {
+      status,
+      reason,
+      disabled: !ready || probing,
+      onProbe: () => {
+        const rawDimension = form.embedding_dimension.trim();
+        connectivityProbe.mutate({
+          key,
+          leg,
+          provider,
+          model,
+          base_url: baseUrl || null,
+          api_key: null,
+          embedding_dimension:
+            leg === "embedding" && rawDimension !== "" ? Number(rawDimension) : null,
+        });
+      },
+    };
+  };
+
+  /** 档位快捷项：① 型 = 探到的有效档；② 型 = ≤ 原生的候选；③ 型没有档位区。 */
+  const dimensionChips = (() => {
+    const verdict = dimensionVerdict;
+    if (!verdict || verdict.status !== "ok") return [] as number[];
+    if (verdict.type === "tiered") return verdict.values;
+    if (verdict.type === "range" && verdict.native !== null) {
+      return verdict.candidates.filter((width) => width <= (verdict.native ?? 0));
+    }
+    return [] as number[];
+  })();
+
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">{t.common.loading}</div>;
   }
@@ -643,8 +808,8 @@ export function FunctionalModelsView() {
         <Rows stacked>
           <div className={`${ROW_PAIR} pt-0 pb-2 max-md:hidden`}>
             <span />
-            <RoleHeading label={F.embeddingModel} />
-            <RoleHeading label={F.rerankModel} />
+            <LegHeading label={F.embeddingModel} {...legProps(values, "embedding")} />
+            <LegHeading label={F.rerankModel} {...legProps(values, "rerank")} />
           </div>
 
           {/* Below `md` the pair regroups into one block per role (spec 2026-09-24 §3.2
@@ -788,6 +953,75 @@ export function FunctionalModelsView() {
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-4">
             <Rows>
+              {/* 维度在上、稀疏来源在下（spec 2026-09-26 D5-4）：维度=库宽、连着全库重建，
+                  是这块最重的一项。探测自动跑，行内没有按钮。 */}
+              <div className={ROW} data-slot="dimension-row">
+                <RowLabel info={`${F.dimensionHint} ${F.dimensionProbeHint}`}>
+                  {F.dimensionLabel}
+                </RowLabel>
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Input
+                    inputMode="numeric"
+                    aria-label={F.dimensionLabel}
+                    data-slot="dimension-input"
+                    className="w-32"
+                    value={values.embedding_dimension}
+                    readOnly={dimensionVerdict?.type === "fixed"}
+                    placeholder={
+                      dimensionVerdict?.native ? String(dimensionVerdict.native) : undefined
+                    }
+                    onChange={(event) =>
+                      update("embedding_dimension", event.target.value)
+                    }
+                    {...AUTOFILL_OFF_INPUT_PROPS}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      role="status"
+                      data-slot="dimension-status"
+                      className="text-muted-foreground text-xs"
+                    >
+                      {dimensionProbing
+                        ? F.dimensionProbing
+                        : dimensionVerdict === null
+                          ? null
+                          : dimensionVerdict.status === "unreachable"
+                            ? F.dimensionUnprobed
+                            : dimensionVerdict.native === null
+                              ? null
+                              : dimensionVerdict.type === "tiered" &&
+                                  dimensionVerdict.values.length === 0
+                                ? F.dimensionNoTiers
+                                : F.dimensionNativeHint(dimensionVerdict.native)}
+                    </span>
+                    {dimensionChips.length > 0 && (
+                      <div
+                        className="flex flex-wrap items-center gap-1"
+                        data-slot="dimension-chips"
+                      >
+                        <span className="text-muted-foreground text-xs">
+                          {F.dimensionTierHint}
+                        </span>
+                        {dimensionChips.map((width) => (
+                          <button
+                            key={width}
+                            type="button"
+                            data-slot="dimension-chip"
+                            className={cn(
+                              "rounded border border-border px-1.5 py-0.5 text-xs hover:bg-muted",
+                              values.embedding_dimension.trim() === String(width) &&
+                                "bg-muted font-medium",
+                            )}
+                            onClick={() => update("embedding_dimension", String(width))}
+                          >
+                            {width}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
               <div className={ROW}>
                 <RowLabel info={`${F.sparseSourceHint} ${F.sparseProbeHint}`}>
                   {F.embeddingSparseSource}

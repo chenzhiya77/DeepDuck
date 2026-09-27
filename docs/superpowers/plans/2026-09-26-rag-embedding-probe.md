@@ -90,19 +90,28 @@
 
 > 动到的文件：`backend/app/gateway/routers/rag_config.py`（两个新端点）+ 前端 `core/rag/{types,api,hooks}.ts` 与 `functional-models-view.tsx` + 两侧用例。**验收对应**：spec §4 的 1 / 2 / 10 / 12 / 14 / 15。
 
-- [ ] **RED（后端 A · 档位）**：`POST /api/rag/config/probe-dimensions` 用例（admin / `extra="forbid"` / 未知 provider 422 / 桩返回三型 / 探不出 ⇒ `detail` 带原因且**不 500**）；此刻路由不存在 ⇒ 404 红。
-- [ ] **GREEN（后端 A）**：请求模型仿 `RagSparseProbeRequest`（provider / model / base_url? / api_key?，sentinel 语义照旧）；`_probe_api_key` 复用；**端点 A 自构请求**（它要**逐候选变 `dimensions`**，而工厂产物是按构造固定宽度的——**走工厂的是端点 B 的两腿**）；出参带 **`candidates`**（后端那张表，供前端 ② 静态提示与 ①"部分未探到"判定——**前端不另抄**；**`values` 语义写死**：① = 探到的有效档、② = `[native]`（上界验证通过）/ `[]`、③ = `[native]`）；**超时用 `_PROBE_TIMEOUT_SECONDS`**（不新起第二份 10s）；只读不落盘。
-- [ ] **RED（后端 B · 连通，D5-5）**：`POST /api/rag/config/probe-connectivity` 用例——入参 `{leg, provider, model?, base_url?, api_key?, embedding_dimension?}`（`api_key` 接受哨兵）；**走工厂**（embedding ⇒ `build_embedder(rag=候选)`；rerank ⇒ `build_reranker(rag=候选)`）；embedding 腿**带所选维度**（桩"只收 1024" ⇒ 选 1536 返回 **`dimension_unavailable`** 而非"连不上"；带参被 400 ⇒ 同一态）；rerank 腿发一发最小调用、**无该态**；不可达 / 凭据被拒 ⇒ `unreachable` / `refused`、**不 500**。
-- [ ] **GREEN（后端 B）**：一发真调用（embedding ⇒ `embed()` 一次并顺带报实测宽度；rerank ⇒ 最小 query+doc 一发、**query 与唯一 doc 都用 `_PROBE_TEXT`**）；**未选维度 ⇒ 按生效宽度（默认 1024）发**；只读不落盘、**超时用 `_PROBE_TIMEOUT_SECONDS`**。⚠️ **时序**：**通用腿的"带维度"要到 Task 3 才真发**（那之前通用腿还不发 `dimensions`）⇒ 本 Task 阶段，B 的用例先钉 **dashscope / ark 两腿** + **通用腿的"未带参"形态**。
-- [ ] **RED（前端 · 维度行）**：dom 用例（结构、不钉几何）——**第一行自由填入 + 档位快捷项**（① 的档位=探到的列表、**点一下填进第一行、不可取消**；② 静态提示（**不跑候选表**）、来源取探针响应的 `candidates` **且只列 ≤ 原生**（超原生不列/置灰）；③ 第一行只读、无档位区）；**档位为空不渲染空列表**（显示"未探到共识档，请手填"）；**0 档回退**（严格端点桩 ⇒ 显示默认宽度 + 可手填 + 说明句）；**填与当前相同的值 ⇒ 不出现"改维度＝全库重建"确认**（触发判据=值变了，与输入来源无关）；**无「探测」按钮**；**自动探**（改 provider/Model/地址触发、400ms 防抖、同 key 不重探）；状态骑在行内；行在**「高级设置」第一行、稀疏来源上面**（D5-4）；`ADVANCED_SETTING_COUNT` 5 ⇒ 6；**控件形态三腿相同**（地址行的锁/放照旧由 `has_fixed_endpoint` 决定，本对不改）。
-- [ ] **RED（前端 · 两个标题点，D5-5）**：两个角色标题变按钮 + 状态点，**四态**（灰未测 / 转圈 / 绿通 / **橙**不通）——橙**分两种原因**（连不上 / 连得上但所选维度要不到）；点绑 `provider|model|地址|有无钥匙`，改值退回灰；缺必填 ⇒ 灰且禁用；hover 分态文案；**任何态不拦保存**；点=手动（保存期探针结果不喂给它）。
-- [ ] **RED（前端 · 数字字段往返，必改）**：往返用例——设维度 ⇒ 保存 ⇒ GET 仍是它；随后一次**无关编辑**保存后它**仍在**。今天必红：`RagConfigFormValues` 无此键、`buildRagConfigInput`（`config-form.ts:92-124` 三张清单）与 `hasFormChanges`（`:516-518`）都不带它，而 PUT 是整对象替换（省略=删除）。
-- [ ] **GREEN（前端 · 数字字段往返）**：新增**"数字字段"这一类**（表单值 / 种子 / 变更检测 / payload 携带四件齐），并把维度控件接上它。
-- [ ] **GREEN（前端）**：其余三文件 + 视图接线（探针 hook 复用 `hooks.ts` 的"verdict 带 key、不 invalidate、失败是状态不是 toast"契约）。
-- [ ] **neuter**：① 后端删 `type` 分支 ⇒ 只红对应型的前端 dom；② 把自动探改成手动 ⇒ 只红"自动探"那条；③ 把橙改成灰 ⇒ 只红连通点那条。**受害者不相交**。
-- [ ] **门禁**：后端窄面 + `pnpm check` + 前端相关 dom。
+- [x] **RED（后端 A · 档位）**：`POST /api/rag/config/probe-dimensions` 用例（admin / `extra="forbid"` / 未知 provider 422 / 桩返回三型 / 探不出 ⇒ `detail` 带原因且**不 500**）；此刻路由不存在 ⇒ 404 红。
+- [x] **GREEN（后端 A）**：请求模型仿 `RagSparseProbeRequest`（provider / model / base_url? / api_key?，sentinel 语义照旧）；`_probe_api_key` 复用；**端点 A 自构请求**（它要**逐候选变 `dimensions`**，而工厂产物是按构造固定宽度的——**走工厂的是端点 B 的两腿**）；出参带 **`candidates`**（后端那张表，供前端 ② 静态提示与 ①"部分未探到"判定——**前端不另抄**；**`values` 语义写死**：① = 探到的有效档、② = `[native]`（上界验证通过）/ `[]`、③ = `[native]`）；**超时用 `_PROBE_TIMEOUT_SECONDS`**（不新起第二份 10s）；只读不落盘。
+- [x] **RED（后端 B · 连通，D5-5）**：`POST /api/rag/config/probe-connectivity` 用例——入参 `{leg, provider, model?, base_url?, api_key?, embedding_dimension?}`（`api_key` 接受哨兵）；**走工厂**（embedding ⇒ `build_embedder(rag=候选)`；rerank ⇒ `build_reranker(rag=候选)`）；embedding 腿**带所选维度**（桩"只收 1024" ⇒ 选 1536 返回 **`dimension_unavailable`** 而非"连不上"；带参被 400 ⇒ 同一态）；rerank 腿发一发最小调用、**无该态**；不可达 / 凭据被拒 ⇒ `unreachable` / `refused`、**不 500**。
+- [x] **GREEN（后端 B）**：一发真调用（embedding ⇒ `embed()` 一次并顺带报实测宽度；rerank ⇒ 最小 query+doc 一发、**query 与唯一 doc 都用 `_PROBE_TEXT`**）；**未选维度 ⇒ 按生效宽度（默认 1024）发**；只读不落盘、**超时用 `_PROBE_TIMEOUT_SECONDS`**。⚠️ **时序**：**通用腿的"带维度"要到 Task 3 才真发**（那之前通用腿还不发 `dimensions`）⇒ 本 Task 阶段，B 的用例先钉 **dashscope / ark 两腿** + **通用腿的"未带参"形态**。
+- [x] **RED（前端 · 维度行）**：dom 用例（结构、不钉几何）——**第一行自由填入 + 档位快捷项**（① 的档位=探到的列表、**点一下填进第一行、不可取消**；② 静态提示（**不跑候选表**）、来源取探针响应的 `candidates` **且只列 ≤ 原生**（超原生不列/置灰）；③ 第一行只读、无档位区）；**档位为空不渲染空列表**（显示"未探到共识档，请手填"）；**0 档回退**（严格端点桩 ⇒ 显示默认宽度 + 可手填 + 说明句）；**填与当前相同的值 ⇒ 不出现"改维度＝全库重建"确认**（触发判据=值变了，与输入来源无关）；**无「探测」按钮**；**自动探**（改 provider/Model/地址触发、400ms 防抖、同 key 不重探）；状态骑在行内；行在**「高级设置」第一行、稀疏来源上面**（D5-4）；`ADVANCED_SETTING_COUNT` 5 ⇒ 6；**控件形态三腿相同**（地址行的锁/放照旧由 `has_fixed_endpoint` 决定，本对不改）。
+- [x] **RED（前端 · 两个标题点，D5-5）**：两个角色标题变按钮 + 状态点，**四态**（灰未测 / 转圈 / 绿通 / **橙**不通）——橙**分两种原因**（连不上 / 连得上但所选维度要不到）；点绑 `provider|model|地址|有无钥匙`，改值退回灰；缺必填 ⇒ 灰且禁用；hover 分态文案；**任何态不拦保存**；点=手动（保存期探针结果不喂给它）。
+- [x] **RED（前端 · 数字字段往返，必改）**：往返用例——设维度 ⇒ 保存 ⇒ GET 仍是它；随后一次**无关编辑**保存后它**仍在**。今天必红：`RagConfigFormValues` 无此键、`buildRagConfigInput`（`config-form.ts:92-124` 三张清单）与 `hasFormChanges`（`:516-518`）都不带它，而 PUT 是整对象替换（省略=删除）。
+- [x] **GREEN（前端 · 数字字段往返）**：新增**"数字字段"这一类**（表单值 / 种子 / 变更检测 / payload 携带四件齐），并把维度控件接上它。
+- [x] **GREEN（前端）**：其余三文件 + 视图接线（探针 hook 复用 `hooks.ts` 的"verdict 带 key、不 invalidate、失败是状态不是 toast"契约）。
+- [x] **neuter**：① 后端删 `type` 分支 ⇒ 只红对应型的前端 dom；② 把自动探改成手动 ⇒ 只红"自动探"那条；③ 把橙改成灰 ⇒ 只红连通点那条。**受害者不相交**。
+- [x] **门禁**：后端窄面 + `pnpm check` + 前端相关 dom。
 
-**实测（待回填）**：
+**实测（2026-09-27，Task 2 完成 · 后端两端点 + 前端维度行/两标题点）**：
+
+- **后端**：新增 `tests/test_rag_config_dimension_probe.py` **13/13 绿**（RED 首跑 13 红 ⇒ 路由不存在）；两文件 `ruff check` + `format --check` 双净；`make lint` 全绿。落点：`POST /api/rag/config/probe-dimensions`（**出参加 `status: ok|unreachable`**——spec §3 端点 A 原本没有状态位，前端无从区分"未探明"与"答案"，按探针族先例补、已获他点头）与 `POST /api/rag/config/probe-connectivity`（四态；embedding 走 `build_embedder(rag=候选)` 带所选维度、rerank 走 `build_reranker(rag=候选)` 发 `_PROBE_TEXT` 一发）。
+- **前端**：`pnpm check` 净；相关三套件 **3 files 全绿**（视图 dom ×2 + config-form node）。钉子：维度行在高级面板**首行**、可编辑、**无「探测」按钮**（行内唯一按钮是 ⓘ）、档位芯片渲染与回填、未探明**不渲染空列表**、两标题变按钮（`data-slot="leg-heading"`）+ 禁用/就位两态、**绿/橙两色**、**自动探一发**（无需点按钮）、位宽改动驱动既有警告且**同值不报警**；config-form 侧：数字字段往返（携带=数字 / 清空=null / 不冻结 operator 值 / 非数字不提交 / `hasFormChanges` 与 `isEmbeddingChange` 各复判）+ 两个 key 的绑定口径。
+- **neuter 三刀各红 1 条、受害者不相交**：① tiered 芯片分支改空 ⇒ 只红芯片那条；② 自动探置 `return` ⇒ 只红"自动探"那条；③ 橙改灰 ⇒ 只红 amber 那条。
+- **两处如实记（缺口/时序）**：① `embedding_dimension` 传非 1024（如 1536）在 **Task 4 之前**会被工厂守门挡下 ⇒ 那两条用例改成"问 1024、桩回 512"来验 `dimension_unavailable`；**"选 1536"的形态留给 Task 4 与真栈**。② spec 的"**带参被 400 拒 ⇒ 同一态**"这半**未实现**（400 与其它失败在 `EmbedderError` 上不可分，除非给错误加状态位）⇒ 现在只按"`200` 但宽度 ≠ 所求"判第四态。
+- **随带**：`ADVANCED_SETTING_COUNT` 5⇒6（用例镜像改 `advancedLabel(6)`）；`RoleHeading` 由 `LegHeading` 取代（旧断言改按 `data-slot`/role 取）；两个视图测试文件的 hooks mock 各补两枚；`config-form` 的 `NUMERIC_FIELDS` 类落地（必改项）。
+- ⚠️ **既有红（非本线，A/B 已证）**：`tests/test_rag_config_probe.py` **4 条在 HEAD 上就红**（根因 `RagConfigurationError: 嵌入 provider 'dashscope' 需要 rag.embedding_base_url`——09-25 端点解锁把地址改必填后该夹具没补地址）。
+
+
 
 ---
 

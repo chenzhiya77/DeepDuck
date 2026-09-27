@@ -154,3 +154,52 @@ export interface RagSparseServiceProbeResponse {
   status: "ok" | "empty" | "unreachable";
   detail: string;
 }
+
+/**
+ * Body of the dimension probe (spec 2026-09-26 §3): a candidate embedding model whose accepted
+ * widths are in question. Same read-only contract as its siblings.
+ */
+export interface RagDimensionProbeRequest {
+  embedding_provider: string;
+  embedding_model: string;
+  embedding_base_url?: string | null;
+  embedding_api_key?: string | null;
+}
+
+/**
+ * Which widths the model accepts. `values` is `[]` for a tiered model that passed nothing (the
+ * caller shows the fallback copy instead of an empty list); `candidates` is the backend's own
+ * table, so the frontend keeps no second copy of it.
+ */
+export interface RagDimensionProbeResponse {
+  status: "ok" | "unreachable";
+  type: "tiered" | "range" | "fixed" | null;
+  native: number | null;
+  values: number[];
+  candidates: number[];
+  detail: string;
+}
+
+/**
+ * One leg's candidate coordinates for a single connectivity call (spec §3 连通探针 D5-5).
+ * `embedding_dimension` is the width in force — the embedding leg sends it, so one call also
+ * proves the width is obtainable.
+ */
+export interface RagConnectivityProbeRequest {
+  leg: "embedding" | "rerank";
+  provider: string;
+  model?: string | null;
+  base_url?: string | null;
+  api_key?: string | null;
+  embedding_dimension?: number | null;
+}
+
+/**
+ * `dimension_unavailable` is the second reason an embedding leg can be unusable: it answered,
+ * but not with the width we asked for.
+ */
+export interface RagConnectivityProbeResponse {
+  status: "ok" | "refused" | "unreachable" | "dimension_unavailable";
+  detail: string;
+  measured_dimension: number | null;
+}

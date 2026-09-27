@@ -21,6 +21,8 @@ import { I18nContext } from "@/core/i18n/context";
 import { enUS } from "@/core/i18n/locales/en-US";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import {
+  connectivityProbeKey,
+  dimensionProbeKey,
   formValuesFromConfig,
   sparseProbeKey,
   sparseServiceProbeKey,
@@ -32,6 +34,8 @@ const ragHooksMock = rs.hoisted(() => ({
   useSaveRagConfig: rs.fn(),
   useProbeSparseCapability: rs.fn(),
   useProbeSparseService: rs.fn(),
+  useProbeDimensions: rs.fn(),
+  useProbeConnectivity: rs.fn(),
 }));
 const modelHooksMock = rs.hoisted(() => ({
   useModels: rs.fn(),
@@ -83,6 +87,8 @@ const saveMock = rs.fn();
 const reindexMock = rs.fn();
 const probeMock = rs.fn();
 const sparseServiceProbeMock = rs.fn();
+const dimensionProbeMock = rs.fn();
+const connectivityProbeMock = rs.fn();
 
 /** What the embedding allowlist reports: who can supply the sparse half, and who fixes its own address. */
 const EMBEDDING_PROVIDERS = [
@@ -206,6 +212,19 @@ function setRag(
     error: opts.error ?? null,
   });
   ragHooksMock.useSaveRagConfig.mockReturnValue({ mutate: saveMock, isPending: false });
+  // 维度探测与两腿连通点：这些用例不碰它们，保持空闲（结论由各自的行渲染）。
+  ragHooksMock.useProbeDimensions.mockReturnValue({
+    mutate: dimensionProbeMock,
+    data: undefined,
+    variables: undefined,
+    isPending: false,
+  });
+  ragHooksMock.useProbeConnectivity.mockReturnValue({
+    mutate: connectivityProbeMock,
+    data: undefined,
+    variables: undefined,
+    isPending: false,
+  });
   setProbe();
   setSparseServiceProbe();
   setKnowledge();
@@ -385,6 +404,8 @@ beforeEach(() => {
   saveMock.mockReset();
   saveModelsMock.mockReset();
   reindexMock.mockReset();
+  dimensionProbeMock.mockReset();
+  connectivityProbeMock.mockReset();
   setRag();
 });
 
@@ -1623,5 +1644,201 @@ describe("ReindexDialog", () => {
         name: F.reindexConfirmAction,
       }).disabled,
     ).toBe(true);
+  });
+});
+
+/** The connectivity probe's stub: one leg's verdict, bound to the same key the view computes. */
+function setConnectivityProbe(
+  over: { leg?: "embedding" | "rerank"; status?: "ok" | "refused" | "unreachable" | "dimension_unavailable" } = {},
+) {
+  ragHooksMock.useProbeConnectivity.mockReturnValue({
+    mutate: connectivityProbeMock,
+    data:
+      over.status === undefined
+        ? undefined
+        : {
+            key: connectivityProbeKey(over.leg ?? "embedding", formValuesFromConfig(view()), true),
+            status: over.status,
+            detail: "probe detail",
+            measured_dimension: null,
+          },
+    variables: undefined,
+    isPending: false,
+  });
+}
+
+/**
+ * The dimension probe's stub: like its siblings, a verdict only counts for the values it was
+ * taken for — the key is computed the way the view computes it. Call **after** `setRag`.
+ */
+function setDimensionProbe(
+  over: {
+    status?: "ok" | "unreachable";
+    type?: "tiered" | "range" | "fixed" | null;
+    native?: number | null;
+    values?: number[];
+    candidates?: number[];
+  } = {},
+) {
+  ragHooksMock.useProbeDimensions.mockReturnValue({
+    mutate: dimensionProbeMock,
+    data:
+      over.status === undefined
+        ? undefined
+        : {
+            key: dimensionProbeKey(formValuesFromConfig(view())),
+            status: over.status,
+            type: over.type ?? null,
+            native: over.native ?? null,
+            values: over.values ?? [],
+            candidates: over.candidates ?? [],
+            detail: "probe detail",
+          },
+    variables: undefined,
+    isPending: false,
+  });
+}
+
+describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
+  /** 高级设置默认收起；探测行就在里面。 */
+  const openAdvanced = () => fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
+
+  it("puts the dimension row at the head of the advanced panel — editable, button-free", () => {
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const row = document.querySelector<HTMLElement>('[data-slot="dimension-row"]')!;
+    expect(row).toBeTruthy();
+    expect(row.parentElement!.firstElementChild).toBe(row);
+
+    const input = within(row).getByLabelText<HTMLInputElement>(F.dimensionLabel);
+    expect(input.readOnly).toBe(false);
+    // 没有「探测」按钮：探测是自动的，档位（有结论时）才是芯片。行内唯一的按钮是 ⓘ
+    // （它的 aria-label 就是那句提示，见 D5-4）。
+    const buttons = within(row).queryAllByRole("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.getAttribute("aria-label")).toBe(
+      `${F.dimensionHint} ${F.dimensionProbeHint}`,
+    );
+
+    fireEvent.change(input, { target: { value: "1536" } });
+    expect(input.value).toBe("1536");
+  });
+
+  it("renders the probed tiers as chips and fills the first line from one", () => {
+    setDimensionProbe({ status: "ok", type: "tiered", native: 1024, values: [256, 1024] });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const chips = within(
+      document.querySelector<HTMLElement>('[data-slot="dimension-chips"]')!,
+    ).getAllByRole("button");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["256", "1024"]);
+
+    fireEvent.click(chips[0]!);
+    expect(screen.getByLabelText<HTMLInputElement>(F.dimensionLabel).value).toBe("256");
+  });
+
+  it("reports 未探明 and renders no tier list when the probe could not answer", () => {
+    setDimensionProbe({ status: "unreachable" });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    expect(screen.getByText(F.dimensionUnprobed)).toBeTruthy();
+    expect(document.querySelector('[data-slot="dimension-chips"]')).toBeNull();
+  });
+
+  it("turns both role headings into connectivity buttons, and a ready leg asks the server", () => {
+    setRag({}, { sources: { embedding_api_key: "env" } });
+    renderPage();
+    openFunctionalView();
+
+    const heading = screen.getByRole<HTMLButtonElement>("button", {
+      name: new RegExp(F.embeddingModel),
+    });
+    expect(heading.getAttribute("data-slot")).toBe("leg-heading");
+    expect(heading.getAttribute("data-state")).toBe("untested");
+    expect(heading.querySelector('[data-slot="leg-dot"]')).toBeTruthy();
+    expect(heading.disabled).toBe(false);
+
+    fireEvent.click(heading);
+    expect(connectivityProbeMock).toHaveBeenCalledTimes(1);
+    expect(connectivityProbeMock.mock.calls[0]![0]).toMatchObject({
+      leg: "embedding",
+      provider: "dashscope",
+    });
+
+    // 重排腿同日就位，且它那发不带维度（spec §3）。
+    const rerank = screen.getByRole("button", { name: new RegExp(F.rerankModel) });
+    expect(rerank.getAttribute("data-slot")).toBe("leg-heading");
+  });
+
+  it("keeps the dots disabled until the leg's own coordinates are complete", () => {
+    setRag({}, { sources: { embedding_api_key: "unset" } });
+    renderPage();
+    openFunctionalView();
+
+    const heading = screen.getByRole("button", { name: new RegExp(F.embeddingModel) });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: new RegExp(F.embeddingModel) }).disabled).toBe(true);
+    expect(heading.getAttribute("data-state")).toBe("untested");
+    fireEvent.click(heading);
+    expect(connectivityProbeMock).not.toHaveBeenCalled();
+  });
+
+  it("raises the embedding-change warning when the width moves, and drops it when put back", () => {
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const input = screen.getByLabelText<HTMLInputElement>(F.dimensionLabel);
+    const seeded = input.value;
+    expect(screen.queryByText(F.embeddingChangeWarning)).toBeNull();
+
+    fireEvent.change(input, { target: { value: "1536" } });
+    expect(screen.queryByText(F.embeddingChangeWarning)).toBeTruthy();
+
+    // 填回原值 ⇒ 不再是改动（D5-4 的"同值不触发"）。
+    fireEvent.change(input, { target: { value: seeded } });
+    expect(screen.queryByText(F.embeddingChangeWarning)).toBeNull();
+  });
+  it("probes the dimension automatically once the coordinates are complete", async () => {
+    setRag({}, { sources: { embedding_api_key: "env" } });
+    renderPage();
+    openFunctionalView();
+
+    // 不用点任何按钮：坐标齐了、防抖过后自己发一发（spec §3 探测的触发）。
+    await waitFor(() => expect(dimensionProbeMock).toHaveBeenCalledTimes(1));
+    expect(dimensionProbeMock.mock.calls[0]![0]).toMatchObject({
+      embedding_provider: "dashscope",
+    });
+  });
+
+  it("paints the dot green when reachable and amber when it is not (橙是他定的)", () => {
+    setRag({}, { sources: { embedding_api_key: "env" } });
+    setConnectivityProbe({ status: "unreachable" });
+    renderPage();
+    openFunctionalView();
+
+    const bad = screen.getByRole<HTMLButtonElement>("button", {
+      name: new RegExp(F.embeddingModel),
+    });
+    expect(bad.getAttribute("data-state")).toBe("bad");
+    expect(bad.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-amber-500");
+  });
+
+  it("keeps a reachable leg green", () => {
+    setRag({}, { sources: { embedding_api_key: "env" } });
+    setConnectivityProbe({ status: "ok" });
+    renderPage();
+    openFunctionalView();
+
+    const ok = screen.getByRole<HTMLButtonElement>("button", {
+      name: new RegExp(F.embeddingModel),
+    });
+    expect(ok.getAttribute("data-state")).toBe("ok");
+    expect(ok.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-emerald-500");
   });
 });

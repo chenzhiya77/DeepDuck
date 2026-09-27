@@ -3,6 +3,8 @@ import type {
   RagConfigValues,
   RagConfigView,
   RagConfigInput,
+  RagConnectivityProbeResponse,
+  RagDimensionProbeResponse,
   RagEmbeddingProviderCapability,
   RagVideoValues,
 } from "./types";
@@ -38,6 +40,12 @@ export interface RagConfigFormValues {
   mineru_api_token: string;
   embedding_provider: "dashscope" | "volcengine-ark" | "openai-compatible";
   embedding_base_url: string;
+  /**
+   * The library width, as text so "not set" has its own spelling (""), like every other row.
+   * It round-trips through the numeric-field class below: the backend stores an int, and a
+   * blank means "stop overriding" rather than 0 (spec 2026-09-26 §3 维度字段的往返).
+   */
+  embedding_dimension: string;
   embedding_sparse_source: "provider" | "external" | "bm25";
   sparse_provider: "tei-sparse" | "";
   sparse_base_url: string;
@@ -108,6 +116,13 @@ const TEXT_FIELDS = [
   "parse_base_url",
 ] as const;
 
+/**
+ * Integer fields. They follow the same carry-forward rule as text, but the wire wants a number:
+ * a blank input means "stop overriding" (so a stored value is removed) and a non-numeric input is
+ * simply not submitted — the row's own validation owns that copy, never the payload.
+ */
+const NUMERIC_FIELDS = ["embedding_dimension"] as const;
+
 /** Enum selects: they carry their own union type, so they are handled apart from text. */
 const SELECT_FIELDS = [
   "embedding_provider",
@@ -149,6 +164,7 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     mineru_api_token: asText(config.mineru_api_token),
     embedding_provider: asEnum(config.embedding_provider, EMBEDDING_PROVIDER_OPTIONS, "dashscope"),
     embedding_base_url: asText(config.embedding_base_url),
+    embedding_dimension: config.embedding_dimension == null ? "" : String(config.embedding_dimension),
     embedding_sparse_source: asEnum(config.embedding_sparse_source, EMBEDDING_SPARSE_SOURCE_OPTIONS, "provider"),
     sparse_provider: asEnum(config.sparse_provider, SPARSE_PROVIDER_OPTIONS, ""),
     sparse_base_url: asText(config.sparse_base_url),
@@ -172,6 +188,12 @@ function owned(view: RagConfigView, key: string): boolean {
 
 function loaded(view: RagConfigView, key: keyof RagConfigValues): string {
   return asText(view.config?.[key]);
+}
+
+/** The same "what is in force today" read for the integer rows, which store a number. */
+function loadedNumber(view: RagConfigView, key: keyof RagConfigValues): string {
+  const value = view.config?.[key];
+  return typeof value === "number" ? String(value) : "";
 }
 
 /** Write one field of the payload; the caller has already narrowed the key and value. */
@@ -204,6 +226,24 @@ export function buildRagConfigInput(
     if (next !== "" || owned(view, key)) {
       input[key] = next;
     }
+  }
+
+  for (const key of NUMERIC_FIELDS) {
+    const raw = values[key].trim();
+    const previous = loadedNumber(view, key);
+    if (raw === previous) {
+      if (raw !== "" && owned(view, key)) {
+        input[key] = Number(raw); // carry the file's own override forward
+      }
+      continue;
+    }
+    if (raw === "") {
+      if (owned(view, key)) input[key] = null; // stop overriding: fall back to config.yaml
+      continue;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) continue; // the row's validation owns that copy
+    input[key] = parsed;
   }
 
   for (const key of SECRET_FIELDS) {
@@ -284,6 +324,7 @@ export function isEmbeddingChange(
     values.embedding_model.trim() !== seeded.embedding_model.trim() ||
     values.embedding_provider !== seeded.embedding_provider ||
     values.embedding_base_url.trim() !== seeded.embedding_base_url.trim() ||
+    values.embedding_dimension.trim() !== seeded.embedding_dimension.trim() ||
     values.embedding_sparse_source !== seeded.embedding_sparse_source
   );
 }
@@ -453,6 +494,45 @@ export function sparseServiceProbeKey(
   ].join("|");
 }
 
+/**
+ * The dimension probe's verdict, tagged with the values it describes (spec 2026-09-26 §3): the
+ * view must never apply a conclusion to a form it was not taken for.
+ */
+export type DimensionProbeVerdict = RagDimensionProbeResponse & { key: string };
+
+/** The values the dimension answer is about — the width itself is *not* among them. */
+export function dimensionProbeKey(values: RagConfigFormValues): string {
+  return [
+    values.embedding_provider,
+    values.embedding_model.trim(),
+    values.embedding_base_url.trim(),
+  ].join("|");
+}
+
+/** The connectivity probe's verdict (D5-5); same "verdict carries its key" contract. */
+export type ConnectivityProbeVerdict = RagConnectivityProbeResponse & { key: string };
+
+/**
+ * The coordinates one leg's dot is about. The embedding leg includes the width in force: asking
+ * for 1536 after choosing 1024 is a different question, so the old answer must be dropped.
+ */
+export function connectivityProbeKey(
+  leg: "embedding" | "rerank",
+  values: RagConfigFormValues,
+  hasKey: boolean,
+): string {
+  const coordinates =
+    leg === "embedding"
+      ? [
+          values.embedding_provider,
+          values.embedding_model.trim(),
+          values.embedding_base_url.trim(),
+          values.embedding_dimension.trim(),
+        ]
+      : [values.rerank_provider, values.rerank_model.trim(), values.rerank_base_url.trim()];
+  return [leg, ...coordinates, hasKey ? "key" : "nokey"].join("|");
+}
+
 /** The verdict for these values, or `null` when it was taken for other ones. */
 export function sparseServiceVerdictFor(
   values: RagConfigFormValues,
@@ -505,6 +585,7 @@ export function hasFormChanges(
   const edited = (a: string, b: string) => a.trim() !== b.trim();
   return (
     TEXT_FIELDS.some((key) => edited(values[key], seeded[key])) ||
+    NUMERIC_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SECRET_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SELECT_FIELDS.some((key) => values[key] !== seeded[key]) ||
     (["asr_provider", "asr_model"] as const).some((key) =>

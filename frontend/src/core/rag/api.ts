@@ -5,6 +5,10 @@ import { getBackendBaseURL } from "../config";
 import type {
   RagConfigInput,
   RagConfigView,
+  RagConnectivityProbeRequest,
+  RagConnectivityProbeResponse,
+  RagDimensionProbeRequest,
+  RagDimensionProbeResponse,
   RagSparseProbeRequest,
   RagSparseProbeResponse,
   RagSparseServiceProbeRequest,
@@ -96,6 +100,56 @@ export async function probeEmbeddingCapability(
     );
   }
   return response.json() as Promise<RagSparseProbeResponse>;
+}
+
+/**
+ * Ask the server which widths a *candidate* model accepts (spec 2026-09-26 §3).
+ *
+ * Read-only like its siblings: real calls, nothing written. `status: "unreachable"` is a state
+ * the row renders (未探明), not an error to dismiss.
+ */
+export async function probeEmbeddingDimensions(
+  input: RagDimensionProbeRequest,
+): Promise<RagDimensionProbeResponse> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/rag/config/probe-dimensions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    throw new RagConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to probe the embedding dimensions"),
+    );
+  }
+  return response.json() as Promise<RagDimensionProbeResponse>;
+}
+
+/**
+ * Reach one leg once and report how it went (spec §3 连通探针 D5-5): `dimension_unavailable`
+ * keeps "it answered, but not with our width" apart from "it never answered".
+ */
+export async function probeLegConnectivity(
+  input: RagConnectivityProbeRequest,
+): Promise<RagConnectivityProbeResponse> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/rag/config/probe-connectivity`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    throw new RagConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to probe the leg"),
+    );
+  }
+  return response.json() as Promise<RagConnectivityProbeResponse>;
 }
 
 /**

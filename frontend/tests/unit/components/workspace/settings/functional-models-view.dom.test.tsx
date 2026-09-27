@@ -68,6 +68,19 @@ rs.mock("@/core/rag/hooks", () => ({
     data: undefined,
     mutate: rs.fn(),
   }),
+  // The dimension probe and the two title dots only decorate the retrieval group; idle here.
+  useProbeDimensions: () => ({
+    isPending: false,
+    data: undefined,
+    variables: undefined,
+    mutate: rs.fn(),
+  }),
+  useProbeConnectivity: () => ({
+    isPending: false,
+    data: undefined,
+    variables: undefined,
+    mutate: rs.fn(),
+  }),
 }));
 
 rs.mock("@/core/models/hooks", () => ({
@@ -146,7 +159,7 @@ const advancedLabel = (count: number) => `advancedSettings(${count})`;
 
 /** The advanced disclosure is closed by default; its rows only exist once it opens. */
 function openAdvanced() {
-  fireEvent.click(screen.getByRole("button", { name: advancedLabel(5) }));
+  fireEvent.click(screen.getByRole("button", { name: advancedLabel(6) }));
 }
 
 afterEach(() => {
@@ -327,6 +340,8 @@ describe("provider rows", () => {
       row.firstElementChild?.textContent?.trim(),
     );
     expect(rows).toEqual([
+      // 维度在上（spec 2026-09-26 D5-4）：它是这块最重的一项，库宽连着全库重建。
+      "dimensionLabel",
       "embeddingSparseSource",
       "providerLabel",
       "modelLabel",
@@ -465,9 +480,8 @@ describe("narrow stacking", () => {
   it("keeps the wide role-heading row hidden below md and drops the English pills", () => {
     renderWith({});
 
-    const heading = screen.getByText("embeddingModel", {
-      selector: "span.text-sm.font-semibold",
-    });
+    // 标题现在是按钮（D5-5 的连通点），所以按 data-slot 选，不再按 span+类名。
+    const heading = screen.getByRole("button", { name: /embeddingModel/ });
     expect(heading.parentElement!.className).toContain("max-md:hidden");
 
     // 乙 (spec §3.2 revision): the pills are gone everywhere, wide included.

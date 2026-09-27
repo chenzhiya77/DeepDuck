@@ -38,8 +38,8 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from deerflow.knowledge.eval.dataset import GoldenQuestion
 from deerflow.knowledge.embedder import RagConfigurationError
+from deerflow.knowledge.eval.dataset import GoldenQuestion
 from deerflow.knowledge.eval.persistence import (
     ENV_LOCAL,
     baseline_diff_from_report,

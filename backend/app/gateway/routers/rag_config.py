@@ -34,11 +34,13 @@ from deerflow.config.rag_config_file import (
     rag_config_write_lock,
 )
 from deerflow.config.runtime_paths import project_root
+from deerflow.knowledge.dimension_probe import CANDIDATE_DIMENSIONS, DimensionProbeError, probe_dimensions
 from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import COLLECTION_DIMENSION, build_embedder, dimension_mismatch_message
 from deerflow.knowledge.model_target import model_not_found_message, rag_target_missing
 from deerflow.knowledge.parser import build_parse_provider
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
+from deerflow.knowledge.reranker import RerankerAuthError
 from deerflow.knowledge.reranker_factory import build_reranker
 
 logger = logging.getLogger(__name__)
@@ -667,3 +669,173 @@ async def probe_sparse_service(
         status="empty",
         detail="稀疏服务已连通，但这段文本没有返回任何词项 ⇒ 请确认它加载的是支持稀疏的模型。",
     )
+
+
+# ── dimension probe + per-leg connectivity (spec 2026-09-26 §3) ────────────
+
+
+class RagDimensionProbeRequest(BaseModel):
+    """A candidate embedding model whose accepted widths are in question.
+
+    ``extra="forbid"`` for the family's reason: this route must not become a second way to
+    describe the configuration. ``embedding_api_key`` accepts the masking sentinel, so the admin
+    never retypes a stored key.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    embedding_provider: str = Field(..., description="Curated allowlist id.")
+    embedding_model: str = Field(..., description="Model id to probe.")
+    embedding_base_url: str | None = Field(default=None, description="Candidate endpoint; omit to keep the configured one.")
+    embedding_api_key: str | None = Field(default=None, description="Candidate key, or the masking sentinel to reuse the stored/environment one.")
+
+
+class RagDimensionProbeResponse(BaseModel):
+    """Which widths the model accepts; ``status`` separates "no answer" from "an answer"."""
+
+    status: Literal["ok", "unreachable"]
+    type: Literal["tiered", "range", "fixed"] | None = None
+    native: int | None = Field(default=None, description="The width the model produces when nobody asks for one.")
+    values: list[int] = Field(default_factory=list, description="tiered: the widths that passed; range/fixed: the single usable width.")
+    candidates: list[int] = Field(default_factory=list, description="The backend's candidate table, so the frontend never keeps a second copy.")
+    detail: str
+
+
+@router.post(
+    "/rag/config/probe-dimensions",
+    response_model=RagDimensionProbeResponse,
+    summary="Probe Which Dimensions an Embedding Model Accepts (admin)",
+    description="Makes real calls with candidate widths and reports the shape of the answer. Nothing is persisted.",
+)
+async def probe_embedding_dimensions(
+    request: Request,
+    body: RagDimensionProbeRequest,
+    config: AppConfig = Depends(get_config),
+) -> RagDimensionProbeResponse:
+    """Classify the model and list what it accepts (spec §3 探针实现).
+
+    Every failure to get an answer — unreachable, refused, timed out — is ``unreachable`` with
+    its own reason, because this row reports a state rather than refusing a save.
+    """
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+
+    if body.embedding_provider not in provider_ids("embedding"):
+        raise HTTPException(status_code=422, detail=f"Unknown embedding provider {body.embedding_provider!r}.")
+
+    try:
+        result = await asyncio.wait_for(
+            probe_dimensions(
+                provider=body.embedding_provider,
+                model=body.embedding_model,
+                base_url=body.embedding_base_url or config.rag.embedding_base_url or "",
+                api_key=_probe_api_key("embedding_api_key", body.embedding_api_key, config, body.embedding_provider),
+                text=_PROBE_TEXT,
+                timeout=_PROBE_TIMEOUT_SECONDS,
+            ),
+            timeout=_PROBE_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        return RagDimensionProbeResponse(status="unreachable", candidates=list(CANDIDATE_DIMENSIONS), detail=f"未能探明：探测超时（超过 {_PROBE_TIMEOUT_SECONDS:g} 秒）。")
+    except DimensionProbeError as exc:
+        logger.warning("dimension probe failed for %s/%s", body.embedding_provider, body.embedding_model, exc_info=True)
+        return RagDimensionProbeResponse(status="unreachable", candidates=list(CANDIDATE_DIMENSIONS), detail=f"未能探明（{type(exc).__name__}）：{_probe_detail(str(exc))}")
+
+    return RagDimensionProbeResponse(
+        status="ok",
+        type=result.type,
+        native=result.native,
+        values=list(result.values),
+        candidates=list(CANDIDATE_DIMENSIONS),
+        detail=result.detail,
+    )
+
+
+class RagConnectivityProbeRequest(BaseModel):
+    """One leg's candidate coordinates for a single connectivity call (spec §3 连通探针)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    leg: Literal["embedding", "rerank"]
+    provider: str = Field(..., description="Curated allowlist id of that leg.")
+    model: str | None = Field(default=None, description="Candidate model id; omit to keep the configured one.")
+    base_url: str | None = Field(default=None, description="Candidate endpoint; omit to keep the configured one.")
+    api_key: str | None = Field(default=None, description="Candidate key, or the masking sentinel.")
+    embedding_dimension: int | None = Field(default=None, description="The width in force; the embedding leg sends it, so one call also proves the width is obtainable.")
+
+
+class RagConnectivityProbeResponse(BaseModel):
+    """``dimension_unavailable`` is the second reason an embedding leg can be unusable."""
+
+    status: Literal["ok", "refused", "unreachable", "dimension_unavailable"]
+    detail: str
+    measured_dimension: int | None = None
+
+
+@router.post(
+    "/rag/config/probe-connectivity",
+    response_model=RagConnectivityProbeResponse,
+    summary="Probe One Leg's Connectivity (admin)",
+    description="One real call through the pipeline's own construction. Nothing is persisted.",
+)
+async def probe_leg_connectivity(
+    request: Request,
+    body: RagConnectivityProbeRequest,
+    config: AppConfig = Depends(get_config),
+) -> RagConnectivityProbeResponse:
+    """Reach the candidate leg once and keep "no answer" apart from "an answer we cannot use".
+
+    Both legs go through the same factories the runtime uses (spec §3): building the client here
+    by hand is how a probe would start certifying a request shape the ingest never sends.
+    """
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+
+    if body.provider not in provider_ids(body.leg):
+        raise HTTPException(status_code=422, detail=f"{body.leg} 腿不认识 provider {body.provider!r}（受控 allowlist）。")
+
+    if body.leg == "embedding":
+        requested = body.embedding_dimension if body.embedding_dimension is not None else (config.rag.embedding_dimension or COLLECTION_DIMENSION)
+        candidate = config.rag.model_copy(
+            update={
+                "embedding_provider": body.provider,
+                "embedding_model": body.model or config.rag.embedding_model,
+                "embedding_base_url": body.base_url or config.rag.embedding_base_url,
+                "embedding_api_key": _probe_api_key("embedding_api_key", body.api_key, config, body.provider),
+                "embedding_dimension": requested,
+            }
+        )
+        try:
+            embedder = build_embedder(config, rag=candidate)
+            results = await asyncio.wait_for(embedder.embed([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+        except EmbedderAuthError as exc:
+            return RagConnectivityProbeResponse(status="refused", detail=f"凭据被拒（{_probe_detail(str(exc))}）")
+        except Exception as exc:  # noqa: BLE001 — everything else means "no answer", with its own reason
+            logger.warning("connectivity probe failed for embedding/%s", body.provider, exc_info=True)
+            return RagConnectivityProbeResponse(status="unreachable", detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}")
+
+        measured = len(results[0].dense) if results else 0
+        if measured and measured != requested:
+            return RagConnectivityProbeResponse(
+                status="dimension_unavailable",
+                measured_dimension=measured,
+                detail=f"连得上，但要不到 {requested} 维：实测返回 {measured} 维 ⇒ 请改选它能给的维度。",
+            )
+        return RagConnectivityProbeResponse(status="ok", measured_dimension=measured or None, detail=f"连通正常，实测 {measured} 维。")
+
+    candidate = config.rag.model_copy(
+        update={
+            "rerank_provider": body.provider,
+            "rerank_model": body.model or config.rag.rerank_model,
+            "rerank_base_url": body.base_url or config.rag.rerank_base_url,
+            "rerank_api_key": _probe_api_key("rerank_api_key", body.api_key, config, body.provider),
+        }
+    )
+    try:
+        reranker = build_reranker(config, rag=candidate)
+        await asyncio.wait_for(reranker.rerank(_PROBE_TEXT, [_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
+    except RerankerAuthError as exc:
+        return RagConnectivityProbeResponse(status="refused", detail=f"凭据被拒（{_probe_detail(str(exc))}）")
+    except Exception as exc:  # noqa: BLE001 — same contract as the embedding branch
+        logger.warning("connectivity probe failed for rerank/%s", body.provider, exc_info=True)
+        return RagConnectivityProbeResponse(status="unreachable", detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}")
+
+    return RagConnectivityProbeResponse(status="ok", detail="连通正常（重排腿没有维度这一问）。")

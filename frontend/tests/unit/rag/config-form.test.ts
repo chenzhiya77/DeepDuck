@@ -18,6 +18,8 @@ const { MASKED_RAG_SECRET, loadRagConfig, RagConfigRequestError, saveRagConfig }
   await import("@/core/rag/api");
 import {
   buildRagConfigInput,
+  connectivityProbeKey,
+  dimensionProbeKey,
   EMBEDDING_PROVIDER_OPTIONS,
   formValuesFromConfig,
   hasFormChanges,
@@ -1062,5 +1064,88 @@ describe("rerank placeholder reads its own capability block", () => {
     expect(endpointPlaceholderFor(undefined, "dashscope")).toBe(
       ENDPOINT_PLACEHOLDER_FALLBACK,
     );
+  });
+});
+
+describe("dimension field round-trip (spec 2026-09-26 §3 维度字段的往返)", () => {
+  it("seeds the stored width as text and submits it as a number", () => {
+    const current = view({ embedding_dimension: 1536 }, { embedding_dimension: "ui" });
+    const values = formValuesFromConfig(current);
+    expect(values.embedding_dimension).toBe("1536");
+
+    // 未改动 ⇒ 原样携带（数字，不是字符串）——这是"任何一次保存都别把它抹掉"的那条。
+    values.rerank_model = "qwen3-rerank-v2";
+    expect(buildRagConfigInput(values, current)).toEqual({
+      rerank_model: "qwen3-rerank-v2",
+      embedding_dimension: 1536,
+    });
+  });
+
+  it("clears a file-owned width with an empty input", () => {
+    const current = view({ embedding_dimension: 1536 }, { embedding_dimension: "ui" });
+    const values = formValuesFromConfig(current);
+
+    values.embedding_dimension = "";
+    expect(buildRagConfigInput(values, current)).toEqual({ embedding_dimension: null });
+  });
+
+  it("does not freeze an operator-owned width into the file", () => {
+    const current = view({ embedding_dimension: 1024 });
+    const values = formValuesFromConfig(current);
+
+    values.rerank_model = "qwen3-rerank-v2";
+    expect(buildRagConfigInput(values, current)).toEqual({
+      rerank_model: "qwen3-rerank-v2",
+    });
+  });
+
+  it("never submits a non-numeric width", () => {
+    const current = view({}, { embedding_dimension: "ui" });
+    const values = formValuesFromConfig(current);
+
+    values.embedding_dimension = "12x";
+    expect(buildRagConfigInput(values, current)).toEqual({});
+  });
+
+  it("counts the width as a change, and knows when it is back to the seeded value", () => {
+    const current = view({ embedding_dimension: 1024 }, { embedding_dimension: "ui" });
+    const values = formValuesFromConfig(current);
+    expect(hasFormChanges(values, current)).toBe(false);
+    expect(isEmbeddingChange(values, current)).toBe(false);
+
+    values.embedding_dimension = "1536";
+    expect(hasFormChanges(values, current)).toBe(true);
+    expect(isEmbeddingChange(values, current)).toBe(true);
+
+    values.embedding_dimension = "1024";
+    expect(hasFormChanges(values, current)).toBe(false);
+  });
+});
+
+describe("probe keys for the dimension row and the leg dots (spec 2026-09-26 §3 / D5-5)", () => {
+  const values = formValuesFromConfig(view());
+
+  it("binds the dimension answer to the provider / model / endpoint, not to the width", () => {
+    const base = dimensionProbeKey(values);
+    expect(base).not.toBe("");
+
+    const other = { ...values, embedding_dimension: "1536" };
+    expect(dimensionProbeKey(other)).toBe(base);
+    expect(dimensionProbeKey({ ...values, embedding_model: "bge-m3" })).not.toBe(base);
+  });
+
+  it("binds a leg dot to its own leg's coordinates, the width in force, and key presence", () => {
+    const withWidth = formValuesFromConfig(
+      view({ embedding_dimension: 1024 }, { embedding_dimension: "ui" }),
+    );
+    const embedding = connectivityProbeKey("embedding", withWidth, true);
+    expect(embedding).toContain("1024");
+    expect(embedding).toContain("key");
+    expect(connectivityProbeKey("embedding", withWidth, false)).not.toBe(embedding);
+    expect(
+      connectivityProbeKey("embedding", { ...withWidth, embedding_dimension: "1536" }, true),
+    ).not.toBe(embedding);
+    // 重排腿没有维度这一问（spec §3）。
+    expect(connectivityProbeKey("rerank", withWidth, true)).not.toContain("embedding");
   });
 });

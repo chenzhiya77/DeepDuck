@@ -8,16 +8,22 @@ import { toast } from "sonner";
 import {
   loadRagConfig,
   probeEmbeddingCapability,
+  probeEmbeddingDimensions,
+  probeLegConnectivity,
   probeSparseService,
   RagConfigRequestError,
   saveRagConfig,
 } from "./api";
 import type {
+  ConnectivityProbeVerdict,
+  DimensionProbeVerdict,
   SparseProbeVerdict,
   SparseServiceProbeVerdict,
 } from "./config-form";
 import type {
   RagConfigInput,
+  RagConnectivityProbeRequest,
+  RagDimensionProbeRequest,
   RagSparseProbeRequest,
   RagSparseServiceProbeRequest,
 } from "./types";
@@ -98,6 +104,47 @@ export function useProbeSparseService() {
     }: SparseServiceProbeInput): Promise<SparseServiceProbeVerdict> => {
       const verdict = await probeSparseService(request);
       return { key, status: verdict.status };
+    },
+  });
+}
+
+/** The dimension probe's input: the candidate values, plus the key they were taken for. */
+export type DimensionProbeInput = RagDimensionProbeRequest & { key: string };
+
+/**
+ * One dimension probe (spec 2026-09-26 §3).
+ *
+ * Same contract as its siblings: the verdict carries the values it describes, nothing is
+ * invalidated (nothing was written), and a failure is a state the row renders —「未探明」 is
+ * information, and it never blocks a save.
+ */
+export function useProbeDimensions() {
+  return useMutation({
+    mutationFn: async ({
+      key,
+      ...request
+    }: DimensionProbeInput): Promise<DimensionProbeVerdict> => {
+      const verdict = await probeEmbeddingDimensions(request);
+      return { ...verdict, key };
+    },
+  });
+}
+
+/** The connectivity probe's input: one leg's candidate coordinates, plus the key. */
+export type ConnectivityProbeInput = RagConnectivityProbeRequest & { key: string };
+
+/**
+ * One connectivity call per leg (D5-5). Manual by裁: the dot's answer only ever comes from a
+ * click, and it lives for the session — the save-time probe's verdict is not fed into it.
+ */
+export function useProbeConnectivity() {
+  return useMutation({
+    mutationFn: async ({
+      key,
+      ...request
+    }: ConnectivityProbeInput): Promise<ConnectivityProbeVerdict> => {
+      const verdict = await probeLegConnectivity(request);
+      return { ...verdict, key };
     },
   });
 }
