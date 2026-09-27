@@ -10,6 +10,7 @@ the ingestion clients rely on.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -96,12 +97,12 @@ def test_file_overrides_only_the_fields_it_declares(env_paths):
 def test_video_block_deep_merges(env_paths):
     config_yaml, rag_json = env_paths
     _write_config_yaml(config_yaml)
-    _write_rag_json(rag_json, {"video": {"asr_model": "ui-asr", "caption_model": "ui-caption"}})
+    _write_rag_json(rag_json, {"video": {"asr_model": "ui-asr", "asr_provider": "whisper"}})
 
     video = get_app_config().rag.video
 
     assert video.asr_model == "ui-asr"
-    assert video.caption_model == "ui-caption"
+    assert video.asr_provider == "whisper"
     # The operator's graph/ingestion switches survive.
     assert video.enabled is True
     assert video.max_size_mb == 512
@@ -155,6 +156,132 @@ def test_unknown_field_is_rejected(env_paths):
     _write_config_yaml(config_yaml)
     _write_rag_json(rag_json, {"embedding_modle": "typo"})
 
+    with pytest.raises(ValueError):
+        RagConfigFile.from_file()
+
+
+# ── retired keys: stripped before validation, names only in the warning ────
+# Spec 2026-09-23 D10.4/R18: three keys retire together and they do not share a level --
+# `vlm_base_url` / `vlm_api_key` sit at the top, `video.caption_model` one level down inside
+# a block that forbids extras too. A stored file has to keep loading, so both levels are
+# stripped before validation; nothing is written back, and the warning names fields only --
+# the addresses and keys are exactly what must not leak into a log line (R22: this assertion
+# is new, the `parse_backend` precedent never pinned it).
+
+RETIRED_VLM_BASE_URL = "http://retired-vlm-sentinel.example:9/v1"
+RETIRED_VLM_API_KEY = "sk-retired-vlm-sentinel"
+RETIRED_CAPTION_MODEL = "retired-caption-sentinel"
+
+
+def test_retired_keys_are_stripped_from_a_legacy_file(env_paths, caplog):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(
+        rag_json,
+        {
+            "vlm_base_url": RETIRED_VLM_BASE_URL,
+            "vlm_api_key": RETIRED_VLM_API_KEY,
+            "vlm_model": "ui-vlm",
+            "default_model": "ui-default",
+            "video": {"caption_model": RETIRED_CAPTION_MODEL, "asr_provider": "whisper", "asr_model": "ui-asr"},
+        },
+    )
+
+    with caplog.at_level(logging.WARNING, logger="deerflow.config.rag_config_file"):
+        declared = RagConfigFile.from_file().model_dump(exclude_none=True)
+
+    assert "vlm_base_url" not in declared
+    assert "vlm_api_key" not in declared
+    assert declared["vlm_model"] == "ui-vlm"  # the successor field still arrives
+    assert declared["default_model"] == "ui-default"
+    # The nested strip takes one key, not the block: the video fields the UI still owns are here.
+    assert declared["video"] == {"asr_provider": "whisper", "asr_model": "ui-asr"}
+    for name in ("vlm_base_url", "vlm_api_key", "video.caption_model"):
+        assert name in caplog.text
+    for sentinel in (RETIRED_VLM_BASE_URL, RETIRED_VLM_API_KEY, RETIRED_CAPTION_MODEL):
+        assert sentinel not in caplog.text
+
+
+def test_retired_keys_coexist_with_the_mineru_normalization(env_paths, caplog):
+    """`parse_backend` keeps its own reason: the VLM keys must not borrow the MinerU one."""
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(
+        rag_json,
+        {"parse_backend": "hybrid", "parse_provider": "mineru-local", "vlm_api_key": RETIRED_VLM_API_KEY, "video": {"caption_model": RETIRED_CAPTION_MODEL}},
+    )
+
+    with caplog.at_level(logging.WARNING, logger="deerflow.config.rag_config_file"):
+        ui = RagConfigFile.from_file()
+
+    assert ui.parse_provider == "mineru-local"
+    assert "parse_tier" in caplog.text  # the MinerU reason survived the change
+
+
+def test_a_legacy_file_reloads_through_the_real_loader_and_is_stripped_again(env_paths, caplog, monkeypatch: pytest.MonkeyPatch):
+    """Auto hot reload keeps working for a file that carries retired keys.
+
+    The signature covers the rag file, so a legacy key arriving on the next save must not
+    turn the reload into a failure -- and the loader must really run (counter + log line),
+    not just the value change.
+    """
+    from deerflow.config import app_config as app_config_module
+
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {"rerank_model": "first"})
+    assert get_app_config().rag.rerank_model == "first"
+
+    loads: list[str] = []
+    original = app_config_module._load_and_cache_app_config
+    monkeypatch.setattr(app_config_module, "_load_and_cache_app_config", lambda path=None: loads.append(str(path)) or original(path))
+
+    _write_rag_json(rag_json, {"rerank_model": "second", "vlm_api_key": RETIRED_VLM_API_KEY, "video": {"caption_model": RETIRED_CAPTION_MODEL}})
+    with caplog.at_level(logging.INFO, logger="deerflow.config.app_config"):
+        after = get_app_config()
+
+    assert len(loads) == 1, "a changed rag file must go through the loader"
+    assert "Rag config file changed, reloading AppConfig" in caplog.text
+    assert after.rag.rerank_model == "second"
+    declared = RagConfigFile.from_file().model_dump(exclude_none=True)
+    assert "vlm_api_key" not in declared
+    assert "caption_model" not in (declared.get("video") or {})
+
+    assert get_app_config() is after, "an unchanged file still hits the cache"
+    assert len(loads) == 1
+
+
+def test_reading_a_legacy_file_does_not_write_it_back(env_paths):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {"rerank_model": "ui", "vlm_api_key": RETIRED_VLM_API_KEY, "video": {"caption_model": RETIRED_CAPTION_MODEL}})
+    before = rag_json.read_bytes()
+
+    RagConfigFile.from_file()
+    RagConfigFile.from_file()
+
+    assert rag_json.read_bytes() == before
+
+
+def test_non_object_json_is_rejected(env_paths):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    rag_json.write_text("[1, 2, 3]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        RagConfigFile.from_file()
+
+
+def test_near_miss_and_nested_unknown_keys_are_still_rejected(env_paths):
+    """Stripping is not ignoring: only the retired names go, both `extra="forbid"` stay."""
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+
+    _write_rag_json(rag_json, {"vlm_typo": "x"})
+    with pytest.raises(ValueError):
+        RagConfigFile.from_file()
+
+    _write_rag_json(rag_json, {"video": {"caption_modle": "typo"}})
     with pytest.raises(ValueError):
         RagConfigFile.from_file()
 

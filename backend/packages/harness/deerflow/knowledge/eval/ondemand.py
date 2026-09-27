@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from deerflow.knowledge.eval.dataset import GoldenQuestion
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.eval.persistence import (
     ENV_LOCAL,
     baseline_diff_from_report,
@@ -354,6 +355,7 @@ async def run_full_eval_for_kb(
         baseline_diff = baseline_diff_from_report(payload)
 
         layer2_metrics: Mapping[str, object] = {}
+        judge_config_error = False
         try:
             effective_runner, effective_judge, effective_ragas = (agent_runner, judge_llm, ragas_evaluator) if agent_runner is not None else await _build_layer2_deps(kb_id, run_id)
             layer2_report = await run_layer2_evaluation(
@@ -366,13 +368,20 @@ async def run_full_eval_for_kb(
                 progress_hook=_forward_progress,
             )
             layer2_metrics = layer2_metrics_from_report(layer2_report_to_dict(layer2_report), questions=questions)
+        except RagConfigurationError:
+            # The judge's *configuration* error is not the optional layer's quality problem
+            # (spec 2026-09-23 D10.5): the run is recorded as error, keeping layer 1 and the
+            # baseline diff, instead of a `completed` run with a hollow second layer. The
+            # wide catch below still degrades every other second-layer failure to a log line.
+            logger.exception("on-demand full eval run %s: judge target unusable for kb %s", run_id, kb_id)
+            judge_config_error = True
         except Exception:
             logger.exception("on-demand full eval run %s: layer-2 stage failed for kb %s (keeping layer-1 results)", run_id, kb_id)
 
         await save_eval_run(
             run_id=run_id,
             kb_id=kb_id,
-            status="completed",
+            status="error" if judge_config_error else "completed",
             created_at=datetime.fromisoformat(generated_at),
             completed_at=datetime.now(UTC),
             layer1_metrics=layer1_metrics,

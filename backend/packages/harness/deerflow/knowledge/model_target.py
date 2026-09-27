@@ -1,9 +1,10 @@
-"""RAG model-target resolution (spec 2026-09-23 default model D3).
+"""RAG model-target resolution and its missing-fields verdict (spec 2026-09-23 default model D3/D10.1).
 
 Every RAG role has its own declaration in the ``rag:`` block (``extract_model`` /
 ``judge_model`` / ``vlm_model``) and one RAG-wide default sits behind them. A caller picks
 its own role declaration first and passes it in as ``name``; this module answers the half
-they all share — the RAG default, else the first configured model.
+they all share — the RAG default, else the first configured model — and, for a target the
+user explicitly declared, whether that target is usable at all.
 
 Deliberately pure and standalone: no SDK construction, no network, no Qdrant, and no read
 of the global config singleton unless the caller hands one over. The RAG save path passes
@@ -21,7 +22,47 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from deerflow.config.models_config import reverse_lookup_provider
+
 logger = logging.getLogger(__name__)
+
+#: The protocol grid the strict rule covers: a UI-managed entry whose class maps to one of
+#: these provider ids. The OpenAI-compatible cell is the only one that must name an address —
+#: its SDK ships no readable default, while the vendor cells borrow theirs (spec D10.2).
+_GRID_PROVIDERS = frozenset({"openai-compatible", "anthropic", "deepseek"})
+_ADDRESS_REQUIRED_PROVIDERS = frozenset({"openai-compatible"})
+
+#: Provider-side endpoint keys an entry may carry (the DeepSeek adapter uses ``api_base``).
+_ENDPOINT_KEYS: tuple[str, ...] = ("base_url", "api_base")
+
+#: The factory's sentence for a name that is not a configured entry. ``deerflow.models.factory``
+#: raises it too; that file is frozen, so this is the one copy the RAG side is allowed to use --
+#: a test drives the real factory to keep the two equal, and the callers must not spell the
+#: sentence out themselves.
+_NOT_FOUND_PREFIX = "Model "
+_NOT_FOUND_SUFFIX = " not found in config"
+_NOT_FOUND_TEMPLATE = f"{_NOT_FOUND_PREFIX}{{name}}{_NOT_FOUND_SUFFIX}"
+
+
+def model_not_found_message(name: str) -> str:
+    """The sentence that says *name* is not a configured model (D9's not-found error)."""
+    return _NOT_FOUND_TEMPLATE.format(name=name)
+
+
+def missing_key_reason(name: str) -> str:
+    """The sentence for a target whose entry carries no usable key (D10.1/R14)."""
+    return f"RAG 目标「{name}」不可用：条目缺少非空 api_key。"
+
+
+def missing_address_reason(name: str) -> str:
+    """The sentence for the one cell that must name an address (D10.2)."""
+    return f"RAG 目标「{name}」不可用：openai-compatible 条目缺少接口地址（base_url）。"
+
+
+def is_model_not_found_error(exc: BaseException) -> bool:
+    """Whether *exc* is that sentence — and nothing else (the CLI's narrow mapping, R28⑤)."""
+    message = str(exc)
+    return message.startswith(_NOT_FOUND_PREFIX) and message.endswith(_NOT_FOUND_SUFFIX)
 
 
 def _declared(value: Any) -> str | None:
@@ -86,4 +127,54 @@ def require_rag_model_name(config: Any, name: str | None = None, *, rag: Any = N
         from deerflow.knowledge.embedder import RagConfigurationError
 
         raise RagConfigurationError(f"RAG 未配置可用模型：{role} 需要 config.models 里至少有一个条目，或为 rag.default_model 指定一个。")
+    return resolved
+
+
+def rag_target_missing(config: Any, declared: str | None, *, role: str) -> str | None:
+    """Why the explicitly declared target *declared* cannot serve *role*, or ``None``.
+
+    Pure: reads the entry through the config object, constructs nothing, goes nowhere. Three
+    answers belong to somebody else and are therefore not this rule's error — a blank
+    declaration is the system's own pick (D3), an entry outside the protocol grid or the UI
+    source is the operator's own file, and a name that is not a configured entry is the
+    not-found error the callers already have (D9). What is left is a UI-managed entry inside
+    the grid that carries no usable key — or, for the OpenAI-compatible cell alone, no
+    address (D10.2). The sentence names the entry and the missing field and nothing else, so
+    every entrance reports the same thing for the same target (D10.1).
+    """
+    name = _declared(declared)
+    if name is None:
+        return None
+    get_entry = getattr(config, "get_model_config", None)
+    entry = get_entry(name) if callable(get_entry) else None
+    if entry is None:
+        return None
+    is_ui = getattr(config, "is_ui_managed_model", None)
+    if not callable(is_ui) or not is_ui(name):
+        return None
+    dumped = entry.model_dump() if hasattr(entry, "model_dump") else {}
+    provider = reverse_lookup_provider((getattr(entry, "use", None) or dumped.get("use") or "").strip())
+    if provider not in _GRID_PROVIDERS:
+        return None
+    if _declared(dumped.get("api_key")) is None:
+        return missing_key_reason(name)
+    if provider in _ADDRESS_REQUIRED_PROVIDERS and not any(dumped.get(key) for key in _ENDPOINT_KEYS):
+        return missing_address_reason(name)
+    return None
+
+
+def require_usable_rag_target(config: Any, declared: str | None, *, role: str, rag: Any = None) -> str:
+    """Resolve a role's target and refuse it when the entry it declares is unusable.
+
+    The runtime entrances' one call: the name is resolved first (D3 — a wrong *name* still
+    reaches the factory and raises there, D9), then the *declared* value is judged by
+    :func:`rag_target_missing`. A blank declaration resolves to the system's own pick and is
+    never judged; only what a caller or the ``rag:`` block actually named can be refused.
+    """
+    resolved = require_rag_model_name(config, declared, rag=rag, role=role)
+    reason = rag_target_missing(config, _declared(declared), role=role)
+    if reason is not None:
+        from deerflow.knowledge.embedder import RagConfigurationError
+
+        raise RagConfigurationError(reason)
     return resolved

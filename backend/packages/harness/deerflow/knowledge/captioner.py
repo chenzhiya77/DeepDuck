@@ -22,16 +22,12 @@ from pathlib import Path
 import httpx
 
 from deerflow.config.app_config import get_app_config
-from deerflow.config.rag_config_file import SECRET_ENV_VARS
 from deerflow.knowledge.caption_client import request_caption
 from deerflow.knowledge.graph.indexer import DEGRADED_FAILURE_THRESHOLD
 from deerflow.knowledge.parser import ParsedImage
 from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
 
 logger = logging.getLogger(__name__)
-
-# Env var name can be overridden via config
-VL_API_KEY_ENV = SECRET_ENV_VARS["vlm_api_key"]
 
 
 @dataclass(slots=True)
@@ -83,13 +79,12 @@ async def caption_images(
         return CaptionOutcome()
 
     cfg = get_app_config()
-    api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
     target = resolve_vlm_target(cfg, model)
     api_key = target.api_key
     total = len(images)
 
     if not api_key:
-        logger.warning("%s is not set; degrading %d image(s) to filename placeholders", api_key_env, total)
+        logger.warning("the caption target %r carries no API key; degrading %d image(s) to filename placeholders", target.model, total)
         return CaptionOutcome(captions={image.ref: _placeholder(image.ref) for image in images}, failed=total, degraded=True)
 
     own_client = client is None

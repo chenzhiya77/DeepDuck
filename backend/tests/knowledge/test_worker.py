@@ -687,6 +687,43 @@ async def _create_doc(store) -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_config_error_on_a_new_document_fails_it_without_a_request(session_factory, tmp_path, monkeypatch):
+    """spec 2026-09-23 D10.1/§4.10: the caption target's configuration error is not a per-image
+    degradation.
+
+    A *declared* target whose UI entry carries no key is refused at the entrance, so the new
+    document fails with that reason and no caption request is ever built — the placeholder
+    degradation stays reserved for the out-of-scope cases.
+    """
+    from deerflow.config.app_config import AppConfig, RagConfig
+    from deerflow.config.model_config import ModelConfig
+    from deerflow.config.sandbox_config import SandboxConfig
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    storage, images = _image_workspace(tmp_path)
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    entry = ModelConfig(name="vl-entry", display_name="vl-entry", description=None, use="langchain_openai:ChatOpenAI", model="vl-wire", base_url="https://ui.example/v1", supports_thinking=False)
+    config = AppConfig(models=[entry], sandbox=SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider"), rag=RagConfig(vlm_model="vl-entry"))
+    config._ui_model_names = {"vl-entry"}
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", lambda: config)
+    monkeypatch.setattr("deerflow.knowledge.worker.get_app_config", lambda: config)
+    sent: list[object] = []
+    monkeypatch.setattr("deerflow.knowledge.caption_client.httpx.AsyncClient", lambda **kw: sent.append(kw) or object())
+
+    async def parse(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=SAMPLE_MD, images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "failed"
+    assert "api_key" in (doc["error"] or "")
+    assert sent == []  # no caption request was ever built
+
+
+@pytest.mark.asyncio
 async def test_pipeline_appends_caption_then_graph_markers_in_that_order(session_factory, tmp_path, monkeypatch):
     """Both degraded legs keep their own marker, caption first (D8), and both sub-states survive."""
     store = KnowledgeStore(session_factory)

@@ -1,7 +1,7 @@
 {
   "_captured": "pre-change code, GET with an empty rag_config.json over YAML_RAG, PUT with PUT_PAYLOAD",
   "_precondition": "config.yaml carries YAML_RAG; rag_config.json starts empty; the seven provider secret env vars are unset (so `sources` is deterministic)",
-  "_registered_additions": "`config.default_model` + `sources.default_model` were added by hand (spec 2026-09-23 default model R19): the pure-addition guard's allow-list is top-level only, so a *nested* new key has to be registered here or the guard would fail on every unrelated response field. The guard still proves nothing else moved.",
+  "_registered_additions": "`config.default_model` + `sources.default_model` were added by hand (spec 2026-09-23 default model R19): the pure-addition guard's allow-list is top-level only, so a *nested* new key has to be registered here or the guard would fail on every unrelated response field. The guard still proves nothing else moved. | Task 9 撤下的三项（`config`/`sources` 的 `vlm_base_url`、`vlm_api_key` 与嵌套的 `video.caption_model`）已从本基线删除，守卫代码未放宽。",
   "get": {
     "config": {
       "qdrant_url": "http://qdrant:6333",
@@ -10,8 +10,6 @@
       "rerank_model": "yaml-rerank",
       "rerank_api_key": "",
       "vlm_model": "yaml-vlm",
-      "vlm_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "vlm_api_key": "",
       "extract_model": null,
       "judge_model": null,
       "default_model": null,
@@ -31,8 +29,7 @@
       "parse_tier": null,
       "video": {
         "asr_provider": "funasr",
-        "asr_model": "yaml-asr",
-        "caption_model": ""
+        "asr_model": "yaml-asr"
       }
     },
     "sources": {
@@ -42,8 +39,6 @@
       "rerank_model": "config_file",
       "rerank_api_key": "unset",
       "vlm_model": "config_file",
-      "vlm_base_url": "config_file",
-      "vlm_api_key": "unset",
       "extract_model": "config_file",
       "judge_model": "config_file",
       "default_model": "config_file",
@@ -62,8 +57,7 @@
       "parse_base_url": "config_file",
       "parse_tier": "config_file",
       "video.asr_provider": "config_file",
-      "video.asr_model": "config_file",
-      "video.caption_model": "config_file"
+      "video.asr_model": "config_file"
     }
   },
   "put": {
@@ -91,8 +85,6 @@
         "rerank_model": "ui-rerank",
         "rerank_api_key": "",
         "vlm_model": "yaml-vlm",
-        "vlm_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "vlm_api_key": "",
         "extract_model": null,
         "judge_model": "judge-entry",
         "default_model": null,
@@ -112,8 +104,7 @@
         "parse_tier": "flash",
         "video": {
           "asr_provider": "funasr",
-          "asr_model": "ui-asr",
-          "caption_model": ""
+          "asr_model": "ui-asr"
         }
       },
       "sources": {
@@ -123,8 +114,6 @@
         "rerank_model": "ui",
         "rerank_api_key": "unset",
         "vlm_model": "config_file",
-        "vlm_base_url": "config_file",
-        "vlm_api_key": "unset",
         "extract_model": "config_file",
         "judge_model": "ui",
         "default_model": "config_file",
@@ -143,8 +132,7 @@
         "parse_base_url": "ui",
         "parse_tier": "ui",
         "video.asr_provider": "config_file",
-        "video.asr_model": "ui",
-        "video.caption_model": "config_file"
+        "video.asr_model": "ui"
       }
     }
   }

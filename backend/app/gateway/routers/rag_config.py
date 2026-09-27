@@ -27,7 +27,6 @@ from app.gateway.deps import get_config, require_admin_user
 from deerflow.config.app_config import AppConfig, RagConfig
 from deerflow.config.rag_config_file import (
     MASKED_SECRET,
-    SECRET_ENV_VARS,
     RagConfigFile,
     atomic_write_rag_config,
     merge_rag_config,
@@ -37,6 +36,7 @@ from deerflow.config.rag_config_file import (
 from deerflow.config.runtime_paths import project_root
 from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import COLLECTION_DIMENSION, build_embedder, dimension_mismatch_message
+from deerflow.knowledge.model_target import model_not_found_message, rag_target_missing
 from deerflow.knowledge.parser import build_parse_provider
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
 from deerflow.knowledge.reranker_factory import build_reranker
@@ -48,12 +48,12 @@ router = APIRouter(prefix="/api", tags=["rag"])
 _ADMIN_DETAIL = "Admin privileges required to manage the RAG configuration."
 
 #: Secret fields: masked on read, sentinel-preserving on write, env-backed when unset.
-_SECRET_FIELDS: tuple[str, ...] = ("embedding_api_key", "rerank_api_key", "vlm_api_key", "mineru_api_token", "sparse_api_key")
+_SECRET_FIELDS: tuple[str, ...] = ("embedding_api_key", "rerank_api_key", "mineru_api_token", "sparse_api_key")
 
 #: Secret field -> (allowlist leg, the config field naming that leg's provider). A secret's
 #: environment fallback is the one the *selected* provider reads, so switching provider
-#: re-points it (spec 2026-09-14 §4.1). The caption VLM key is deliberately absent: its env
-#: name comes from the plain ``vlm_api_key_env`` field, not from a curated provider.
+#: re-points it (spec 2026-09-14 §4.1). The caption VLM key has no row here because it has
+#: no fallback at all any more: it comes from the model entry (spec 2026-09-23 D10.1/R14).
 _SECRET_LEGS: dict[str, tuple[str, str]] = {
     "embedding_api_key": ("embedding", "embedding_provider"),
     "rerank_api_key": ("rerank", "rerank_provider"),
@@ -62,7 +62,7 @@ _SECRET_LEGS: dict[str, tuple[str, str]] = {
 }
 
 #: The video sub-block is a nested object in the file; the API reports/receives it as one.
-_VIDEO_FIELDS: tuple[str, ...] = ("asr_provider", "asr_model", "caption_model")
+_VIDEO_FIELDS: tuple[str, ...] = ("asr_provider", "asr_model")
 
 
 class RagEmbeddingProviderCapability(BaseModel):
@@ -173,8 +173,6 @@ def _secret_env_name(field_name: str, config: AppConfig, written: dict[str, Any]
     Returns ``None`` when no fallback exists — the local MinerU service ships without auth,
     so a deployment that selects it has nothing to point at.
     """
-    if field_name == "vlm_api_key":
-        return config.rag.vlm_api_key_env or SECRET_ENV_VARS[field_name]
     leg, provider_field = _SECRET_LEGS[field_name]
     # The submitted object wins: a PUT that switches provider must report the new fallback
     # in its own response, before ``get_app_config()`` reloads the file it just wrote.
@@ -294,6 +292,31 @@ def _pending_rag(config: AppConfig, payload: dict[str, Any]) -> RagConfig:
     return RagConfig.model_validate(merge_rag_config(config.yaml_rag, RagConfigFile.model_validate(payload)))
 
 
+def _reject_unusable_role_targets(config: AppConfig, pending: RagConfig) -> None:
+    """Refuse a write whose *declared* model targets cannot be used (spec 2026-09-23 D10.1).
+
+    Only what the payload and ``config.yaml`` declare is judged: the RAG default and the three
+    role fields. A target the system would pick itself — the first configured model, or the
+    default standing in for a blank role — is never a refusal reason (D3), so a blank field is
+    skipped here. Two failures are possible and they are different errors: a name with no entry
+    at all (the factory's own sentence, D9) and an entry that exists but is unusable
+    (`rag_target_missing`, D10.1). Pure lookups: no SDK is constructed and nothing goes out.
+    """
+    for field in ("default_model", "extract_model", "judge_model", "vlm_model"):
+        name = getattr(pending, field, None)
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if config.get_model_config(name) is None:
+            # A declared name with no entry is refused for all four fields, the default
+            # included: the save *is* the declaration, so an unknown name is a usage error
+            # there. D3's warning-and-fall-back is the *runtime* path, where a default that
+            # used to be valid can go stale after a model is removed.
+            raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{model_not_found_message(name)}")
+        reason = rag_target_missing(config, name, role=field)
+        if reason is not None:
+            raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{reason}")
+
+
 def _reject_unusable_after_save(pending: RagConfig) -> None:
     """Refuse a write whose *result* cannot build the pipeline (spec 2026-09-16 §3 D3).
 
@@ -402,6 +425,7 @@ async def put_rag_config(
 
     payload = _prune_empty(submitted)
     pending = _pending_rag(config, payload)
+    _reject_unusable_role_targets(config, pending)
     _reject_unusable_after_save(pending)
     # One real call, but only when one of the watched embedding settings actually changed: an
     # unrelated edit (rerank, parse, …) must not turn every save into a network round trip.

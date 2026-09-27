@@ -204,6 +204,36 @@ async def test_runtime_exception_falls_back_to_error_row_without_raising(tmp_pat
     assert row.layer1_metrics == {}
 
 
+async def test_a_judge_target_that_cannot_be_built_records_an_error_row_with_layer1(tmp_path, store, monkeypatch) -> None:
+    """spec 2026-09-23 D10.5: the judge's *configuration* error is not the optional layer's
+    quality problem.
+
+    Layer 1 finished, so its metrics and the baseline diff are kept; the second layer never
+    ran (empty), the row is ``error`` rather than a ``completed`` run with a hollow layer 2,
+    and the ``finally`` still releases the in-flight registration.
+    """
+    from deerflow.knowledge.embedder import RagConfigurationError
+
+    golden = tmp_path / "golden.jsonl"
+    await _seed_question(golden)
+
+    async def _refuse(kb_id, run_id):
+        raise RagConfigurationError("RAG 目标「judge-entry」不可用：条目缺少非空 api_key。")
+
+    monkeypatch.setattr(ondemand, "_build_layer2_deps", _refuse)
+
+    run_id = await ondemand.run_full_eval_for_kb(KB, golden_path=golden, searchers=_stub_searchers(), generated_at=GENERATED_AT)
+
+    rows = await store.list_eval_runs(KB)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == run_id
+    assert row.status == "error"  # not "completed"
+    assert row.layer2_metrics == {}
+    assert row.layer1_metrics["summary"]["question_count"] == 1  # layer 1 kept
+    assert not ondemand.eval_run_in_progress(KB)  # the finally released it
+
+
 async def test_missing_bank_raises_and_persists_nothing(tmp_path, store) -> None:
     with pytest.raises(ondemand.EvalQuestionBankEmpty):
         await ondemand.run_layer1_for_kb(KB, golden_path=tmp_path / "absent.jsonl", searchers=_stub_searchers(), generated_at=GENERATED_AT)

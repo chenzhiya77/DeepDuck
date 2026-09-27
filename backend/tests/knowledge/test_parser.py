@@ -1,8 +1,9 @@
 """Tests for the MinerU parse client and the VLM captioner.
 
 HTTP layer is mocked with ``httpx.MockTransport``; the MinerU token must come
-from the ``MINERU_API_TOKEN`` env var (never from the caller), and the VLM key
-from ``SILICONFLOW_VLM_API_KEY``.
+from the ``MINERU_API_TOKEN`` env var (never from the caller), and the caption
+target is a real ``models:`` entry — the key comes from the entry (spec
+2026-09-23 D10.3: the env fallback and the bare-id path are gone).
 """
 
 from __future__ import annotations
@@ -34,13 +35,29 @@ def _make_result_zip() -> bytes:
     return buf.getvalue()
 
 
-@pytest.fixture(autouse=True)
-def _ensure_dashscope_key(monkeypatch):
-    """Ensure DASHSCOPE_API_KEY is set for all tests (Task 16 migration).
-    Tests that explicitly monkeypatch.delenv will override this fixture.
-    Unconditional: app_config's load_dotenv() injects the real .env key at
-    import time, so a presence check would silently leak it into assertions."""
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-dash-key")
+#: The caption target this file's tests resolve: a real ``models:`` entry, because the
+#: caption legs read the key from the entry now (spec 2026-09-23 D10.3/R14) — the env
+#: fallback and the bare-id path are gone, so a bare id is no longer a target at all.
+_VLM_ENTRY = {
+    "name": "test-vlm",
+    "use": "langchain_openai:ChatOpenAI",
+    "model": "test-vlm-wire",
+    "base_url": "https://vlm.example/v1",
+    "api_key": "test-entry-key",
+    "supports_vision": True,
+}
+
+
+def _vlm_config(*, with_key: bool = True):
+    """The entry-backed config; ``with_key=False`` leaves the entry keyless on purpose.
+
+    It is still a *target* (the entry exists), which is exactly the out-of-scope case the
+    strict rule does not judge: the leg degrades to placeholders, as it always did.
+    """
+    from deerflow.config.app_config import AppConfig
+
+    entry = {key: value for key, value in _VLM_ENTRY.items() if with_key or key != "api_key"}
+    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [entry], "rag": {"vlm_model": "test-vlm"}})
 
 
 def _mineru_transport(recorded: list[httpx.Request], *, poll_states: list[dict] | None = None) -> httpx.MockTransport:
@@ -208,17 +225,17 @@ def _vlm_transport(recorded: list[httpx.Request], *, status: int = 200) -> httpx
 
 @pytest.mark.asyncio
 async def test_caption_images_calls_vlm_with_base64(monkeypatch):
-    monkeypatch.setenv("SILICONFLOW_VLM_API_KEY", "vlm-key")
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_vlm_transport(recorded))
 
-    outcome = await caption_images([_SAMPLE_IMAGE], client=client, model="Qwen/Qwen3-VL-30B-A3B-Instruct")
+    outcome = await caption_images([_SAMPLE_IMAGE], client=client, model="test-vlm")
 
     assert outcome.captions == {"images/p1.jpg": "系统架构示意图"}
     request = recorded[0]
-    assert request.headers["Authorization"] == "Bearer test-dash-key"
+    assert request.headers["Authorization"] == "Bearer test-entry-key"
     body = json.loads(request.content)
-    assert body["model"] == "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    assert body["model"] == "test-vlm-wire"
     content = body["messages"][0]["content"]
     image_part = next(part for part in content if part["type"] == "image_url")
     assert image_part["image_url"]["url"].startswith("data:image/jpeg;base64,")
@@ -234,21 +251,23 @@ def test_apply_captions_merges_back_into_markdown():
 
 @pytest.mark.asyncio
 async def test_vlm_failure_degrades_to_filename_placeholder(monkeypatch):
-    monkeypatch.setenv("SILICONFLOW_VLM_API_KEY", "vlm-key")
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_vlm_transport(recorded, status=500))
 
-    outcome = await caption_images([_SAMPLE_IMAGE], client=client, model="m")
+    outcome = await caption_images([_SAMPLE_IMAGE], client=client, model="test-vlm")
 
     assert outcome.captions == {"images/p1.jpg": "图片 p1.jpg"}
 
 
 @pytest.mark.asyncio
 async def test_missing_vlm_key_degrades_all_images(monkeypatch):
-    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    """A target with no usable key degrades to placeholders — and now that is only reachable
+    for an entry outside the strict grid (the declared-UI case is refused upstream)."""
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", lambda: _vlm_config(with_key=False))
     recorded: list[httpx.Request] = []
 
-    outcome = await caption_images([_SAMPLE_IMAGE], client=httpx.AsyncClient(transport=_vlm_transport(recorded)), model="m")
+    outcome = await caption_images([_SAMPLE_IMAGE], client=httpx.AsyncClient(transport=_vlm_transport(recorded)), model="test-vlm")
 
     assert outcome.captions == {"images/p1.jpg": "图片 p1.jpg"}
     assert recorded == []  # no outbound call without a key
@@ -271,11 +290,11 @@ def test_caption_prompt_offers_transcription_mode_for_text_dense_images():
 async def test_caption_request_allows_transcription_length(monkeypatch):
     """Task 15: max_tokens raised from 256 (one sentence) to 1024 so a full
     page of transcribed text fits."""
-    monkeypatch.setenv("SILICONFLOW_VLM_API_KEY", "vlm-key")
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_vlm_transport(recorded))
 
-    await caption_images([_SAMPLE_IMAGE], client=client, model="m")
+    await caption_images([_SAMPLE_IMAGE], client=client, model="test-vlm")
 
     body = json.loads(recorded[0].content)
     assert body["max_tokens"] == 1024
@@ -300,7 +319,7 @@ async def test_concurrent_captions_maintain_original_order(monkeypatch):
     Simulate: p1 needs 5s, p2 needs 1s → p2 returns first but stays at pos2."""
     import asyncio
 
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "dash-key")
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)
     recorded: list[httpx.Request] = []
 
     # Mock transport that delays p1 more than p2 (simulate different generation times)
@@ -325,7 +344,7 @@ async def test_concurrent_captions_maintain_original_order(monkeypatch):
         ParsedImage(ref="images/p2.png", content=b"png-bytes", media_type="image/png"),
     ]
 
-    outcome = await caption_images(images, client=client, model="qwen3.7-flash")
+    outcome = await caption_images(images, client=client, model="test-vlm")
 
     # Verify order preservation: dict keys match input list order
     assert list(outcome.captions.keys()) == ["images/p1.jpg", "images/p2.png"]
@@ -337,7 +356,7 @@ async def test_concurrent_captions_maintain_original_order(monkeypatch):
 async def test_timeout_parameter_extended_to_180_seconds(monkeypatch):
     """Task 16: timeout raised from 60s to 180s so long-form transcription fits.
     Connect timeout remains 15s."""
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "dash-key")
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)
     recorded: list[httpx.Request] = []
 
     def transport_handler(request: httpx.Request) -> httpx.Response:
@@ -346,7 +365,7 @@ async def test_timeout_parameter_extended_to_180_seconds(monkeypatch):
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(transport_handler), timeout=httpx.Timeout(180.0, connect=15.0))
 
-    await caption_images([_SAMPLE_IMAGE], client=client, model="qwen3.7-flash")
+    await caption_images([_SAMPLE_IMAGE], client=client, model="test-vlm")
 
     # Timeout configured correctly
     assert client.timeout.connect == 15.0
@@ -1295,26 +1314,15 @@ def _marker_transport(recorded: list[httpx.Request]) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-async def _caption(monkeypatch, flags: str, *, key: str = "test-dash-key"):
+async def _caption(monkeypatch, flags: str, *, key: str = "test-entry-key"):
     from deerflow.knowledge.captioner import caption_images
 
-    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", lambda: _vlm_config())
-    if key:
-        monkeypatch.setenv("DASHSCOPE_API_KEY", key)
-    else:
-        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
-        monkeypatch.delenv("SILICONFLOW_VLM_API_KEY", raising=False)
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", lambda: _vlm_config(with_key=bool(key)))
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_marker_transport(recorded))
-    outcome = await caption_images(_images(flags), client=client, model="qwen3.7-flash")
+    outcome = await caption_images(_images(flags), client=client, model="test-vlm")
     await client.aclose()
     return outcome, recorded
-
-
-def _vlm_config():
-    from deerflow.config.app_config import AppConfig
-
-    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [], "rag": {}})
 
 
 @pytest.mark.asyncio

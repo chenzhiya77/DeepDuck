@@ -7,20 +7,18 @@ from that entry — which is what lets the settings UI offer a plain model picke
 asking for an endpoint and a key that the entry already carries — and the entry's ``use:``
 class is what decides the dialect.
 
-A value that names no entry is a legacy bare model id and keeps the documented fallback
-(``rag.vlm_base_url`` plus the rag file key or the backing environment variable), so a
-deployment that only ever set ``rag.vlm_model`` in ``config.yaml`` captions as before.
+There is no second path any more (spec 2026-09-23 D10.3): a value that names no entry is a
+configuration error raised by the resolver, not a bare model id pointed at a retired
+endpoint, and an entry's address is its own or the one its SDK ships (D10.2).
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Literal
 
 from deerflow.config.app_config import AppConfig
 from deerflow.config.models_config import reverse_lookup_provider
-from deerflow.config.rag_config_file import SECRET_ENV_VARS
 
 #: Provider-side endpoint keys an entry may carry (OpenAI-compatible vs the DeepSeek adapter).
 _ENDPOINT_KEYS: tuple[str, ...] = ("base_url", "api_base")
@@ -38,6 +36,27 @@ def _dialect_for(use: str) -> Dialect:
     return _DIALECT_BY_PROVIDER.get(reverse_lookup_provider(use) or "", "openai")
 
 
+def _sdk_default_endpoint(provider: str | None) -> str | None:
+    """The address an entry borrows when it declares none (spec 2026-09-23 D10.2/R1).
+
+    Read from the SDK that will make the call, lazily and without constructing anything, so
+    the borrow cannot drift: anthropic exposes its own field default, deepseek a module
+    constant. The OpenAI-compatible cell has no such default — its blank would mean OpenAI's
+    public cloud — so it answers ``None`` and the caller refuses instead of guessing.
+    """
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        # `.default_factory()` is the only readable spelling: the field's `.default` is
+        # PydanticUndefined (spec R23).
+        return ChatAnthropic.model_fields["anthropic_api_url"].default_factory()
+    if provider == "deepseek":
+        from langchain_deepseek.chat_models import DEFAULT_API_BASE
+
+        return DEFAULT_API_BASE
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class VlmTarget:
     """Where a caption call goes, what it authenticates with, and which protocol it speaks."""
@@ -46,44 +65,49 @@ class VlmTarget:
     base_url: str
     api_key: str | None
     dialect: Dialect
-    source: Literal["model_entry", "legacy"]
-
-
-def _environment_key(config: AppConfig) -> str | None:
-    env_name = config.rag.vlm_api_key_env or SECRET_ENV_VARS["vlm_api_key"]
-    return os.environ.get(env_name) or None
+    source: Literal["model_entry"]
 
 
 def resolve_vlm_target(config: AppConfig, model: str | None = None) -> VlmTarget:
     """Resolve the caption target for ``model``, defaulting to ``rag.vlm_model``.
 
-    ``model`` may be an entry name (preferred) or a bare provider model id (legacy); the
-    video leg passes ``rag.video.caption_model`` here when it overrides the shared model.
+    ``model`` names a ``models:`` entry; the video leg passes nothing and shares the chain.
     """
-    from deerflow.knowledge.model_target import require_rag_model_name
+    from deerflow.knowledge.model_target import require_usable_rag_target
 
     # The declaration is the caller's argument, else ``rag.vlm_model``; everything below that
     # (the RAG default, then the first model) is the shared chain, so both caption legs and
     # the two LLM roles answer the same way. No models at all is a configuration error rather
-    # than an empty ``model`` in the request.
-    declared = require_rag_model_name(config, (model or config.rag.vlm_model or "").strip() or None, role="文档图片配文")
+    # than an empty ``model`` in the request, and a *declared* target whose entry is
+    # incomplete is refused here — outside the per-image recovery, so it cannot degrade into
+    # placeholders (spec 2026-09-23 D10.1).
+    declared = require_usable_rag_target(config, (model or config.rag.vlm_model or "").strip() or None, role="文档图片配文")
     entry = config.get_model_config(declared)
 
     if entry is not None:
         dumped = entry.model_dump()
         endpoint = next((dumped[key] for key in _ENDPOINT_KEYS if dumped.get(key)), None)
+        provider = reverse_lookup_provider(entry.use)
+        base_url = endpoint or _sdk_default_endpoint(provider)
+        if not base_url:
+            # The one cell with no default to borrow: refusing beats posting the document's
+            # images to a public cloud nobody named (spec D10.2).
+            from deerflow.knowledge.embedder import RagConfigurationError
+            from deerflow.knowledge.model_target import missing_address_reason
+
+            raise RagConfigurationError(missing_address_reason(declared))
         return VlmTarget(
             model=entry.model,
-            base_url=endpoint or config.rag.vlm_base_url,
-            api_key=dumped.get("api_key") or config.rag.vlm_api_key or _environment_key(config),
+            base_url=base_url,
+            api_key=dumped.get("api_key") or None,
             dialect=_dialect_for(entry.use),
             source="model_entry",
         )
 
-    return VlmTarget(
-        model=declared or config.rag.vlm_model,
-        base_url=config.rag.vlm_base_url,
-        api_key=config.rag.vlm_api_key or _environment_key(config),
-        dialect="openai",
-        source="legacy",
-    )
+    # A name with no entry used to be a bare provider id pointed at the retired RAG endpoint.
+    # D10.3 deleted that path: it is a configuration error, and the resolver that resolved the
+    # name is the one that reports it (spec §4.9).
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.model_target import model_not_found_message
+
+    raise RagConfigurationError(f"文档图片配文：{model_not_found_message(declared)}")

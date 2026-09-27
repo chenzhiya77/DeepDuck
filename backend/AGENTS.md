@@ -702,24 +702,37 @@ config cannot be resolved, so env-only callers keep working without a config fil
 
 **Caption target resolution** (`knowledge/vlm_target.py::resolve_vlm_target`): the two caption legs
 are raw HTTP calls (not LangChain models), so they need a `(wire model, endpoint, key)` triple — plus
-the protocol to speak, which is no longer always OpenAI's (spec 2026-09-18). When `vlm_model` names
-a `models:` entry, all three come from that entry — the wire id from
-`entry.model`, the endpoint from the entry's `base_url` / `api_base` (falling back to
-`rag.vlm_base_url` when the entry declares none), the key from the entry's `api_key` (already
-`$ENV`-resolved at load), then the rag file key, then the environment. The dialect comes from the
-entry's `use:` class through the same allowlist `/api/models` reports (`reverse_lookup_provider`),
-and the protocol is written once in `knowledge/caption_client.py` — the one outbound entry point both
-legs call: an Anthropic entry posts to `{base_url}/v1/messages` with `X-Api-Key` and
-`anthropic-version` and reads the text blocks, everything else keeps `POST {base_url}/chat/completions`
-with `Authorization` byte for byte. An entry whose class the allowlist cannot place, and the legacy
-bare-id path below, keep the OpenAI shape — an unrecognized class is not evidence of a third one. The
-`base_url` join mirrors the SDK the chat leg uses (raw path concatenation), so a trailing `/v1`
-doubles on both legs rather than being silently repaired here. A value that names no entry is
-a legacy bare model id and keeps the old path (`rag.vlm_base_url` plus the file key or the
-environment), which is what lets a deployment that only ever set `rag.vlm_model` in `config.yaml`
-caption unchanged. This is also why the settings form asks for no endpoint and no key on that row:
-`DASHSCOPE_VL_BASE_URL` was retired in favour of the entry and `rag.vlm_base_url` as the only two
-endpoint sources.
+the protocol to speak, which is no longer always OpenAI's (spec 2026-09-18). The value must name a
+`models:` entry, and all three come from it — the wire id from `entry.model`, the endpoint from the
+entry's `base_url` / `api_base` (an entry that declares none borrows its SDK's own default address —
+`anthropic`'s field default, `deepseek`'s module constant — while the OpenAI-compatible cell has no
+such default to borrow and is refused instead, spec 2026-09-23 D10.2), and the key from the entry's
+`api_key` (already `$ENV`-resolved at load). There is no environment fallback and no bare-id path any
+more (D10.3): a value that names no entry is a configuration error, and a *declared* target whose
+entry is incomplete is refused by the shared check in `knowledge/model_target.py`
+(`rag_target_missing`) before any request is built. The dialect comes from the entry's `use:` class
+through the same allowlist `/api/models` reports (`reverse_lookup_provider`), and the protocol is
+written once in `knowledge/caption_client.py` — the one outbound entry point both legs call: an
+Anthropic entry posts to `{base_url}/v1/messages` with `X-Api-Key` and `anthropic-version` and reads
+the text blocks, everything else keeps `POST {base_url}/chat/completions` with `Authorization` byte
+for byte. An entry whose class the allowlist cannot place keeps the OpenAI shape — an unrecognized
+class is not evidence of a third one. The `base_url` join mirrors the SDK the chat leg uses (raw path
+concatenation), so a trailing `/v1` doubles on both legs rather than being silently repaired here.
+This is also why the settings form asks for no endpoint and no key on that row: the entry carries
+both.
+
+**RAG model targets** (`knowledge/model_target.py`, spec 2026-09-23 D2/D3): each RAG role declares its
+own target in the `rag:` block — `extract_model` / `judge_model` / `vlm_model` — and one RAG-wide
+`default_model` sits behind them. A caller picks its role field and hands it to
+`resolve_rag_model_name()`, which answers only the "nothing declared, so what then" half: the RAG
+default, else the first configured model. An explicit name is never replaced (a typo reaches the
+factory and raises), and only the default itself may be superseded — with a warning that names it.
+`require_usable_rag_target()` adds the missing-fields verdict for *declared* targets
+(`rag_target_missing`: a UI-managed entry inside the protocol grid must carry its own key, and an
+OpenAI-compatible entry its address); a target the system picked itself is never judged. Blank
+spellings (`""` / whitespace) mean "not declared" everywhere: `RagConfigFile`'s one field validator
+turns them into `None` before the file is written, so clearing a row withdraws the override instead
+of declaring an empty name.
 
 Security boundary: `GET/PUT /api/rag/config` are admin-gated. A read never returns a stored key — it
 comes back as the masking sentinel (or empty when the environment backs it), plus a flattened
@@ -1185,7 +1198,7 @@ query-entity extraction → seed match (entity scores) → `expand_neighborhood`
 
 **Offline entity re-resolution**: after `index_document_graph`, the worker runs `graph/resolver.py::resolve_entity_aliases` — full entity table below `graph_resolution_full_scan_threshold` rows, else touched entities + 1-hop neighbours — clustering aliases (alias fold + `entity_merge_similarity` cosine union-find, deterministic representative) and applying an idempotent five-step side-effect chain: merge entity rows → rewrite relation endpoints (dedupe triples, drop self-loops) → delete alias vectors + re-embed the representative → rewrite chunk entities in both the business column and the Qdrant payload → mark affected wiki entries dirty. Failure degrades to the `entity-resolution failed` sub-marker; the document still reaches `ready`.
 
-All knobs live in `RagConfig` (`rag.*` in config.yaml; secrets only via env: `DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `SILICONFLOW_VLM_API_KEY` / `MINERU_API_TOKEN`). Phase-1 graph behaviour is recoverable by config: caps very large, `graph_neighbor_min_score: 0`, `graph_hop0_guarantee: 0`. Selection/expansion/clustering logic (`retrieval.py` / `resolver.py` / `normalizer.py`) is pure and unit-tested without Qdrant or the DB; integration tests need a local Qdrant (`docker start qdrant`, marker `requires_qdrant`).
+All knobs live in `RagConfig` (`rag.*` in config.yaml; secrets only via env: `DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `MINERU_API_TOKEN`). Phase-1 graph behaviour is recoverable by config: caps very large, `graph_neighbor_min_score: 0`, `graph_hop0_guarantee: 0`. Selection/expansion/clustering logic (`retrieval.py` / `resolver.py` / `normalizer.py`) is pure and unit-tested without Qdrant or the DB; integration tests need a local Qdrant (`docker start qdrant`, marker `requires_qdrant`).
 
 **Phase-3 editing (Batch-1 completed 2026-08-16, spec `docs/superpowers/specs/2026-08-15-rag-phase3-editing-design.md`)**: user-side correction channels over the same stores —
 

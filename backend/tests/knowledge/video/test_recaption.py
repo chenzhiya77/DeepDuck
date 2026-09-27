@@ -88,7 +88,6 @@ def _video_config(**overrides):
         keyframes_per_shot=1,
         asr_provider="funasr",
         asr_model="paraformer-zh",
-        caption_model="",
         card_text_mode="full",
         **overrides,
     )
@@ -307,6 +306,61 @@ async def test_recaption_skips_media_legs_and_reembeds_only_changed(session_fact
     assert chunks[0]["text"] == "场景：新0\n口述：你好\n屏幕文字：A"
     assert chunks[1]["text"] == "场景：保持1\n口述：世界\n屏幕文字：B"
     # 实体列保持（图谱腿不重跑）
+    assert chunks[0]["entities"] == ["Alpha"]
+
+
+async def test_recaption_config_error_keeps_the_old_content_and_marks_caption_failed(session_factory, tmp_path, monkeypatch):
+    """spec 2026-09-23 D10.5: a target its entry cannot serve is caught inside recaption.
+
+    The old captions/chunks/vectors stay (recaption is an enhancement, never destructive), the
+    document keeps ready/100, this pass records ``caption=failed`` plus the sanitized reason,
+    and nothing is left ``indexing``. The call returns normally, which is what frees the video
+    side's in-flight slot — that side releases through a done-callback, not a ``finally``.
+    """
+    import json
+
+    import deerflow.knowledge.worker as w
+    from deerflow.config.app_config import AppConfig, RagConfig
+    from deerflow.config.model_config import ModelConfig
+    from deerflow.config.sandbox_config import SandboxConfig
+
+    store = KnowledgeStore(session_factory)
+    vstore = VideoShotStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await _seed_video_doc(
+        store,
+        vstore,
+        tmp_path,
+        doc_id="doc-v",
+        kb_id="kb-1",
+        shots=[_shot(0, 0, 5000, caption="旧0", asr="你好", ocr="A", status="pending")],
+        chunks=[_chunk("doc-v", "kb-1", 0, "场景：旧0\n口述：你好\n屏幕文字：A", entities=["Alpha"])],
+    )
+    entry = ModelConfig(name="vl-entry", display_name="vl-entry", description=None, use="langchain_openai:ChatOpenAI", model="vl-wire", base_url="https://ui.example/v1", supports_thinking=False)
+    config = AppConfig(models=[entry], sandbox=SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider"), rag=RagConfig(vlm_model="vl-entry"))
+    config._ui_model_names = {"vl-entry"}  # keyless on purpose: the declared target is refused
+
+    async def _frames(video_path, start_ms, end_ms, **kw):
+        return [b"\xff\xd8frame"]
+
+    monkeypatch.setattr(w, "extract_caption_frames", _frames)
+    monkeypatch.setattr(w, "get_app_config", lambda: config)
+    # The caption leg resolves through its own module's name — patching the worker's is not enough.
+    monkeypatch.setattr("deerflow.knowledge.video.captioner.get_app_config", lambda: config)
+    worker = KnowledgeIndexWorker(store=store, vector_store=_vs_mock(), embedder=SpyEmbedder(), llm=FakeLLM())
+
+    await worker.recaption_document("doc-v")
+
+    doc = await store.get_document("doc-v")
+    assert doc["status"] == "ready"
+    assert doc["progress_percent"] == 100
+    assert doc["path_status"]["caption"] == "failed"  # this pass's verdict, not the leg's "indexing"
+    assert "api_key" in doc["error"]  # the sanitized reason, appended as a marker
+    assert "indexing" not in json.dumps(doc["path_status"])
+    shots = await vstore.list_shots("doc-v")
+    assert shots[0]["caption"] == "旧0"  # old content untouched
+    chunks = await store.list_chunks("doc-v", limit=10)
+    assert chunks[0]["text"] == "场景：旧0\n口述：你好\n屏幕文字：A"
     assert chunks[0]["entities"] == ["Alpha"]
 
 

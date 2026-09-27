@@ -1,18 +1,18 @@
 """Shot captioner (spec 2026-09-08 §2/§3, plan Task 6).
 
 caption 腿：给每镜头的关键帧序列（≤3 帧，来自 ``frames.extract_caption_frames``）
-生成一句中文场景描述，走 DashScope VLM（默认复用 ``rag.vlm_model``，可被
-``rag.video.caption_model`` 覆盖，spec §7）。prompt 双模式对齐现有图像 captioner
+生成一句中文场景描述，与图片配文共用 ``rag.vlm_model``（`rag.video.caption_model`
+已于 2026-09-23 R18 退役，视频腿不再有自己的那一层）。prompt 双模式对齐现有图像 captioner
 先例（``deerflow/knowledge/captioner.py``）：文字密集帧全转录、否则一句描述。
 
-降级非硬依赖（spec §2）：api_key 缺失 → 全镜头空 caption + degraded；单镜头 VLM
+降级非硬依赖（spec §2）：条目无可用钥匙 → 全镜头空 caption + degraded；单镜头 VLM
 失败 → 该镜头空、计入 failed；failed/total > 30% → degraded（对齐 graph 30% 规则）。
 caption 缺失时镜头卡仍含 asr+ocr（三路并列，幻觉/缺失可被原文对冲，spec §9）。
 
-VLM 目标（模型 id / endpoint / key / 方言）由 ``resolve_vlm_target`` 解析：``vlm_model`` 命名
-``models:`` 条目时四者都取自该条目，命名不到条目则回退 ``rag.vlm_base_url`` + rag 文件密钥
-/env。``httpx.AsyncClient`` 可注入（测试用 MockTransport）；Semaphore 按
-``worker_concurrency`` 限流并发。
+VLM 目标（模型 id / endpoint / key / 方言）由 ``resolve_vlm_target`` 解析：目标必须命名一条
+``models:`` 条目，四者都取自该条目（条目缺地址时按 provider 借其 SDK 自己的默认值，
+openai-compatible 格例外 ⇒ 直接报配置错）。``httpx.AsyncClient`` 可注入（测试用
+MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。
 """
 
 from __future__ import annotations
@@ -25,13 +25,10 @@ from dataclasses import dataclass, field
 import httpx
 
 from deerflow.config.app_config import get_app_config
-from deerflow.config.rag_config_file import SECRET_ENV_VARS
 from deerflow.knowledge.caption_client import request_caption
 from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
 
 logger = logging.getLogger(__name__)
-
-VL_API_KEY_ENV = SECRET_ENV_VARS["vlm_api_key"]  # 对齐现有 captioner.py 的默认 env 名
 
 _SHOT_CAPTION_PROMPT = (
     "这是同一段视频镜头的若干关键帧（按时间顺序）。用于视频检索索引："
@@ -71,25 +68,23 @@ async def caption_shots(
     - 无帧镜头 → 空 caption，**不计** failed（无输入 ≠ 调用失败）；
     - ``failed/total > 30%`` → ``degraded=True``（对齐 graph 规则，严格大于）。
 
-    ``model`` 默认 ``rag.video.caption_model or rag.vlm_model``（spec §7）；``client``
+    ``model`` 默认取 ``rag.vlm_model``（视频腿与图片腿同一条链，R18）；``client``
     可注入（测试 MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。
     """
     if not shot_frames:
         return CaptionOutcome()
 
     cfg = get_app_config()
-    api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
     if model is None:
         # No layer of its own since R18: the video leg follows the same chain as the image
-        # leg (`rag.vlm_model` → the RAG default → the first model), so the retired
-        # `rag.video.caption_model` is not consulted even while the field still exists.
+        # leg (`rag.vlm_model` → the RAG default → the first model).
         model = cfg.rag.vlm_model
     target = resolve_vlm_target(cfg, model)
     api_key = target.api_key
 
     total = len(shot_frames)
     if not api_key:
-        logger.warning("%s 未设置；%d 个镜头 caption 降级为空（腿 degraded）", api_key_env, total)
+        logger.warning("配文目标 %r 没有可用的 API key；%d 个镜头 caption 降级为空（腿 degraded）", target.model, total)
         return CaptionOutcome(captions={index: "" for index in shot_frames}, failed=total, degraded=True)
 
     own_client = client is None

@@ -32,8 +32,6 @@ export interface RagConfigFormValues {
   rerank_model: string;
   rerank_api_key: string;
   vlm_model: string;
-  vlm_base_url: string;
-  vlm_api_key: string;
   extract_model: string;
   judge_model: string;
   default_model: string;
@@ -53,7 +51,6 @@ export interface RagConfigFormValues {
   video: {
     asr_provider: "funasr" | "whisper";
     asr_model: string;
-    caption_model: string;
   };
 }
 
@@ -92,7 +89,6 @@ export const PARSE_TIER_OPTIONS = [
 const SECRET_FIELDS = [
   "embedding_api_key",
   "rerank_api_key",
-  "vlm_api_key",
   "mineru_api_token",
   "sparse_api_key",
 ] as const;
@@ -102,7 +98,6 @@ const TEXT_FIELDS = [
   "embedding_model",
   "rerank_model",
   "vlm_model",
-  "vlm_base_url",
   "extract_model",
   "judge_model",
   "default_model",
@@ -126,7 +121,6 @@ const SELECT_FIELDS = [
 const VIDEO_SOURCES: Record<string, string> = {
   asr_provider: "video.asr_provider",
   asr_model: "video.asr_model",
-  caption_model: "video.caption_model",
 };
 
 function asText(value: unknown): string {
@@ -149,8 +143,6 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     rerank_model: asText(config.rerank_model),
     rerank_api_key: asText(config.rerank_api_key),
     vlm_model: asText(config.vlm_model),
-    vlm_base_url: asText(config.vlm_base_url),
-    vlm_api_key: asText(config.vlm_api_key),
     extract_model: asText(config.extract_model),
     judge_model: asText(config.judge_model),
     default_model: asText(config.default_model),
@@ -170,7 +162,6 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     video: {
       asr_provider: video.asr_provider === "whisper" ? "whisper" : "funasr",
       asr_model: asText(video.asr_model),
-      caption_model: asText(video.caption_model),
     },
   };
 }
@@ -248,7 +239,7 @@ export function buildRagConfigInput(
   const loadedVideo: RagVideoValues = view.config?.video ?? {};
 
   // The two free-text fields share one rule...
-  for (const key of ["asr_model", "caption_model"] as const) {
+  for (const key of ["asr_model"] as const) {
     const source = VIDEO_SOURCES[key]!;
     const previous = asText(loadedVideo[key]);
     const next = values.video[key].trim();
@@ -516,7 +507,7 @@ export function hasFormChanges(
     TEXT_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SECRET_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SELECT_FIELDS.some((key) => values[key] !== seeded[key]) ||
-    (["asr_provider", "asr_model", "caption_model"] as const).some((key) =>
+    (["asr_provider", "asr_model"] as const).some((key) =>
       edited(values.video[key], seeded.video[key]),
     )
   );

@@ -44,16 +44,27 @@ MASKED_SECRET = MASKED_API_KEY
 SECRET_ENV_VARS: dict[str, str] = {
     "embedding_api_key": "DASHSCOPE_EMBEDDING_API_KEY",
     "rerank_api_key": "DASHSCOPE_RERANK_API_KEY",
-    "vlm_api_key": "DASHSCOPE_API_KEY",
     "mineru_api_token": "MINERU_API_TOKEN",
 }
 
-#: Keys retired by a later contract. Their files must keep loading (the module's promise:
-#: an existing ``rag_config.json`` keeps working), but the value cannot be carried across —
-#: ``parse_backend``'s ``vlm`` / ``hybrid`` have no 4.x equivalent, because the backend
-#: choice moved to the service's own startup flags (spec 2026-09-24 D2). Dropped with a
-#: warning rather than silently reinterpreted as a tier.
-_RETIRED_KEYS = ("parse_backend",)
+#: Keys retired by a later contract, with the reason the load warning reports. Their files
+#: must keep loading (the module's promise: an existing ``rag_config.json`` keeps working),
+#: but the value cannot be carried across — ``parse_backend``'s ``vlm`` / ``hybrid`` have no
+#: 4.x equivalent (the backend choice moved to the service's own startup flags, spec
+#: 2026-09-24 D2), and the caption endpoint/key now come from the ``models:`` entry the role
+#: names (spec 2026-09-23 D10.3/R18). Dropped with a warning rather than silently
+#: reinterpreted as another field's meaning.
+_RETIRED_KEYS: dict[str, str] = {
+    "parse_backend": "the local MinerU leg speaks the 4.x contract now (use parse_tier)",
+    "vlm_base_url": "the caption endpoint now comes from the configured model entry",
+    "vlm_api_key": "the caption key now comes from the configured model entry",
+}
+
+#: The same handling one level down: the nested ``video`` block forbids extras too, and its
+#: own caption override retired with the rest (video now follows ``rag.vlm_model``).
+_RETIRED_VIDEO_KEYS: dict[str, str] = {
+    "caption_model": "the video caption leg follows rag.vlm_model now",
+}
 
 #: The fields that name a ``config.yaml`` ``models:`` entry rather than carrying a value.
 #: A *blank* declaration in any of them is not a name — it is the absence of one, which is
@@ -70,6 +81,22 @@ def _blank_to_none(value: Any) -> Any:
     return value
 
 
+def _drop_retired_keys(raw: dict[str, Any], keys: dict[str, str], *, path: Path, prefix: str = "") -> None:
+    """Strip retired keys in place, warning per key.
+
+    Runs before validation because both models forbid extras: without this a stored file that
+    still carries a retired key would fail to load instead of losing just that field. Only the
+    key's path is logged — the values here are addresses and keys, so they never enter a log
+    line. Nothing is written back: the next legitimate whole-object write is what clears the
+    file.
+    """
+    for key, reason in keys.items():
+        if key not in raw:
+            continue
+        raw.pop(key)
+        logger.warning("Dropped retired key %r from %s: %s.", f"{prefix}{key}", path, reason)
+
+
 class RagVideoFileConfig(BaseModel):
     """The video-ingestion fields the settings UI may override.
 
@@ -82,7 +109,6 @@ class RagVideoFileConfig(BaseModel):
 
     asr_provider: Literal["funasr", "whisper"] | None = Field(default=None, description="ASR backend for video ingestion.")
     asr_model: str | None = Field(default=None, description="ASR model name for the chosen provider.")
-    caption_model: str | None = Field(default=None, description="VLM for shot captions; empty reuses rag.vlm_model.")
 
 
 class RagConfigFile(BaseModel):
@@ -100,9 +126,7 @@ class RagConfigFile(BaseModel):
     embedding_api_key: str | None = Field(default=None, description="Embedding API key; masked on read, env is the fallback.")
     rerank_model: str | None = Field(default=None, description="DashScope rerank model.")
     rerank_api_key: str | None = Field(default=None, description="Rerank API key; masked on read, env is the fallback.")
-    vlm_model: str | None = Field(default=None, description="OpenAI-compatible VLM used for captioning.")
-    vlm_base_url: str | None = Field(default=None, description="Endpoint for the caption VLM.")
-    vlm_api_key: str | None = Field(default=None, description="Caption VLM API key; masked on read, env is the fallback.")
+    vlm_model: str | None = Field(default=None, description="Name of a config `models:` entry used for captioning; None follows the RAG default, then the first configured model.")
     extract_model: str | None = Field(default=None, description="Name of a config `models:` entry used for graph extraction.")
     judge_model: str | None = Field(default=None, description="Name of a config `models:` entry used as the ragas eval judge; None uses the config primary model.")
     default_model: str | None = Field(default=None, description="Name of a config `models:` entry used by every RAG role that declares none of its own; None uses the first configured model.")
@@ -191,14 +215,10 @@ class RagConfigFile(BaseModel):
             raw = {}
         if not isinstance(raw, dict):
             raise ValueError(f"Rag config file at {resolved_path} must be a JSON object")
-        for key in _RETIRED_KEYS:
-            if key in raw:
-                raw.pop(key)
-                logger.warning(
-                    "Dropped retired key %r from %s: the local MinerU leg speaks the 4.x contract now (use parse_tier).",
-                    key,
-                    resolved_path,
-                )
+        _drop_retired_keys(raw, _RETIRED_KEYS, path=resolved_path)
+        video = raw.get("video")
+        if isinstance(video, dict):
+            _drop_retired_keys(video, _RETIRED_VIDEO_KEYS, path=resolved_path, prefix="video.")
         try:
             return cls.model_validate(raw)
         except Exception as e:

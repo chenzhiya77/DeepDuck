@@ -41,6 +41,12 @@ from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
 
 SANDBOX = {"use": "deerflow.sandbox.local:LocalSandboxProvider"}
+
+#: The names this file's payloads and ``YAML_RAG`` declare must exist as entries: since spec
+#: 2026-09-23 D10.1 a save refuses a declared name with no entry. YAML entries on purpose --
+#: the strict missing-key/address rule covers UI-managed entries only.
+_YAML_MODELS = [{"name": name, "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key", "base_url": "https://yaml.example/v1"} for name in ("rag-default", "yaml-vlm")]
+
 YAML_RAG = {
     "qdrant_url": "http://qdrant:6333",
     "embedding_model": "yaml-embedding",
@@ -74,7 +80,7 @@ _INVALID_WIDTH_PAYLOAD = {
 @pytest.fixture
 def config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (tmp_path / "config.yaml").write_text(
-        yaml.safe_dump({"sandbox": SANDBOX, "models": [], "rag": YAML_RAG}),
+        yaml.safe_dump({"sandbox": SANDBOX, "models": _YAML_MODELS, "rag": YAML_RAG}),
         encoding="utf-8",
     )
     (tmp_path / "models_config.json").write_text(json.dumps({"models": []}), encoding="utf-8")

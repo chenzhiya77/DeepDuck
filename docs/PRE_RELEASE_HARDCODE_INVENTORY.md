@@ -423,7 +423,7 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | --- | --- | --- | --- |
 | 嵌入 | `rag.embedding_model` = **字面量 `"qwen3.7-text-embedding"`**（`app_config.py:189`） | 有字段，但**默认值是厂商型号** | **A-1** |
 | 重排 | `rag.rerank_model` = **字面量 `"qwen3-rerank"`**（`:191`） | 同上 | **A-1** |
-| 图片说明 VLM | `rag.vlm_model` = **字面量 `"qwen3.7-flash"`** + `vlm_base_url` = 字面量 DashScope 地址 + `vlm_api_key_env` = `"DASHSCOPE_API_KEY"`（`:193-196`，**三个字面量**） | 同上 | **A-1**（`:193` 归 2026-09-23 那一对的 D7/D10） |
+| 图片说明 VLM | `rag.vlm_model` 的三个字面量（型号 `"qwen3.7-flash"` + `vlm_base_url` 的 DashScope 地址 + `vlm_api_key_env` 的 `"DASHSCOPE_API_KEY"`）**已于 2026-09-27 随 `3bf049cf`＋Task 9 退役**：字段全删、`vlm_model` 改为条目名，字面量默认与端点／环境兜底都不存在 | 同上 | **A-1**（已闭合） |
 | 视频 ASR | `rag.video.asr_model` = **字面量 `"paraformer-zh"`**（`:157`；另 `video/asr.py:89`/`:177` 还有两份签名默认） | 有字段 + 有 UI（`rag_config_file.py:63`），但默认是厂商型号 | **A-1 + C-3** |
 | 视频镜头说明 | `rag.video.caption_model` 默认 `""` ⇒ **复用 `rag.vlm_model`**（`:158`）⇒ 继承上一行的三个字面量 | 有字段 | 继承 A-1 |
 | 文档解析（云） | `model_version="vlm"` 三层签名默认（`parser.py:686`/`:722`/`:756`），**无配置通路**；对照：本地腿有 `rag.parse_tier`（`app_config.py:219-222`，四档，None = 让服务决定） | **✗ 无字段** | **A-5** |

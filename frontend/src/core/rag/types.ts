@@ -10,7 +10,6 @@
 export interface RagVideoValues {
   asr_provider?: "funasr" | "whisper" | null;
   asr_model?: string | null;
-  caption_model?: string | null;
 }
 
 /** One effective RAG configuration object (the PUT body, and the GET's `config`). */
@@ -21,8 +20,6 @@ export interface RagConfigValues {
   rerank_model?: string | null;
   rerank_api_key?: string | null;
   vlm_model?: string | null;
-  vlm_base_url?: string | null;
-  vlm_api_key?: string | null;
   extract_model?: string | null;
   judge_model?: string | null;
   /**

@@ -760,7 +760,10 @@ class KnowledgeIndexWorker:
         except Exception as exc:
             logger.exception("recaption failed for document %s", doc_id)
             chunk_count = await self._store.count_chunks(doc_id)
-            await self._store.update_document_status(doc_id, "ready", progress_percent=100, chunk_count=chunk_count)
+            # This pass's verdict lands explicitly: without it the leg's own "indexing" would
+            # be what the row keeps, and the admin would read a run that never finished
+            # (spec 2026-09-23 D10.5; ready only means the *old* content is still usable).
+            await self._store.update_document_status(doc_id, "ready", progress_percent=100, chunk_count=chunk_count, path_status={"caption": "failed"})
             await self._append_error_marker(doc_id, f"recaption failed: {str(exc)[:200]}")
         return await self._store.get_document(doc_id)
 

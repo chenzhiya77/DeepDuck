@@ -58,8 +58,6 @@ function view(
       rerank_model: "qwen3-rerank",
       rerank_api_key: "",
       vlm_model: "Qwen/Qwen3-VL-30B-A3B-Instruct",
-      vlm_base_url: "https://api.siliconflow.cn/v1",
-      vlm_api_key: "",
       extract_model: "deepseek-chat",
       judge_model: "deepseek-chat",
       mineru_api_token: "",
@@ -75,7 +73,7 @@ function view(
       parse_provider: "mineru-cloud",
       parse_base_url: "",
       parse_tier: null,
-      video: { asr_provider: "funasr", asr_model: "paraformer-zh", caption_model: "" },
+      video: { asr_provider: "funasr", asr_model: "paraformer-zh" },
       ...over,
     },
     sources: {
@@ -85,8 +83,6 @@ function view(
       rerank_model: "config_file",
       rerank_api_key: "env",
       vlm_model: "config_file",
-      vlm_base_url: "config_file",
-      vlm_api_key: "unset",
       extract_model: "config_file",
       judge_model: "config_file",
       mineru_api_token: "unset",
@@ -104,7 +100,6 @@ function view(
       parse_tier: "config_file",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file",
-      "video.caption_model": "config_file",
       ...sources,
     },
   };
@@ -132,7 +127,6 @@ describe("formValuesFromConfig", () => {
     expect(values.video).toEqual({
       asr_provider: "funasr",
       asr_model: "paraformer-zh",
-      caption_model: "",
     });
   });
 

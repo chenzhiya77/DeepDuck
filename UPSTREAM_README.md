@@ -954,9 +954,8 @@ rag:
   qdrant_url: http://localhost:6333
   embedding_model: qwen3.7-text-embedding
   rerank_model: qwen3-rerank
-  # Name of a `models:` entry (its endpoint and API key are then reused), or a bare
-  # model id to use rag.vlm_base_url with the caption API key.
-  vlm_model: qwen3.7-flash
+  # Name of a `models:` entry (its endpoint and API key are then reused).
+  # vlm_model: qwen3-vl-plus
   worker_concurrency: 2
   extract_rate_limit_rps: 5.0
 ```

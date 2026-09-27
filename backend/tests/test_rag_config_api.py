@@ -35,12 +35,35 @@ YAML_RAG = {
     "video": {"enabled": False, "asr_model": "yaml-asr"},
 }
 
+#: The model names this file's payloads declare, as ``config.yaml`` entries. They have to
+#: exist: since spec 2026-09-23 D10.1 a save refuses a declared name that is not a configured
+#: entry (the not-found mapping below), and the legacy fixtures declared names into an empty
+#: model list. They are YAML entries on purpose -- the strict missing-key/address rule covers
+#: UI-managed entries only, so an operator's own file stays out of it.
+YAML_MODELS = [
+    {"name": name, "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key", "base_url": "https://yaml.example/v1"}
+    for name in ("B", "default-entry", "rag-default", "ui-default", "yaml-default", "judge-entry", "yaml-vlm")
+]
+
 
 def _write_config_yaml(root: Path, rag: dict | None = None) -> None:
     (root / "config.yaml").write_text(
-        yaml.safe_dump({"sandbox": SANDBOX, "models": [], "rag": rag or YAML_RAG}),
+        yaml.safe_dump({"sandbox": SANDBOX, "models": YAML_MODELS, "rag": rag or YAML_RAG}),
         encoding="utf-8",
     )
+
+
+def _seed_ui_model(root: Path, *, name: str, api_key: str | None = "sk-ui", base_url: str | None = "https://ui.example/v1") -> None:
+    """One UI-managed (models_config.json) entry, complete by default.
+
+    Omitting a value is how a case builds the incomplete target the save-time rule refuses.
+    """
+    entry: dict = {"name": name, "use": "langchain_openai:ChatOpenAI", "model": "gpt-test"}
+    if api_key is not None:
+        entry["api_key"] = api_key
+    if base_url is not None:
+        entry["base_url"] = base_url
+    (root / "models_config.json").write_text(json.dumps({"models": [entry]}), encoding="utf-8")
 
 
 def _write_rag_json(root: Path, payload: dict) -> None:
@@ -175,13 +198,13 @@ def test_get_reports_effective_values_and_origins(config_env: Path, monkeypatch:
 
 
 def test_get_never_returns_a_stored_secret(config_env: Path):
-    _write_rag_json(config_env, {"vlm_api_key": "sk-super-secret"})
+    _write_rag_json(config_env, {"embedding_api_key": "sk-super-secret"})
 
     with _client(system_role="admin") as client:
         response = client.get("/api/rag/config")
 
     assert "sk-super-secret" not in response.text
-    assert response.json()["config"]["vlm_api_key"] == MASKED_SECRET
+    assert response.json()["config"]["embedding_api_key"] == MASKED_SECRET
 
 
 # ── write: validation, masking, and the file-only boundary ───────────────
@@ -354,8 +377,8 @@ def _seed_two_models(root: Path) -> None:
         json.dumps(
             {
                 "models": [
-                    {"name": "A", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key"},
-                    {"name": "B", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key"},
+                    {"name": "A", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key", "base_url": "https://ui.example/v1"},
+                    {"name": "B", "use": "langchain_openai:ChatOpenAI", "model": "gpt-test", "api_key": "test-key", "base_url": "https://ui.example/v1"},
                 ]
             }
         ),
@@ -396,6 +419,166 @@ def test_saving_the_rag_default_touches_no_other_configuration_file(config_env: 
         assert client.put("/api/rag/config", json={"default_model": "rag-default"}).status_code == 200
 
     assert {name: (config_env / name).read_bytes() for name in names} == before
+
+
+# ── the save-time target check (spec 2026-09-23 D10.1) ────────────────────
+# A save judges the targets the payload (plus config.yaml) declares: a UI-managed entry in
+# the protocol grid must carry its own key -- and an address, in the one cell whose SDK has
+# no default to borrow -- while a name that is not a configured entry is the not-found error.
+# What the system would pick itself is never a refusal reason, so an empty declaration or a
+# non-UI entry stays out of it.
+
+
+def test_save_refuses_a_ui_target_without_a_key(config_env: Path):
+    _seed_ui_model(config_env, name="ui-bare", api_key=None)
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"judge_model": "ui-bare"})
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail.startswith("提交后的配置仍不可用：")
+    assert "ui-bare" in detail and "api_key" in detail
+    assert _read_rag_json(config_env) == {}  # a refused write leaves the file alone
+
+
+def test_save_refuses_an_openai_compatible_target_without_an_address(config_env: Path):
+    _seed_ui_model(config_env, name="ui-noaddr", base_url=None)
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"vlm_model": "ui-noaddr"})
+
+    assert response.status_code == 400
+    assert "base_url" in response.json()["detail"]
+
+
+def test_save_accepts_a_complete_ui_target(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The positive control: the rule is not refusing the grid, only incomplete entries."""
+    _seed_ui_model(config_env, name="ui-complete")
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"extract_model": "ui-complete"})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env)["extract_model"] == "ui-complete"
+
+
+def test_save_does_not_judge_the_fallback_target(config_env: Path):
+    """`models[0]` standing in for a blank role is the system's own pick (D3): never a refusal.
+
+    The seeded UI entry is incomplete on purpose -- if the check leaked onto a fallback the
+    save would be refused here.
+    """
+    _seed_ui_model(config_env, name="ui-incomplete", api_key=None)
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"embedding_model": "ui-embedding"})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("field", ["default_model", "extract_model", "judge_model", "vlm_model"])
+def test_save_maps_a_wrong_role_name_to_400(config_env: Path, field: str):
+    """Every declared role, the default included: a name with no entry is a usage error."""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={field: "ghost-entry"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "提交后的配置仍不可用：Model ghost-entry not found in config"
+    assert _read_rag_json(config_env) == {}
+
+
+def test_save_refuses_a_declared_target_when_there_are_no_models_at_all(config_env: Path):
+    """A model list with nothing in it cannot contain the declared name either."""
+    (config_env / "models_config.json").write_text(json.dumps({"models": []}), encoding="utf-8")
+    (config_env / "config.yaml").write_text(yaml.safe_dump({"sandbox": SANDBOX, "models": [], "rag": YAML_RAG}), encoding="utf-8")
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"judge_model": "any-entry"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "提交后的配置仍不可用：Model any-entry not found in config"
+
+
+def test_save_maps_the_retired_prefix_to_the_same_400(config_env: Path):
+    """A `dashscope:` name is an ordinary name now (spec D9): no entry, no save."""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"judge_model": "dashscope:qwen3.8-max"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "提交后的配置仍不可用：Model dashscope:qwen3.8-max not found in config"
+
+
+def test_save_refuses_a_stale_default_at_the_moment_it_is_declared(config_env: Path):
+    """The save *is* the declaration, so an unknown name is a usage error here for all four
+    fields — the default included. D3's warning-and-fall-back is the runtime path, where a
+    default that used to be valid can go stale after a model is removed (pinned in
+    `test_model_target.py` and the resolver's own tests)."""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"default_model": "gone-model"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "提交后的配置仍不可用：Model gone-model not found in config"
+    assert _read_rag_json(config_env) == {}
+
+
+def test_the_not_found_sentence_is_written_once():
+    """R6: the RAG side owns one copy of the factory's sentence; the router carries none."""
+    from pathlib import Path as _Path
+
+    from deerflow.knowledge import model_target as model_target_module
+
+    router_source = _Path(rag_config_router.__file__).read_text(encoding="utf-8")
+    target_source = _Path(model_target_module.__file__).read_text(encoding="utf-8")
+
+    assert "not found in config" not in router_source  # only the wording helper says it
+    assert "model_not_found_message(" in router_source
+    assert target_source.count('_NOT_FOUND_SUFFIX = " not found in config"') == 1
+
+
+def test_the_not_found_sentence_equals_the_factorys_own(config_env: Path):
+    """The value pin: the real factory's message must equal the RAG helper's output, word for word."""
+    from deerflow.config.app_config import AppConfig
+    from deerflow.config.app_config import RagConfig as _RagConfig
+    from deerflow.config.sandbox_config import SandboxConfig
+    from deerflow.knowledge.model_target import model_not_found_message
+    from deerflow.models.factory import create_chat_model
+
+    config = AppConfig(models=[], sandbox=SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider"), rag=_RagConfig())
+    with pytest.raises(ValueError) as excinfo:
+        create_chat_model(name="ghost", app_config=config)
+
+    assert str(excinfo.value) == model_not_found_message("ghost")
+
+
+def test_put_rejects_the_retired_top_level_vlm_fields(config_env: Path):
+    """The two top-level VLM keys are gone from the file contract (spec 2026-09-23 D10.3):
+    a payload that still carries them is refused by the same ``extra="forbid"`` that guards
+    every typo — not silently stripped."""
+    for field in ("vlm_base_url", "vlm_api_key"):
+        with _client(system_role="admin") as client:
+            response = client.put("/api/rag/config", json={field: "leftover"})
+
+        assert response.status_code == 422, field
+    assert _read_rag_json(config_env) == {}
+
+
+def test_put_rejects_the_retired_nested_caption_field(config_env: Path):
+    """The nested key is a different rejection path: ``RagVideoFileConfig`` forbids extras."""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"video": {"caption_model": "leftover"}})
+
+    assert response.status_code == 422
+    assert _read_rag_json(config_env) == {}
+
+
+def test_put_accepts_the_remaining_video_fields_after_the_retirement(config_env: Path):
+    """The positive control: the video block still takes what it owns."""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"video": {"asr_provider": "whisper", "asr_model": "small"}})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env)["video"] == {"asr_provider": "whisper", "asr_model": "small"}
 
 
 # ── hot reload through the shared config singleton ────────────────────────

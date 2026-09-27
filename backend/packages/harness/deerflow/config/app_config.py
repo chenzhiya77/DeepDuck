@@ -155,7 +155,6 @@ class RagVideoConfig(BaseModel):
     keyframes_per_shot: int = Field(default=1, ge=1, description="Persisted keyframes per shot; caption frames (≤3) are transient.")
     asr_provider: Literal["funasr", "whisper"] = Field(default="funasr", description="ASR backend: funasr (Paraformer, local CPU) or whisper (local CPU fallback tier).")
     asr_model: str = Field(default="paraformer-zh", description="ASR model name for the chosen provider (whisper tier example: small).")
-    caption_model: str = Field(default="", description="VLM used for shot captions; empty reuses rag.vlm_model.")
     card_text_mode: Literal["full", "caption_only", "asr_only"] = Field(default="full", description="Shot-card text assembly mode; non-full modes are caption-quality ablation experiments (spec §6), not a production path.")
 
 
@@ -181,8 +180,7 @@ class RagConfig(BaseModel):
     left unset here: they come from the API-writable ``rag_config.json`` (spec
     2026-09-10 rag functional-model config §3) or, as the fallback, from the
     environment (``DASHSCOPE_EMBEDDING_API_KEY``, ``DASHSCOPE_RERANK_API_KEY``,
-    ``SILICONFLOW_VLM_API_KEY``, ``MINERU_API_TOKEN``). Their resolution order is
-    ``explicit argument > file > environment``.
+    ``MINERU_API_TOKEN``). Their resolution order is ``explicit argument > file > environment``.
     """
 
     qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant server URL hosting the knowledge vector collections (kb_chunks / kb_entities / kb_wiki_entries).")
@@ -190,10 +188,7 @@ class RagConfig(BaseModel):
     embedding_api_key: str | None = Field(default=None, description="Embedding API key from rag_config.json; None falls back to DASHSCOPE_EMBEDDING_API_KEY.")
     rerank_model: str = Field(default="qwen3-rerank", description="DashScope rerank model used for hybrid-search precision ranking.")
     rerank_api_key: str | None = Field(default=None, description="Rerank API key from rag_config.json; None falls back to DASHSCOPE_RERANK_API_KEY.")
-    vlm_model: str = Field(default="qwen3.7-flash", description="DashScope VLM (visual-language) model for image captioning.")
-    vlm_base_url: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1", description="OpenAI-compatible endpoint for qwen3.7-flash.")
-    vlm_api_key: str | None = Field(default=None, description="Caption VLM API key from rag_config.json; None falls back to the vlm_api_key_env variable.")
-    vlm_api_key_env: str = Field(default="DASHSCOPE_API_KEY", description="Env var name for the VLM API key (fallback when rag_config.json declares none).")
+    vlm_model: str | None = Field(default=None, description="Name of a config `models:` entry used for captioning images and video shots; None follows the RAG default, then the first configured model.")
     vlm_timeout: float | None = Field(default=None, description="Read timeout for VLM requests; None uses default 180s from code. Connect timeout is always 15s.")
     vlm_connect_timeout: float = Field(default=15.0, description="Connection timeout for VLM requests (seconds).")
     extract_model: str | None = Field(default=None, description="Name of the config `models:` entry used for graph extraction (small, cheap, stable JSON output); None uses the first configured model.")

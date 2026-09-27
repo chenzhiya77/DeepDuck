@@ -118,7 +118,6 @@ def _video_config(**overrides):
         keyframes_per_shot=1,
         asr_provider="funasr",
         asr_model="paraformer-zh",
-        caption_model="",
         card_text_mode="full",
         **overrides,
     )

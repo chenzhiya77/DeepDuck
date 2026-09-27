@@ -2561,7 +2561,6 @@ authorization:
 # Secrets come from .env, never from this file:
 #   DASHSCOPE_EMBEDDING_API_KEY  — Aliyun Bailian embedding (dense+sparse)
 #   DASHSCOPE_RERANK_API_KEY     — Aliyun Bailian rerank
-#   SILICONFLOW_VLM_API_KEY      — SiliconFlow VLM image captioning
 #   MINERU_API_TOKEN             — MinerU document parsing API
 #   RAG_EMBEDDING_API_KEY        — fallback key when embedding_provider is not dashscope
 #   RAG_RERANK_API_KEY           — fallback key when rerank_provider is not dashscope
@@ -2575,13 +2574,11 @@ rag:
   embedding_model: qwen3.7-text-embedding
   # DashScope rerank model for hybrid-search precision ranking.
   rerank_model: qwen3-rerank
-  # Vision-language model used to caption images extracted from documents. Prefer the
-  # name of a `models:` entry — its endpoint and API key are then reused, which is what
-  # the settings form picks from. A bare model id keeps the legacy path: rag.vlm_base_url
-  # (DashScope's compatible endpoint by default) plus DASHSCOPE_API_KEY.
-  vlm_model: qwen3.7-flash
-  # Endpoint used when vlm_model names no `models:` entry. Uncomment to override.
-  # vlm_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # Vision-language model used to caption images extracted from documents and
+  # video shots. Name a `models:` entry — the caption call reuses that entry's
+  # endpoint and API key, which is what the settings form picks from. Omit to
+  # follow the RAG default, then the first configured model.
+  # vlm_model: qwen3-vl-plus
   # Name of the `models:` entry used for graph extraction — pick a small,
   # cheap model with stable JSON output. Omit to use the first configured model.
   # extract_model: deepseek-v4-flash
@@ -2667,8 +2664,6 @@ rag:
     # ASR backend: funasr (Paraformer, local CPU) | whisper (local fallback).
     asr_provider: funasr
     asr_model: paraformer-zh
-    # VLM used for shot captions; empty reuses rag.vlm_model.
-    caption_model: ""
     # Shot-card text assembly: full | caption_only | asr_only — non-full modes
     # are caption-quality ablation experiments (spec §6), not a production path.
     card_text_mode: full

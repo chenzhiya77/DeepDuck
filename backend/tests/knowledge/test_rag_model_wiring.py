@@ -25,18 +25,34 @@ SANDBOX = SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider")
 GRAPH_SEARCH_SOURCE = Path(__file__).resolve().parents[2] / "packages" / "harness" / "deerflow" / "tools" / "builtins" / "graph_search_tool.py"
 
 
-def _model(name: str, *, vision: bool = False) -> ModelConfig:
-    """``model=`` is distinct from ``name`` so a built client identifies its entry."""
+def _model(name: str, *, vision: bool = False, api_key: str | None = "test-key", base_url: str | None = "https://ui.example/v1") -> ModelConfig:
+    """``model=`` is distinct from ``name`` so a built client identifies its entry.
+
+    ``api_key`` / ``base_url`` are parameters because the strict target rule (spec
+    2026-09-23 D10.1) turns exactly those two into its verdicts for a UI entry.
+    """
+    extra: dict = {}
+    if api_key is not None:
+        extra["api_key"] = api_key
+    if base_url is not None:
+        extra["base_url"] = base_url
     return ModelConfig(
         name=name,
         display_name=name,
         description=None,
         use="langchain_openai:ChatOpenAI",
         model=f"{name}-wire",
-        api_key="test-key",
         supports_thinking=False,
         supports_vision=vision,
+        **extra,
     )
+
+
+def _ui_config(*entries: ModelConfig, rag: RagConfig | None = None) -> AppConfig:
+    """A config whose entries came from the API-writable file: the strict rule's scope."""
+    config = AppConfig(models=list(entries), sandbox=SANDBOX, rag=rag or RagConfig())
+    config._ui_model_names = {entry.name for entry in entries}
+    return config
 
 
 def _config(*names: str, default_model: str | None = None, extract_model: str | None = None, judge_model: str | None = None) -> AppConfig:
@@ -177,6 +193,67 @@ def test_graph_search_tool_source_is_untouched():
     assert "llm = llm or get_extract_llm()" in source
     # If this file ever grows a RAG-default lookup of its own, this pins where it went.
     assert "default_model" not in source
+
+
+# ── the runtime half of the target rule (spec 2026-09-23 D10.1) ───────────
+# The build entrances refuse a *declared* target whose UI entry is unusable, and they refuse
+# it before the factory is asked. A target the system would pick itself (a blank role falling
+# back to the first model) is never refused here -- that is R2's tooth: the failure stays at
+# request time, as it always was, instead of turning a save or an ingest into a hard error.
+
+
+def test_extraction_refuses_a_declared_ui_target_with_no_key(factory_spy):
+    from deerflow.knowledge.embedder import RagConfigurationError
+
+    config = _ui_config(_model("A", api_key=None), rag=RagConfig(extract_model="A"))
+
+    with pytest.raises(RagConfigurationError) as excinfo:
+        get_extract_llm(config)
+
+    assert "A" in str(excinfo.value) and "api_key" in str(excinfo.value)
+    assert factory_spy == []  # refused before the factory was asked
+
+
+def test_extraction_does_not_refuse_a_fallback_target(factory_spy):
+    """A blank role resolves to the first model; that pick is not judged (D3/R2)."""
+    config = _ui_config(_model("A", api_key=None), rag=RagConfig())
+
+    get_extract_llm(config)
+
+    assert factory_spy[-1][0] == "A"
+
+
+def test_the_judge_refuses_a_declared_ui_target_with_no_key(factory_spy):
+    from deerflow.knowledge.embedder import RagConfigurationError
+
+    config = _ui_config(_model("A", api_key=None), rag=RagConfig(judge_model="A"))
+
+    with pytest.raises(RagConfigurationError) as excinfo:
+        build_judge_llm(None, config=config)
+
+    assert "api_key" in str(excinfo.value)
+    assert factory_spy == []
+
+
+async def test_the_retrieval_time_consumer_refuses_the_same_target(monkeypatch: pytest.MonkeyPatch, factory_spy):
+    """R12/R14: `graph_search` reaches the same entrance, so it inherits the refusal."""
+    from deerflow.config import app_config as app_config_module
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.tools.builtins import graph_search_tool
+
+    config = _ui_config(_model("A", api_key=None), rag=RagConfig(extract_model="A"))
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: config)
+    monkeypatch.setattr(graph_search_tool, "resolve_kb_scope", lambda runtime: ("kb-1", "user-1"))
+
+    async def _allowed(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(graph_search_tool, "can_access", _allowed)
+
+    with pytest.raises(RagConfigurationError):
+        await graph_search_tool._graph_search_impl("q", SimpleNamespace(), store=SimpleNamespace(_sf=object()))
+
+    assert factory_spy == []
 
 
 # ── eval judge ───────────────────────────────────────────────────────────

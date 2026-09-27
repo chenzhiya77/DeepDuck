@@ -1,11 +1,12 @@
 """Caption VLM resolution: a `models:` entry reference is the single source.
 
 The caption legs are raw HTTP calls, so they need a (wire model, endpoint, key) triple and
-the protocol to speak. Naming a configured `models:` entry must be enough — that is what
-lets the settings UI offer a plain model picker with no endpoint/key boxes, and the entry's
-`use:` class decides the dialect (spec 2026-09-18). A value that names no entry keeps the
-legacy fallback (`rag.vlm_base_url` plus the rag file key or the env var), so a deployment
-that only ever set `rag.vlm_model` in config.yaml keeps captioning.
+the protocol to speak. Naming a configured `models:` entry is the only way to get one — that
+is what lets the settings UI offer a plain model picker with no endpoint/key boxes, and the
+entry's `use:` class decides the dialect (spec 2026-09-18). A value that names no entry is a
+configuration error since spec 2026-09-23 D10.3 (the legacy bare-id path and the RAG-side
+endpoint/key fields are retired), and an entry's address is its own or the one its SDK ships
+(D10.2).
 """
 
 from __future__ import annotations
@@ -72,57 +73,63 @@ def test_entry_reference_supplies_model_endpoint_and_key():
     assert target.source == "model_entry"
 
 
-def test_entry_without_endpoint_keeps_the_configured_caption_endpoint():
-    """An entry that declares no endpoint means its client default — for captioning that
-    is the configured DashScope VLM endpoint, not whatever the entry's class defaults to."""
+def test_entry_without_endpoint_does_not_borrow_a_rag_side_field():
+    """Reversed (spec 2026-09-23 R1/D10.2): the RAG-side caption endpoint is retired.
+
+    An entry that declares no address now borrows its own SDK's default — and the one cell
+    without such a default is refused rather than pointed at a cloud nobody named, which is
+    what the `rag.vlm_base_url` field used to supply.
+    """
+    from deerflow.knowledge.embedder import RagConfigurationError
     from deerflow.knowledge.vlm_target import resolve_vlm_target
 
     entry = {key: value for key, value in VL_ENTRY.items() if key != "base_url"}
-    config = _config([entry], {"vlm_base_url": "https://caption.example/v1"})
+    config = _config([entry])
 
-    target = resolve_vlm_target(config, "vl-entry")
+    with pytest.raises(RagConfigurationError) as excinfo:
+        resolve_vlm_target(config, "vl-entry")
 
-    assert target.base_url == "https://caption.example/v1"
-    assert target.source == "model_entry"
+    assert "base_url" in str(excinfo.value)
 
 
-def test_entry_without_key_falls_back_to_the_file_then_the_environment(monkeypatch):
+def test_entry_without_key_has_no_fallback_left():
+    """Reversed (R14/D10.3): the entry must carry the key — the RAG field and the environment
+    are both gone, and this is what the strict target rule keys off."""
     from deerflow.knowledge.vlm_target import resolve_vlm_target
 
     entry = {key: value for key, value in VL_ENTRY.items() if key != "api_key"}
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-env")
 
-    assert resolve_vlm_target(_config([entry], {"vlm_api_key": "sk-file"}), "vl-entry").api_key == "sk-file"
-    assert resolve_vlm_target(_config([entry]), "vl-entry").api_key == "sk-env"
-
-    monkeypatch.delenv("DASHSCOPE_API_KEY")
     assert resolve_vlm_target(_config([entry]), "vl-entry").api_key is None
 
 
-def test_value_naming_no_entry_keeps_the_legacy_bare_id_path(monkeypatch):
-    from deerflow.knowledge.vlm_target import resolve_vlm_target
-
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-env")
-    config = _config([VL_ENTRY], {"vlm_base_url": "https://legacy.example/v1"})
-
-    target = resolve_vlm_target(config, "qwen3.7-flash-not-an-entry")
-
-    assert target.model == "qwen3.7-flash-not-an-entry"
-    assert target.base_url == "https://legacy.example/v1"
-    assert target.api_key == "sk-env"
-    assert target.source == "legacy"
-
-
-def test_defaults_to_the_configured_vlm_model():
+def test_a_value_naming_no_entry_is_a_configuration_error():
+    """Reversed (D10.3): the bare-id path is gone, so this reports instead of dialing."""
+    from deerflow.knowledge.embedder import RagConfigurationError
     from deerflow.knowledge.vlm_target import resolve_vlm_target
 
     config = _config([VL_ENTRY])
 
+    with pytest.raises(RagConfigurationError) as excinfo:
+        resolve_vlm_target(config, "qwen3.7-flash-not-an-entry")
+
+    assert "Model qwen3.7-flash-not-an-entry not found in config" in str(excinfo.value)
+
+
+def test_defaults_to_the_configured_vlm_model():
+    """Reversed (D10.3): `rag.vlm_model` names an entry now; its old literal default is gone.
+
+    The fixture's entry name, wire id and the RAG default are three different strings, so
+    "which level answered" is visible in the result.
+    """
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    config = _config([VL_ENTRY], {"vlm_model": "vl-entry"})
+
     target = resolve_vlm_target(config, None)
 
-    # rag.vlm_model's own default names no entry, so this is the legacy path.
-    assert target.model == config.rag.vlm_model
-    assert target.source == "legacy"
+    assert target.model == "qwen3.7-flash"  # the entry's wire id, not the entry name
+    assert target.source == "model_entry"
+    assert config.rag.vlm_model == "vl-entry" != target.model
 
 
 # ── the two caption legs actually use it ──────────────────────────────────
@@ -201,7 +208,7 @@ ROLE_ENTRY = {
 def _two_leg_config() -> AppConfig:
     return _config(
         models=[VIDEO_ENTRY, ROLE_ENTRY],
-        rag={"vlm_model": "role-entry", "video": {"caption_model": "video-entry"}},
+        rag={"vlm_model": "role-entry"},
     )
 
 
@@ -248,8 +255,6 @@ def test_dialect_is_read_off_the_entrys_use_class():
     assert resolve_vlm_target(_config([VL_ENTRY]), "vl-entry").dialect == "openai"
     # An unrecognized class path is not evidence of a third shape — keep OpenAI.
     assert resolve_vlm_target(_config([CUSTOM_ENTRY]), "custom-entry").dialect == "openai"
-    # A value naming no entry keeps the legacy path, which has always been OpenAI-shaped.
-    assert resolve_vlm_target(_config([VL_ENTRY]), "no-such-entry").dialect == "openai"
 
 
 @pytest.mark.asyncio
@@ -459,3 +464,128 @@ def test_no_models_at_all_refuses_instead_of_sending_an_empty_model():
 
     with pytest.raises(RagConfigurationError):
         resolve_vlm_target(_config(models=[], rag={"vlm_model": ""}))
+
+
+# ── the declared caption target must be usable (spec 2026-09-23 D10.1/§4.10) ──
+# The caption legs share this one entrance, so refusing here covers both. Only a *declared*
+# target is refused: a blank role falling back to the first model keeps today's behaviour and
+# fails (or degrades) at request time, which is R2's other half.
+
+
+def _ui_config(*entries: dict, vlm_model: str | None = None):
+    """A real AppConfig whose entries are UI-managed: the strict rule's scope."""
+    config = _config(models=list(entries), rag={"vlm_model": vlm_model})
+    config._ui_model_names = {entry["name"] for entry in entries}
+    return config
+
+
+def test_a_declared_ui_caption_target_without_a_key_is_refused():
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    config = _ui_config({**VL_ENTRY, "api_key": None}, vlm_model="vl-entry")
+
+    with pytest.raises(RagConfigurationError) as excinfo:
+        resolve_vlm_target(config)
+
+    assert "vl-entry" in str(excinfo.value) and "api_key" in str(excinfo.value)
+
+
+def test_a_fallback_caption_target_is_not_refused():
+    """Blank role, keyless first model: still today's degradation path, not a hard error."""
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    config = _ui_config({**VL_ENTRY, "api_key": None}, vlm_model="")
+
+    target = resolve_vlm_target(config)
+
+    assert target.model == "qwen3.7-flash"  # the entry supplies the wire id; the missing key shows up later
+
+
+# ── the address boundary (spec 2026-09-23 D10.2/R1) ───────────────────────
+# A vendor entry that declares no address borrows the address its own SDK ships — read
+# lazily from that SDK, never copied here — while the OpenAI-compatible cell has no such
+# default to borrow, so a blank address there is a refusal. The equality assertions are the
+# point: they compare the RAG side against the SDK's own value, so an SDK that changes its
+# default keeps them green only if the borrow is real (a copied URL literal would drift).
+
+
+def test_an_anthropic_entry_without_an_address_borrows_the_sdks_own_default():
+    from langchain_anthropic import ChatAnthropic
+
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    config = _config([{**ANTHROPIC_ENTRY, "base_url": None}])
+    target = resolve_vlm_target(config, "claude-entry")
+
+    sdk_default = ChatAnthropic.model_fields["anthropic_api_url"].default_factory()
+    assert target.base_url == sdk_default
+    assert target.api_key == "sk-anthropic"  # the entry still supplies the key
+
+
+def test_a_deepseek_entry_without_an_address_borrows_the_sdks_own_default():
+    from langchain_deepseek.chat_models import DEFAULT_API_BASE
+
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    entry = {"name": "ds-entry", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "ds-wire", "api_key": "sk-ds", "supports_vision": True}
+    config = _config([entry])
+    target = resolve_vlm_target(config, "ds-entry")
+
+    assert target.base_url == DEFAULT_API_BASE
+
+
+def test_an_explicit_address_wins_in_every_cell():
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    entries = [
+        {**VL_ENTRY, "base_url": "https://explicit.example/v1"},
+        {**ANTHROPIC_ENTRY, "base_url": "https://explicit-anthropic.example"},
+        {"name": "ds-entry", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "ds-wire", "api_key": "sk-ds", "api_base": "https://explicit-ds.example/v1"},
+    ]
+    for entry in entries:
+        target = resolve_vlm_target(_config([entry]), entry["name"])
+        assert target.base_url in entry.values(), entry["name"]
+
+
+def test_an_openai_compatible_entry_without_an_address_is_refused_at_the_entrance():
+    """No SDK default to borrow (its blank would mean OpenAI's public cloud): refuse."""
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    config = _config([{**VL_ENTRY, "base_url": None}])
+
+    with pytest.raises(RagConfigurationError) as excinfo:
+        resolve_vlm_target(config, "vl-entry")
+
+    assert "base_url" in str(excinfo.value)
+
+
+def test_resolving_borrows_no_client_and_no_network(monkeypatch):
+    """Purity pin: reading an SDK's default address must not build a client or dial out."""
+    import httpx
+
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    def _explode(*args, **kwargs):
+        raise AssertionError("resolving a target must not construct a client")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _explode)
+    monkeypatch.setattr(httpx, "Client", _explode)
+
+    target = resolve_vlm_target(_config([{**ANTHROPIC_ENTRY, "base_url": None}]), "claude-entry")
+
+    assert target.base_url
+
+
+def test_the_rag_side_carries_no_vendor_url_literal():
+    """The borrow is read from the SDK, so no default address may be copied into this repo."""
+    from pathlib import Path
+
+    from deerflow.knowledge import vlm_target as module
+
+    source = Path(module.__file__).read_text(encoding="utf-8")
+
+    assert "anthropic.com" not in source
+    assert "deepseek.com" not in source
+    assert "dashscope.aliyuncs.com" not in source

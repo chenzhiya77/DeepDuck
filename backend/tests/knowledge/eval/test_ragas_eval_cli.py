@@ -230,15 +230,16 @@ class TestJudgeNameMapping:
 
     def test_the_mapping_only_accepts_the_factorys_own_sentence(self):
         """One wording, pinned by equality: the recognizer is fed the sentence the *real*
-        factory raises — and nothing that merely resembles it."""
+        factory raises — and nothing that merely resembles it (spec 2026-09-23 D9/R6)."""
         from deerflow.knowledge.eval import factory as eval_factory
+        from deerflow.knowledge.model_target import is_model_not_found_error
 
         with pytest.raises(ValueError) as excinfo:
             eval_factory.build_judge_llm("ghost-entry", config=_config("A"))
 
-        assert cli._is_model_not_found(excinfo.value) is True
+        assert is_model_not_found_error(excinfo.value) is True
         for near_miss in ("Model A not found in configs", "model A not found in config", "Model A missing from config", "boom"):
-            assert cli._is_model_not_found(ValueError(near_miss)) is False
+            assert is_model_not_found_error(ValueError(near_miss)) is False
 
     def test_the_wrong_judge_name_exits_two_in_a_subprocess(self, tmp_path):
         """The module's own ``sys.exit(main())`` contract, end to end: 2, never 1 or 3.

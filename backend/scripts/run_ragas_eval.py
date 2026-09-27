@@ -56,21 +56,11 @@ from deerflow.knowledge.eval.factory import (
     build_ragas_evaluator as _factory_build_ragas_evaluator,
 )
 from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_COMPLETED, resolve_environment
+from deerflow.knowledge.model_target import is_model_not_found_error
 
 EXIT_OK = 0
 EXIT_ERROR = 2
 EXIT_SKIPPED = 3
-
-#: ``create_chat_model`` 对"这个名字不在 ``models:`` 里"抛出的那一句（spec 2026-09-23 D9）。
-#: CLI 只映射这一种形状，其余 ``ValueError`` 照旧抛穿（R28⑤）；等值时由测试喂真实工厂那句
-#: 来钉住，避免两处措辞各自漂移。Task 9 的保存期映射会把这条文案收进一处共享 helper。
-_NOT_FOUND_HEAD = "Model "
-_NOT_FOUND_TAIL = " not found in config"
-
-
-def _is_model_not_found(exc: ValueError) -> bool:
-    message = str(exc)
-    return message.startswith(_NOT_FOUND_HEAD) and message.endswith(_NOT_FOUND_TAIL)
 
 
 def _generate_run_id() -> str:
@@ -221,7 +211,7 @@ async def _async_main(args: argparse.Namespace, *, environment: str = ENV_LOCAL)
     except ValueError as exc:
         # Narrow on purpose (R28⑤): only the factory's "not a configured model" sentence is
         # mapped — every other ValueError still propagates as the bug it is.
-        if not _is_model_not_found(exc):
+        if not is_model_not_found_error(exc):
             raise
         print(f"ragas-eval error: {exc}", file=sys.stderr)
         await _persist_eval_run(args, config=config, status="error", environment=environment)
