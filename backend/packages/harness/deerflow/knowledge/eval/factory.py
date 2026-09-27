@@ -3,9 +3,9 @@
 Judge LLM 与 ragas 评估器的构建从 CLI 脚本提升到本模块：
 
 - **judge 独立性**：judge 与答题 Agent 的模型刻意可分离（自评偏差是真实
-  失败模式）；``dashscope:<model>`` 直连 DashScope OpenAI 兼容端点（key 从
-  环境读取，judge 永远不需要 config.yaml 条目），其余走 config 模型白名单，
-  ``None`` 按 RAG 自己的顺序（D3）取 ``rag.judge_model`` → RAG 默认 → 首项。
+  失败模式）——独立性由“换个条目名”实现，判分模型与答题模型都来自 ``models:``；
+  judge 按 RAG 自己的顺序（D3）取 ``rag.judge_model`` → RAG 默认 → 首项，
+  显式名字永不替换（错名一路抛到工厂）。
 - **ragas 可选**：未安装时评估器返回 ``None``，``run_layer2_evaluation``
   把标准指标标记为显式跳过（绝不伪绿）。
 """
@@ -13,14 +13,7 @@ Judge LLM 与 ragas 评估器的构建从 CLI 脚本提升到本模块：
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Sequence
-
-DASHSCOPE_COMPATIBLE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-
-class JudgeKeyMissingError(Exception):
-    """A ``dashscope:`` judge model was requested but neither DASHSCOPE_JUDGE_API_KEY nor DASHSCOPE_API_KEY is set."""
 
 
 class DashScopeLangChainEmbeddings:
@@ -66,22 +59,11 @@ class DashScopeLangChainEmbeddings:
 def build_judge_llm(judge_model: str | None, *, config):
     """Build the judge LLM, independently from the answering agent's model.
 
-    ``dashscope:<model>`` constructs a DashScope OpenAI-compatible client
-    directly (key from env — the judge never needs a config.yaml entry);
-    anything else resolves through the config model allowlist, in RAG's own order (D3):
-    the explicit name, then ``rag.judge_model``, then the RAG default, then the first
+    Anything the caller passes resolves through the config model entries, in RAG's own order
+    (D3): the explicit name, then ``rag.judge_model``, then the RAG default, then the first
     configured model. An explicit name is never replaced — a wrong one reaches the factory
     and fails loudly rather than quietly grading with a model nobody asked for.
     """
-
-    if judge_model and judge_model.startswith("dashscope:"):
-        model = judge_model.removeprefix("dashscope:")
-        api_key = os.environ.get("DASHSCOPE_JUDGE_API_KEY") or os.environ.get("DASHSCOPE_API_KEY")
-        if not api_key:
-            raise JudgeKeyMissingError(f"judge model {judge_model!r} requires DASHSCOPE_JUDGE_API_KEY (or DASHSCOPE_API_KEY) in the environment")
-        from langchain_openai import ChatOpenAI
-
-        return ChatOpenAI(model=model, base_url=DASHSCOPE_COMPATIBLE_BASE_URL, api_key=api_key, timeout=600.0, max_retries=2)
 
     from deerflow.knowledge.model_target import require_rag_model_name
     from deerflow.models.factory import create_chat_model

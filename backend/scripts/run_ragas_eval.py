@@ -8,7 +8,7 @@ metrics plus the three architecture-specific ones, pushes scores to Langfuse
 Report-only, never a gate — there is deliberately no failure threshold:
 
 - 0  ok (metrics may be terrible; Layer 2 never fails on quality)
-- 2  usage / IO error (bad golden file, unknown kb)
+- 2  usage / IO error (bad golden file, unknown kb, unknown judge model)
 - 3  skipped — required API keys absent (explicit, never a fake green)
 
 ``ragas`` itself is an optional dependency: when it is not installed the
@@ -19,7 +19,7 @@ Usage (from ``backend/``):
 
     uv run python scripts/run_ragas_eval.py \
         --kb-id <KB_ID> --golden tests/fixtures/rag_eval/golden.jsonl --out <dir> \
-        [--limit N] [--agent-model <name>] [--judge-model <name|dashscope:model>] \
+        [--limit N] [--agent-model <name>] [--judge-model <name>] \
         [--environment local|ci|nightly] [--mark-baseline]
 
 ``--mark-baseline`` marks this run as the KB's baseline (completed runs only —
@@ -27,12 +27,10 @@ ignored for error/skipped runs, previous baseline stays untouched).
 
 Model selection: the agent and the judge are deliberately separable so the
 judge can be an independent model family (self-judging bias is a real failure
-mode). ``--judge-model dashscope:qwen3.8-max`` talks to the DashScope
-OpenAI-compatible endpoint directly, with the key read from
-``DASHSCOPE_JUDGE_API_KEY`` (falling back to ``DASHSCOPE_API_KEY``) — the judge
-never needs a config.yaml model entry. Any other value resolves through the
-config.yaml model allowlist; omitting both flags uses the config primary model
-for both roles.
+mode). Both name entries from ``config.yaml`` ``models:``; omitting
+``--judge-model`` uses RAG's own order (``rag.judge_model`` → the RAG default →
+the first configured model). A name that is not a configured entry is a usage
+error: one readable line on stderr, one ``status="error"`` row, exit 2.
 """
 
 from __future__ import annotations
@@ -52,9 +50,6 @@ from deerflow.knowledge.eval.factory import (
     DashScopeLangChainEmbeddings as _DashScopeLangChainEmbeddings,  # noqa: F401 — 既有测试 monkeypatch 该名，必须保留模块属性
 )
 from deerflow.knowledge.eval.factory import (
-    JudgeKeyMissingError,
-)
-from deerflow.knowledge.eval.factory import (
     build_judge_llm as _build_judge_llm,
 )
 from deerflow.knowledge.eval.factory import (
@@ -65,6 +60,17 @@ from deerflow.knowledge.eval.persistence import ENV_LOCAL, ENVIRONMENTS, STATUS_
 EXIT_OK = 0
 EXIT_ERROR = 2
 EXIT_SKIPPED = 3
+
+#: ``create_chat_model`` 对"这个名字不在 ``models:`` 里"抛出的那一句（spec 2026-09-23 D9）。
+#: CLI 只映射这一种形状，其余 ``ValueError`` 照旧抛穿（R28⑤）；等值时由测试喂真实工厂那句
+#: 来钉住，避免两处措辞各自漂移。Task 9 的保存期映射会把这条文案收进一处共享 helper。
+_NOT_FOUND_HEAD = "Model "
+_NOT_FOUND_TAIL = " not found in config"
+
+
+def _is_model_not_found(exc: ValueError) -> bool:
+    message = str(exc)
+    return message.startswith(_NOT_FOUND_HEAD) and message.endswith(_NOT_FOUND_TAIL)
 
 
 def _generate_run_id() -> str:
@@ -154,7 +160,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--judge-model",
         default=None,
-        help="Judge model: a config.yaml model name, or 'dashscope:<model>' for the DashScope OpenAI-compatible endpoint (key from DASHSCOPE_JUDGE_API_KEY, fallback DASHSCOPE_API_KEY). Default: config primary model.",
+        help="Judge model: a config.yaml model name. Default: RAG's own order (rag.judge_model → the RAG default → the first configured model).",
     )
     parser.add_argument(
         "--environment",
@@ -204,16 +210,22 @@ async def _async_main(args: argparse.Namespace, *, environment: str = ENV_LOCAL)
     from deerflow.knowledge.store import get_knowledge_store
     from deerflow.persistence.engine import close_engine, init_engine_from_config
 
-    # Judge: independent from the answering agent (spec §8; --judge-model
-    # supports a direct DashScope model so the judge can be a different model
-    # family without a config.yaml entry). Built BEFORE the engine so a
-    # missing judge key fails fast without touching persistence.
+    # Judge: independent from the answering agent (spec §8) — independence is a different
+    # entry name, not a second connection path. It is built BEFORE the engine so a wrong
+    # name fails fast; a name that is not a configured model maps to a readable error row
+    # (spec 2026-09-23 D9), which is still possible here because ``_persist_eval_run``
+    # initializes its own engine on demand (``:110-112``) and closes it in ``finally``
+    # (``:124-126``).
     try:
         judge_llm = _build_judge_llm(args.judge_model, config=config)
-    except JudgeKeyMissingError as exc:
-        print(f"ragas-eval skipped: {exc}")
-        await _persist_eval_run(args, config=config, status="skipped", environment=environment)
-        return EXIT_SKIPPED
+    except ValueError as exc:
+        # Narrow on purpose (R28⑤): only the factory's "not a configured model" sentence is
+        # mapped — every other ValueError still propagates as the bug it is.
+        if not _is_model_not_found(exc):
+            raise
+        print(f"ragas-eval error: {exc}", file=sys.stderr)
+        await _persist_eval_run(args, config=config, status="error", environment=environment)
+        return EXIT_ERROR
 
     await init_engine_from_config(config.database)
     try:

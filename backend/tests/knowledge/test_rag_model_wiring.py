@@ -224,19 +224,19 @@ def test_judge_does_not_let_the_rag_default_override_an_explicit_name(factory_sp
     assert factory_spy[-1][0] == "A"
 
 
-def test_dashscope_prefix_still_takes_its_own_branch(monkeypatch: pytest.MonkeyPatch):
-    """Pinned, not endorsed: the direct branch survives until Task 7 retires it.
+def test_the_dashscope_prefix_is_an_ordinary_entry_name(factory_spy):
+    """Reversed pin (was: "the direct branch survives until Task 7"): the branch is gone.
 
-    When Task 7 removes it this test goes red on purpose, which is how that reversal stays
-    visible instead of being folded into an unrelated diff.
+    A ``dashscope:``-looking judge name is now resolved like any other name — here it happens
+    to name a configured entry, and the factory receives exactly that name. The retired
+    behaviour (an env key picking a hardcoded endpoint while bypassing ``models:``) is gone,
+    which is what spec 2026-09-23 D9 asked for.
     """
-    monkeypatch.setenv("DASHSCOPE_JUDGE_API_KEY", "test-judge-key")
-    config = _config("A", default_model="B")
+    config = _config("dashscope:qwen3.8-max")
 
-    client = build_judge_llm("dashscope:qwen3.8-max", config=config)
+    build_judge_llm("dashscope:qwen3.8-max", config=config)
 
-    assert client.model_name == "qwen3.8-max"
-    assert "dashscope.aliyuncs.com" in str(client.openai_api_base)
+    assert factory_spy[-1][0] == "dashscope:qwen3.8-max"
 
 
 # ── the two nameless RAG-internal points stay out of this (R20) ──────────

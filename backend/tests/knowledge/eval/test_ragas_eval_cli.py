@@ -10,10 +10,18 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
+import yaml
+
+from deerflow.config.app_config import AppConfig, RagConfig
+from deerflow.config.model_config import ModelConfig
+from deerflow.config.sandbox_config import SandboxConfig
 
 CLI_PATH = Path(__file__).resolve().parents[3] / "scripts" / "run_ragas_eval.py"
 
@@ -28,6 +36,24 @@ def _load_cli():
 cli = _load_cli()
 
 KEYS = {"DASHSCOPE_EMBEDDING_API_KEY": "k1", "DASHSCOPE_RERANK_API_KEY": "k2"}
+
+
+def _config(*names: str, default_model: str | None = None, judge_model: str | None = None) -> AppConfig:
+    """A real config, so a wrong judge name reaches the real factory's not-found raise."""
+    return AppConfig(
+        models=[ModelConfig(name=name, display_name=name, description=None, use="langchain_openai:ChatOpenAI", model=f"{name}-wire", api_key="test-key", supports_thinking=False) for name in names],
+        sandbox=SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider"),
+        rag=RagConfig(default_model=default_model, judge_model=judge_model),
+    )
+
+
+def _golden(tmp_path: Path) -> Path:
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(
+        json.dumps({"id": "q1", "query": "q", "expected_path": "vector", "relevant_chunk_ids": [], "relevant_entities": [], "category": "fact"}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return golden
 
 
 def _args(*extra: str) -> list[str]:
@@ -104,30 +130,6 @@ class TestAsyncMainGuards:
 
 
 class TestJudgeModelSelection:
-    def test_dashscope_prefix_builds_openai_compatible_client(self, monkeypatch):
-        monkeypatch.setenv("DASHSCOPE_JUDGE_API_KEY", "judge-key")
-
-        llm = cli._build_judge_llm("dashscope:qwen3.8-max", config=object())
-
-        assert llm.model_name == "qwen3.8-max"
-        assert "dashscope.aliyuncs.com" in str(llm.openai_api_base)
-        assert llm.openai_api_key.get_secret_value() == "judge-key"
-
-    def test_dashscope_prefix_falls_back_to_dashscope_api_key(self, monkeypatch):
-        monkeypatch.delenv("DASHSCOPE_JUDGE_API_KEY", raising=False)
-        monkeypatch.setenv("DASHSCOPE_API_KEY", "shared-key")
-
-        llm = cli._build_judge_llm("dashscope:qwen3.8-max", config=object())
-
-        assert llm.openai_api_key.get_secret_value() == "shared-key"
-
-    def test_dashscope_prefix_without_key_raises(self, monkeypatch):
-        monkeypatch.delenv("DASHSCOPE_JUDGE_API_KEY", raising=False)
-        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
-
-        with pytest.raises(cli.JudgeKeyMissingError):
-            cli._build_judge_llm("dashscope:qwen3.8-max", config=object())
-
     def test_config_model_name_delegates_to_factory(self, monkeypatch):
         import deerflow.models.factory as factory
 
@@ -139,7 +141,7 @@ class TestJudgeModelSelection:
 
         monkeypatch.setattr(factory, "create_chat_model", _create)
 
-        cli._build_judge_llm("qwen3.7-flash", config=object())
+        cli._build_judge_llm("qwen3.7-flash", config=_config("qwen3.7-flash"))
         assert seen["name"] == "qwen3.7-flash"
 
     def test_default_none_falls_back_to_the_rag_default(self, monkeypatch):
@@ -162,20 +164,127 @@ class TestJudgeModelSelection:
         cli._build_judge_llm(None, config=config)
         assert seen["name"] == "B"
 
-    def test_missing_judge_key_maps_to_skipped_before_engine(self, monkeypatch, tmp_path):
+    def test_the_direct_branch_is_gone_from_the_script(self):
+        """Source pin (D9): the CLI no longer knows the prefix, its env key or its exception."""
+        source = CLI_PATH.read_text(encoding="utf-8")
+
+        assert "JudgeKeyMissingError" not in source
+        assert "DASHSCOPE_JUDGE_API_KEY" not in source
+        assert "dashscope:" not in source
+
+
+class TestJudgeNameMapping:
+    """A wrong judge name is a usage error: readable sentence, one ``error`` row, exit 2 (D9 乙).
+
+    It used to be a *skip* (exit 3, a row marked ``skipped``), which the nightly job treated as
+    an explicit pass — the reversal is the point of R27/R28③.
+    """
+
+    def test_a_wrong_judge_name_maps_to_a_readable_error_row(self, monkeypatch, capsys, tmp_path):
         import deerflow.config.app_config as app_config_module
 
-        monkeypatch.setattr(app_config_module, "get_app_config", lambda: object())
-        monkeypatch.delenv("DASHSCOPE_JUDGE_API_KEY", raising=False)
-        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
-        golden = tmp_path / "golden.jsonl"
-        golden.write_text(
-            json.dumps({"id": "q1", "query": "q", "expected_path": "vector", "relevant_chunk_ids": [], "relevant_entities": [], "category": "fact"}, ensure_ascii=False) + "\n",
+        monkeypatch.setattr(app_config_module, "get_app_config", lambda: _config("A"))
+        spy = AsyncMock()
+        monkeypatch.setattr(cli, "_persist_eval_run", spy)
+        monkeypatch.setattr("deerflow.persistence.engine.init_engine_from_config", AsyncMock())
+        reached: list[str] = []
+
+        class _StoreStub:
+            async def get_kb(self, kb_id):
+                reached.append(kb_id)
+                raise AssertionError("the run must stop at the judge mapping, not continue into the store")
+
+        monkeypatch.setattr("deerflow.knowledge.store.get_knowledge_store", lambda: _StoreStub())
+        args = cli.parse_args(["--golden", str(_golden(tmp_path)), "--out", str(tmp_path / "out"), "--kb-id", "kb1", "--judge-model", "dashscope:qwen3.8-max"])
+
+        code = cli._run(args)
+
+        assert code == cli.EXIT_ERROR == 2  # not 1, not EXIT_SKIPPED
+        captured = capsys.readouterr()
+        assert "Model dashscope:qwen3.8-max not found in config" in captured.err
+        assert captured.out == ""  # a refusal, not a report
+        # Exactly one row, marked as a failure — the same invariant the other error paths keep.
+        assert spy.await_count == 1
+        assert spy.await_args.kwargs["status"] == "error"
+        assert reached == []
+
+    def test_a_non_not_found_value_error_is_not_mapped(self, monkeypatch, capsys, tmp_path):
+        """R28⑤: only the not-found sentence is mapped. A bug inside the factory must keep
+        escaping instead of being laundered into a tidy "your name is wrong" exit 2."""
+        import deerflow.config.app_config as app_config_module
+
+        monkeypatch.setattr(app_config_module, "get_app_config", lambda: _config("A"))
+
+        def _boom(*args, **kwargs):
+            raise ValueError("factory exploded")
+
+        monkeypatch.setattr(cli, "_build_judge_llm", _boom)
+        spy = AsyncMock()
+        monkeypatch.setattr(cli, "_persist_eval_run", spy)
+        args = cli.parse_args(["--golden", str(_golden(tmp_path)), "--out", str(tmp_path / "out"), "--kb-id", "kb1", "--judge-model", "whatever"])
+
+        with pytest.raises(ValueError, match="factory exploded"):
+            cli._run(args)
+
+        assert spy.await_count == 0
+
+    def test_the_mapping_only_accepts_the_factorys_own_sentence(self):
+        """One wording, pinned by equality: the recognizer is fed the sentence the *real*
+        factory raises — and nothing that merely resembles it."""
+        from deerflow.knowledge.eval import factory as eval_factory
+
+        with pytest.raises(ValueError) as excinfo:
+            eval_factory.build_judge_llm("ghost-entry", config=_config("A"))
+
+        assert cli._is_model_not_found(excinfo.value) is True
+        for near_miss in ("Model A not found in configs", "model A not found in config", "Model A missing from config", "boom"):
+            assert cli._is_model_not_found(ValueError(near_miss)) is False
+
+    def test_the_wrong_judge_name_exits_two_in_a_subprocess(self, tmp_path):
+        """The module's own ``sys.exit(main())`` contract, end to end: 2, never 1 or 3.
+
+        The child gets its own config (whose sqlite dir stays inside ``tmp_path``, so nothing
+        touches a real database) and no judge env key: the name alone decides.
+        """
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"},
+                    "models": [{"name": "A", "use": "langchain_openai:ChatOpenAI", "model": "a-wire"}],
+                    "rag": {},
+                    "database": {"backend": "sqlite", "sqlite_dir": str(tmp_path / "data")},
+                }
+            ),
             encoding="utf-8",
         )
-        args = cli.parse_args(["--golden", str(golden), "--out", str(tmp_path / "out"), "--kb-id", "kb1", "--judge-model", "dashscope:qwen3.8-max"])
+        extensions_path = tmp_path / "extensions_config.json"
+        extensions_path.write_text(json.dumps({"mcpServers": {}, "skills": {}}), encoding="utf-8")
+        env = {
+            **os.environ,
+            **KEYS,
+            "DEER_FLOW_CONFIG_PATH": str(config_path),
+            "DEER_FLOW_EXTENSIONS_CONFIG_PATH": str(extensions_path),
+        }
+        env.pop("DASHSCOPE_JUDGE_API_KEY", None)
+        env.pop("DASHSCOPE_API_KEY", None)
 
-        assert cli._run(args) == 3  # EXIT_SKIPPED，且未触达引擎初始化
+        proc = subprocess.run(
+            [sys.executable, str(CLI_PATH), "--golden", str(_golden(tmp_path)), "--out", str(tmp_path / "out"), "--kb-id", "kb1", "--judge-model", "dashscope:qwen3.8-max"],
+            cwd=str(tmp_path),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+        )
+
+        assert proc.returncode == 2, proc.stderr
+        assert proc.returncode not in (1, 3)
+        assert "Model dashscope:qwen3.8-max not found in config" in proc.stderr
+        # …and it stopped at the judge: a later failure would also exit 2 and fake this green.
+        assert "knowledge base not found" not in proc.stderr
 
 
 class TestEnvFileLoading:
