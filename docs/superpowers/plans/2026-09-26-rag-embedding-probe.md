@@ -4,7 +4,7 @@
 
 **Spec:** [2026-09-26-rag-embedding-probe-design.md](../specs/2026-09-26-rag-embedding-probe-design.md)
 **证据物:** [pr-build/rag-embedding-probe-2026-09-27/](../../../pr-build/rag-embedding-probe-2026-09-27/notes.md)——真接口实测（脚本 + 原始输出），spec §3.1 引用它
-**Status:** 🟡 **草案（2026-09-26 立；同日按 spec 定稿镜像重写 + 依「按现有项目情况审查」的 1–8 条修订；**2026-09-27 续**：§3.1 证据物入仓、四轮自审（1–9 / 1–11 / 1–5）已并入，未开工、未提交）** —— **四点全裁**（D1 乙 / D2 甲a / D3 甲′ / D4 甲）+ **D5 五条细节**（作用域部署级 / 先建后切 / 默认 1024 / 界面位置=高级设置第一行 / 连通点=两标题变按钮+四态）。落法 = 后端为主 + 设置页「维度」控件（**自动探、无按钮**）+ 两个角色标题的连通点。
+**Status:** 🟡 **进行中（2026-09-26 立；同日按 spec 定稿镜像重写 + 依「按现有项目情况审查」的 1–8 条修订；**2026-09-27 续**：§3.1 证据物入仓、四轮自审（1–9 / 1–11 / 1–5）已并入。**进度：Task 0–2 已提交（`63f3c448` 文档+证据 · `f9ac82dc` Task 1 · `4f1456c4` Task 2）；Task 3 代码已改、未提交；Task 4–5 未开工**）** —— **四点全裁**（D1 乙 / D2 甲a / D3 甲′ / D4 甲）+ **D5 五条细节**（作用域部署级 / 先建后切 / 默认 1024 / 界面位置=高级设置第一行 / 连通点=两标题变按钮+四态）。落法 = 后端为主 + 设置页「维度」控件（**自动探、无按钮**）+ 两个角色标题的连通点。
 
 **硬约束**：**通用嵌入腿**（`openai-compatible`）的请求构造 + 集合命名与生命周期 + 保存期探针 + 设置页嵌入行；**厂商腿（dashscope / ark）的入库请求零触碰**（新增的只是探测路径——按各家请求形状真发请求，但那是探针自己的请求）；rerank / parse / 稀疏腿的既有行为、检索三路逻辑零触碰（**新增**：重排腿一发连通测试 · 探测纳三腿）；**默认 1024 ⇒ 不迁移时请求与结果逐字节不变**；探针族规范（真实调用 / 只读不落盘 / 有界超时 / 三态 / 只报不拦）。
 
@@ -119,15 +119,25 @@
 
 > 动到的文件：`embedder_openai.py`、`embedder_factory.py`（注入声明值）+ 两腿用例。**验收对应**：spec §4 的 3 / 4 / 7。
 
-- [ ] **RED（发参）**：夹具声明 `embedding_dimension=1024` ⇒ 断言请求体**带** `"dimensions": 1024`；未声明 ⇒ 断言请求体**不含**该键（与今天逐字节相同）。此刻恒"不含" ⇒ 第一条红。
-- [ ] **RED（阶梯）**：桩端点上限 5 ⇒ **首批就是 20 行**（属性初值=阶梯顶端，桩按行数计数断言）撞 400 后沿 `20→10→5` 降档、**同一批**重试至通过；断言：(a) 该批切片**不落 failed**；(b) 之后同 embedder 实例的批直接按 5 发（请求体行数）。上限 20 的桩 ⇒ 首批即过、此后按 20 发。
-- [ ] **RED（判定次序）**：单行批 + 正带 `dimensions` 撞 400 ⇒ 去掉参数重试一次（而不是无限降档）；多行批 ⇒ 先降档。
-- [ ] **GREEN**：payload 加参（声明时）；阶梯常量 `[20, 10, 5, 2, 1]` + 进程内记档；400 判定次序如上；工厂把声明值传给通用腿（`pins_dimension` 分支照旧）。**通用腿的 `batch_size` 属性初值 = 20（阶梯顶端）**——`index_chunks` 按它先切片（`indexer.py:66-68`），初值还是 10 的话 20 那一档永远发不出去；**`DEFAULT_BATCH_LIMIT` 的值不动**（`sparse.py:104` 共用它，改了会连带稀疏腿）。
-- [ ] **neuter**：① 删"发参"⇒ 只有发参钉红；② 把阶梯起点改回 10 ⇒ 只有"上限 20 的桩"那条红。**受害者不相交**。
-- [ ] **回归（零影响证明）**：不声明维度的既有断言**零改动**全绿；厂商腿（dashscope / ark）用例零改动全绿。
-- [ ] **门禁**：`make test` 相关面 + `make lint`。
+- [x] **RED（发参）**：夹具声明 `embedding_dimension=1024` ⇒ 断言请求体**带** `"dimensions": 1024`；未声明 ⇒ 断言请求体**不含**该键（与今天逐字节相同）。此刻恒"不含" ⇒ 第一条红。
+- [x] **RED（阶梯）**：桩端点上限 5 ⇒ **首批就是 20 行**（属性初值=阶梯顶端，桩按行数计数断言）撞 400 后沿 `20→10→5` 降档、**同一批**重试至通过；断言：(a) 该批切片**不落 failed**；(b) 之后同 embedder 实例的批直接按 5 发（请求体行数）。上限 20 的桩 ⇒ 首批即过、此后按 20 发。
+- [x] **RED（判定次序）**：单行批 + 正带 `dimensions` 撞 400 ⇒ 去掉参数重试一次（而不是无限降档）；多行批 ⇒ 先降档。
+- [x] **GREEN**：payload 加参（声明时）；阶梯常量 `[20, 10, 5, 2, 1]` + 进程内记档；400 判定次序如上；工厂把声明值传给通用腿（`pins_dimension` 分支照旧）。**通用腿的 `batch_size` 属性初值 = 20（阶梯顶端）**——`index_chunks` 按它先切片（`indexer.py:66-68`），初值还是 10 的话 20 那一档永远发不出去；**`DEFAULT_BATCH_LIMIT` 的值不动**（`sparse.py:104` 共用它，改了会连带稀疏腿）。
+- [x] **neuter**：① 删"发参"⇒ 只有发参钉红；② 把阶梯起点改回 10 ⇒ 只有"上限 20 的桩"那条红。**受害者不相交**。
+- [x] **回归（零影响证明）**：不声明维度的既有断言**零改动**全绿；厂商腿（dashscope / ark）用例零改动全绿。
+- [x] **门禁**：`make test` 相关面 + `make lint`。
 
-**实测（待回填）**：
+**实测（2026-09-27，代码已改、未提交）**：
+
+- **改动面**：3 文件 **+201/−16** —— `embedder_openai.py`（阶梯 / 自愈 / 发参 / `_Rejected`）、`embedder_factory.py`（**+5 一行分支**：`elif declared is not None: kwargs["dimension"] = declared`，`pins_dimension` 分支未动）、`tests/knowledge/test_embedder_providers.py`（+121）。
+- **发参（D2 甲a）**：未声明 ⇒ 请求体键集 `== {"model","input"}`（与今天逐字节相同）；声明 ⇒ 每一发都带 `dimensions`，拆批只改行数、不改这个键（`[1024, 1024]`）。
+- **阶梯（D3 甲′）**：`BATCH_LADDER = (20,10,5,2,1)`、属性初值 `_BATCH_CAPS.get((base_url, model), BATCH_LADDER[0])` = **20**；`DEFAULT_BATCH_LIMIT` 值**仍 10**（稀疏腿共用，未动）。上限 5 的桩、30 片 ⇒ 行数序列 **`[20, 10, 5, 5, 5, 5, 5, 5]`**（首批白付一发、同一批降档重试、不落 failed、30 片全回）；学到后 `embedder.batch_size == 5`，**同端点新实例直接按 5 发**（`[5, 1]`，端点级记忆生效）✓。上限 20 的桩、25 片 ⇒ `[20, 5]`（零被拒发）✓。
+- **判定次序（D3 尾）**：多行 400 ⇒ 降档；单行 + 正带参 400 ⇒ **去参重试一次**（`bodies[0]` 有 `dimensions`、`bodies[1]` 没有），并记入 `_NO_DIMENSION_PARAM` ⇒ **同端点新实例首发就不带参**（"不再白付那一发"）✓。
+- **neuter（可复跑）**：① 删 `payload["dimensions"] = dimension` ⇒ **2 红**（`test_the_declared_dimension_is_sent_and_undeclared_stays_byte_identical`、`test_a_rejected_dimension_parameter_is_dropped_once_and_remembered`；都是"参数要发出去"这一行为的正反面钉子）；② `_initial_batch_size` 回落改回 `DEFAULT_BATCH_LIMIT`(10) ⇒ **3 红**（`test_the_generic_embedder_starts_at_the_ladder_top`、`test_a_batch_size_400_walks_the_ladder_down_and_remembers_where_it_landed`、`test_a_twenty_row_cap_is_used_without_a_single_rejected_request`）。**受害者不相交**（{2 发参} ∩ {3 起点} = ∅）✓；两次各自还原后 **26/26 绿**。
+- **⚠️ 计划两处低估（如实记）**：计划预测 ① 只有 1 条红、② 只有"上限 20"1 条红 —— 实测各 **2 / 3** 条。差异可解释：两条发参钉子（正向 + 自愈）都靠"参数发出去"、三条起点钉子（专用 + 降档序列 + 上限 20）都靠"初值 20"，属同一行为的多个断言，不是受害者扩散。
+- **RED 的有效度量是逐条 neuter，不是整文件回退**：把 `embedder_openai.py` 整体回退到 HEAD 复现 RED 时得到的是 **26 errors**（测试文件 import 新符号 `BATCH_LADDER`/`_BATCH_CAPS` 直接失败、collection 级）⇒ 若日后要复跑 RED，用上面两条逐条 neuter，别整文件回退。
+- **回归**：`tests/knowledge/` + `tests/test_rag_config_api.py` ⇒ **1393 passed / 2 skipped / 2 failed**，两条失败是**环境条件红**（本机仓库根真 `rag_config.json` 带 key ⇒ `test_embed_missing_api_key` / `test_rerank_missing_api_key` 的"缺 key 必拒"前提不成立；**阳性对照**：`DEER_FLOW_RAG_CONFIG_PATH` 指向空 `{}` 后两条转绿）⇒ 非本 Task 引入，与既有环境债同族。厂商腿（dashscope / ark）用例**零改动**全绿✓。
+- **门禁**：`make lint` 绿（1303 files already formatted）。
 
 ---
 

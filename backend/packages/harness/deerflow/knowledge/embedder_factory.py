@@ -171,6 +171,11 @@ def _build_dense(spec, rag, declared: int | None, client: Any | None) -> Embedde
         # a vendor whose model is born wider than our collections must be *told* the target,
         # and the guard that would catch a wrong width only fires on a real call.
         kwargs["dimension"] = declared if declared is not None else COLLECTION_DIMENSION
+    elif declared is not None:
+        # A declaration is also *sent* on the generic leg (spec 2026-09-26 D2 甲a): asking for
+        # the width is what makes a model whose default is not 1024 usable at all. Undeclared
+        # stays undeclared — that request body is byte for byte what it always was.
+        kwargs["dimension"] = declared
     return _guard(resolve_variable(spec.implementation)(**kwargs), spec, rag)
 
 
