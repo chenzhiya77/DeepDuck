@@ -16,19 +16,37 @@
 
 ## Task 0 — 开工前核实（只读）
 
-- [ ] 1. **集合命名的影响面**：`KnowledgeVectorStore` 四个集合名（`:132-150`）的全部消费点（worker / retrieval / eval / vector-projection / reindex / 测试夹具）⇒ 换名（带宽度后缀）要动哪些调用方、有没有外部约定（Qdrant 运维、文档）。
-- [ ] 2. **尺寸可读性**：`AsyncQdrantClient.get_collection()` 读回 `config.params.vectors` 的形状（本机 Qdrant 实跑一发只读调用）⇒ 确认"检测现有集合尺寸"可实现。
-- [ ] 3. **构造点唯一性**：`KnowledgeVectorStore(` 的生产构造点只有 `get_vector_store()`（`:501-505`）⇒ 生效宽度接进去不波及其它。
-- [ ] 4. **会红断言扫描**：`test_rag_config_api.py` / `test_embedder_providers.py` / `test_rag_provider_config.py` 里与「宽度=1024 拒绝」「请求体（无 `dimensions`）」「批量=10」相关的既有断言清单 ⇒ 逐条判"该红 / 该保持"。
-- [ ] 5. **探针先例可复用面**：`RagSparseProbeRequest`（`rag_config.py:430` 一带）/ `_probe_api_key`（`:463`）/ `require_admin_user` / `_probe_detail`（`:480`）能不能直接拼新端点。
-- [ ] 6. **声明字段的现有语义**：`embedding_dimension`（`app_config.py:210` / `rag_config_file.py:115`）的读写路径与 `ge=1` 约束；`_WATCHED_EMBEDDING_FIELDS`（`rag_config.py:319-326`）已含它。
-- [ ] 7. **迁移挂点**：`POST /{kb_id}/reindex`（reindex 路由）与 `reindex_kb` 的现状（进程内计数 / 状态 / 任务调度）⇒「先建新集合」能否作为它的前置复用；`worker.py::init_collections`（`:215`）在迁移期间的行为。
-- [ ] 8. **前端骑乘位**：嵌入行的结构（`functional-models-view.tsx:612-740` 一带）+ 探针 hook 先例（`hooks.ts:69-103`）+ 自动探的防抖写法（`:442-464`）⇒ 新控件与状态照抄哪一段。
-- [ ] 9. **标题按钮面（D5-5）**：两个角色标题（`:620-621`）的现有结构（gutter 里的 `RoleHeading`、窄屏 `max-md` 布局）⇒ 变按钮 + 状态点的落点与几何影响；`ADVANCED_SETTING_COUNT`（`:77`）与其用例镜像（`advancedLabel(count)`）现为 5。
-- [ ] 10. **重排腿的一发测试面（D5-5）**：`reranker_generic` / dashscope 重排的构造点与最小调用形状（query + 一条 doc）⇒ 连通探针在 rerank 分支要复用哪个客户端、不许改动它的既有请求构造。
-- [ ] 11. **三腿探针请求构造的复用面**：`DashScopeEmbedder`（`parameters.dimension` + `output_type`）与 `ArkEmbedder`（一次一条 content + 自己的 `dimensions`）的请求体构造能不能被探针复用/共用，还是要各写一个薄封装。
+- [x] 1. **集合命名的影响面**：`KnowledgeVectorStore` 四个集合名（`:132-150`）的全部消费点（worker / retrieval / eval / vector-projection / reindex / 测试夹具）⇒ 换名（带宽度后缀）要动哪些调用方、有没有外部约定（Qdrant 运维、文档）。
+- [x] 2. **尺寸可读性**：`AsyncQdrantClient.get_collection()` 读回 `config.params.vectors` 的形状（本机 Qdrant 实跑一发只读调用）⇒ 确认"检测现有集合尺寸"可实现。
+- [x] 3. **构造点唯一性**：`KnowledgeVectorStore(` 的生产构造点只有 `get_vector_store()`（`:501-505`）⇒ 生效宽度接进去不波及其它。
+- [x] 4. **会红断言扫描**：`test_rag_config_api.py` / `test_embedder_providers.py` / `test_rag_provider_config.py` 里与「宽度=1024 拒绝」「请求体（无 `dimensions`）」「批量=10」相关的既有断言清单 ⇒ 逐条判"该红 / 该保持"。
+- [x] 5. **探针先例可复用面**：`RagSparseProbeRequest`（`rag_config.py:430` 一带）/ `_probe_api_key`（`:463`）/ `require_admin_user` / `_probe_detail`（`:480`）能不能直接拼新端点。
+- [x] 6. **声明字段的现有语义**：`embedding_dimension`（`app_config.py:210` / `rag_config_file.py:115`）的读写路径与 `ge=1` 约束；`_WATCHED_EMBEDDING_FIELDS`（`rag_config.py:319-326`）已含它。
+- [x] 7. **迁移挂点**：`POST /{kb_id}/reindex`（reindex 路由）与 `reindex_kb` 的现状（进程内计数 / 状态 / 任务调度）⇒「先建新集合」能否作为它的前置复用；`worker.py::init_collections`（`:226`）在迁移期间的行为。
+- [x] 8. **前端骑乘位**：嵌入行的结构（`functional-models-view.tsx:640-770` 一带）+ 探针 hook 先例（`hooks.ts:69-103`）+ 自动探的防抖写法（`:442-464`）⇒ 新控件与状态照抄哪一段。
+- [x] 9. **标题按钮面（D5-5）**：两个角色标题（`:646-647`）的现有结构（gutter 里的 `RoleHeading`、窄屏 `max-md` 布局）⇒ 变按钮 + 状态点的落点与几何影响；`ADVANCED_SETTING_COUNT`（`:77`）与其用例镜像（`advancedLabel(count)`）现为 5。
+- [x] 10. **重排腿的一发测试面（D5-5）**：`reranker_generic` / dashscope 重排的构造点与最小调用形状（query + 一条 doc）⇒ 连通探针在 rerank 分支要复用哪个客户端、不许改动它的既有请求构造。
+- [x] 11. **三腿探针请求构造的复用面**：`DashScopeEmbedder`（`parameters.dimension` + `output_type`）与 `ArkEmbedder`（一次一条 content + 自己的 `dimensions`）的请求体构造能不能被探针复用/共用，还是要各写一个薄封装。
 
-**实测（待回填）**：
+**实测（2026-09-27，十一项逐条 · 只读）**：
+
+- ① **集合命名影响面**：消费点只有两处 —— `vector_store.py` 自身的属性/方法（四个 property + `scroll_collection`/upsert/delete 全走 `self.<prop>`）与 `projection/fetcher.py:30-33` 的四行映射（值是**属性名**不是字面集合名）；`packages`/`app` 里**没有任何地方硬编码 `kb_chunks` 这类物理名**（字面出现全是 docstring/注释：`app_config.py:186`、`graph/*.py`、`models.py:144`、`reindex.py:188`）。⇒ **换名只需改 `vector_store.py` 一处**；测试各自用随机前缀夹具（本机 Qdrant 里已积了一批 `test*`/`testt*`）⇒ 隔离不受影响。
+- ② **尺寸可读性（本机实跑，只读）**：`localhost:6333` 在线，四个 `kb_*` 集合都在；`get_collection(name).config.params.vectors` 返回 **dict** —— `{'dense': VectorParams(size=1024, distance=COSINE, …)}` ⇒ `vectors["dense"].size` 可读，**尺寸检测可实现** ✓。
+- ③ **构造点唯一性** ✓：生产构造点只有 `vector_store.py:505`（`get_vector_store()`），其余全是测试夹具。
+- ④ **会红断言扫描（逐条判）**：
+  - **该红/该改**（Task 3：初值 20 + 阶梯）——`test_embedder_providers.py:167`（`assert embedder.batch_size == 10`，通用腿）与 `:171`（`rows_per_request == [10, 10, 5]`，25 行拆批）。
+  - **该红/该改**（Task 4：守门跟生效宽度）——`:260 test_declared_dimension_other_than_1024_is_refused`、`:284 test_probe_reads_the_real_length_and_refuses_non_1024`（`:291 match="1024"`）、`:308 _PROBED_DIMENSIONS == {…: 1024}`。
+  - **该保持**——`:401` + `:405`（dashscope 原生腿的同名断言，本对不碰）；`test_rag_config_api.py:145-154`（1024 宽假响应夹具）；`test_rag_provider_config.py:142/154`（`embedding_dimension == 1024` 往返）。
+  - **「不发 `dimensions`」类断言：零**（两文件里 `dimensions` 的命中只有 `embedding_dimension`）⇒ Task 3 的带参/不带参钉子是**新增**，不撞既有断言 ✓。
+- ⑤ **探针先例可复用** ✓：`RagSparseProbeRequest` 在 `:434`（"430 一带"成立）、`_probe_api_key` `:463`、`_probe_detail` `:480`；四条路由同用 `require_admin_user`（`:281/411/560/634`）。
+- ⑥ **声明字段语义** ✓：`app_config.py:210`（`ge=1`）/ `rag_config_file.py:115`；`_WATCHED_EMBEDDING_FIELDS`（`rag_config.py:319-326`）已含 `embedding_dimension`；读写与"省略=删除"语义见 spec §3 往返行。
+- ⑦ **迁移挂点**：路由 `knowledge_bases.py:482`（`POST /{kb_id}/reindex`，202）+ `:497` 状态；服务 `knowledge_service.py:1703 trigger_reindex(kb_id)`（`:1711` `reindex_in_progress` 守卫）→ `:1730 reindex_kb(self.store, self.vector_store, build_embedder(), kb_id=…, graph_store=…, wiki_store=…)`；`reindex.py:74/78` 是 per-KB 进程内登记。⚠️ **行号更正**：`worker.py` 的 `init_collections` 现在在 **`:226`**（plan 原写 `:215`）；`build_embedder()` 在 `:331` / `:814`。
+- ⑧ **前端骑乘位**：⚠️ **行号已漂**（前端被别线改过）——两个角色标题现在 **`:646-647`**（原写 `:620-621`）；嵌入行约 `:640-770`（`embeddingBaseUrl` 的 aria-label 在 `:760`）；稀疏来源 `:793-796`；「高级设置」触发器 `:785`；探针 hook 先例 `hooks.ts:69-103` ✓、防抖常量 **`PROBE_DEBOUNCE_MS = 400`（`:86`）** ✓。
+- ⑨ **标题按钮面**：`ADVANCED_SETTING_COUNT = 5`（`:77`）✓；用例镜像 `advancedLabel(count)`（`functional-models-view.dom.test.tsx:135`）✓。
+- ⑩ **重排腿一发测试**：三家构造点 `DashScopeReranker`（`reranker.py:47`）/ `GenericReranker`（`reranker_generic.py:48`）/ `TEIReranker`（`reranker_tei.py:50`），统一签名 `async rerank(query, documents, *, top_n=5)`；**`documents` 为空直接返回 `[]`** ⇒ 连通那发必须给 ≥1 条 doc（`_PROBE_TEXT` 作 query 与唯一 doc ✓）；构造走 `build_reranker(config=None, *, rag=…)`（`reranker_factory.py:16`）✓。
+- ⑪ **三腿请求构造复用面**：三家 payload 都是**方法内联构造**（不是可注入 builder）——DashScope 原生 `{"model","input":{"texts"},"parameters":{"dimension","output_type":"dense&sparse","text_type"}}`（`embedder.py:200`）；Ark `{"model","input":[{"type":"text","text"}],"dimensions","sparse_embedding":{"type":"enabled"}}`（`embedder_ark.py:92-97`，**一次一条 content**）；通用腿 `{"model","input"}`（+新 `dimensions`）（`embedder_openai.py:95`）。⇒ 探针**各写一个薄封装**（复用形状，不改三家客户端）。
+
+**两项文档级更正（随本轮回填并改）**：① `worker.py::init_collections` `:215 → :226`；② 前端两处行号 `:612-740 / :620-621 → :640-770 / :646-647`。
 
 ---
 
@@ -36,22 +54,35 @@
 
 > 动到的文件：**新增** `backend/packages/harness/deerflow/knowledge/dimension_probe.py`、**新增** `backend/tests/knowledge/test_dimension_probe.py`。**验收对应**：spec §4 的 1 / 13 / 14 / 15。
 
-- [ ] **RED**：先写断言（函数尚不存在 ⇒ 收集失败即红）。`httpx.MockTransport` 桩**按三型 × 请求形状**：
+- [x] **RED**：先写断言（函数尚不存在 ⇒ 收集失败即红）。`httpx.MockTransport` 桩**按三型 × 请求形状**：
   - 桩 A（**范围型**）：收怪值 `333` 回 200、宽度=333 ⇒ 期望 `type="range"`、`native=` **补发那一发（不带参数）**的宽度（**有且仅有这一发额外调用**——定性那发返回的是 333、不是原生）。
   - 桩 B（**档位型**）：`333` 回 400、`1024/1536` 回 200 ⇒ 期望 `type="tiered"`、`values` 只含通过档（逐档探按候选表 `256/512/768/1024/1536/2048/2560/3072/4096`）。
   - 桩 C（**固定型**）：任何参数都被忽略、恒回 200+宽度 768 ⇒ 期望 `type="fixed"`、`native=768`、`values=[768]`（**断言没有额外的量宽调用**——参数被忽略，定性那发返回的就是原生）。
   - **三腿各一遍**（同一套三型断言换请求形状）：通用腿 body `dimensions` / dashscope 原生 `parameters.dimension`（+ `output_type: dense&sparse`）/ ark 一次一条 content + 自己的 `dimensions`——**桩按各自形状校验请求体**（断言"发出去的参数名/形状对"）。
-- [ ] **RED（量宽那一发，①② 都要）**：**① 与 ② 型桩都必有一发"不带参数"的量宽调用**（① 的定性那发是 400、没有向量；**② 的定性那发收 333 ⇒ 返回的是 333 宽、不是原生**）；**③ 型没有这一发**（参数被忽略、定性那发返回的就是原生）。
-- [ ] **GREEN**：`probe_dimensions(...)` = 怪值探定性（**怪值 `333` 提成命名常量**并注释"为什么是它"）→ **量原生宽度**（**① 与 ② 都额外发一发不带参数的**；③ 复用定性那发）→ 按型探（逐档**并发** / 只验输入值 / 读默认）；**候选表只为 ① 跑**（②/③ 不跑）；候选表常量（可改）；每发单条文本、有界超时；返回 `DimensionProbeResult(type, native, values, detail)`——**`native` 恒填**（0 档回退要用它）；**请求构造按 provider 分派**（定性/候选表/并发/三态是共用的那一层）；**候选表三腿共用同一张常量**。
-- [ ] **RED（0 档回退的返回形态）**：桩"任何参数都 400"（严格端点）⇒ 期望 `type="tiered"`、`values=[]`、**`native` 仍是实测默认宽度**（上层据此渲染回退，而不是空列表）。
-- [ ] **RED（原生宽度补验，verify-then-list）**：桩 A'——原生 640（**不在候选表**）、且 `dimensions: 640` 也 200 ⇒ 补验那一发**能观察到**、`values` 含 640；桩 A''——原生 3072、`dimensions: 3072` 回 400 ⇒ **不并入** `values`；桩 A'''——原生 1024（**在表内**）⇒ **不补验**（断言请求次数：**定性 + 量宽 + 逐档**——量宽恒有，补验因原生在表内而不发）。
-- [ ] **RED（钳位桩，判"通过"= 200 且宽度相等）**：桩对 1536 回 **200 但宽度 1024**（复刻 `flash` 实测行为）⇒ 1536 **不出现在 `values`**；同时验证 ① 逐档、① 原生补验、② 上界三处都按"宽度相等"判（只看状态码的实现会被本条打红）。
-- [ ] **RED（② 的上界验证与判歪降级）**：桩 B'（真 ②）⇒ **恒观察到一发 `dimensions: <原生>`** 且 200（上界可用）；桩 B''（"假 ②"= 真 ① 但收 333）⇒ 那一发 **400** ⇒ 探针**降级跑候选表**、`values` = 该模型真档位；桩 C（③）⇒ **没有**任何 `dimensions` 请求（只有定性那发）。
-- [ ] **GREEN（常量沿用）**：探测文本与超时用**探针族既有常量**（`_PROBE_TEXT` / `_PROBE_TIMEOUT_SECONDS`），不新起第二份；重排连通那发以同一文本作 query 与唯一 doc。
-- [ ] **neuter**：① 删怪值探 ⇒ 三桩全红（无法定型）；② 删档位型逐档 ⇒ 只有桩 B 的 `values` 红。**受害者不相交**，如实记。
-- [ ] **还原证明** + `make lint` 净（ruff）。
+- [x] **RED（量宽那一发，①② 都要）**：**① 与 ② 型桩都必有一发"不带参数"的量宽调用**（① 的定性那发是 400、没有向量；**② 的定性那发收 333 ⇒ 返回的是 333 宽、不是原生**）；**③ 型没有这一发**（参数被忽略、定性那发返回的就是原生）。
+- [x] **GREEN**：`probe_dimensions(...)` = 怪值探定性（**怪值 `333` 提成命名常量**并注释"为什么是它"）→ **量原生宽度**（**① 与 ② 都额外发一发不带参数的**；③ 复用定性那发）→ 按型探（逐档**并发** / 只验输入值 / 读默认）；**候选表只为 ① 跑**（②/③ 不跑）；候选表常量（可改）；每发单条文本、有界超时；返回 `DimensionProbeResult(type, native, values, detail)`——**`native` 恒填**（0 档回退要用它）；**请求构造按 provider 分派**（定性/候选表/并发/三态是共用的那一层）；**候选表三腿共用同一张常量**。
+- [x] **RED（0 档回退的返回形态）**：桩"任何参数都 400"（严格端点）⇒ 期望 `type="tiered"`、`values=[]`、**`native` 仍是实测默认宽度**（上层据此渲染回退，而不是空列表）。
+- [x] **RED（原生宽度补验，verify-then-list）**：桩 A'——原生 640（**不在候选表**）、且 `dimensions: 640` 也 200 ⇒ 补验那一发**能观察到**、`values` 含 640；桩 A''——原生 3072、`dimensions: 3072` 回 400 ⇒ **不并入** `values`；桩 A'''——原生 1024（**在表内**）⇒ **不补验**（断言请求次数：**定性 + 量宽 + 逐档**——量宽恒有，补验因原生在表内而不发）。
+- [x] **RED（钳位桩，判"通过"= 200 且宽度相等）**：桩对 1536 回 **200 但宽度 1024**（复刻 `flash` 实测行为）⇒ 1536 **不出现在 `values`**；同时验证 ① 逐档、① 原生补验、② 上界三处都按"宽度相等"判（只看状态码的实现会被本条打红）。
+- [x] **RED（② 的上界验证与判歪降级）**：桩 B'（真 ②）⇒ **恒观察到一发 `dimensions: <原生>`** 且 200（上界可用）；桩 B''（"假 ②"= 真 ① 但收 333）⇒ 那一发 **400** ⇒ 探针**降级跑候选表**、`values` = 该模型真档位；桩 C（③）⇒ **没有**任何 `dimensions` 请求（只有定性那发）。
+- [x] **GREEN（常量沿用）**：探测文本与超时用**探针族既有常量**（`_PROBE_TEXT` / `_PROBE_TIMEOUT_SECONDS`），不新起第二份；重排连通那发以同一文本作 query 与唯一 doc。
+- [x] **neuter**：① 删怪值探 ⇒ 三桩全红（无法定型）；② 删档位型逐档 ⇒ 只有桩 B 的 `values` 红。**受害者不相交**，如实记。
+- [x] **还原证明** + `make lint` 净（ruff）。
 
 **实测（待回填）**：
+
+---
+
+**实测（2026-09-27，Task 1 完成 · 新增 `dimension_probe.py` + `test_dimension_probe.py`（12 例））**：
+
+- **RED**：实现文件未建 ⇒ 收集失败（`ModuleNotFoundError: deerflow.knowledge.dimension_probe`）**1 文件红 / 0 例** ✓。
+- **GREEN**：12/12 绿（11.4s）。覆盖：三型定性、**①② 各补一发"不带参数"量宽**（③ 复用定性那发、断言只 1 发）、三腿请求形状（generic `dimensions` / dashscope `parameters.dimension`+`output_type` / ark 一条 content）、0 档回退（`values=[]` 且 `native` 仍填）、verify-then-list 三分支（并入 / 钳位不并入 / 原生在表内不补发）、**钳位桩**（200 但宽度 ≠ 所求不列）、② 上界两分支（可设 ⇒ 不降级 / 不可设 ⇒ 当场降级跑候选表）、401 ⇒ `DimensionProbeError`。
+- **neuter ①（删怪值探：`classify()` 不走 333 那发）**：**7 红 / 5 绿** —— {range、tiered_lists、fixed、three_legs×3、fake_range_settable} → "三桩全红"成立 ✓。
+- **neuter ②（删档位型逐档：候选结果全判不通过）**：**4 红 / 8 绿** —— {tiered_lists、offtable（in-table 子案例）、clamped_200、fake_range_unsettable}。
+- ⚠️ **与计划预测的偏差（如实记）**：计划写"受害者**不相交**"——实际**相交于 `test_tiered_lists…` 一条**（① 让它缺了定性那发、② 让它的 `values` 变空）。其余互相独立。
+- **还原证明**：备份还原后复跑 **12/12 绿**；`ruff check` + `ruff format --check` 两文件**全净** ✓。
+- **一处设计落法（与 spec 措辞的差别，先记）**：`text` / `timeout` 做**必填参数**（不给默认值）——`_PROBE_TEXT` / `_PROBE_TIMEOUT_SECONDS` 住 `app/gateway/routers/rag_config.py`，而 harness **不许 import app**（`test_harness_boundary`）⇒ "不新起第二份"靠**调用方传进来**实现；Task 2 的端点把这两个常量传下即可。
+- 首跑还发现**测试自身**一处 `None` 排序问题（`sorted([333, None, …])`）⇒ 改带 key 的 `sorted`，非实现缺陷。
 
 ---
 
