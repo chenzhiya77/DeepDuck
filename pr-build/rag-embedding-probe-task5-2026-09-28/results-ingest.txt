@@ -1,0 +1,14 @@
+model -> stub-embed-ladder-1790532106
+stub -> {"mode": "range", "native": 1024, "allowed": [256, 512, 1024], "model": "stub-embed", "rerank_status": 200, "max_rows": 5}
+create kb -> 201 {"id": "53f5a03446ac4c3f83a24597989614c9", "owner_id": "d6eff90e-8d6e-41c2-8857-57a5cb3f6606", "name": "task5-ingest", "description": "", "visibility": "private", "created_at": "2026-09-27T18:01:49.22
+kb_id -> 53f5a03446ac4c3f83a24597989614c9
+upload -> 202 {"id": "2eb88a73f8b549a9a17b79d2bbf85257", "kb_id": "53f5a03446ac4c3f83a24597989614c9", "uploader_id": "d6eff90e-8d6e-41c2-8857-57a5cb3f6606", "name": "task5-long.txt", "size_bytes": 149738, "storage_
+document -> {"status": "failed", "chunk_count": 67, "error": "RAG 未配置可用模型：图谱抽取 需要 config.models 里至少有一个条目，或为 rag.default_model 指定一个。"}
+batch rows asked -> [20, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 2]
+batch rows accepted -> [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 2]
+widths asked -> [1024]
+[PASS] 首批就是阶梯顶端 20 行 — rows=[20, 10, 5, 5]
+[PASS] 撞 400 后沿阶梯降档（20 → 10 → 5） — rows=[20, 10, 5, 5]
+[PASS] 学到档位后不再试大（之后每一批 ≤ 5 行，最后一批是余数） — accepted=[5, 5, 5, 5, 5, 5, 5, 5]
+[PASS] 入库的向量腿跑完（切片数 = 各批行数之和；图谱腿因 scratch 无模型而失败，与本线无关） — chunk_count=67 sum(accepted)=67 path_status={'vector': 'done', 'graph': 'failed', 'wiki': 'pending'}
+[PASS] 声明发参：每一发都带 dimensions=1024 — widths=[1024]

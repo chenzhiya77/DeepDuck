@@ -76,11 +76,11 @@ const SAVE_WARNING =
  * （切片 / 实体 / 百科条目 / 人工卡片），源文件与图谱抽取都不重跑，句子必须说全。
  */
 const REINDEX_HINT_ZH =
-  "换嵌入 provider / 维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一起换到新的向量空间。只读库中现有文本，不重解析源文件、不重跑图谱抽取。";
+  "更换嵌入 provider 或维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一并重新生成。只读取库中现有文本：不重新解析源文件，也不重新执行图谱抽取。";
 const REINDEX_CONFIRM_ZH =
   "将重新嵌入该知识库的全部向量（切片、实体、百科条目、人工卡片；不重解析源文件），期间检索结果可能不稳。目标知识库：";
 const REINDEX_HINT_EN =
-  "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here: chunks, entities, wiki entries and manual cards all move to the new vector space. This reads the library's existing text and never re-parses source files or re-runs graph extraction.";
+  "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here: chunks, entities, wiki entries and manual cards are regenerated together. This reads the library's existing text only: source files are not re-parsed, and graph extraction is not re-run.";
 const REINDEX_CONFIRM_EN =
   "Every vector in this library will be re-embedded — chunks, entities, wiki entries and manual cards (source files are not re-parsed) — and retrieval may be unstable while it runs. Target library:";
 
@@ -1665,7 +1665,11 @@ describe("ReindexDialog", () => {
 
 /** The connectivity probe's stub: one leg's verdict, bound to the same key the view computes. */
 function setConnectivityProbe(
-  over: { leg?: "embedding" | "rerank"; status?: "ok" | "refused" | "unreachable" | "dimension_unavailable" } = {},
+  over: {
+    leg?: "embedding" | "rerank";
+    status?: "ok" | "refused" | "unreachable" | "dimension_unavailable" | "half_missing";
+    detail?: string;
+  } = {},
 ) {
   ragHooksMock.useProbeConnectivity.mockReturnValue({
     mutate: connectivityProbeMock,
@@ -1675,7 +1679,7 @@ function setConnectivityProbe(
         : {
             key: connectivityProbeKey(over.leg ?? "embedding", formValuesFromConfig(view()), true),
             status: over.status,
-            detail: "probe detail",
+            detail: over.detail ?? "probe detail",
             measured_dimension: null,
           },
     variables: undefined,
@@ -1742,29 +1746,88 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     expect(input.value).toBe("1536");
   });
 
-  it("renders the probed tiers as chips and fills the first line from one", () => {
+  it("keeps the detected tiers in an in-field dropdown and fills the input from one", async () => {
+    // 档位不再平铺在行里（那会让这一项变成两行）：收进输入框右侧的小箭头，点开是下拉菜单。
     setDimensionProbe({ status: "ok", type: "tiered", native: 1024, values: [256, 1024] });
     renderPage();
     openFunctionalView();
     openAdvanced();
 
-    const chips = within(
-      document.querySelector<HTMLElement>('[data-slot="dimension-chips"]')!,
-    ).getAllByRole("button");
-    expect(chips.map((chip) => chip.textContent)).toEqual(["256", "1024"]);
+    const control = document.querySelector<HTMLElement>('[data-slot="dimension-control"]')!;
+    expect(control.querySelector('[data-slot="dimension-chips"]')).toBeNull();
 
-    fireEvent.click(chips[0]!);
+    fireEvent.pointerDown(within(control).getByRole("button", { name: F.dimensionTierHint }));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["256", "1024"]);
+    expect(screen.getByText(F.dimensionNativeHint(1024))).toBeTruthy();
+
+    fireEvent.click(items[0]!);
     expect(screen.getByLabelText<HTMLInputElement>(F.dimensionLabel).value).toBe("256");
   });
 
-  it("reports 未探明 and renders no tier list when the probe could not answer", () => {
+  it("shows the single value of a fixed-width model in the read-only first line", () => {
+    // ③ 型不吃参数：只有一个可取值。行必须把它**填进去**（不是只当占位提示）——
+    // 否则留空=1024，一个原生 768 的模型永远保存不过，而用户没有输入口。
+    setDimensionProbe({ status: "ok", type: "fixed", native: 768, values: [768] });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const input = screen.getByLabelText<HTMLInputElement>(F.dimensionLabel);
+    expect(input.readOnly).toBe(true);
+    expect(input.value).toBe("768");
+    // 没有可选项 ⇒ 没有下拉箭头；为什么只读由行内的 ⓘ 说明（"不接受维度参数"那句）。
+    expect(document.querySelector('[data-slot="dimension-tiers-trigger"]')).toBeNull();
+    const info = screen.getByRole<HTMLButtonElement>("button", {
+      name: new RegExp(F.dimensionHint),
+    });
+    expect(info.getAttribute("aria-label")).toContain(F.dimensionFixedHint(768));
+  });
+
+  it("reports the no-tier case through the in-field status dot, never an empty list", () => {
+    setDimensionProbe({ status: "ok", type: "tiered", native: 768, values: [] });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    const dot = document.querySelector<HTMLElement>('[data-slot="dimension-status"]')!;
+    expect(dot.getAttribute("data-state")).toBe("no-tiers");
+    expect(dot.getAttribute("aria-label")).toBe(F.dimensionNoTiers);
+    // 没有档位就没有下拉箭头（不渲染空列表），手填照旧。
+    expect(document.querySelector('[data-slot="dimension-tiers-trigger"]')).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>(F.dimensionLabel).readOnly).toBe(false);
+  });
+
+  it("offers the candidate widths below the native one for a range model", async () => {
+    setDimensionProbe({
+      status: "ok",
+      type: "range",
+      native: 1024,
+      values: [1024],
+      candidates: [256, 512, 768, 1024, 1536],
+    });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: F.dimensionTierHint }),
+    );
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["256", "512", "768", "1024"]);
+    expect(screen.getByText(F.dimensionNativeHint(1024))).toBeTruthy();
+  });
+
+  it("reports 未探明 in-field and offers no tier list when the probe could not answer", () => {
     setDimensionProbe({ status: "unreachable" });
     renderPage();
     openFunctionalView();
     openAdvanced();
 
-    expect(screen.getByText(F.dimensionUnprobed)).toBeTruthy();
-    expect(document.querySelector('[data-slot="dimension-chips"]')).toBeNull();
+    const dot = document.querySelector<HTMLElement>('[data-slot="dimension-status"]')!;
+    expect(dot.getAttribute("data-state")).toBe("unprobed");
+    expect(dot.getAttribute("aria-label")).toContain(F.dimensionUnprobed);
+    expect(document.querySelector('[data-slot="dimension-tiers-trigger"]')).toBeNull();
   });
 
   it("turns both role headings into connectivity buttons, and a ready leg asks the server", () => {
@@ -1843,6 +1906,79 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     });
     expect(bad.getAttribute("data-state")).toBe("bad");
     expect(bad.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-amber-500");
+  });
+
+  it("keeps both legs' own verdicts — probing one never greys the other", () => {
+    // 结论是「按腿」的。早期两条腿共用一个 mutation 实例 ⇒ 只留最后一发：点一条变绿，
+    // 另一条（哪怕刚测过绿）当场退回灰。两个 hook 实例各自持有自己的结论。
+    // 桩按调用次序一前一后发（该组件两次调用 = 两条腿；StrictMode 下每轮重放同样的次序），
+    // 旧实现每次渲染只调一次 ⇒ 第二条腿拿不到自己的结论，本用例即红。
+    setRag({}, { sources: { embedding_api_key: "env", rerank_api_key: "env" } });
+    const form = formValuesFromConfig(view());
+    const verdictFor = (leg: "embedding" | "rerank") => ({
+      mutate: connectivityProbeMock,
+      data: {
+        key: connectivityProbeKey(leg, form, true),
+        status: "ok" as const,
+        detail: "连通正常",
+        measured_dimension: null,
+      },
+      variables: undefined,
+      isPending: false,
+    });
+    let call = 0;
+    ragHooksMock.useProbeConnectivity.mockImplementation(() =>
+      call++ % 2 === 0 ? verdictFor("embedding") : verdictFor("rerank"),
+    );
+
+    renderPage();
+    openFunctionalView();
+
+    const dotOf = (label: string) =>
+      screen
+        .getByRole<HTMLButtonElement>("button", { name: new RegExp(label) })
+        .querySelector('[data-slot="leg-dot"]')!;
+    expect(dotOf(F.embeddingModel).className).toContain("bg-emerald-500");
+    expect(dotOf(F.rerankModel).className).toContain("bg-emerald-500");
+  });
+
+  it("puts a leg's reason in the house tooltip, not in a native title", () => {
+    // 原生 `title` 会弹出浏览器自己画的白框，与仓库的深色 Tooltip 不合（2026-09-28 他报回）。
+    setRag({}, { sources: { embedding_api_key: "env" } });
+    renderPage();
+    openFunctionalView();
+
+    const heading = screen.getByRole<HTMLButtonElement>("button", {
+      name: new RegExp(F.embeddingModel),
+    });
+    expect(heading.hasAttribute("title")).toBe(false);
+    // 那句原因仍在无障碍名里（提示气泡的内容就是它）。
+    expect(heading.getAttribute("aria-label")).toBe(
+      `${F.embeddingModel} · ${F.legDotUntested}`,
+    );
+    // 灰点的悬浮要说"点它能做什么"（spec D5-5 的"hover：为什么灰、点它可以测"），
+    // 不只是报个状态词。
+    expect(F.legDotUntested).toContain("点");
+  });
+
+  it("gives a promised-but-missing sparse half its own reason, still amber", () => {
+    // 双路 provider 答了稠密、稀疏为空：连得上、凭据对、宽度也对 —— 这是一种"答案"，
+    // 不该被说成"连不上"（它与「要不到该维度」同族，颜色仍是橙、理由各写各的）。
+    setRag({}, { sources: { embedding_api_key: "env" } });
+    setConnectivityProbe({
+      status: "half_missing",
+      detail:
+        "连得上，但这个模型没给稀疏那一半：嵌入 provider 返回了空的稀疏向量 ⇒ 请改为「独立稀疏服务」或「本地 BM25」",
+    });
+    renderPage();
+    openFunctionalView();
+
+    const head = screen.getByRole<HTMLButtonElement>("button", {
+      name: new RegExp(F.embeddingModel),
+    });
+    expect(head.getAttribute("data-state")).toBe("bad-half");
+    expect(head.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-amber-500");
+    expect(head.getAttribute("aria-label")).toContain("没给稀疏那一半");
   });
 
   it("keeps a reachable leg green", () => {

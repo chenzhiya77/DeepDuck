@@ -1,0 +1,63 @@
+baseline -> null ['kb_chunks', 'kb_entities', 'kb_manual_cards', 'kb_wiki_entries']
+probe(tiered) -> 200 {"status": "ok", "type": "tiered", "native": 1024, "values": [256, 512, 1024], "candidates": [256, 512, 768, 1024, 1536, 2048, 2560, 3072, 4096], "detail": "探到的有效档：[256, 512, 1024]（原生 1024）"}
+[PASS] ① 档位型 — values=[256, 512, 1024] native=1024
+probe(range) -> 200 {"status": "ok", "type": "range", "native": 1024, "values": [1024], "candidates": [256, 512, 768, 1024, 1536, 2048, 2560, 3072, 4096], "detail": "可接受任意 ≤ 1024 的值（上界已验）"}
+[PASS] ② 范围型 — type=range native=1024 values=[1024]
+probe(fixed) -> 200 {"status": "ok", "type": "fixed", "native": 768, "values": [768], "candidates": [256, 512, 768, 1024, 1536, 2048, 2560, 3072, 4096], "detail": "该模型不接受 dimensions 参数，固定 768 维"}
+[PASS] ③ 固定型 — type=fixed values=[768]
+probe(0-tier) -> 200 {"status": "ok", "type": "tiered", "native": 1024, "values": [], "candidates": [256, 512, 768, 1024, 1536, 2048, 2560, 3072, 4096], "detail": "未探到候选档（原生 1024）——可手填一个值，保存时会实发验证"}
+[PASS] 0 档回退 — values=[] native=1024
+probe(native outside table) -> 200 {"status": "ok", "type": "tiered", "native": 640, "values": [256, 640], "candidates": [256, 512, 768, 1024, 1536, 2048, 2560, 3072, 4096], "detail": "探到的有效档：[256, 640]（原生 640）"}
+[PASS] 原生补验（640 ∉ 表 ⇒ 通过后并入） — values=[256, 640]
+probe(clamped 1536) -> 200 {"status": "ok", "type": "range", "native": 1024, "values": [1024], "candidates": [256, 512, 768, 1024, 1536, 2048, 2560, 3072, 4096], "detail": "可接受任意 ≤ 1024 的值（上界已验）"}
+[PASS] 钳位（200 但宽度≠所求 ⇒ 不列） — values=[1024]
+[PASS] ② 上界验证（恒发一发 dimensions=<原生>） — asked=[333, None, 1024]
+connectivity(ok) -> 200 {"status": "ok", "detail": "连通正常，实测 1024 维。", "measured_dimension": 1024}
+[PASS] 连通 = ok — {"status": "ok", "detail": "连通正常，实测 1024 维。", "measured_dimension": 1024}
+connectivity(dimension_unavailable) -> 200 {"status": "dimension_unavailable", "detail": "连得上，但要不到 1536 维：实测返回 1024 维 ⇒ 请改选它能给的维度。", "measured_dimension": 1024}
+[PASS] 连通 = dimension_unavailable（橙的第二种原因） — {"status": "dimension_unavailable", "detail": "连得上，但要不到 1536 维：实测返回 1024 维 ⇒ 请改选它能给的维度。", "measured_dimension": 1024}
+connectivity(refused) -> 200 {"status": "refused", "detail": "凭据被拒（embedding endpoint rejected the API key (HTTP 401)）", "measured_dimension": null}
+[PASS] 连通 = refused（凭据被拒） — {"status": "refused", "detail": "凭据被拒（embedding endpoint rejected the API key (HTTP 401)）", "measured_dimension": null}
+connectivity(unreachable) -> 200 {"status": "unreachable", "detail": "未能连通（EmbedderError）：embedding request failed: All connection attempts failed", "measured_dimension": null}
+[PASS] 连通 = unreachable（连不上） — {"status": "unreachable", "detail": "未能连通（EmbedderError）：embedding request failed: All connection attempts failed", "measured_dimension": null}
+connectivity(rerank ok) -> 200 {"status": "ok", "detail": "连通正常（重排腿没有维度这一问）。", "measured_dimension": null}
+[PASS] 重排腿一发连通 — {"status": "ok", "detail": "连通正常（重排腿没有维度这一问）。", "measured_dimension": null}
+PUT dimension=1024 -> 200 null
+[PASS] 同值保存不触发迁移（前后结论一致，宽度仍是 1024） — before=null after=null
+[PASS] 无关编辑不抹掉维度（整对象提交时它原样回来） — dimension=1024
+collections before -> ['kb_chunks', 'kb_entities', 'kb_manual_cards', 'kb_wiki_entries']
+PUT free value 1000 -> 200 {"state": "running", "target_dimension": 1000, "detail": null, "progress": null}
+[PASS] 自由值（表外，模型能给 ⇒ 放行 + 启动迁移） — {"state": "running", "target_dimension": 1000, "detail": null, "progress": null}
+migration settled -> {"state": "succeeded", "target_dimension": 1000, "detail": null, "progress": null}
+collections after -> ['kb_chunks_1000', 'kb_entities_1000', 'kb_manual_cards_1000', 'kb_wiki_entries_1000']
+[PASS] 迁移端到端（建新代 → 完成才翻 → 删旧代） — state=succeeded stored=1000 collections=['kb_chunks_1000', 'kb_entities_1000', 'kb_manual_cards_1000', 'kb_wiki_entries_1000']
+PUT clear the declaration -> 200 {"state": "running", "target_dimension": 1024, "detail": null, "progress": null}
+[PASS] 反向迁移（回到默认宽度 ⇒ 无后缀名） — collections=['kb_chunks', 'kb_entities', 'kb_manual_cards', 'kb_wiki_entries'] stored=None
+[PASS] 对照组（不声明 ⇒ 请求体无 dimensions，逐字节如旧） — keys=['input', 'model']
+PUT free value 999 (refused by the model) -> 400 {"detail": "提交后的配置仍不可用：嵌入模型返回 1024 维，而当前生效宽度是 999 维 ⇒ 拒绝启用。请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。"}
+[PASS] 自由值（模型给不了 ⇒ 400 + 可执行文案） — {"detail": "提交后的配置仍不可用：嵌入模型返回 1024 维，而当前生效宽度是 999 维 ⇒ 拒绝启用。请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。"}
+requests after the refusal -> [["input", "model"]]
+[PASS] 被判「不吃参数」的端点之后不再白带 dimensions（D2 甲a 自愈） — keys=['input', 'model']
+
+==== summary ====
+PASS  ① 档位型
+PASS  ② 范围型
+PASS  ③ 固定型
+PASS  0 档回退
+PASS  原生补验（640 ∉ 表 ⇒ 通过后并入）
+PASS  钳位（200 但宽度≠所求 ⇒ 不列）
+PASS  ② 上界验证（恒发一发 dimensions=<原生>）
+PASS  连通 = ok
+PASS  连通 = dimension_unavailable（橙的第二种原因）
+PASS  连通 = refused（凭据被拒）
+PASS  连通 = unreachable（连不上）
+PASS  重排腿一发连通
+PASS  同值保存不触发迁移（前后结论一致，宽度仍是 1024）
+PASS  无关编辑不抹掉维度（整对象提交时它原样回来）
+PASS  自由值（表外，模型能给 ⇒ 放行 + 启动迁移）
+PASS  迁移端到端（建新代 → 完成才翻 → 删旧代）
+PASS  反向迁移（回到默认宽度 ⇒ 无后缀名）
+PASS  对照组（不声明 ⇒ 请求体无 dimensions，逐字节如旧）
+PASS  自由值（模型给不了 ⇒ 400 + 可执行文案）
+PASS  被判「不吃参数」的端点之后不再白带 dimensions（D2 甲a 自愈）
+20/20 legs passed

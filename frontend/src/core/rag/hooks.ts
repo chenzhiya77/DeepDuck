@@ -3,6 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import {
@@ -72,12 +73,28 @@ export function useSaveRagConfig() {
  * the save button — the row keeps rendering the width that is *in force* until the switch.
  */
 export function useRagMigrationStatus({ enabled = true }: { enabled?: boolean } = {}) {
-  return useQuery({
+  const queryClient = useQueryClient();
+  // 迁移「落地」的那一刻才需要重读生效配置：成功则宽度真的换了，失败则没换 —— 两种都要让
+  // 表单离开「正在迁移到的那个值」。在飞期间不重读（那时文件里仍是旧宽度，读回来反而误导）。
+  const ran = useRef(false);
+  const query = useQuery({
     queryKey: ["ragMigration"],
     queryFn: () => loadRagMigrationStatus(),
     enabled,
     refetchInterval: (query) => migrationRefetchInterval(query.state.data),
   });
+  const state = query.data?.state;
+  useEffect(() => {
+    if (state === "running") {
+      ran.current = true;
+      return;
+    }
+    if (state && ran.current) {
+      ran.current = false;
+      void queryClient.invalidateQueries({ queryKey: ["ragConfig"] });
+    }
+  }, [state, queryClient]);
+  return query;
 }
 
 /** The probe's input: the candidate configuration, plus the key it was taken for. */

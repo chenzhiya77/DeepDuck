@@ -832,9 +832,15 @@ class RagConnectivityProbeRequest(BaseModel):
 
 
 class RagConnectivityProbeResponse(BaseModel):
-    """``dimension_unavailable`` is the second reason an embedding leg can be unusable."""
+    """Four ways an embedding leg can fail to be usable, and one that is not a failure at all.
 
-    status: Literal["ok", "refused", "unreachable", "dimension_unavailable"]
+    ``dimension_unavailable`` and ``half_missing`` are both *answers* — the endpoint reached us
+    and its answer cannot be used (the width is not on offer; the sparse half did not come) —
+    as opposed to ``refused`` / ``unreachable``, which are "no answer". Collapsing the latter
+    pair into a single "failed" would send the admin to the wrong repair.
+    """
+
+    status: Literal["ok", "refused", "unreachable", "dimension_unavailable", "half_missing"]
     detail: str
     measured_dimension: int | None = None
 
@@ -876,6 +882,10 @@ async def probe_leg_connectivity(
             results = await asyncio.wait_for(embedder.embed([_PROBE_TEXT]), timeout=_PROBE_TIMEOUT_SECONDS)
         except EmbedderAuthError as exc:
             return RagConnectivityProbeResponse(status="refused", detail=f"凭据被拒（{_probe_detail(str(exc))}）")
+        except SparseHalfMissingError as exc:
+            # The call came back — with a dense half where both were promised. Same family as
+            # `dimension_unavailable`: an answer we cannot use, never "could not connect".
+            return RagConnectivityProbeResponse(status="half_missing", detail=f"连得上，但这个模型没给稀疏那一半：{_probe_detail(str(exc))}")
         except Exception as exc:  # noqa: BLE001 — everything else means "no answer", with its own reason
             logger.warning("connectivity probe failed for embedding/%s", body.provider, exc_info=True)
             return RagConnectivityProbeResponse(status="unreachable", detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}")
@@ -906,4 +916,6 @@ async def probe_leg_connectivity(
         logger.warning("connectivity probe failed for rerank/%s", body.provider, exc_info=True)
         return RagConnectivityProbeResponse(status="unreachable", detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}")
 
-    return RagConnectivityProbeResponse(status="ok", detail="连通正常（重排腿没有维度这一问）。")
+    # Say what the admin got, not how the leg is built: "this leg has no dimension question"
+    # explains our design, which is not what a hover is for (2026-09-28).
+    return RagConnectivityProbeResponse(status="ok", detail="连通正常，重排服务可用。")

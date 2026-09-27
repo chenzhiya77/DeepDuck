@@ -214,7 +214,12 @@ export interface RagConnectivityProbeRequest {
  * but not with the width we asked for.
  */
 export interface RagConnectivityProbeResponse {
-  status: "ok" | "refused" | "unreachable" | "dimension_unavailable";
+  status:
+    | "ok"
+    | "refused"
+    | "unreachable"
+    | "dimension_unavailable"
+    | "half_missing";
   detail: string;
   measured_dimension: number | null;
 }

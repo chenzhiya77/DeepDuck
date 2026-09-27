@@ -258,6 +258,29 @@ def test_a_dimension_the_model_will_not_give_is_its_own_state(config_env: Path, 
     assert "1024" in body["detail"] and "512" in body["detail"]
 
 
+def test_a_promised_sparse_half_that_did_not_come_is_its_own_state(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """连得上、凭据对、宽度对，但稀疏那一半没给 —— 这是一个"答案"，不是"没能连上"。
+
+    同一个输入在保存那一刻是 400 + 可执行文案（保存期探针）；连通点此前把它归进
+    ``unreachable``（状态词撒谎），现在有自己的一态。
+    """
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"output": {"embeddings": [{"text_index": 0, "embedding": [0.0] * 1024}]}})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler)))
+
+    with _client() as client:
+        body = _probe_connectivity(client, embedding_dimension=1024).json()
+
+    assert body["status"] == "half_missing"
+    assert "稀疏" in body["detail"]
+    # 可执行的那条出路也在里面（改稀疏来源或换模型），与保存期的文案同源。
+    assert "独立稀疏服务" in body["detail"] or "本地 BM25" in body["detail"]
+
+
 def test_refused_and_unreachable_stay_apart(config_env: Path, monkeypatch: pytest.MonkeyPatch):
     _stub_embedding(monkeypatch, lambda asked: (401, 0))
     with _client() as client:
@@ -276,6 +299,8 @@ def test_the_rerank_leg_sends_one_minimal_call_and_has_no_dimension_state(config
 
     assert body["status"] == "ok"
     assert body["measured_dimension"] is None
+    # 悬浮那句只说"能用"：解释"这一腿为什么没有维度这一问"是我们的设计，不是给用户看的。
+    assert "连通正常" in body["detail"] and "维度" not in body["detail"]
     assert len(recorded) == 1
     asked = json.loads(recorded[0].content)
     assert asked["query"] == "probe" and asked["documents"] == ["probe"], "query 与唯一 doc 都用探针文本"

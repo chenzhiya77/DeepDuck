@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -20,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   useKnowledgeBases,
@@ -252,7 +261,13 @@ function PairCell({
 
 /** A role heading: the bold role name. The English pill is gone (spec §3.2 revision, 乙). */
 /** The four states one leg's dot can be in (spec 2026-09-26 D5-5). */
-type LegDotState = "untested" | "probing" | "ok" | "bad-dimension" | "bad";
+type LegDotState =
+  | "untested"
+  | "probing"
+  | "ok"
+  | "bad-dimension"
+  | "bad-half"
+  | "bad";
 
 const LEG_DOT_TONE: Record<LegDotState, string> = {
   untested: "bg-muted-foreground/40",
@@ -260,6 +275,8 @@ const LEG_DOT_TONE: Record<LegDotState, string> = {
   ok: "bg-emerald-500",
   // 橙是他定的：与「没答案」的灰分开，也与既有失败色 destructive 分开。
   "bad-dimension": "bg-amber-500",
+  // 三橙同色、理由不同：连不上 / 要不到该维度 / 连得上但没给稀疏那一半。
+  "bad-half": "bg-amber-500",
   bad: "bg-amber-500",
 };
 
@@ -284,30 +301,33 @@ function LegHeading({
   onProbe: () => void;
 }) {
   return (
-    <button
-      type="button"
-      data-slot="leg-heading"
-      data-state={status}
-      aria-label={`${label} · ${reason}`}
-      title={reason}
-      disabled={disabled}
-      onClick={onProbe}
-      className={cn(
-        "text-sm font-semibold",
-        !disabled && "hover:text-foreground/80 cursor-pointer",
-        disabled && "cursor-not-allowed",
-      )}
-    >
-      {label}
-      <span
-        aria-hidden
-        data-slot="leg-dot"
+    <Tooltip content={reason} contentClassName="max-w-xs">
+      <button
+        type="button"
+        data-slot="leg-heading"
+        data-state={status}
+        aria-label={`${label} · ${reason}`}
+        disabled={disabled}
+        onClick={onProbe}
         className={cn(
-          "ml-1.5 inline-block size-2 rounded-full align-middle",
-          LEG_DOT_TONE[status],
+          // `inline-flex` + `text-left` 是为了回到原来的位置：原来的标题是个 `<span>`（按内容宽、
+          // 贴左），换成 `<button>` 后浏览器默认撑满整格并把内容居中 —— 标题会飘到列中间。
+          "inline-flex items-center text-left text-sm font-semibold",
+          !disabled && "hover:text-foreground/80 cursor-pointer",
+          disabled && "cursor-not-allowed",
         )}
-      />
-    </button>
+      >
+        {label}
+        <span
+          aria-hidden
+          data-slot="leg-dot"
+          className={cn(
+            "ml-1.5 inline-block size-2 rounded-full align-middle",
+            LEG_DOT_TONE[status],
+          )}
+        />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -421,7 +441,10 @@ export function FunctionalModelsView() {
   const probe = useProbeSparseCapability();
   const sparseServiceProbe = useProbeSparseService();
   const dimensionProbe = useProbeDimensions();
-  const connectivityProbe = useProbeConnectivity();
+  // 一条腿一个实例：结论是「按腿」的，共用一个 mutation 只会留下最后一发 —— 那样两条腿
+  // 永远只有一条亮（点另一条就把前一条打回灰）。
+  const embeddingConnectivity = useProbeConnectivity();
+  const rerankConnectivity = useProbeConnectivity();
   const requestedDimension = useRef<string | null>(null);
   const { models } = useModels();
   const { config: modelsConfig } = useModelsConfig();
@@ -592,6 +615,17 @@ export function FunctionalModelsView() {
       : null;
   const dimensionProbing =
     dimensionProbe.isPending && dimensionProbe.variables?.key === dimensionKey;
+
+  /** 框内状态点：只在不"绿"时才出现，理由走它自己的提示气泡（dark Tooltip，与两条腿同族）。 */
+  const dimensionState: { state: "probing" | "unprobed" | "no-tiers"; reason: string } | null = dimensionProbing
+    ? { state: "probing", reason: F.dimensionProbing }
+    : dimensionVerdict === null
+      ? null
+      : dimensionVerdict.status === "unreachable"
+        ? { state: "unprobed", reason: `${F.dimensionUnprobed}：${dimensionVerdict.detail}` }
+        : dimensionVerdict.type === "tiered" && dimensionVerdict.values.length === 0
+          ? { state: "no-tiers", reason: F.dimensionNoTiers }
+          : null;
   const dimensionApplies =
     values !== null &&
     values.embedding_model.trim() !== "" &&
@@ -616,6 +650,18 @@ export function FunctionalModelsView() {
     return () => clearTimeout(timer);
   }, [dimensionApplies, values, dimensionProbe]);
 
+  useEffect(() => {
+    // ③ 型（不吃参数）只有唯一一个可取值 ⇒ 行是只读的，那就必须把那个值**填进去**，不能只当占位提示：
+    // 留空 = 1024，而一个原生 768 的固定型模型于是永远保存不过（保存期探针会拒），用户还没有输入口。
+    if (dimensionVerdict?.type !== "fixed" || dimensionVerdict.native === null) return;
+    const native = String(dimensionVerdict.native);
+    setValues((prev) =>
+      prev && prev.embedding_dimension !== native
+        ? { ...prev, embedding_dimension: native }
+        : prev,
+    );
+  }, [dimensionVerdict]);
+
   /** 一条腿的连通点：坐标齐了才可点；结论只认「点过的那一发」。 */
   const legProps = (form: RagConfigFormValues, leg: "embedding" | "rerank") => {
     const provider =
@@ -628,13 +674,12 @@ export function FunctionalModelsView() {
     ).trim();
     const hasKey = leg === "embedding" ? embeddingKeyPresent : rerankKeyPresent;
     const ready = model !== "" && baseUrl !== "" && hasKey;
+    const probe =
+      leg === "embedding" ? embeddingConnectivity : rerankConnectivity;
     const key = connectivityProbeKey(leg, form, hasKey);
     const verdict =
-      connectivityProbe.data && connectivityProbe.data.key === key
-        ? connectivityProbe.data
-        : null;
-    const probing =
-      connectivityProbe.isPending && connectivityProbe.variables?.key === key;
+      probe.data && probe.data.key === key ? probe.data : null;
+    const probing = probe.isPending && probe.variables?.key === key;
     const status: LegDotState = probing
       ? "probing"
       : !ready || verdict === null
@@ -643,7 +688,9 @@ export function FunctionalModelsView() {
           ? "ok"
           : verdict.status === "dimension_unavailable"
             ? "bad-dimension"
-            : "bad";
+            : verdict.status === "half_missing"
+              ? "bad-half"
+              : "bad";
     const reason = probing
       ? F.legDotProbing
       : !ready
@@ -657,7 +704,7 @@ export function FunctionalModelsView() {
       disabled: !ready || probing,
       onProbe: () => {
         const rawDimension = form.embedding_dimension.trim();
-        connectivityProbe.mutate({
+        probe.mutate({
           key,
           leg,
           provider,
@@ -672,9 +719,10 @@ export function FunctionalModelsView() {
   };
 
   /** 档位快捷项：① 型 = 探到的有效档；② 型 = ≤ 原生的候选；③ 型没有档位区。 */
-  const dimensionChips = (() => {
+  const dimensionTiers = (() => {
     const verdict = dimensionVerdict;
     if (!verdict || verdict.status !== "ok") return [] as number[];
+    // ① 型 = 探到的有效档；② 型 = ≤ 原生的候选（静态提示）；③ 型没有档位。
     if (verdict.type === "tiered") return verdict.values;
     if (verdict.type === "range" && verdict.native !== null) {
       return verdict.candidates.filter((width) => width <= (verdict.native ?? 0));
@@ -770,6 +818,16 @@ export function FunctionalModelsView() {
       onSuccess: (saved) => {
         toast.success(F.saved);
         setSaveWarning(saved.warning ?? null);
+        // 迁移在飞时，PUT 响应里的宽度仍是「当前生效」的旧值（这是设计），而表单里该显示
+        // 用户刚选的那个 —— 否则响应回填会把它改回去，下一次保存就悄悄触发反向迁移。
+        const pending = saved.migration;
+        if (pending?.state === "running") {
+          setValues((prev) =>
+            prev
+              ? { ...prev, embedding_dimension: String(pending.target_dimension) }
+              : prev,
+          );
+        }
       },
     });
   }
@@ -979,15 +1037,28 @@ export function FunctionalModelsView() {
               {/* 维度在上、稀疏来源在下（spec 2026-09-26 D5-4）：维度=库宽、连着全库重建，
                   是这块最重的一项。探测自动跑，行内没有按钮。 */}
               <div className={ROW} data-slot="dimension-row">
-                <RowLabel info={`${F.dimensionHint} ${F.dimensionProbeHint}`}>
+                <RowLabel
+                  info={[
+                    F.dimensionHint,
+                    F.dimensionProbeHint,
+                    // ③ 型只读：说明为什么改不了（档位菜单在 ③ 不存在，这句只能挂在这里）。
+                    dimensionVerdict?.type === "fixed" && dimensionVerdict.native !== null
+                      ? F.dimensionFixedHint(dimensionVerdict.native)
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
                   {F.dimensionLabel}
                 </RowLabel>
-                <div className="flex min-w-0 flex-col gap-1.5">
+                {/* 一行：输入框（自由值） + 框内下拉（探到的档位） + 框内状态点。
+                    规格：状态必须骑在它描述的字段内，不能自己占一行 —— 行高与相邻行一致。 */}
+                <div className="relative w-full" data-slot="dimension-control">
                   <Input
                     inputMode="numeric"
                     aria-label={F.dimensionLabel}
                     data-slot="dimension-input"
-                    className="w-32"
+                    className="w-full pr-10"
                     value={values.embedding_dimension}
                     readOnly={dimensionVerdict?.type === "fixed"}
                     placeholder={
@@ -998,51 +1069,64 @@ export function FunctionalModelsView() {
                     }
                     {...AUTOFILL_OFF_INPUT_PROPS}
                   />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      role="status"
-                      data-slot="dimension-status"
-                      className="text-muted-foreground text-xs"
-                    >
-                      {dimensionProbing
-                        ? F.dimensionProbing
-                        : dimensionVerdict === null
-                          ? null
-                          : dimensionVerdict.status === "unreachable"
-                            ? F.dimensionUnprobed
-                            : dimensionVerdict.native === null
-                              ? null
-                              : dimensionVerdict.type === "tiered" &&
-                                  dimensionVerdict.values.length === 0
-                                ? F.dimensionNoTiers
-                                : F.dimensionNativeHint(dimensionVerdict.native)}
-                    </span>
-                    {dimensionChips.length > 0 && (
-                      <div
-                        className="flex flex-wrap items-center gap-1"
-                        data-slot="dimension-chips"
-                      >
-                        <span className="text-muted-foreground text-xs">
-                          {F.dimensionTierHint}
-                        </span>
-                        {dimensionChips.map((width) => (
+                  {/* 触发器**就是整格**（这一层 inset-0 的透明壳），所以下拉锚在整格上、
+                      宽度取触发的宽度 ⇒ 与输入框同宽同左缘，绝不会超出。壳本身不吃事件，
+                      只有里面的箭头与状态点可点（事件从它们冒泡到触发器）。 */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <span className="pointer-events-none absolute inset-0 flex items-center justify-end gap-1 pr-1.5">
+                        {dimensionState !== null && (
+                          <Tooltip content={dimensionState.reason}>
+                            <span
+                              role="status"
+                              aria-label={dimensionState.reason}
+                              data-slot="dimension-status"
+                              data-state={dimensionState.state}
+                              className={cn(
+                                "pointer-events-auto inline-block size-2 rounded-full",
+                                dimensionState.state === "probing"
+                                  ? "bg-muted-foreground/40 animate-pulse"
+                                  : "bg-muted-foreground/40",
+                              )}
+                            />
+                          </Tooltip>
+                        )}
+                        {dimensionTiers.length > 0 && (
                           <button
-                            key={width}
                             type="button"
-                            data-slot="dimension-chip"
-                            className={cn(
-                              "rounded border border-border px-1.5 py-0.5 text-xs hover:bg-muted",
-                              values.embedding_dimension.trim() === String(width) &&
-                                "bg-muted font-medium",
-                            )}
-                            onClick={() => update("embedding_dimension", String(width))}
+                            aria-label={F.dimensionTierHint}
+                            data-slot="dimension-tiers-trigger"
+                            className="text-muted-foreground hover:text-foreground pointer-events-auto inline-flex"
                           >
-                            {width}
+                            <ChevronDown className="size-3.5" />
                           </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                        )}
+                      </span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="w-(--radix-dropdown-menu-trigger-width) min-w-0"
+                    >
+                      {dimensionVerdict?.native != null && (
+                        <DropdownMenuLabel className="text-muted-foreground font-normal">
+                          {F.dimensionNativeHint(dimensionVerdict.native)}
+                        </DropdownMenuLabel>
+                      )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-muted-foreground font-normal">
+                        {F.dimensionTierHint}
+                      </DropdownMenuLabel>
+                      {dimensionTiers.map((width) => (
+                        <DropdownMenuItem
+                          key={width}
+                          data-slot="dimension-tier"
+                          onSelect={() => update("embedding_dimension", String(width))}
+                        >
+                          {width}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
               <div className={ROW}>

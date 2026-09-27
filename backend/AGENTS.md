@@ -842,6 +842,26 @@ dragged into a question it has nothing to do with. **Nothing here blocks a save*
 down now may be up in a minute, and refusing the write would repeat the mistake the `unverifiable`
 rule exists to avoid — the probe reports, the admin decides.
 
+`POST /api/rag/config/probe-dimensions` (admin, spec 2026-09-26 §3) answers "which widths does this
+model accept": a wild-value probe (`dimensions: 333`) classifies the model as tiered / range / fixed,
+then walks the candidate table (tiered), verifies one value (range) or reads the default (fixed). A
+candidate passes only when the answer is `200` **and** the returned width equals the one asked for —
+the live evidence for that rule is a model that answers `200` with a silently clamped width. The
+response carries the type, the native width, the accepted values and the candidate table itself, so
+the settings row never keeps a second copy. Read-only, no key echoed, bounded by the same 10s.
+
+`POST /api/rag/config/probe-connectivity` (admin, same spec) is the "one real call" behind the two
+role headings' status dots, for the embedding **and** the rerank leg: it builds through the factory
+(`build_embedder` / `build_reranker`) and reports `ok`, `refused` (credentials), `unreachable`,
+`dimension_unavailable`, or `half_missing` — the last two separating answers we cannot use
+("this width is not on offer", "the promised sparse half did not come") from "could not connect at
+all", because the repair each one sends the admin to is a different one. The embedding leg sends the width in force, so one call certifies
+reachability, credentials and the width together. Nothing is persisted and nothing blocks a save.
+
+`GET /api/rag/config/migration` (admin) reports the width migration's state
+(`running` / `succeeded` / `failed` + the reason + progress); a save that changes the width returns
+the same block inline (spec 2026-09-26 D5-7).
+
 At run time the same promise is enforced once more (spec §3 D5): with
 `embedding_sparse_source='provider'`, `build_embedder` wraps the dense leg in
 `_SparseHalfCheckedEmbedder`, which refuses a result whose `sparse.indices` is empty and raises
@@ -856,14 +876,35 @@ So the check runs on **every** `embed()` and keeps raising while the answer hold
 **only** the `provider` source (under `external`/`bm25` the dense leg's own sparse is discarded by
 `ComposedEmbedder` anyway).
 
-Operational caveat: the vector collections are fixed at 1024 dimensions
-(`knowledge/vector_store.py`) — that is a **hard gate**, not a default: `build_embedder()` refuses a
-non-1024 provider (§4.2). Embedding model changes invalidate existing vectors, and since
-2026-09-14 the provider dimension exists too (embedding / rerank / parse each pick a curated
-provider id), so the view warns on any of those changes and the rebuild entry is the documented way
-out — it re-embeds every vector collection from the stored rows (chunks, entities, wiki entries,
-manual cards) and never re-parses nor re-runs graph extraction (v1 still does not re-index
-automatically).
+**The width is a deployment setting** (spec 2026-09-26 D1 乙): `rag.embedding_dimension` (blank =
+1024, the value every deployment starts at) is the width the library is _written_ at, resolved in
+exactly one place — `effective_dimension()`, shared by the store's collection names, the runtime
+guard and the save-time probe. Collections of a non-default width carry it in their names
+(`kb_chunks_1536`); the default keeps the unsuffixed names every deployment already has. What stays
+a hard gate is "the model must return the width in force": the declaration goes out on the request
+(`dimensions` on the generic leg, `parameters.dimension` where the vendor pins it) and one real call
+certifies it — always at save time, and once per process for the undeclared case. Embedding model /
+provider / endpoint changes still invalidate existing vectors, and since 2026-09-14 the provider
+dimension exists too (embedding / rerank / parse each pick a curated provider id), so the view warns
+on any of those changes and the per-library rebuild entry re-embeds every collection from the stored
+rows (chunks, entities, wiki entries, manual cards), never re-parsing nor re-running graph
+extraction.
+
+**Changing the width is a migration, not an edit** (spec 2026-09-26 D5-2 / D5-6 / D5-7). The save
+that changes it writes everything _else_ immediately, leaves the stored width at its old value, and
+starts a background rebuild: a fresh generation is built (a leftover from an interrupted run is
+dropped rather than resumed), **every** library is re-embedded into it (the collections are
+deployment-wide while the rebuild entry is per library), libraries whose content moved during the
+run are rebuilt again before the switch — non-terminal documents included, because until the switch
+the worker's own writes still land in the old generation — and only then is `rag_config.json`
+replaced, followed by a best-effort deletion of the old generation (`deerflow.knowledge.
+dimension_migration` + `app/gateway/services/rag_migration.py`). The delta is per _library_, not per
+document: `documents` has no `updated_at` and the entity/wiki/card passes have no per-document
+attribution, so the store's own content signature decides which libraries moved. A failure is
+"nothing happened": the file was never written and the old generation keeps serving. The verdict is
+process-local, readable from `GET /api/rag/config/migration` (admin) and on every `/api/rag/config`
+response as `migration` (`null` until a save starts one, `running` while it works, then
+`succeeded` / `failed` with the reason).
 
 **The RAG provider mechanism is deliberately not the Models mechanism.** The three legs above are
 raw HTTP clients, not LangChain models, so they never appear in a `models:` picker and do not
@@ -1190,7 +1231,7 @@ query-entity extraction → seed match (entity scores) → `expand_neighborhood`
 
 **Parse provider dimension** (spec 2026-09-14 §4.4): `rag.parse_provider` selects how a document is parsed — `mineru-cloud` (default, the MinerU v4 API in `knowledge/parser.py`) or `mineru-local` (a self-hosted MinerU HTTP service, `knowledge/parse_local.py`, needing `rag.parse_base_url`). Both are resolved from the curated allowlist in `knowledge/providers/__init__.py` (never a caller-supplied class path) and both return the same `ParsedDocument`, sharing `normalize_mineru_markdown` — the two-step trailing-title relocation + HTML-table→GFM pass, which any MinerU output needs regardless of transport. The local client drives the 4.x service's own job API (three-step upload — `POST /v1/uploads` → raw `PUT` to the returned `upload_url` → `POST /v1/uploads/{id}/complete` — then `POST /v1/parse/jobs`, poll `GET /v1/parse/jobs/{id}`, and fetch the result zip out of the file registry at `GET /v1/files/{file_id}/content`), sends no credential (that service ships without auth), reuses the cloud error taxonomy so the worker's degradation contract is identical, and forwards `rag.parse_tier` (`flash` / `basic` / `standard` / `advanced`, empty = the service decides) as the job's `tier`. Local-read suffixes (`.md` / `.txt` / `.csv` / `.tsv` / `.xlsx` / `.xls`) still short-circuit before any provider is built.
 
-**Embedding provider dimension** (spec 2026-09-14 §4.2): `rag.embedding_provider` picks the dense source — `dashscope` (dual-output), `volcengine-ark` (dual-output, via `/api/v3/embeddings/multimodal`) or `openai-compatible` (dense-only `/v1/embeddings`) — and `rag.embedding_sparse_source` picks who supplies the sparse half: the provider itself (`provider`, valid only when that provider's allowlist row declares `emits_sparse` — pairing a dense-only provider with it is refused at build time), a separate service (`external` + `rag.sparse_base_url`, shape pinned to Text Embeddings Inference's `/embed_sparse`), or local BM25 (`bm25`: deterministic hashed character-bigram term frequencies under BM25's saturation curve, with **no idf** — chunks are indexed one at a time, so there is no corpus to compute one from). A CJK-aware tokenizer is built in rather than an optional jieba on purpose: the index space must not depend on which environment indexed the document. All three routes emit Qdrant `SparseVector`s, so the collection schema and the retrieval code are untouched; when the halves come from different places, `ComposedEmbedder` (甲) pairs them and still returns one `EmbeddingResult` per text. `build_embedder()` is the only construction point — pinned by `tests/knowledge/test_provider_construction_sites.py`, which now covers the embedding, rerank and parse legs. It takes an optional `rag=` override so the settings PUT can validate a configuration it has not written yet. The collections are fixed at 1024 dense dimensions, so a non-1024 provider is refused with a pointer at the rebuild entry; the width is measured once per process from the first real embedding, except where the provider pins it in its own request (DashScope) or the operator declares `rag.embedding_dimension` (a declaration is authoritative — probing is unreliable on some self-hosted services). That refusal is a `RagConfigurationError`, a `ValueError` subclass, never an `EmbedderError`: the latter is the worker's *soft* per-batch failure and would bury a configuration mistake as "some chunks failed". The dedicated type is also what the gateway maps to a readable 400 (`add_exception_handler` in `app/gateway/app.py`) so a configuration mistake reaches the caller instead of becoming a bare 500 — deliberately that one type only, never `ValueError` at large (spec 2026-09-16 §3 D4). The rerank and parse legs still raise plain `ValueError`s: their refusals are outside the embedder build path and outside that spec's scope. Rows per embedding call are capped **per model**, not by one constant: `DASHSCOPE_SAFE_BATCH_SIZE` (10, the lowest cap measured on the platform) is the default and `DASHSCOPE_BATCH_SIZES` raises it only for models where a probe proved more fits (`qwen3.7-text-embedding`: 20) — so an unknown or newly released model is merely a little slower, never a rejected batch (2026-09-17: 20 rows against `text-embedding-v3`/`v4` answers 400 `batch size is invalid, it should not be larger than 10`, which used to fail every batch of a document with more than ten chunks). The generic `openai-compatible` client has no per-model table to consult, so it splits at one fixed `DEFAULT_BATCH_LIMIT` — also 10, the same known-lowest cap (2026-09-25 real-stack acceptance: 20 rows against DashScope's compatible-mode endpoint answers that very 400, and a 297-row rebuild page used to be rejected in one go and written nowhere while the run still reported `succeeded`). The cap only decides how many requests an ingest makes; queries are single rows, so retrieval latency is untouched.
+**Embedding provider dimension** (spec 2026-09-14 §4.2): `rag.embedding_provider` picks the dense source — `dashscope` (dual-output), `volcengine-ark` (dual-output, via `/api/v3/embeddings/multimodal`) or `openai-compatible` (dense-only `/v1/embeddings`) — and `rag.embedding_sparse_source` picks who supplies the sparse half: the provider itself (`provider`, valid only when that provider's allowlist row declares `emits_sparse` — pairing a dense-only provider with it is refused at build time), a separate service (`external` + `rag.sparse_base_url`, shape pinned to Text Embeddings Inference's `/embed_sparse`), or local BM25 (`bm25`: deterministic hashed character-bigram term frequencies under BM25's saturation curve, with **no idf** — chunks are indexed one at a time, so there is no corpus to compute one from). A CJK-aware tokenizer is built in rather than an optional jieba on purpose: the index space must not depend on which environment indexed the document. All three routes emit Qdrant `SparseVector`s, so the collection schema and the retrieval code are untouched; when the halves come from different places, `ComposedEmbedder` (甲) pairs them and still returns one `EmbeddingResult` per text. `build_embedder()` is the only construction point — pinned by `tests/knowledge/test_provider_construction_sites.py`, which now covers the embedding, rerank and parse legs. It takes an optional `rag=` override so the settings PUT can validate a configuration it has not written yet. The collections are named after the width in force (`effective_dimension()`: the declared `rag.embedding_dimension`, else 1024), so the gate is "the model must return the width in force" rather than "the width must be 1024"; the declared value is also sent on the request, and an undeclared width is measured once per process from the first real embedding, except where the provider pins it in its own request (DashScope, Ark). That refusal is a `RagConfigurationError`, a `ValueError` subclass, never an `EmbedderError`: the latter is the worker's *soft* per-batch failure and would bury a configuration mistake as "some chunks failed". The dedicated type is also what the gateway maps to a readable 400 (`add_exception_handler` in `app/gateway/app.py`) so a configuration mistake reaches the caller instead of becoming a bare 500 — deliberately that one type only, never `ValueError` at large (spec 2026-09-16 §3 D4). The rerank and parse legs still raise plain `ValueError`s: their refusals are outside the embedder build path and outside that spec's scope. Rows per embedding call are capped **per model**, not by one constant: `DASHSCOPE_SAFE_BATCH_SIZE` (10, the lowest cap measured on the platform) is the default and `DASHSCOPE_BATCH_SIZES` raises it only for models where a probe proved more fits (`qwen3.7-text-embedding`: 20) — so an unknown or newly released model is merely a little slower, never a rejected batch (2026-09-17: 20 rows against `text-embedding-v3`/`v4` answers 400 `batch size is invalid, it should not be larger than 10`, which used to fail every batch of a document with more than ten chunks). The generic `openai-compatible` client has no per-model table to consult, so it walks a `BATCH_LADDER` instead (20 → 10 → 5 → 2 → 1, spec 2026-09-26 D3 甲′): the top rung is the highest cap with evidence (`qwen3.7-text-embedding`: 20 rows), a batch-size 400 steps down exactly one rung and re-sends the same batch, and where it landed is remembered per `(base_url, model)` for the process — an endpoint that refuses 20 pays one wasted request per process, while one whose cap is below 10 no longer fails every batch forever. `DEFAULT_BATCH_LIMIT` (10) survives as the sparse leg's cap only. The cap only decides how many requests an ingest makes; queries are single rows, so retrieval latency is untouched.
 
 **Two vendors now return both halves** (spec 2026-09-17). DashScope's endpoint takes a batch; Ark's (`doubao-embedding-vision-*`) takes **one content item per call**, and `knowledge/embedder_ark.py` follows that shape rather than smoothing it over: `batch_size` is 1 (so N texts cost N requests — measured 2026-09-17 at ~1.3x the wall clock of DashScope's 20-rows-per-call, because the per-item compute dominates and that endpoint's round trip is ~0.19 s), `dimensions` goes out on **every** request (the model is born at 2048 while the collections are 1024, and the width is injected by `_build_dense` — `ArkEmbedder.__init__` deliberately has no default for it, so "the factory injected it" and "the adapter guessed" cannot be told apart by the request alone), `text_type` is accepted for interface parity but **never transmitted** (that shape has no query/document knob), and the sparse half is read from `data.sparse_embedding[]`. Only the multimodal endpoint exposes that half — the OpenAI-shaped, batchable `/api/v3/embeddings` has no such parameter. Its row is `pins_dimension=True`, so the runtime width probe is skipped: the request certifies the width itself, and only Qdrant's rejection of a wrong one remains behind it.
 

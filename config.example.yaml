@@ -2595,7 +2595,8 @@ rag:
   # are listed here for discoverability, uncomment to override.
   # embedding_provider: dashscope        # dashscope | volcengine-ark | openai-compatible (dense only)
   # embedding_base_url:                  # endpoint; required (no provider fallback)
-  # embedding_dimension:                 # dense dimension override; empty probes at enable time
+  # embedding_dimension:                 # library width; empty = 1024. Changing it rebuilds every collection
+  #                                        # into a new generation before the switch (settings: 功能模型 → 高级设置 → 维度)
   # embedding_sparse_source: provider    # provider | external | bm25
   # sparse_provider: tei-sparse         # only when embedding_sparse_source=external
   #                                     # tei-sparse = Text Embeddings Inference /embed_sparse

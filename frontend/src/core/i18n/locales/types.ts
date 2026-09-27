@@ -1742,6 +1742,7 @@ export interface Translations {
       dimensionUnprobed: string;
       dimensionNativeHint: (width: number) => string;
       dimensionNoTiers: string;
+      dimensionFixedHint: (width: number) => string;
       dimensionTierHint: string;
       legDotUntested: string;
       legDotProbing: string;

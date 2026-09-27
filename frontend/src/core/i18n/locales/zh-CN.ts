@@ -1721,23 +1721,24 @@ export const zhCN: Translations = {
       sparseServiceEmpty: "没返回词项",
       dimensionLabel: "维度",
       dimensionHint:
-        "这一格决定向量库的宽度（留空=1024）。改它会触发全库重建，且改前改后要用同一个模型。",
+        "该项决定向量库的宽度（留空为 1024）。修改后将触发全库重建，且修改前后需使用同一模型。",
       dimensionProbeHint:
-        "改动提供商 / Model / 地址会自动探测该模型吃哪些维度——真实调用、只读、不保存。",
+        "更改提供商 / Model / 地址后，会自动检测该模型支持的维度，无需手动发起。",
       dimensionProbing: "探测中…",
       dimensionUnprobed: "未探明",
-      dimensionNativeHint: (width) => `该模型原生 ${width} 维：可填任意 ≤ 它的值。`,
-      dimensionNoTiers: "未探到共识档，请手填——保存时会带它实发验证。",
-      dimensionTierHint: "已探到这些档：",
-      legDotUntested: "连通未测",
+      dimensionNativeHint: (width) => `该模型原生宽度为 ${width} 维，可填写不大于它的任意值。`,
+      dimensionNoTiers: "未检测到常用档位，可手动填写；保存时将实发验证。",
+      dimensionFixedHint: (width) => `该模型不接受维度参数，固定为 ${width} 维。`,
+      dimensionTierHint: "已检测到的档位：",
+      legDotUntested: "尚未检测。点击标题可发起一次连通检测。",
       legDotProbing: "检测中…",
       legDotOk: "连通正常",
-      legDotUnreachable: "连不上",
-      legDotDimension: "要不到该维度",
-      legDotNeedsConfig: "先填好提供商 / Model / 地址 / 钥匙",
-      dimensionConfirmTitle: "改维度会触发全库重建？",
+      legDotUnreachable: "无法连通",
+      legDotDimension: "无法提供所选维度",
+      legDotNeedsConfig: "请先填写提供商 / Model / 地址 / 钥匙",
+      dimensionConfirmTitle: "修改维度将触发全库重建？",
       dimensionConfirmDescription:
-        "新宽度会先建一套新集合，把每个知识库的切片 / 实体 / 百科 / 卡片重新嵌入；期间旧向量照常可用。全部完成后才切换，失败则一切保持原样。",
+        "新宽度通过重建生效：每个知识库的向量都会重新生成，期间检索仍使用旧向量。全部完成后才切换；中途失败则保持不变。",
       dimensionConfirmAction: "开始迁移",
       migrationRunning: "维度迁移中",
       migrationSucceeded: "维度迁移已完成，新宽度已生效。",
@@ -1765,7 +1766,7 @@ export const zhCN: Translations = {
       vlmNoVisionModel:
         "还没有配置支持视觉的模型——先到「对话模型」里加一个带视觉能力的模型。",
       extractModelHint:
-        "用于从文档构建知识图谱，建议选小、便宜、输出稳定 JSON 的模型。留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手。",
+        "用于从文档构建知识图谱的模型，建议选择参数规模小、成本低、输出稳定 JSON 的模型。留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。",
       extractModelNone: "（使用配置默认）",
       captionModel: "图片描述模型 (VLM)",
       captionModelHint:
@@ -1798,7 +1799,7 @@ export const zhCN: Translations = {
       noChanges: "没有需要保存的改动",
       reindexTitle: "重建索引",
       reindexHint:
-        "换嵌入 provider / 维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一起换到新的向量空间。只读库中现有文本，不重解析源文件、不重跑图谱抽取。",
+        "更换嵌入 provider 或维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一并重新生成。只读取库中现有文本：不重新解析源文件，也不重新执行图谱抽取。",
       reindexKbLabel: "目标知识库",
       reindexKbPlaceholder: "选择知识库",
       reindexNoKb: "还没有知识库可重建。",
