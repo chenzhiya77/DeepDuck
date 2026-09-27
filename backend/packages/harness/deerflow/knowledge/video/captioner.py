@@ -80,7 +80,10 @@ async def caption_shots(
     cfg = get_app_config()
     api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
     if model is None:
-        model = cfg.rag.video.caption_model or cfg.rag.vlm_model
+        # No layer of its own since R18: the video leg follows the same chain as the image
+        # leg (`rag.vlm_model` → the RAG default → the first model), so the retired
+        # `rag.video.caption_model` is not consulted even while the field still exists.
+        model = cfg.rag.vlm_model
     target = resolve_vlm_target(cfg, model)
     api_key = target.api_key
 

@@ -30,9 +30,10 @@ export function pathStatusLines(
   }
   const indexingGraph =
     doc.status === "indexing" && status.graph === "indexing";
-  // Video prep legs (spec 2026-09-08 §5): asr/segment/caption sit upstream of
-  // the retrieval legs, so they lead the breakdown. Only include a leg the
-  // payload actually carries — text documents write vector/graph/wiki alone.
+  // Prep legs (spec 2026-09-08 §5; the text caption leg joined 2026-09-23 D8): asr/segment/
+  // caption sit upstream of the retrieval legs, so they lead the breakdown. Presence is the
+  // whole rule — a leg shows when the payload carries its key (video documents write the
+  // three video legs, a text document with images writes its own caption verdict).
   const videoLegs: PathStatusLine[] = (["asr", "segment", "caption"] as const)
     .filter((leg) => status[leg] !== undefined)
     .map((leg) => ({ path: leg, state: status[leg]! }));

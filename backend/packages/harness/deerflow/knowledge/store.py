@@ -173,13 +173,15 @@ class KnowledgeStore:
         progress_percent: int | None = None,
         chunk_count: int | None = None,
         error: str | None = None,
-        path_status: dict[str, str] | None = None,
+        path_status: dict[str, str | None] | None = None,
     ) -> dict[str, Any] | None:
         """Advance the document status machine; ``None`` leaves a field unchanged.
 
         ``path_status`` merges **partially** (spec 2026-08-11 §5): only the
         keys passed on this call are updated — the other paths' sub-states
         persist untouched. A wholesale overwrite would violate the contract.
+        A ``None`` *value* deletes that key (the merge itself cannot express
+        "remove"), which is distinct from the call-level ``None`` arguments.
         """
         async with self._sf() as session:
             row = await session.get(DocumentRow, doc_id)
@@ -194,7 +196,11 @@ class KnowledgeStore:
                 row.error = error
             if path_status is not None:
                 merged = dict(row.path_status or {})
-                merged.update(path_status)
+                for key, value in path_status.items():
+                    if value is None:
+                        merged.pop(key, None)
+                    else:
+                        merged[key] = value
                 row.path_status = merged
             await session.commit()
             await session.refresh(row)

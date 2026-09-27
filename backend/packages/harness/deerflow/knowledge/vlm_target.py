@@ -60,8 +60,14 @@ def resolve_vlm_target(config: AppConfig, model: str | None = None) -> VlmTarget
     ``model`` may be an entry name (preferred) or a bare provider model id (legacy); the
     video leg passes ``rag.video.caption_model`` here when it overrides the shared model.
     """
-    declared = (model or config.rag.vlm_model or "").strip()
-    entry = config.get_model_config(declared) if declared else None
+    from deerflow.knowledge.model_target import require_rag_model_name
+
+    # The declaration is the caller's argument, else ``rag.vlm_model``; everything below that
+    # (the RAG default, then the first model) is the shared chain, so both caption legs and
+    # the two LLM roles answer the same way. No models at all is a configuration error rather
+    # than an empty ``model`` in the request.
+    declared = require_rag_model_name(config, (model or config.rag.vlm_model or "").strip() or None, role="文档图片配文")
+    entry = config.get_model_config(declared)
 
     if entry is not None:
         dumped = entry.model_dump()

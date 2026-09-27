@@ -73,6 +73,17 @@ _PROGRESS_AFTER_SEGMENT = 35
 _PROGRESS_AFTER_CAPTION = 70
 _PROGRESS_AFTER_MATERIALIZE = 75
 
+#: 计数型 error 子标记的前缀（spec 2026-09-23 D8/R21 ②）：``_append_error_marker`` 的幂等
+#: 判据是子串比较，而计数一变子串就不匹配 ⇒ 这两个标记按前缀刷新，同一阶段只留最新结论。
+_CAPTION_MARKER_PREFIX = "image caption degraded:"
+_GRAPH_MARKER_PREFIX = "graph degraded:"
+
+
+def _drop_error_markers(error: str, prefix: str) -> str:
+    """删掉 ``error`` 里以 *prefix* 开头的 ``; `` 分隔子标记，其余原样保留。"""
+    parts = [part.strip() for part in error.split(";")]
+    return "; ".join(part for part in parts if part and not part.startswith(prefix))
+
 
 def _is_video_path(storage_path: str) -> bool:
     """文档是否视频（storage_path 后缀 ∈ 冻结视频集）——worker 分支路由的单一判据。"""
@@ -361,6 +372,14 @@ class KnowledgeIndexWorker:
             # Same verdict source as the ``graph degraded`` error sub-marker.
             legs["graph"] = "degraded" if stats.degraded else "done"
             await self._store.update_document_status(doc_id, "indexing", path_status={"graph": legs["graph"]})
+            if stats.degraded:
+                # The marker moved here with the append path (spec 2026-09-23 D8/R8): the
+                # indexer used to overwrite ``error``, which erased a degraded caption pass.
+                await self._append_error_marker(
+                    doc_id,
+                    f"{_GRAPH_MARKER_PREFIX} {len(stats.failed_chunk_ids)}/{stats.total} chunks failed extraction",
+                    replace_prefix=_GRAPH_MARKER_PREFIX,
+                )
             # D3: merge cross-slice entity aliases right after the graph leg.
             # A failing resolution never blocks the pipeline — the document
             # still reaches ``ready`` with a visible error sub-marker.
@@ -401,16 +420,41 @@ class KnowledgeIndexWorker:
             await self._store.update_document_status(doc_id, "failed", error=str(exc)[:500], path_status=failed_legs or None)
         return await self._store.get_document(doc_id)
 
-    async def _append_error_marker(self, doc_id: str, marker: str) -> None:
+    async def _append_error_marker(self, doc_id: str, marker: str, *, replace_prefix: str | None = None) -> None:
         """Append a visible sub-marker to the document error field without
         clobbering an existing one (e.g. "graph degraded") — degraded stages
-        stack their markers, never silently (spec 2026-08-10 D3 降级)."""
+        stack their markers, never silently (spec 2026-08-10 D3 降级).
+
+        ``replace_prefix`` refreshes a *counted* marker of the same stage in place
+        instead of stacking a second claim about it (spec 2026-09-23 D8/R21 ②).
+        """
         document = await self._store.get_document(doc_id)
-        if document is None or marker in (document.get("error") or ""):
+        if document is None:
             return
         existing = document.get("error") or ""
-        error = f"{existing}; {marker}" if existing else marker
-        await self._store.update_document_status(doc_id, document["status"], error=error)
+        if replace_prefix is not None:
+            existing = _drop_error_markers(existing, replace_prefix)
+        parts = [part.strip() for part in existing.split(";")]
+        parts = [part for part in parts if part]
+        if marker in parts:
+            return
+        parts.append(marker)
+        await self._store.update_document_status(doc_id, document["status"], error="; ".join(parts))
+
+    async def _clear_error_markers(self, doc_id: str, prefix: str) -> None:
+        """Delete this document's markers sharing *prefix* (the counted ones).
+
+        ``documents.error`` has no delete channel, so the remainder is written back
+        explicitly — and only when something was actually dropped, so documents that
+        never carried the marker keep their column untouched.
+        """
+        document = await self._store.get_document(doc_id)
+        if document is None:
+            return
+        existing = document.get("error") or ""
+        remaining = _drop_error_markers(existing, prefix)
+        if remaining != existing:
+            await self._store.update_document_status(doc_id, document["status"], error=remaining)
 
     async def _wipe_doc_chunks(self, doc_id: str, kb_id: str) -> None:
         """Drop a document's chunks + their vector/graph residue (idempotent).
@@ -434,14 +478,28 @@ class KnowledgeIndexWorker:
         """Parse → caption → chunk, wiping any partial output first (idempotent)."""
         await self._wipe_doc_chunks(doc_id, kb_id)
 
-        await self._store.update_document_status(doc_id, "parsing", path_status={"vector": "pending", "graph": "pending"})
+        # A new pass re-decides the caption leg, so the previous verdict and its counted
+        # marker go before the parse: the wipe above drops chunks and their residue but not
+        # ``documents.error``, and the status write below merges per key — neither residue
+        # clears itself (spec 2026-09-23 D8/R21 ①).
+        await self._clear_error_markers(doc_id, _CAPTION_MARKER_PREFIX)
+        await self._store.update_document_status(doc_id, "parsing", path_status={"vector": "pending", "graph": "pending", "caption": None})
         parsed = await self._parse_fn(storage_path)
         if not parsed.markdown.strip():
             raise EmptyParseResultError("解析结果为空：解析服务（MinerU）未从文档中提取到任何文本（常见于纯标题页、扫描页或内容过短），请重试或改传 .md/.txt 文本版本")
         markdown = parsed.markdown
         if parsed.images:
-            captions = await caption_images(parsed.images)
-            markdown = apply_captions(markdown, captions)
+            # The outcome carries its own verdict (spec 2026-09-23 D8/R13): the pass count and
+            # the degradation flag are decided in the captioner, so this leg only reads them.
+            outcome = await caption_images(parsed.images)
+            markdown = apply_captions(markdown, outcome.captions)
+            await self._store.update_document_status(doc_id, "parsing", path_status={"caption": "degraded" if outcome.degraded else "done"})
+            if outcome.degraded:
+                await self._append_error_marker(
+                    doc_id,
+                    f"{_CAPTION_MARKER_PREFIX} {outcome.failed}/{len(parsed.images)} images failed",
+                    replace_prefix=_CAPTION_MARKER_PREFIX,
+                )
 
         await self._require_alive(doc_id)  # checkpoint: after the long external parse, before any write
         if parsed.images:

@@ -145,13 +145,13 @@ async def test_image_caption_posts_to_the_selected_entry(monkeypatch):
     monkeypatch.setattr(captioner_module, "get_app_config", lambda: _config([VL_ENTRY]))
     recorded: list[httpx.Request] = []
 
-    captions = await caption_images(
+    outcome = await caption_images(
         [ParsedImage(ref="images/p1.jpg", content=b"jpeg", media_type="image/jpeg")],
         client=httpx.AsyncClient(transport=_recording_transport(recorded)),
         model="vl-entry",
     )
 
-    assert captions == {"images/p1.jpg": "一张架构图"}
+    assert outcome.captions == {"images/p1.jpg": "一张架构图"}
     request = recorded[0]
     assert str(request.url) == "https://dashscope.example/compatible-mode/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer sk-entry"
@@ -171,6 +171,63 @@ async def test_shot_caption_posts_to_the_selected_entry(monkeypatch):
     request = recorded[0]
     assert str(request.url) == "https://dashscope.example/compatible-mode/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer sk-entry"
+
+
+# ── both caption legs read one target (spec 2026-09-23 D3/D7, R18) ─────────
+#
+# `video.caption_model` is retired: the video leg keeps no layer of its own, so both legs
+# resolve the same way. The fixture deliberately points the retired field at a *different*
+# entry — naming the same model in both fields would make the two layers indistinguishable,
+# and the assertion would hold even with the old precedence restored.
+
+VIDEO_ENTRY = {
+    "name": "video-entry",
+    "use": "langchain_openai:ChatOpenAI",
+    "model": "wire-video",
+    "base_url": "https://video.example/v1",
+    "api_key": "sk-video",
+    "supports_vision": True,
+}
+ROLE_ENTRY = {
+    "name": "role-entry",
+    "use": "langchain_openai:ChatOpenAI",
+    "model": "wire-role",
+    "base_url": "https://role.example/v1",
+    "api_key": "sk-role",
+    "supports_vision": True,
+}
+
+
+def _two_leg_config() -> AppConfig:
+    return _config(
+        models=[VIDEO_ENTRY, ROLE_ENTRY],
+        rag={"vlm_model": "role-entry", "video": {"caption_model": "video-entry"}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_both_caption_legs_read_the_same_target(monkeypatch):
+    from deerflow.knowledge import captioner as captioner_module
+    from deerflow.knowledge.captioner import caption_images
+    from deerflow.knowledge.parser import ParsedImage
+    from deerflow.knowledge.video import captioner as video_captioner_module
+    from deerflow.knowledge.video.captioner import caption_shots
+
+    image_requests: list[httpx.Request] = []
+    video_requests: list[httpx.Request] = []
+    monkeypatch.setattr(captioner_module, "get_app_config", _two_leg_config)
+    monkeypatch.setattr(video_captioner_module, "get_app_config", _two_leg_config)
+
+    await caption_images(
+        [ParsedImage(ref="images/p1.jpg", content=b"jpeg", media_type="image/jpeg")],
+        client=httpx.AsyncClient(transport=_recording_transport(image_requests)),
+    )
+    await caption_shots({0: [b"frame"]}, client=httpx.AsyncClient(transport=_recording_transport(video_requests)))
+
+    # Same entry ⇒ same endpoint and same key: the video field above is not consulted.
+    assert str(image_requests[0].url) == "https://role.example/v1/chat/completions"
+    assert str(video_requests[0].url) == str(image_requests[0].url)
+    assert video_requests[0].headers["Authorization"] == image_requests[0].headers["Authorization"] == "Bearer sk-role"
 
 
 # ── dialect dispatch (spec 2026-09-18) ────────────────────────────────────
@@ -204,13 +261,13 @@ async def test_anthropic_image_caption_speaks_the_messages_protocol(monkeypatch)
     monkeypatch.setattr(captioner_module, "get_app_config", lambda: _config([ANTHROPIC_ENTRY]))
     recorded: list[httpx.Request] = []
 
-    captions = await caption_images(
+    outcome = await caption_images(
         [ParsedImage(ref="images/p1.jpg", content=b"jpeg", media_type="image/jpeg")],
         client=httpx.AsyncClient(transport=_anthropic_transport(recorded)),
         model="claude-entry",
     )
 
-    assert captions == {"images/p1.jpg": "一张架构图"}
+    assert outcome.captions == {"images/p1.jpg": "一张架构图"}
     request = recorded[0]
     assert str(request.url) == "https://anthropic.example/v1/messages"
     assert request.headers["X-Api-Key"] == "sk-anthropic"
@@ -298,7 +355,7 @@ async def test_anthropic_reply_keeps_the_text_blocks_and_ignores_the_rest(monkey
     monkeypatch.setattr(captioner_module, "get_app_config", lambda: _config([ANTHROPIC_ENTRY]))
     recorded: list[httpx.Request] = []
 
-    captions = await caption_images(
+    outcome = await caption_images(
         [ParsedImage(ref="images/p1.jpg", content=b"jpeg", media_type="image/jpeg")],
         client=httpx.AsyncClient(
             transport=_anthropic_transport(
@@ -309,7 +366,7 @@ async def test_anthropic_reply_keeps_the_text_blocks_and_ignores_the_rest(monkey
         model="claude-entry",
     )
 
-    assert captions == {"images/p1.jpg": "X"}
+    assert outcome.captions == {"images/p1.jpg": "X"}
 
 
 @pytest.mark.asyncio
@@ -321,13 +378,84 @@ async def test_unrecognized_entry_still_posts_the_openai_shape(monkeypatch):
     monkeypatch.setattr(captioner_module, "get_app_config", lambda: _config([CUSTOM_ENTRY]))
     recorded: list[httpx.Request] = []
 
-    captions = await caption_images(
+    outcome = await caption_images(
         [ParsedImage(ref="images/p1.jpg", content=b"jpeg", media_type="image/jpeg")],
         client=httpx.AsyncClient(transport=_recording_transport(recorded)),
         model="custom-entry",
     )
 
-    assert captions == {"images/p1.jpg": "一张架构图"}
+    assert outcome.captions == {"images/p1.jpg": "一张架构图"}
     request = recorded[0]
     assert str(request.url) == "https://custom.example/v1/chat/completions"
     assert request.headers["Authorization"] == "Bearer sk-custom"
+
+
+# ── the RAG default joins the chain (spec 2026-09-23 D3/D7) ───────────────
+#
+# Four distinct targets, so a case can tell which level answered. The caption legs and the
+# extraction/judge roles now share one resolver shape: explicit argument → the role field
+# → the RAG default → the first configured model.
+
+
+def _chain() -> list[dict]:
+    return [
+        {**VL_ENTRY, "name": "first-model", "model": "wire-first"},
+        {**VL_ENTRY, "name": "default-model", "model": "wire-default"},
+        {**VL_ENTRY, "name": "role-model", "model": "wire-role"},
+        {**VL_ENTRY, "name": "explicit-model", "model": "wire-explicit"},
+    ]
+
+
+def test_explicit_argument_still_wins():
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    target = resolve_vlm_target(_config(models=_chain(), rag={"vlm_model": "role-model", "default_model": "default-model"}), "explicit-model")
+
+    assert target.model == "wire-explicit"
+
+
+def test_vlm_model_beats_the_rag_default():
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    target = resolve_vlm_target(_config(models=_chain(), rag={"vlm_model": "role-model", "default_model": "default-model"}))
+
+    assert target.model == "wire-role"
+
+
+def test_rag_default_answers_when_the_role_is_empty():
+    # `rag.vlm_model` carries a code-level literal default until Task 9 retires it, so the
+    # lower levels of the chain are only reachable from an isolated configuration.
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    target = resolve_vlm_target(_config(models=_chain(), rag={"vlm_model": "", "default_model": "default-model"}))
+
+    assert target.model == "wire-default"
+
+
+def test_first_model_answers_when_nothing_declares_a_target():
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    target = resolve_vlm_target(_config(models=_chain(), rag={"vlm_model": ""}))
+
+    assert target.model == "wire-first"
+
+
+def test_a_stale_default_falls_back_to_the_first_model_and_is_named(caplog):
+    import logging
+
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    with caplog.at_level(logging.WARNING, logger="deerflow.knowledge.model_target"):
+        target = resolve_vlm_target(_config(models=_chain(), rag={"vlm_model": "", "default_model": "gone-model"}))
+
+    assert target.model == "wire-first"
+    assert "gone-model" in caplog.text
+
+
+def test_no_models_at_all_refuses_instead_of_sending_an_empty_model():
+    """A caption call with an empty ``model`` is a request the endpoint would refuse anyway."""
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    with pytest.raises(RagConfigurationError):
+        resolve_vlm_target(_config(models=[], rag={"vlm_model": ""}))

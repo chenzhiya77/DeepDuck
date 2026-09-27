@@ -212,9 +212,9 @@ async def test_caption_images_calls_vlm_with_base64(monkeypatch):
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_vlm_transport(recorded))
 
-    captions = await caption_images([_SAMPLE_IMAGE], client=client, model="Qwen/Qwen3-VL-30B-A3B-Instruct")
+    outcome = await caption_images([_SAMPLE_IMAGE], client=client, model="Qwen/Qwen3-VL-30B-A3B-Instruct")
 
-    assert captions == {"images/p1.jpg": "系统架构示意图"}
+    assert outcome.captions == {"images/p1.jpg": "系统架构示意图"}
     request = recorded[0]
     assert request.headers["Authorization"] == "Bearer test-dash-key"
     body = json.loads(request.content)
@@ -238,9 +238,9 @@ async def test_vlm_failure_degrades_to_filename_placeholder(monkeypatch):
     recorded: list[httpx.Request] = []
     client = httpx.AsyncClient(transport=_vlm_transport(recorded, status=500))
 
-    captions = await caption_images([_SAMPLE_IMAGE], client=client, model="m")
+    outcome = await caption_images([_SAMPLE_IMAGE], client=client, model="m")
 
-    assert captions == {"images/p1.jpg": "图片 p1.jpg"}
+    assert outcome.captions == {"images/p1.jpg": "图片 p1.jpg"}
 
 
 @pytest.mark.asyncio
@@ -248,9 +248,9 @@ async def test_missing_vlm_key_degrades_all_images(monkeypatch):
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
     recorded: list[httpx.Request] = []
 
-    captions = await caption_images([_SAMPLE_IMAGE], client=httpx.AsyncClient(transport=_vlm_transport(recorded)), model="m")
+    outcome = await caption_images([_SAMPLE_IMAGE], client=httpx.AsyncClient(transport=_vlm_transport(recorded)), model="m")
 
-    assert captions == {"images/p1.jpg": "图片 p1.jpg"}
+    assert outcome.captions == {"images/p1.jpg": "图片 p1.jpg"}
     assert recorded == []  # no outbound call without a key
 
 
@@ -325,12 +325,12 @@ async def test_concurrent_captions_maintain_original_order(monkeypatch):
         ParsedImage(ref="images/p2.png", content=b"png-bytes", media_type="image/png"),
     ]
 
-    captions = await caption_images(images, client=client, model="qwen3.7-flash")
+    outcome = await caption_images(images, client=client, model="qwen3.7-flash")
 
     # Verify order preservation: dict keys match input list order
-    assert list(captions.keys()) == ["images/p1.jpg", "images/p2.png"]
-    assert "p1.jpg" in captions["images/p1.jpg"]
-    assert "p2.png" in captions["images/p2.png"]
+    assert list(outcome.captions.keys()) == ["images/p1.jpg", "images/p2.png"]
+    assert "p1.jpg" in outcome.captions["images/p1.jpg"]
+    assert "p2.png" in outcome.captions["images/p2.png"]
 
 
 @pytest.mark.asyncio
@@ -1270,3 +1270,123 @@ async def test_parse_excel_real_xlsx_end_to_end(tmp_path, monkeypatch):
     assert "| Region | Q1 |" in doc.markdown
     assert "| North | 120 |" in doc.markdown
     assert "## Empty" not in doc.markdown
+
+
+# ── caption_images()'s outcome (spec 2026-09-23 D8/R13) ────────────────────
+#
+# The return shape is a dataclass, not a bare mapping: the worker needs the failure count
+# and the degradation verdict, and it must not compute the ratio a second time. The failure
+# ratio is controlled through the image bytes, so a case is deterministic under the
+# concurrent gather.
+
+
+def _images(flags: str) -> list[ParsedImage]:
+    """One image per character; ``F`` carries the marker the stub fails on."""
+    return [ParsedImage(ref=f"images/p{i}.jpg", content=b"FAIL" if flag == "F" else b"OK", media_type="image/jpeg") for i, flag in enumerate(flags)]
+
+
+def _marker_transport(recorded: list[httpx.Request]) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if b"RkFJTA==" in request.content:  # base64 of b"FAIL": the body carries the encoded bytes
+            return httpx.Response(500, text="vlm boom")
+        return httpx.Response(200, json={"choices": [{"message": {"content": "图注"}}]})
+
+    return httpx.MockTransport(handler)
+
+
+async def _caption(monkeypatch, flags: str, *, key: str = "test-dash-key"):
+    from deerflow.knowledge.captioner import caption_images
+
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", lambda: _vlm_config())
+    if key:
+        monkeypatch.setenv("DASHSCOPE_API_KEY", key)
+    else:
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        monkeypatch.delenv("SILICONFLOW_VLM_API_KEY", raising=False)
+    recorded: list[httpx.Request] = []
+    client = httpx.AsyncClient(transport=_marker_transport(recorded))
+    outcome = await caption_images(_images(flags), client=client, model="qwen3.7-flash")
+    await client.aclose()
+    return outcome, recorded
+
+
+def _vlm_config():
+    from deerflow.config.app_config import AppConfig
+
+    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [], "rag": {}})
+
+
+@pytest.mark.asyncio
+async def test_captions_are_a_dataclass_with_the_counts_the_worker_needs(monkeypatch):
+    import dataclasses
+
+    outcome, recorded = await _caption(monkeypatch, "OOO")
+
+    assert dataclasses.is_dataclass(outcome)
+    assert outcome.captions == {"images/p0.jpg": "图注", "images/p1.jpg": "图注", "images/p2.jpg": "图注"}
+    assert outcome.failed == 0
+    assert outcome.degraded is False
+    assert len(recorded) == 3
+
+
+@pytest.mark.asyncio
+async def test_one_failure_in_three_is_degraded(monkeypatch):
+    outcome, _ = await _caption(monkeypatch, "FOO")
+
+    assert outcome.failed == 1
+    assert outcome.degraded is True
+    # The failed image keeps a usable placeholder rather than an empty alt text.
+    assert outcome.captions["images/p0.jpg"] == "图片 p0.jpg"
+
+
+@pytest.mark.asyncio
+async def test_one_failure_in_four_is_not_degraded(monkeypatch):
+    outcome, _ = await _caption(monkeypatch, "FOOO")
+
+    assert outcome.failed == 1
+    assert outcome.degraded is False
+
+
+@pytest.mark.asyncio
+async def test_exactly_thirty_percent_is_not_degraded(monkeypatch):
+    """Degradation is strictly *over* the threshold, matching the graph leg's rule."""
+    outcome, _ = await _caption(monkeypatch, "FFF" + "O" * 7)
+
+    assert outcome.failed == 3
+    assert outcome.degraded is False
+
+
+@pytest.mark.asyncio
+async def test_a_missing_key_degrades_every_image_without_a_call(monkeypatch):
+    outcome, recorded = await _caption(monkeypatch, "OOO", key="")
+
+    assert outcome.captions == {f"images/p{i}.jpg": f"图片 p{i}.jpg" for i in range(3)}
+    assert outcome.failed == 3
+    assert outcome.degraded is True
+    assert recorded == [], "a missing key must not reach the network"
+
+
+@pytest.mark.asyncio
+async def test_no_images_is_an_empty_outcome(monkeypatch):
+    outcome, recorded = await _caption(monkeypatch, "")
+
+    assert outcome.captions == {}
+    assert outcome.failed == 0
+    assert outcome.degraded is False
+    assert recorded == []
+
+
+def test_the_captioner_reuses_the_graph_legs_threshold_constant():
+    """One constant, and not a third copy: the ratio lives in ``graph/indexer.py``.
+
+    The pin covers the new leg's own module only — a *fourth* copy written elsewhere would
+    have to be caught by the boundary cases above (0.3 within the captioner would pass no
+    count-sensitive verdict test by accident).
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[2] / "packages" / "harness" / "deerflow" / "knowledge" / "captioner.py").read_text(encoding="utf-8")
+
+    assert "DEGRADED_FAILURE_THRESHOLD" in source
+    assert "0.3" not in source

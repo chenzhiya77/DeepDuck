@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from qdrant_client.models import SparseVector
 
+from deerflow.knowledge.captioner import CaptionOutcome
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.parser import ParsedDocument, ParsedImage
@@ -153,7 +154,7 @@ async def test_parsed_images_are_persisted_next_to_document(session_factory, tmp
     storage.write_bytes(b"pdf")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
     images = [ParsedImage(ref="images/p1.jpg", content=b"jpeg-bytes", media_type="image/jpeg")]
-    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value={"images/p1.jpg": "图注"}))
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value=CaptionOutcome(captions={"images/p1.jpg": "图注"})))
 
     async def parse_with_images(path: str) -> ParsedDocument:
         return ParsedDocument(markdown=SAMPLE_MD + "\n\n![图注](images/p1.jpg)\n", images=images)
@@ -180,7 +181,7 @@ async def test_reparse_rebuilds_images_dir(session_factory, tmp_path, monkeypatc
     storage.write_bytes(b"pdf")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
     images = [ParsedImage(ref="images/p1.jpg", content=b"fresh", media_type="image/jpeg")]
-    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value={"images/p1.jpg": "图注"}))
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value=CaptionOutcome(captions={"images/p1.jpg": "图注"})))
 
     async def parse_with_images(path: str) -> ParsedDocument:
         return ParsedDocument(markdown=SAMPLE_MD, images=images)
@@ -203,7 +204,7 @@ async def test_image_persist_failure_does_not_fail_document(session_factory, tmp
     storage.write_bytes(b"pdf")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
     images = [ParsedImage(ref="images/p1.jpg", content=b"jpeg-bytes", media_type="image/jpeg")]
-    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value={"images/p1.jpg": "图注"}))
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(return_value=CaptionOutcome(captions={"images/p1.jpg": "图注"})))
 
     async def boom(fn, *args, **kwargs):
         raise OSError("disk full")
@@ -640,3 +641,212 @@ async def test_pipeline_aborts_quietly_when_document_deleted_mid_parse(session_f
     assert await store.list_chunks("doc-1", limit=10) == []  # no zombie chunks
     graph = await GraphStore(session_factory).load_networkx("kb-1")
     assert len(graph.nodes) == 0  # no phantom entities
+
+
+# ── caption lifecycle & the marker's producer (spec 2026-09-23 D8/R8/R21) ──
+#
+# The pipeline order is caption → vector → graph, and both degraded legs write a marker into
+# the same ``error`` column. The graph marker used to be written *by the indexer* with a plain
+# overwrite, so a degraded caption verdict was erased by a degraded graph pass; the worker now
+# owns both markers (it already had ``stats.degraded``) and appends them joined by ``; ``.
+# A re-parse clears the previous caption verdict and marker before the new pass runs — the
+# caption leg is the only leg whose state survives a re-parse otherwise (the chunk wipe does
+# not touch ``documents.error``, and the status writes merge per key).
+
+#: ``TWO_CHUNK_MD`` with an extraction-failure needle in the second section — the proven
+#: two-chunk fixture, so the graph leg fails exactly one chunk (50% > 30% ⇒ degraded).
+_FAILING_PAIR_MD = TWO_CHUNK_MD.replace("## 1.1 DeerFlow 架构", "## 1.1 坏切片的环境").replace("DeerFlow 的索引流水线由 Parser 与 Chunker 组成", "坏切片的索引流水线由 Parser 与 Chunker 组成")
+
+CAPTION_MARKER = "image caption degraded: 1/1 images failed"
+GRAPH_MARKER = "graph degraded: 1/2 chunks failed extraction"
+CAPTION_PREFIX = "image caption degraded:"
+
+
+def _degraded_caption(images, **kwargs) -> CaptionOutcome:
+    """The captioner's own verdict is unit-tested in test_parser.py; the worker only reads it.
+
+    The text differs from the markdown's own alt ("图注"), so the chunk text proves *these*
+    captions travelled through ``apply_captions()`` and not the original alt.
+    """
+    return CaptionOutcome(captions={image.ref: "VLM 图注" for image in images}, failed=1, degraded=True)
+
+
+def _image_workspace(tmp_path):
+    """A real doc dir with a source file plus one parsed image (persisting needs a dir)."""
+    doc_dir = tmp_path / "knowledge" / "kb-1" / "doc-1"
+    doc_dir.mkdir(parents=True)
+    storage = doc_dir / "a.pdf"
+    storage.write_bytes(b"pdf")
+    images = [ParsedImage(ref="images/p1.jpg", content=b"jpeg-bytes", media_type="image/jpeg")]
+    return storage, images
+
+
+async def _create_doc(store) -> None:
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=3, storage_path="/tmp/a.md")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_appends_caption_then_graph_markers_in_that_order(session_factory, tmp_path, monkeypatch):
+    """Both degraded legs keep their own marker, caption first (D8), and both sub-states survive."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    storage, images = _image_workspace(tmp_path)
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(side_effect=_degraded_caption))
+
+    async def parse(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=_FAILING_PAIR_MD + "\n\n![图注](images/p1.jpg)\n", images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse, llm=_PartialFailLLM())
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert doc["error"] == f"{CAPTION_MARKER}; {GRAPH_MARKER}"
+    assert doc["path_status"]["caption"] == "degraded"
+    assert doc["path_status"]["graph"] == "degraded"
+    assert doc["path_status"]["vector"] == "done"
+    # The captions reached the chunk markdown (spec 2026-09-23 D8: the leg reads
+    # ``outcome.captions`` — the original alt was "图注", the fake caption is "VLM 图注").
+    chunks = await store.list_chunks("doc-1", limit=10)
+    assert any("VLM 图注" in chunk["text"] for chunk in chunks), "captions must be applied to the chunk markdown"
+
+
+@pytest.mark.asyncio
+async def test_reparse_clears_the_previous_caption_verdict_and_marker(session_factory):
+    """R21 ①: the chunk wipe does not touch ``error``, and the status merge keeps the old
+    ``caption`` key — both residues must be deleted when a new pass starts."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.insert_chunks([{"chunk_id": "doc-1#0000", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 0, "text": "旧切片", "heading_path": [], "page": None, "token_count": 5}])
+    await store.update_document_status("doc-1", "parsing", path_status={"caption": "degraded", "vector": "done", "graph": "done"}, error=CAPTION_MARKER)
+
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    # The new pass has no images, so nothing may remain claiming a caption verdict.
+    assert "caption" not in doc["path_status"]
+    assert doc["path_status"] == {"vector": "done", "graph": "done"}
+    assert not (doc["error"] or "").strip()
+
+
+@pytest.mark.asyncio
+async def test_reparse_clears_the_stale_caption_verdict_even_when_the_new_pass_fails(session_factory):
+    """The clearing happens before the parse — a hard-failed re-parse must not leave the old
+    caption key behind (its leg never ran, so the failure branch never overwrites it)."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.update_document_status("doc-1", "parsing", path_status={"caption": "degraded", "vector": "done", "graph": "done"}, error=CAPTION_MARKER)
+
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(md="  \n"), llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "failed"
+    assert "caption" not in doc["path_status"]
+    assert doc["path_status"] == {"vector": "failed", "graph": "failed"}
+
+
+@pytest.mark.asyncio
+async def test_reparse_refreshes_a_counted_marker_instead_of_stacking(session_factory, tmp_path, monkeypatch):
+    """The old count must not survive anywhere: a stacked second claim would read as two
+    independent degradations (R21 ②)."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    storage, images = _image_workspace(tmp_path)
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    await store.update_document_status("doc-1", "parsing", path_status={"caption": "degraded"}, error="image caption degraded: 1/2 images failed")
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(side_effect=_degraded_caption))
+
+    async def parse(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=SAMPLE_MD, images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["error"] == CAPTION_MARKER  # the new 1/1, not the old 1/2 and not both
+    assert doc["path_status"]["caption"] == "degraded"
+
+
+@pytest.mark.asyncio
+async def test_a_counted_marker_is_refreshed_in_place_not_stacked(session_factory):
+    """R21 ②: the idempotence check compares substrings while the marker carries a count, so
+    the choice is explicit — a marker sharing the prefix is replaced, never duplicated."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    worker = _worker(store, session_factory)
+
+    await worker._append_error_marker("doc-1", CAPTION_MARKER, replace_prefix=CAPTION_PREFIX)
+    await worker._append_error_marker("doc-1", CAPTION_MARKER, replace_prefix=CAPTION_PREFIX)
+
+    assert (await store.get_document("doc-1"))["error"] == CAPTION_MARKER  # same count: once
+
+    await worker._append_error_marker("doc-1", "image caption degraded: 2/2 images failed", replace_prefix=CAPTION_PREFIX)
+
+    assert (await store.get_document("doc-1"))["error"] == "image caption degraded: 2/2 images failed"
+
+
+@pytest.mark.asyncio
+async def test_an_indexing_resume_keeps_the_caption_result_and_never_reruns_it(session_factory, monkeypatch):
+    """D8: an ``indexing`` resume re-runs the index legs only — the caption leg has no input
+    to redo and its recorded verdict stays."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.insert_chunks([{"chunk_id": "doc-1#0000", "doc_id": "doc-1", "kb_id": "kb-1", "chunk_index": 0, "text": "DeerFlow 智能体", "heading_path": [], "page": None, "token_count": 5}])
+    await store.update_document_status("doc-1", "indexing", path_status={"caption": "degraded", "vector": "done", "graph": "done"}, error=CAPTION_MARKER)
+    stub = AsyncMock(side_effect=AssertionError("caption_images must not rerun on an indexing resume"))
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", stub)
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}}))
+
+    await worker.process_document("doc-1")
+
+    assert stub.await_count == 0
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "ready"
+    assert doc["path_status"]["caption"] == "degraded"
+    assert doc["error"] == CAPTION_MARKER
+
+
+@pytest.mark.asyncio
+async def test_a_hard_failure_still_overwrites_the_caption_marker(session_factory, tmp_path, monkeypatch):
+    """R21 ③ — existing behaviour, not fixed here: the failure branch writes ``error=str(exc)``
+    wholesale, so the marker only survives a successful/degraded pass. The already-written
+    caption sub-state stays (it reached a terminal verdict)."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    storage, images = _image_workspace(tmp_path)
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.pdf", size_bytes=3, storage_path=str(storage))
+    monkeypatch.setattr("deerflow.knowledge.worker.caption_images", AsyncMock(side_effect=_degraded_caption))
+    store.insert_chunks = AsyncMock(side_effect=RuntimeError("chunk table is locked"))
+
+    async def parse(path: str) -> ParsedDocument:
+        return ParsedDocument(markdown=SAMPLE_MD, images=images)
+
+    worker = _worker(store, session_factory, parse_fn=parse, llm=FakeLLM({}))
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "failed"
+    assert doc["error"] == "chunk table is locked"
+    assert doc["path_status"] == {"caption": "degraded", "vector": "failed", "graph": "failed"}
+
+
+@pytest.mark.asyncio
+async def test_the_store_deletes_a_path_key_only_for_an_explicit_none_value(session_factory):
+    """R21 ④: ``None`` at the *argument* level means "leave unchanged"; a ``None`` *value*
+    inside ``path_status`` is the deletion channel. A fake store cannot show this."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.update_document_status("doc-1", "parsing", path_status={"caption": "degraded", "vector": "done"})
+
+    await store.update_document_status("doc-1", "parsing")  # no path_status argument: unchanged
+
+    assert (await store.get_document("doc-1"))["path_status"] == {"caption": "degraded", "vector": "done"}
+
+    await store.update_document_status("doc-1", "parsing", path_status={"caption": None, "graph": "pending"})
+
+    assert (await store.get_document("doc-1"))["path_status"] == {"vector": "done", "graph": "pending"}

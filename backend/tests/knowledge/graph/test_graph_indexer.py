@@ -186,11 +186,11 @@ async def test_failed_chunk_marked_failed_and_others_continue(graph_env):
     rows = {c["chunk_id"]: c for c in await store.list_chunks(doc_id, limit=10)}
     assert rows[f"{doc_id}-c1"]["extract_status"] == "failed"
     assert "JSON" in rows[f"{doc_id}-c1"]["extract_error"] or "parse" in rows[f"{doc_id}-c1"]["extract_error"].lower()
-    # 2/3 failed > 30% → document flagged "graph degraded", visible to the frontend.
+    # 2/3 failed > 30% → the degraded verdict; the *marker* belongs to the worker since
+    # spec 2026-09-23 D8/R8, so the indexer alone must leave ``documents.error`` untouched.
     assert stats.degraded is True
     doc = await store.get_document(doc_id)
-    assert "graph degraded" in doc["error"]
-    assert "2/3" in doc["error"]
+    assert doc["error"] is None
 
 
 @pytest.mark.asyncio
@@ -241,3 +241,28 @@ async def test_degraded_threshold_boundary_not_flagged_at_exactly_30_percent(ses
     assert stats.degraded is False
     doc = await store.get_document("doc-t")
     assert doc["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_degraded_run_writes_no_error_itself(session_factory):
+    """R8: the marker's producer moved to the worker (spec 2026-09-23 D8) — calling the
+    indexer alone must not overwrite ``documents.error`` the way ``:209`` used to."""
+    from deerflow.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-w", owner_id="user-1", name="写入点库")
+    await store.create_document(doc_id="doc-w", kb_id="kb-w", uploader_id="user-1", name="写入点.md", size_bytes=1, storage_path="/w.md")
+    await store.insert_chunks(
+        [
+            {"chunk_id": "doc-w-c0", "doc_id": "doc-w", "kb_id": "kb-w", "chunk_index": 0, "text": "DeerFlow 是一个基于 LangGraph 的智能体"},
+            {"chunk_id": "doc-w-c1", "doc_id": "doc-w", "kb_id": "kb-w", "chunk_index": 1, "text": "坏切片的索引流水线"},
+        ]
+    )
+    llm = _RoutingLLM([("DeerFlow 是一个基于 LangGraph", _payload([], []))], default="broken json")
+    chunks = await store.list_chunks("doc-w", limit=20)
+
+    stats = await index_document_graph(store, GraphStore(session_factory), None, kb_id="kb-w", doc_id="doc-w", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0)
+
+    assert stats.degraded is True  # 1/2 failed > 30%: the verdict is still the indexer's
+    doc = await store.get_document("doc-w")
+    assert doc["error"] is None  # …but the marker is the worker's to write

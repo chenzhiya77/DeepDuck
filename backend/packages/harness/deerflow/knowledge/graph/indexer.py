@@ -6,8 +6,10 @@ resume), normalized, merged into the graph store, then its normalized entity
 names are written back to the chunk row and the ``kb_chunks`` Qdrant payload
 (the reverse half of the graph↔vector link). Touched entities are re-embedded
 into ``kb_entities`` so ``graph_search`` can match them. A document whose
-failure rate exceeds 30% gets the "graph degraded" flag on its ``error``
-field — visible on the document list, never a silently-incomplete graph.
+failure rate exceeds 30% is reported as ``stats.degraded`` — the *marker* it
+produces is the worker's to write (spec 2026-09-23 D8/R8: appending keeps a
+degraded caption verdict instead of overwriting it), so this stage never
+touches ``documents.error``.
 """
 
 from __future__ import annotations
@@ -201,12 +203,5 @@ async def index_document_graph(
 
     if stats.total and len(stats.failed_chunk_ids) / stats.total > DEGRADED_FAILURE_THRESHOLD:
         stats.degraded = True
-        document = await store.get_document(doc_id)
-        if document is not None:
-            await store.update_document_status(
-                doc_id,
-                document["status"],
-                error=f"graph degraded: {len(stats.failed_chunk_ids)}/{stats.total} chunks failed extraction",
-            )
     stats.touched_entities = touched_entities
     return stats

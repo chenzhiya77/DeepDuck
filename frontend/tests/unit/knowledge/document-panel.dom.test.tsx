@@ -1048,7 +1048,7 @@ describe("PathStatusBreakdown 视频腿三芯片 + degraded 琥珀（spec 2026-0
     ]);
   });
 
-  it("pathStatusLines 文本文档仍只返回 vector/graph/wiki", () => {
+  it("pathStatusLines 带哪个键就返回哪一腿（不带 caption 键的文本文档仍是 vector/graph/wiki）", () => {
     const lines = pathStatusLines(
       doc({ path_status: { vector: "done", graph: "done", wiki: "ready" } }),
     );
@@ -1057,6 +1057,30 @@ describe("PathStatusBreakdown 视频腿三芯片 + degraded 琥珀（spec 2026-0
       "graph",
       "wiki",
     ]);
+  });
+
+  it("pathStatusLines 文本文档带 caption 键时多出配文一行", () => {
+    // Since spec 2026-09-23 D8 a text document with images writes its own caption
+    // verdict; the key's presence is what adds the line (no frontend branch for it).
+    const lines = pathStatusLines(
+      doc({
+        path_status: {
+          caption: "degraded",
+          vector: "done",
+          graph: "done",
+          wiki: "ready",
+        },
+      }),
+    );
+    expect(lines!.map((line) => line.path)).toEqual([
+      "caption",
+      "vector",
+      "graph",
+      "wiki",
+    ]);
+    expect(lines!.find((line) => line.path === "caption")!.state).toBe(
+      "degraded",
+    );
   });
 
   it("视频文档 hover 渲染 asr/segment/caption 标签，排在检索腿之前", () => {

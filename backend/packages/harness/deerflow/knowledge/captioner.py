@@ -16,6 +16,7 @@ import asyncio
 import logging
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,7 @@ import httpx
 from deerflow.config.app_config import get_app_config
 from deerflow.config.rag_config_file import SECRET_ENV_VARS
 from deerflow.knowledge.caption_client import request_caption
+from deerflow.knowledge.graph.indexer import DEGRADED_FAILURE_THRESHOLD
 from deerflow.knowledge.parser import ParsedImage
 from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
 
@@ -30,6 +32,21 @@ logger = logging.getLogger(__name__)
 
 # Env var name can be overridden via config
 VL_API_KEY_ENV = SECRET_ENV_VARS["vlm_api_key"]
+
+
+@dataclass(slots=True)
+class CaptionOutcome:
+    """What one document's image pass produced (spec 2026-09-23 D8/R13).
+
+    Same family as the video leg's outcome: the captions themselves plus the verdict the
+    worker records. The verdict is computed here — against the graph leg's own threshold
+    constant — so the worker reads it instead of recomputing a ratio of its own.
+    """
+
+    captions: dict[str, str] = field(default_factory=dict)
+    failed: int = 0
+    degraded: bool = False
+
 
 _CAPTION_PROMPT = "请分析这张图片，用于文档检索索引：如果图片以文字内容为主（如文档截图、表格、代码），请完整转录图中的全部文字；否则请用一句简洁的中文描述图片的主要内容（对象、场景、关键文字）。只输出转录或描述文本，不要多余解释。"
 
@@ -49,7 +66,7 @@ async def caption_images(
     *,
     client: httpx.AsyncClient | None = None,
     model: str | None = None,
-) -> dict[str, str]:
+) -> CaptionOutcome:
     """Caption every image with concurrent calls; failures degrade to filename placeholders.
 
     The target (model id, endpoint, key) is resolved by :func:`resolve_vlm_target` — naming
@@ -57,18 +74,23 @@ async def caption_images(
     its placeholder without any outbound call. *model* overrides ``rag.vlm_model``. Uses
     asyncio.gather with Semaphore(4) for concurrency control; results are returned in input
     list order to protect Markdown image position mapping.
+
+    The verdict travels with the data (spec 2026-09-23 D8/R13): the failure count and the
+    degradation flag are computed here, against the same threshold the graph leg uses, so the
+    worker never recomputes a ratio of its own.
     """
     if not images:
-        return {}
+        return CaptionOutcome()
 
     cfg = get_app_config()
     api_key_env = cfg.rag.vlm_api_key_env or VL_API_KEY_ENV
     target = resolve_vlm_target(cfg, model)
     api_key = target.api_key
+    total = len(images)
 
     if not api_key:
-        logger.warning("%s is not set; degrading %d image(s) to filename placeholders", api_key_env, len(images))
-        return {image.ref: _placeholder(image.ref) for image in images}
+        logger.warning("%s is not set; degrading %d image(s) to filename placeholders", api_key_env, total)
+        return CaptionOutcome(captions={image.ref: _placeholder(image.ref) for image in images}, failed=total, degraded=True)
 
     own_client = client is None
     # Task 16: timeout raised to 180s for long-form transcription
@@ -77,15 +99,18 @@ async def caption_images(
 
     # Task 16: concurrent execution with semaphore-limited parallelism
     captions: dict[str, str] = {}
+    failed = 0
     semaphore = asyncio.Semaphore(4)  # max 4 concurrent requests
 
     async def caption_with_semaphore(img: ParsedImage) -> tuple[str, str]:
+        nonlocal failed
         async with semaphore:
             try:
                 result = await _caption_one(http, img, target=target)
                 return img.ref, result
             except Exception as exc:
                 logger.warning("VLM caption failed for %s (%s); using filename placeholder", img.ref, exc)
+                failed += 1
                 return img.ref, _placeholder(img.ref)
 
     try:
@@ -97,7 +122,7 @@ async def caption_images(
     finally:
         if own_client:
             await http.aclose()
-    return captions
+    return CaptionOutcome(captions=captions, failed=failed, degraded=(failed / total) > DEGRADED_FAILURE_THRESHOLD)
 
 
 def apply_captions(markdown: str, captions: Mapping[str, str]) -> str:
