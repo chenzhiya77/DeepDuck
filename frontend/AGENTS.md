@@ -173,7 +173,11 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   backend resolves what each role needs from the named entry, so none of them asks for an endpoint or
   a key of its own. The caption row's candidates are every vision-capable entry — the entry's `use:`
   class decides which protocol the caption call speaks (spec 2026-09-18), so nothing is filtered out
-  by provider. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
+  by provider. The video section's **ASR model row** is the width row's in-field dropdown again
+  (spec 2026-09-27): a free-typed value over the selected engine's common models, and a switch
+  falls back to the target menu's first row — judged only against whisper's own name set, because
+  funasr is an open set (ModelScope ids, local directories) and its menu must never double as a
+  filter. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
   they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and
   the embedding row also carries the sparse-source select — the field that decides whether a
   dense-only provider is usable at all. Every provider-driven row is **always rendered**: a row the
