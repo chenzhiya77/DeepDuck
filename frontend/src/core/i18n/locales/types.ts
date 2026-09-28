@@ -1772,6 +1772,9 @@ export interface Translations {
       groupEvaluationHint: string;
       judgeModel: string;
       judgeModelNone: string;
+      synthesisModel: string;
+      synthesisModelHint: string;
+      synthesisModelNone: string;
       groupMultimodal: string;
       groupMultimodalHint: string;
       groupServices: string;
@@ -1779,6 +1782,9 @@ export interface Translations {
       vlmNoVisionModel: string;
       extractModelHint: string;
       extractModelNone: string;
+      wikiModel: string;
+      wikiModelHint: string;
+      wikiModelNone: string;
       captionModel: string;
       captionModelHint: string;
       vlmModelDefault: string;

@@ -636,6 +636,49 @@ describe("RAG default row", () => {
  * save the server could not verify — it must not read as a clean save, and it must not read as a
  * refusal either.
  */
+describe("wiki and synthesis rows", () => {
+  it("offers both inside their existing cards, each with its own hint", () => {
+    renderPage();
+    openFunctionalView();
+
+    // ②'s decision: one more row in each existing card, no new card.
+    expect(screen.getByText(F.wikiModel)).toBeTruthy();
+    expect(screen.getByText(F.synthesisModel)).toBeTruthy();
+    expect(screen.queryByText("groupWiki")).toBeNull();
+    expect(screen.queryByText("groupSynthesis")).toBeNull();
+
+    // The cards keep their own ⓘ; these rows carry theirs.
+    expect(screen.getByLabelText(F.wikiModelHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.synthesisModelHint)).toBeTruthy();
+    expect(screen.getByLabelText(F.extractModelHint)).toBeTruthy();
+  });
+
+  it("states the same inheritance rule as the other role rows", () => {
+    // D5's alignment rule applied to the two new roles: empty withdraws this row's override,
+    // the configured value still applies, and only when both are empty does the default take over.
+    for (const hint of [F.wikiModelHint, F.synthesisModelHint]) {
+      expect(hint).toContain(F.defaultModel);
+      expect(hint).toContain("留空");
+      expect(hint).not.toContain("主模型");
+      expect(hint).not.toContain("要重启");
+      expect(hint).not.toContain("primary model");
+    }
+  });
+
+  it("ships the two roles' copy in both locales", () => {
+    expect(F.wikiModel).toBe("百科生成模型");
+    expect(F.wikiModelNone).toBe("（使用配置默认）");
+    expect(F.synthesisModel).toBe("考题合成模型");
+    expect(F.synthesisModelNone).toBe("（使用配置默认）");
+
+    const FE = enUS.settings.functionalModels;
+    expect(FE.wikiModel).toBe("Wiki generation model");
+    expect(FE.synthesisModel).toBe("Question synthesis model");
+    expect(FE.wikiModelNone).toBe("(use the configured default)");
+    expect(FE.synthesisModelNone).toBe("(use the configured default)");
+  });
+});
+
 describe("save-time verification notice", () => {
   it("shows what the server could not verify about the configuration it saved", async () => {
     renderPage();

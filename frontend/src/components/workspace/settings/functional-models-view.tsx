@@ -1306,6 +1306,33 @@ export function FunctionalModelsView() {
             </SelectContent>
           </Select>
         </div>
+        <div className={ROW}>
+          <RowLabel info={F.wikiModelHint}>{F.wikiModel}</RowLabel>
+          <Select
+            value={values.wiki_model || MODEL_REFERENCE_NONE}
+            onValueChange={(next) =>
+              update("wiki_model", next === MODEL_REFERENCE_NONE ? "" : next)
+            }
+          >
+            <SelectTrigger
+              className="w-full min-w-0"
+              aria-label={F.wikiModel}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {modelReferenceOptions(
+                models,
+                values.wiki_model,
+                F.wikiModelNone,
+              ).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </Group>
 
       <Group title={F.groupEvaluation} info={F.groupEvaluationHint}>
@@ -1325,6 +1352,36 @@ export function FunctionalModelsView() {
                 models,
                 values.judge_model,
                 F.judgeModelNone,
+              ).map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className={ROW}>
+          <RowLabel info={F.synthesisModelHint}>{F.synthesisModel}</RowLabel>
+          <Select
+            value={values.synthesis_model || MODEL_REFERENCE_NONE}
+            onValueChange={(next) =>
+              update(
+                "synthesis_model",
+                next === MODEL_REFERENCE_NONE ? "" : next,
+              )
+            }
+          >
+            <SelectTrigger
+              className="w-full min-w-0"
+              aria-label={F.synthesisModel}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {modelReferenceOptions(
+                models,
+                values.synthesis_model,
+                F.synthesisModelNone,
               ).map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}

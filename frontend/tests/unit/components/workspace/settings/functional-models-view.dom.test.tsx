@@ -491,3 +491,63 @@ describe("narrow stacking", () => {
     expect(screen.queryByText("roleTagRerank")).toBeNull();
   });
 });
+
+describe("wiki and synthesis rows", () => {
+  it("adds one row to each existing card instead of opening a new one", () => {
+    catalogues.models = [
+      { name: "deepseek-chat", display_name: "DeepSeek Chat" },
+    ];
+
+    renderWith({
+      extract_model: "deepseek-chat",
+      judge_model: "deepseek-chat",
+      wiki_model: "deepseek-chat",
+      synthesis_model: "deepseek-chat",
+    });
+
+    // One row each, and each explains itself in place rather than borrowing the card's ⓘ.
+    expect(labelCount("wikiModel")).toBe(1);
+    expect(labelCount("synthesisModel")).toBe(1);
+    expect(labelCount("wikiModelHint")).toBe(1);
+    expect(labelCount("synthesisModelHint")).toBe(1);
+
+    // ②'s decision: no new cards exist for them.
+    expect(screen.queryByText("groupWiki")).toBeNull();
+    expect(screen.queryByText("groupSynthesis")).toBeNull();
+
+    // The teeth of that decision: each new row lives in the *same* card as the row it joins.
+    const cardOf = (label: string) =>
+      screen.getByLabelText(label).closest('[data-slot="card"]');
+    expect(cardOf("wikiModel")).toBe(cardOf("extractModel"));
+    expect(cardOf("synthesisModel")).toBe(cardOf("judgeModel"));
+
+    // …and each row follows its card's existing row, in document order.
+    const order = [
+      "extractModel",
+      "wikiModel",
+      "judgeModel",
+      "synthesisModel",
+    ].map((label) => screen.getByLabelText(label));
+    for (let i = 1; i < order.length; i += 1) {
+      expect(
+        order[i - 1]!.compareDocumentPosition(order[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("offers a non-vision entry on both rows (no vision filter here)", () => {
+    // `visionReferenceOptions` would drop this entry; the discriminator is the *display name*,
+    // because a filtered-out stored value still renders as its raw name (門 A's Task 4 lesson).
+    catalogues.models = [{ name: "text-only", display_name: "Text Only" }];
+
+    renderWith({ wiki_model: "text-only", synthesis_model: "text-only" });
+
+    expect(screen.getByLabelText("wikiModel").textContent).toContain(
+      "Text Only",
+    );
+    expect(screen.getByLabelText("synthesisModel").textContent).toContain(
+      "Text Only",
+    );
+  });
+});

@@ -1854,6 +1854,10 @@ export const enUS: Translations = {
         "Scores retrieval quality with ragas, independently of the model you chat with. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
       judgeModel: "Judge model",
       judgeModelNone: "(use the configured default)",
+      synthesisModel: "Question synthesis model",
+      synthesisModelHint:
+        "Synthesizes candidate evaluation questions from documents. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
+      synthesisModelNone: "(use the configured default)",
       groupMultimodal: "Multimodal & video",
       groupMultimodalHint: "Captions turn images and keyframes into text; speech recognition only serves video ingestion.",
       groupServices: "Services & tokens",
@@ -1862,6 +1866,10 @@ export const enUS: Translations = {
       extractModelHint:
         "Builds the knowledge graph from documents. Prefer a model with a small parameter count, low cost and stable JSON output. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
       extractModelNone: "(use the configured default)",
+      wikiModel: "Wiki generation model",
+      wikiModelHint:
+        "Writes the knowledge-base wiki entries. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
+      wikiModelNone: "(use the configured default)",
       captionModel: "Caption model (VLM)",
       captionModelHint:
         "The endpoint and API key come from the selected model entry; leaving it empty withdraws this row's override, so a value set for it in the configuration still applies, and only when neither is set does the RAG default model take over. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry keeps the OpenAI shape.",

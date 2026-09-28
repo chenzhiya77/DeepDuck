@@ -43,7 +43,11 @@ import {
   sparseServiceVerdictFor,
   visionReferenceOptions,
 } from "@/core/rag/config-form";
-import type { RagConfigSource, RagConfigView } from "@/core/rag/types";
+import type {
+  RagConfigSource,
+  RagConfigValues,
+  RagConfigView,
+} from "@/core/rag/types";
 
 /**
  * A view where the file owns nothing: every field is either the operator's (`config_file`),
@@ -451,6 +455,92 @@ describe("RAG default model", () => {
       hasFormChanges({ ...seeded, default_model: "  yaml-default  " }, current),
     ).toBe(false);
   });
+});
+
+describe("wiki and synthesis roles", () => {
+  // The two roles that had no field at all before spec 2026-09-26. Same contract as every
+  // other model-reference row — including the B-1-shaped guard: a file-owned override has to
+  // survive an unrelated edit, or the whole-object PUT would silently drop it.
+  const ROLES = ["wiki_model", "synthesis_model"] as const;
+  const over = (field: (typeof ROLES)[number], value: string) =>
+    ({ [field]: value }) as Partial<RagConfigValues>;
+  const edited = (field: (typeof ROLES)[number], value: string) => ({
+    ...formValuesFromConfig(view(over(field, "yaml-role"))),
+    [field]: value,
+  });
+
+  it.each(ROLES)(
+    "%s seeds the effective value and reports no change for it",
+    (field) => {
+      const current = view(over(field, "yaml-role"));
+      const values = formValuesFromConfig(current);
+
+      expect(values[field]).toBe("yaml-role");
+      expect(hasFormChanges(values, current)).toBe(false);
+      expect(buildRagConfigInput(values, current)).toEqual({});
+    },
+  );
+
+  it.each(ROLES)(
+    "%s seeds an empty string when nothing declares it",
+    (field) => {
+      expect(formValuesFromConfig(view())[field]).toBe("");
+    },
+  );
+
+  it.each(ROLES)("%s is submitted when an operator picks one", (field) => {
+    const current = view();
+    const values = edited(field, "qwen3.7-max");
+
+    expect(buildRagConfigInput(values, current)).toEqual({
+      [field]: "qwen3.7-max",
+    });
+  });
+
+  it.each(ROLES)(
+    "%s survives an unrelated edit when the file owns it",
+    (field) => {
+      const current = view(
+        { ...over(field, "file-role"), rerank_model: "qwen3-rerank" },
+        { [field]: "ui" },
+      );
+      const values = {
+        ...formValuesFromConfig(current),
+        rerank_model: "qwen3-rerank-v2",
+      };
+
+      expect(buildRagConfigInput(values, current)).toEqual({
+        [field]: "file-role",
+        rerank_model: "qwen3-rerank-v2",
+      });
+    },
+  );
+
+  it.each(ROLES)("%s is withdrawn with an explicit empty string", (field) => {
+    // `""` rather than an omitted key: the server reads an omission as carry-forward.
+    const current = view(over(field, "file-role"), { [field]: "ui" });
+    const values = {
+      ...formValuesFromConfig(current),
+      [field]: "",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({ [field]: "" });
+  });
+
+  it.each(ROLES)(
+    "%s counts as a change when picked, and not once reverted",
+    (field) => {
+      const current = view(over(field, "yaml-role"));
+      const seeded = formValuesFromConfig(current);
+
+      expect(hasFormChanges({ ...seeded, [field]: "other" }, current)).toBe(
+        true,
+      );
+      expect(
+        hasFormChanges({ ...seeded, [field]: "  yaml-role  " }, current),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("hasFormChanges", () => {

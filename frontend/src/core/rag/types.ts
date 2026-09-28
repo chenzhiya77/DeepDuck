@@ -28,6 +28,13 @@ export interface RagConfigValues {
    * with it, so this row asks for no endpoint and no key.
    */
   default_model?: string | null;
+  /**
+   * The two roles that had no field at all (spec 2026-09-26 D2), shaped exactly like the
+   * other model references: an entry name the backend resolves, so the rows ask for no
+   * endpoint and no key.
+   */
+  wiki_model?: string | null;
+  synthesis_model?: string | null;
   mineru_api_token?: string | null;
   /**
    * Provider dimension (spec 2026-09-14 §4.1). Ids mirror the backend's curated

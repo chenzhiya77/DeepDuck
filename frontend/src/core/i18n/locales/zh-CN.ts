@@ -1760,6 +1760,10 @@ export const zhCN: Translations = {
         "用 ragas 给检索质量打分，与对话里选的模型无关。留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手。",
       judgeModel: "裁判模型",
       judgeModelNone: "（使用配置默认）",
+      synthesisModel: "考题合成模型",
+      synthesisModelHint:
+        "用于从文档合成评测候选题的模型。留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。",
+      synthesisModelNone: "（使用配置默认）",
       groupMultimodal: "多模态与视频",
       groupMultimodalHint: "图片描述把图片与关键帧转成文字；语音识别只服务视频入库。",
       groupServices: "服务与令牌",
@@ -1769,6 +1773,10 @@ export const zhCN: Translations = {
       extractModelHint:
         "用于从文档构建知识图谱的模型，建议选择参数规模小、成本低、输出稳定 JSON 的模型。留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。",
       extractModelNone: "（使用配置默认）",
+      wikiModel: "百科生成模型",
+      wikiModelHint:
+        "用于生成知识库百科条目的模型。留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。",
+      wikiModelNone: "（使用配置默认）",
       captionModel: "图片描述模型 (VLM)",
       captionModelHint:
         "接口地址与 API Key 取自所选模型条目；留空先撤掉本行的覆盖，配置里为它指定的值仍然生效，两边都空才由 RAG 默认模型接手。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 形状。",
