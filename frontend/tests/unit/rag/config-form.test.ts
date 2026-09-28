@@ -1199,7 +1199,7 @@ describe("ASR model menu and the provider switch (spec 2026-09-27 §2 D2)", () =
   it("keeps everything that is not a whisper name when switching to funasr", () => {
     // funasr is an open set (any ModelScope id, or a local directory) — its menu is not a filter.
     for (const value of [
-      "sensevoice",
+      "paraformer-en-spk",
       "iic/SenseVoiceSmall",
       "./models/paraformer",
     ]) {

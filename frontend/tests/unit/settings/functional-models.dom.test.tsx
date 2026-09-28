@@ -2119,11 +2119,7 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
     renderPage();
     openFunctionalView();
 
-    expect(await openAsrMenu()).toEqual([
-      "paraformer-zh",
-      "paraformer-en",
-      "sensevoice",
-    ]);
+    expect(await openAsrMenu()).toEqual(["paraformer-zh", "paraformer-en"]);
 
     fireEvent.click(screen.getAllByRole("menuitem")[1]!);
     expect(asrInput().value).toBe("paraformer-en");
@@ -2166,9 +2162,11 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
       screen.getByLabelText(F.asrModelFunasrHint).getAttribute("aria-label") ??
       "";
 
-    for (const name of ["paraformer-zh", "paraformer-en", "sensevoice"]) {
+    for (const name of ["paraformer-zh", "paraformer-en"]) {
       expect(text.split(name)).toHaveLength(2); // once each
     }
+    // 2026-09-29：`sensevoice` 从菜单与注记里删掉（短名 AutoModel 不认；且实测 0 段）。
+    expect(text).not.toContain("sensevoice");
     expect(text).toContain("逐句时间戳");
     expect(text).toContain("镜头卡");
   });

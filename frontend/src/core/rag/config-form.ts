@@ -335,7 +335,7 @@ export function isEmbeddingChange(
  * fall back to, so one table serves both the dropdown and the fallback.
  */
 export const ASR_MODEL_MENU = {
-  funasr: ["paraformer-zh", "paraformer-en", "sensevoice"],
+  funasr: ["paraformer-zh", "paraformer-en"],
   // `small` leads because it is the tier most people should use — the fallback is this row.
   whisper: ["small", "tiny", "base", "medium", "large-v3", "large-v3-turbo"],
 } as const;
