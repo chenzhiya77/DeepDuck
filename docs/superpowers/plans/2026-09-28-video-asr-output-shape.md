@@ -1,0 +1,96 @@
+# 视频 ASR 腿的输出形状（抽取器校准 + 整段一行可观测；**放弃分段**）—— 实施计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Spec:** [2026-09-28-video-asr-output-shape-design.md](../specs/2026-09-28-video-asr-output-shape-design.md)
+**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。
+**来源**：[2026-09-27-rag-asr-model-picker.md](2026-09-27-rag-asr-model-picker.md) 的 `实测` 越界发现（那条线纯前端、本件动 `backend/`，两者零文件重叠）。
+
+**Architecture:** 两处——**① 调用侧只带 `vad_model="fsmn-vad"`**（`asr.py:98-99`；**不补 `punc_model`**——真机已证"分段绕不过 punc"，本件放弃分段）**② 抽取器按真机形状校准 + 把"整段一行"变可观测**（`asr.py:127-150`：键名按真机校正、保留回退，新增告警，按 D2）。
+
+**硬约束（spec 已定，实现时不许自行放松）**：
+
+- **D1 已裁，不许加码**：调用只带 VAD；**不许顺手补 `punc_model`**（那是另一条出路，见 spec §2 D1 的"将来出路"，且会带来 283 MB–1.2 GB 下载）。
+- **降级语义原样**：依赖缺失 / 加载失败仍收敛为 `AsrError` ⇒ `asr=failed` ⇒ 卡片「（ASR 失败）」；**不得**因为"补了 VAD"就改成硬失败或新增状态值。
+- **不改 whisper 侧**（`transcribe()` 默认带 segments 起止，本来就对）；不改卡片三行结构；不改 `worker.py` 的降级矩阵与分桶规则（`worker.py:93-125`）。
+- **配件 = 只有 VAD**：默认给所有名字配 `vad_model="fsmn-vad"`；**例外名单**（`paraformer-zh-streaming` 流式 / `Whisper-*` 托管）**不加**。
+- **成本要给数**：真机腿必须记录耗时（补 VAD 前后各一次；Task 0 的对照数在 `实测` 里）。
+- **scope fence**：不做 ASR 服务档 · 不做模型候选化/探测 · **不修分段、不补标点**（本件只交付"可观测"+VAD 接线）· 不动前端（`asr-picker` 那条线）· 不引入新依赖（VAD 是 funasr 自带模型，不是新包）。
+
+**Global Constraints:**
+
+- 分支 `feat/rag-knowledge-base`；每个 Task：**RED → GREEN → neuter（带 revert proof）→ 门禁 → commit**（Conventional Commits）。
+- **后端命令**：`cd backend && make test`（离线套件）/ `make lint`；真机实验跑 `.venv/Scripts/python`（**别用裸 `uv run`**——它按 lock 精确同步、会把 funasr 那套剪掉）。
+- **每个 Task 的 `**实测**` 行必须回填**（RED/GREEN/neuter 受害者/门禁数字/真机耗时）——未回写的 plan 不算交付。
+
+**依赖顺序**：Task 0（取证，含一次性真机实验）→ Task 1（调用侧带 VAD）→ Task 2（抽取器校准 + 可观测）→ Task 3（文档 + 端到端 + 收官）。
+
+---
+
+## Task 0 — 开工前取证（只读 + 一次性真机实验）
+
+- [x] 1. **补 vad + punc 真机跑**（临时脚本，**不进仓库**）：`AutoModel(model="paraformer-zh", vad_model="fsmn-vad", punc_model="ct-punc")` + `generate(input=<示例 wav>, batch_size_s=300)` —— 报：① `sentence` 出不出？② 文本是否带标点、还有没有逐字空格？③ **耗时**（对照现状的 `load 4.7s / gen 1.2s`）。
+  - **顺手把 `sensevoice` 也跑一遍**：同一个 wav，`model="sensevoice"` + 其 CLI 预设（`vad_model="fsmn-vad"` + `vad_kwargs={"max_single_segment_time": 30000}`），同样报三项；并对照"不传 `output_timestamp` 时是否 **0 段**"（`sense_voice` 类的开关默认 False，`sense_voice/model.py:980`）。**这条结论同时是 picker 的 ⓘ 注记原文**（不跑，注记只能写"未测"）。
+- [x] 2. **`ct-punc` vs `ct-punc-c`**：下载体积与中英混排效果，给出选哪个（以及是否要按语言切）。
+- [x] 3. **长音频切分粒度**：把示例 wav 拼长（或 `max_single_segment_time` 调小）跑一次，报 VAD 切出多少段、段长分布——判"分桶会不会过碎"。
+- [x] 4. **配件表核对（已结，2026-09-29）**：`funasr/cli.py:11-16` 的 `MODEL_CONFIGS` 逐 key 抄准（verbatim）——
+  - `sensevoice` = `{"model": "iic/SenseVoiceSmall", "vad_model": "fsmn-vad", "vad_kwargs": {"max_single_segment_time": 30000}}`
+  - `paraformer` = `{"model": "paraformer-zh", "vad_model": "fsmn-vad", "punc_model": "ct-punc"}`
+  - `paraformer-en` = `{"model": "paraformer-en", "vad_model": "fsmn-vad"}`（**不带 punc** ✓）
+  - `fun-asr-nano` = `{"model": "FunAudioLLM/Fun-ASR-Nano-2512", "vad_model": "fsmn-vad"}`
+  - ⚠️ 实现时注意：`sensevoice` 的 `vad_kwargs` 是**嵌套 dict**，要原样传进 `AutoModel`。
+
+**实测**（Task 0，2026-09-29，真机；样本 = seaco 快照自带的 `example/asr_example.wav`（**4.52s / 16k**），长音频 = 该样本重复 20 次拼成 **90.45s**）：
+- **第 1 项（补 vad + punc）**：`paraformer-zh + vad_model="fsmn-vad" + punc_model="ct-punc"`
+  - 4.5s：`keys=['key','text','timestamp']`、文本**带标点**（"欢迎大家来到哒社区进行体验。"）、**逐字空格消失** ✓、`n_items=1`、`n_timestamp=14`、**`sentence` 没出现**；`load 31.9s / gen 0.9s`。
+  - 90s：**`n_items` 仍为 1**、`timestamp` 跨度 **89.2s** ⇒ 抽取器还是走"整段一行" ⇒ **rows 不会 > 1**。⚠️ **spec 的前提被推翻**：`AutoModel` 把 VAD 各段**并回一条结果**，VAD 单用不产生"每段一条"。
+  - 真正给分段的是 **`sentence_timestamp=True`**：90s ⇒ 多出 **`sentence_info`** 键、**20 条**（≈3.4s/条，正好每次重复句一条；`gen 7.9s`）；换 `ct-punc-c` ⇒ **27 条**（段更细）。⚠️ **键名是 `sentence_info`**，不是抽取器读的 `sentence`（真机里**从不出现**）。
+- **第 1 项第二半（sensevoice）**：`model="sensevoice"` ⇒ **`RuntimeError: model 'sensevoice' is not registered`**——它只是 **CLI 层别名**（CLI 自己换成 `iic/SenseVoiceSmall` 再调 `AutoModel`），别名表里没有它；用仓库 id `iic/SenseVoiceSmall` + 其预设 ⇒ `keys=['key','text']`、**无 `timestamp`** ⇒ `_rows_from_funasr` 产 **0 段**（静默空），且文本带 `<|zh|><|NEUTRAL|><|Speech|><|woitn|>` 特殊标记 ⇒ **SenseVoice 按当前调用不可用**。
+- **第 2 项（punc 选型）**：`ct-punc` = **1.2 GB**、90s 出 20 段；`ct-punc-c` = **283 MB**、90s 出 **27 段**（更细）。**中英混排那半未测**（无英文样本）⇒ 建议 **`ct-punc-c`**（本腿默认是中文；体积 1/4）。`fsmn-vad` 只有 **3.9 MB**（可忽略）。
+- **第 3 项（长音频粒度）**：见上——`vad` 单用**不分段**（1 条）；`vad + sentence_timestamp` 在 90s 上给 **20–27 段、段长 ≈ 3–4.5s**（正好对齐镜头卡粒度，不过碎）；`gen` 90s ≈ **8–9s**（CPU，≈10× 实时）。
+- ⚠️ **对 D1/D2 的影响（→ 已按此改判，2026-09-29）**：刚拍的 **D1 甲达不到验收 §4.1 / §4.2**（rows > 1、段落多张卡）⇒ 实际需要 **`vad + punc + sentence_timestamp=True`**（原表"丙"里的 `pred_timestamp` 换成这个；`pred_timestamp` 那版可弃）；**D2 的校准目标要改成 `sentence_info`**（`sentence` 键不存在）。**改判结果（2026-09-29 裁）**：**D1 = 只补 VAD + 明确放弃分段**（不装 punc，接受"整段一行"）⇒ 本件只剩"**可观测** + VAD 接线"；`vad + punc + sentence_timestamp` 记成"将来出路"（spec §2 D1）。
+- ⚠️ **对 picker 那对的影响（另报）**：菜单第三条 `sensevoice` ① 名字 `AutoModel` 不认（须 `iic/SenseVoiceSmall`）② 就算改名也拿不到段（0 段静默）⇒ 菜单名与 ⓘ 注记需要一次小修。
+- **追加（2026-09-29，候选侦察；不在原四项里 ⇒ 原"待验"至此已验）**：`OpenMOSS-Team/MOSS-Transcribe-Diarize` 真机一跑（**1.83 GB**、走 `hf-mirror`、需 `trust_remote_code`；缓存落 `E:\app-model\hf-cache\hub`，C 盘零写入）⇒ **它确实给段**：键 `['key','raw_text','sentence_info','text','timestamp']`，`sentence_info` = `{start: 1030, end: 4470, text: "欢迎大家来到摩哒社区进行体验。", spk: "S01", timestamp: [[1030, 4470]]}`（`sentence` 键为 `null`）；1030→4470 ms 与 4.52 s 音频吻合 ⇒ **真时间戳，不是等分合成**。**但代价否掉默认**：CPU 上**加载 628 s、4.52 s 音频推理 66 s（RTF ≈ 14.6）**（10 分钟视频外推 ≈ 2.4 h）⇒ **本件不采用、也不进 picker 菜单**；它证明的是"进程内形态也能拿到段"，并为"要不要 GPU / 服务档"提供量级参照（详见 [HTTP 草案 §3](../specs/2026-09-28-rag-asr-service-tier-design.md)）。
+
+---
+
+## Task 1 — 调用侧带 VAD（spec D1 / D3）
+
+> 动到的文件：`packages/harness/deerflow/knowledge/video/asr.py`（`FunAsrProvider.__init__` 与 `transcribe` 的 `AutoModel(...)` 调用）＋ 该腿的既有测试文件（`backend/tests/knowledge/video/…`）。
+> **验收对应**：spec §4 的 3（降级语义不变）+ §4 的 1（前半：补 VAD 后 rows 仍为 1——本件接受的现状）。
+
+- [ ] **RED**：单测——以桩替换 `funasr.AutoModel`，断言：① 构造参数**含** `vad_model="fsmn-vad"`；② **不含** `punc_model`（D1 不许加码）；③ 例外名单（`paraformer-zh-streaming` / `Whisper-*`）**不带** `vad_model`。此刻无实现 ⇒ 红。
+- [ ] **GREEN**：例外名单常量 + `AutoModel(...)` 带上 `vad_model`。
+- [ ] **neuter**：把 `vad_model` 去掉 ⇒ ① 红（revert proof）。
+- [ ] **门禁**：`make test`（相关文件）+ `make lint` 净。
+
+**实测**：（回填）
+
+---
+
+## Task 2 — 抽取器校准 + 可观测（spec D2）
+
+> 动到的文件：`asr.py`（`_rows_from_funasr` 与其 docstring）＋ 该腿测试。
+> **验收对应**：spec §4 的 2（可观测生效）。
+
+- [ ] **RED**：纯函数用例三形状——① `sentence_info` 非空（**真机键名**，装 punc 后才会出现）⇒ 多 rows；② 只有 `timestamp` 且跨度≈全长 ⇒ **1 行 + 一条 warning**（"整段一行"防御，**本件真机的实际形状**）；③ 两者都没有 ⇒ 空 rows（**不抛**，保持降级语义）。此刻无实现 ⇒ 红。
+- [ ] **GREEN**：按真机键名校准取数（`sentence_info` 优先 / `timestamp` 回退）+ 加告警；docstring 去掉"待 Task 7/12 校准"的自述（已校准）。
+- [ ] **neuter**：去掉"整段一行"告警 ⇒ ② 红、①③ 绿。
+- [ ] **真机复核**：90s 音频 ⇒ **1 行 + warning 出现**（rows 仍为 1——本件接受的现状）；分桶结果与今天一致（仍进 1 张卡）⇒ 把"不变"记成现状，**不是失败**。
+- [ ] **门禁**：`make test` + `make lint` 净。
+
+**实测**：（回填）
+
+---
+
+## Task 3 — 文档 + 端到端 + 收官（spec §4）
+
+> 动到的文件：`backend/AGENTS.md`（视频 ASR 腿一段）。
+> **验收对应**：spec §4 的 3 / 4。
+
+- [ ] **文档**：`backend/AGENTS.md` 的视频段补一句——ASR 腿的 `AutoModel` 带 `vad_model="fsmn-vad"`（**不补 punc**）；**句级分段需要 punc**（本件不做；装了 `ct-punc-c` 才会出现 `sentence_info`）；"整段一行"是**已知现状**，由抽取器的 warning 可观测。
+- [ ] **端到端（真机）**：入一个真实（短）视频，看镜头卡「口述」：**仍是一张卡有字、无标点**（预期不变）；看日志 / `path_status` 是否出现"整段一行"信号；记录**总耗时**对照改造前（VAD 的加载成本）。
+- [ ] ~~**跨件：回改姊妹件的注记文案**~~ **取消留档（2026-09-29）**：本件**不修分段**（放弃 punc）⇒ picker 那条 ⓘ 注记的后果句**仍然成立、不过期**，无需回改（将来若装 punc，再把这条恢复）。
+- [ ] **收官门禁**：后端全量套件 + `make lint` 净；`git diff` 只含本件该动的文件。
+
+**实测**：（回填）
