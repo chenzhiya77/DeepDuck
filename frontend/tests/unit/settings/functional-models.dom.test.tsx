@@ -2102,10 +2102,18 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
     fireEvent.pointerDown(
       screen.getByRole("button", { name: F.asrModelCandidates }),
     );
-    return (await screen.findAllByRole("menuitem")).map((item) => item.textContent);
+    return (await screen.findAllByRole("menuitem")).map(
+      (item) => item.textContent,
+    );
   }
 
   const asrInput = () => screen.getByLabelText<HTMLInputElement>(F.asrModel);
+
+  /** 引擎选择是下拉：点开触发器，再点那一条。 */
+  async function switchEngine(label: string) {
+    fireEvent.click(screen.getByRole("combobox", { name: F.asrProvider }));
+    fireEvent.click(await screen.findByRole("option", { name: label }));
+  }
 
   it("offers the engine's common models inside the field and writes a picked one back", async () => {
     renderPage();
@@ -2125,7 +2133,7 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
     renderPage();
     openFunctionalView();
 
-    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+    await switchEngine(F.asrProviderWhisper);
 
     expect(await openAsrMenu()).toEqual([
       "small",
@@ -2137,14 +2145,14 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
     ]);
   });
 
-  it("explains the row with the selected engine's own hint", () => {
+  it("explains the row with the selected engine's own hint", async () => {
     renderPage();
     openFunctionalView();
 
     expect(screen.getByLabelText(F.asrModelFunasrHint)).toBeTruthy();
     expect(screen.queryByLabelText(F.asrModelWhisperHint)).toBeNull();
 
-    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+    await switchEngine(F.asrProviderWhisper);
 
     expect(screen.getByLabelText(F.asrModelWhisperHint)).toBeTruthy();
     expect(screen.queryByLabelText(F.asrModelFunasrHint)).toBeNull();
@@ -2155,7 +2163,8 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
     openFunctionalView();
 
     const text =
-      screen.getByLabelText(F.asrModelFunasrHint).getAttribute("aria-label") ?? "";
+      screen.getByLabelText(F.asrModelFunasrHint).getAttribute("aria-label") ??
+      "";
 
     for (const name of ["paraformer-zh", "paraformer-en", "sensevoice"]) {
       expect(text.split(name)).toHaveLength(2); // once each
@@ -2164,24 +2173,24 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
     expect(text).toContain("镜头卡");
   });
 
-  it("replaces a value the target engine cannot load when the provider switches", () => {
+  it("replaces a value the target engine cannot load when the provider switches", async () => {
     renderPage();
     openFunctionalView();
 
-    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+    await switchEngine(F.asrProviderWhisper);
     expect(asrInput().value).toBe("small");
 
-    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderFunasr }));
+    await switchEngine(F.asrProviderFunasr);
     expect(asrInput().value).toBe("paraformer-zh");
   });
 
-  it("keeps a hand-typed funasr value when switching back to funasr", () => {
+  it("keeps a hand-typed funasr value when switching back to funasr", async () => {
     renderPage();
     openFunctionalView();
 
-    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+    await switchEngine(F.asrProviderWhisper);
     fireEvent.change(asrInput(), { target: { value: "iic/SenseVoiceSmall" } });
-    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderFunasr }));
+    await switchEngine(F.asrProviderFunasr);
 
     expect(asrInput().value).toBe("iic/SenseVoiceSmall");
   });

@@ -27,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -103,6 +102,9 @@ const EMBEDDING_KEY_SOURCE = "embedding_api_key";
  * call against the platform, so the wait is about not billing a call per keystroke.
  */
 const PROBE_DEBOUNCE_MS = 400;
+
+/** The ASR engines in picker order — a later vendor split adds `SelectGroup` separators here. */
+const ASR_PROVIDER_OPTIONS = ["funasr", "whisper"] as const;
 
 /**
  * A provider dropdown. Its ids come from the backend's curated allowlist; the empty id means
@@ -1369,15 +1371,16 @@ export function FunctionalModelsView() {
 
           <div className={ROW}>
             <RowLabel>{F.asrProvider}</RowLabel>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              aria-label={F.asrProvider}
+            <OptionSelect
+              label={F.asrProvider}
               value={values.video.asr_provider}
-              onValueChange={(next) => {
-                if (!next) return;
-                // ToggleGroup hands back a plain string; the field's own union is two values wide.
+              options={ASR_PROVIDER_OPTIONS}
+              labels={{
+                funasr: F.asrProviderFunasr,
+                whisper: F.asrProviderWhisper,
+              }}
+              onChange={(next) => {
+                // The select hands back a plain string; the field's own union is two values wide.
                 const provider = next === "whisper" ? "whisper" : "funasr";
                 updateVideo("asr_provider", provider);
                 // 切换即改值：另一个引擎跑不了的值换成目标引擎的首行（spec 2026-09-27 §2 D2）。
@@ -1388,17 +1391,7 @@ export function FunctionalModelsView() {
                 if (kept !== values.video.asr_model)
                   updateVideo("asr_model", kept);
               }}
-            >
-              <ToggleGroupItem value="funasr" aria-label={F.asrProviderFunasr}>
-                {F.asrProviderFunasr}
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="whisper"
-                aria-label={F.asrProviderWhisper}
-              >
-                {F.asrProviderWhisper}
-              </ToggleGroupItem>
-            </ToggleGroup>
+            />
           </div>
 
           <div className={ROW}>
