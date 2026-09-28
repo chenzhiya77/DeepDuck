@@ -557,6 +557,8 @@ export interface Translations {
       graph: string;
       /** 评测 tab（2026-08-24 spec §5，plan Task 4）。 */
       eval: string;
+      /** tab 行遮罩按钮 aria-label（spec 2026-09-28-kb-tabs-overflow D6）。 */
+      more: string;
     };
     /** RAG 评测指标总览（spec 2026-08-24 §3.6/§3.7）：Layer 1/2 标题、表格列头、空态提示。*/
     eval: {

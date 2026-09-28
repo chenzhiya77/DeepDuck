@@ -641,6 +641,7 @@ export const enUS: Translations = {
       vectors: "Vector space",
       graph: "Knowledge graph",
       eval: "Evaluation",
+      more: "More tabs",
     },
     eval: {
       layer1Title: "Retrieval Quality",

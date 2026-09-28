@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useI18n } from "@/core/i18n/hooks";
 import type { WikiGenerateMode } from "@/core/knowledge/api";
 import { acceptAttribute, partitionFilesBySuffix } from "@/core/knowledge/supported-formats";
@@ -29,6 +29,7 @@ import type { KnowledgeBase } from "@/core/knowledge/types";
 
 import { toast } from "./kb-toast";
 import { runAfterMenuClose } from "./run-after-menu-close";
+import { TabStrip } from "./tab-strip";
 import { WikiRebuildDialog } from "./wiki-rebuild-dialog";
 
 export type KnowledgeMiddleTab = "documents" | "wiki" | "recall" | "vectors" | "graph" | "eval";
@@ -199,14 +200,18 @@ export function MiddleTabs({
         value={activeTab}
         onValueChange={(value) => onTabChange(value as KnowledgeMiddleTab)}
       >
-        <TabsList className="mx-4 mt-2" variant="line">
-          <TabsTrigger value="documents">{tk.tabs.documents}</TabsTrigger>
-          <TabsTrigger value="wiki">{tk.tabs.wiki}</TabsTrigger>
-          <TabsTrigger value="recall">{tk.tabs.recall}</TabsTrigger>
-          <TabsTrigger value="vectors">{tk.tabs.vectors}</TabsTrigger>
-          <TabsTrigger value="graph">{tk.tabs.graph}</TabsTrigger>
-          <TabsTrigger value="eval">{tk.tabs.eval}</TabsTrigger>
-        </TabsList>
+        <TabStrip<KnowledgeMiddleTab>
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          tabs={[
+            { value: "documents", label: tk.tabs.documents },
+            { value: "wiki", label: tk.tabs.wiki },
+            { value: "recall", label: tk.tabs.recall },
+            { value: "vectors", label: tk.tabs.vectors },
+            { value: "graph", label: tk.tabs.graph },
+            { value: "eval", label: tk.tabs.eval },
+          ]}
+        />
         <TabsContent
           className="min-h-0 data-[state=inactive]:hidden"
           forceMount

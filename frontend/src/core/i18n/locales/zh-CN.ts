@@ -598,6 +598,7 @@ export const zhCN: Translations = {
       vectors: "向量空间",
       graph: "知识图谱",
       eval: "评测",
+      more: "更多标签页",
     },
     eval: {
       layer1Title: "检索质量",
