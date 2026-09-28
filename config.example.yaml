@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 39
+config_version: 40
 
 # ============================================================================
 # Logging
@@ -2589,6 +2589,12 @@ rag:
   # its own (graph extraction, eval judge, image/video captions). Omit to use the first
   # configured model. Also editable in Settings → Models → Functional models.
   # default_model: deepseek-v4-flash
+  # Name of the `models:` entry used to write knowledge-base wiki entries. Omit to follow
+  # the RAG default, then the first configured model.
+  # wiki_model: <your-model-name>
+  # Name of the `models:` entry used to synthesize eval questions. Omit to follow the RAG
+  # default, then the first configured model.
+  # synthesis_model: <your-model-name>
   # --- Provider selection (spec 2026-09-14, §4.1) ---
   # Curated ids from `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`. Every default
   # reproduces the behaviour of a config that sets only the models above; the fields

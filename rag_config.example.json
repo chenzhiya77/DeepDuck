@@ -8,6 +8,8 @@
   "extract_model": "deepseek-v4-flash",
   "judge_model": "",
   "default_model": "",
+  "wiki_model": "",
+  "synthesis_model": "",
   "mineru_api_token": "",
   "video": {
     "asr_provider": "funasr",
