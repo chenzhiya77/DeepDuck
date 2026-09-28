@@ -39,6 +39,8 @@ import { isReindexRunning } from "@/core/knowledge/reindex-status";
 import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
+  ASR_MODEL_MENU,
+  asrModelForProviderSwitch,
   buildRagConfigInput,
   changesEmbeddingDimension,
   connectivityProbeKey,
@@ -1374,7 +1376,17 @@ export function FunctionalModelsView() {
               aria-label={F.asrProvider}
               value={values.video.asr_provider}
               onValueChange={(next) => {
-                if (next) updateVideo("asr_provider", next);
+                if (!next) return;
+                // ToggleGroup hands back a plain string; the field's own union is two values wide.
+                const provider = next === "whisper" ? "whisper" : "funasr";
+                updateVideo("asr_provider", provider);
+                // 切换即改值：另一个引擎跑不了的值换成目标引擎的首行（spec 2026-09-27 §2 D2）。
+                const kept = asrModelForProviderSwitch(
+                  provider,
+                  values.video.asr_model,
+                );
+                if (kept !== values.video.asr_model)
+                  updateVideo("asr_model", kept);
               }}
             >
               <ToggleGroupItem value="funasr" aria-label={F.asrProviderFunasr}>
@@ -1390,13 +1402,60 @@ export function FunctionalModelsView() {
           </div>
 
           <div className={ROW}>
-            <RowLabel>{F.asrModel}</RowLabel>
-            <Input
-              value={values.video.asr_model}
-              aria-label={F.asrModel}
-              {...AUTOFILL_OFF_INPUT_PROPS}
-              onChange={(event) => updateVideo("asr_model", event.target.value)}
-            />
+            <RowLabel
+              info={
+                values.video.asr_provider === "whisper"
+                  ? F.asrModelWhisperHint
+                  : F.asrModelFunasrHint
+              }
+            >
+              {F.asrModel}
+            </RowLabel>
+            {/* 与「维度」行同款：输入框自由填 + 框内下拉（候选组按引擎整组换）。 */}
+            <div className="relative w-full" data-slot="asr-model-control">
+              <Input
+                aria-label={F.asrModel}
+                data-slot="asr-model-input"
+                className="w-full pr-10"
+                value={values.video.asr_model}
+                placeholder={ASR_MODEL_MENU[values.video.asr_provider][0]}
+                onChange={(event) =>
+                  updateVideo("asr_model", event.target.value)
+                }
+                {...AUTOFILL_OFF_INPUT_PROPS}
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-end pr-1.5">
+                    <button
+                      type="button"
+                      aria-label={F.asrModelCandidates}
+                      data-slot="asr-model-candidates-trigger"
+                      className="text-muted-foreground hover:text-foreground pointer-events-auto inline-flex"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                  </span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-(--radix-dropdown-menu-trigger-width) min-w-0"
+                >
+                  <DropdownMenuLabel className="text-muted-foreground font-normal">
+                    {F.asrModelCandidates}
+                  </DropdownMenuLabel>
+                  {ASR_MODEL_MENU[values.video.asr_provider].map((name) => (
+                    <DropdownMenuItem
+                      key={name}
+                      data-slot="asr-model-candidate"
+                      onSelect={() => updateVideo("asr_model", name)}
+                    >
+                      {name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </Rows>
       </Group>

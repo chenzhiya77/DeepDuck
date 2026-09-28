@@ -2095,3 +2095,121 @@ describe("宽度迁移：保存前的确认 + 在飞状态面 (spec 2026-09-26 D
     expect(line.textContent).toContain("向量库连不上");
   });
 });
+
+describe("ASR model row: in-field candidates and the provider switch (spec 2026-09-27)", () => {
+  /** The rendered candidate labels, in menu order. */
+  async function openAsrMenu() {
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: F.asrModelCandidates }),
+    );
+    return (await screen.findAllByRole("menuitem")).map((item) => item.textContent);
+  }
+
+  const asrInput = () => screen.getByLabelText<HTMLInputElement>(F.asrModel);
+
+  it("offers the engine's common models inside the field and writes a picked one back", async () => {
+    renderPage();
+    openFunctionalView();
+
+    expect(await openAsrMenu()).toEqual([
+      "paraformer-zh",
+      "paraformer-en",
+      "sensevoice",
+    ]);
+
+    fireEvent.click(screen.getAllByRole("menuitem")[1]!);
+    expect(asrInput().value).toBe("paraformer-en");
+  });
+
+  it("swaps the whole candidate group with the engine", async () => {
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+
+    expect(await openAsrMenu()).toEqual([
+      "small",
+      "tiny",
+      "base",
+      "medium",
+      "large-v3",
+      "large-v3-turbo",
+    ]);
+  });
+
+  it("explains the row with the selected engine's own hint", () => {
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.getByLabelText(F.asrModelFunasrHint)).toBeTruthy();
+    expect(screen.queryByLabelText(F.asrModelWhisperHint)).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+
+    expect(screen.getByLabelText(F.asrModelWhisperHint)).toBeTruthy();
+    expect(screen.queryByLabelText(F.asrModelFunasrHint)).toBeNull();
+  });
+
+  it("carries the per-model capability note in the funasr hint", () => {
+    renderPage();
+    openFunctionalView();
+
+    const text =
+      screen.getByLabelText(F.asrModelFunasrHint).getAttribute("aria-label") ?? "";
+
+    for (const name of ["paraformer-zh", "paraformer-en", "sensevoice"]) {
+      expect(text.split(name)).toHaveLength(2); // once each
+    }
+    expect(text).toContain("逐句时间戳");
+    expect(text).toContain("镜头卡");
+  });
+
+  it("replaces a value the target engine cannot load when the provider switches", () => {
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+    expect(asrInput().value).toBe("small");
+
+    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderFunasr }));
+    expect(asrInput().value).toBe("paraformer-zh");
+  });
+
+  it("keeps a hand-typed funasr value when switching back to funasr", () => {
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderWhisper }));
+    fireEvent.change(asrInput(), { target: { value: "iic/SenseVoiceSmall" } });
+    fireEvent.click(screen.getByRole("radio", { name: F.asrProviderFunasr }));
+
+    expect(asrInput().value).toBe("iic/SenseVoiceSmall");
+  });
+
+  it("submits whatever is typed, and leaves the video block alone when untouched", async () => {
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.change(asrInput(), { target: { value: "./models/tiny-zh" } });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(
+      (saveMock.mock.calls[0]?.[0] as { video?: { asr_model?: string } }).video
+        ?.asr_model,
+    ).toBe("./models/tiny-zh");
+
+    saveMock.mockClear();
+    cleanup();
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.change(screen.getByLabelText(F.rerankModel), {
+      target: { value: "qwen3-rerank-v2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
+    expect(saveMock.mock.calls[0]?.[0]).not.toHaveProperty("video");
+  });
+});

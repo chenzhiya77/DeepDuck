@@ -1793,6 +1793,9 @@ export interface Translations {
       asrProviderFunasr: string;
       asrProviderWhisper: string;
       asrModel: string;
+      asrModelCandidates: string;
+      asrModelFunasrHint: string;
+      asrModelWhisperHint: string;
       services: string;
       qdrantUrl: string;
       mineruToken: string;
