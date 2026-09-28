@@ -1,6 +1,6 @@
 # 「ASR 模型」字段：可填下拉 + provider 联动 —— 设计
 
-**Status:** 🟢 **已交付（2026-09-27 立，2026-09-28 裁 D1/D2/D3；Task 0–3 全部落地）** —— **D1 = 乙（可填下拉；实现照抄「维度」行 = `Input` + 内嵌 `DropdownMenu`，零新依赖）· D2 = 甲（切换时置目标引擎列表的首行）· D3 = 甲（不做保存期校验）**。**已成对**：plan = [2026-09-27-rag-asr-model-picker.md](../plans/2026-09-27-rag-asr-model-picker.md)（Task 0–3 + 一节「交付后调整」）。与嵌入探测线的串行约束**已解除**：**本线** `63f3c448`→`e6dc651b` 各笔已推送（分支 tip 随推送到 `7e9dfc6c`）。**交付后调整（2026-09-29）：引擎选择由按钮组改为下拉**（`OptionSelect`，为后续"厂家分隔线"预留形状；本件 §1.1 ① 记的是调整前的形态）。
+**Status:** 🟢 **已交付（2026-09-27 立，2026-09-28 裁 D1/D2/D3；Task 0–3 全部落地）** —— **D1 = 乙（可填下拉；实现照抄「维度」行 = `Input` + 内嵌 `DropdownMenu`，零新依赖）· D2 = 甲（切换时置目标引擎列表的首行）· D3 = 甲（不做保存期校验）**。**已成对**：plan = [2026-09-27-rag-asr-model-picker.md](../plans/2026-09-27-rag-asr-model-picker.md)（Task 0–3 + 一节「交付后调整」）。与嵌入探测线的串行约束**已解除**：**本线** `63f3c448`→`e6dc651b` 各笔已推送（分支 tip 随推送到 `7e9dfc6c`）。**交付后调整（2026-09-29）：引擎选择由按钮组改为下拉**（`OptionSelect`，为后续"厂家分隔线"预留形状；本件 §1.1 ① 记的是调整前的形态）。**同日再调整：`sensevoice` 从 funasr 菜单与 ⓘ 注记里删掉**（短名 `AutoModel` 不认、换仓库 id 实测 0 段 ⇒ 不可用）⇒ **菜单现为 2 条**。
 
 > **行号锚点**：本文所有 `file:line` 锚定于 **2026-09-28**（嵌入探测线落地之后）。线漂了就按文件名 + 符号名找。
 
@@ -21,7 +21,7 @@
 | | funasr | whisper |
 | --- | --- | --- |
 | 名字从哪来 | ModelScope 模型 id（或**本地目录**）——**开放集**：`funasr/download/download_model_from_hub.py:241-275`（`os.path.exists(model)` ⇒ 直接当目录用；否则 `snapshot_download(model)` 当仓库 id 去下） | 包内置固定清单——**封闭集** |
-| 常用值 | `paraformer-zh`（默认，中文）、`paraformer-en`、`sensevoice`（= `iic/SenseVoiceSmall`）…（**Task 0 已结，见 §7.1**） | 包内 `_MODELS` 共 **14 键**（含 `.en` 与别名），菜单列常用 **6 条**：`tiny` / `base` / `small` / `medium` / `large-v3` / `large-v3-turbo`（`large`≡`large-v3`、`turbo`≡`large-v3-turbo` 是别名 ⇒ 实际 12 份权重）；**判据用它（14 键），菜单只列 6 条** |
+| 常用值 | `paraformer-zh`（默认，中文）、`paraformer-en`（**`sensevoice` 已于 2026-09-29 剔出菜单**：短名不可加载、实测 0 段，见 §7.1）…（**Task 0 已结，见 §7.1**） | 包内 `_MODELS` 共 **14 键**（含 `.en` 与别名），菜单列常用 **6 条**：`tiny` / `base` / `small` / `medium` / `large-v3` / `large-v3-turbo`（`large`≡`large-v3`、`turbo`≡`large-v3-turbo` 是别名 ⇒ 实际 12 份权重）；**判据用它（14 键），菜单只列 6 条** |
 | 值的含义 | 模型**族**不同（中文 / 多语言 / 英文），也可以是**一个目录路径** | 同族里**大小**不同（越大越准越慢） |
 | 仓内唯一的示例 | `app_config.py:157` 的默认值与 video spec `:55/:185-186` | 同处："whisper tier example: small" |
 
@@ -52,7 +52,7 @@
 | --- | --- | --- |
 | → whisper | 值 ∉ whisper 合法名（14 键） | 置 whisper 列表**首行** `small` |
 | → funasr | 值 ∈ whisper 合法名（14 键） | 置 funasr 列表**首行** `paraformer-zh` |
-| → funasr | 其余一切（`sensevoice`、仓库 id、目录路径…） | **原样保留** |
+| → funasr | 其余一切（`paraformer-en-spk`、仓库 id、目录路径…） | **原样保留** |
 
 - **首行 = 默认**：前端**不另设默认常量**——每个引擎的"默认"就是它推荐列表的第一项（funasr `paraformer-zh` 与后端 `app_config.py:157` 一致；whisper `small` 是多数人该用的档，不是最差的 `tiny`）。这一条同时消掉了"前端要不要硬编码两个默认值"的问题。
 - **不记历史**：切走再切回**不会复原**用户上一次的输入（`sensevoice` 这类值会被首行顶掉）。要"每个引擎各留一份值"就得改数据模型 ⇒ 见 §5 的 C（单独立项）。
@@ -70,7 +70,7 @@
 | 面 | 改什么 |
 | --- | --- |
 | 界面 | `functional-models-view.tsx:1394-1399`：控件换成**可填下拉**——**照抄「维度」行整段**（`:1039-1131`）：`relative w-full` 包一层 + `Input`（留出右侧内边距）+ 内嵌 `absolute inset-0 flex justify-end` 的 chevron 壳（外层 `pointer-events-none`、里层 `pointer-events-auto`）+ `DropdownMenu`（菜单 `w-(--radix-dropdown-menu-trigger-width)` 与输入框等宽），候选 `onSelect` 写回输入框。候选组按 provider 整组换；**占位**放输入框内；**说明句**进 `RowLabel` 的 `info=`（ⓘ，同 `:1337` 先例）——**不新增任何可见行** |
-| 候选表 | **两张常量、各司其职**：**① 菜单**——**按推荐序**（funasr 首行 `paraformer-zh`、whisper 首行 `small`；**funasr 按「甲」三条（已拍）/ whisper 已定 6 条**），只负责渲染候选与「**首行 = 默认**」；**按常用排、不按能力筛**（逐句时间戳能力作注记，见 §2 D1）；**② 判据集合**——whisper 的**全部合法名（14 键，§7.2）**，只负责 D2 的"是不是 whisper 名"。⚠️ **不要合并两者**：`large` / `turbo` / `tiny.en` 合法但不在菜单里，合并即漏判。funasr 侧菜单三条已拍（原文见 §7.1）。|
+| 候选表 | **两张常量、各司其职**：**① 菜单**——**按推荐序**（funasr 首行 `paraformer-zh`、whisper 首行 `small`；**funasr 两条（2026-09-29 删 `sensevoice`）/ whisper 已定 6 条**），只负责渲染候选与「**首行 = 默认**」；**按常用排、不按能力筛**（逐句时间戳能力作注记，见 §2 D1）；**② 判据集合**——whisper 的**全部合法名（14 键，§7.2）**，只负责 D2 的"是不是 whisper 名"。⚠️ **不要合并两者**：`large` / `turbo` / `tiny.en` 合法但不在菜单里，合并即漏判。funasr 侧菜单三条已拍（原文见 §7.1）。|
 | 表单规则 | `config-form.ts` 加一个**纯函数**（按上表判 + 置首行），由视图的 `updateVideo` 在 provider 变化时调用；与现有写回语义一致（`:281-304`：值变了才写、空值只在文件自有覆盖时写回） |
 | i18n | `locales/{types,zh-CN,en-US}.ts`：新增提示 key（按 provider 变 ⇒ **2 个**）+ 占位（可直接用模型名字面量，不进 i18n）——**+2 key ×3 文件** |
 | **不动** | 后端全部（`asr_provider`/`asr_model` 的契约、`asr.py` 的分派与降级语义）；video 流水线；VLM 行；本节的其它行 |
@@ -81,7 +81,7 @@
 2. **联动三条**（D2=甲，判据 = whisper 合法名 **14 键**）：
    - 切到 whisper 且当前值 ∉ 14 键 ⇒ 变 `small`；
    - 切向 funasr 且当前值 ∈ 14 键 ⇒ 变 `paraformer-zh`——**含不在菜单里的合法名**（`turbo` / `large` / `tiny.en`）；
-   - **切向 funasr 时判据不看 funasr 自己的推荐表**：whisper 名以外的值（`sensevoice`、仓库 id、目录路径）在任何"切向 funasr"的场景都原样保留。⚠️ 这一条**不是**"往返不动"——切走再切回**不复原**上一次的输入（见 §2 D2「不记历史」）。
+   - **切向 funasr 时判据不看 funasr 自己的推荐表**：whisper 名以外的值（`paraformer-en-spk`、仓库 id、目录路径）在任何"切向 funasr"的场景都原样保留。⚠️ 这一条**不是**"往返不动"——切走再切回**不复原**上一次的输入（见 §2 D2「不记历史」）。
 3. **自由填不被破坏**（D1=乙）：任意字符串仍可保存并原样读回（往返用例）。
 4. **既有配置零变化**：不动这两行时，保存 payload 与今天逐字节相同；后端零改动（`git diff` 不含 `backend/`）。
 5. **门禁**：前端 `pnpm check` + 相关 dom 用例；纯前端 ⇒ 不跑后端套件（交付说明注明）。
@@ -104,7 +104,7 @@
 ## 7. 待办（开工前 Task 0 该取证的）
 
 1. ✅ **funasr 候选表（已结，2026-09-28）**：三条来源交叉核——官方 README / 模型 zoo、本机 CLI 注册表 `funasr/cli.py:11-16`、别名表 `download/name_maps_from_hub.py`。**按 §2 D1「甲」**：
-   - **菜单三条（已拍，2026-09-28）**：`paraformer-zh`（**首行**）/ `paraformer-en` / `sensevoice`（= `iic/SenseVoiceSmall`）——按**常用度**排，**不按"能否出时间戳"筛**；
+   - **菜单两条（已拍；2026-09-29 删去 `sensevoice`）**：`paraformer-zh`（**首行**）/ `paraformer-en`——按**常用度**排，**不按"能否出时间戳"筛**；
    - ⚠️ **拼写更正**：`sensevoice-small` 这个名字**不存在**（全包 0 命中）——准确拼写 `sensevoice`（CLI 别名）/ 仓库 id `iic/SenseVoiceSmall`；
    - **能力注记（当前调用的实测结论）**：`paraformer-zh` 能返回 `timestamp`，但只因调用侧没传 `vad_model` / `punc_model`，产出是**整段一行 + 逐字带空格** ⇒ 整段挤进一张镜头卡、其余「（无）」；**其余模型未测**（标"未测"）。真机证据与"另开一笔"的建议见 plan 的 `实测`。
 2. ✅ **whisper 候选表（已结，2026-09-28）**：`openai-whisper` 源码 `whisper/__init__.py` 的 `_MODELS` = **14 键**（`tiny.en`/`tiny`/`base.en`/`base`/`small.en`/`small`/`medium.en`/`medium`/`large-v1`/`large-v2`/`large-v3`/`large`/`turbo`/`large-v3-turbo`）⇒ **"常用五档"不是全集**；`large-v3-turbo` 确实存在；`large`≡`large-v3`、`turbo`≡`large-v3-turbo` 指向同一 URL ⇒ 实际 12 份权重。同文件 `load_model` 的第二分支 `elif os.path.isfile(name)`（`:139`）接受**本地 .pt**——这也是 D3 改措辞的源码证据。**菜单**取常用 6 条：`tiny` / `base` / `small` / `medium` / `large-v3` / `large-v3-turbo`（不混入 `.en` 与别名）；⚠️ **判据用这 14 键全集**，菜单只负责渲染（见 §2 D2 / §3）——两者不得合并。
