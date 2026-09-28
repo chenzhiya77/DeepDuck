@@ -1,6 +1,6 @@
 # 对外发布前的写死项盘点：好的写死 vs 坏的写死（2026-09）
 
-**盘点日期**：2026-09-23 起，第三轮（角色落点枚举）2026-09-24（本机只读代码 + git 归属核对；未做端点实测，凡引用实测结论处均标出原始探针日期）。行号为工作树快照（分支 `feat/rag-knowledge-base`；初盘 HEAD `448fa421`，**第四轮 2026-09-26 按 HEAD `860dbf25` 复核了 B-1 / B-3 / A-1 / A-5 / G-9 引用的行号**，其余条目未逐个复核）。
+**盘点日期**：2026-09-23 起，第三轮（角色落点枚举）2026-09-24（本机只读代码 + git 归属核对；未做端点实测，凡引用实测结论处均标出原始探针日期）。行号为工作树快照（分支 `feat/rag-knowledge-base`；初盘 HEAD `448fa421`，**第四轮 2026-09-26 按 HEAD `860dbf25` 复核了 B-1 / B-3 / A-1 / A-5 / G-9 引用的行号**，其余条目未逐个复核；**第五轮 2026-09-28 按 HEAD `47c35ca0` 更正门 A 的状态（那一对已交付）与字段真名（`default_model`，原写 `default_model_name`），并解除原先挂在门 A 上的四条与 `B-1` 选乙**）。
 
 **缘起**：问题是「现在的模型配置中还有直接写死的吗，就是功能上、默认的、改不了换不了的，比如某些名称为厂商变量」→「哪些是**人为**固定写死的（为了一时堵住缺口的），**另外一个人下载使用这个项目会受影响**的」→ 最后要求**把写死分成两种**：好的写死是设计约束，是可变可换的、不触及默认功能行为的（包括用户自己手写一个模型名——它虽然"写死"在配置里，但它是功能的一部分、供功能调用运转）；坏的写死是不规范的、静默的、用户触碰不到控制不了的，**尤其是直接决定功能结果方向的、相当于默认替用户做了选择的**。
 
@@ -14,11 +14,17 @@
 
 **闭合登记（2026-09-27）**：**`A-9` 已闭合**——由 [2026-09-23 默认模型那一对](superpowers/specs/2026-09-23-default-model-design.md) 的 Task 7 落地（提交 `3bf049cf`：删 `knowledge/eval/factory.py` 的 `dashscope:` 直连分支、端点常量与 `JudgeKeyMissingError`；CLI 的错名从 `skipped` ＋ 退 3 改为 stderr 一句 ＋ 一行 `status="error"` ＋ 退 2，judge 与答题一样按 `models:` 条目名取值）。坏写死**现存 14 条**（16 − 已闭合 2），**本仓自己待修仍为 13 条**（`A-9` 原就排除在"本仓待修"之外）；§3 与 §4 的计数句同批改准，逐条与表格属各轮历史快照、不动。
 
+**第五轮（2026-09-28，门 A 状态复核）**：核对 HEAD `47c35ca0` 时发现**门 A 早已交付**——那一对的 plan **82/82 全勾**，提交落在 2026-09-26 21:14 → 09-27 20:35（`bfed5529` → `305f4fa2`），而本档第四轮把它记成"有排期（状态「暂不开工」）"、并据此建议「对 1」先落地，两处都过期。⇒ **更正 1 条状态**（门 A 从"待开"移入 §4.1「已开的门」）、**解除 5 项门禁**（`B-2` 剩余三处、`C-1`、`C-2`、`A-1` 的余下三行、`B-1` 选乙）、**更正 4 处字段名**（`rag.default_model_name` → `rag.default_model`：G-9、§4.1 门 B 表的"形状判断"与"授权不对称"两行、§6 附录末段）、**更正 1 处计数**（§4.1 那句"本仓自己待修 14 条"应为 13）。同批更正「对 1」两份在飞文档里同源的三处过期事实（门 A 已交付、字段名、golden 键数），并把"这两个角色要不要一并接 `rag.default_model`"补为它 §6.1 的第 ④ 项待裁；**已交付的门 A 那两份不回改**（按本档自己的惯例：已发过的文档冻结留档）。逐条见 §5 的「第五轮」表。
+
+**闭合登记（2026-09-29）**：**`A-7`／`A-8` 已闭合**——由 [2026-09-26 那一对](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（§4.2「对 1」）交付：`rag.wiki_model`／`rag.synthesis_model` 两层字段（并进共享空白归一 `MODEL_REFERENCE_FIELDS`）＋ 三个调用点（wiki 手动／wiki worker 自动／考题合成）接上 `require_usable_rag_target` ⇒ 兜底链 `角色字段 → rag.default_model → models[0]`；worker 那条腿同时惰性化（改设置不用重启）、`app.py` 的 boot 建模型退场；保存期检查扩到六个字段。实施提交 `7d517757`（后端）／`7ba229eb`（前端）／`9ffae7c3`（模板与模块指南），真栈六条腿已过（Task 4／5 的真栈验收与交付回写另成一笔文档提交）。坏写死**现存 12 条**（16 − 已闭合 4：`B-3`／`A-9`／`A-7`／`A-8`），**本仓自己待修 11 条**（再减属上游的 `A-10`）；§3／§4／§4.1 与「一句话结论」的计数句同批改准，逐条与表格属各轮历史快照、不动。
+
+**⚠ 本轮未处理的同源过期处**（登记备查，等指令）：**§6 附录 §6.1 的角色表**里至少两行随门 A 交付而过期——「图谱抽取」行写「未设 `models[0]`」（现为 `extract_model → rag.default_model → models[0]`）、「评测 judge」行写「另有 `dashscope:` 支路绕过 config 白名单」（该支路已删）。它们属§6 的第三轮快照，本轮只做 §4/§4.1/§4.2 与字段名的更正，未动。**2026-09-29 追加**：「wiki 生成」「题目合成」两行随「对 1」交付同批过期（前者现为 `wiki_model → rag.default_model → models[0]` 且启动期建模型已删，后者为 `synthesis_model → rag.default_model → models[0]`），同样留作快照、等指令。
+
 **范围**：本仓 fork 新增/改动的 RAG 与配置层代码，加上会被别人直接拿走的载体（`config.example.yaml` / `rag_config.example.json` / `.env.example` / `README.md` 的相关段落）；**第三轮起扩到"所有用模型的角色"**（含标题 / 摘要 / 记忆 / 目标评估 / 输入润色 / 追问建议 / 技能审核这些非 RAG 角色），因为它们与 RAG 角色共用同一个"没指定时用谁"的问题——逐角色落点见附录 §6。**不含**上游自有文件里上游自己写的默认值与端点常量（归属核对方法见 §1.3；唯一例外是 `G-9` 那条位置默认，它是上游机制但为本档提供对照基线，故只登记不建议改）。
 
 **与 [2026-09-23 默认模型那一对](superpowers/specs/2026-09-23-default-model-design.md) 的关系**：**本档不在其范围内，也未排期**——那份 spec 管「没指定功能模型时落到哪」，本档管「哪些东西用户根本指定不了」。两者有一处交叠（`vlm_base_url` / `vlm_api_key` 的退役），在相关条目里标注，避免双计。
 
-**一句话结论**：**9 条好的写死（别动）· 16 条坏的写死**（坏-B 假旋钮 3 · 坏-A 替用户决定+够不着 10 · 坏-C 不规范 3）；其中 **`B-3` 已于 2026-09-16 被 `8eed49b8` 闭合**、**`A-9` 已于 2026-09-27 被 `3bf049cf` 闭合**（现存 14 条）、`A-10` 是上游的 ⇒ **本仓自己待修的实为 13 条**。核心不一致是：**20 个用模型的角色里，13 个退到"位置默认 `models[0]`／跟随本轮／干脆不用模型"（由用户自己的配置决定），4 个退到字面量厂商型号（由别人的选择决定）**，另有 1 个继承那 4 个之一、1 个是档位参数、1 个无字面量（逐条见附录 §6）。坏的里面最危险的不是"够不着"那类，而是 **坏-B「假旋钮 / 文档与代码不符」那 3 条**——用户以为自己控制住了，其实没有。**顺序、门槛与分组见 §4 / §4.1 / §4.2**（第四轮已重排：`B-3` 闭合、`A-7 + A-8` 升到第一、`B-1` 因改法岔口可能落到门 A）。**B-2 按载体删行 / 删项、不改名**：三处说明与 `test_parser.py` 四处归 Task 9，余下三处说明与一处 live 门禁紧跟其后处理。退役的是 RAG 专属回退，模型条目仍可显式引用自选环境变量，详见 B-2。
+**一句话结论**：**9 条好的写死（别动）· 16 条坏的写死**（坏-B 假旋钮 3 · 坏-A 替用户决定+够不着 10 · 坏-C 不规范 3）；其中 **`B-3` 已于 2026-09-16 被 `8eed49b8` 闭合**、**`A-9` 已于 2026-09-27 被 `3bf049cf` 闭合**、**`A-7`／`A-8` 已于 2026-09-29 被「对 1」交付**（现存 12 条）、`A-10` 是上游的 ⇒ **本仓自己待修的实为 11 条**。核心不一致是：**20 个用模型的角色里，13 个退到"位置默认 `models[0]`／跟随本轮／干脆不用模型"（由用户自己的配置决定），4 个退到字面量厂商型号（由别人的选择决定）**，另有 1 个继承那 4 个之一、1 个是档位参数、1 个无字面量（逐条见附录 §6）。坏的里面最危险的不是"够不着"那类，而是 **坏-B「假旋钮 / 文档与代码不符」那 3 条**——用户以为自己控制住了，其实没有。**顺序、门槛与分组见 §4 / §4.1 / §4.2**（第四轮重排：`B-3` 闭合、`A-7 + A-8` 升到第一、`B-1` 因改法岔口可能落到门 A；**第五轮解除门禁：门 A 已交付（2026-09-27），原先挂它的四条与 `B-1` 选乙现在都无门，唯一还开着的是门 B**）。**2026-09-29：`A-7` + `A-8` 已由「对 1」交付闭合（§4.2），坏写死现存 12 条、本仓待修 11 条。** **B-2 按载体删行 / 删项、不改名**：三处说明与 `test_parser.py` 四处归 Task 9，余下三处说明与一处 live 门禁紧跟其后处理。退役的是 RAG 专属回退，模型条目仍可显式引用自选环境变量，详见 B-2。
 
 ---
 
@@ -83,11 +89,11 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | **G-6** | 内部结构约定：`app_config.py:188` `qdrant_url` 缺省 `http://localhost:6333`（有旋钮，且与 docker-compose 的服务对齐）、集合名、`rag_config_file.py:39` `MASKED_SECRET = MASKED_API_KEY`（与模型钥匙同一个哨兵值，注释自述"so the UI can share one constant"） | 缺省值 + 旋钮 / 纯内部约定，不决定功能方向。 | 不需要改。 |
 | **G-7** | `models/openai_codex_provider.py:29` `CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"`（`:254` 使用） | **上游写的，本仓没碰过**：`git log -L 29,29:…` → `835ba041`（Purricane，2026-03-22，上游 PR #1166「add Claude Code OAuth and Codex CLI as LLM providers」），且 merge-base `99c926b7` 里同一行已在原位。它是产品固定端点（ChatGPT 后端），属 §1.1 末尾那类。 | 改动只会扩大与上游的 diff 面。**注意**：本仓文档曾把它误记为「本仓自己持有端点常量的唯一先例」，已于 2026-09-23 在 [spec §6.12](superpowers/specs/2026-09-23-default-model-design.md) 更正——「唯一」只在 `deerflow/models/` 这一层成立（反例即 G-3 与 A-6）。 |
 | **G-8** | 用户在 `config.yaml` / `rag_config.json` / 设置界面里**自己填的**模型名、地址、钥匙 | 按 §1.1 第 1 条这就是"可变可换"，按 §1.2 的注意区分它**不是写死**——它是功能的输入，供功能调用运转。列在这里只为把边界划清：本档所有条目都是"用户没有表达位置"的那些。 | 不适用。 |
-| **G-9** | **位置默认 `models[0]`**：`models/factory.py:298-299` `if name is None: name = config.models[0].name`（docstring `:273`：“If None, the first model in the config will be used”）。`models[0]` 是谁由 `models_config.py:191-212` 的 `merge_ui_models` 决定：config.yaml 的条目**原位保留**，UI 条目同名则原位替换、否则**追加到末尾** ⇒ 只要 config.yaml 有模型，`models[0]` 恒为**它的第一条**。 | **登记为基线，不建议在本档里改**：① 它是**上游机制**（`git log -L 298,299:…factory.py` → `83bd7e43`，Henry Li，2026-01-14，当时路径还是 `backend/src/models/factory.py`）；② 它退到的是**用户自己配置的第一条**，不是别人的厂商型号 ⇒ 满足 §1.1 第 2 条。它是 §6 附录里那 13 个角色的共同落点，所以必须先讲清它是什么，A-7/A-8/A-10 才读得懂。 | **它有真实缺点，但不由本档处理，也不由 [2026-09-23 那一对](superpowers/specs/2026-09-23-default-model-design.md) 处理**："第一条"是**位置语义**而不是"用户指定的默认"⇒ 在界面里新加的模型永远排在末尾、**当不上默认**；且重排或删除 config.yaml 的 `models:` 会**静默改变十来个角色的落点**。那一对（**2026-09-26 已收窄为 RAG 范围**）**明确不碰公共工厂**：spec `:21` 把「全站默认字段、公共工厂默认行为」列进本期不做，`:204` 写「字段加载不改变公共模型工厂的 `name=None` 行为」，`:244` 把 `models/factory.py` 明列为不改的生产文件 ⇒ **G-9 不由它替换**；它只在四个 RAG 角色（图谱抽取／评测裁判／图片配文／视频配文）上面加一层 `rag.default_model_name`（spec D3 `:57-60`），`models[0]` 仍是这四条的**最后一层兜底**。**位置默认本身的替换归上游**：上游至今没有默认模型字段（`upstream/main` 的 `models/factory.py:393-394` 仍是 `name is None → config.models[0].name`），详见 §4.1 的门 B。**它也不能删**：删掉会让「没设默认模型」的部署失去落点。**⚠ 别顺手改工厂的解析顺序**：这条隐式约定在我方散落于 **10 处**非文档代码（`models/factory.py:299`、`lead_agent/agent.py:133`、`summarization_middleware.py:162`/`:716`、`tool_error_handling_middleware.py:361`、`client.py:301`、`context_compaction.py:88`、`subagents/config.py:48`、`tools/tools.py:114`、`context_usage.py:47`），上游是 **11 处**——多的那处是 `app/gateway/authz.py:387` 的 `authorize_model_use`，它把 `model_name is None → app_config.models[0].name` **在授权路径上又写了一遍**。只改工厂不改它，就会变成「授权查 A 模型、实际跑 B 模型」。 |
+| **G-9** | **位置默认 `models[0]`**：`models/factory.py:298-299` `if name is None: name = config.models[0].name`（docstring `:273`：“If None, the first model in the config will be used”）。`models[0]` 是谁由 `models_config.py:191-212` 的 `merge_ui_models` 决定：config.yaml 的条目**原位保留**，UI 条目同名则原位替换、否则**追加到末尾** ⇒ 只要 config.yaml 有模型，`models[0]` 恒为**它的第一条**。 | **登记为基线，不建议在本档里改**：① 它是**上游机制**（`git log -L 298,299:…factory.py` → `83bd7e43`，Henry Li，2026-01-14，当时路径还是 `backend/src/models/factory.py`）；② 它退到的是**用户自己配置的第一条**，不是别人的厂商型号 ⇒ 满足 §1.1 第 2 条。它是 §6 附录里那 13 个角色的共同落点，所以必须先讲清它是什么，A-7/A-8/A-10 才读得懂。 | **它有真实缺点，但不由本档处理，也不由 [2026-09-23 那一对](superpowers/specs/2026-09-23-default-model-design.md) 处理**："第一条"是**位置语义**而不是"用户指定的默认"⇒ 在界面里新加的模型永远排在末尾、**当不上默认**；且重排或删除 config.yaml 的 `models:` 会**静默改变十来个角色的落点**。那一对（**2026-09-26 已收窄为 RAG 范围**）**明确不碰公共工厂**：spec `:21` 把「全站默认字段、公共工厂默认行为」列进本期不做，`:204` 写「字段加载不改变公共模型工厂的 `name=None` 行为」，`:244` 把 `models/factory.py` 明列为不改的生产文件 ⇒ **G-9 不由它替换**；它只在四个 RAG 角色（图谱抽取／评测裁判／图片配文／视频配文）上面加一层 `rag.default_model`（spec D3 `:57-60`；**2026-09-27 已交付**），`models[0]` 仍是这四条的**最后一层兜底**。**位置默认本身的替换归上游**：上游至今没有默认模型字段（`upstream/main` 的 `models/factory.py:393-394` 仍是 `name is None → config.models[0].name`），详见 §4.1 的门 B。**它也不能删**：删掉会让「没设默认模型」的部署失去落点。**⚠ 别顺手改工厂的解析顺序**：这条隐式约定在我方散落于 **10 处**非文档代码（`models/factory.py:299`、`lead_agent/agent.py:133`、`summarization_middleware.py:162`/`:716`、`tool_error_handling_middleware.py:361`、`client.py:301`、`context_compaction.py:88`、`subagents/config.py:48`、`tools/tools.py:114`、`context_usage.py:47`），上游是 **11 处**——多的那处是 `app/gateway/authz.py:387` 的 `authorize_model_use`，它把 `model_name is None → app_config.models[0].name` **在授权路径上又写了一遍**。只改工厂不改它，就会变成「授权查 A 模型、实际跑 B 模型」。 |
 
 ---
 
-## 3. 坏的写死（16 条，其中 `B-3`、`A-9` 已闭合、`A-10` 判为上游所有 ⇒ 现存待修 13 条）
+## 3. 坏的写死（16 条，其中 `B-3`、`A-9`、`A-7`、`A-8` 已闭合、`A-10` 判为上游所有 ⇒ 现存待修 11 条）
 
 ### 3.1 坏-B：假旋钮 / 文档与代码不符（3 条，最危险；其中 `B-3` 已闭合 ⇒ 现存 2 条）
 
@@ -102,7 +108,7 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | **⚠ 第四轮更正：这个字段前端零暴露** | 本条前一版写「界面上是一个能填的框」「要同步改前端标签与 i18n 三处」——**错的**。全前端只有 `core/rag/types.ts:39` 一处 wire 类型；它**不在** `core/rag/config-form.ts` 的 `SECRET_FIELDS` / `TEXT_FIELDS` / `SELECT_FIELDS` 任一清单里，没有 i18n key，没有任何组件渲染它。⇒ 它是 **API 可写、但界面够不着**的字段，只能靠手写 `rag_config.json` 或 `config.yaml` 表达。`config.example.yaml:2597` 有它的注释行，`rag_config.example.json` 没有。 |
 | **⚠ 第四轮新查出的缺陷：一次无关的保存会把它删掉** | `RagConfigFile` 的 25 个字段里，`embedding_dimension` 是**唯一**不被 `buildRagConfigInput()` 带回的标量字段（`config-form.ts:195-243` 只遍历那三个清单 + `video` 子对象；`video` 是逐键合并的窄模型 `RagVideoFileConfig`，不受影响）。而 PUT 是**整对象替换**（router docstring `:380`「Replace the API-writable rag_config.json」；`backend/AGENTS.md`「an omitted or emptied field is **removed** from the file」）⇒ **从功能模型视图保存任何东西（改重排、改解析都算），都会把 `rag_config.json` 里手写的 `embedding_dimension` 删掉**，退回 `config.yaml` 的值、或退回 `None` ⇒ 启用时重新探测。危害不是"少了一个值"，而是**静默把「声明＝跳过探测」变回「探测」**——而按 `backend/AGENTS.md:1180` 自己的话，探测在某些自建服务上不可靠。 |
 | **归属** | fork-new（§1.3 ①）。 |
-| **改法与破坏面（⚠ 有岔口，甲／乙待裁）** | **共同点**：改描述**零用例风险**（已核：`backend/tests` 与 `frontend` 搜 “Dense dimension override” / “Must be 1024” 零命中，没有测试钉这两段文字）；**别改 `app_config.py:209`**（它已经是对的）。<br>**甲 —— 只改描述**：把 `rag_config_file.py:100` 补成与 `:209` 一致（"必须 1024；声明它等于跳过探测"）。零代码逻辑、**无门**、可立刻做。**代价**：上面那条「保存即丢」的缺陷**原样留着**，得在本档另立一条登记。<br>**乙 —— 把字段从 `RagConfigFile` 退役**（只留在 `RagConfig`，即只能由 `config.yaml` 声明）：既然界面从来不暴露它、唯一合法值是 1024，它本就不该在 API 可写文件里 ⇒ **一次关掉假旋钮与保存即丢两件事**。机制现成：`_RETIRED_KEYS`（`rag_config_file.py:56`，MinerU 那对刚为 `parse_backend` 建的——读取期剥离 + warning，不回写磁盘）。**代价**：**撞门 A**——2026-09-23 那一对的 Task 8/9 也要往 `_RETIRED_KEYS` 加两个 VLM 键，且其 spec D10.4 明写「Task 8 归一与 Task 9 删字段必须背靠背交付、同批发布」⇒ 乙不能抢在它前面。<br>**丙（不推荐）**：把它加进表单清单让它能被带回 ⇒ 等于给一个「只能是 1024」的字段做界面，正是本条判为坏的假旋钮的放大版。 |
+| **改法与破坏面（⚠ 有岔口，甲／乙待裁）** | **共同点**：改描述**零用例风险**（已核：`backend/tests` 与 `frontend` 搜 “Dense dimension override” / “Must be 1024” 零命中，没有测试钉这两段文字）；**别改 `app_config.py:209`**（它已经是对的）。<br>**甲 —— 只改描述**：把 `rag_config_file.py:100` 补成与 `:209` 一致（"必须 1024；声明它等于跳过探测"）。零代码逻辑、**无门**、可立刻做。**代价**：上面那条「保存即丢」的缺陷**原样留着**，得在本档另立一条登记。<br>**乙 —— 把字段从 `RagConfigFile` 退役**（只留在 `RagConfig`，即只能由 `config.yaml` 声明）：既然界面从来不暴露它、唯一合法值是 1024，它本就不该在 API 可写文件里 ⇒ **一次关掉假旋钮与保存即丢两件事**。机制现成：`_RETIRED_KEYS`（`rag_config_file.py:57`；MinerU 那对为 `parse_backend` 建，2026-09-23 那一对的 Task 8 已把它扩成"名字→原因表"并加了嵌套剥离，Task 9 已删字段且已发布）。**代价（2026-09-28 更新：原写的「撞门 A」已解除）**：原先的顾虑是"那一对的 Task 8/9 也要往 `_RETIRED_KEYS` 加两个 VLM 键、且其 spec D10.4 要求两者背靠背交付 ⇒ 乙不能抢在它前面"——**那一对已交付**，机制现成、无人撞车，乙现在是**一笔独立的改动**，要点两条：① `_RETIRED_KEYS` 加一项（读时剥离 ＋ warning，不回写磁盘）；② 删 `RagConfigFile` 的声明。**这两件事要在同一个批次里完成**（沿用 Task 8/9 那条纪律：先剥离后删声明的中间态不可单独发布，反序则存量文件加载失败）。另：乙是**API 形状变更**（PUT 回送该键将变 422），与甲的一次性描述修正不同量级。<br>**丙（不推荐）**：把它加进表单清单让它能被带回 ⇒ 等于给一个「只能是 1024」的字段做界面，正是本条判为坏的假旋钮的放大版。 |
 
 #### B-2 `SILICONFLOW_VLM_API_KEY`：六处文档叫用户设，零处代码读它
 
@@ -127,7 +133,7 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | **结论** | **不是"后来被修掉的"，是我当时没核界面** ⇒ 本条从坏项里移出，计数随之调整（§3 / §3.1 / 一句话结论）。保留本条与编号不删，是为了给"同形字段"这个判据留一个**反例**：同形不等于同义，但**界面把差异说出来之后**它就不是坏写死。 |
 | **遗留（不归本条）** | 后端**字段名**仍与三个真旋钮同形；只读 `config.yaml` 的人看到的是字段名，不是界面。要不要连字段名一起改属命名口味，**不登记为坏项**——改了要动 `rag_config.json` 的键 ⇒ 反而制造一次退役，成本高于收益。 |
 
-### 3.2 坏-A：替用户做决定 + 够不着（10 条；其中 `A-9` 已闭合 ⇒ 现存 9 条）
+### 3.2 坏-A：替用户做决定 + 够不着（10 条；其中 `A-9`、`A-7`、`A-8` 已闭合 ⇒ 现存 7 条）
 
 > 共同特征：**没有配置通路**，而这个值决定功能结果的方向。"没有配置通路"有两种形态（§1.2）：`A-1`～`A-6` 与 `A-9` 是**值写死了**；`A-7`/`A-8`/`A-10` 是**字段根本不存在**——代码老老实实退到通用默认，但用户没有任何位置能指定这个角色该用谁。
 
@@ -200,8 +206,8 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | **为什么是坏-A** | `RagConfig` **没有任何 wiki 模型字段**（全部字段已逐个核过：`app_config.py:188-201` 与 `:207-231`，LLM 角色字段只有 `extract_model`(`:199`) / `judge_model`(`:200`) / `vlm_model`(`:193`) 三个）。而 wiki 条目是**用户会直接阅读、且能被"生成方向"引导**的产物 ⇒ "用哪个模型写我的百科"这件事，用户没有表达位置，只能拿到 `models[0]`（G-9 那个位置默认）。 |
 | **同层对照** | 同为 RAG 的 LLM 角色：图谱抽取**有** `rag.extract_model`、评测 judge **有** `rag.judge_model`，两者在设置界面都是"条目选择器"。⇒ **同一层三个 LLM 角色，两个有字段、一个没有**，这不是设计取舍的形状。 |
 | **归属** | fork-new（§1.3 ①：`knowledge/wiki/generator.py` 在 merge-base 不存在）。 |
-| **改法与破坏面** | 加 `rag.wiki_model`（默认 `None` ⇒ 仍落 `models[0]`，行为不变）⇒ **纯加法、不破坏任何部署**；要同时进 `rag_config.json` 与设置界面选择器，照 `extract_model`/`judge_model` 的既有形状抄即可（含"空 = 使用配置默认"那个既有文案）。 |
-| **✅ 已成对起草（2026-09-26，未开工）** | 与 A-8 合为 [2026-09-26 那一对](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（spec + [plan](superpowers/plans/2026-09-26-rag-wiki-synthesis-model.md)，§4.2 的「对 1」）。**其 spec D2/D3 查出本条此前漏掉的一半**：wiki 有**两个**调用点——`generator.py` 那个是惰性的（每次调用读配置、热加载生效），`app.py:351` 那个是**启动期一次性**注入 worker 的（改了要重启）。**两处必须同批改**，只改一处就造出一个只对一条腿生效的假旋钮，正是 §3.1 判为最危险的那一类。该不对称今天已存在（worker 的模型本来就 boot 冻结），本对只登记并写进界面提示，不改 boot 注入语义。 |
+| **改法与破坏面** | 加 `rag.wiki_model`（默认 `None` ⇒ 仍落 `models[0]`，"用哪个模型"不变）＋ 照 `extract_model`/`judge_model` 的既有形状进 `rag_config.json` 与设置界面选择器（含"空 = 使用配置默认"那个既有文案）。**⚠ 2026-09-28 更正：不再能称"纯加法、不破坏任何部署"** —— 那一对同日把 ③ 裁定为乙（spec D3），顺手把 worker 那条自动生成腿从"启动期定模型"改成"每次现解析"。**这是与字段是否声明无关的行为变化**：没有可用模型时从"启动时一条一次性日志 ＋ 之后静默关闭"变成"每次触发各一条日志"，收益是配置修好即自愈、不用重启。该对的 spec §6.2 已如实登记这条代价。 |
+| **✅ 已交付（2026-09-29，「对 1」）** | 与 A-8 合为 [2026-09-26 那一对](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（spec + [plan](superpowers/plans/2026-09-26-rag-wiki-synthesis-model.md)，§4.2 的「对 1」）。**其 spec D2/D3 查出本条此前漏掉的一半**：wiki 有**两个**调用点——`generator.py` 那个是惰性的（每次调用读配置、热加载生效），`app.py:351` 那个是**启动期一次性**注入 worker 的（改了要重启）。**两处必须同批改**，只改一处就造出一个只对一条腿生效的假旋钮，正是 §3.1 判为最危险的那一类。该不对称今天已存在（worker 的模型本来就 boot 冻结）。**⚠ 2026-09-28 再更正**：本行原写"本对只登记并写进界面提示，不改 boot 注入语义"——**该裁定随后被推翻**：2026-09-28 的 ③＝乙 把 worker 腿改成**每次触发现解析**、`app.py` 的 boot 建模型与它那条 `except` 一并退场（spec D3），并把它登记为该对唯一"与字段是否声明无关的行为变化"（见 A-7 的「改法与破坏面」行末）。**交付（2026-09-29）**：`RagConfig`／`RagConfigFile` 各加 `wiki_model`（并进共享空白归一 `MODEL_REFERENCE_FIELDS`）；两个调用点（手动 `generator.py:220`、worker `worker.py:848`）同批接 `require_usable_rag_target` ⇒ `wiki_model → rag.default_model → models[0]`；提交 `7d517757`（后端）／`7ba229eb`（前端两行并入既有分组）／`9ffae7c3`（模板与指南）；真栈"改完不重启即生效"已验（活体证据见 plan Task 4 腿二的甲步）。 |
 
 #### A-8 评测题目合成：同样没有字段，且**已被登记为待办却没进任何清单**
 
@@ -212,7 +218,7 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | **为什么是坏-A（危害比 A-7 更硬）** | 合成出来的题目会进**评测题库**（golden bank），而题库是 Layer 1 CI 门禁的判据（`.github/workflows/rag-eval.yml` 按 Recall@k 掉点变红）⇒ **出题模型一变，门禁的基准就变**。用户对"谁出题"没有表达位置。 |
 | **归属** | fork-new（§1.3 ①）。 |
 | **改法与破坏面** | 加 `rag.synthesis_model`（默认 `None`）⇒ 不破坏。与 A-7 同一批做最省（两处形状相同、且 `synthesis.py` 自己就引了 wiki 作先例）。 |
-| **✅ 已成对起草（2026-09-26，未开工）** | 与 A-7 合为 [2026-09-26 那一对](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（§4.2 的「对 1」）。**它只有一个调用点、且比 A-7 干净**：`_default_llm_factory` 是个**工厂**（`synthesis.py:332-333` `factory = llm_factory or _default_llm_factory; llm = factory()`），每次合成调一次 ⇒ 热加载天然生效，没有 A-7 那条启动期冻结的不对称。生产路径 `knowledge_service.py:1562` 不传 `llm_factory` ⇒ 恒走默认工厂；四条既有用例都注入 `llm_factory`，不受影响。其 spec Task 3 还负责**撤掉 `backend/AGENTS.md` 那条 open point**——交付后它不再是待办。 |
+| **✅ 已交付（2026-09-29，「对 1」）** | 与 A-7 合为 [2026-09-26 那一对](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（§4.2 的「对 1」）。**它只有一个调用点、且比 A-7 干净**：`_default_llm_factory` 是个**工厂**（`synthesis.py:332-333` `factory = llm_factory or _default_llm_factory; llm = factory()`），每次合成调一次 ⇒ 热加载天然生效，没有 A-7 那条启动期冻结的不对称。生产路径 `knowledge_service.py:1562` 不传 `llm_factory` ⇒ 恒走默认工厂；四条既有用例都注入 `llm_factory`，不受影响。其 spec Task 3 还负责**撤掉 `backend/AGENTS.md` 那条 open point**——交付后它不再是待办。**交付（2026-09-29）**：`_default_llm_factory` 现取 `synthesis_model → rag.default_model → models[0]`（`synthesis.py:149`）；真栈腿三验了两级（显式 ⇒ 直打该条目宿主；撤销 ⇒ RAG 默认）；那条 open point 已撤，同批修正该段的四处 `doc_id` → `doc_ids` 漂移（触发签名／暂存元数据／请求体／状态载荷）。 |
 
 #### A-9 评测 judge 的 `dashscope:` 支路：绕过 config 白名单直连一家厂商 —— ✅ **已闭合（2026-09-27 `3bf049cf`，那一对的 Task 7），登记不改**
 
@@ -267,44 +273,44 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 
 ## 4. 如果要做，建议的顺序
 
-按「收益 / 风险」排，不是按严重度排。**第四轮（2026-09-26）重排**：`B-3` 已闭合移出、`A-7 + A-8` 升到第一（它们是 2026-09-23 那一对收窄之后留下的孤儿）、`B-1` 因改法岔口可能落到门 A。每条属哪个门见 §4.1，分组见 §4.2。
+按「收益 / 风险」排，不是按严重度排。**第四轮（2026-09-26）重排**：`B-3` 已闭合移出、`A-7 + A-8` 升到第一（它们是 2026-09-23 那一对收窄之后留下的孤儿）、`B-1` 因改法岔口可能落到门 A。**第五轮（2026-09-28）修正**：`B-3`、`A-9` 均已闭合；**门 A 已于 2026-09-27 全部交付**（那一对的 plan 82/82，`bfed5529` → `305f4fa2`）⇒ 原先标着「门 A 之后」的四条（`B-2` 剩余 / `A-1` / `C-2` / `C-1`）与 `B-1` 选乙**全部解除门禁**，本节不再按门分段、只按收益排。每条属哪个门见 §4.1，分组见 §4.2。
 
-**无任何门、现在就能起 spec/plan 的（8 条）**：
+**无任何门、现在就能起 spec/plan 的（6 条；原列表 8 条，`A-7` + `A-8` 已于 2026-09-29 交付 ⇒ 移出）**：
 
-1. **A-7 + A-8**（wiki 生成与题目合成各加一个模型字段，默认 `None` ⇒ 行为不变）——纯加法、有现成形状可抄（`rag.extract_model` / `rag.judge_model` 就是"条目选择器"），且 A-8 是 `backend/AGENTS.md` 已登记的 open point。**建议同一批做**：`eval/synthesis.py:139` 的 docstring 自述 "wiki-generator precedent"，两者是同一个决定的两份副本。**升到第一的理由**：那一对的 spec `:27` 与 D6 `:106` 明确把它们排除在外，上游也不知道 RAG 有这两个角色 ⇒ 收窄之后没人管，越晚越像遗漏；A-8 的产物还喂进 golden bank 门 `rag-eval.yml`。
+1. **A-7 + A-8** ✅ **已交付（2026-09-29，「对 1」，见 §4.2）——本条移出可做清单，以下为起草时的推荐理由与更正（留档）**：（wiki 生成与题目合成各加一个模型字段，默认 `None` ⇒ "用哪个模型"不变）——有现成形状可抄（`rag.extract_model` / `rag.judge_model` 就是"条目选择器"），且 A-8 是 `backend/AGENTS.md` 已登记的 open point。**⚠ 2026-09-28 更正**：该对把 ③ 裁定为乙 ⇒ 它**不再是纯加法**（worker 自动生成腿的模型生命周期也改，与字段声明无关；见 A-7 行的更正与那一对的 spec §6.2）。**建议两者同一批做**：`eval/synthesis.py:139` 的 docstring 自述 "wiki-generator precedent"，是同一个决定的两份副本。**升到第一的理由**：那一对的 spec `:27` 与 D6 `:106` 明确把它们排除在外，上游也不知道 RAG 有这两个角色 ⇒ 收窄之后没人管，越晚越像遗漏；A-8 的产物还喂进 golden bank 门 `rag-eval.yml`。
 2. **A-2 / A-3 / A-6**（`language` / `ocr lang` / 云侧地址提成配置，默认值全部保持现状）——纯加法，不破坏任何部署，且 A-6 是对齐 G-3 的既有形状。
 3. **A-5**（云侧 `model_version`）——顺序约束**已满足**（MinerU 那一对 2026-09-24 已交付，`parse_backend` 已退役为 `parse_tier`）。加旋钮不破坏（本地腿的 `rag.parse_tier` 就是现成对照），但"默认该不该是 vlm"要先拿云侧对照数据，别拿本地那张表推；建议**只做旋钮、把默认值的决定留白**。
 4. **A-4 + C-3**（caption 的 `max_tokens` / `temperature`；ASR 双真值源）——A-4 照 `agents_config.py:194-203` 的既有形状做，先定"两条腿共用还是分腿"；C-3 是纯代码卫生，随时可做。**注**：A-4 有一个更贴的上游先例（`ReasoningEffortCapabilities.default`），但要等门 B 才拿得到，见 §4.1。
 
-**门 A 之后（2026-09-23 那一对的 Task 0–9 落地；不抢在它前面做）**：
+**原「门 A 之后」的四条（2026-09-28 起不再等门 —— 那一对已交付）**：
 
-5. **B-2 剩余载体**——Task 9 负责三处说明的删行 / 删项与 `test_parser.py` 四处清理；本档只接三处说明（`.env.example:44` / `README.md:221` / `UPSTREAM_README.md:152`）与一处 live 门禁（`test_e2e_smoke.py:53`）。逐载体处置以 B-2 清单为准，不重复改名，也不重复处理 `test_parser.py`。
-6. **A-1**（代码侧字面默认模型名）——**必须与"缺项即配置错误"的收口同时做**；`:193-196` 归那一对（D10.3 退役三字段 + `:193` 只删字面量默认），`:189`/`:191`/`:157` 另起一对、照抄同一形状。
-7. **C-2**（示例文件换中性占位）——不破坏现网部署，但那一对会改 `rag_config.example.json` 与 `config.example.yaml` 的 rag 段（其 spec `:242`），抢在前面会做两遍。
-8. **C-1**（错误文案的语言）——先定策略；那一对的 D10.1 会新增 `RagConfigurationError(共享文案)`，先改文案再改结构等于改两遍。
-9. **B-1（仅当选乙）**——退役字段要动 `_RETIRED_KEYS`，与那一对的 Task 8/9 撞车。**选甲则不属门 A**，可插到上面第 4 项里搭车（两行描述）。
+5. **B-2 剩余载体**——那一对的 Task 9 **已按载体删行 / 删项**（三处说明 ＋ `test_parser.py` 四处）；本档只接余下三处说明（`.env.example:44` / `README.md:221` / `UPSTREAM_README.md:152`）与一处 live 门禁（`test_e2e_smoke.py:53`）。逐载体处置以 B-2 清单为准，不重复改名。
+6. **A-1**（代码侧字面默认模型名）——**必须与"缺项即配置错误"的收口同时做**；归宿已定：`:193-196` 已随那一对的 D10.3 处置（`vlm_model` 的字面量默认已删、三个 VLM 字段已删），余下 `:189`/`:191`/`:157` 另起一对、照抄 D10 已建立的形状（`RagConfigurationError` + 保存期 400；`knowledge/model_target.py` 是现成落点）。
+7. **C-2**（示例文件换中性占位）——不破坏现网部署；那一对已改过 `rag_config.example.json` 与 `config.example.yaml` 的 rag 段（其 spec `:242`），本档在**已交付的版本上**再改一次即可，无重复劳动。
+8. **C-1**（错误文案的语言）——那一对的 D10.1 **已落地**，`RagConfigurationError(共享文案)` 已存在 ⇒ 现在改文案是**一次**（改已落地的文案），不是"先改文案再改结构"。
+9. **B-1（甲／乙均已无门）**——`_RETIRED_KEYS` 机制在那一对的 Task 8 已从 tuple 扩成"名字→原因表"、并支持嵌套剥离，Task 9 已删字段且已发布 ⇒ **选乙不再与任何人撞车**，加 `embedding_dimension` 是独立一笔（沿用现成机制）。选甲仍是两行描述，可插到上面第 4 项里搭车。
 
 **不排进上面顺序的两条**：`A-10`（追问建议无配置字段）是**上游的**（`suggestions_config.py` 与 merge-base 逐字节相同；上游 #5816 只加了授权、没加模型字段），登记不改，真要做走上游 PR；`A-9` 已闭合（见该条）——它原属那一对的 D9 / Task 7，2026-09-27 随 `3bf049cf` 落地，**两边不再需要同步改**；`G-1`（向量宽度可配）**不在"清理"范围内**——它是设计约束，真要做是一整套迁移工程，单独立项。
 
 **已闭合**：`B-3`（2026-09-16 `8eed49b8`）、`A-9`（2026-09-27 `3bf049cf`），见各条。
 
-**排期状态**：**「对 1」（`A-7` + `A-8`）已于 2026-09-26 成对起草**——[spec](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md) + [plan](superpowers/plans/2026-09-26-rag-wiki-synthesis-model.md)，状态**暂不开工**、spec §6.1 三项待裁未回、plan 34 个复选框全未勾。**其余条目仍未排期**。要开工的话按项目惯例每一组单独起一对，别并进 2026-09-23 那一对；分组见 §4.2。
+**排期状态**：**「对 1」（`A-7` + `A-8`）已于 2026-09-29 交付**——[spec](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md) + [plan](superpowers/plans/2026-09-26-rag-wiki-synthesis-model.md)，plan **36／36**（Task 0–5 全部完成、真栈六条腿已过）、spec §6.1 **无待裁项**（①甲 ②两行分别并入既有「图谱抽取」「评测裁判」 ③乙 ④甲 ⑤甲，均在 2026-09-28／29 裁定并已落进文档）；实施提交 `7d517757`（后端）／`7ba229eb`（前端）／`9ffae7c3`（模板与文档），Task 4／5 的验收与回写另成一笔文档提交（均未推送）。**plan 复选框实数 36**（本文原写 34，按 §5 的「实施轮」更正）。**其余条目仍未排期**。要开工的话按项目惯例每一组单独起一对，别并进已交付的 2026-09-23 那一对；分组见 §4.2。
 
-### 4.1 两个门：门 A（那一对落地）与门 B（上游合并）
+### 4.1 两个门：门 B（上游合并，未开）与两扇已开的门
 
-**2026-09-26 补记**。触发：核 `99c926b7..upstream/main`（614 个提交）后发现，本档若干事项等的**不是同一个门**，此前混为一谈。
+**2026-09-26 补记**。触发：核 `99c926b7..upstream/main`（614 个提交）后发现，本档若干事项等的**不是同一个门**，此前混为一谈。**2026-09-28 修正**：核对 HEAD `47c35ca0` 时发现**门 A 早已交付**（那一对 plan 82/82，提交 2026-09-26 21:14 → 09-27 20:35）⇒ 原表把它列为"待开"是过期的；它已移入下面的「已开的门」，其解锁的四条与 `B-1` 选乙现在都无门。
 
 | 门 | 触发条件 | 解锁 | 现在有排期吗 |
 | --- | --- | --- | --- |
-| **门 A** | [2026-09-23 那一对](superpowers/specs/2026-09-23-default-model-design.md) 的 Task 0–9 落地 | `B-2` 剩余三处、`C-1`、`C-2`，以及 `A-1` 的 `:189`/`:191`/`:157`（要照 D10 建立的「缺项即配置错误」形状抄） | 有（plan 已就位，状态「暂不开工」） |
 | **门 B** | 上游 `main` 合并进本分支 | 下表六项 | **无排期** |
-| **已开的门** | [2026-09-24 MinerU 那一对](superpowers/specs/2026-09-24-mineru-4x-parse-adaptation-design.md) —— Status ✅ **已交付** | `A-5` 的顺序约束**已满足**：`parse_backend` 已退役为 `parse_tier`（HEAD `app_config.py:219`、`parser.py:744`；`parse_backend` 只剩 `rag_config_file.py:56` 的退役键常量与 `:53` 注释）⇒ `A-5` 现在**无门** | 已交付 |
+| **已开的门 ①** | [2026-09-24 MinerU 那一对](superpowers/specs/2026-09-24-mineru-4x-parse-adaptation-design.md) —— Status ✅ **已交付** | `A-5` 的顺序约束**已满足**：`parse_backend` 已退役为 `parse_tier`（HEAD `app_config.py:219`、`parser.py:744`；`parse_backend` 只剩 `rag_config_file.py:56` 的退役键表与 `:53` 注释） | 已交付 |
+| **已开的门 ②** | [2026-09-23 RAG 默认那一对](superpowers/specs/2026-09-23-default-model-design.md) —— **已交付**（2026-09-27，plan 82/82；`bfed5529` → `305f4fa2`） | `B-2` 剩余三处、`C-1`、`C-2`，`A-1` 的 `:189`/`:191`/`:157`（照 D10 **已落地**的「缺项即配置错误」形状抄：`knowledge/model_target.py` 的 `RagConfigurationError` + 保存期 400），以及 `B-1` 选乙（`_RETIRED_KEYS` 已可承载，不再撞车） | 已交付 |
 
-**因此现在就能起 spec/plan 的（无任何门，共 8 条）**：`A-2`、`A-3`、`A-4`、`A-5`、`A-6`、`A-7`、`A-8`、`C-3`。`B-1` **视改法岔口**：选甲 ⇒ 无门，选乙 ⇒ 门 A（要动 `_RETIRED_KEYS`，与那一对的 Task 8/9 撞车）。`B-3` **已闭合**（2026-09-16 `8eed49b8`）、`A-9` **已闭合**（2026-09-27 `3bf049cf`），均不属任何门。**等门 A 的 4 条**：`B-2` 剩余载体、`C-1`、`C-2`、`A-1`。**不归本档排期的 1 条**：`A-10`（上游所有）。`G-1`–`G-9` 别动。分组见 §4.2。
+**因此现在就能起 spec/plan 的（无任何门，共 11 条）**：`A-1`、`A-2`、`A-3`、`A-4`、`A-5`、`A-6`、`C-1`、`C-2`、`C-3`，加上 `B-1`（甲／乙**都已无门**）与 `B-2` 剩余载体。**唯一还开着的门是门 B**（上游合并，无排期），它解锁的是下面那六项。`B-3` **已闭合**（2026-09-16 `8eed49b8`）、`A-9` **已闭合**（2026-09-27 `3bf049cf`）、`A-7`／`A-8` **已闭合**（2026-09-29，「对 1」交付），均不属任何门。**不归本档排期的 1 条**：`A-10`（上游所有）。`G-1`–`G-9` 别动。分组见 §4.2。
 
 **门 B 不由门 A 触发**：那一对落地之后，下表六项照样动不了——它们要检测的模块、要放行的哨兵、要抄的形状，在本分支 HEAD 里**一行都不存在**。证据：`config/managed_models.py`、`config/managed_model_providers.py`、`models/reasoning.py`、`config/knowledge_base_config.py`、`frontend/src/core/models/management.ts` 五个文件 `git cat-file -e HEAD:<path>` 全部不存在；`authorize_model_use`、`"not-required"`、`_managed_model_names` 三处 `git grep HEAD` 零命中。
 
-下表六项**不编号、不进 §3 的计数**（「9 好 · 16 坏」与「本仓自己待修 14 条」不变）；它们是门 B 打开时要重新判的**待办**，不是已判定的写死项。
+下表六项**不编号、不进 §3 的计数**（「9 好 · 16 坏」与「本仓自己待修 **11 条**——16 减去已闭合的 `B-3`／`A-9`／`A-7`／`A-8`，再减去属上游的 `A-10`」不变）；它们是门 B 打开时要重新判的**待办**，不是已判定的写死项。
 
 | 门 B 事项 | 现在为什么改不了 | 门 B 后要做什么 |
 | --- | --- | --- |
@@ -312,28 +318,28 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | `models[0]` 出现**第三个来源** | `merge_managed_models` 零命中 | 补 G-9：YAML 与 UI **都为空**时才轮到托管条目；并记「UI 名压过托管名」是合成顺序的副产物（上游的冲突判定 `yaml_names` 取自**已含 UI 条目**的 `config.models`），两边文档都没写 |
 | 上游的 `"not-required"` 钥匙哨兵会**通过** D10.1 | 零命中 | 显式承认它算有效钥匙（本地 provider 无鉴权是合法形态），或加哨兵名单；别让检查声称能分辨真假钥匙 |
 | `A-4` 有了更贴近的上游先例 | `models/reasoning.py` 零命中 | `A-4` 的改法照上游 `ReasoningEffortCapabilities.default`（「调用方不选时用条目声明的默认」）抄，别自造形状；本档现有的 `agents_config.py:194-203` 对照降为次选 |
-| 上游对知识库配置块的**形状判断与我们不同** | `knowledge_base_config.py` 零命中 | 上游只有 `enabled` + `scope_selection_enabled`，docstring 明写「provider 连接与检索选项属于 tool 条目，不属于这个通用块」；我们整套 RAG 是一等配置域。门 B 后要重判 `rag.*` 与 `rag.default_model_name` 的归属 |
-| 授权过滤与 RAG 后台任务的**不对称** | `authorize_model_use` 零命中 | `/api/models` 按 `model:list` 过滤，RAG worker 直接读 `config.models` 解析 `rag.default_model_name`、不经授权。索引属管理员域，大概率是对的，但要写成**有意**，否则会被当漏洞报 |
+| 上游对知识库配置块的**形状判断与我们不同** | `knowledge_base_config.py` 零命中 | 上游只有 `enabled` + `scope_selection_enabled`，docstring 明写「provider 连接与检索选项属于 tool 条目，不属于这个通用块」；我们整套 RAG 是一等配置域。门 B 后要重判 `rag.*` 与 `rag.default_model` 的归属 |
+| 授权过滤与 RAG 后台任务的**不对称** | `authorize_model_use` 零命中 | `/api/models` 按 `model:list` 过滤，RAG worker 直接读 `config.models` 解析 `rag.default_model`、不经授权。索引属管理员域，大概率是对的，但要写成**有意**，否则会被当漏洞报 |
 
 **顺带一条已生效的结论（不待门 B）**：上游 `app/gateway/authz.py:387` 的 `authorize_model_use` 把 `model_name is None → app_config.models[0].name` 在**授权路径**上又写了一遍（我方 10 处非文档 `models[0]`，上游 11 处）。这正是那一对「不改公共工厂」这次收窄换来的收益——若按旧的全局默认方案改 `factory.py` 的解析顺序，就会出现「授权查 A 模型、实际跑 B 模型」。详见 G-9。
 
-### 4.2 spec/plan 分组（第四轮定，2026-09-26）
+### 4.2 spec/plan 分组（第四轮定 2026-09-26；第五轮 2026-09-28 更新"门"那一列）
 
 本档整体**不需要**一份 spec/plan——它是登记档，不是待实现功能。要开工时按下面的分组各起一对：
 
 | 对 | 条目 | 门 | 一句话范围 |
 | --- | --- | --- | --- |
-| **对 1** ✅ 已成对起草 | `A-7` + `A-8` | 无 | [spec](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md) + [plan](superpowers/plans/2026-09-26-rag-wiki-synthesis-model.md)：wiki 生成与考题合成各加一个模型条目字段，默认 `None` ⇒ 行为逐字节不变。**暂不开工、三项待裁未回** |
+| **对 1** ✅ **已交付（2026-09-29）** | `A-7` + `A-8` | 无 | [spec](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md) + [plan](superpowers/plans/2026-09-26-rag-wiki-synthesis-model.md)：wiki 生成与考题合成各加一个模型条目字段，默认 `None`；**五项裁定全部落定**（①甲 ②两行分别并入既有「图谱抽取」「评测裁判」 ③乙 worker 腿惰性化 ④甲 接 `rag.default_model` ⑤甲 保存期检查扩到六个字段）。**已交付**：提交 `7d517757` 后端／`7ba229eb` 前端／`9ffae7c3` 模板与文档，真栈六条腿已过（Task 4／5 的验收与回写另成一笔文档提交、未推送） |
 | **对 2** | `A-2` + `A-3` + `A-6` + `A-5` | 无 | 语种与云侧地址／档位提成配置，默认值全部保持现状 |
 | **对 3** | `A-4` + `C-3`（+ `B-1` 甲，若选甲） | 无 | 生成参数与 ASR 默认的代码卫生 |
-| **对 4** | `B-2` 剩余 + `A-1` + `C-2` + `C-1`（+ `B-1` 乙，若选乙） | 门 A | 发布前收口，四条都要碰那一对改过的文件／文案 |
+| **对 4** | `B-2` 剩余 + `A-1` + `C-2` + `C-1`（+ `B-1` 乙，若选乙） | **无（门 A 已于 2026-09-27 交付，原先的"发布前收口"约束解除）** | 收口，四条都要碰那一对改过的文件／文案；现在是在**已交付的版本上**再改一次 |
 | 门 B 之后 | §4.1 那六项 | 门 B | **无排期**，等上游 `main` 合并进本分支 |
 
-`A-9`（已闭合）、`A-10`（上游）、`B-3`（已闭合）、`G-1`–`G-9`（别动）**不进任何一对**。
+`A-9`（已闭合）、`A-10`（上游）、`B-3`（已闭合）、`G-1`–`G-9`（别动）**不进任何一对**；`A-7`／`A-8` 已随「对 1」交付（§4.2），也不再有待办。
 
 ---
 
-## 5. 编号映射（四轮的增删与改判）
+## 5. 编号映射（五轮的增删与改判）
 
 **第一版 → 第二版**：第一版按"克隆者受影响程度"分 🔴/🟡/🟢；第二版按 §1 的好/坏轴重排，**5 条换了档**：
 
@@ -390,6 +396,27 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 | 顺序表把 `A-5`/`B-3`/`B-1` 混在"立刻可做" | **新增 §4.1（门 A／门 B／已开的门）与 §4.2（分组）** | 上游六个模块在本分支 HEAD **零命中** ⇒ 它们等的是**上游合并**，不是那一对落地；两个门此前被混为一谈。另：MinerU 那一对**已交付** ⇒ `A-5` 的顺序约束早已满足 |
 | §4「本档全部条目都还没有对应的 spec/plan 对」 | **补明确一句：本档整体不需要一份 spec/plan** | 它是登记档、不是待实现功能；要开工时按 §4.2 的分组**各起一对** |
 
+**第五轮（2026-09-28）**：不对应"条目改判"，而是**状态更正** —— 门 A 已交付，而第四轮把它记成「暂不开工」。逐处：
+
+| 更正前 | 更正后 | 原因 |
+| --- | --- | --- |
+| §4.1 门表把「门 A」列为待开（"有排期（plan 已就位，状态「暂不开工」）"） | **门 A 移入「已开的门 ②」**，与 MinerU 那一对并列；唯一未开的门是门 B | 那一对 plan **82/82 全勾**，提交 2026-09-26 21:14 → 09-27 20:35 已在 `git log` 里（`bfed5529` → `305f4fa2`） |
+| §4「**门 A 之后（…不抢在它前面做）**」及其下 4 条 | 改为「**原「门 A 之后」的四条（2026-09-28 起不再等门）**」 | 门禁随交付解除；四条各自也不再重复劳动（`B-2` 的"三处说明"与 `test_parser.py` 已由 Task 9 做掉、`C-2` 的示例段已在交付版上、`C-1` 的文案载体已存在、`A-1` 要抄的形状已建立） |
+| §4 第 9 条「`B-1`（仅当选乙）…与那一对的 Task 8/9 撞车」 | 「`B-1`（甲／乙均已无门）」，选乙改为独立一笔 | Task 8 已把 `_RETIRED_KEYS` 扩成"名字→原因表"并支持嵌套剥离，Task 9 已删字段并发布 |
+| §4.1「因此现在就能起 spec/plan 的（无任何门，共 **8** 条）」＋「等门 A 的 **4** 条」 | 「共 **13** 条」；唯一未开的门是门 B | 8 ＋ 4 ＝ 12，再加 `B-1`（甲／乙都无门） |
+| §4.1 门 B 表末「本仓自己待修 **14 条**」 | **13 条**（16 − `B-3` − `A-9` − `A-10`） | 与本文开头「一句话结论」同口径；第四轮那句漏了 `A-9` 已闭合 |
+| `rag.default_model_name`（G-9、§4.1 门 B 表 ×2、§6 附录末段，共 4 处） | **`rag.default_model`** | 落地后的真名（`app_config.py:196`），helper 是 `knowledge/model_target.py` 的 `resolve_rag_model_name()` |
+| §4.2「对 4」的门列写「门 A」 | 「无（门 A 已交付…）」 | 同上 |
+| §4.2「对 1」只写"三项待裁未回" | 「**无待裁项**」——五项先后裁定：③乙、④甲（2026-09-28），①甲、②两行并入既有分组、⑤甲（2026-09-29） | 门 A 交付后这两个角色的兜底与生命周期出现新岔口；五项落定后同一张视图里的六个角色只有一套兜底、一套保存期检查 |
+| §6 附录 §6.1 角色表两行（图谱抽取 / 评测 judge） | **本轮未改**，已在开头「⚠ 本轮未处理的同源过期处」登记 | 属第三轮快照；本轮只动 §4 / §4.1 / §4.2 与字段名 |
+
+**实施轮（2026-09-29，「对 1」交付）**：登记实施中查出、与本档既有记述不符的事实（按 §5 惯例逐条列，不改写已交付的判定）：
+
+| 与本档不符处 | 更正 | 原因 |
+| --- | --- | --- |
+| §4「排期状态」写「plan **34** 个复选框全未勾」 | 实数 **36**，本对交付时 **36／36** | Task 0 6 ＋ Task 1 8 ＋ Task 2 7 ＋ Task 3 3 ＋ Task 4 6 ＋ Task 5 5 |
+| A-7「改法与破坏面」只列"加字段 ＋ 进 `rag_config.json` ＋ 设置界面选择器" | 两字段**必须同时进** `rag_config_file.py:74` 的共享空白归一 `MODEL_REFERENCE_FIELDS`（四 → 六） | 不进该元组，文件里的 `"wiki_model": "   "`（纯空白）不被归一成 `None`、会以"空白名字"活到运行期（`_prune_empty()` 只吃 `""`）；其 spec D1 与 plan Task 1 已按此实施 |
+
 
 ---
 
@@ -431,8 +458,8 @@ git log -1 --format='%h %an %ad %s' -L 29,29:backend/packages/harness/deerflow/m
 
 ### 6.3 一句话对照
 
-**同一个"没指定"状态，两种语义**：13 个角色退到**用户自己配置的第一条模型**（或本轮模型、或干脆不用模型）；4 个角色退到**某个人的厂商型号字面量**。前者是位置语义（G-9 的缺点，**归上游**：2026-09-23 那一对已于 2026-09-26 收窄为 RAG 范围，明写不改 `models/factory.py`，只在这 13 个角色里的 4 个 RAG 角色上面加一层 `rag.default_model_name`），后者是别人的选择（A-1，归本档）。**「走库默认」（读 SDK 自己的端点常量）目前代码里一处都没有**——它只作为 2026-09-23 spec `:151`（D10.2）的 b 方案待实现（仅对 UI `deepseek` 缺地址时惰性读 `langchain_deepseek.chat_models.DEFAULT_API_BASE`）。
+**同一个"没指定"状态，两种语义**：13 个角色退到**用户自己配置的第一条模型**（或本轮模型、或干脆不用模型）；4 个角色退到**某个人的厂商型号字面量**。前者是位置语义（G-9 的缺点，**归上游**：2026-09-23 那一对已于 2026-09-26 收窄为 RAG 范围、2026-09-27 交付，明写不改 `models/factory.py`，只在这 13 个角色里的 4 个 RAG 角色上面加一层 `rag.default_model`），后者是别人的选择（A-1，归本档）。**「走库默认」（读 SDK 自己的端点常量）目前代码里一处都没有**——它只作为 2026-09-23 spec `:151`（D10.2）的 b 方案待实现（仅对 UI `deepseek` 缺地址时惰性读 `langchain_deepseek.chat_models.DEFAULT_API_BASE`）。
 
 ---
 
-**相关记录**：[2026-09-23-default-model-design.md](superpowers/specs/2026-09-23-default-model-design.md)（默认模型与功能模型缺项收口：与本档 **A-1 / A-9 / B-2 / C-1 / C-2 / G-9** 有交叠——A-9 由它的 D9 / Task 7 处理、B-2 的三处说明由它的 Task 9 按载体删行 / 删项且 `test_parser.py` 四处也归 Task 9、G-9 **不是**它要替换的机制——2026-09-26 收窄后 spec `:21`/`:204`/`:244` 明写不改 `models/factory.py`，G-9 保留为最后一层兜底、位置默认的替换归上游，见 §4.1 门 B）· [2026-09-24-mineru-4x-parse-adaptation-design.md](superpowers/specs/2026-09-24-mineru-4x-parse-adaptation-design.md)（**本地腿** `parse_backend` → `parse_tier`；其 spec `:208` **点名本档**有 4 处 `parse_backend` 引用，**已于 2026-09-24 同步改名**，其 `:65`「`mineru-cloud` 零改动」证明 **A-2 / A-5 / A-6 不在它范围内**）· [2026-09-14-rag-model-provider-adaptation-design.md](superpowers/specs/2026-09-14-rag-model-provider-adaptation-design.md)（§3.6 三档后端精度表，A-5 引用它并说明为何不能直接对比）· [2026-09-26-rag-wiki-synthesis-model-design.md](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（**本档 §4.2「对 1」＝ A-7 + A-8**，2026-09-26 成对起草、暂不开工；其 spec §5.2 记了与门 A 那一对的**文件碰撞面**——12 个同文件（`app_config.py` / `rag_config_file.py` / `core/rag/types.ts` / `config-form.ts` / `functional-models-view.tsx` / 三个 locale / `response_golden.json` / `test_rag_config_api.py` / `rag_config.example.json` / `config.example.yaml`），**全是加法、无语义冲突**，后落地的一方 rebase 并重跑 golden；建议本对先落地）· [MODEL_PATCH_INVENTORY.md](MODEL_PATCH_INVENTORY.md)（模型层补丁盘点，同一套归属核对方法）
+**相关记录**：[2026-09-23-default-model-design.md](superpowers/specs/2026-09-23-default-model-design.md)（默认模型与功能模型缺项收口：与本档 **A-1 / A-9 / B-2 / C-1 / C-2 / G-9** 有交叠——A-9 **已**由它的 D9 / Task 7 处理（`3bf049cf` 闭合）、B-2 的三处说明由它的 Task 9 按载体删行 / 删项且 `test_parser.py` 四处也归 Task 9、G-9 **不是**它要替换的机制——2026-09-26 收窄后 spec `:21`/`:204`/`:244` 明写不改 `models/factory.py`，G-9 保留为最后一层兜底、位置默认的替换归上游，见 §4.1 门 B）· [2026-09-24-mineru-4x-parse-adaptation-design.md](superpowers/specs/2026-09-24-mineru-4x-parse-adaptation-design.md)（**本地腿** `parse_backend` → `parse_tier`；其 spec `:208` **点名本档**有 4 处 `parse_backend` 引用，**已于 2026-09-24 同步改名**，其 `:65`「`mineru-cloud` 零改动」证明 **A-2 / A-5 / A-6 不在它范围内**）· [2026-09-14-rag-model-provider-adaptation-design.md](superpowers/specs/2026-09-14-rag-model-provider-adaptation-design.md)（§3.6 三档后端精度表，A-5 引用它并说明为何不能直接对比）· [2026-09-26-rag-wiki-synthesis-model-design.md](superpowers/specs/2026-09-26-rag-wiki-synthesis-model-design.md)（**本档 §4.2「对 1」＝ A-7 + A-8**，2026-09-26 成对起草，**2026-09-29 已交付**；其 spec §5.2 记了与门 A 那一对的**文件碰撞面**——12 个同文件（`app_config.py` / `rag_config_file.py` / `core/rag/types.ts` / `config-form.ts` / `functional-models-view.tsx` / 三个 locale / `response_golden.json` / `test_rag_config_api.py` / `rag_config.example.json` / `config.example.yaml`），**全是加法、无语义冲突**；那一对**已于 2026-09-27 交付**，所以本对是"在它之上加两行"，「先落地」的措辞已作废 —— 改法与随之更正的三处事实（门 A 已交付、字段真名、golden 键数）见其 spec §5.2 与 §6.1；**同日又裁定"一并接 `rag.default_model`"（甲）**，并新开 ⑤）· [MODEL_PATCH_INVENTORY.md](MODEL_PATCH_INVENTORY.md)（模型层补丁盘点，同一套归属核对方法）
