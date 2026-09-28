@@ -329,6 +329,57 @@ export function isEmbeddingChange(
   );
 }
 
+/**
+ * The two ASR engines' candidate menus, in recommendation order (spec 2026-09-27 §7.1/§7.3).
+ * The first row of each is also that engine's default: a provider switch has nothing else to
+ * fall back to, so one table serves both the dropdown and the fallback.
+ */
+export const ASR_MODEL_MENU = {
+  funasr: ["paraformer-zh", "paraformer-en", "sensevoice"],
+  // `small` leads because it is the tier most people should use — the fallback is this row.
+  whisper: ["small", "tiny", "base", "medium", "large-v3", "large-v3-turbo"],
+} as const;
+
+/**
+ * Every name `openai-whisper` accepts, aliases and `.en` variants included. The judgement set
+ * is deliberately wider than the menu (spec 2026-09-27 §2 D2): `turbo` and `large` are legal
+ * whisper names the menu does not offer, and a menu-sized judgement would leave them in place
+ * when the admin switches to funasr — where they fail only at the next ingest.
+ */
+const WHISPER_MODEL_NAMES: ReadonlySet<string> = new Set([
+  "tiny.en",
+  "tiny",
+  "base.en",
+  "base",
+  "small.en",
+  "small",
+  "medium.en",
+  "medium",
+  "large-v1",
+  "large-v2",
+  "large-v3",
+  "large",
+  "turbo",
+  "large-v3-turbo",
+]);
+
+/**
+ * The model value a provider switch leaves behind (spec 2026-09-27 §2 D2). Only the whisper
+ * side can judge "illegal": funasr is an open set — any ModelScope repo id, or a local
+ * directory — so its menu must never double as a filter, and everything that is not a whisper
+ * name is carried over untouched.
+ */
+export function asrModelForProviderSwitch(
+  next: "funasr" | "whisper",
+  value: string,
+): string {
+  const name = value.trim();
+  if (next === "funasr") {
+    return WHISPER_MODEL_NAMES.has(name) ? ASR_MODEL_MENU.funasr[0] : value;
+  }
+  return WHISPER_MODEL_NAMES.has(name) ? value : ASR_MODEL_MENU.whisper[0];
+}
+
 /** The width every deployment starts at; a blank declaration keeps it (spec 2026-09-26 D1 乙). */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 

@@ -17,6 +17,8 @@ rs.mock("@/core/api/fetcher", () => ({ fetch: fetchMock.fetch }));
 const { MASKED_RAG_SECRET, loadRagConfig, RagConfigRequestError, saveRagConfig } =
   await import("@/core/rag/api");
 import {
+  ASR_MODEL_MENU,
+  asrModelForProviderSwitch,
   buildRagConfigInput,
   changesEmbeddingDimension,
   connectivityProbeKey,
@@ -1182,5 +1184,50 @@ describe("改宽度 = 迁移的那一次保存 (spec 2026-09-26 D5-7)", () => {
     const live = view({ embedding_dimension: 1536 });
 
     expect(changesEmbeddingDimension(formValuesFromConfig(live), live)).toBe(false);
+  });
+});
+
+describe("ASR model menu and the provider switch (spec 2026-09-27 §2 D2)", () => {
+  it("rewrites a value the target engine cannot load to that engine's first menu row", () => {
+    expect(asrModelForProviderSwitch("whisper", "paraformer-zh")).toBe("small");
+  });
+
+  it("rewrites a whisper name when switching to funasr", () => {
+    expect(asrModelForProviderSwitch("funasr", "tiny")).toBe("paraformer-zh");
+  });
+
+  it("keeps everything that is not a whisper name when switching to funasr", () => {
+    // funasr is an open set (any ModelScope id, or a local directory) — its menu is not a filter.
+    for (const value of [
+      "sensevoice",
+      "iic/SenseVoiceSmall",
+      "./models/paraformer",
+    ]) {
+      expect(asrModelForProviderSwitch("funasr", value)).toBe(value);
+    }
+  });
+
+  it("takes each engine's default from its own menu's first row", () => {
+    expect(ASR_MODEL_MENU.whisper[0]).toBe("small");
+    expect(ASR_MODEL_MENU.funasr[0]).toBe("paraformer-zh");
+    expect(asrModelForProviderSwitch("whisper", "")).toBe(
+      ASR_MODEL_MENU.whisper[0],
+    );
+    expect(asrModelForProviderSwitch("funasr", "tiny")).toBe(
+      ASR_MODEL_MENU.funasr[0],
+    );
+  });
+
+  it("leaves a legal whisper name alone even when the menu does not offer it", () => {
+    for (const value of ["turbo", "large"]) {
+      expect(asrModelForProviderSwitch("whisper", value)).toBe(value);
+    }
+  });
+
+  it("judges against every whisper name, not against the six menu rows", () => {
+    // A menu-sized judgement would let these through to funasr, which fails only at ingest.
+    for (const value of ["turbo", "large", "tiny.en"]) {
+      expect(asrModelForProviderSwitch("funasr", value)).toBe("paraformer-zh");
+    }
   });
 });
