@@ -177,4 +177,51 @@ describe("TabStrip 折叠呈现（D1 乙 / D3 / D6）", () => {
       screen.getByTestId("tab-strip-mask").getAttribute("aria-label"),
     ).toBe(zhCN.knowledge.tabs.more);
   });
+
+  it("⑦ 激活项滚入有效可见区（扣遮罩宽；切回时对齐左缘）", () => {
+    pinLayout({
+      containerWidth: 300,
+      ends: [70, 140, 210, 250, 330, 420],
+      scrollWidth: 460,
+    });
+    type TabValue = (typeof TABS)[number]["value"];
+    const element = (tab: TabValue) => (
+      <I18nContext.Provider
+        value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}
+      >
+        <Tabs value={tab} onValueChange={() => undefined}>
+          <TabStrip activeTab={tab} tabs={TABS} onTabChange={() => undefined} />
+        </Tabs>
+      </I18nContext.Provider>
+    );
+    const { rerender } = render(element("documents"));
+    const container = screen.getByTestId("tab-strip-scroll");
+    expect(container.scrollLeft).toBe(0);
+    rerender(element("eval"));
+    // eval 尾端 420、有效可见区 300-40=260 ⇒ 落点 160（尾端贴遮罩左缘、
+    // 不停在 40px 遮罩下）。
+    expect(container.scrollLeft).toBe(160);
+    rerender(element("documents"));
+    // documents 起点 60 < 当前 160 ⇒ 对齐左缘（另一半分支）。
+    expect(container.scrollLeft).toBe(60);
+  });
+
+  it("⑧ 溢出时滚动内容尾垫 40px（滚入落点可达），不溢出不垫", () => {
+    pinLayout({
+      containerWidth: 300,
+      ends: [70, 140, 210, 250, 330, 420],
+      scrollWidth: 460,
+    });
+    renderStrip();
+    expect(screen.getByTestId("tab-strip-tail-pad")).toBeTruthy();
+    cleanup();
+    restoreLayout();
+    pinLayout({
+      containerWidth: 500,
+      ends: [60, 120, 180, 240, 300, 360],
+      scrollWidth: 360,
+    });
+    renderStrip();
+    expect(screen.queryByTestId("tab-strip-tail-pad")).toBeNull();
+  });
 });
