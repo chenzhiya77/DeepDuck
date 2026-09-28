@@ -416,6 +416,38 @@ def test_the_saved_default_reaches_the_extraction_role(config_env: Path, monkeyp
     assert seen["name"] == "B"
 
 
+@pytest.mark.parametrize("field", ["wiki_model", "synthesis_model"])
+def test_a_new_role_field_round_trips_and_reports_where_it_came_from(config_env: Path, field: str):
+    """Write and read shape for the two roles that had no field at all (spec 2026-09-26 D2/D6).
+
+    The withdrawal is read back with a fresh GET on purpose: a PUT response composes ``config``
+    from the *pre-write* snapshot for keys the payload omits (pre-existing — the settings UI
+    refetches), so only ``sources`` is truthful there.
+    """
+    with _client(system_role="admin") as client:
+        saved = client.put("/api/rag/config", json={field: "judge-entry"})
+
+    assert saved.status_code == 200
+    assert saved.json()["config"][field] == "judge-entry"
+    assert saved.json()["sources"][field] == "ui"
+    assert _read_rag_json(config_env)[field] == "judge-entry"
+
+    with _client(system_role="admin") as client:
+        assert client.get("/api/rag/config").json()["config"][field] == "judge-entry"
+        # Withdrawing the override hands the role back to config.yaml (which declares none).
+        withdrawn = client.put("/api/rag/config", json={field: ""})
+
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["sources"][field] == "config_file"
+    assert field not in _read_rag_json(config_env)
+
+    with _client(system_role="admin") as client:
+        after = client.get("/api/rag/config").json()
+
+    assert after["config"][field] is None
+    assert after["sources"][field] == "config_file"
+
+
 def test_saving_the_rag_default_touches_no_other_configuration_file(config_env: Path):
     """The save writes `rag_config.json` and nothing else, byte for byte."""
     names = ("config.yaml", "models_config.json", "extensions_config.json")
@@ -483,7 +515,7 @@ def test_save_does_not_judge_the_fallback_target(config_env: Path):
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("field", ["default_model", "extract_model", "judge_model", "vlm_model"])
+@pytest.mark.parametrize("field", ["default_model", "extract_model", "judge_model", "vlm_model", "wiki_model", "synthesis_model"])
 def test_save_maps_a_wrong_role_name_to_400(config_env: Path, field: str):
     """Every declared role, the default included: a name with no entry is a usage error."""
     with _client(system_role="admin") as client:
@@ -492,6 +524,26 @@ def test_save_maps_a_wrong_role_name_to_400(config_env: Path, field: str):
     assert response.status_code == 400
     assert response.json()["detail"] == "提交后的配置仍不可用：Model ghost-entry not found in config"
     assert _read_rag_json(config_env) == {}
+
+
+@pytest.mark.parametrize("field", ["wiki_model", "synthesis_model"])
+def test_save_judges_a_declared_new_role_target(config_env: Path, field: str):
+    """⑤＝甲: the two new roles join the same declared-target rule as the other four."""
+    _seed_ui_model(config_env, name="ui-bare-new-role", api_key=None)
+
+    with _client(system_role="admin") as client:
+        refused = client.put("/api/rag/config", json={field: "ui-bare-new-role"})
+
+    assert refused.status_code == 400
+    assert "api_key" in refused.json()["detail"]
+
+    _seed_ui_model(config_env, name="ui-complete-new-role")
+
+    with _client(system_role="admin") as client:
+        accepted = client.put("/api/rag/config", json={field: "ui-complete-new-role"})
+
+    assert accepted.status_code == 200
+    assert _read_rag_json(config_env)[field] == "ui-complete-new-role"
 
 
 def test_save_refuses_a_declared_target_when_there_are_no_models_at_all(config_env: Path):

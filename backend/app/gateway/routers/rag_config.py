@@ -316,19 +316,19 @@ def _pending_rag(config: AppConfig, payload: dict[str, Any]) -> RagConfig:
 def _reject_unusable_role_targets(config: AppConfig, pending: RagConfig) -> None:
     """Refuse a write whose *declared* model targets cannot be used (spec 2026-09-23 D10.1).
 
-    Only what the payload and ``config.yaml`` declare is judged: the RAG default and the three
+    Only what the payload and ``config.yaml`` declare is judged: the RAG default and the five
     role fields. A target the system would pick itself — the first configured model, or the
     default standing in for a blank role — is never a refusal reason (D3), so a blank field is
     skipped here. Two failures are possible and they are different errors: a name with no entry
     at all (the factory's own sentence, D9) and an entry that exists but is unusable
     (`rag_target_missing`, D10.1). Pure lookups: no SDK is constructed and nothing goes out.
     """
-    for field in ("default_model", "extract_model", "judge_model", "vlm_model"):
+    for field in ("default_model", "extract_model", "judge_model", "vlm_model", "wiki_model", "synthesis_model"):
         name = getattr(pending, field, None)
         if not isinstance(name, str) or not name.strip():
             continue
         if config.get_model_config(name) is None:
-            # A declared name with no entry is refused for all four fields, the default
+            # A declared name with no entry is refused for all six fields, the default
             # included: the save *is* the declaration, so an unknown name is a usage error
             # there. D3's warning-and-fall-back is the *runtime* path, where a default that
             # used to be valid can go stale after a model is removed.

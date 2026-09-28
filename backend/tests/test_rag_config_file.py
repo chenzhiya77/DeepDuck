@@ -316,7 +316,19 @@ def test_changing_only_the_rag_file_reloads_app_config(env_paths):
 # target the RAG resolver reads; the blank rule is what makes "clear it in the
 # UI" mean "withdraw the override" rather than "declare an empty name".
 
-MODEL_REFERENCE_FIELDS = ("default_model", "extract_model", "judge_model", "vlm_model")
+MODEL_REFERENCE_FIELDS = ("default_model", "extract_model", "judge_model", "vlm_model", "wiki_model", "synthesis_model")
+
+
+def test_the_local_blank_rule_list_matches_the_production_one():
+    """A stale copy here is how a newly added role escapes the blank rule silently.
+
+    The parametrised case below only covers what this module lists, so the module list and
+    ``RagConfigFile``'s own ``MODEL_REFERENCE_FIELDS`` (the validator's argument) must move
+    together: diverge and one of them is testing/carrying less than the other claims.
+    """
+    from deerflow.config import rag_config_file
+
+    assert MODEL_REFERENCE_FIELDS == rag_config_file.MODEL_REFERENCE_FIELDS
 
 
 def test_default_model_file_overrides_config_yaml_then_undoes(env_paths):
@@ -363,6 +375,35 @@ def test_blank_default_model_with_no_yaml_counterpart_is_none(env_paths):
     _write_rag_json(rag_json, {"default_model": "   "})
 
     assert get_app_config().rag.default_model is None
+
+
+# ── wiki / synthesis: the two roles that had no field at all (spec 2026-09-26) ──
+
+
+@pytest.mark.parametrize("field", ["wiki_model", "synthesis_model"])
+def test_a_role_field_overrides_config_yaml_then_undoes(env_paths, field: str):
+    """Same two-step as ``default_model``: the UI file wins, withdrawing it falls back.
+
+    Withdrawing must fall back to config.yaml's own value rather than forcing ``None`` --
+    an operator who declared the role in their own file keeps that declaration.
+    """
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml, {**dict(YAML_RAG), field: f"yaml-{field}"})
+    _write_rag_json(rag_json, {field: f"ui-{field}"})
+    assert getattr(get_app_config().rag, field) == f"ui-{field}"
+
+    _write_rag_json(rag_json, {})
+    assert getattr(get_app_config().rag, field) == f"yaml-{field}"
+
+
+@pytest.mark.parametrize("field", ["wiki_model", "synthesis_model"])
+def test_a_role_field_with_neither_source_is_none(env_paths, field: str):
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {})
+
+    assert getattr(get_app_config().rag, field) is None
+    assert field not in RagConfigFile.from_file().model_dump(exclude_none=True)
 
 
 def test_changing_only_the_rag_default_reloads_through_the_resolver(env_paths):

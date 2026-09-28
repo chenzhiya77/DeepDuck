@@ -316,28 +316,119 @@ def test_the_dashscope_prefix_is_an_ordinary_entry_name(factory_spy):
     assert factory_spy[-1][0] == "dashscope:qwen3.8-max"
 
 
-# ── the two nameless RAG-internal points stay out of this (R20) ──────────
+# ── the two roles that had no field at all (spec 2026-09-26 D2/D4) ───────
+# Both follow the same chain as extraction and the judge: role field -> RAG default ->
+# first configured model. The manual wiki leg and the synthesis factory take no snapshot
+# argument (their callers already own the injection seam through ``llm=`` / ``llm_factory=``),
+# so these patch the process config — the same seam the extraction case above uses.
 
 
-@pytest.mark.parametrize("call", ["wiki", "synthesis"])
-def test_nameless_rag_points_never_see_the_rag_default(factory_spy, call: str):
-    """Neither passes a name, so both keep resolving to the first model (R20).
+def _patch_process_config(monkeypatch: pytest.MonkeyPatch, config: AppConfig) -> None:
+    from deerflow.config import app_config as app_config_module
 
-    They are *not* wired to the RAG default this period; these assertions are what makes
-    spec D6's "other RAG calls keep their own behaviour" checkable rather than assumed.
-    """
-    if call == "wiki":
-        from deerflow.knowledge.wiki.generator import _default_llm
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: config)
 
-        _default_llm()
-    else:
-        from deerflow.knowledge.eval.synthesis import _default_llm_factory
 
-        _default_llm_factory()
+def _role_config(point: str, *names: str, role: str | None = None, default_model: str | None = None) -> AppConfig:
+    """A config whose role field is the one that point owns (``wiki_model`` / ``synthesis_model``)."""
+    return AppConfig(
+        models=[_model(name) for name in names],
+        sandbox=SANDBOX,
+        rag=RagConfig(**{"default_model": default_model, f"{point}_model": role}),
+    )
 
-    name, app_config = factory_spy[-1]
-    assert name is None, "a nameless point must not start naming a model"
-    assert app_config is None, "a nameless point must not start taking a snapshot"
+
+def _resolve_manual_wiki() -> None:
+    from deerflow.knowledge.wiki.generator import _default_llm
+
+    _default_llm()
+
+
+def _resolve_synthesis() -> None:
+    from deerflow.knowledge.eval.synthesis import _default_llm_factory
+
+    _default_llm_factory()
+
+
+NEW_ROLE_POINTS = [
+    pytest.param("wiki", _resolve_manual_wiki, id="wiki-manual"),
+    pytest.param("synthesis", _resolve_synthesis, id="synthesis"),
+]
+
+
+@pytest.mark.parametrize("point, resolve", NEW_ROLE_POINTS)
+@pytest.mark.parametrize(
+    "role, default_model, expected",
+    [
+        ("C", "B", "C"),  # the role declaration wins
+        (None, "B", "B"),  # blank role -> the RAG default (④甲: these points follow it now)
+        (None, None, "A"),  # both blank -> the first configured model, as today
+        ("", "B", "B"),  # a blank spelling is not a declaration
+    ],
+)
+def test_the_new_roles_follow_the_same_chain(monkeypatch: pytest.MonkeyPatch, factory_spy, point: str, resolve, role, default_model, expected):
+    config = _role_config(point, "A", "B", "C", role=role, default_model=default_model)
+    _patch_process_config(monkeypatch, config)
+
+    resolve()
+
+    assert factory_spy[-1] == (expected, config)
+
+
+@pytest.mark.parametrize("point, resolve", NEW_ROLE_POINTS)
+def test_the_new_roles_do_not_replace_an_explicit_name(monkeypatch: pytest.MonkeyPatch, factory_spy, point: str, resolve):
+    """A wrong name is the factory's error (D9), never silently swapped for the default."""
+    config = _role_config(point, "A", "B", role="ghost", default_model="B")
+    _patch_process_config(monkeypatch, config)
+
+    resolve()
+
+    assert factory_spy[-1][0] == "ghost"
+
+
+@pytest.mark.parametrize("point, resolve", NEW_ROLE_POINTS)
+def test_the_new_roles_fall_back_with_a_warning_when_the_default_is_stale(monkeypatch: pytest.MonkeyPatch, factory_spy, caplog, point: str, resolve):
+    """Only the default itself may be superseded — and it names itself when it is."""
+    config = _role_config(point, "A", "B", default_model="ghost")
+    _patch_process_config(monkeypatch, config)
+
+    with caplog.at_level("WARNING"):
+        resolve()
+
+    assert factory_spy[-1][0] == "A"
+    assert "ghost" in caplog.text
+
+
+@pytest.mark.parametrize("point, resolve", NEW_ROLE_POINTS)
+def test_the_new_roles_refuse_when_there_is_no_model_at_all(monkeypatch: pytest.MonkeyPatch, factory_spy, point: str, resolve):
+    config = _role_config(point)
+    _patch_process_config(monkeypatch, config)
+
+    with pytest.raises(RagConfigurationError):
+        resolve()
+
+    assert factory_spy == [], "a missing model must not reach the factory at all"
+
+
+@pytest.mark.parametrize("point, resolve", NEW_ROLE_POINTS)
+def test_the_new_roles_refuse_a_declared_ui_target_with_no_key(monkeypatch: pytest.MonkeyPatch, factory_spy, point: str, resolve):
+    """Same runtime rule as extraction and the judge: a *declared* UI target must be usable."""
+    config = _ui_config(_model("A", api_key=None), rag=RagConfig(**{f"{point}_model": "A"}))
+    _patch_process_config(monkeypatch, config)
+
+    with pytest.raises(RagConfigurationError):
+        resolve()
+
+
+@pytest.mark.parametrize("point, resolve", NEW_ROLE_POINTS)
+def test_the_new_roles_do_not_refuse_a_fallback_target(monkeypatch: pytest.MonkeyPatch, factory_spy, point: str, resolve):
+    """R2's teeth: a target the system picked itself is never judged — it degrades instead."""
+    config = _ui_config(_model("A", api_key=None), rag=RagConfig())
+    _patch_process_config(monkeypatch, config)
+
+    resolve()
+
+    assert factory_spy[-1][0] == "A"
 
 
 def _raise(exc: BaseException):

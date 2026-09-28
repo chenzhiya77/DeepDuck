@@ -580,7 +580,14 @@ async def test_entity_resolution_failure_degrades_without_blocking(session_facto
 @pytest.mark.asyncio
 async def test_new_document_marks_touched_wiki_entries_dirty(session_factory):
     """Task 5b: the new-document hook flags the touched entities' entries as
-    dirty; untouched entries stay ready (spec §3.5 2026-08-12 revision)."""
+    dirty; untouched entries stay ready (spec §3.5 2026-08-12 revision).
+
+    Since spec 2026-09-26 the wiki trigger resolves a model per run instead of returning
+    early on a ``None`` boot instance, so a run that *reaches* the threshold would consume
+    the flag in the same pass. The library therefore carries a second, unprocessed document
+    (ready share 1/2 < 0.9): the trigger stays below its bar, which is the state this test is
+    about. The fake ``main_llm`` keeps it offline even if that gauge ever moves.
+    """
     store = KnowledgeStore(session_factory)
     wiki_store = WikiStore(session_factory)
     await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
@@ -589,8 +596,9 @@ async def test_new_document_marks_touched_wiki_entries_dirty(session_factory):
     await wiki_store.upsert_entry("kb-1", title="DeerFlow", content="旧条目", source_chunk_ids=[], status="ready")
     await wiki_store.upsert_entry("kb-1", title="Gateway", content="旧条目", source_chunk_ids=[], status="ready")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    await store.create_document(doc_id="doc-2", kb_id="kb-1", uploader_id="user-1", name="b.md", size_bytes=10, storage_path="/tmp/b.md")
     llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
-    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm)
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm, main_llm=_WikiLLM())
 
     await worker.process_document("doc-1")
 
@@ -887,3 +895,134 @@ async def test_the_store_deletes_a_path_key_only_for_an_explicit_none_value(sess
     await store.update_document_status("doc-1", "parsing", path_status={"caption": None, "graph": "pending"})
 
     assert (await store.get_document("doc-1"))["path_status"] == {"vector": "done", "graph": "pending"}
+
+
+# ── the wiki trigger resolves its model per trigger (spec 2026-09-26 D3, ③＝乙) ──
+
+
+def _wiki_cfg(*names: str, **rag_kwargs):
+    """A minimal real config: only the fields the resolver reads are meaningful here."""
+    from deerflow.config.app_config import AppConfig, RagConfig
+    from deerflow.config.model_config import ModelConfig
+    from deerflow.config.sandbox_config import SandboxConfig
+
+    return AppConfig(
+        models=[
+            ModelConfig(
+                name=name,
+                display_name=name,
+                description=None,
+                use="langchain_openai:ChatOpenAI",
+                model=f"{name}-wire",
+                supports_thinking=False,
+                supports_vision=False,
+            )
+            for name in names
+        ],
+        sandbox=SandboxConfig(use="deerflow.sandbox.local:LocalSandboxProvider"),
+        rag=RagConfig(**rag_kwargs),
+    )
+
+
+def _target_spy(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str | None, object]]:
+    """Record what this trigger hands the factory, without building a client."""
+    seen: list[tuple[str | None, object]] = []
+
+    def _fake(name=None, *, app_config=None, **_kwargs):
+        seen.append((name, app_config))
+        return SimpleNamespace(name=name)
+
+    monkeypatch.setattr("deerflow.models.factory.create_chat_model", _fake)
+    return seen
+
+
+@pytest.fixture
+def wiki_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    """Replace the batch writer: these cases are about *which* llm it is handed."""
+    calls: list[dict] = []
+
+    async def _fake_generate_wiki(*_args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _fake_generate_wiki)
+    return calls
+
+
+def _point_at(monkeypatch: pytest.MonkeyPatch, config) -> None:
+    from deerflow.config import app_config as app_config_module
+
+    monkeypatch.setattr(app_config_module, "get_app_config", lambda: config)
+
+
+@pytest.mark.asyncio
+async def test_the_wiki_trigger_follows_the_config_it_reads_each_time(session_factory, monkeypatch, wiki_calls):
+    """③＝乙: no boot snapshot — one worker instance follows the configuration of each trigger.
+
+    The reverse control at the end is what keeps the first half honest: with an unchanged
+    config the target must not wander (so "it changed" cannot be a coincidence of the spy).
+    """
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.update_document_status("doc-1", "ready")
+    worker = _worker(store, session_factory)
+    seen = _target_spy(monkeypatch)
+
+    _point_at(monkeypatch, _wiki_cfg("A", "B", "C", wiki_model="C"))
+    await worker._maybe_generate_wiki("kb-1", FakeEmbedder())
+    _point_at(monkeypatch, _wiki_cfg("A", "B", default_model="B"))
+    await worker._maybe_generate_wiki("kb-1", FakeEmbedder())
+    await worker._maybe_generate_wiki("kb-1", FakeEmbedder())
+
+    assert [name for name, _config in seen] == ["C", "B", "B"]
+    assert len(wiki_calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_the_wiki_trigger_still_honours_the_injected_llm(session_factory, monkeypatch, wiki_calls):
+    """The construction port survives the change: tests keep driving wiki generation with a fake."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.update_document_status("doc-1", "ready")
+    injected = _WikiLLM()
+    worker = _worker(store, session_factory, main_llm=injected)
+    seen = _target_spy(monkeypatch)
+
+    # A config that would refuse on its own — proof the port short-circuits resolution.
+    _point_at(monkeypatch, _wiki_cfg())
+    await worker._maybe_generate_wiki("kb-1", FakeEmbedder())
+
+    assert seen == []
+    assert wiki_calls[-1]["llm"] is injected
+
+
+@pytest.mark.asyncio
+async def test_a_broken_wiki_target_is_logged_and_the_document_stays_ready(session_factory, monkeypatch, wiki_calls, caplog):
+    """No usable model is not a document failure: the existing guard swallows it and says so."""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.update_document_status("doc-1", "ready")
+    worker = _worker(store, session_factory)
+    _target_spy(monkeypatch)
+    _point_at(monkeypatch, _wiki_cfg())
+
+    with caplog.at_level("ERROR"):
+        await worker._maybe_generate_wiki("kb-1", FakeEmbedder())
+
+    assert wiki_calls == []
+    assert "wiki generation trigger failed for kb kb-1" in caplog.text
+    assert (await store.get_document("doc-1"))["status"] == "ready"
+
+
+def test_the_boot_snapshot_is_gone_from_both_sides():
+    """The source claims behind ③＝乙: no model built at boot, and no snapshot read in the worker."""
+    from pathlib import Path
+
+    backend = Path(__file__).resolve().parents[2]
+    app_source = (backend / "app" / "gateway" / "app.py").read_text(encoding="utf-8")
+    worker_source = (backend / "packages" / "harness" / "deerflow" / "knowledge" / "worker.py").read_text(encoding="utf-8")
+
+    assert "Main model unavailable" not in app_source
+    assert "main_llm=" not in app_source
+    # The worker must read the *current* config where it used to consume a boot snapshot.
+    assert "get_app_config" in worker_source
+    assert "startup_config" not in worker_source

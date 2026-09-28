@@ -829,20 +829,30 @@ class KnowledgeIndexWorker:
         await self._store.delete_chunk(chunk_id)
 
     async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder) -> None:
-        """Triggered batch on first completion, dirty incremental afterwards."""
-        if self._main_llm is None:
-            return
+        """Triggered batch on first completion, dirty incremental afterwards.
+
+        The model is resolved **per trigger** (spec 2026-09-26 D3): the boot-time instance was
+        retired, so a settings change applies without a restart. ``main_llm`` stays as a
+        construction-time injection port for tests — production callers must not pass it, since
+        it short-circuits the resolution below.
+        """
         try:
             if not await wiki_trigger_ready(self._store, kb_id):
                 return
             existing = await self._wiki_store.list_entries(kb_id)
+            from deerflow.config.app_config import get_app_config
+            from deerflow.knowledge.model_target import require_usable_rag_target
+            from deerflow.models.factory import create_chat_model
+
+            config = get_app_config()
+            llm = self._main_llm or create_chat_model(require_usable_rag_target(config, config.rag.wiki_model, role="百科生成"), app_config=config)
             await generate_wiki(
                 self._store,
                 self._graph_store,
                 self._wiki_store,
                 self._vector_store,
                 kb_id=kb_id,
-                llm=self._main_llm,
+                llm=llm,
                 embedder=embedder,
                 only_dirty=bool(existing),
             )

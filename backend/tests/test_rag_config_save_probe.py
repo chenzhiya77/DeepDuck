@@ -335,6 +335,27 @@ def test_changing_only_the_rag_default_probes_nothing(config_env: Path, monkeypa
     assert recorded != [], "the positive control must reach the network"
 
 
+def test_changing_only_a_new_role_field_probes_nothing(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """``wiki_model`` / ``synthesis_model`` are model references, not embedding settings (D2).
+
+    Same shape as the default-model case above, positive control included.
+    """
+    recorded = _stub(monkeypatch, _healthy())
+
+    with _client() as client:
+        picked = client.put(_PUT, json={"wiki_model": "rag-default", "synthesis_model": "rag-default"})
+
+    assert picked.status_code == 200
+    assert picked.json()["warning"] is None
+    assert _read_rag_json(config_env)["wiki_model"] == "rag-default"
+    assert recorded == []
+
+    with _client() as client:
+        assert client.put(_PUT, json={**_INVALID_WIDTH_PAYLOAD, "wiki_model": "rag-default"}).status_code == 200
+
+    assert recorded != [], "the positive control must reach the network"
+
+
 def test_resubmitting_the_same_embedding_settings_probes_nothing(config_env: Path, monkeypatch: pytest.MonkeyPatch):
     """The judgement is on *values*, not on which keys the payload carried — and a masking
     sentinel resolves to the stored key, which is the value already in force (D2)."""

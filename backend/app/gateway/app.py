@@ -343,20 +343,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             from deerflow.knowledge.store import get_knowledge_store
             from deerflow.knowledge.vector_store import get_vector_store
             from deerflow.knowledge.worker import KnowledgeIndexWorker
-            from deerflow.models.factory import create_chat_model
 
             knowledge_store = get_knowledge_store()
             knowledge_vector_store = get_vector_store()
-            try:
-                wiki_main_llm = create_chat_model()
-            except Exception:
-                logger.exception("Main model unavailable; wiki auto-generation disabled")
-                wiki_main_llm = None
+            # No model is built here: the wiki trigger resolves ``rag.wiki_model`` per run
+            # (spec 2026-09-26 D3), so a settings change no longer needs a restart and a
+            # misconfigured model no longer disables auto-generation for the whole process.
             knowledge_worker = KnowledgeIndexWorker(
                 store=knowledge_store,
                 vector_store=knowledge_vector_store,
                 concurrency=startup_config.rag.worker_concurrency,
-                main_llm=wiki_main_llm,
                 resolution_full_scan_threshold=startup_config.rag.graph_resolution_full_scan_threshold,
                 entity_merge_similarity=startup_config.rag.entity_merge_similarity,
             )

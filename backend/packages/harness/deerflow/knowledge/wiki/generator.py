@@ -206,10 +206,18 @@ async def mark_dirty_for_entities(wiki_store: WikiStore, kb_id: str, entity_name
 
 
 def _default_llm():
-    """Wiki writing uses the main model (first configured) per spec §3.4 分层."""
+    """Wiki writing: ``rag.wiki_model`` → the RAG default → the first model (spec 2026-09-26 D4).
+
+    The same chain, helper and call shape as extraction and the judge: the name is resolved
+    here and handed to the untouched factory, which is what makes the RAG default picker in
+    the settings view govern this role too.
+    """
+    from deerflow.config.app_config import get_app_config
+    from deerflow.knowledge.model_target import require_usable_rag_target
     from deerflow.models.factory import create_chat_model
 
-    return create_chat_model()
+    config = get_app_config()
+    return create_chat_model(require_usable_rag_target(config, config.rag.wiki_model, role="百科生成"), app_config=config)
 
 
 def _parse_batch_response(text: str, expected_titles: set[str]) -> dict[str, str]:

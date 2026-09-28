@@ -137,10 +137,16 @@ def _lock(path: Path) -> asyncio.Lock:
 
 
 def _default_llm_factory():
-    """Synthesis uses the main model (first configured), wiki-generator precedent."""
+    """Synthesis: ``rag.synthesis_model`` → the RAG default → the first model (spec 2026-09-26 D4).
+
+    Same chain and helper as the wiki generator it used to take as its precedent.
+    """
+    from deerflow.config.app_config import get_app_config
+    from deerflow.knowledge.model_target import require_usable_rag_target
     from deerflow.models.factory import create_chat_model
 
-    return create_chat_model()
+    config = get_app_config()
+    return create_chat_model(require_usable_rag_target(config, config.rag.synthesis_model, role="考题合成"), app_config=config)
 
 
 _SYSTEM_PROMPT = """你是知识库评测题库的出题员，基于给定文档的编号切片出评测题。切片可能来自多篇文档。
