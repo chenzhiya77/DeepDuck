@@ -10,16 +10,27 @@ import type { KnowledgeCitation } from "@/core/knowledge/types";
 /**
  * Superscript citation mark (phase-2 batch-1, spec §4): the answer's ``[n]``
  * renders as a small muted superscript button — visually annotation-layer,
- * not body text. Hover shows a preview card (type badge + doc name + page /
+ * not body text. Hover shows preview cards (type badge + doc name + page /
  * heading path + ~120-char excerpt, reusing the citation's own ``text`` — no
  * new API); clicking dispatches ``KB_CITATION_JUMP_EVENT`` so the sources
- * strip expands and highlights the matching card. On touch devices (no
+ * strip expands and highlights the matching cards. On touch devices (no
  * hover) the tap still jumps — the strip auto-opens the chunk card.
+ *
+ * Merged marks (spec 2026-09-28-citation-mark-merge-quiet): one button may
+ * carry several citations — the rehype plugin collapses whitespace-adjacent
+ * ``[n]`` runs into ``data-citation-indices``, and the renderer shows the
+ * group's display numbers sorted ascending and deduped, joined with ``,``
+ * (a middle dot floats at mid-height and reads odd at superscript size). Hover stacks one preview card per
+ * citation; the click highlights every matching card. The default style is a
+ * quieter grey step (hover restores and lifts it) — dense annotation should
+ * read as an annotation layer, not noise.
  */
 
 export const KB_CITATION_JUMP_EVENT = "kb-citation-jump";
 
-export type CitationJumpDetail = { messageId: string; index: number };
+export type CitationJumpDetail = { messageId: string; indices: number[] };
+
+export type CitationMarkItem = { citation: KnowledgeCitation; index: number };
 
 export function CitationPreviewCard({ citation }: { citation: KnowledgeCitation }) {
   const { t } = useI18n();
@@ -51,35 +62,43 @@ export function CitationPreviewCard({ citation }: { citation: KnowledgeCitation 
 }
 
 export function CitationMark({
-  citation,
-  index,
+  items,
   messageId,
 }: {
-  citation: KnowledgeCitation;
-  /** The DISPLAY number (the source's sorted strip position) — rendered on the mark and used as the jump target. */
-  index: number;
+  /** One entry per cited source, DISPLAY numbers (sorted strip positions) ascending. */
+  items: CitationMarkItem[];
   messageId: string;
 }) {
   const { t } = useI18n();
   const tc = t.knowledge.chat;
+  const label = items
+    .map((item) => tc.sourceMarkAriaLabel(item.index, item.citation.doc_name))
+    .join("; ");
   return (
     <HoverCard closeDelay={100} openDelay={300}>
       <HoverCardTrigger asChild>
         <button
-          aria-label={tc.sourceMarkAriaLabel(index, citation.doc_name)}
-          className="text-muted-foreground bg-muted/60 hover:bg-muted mx-0.5 inline-flex h-[1.4em] min-w-[1.4em] items-center justify-center rounded px-0.5 align-super text-[0.7em] leading-none font-medium"
-          data-citation-mark={index}
+          aria-label={label}
+          className="text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground mx-px inline-flex h-[1.4em] items-center justify-center rounded px-px align-super text-[0.3em] leading-none font-medium transition-colors"
+          data-citation-mark={items.map((item) => item.index).join(",")}
           type="button"
           onClick={() => {
-            const detail: CitationJumpDetail = { messageId, index };
+            const detail: CitationJumpDetail = {
+              messageId,
+              indices: items.map((item) => item.index),
+            };
             window.dispatchEvent(new CustomEvent(KB_CITATION_JUMP_EVENT, { detail }));
           }}
         >
-          {index}
+          {items.map((item) => item.index).join(",")}
         </button>
       </HoverCardTrigger>
       <HoverCardContent className="w-72">
-        <CitationPreviewCard citation={citation} />
+        <div className="flex flex-col gap-2">
+          {items.map((item) => (
+            <CitationPreviewCard citation={item.citation} key={item.index} />
+          ))}
+        </div>
       </HoverCardContent>
     </HoverCard>
   );
@@ -88,32 +107,84 @@ export function CitationMark({
 /**
  * Build the markdown ``sup`` component override for one assistant message.
  * The rehype-citation-marks plugin emits ``<sup data-citation-index="n">``
- * where ``n`` is the number the model wrote (the backend citation_no — an
- * internal handle, NEVER shown). The mark renders the DISPLAY number: the
- * source's 1-based position in the deduped, citation_no-sorted strip, so the
- * visible number space is continuous (1..N) and matches the cards exactly
- * (Perplexity-style). Resolution: (1) the source whose merged citation_nos
- * contains ``n`` — hybrid/graph overlap assigns one chunk several numbers,
- * and the model may cite any of them; (2) positional fallback for legacy
- * sources without citation_nos. Anything else falls back to a plain sup so
- * stale/foreign marks never crash.
+ * (single) or ``<sup data-citation-indices="n1 n2">`` (whitespace-adjacent
+ * run) where each ``n`` is the number the model wrote (the backend
+ * citation_no — an internal handle, NEVER shown). The mark renders the
+ * DISPLAY numbers: each source's 1-based position in the deduped,
+ * citation_no-sorted strip, so the visible number space is continuous (1..N)
+ * and matches the cards exactly (Perplexity-style). A group is shown as one
+ * pill with its display numbers sorted ascending and deduped. Resolution per
+ * number: (1) the source whose merged citation_nos contains ``n`` —
+ * hybrid/graph overlap assigns one chunk several numbers, and the model may
+ * cite any of them; (2) positional fallback for legacy sources without
+ * citation_nos. A number nothing resolves falls back to a plain sup (raw
+ * text, as before) so stale/foreign marks never crash; in a mixed group the
+ * resolvable part still renders as a pill.
  */
 export function createCitationSupRenderer(sources: KnowledgeCitation[], messageId: string) {
   return function CitationSupRenderer(props: ComponentProps<"sup">) {
-    const raw = (props as Record<string, unknown>)["data-citation-index"];
-    const cited = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
-    if (!Number.isInteger(cited) || cited < 1) {
+    const record = props as Record<string, unknown>;
+    const raws = parseCitedNumbers(
+      record["data-citation-index"],
+      record["data-citation-indices"],
+    );
+    if (raws.length === 0) {
       return <sup {...props} />;
     }
-    let position = sources.findIndex((source) => source.citation_nos?.includes(cited));
-    if (position < 0 && sources.every((source) => !source.citation_nos)) {
-      // Legacy payloads carry no citation numbers at all — positional mapping.
-      position = cited - 1 < sources.length ? cited - 1 : -1;
+    const items: CitationMarkItem[] = [];
+    const unresolved: number[] = [];
+    for (const cited of raws) {
+      let position = sources.findIndex((source) =>
+        source.citation_nos?.includes(cited),
+      );
+      if (position < 0 && sources.every((source) => !source.citation_nos)) {
+        // Legacy payloads carry no citation numbers at all — positional mapping.
+        position = cited - 1 < sources.length ? cited - 1 : -1;
+      }
+      const citation = position >= 0 ? sources[position] : undefined;
+      if (citation) {
+        const index = position + 1;
+        if (!items.some((item) => item.index === index)) {
+          items.push({ citation, index });
+        }
+      } else if (!unresolved.includes(cited)) {
+        unresolved.push(cited);
+      }
     }
-    const citation = position >= 0 ? sources[position] : undefined;
-    if (!citation) {
+    if (items.length === 0) {
       return <sup {...props} />;
     }
-    return <CitationMark citation={citation} index={position + 1} messageId={messageId} />;
+    items.sort((a, b) => a.index - b.index);
+    return (
+      <>
+        <CitationMark items={items} messageId={messageId} />
+        {unresolved.map((cited) => (
+          <sup key={cited}>{cited}</sup>
+        ))}
+      </>
+    );
   };
+}
+
+function parseCitedNumbers(single: unknown, multi: unknown): number[] {
+  const out: number[] = [];
+  const push = (value: unknown) => {
+    const n =
+      typeof value === "number"
+        ? value
+        : typeof value === "string"
+          ? Number(value)
+          : NaN;
+    if (Number.isInteger(n) && n >= 1 && !out.includes(n)) {
+      out.push(n);
+    }
+  };
+  if (typeof multi === "string") {
+    for (const part of multi.split(/\s+/)) {
+      push(part);
+    }
+  } else {
+    push(single);
+  }
+  return out;
 }

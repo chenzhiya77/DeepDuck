@@ -57,12 +57,48 @@ describe("rehypeCitationMarks", () => {
     expect(tree.children?.[1]).toEqual(code);
   });
 
-  test("splits consecutive marks without crashing (一句多标容错)", () => {
+  test("merges consecutive marks into one data-citation-indices sup (一句多标容错)", () => {
     const tree = run(paragraph(text("结论[1][2]。")));
     const children = tree.children ?? [];
-    expect(children.filter((node) => node.tagName === "sup")).toHaveLength(2);
+    expect(children.filter((node) => node.tagName === "sup")).toHaveLength(1);
+    expect(children[1]).toMatchObject({
+      type: "element",
+      tagName: "sup",
+      properties: { dataCitationIndices: "1 2" },
+      children: [text("1,2")],
+    });
+  });
+
+  test("merges whitespace-separated runs ([7] [5] → one sup, model order kept)", () => {
+    const tree = run(paragraph(text("超时自动放弃）[7] [5]")));
+    const children = tree.children ?? [];
+    expect(children.filter((node) => node.tagName === "sup")).toHaveLength(1);
+    expect(children[1]).toMatchObject({ properties: { dataCitationIndices: "7 5" } });
+  });
+
+  test("does not merge across real text or punctuation (裁定①: 只有空白才算相邻)", () => {
+    const withWords = run(paragraph(text("[1] 依据 [2]")));
+    expect(withWords.children?.filter((node) => node.tagName === "sup")).toHaveLength(2);
+    const withPunct = run(paragraph(text("[1]；[2]")));
+    expect(withPunct.children?.filter((node) => node.tagName === "sup")).toHaveLength(2);
+  });
+
+  test("does not merge across element boundaries", () => {
+    const tree = run(paragraph(text("a[1] "), { type: "element", tagName: "strong", children: [text("[2]")] }));
+    const children = tree.children ?? [];
+    expect(children.filter((node) => node.tagName === "sup")).toHaveLength(1);
     expect(children[1]).toMatchObject({ properties: { dataCitationIndex: 1 } });
-    expect(children[2]).toMatchObject({ properties: { dataCitationIndex: 2 } });
+    const strong = children.find((node) => node.tagName === "strong");
+    expect(strong?.children?.[0]).toMatchObject({ properties: { dataCitationIndex: 2 } });
+  });
+
+  test("never merges hand-written sup elements", () => {
+    const handwritten: HastNode = { type: "element", tagName: "sup", children: [text("†")] };
+    const tree = run(paragraph(text("x[1] "), handwritten, text(" [2]")));
+    const children = tree.children ?? [];
+    // the hand-written sup separates the two marks into single marks
+    expect(children.filter((node) => node.tagName === "sup")).toHaveLength(3);
+    expect(children.filter((node) => node.properties?.dataCitationIndices !== undefined)).toHaveLength(0);
   });
 
   test("ignores three-digit brackets (not a citation)", () => {

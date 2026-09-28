@@ -67,7 +67,7 @@ export function KbCitationSources({
   const [expanded, setExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [expandedChunkId, setExpandedChunkId] = useState<string | null>(null);
-  const [highlightNumber, setHighlightNumber] = useState<number | null>(null);
+  const [highlightNumbers, setHighlightNumbers] = useState<number[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(() => groupSources(sources), [sources]);
@@ -77,7 +77,9 @@ export function KbCitationSources({
   const manualCount = sources.length - chunkCount - wikiCount;
 
   // Citation-mark clicks in the answer body land here: expand + highlight
-  // (+ auto-open the chunk text, so a touch tap reaches the slice directly).
+  // every matching card (a merged mark carries several display numbers),
+  // auto-opening the first chunk/manual card's text so a touch tap reaches
+  // the slice directly.
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<CitationJumpDetail>).detail;
@@ -85,18 +87,24 @@ export function KbCitationSources({
         return;
       }
       setExpanded(true);
-      setHighlightNumber(detail.index);
-      const group = groups.find((candidate) => candidate.items.some((item) => item.number === detail.index));
+      setHighlightNumbers(detail.indices);
+      const matched = groups.filter((candidate) =>
+        candidate.items.some((item) => detail.indices.includes(item.number)),
+      );
       // Cards expand in place like chunks (no entry drawer for manual cards).
-      if (group?.sourceType === "chunk" || group?.sourceType === "manual") {
-        setExpandedChunkId(group.items[0]!.citation.chunk_id);
+      const target = matched.find(
+        (candidate) =>
+          candidate.sourceType === "chunk" || candidate.sourceType === "manual",
+      );
+      if (target) {
+        setExpandedChunkId(target.items[0]!.citation.chunk_id);
       }
       window.setTimeout(() => {
         // Scoped to this strip — a document-wide selector could scroll to a
         // highlight left over in ANOTHER message's sources.
         rootRef.current?.querySelector(`[data-citation-highlight="true"]`)?.scrollIntoView?.({ block: "nearest" });
       }, 0);
-      window.setTimeout(() => setHighlightNumber(null), HIGHLIGHT_MS);
+      window.setTimeout(() => setHighlightNumbers([]), HIGHLIGHT_MS);
     };
     window.addEventListener(KB_CITATION_JUMP_EVENT, handler);
     return () => window.removeEventListener(KB_CITATION_JUMP_EVENT, handler);
@@ -133,7 +141,9 @@ export function KbCitationSources({
             const isWiki = group.sourceType === "wiki";
             const typeLabel =
               group.sourceType === "wiki" ? tc.sourceTypeWiki : group.sourceType === "manual" ? tc.sourceTypeManual : tc.sourceTypeChunk;
-            const isHighlighted = group.items.some((item) => item.number === highlightNumber);
+            const isHighlighted = group.items.some((item) =>
+              highlightNumbers.includes(item.number),
+            );
             // Display numbers only: each item's number IS its sorted strip
             // position (the raw backend citation_nos are internal handles and
             // never shown), so the visible number space stays 1..N continuous

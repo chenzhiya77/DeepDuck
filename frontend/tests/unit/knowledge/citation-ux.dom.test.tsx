@@ -77,12 +77,16 @@ afterEach(() => {
 });
 
 describe("CitationMark", () => {
-  it("renders a superscript button with an accessible label", () => {
+  it("renders a superscript button with an accessible label (quiet grey step)", () => {
     const Sup = createCitationSupRenderer([CHUNK_1], "m1");
     renderWithI18n(<Sup data-citation-index="1">1</Sup>);
     const mark = screen.getByRole("button", { name: "引用 1：手册.pdf" });
     expect(mark.className).toContain("align-super");
-    expect(mark.className).toContain("text-[0.7em]");
+    // 裁定④：默认极小极淡（不注意看看不出来）、无常驻底色，hover 才浮出胶囊
+    expect(mark.className).toContain("text-[0.3em]");
+    expect(mark.className).toContain("text-muted-foreground/70");
+    expect(mark.className).toContain("hover:text-foreground");
+    expect(mark.className).not.toContain("bg-muted/40");
   });
 
   it("falls back to a plain sup for unknown indexes (no crash on stale marks)", () => {
@@ -107,14 +111,14 @@ describe("CitationMark", () => {
     expect(preview.textContent).not.toContain("我的卡片");
   });
 
-  it("dispatches the jump event with messageId + index on click", () => {
+  it("dispatches the jump event with messageId + indices on click", () => {
     const listener = rs.fn();
     window.addEventListener(KB_CITATION_JUMP_EVENT, listener);
     try {
-      renderWithI18n(<CitationMark citation={WIKI_1} index={2} messageId="m1" />);
+      renderWithI18n(<CitationMark items={[{ citation: WIKI_1, index: 2 }]} messageId="m1" />);
       fireEvent.click(screen.getByRole("button"));
       expect(listener).toHaveBeenCalled();
-      expect(listener.mock.calls[0]![0].detail).toEqual({ messageId: "m1", index: 2 });
+      expect(listener.mock.calls[0]![0].detail).toEqual({ messageId: "m1", indices: [2] });
     } finally {
       window.removeEventListener(KB_CITATION_JUMP_EVENT, listener);
     }
@@ -135,10 +139,41 @@ describe("CitationMark", () => {
       const mark = screen.getByRole("button", { name: "引用 2：手册.pdf" });
       expect(mark.textContent).toBe("2");
       fireEvent.click(mark);
-      expect(listener.mock.calls[0]![0].detail).toEqual({ messageId: "m1", index: 2 });
+      expect(listener.mock.calls[0]![0].detail).toEqual({ messageId: "m1", indices: [2] });
     } finally {
       window.removeEventListener(KB_CITATION_JUMP_EVENT, listener);
     }
+  });
+
+  it("renders a merged group as one pill, display numbers sorted ascending and deduped (裁定③)", () => {
+    const first: KnowledgeCitation = { ...WIKI_1, citation_nos: [5] };
+    const second: KnowledgeCitation = { ...CHUNK_1, citation_nos: [9] };
+    const listener = rs.fn();
+    window.addEventListener(KB_CITATION_JUMP_EVENT, listener);
+    try {
+      const Sup = createCitationSupRenderer([first, second], "m1");
+      renderWithI18n(<Sup data-citation-indices="9 5 9">9 5 9</Sup>);
+      expect(screen.getAllByRole("button")).toHaveLength(1);
+      const mark = screen.getByRole("button");
+      // raw 9 → display 2, raw 5 → display 1 ⇒ sorted "1,2" (never "2,1" or "2,1,2")
+      expect(mark.textContent).toBe("1,2");
+      expect(mark.getAttribute("aria-label")).toBe("引用 1：DeerFlow; 引用 2：手册.pdf");
+      fireEvent.click(mark);
+      expect(listener.mock.calls[0]![0].detail).toEqual({ messageId: "m1", indices: [1, 2] });
+    } finally {
+      window.removeEventListener(KB_CITATION_JUMP_EVENT, listener);
+    }
+  });
+
+  it("keeps the pill for resolvable numbers and plain sups for stale ones (mixed group)", () => {
+    const chunk: KnowledgeCitation = { ...CHUNK_1, citation_nos: [9] };
+    const Sup = createCitationSupRenderer([chunk], "m1");
+    const { container } = renderWithI18n(<Sup data-citation-indices="9 7">9 7</Sup>);
+    const mark = screen.getByRole("button");
+    expect(mark.textContent).toBe("1");
+    const plain = container.querySelectorAll("sup");
+    expect(plain).toHaveLength(1);
+    expect(plain[0]!.textContent).toBe("7");
   });
 });
 
@@ -249,12 +284,21 @@ describe("KbCitationSources (collapsed by default)", () => {
     renderWithI18n(<KbCitationSources messageId="m1" sources={[CHUNK_1, WIKI_1]} />);
     expect(screen.queryByRole("list")).toBeNull();
     act(() => {
-      window.dispatchEvent(new CustomEvent(KB_CITATION_JUMP_EVENT, { detail: { messageId: "m1", index: 1 } }));
+      window.dispatchEvent(new CustomEvent(KB_CITATION_JUMP_EVENT, { detail: { messageId: "m1", indices: [1] } }));
     });
     const highlighted = screen.getByTestId("citation-card-chunk-c1");
     expect(highlighted.getAttribute("data-citation-highlight")).toBe("true");
     // chunk card auto-expanded (移动端 tap 直接展开切片)
     expect(screen.getAllByText(/切片原文一/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("highlights every matching card for a merged mark (裁定②)", () => {
+    renderWithI18n(<KbCitationSources messageId="m1" sources={[CHUNK_1, WIKI_1]} />);
+    act(() => {
+      window.dispatchEvent(new CustomEvent(KB_CITATION_JUMP_EVENT, { detail: { messageId: "m1", indices: [1, 2] } }));
+    });
+    expect(screen.getByTestId("citation-card-chunk-c1").getAttribute("data-citation-highlight")).toBe("true");
+    expect(screen.getByTestId("citation-card-wiki-e1").getAttribute("data-citation-highlight")).toBe("true");
   });
 
   it("shows display numbers (sorted positions) even when citations carry backend citation_nos", () => {
@@ -272,7 +316,7 @@ describe("KbCitationSources (collapsed by default)", () => {
   it("ignores jump events for other messages", () => {
     renderWithI18n(<KbCitationSources messageId="m1" sources={[CHUNK_1]} />);
     act(() => {
-      window.dispatchEvent(new CustomEvent(KB_CITATION_JUMP_EVENT, { detail: { messageId: "other", index: 1 } }));
+      window.dispatchEvent(new CustomEvent(KB_CITATION_JUMP_EVENT, { detail: { messageId: "other", indices: [1] } }));
     });
     expect(screen.queryByRole("list")).toBeNull();
   });
