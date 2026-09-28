@@ -18,7 +18,7 @@
 ```mermaid
 flowchart LR
     subgraph NOW[现状]
-        A1["六 trigger 平铺 w-fit"] --> A2["总宽 ~480px > 栏宽"]
+        A1["六 trigger 平铺 w-fit"] --> A2["总宽 356px > 栏宽"]
         A2 --> A3["溢出被栏边裁掉<br/>无暗示 · 无入口"]
     end
     subgraph AFTER[本对之后]
@@ -43,7 +43,7 @@ flowchart LR
 | # | 根因 | 证据（file:line） |
 | --- | --- | --- |
 | ① | **tab 行无溢出处理**：`TabsList` 基类 `inline-flex w-fit`（`ui/tabs.tsx:29`）平铺六个 `TabsTrigger`（`middle-tabs.tsx:203-208`），总宽超过栏宽即画出可见区、被栏边裁掉 | `middle-tabs.tsx:202`（`<TabsList className="mx-4 mt-2" variant="line">`）；裁它的层 = react-resizable-panels **库内联 `overflow:"hidden"`**（dist 两处命中；经 `panels-shell.tsx:342` 的 `ResizablePanel` 渲染——`ui/resizable.tsx` 是纯透传、无 overflow 类，审查 ④ 更正） |
-| ② | **栏宽可以远窄于 tab 行**：中栏 `minSize={320}`px（`panels-shell.tsx:342`），而六 tab 总宽约 480px（**估算**：2 字 tab ≈ 64px、4 字 tab ≈ 96px + gap；实值 Task 3 真浏览器量后回填，审查 ⑧）⇒ 最窄处只容 2~3 个，"拖窄必吞"是布局允许的，tab 行必须自己降级 | `panels-shell.tsx:342`；实测截图（~530px 时「评测」被裁） |
+| ② | **栏宽可以远窄于 tab 行**：中栏 `minSize={320}`px（`panels-shell.tsx:342`），而六 tab 总宽 **356px**（实测 2026-09-28：45/45/73/73/73/45 + gap；原估算 480 偏大，审查 ⑧ 回填）⇒ 最窄处只容 2~3 个，"拖窄必吞"是布局允许的，tab 行必须自己降级 | `panels-shell.tsx:342`；实测截图（~530px 时「评测」被裁） |
 
 **同栏不一致的对照**：文档表格的列（时间 / 大小 / 切片）窄了会自动丢列降级，tab 行却是硬裁——同一屏两种降级行为，这是他报这个问题的直接观感来源。
 
