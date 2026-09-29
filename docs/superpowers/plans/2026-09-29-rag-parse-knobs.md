@@ -5,7 +5,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-29-rag-parse-knobs-design.md](../specs/2026-09-29-rag-parse-knobs-design.md)
-**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」）；**Task 2 已完成（2026-09-30 提交）**（RED 6 红／窄 119 绿／neuter ①2②2③1④1／前端全量 2751 例零失败）；**Task 3 已完成（2026-09-30 提交）**（RED 3 红／契约 7 绿／版本脚本 OK），**Task 4–5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
+**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」）；**Task 2 已完成（2026-09-30 提交）**（RED 6 红／窄 119 绿／neuter ①2②2③1④1／前端全量 2751 例零失败）；**Task 3 已完成（2026-09-30 提交）**（RED 3 红／契约 7 绿／版本脚本 OK）；**Task 4 已完成（2026-09-30 提交）**（真栈三腿＋逐字节还原 ✓），**Task 5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 2」＝本对；**A-3 已于 2026-09-30 撤销**（余 `A-2` + `A-6` + `A-5`）；[2026-09-24 MinerU 4.x 那一对](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)（本地腿，明写「mineru-cloud 零改动」）；[2026-09-08 视频入库](../specs/2026-09-08-video-ingest-design.md)（A-3 所在腿）。
 
 **Architecture:** `config.yaml → RagConfig`／`rag_config.json → RagConfigFile → merge → AppConfig.rag`；**两个新字段**挂两层，另**扩大既有 `parse_base_url` 的语义**（云腿也读它，空则退官方常量）。**两个消费点**各自**现取配置**：云腿 `parser.py`（请求体的 `language`／`model_version` 与 URL 主机）——~~视频 ocr `video/ocr.py`（`PaddleOCR(lang=…)`）~~ **2026-09-30 撤销**（该消费点已消失）。响应侧靠 `_build_response` 反射（② 已裁乙，golden 同批）。**除 `parse_base_url` 语义扩大这唯一例外外**，不声明时余下三项行为逐字节不变。
@@ -196,13 +196,22 @@ Authorization: Bearer <token>
 
 > 前提：服务运行且已加载本对代码；`config.yaml` 与 `rag_config.json` 先存档字节/md5，结束逐字节还原。
 
-- [ ] **腿一（语种）**：改 `parse_language` ⇒ 入库一条文本文件，网关日志里 MinerU 请求体的 `language` 跟着变（具名证据）；清空 ⇒ 回 `"ch"`。
-- [ ] **腿二（档位）**：改 `parse_model_version` ⇒ 请求体 `model_version` 跟着变；清空 ⇒ 回 `"vlm"`。
-- [ ] **腿三（地址）**：把 `parse_base_url` 设到一个**可控的失败地址**（如 `http://127.0.0.1:9/`，日志只体现主机名）⇒ 云腿请求打到该主机并失败（**这同时是 spec §6.2 那条行为变化的真栈证据**：该字段在云腿下从"被忽略"变"生效"）；清空 ⇒ 回官方地址。（**不把真实文档流量引向不明主机**；失败即证据。）
+- [x] **腿一（语种）**：改 `parse_language` ⇒ 入库一条文本文件，网关日志里 MinerU 请求体的 `language` 跟着变（具名证据）；清空 ⇒ 回 `"ch"`。
+- [x] **腿二（档位）**：改 `parse_model_version` ⇒ 请求体 `model_version` 跟着变；清空 ⇒ 回 `"vlm"`。
+- [x] **腿三（地址）**：把 `parse_base_url` 设到一个**可控的失败地址**（如 `http://127.0.0.1:9/`，日志只体现主机名）⇒ 云腿请求打到该主机并失败（**这同时是 spec §6.2 那条行为变化的真栈证据**：该字段在云腿下从"被忽略"变"生效"）；清空 ⇒ 回官方地址。（**不把真实文档流量引向不明主机**；失败即证据。）
 - [x] ~~**腿四（OCR 语种）**~~ **2026-09-30 撤销**（A-3 已废；屏幕文字改走 VLM，其验收归那条改动自己的用例）。
-- [ ] **还原**：两份配置逐字节还原；清理本次创建的测试文档（按 id）。
+- [x] **还原**：两份配置逐字节还原；清理本次创建的测试文档（按 id）。
 
-**实测（待回填）**：
+**实测（2026-09-30，真栈；网关已加载本对代码——`openapi.json` 含两个新字段）**
+
+**做法**：临时把 `parse_base_url` 指到本机抓包服务（`127.0.0.1:8899`，只记录请求体、零外网流量），以 **PNG 探针**入库「测试2」，每腿两向（设→抓、清→抓）。共 5 件探针、4 笔 PUT；结束时按 id 全删、两份配置逐字节还原。
+
+**腿一（语种）**：设 `parse_language=japan` ⇒ 抓包 `body={…,"language":"japan"}`；清空 ⇒ `"language":"ch"` ✓。
+**腿二（档位）**：设 `parse_model_version=pipeline` ⇒ `"model_version":"pipeline"`；清空 ⇒ `"vlm"` ✓。
+**腿三（地址）**：指向抓包服务 ⇒ 请求**到达配置地址**（抓包 `host=127.0.0.1:8899`；对应文档的失败文案逐字引用该服务的应答）；改到 `http://127.0.0.1:9/` ⇒ 连接失败（`All connection attempts failed`——**如实记差：网关日志对连接失败不体现主机名**，httpx 只在收到响应时打 INFO 行；具名链路由 traceback 的 `base_url=self._base_url` 帧 ＋ 当时 GET 的 `parse_base_url` 值构成）；清空 ⇒ `POST https://mineru.net/api/v4/file-urls/batch "HTTP/1.1 200 OK"` ✓（回官方）。
+**还原**：5 探针文档按 id 删除（204×5）；`config.yaml`（`764c7c4d…`）与 `rag_config.json`（`323f9046…`）逐字节还原、md5 一致 ✓；终态 GET：三项均 `config_file`／`ch`／`vlm`／`null` ✓；抓包服务已停。
+
+**实施期发现**：① 计划里"入库一条**文本文件**"不成立——`.md`/`.txt` 走本地直读、永不到达 MinerU ⇒ 探针改用 PNG（任一 MinerU 后缀同理）；② 版本 40→41 落地后，真栈每次配置重载会打 `config.yaml (version 40) is outdated — the latest version is 41. Run make config-upgrade` 的 WARNING（bump 的设计行为；本对不代跑 upgrade）。
 
 ---
 
