@@ -112,12 +112,22 @@
 
 ## Task 1 — 配置面（spec D4；落点按 Task 0 实测校正）
 
-- [ ] **RED**：断言两处后端字面量（`app_config.py:156` / `rag_config_file.py:110`）接受服务档值、两处前端字面量（`types.ts:11` / `config-form.ts:62`）同步、**顶层**两个新字段（`asr_base_url` / `asr_api_key`）可读写且**钥匙走 secret 机制**（掩码哨兵 + env 徽章）；**3 处窄化**（`config-form.ts:185` / `:305` / `:307`）不再吞掉新值；`PROVIDER_ALLOWLIST["asr"]` 四条 id 齐（`funasr` / `whisper` / `openai-audio` / `dashscope`）且 `secret_env_var` 各自对。此刻无实现 ⇒ 红。
-- [ ] **GREEN**：放开字面量 + 顶层加 `asr_base_url` / `asr_api_key`（`app_config.RagConfig` 与 `rag_config_file.RagConfigFile` 各一对）；`_SECRET_FIELDS` + `_SECRET_LEGS` 各加一行；**`_secret_env_name` 认点号路径**（`rag.video.asr_provider`，见 Task 0 结论 ① 的连带事实）；**新增 `PROVIDER_ALLOWLIST["asr"]` 腿**（`dashscope` 行带 `default_endpoint`——**只喂占位**，**不带锁语义**；`has_fixed_endpoint` 该不该跟着填由既有四行的惯例决定）；**GET 响应加 `asr_providers` capability 列表**（照 `embedding_providers` / `rerank_providers`：`provider_id` + `default_endpoint` + **`group`**）；**服务档地址留空 ⇒ PUT 报错**（09-25 D1 乙"连回落删"的既有规则）；`_VIDEO_FIELDS` **不动**。⚠️ **分组（D2 三组）要跟行走、不在前端硬编码**——同 `_embedding_provider_capabilities` 那条规则；落法：`ProviderSpec` 加一个 `group` 字段，随 capability 出给前端。
-- [ ] **neuter**：把窄化改回"只认两个"⇒ "新值被吞"的断言红（revert proof）。
-- [ ] **门禁**：后端相关套件 + `make lint`；前端 `pnpm test` / `pnpm check`。
+- [x] **RED**：断言两处后端字面量（`app_config.py:156` / `rag_config_file.py:110`）接受服务档值、两处前端字面量（`types.ts:11` / `config-form.ts:62`）同步、**顶层**两个新字段（`asr_base_url` / `asr_api_key`）可读写且**钥匙走 secret 机制**（掩码哨兵 + env 徽章）；**3 处窄化**（`config-form.ts:185` / `:305` / `:307`）不再吞掉新值；`PROVIDER_ALLOWLIST["asr"]` 四条 id 齐（`funasr` / `whisper` / `openai-audio` / `dashscope`）且 `secret_env_var` 各自对。此刻无实现 ⇒ 红。
+- [x] **GREEN**：放开字面量 + 顶层加 `asr_base_url` / `asr_api_key`（`app_config.RagConfig` 与 `rag_config_file.RagConfigFile` 各一对）；`_SECRET_FIELDS` + `_SECRET_LEGS` 各加一行；**`_secret_env_name` 认点号路径**（`rag.video.asr_provider`，见 Task 0 结论 ① 的连带事实）；**新增 `PROVIDER_ALLOWLIST["asr"]` 腿**；**GET 响应加 `asr_providers` capability 列表**；`_VIDEO_FIELDS` **不动**。
+- [x] **neuter**：把窄化改回"只认两个"⇒ "新值被吞"的断言红（revert proof）。
+- [x] **门禁**：后端相关套件 + `make lint`；前端 `pnpm test` / `pnpm check`。
 
-**实测**：（回填）
+**实测**（Task 1，2026-09-29）：
+
+- **RED**：后端 `test_rag_provider_config.py` **10 红 / 28 绿**；后端 `test_rag_config_api.py` **6 红 / 70 绿**（4 条新用例 + 2 条"纯增量"守卫 —— 后者按设计在 `asr_providers` 落地前红）；前端 `config-form.test.ts` **2 红 / 93 绿**。
+- **GREEN**：后端两文件 **114 绿**（+ `test_embedder_ark.py` 共 129 绿）；前端 `config-form.test.ts` **95 绿**；前端全量 **247 文件 / 2738 例 / 0 失败**；`pnpm check` 净；`make lint` 净（1308 文件）。
+- **neuter（两个受害者不相交）**：① 把**载入侧**窄化改回三元 ⇒ `keeps a service-tier ASR provider…` **1 红**；② 把**提交侧**两处窄化改回 ⇒ `round-trips the ASR address and key…` **1 红**。两处还原后全绿 ⇒ revert proof 成立。
+- **真机/既有面**：触碰面（5 个 rag 配置套件 + `tests/knowledge/`）**8 红 / 1448 绿 / 1 错**——逐条归因：**6 条探针红在 HEAD 上同样红**（`git worktree add --detach` 于 `28ab027d` 跑同一批 node id，A/B 双向）；**2 条 `*_missing_api_key` 是他本机仓库根 `config.yaml` + `rag_config.json` 的真实钥匙所致**（把 `DEER_FLOW_CONFIG_PATH` 指到最小配置 + `DEER_FLOW_RAG_CONFIG_PATH` 指到不存在的路径，**同一棵树里立刻转绿**）；**1 条 qdrant 错**＝本机没起 Qdrant。⇒ **零回归**。（第 9 条红＝`test_the_two_new_fields_never_disagree`，属**本件真回归**，已由偏差 2 修掉——这正是那条不变量测试的价值。）
+- **偏差登记（三处，均已改）**：
+  1. **分组不进 allowlist**：原计划写"`ProviderSpec` 加 `group`、分组跟行走"。读代码后更正——仓里既有两条惯例是**前端常量镜像 allowlist**（`EMBEDDING_PROVIDER_OPTIONS` 那组 + "drift 由 422 显形"）与**按 provider 值判锁**（MinerU 行 `parse_provider === "mineru-local"`），capability 块只喂**占位**（`endpointPlaceholderFor`）。⇒ 分组与锁法落成前端常量（`ASR_PROVIDER_OPTIONS` / `ASR_LOCAL_ENGINES`），capability 只出 `provider_id` + `default_endpoint`。
+  2. **`has_fixed_endpoint` 必须跟着填**：既有单测 `test_the_two_new_fields_never_disagree` 钉着"它与 `default_endpoint` 同真同假"⇒ `asr/dashscope` 行必须 `True`（事实为真），只是**不发布**给 ASR 行（锁已由 09-25 解锁退役）。顺带把该字段那句过期 docstring（"UI 显示为只读"）改成现义。
+  3. **地址必填检查挪到 Task 2**：它属于 provider 的构造面（既有先例是 `build_*` 抛 `RagConfigurationError`），本 Task 不碰 `asr.py`。
+- **顺带发现**：响应基线 `tests/fixtures/rag_config/response_golden.json` 的"纯增量"守卫**只覆盖顶层键**，嵌套新键要**手工登记**到 `_registered_additions`（本次加了 4 个：`config`/`sources` 的 `asr_base_url`、`asr_api_key`）——照仓里既有注释的约定办。
 
 ---
 
