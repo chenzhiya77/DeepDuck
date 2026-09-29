@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-28-video-asr-output-shape-design.md](../specs/2026-09-28-video-asr-output-shape-design.md)
-**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅（已提交 `dcd1142d`）/ Task 2 ✅（代码未提交）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20 + 真机复核（rows=1、warning 打出、跨度 1070→90305ms）；`tests/knowledge/video` **132 例**、`make lint` 净；**Task 3 未开工**。
+**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅（`dcd1142d`）/ Task 2 ✅（`15b72ab5`）/ Task 1b ✅（代码未提交）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20 + 真机复核（rows=1、warning 打出、跨度 1070→90305ms）；`tests/knowledge/video` **132 例**、`make lint` 净；**Task 3 未开工**。
 **来源**：[2026-09-27-rag-asr-model-picker.md](2026-09-27-rag-asr-model-picker.md) 的 `实测` 越界发现（那条线纯前端、本件动 `backend/`，两者零文件重叠）。
 
 **Architecture:** 两处——**① 调用侧只带 `vad_model="fsmn-vad"`**（`asr.py:98-99`；**不补 `punc_model`**——真机已证"分段绕不过 punc"，本件放弃分段）**② 抽取器按真机形状校准 + 把"整段一行"变可观测**（`asr.py:127-150`：键名按真机校正、保留回退，新增告警，按 D2）。
@@ -58,6 +58,7 @@
 
 > 动到的文件：`packages/harness/deerflow/knowledge/video/asr.py`（`FunAsrProvider.__init__` 与 `transcribe` 的 `AutoModel(...)` 调用）＋ 该腿的既有测试文件（`backend/tests/knowledge/video/…`）。
 > **验收对应**：spec §4 的 3（降级语义不变）+ §4 的 1（前半：补 VAD 后 rows 仍为 1——本件接受的现状）。
+> ⚠️ **2026-09-29 二次改判**：配件追加 `spk_model="cam++"` ⇒ 上面这条"rows 仍为 1"的期望**作废**（改为 rows > 1）；追加落 **Task 1b**（见下）。
 
 - [x] **RED**：单测——以桩替换 `funasr.AutoModel`，断言：① 构造参数**含** `vad_model="fsmn-vad"`；② **不含** `punc_model`（D1 不许加码）；③ 例外名单（`paraformer-zh-streaming` / `Whisper-*`）**不带** `vad_model`。此刻无实现 ⇒ 红。
 - [x] **GREEN**：例外名单常量 + `AutoModel(...)` 带上 `vad_model`。
@@ -73,10 +74,35 @@
 
 ---
 
+## Task 1b — 追加 `spk_model="cam++"`（2026-09-29 二次改判；spec D1 追加段 + §7.5）
+
+> 动到的文件：同 Task 1（`asr.py` 的 `_vad_kwargs` 与调用点）＋ 该腿测试。
+> **验收对应**：spec §4 的 1（**新期望：rows > 1、每段带 `spk`**）+ §4 的 3（降级语义不变）。
+
+- [x] **RED**：在 Task 1 的断言上加两条——① 构造参数**含** `spk_model="cam++"`；② 例外名单（`paraformer-zh-streaming` / `Whisper-*`）**两个都不带**（`spk_model` 也不给）。此刻无实现 ⇒ 红。
+- [x] **GREEN**：`_vad_kwargs(model)` 扩成"VAD + spk"（或并列一个新纯函数）；例外名单同时管住两个参数。
+- [x] **neuter**：把 `spk_model` 去掉 ⇒ ① 红（revert proof）。
+- [x] **真机复核**：示例音频 ⇒ **rows > 1**（VAD 段 + `spk`）；"整段一行" + warning 用**无停顿样本**复现（400ms 间隙版）；记录 **gen ≈2.3×** 的实测耗时。
+- [x] **门禁**：`make test`（相关文件）+ `make lint` 净。
+
+**实测**（Task 1b，2026-09-29）：
+- **RED**：**1 红 / 19 绿**（单文件 20 例）。⚠️ 计划的 ②（例外名单"两个都不带"）又是"不许加"的守卫 ⇒ **实现前天然绿**；真正红的是 ① 的 `spk_model` 断言。
+- **GREEN**：**20 绿**。
+- **neuter**（把 `spk_model` 去掉）：**1 红 / 19 绿**，受害者 = ① ⇒ revert proof 成立。
+- **真机复核**（`MODELSCOPE_CACHE=E:\app-model\ms-cache`；材料 = 4.52s 样本重复 20 次 = 90s）：
+  - `provider · 20× 原样` ⇒ **rows = 8 / segments = 8**（跨度 740→90430 ms）、**无 warning**（有句级就不再报）；全程 44.0 s（含 VAD + cam++ + ASR 三个模型的加载）。
+  - **直调 ⇒ `sentence_info` 8 条、`spk = [0,1,0,0,0,0,0,0]`** ⇒ **每段带 `spk`** ✓（单人音频的 0/1 交替 = §5 边界①"假分裂"，与 §7.5 一致）。
+  - ⚠️ **"整段一行"的复现没做成**：按"400ms 间隙版"构造（重复之间插 400 ms 静音）跑出 **9 段**，不是 1 段——**材料不同**：§7.5 那组（400 ms ⇒ 合 1 段 / 1.2 s ⇒ 6 段）是在**合成对话**（6 句交替）上得的，而我的样本自带内部停顿。1 行 + warning 的**真机证据**此前已有（Task 2 那次 `rows=1` + warning 原文 ✓），单测也覆盖该路径 ⇒ 本项记"未按此材料复现，证据由 Task 2 那次提供"。
+- **门禁**：`tests/knowledge/video` **132 例全绿**；`make lint` 净（1308 文件）。
+- **偏差登记**：`_vad_kwargs` **改名 `_funasr_kwargs`**、`_NO_VAD_*` **改名 `_NO_COMPANION_*`**（配件已不止 VAD，旧名会误导；计划里"或并列一个新纯函数"两者都允许）。另：**`spk` 没有进 `TranscriptSegment`**（该 dataclass 无说话人字段）⇒ 说话人标签当前止于 funasr 输出、被抽取器丢弃；要用它得扩契约（另立项）。
+
+---
+
 ## Task 2 — 抽取器校准 + 可观测（spec D2）
 
 > 动到的文件：`asr.py`（`_rows_from_funasr` 与其 docstring）＋ 该腿测试。
 > **验收对应**：spec §4 的 2（可观测生效）。
+> ⚠️ **2026-09-29 二次改判**：`sentence_info` 现在由 **cam++ 顺带**产生（不必装 punc）；本 Task 的"整段一行"用例仍有效（无停顿样本会复现），但**真机常态期望改为 rows > 1**（见 Task 1b）。
 
 - [x] **RED**：纯函数用例三形状——① `sentence_info` 非空（**真机键名**，装 punc 后才会出现）⇒ 多 rows；② 只有 `timestamp` 且跨度≈全长 ⇒ **1 行 + 一条 warning**（"整段一行"防御，**本件真机的实际形状**）；③ 两者都没有 ⇒ 空 rows（**不抛**，保持降级语义）。此刻无实现 ⇒ 红。
 - [x] **GREEN**：按真机键名校准取数（`sentence_info` 优先 / `timestamp` 回退）+ 加告警；docstring 去掉"待 Task 7/12 校准"的自述（已校准）。
@@ -99,8 +125,8 @@
 > 动到的文件：`backend/AGENTS.md`（视频 ASR 腿一段）。
 > **验收对应**：spec §4 的 3 / 4。
 
-- [ ] **文档**：`backend/AGENTS.md` 的视频段补一句——ASR 腿的 `AutoModel` 带 `vad_model="fsmn-vad"`（**不补 punc**）；**句级分段需要 punc**（本件不做；装了 `ct-punc-c` 才会出现 `sentence_info`）；"整段一行"是**已知现状**，由抽取器的 warning 可观测。
-- [ ] **端到端（真机）**：入一个真实（短）视频，看镜头卡「口述」：**仍是一张卡有字、无标点**（预期不变）；看日志 / `path_status` 是否出现"整段一行"信号；记录**总耗时**对照改造前（VAD 的加载成本）。
+- [ ] **文档**：`backend/AGENTS.md` 的视频段补一句——ASR 腿的 `AutoModel` 带 `vad_model="fsmn-vad"` + `spk_model="cam++"`（**不补 punc**）；**分段由 cam++ 顺带获得**（VAD 段粒度 + `spk`；2026-09-29 二次改判）；"整段一行"只在无停顿样本上出现、由抽取器的 warning 可观测。
+- [ ] **端到端（真机）**：入一个真实（短）视频，看镜头卡「口述」：**rows > 1**（VAD 段、每段带 `spk`）、**仍无标点**；看日志是否出现"整段一行"信号；记录**总耗时**对照改造前（VAD + cam++ 的加载与推理成本）。
 - [ ] ~~**跨件：回改姊妹件的注记文案**~~ **取消留档（2026-09-29）**：本件**不修分段**（放弃 punc）⇒ picker 那条 ⓘ 注记的后果句**仍然成立、不过期**，无需回改（将来若装 punc，再把这条恢复）。
 - [ ] **收官门禁**：后端全量套件 + `make lint` 净；`git diff` 只含本件该动的文件。
 

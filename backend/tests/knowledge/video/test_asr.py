@@ -188,7 +188,7 @@ def _install_fake_funasr(monkeypatch, calls: list[dict]) -> None:
     monkeypatch.setitem(sys.modules, "funasr", module)
 
 
-def test_funasr_provider_asks_for_vad_and_never_for_punc(monkeypatch):
+def test_funasr_provider_asks_for_vad_and_speakers_but_never_punc(monkeypatch):
     calls: list[dict] = []
     _install_fake_funasr(monkeypatch, calls)
 
@@ -197,15 +197,18 @@ def test_funasr_provider_asks_for_vad_and_never_for_punc(monkeypatch):
     assert calls[0]["model"] == "paraformer-zh"
     assert calls[0]["disable_update"] is True
     assert calls[0]["vad_model"] == "fsmn-vad"
-    assert "punc_model" not in calls[0]  # D1 只补 VAD，不许加码
-    assert rows == [(0, 1200, "你好")]  # 带 VAD 不影响取数路径
+    assert calls[0]["spk_model"] == "cam++"  # 顺带产出 sentence_info（VAD 段 + spk）
+    assert "punc_model" not in calls[0]  # D1 不补标点
+    assert rows == [(0, 1200, "你好")]  # 带配件不影响取数路径
 
 
 @pytest.mark.parametrize("model", ["paraformer-zh-streaming", "Whisper-large-v3"])
-def test_funasr_provider_skips_vad_for_the_exception_list(monkeypatch, model):
+def test_funasr_provider_skips_companions_for_the_exception_list(monkeypatch, model):
     calls: list[dict] = []
     _install_fake_funasr(monkeypatch, calls)
 
     FunAsrProvider(model=model).transcribe("clip.mp4")
 
-    assert "vad_model" not in calls[0]  # 流式按 chunk 调；托管 whisper 走自己的路径
+    # 流式按 chunk 调；托管 whisper 走自己的路径 —— VAD 与 cam++ 两个都不给。
+    assert "vad_model" not in calls[0]
+    assert "spk_model" not in calls[0]
