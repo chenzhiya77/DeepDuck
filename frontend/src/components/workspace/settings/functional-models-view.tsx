@@ -46,7 +46,6 @@ import {
   ASR_PROVIDER_OPTIONS,
   asrModelForProviderSwitch,
   asrProbeBlocksSave,
-  asrProbeKey,
   asrProbeVerdictFor,
   buildRagConfigInput,
   changesEmbeddingDimension,
@@ -540,20 +539,12 @@ export function FunctionalModelsView() {
 
   // The ASR row's own probe (spec 2026-09-28 D7): only the service tiers reach out, the
   // verdict counts only for the values it was taken for, and only `no_timestamps` blocks a save.
+  // 手动探针 2026-09-30 起零入口休眠（用户裁定）——判定与拦保存留着，只是没有可点的控件。
   const asrKeyPresent = view?.sources?.asr_api_key !== "unset";
   const asrServiceApplies = values ? shouldProbeAsr(values) : false;
   const asrVerdict = values
     ? asrProbeVerdictFor(values, asrKeyPresent, asrProbe.data ?? null)
     : null;
-  const asrProbeCurrentKey = values ? asrProbeKey(values, asrKeyPresent) : "";
-  const asrProbing =
-    asrProbe.isPending && asrProbe.variables?.key === asrProbeCurrentKey;
-  const asrReady = Boolean(
-    values &&
-      values.video.asr_model.trim() !== "" &&
-      values.asr_base_url.trim() !== "" &&
-      asrKeyPresent,
-  );
   const asrBlockReason =
     asrServiceApplies && asrProbeBlocksSave(asrVerdict)
       ? F.asrProbeBlocksSave
@@ -1496,114 +1487,46 @@ export function FunctionalModelsView() {
             </div>
           </div>
 
+          {/* 主角行（spec 2026-09-30 观感二轮）：与「图片描述模型 (VLM)」同级；它的细节
+              （Model ID / API Key / 接口地址）缩进一级，照稀疏服务那套嵌套。
+              手动探针零入口休眠（同日第三轮裁定）：兜底＝保存期构造拒绝（缺地址/钥匙 ⇒ 400）
+              ＋ 入库期 asr=failed；探针链路与保存区那道门留着，只是没有可点的控件。 */}
           <div className={ROW}>
-            <RowLabel>{F.providerLabel}</RowLabel>
-            <div
-              className="flex min-w-0 items-center gap-2"
-              data-slot="asr-provider-control"
-            >
-              <OptionSelect
-                label={F.asrProvider}
-                value={values.video.asr_provider}
-                options={ASR_PROVIDER_OPTIONS}
-                labels={{
-                  funasr: F.asrProviderFunasr,
-                  whisper: F.asrProviderWhisper,
-                  "openai-audio": F.asrProviderOpenaiAudio,
-                  dashscope: F.asrProviderDashscope,
-                }}
-                groups={ASR_PROVIDER_GROUPS.map((group) => ({
-                  labelKey: group.labelKey,
-                  label: F[group.labelKey],
-                  ids: group.ids,
-                }))}
-                onChange={(next) => {
-                  const provider =
-                    next as RagConfigFormValues["video"]["asr_provider"];
-                  updateVideo("asr_provider", provider);
-                  // 切换即改值：另一个引擎跑不了的值换成目标引擎的首行（spec 2026-09-27 §2 D2）。
-                  // 服务档的模型名是服务侧的、没有候选行，所以那一侧不动值（探针会给反馈）。
-                  const kept = asrModelForProviderSwitch(
-                    provider,
-                    values.video.asr_model,
-                  );
-                  if (kept !== values.video.asr_model)
-                    updateVideo("asr_model", kept);
-                }}
-              />
-              {/* 探针只挂服务档（D7）：一点一次真调用、不落库，hover 给服务端原话。 */}
-              {asrServiceApplies ? (
-                <Tooltip
-                  content={
-                    asrProbing
-                      ? F.legDotProbing
-                      : !asrReady
-                        ? F.legDotNeedsConfig
-                        : (asrVerdict?.detail ?? F.legDotUntested)
-                  }
-                  contentClassName="max-w-xs"
-                >
-                  <button
-                    type="button"
-                    data-slot="asr-probe"
-                    data-state={
-                      asrProbing
-                        ? "probing"
-                        : !asrReady
-                          ? "untested"
-                          : asrVerdict?.status === "ok"
-                            ? "ok"
-                            : asrVerdict
-                              ? "bad"
-                              : "untested"
-                    }
-                    aria-label={`${F.asrProbe} · ${
-                      asrProbing
-                        ? F.legDotProbing
-                        : !asrReady
-                          ? F.legDotNeedsConfig
-                          : (asrVerdict?.detail ?? F.legDotUntested)
-                    }`}
-                    disabled={!asrReady || asrProbing}
-                    onClick={() =>
-                      asrProbe.mutate({
-                        key: asrProbeCurrentKey,
-                        asr_provider: values.video.asr_provider,
-                        asr_model: values.video.asr_model.trim(),
-                        asr_base_url: values.asr_base_url.trim() || null,
-                        // 钥匙从不回显：空表示"用已存的或环境里的那把"。
-                        asr_api_key: null,
-                      })
-                    }
-                    className={cn(
-                      "inline-flex shrink-0 items-center",
-                      !asrReady || asrProbing
-                        ? "cursor-not-allowed"
-                        : "hover:text-foreground/80 cursor-pointer",
-                    )}
-                  >
-                    <span
-                      aria-hidden
-                      data-slot="asr-probe-dot"
-                      className={cn(
-                        "inline-block size-2 rounded-full",
-                        asrProbing
-                          ? LEG_DOT_TONE.probing
-                          : !asrReady || asrVerdict === null
-                            ? LEG_DOT_TONE.untested
-                            : asrVerdict.status === "ok"
-                              ? LEG_DOT_TONE.ok
-                              : LEG_DOT_TONE.bad,
-                      )}
-                    />
-                  </button>
-                </Tooltip>
-              ) : null}
-            </div>
+            <RowLabel>{F.asrModelRow}</RowLabel>
+            <OptionSelect
+              label={F.asrProvider}
+              value={values.video.asr_provider}
+              options={ASR_PROVIDER_OPTIONS}
+              labels={{
+                funasr: F.asrProviderFunasr,
+                whisper: F.asrProviderWhisper,
+                "openai-audio": F.asrProviderOpenaiAudio,
+                dashscope: F.asrProviderDashscope,
+              }}
+              groups={ASR_PROVIDER_GROUPS.map((group) => ({
+                labelKey: group.labelKey,
+                label: F[group.labelKey],
+                ids: group.ids,
+              }))}
+              onChange={(next) => {
+                const provider =
+                  next as RagConfigFormValues["video"]["asr_provider"];
+                updateVideo("asr_provider", provider);
+                // 切换即改值：另一个引擎跑不了的值换成目标引擎的首行（spec 2026-09-27 §2 D2）。
+                // 服务档的模型名是服务侧的、没有候选行，所以那一侧不动值。
+                const kept = asrModelForProviderSwitch(
+                  provider,
+                  values.video.asr_model,
+                );
+                if (kept !== values.video.asr_model)
+                  updateVideo("asr_model", kept);
+              }}
+            />
           </div>
 
           <div className={ROW}>
             <RowLabel
+              nested
               info={
                 values.video.asr_provider === "whisper"
                   ? F.asrModelWhisperHint
@@ -1676,7 +1599,7 @@ export function FunctionalModelsView() {
           {/* 钥匙与地址：本地引擎（进程内）两格都锁——它们对进程内引擎没有概念；
               服务档两格都填，地址格用厂商端点做灰字占位（D3）。恒显、锁而不藏。 */}
           <div className={ROW}>
-            <RowLabel>{F.apiKeyLabel}</RowLabel>
+            <RowLabel nested>{F.apiKeyLabel}</RowLabel>
             {asrServiceApplies ? (
               <SecretInput
                 badge={asrKeyPresent ? F.secretFromEnvBadge : undefined}
@@ -1692,7 +1615,7 @@ export function FunctionalModelsView() {
           </div>
 
           <div className={ROW}>
-            <RowLabel>{F.endpointLabel}</RowLabel>
+            <RowLabel nested>{F.endpointLabel}</RowLabel>
             {asrServiceApplies ? (
               <Input
                 value={values.asr_base_url}

@@ -1897,6 +1897,7 @@ export const enUS: Translations = {
         "The selected embedding model cannot supply the sparse half. Set the sparse source to a separate sparse service or local BM25.",
       rerankModel: "Rerank model",
       rerankApiKey: "API key (rerank)",
+      asrModelRow: "Speech recognition model",
       asrProvider: "Speech recognition (ASR)",
       asrProviderFunasr: "funasr (local)",
       asrProviderWhisper: "whisper (local)",

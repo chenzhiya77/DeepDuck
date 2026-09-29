@@ -1803,6 +1803,7 @@ export const zhCN: Translations = {
         "当前选择的向量模型无法提供稀疏向量；请把「稀疏向量来源」改为「独立稀疏服务」或「本地 BM25」。",
       rerankModel: "重排模型",
       rerankApiKey: "API Key（重排）",
+      asrModelRow: "语音识别模型",
       asrProvider: "语音识别 (ASR)",
       asrProviderFunasr: "funasr（本地）",
       asrProviderWhisper: "whisper（本地）",

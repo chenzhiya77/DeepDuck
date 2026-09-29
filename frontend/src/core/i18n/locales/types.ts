@@ -1801,6 +1801,7 @@ export interface Translations {
       sparseServiceUnconfigured: string;
       rerankModel: string;
       rerankApiKey: string;
+      asrModelRow: string;
       asrProvider: string;
       asrProviderFunasr: string;
       asrProviderWhisper: string;

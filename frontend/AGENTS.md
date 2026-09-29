@@ -177,15 +177,22 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   (spec 2026-09-27): a free-typed value over the selected engine's common models, and a switch
   falls back to the target menu's first row — judged only against whisper's own name set, because
   funasr is an open set (ModelScope ids, local directories) and its menu must never double as a
-  filter. Since 2026-09-28 the video section is a **four-row block** — provider / Model ID / API Key /
-  接口地址 — with the labels the retrieval pair already uses and the roles on the aria-labels; the
-  provider menu is grouped into engines and protocol tiers, and the block has two lock states rather
-  than three: an in-process engine locks both service fields (its own reason string — an ASR service
-  may be a local one, so "cloud API only" would be wrong), a service tier leaves both editable with
-  the vendor endpoint as the placeholder. Only the service tiers carry the **probe dot** on the
-  provider row: one real call per click, nothing persisted, the server's own `detail` on hover, and
-  `no_timestamps` is the single verdict that blocks Save — a verdict that only counts for the four
-  values it was taken for. A service tier also drops the model row's candidate menu (a service-side
+  filter. Since 2026-09-28 the video section's speech block is a **four-row block** — provider /
+  Model ID / API Key / 接口地址 — and since 2026-09-30 it reads as **one principal row with three
+  nested details** (two rounds of visual review; no role headings): the first row is labelled
+  语音识别模型 and sits at the caption row's level (图片描述模型 (VLM)), while Model ID / API Key /
+  接口地址 are indented one level beneath it — the sparse service's `RowLabel nested`
+  indent-and-rule, not headings. The provider menu is grouped into engines and protocol tiers, and
+  the block has two lock states rather than three: an in-process engine locks both service fields
+  (its own reason string — an ASR service may be a local one, so "cloud API only" would be wrong), a
+  service tier leaves both editable with the vendor endpoint as the placeholder. **The manual probe
+  has no UI entry point since 2026-09-30** (three placement rounds all failed; the user's call was
+  to keep it dormant): nothing renders a dot, but the chain stays wired — `POST
+  /rag/config/probe-asr`, the wire/verdict helpers and the `no_timestamps` save gate are all still
+  there, just unreachable. What guards the leg now is the save-time construction refusal (a service
+  tier missing endpoint/key is a 400) and the ingest-time degradation (`asr=failed`); the one case
+  that goes quiet is a service answering without segment timestamps (empty or single whole-file
+  answer ⇒ no transcript), which used to be caught before saving. A service tier also drops the model row's candidate menu (a service-side
   name is an open set), so a switch carries the model value over instead of rewriting it.
   The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
   they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and

@@ -2313,8 +2313,6 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
 describe("ASR row: four rows, grouped providers, and the probe (spec 2026-09-28)", () => {
   const asrProvider = () =>
     screen.getByRole("combobox", { name: F.asrProvider });
-  const probeDot = () =>
-    screen.getByRole("button", { name: new RegExp(F.asrProbe) });
   const saveButton = () =>
     screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
   const lockedCells = () =>
@@ -2429,33 +2427,46 @@ describe("ASR row: four rows, grouped providers, and the probe (spec 2026-09-28)
     expect(lockedCells()).toHaveLength(0);
   });
 
-  it("hangs the probe on the provider row for services only", () => {
-    setRag();
+  it("carries no probe control for in-process engines", () => {
+    setRag(); // 默认 funasr
     renderPage();
     openFunctionalView();
 
-    // 本地引擎本就有「加载失败 ⇒ asr_failed」的降级路径，不需要探针（D7）。
+    expect(document.querySelector('[data-slot="asr-probe"]')).toBeNull();
     expect(
       screen.queryByRole("button", { name: new RegExp(F.asrProbe) }),
     ).toBeNull();
   });
 
-  it("runs one real probe on click, carrying the values it is taken for", () => {
+  it("carries none for service tiers either — the manual probe is dormant (2026-09-30)", () => {
     setService();
     renderPage();
     openFunctionalView();
 
-    fireEvent.click(probeDot());
-
-    expect(asrProbeMock).toHaveBeenCalledTimes(1);
-    expect(asrProbeMock.mock.calls[0]![0]).toMatchObject({
-      asr_provider: "dashscope",
-      asr_model: "qwen-audio-3.1-asr-flash",
-      asr_base_url: "https://dashscope.aliyuncs.com",
-      // 钥匙从不回显：空表示"用已存的或环境里的那把"。
-      asr_api_key: null,
-    });
+    // 零入口休眠（用户裁定）：兜底＝保存期构造拒绝（缺地址/钥匙 ⇒ 400）＋ 入库期 asr=failed；
+    // 「连得上但没分段」那格因此变静默——已登记在 spec §6.2。探针链路（路由/夹具/判定/hook）
+    // 与保存区那道门都留着，只是没有入口。
+    expect(document.querySelector('[data-slot="asr-probe"]')).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: new RegExp(F.asrProbe) }),
+    ).toBeNull();
   });
+
+  it("names the engine row after the ASR model, and nests its details under it", () => {
+    setService();
+    renderPage();
+    openFunctionalView();
+
+    // 主角行与「图片描述模型 (VLM)」同级（spec 2026-09-30 观感二轮：原「提供商」行改名）。
+    expect(screen.getByText(F.asrModelRow)).toBeTruthy();
+
+    // 三张明细行降一级（照稀疏服务那套嵌套：标签带缩进竖线）。
+    for (const label of [F.asrModel, F.asrApiKey, F.asrBaseUrl]) {
+      const row = screen.getByLabelText(label).closest(".grid")!;
+      expect(row.querySelector("span.border-l")).toBeTruthy();
+    }
+  });
+
 
   it("blocks Save on a no_timestamps verdict — the only blocking state", () => {
     setService();
