@@ -5,7 +5,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-29-rag-parse-knobs-design.md](../specs/2026-09-29-rag-parse-knobs-design.md)
-**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」）；**Task 2 已完成（2026-09-30 提交）**（RED 6 红／窄 119 绿／neuter ①2②2③1④1／前端全量 2751 例零失败），**Task 3–5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
+**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」）；**Task 2 已完成（2026-09-30 提交）**（RED 6 红／窄 119 绿／neuter ①2②2③1④1／前端全量 2751 例零失败）；**Task 3 已完成（2026-09-30 提交）**（RED 3 红／契约 7 绿／版本脚本 OK），**Task 4–5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 2」＝本对；**A-3 已于 2026-09-30 撤销**（余 `A-2` + `A-6` + `A-5`）；[2026-09-24 MinerU 4.x 那一对](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)（本地腿，明写「mineru-cloud 零改动」）；[2026-09-08 视频入库](../specs/2026-09-08-video-ingest-design.md)（A-3 所在腿）。
 
 **Architecture:** `config.yaml → RagConfig`／`rag_config.json → RagConfigFile → merge → AppConfig.rag`；**两个新字段**挂两层，另**扩大既有 `parse_base_url` 的语义**（云腿也读它，空则退官方常量）。**两个消费点**各自**现取配置**：云腿 `parser.py`（请求体的 `language`／`model_version` 与 URL 主机）——~~视频 ocr `video/ocr.py`（`PaddleOCR(lang=…)`）~~ **2026-09-30 撤销**（该消费点已消失）。响应侧靠 `_build_response` 反射（② 已裁乙，golden 同批）。**除 `parse_base_url` 语义扩大这唯一例外外**，不声明时余下三项行为逐字节不变。
@@ -178,11 +178,17 @@ Authorization: Bearer <token>
 
 > 文件：`config.example.yaml`、`deploy/helm/deer-flow/values.yaml`、`deploy/helm/deer-flow/README.md`、**仓根 `README.md`**、`backend/AGENTS.md`、[盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md)。**`rag_config.example.json` 不改**（该文件口径＝模型条目／主设施字段，其守卫绑定 `MODEL_REFERENCE_FIELDS`）。**不运行 `make config-upgrade`、不读改用户真实配置。**
 
-- [ ] **RED**：模板契约用例扩**两项**（存在、键序、`config_version` ≥ 41；**取值按各段既有风格**：parse 段两处是注释示例）。**`rag_config.example.json` 不进断言面**（它不改）。
-- [ ] **GREEN**：示例**按各段风格**（parse 段：两处新增注释示例 ＋ `parse_base_url` 注释改两态；~~video 段加 `ocr_lang`~~ **2026-09-30 撤销**）／版本同批（`config_version` 40 → 41，**若 ASR 服务档先落地并 bump 则顺延 42** ＋ chart 同升，否则 `scripts/check_config_version.sh` 会新开红）；**仓根 `README.md` 两处**（解析 bullet `:46` 补"云腿留空＝官方、填了就打到它"；~~视频 bullet `:45` 补"PaddleOCR 未安装 ⇒ 屏幕文字恒空"~~ —— **2026-09-30 改判**：该 bullet 已由撤销轮就地改为"屏幕文字走所配置的模型端点"、不再提 PaddleOCR）；`backend/AGENTS.md` 补**两个**旋钮＋ `parse_base_url` 的两态口径；~~把 PaddleOCR 加进视频重依赖清单 ＋ 一句"未安装时屏幕文字恒空"~~ **2026-09-30 撤销**（视频段那句已由撤销轮改写为走 `rag.vlm_model`；PaddleOCR 不入清单）；盘点档 A-2 例证收窄（"非中英文字种"）＋ **复核 A-6 行的"⚠ 不再能称纯加法"批注**（起草轮 2026-09-29 已就地登记，实施时确认仍在即可）。
-- [ ] **门禁**：示例契约用例绿；`bash scripts/check_config_version.sh` OK；grep 复核**两处新增键 ＋ 一处改写**出现（parse 段两键、`parse_base_url` 注释）。
+- [x] **RED**：模板契约用例扩**两项**（存在、键序、`config_version` ≥ 41；**取值按各段既有风格**：parse 段两处是注释示例）。**`rag_config.example.json` 不进断言面**（它不改）。
+- [x] **GREEN**：示例**按各段风格**（parse 段：两处新增注释示例 ＋ `parse_base_url` 注释改两态；~~video 段加 `ocr_lang`~~ **2026-09-30 撤销**）／版本同批（`config_version` 40 → 41，**若 ASR 服务档先落地并 bump 则顺延 42** ＋ chart 同升，否则 `scripts/check_config_version.sh` 会新开红）；**仓根 `README.md` 两处**（解析 bullet `:46` 补"云腿留空＝官方、填了就打到它"；~~视频 bullet `:45` 补"PaddleOCR 未安装 ⇒ 屏幕文字恒空"~~ —— **2026-09-30 改判**：该 bullet 已由撤销轮就地改为"屏幕文字走所配置的模型端点"、不再提 PaddleOCR）；`backend/AGENTS.md` 补**两个**旋钮＋ `parse_base_url` 的两态口径；~~把 PaddleOCR 加进视频重依赖清单 ＋ 一句"未安装时屏幕文字恒空"~~ **2026-09-30 撤销**（视频段那句已由撤销轮改写为走 `rag.vlm_model`；PaddleOCR 不入清单）；盘点档 A-2 例证收窄（"非中英文字种"）＋ **复核 A-6 行的"⚠ 不再能称纯加法"批注**（起草轮 2026-09-29 已就地登记，实施时确认仍在即可）。
+- [x] **门禁**：示例契约用例绿；`bash scripts/check_config_version.sh` OK；grep 复核**两处新增键 ＋ 一处改写**出现（parse 段两键、`parse_base_url` 注释）。
 
-**实测（待回填）**：
+**实测（2026-09-30）**
+
+**RED**：`test_rag_config_example.py` 扩两条（两键的注释示例存在＋不激活；`parse_*` 注释行的键序）＋版本底线 40 → 41 ⇒ 未改示例前 **3 红／4 绿**（两条新用例＋版本那条）。
+
+**GREEN**：契约用例 **7 passed**；`bash scripts/check_config_version.sh` **OK**（example 41 ＝ chart 41）；grep 复核：两处注释示例在 `:2617-2618`、`parse_base_url` 注释已改两态口径（`:2614`）。**连跑三件读示例的用例**（`test_config_version` ＋ `test_rag_config_example` ＋ `test_rag_config`）：**39 passed／1 failed**——那条 `test_version_26_config_upgrades_to_checkpoint_channel_mode` **在既有全量基线集合内**（162 红之一、已在 HEAD 上逐条复现），非本对所致。
+
+**改动面**：`config.example.yaml`（版本 40→41 ＋ 两处注释示例 ＋ `parse_base_url` 一处改写）、`deploy/helm/deer-flow/{values.yaml,README.md}`（版本同升）、仓根 `README.md`（解析 bullet 补"该地址云腿同样生效：留空＝官方地址，填了就打到它"）、`backend/AGENTS.md`（RAG 段补两个旋钮 ＋ 地址两态）、盘点档（A-2 例证收窄；**A-6 行批注复核仍在** ✓）。**未做**（按 spec D5）：`rag_config.example.json` 不改（两键非模型引用）。
 
 ---
 

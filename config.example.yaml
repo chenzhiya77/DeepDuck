@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 40
+config_version: 41
 
 # ============================================================================
 # Logging
@@ -2611,8 +2611,11 @@ rag:
   # rerank_provider: dashscope           # dashscope | generic-rerank | tei-rerank
   # rerank_base_url:
   # parse_provider: mineru-cloud         # mineru-cloud | mineru-local
-  # parse_base_url:                      # required when parse_provider=mineru-local
+  # parse_base_url:                      # parsing service address; empty = the official MinerU cloud
+  #                                        # (https://mineru.net); required for a self-hosted mineru-local
   # parse_tier:                          # flash | basic | standard | advanced; empty lets the local service decide
+  # parse_language: ch                   # MinerU cloud document language pack; `ch` covers Chinese and English
+  # parse_model_version: vlm             # MinerU cloud model version: pipeline | vlm
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
   # Requests/second cap for graph-extraction LLM calls during indexing.
