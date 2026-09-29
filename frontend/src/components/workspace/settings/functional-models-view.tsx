@@ -64,6 +64,8 @@ import {
   isSparseSourceUnsupported,
   MODEL_REFERENCE_NONE,
   modelReferenceOptions,
+  PARSE_LANGUAGE_OPTIONS,
+  PARSE_MODEL_VERSION_OPTIONS,
   PARSE_TIER_OPTIONS,
   PARSE_PROVIDER_OPTIONS,
   RERANK_PROVIDER_OPTIONS,
@@ -839,6 +841,14 @@ export function FunctionalModelsView() {
   const SPARSE_SERVICE_LABELS: Record<string, string> = {
     "": F.sparseProviderNone,
     "tei-sparse": F.providerTeiSparse,
+  };
+  // The two cloud-only parse knobs name their own empty option, like the sparse service:
+  // on the wire it means "not declared here", so the configured default applies.
+  const PARSE_LANGUAGE_LABELS: Record<string, string> = {
+    "": F.parseLanguageDefault,
+  };
+  const PARSE_MODEL_VERSION_LABELS: Record<string, string> = {
+    "": F.parseModelVersionDefault,
   };
 
   function update<K extends keyof RagConfigFormValues>(
@@ -1761,6 +1771,14 @@ export function FunctionalModelsView() {
                 />
               </div>
               <div className={ROW}>
+                <RowLabel>{F.parseLanguage}</RowLabel>
+                <LockedBox reason={F.lockedCloudOnly} />
+              </div>
+              <div className={ROW}>
+                <RowLabel>{F.parseModelVersion}</RowLabel>
+                <LockedBox reason={F.lockedCloudOnly} />
+              </div>
+              <div className={ROW}>
                 <RowLabel>{F.mineruToken}</RowLabel>
                 <LockedBox reason={F.lockedCloudOnly} />
               </div>
@@ -1769,11 +1787,52 @@ export function FunctionalModelsView() {
             <>
               <div className={ROW}>
                 <RowLabel>{F.parseBaseUrl}</RowLabel>
-                <LockedBox reason={F.lockedLocalOnly} />
+                <Input
+                  value={values.parse_base_url}
+                  aria-label={F.parseBaseUrl}
+                  {...AUTOFILL_OFF_INPUT_PROPS}
+                  onChange={(event) =>
+                    update("parse_base_url", event.target.value)
+                  }
+                />
               </div>
               <div className={ROW}>
                 <RowLabel>{F.parseTier}</RowLabel>
                 <LockedBox reason={F.lockedLocalOnly} />
+              </div>
+              <div className={ROW}>
+                <RowLabel info={F.parseLanguageHint}>
+                  {F.parseLanguage}
+                </RowLabel>
+                <OptionSelect
+                  label={F.parseLanguage}
+                  value={values.parse_language}
+                  options={PARSE_LANGUAGE_OPTIONS}
+                  labels={PARSE_LANGUAGE_LABELS}
+                  onChange={(next) =>
+                    update(
+                      "parse_language",
+                      next as RagConfigFormValues["parse_language"],
+                    )
+                  }
+                />
+              </div>
+              <div className={ROW}>
+                <RowLabel info={F.parseModelVersionHint}>
+                  {F.parseModelVersion}
+                </RowLabel>
+                <OptionSelect
+                  label={F.parseModelVersion}
+                  value={values.parse_model_version}
+                  options={PARSE_MODEL_VERSION_OPTIONS}
+                  labels={PARSE_MODEL_VERSION_LABELS}
+                  onChange={(next) =>
+                    update(
+                      "parse_model_version",
+                      next as RagConfigFormValues["parse_model_version"],
+                    )
+                  }
+                />
               </div>
               <div className={ROW}>
                 <RowLabel>{F.mineruToken}</RowLabel>

@@ -5,7 +5,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-29-rag-parse-knobs-design.md](../specs/2026-09-29-rag-parse-knobs-design.md)
-**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」），**Task 2–5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
+**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」）；**Task 2 已完成（2026-09-30 提交）**（RED 6 红／窄 119 绿／neuter ①2②2③1④1／前端全量 2751 例零失败），**Task 3–5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 2」＝本对；**A-3 已于 2026-09-30 撤销**（余 `A-2` + `A-6` + `A-5`）；[2026-09-24 MinerU 4.x 那一对](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)（本地腿，明写「mineru-cloud 零改动」）；[2026-09-08 视频入库](../specs/2026-09-08-video-ingest-design.md)（A-3 所在腿）。
 
 **Architecture:** `config.yaml → RagConfig`／`rag_config.json → RagConfigFile → merge → AppConfig.rag`；**两个新字段**挂两层，另**扩大既有 `parse_base_url` 的语义**（云腿也读它，空则退官方常量）。**两个消费点**各自**现取配置**：云腿 `parser.py`（请求体的 `language`／`model_version` 与 URL 主机）——~~视频 ocr `video/ocr.py`（`PaddleOCR(lang=…)`）~~ **2026-09-30 撤销**（该消费点已消失）。响应侧靠 `_build_response` 反射（② 已裁乙，golden 同批）。**除 `parse_base_url` 语义扩大这唯一例外外**，不声明时余下三项行为逐字节不变。
@@ -135,19 +135,42 @@ Authorization: Bearer <token>
 
 ## Task 2 — 前端触点与解析区（② 已裁乙）
 
-> 文件：`core/rag/types.ts`、`core/rag/config-form.ts`、`components/workspace/settings/functional-models-view.tsx`、`core/i18n/locales/{types,zh-CN,en-US}.ts`；用例 `tests/unit/rag/config-form.test.ts`、`tests/unit/settings/functional-models.dom.test.tsx`。
+> 文件：`core/rag/types.ts`、`core/rag/config-form.ts`、`components/workspace/settings/functional-models-view.tsx`、`core/i18n/locales/{types,zh-CN,en-US}.ts`；用例 `tests/unit/rag/config-form.test.ts`、`tests/unit/components/workspace/settings/functional-models-view.dom.test.tsx`（**2026-09-30 核实更正**：原写 `tests/unit/settings/…` 漏了 `components/workspace/` 段。同目录另有一份 `tests/unit/settings/functional-models.dom.test.tsx`：其 `:861-873` 取 `getAllByText(lockedLocalOnly)[0]`，云分支 2→1 后仍 ≥1 ⇒ 预期不受影响，实施时顺带跑一遍确认）。
 
-- [ ] **RED：保存不丢字段**（B-1 形状的反向守卫）：两个新字段任一有文件层覆盖时，编辑无关字段后 `buildRagConfigInput()` 仍带它。
-- [ ] **RED：清空枚举的编码**（Task 1 实施期查出的既有缺陷，spec §6.2 末条）：「文件里有覆盖」的枚举被清空 ⇒ 载荷必须写 `null`（今天写 `""` ⇒ PUT 422）；两个新字段与六个旧 `SELECT_FIELDS` 走同一循环、同此路径。
+> **2026-09-30 只读核实（准备轮；未写码，锚点复核于 HEAD `5bea5cfe`）**
+> - 视图锚点全中：ⓘ 在「解析提供方」行 `:1720` ✓；`parse_tier` 可编辑行 `:1748-1762` ✓（照它做两个新 select）；云分支**地址锁定行 `:1770-1773`**（`LockedBox lockedLocalOnly`）、本地分支 `mineruToken` 孪生 `:1763-1766` ✓；解析区在 `groupServices`（`:1706`）内、**不在** `advancedSettings` 折叠区（`:1094-1324`；常量 `ADVANCED_SETTING_COUNT=6` 只数检索组）⇒ 加两行**不动**折叠计数、`openAdvanced()` 不受影响。
+> - 断言现况与计划一致：云分支 `labelCount("parseBaseUrl")===0` ＋ `lockedLocalOnly===2`（`:376-380`）；本地分支单数 `getByText("lockedCloudOnly")`（`:387-390`）⇒ 改动后应为 `>0`／`1`／`getAllByText(...).length===3` ✓。
+> - i18n 现况：`parseBaseUrl` zh-CN `:1751`／en-US `:1845`；`parseBaseUrlHint` `:1752`／`:1846`。**空选项文案取 `judgeModelNone` 那句「（使用配置默认）」**——`parseTierAuto` 是「（由服务决定）」、`sparseProviderNone` 是「（未选择）」，都不是本义。
+> - 实施细节：两个新 `OPTIONS` 常量放 `config-form.ts` 的 `PARSE_TIER_OPTIONS`（`:94`）旁、由视图导入；两个新 select 各配一张小 labels 映射（照 `SPARSE_SERVICE_LABELS` 形：`"": 新键`），16 个语种与两个档位按 `parse_tier` 先例**直接显示原值**（`OptionSelect` 缺省回退 `labels[option] ?? option`）。清空编码缺陷的实测面＝`config-form.ts:297-303`（`writeField(input, key, next)` 原样写 `""`），既有用例**无一**钉住该行为 ⇒ 改 `null` 没有旧断言要改。
+
+- [x] **RED：保存不丢字段**（B-1 形状的反向守卫）：两个新字段任一有文件层覆盖时，编辑无关字段后 `buildRagConfigInput()` 仍带它。
+- [x] **RED：清空枚举的编码**（Task 1 实施期查出的既有缺陷，spec §6.2 末条）：「文件里有覆盖」的枚举被清空 ⇒ 载荷必须写 `null`（今天写 `""` ⇒ PUT 422）；两个新字段与六个旧 `SELECT_FIELDS` 走同一循环、同此路径。
 - [x] ~~**RED：保存不可用也要防**：只改 `ocr_lang` ⇒ Save 必须可用~~ **2026-09-30 撤销**（A-3 已废；`hasFormChanges` 的 video 列表不动）。
-- [ ] **RED：读取映射**：`formValuesFromConfig()` 把两项（含 `null`/缺键）正确落成表单值。
-- [ ] **RED：界面结构**：解析区新增语种／版本两行——**云分支是可编辑控件、本地分支是同名的锁定孪生**（`lockedCloudOnly`）；**地址行标题为「服务地址」**（始终可编辑、**无**锁定孪生）；**两态 ⓘ 在「解析提供方」行**（`:1720`）；~~视频区多一行 `ocrLang`~~ **2026-09-30 撤销**；用 `aria-label` 与分组标题断言，不断言几何。
-- [ ] **RED：既有断言改写（不是放宽，2026-09-29 审查点名）**：~~`config-form.test.ts:136` 的 `values.video` 整对象相等 ⇒ 补 `ocr_lang` 键~~（**2026-09-30 不用改了**：`ocr_lang` 已废、video 形状回到两格）；`functional-models-view.dom.test.tsx:372-381` 云分支改成"地址行可编辑 ＋ `getAllByText("lockedLocalOnly").length === 1`"；`:383-391` 的 `lockedCloudOnly` 由**单数** `getByText` 改 `getAllByText(...).length === 3`。**⚠ 孪生行没有 aria-label**（照 `mineruToken` 孪生）而 `labelCount` 用 `queryAllByLabelText` ⇒ 孪生断言用 gutter 文本/计数，**别用 `labelCount`**（恒 0 ＝ 假绿）。
-- [ ] **GREEN**：**触点四处**（2026-09-30 由六处收窄——原 ③⑤⑥ 里的 `ocr_lang` 那半已撤）：① `types.ts` **两项**；② `config-form.ts` 表单值类型**两行**；③ `SELECT_FIELDS`（语种／版本）；④ `formValuesFromConfig` **两行**；~~`VIDEO_SOURCES`／video 自由文本循环（`:288`）／`hasFormChanges` 的 video 列表（`:677`）~~ **都不动**；＋ **清空编码 `""` → `null`**（`:297-303`，见上一条 RED——顺带修既有六个枚举字段）。视图**解析区**两行（语种/版本用 `OptionSelect`；**地址行只改标题**，`parseBaseUrlHint` 的两态口径改的是**「解析提供方」行的 ⓘ**（`:1720`））＋ i18n **新 6 键 × 3 文件**（四键角色标签/提示 ＋ **两个 select 的空选项标签 2 键**）＋ **改 2 键 × 2 语（`parseBaseUrl` 标题、`parseBaseUrlHint` 说明）**。
-- [ ] **neuter**：① 从各清单去掉两个新字段（`parse_language`/`parse_model_version` 在 `SELECT_FIELDS`）⇒ 保存不丢转红；~~①′／①″（`ocr_lang` 那两条）~~ **2026-09-30 撤销**；② 从 `formValuesFromConfig` 去掉两行 ⇒ 读取映射转红；③ **把本地分支的两个锁定孪生行删掉** ⇒ 界面结构转红（验"孪生"这条有牙；**不是**"把两行放进本地分支"——甲方案下本地分支本来就该有它们）。
-- [ ] **门禁**：`pnpm check` 零诊断；`config-form` 与 `functional-models` 窄面绿；**前端全量**（共享组件，后台执行）。
+- [x] **RED：读取映射**：`formValuesFromConfig()` 把两项（含 `null`/缺键）正确落成表单值。
+- [x] **RED：界面结构**：解析区新增语种／版本两行——**云分支是可编辑控件、本地分支是同名的锁定孪生**（`lockedCloudOnly`）；**地址行标题为「服务地址」**（始终可编辑、**无**锁定孪生）；**两态 ⓘ 在「解析提供方」行**（`:1720`）；~~视频区多一行 `ocrLang`~~ **2026-09-30 撤销**；用 `aria-label` 与分组标题断言，不断言几何。
+- [x] **RED：既有断言改写（不是放宽，2026-09-29 审查点名）**：~~`config-form.test.ts:136` 的 `values.video` 整对象相等 ⇒ 补 `ocr_lang` 键~~（**2026-09-30 不用改了**：`ocr_lang` 已废、video 形状回到两格）；`functional-models-view.dom.test.tsx:372-381` 云分支改成"地址行可编辑 ＋ `getAllByText("lockedLocalOnly").length === 1`"；`:383-391` 的 `lockedCloudOnly` 由**单数** `getByText` 改 `getAllByText(...).length === 3`。**⚠ 孪生行没有 aria-label**（照 `mineruToken` 孪生）而 `labelCount` 用 `queryAllByLabelText` ⇒ 孪生断言用 gutter 文本/计数，**别用 `labelCount`**（恒 0 ＝ 假绿）。
+- [x] **GREEN**：**触点四处**（2026-09-30 由六处收窄——原 ③⑤⑥ 里的 `ocr_lang` 那半已撤）：① `types.ts` **两项**；② `config-form.ts` 表单值类型**两行**；③ `SELECT_FIELDS`（语种／版本）；④ `formValuesFromConfig` **两行**；~~`VIDEO_SOURCES`／video 自由文本循环（`:288`）／`hasFormChanges` 的 video 列表（`:677`）~~ **都不动**；＋ **清空编码 `""` → `null`**（`:297-303`，见上一条 RED——顺带修既有六个枚举字段）。视图**解析区**两行（语种/版本用 `OptionSelect`；**地址行只改标题**，`parseBaseUrlHint` 的两态口径改的是**「解析提供方」行的 ⓘ**（`:1720`））＋ i18n **新 6 键 × 3 文件**（四键角色标签/提示 ＋ **两个 select 的空选项标签 2 键**）＋ **改 2 键 × 2 语（`parseBaseUrl` 标题、`parseBaseUrlHint` 说明）**。
+- [x] **neuter**：① 从各清单去掉两个新字段（`parse_language`/`parse_model_version` 在 `SELECT_FIELDS`）⇒ 保存不丢转红；~~①′／①″（`ocr_lang` 那两条）~~ **2026-09-30 撤销**；② 从 `formValuesFromConfig` 去掉两行 ⇒ 读取映射转红；③ **把本地分支的两个锁定孪生行删掉** ⇒ 界面结构转红（验"孪生"这条有牙；**不是**"把两行放进本地分支"——甲方案下本地分支本来就该有它们）。
+- [x] **门禁**：`pnpm check` 零诊断；`config-form` 与 `functional-models` 窄面绿；**前端全量**（共享组件，后台执行）。
 
-**实测（待回填）**：
+**实测（2026-09-30）**
+
+**RED**：新增/改写 6 条用例在未改代码上 **6 红／113 绿**（`config-form.test.ts`：映射、空选项回退、带出、`null` 撤销；`functional-models-view.dom.test.tsx`：云分支"地址可编辑＋`lockedLocalOnly===1`＋两个新行可编辑"、本地分支"`lockedCloudOnly===3`＋两新行锁上"）。
+
+**GREEN**：窄面（两文件）**119 passed**；更宽窄面（`tests/unit/rag`＋`tests/unit/settings`＋`tests/unit/components/workspace/settings`，15 文件）**307 passed**（含第二份 dom 文件的复核）。
+
+**neuter（逐项独立；改 → 跑 → 逐字节还原 → md5 核对，全部 ✓）**：
+
+| # | 还原的旧行为 | 受害者 |
+| --- | --- | --- |
+| ① | `SELECT_FIELDS` 去掉两个新字段（改名） | 2：`carries a file-owned parse language and version forward`、`withdraws a file-owned enum with null, never an empty string` |
+| ② | `formValuesFromConfig` 两行改为常量空串 | 2：`carries a file-owned…`、`maps the stored parse language and version back into the form` |
+| ③ | 本地分支两个锁定孪生删掉 | 1：`swaps the token for the service address when parsing goes local` |
+| ④ | 清空编码回 `""`（撤销 `null` 修复） | 1：`withdraws a file-owned enum with null, never an empty string` |
+
+**门禁**：`pnpm check`（eslint ＋ tsc）**零诊断**（tsc 逮出 1 处：测试里先 `const cleared = {…}` 再传入 ⇒ 字面量放宽为 `string`，已改内联、照 `:690` 先例）；**前端全量：247 文件／2751 例／0 失败**（3m13s；跑在 HEAD `74136371`＋本对未提交改动上——他线的 VLM 提交先落地，与本对零重叠）。
+
+**实施期发现**：① 空选项文案＝`judgeModelNone` 那句「（使用配置默认）」（准备轮已核）；② 清空编码的 `null` 修复走同一循环 ⇒ 六个旧枚举字段一并受益，**既有用例无一钉住旧行为**、无需改写；③ 前端全仓本来就有 prettier 历史格式债（`pnpm format` 非本仓门禁，CI 只跑 `pnpm check`）⇒ 新行按文件既有风格写即可，不动历史行。
 
 ---
 

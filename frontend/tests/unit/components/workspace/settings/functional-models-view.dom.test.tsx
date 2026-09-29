@@ -374,10 +374,13 @@ describe("provider rows", () => {
     openAdvanced();
 
     expect(labelCount("mineruToken")).toBeGreaterThan(0);
-    // The local-service rows are shown locked: "local service only".
-    expect(labelCount("parseBaseUrl")).toBe(0);
+    // The cloud leg reads the address too (① 乙) and owns the two parse knobs — all editable.
+    expect(labelCount("parseBaseUrl")).toBeGreaterThan(0);
+    expect(labelCount("parseLanguage")).toBeGreaterThan(0);
+    expect(labelCount("parseModelVersion")).toBeGreaterThan(0);
+    // Only the local-only tier is shown locked: "local service only".
     expect(labelCount("parseTier")).toBe(0);
-    expect(screen.getAllByText("lockedLocalOnly").length).toBe(2);
+    expect(screen.getAllByText("lockedLocalOnly").length).toBe(1);
   });
 
   it("swaps the token for the service address when parsing goes local", () => {
@@ -387,7 +390,11 @@ describe("provider rows", () => {
     expect(labelCount("mineruToken")).toBe(0);
     expect(labelCount("parseBaseUrl")).toBeGreaterThan(0);
     expect(labelCount("parseTier")).toBeGreaterThan(0);
-    expect(screen.getByText("lockedCloudOnly")).toBeTruthy();
+    // The cloud-only rows are present as locked twins, never hidden: the token and the
+    // two parse knobs.
+    expect(labelCount("parseLanguage")).toBe(0);
+    expect(labelCount("parseModelVersion")).toBe(0);
+    expect(screen.getAllByText("lockedCloudOnly").length).toBe(3);
   });
 });
 

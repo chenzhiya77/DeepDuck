@@ -1767,6 +1767,12 @@ export interface Translations {
       parseTier: string;
       parseTierAuto: string;
       parseTierHint: string;
+      parseLanguage: string;
+      parseLanguageHint: string;
+      parseLanguageDefault: string;
+      parseModelVersion: string;
+      parseModelVersionHint: string;
+      parseModelVersionDefault: string;
       groupExtraction: string;
       groupEvaluation: string;
       groupEvaluationHint: string;

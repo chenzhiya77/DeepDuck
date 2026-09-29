@@ -1748,12 +1748,20 @@ export const zhCN: Translations = {
       sparseProviderDenseOnly: "该向量模型只输出稠密向量",
       sparseProviderNone: "（未选择）",
       parseProvider: "解析提供方",
-      parseBaseUrl: "本地服务地址",
-      parseBaseUrlHint: "本地 MinerU 服务不带鉴权，只应部署在内网。",
+      parseBaseUrl: "服务地址",
+      parseBaseUrlHint:
+        "云腿留空即官方 https://mineru.net；本地 MinerU 服务必填——该服务不带鉴权，只应部署在内网。",
       parseTier: "解析档位",
       parseTierAuto: "（由服务决定）",
       parseTierHint:
         "档位由 MinerU 服务端定义：flash / basic 轻量，standard / advanced 需要服务端装 torch。空 = 由服务端决定（默认 standard）。",
+      parseLanguage: "解析语种",
+      parseLanguageHint:
+        "MinerU 云腿的文档语言包，ch 同时覆盖中英文；仅云 API 有此参数。",
+      parseLanguageDefault: "（使用配置默认）",
+      parseModelVersion: "模型版本",
+      parseModelVersionHint: "MinerU 云腿的模型版本；本部署一直发送 vlm。",
+      parseModelVersionDefault: "（使用配置默认）",
       groupExtraction: "图谱抽取",
       groupEvaluation: "评测裁判",
       groupEvaluationHint:

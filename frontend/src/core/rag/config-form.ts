@@ -58,6 +58,25 @@ export interface RagConfigFormValues {
   parse_provider: "mineru-cloud" | "mineru-local";
   parse_base_url: string;
   parse_tier: "flash" | "basic" | "standard" | "advanced" | "";
+  parse_language:
+    | "ch"
+    | "ch_server"
+    | "en"
+    | "japan"
+    | "korean"
+    | "chinese_cht"
+    | "ta"
+    | "te"
+    | "ka"
+    | "el"
+    | "th"
+    | "latin"
+    | "arabic"
+    | "cyrillic"
+    | "east_slavic"
+    | "devanagari"
+    | "";
+  parse_model_version: "pipeline" | "vlm" | "";
   /** The ASR leg's connection info — top level, beside the other legs' (① 乙, 2026-09-29). */
   asr_base_url: string;
   asr_api_key: string;
@@ -98,6 +117,35 @@ export const PARSE_TIER_OPTIONS = [
   "standard",
   "advanced",
 ] as const;
+/**
+ * The cloud leg's document-language packs (spec 2026-09-29 D1): the backend Literal's full
+ * 16-value table. The empty option means "not declared here" — the configured default (`ch`)
+ * applies; the local leg has no language knob.
+ */
+export const PARSE_LANGUAGE_OPTIONS = [
+  "",
+  "ch",
+  "ch_server",
+  "en",
+  "japan",
+  "korean",
+  "chinese_cht",
+  "ta",
+  "te",
+  "ka",
+  "el",
+  "th",
+  "latin",
+  "arabic",
+  "cyrillic",
+  "east_slavic",
+  "devanagari",
+] as const;
+/**
+ * The cloud leg's model version (spec 2026-09-29 D1); `vlm` is what this deployment has
+ * always sent, and the empty option falls back to the configured default.
+ */
+export const PARSE_MODEL_VERSION_OPTIONS = ["", "pipeline", "vlm"] as const;
 /**
  * The ASR leg's providers (spec 2026-09-28 D2「三组四值」): the two engines that run inside
  * this process, then one row per protocol family — the generic OpenAI-audio shape and the
@@ -156,6 +204,8 @@ const SELECT_FIELDS = [
   "rerank_provider",
   "parse_provider",
   "parse_tier",
+  "parse_language",
+  "parse_model_version",
 ] as const;
 
 const VIDEO_SOURCES: Record<string, string> = {
@@ -202,6 +252,8 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     parse_provider: asEnum(config.parse_provider, PARSE_PROVIDER_OPTIONS, "mineru-cloud"),
     parse_base_url: asText(config.parse_base_url),
     parse_tier: asEnum(config.parse_tier, PARSE_TIER_OPTIONS, ""),
+    parse_language: asEnum(config.parse_language, PARSE_LANGUAGE_OPTIONS, ""),
+    parse_model_version: asEnum(config.parse_model_version, PARSE_MODEL_VERSION_OPTIONS, ""),
     asr_base_url: asText(config.asr_base_url),
     asr_api_key: asText(config.asr_api_key),
     video: {
@@ -301,7 +353,9 @@ export function buildRagConfigInput(
       if (next !== "" && owned(view, key)) writeField(input, key, next); // carry the file's own override
       continue;
     }
-    if (next !== "" || owned(view, key)) writeField(input, key, next);
+    // A cleared select must be *said* as `null`: `""` fails the Literal on the PUT body (422),
+    // so an empty option used to leave the override unremovable (spec 2026-09-29 §6.2 末条).
+    if (next !== "" || owned(view, key)) writeField(input, key, next === "" ? null : next);
   }
 
   const video: RagVideoValues = {};

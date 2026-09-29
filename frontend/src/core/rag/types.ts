@@ -57,6 +57,25 @@ export interface RagConfigValues {
   parse_provider?: "mineru-cloud" | "mineru-local" | null;
   parse_base_url?: string | null;
   parse_tier?: "flash" | "basic" | "standard" | "advanced" | null;
+  parse_language?:
+    | "ch"
+    | "ch_server"
+    | "en"
+    | "japan"
+    | "korean"
+    | "chinese_cht"
+    | "ta"
+    | "te"
+    | "ka"
+    | "el"
+    | "th"
+    | "latin"
+    | "arabic"
+    | "cyrillic"
+    | "east_slavic"
+    | "devanagari"
+    | null;
+  parse_model_version?: "pipeline" | "vlm" | null;
   asr_base_url?: string | null;
   asr_api_key?: string | null;
   video?: RagVideoValues | null;

@@ -730,6 +730,53 @@ describe("provider dimension (spec 2026-09-14 §4.1)", () => {
   });
 });
 
+describe("解析语种与模型版本 (spec 2026-09-29 D1)", () => {
+  it("maps the stored parse language and version back into the form", () => {
+    const values = formValuesFromConfig(
+      view({ parse_language: "japan", parse_model_version: "pipeline" }),
+    );
+
+    expect(values.parse_language).toBe("japan");
+    expect(values.parse_model_version).toBe("pipeline");
+  });
+
+  it("falls back to the empty option when the file declares neither", () => {
+    const values = formValuesFromConfig(view());
+
+    expect(values.parse_language).toBe("");
+    expect(values.parse_model_version).toBe("");
+  });
+
+  it("carries a file-owned parse language and version forward", () => {
+    const owned = view(
+      { parse_language: "korean", parse_model_version: "pipeline" },
+      { parse_language: "ui", parse_model_version: "ui" },
+    );
+
+    const input = buildRagConfigInput(formValuesFromConfig(owned), owned);
+
+    expect(input.parse_language).toBe("korean");
+    expect(input.parse_model_version).toBe("pipeline");
+  });
+
+  it("withdraws a file-owned enum with null, never an empty string", () => {
+    // `""` fails the Literal on the PUT body (422), so a cleared override has to be said
+    // as `null` — true for the six pre-existing selects too, same loop (spec §6.2 末条).
+    const owned = view(
+      { parse_language: "korean", parse_tier: "flash" },
+      { parse_language: "ui", parse_tier: "ui" },
+    );
+
+    const input = buildRagConfigInput(
+      { ...formValuesFromConfig(owned), parse_language: "", parse_tier: "" },
+      owned,
+    );
+
+    expect(input.parse_language).toBeNull();
+    expect(input.parse_tier).toBeNull();
+  });
+});
+
 describe("isEmbeddingChange covers the whole provider dimension", () => {
   it("reports a changed provider, endpoint or sparse source, not only the model", () => {
     const base = formValuesFromConfig(view());

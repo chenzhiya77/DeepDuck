@@ -1842,12 +1842,21 @@ export const enUS: Translations = {
       sparseProviderDenseOnly: "this embedding model emits dense vectors only",
       sparseProviderNone: "(not chosen)",
       parseProvider: "Parsing provider",
-      parseBaseUrl: "Local service address",
-      parseBaseUrlHint: "The local MinerU service ships without auth, so expose it on an internal network only.",
+      parseBaseUrl: "Service address",
+      parseBaseUrlHint:
+        "Empty means the official https://mineru.net on the cloud leg; the local MinerU service needs it (it ships without auth, so keep it internal).",
       parseTier: "Parsing tier",
       parseTierAuto: "(let the service decide)",
       parseTierHint:
         "Tiers are defined by the MinerU service: flash / basic are light; standard / advanced need its torch extra. Empty lets the service decide (default: standard).",
+      parseLanguage: "Document language",
+      parseLanguageHint:
+        "The cloud leg's MinerU language pack; ch covers Chinese and English. Cloud API only.",
+      parseLanguageDefault: "(use the configured default)",
+      parseModelVersion: "Model version",
+      parseModelVersionHint:
+        "The cloud leg's MinerU model version; this deployment has always sent vlm.",
+      parseModelVersionDefault: "(use the configured default)",
       groupExtraction: "Graph extraction",
       groupEvaluation: "Evaluation judge",
       groupEvaluationHint:
