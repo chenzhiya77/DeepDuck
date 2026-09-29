@@ -80,6 +80,21 @@ def normalize_transcript(rows: Iterable[Sequence[Any]], *, unit: Unit = "ms") ->
     return segments
 
 
+#: funasr 自带 VAD：长音频先切段逐段识别再并回（3.9 MB；spec 2026-09-28 §2 D1/D3）。
+_VAD_MODEL = "fsmn-vad"
+
+#: 不吃 VAD 的名字（spec §2 D3）：流式按 chunk 调；ModelScope 托管的 whisper 走自己的路径。
+_NO_VAD_NAMES = frozenset({"paraformer-zh-streaming"})
+_NO_VAD_PREFIXES = ("Whisper-",)
+
+
+def _vad_kwargs(model: str) -> dict[str, str]:
+    """该模型名要带的 VAD 参数；例外名单里返回空（spec §2 D3）。"""
+    if model in _NO_VAD_NAMES or model.startswith(_NO_VAD_PREFIXES):
+        return {}
+    return {"vad_model": _VAD_MODEL}
+
+
 class FunAsrProvider:
     """FunASR Paraformer（默认，本地 CPU 离线，spec §7）。重依赖延迟 import。"""
 
@@ -95,7 +110,7 @@ class FunAsrProvider:
         except ImportError as exc:
             raise AsrError("FunASR 未安装：视频口述转录需要 funasr（pip install funasr）；或改配置 rag.video.asr_provider=whisper 走兼容档") from exc
         try:
-            model = AutoModel(model=self._model, disable_update=True)
+            model = AutoModel(model=self._model, disable_update=True, **_vad_kwargs(self._model))
             result = model.generate(input=path, batch_size_s=300)
         except Exception as exc:  # 模型加载/解码/推理失败统一降级
             raise AsrError(f"FunASR 转录失败（{self._model}）：{exc}") from exc

@@ -14,6 +14,9 @@ TranscriptSegment 序列——单位换算、取整、去空白、丢弃无效�
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 from deerflow.knowledge.video.asr import (
@@ -151,3 +154,44 @@ def test_rows_from_funasr_falls_back_to_utterance_timestamp():
 def test_rows_from_whisper_extracts_start_end_text():
     result = {"segments": [{"start": 0.0, "end": 2.5, "text": " hello "}, {"start": 2.5, "end": 4.0, "text": "world"}]}
     assert _rows_from_whisper(result) == [(0.0, 2.5, " hello "), (2.5, 4.0, "world")]  # 原文不 strip，规整在 normalize
+
+
+# ── 调用侧带 VAD（spec 2026-09-28 §2 D1/D3）─────────────────────────────
+
+
+def _install_fake_funasr(monkeypatch, calls: list[dict]) -> None:
+    """把 `funasr.AutoModel` 换成记录构造参数的桩：不真加载模型，秒级返回。"""
+    module = types.ModuleType("funasr")
+
+    class _FakeAutoModel:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def generate(self, **kwargs):  # noqa: ARG002 - 桩只关心构造参数
+            return [{"text": "你好", "timestamp": [[0, 600], [600, 1200]]}]
+
+    module.AutoModel = _FakeAutoModel
+    monkeypatch.setitem(sys.modules, "funasr", module)
+
+
+def test_funasr_provider_asks_for_vad_and_never_for_punc(monkeypatch):
+    calls: list[dict] = []
+    _install_fake_funasr(monkeypatch, calls)
+
+    rows = FunAsrProvider(model="paraformer-zh").transcribe("clip.mp4")
+
+    assert calls[0]["model"] == "paraformer-zh"
+    assert calls[0]["disable_update"] is True
+    assert calls[0]["vad_model"] == "fsmn-vad"
+    assert "punc_model" not in calls[0]  # D1 只补 VAD，不许加码
+    assert rows == [(0, 1200, "你好")]  # 带 VAD 不影响取数路径
+
+
+@pytest.mark.parametrize("model", ["paraformer-zh-streaming", "Whisper-large-v3"])
+def test_funasr_provider_skips_vad_for_the_exception_list(monkeypatch, model):
+    calls: list[dict] = []
+    _install_fake_funasr(monkeypatch, calls)
+
+    FunAsrProvider(model=model).transcribe("clip.mp4")
+
+    assert "vad_model" not in calls[0]  # 流式按 chunk 调；托管 whisper 走自己的路径

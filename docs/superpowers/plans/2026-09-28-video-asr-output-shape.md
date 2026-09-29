@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-28-video-asr-output-shape-design.md](../specs/2026-09-28-video-asr-output-shape-design.md)
-**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。
+**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅ 已交付（代码未提交）**：RED 1 红/17 绿 → GREEN 18 → neuter 1 红（VAD 那条）→ 还原 18；`tests/knowledge/video` 130 例、`make lint` 净；**Task 2 / 3 未开工**。
 **来源**：[2026-09-27-rag-asr-model-picker.md](2026-09-27-rag-asr-model-picker.md) 的 `实测` 越界发现（那条线纯前端、本件动 `backend/`，两者零文件重叠）。
 
 **Architecture:** 两处——**① 调用侧只带 `vad_model="fsmn-vad"`**（`asr.py:98-99`；**不补 `punc_model`**——真机已证"分段绕不过 punc"，本件放弃分段）**② 抽取器按真机形状校准 + 把"整段一行"变可观测**（`asr.py:127-150`：键名按真机校正、保留回退，新增告警，按 D2）。
@@ -50,7 +50,7 @@
 - **第 3 项（长音频粒度）**：见上——`vad` 单用**不分段**（1 条）；`vad + sentence_timestamp` 在 90s 上给 **20–27 段、段长 ≈ 3–4.5s**（正好对齐镜头卡粒度，不过碎）；`gen` 90s ≈ **8–9s**（CPU，≈10× 实时）。
 - ⚠️ **对 D1/D2 的影响（→ 已按此改判，2026-09-29）**：刚拍的 **D1 甲达不到验收 §4.1 / §4.2**（rows > 1、段落多张卡）⇒ 实际需要 **`vad + punc + sentence_timestamp=True`**（原表"丙"里的 `pred_timestamp` 换成这个；`pred_timestamp` 那版可弃）；**D2 的校准目标要改成 `sentence_info`**（`sentence` 键不存在）。**改判结果（2026-09-29 裁）**：**D1 = 只补 VAD + 明确放弃分段**（不装 punc，接受"整段一行"）⇒ 本件只剩"**可观测** + VAD 接线"；`vad + punc + sentence_timestamp` 记成"将来出路"（spec §2 D1）。
 - ⚠️ **对 picker 那对的影响（另报）**：菜单第三条 `sensevoice` ① 名字 `AutoModel` 不认（须 `iic/SenseVoiceSmall`）② 就算改名也拿不到段（0 段静默）⇒ 菜单名与 ⓘ 注记需要一次小修。
-- **追加（2026-09-29，候选侦察；不在原四项里 ⇒ 原"待验"至此已验）**：`OpenMOSS-Team/MOSS-Transcribe-Diarize` 真机一跑（**1.83 GB**、走 `hf-mirror`、需 `trust_remote_code`；缓存落 `E:\app-model\hf-cache\hub`，C 盘零写入）⇒ **它确实给段**：键 `['key','raw_text','sentence_info','text','timestamp']`，`sentence_info` = `{start: 1030, end: 4470, text: "欢迎大家来到摩哒社区进行体验。", spk: "S01", timestamp: [[1030, 4470]]}`（`sentence` 键为 `null`）；1030→4470 ms 与 4.52 s 音频吻合 ⇒ **真时间戳，不是等分合成**。**但代价否掉默认**：CPU 上**加载 628 s、4.52 s 音频推理 66 s（RTF ≈ 14.6）**（10 分钟视频外推 ≈ 2.4 h）⇒ **本件不采用、也不进 picker 菜单**；它证明的是"进程内形态也能拿到段"，并为"要不要 GPU / 服务档"提供量级参照（详见 [HTTP 草案 §3](../specs/2026-09-28-rag-asr-service-tier-design.md)）。
+- **追加（2026-09-29，候选侦察；不在原四项里 ⇒ 原"待验"至此已验）**：`OpenMOSS-Team/MOSS-Transcribe-Diarize` 真机一跑（**1.83 GB**、走 `hf-mirror`、需 `trust_remote_code`；缓存落 `E:\app-model\hf-cache\hub`，C 盘零写入）⇒ **它确实给段**：键 `['key','raw_text','sentence_info','text','timestamp']`，`sentence_info` = `{start: 1030, end: 4470, text: "欢迎大家来到摩哒社区进行体验。", spk: "S01", timestamp: [[1030, 4470]]}`（`sentence` 键为 `null`）；1030→4470 ms 与 4.52 s 音频吻合 ⇒ **真时间戳，不是等分合成**。**但代价否掉默认**：CPU 上**加载 628 s、4.52 s 音频推理 66 s（RTF ≈ 14.6）**（10 分钟视频外推 ≈ 2.4 h）⇒ **本件不采用、也不进 picker 菜单**；它证明的是"进程内形态也能拿到段"，并为"要不要 GPU / 服务档"提供量级参照（详见 [HTTP 草案 §4](../specs/2026-09-28-rag-asr-service-tier-design.md)）。
 
 ---
 
@@ -59,12 +59,17 @@
 > 动到的文件：`packages/harness/deerflow/knowledge/video/asr.py`（`FunAsrProvider.__init__` 与 `transcribe` 的 `AutoModel(...)` 调用）＋ 该腿的既有测试文件（`backend/tests/knowledge/video/…`）。
 > **验收对应**：spec §4 的 3（降级语义不变）+ §4 的 1（前半：补 VAD 后 rows 仍为 1——本件接受的现状）。
 
-- [ ] **RED**：单测——以桩替换 `funasr.AutoModel`，断言：① 构造参数**含** `vad_model="fsmn-vad"`；② **不含** `punc_model`（D1 不许加码）；③ 例外名单（`paraformer-zh-streaming` / `Whisper-*`）**不带** `vad_model`。此刻无实现 ⇒ 红。
-- [ ] **GREEN**：例外名单常量 + `AutoModel(...)` 带上 `vad_model`。
-- [ ] **neuter**：把 `vad_model` 去掉 ⇒ ① 红（revert proof）。
-- [ ] **门禁**：`make test`（相关文件）+ `make lint` 净。
+- [x] **RED**：单测——以桩替换 `funasr.AutoModel`，断言：① 构造参数**含** `vad_model="fsmn-vad"`；② **不含** `punc_model`（D1 不许加码）；③ 例外名单（`paraformer-zh-streaming` / `Whisper-*`）**不带** `vad_model`。此刻无实现 ⇒ 红。
+- [x] **GREEN**：例外名单常量 + `AutoModel(...)` 带上 `vad_model`。
+- [x] **neuter**：把 `vad_model` 去掉 ⇒ ① 红（revert proof）。
+- [x] **门禁**：`make test`（相关文件）+ `make lint` 净。
 
-**实测**：（回填）
+**实测**（Task 1，2026-09-29）：
+- **RED**：**1 红 / 17 绿**（单文件 18 例）。⚠️ 计划里「③ 例外名单不带 VAD ⇒ 红」**不成立**——那是"不许加"的断言，实现前天然绿（与 picker 的 ⑤/⑥ 同类）；真正红的是 ① 的 `vad_model` 断言。
+- **GREEN**：**18 绿**（桩经 `sys.modules["funasr"]` 注入，不真加载模型 ⇒ 秒级）。
+- **neuter**（把调用里的 `vad_model` 去掉）：**1 红 / 17 绿**，受害者 = ① 那条 ⇒ revert proof 成立。
+- **还原证明 + 门禁**：还原 ⇒ **18 绿**；`tests/knowledge/video` 全套 **130 例全绿**；`make lint` 净（1308 文件已格式化）。
+- **偏差登记**：例外名单落成两个常量（`_NO_VAD_NAMES` / `_NO_VAD_PREFIXES`）+ 纯函数 `_vad_kwargs(model)`，而不是把判断写在调用点——这样它可被单测直接覆盖。
 
 ---
 
