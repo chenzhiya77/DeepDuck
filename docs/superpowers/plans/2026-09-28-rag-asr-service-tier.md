@@ -156,12 +156,21 @@
 
 > Task 0 查出的计划缺口：探针的后端那一半原先没 Task。
 
-- [ ] **RED**：① fixture **入库**（`backend/app/gateway/assets/asr_probe.wav`，SAPI 现造 8.96 s；仓里已有测试断言它的时长/静音区间/体积）；② `POST /rag/config/probe-asr`（照 `probe-sparse` 族：`require_admin_user` · body `extra="forbid"` · 返回 `{status, detail}` · 10 s 超时 · 不落库）；③ **黄金期望判据**：边界落进已知静音区间 + 段间 `ms/字符` 不得近似相等 ⇒ `no_timestamps` 只在"没有段级时间戳 / 只有一条整段"时给。此刻无实现 ⇒ 红。
-- [ ] **GREEN**：fixture 落盘 + 路由 + 判据（探针**只走服务腿**，不发本地腿）。
-- [ ] **neuter**：把"等分特征"判据去掉（只看"有没有 segments"）⇒ ③ 的合成段用例红（revert proof）。
-- [ ] **门禁**：`make test`（相关文件）+ `make lint` 净。
+- [x] **RED**：① fixture **入库**（`backend/app/gateway/assets/asr_probe.wav`，SAPI 现造 8.96 s；仓里已有测试断言它的时长/静音区间/体积）；② `POST /rag/config/probe-asr`（照 `probe-sparse` 族：`require_admin_user` · body `extra="forbid"` · 返回 `{status, detail}` · 10 s 超时 · 不落库）；③ **黄金期望判据**：边界落进已知静音区间 + 段间 `ms/字符` 不得近似相等 ⇒ `no_timestamps` 只在"没有段级时间戳 / 只有一条整段"时给。此刻无实现 ⇒ 红。
+- [x] **GREEN**：fixture 落盘 + 路由 + 判据（探针**只走服务腿**，不发本地腿）。
+- [x] **neuter**：把"等分特征"判据去掉（只看"有没有 segments"）⇒ ③ 的合成段用例红（revert proof）。
+- [x] **门禁**：`make test`（相关文件）+ `make lint` 净。
 
-**实测**：（回填）
+**实测**（Task 2b，2026-09-29）：
+
+- **RED**：新文件 `tests/test_rag_config_asr_probe.py` 收集期 `ImportError`（`ASR_PROBE_FIXTURE_PATH` 还不存在）。⚠️ 期间踩了自己一个坑：`user_factory=lambda User(...)` **漏了冒号**（写成 `lambda User(...)`），先报成 SyntaxError——已按同族文件改成 `lambda: User(...)`。
+- **GREEN**：`test_rag_config_asr_probe.py` **14 绿**；与 `test_asr.py` 合跑 **63 绿**；`make lint` 净（1309 文件）。
+- **neuter（两个受害者不相交）**：① 停掉「离散度」判据 ⇒ **只有** `test_equal_rates_are_not_an_ok` 红；② 停掉「静音落点」判据 ⇒ **只有** `test_boundaries_outside_the_pause_are_not_an_ok` 红。⇒ 两条判据各自承重，revert proof 成立。
+- **夹具真值（本文件与测试共同钉住）**：8.965 s / 16 kHz / 单声道 / 16 bit；静音窗实测 **1.32–3.22 s**（设计值是 1.84–3.04，SAPI 首尾静音把窗口撑宽了）；句 A 在 0.4–1.2 s、句 B 在 4.0–4.8 s 有声。
+- **两条判据的数值与理由**：① 边界必须落在 `1320–3220 ms ± 150 ms`——静音本身 1.9 s，这个余量对真分段很宽；按字数摊开的假段会落在 **3586 ms**（静音之外）⇒ 抓得住。② 段间 `ms/字符` 的离散度必须 ≥ **1.5×**——夹具故意把句 A 快读、句 B 慢读（真分段 ≈2.1×），等比摊开恒为 **1.0×**；两条判据**互相兜底**（`_SYNTHETIC` 那条被任一判据抓到都算过，所以用例只钉状态；专门为判据 ② 造了 `_EQUAL_RATES`：边界蒙混进静音、但离散度只有 1.3×）。
+- **状态映射（四态，只有一态拦保存）**：`ok` / `no_timestamps`（含"没有段"与"段是造的"两类，detail 区分）/ `refused`（401/403）/ `unreachable`（网络、超时、其它 HTTP）。⚠️ **合成段折进 `no_timestamps` 是我对 D7 的读法**（D7 明说"只有 `no_timestamps` 拦 Save"，所以"段是造的"必须落在这个会拦的状态里，不能另开第五态）；若你想让它单独成一态，前端与 spec 要一起改。
+- **夹具入库面**：`app/gateway/assets/` 是新目录；它随 Docker 的 `COPY backend ./backend` 走，`git check-ignore` 确认**未被忽略**（Task 0 已证"入库才随包走"）。
+- **触碰面（同一批 + 新探针文件）**：**8 红 / 1491 绿 / 1 错**——与 Task 2 收官**逐条相同**（6 探针红 + 2 环境红 + 1 qdrant 错），绿数 **1477 → 1491（+14 = 新探针用例）** ⇒ **零回归**。
 
 ---
 
