@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-28-video-asr-output-shape-design.md](../specs/2026-09-28-video-asr-output-shape-design.md)
-**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅（`dcd1142d`）/ Task 2 ✅（`15b72ab5`）/ Task 1b ✅（代码未提交）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20 + 真机复核（rows=1、warning 打出、跨度 1070→90305ms）；`tests/knowledge/video` **132 例**、`make lint` 净；**Task 3 未开工**。
+**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅（`dcd1142d`）/ Task 2 ✅（`15b72ab5`）/ Task 1b ✅（`2c17c94b`）/ Task 3 ✅（文档+端到端+门禁；代码未提交）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20 + 真机复核（rows=1、warning 打出、跨度 1070→90305ms）；`tests/knowledge/video` **132 例**、`make lint` 净；**Task 3 未开工**。
 **来源**：[2026-09-27-rag-asr-model-picker.md](2026-09-27-rag-asr-model-picker.md) 的 `实测` 越界发现（那条线纯前端、本件动 `backend/`，两者零文件重叠）。
 
 **Architecture:** 两处——**① 调用侧只带 `vad_model="fsmn-vad"`**（`asr.py:98-99`；**不补 `punc_model`**——真机已证"分段绕不过 punc"，本件放弃分段）**② 抽取器按真机形状校准 + 把"整段一行"变可观测**（`asr.py:127-150`：键名按真机校正、保留回退，新增告警，按 D2）。
@@ -50,7 +50,7 @@
 - **第 3 项（长音频粒度）**：见上——`vad` 单用**不分段**（1 条）；`vad + sentence_timestamp` 在 90s 上给 **20–27 段、段长 ≈ 3–4.5s**（正好对齐镜头卡粒度，不过碎）；`gen` 90s ≈ **8–9s**（CPU，≈10× 实时）。
 - ⚠️ **对 D1/D2 的影响（→ 已按此改判，2026-09-29）**：刚拍的 **D1 甲达不到验收 §4.1 / §4.2**（rows > 1、段落多张卡）⇒ 实际需要 **`vad + punc + sentence_timestamp=True`**（原表"丙"里的 `pred_timestamp` 换成这个；`pred_timestamp` 那版可弃）；**D2 的校准目标要改成 `sentence_info`**（`sentence` 键不存在）。**改判结果（2026-09-29 裁）**：**D1 = 只补 VAD + 明确放弃分段**（不装 punc，接受"整段一行"）⇒ 本件只剩"**可观测** + VAD 接线"；`vad + punc + sentence_timestamp` 记成"将来出路"（spec §2 D1）。
 - ⚠️ **对 picker 那对的影响（另报）**：菜单第三条 `sensevoice` ① 名字 `AutoModel` 不认（须 `iic/SenseVoiceSmall`）② 就算改名也拿不到段（0 段静默）⇒ 菜单名与 ⓘ 注记需要一次小修。
-- **追加（2026-09-29，候选侦察；不在原四项里 ⇒ 原"待验"至此已验）**：`OpenMOSS-Team/MOSS-Transcribe-Diarize` 真机一跑（**1.83 GB**、走 `hf-mirror`、需 `trust_remote_code`；缓存落 `E:\app-model\hf-cache\hub`，C 盘零写入）⇒ **它确实给段**：键 `['key','raw_text','sentence_info','text','timestamp']`，`sentence_info` = `{start: 1030, end: 4470, text: "欢迎大家来到摩哒社区进行体验。", spk: "S01", timestamp: [[1030, 4470]]}`（`sentence` 键为 `null`）；1030→4470 ms 与 4.52 s 音频吻合 ⇒ **真时间戳，不是等分合成**。**但代价否掉默认**：CPU 上**加载 628 s、4.52 s 音频推理 66 s（RTF ≈ 14.6）**（10 分钟视频外推 ≈ 2.4 h）⇒ **本件不采用、也不进 picker 菜单**；它证明的是"进程内形态也能拿到段"，并为"要不要 GPU / 服务档"提供量级参照（详见 [HTTP 草案 §4](../specs/2026-09-28-rag-asr-service-tier-design.md)）。
+- **追加（2026-09-29，候选侦察；不在原四项里 ⇒ 原"待验"至此已验）**：`OpenMOSS-Team/MOSS-Transcribe-Diarize` 真机一跑（**1.83 GB**、走 `hf-mirror`、需 `trust_remote_code`；缓存落 `E:\app-model\hf-cache\hub`，C 盘零写入）⇒ **它确实给段**：键 `['key','raw_text','sentence_info','text','timestamp']`，`sentence_info` = `{start: 1030, end: 4470, text: "欢迎大家来到摩哒社区进行体验。", spk: "S01", timestamp: [[1030, 4470]]}`（`sentence` 键为 `null`）；1030→4470 ms 与 4.52 s 音频吻合 ⇒ **真时间戳，不是等分合成**。**但代价否掉默认**：CPU 上**加载 628 s、4.52 s 音频推理 66 s（RTF ≈ 14.6）**（10 分钟视频外推 ≈ 2.4 h）⇒ **本件不采用、也不进 picker 菜单**；它证明的是"进程内形态也能拿到段"，并为"要不要 GPU / 服务档"提供量级参照（详见 [HTTP 草案 §5](../specs/2026-09-28-rag-asr-service-tier-design.md)）。
 
 ---
 
@@ -125,9 +125,18 @@
 > 动到的文件：`backend/AGENTS.md`（视频 ASR 腿一段）。
 > **验收对应**：spec §4 的 3 / 4。
 
-- [ ] **文档**：`backend/AGENTS.md` 的视频段补一句——ASR 腿的 `AutoModel` 带 `vad_model="fsmn-vad"` + `spk_model="cam++"`（**不补 punc**）；**分段由 cam++ 顺带获得**（VAD 段粒度 + `spk`；2026-09-29 二次改判）；"整段一行"只在无停顿样本上出现、由抽取器的 warning 可观测。
-- [ ] **端到端（真机）**：入一个真实（短）视频，看镜头卡「口述」：**rows > 1**（VAD 段、每段带 `spk`）、**仍无标点**；看日志是否出现"整段一行"信号；记录**总耗时**对照改造前（VAD + cam++ 的加载与推理成本）。
+- [x] **文档**：`backend/AGENTS.md` 的视频段补一句——ASR 腿的 `AutoModel` 带 `vad_model="fsmn-vad"` + `spk_model="cam++"`（**不补 punc**）；**分段由 cam++ 顺带获得**（VAD 段粒度 + `spk`；2026-09-29 二次改判）；"整段一行"只在无停顿样本上出现、由抽取器的 warning 可观测。
+- [x] **端到端（真机）**：入一个真实（短）视频，看镜头卡「口述」：**rows > 1**（VAD 段、每段带 `spk`）、**仍无标点**；看日志是否出现"整段一行"信号；记录**总耗时**对照改造前（VAD + cam++ 的加载与推理成本）。
+- [x] **跨件：回改姊妹件的注记文案（2026-09-29 恢复并完成）**：cam++ 之后本件**确实修了分段** ⇒ picker 那条 ⓘ 的后果句（"没有逐句时间戳时整段文字会挤进一张镜头卡"）**已过期** ⇒ 改成"口述按 VAD 分段落到镜头卡，连续语音可能整段只落一张"（`zh-CN.ts` / `en-US.ts` 各 1 行；其 dom 断言靠新文案里的"镜头卡"继续成立，picker 大册 **101 例全绿**）。
 - [ ] ~~**跨件：回改姊妹件的注记文案**~~ **取消留档（2026-09-29）**：本件**不修分段**（放弃 punc）⇒ picker 那条 ⓘ 注记的后果句**仍然成立、不过期**，无需回改（将来若装 punc，再把这条恢复）。
-- [ ] **收官门禁**：后端全量套件 + `make lint` 净；`git diff` 只含本件该动的文件。
+- [x] **收官门禁**：后端全量套件 + `make lint` 净；`git diff` 只含本件该动的文件。
 
-**实测**：（回填）
+**实测**（Task 3，2026-09-29，进行中——收官门禁待全量套件回填）：
+- **文档**：`backend/AGENTS.md` 的视频腿那条补了一句——funasr 腿带 `vad_model="fsmn-vad"` + `spk_model="cam++"`（**不补标点模型**），这正是 `sentence_info`（VAD 段粒度）出现、口述能落到多张卡的原因；例外名单两个都不给，且抽取器在"塌成一行"时会 warning。
+- **端到端（进程内真机，未走 UI）**：浏览器两个标签被 volcengine 文档占着（另一条线在用），且隐藏窗口下 `window.open` / `click` 都不可用 ⇒ 改走**进程内**同一条腿序：真 `probe_video` → 真 `_detect_scene_cuts`（PySceneDetect）→ `merge_scene_bounds` → 真 `transcribe_video` → 真 `assign_transcript_to_shots`。材料 = 自造短片（18s、3 段硬切、音轨 = 4.52s 样本 ×4）：
+  - `duration_ms = 18000`、`cuts = [6000, 12000]`、**6 个镜头**（6s 段被 `max_shot_seconds=5` 再切成 3s+3s ✓）；
+  - ⚠️ **ASR 只出 1 段**（`seg_spans = [[750, 17960]]`）⇒ **口述只落 1 张卡**，与 90s WAV 上的 8 段不同。直调复核原因：`WARNING punc_model is missing, falling back to vad_segment mode` ⇒ `sentence_info` **只有 1 条**（**VAD 在这段连续语音上只切出 1 段**）⇒ 正是 spec §5 边界③"段粒度由 VAD 定"的实例（连续语音 ⇒ 整段）。
+  - ⚠️ **而且这次没有 warning**：抽取器走的是 `sentence_info` 分支（1 条）而非 `timestamp` 回退 ⇒ **Task 2 的告警覆盖不到"1 个 VAD 段"这种整段一行**；而 §4.2 的验收词正是"跨度≈全长 ⇒ 给出信号" ⇒ **这条真实路径漏了信号**（要覆盖得把时长带进来判"跨度≈全长"；纯函数没有时长）⇒ **留给你拍：现在补还是二期**。
+- **跨件那条要翻案**：Task 3 的"取消留档"写"本件不修分段 ⇒ picker 的 ⓘ 后果句仍成立"——**cam++ 之后本件确实修了分段**（VAD 段粒度）⇒ picker 那条注记的"没有逐句时间戳时整段文字会挤进一张镜头卡"在常态下**已过期**（除连续语音这种 1 段情形）。建议**恢复**那条跨件回改（picker 的 ⓘ 文案 + 其 dom 断言各一处）。
+- **（a）已补：告警改成"跨度≈全长"判据**（2026-09-29，Task 3 内追加）：`transcribe_video(..., duration_ms=)` 拿到探测腿的时长后判"只有一段且覆盖 ≥90% ⇒ warning"（判据 `_is_collapsed` / 占比 `_COLLAPSED_SPAN_RATIO = 0.9`）；纯函数里的旧告警**移除**（单一信号点，纯函数恢复无日志）；`worker.py` 的 asr 腿传 `duration_ms`。RED **3 红 / 19 绿** → GREEN **22 绿** → neuter（去掉判据）**1 红 / 21 绿** → 还原 22；真机复核：18s MP4（连续语音、1 段）**warning 打出** ✓ / 90s WAV（8 段）**不报** ✓；`tests/knowledge/video` **134 例**、`make lint` 净。
+- **收官门禁**：后端全量套件 **163 failed / 12739 passed / 109 skipped**（19:08；失败全在既有环境条件红，`tests/knowledge/video/` **零条**）；按房规做 **A/B**（把这 163 个 id 在**本线三笔之前**的 `c8194d4a` 上跑同一批）⇒ **双向差 1 条**：`test_delta_channel_state.py::test_merge_message_writes_randomized_differential`（随机化差分用例、属 checkpoint 线、不在本线触碰面）**复跑 3/3 通过 ⇒ flake** ⇒ **本线零回归**。`make lint` 净（1308 文件）；A/B worktree 与两侧 basetemp 已清。

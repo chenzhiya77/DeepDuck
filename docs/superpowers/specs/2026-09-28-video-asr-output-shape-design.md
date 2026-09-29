@@ -28,6 +28,8 @@
 
 **追加裁定（2026-09-29 二次改判；真机取证见 §7.5；VAD 那半已随 plan 的 Task 1 交付，`spk_model` 追加落 Task 1b）**：原裁定是"只补 VAD、放弃分段、接受整段一行"（见下"原裁定留档"）。实测发现 **`spk_model="cam++"`（28 MB）在无 punc 时自动退到 `vad_segment` 模式**，**顺带产出 `sentence_info`**（`auto_model.py:1206-1207`）⇒ "整段一行"被打破、说话人也拿到。**代价**：gen ≈**2.3×**（90s：19.7s vs ≈8.5s）。**两条边界**：① **单人音频会假分裂**（同一人重复 90s 被聚成 0/1 交替）② **段粒度由 VAD 定**（400ms 间隙整段合一；1.2s 才切 6 段）——不由说话人切换定。
 
+⚠️ **两个别踩的坑（2026-09-29 源码核）**：① **"模型自带标点" ≠ "标点句分段"**——funasr 的句级分段只读 **punc 模型的 `punc_array`**（`auto_model.py:1072`：`if self.punc_model is not None and "timestamps" not in result`），自带标点只让**文本**带标点（段边界仍是 VAD 段）；② **一条免费分段近路**：`sentence_timestamp=True` + **无时间戳**的模型 ⇒ `_vad_segment_sentences`（`:1211-1212`）直接给 VAD 段——可惜 `paraformer-zh` 有 `timestamp`，走的是"warning + 空"那条（Task 0 已实测）。
+
 **原裁定留档（2026-09-29 上午）**（⚠️ 其中"分段绕不过 punc"已被同日下午的 cam++ 实测推翻——见上"追加裁定"）：
 - **分段这件事绕不过 punc**：`vad` 单用**不分段**（90s 实测 `n_items` 仍为 1——`AutoModel` 把 VAD 各段并回一条）；只有 `sentence_timestamp=True` 才产 `sentence_info`，而它在"有模型时间戳、无 punc"时走 `auto_model.py:1207-1215` 的 `elif punc_res is None:` ⇒ **warning `punc_model is required for sentence_timestamp` + `sentence_info=[]`**。
 - **punc 的体积与"本机离线"冲突**：`ct-punc` 1.2 GB / `ct-punc-c` 283 MB（本机缓存实测）。
