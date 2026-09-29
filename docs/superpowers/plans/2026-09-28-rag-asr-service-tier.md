@@ -176,12 +176,24 @@
 
 ## Task 3 — 前端：ASR 行（spec D1 / D2 / D3 / D7）
 
-- [ ] **RED**：DOM 用例——① 行数 2→4（标签复用「提供商 / Model ID / API Key / 接口地址」）；② 分组下拉（**三组** + 分隔线）；③ 锁法**两态**（本地引擎双锁 / **服务档两格都填 + 地址格灰字占位**：`dashscope` ⇒ `https://dashscope.aliyuncs.com`、`openai-audio` ⇒ `https://api.example.com/v1`）；④ 探针（挂提供商行右端、结论入状态、`no_timestamps` 拦 Save）。此刻无实现 ⇒ 红。
-- [ ] **GREEN**：`functional-models-view.tsx` 按 D1–D3 / D7 实现；`OptionSelect` 扩分组（照 `models-add-dialog.tsx:234-244` 的 `SelectGroup`/`SelectLabel`/`SelectSeparator`）；占位与分组**读后端 capability**（`default_endpoint` / `group`），不按 provider 名字硬编码（照 `endpointPlaceholderFor` 的既有写法，`config-form.ts:531`）。
-- [ ] **neuter**：把"锁"改成"隐藏"⇒ ③ 红（revert proof；铁律 = 恒显、锁而不藏）。
-- [ ] **门禁**：`pnpm test` + `pnpm check`；**真浏览器复核**四行 / 分组 / 锁（**只读，不点保存**）。
+- [x] **RED**：DOM 用例——① 行数 2→4（标签复用「提供商 / Model ID / API Key / 接口地址」）；② 分组下拉（**三组** + 分隔线）；③ 锁法**两态**（本地引擎双锁 / **服务档两格都填 + 地址格灰字占位**：`dashscope` ⇒ `https://dashscope.aliyuncs.com`、`openai-audio` ⇒ `https://api.example.com/v1`）；④ 探针（挂提供商行右端、结论入状态、`no_timestamps` 拦 Save）。此刻无实现 ⇒ 红。
+- [x] **GREEN**：`functional-models-view.tsx` 按 D1–D3 / D7 实现；`OptionSelect` 扩分组（照 `models-add-dialog.tsx:234-244` 的 `SelectGroup`/`SelectLabel`/`SelectSeparator`）；占位**读后端 capability**（`default_endpoint`，照 `endpointPlaceholderFor`），分组按仓里惯例落在前端常量（`ASR_PROVIDER_GROUPS`）。
+- [x] **neuter**：把"锁"改成"隐藏"⇒ ③ 红（revert proof；铁律 = 恒显、锁而不藏）。
+- [x] **门禁**：`pnpm test` + `pnpm check`；**真浏览器复核**四行 / 分组 / 锁（**只读，不点保存**）。
 
-**实测**：（回填）
+**实测**（Task 3，2026-09-29）：
+
+- **RED**：新 describe 块 **8 红**（i18n 键与探针 hook 都还不存在）；期间自己踩一个：`new RegExp(undefined)` 变成 `/(?:)/`，报的是"找到多个 button"——键一落地就对了。
+- **GREEN**：`functional-models.dom.test.tsx` **109 绿**；前端全量 **247 文件 / 2746 例 / 0 失败**（+8 = 本 Task 新增）；`pnpm check` 净。
+- **neuter**：把两格的"锁"改成"藏"（整行不渲染）⇒ **只有** `locks both service fields for an in-process engine and hides neither row` 红 ⇒ revert proof 成立（铁律 = 恒显、锁而不藏）。
+- **连带修的既有面（3 处）**：① 另一个 DOM 文件（`tests/unit/components/workspace/settings/…`）的 hooks mock 少 `useProbeAsrService` ⇒ 整个视图崩，已补 idle 桩；② 它的 `getByText(lockedCloudOnly)` 因 ASR 两格也用该串而变"多个匹配" ⇒ **给 ASR 换成新串 `lockedServiceOnly`（「仅服务档需要」）**——顺带更正语义：ASR 的服务档**可以是本机服务**（`funasr-server`），说"仅云 API"是错的；③ 布局用例里 `F.asrModel` 的**可见**标签断言改成 `F.modelLabel`（D1 复用共享词，角色区分在 aria-label）。
+- **两处实现决定（都记在代码注释里）**：① **服务档不给模型候选下拉**（服务侧模型名是开放集，没有"首行"可换）⇒ 切到服务档时 `asrModelForProviderSwitch` **原样保留值**（另一侧由探针给反馈），模型行的 ⓘ 也换成新串 `asrModelServiceHint`；② 探针的**门控**：模型 + 地址 + 钥匙三者齐了才可点（与两条腿的 `ready` 同尺子），hover 给服务端原话（`detail`），四态里只有 `no_timestamps` 进 `saveBlockReason`。
+- ✅ **真浏览器复核（2026-09-29，他起栈后只读跑完；全程没点保存，收尾 `navigate_page` 重载复原表单）**：
+  - **四行 + 可见标签**：`提供商 → 语音识别 (ASR)` · `Model ID → ASR 模型` · `API Key → 锁` · `接口地址 → 锁`（本地引擎态），四行的 gutter 词就是共享的「提供商 / Model ID / API Key / 接口地址」✓
+  - **三组 + 分隔线**：列表按 `本地引擎[funasr/whisper] · 通用协议[openai-audio] · 原生协议[dashscope]` 分三组，组间 **2 条 `data-slot=select-separator`（高 1px）** ✓
+  - **两态锁法**：`funasr` ⇒ 钥匙与地址两个 input **不存在**、`[data-slot=asr-locked]` **2 个**（文案「仅服务档需要」）；切到 `dashscope` ⇒ 两个 input 都在、**0 个锁框**、地址格 placeholder = `https://dashscope.aliyuncs.com`（来自后端 capability）✓
+  - **探针点**：本地引擎态**不挂**；服务档态挂上且 `data-state=untested`、**disabled**（钥匙三处都没有 ⇒ 未就绪），hover 文案走 `legDotNeedsConfig` ✓
+  - **模型行**：服务档态**无候选下拉**、无 placeholder（服务侧名是开放集）✓；切回后 Save 仍禁用（无脏改动）✓
 
 ---
 
