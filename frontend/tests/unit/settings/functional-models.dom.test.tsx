@@ -1786,6 +1786,25 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
   /** 高级设置默认收起；探测行就在里面。 */
   const openAdvanced = () => fireEvent.click(screen.getByRole("button", { name: /^高级设置/ }));
 
+  it("keeps both in-field chevrons to the page's own select style", () => {
+    // 标准 SelectTrigger 的箭头是 `size-4 opacity-50`，距右 12px（触发器的 px-3）。框内那两处
+    // （维度行 / ASR 模型行）曾经是 `size-3.5` + `pr-1.5` ⇒ 视觉上小一号、也贴得更靠边
+    // （2026-09-29 他报的缺陷）。几何只能在真浏览器量，这里钉住规格本身。
+    setDimensionProbe({ status: "ok", type: "tiered", native: 1024, values: [256, 1024] });
+    renderPage();
+    openFunctionalView();
+    openAdvanced();
+
+    for (const slot of ["dimension-tiers-trigger", "asr-model-candidates-trigger"]) {
+      const button = document.querySelector<HTMLElement>(`[data-slot="${slot}"]`);
+      expect(button, slot).toBeTruthy();
+      expect(button!.querySelector("svg")!.getAttribute("class")).toContain("size-4");
+      expect(button!.querySelector("svg")!.getAttribute("class")).toContain("opacity-50");
+      // 12px 的右内边距 = 标准触发器的 px-3。
+      expect(button!.parentElement!.className).toContain("pr-3");
+    }
+  });
+
   it("puts the dimension row at the head of the advanced panel — editable, button-free", () => {
     renderPage();
     openFunctionalView();

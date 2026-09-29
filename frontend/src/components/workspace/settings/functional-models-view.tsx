@@ -1138,7 +1138,7 @@ export function FunctionalModelsView() {
                       只有里面的箭头与状态点可点（事件从它们冒泡到触发器）。 */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <span className="pointer-events-none absolute inset-0 flex items-center justify-end gap-1 pr-1.5">
+                      <span className="pointer-events-none absolute inset-0 flex items-center justify-end gap-1 pr-3">
                         {dimensionState !== null && (
                           <Tooltip content={dimensionState.reason}>
                             <span
@@ -1162,7 +1162,7 @@ export function FunctionalModelsView() {
                             data-slot="dimension-tiers-trigger"
                             className="text-muted-foreground hover:text-foreground pointer-events-auto inline-flex"
                           >
-                            <ChevronDown className="size-3.5" />
+                            <ChevronDown className="size-4 opacity-50" />
                           </button>
                         )}
                       </span>
@@ -1630,14 +1630,14 @@ export function FunctionalModelsView() {
               {asrServiceApplies ? null : (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <span className="pointer-events-none absolute inset-0 flex items-center justify-end pr-1.5">
+                    <span className="pointer-events-none absolute inset-0 flex items-center justify-end pr-3">
                       <button
                         type="button"
                         aria-label={F.asrModelCandidates}
                         data-slot="asr-model-candidates-trigger"
                         className="text-muted-foreground hover:text-foreground pointer-events-auto inline-flex"
                       >
-                        <ChevronDown className="size-3.5" />
+                        <ChevronDown className="size-4 opacity-50" />
                       </button>
                     </span>
                   </DropdownMenuTrigger>
