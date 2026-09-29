@@ -411,7 +411,9 @@ async def test_parse_document_defaults_to_the_cloud_provider(tmp_path, monkeypat
     """老配置（未设 provider）必须仍走云端 —— 默认行为零变化。"""
     monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
     recorded: list[httpx.Request] = []
-    _stub_config(monkeypatch, parse_provider="mineru-cloud")
+    # 显式钉 `parse_base_url=None`：`_stub_config` 继承真实配置，而云腿现在会读这个字段
+    # （spec 2026-09-29 ①＝乙）—— 让它继承真实值会把这条守卫绑到本机环境上。
+    _stub_config(monkeypatch, parse_provider="mineru-cloud", parse_base_url=None)
 
     def handler(request: httpx.Request) -> httpx.Response:
         recorded.append(request)
@@ -422,3 +424,66 @@ async def test_parse_document_defaults_to_the_cloud_provider(tmp_path, monkeypat
             await parse_document(_pdf(tmp_path), client=client)
 
     assert recorded[0].url.host == "mineru.net"
+
+
+# ── 云腿请求形状：语种／档位／服务地址（spec 2026-09-29 D2）──────────────────
+
+
+def _capture_transport(recorded: list[httpx.Request]) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(404, json={"msg": "captured"})
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_cloud_request_carries_the_configured_language_and_model_version(tmp_path, monkeypatch):
+    monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
+    _stub_config(monkeypatch, parse_provider="mineru-cloud", parse_language="japan", parse_model_version="pipeline")
+    recorded: list[httpx.Request] = []
+
+    async with httpx.AsyncClient(transport=_capture_transport(recorded)) as client:
+        with pytest.raises(MineruError, match="404"):
+            await parse_document(_pdf(tmp_path), client=client)
+
+    body = json.loads(recorded[0].content)
+    assert body["language"] == "japan"
+    assert body["model_version"] == "pipeline"
+    # 顶层批参数（官方文档：per-request），不是 per-file 字段。
+    assert set(body) == {"files", "language", "model_version"}
+    assert set(body["files"][0]) == {"name", "data_id"}
+
+
+@pytest.mark.asyncio
+async def test_cloud_request_is_byte_identical_when_nothing_is_declared(tmp_path, monkeypatch):
+    """负向对照（Task 0 捕获的今日基线）：不声明 ⇒ 官方主机 + `ch`/`vlm`，其余逐字节相同。"""
+    monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
+    _stub_config(monkeypatch, parse_provider="mineru-cloud", parse_base_url=None)
+    recorded: list[httpx.Request] = []
+
+    async with httpx.AsyncClient(transport=_capture_transport(recorded)) as client:
+        with pytest.raises(MineruError, match="404"):
+            await parse_document(_pdf(tmp_path), client=client)
+
+    assert str(recorded[0].url) == "https://mineru.net/api/v4/file-urls/batch"
+    assert json.loads(recorded[0].content) == {
+        "files": [{"name": "手册.pdf", "data_id": "手册"}],
+        "language": "ch",
+        "model_version": "vlm",
+    }
+
+
+@pytest.mark.asyncio
+async def test_cloud_request_follows_the_configured_service_address(tmp_path, monkeypatch):
+    """① 裁乙 的那条行为变化：云腿现在读 `parse_base_url` —— 这条用例就是它的牙。"""
+    monkeypatch.setenv("MINERU_API_TOKEN", "test-token")
+    _stub_config(monkeypatch, parse_provider="mineru-cloud", parse_base_url=BASE_URL)
+    recorded: list[httpx.Request] = []
+
+    async with httpx.AsyncClient(transport=_capture_transport(recorded)) as client:
+        with pytest.raises(MineruError, match="404"):
+            await parse_document(_pdf(tmp_path), client=client)
+
+    assert recorded[0].url.host == "127.0.0.1"
+    assert recorded[0].url.port == 9999

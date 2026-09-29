@@ -541,3 +541,47 @@ def test_judge_model_defaults_to_none(env_paths):
     _write_rag_json(rag_json, {})
 
     assert get_app_config().rag.judge_model is None
+
+
+# ── parse knobs: language / model version (spec 2026-09-29) ──
+# 两个都是"值字段"（不是条目引用）：不做空白归一，非枚举值是**硬报错**
+# （与 `parse_tier` 今天的形状一致，spec §6.2 已登记）。
+
+PARSE_KNOB_VALUES = {"parse_language": ("en", "japan"), "parse_model_version": ("pipeline", "vlm")}
+
+
+@pytest.mark.parametrize("field", sorted(PARSE_KNOB_VALUES))
+def test_a_parse_knob_overrides_config_yaml_then_undoes(env_paths, field: str):
+    """Same two-step as the role fields: the UI file wins, withdrawing it falls back."""
+    yaml_value, ui_value = PARSE_KNOB_VALUES[field]
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml, {**dict(YAML_RAG), field: yaml_value})
+    _write_rag_json(rag_json, {field: ui_value})
+    assert getattr(get_app_config().rag, field) == ui_value
+
+    _write_rag_json(rag_json, {})
+    assert getattr(get_app_config().rag, field) == yaml_value
+
+
+def test_the_parse_knobs_default_when_nobody_declares_them(env_paths):
+    """Absent everywhere ⇒ the literal defaults, which is exactly today's behaviour."""
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml, {})
+    _write_rag_json(rag_json, {})
+
+    rag = get_app_config().rag
+    assert rag.parse_language == "ch"
+    assert rag.parse_model_version == "vlm"
+    declared = RagConfigFile.from_file().model_dump(exclude_none=True)
+    assert not {"parse_language", "parse_model_version"} & set(declared)
+
+
+@pytest.mark.parametrize("field", sorted(PARSE_KNOB_VALUES))
+def test_an_out_of_enum_choice_is_a_loud_load_error(env_paths, field: str):
+    """Value fields are validated by their Literal, not silently accepted."""
+    config_yaml, rag_json = env_paths
+    _write_config_yaml(config_yaml)
+    _write_rag_json(rag_json, {field: "not-a-choice"})
+
+    with pytest.raises(ValueError):
+        get_app_config()

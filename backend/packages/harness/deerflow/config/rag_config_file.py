@@ -147,8 +147,13 @@ class RagConfigFile(BaseModel):
     rerank_provider: Literal["dashscope", "generic-rerank", "tei-rerank"] | None = Field(default=None, description="Rerank provider id; None uses config.yaml.")
     rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
     parse_provider: Literal["mineru-cloud", "mineru-local"] | None = Field(default=None, description="Document-parsing provider; None uses config.yaml.")
-    parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local.")
+    parse_base_url: str | None = Field(default=None, description="Parsing service address; None uses config.yaml (whose empty value means the official MinerU cloud endpoint).")
     parse_tier: Literal["flash", "basic", "standard", "advanced"] | None = Field(default=None, description="Optional tier for the local MinerU 4.x service; None lets the service decide.")
+    parse_language: Literal["ch", "ch_server", "en", "japan", "korean", "chinese_cht", "ta", "te", "ka", "el", "th", "latin", "arabic", "cyrillic", "east_slavic", "devanagari"] | None = Field(
+        default=None, description="MinerU cloud document language pack; None uses config.yaml."
+    )
+    parse_model_version: Literal["pipeline", "vlm"] | None = Field(default=None, description="MinerU model version for the cloud leg; None uses config.yaml.")
+
     asr_base_url: str | None = Field(default=None, description="Transcription service endpoint; the service rows need one, the in-process engines take none.")
     asr_api_key: str | None = Field(default=None, description="Transcription service API key; masked on read, env is the fallback.")
     video: RagVideoFileConfig | None = Field(default=None, description="Video-ingestion model choices.")

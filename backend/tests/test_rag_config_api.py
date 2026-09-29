@@ -1423,3 +1423,44 @@ def test_an_unrelated_edit_does_not_start_a_migration(config_env: Path, monkeypa
     assert response.status_code == 200
     assert response.json()[_MIGRATION_FIELD] is None
     assert calls == [], "没改宽度就不该有迁移"
+
+
+# ── 解析的两个旋钮（spec 2026-09-29 D1；OCR 语种那一格 2026-09-30 已撤）──────
+
+
+def test_the_two_parse_knobs_round_trip_with_their_sources(config_env: Path):
+    """Write / read / withdraw for `parse_language`, `parse_model_version`."""
+    with _client(system_role="admin") as client:
+        saved = client.put(
+            "/api/rag/config",
+            json={"parse_language": "en", "parse_model_version": "pipeline"},
+        )
+
+    assert saved.status_code == 200
+    assert saved.json()["sources"]["parse_language"] == "ui"
+    assert saved.json()["sources"]["parse_model_version"] == "ui"
+
+    # 清空 = 撤销覆盖。⚠ 枚举字段必须以 **`null`**（不是 `""`）表达"撤销"：`""` 过不了
+    # 字段的 Literal 校验 ⇒ 422（既有 `parse_tier` / `sparse_provider` / `rerank_provider`
+    # 今天就踩这个坑 —— Task 2 把 `SELECT_FIELDS` 的清空编码改成 `null`，见 plan Task 2）。
+    with _client(system_role="admin") as client:
+        withdrawn = client.put(
+            "/api/rag/config",
+            json={"parse_language": None, "parse_model_version": None},
+        )
+
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["sources"]["parse_language"] == "config_file"
+    assert withdrawn.json()["sources"]["parse_model_version"] == "config_file"
+
+    with _client(system_role="admin") as client:
+        after = client.get("/api/rag/config").json()
+
+    assert after["config"]["parse_language"] == "ch"
+    assert after["config"]["parse_model_version"] == "vlm"
+
+
+def test_an_out_of_enum_parse_knob_is_rejected_with_422(config_env: Path):
+    with _client(system_role="admin") as client:
+        assert client.put("/api/rag/config", json={"parse_language": "not-a-language"}).status_code == 422
+        assert client.put("/api/rag/config", json={"parse_model_version": "MinerU-HTML"}).status_code == 422

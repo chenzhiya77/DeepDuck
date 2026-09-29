@@ -380,11 +380,11 @@ def _check_http(response: httpx.Response) -> None:
         raise MineruError(f"MinerU HTTP {response.status_code}: {response.text[:200]}", status=response.status_code)
 
 
-async def _apply_upload_url(client: httpx.AsyncClient, *, file_name: str, data_id: str, model_version: str, token: str) -> tuple[str, str]:
+async def _apply_upload_url(client: httpx.AsyncClient, *, file_name: str, data_id: str, model_version: str, language: str = "ch", base_url: str = MINERU_BASE_URL, token: str) -> tuple[str, str]:
     response = await client.post(
-        f"{MINERU_BASE_URL}/api/v4/file-urls/batch",
+        f"{base_url}/api/v4/file-urls/batch",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json={"files": [{"name": file_name, "data_id": data_id}], "model_version": model_version, "language": "ch"},
+        json={"files": [{"name": file_name, "data_id": data_id}], "model_version": model_version, "language": language},
     )
     _check_http(response)
     data = _check_envelope(response.json())
@@ -401,9 +401,9 @@ async def _upload_file(client: httpx.AsyncClient, upload_url: str, content: byte
         raise MineruError(f"MinerU upload HTTP {response.status_code}", status=response.status_code)
 
 
-async def _poll_result(client: httpx.AsyncClient, *, batch_id: str, file_name: str, token: str, poll_interval_seconds: float, timeout_seconds: float) -> str:
+async def _poll_result(client: httpx.AsyncClient, *, batch_id: str, file_name: str, token: str, poll_interval_seconds: float, timeout_seconds: float, base_url: str = MINERU_BASE_URL) -> str:
     deadline = time.monotonic() + timeout_seconds
-    url = f"{MINERU_BASE_URL}/api/v4/extract-results/batch/{batch_id}"
+    url = f"{base_url}/api/v4/extract-results/batch/{batch_id}"
     while True:
         response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
         _check_http(response)
@@ -683,12 +683,16 @@ class MineruCloudParseProvider:
         self,
         *,
         client: httpx.AsyncClient | None = None,
-        model_version: str = "vlm",
+        model_version: str,
+        language: str,
+        base_url: str,
         poll_interval_seconds: float = 5.0,
         timeout_seconds: float = 1800.0,
     ) -> None:
         self._client = client
         self._model_version = model_version
+        self._language = language
+        self._base_url = base_url
         self._poll_interval_seconds = poll_interval_seconds
         self._timeout_seconds = timeout_seconds
 
@@ -698,7 +702,7 @@ class MineruCloudParseProvider:
         own_client = self._client is None
         http = self._client or httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=30.0))
         try:
-            batch_id, upload_url = await _apply_upload_url(http, file_name=path.name, data_id=path.stem, model_version=self._model_version, token=token)
+            batch_id, upload_url = await _apply_upload_url(http, file_name=path.name, data_id=path.stem, model_version=self._model_version, language=self._language, base_url=self._base_url, token=token)
             await _upload_file(http, upload_url, path.read_bytes())
             zip_url = await _poll_result(
                 http,
@@ -707,6 +711,7 @@ class MineruCloudParseProvider:
                 token=token,
                 poll_interval_seconds=self._poll_interval_seconds,
                 timeout_seconds=self._timeout_seconds,
+                base_url=self._base_url,
             )
             zip_parsed = _unpack_zip(await _download_zip(zip_url))
             return ParsedDocument(markdown=normalize_mineru_markdown(zip_parsed.markdown), images=zip_parsed.images)
@@ -719,7 +724,9 @@ def build_parse_provider(
     *,
     rag: Any | None = None,
     client: httpx.AsyncClient | None = None,
-    model_version: str = "vlm",
+    model_version: str | None = None,
+    language: str | None = None,
+    base_url: str | None = None,
     poll_interval_seconds: float = 5.0,
     timeout_seconds: float = 1800.0,
 ) -> object:
@@ -728,7 +735,9 @@ def build_parse_provider(
     Same rule as the rerank factory: the provider id picks the implementation, the caller never
     supplies a class path. Constructor kwargs differ per provider, so the split lives here —
     ``mineru-local`` takes the configured address and tier hint, the cloud provider takes
-    ``model_version``.
+    ``model_version`` / ``language`` / ``base_url``, each resolved from the ``rag`` section when
+    the caller passes nothing (spec 2026-09-29 D2; the cloud address falls back to the vendor
+    constant only when nothing is configured).
 
     ``rag`` overrides the RAG section for this call, so the save-time check can construct the
     provider from the configuration it is about to write instead of the live one (spec 2026-09-17
@@ -743,7 +752,9 @@ def build_parse_provider(
         kwargs["base_url"] = section.parse_base_url
         kwargs["tier"] = section.parse_tier
     else:
-        kwargs["model_version"] = model_version
+        kwargs["model_version"] = model_version if model_version is not None else section.parse_model_version
+        kwargs["language"] = language if language is not None else section.parse_language
+        kwargs["base_url"] = base_url if base_url is not None else (section.parse_base_url or MINERU_BASE_URL)
     from deerflow.reflection import resolve_variable
 
     return resolve_variable(spec.implementation)(**kwargs)
@@ -753,7 +764,9 @@ async def parse_document(
     file_path: str | Path,
     *,
     client: httpx.AsyncClient | None = None,
-    model_version: str = "vlm",
+    model_version: str | None = None,
+    language: str | None = None,
+    base_url: str | None = None,
     poll_interval_seconds: float = 5.0,
     timeout_seconds: float = 1800.0,
 ) -> ParsedDocument:
@@ -761,7 +774,8 @@ async def parse_document(
 
     Provider is ``rag.parse_provider`` (default ``mineru-cloud`` = the MinerU v4 API;
     ``mineru-local`` = a self-hosted MinerU HTTP service, which needs
-    ``rag.parse_base_url``). ``model_version`` is a cloud-only knob.
+    ``rag.parse_base_url``). ``model_version`` / ``language`` / ``base_url`` are cloud-only
+    knobs; passing ``None`` reads the configured ``rag`` values (spec 2026-09-29 D2).
 
     ``.md``/``.markdown``/``.txt`` files are read locally (UTF-8 strict with GBK
     fallback); ``.csv``/``.tsv`` are parsed locally into a GFM pipe table and
@@ -784,6 +798,8 @@ async def parse_document(
     provider = build_parse_provider(
         client=client,
         model_version=model_version,
+        language=language,
+        base_url=base_url,
         poll_interval_seconds=poll_interval_seconds,
         timeout_seconds=timeout_seconds,
     )

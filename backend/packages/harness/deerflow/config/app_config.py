@@ -213,10 +213,21 @@ class RagConfig(BaseModel):
     rerank_provider: Literal["dashscope", "generic-rerank", "tei-rerank"] = Field(default="dashscope", description="Rerank provider id (curated allowlist).")
     rerank_base_url: str | None = Field(default=None, description="Rerank endpoint; None uses the provider's own default.")
     parse_provider: Literal["mineru-cloud", "mineru-local"] = Field(default="mineru-cloud", description="Document-parsing provider: the MinerU cloud API, or a local MinerU service.")
-    parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local. That service ships without auth, so expose it on an internal network only.")
+    parse_base_url: str | None = Field(
+        default=None,
+        description="Parsing-service address: empty means the official MinerU cloud endpoint (https://mineru.net); a self-hosted `mineru-local` needs it (that service ships without auth, so keep it internal).",
+    )
     parse_tier: Literal["flash", "basic", "standard", "advanced"] | None = Field(
         default=None,
         description="Optional tier for the local MinerU 4.x service; None lets the service decide (its own default is standard). A flash-only service needs an explicit tier: with none it answers 503 for PDFs.",
+    )
+    parse_language: Literal["ch", "ch_server", "en", "japan", "korean", "chinese_cht", "ta", "te", "ka", "el", "th", "latin", "arabic", "cyrillic", "east_slavic", "devanagari"] = Field(
+        default="ch",
+        description="Document language pack for the MinerU cloud leg; `ch` covers Chinese and English (the platform's own default too). The local leg has no language knob.",
+    )
+    parse_model_version: Literal["pipeline", "vlm"] = Field(
+        default="vlm",
+        description="MinerU model version for the cloud leg. `vlm` is what this deployment has always sent; `MinerU-HTML` is unreachable because `.html` is not an accepted upload suffix.",
     )
     # The ASR leg's connection info sits here rather than inside `video:` (spec 2026-09-28 D4,
     # ① 乙): every other leg keeps its address and key at this level, and `video` holds the
