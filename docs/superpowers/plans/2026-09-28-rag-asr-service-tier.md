@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-28-rag-asr-service-tier-design.md](../specs/2026-09-28-rag-asr-service-tier-design.md)
-**Status:** 🚧 **已立项、开工（2026-09-29）**——**Task 0 已完成**（三项取证全回填；两处 spec §5.1 的缺前提 + 三处 spec 没写的配置面）；**四件追加裁定已落**（钥匙放**顶层** · 加 **`asr` 腿** · 服务档**两格都填、地址格灰字占位**（③ 已按 09-25 端点解锁对复核更正）· 探针**夹具自带黄金期望**），并**补了 Task 2b**（探针后端原先没 Task）；spec 已原地改词。**下一步 Task 1**。D1–D8 已裁，串行门已清。
+**Status:** 🚧 **已立项、开工（2026-09-29）**——**Task 0 已完成**（三项取证全回填；两处 spec §5.1 的缺前提 + 三处 spec 没写的配置面）；**四件追加裁定已落**（钥匙放**顶层** · 加 **`asr` 腿** · 服务档**两格都填、地址格灰字占位**（③ 已按 09-25 端点解锁对复核更正）· 探针**夹具自带黄金期望**），并**补了 Task 2b**（探针后端原先没 Task）；spec 已原地改词。**Task 0–4 全部落地**（含真机端到端正反例），各 Task 的 `实测` 已回填。D1–D8 已裁，串行门已清。
 **来源**：侧聊产出；与 [2026-09-28-video-asr-output-shape.md](2026-09-28-video-asr-output-shape.md)（本地档）是同一架构的**两条来源面**——⚠️ **两条线都动 `asr.py` ⇒ 必须串行**（spec §8）。
 
 **Architecture:** 三处——**① 配置面**（两处后端字面量 + `video` 块两字段 + 两处前端字面量 + 3 处窄化）**② 后端**（`asr.py` 分派加一支 + 新增服务档 provider：HTTP 客户端 + 抽取函数 + 降级）**③ 前端**（ASR 行 2→4 行 + 分组下拉 + 锁法 + 探针）。逐面清单见 spec **§3 落点**。
@@ -199,8 +199,22 @@
 
 ## Task 4 — 文档 + 端到端 + 收官（spec §7 / §8）
 
-- [ ] **文档**：`backend/AGENTS.md` 的视频段 + `frontend/AGENTS.md` 的 functional-models 段各补一句（服务档：四行 / **三组四值** / 探针 / 降级契约）。
-- [ ] **端到端（真机）**：配一个 `dashscope` 服务 + 一个 ≤5 分钟视频 ⇒ 卡片「口述」多段、带标点、带 `spk`；再跑一次**故意配错钥匙** ⇒ `asr=failed` + 卡片「（ASR 失败）」；记录总耗时。
-- [ ] **收官门禁**：后端全量 + `pnpm check` 净；`git diff` 只含本件该动的文件。
+- [x] **文档**：`backend/AGENTS.md` 的视频段 + `frontend/AGENTS.md` 的 functional-models 段各补一句（服务档：四行 / **三组四值** / 探针 / 降级契约）。
+- [x] **端到端（真机）**：配一个 `dashscope` 服务 + 一个 ≤5 分钟视频 ⇒ 卡片「口述」多段、带标点（**说话人不进卡**，与 §3 fence 一致）；再跑一次**故意配错钥匙** ⇒ `asr=failed` + 卡片「（ASR 失败）」；记录耗时。
+- [x] **收官门禁**：后端全量 + `pnpm check` 净；`git diff` 只含本件该动的文件。
 
-**实测**：（回填）
+**实测**（Task 4，2026-09-29；**他授权改配置、先备份**）：
+
+- **端到端素材**：`ffmpeg` 现造 `asr_e2e.mp4`（testsrc 640×360/15fps + 43.69 s 双人对话音轨，506 KB）——≤5 分钟 ✓、有视频流 ✓。
+- **配置面（改前先备份、改后逐字节还原）**：把 `rag_config.json` 加上 `video.asr_provider=dashscope` / `asr_model=qwen-audio-3.1-asr-flash` / `asr_base_url` / `asr_api_key`（用他 `.env` 里那把**已验证可用**的 key）；GET 立刻回新值 + `sources` 报 `ui`（**热重载生效，没重启**）。收尾 `cp` 还原 + `md5sum` 一致（`323f904649584253f0da67e1d4a32f30`）。
+- **正例（真机，走完整流水线）**：上传 → `path_status.asr=done`、9 张镜头卡，**6 张卡的「口述」是完整句子且带标点**（如「大家好，今天我来介绍一下我们的知识库功能。」「那如果视频比较长呢？比如一个小时的会议室录像。」）——与本地腿的「逐字空格、无标点」形成对照 ✓；另 3 张「（无）」是段与镜头错位的既有分桶行为 ✓。
+  - ⚠️ **文档最终 `failed`**：`vector`/`graph` 腿「All connection attempts failed」——**本机没起 Qdrant**，与本件无关（ASR 腿 done、卡片已落库，所以判据照读）。
+- **反例（真机）**：把 `asr_api_key` 换成假值 ⇒ 再传同一视频 ⇒ `path_status.asr=failed`、**每张卡的「口述」都是「（ASR 失败）」** ✓、**没有新状态值** ✓（文档的 `failed` 同样来自 Qdrant 腿）。
+- **探针真机（附加证据）**：`POST /api/rag/config/probe-asr`（真 key）⇒ **1.0 s**、`status=ok`、detail「连通正常，返回 3 段，边界落在夹具的静音处。」⇒ D7 的黄金期望对**真服务**判 ok ✓。⚠️ 换成假钥匙后同一条探针回 **`unreachable`（不是 `refused`）**：平台是**直接掐连接**（`10054`）而不是回 401——正是 Task 0 记的那条红鲱鱼；四态里两者都不拦保存 ✓，但"配错钥匙"在真机上长得像"连不上"，这点值得知道。
+- **清理**：临时库 `asr-e2e-tmp` 已删（级联清掉它的文档与向量）、`frontend/public/` 里那份暂存 mp4 已删、`rag_config.json` 已还原 ⇒ 工作树只剩本件该动的文件 + 别线那两份。
+- **文档**：`backend/AGENTS.md` 的视频「Legs」段补了四行/两条服务档/`format` 与分段开关/`rag.asr_base_url` 顶层且必填/D6 五分钟/「空或单段=没答案」/探针夹具；`frontend/AGENTS.md` 的 functional-models 段补了四行块、三组、两态锁法（含新理由串）、探针点与 `no_timestamps` 拦保存、服务档无候选菜单。
+- **顺带发现（既有，未修）**：`_build_response` 的 video 分支读的是**扁平化后的** `written`（`_declared_flat` 把 `video` 摊成 `video.asr_provider` 键），所以 `sources["video.*"]` **永远报 `config_file`**，哪怕文件确实声明了它（真机上看到的就是这个）。对 UI 无害（`owned()` 只影响"未改动是否重提交"，而值相等时提交与否都不改变文件），但**provenance 显示是错的**。不属本件范围，登记待裁。
+- **收官门禁**：
+  - **前端**：`pnpm check` 净；全量 **247 文件 / 2746 例 / 0 失败**（复跑一次确认）。
+  - **后端全量**（`-m "not live" tests/`，仓内 basetemp）：**164 failed / 12743 passed / 160 skipped / 1 error**（15m25s）。**A/B 归因**（`git worktree add --detach` 于 HEAD `082b5090` 跑同一批 164 个 node id）：**161 条在 HEAD 上同样红**；剩 3 条逐条查清——① `test_delta_channel_state…randomized_differential`（**已知易失**，复跑即过）、② `test_detector_repo_root…`（**已知 basetemp 位置条件**：换仓外 basetemp 立刻过）、③ `test_invoke_acp_agent…times_out_and_kills_hung_subprocess`（**在 HEAD 的干净树里重跑也红**，两种 PYTHONPATH 形式都试过）⇒ **零回归**。失败清单里与本件相关的只有那 6 条探针红（既有，见 Task 1/2 的归因）。
+  - **`git diff` 范围**：本件该动的文件 = `backend/AGENTS.md` · `frontend/AGENTS.md` · 本 plan（+ spec 的 Status 一行）；`PRE_RELEASE_HARDCODE_INVENTORY.md` 与那批未跟踪研究文档**一律没碰**（别线）。

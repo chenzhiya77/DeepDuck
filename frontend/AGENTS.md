@@ -177,7 +177,17 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   (spec 2026-09-27): a free-typed value over the selected engine's common models, and a switch
   falls back to the target menu's first row — judged only against whisper's own name set, because
   funasr is an open set (ModelScope ids, local directories) and its menu must never double as a
-  filter. The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
+  filter. Since 2026-09-28 the video section is a **four-row block** — provider / Model ID / API Key /
+  接口地址 — with the labels the retrieval pair already uses and the roles on the aria-labels; the
+  provider menu is grouped into engines and protocol tiers, and the block has two lock states rather
+  than three: an in-process engine locks both service fields (its own reason string — an ASR service
+  may be a local one, so "cloud API only" would be wrong), a service tier leaves both editable with
+  the vendor endpoint as the placeholder. Only the service tiers carry the **probe dot** on the
+  provider row: one real call per click, nothing persisted, the server's own `detail` on hover, and
+  `no_timestamps` is the single verdict that blocks Save — a verdict that only counts for the four
+  values it was taken for. A service tier also drops the model row's candidate menu (a service-side
+  name is an open set), so a switch carries the model value over instead of rewriting it.
+  The **embedding and rerank rows are the exception** (spec 2026-09-14 §4.1):
   they pick a *provider* from the backend's curated allowlist rather than a `models:` entry, and
   the embedding row also carries the sparse-source select — the field that decides whether a
   dense-only provider is usable at all. Every provider-driven row is **always rendered**: a row the
