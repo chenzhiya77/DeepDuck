@@ -188,6 +188,8 @@
 - **neuter**：把两格的"锁"改成"藏"（整行不渲染）⇒ **只有** `locks both service fields for an in-process engine and hides neither row` 红 ⇒ revert proof 成立（铁律 = 恒显、锁而不藏）。
 - **连带修的既有面（3 处）**：① 另一个 DOM 文件（`tests/unit/components/workspace/settings/…`）的 hooks mock 少 `useProbeAsrService` ⇒ 整个视图崩，已补 idle 桩；② 它的 `getByText(lockedCloudOnly)` 因 ASR 两格也用该串而变"多个匹配" ⇒ **给 ASR 换成新串 `lockedServiceOnly`（「仅服务档需要」）**——顺带更正语义：ASR 的服务档**可以是本机服务**（`funasr-server`），说"仅云 API"是错的；③ 布局用例里 `F.asrModel` 的**可见**标签断言改成 `F.modelLabel`（D1 复用共享词，角色区分在 aria-label）。
 - **两处实现决定（都记在代码注释里）**：① **服务档不给模型候选下拉**（服务侧模型名是开放集，没有"首行"可换）⇒ 切到服务档时 `asrModelForProviderSwitch` **原样保留值**（另一侧由探针给反馈），模型行的 ⓘ 也换成新串 `asrModelServiceHint`；② 探针的**门控**：模型 + 地址 + 钥匙三者齐了才可点（与两条腿的 `ready` 同尺子），hover 给服务端原话（`detail`），四态里只有 `no_timestamps` 进 `saveBlockReason`。
+- **交付后调整（2026-09-29，他报的缺陷）**：**框内下拉箭头与页面标准下拉不同规格**——模型行与**维度行**两处的框内触发器用的是 `size-3.5` + `pr-1.5`，而标准 `SelectTrigger` 的箭头是 `size-4 opacity-50` + `px-3` ⇒ 视觉上小一号、也更贴右缘。两处统一成 `size-4 opacity-50` + `pr-3`；真机量到与标准下拉**逐项相同**（16×16 · `opacity .5` · 同色 · 距右 12px vs 12.7px 差的是那条边框，且模型框右缘与标准触发器同为 544px）。
+  - 补一条结构用例（`dimension-tiers-trigger` + `asr-model-candidates-trigger` 都断言 `size-4`/`opacity-50`/`pr-3`；几何只能在真浏览器量）；**neuter**：把其中一处改回旧规格 ⇒ 该用例红（revert proof）。前端全量 **247 文件 / 2747 例 / 0 失败**、`pnpm check` 净。
 - ✅ **真浏览器复核（2026-09-29，他起栈后只读跑完；全程没点保存，收尾 `navigate_page` 重载复原表单）**：
   - **四行 + 可见标签**：`提供商 → 语音识别 (ASR)` · `Model ID → ASR 模型` · `API Key → 锁` · `接口地址 → 锁`（本地引擎态），四行的 gutter 词就是共享的「提供商 / Model ID / API Key / 接口地址」✓
   - **三组 + 分隔线**：列表按 `本地引擎[funasr/whisper] · 通用协议[openai-audio] · 原生协议[dashscope]` 分三组，组间 **2 条 `data-slot=select-separator`（高 1px）** ✓
@@ -210,6 +212,7 @@
 - **正例（真机，走完整流水线）**：上传 → `path_status.asr=done`、9 张镜头卡，**6 张卡的「口述」是完整句子且带标点**（如「大家好，今天我来介绍一下我们的知识库功能。」「那如果视频比较长呢？比如一个小时的会议室录像。」）——与本地腿的「逐字空格、无标点」形成对照 ✓；另 3 张「（无）」是段与镜头错位的既有分桶行为 ✓。
   - ⚠️ **文档最终 `failed`**：`vector`/`graph` 腿「All connection attempts failed」——**本机没起 Qdrant**，与本件无关（ASR 腿 done、卡片已落库，所以判据照读）。
 - **反例（真机）**：把 `asr_api_key` 换成假值 ⇒ 再传同一视频 ⇒ `path_status.asr=failed`、**每张卡的「口述」都是「（ASR 失败）」** ✓、**没有新状态值** ✓（文档的 `failed` 同样来自 Qdrant 腿）。
+- **耗时（真机，服务档这一腿本身）**：同一支 44 s 视频直接走 `DashScopeAsrProvider.transcribe` ⇒ **2.0 s、6 段**（与 Task 0 量的 44 s 音频 1.6–2.4 s 一致）；探针那次 9 s 夹具 ⇒ **1.0 s**。流水线整体从上传到 `asr=done` 在 ~25 s 内（含 probe / segment / 9 帧关键帧 + OCR），其余腿与本地档同构、不受本件影响。
 - **探针真机（附加证据）**：`POST /api/rag/config/probe-asr`（真 key）⇒ **1.0 s**、`status=ok`、detail「连通正常，返回 3 段，边界落在夹具的静音处。」⇒ D7 的黄金期望对**真服务**判 ok ✓。⚠️ 换成假钥匙后同一条探针回 **`unreachable`（不是 `refused`）**：平台是**直接掐连接**（`10054`）而不是回 401——正是 Task 0 记的那条红鲱鱼；四态里两者都不拦保存 ✓，但"配错钥匙"在真机上长得像"连不上"，这点值得知道。
 - **清理**：临时库 `asr-e2e-tmp` 已删（级联清掉它的文档与向量）、`frontend/public/` 里那份暂存 mp4 已删、`rag_config.json` 已还原 ⇒ 工作树只剩本件该动的文件 + 别线那两份。
 - **文档**：`backend/AGENTS.md` 的视频「Legs」段补了四行/两条服务档/`format` 与分段开关/`rag.asr_base_url` 顶层且必填/D6 五分钟/「空或单段=没答案」/探针夹具；`frontend/AGENTS.md` 的 functional-models 段补了四行块、三组、两态锁法（含新理由串）、探针点与 `no_timestamps` 拦保存、服务档无候选菜单。
