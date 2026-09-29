@@ -43,7 +43,7 @@ from deerflow.knowledge.indexer import index_chunks
 from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
-from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, transcribe_video
+from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, resolve_leg_provider, transcribe_video
 from deerflow.knowledge.video.captioner import caption_shots
 from deerflow.knowledge.video.frames import extract_caption_frames, extract_keyframes
 from deerflow.knowledge.video.ocr import ocr_frame
@@ -574,7 +574,8 @@ class KnowledgeIndexWorker:
         storage_path = document["storage_path"]
         video_name = document["name"]
         doc_dir = Path(storage_path).parent
-        cfg = get_app_config().rag.video
+        rag_cfg = get_app_config().rag
+        cfg = rag_cfg.video
 
         if await self._video_store.list_shots(doc_id):
             # resume：probe/asr/segment/keyframe 的产物已固化在骨架，不重跑；标
@@ -595,8 +596,19 @@ class KnowledgeIndexWorker:
         # ── asr（降级腿：整腿失败 → asr=failed，口述段写「（ASR 失败）」，文档仍 ready）──
         await self._store.update_document_status(doc_id, "parsing", path_status={"asr": "indexing"})
         asr_failed = False
+        # D6：服务档只吃 ≤5 分钟（同步 + base64），更长的整段留在本地腿（一期不投递）。
+        asr_leg = resolve_leg_provider(cfg.asr_provider, duration_ms=duration_ms)
+        if asr_leg != cfg.asr_provider:
+            logger.info("video ASR: %s is a service tier and the audio is %.1f min long ⇒ staying on the local leg (%s, D6)", cfg.asr_provider, duration_ms / 60000, asr_leg)
         try:
-            segments = await transcribe_video(storage_path, provider_name=cfg.asr_provider, model=cfg.asr_model, duration_ms=duration_ms)
+            segments = await transcribe_video(
+                storage_path,
+                provider_name=asr_leg,
+                model=cfg.asr_model,
+                duration_ms=duration_ms,
+                base_url=rag_cfg.asr_base_url,
+                api_key=rag_cfg.asr_api_key,
+            )
         except AsrError as exc:
             logger.warning("video ASR leg failed for document %s (%s); degrading asr=failed", doc_id, exc)
             segments = []

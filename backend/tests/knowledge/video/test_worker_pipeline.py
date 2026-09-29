@@ -121,7 +121,8 @@ def _video_config(**overrides):
         card_text_mode="full",
         **overrides,
     )
-    return SimpleNamespace(rag=SimpleNamespace(video=video, worker_concurrency=2, vlm_model="test-vlm"))
+    # The ASR leg's connection info is top-level on `rag` (① 乙, 2026-09-29), not inside `video`.
+    return SimpleNamespace(rag=SimpleNamespace(video=video, worker_concurrency=2, vlm_model="test-vlm", asr_base_url=None, asr_api_key=None))
 
 
 def _fake_legs(

@@ -14,20 +14,28 @@ TranscriptSegment 序列——单位换算、取整、去空白、丢弃无效�
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import types
 
+import httpx
 import pytest
 
+from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.video.asr import (
     AsrError,
+    DashScopeAsrProvider,
     FunAsrProvider,
+    OpenAiAudioProvider,
     TranscriptSegment,
     WhisperProvider,
+    _rows_from_dashscope,
     _rows_from_funasr,
+    _rows_from_openai_audio,
     _rows_from_whisper,
     normalize_transcript,
+    resolve_leg_provider,
     resolve_provider,
     transcribe_video,
 )
@@ -241,3 +249,214 @@ def test_funasr_provider_skips_companions_for_the_exception_list(monkeypatch, mo
     # 流式按 chunk 调；托管 whisper 走自己的路径 —— VAD 与 cam++ 两个都不给。
     assert "vad_model" not in calls[0]
     assert "spk_model" not in calls[0]
+
+
+# ── 服务档：路由 / 地址守卫（spec 2026-09-28 D5 + D4）────────────────────
+
+
+def test_resolve_provider_routes_the_service_tiers():
+    assert isinstance(resolve_provider("dashscope", model="qwen-audio-3.1-asr-flash", base_url="https://dashscope.aliyuncs.com"), DashScopeAsrProvider)
+    assert isinstance(resolve_provider("openai-audio", model="whisper-1", base_url="http://127.0.0.1:8000/v1"), OpenAiAudioProvider)
+    assert isinstance(resolve_provider("funasr", model="paraformer-zh"), FunAsrProvider)
+
+
+@pytest.mark.parametrize("name", ["dashscope", "openai-audio"])
+@pytest.mark.parametrize("base_url", [None, "", "   "])
+def test_the_service_rows_need_an_address(name, base_url):
+    """09-25 D1 乙「连回落删」：地址留空不是"用厂商默认"，是配置错误。"""
+    with pytest.raises(RagConfigurationError):
+        resolve_provider(name, model="m", base_url=base_url)
+
+
+def test_the_in_process_rows_need_no_address():
+    assert isinstance(resolve_provider("funasr", model="paraformer-zh"), FunAsrProvider)
+    assert isinstance(resolve_provider("whisper", model="small"), WhisperProvider)
+
+
+def test_long_audio_stays_on_the_local_leg():
+    """D6：服务档只吃 ≤5 分钟（同步 + base64），更长的整段留在本地腿。"""
+    assert resolve_leg_provider("dashscope", duration_ms=6 * 60 * 1000) == "funasr"
+    assert resolve_leg_provider("openai-audio", duration_ms=6 * 60 * 1000) == "funasr"
+    # 边界与未知时长都不换：5 分钟整仍在服务档；拿不到时长就不判。
+    assert resolve_leg_provider("dashscope", duration_ms=5 * 60 * 1000) == "dashscope"
+    assert resolve_leg_provider("dashscope", duration_ms=None) == "dashscope"
+    assert resolve_leg_provider("whisper", duration_ms=6 * 60 * 1000) == "whisper"
+
+
+# ── 服务档：请求形状（spec §5.4 的三条硬事实）───────────────────────────
+
+_DASHSCOPE_ASR_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+
+
+def _sync_client(recorded: list[httpx.Request], *, json_body: dict, status: int = 200) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(status, json=json_body)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+_TWO_SENTENCES = {
+    "output": {
+        "sentence": {"begin_time": 0, "end_time": 2400, "text": "甲乙"},
+        "sentences": [
+            {"begin_time": 0, "end_time": 1200, "text": "甲"},
+            {"begin_time": 1200, "end_time": 2400, "text": "乙"},
+        ],
+    }
+}
+
+
+def test_dashscope_sends_the_documented_request(tmp_path):
+    recorded: list[httpx.Request] = []
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"\x00\x01\x02")
+
+    provider = DashScopeAsrProvider(
+        model="qwen-audio-3.1-asr-flash",
+        base_url="https://dashscope.aliyuncs.com",
+        api_key="sk-asr",
+        client=_sync_client(recorded, json_body=_TWO_SENTENCES),
+    )
+    rows = provider.transcribe(str(clip))
+
+    request = recorded[0]
+    assert str(request.url) == _DASHSCOPE_ASR_URL
+    assert request.headers["authorization"] == "Bearer sk-asr"
+    body = json.loads(request.content)
+    assert body["model"] == "qwen-audio-3.1-asr-flash"
+    # §5.4 ①：format 必填（缺了服务端秒回 400「format is empty」）——填文件后缀即可。
+    assert body["parameters"]["format"] == "mp4"
+    # §5.4 ②：说话人开关是**分段开关**，且必须在 parameters 顶层（塞 asr_options 里无效）。
+    assert body["parameters"]["speaker_diarization_enabled"] is True
+    assert "asr_options" not in body["parameters"]
+    audio = body["input"]["messages"][0]["content"][0]["audio"]
+    assert audio.startswith("data:") and ";base64," in audio
+    assert rows == [(0, 1200, "甲"), (1200, 2400, "乙")]
+
+
+def test_openai_audio_posts_multipart_and_reads_segments(tmp_path):
+    recorded: list[httpx.Request] = []
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"\x00\x01\x02")
+    reply = {"segments": [{"start": 0.0, "end": 1.2, "text": "甲"}, {"start": 1.2, "end": 2.4, "text": "乙"}]}
+
+    provider = OpenAiAudioProvider(model="whisper-1", base_url="http://127.0.0.1:8000/v1", api_key="sk-x", client=_sync_client(recorded, json_body=reply))
+    rows = provider.transcribe(str(clip))
+
+    request = recorded[0]
+    # 通用协议：`/v1` 不写两遍（join_endpoint 的既有规则）。
+    assert str(request.url) == "http://127.0.0.1:8000/v1/audio/transcriptions"
+    assert request.headers["authorization"] == "Bearer sk-x"
+    # verbose_json 是段级时间戳的前提——默认的 json 只给文本。
+    assert b'name="response_format"' in request.content and b"verbose_json" in request.content
+    assert b'name="model"' in request.content
+    assert rows == [(0.0, 1.2, "甲"), (1.2, 2.4, "乙")]
+
+
+# ── 服务档：抽取（sentences[] 优先 / utterances[] 回退 / 空或单段 = 没答案）──
+
+
+def test_rows_from_dashscope_prefers_sentences():
+    assert _rows_from_dashscope(_TWO_SENTENCES) == [(0, 1200, "甲"), (1200, 2400, "乙")]
+
+
+def test_rows_from_dashscope_reads_the_doubly_nested_copy():
+    """实测里同一份结果挂在 `output.*` 与 `output.output.*` 两层（§5.4 ③）。"""
+    nested = {"output": {"output": _TWO_SENTENCES["output"]}}
+    assert _rows_from_dashscope(nested) == [(0, 1200, "甲"), (1200, 2400, "乙")]
+
+
+def test_rows_from_dashscope_falls_back_to_utterances():
+    """火山形状（随投递二期）；回退路径先钉住，两种拼法都认。"""
+    result = {
+        "output": {
+            "utterances": [
+                {"start_time": 0, "end_time": 1200, "text": "甲"},
+                {"begin_time": 1200, "end_time": 2400, "text": "乙"},
+            ]
+        }
+    }
+    assert _rows_from_dashscope(result) == [(0, 1200, "甲"), (1200, 2400, "乙")]
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        {"output": {}},
+        {"output": {"sentences": []}},
+        # 单段（哪怕带真时间戳）也算"没答案"：硬要求 ③——服务端没分段时不要假装有一行。
+        {"output": {"sentences": [{"begin_time": 0, "end_time": 9000, "text": "整段"}]}},
+        {"output": {"sentence": {"begin_time": 0, "end_time": 9000, "text": "整段"}}},
+    ],
+)
+def test_a_single_or_empty_dashscope_result_is_no_answer(result):
+    assert _rows_from_dashscope(result) == []
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {},
+        {"segments": []},
+        {"segments": [{"start": 0.0, "end": 9.0, "text": "整段"}]},
+    ],
+)
+def test_a_single_or_empty_openai_result_is_no_answer(result):
+    assert _rows_from_openai_audio(result) == []
+
+
+def test_rows_from_openai_audio_keeps_a_multi_segment_transcript():
+    result = {"segments": [{"start": 0.0, "end": 1.0, "text": "甲"}, {"start": 1.0, "end": 2.0, "text": "乙"}]}
+    assert _rows_from_openai_audio(result) == [(0.0, 1.0, "甲"), (1.0, 2.0, "乙")]
+
+
+# ── 服务档：降级（D8：网络失败 / 超时 / 401 ⇒ AsrError，不加新状态值）──────
+
+
+@pytest.mark.parametrize("failure", ["connect", "timeout", "401"])
+async def test_a_service_failure_degrades_to_asrerror(tmp_path, failure):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"\x00\x01\x02")
+
+    if failure == "401":
+        client = _sync_client([], json_body={"code": "InvalidApiKey", "message": "blocked"}, status=401)
+    else:
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectTimeout("timed out", request=request) if failure == "timeout" else httpx.ConnectError("no route", request=request)
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    provider = DashScopeAsrProvider(model="m", base_url="https://dashscope.aliyuncs.com", api_key="sk", client=client)
+    with pytest.raises(AsrError):
+        await transcribe_video(str(clip), provider=provider)
+
+
+# ── 服务档：签名把地址与钥匙送到 provider（worker 侧的同一条路）──────────
+
+
+async def test_transcribe_video_carries_the_address_and_key(tmp_path, monkeypatch):
+    recorded: list[httpx.Request] = []
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"\x00\x01\x02")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=_TWO_SENTENCES)
+
+    real_client = httpx.Client  # 捕获真类，否则桩自己会再进桩（无限递归）
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(handler)))
+
+    segments = await transcribe_video(
+        str(clip),
+        provider_name="dashscope",
+        model="qwen-audio-3.1-asr-flash",
+        base_url="https://dashscope.aliyuncs.com",
+        api_key="sk-asr",
+    )
+
+    assert str(recorded[0].url) == _DASHSCOPE_ASR_URL
+    assert recorded[0].headers["authorization"] == "Bearer sk-asr"
+    assert segments == [TranscriptSegment(0, 1200, "甲"), TranscriptSegment(1200, 2400, "乙")]

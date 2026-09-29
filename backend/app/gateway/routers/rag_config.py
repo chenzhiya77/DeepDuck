@@ -42,6 +42,10 @@ from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_
 from deerflow.knowledge.reranker import RerankerAuthError
 from deerflow.knowledge.reranker_factory import build_reranker
 
+# The ASR leg has its own dispatch (spec 2026-09-28 §3 fence), so its `resolve_provider` is
+# imported under an alias — the retrieval allowlist's one owns the plain name above.
+from deerflow.knowledge.video.asr import resolve_provider as resolve_asr_provider
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["rag"])
@@ -406,6 +410,16 @@ def _reject_unusable_after_save(pending: RagConfig) -> None:
         build_embedder(rag=pending)
         build_reranker(rag=pending)
         build_parse_provider(rag=pending)
+        # The ASR leg joins the same check (spec 2026-09-28 D4): its construction is where the
+        # service rows' address requirement lives (2026-09-25 rag-endpoint-unlock D1 乙), and it
+        # is offline too — the in-process engines only store a name, the service rows only
+        # validate the address.
+        resolve_asr_provider(
+            pending.video.asr_provider,
+            model=pending.video.asr_model,
+            base_url=pending.asr_base_url,
+            api_key=pending.asr_api_key,
+        )
     except RagConfigurationError as exc:
         raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
 

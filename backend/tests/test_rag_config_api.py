@@ -993,6 +993,25 @@ def test_the_asr_key_env_source_follows_the_selected_provider(config_env: Path, 
         assert client.get("/api/rag/config").json()["sources"]["asr_api_key"] == "env"
 
 
+def test_put_refuses_a_service_tier_without_its_address(config_env: Path):
+    """09-25 D1 乙「连回落删」的既有规则，套到新腿上：地址留空不是"用厂商默认"。"""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"video": {"asr_provider": "dashscope"}})
+
+    assert response.status_code == 400
+    assert "asr_base_url" in response.json()["detail"]
+    assert _read_rag_json(config_env) == {}
+
+
+def test_put_accepts_an_in_process_engine_without_an_address(config_env: Path):
+    """第一组（进程内）不吃地址与钥匙——留空是常态，不是缺项。"""
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"video": {"asr_provider": "funasr", "asr_model": "paraformer-zh"}})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env)["video"] == {"asr_provider": "funasr", "asr_model": "paraformer-zh"}
+
+
 # ── save-time validation of the configuration about to be persisted ──────────
 #
 # Spec 2026-09-16 §3 D3. The PUT refuses a write whose *result* cannot build an embedder, so
