@@ -1798,10 +1798,20 @@ export interface Translations {
       asrProvider: string;
       asrProviderFunasr: string;
       asrProviderWhisper: string;
+      asrProviderOpenaiAudio: string;
+      asrProviderDashscope: string;
+      asrGroupLocal: string;
+      asrGroupProtocol: string;
+      asrGroupNative: string;
       asrModel: string;
       asrModelCandidates: string;
       asrModelFunasrHint: string;
       asrModelWhisperHint: string;
+      asrModelServiceHint: string;
+      asrApiKey: string;
+      asrBaseUrl: string;
+      asrProbe: string;
+      asrProbeBlocksSave: string;
       services: string;
       qdrantUrl: string;
       mineruToken: string;
@@ -1831,6 +1841,7 @@ export interface Translations {
       advancedSettings: (count: number) => string;
       endpointRequired: string;
       lockedCloudOnly: string;
+      lockedServiceOnly: string;
       lockedLocalOnly: string;
       lockedExternalOnly: string;
       secretFromEnvBadge: string;

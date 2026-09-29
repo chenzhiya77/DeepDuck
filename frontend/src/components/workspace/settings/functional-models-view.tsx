@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronRight, Lock } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,10 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -38,8 +41,13 @@ import { isReindexRunning } from "@/core/knowledge/reindex-status";
 import { useModels, useModelsConfig } from "@/core/models/hooks";
 import { RagConfigRequestError } from "@/core/rag/api";
 import {
+  ASR_LOCAL_ENGINES,
   ASR_MODEL_MENU,
+  ASR_PROVIDER_OPTIONS,
   asrModelForProviderSwitch,
+  asrProbeBlocksSave,
+  asrProbeKey,
+  asrProbeVerdictFor,
   buildRagConfigInput,
   changesEmbeddingDimension,
   connectivityProbeKey,
@@ -61,6 +69,7 @@ import {
   RERANK_PROVIDER_OPTIONS,
   resolveSparseCapability,
   SPARSE_PROVIDER_OPTIONS,
+  shouldProbeAsr,
   shouldProbeSparseService,
   sparseProbeKey,
   sparseServiceProbeKey,
@@ -69,6 +78,7 @@ import {
   type RagConfigFormValues,
 } from "@/core/rag/config-form";
 import {
+  useProbeAsrService,
   useProbeConnectivity,
   useProbeDimensions,
   useProbeSparseCapability,
@@ -103,8 +113,16 @@ const EMBEDDING_KEY_SOURCE = "embedding_api_key";
  */
 const PROBE_DEBOUNCE_MS = 400;
 
-/** The ASR engines in picker order — a later vendor split adds `SelectGroup` separators here. */
-const ASR_PROVIDER_OPTIONS = ["funasr", "whisper"] as const;
+/**
+ * The ASR dropdown's three groups (spec 2026-09-28 D2「三组四值」): the two engines that run
+ * inside this process, then one row per protocol family. The ids mirror the backend allowlist
+ * like every other option list here; the grouping is the row's own reading of them.
+ */
+const ASR_PROVIDER_GROUPS = [
+  { labelKey: "asrGroupLocal" as const, ids: ASR_LOCAL_ENGINES },
+  { labelKey: "asrGroupProtocol" as const, ids: ["openai-audio"] },
+  { labelKey: "asrGroupNative" as const, ids: ["dashscope"] },
+] as const;
 
 /**
  * A provider dropdown. Its ids come from the backend's curated allowlist; the empty id means
@@ -120,12 +138,18 @@ const ASR_PROVIDER_OPTIONS = ["funasr", "whisper"] as const;
  * below it down and back on each open. It is deliberately a *sibling* of `SelectValue` and not a
  * child: Radix mirrors the selected item's text into the trigger, so a child would also be
  * copied into the option labels.
+ *
+ * `groups` turns the flat list into labelled sections separated by hairlines (spec 2026-09-28
+ * D2): the ASR row's four values are two *kinds* of thing — engines and protocols — and a flat
+ * list of four makes the admin read all four to find the split. The ids still come from
+ * `options`; a group only says where they sit.
  */
 function OptionSelect({
   label,
   value,
   options,
   labels,
+  groups,
   disabledReasons,
   trailing,
   onChange,
@@ -134,10 +158,25 @@ function OptionSelect({
   value: string;
   options: readonly string[];
   labels: Record<string, string>;
+  groups?: readonly { labelKey: string; label: string; ids: readonly string[] }[];
   disabledReasons?: Partial<Record<string, string>>;
   trailing?: React.ReactNode;
   onChange: (next: string) => void;
 }) {
+  const renderOption = (option: string) => {
+    const reason = disabledReasons?.[option];
+    return (
+      <SelectItem
+        key={option || AUTO_OPTION_VALUE}
+        value={option || AUTO_OPTION_VALUE}
+        disabled={Boolean(reason)}
+      >
+        {reason
+          ? `${labels[option] ?? option} · ${reason}`
+          : (labels[option] ?? option)}
+      </SelectItem>
+    );
+  };
   return (
     <Select
       value={value || AUTO_OPTION_VALUE}
@@ -154,20 +193,17 @@ function OptionSelect({
         ) : null}
       </SelectTrigger>
       <SelectContent>
-        {options.map((option) => {
-          const reason = disabledReasons?.[option];
-          return (
-            <SelectItem
-              key={option || AUTO_OPTION_VALUE}
-              value={option || AUTO_OPTION_VALUE}
-              disabled={Boolean(reason)}
-            >
-              {reason
-                ? `${labels[option] ?? option} · ${reason}`
-                : (labels[option] ?? option)}
-            </SelectItem>
-          );
-        })}
+        {groups
+          ? groups.map((group, index) => (
+              <Fragment key={group.labelKey}>
+                {index > 0 && <SelectSeparator />}
+                <SelectGroup>
+                  <SelectLabel>{group.label}</SelectLabel>
+                  {group.ids.map(renderOption)}
+                </SelectGroup>
+              </Fragment>
+            ))
+          : options.map(renderOption)}
       </SelectContent>
     </Select>
   );
@@ -449,6 +485,8 @@ export function FunctionalModelsView() {
   // 永远只有一条亮（点另一条就把前一条打回灰）。
   const embeddingConnectivity = useProbeConnectivity();
   const rerankConnectivity = useProbeConnectivity();
+  // 一行一个实例：ASR 那格的结论与两条腿无关，共用只会互相顶掉。
+  const asrProbe = useProbeAsrService();
   const requestedDimension = useRef<string | null>(null);
   const { models } = useModels();
   const { config: modelsConfig } = useModelsConfig();
@@ -498,6 +536,27 @@ export function FunctionalModelsView() {
     values?.rerank_provider ?? "",
   );
 
+  // The ASR row's own probe (spec 2026-09-28 D7): only the service tiers reach out, the
+  // verdict counts only for the values it was taken for, and only `no_timestamps` blocks a save.
+  const asrKeyPresent = view?.sources?.asr_api_key !== "unset";
+  const asrServiceApplies = values ? shouldProbeAsr(values) : false;
+  const asrVerdict = values
+    ? asrProbeVerdictFor(values, asrKeyPresent, asrProbe.data ?? null)
+    : null;
+  const asrProbeCurrentKey = values ? asrProbeKey(values, asrKeyPresent) : "";
+  const asrProbing =
+    asrProbe.isPending && asrProbe.variables?.key === asrProbeCurrentKey;
+  const asrReady = Boolean(
+    values &&
+      values.video.asr_model.trim() !== "" &&
+      values.asr_base_url.trim() !== "" &&
+      asrKeyPresent,
+  );
+  const asrBlockReason =
+    asrServiceApplies && asrProbeBlocksSave(asrVerdict)
+      ? F.asrProbeBlocksSave
+      : null;
+
   // The sparse half's capability is a three-state answer (spec 2026-09-16 §3 D2): the allowlist
   // settles the dialect question, a probe settles the model question, and everything unproven
   // stays `unknown` — which blocks nothing.
@@ -523,7 +582,8 @@ export function FunctionalModelsView() {
     (!values.embedding_base_url.trim() || !values.rerank_base_url.trim())
       ? F.endpointRequired
       : null;
-  const saveBlockReason = sparseBlockReason ?? endpointRequiredReason;
+  const saveBlockReason =
+    sparseBlockReason ?? endpointRequiredReason ?? asrBlockReason;
   const sparseUnverified =
     values?.embedding_sparse_source === "provider" &&
     probeVerdict?.key === (values ? sparseProbeKey(values) : "") &&
@@ -1427,28 +1487,109 @@ export function FunctionalModelsView() {
           </div>
 
           <div className={ROW}>
-            <RowLabel>{F.asrProvider}</RowLabel>
-            <OptionSelect
-              label={F.asrProvider}
-              value={values.video.asr_provider}
-              options={ASR_PROVIDER_OPTIONS}
-              labels={{
-                funasr: F.asrProviderFunasr,
-                whisper: F.asrProviderWhisper,
-              }}
-              onChange={(next) => {
-                // The select hands back a plain string; the field's own union is two values wide.
-                const provider = next === "whisper" ? "whisper" : "funasr";
-                updateVideo("asr_provider", provider);
-                // 切换即改值：另一个引擎跑不了的值换成目标引擎的首行（spec 2026-09-27 §2 D2）。
-                const kept = asrModelForProviderSwitch(
-                  provider,
-                  values.video.asr_model,
-                );
-                if (kept !== values.video.asr_model)
-                  updateVideo("asr_model", kept);
-              }}
-            />
+            <RowLabel>{F.providerLabel}</RowLabel>
+            <div
+              className="flex min-w-0 items-center gap-2"
+              data-slot="asr-provider-control"
+            >
+              <OptionSelect
+                label={F.asrProvider}
+                value={values.video.asr_provider}
+                options={ASR_PROVIDER_OPTIONS}
+                labels={{
+                  funasr: F.asrProviderFunasr,
+                  whisper: F.asrProviderWhisper,
+                  "openai-audio": F.asrProviderOpenaiAudio,
+                  dashscope: F.asrProviderDashscope,
+                }}
+                groups={ASR_PROVIDER_GROUPS.map((group) => ({
+                  labelKey: group.labelKey,
+                  label: F[group.labelKey],
+                  ids: group.ids,
+                }))}
+                onChange={(next) => {
+                  const provider =
+                    next as RagConfigFormValues["video"]["asr_provider"];
+                  updateVideo("asr_provider", provider);
+                  // 切换即改值：另一个引擎跑不了的值换成目标引擎的首行（spec 2026-09-27 §2 D2）。
+                  // 服务档的模型名是服务侧的、没有候选行，所以那一侧不动值（探针会给反馈）。
+                  const kept = asrModelForProviderSwitch(
+                    provider,
+                    values.video.asr_model,
+                  );
+                  if (kept !== values.video.asr_model)
+                    updateVideo("asr_model", kept);
+                }}
+              />
+              {/* 探针只挂服务档（D7）：一点一次真调用、不落库，hover 给服务端原话。 */}
+              {asrServiceApplies ? (
+                <Tooltip
+                  content={
+                    asrProbing
+                      ? F.legDotProbing
+                      : !asrReady
+                        ? F.legDotNeedsConfig
+                        : (asrVerdict?.detail ?? F.legDotUntested)
+                  }
+                  contentClassName="max-w-xs"
+                >
+                  <button
+                    type="button"
+                    data-slot="asr-probe"
+                    data-state={
+                      asrProbing
+                        ? "probing"
+                        : !asrReady
+                          ? "untested"
+                          : asrVerdict?.status === "ok"
+                            ? "ok"
+                            : asrVerdict
+                              ? "bad"
+                              : "untested"
+                    }
+                    aria-label={`${F.asrProbe} · ${
+                      asrProbing
+                        ? F.legDotProbing
+                        : !asrReady
+                          ? F.legDotNeedsConfig
+                          : (asrVerdict?.detail ?? F.legDotUntested)
+                    }`}
+                    disabled={!asrReady || asrProbing}
+                    onClick={() =>
+                      asrProbe.mutate({
+                        key: asrProbeCurrentKey,
+                        asr_provider: values.video.asr_provider,
+                        asr_model: values.video.asr_model.trim(),
+                        asr_base_url: values.asr_base_url.trim() || null,
+                        // 钥匙从不回显：空表示"用已存的或环境里的那把"。
+                        asr_api_key: null,
+                      })
+                    }
+                    className={cn(
+                      "inline-flex shrink-0 items-center",
+                      !asrReady || asrProbing
+                        ? "cursor-not-allowed"
+                        : "hover:text-foreground/80 cursor-pointer",
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      data-slot="asr-probe-dot"
+                      className={cn(
+                        "inline-block size-2 rounded-full",
+                        asrProbing
+                          ? LEG_DOT_TONE.probing
+                          : !asrReady || asrVerdict === null
+                            ? LEG_DOT_TONE.untested
+                            : asrVerdict.status === "ok"
+                              ? LEG_DOT_TONE.ok
+                              : LEG_DOT_TONE.bad,
+                      )}
+                    />
+                  </button>
+                </Tooltip>
+              ) : null}
+            </div>
           </div>
 
           <div className={ROW}>
@@ -1456,56 +1597,108 @@ export function FunctionalModelsView() {
               info={
                 values.video.asr_provider === "whisper"
                   ? F.asrModelWhisperHint
-                  : F.asrModelFunasrHint
+                  : values.video.asr_provider === "funasr"
+                    ? F.asrModelFunasrHint
+                    : F.asrModelServiceHint
               }
             >
-              {F.asrModel}
+              {F.modelLabel}
             </RowLabel>
-            {/* 与「维度」行同款：输入框自由填 + 框内下拉（候选组按引擎整组换）。 */}
+            {/* 与「维度」行同款：输入框自由填 + 框内下拉（候选组按引擎整组换）。
+                服务档的模型名是服务侧的、没有候选清单，所以那一侧不给下拉。 */}
             <div className="relative w-full" data-slot="asr-model-control">
               <Input
                 aria-label={F.asrModel}
                 data-slot="asr-model-input"
-                className="w-full pr-10"
+                className={cn(
+                  "w-full",
+                  values.video.asr_provider !== "openai-audio" &&
+                    values.video.asr_provider !== "dashscope" &&
+                    "pr-10",
+                )}
                 value={values.video.asr_model}
-                placeholder={ASR_MODEL_MENU[values.video.asr_provider][0]}
+                placeholder={
+                  asrServiceApplies
+                    ? ""
+                    : ASR_MODEL_MENU[values.video.asr_provider][0]
+                }
                 onChange={(event) =>
                   updateVideo("asr_model", event.target.value)
                 }
                 {...AUTOFILL_OFF_INPUT_PROPS}
               />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <span className="pointer-events-none absolute inset-0 flex items-center justify-end pr-1.5">
-                    <button
-                      type="button"
-                      aria-label={F.asrModelCandidates}
-                      data-slot="asr-model-candidates-trigger"
-                      className="text-muted-foreground hover:text-foreground pointer-events-auto inline-flex"
-                    >
-                      <ChevronDown className="size-3.5" />
-                    </button>
-                  </span>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="w-(--radix-dropdown-menu-trigger-width) min-w-0"
-                >
-                  <DropdownMenuLabel className="text-muted-foreground font-normal">
-                    {F.asrModelCandidates}
-                  </DropdownMenuLabel>
-                  {ASR_MODEL_MENU[values.video.asr_provider].map((name) => (
-                    <DropdownMenuItem
-                      key={name}
-                      data-slot="asr-model-candidate"
-                      onSelect={() => updateVideo("asr_model", name)}
-                    >
-                      {name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {asrServiceApplies ? null : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <span className="pointer-events-none absolute inset-0 flex items-center justify-end pr-1.5">
+                      <button
+                        type="button"
+                        aria-label={F.asrModelCandidates}
+                        data-slot="asr-model-candidates-trigger"
+                        className="text-muted-foreground hover:text-foreground pointer-events-auto inline-flex"
+                      >
+                        <ChevronDown className="size-3.5" />
+                      </button>
+                    </span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="w-(--radix-dropdown-menu-trigger-width) min-w-0"
+                  >
+                    <DropdownMenuLabel className="text-muted-foreground font-normal">
+                      {F.asrModelCandidates}
+                    </DropdownMenuLabel>
+                    {ASR_MODEL_MENU[values.video.asr_provider].map((name) => (
+                      <DropdownMenuItem
+                        key={name}
+                        data-slot="asr-model-candidate"
+                        onSelect={() => updateVideo("asr_model", name)}
+                      >
+                        {name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
+          </div>
+
+          {/* 钥匙与地址：本地引擎（进程内）两格都锁——它们对进程内引擎没有概念；
+              服务档两格都填，地址格用厂商端点做灰字占位（D3）。恒显、锁而不藏。 */}
+          <div className={ROW}>
+            <RowLabel>{F.apiKeyLabel}</RowLabel>
+            {asrServiceApplies ? (
+              <SecretInput
+                badge={asrKeyPresent ? F.secretFromEnvBadge : undefined}
+                value={values.asr_api_key}
+                aria-label={F.asrApiKey}
+                onChange={(event) => update("asr_api_key", event.target.value)}
+              />
+            ) : (
+              <div data-slot="asr-locked">
+                <LockedBox reason={F.lockedServiceOnly} />
+              </div>
+            )}
+          </div>
+
+          <div className={ROW}>
+            <RowLabel>{F.endpointLabel}</RowLabel>
+            {asrServiceApplies ? (
+              <Input
+                value={values.asr_base_url}
+                aria-label={F.asrBaseUrl}
+                placeholder={endpointPlaceholderFor(
+                  view?.asr_providers,
+                  values.video.asr_provider,
+                )}
+                onChange={(event) => update("asr_base_url", event.target.value)}
+                {...AUTOFILL_OFF_INPUT_PROPS}
+              />
+            ) : (
+              <div data-slot="asr-locked">
+                <LockedBox reason={F.lockedServiceOnly} />
+              </div>
+            )}
           </div>
         </Rows>
       </Group>

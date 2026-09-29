@@ -83,6 +83,13 @@ rs.mock("@/core/rag/hooks", () => ({
     variables: undefined,
     mutate: rs.fn(),
   }),
+  // The ASR row's own probe (spec 2026-09-28 D7) — same idle shape as the others.
+  useProbeAsrService: () => ({
+    isPending: false,
+    data: undefined,
+    variables: undefined,
+    mutate: rs.fn(),
+  }),
 }));
 
 rs.mock("@/core/models/hooks", () => ({

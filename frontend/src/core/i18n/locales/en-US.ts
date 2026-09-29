@@ -1891,12 +1891,24 @@ export const enUS: Translations = {
       asrProvider: "Speech recognition (ASR)",
       asrProviderFunasr: "funasr (local)",
       asrProviderWhisper: "whisper (local)",
+      asrProviderOpenaiAudio: "openai-audio (generic protocol)",
+      asrProviderDashscope: "dashscope (Bailian)",
+      asrGroupLocal: "Local engines",
+      asrGroupProtocol: "Generic protocol",
+      asrGroupNative: "Native protocol",
       asrModel: "ASR model",
       asrModelCandidates: "Common models:",
       asrModelFunasrHint:
         "A ModelScope model id, or a local directory. Sentence timestamps: paraformer-zh yes, paraformer-en not tested; speech is split per VAD segment across the shot cards, and continuous speech may still land on a single one.",
       asrModelWhisperHint:
         "Built-in tiers — larger is more accurate and slower; small is the common pick. Any legal name works too (large-v2, turbo, or a local .pt file).",
+      asrModelServiceHint:
+        "The name the service itself uses (e.g. qwen-audio-3.1-asr-flash); the candidate menu is for the local engines only.",
+      asrApiKey: "ASR API key",
+      asrBaseUrl: "ASR endpoint",
+      asrProbe: "Check segment timestamps",
+      asrProbeBlocksSave:
+        "This service gave no usable segment timestamps: pick another service, or switch back to a local engine.",
       services: "Services & tokens",
       qdrantUrl: "Qdrant URL",
       mineruToken: "MinerU parsing token",
@@ -1928,6 +1940,7 @@ export const enUS: Translations = {
       advancedSettings: (count) => `Advanced settings (${count})`,
       endpointRequired: "Enter the endpoint address",
       lockedCloudOnly: "Cloud API only",
+      lockedServiceOnly: "Service tiers only",
       lockedLocalOnly: "Local service only",
       lockedExternalOnly: "Only when using a separate sparse service",
       secretFromEnvBadge: "From env",

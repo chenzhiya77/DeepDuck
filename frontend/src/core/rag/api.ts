@@ -3,6 +3,8 @@ import { fetch as authFetch } from "@/core/api/fetcher";
 import { getBackendBaseURL } from "../config";
 
 import type {
+  RagAsrProbeRequest,
+  RagAsrProbeResponse,
   RagConfigInput,
   RagConfigView,
   RagConnectivityProbeRequest,
@@ -168,6 +170,32 @@ export async function probeLegConnectivity(
     );
   }
   return response.json() as Promise<RagConnectivityProbeResponse>;
+}
+
+/**
+ * Ask the server whether an ASR service returns *real* segment timestamps (spec 2026-09-28 D7).
+ *
+ * Read-only like its siblings: one real transcription of the built-in fixture, nothing written.
+ * The verdict rides in `status` and the server's own words ride in `detail`.
+ */
+export async function probeAsrService(
+  input: RagAsrProbeRequest,
+): Promise<RagAsrProbeResponse> {
+  const response = await authFetch(
+    `${getBackendBaseURL()}/api/rag/config/probe-asr`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) {
+    throw new RagConfigRequestError(
+      response.status,
+      await readErrorDetail(response, "Failed to probe the ASR service"),
+    );
+  }
+  return response.json() as Promise<RagAsrProbeResponse>;
 }
 
 /**

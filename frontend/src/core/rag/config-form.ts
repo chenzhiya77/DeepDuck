@@ -112,6 +112,8 @@ export const ASR_PROVIDER_OPTIONS = [
   "dashscope",
 ] as const;
 export const ASR_LOCAL_ENGINES = ["funasr", "whisper"] as const;
+/** One ASR provider id, as the row and the switch helper spell it. */
+export type AsrProvider = (typeof ASR_PROVIDER_OPTIONS)[number];
 
 const SECRET_FIELDS = [
   "embedding_api_key",
@@ -396,11 +398,14 @@ const WHISPER_MODEL_NAMES: ReadonlySet<string> = new Set([
  * directory — so its menu must never double as a filter, and everything that is not a whisper
  * name is carried over untouched.
  */
-export function asrModelForProviderSwitch(
-  next: "funasr" | "whisper",
-  value: string,
-): string {
+export function asrModelForProviderSwitch(next: AsrProvider, value: string): string {
   const name = value.trim();
+  // The service tiers have no candidate row to fall back to — the name is the service's own,
+  // and only the probe can say whether it is one it knows. So the value is carried over, and
+  // the admin is the one who changes it.
+  if (next === "openai-audio" || next === "dashscope") {
+    return value;
+  }
   if (next === "funasr") {
     return WHISPER_MODEL_NAMES.has(name) ? ASR_MODEL_MENU.funasr[0] : value;
   }
@@ -599,6 +604,63 @@ export function sparseServiceProbeKey(
     values.sparse_base_url.trim(),
     hasKey ? "key" : "nokey",
   ].join("|");
+}
+
+/** The ASR probe's verdict (spec 2026-09-28 D7), tagged with the values it describes. */
+export interface AsrProbeVerdict {
+  key: string;
+  status: "ok" | "no_timestamps" | "refused" | "unreachable";
+  detail: string;
+}
+
+/**
+ * Whether this row has a service to call at all (D7): only the two protocol tiers reach out —
+ * the in-process engines have no endpoint, and they already degrade to `asr_failed` when their
+ * models are missing, so a probe would only be a second way to learn the same thing.
+ */
+export function shouldProbeAsr(values: RagConfigFormValues): boolean {
+  return (ASR_PROVIDER_OPTIONS as readonly string[]).includes(
+    values.video.asr_provider,
+  )
+    ? !(ASR_LOCAL_ENGINES as readonly string[]).includes(
+        values.video.asr_provider,
+      )
+    : false;
+}
+
+/** The ASR probe's identity: the four values that decide what the call would ask. */
+export function asrProbeKey(
+  values: RagConfigFormValues,
+  hasKey: boolean,
+): string {
+  return [
+    values.video.asr_provider,
+    values.video.asr_model.trim(),
+    values.asr_base_url.trim(),
+    hasKey ? "key" : "nokey",
+  ].join("|");
+}
+
+/**
+ * Whether a probe verdict may still speak for the form: it only counts for the values it was
+ * taken for — editing the provider, the model or the address is asking a different question.
+ */
+export function asrProbeVerdictFor(
+  values: RagConfigFormValues,
+  hasKey: boolean,
+  verdict: AsrProbeVerdict | null,
+): AsrProbeVerdict | null {
+  return verdict?.key === asrProbeKey(values, hasKey) ? verdict : null;
+}
+
+/**
+ * The one probe state that blocks a save (D7): a service that cannot give segment-level
+ * timestamps makes its own row pointless — the cards would be assembled from rows that cannot
+ * be projected onto them. Everything else the probe can report is information: an endpoint that
+ * is down now may be up in a minute, and refusing the write would close the admin's exit.
+ */
+export function asrProbeBlocksSave(verdict: AsrProbeVerdict | null): boolean {
+  return verdict?.status === "no_timestamps";
 }
 
 /**

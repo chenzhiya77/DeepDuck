@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   loadRagConfig,
   loadRagMigrationStatus,
+  probeAsrService,
   probeEmbeddingCapability,
   probeEmbeddingDimensions,
   probeLegConnectivity,
@@ -17,6 +18,7 @@ import {
   saveRagConfig,
 } from "./api";
 import type {
+  AsrProbeVerdict,
   ConnectivityProbeVerdict,
   DimensionProbeVerdict,
   SparseProbeVerdict,
@@ -24,6 +26,7 @@ import type {
 } from "./config-form";
 import { migrationRefetchInterval } from "./migration-status";
 import type {
+  RagAsrProbeRequest,
   RagConfigInput,
   RagConnectivityProbeRequest,
   RagDimensionProbeRequest,
@@ -161,6 +164,26 @@ export function useProbeDimensions() {
       ...request
     }: DimensionProbeInput): Promise<DimensionProbeVerdict> => {
       const verdict = await probeEmbeddingDimensions(request);
+      return { ...verdict, key };
+    },
+  });
+}
+
+/** The ASR probe's input: the candidate service, plus the key it was taken for. */
+export type AsrProbeInput = RagAsrProbeRequest & { key: string };
+
+/**
+ * One call against an ASR service (spec 2026-09-28 D7). Manual by design, like the two legs'
+ * dots: the answer only ever comes from a click, and nothing is invalidated (nothing was
+ * written). The verdict carries the values it describes, so editing them drops it.
+ */
+export function useProbeAsrService() {
+  return useMutation({
+    mutationFn: async ({
+      key,
+      ...request
+    }: AsrProbeInput): Promise<AsrProbeVerdict> => {
+      const verdict = await probeAsrService(request);
       return { ...verdict, key };
     },
   });

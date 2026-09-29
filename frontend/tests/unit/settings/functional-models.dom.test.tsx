@@ -21,6 +21,7 @@ import { I18nContext } from "@/core/i18n/context";
 import { enUS } from "@/core/i18n/locales/en-US";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
 import {
+  asrProbeKey,
   connectivityProbeKey,
   dimensionProbeKey,
   formValuesFromConfig,
@@ -36,6 +37,7 @@ const ragHooksMock = rs.hoisted(() => ({
   useProbeSparseService: rs.fn(),
   useProbeDimensions: rs.fn(),
   useProbeConnectivity: rs.fn(),
+  useProbeAsrService: rs.fn(),
   useRagMigrationStatus: rs.fn(),
 }));
 const modelHooksMock = rs.hoisted(() => ({
@@ -90,6 +92,7 @@ const probeMock = rs.fn();
 const sparseServiceProbeMock = rs.fn();
 const dimensionProbeMock = rs.fn();
 const connectivityProbeMock = rs.fn();
+const asrProbeMock = rs.fn();
 
 /** What the embedding allowlist reports: who can supply the sparse half, and who fixes its own address. */
 const EMBEDDING_PROVIDERS = [
@@ -111,6 +114,14 @@ const EMBEDDING_PROVIDERS = [
     has_fixed_endpoint: false,
     default_endpoint: null,
   },
+];
+
+/** The ASR leg's block (spec 2026-09-28 §3): only the placeholder source travels. */
+const ASR_PROVIDERS = [
+  { provider_id: "funasr", default_endpoint: null },
+  { provider_id: "whisper", default_endpoint: null },
+  { provider_id: "openai-audio", default_endpoint: null },
+  { provider_id: "dashscope", default_endpoint: "https://dashscope.aliyuncs.com" },
 ];
 
 /** The rerank allowlist's own block: the same rule, its own shape — no `emits_sparse` there. */
@@ -155,6 +166,7 @@ function view(
       : {
           embedding_providers: opts.providers ?? EMBEDDING_PROVIDERS,
           rerank_providers: RERANK_PROVIDERS,
+          asr_providers: ASR_PROVIDERS,
         }),
     config: {
       qdrant_url: "http://qdrant:6333",
@@ -223,6 +235,12 @@ function setRag(
   });
   ragHooksMock.useProbeConnectivity.mockReturnValue({
     mutate: connectivityProbeMock,
+    data: undefined,
+    variables: undefined,
+    isPending: false,
+  });
+  ragHooksMock.useProbeAsrService.mockReturnValue({
+    mutate: asrProbeMock,
     data: undefined,
     variables: undefined,
     isPending: false,
@@ -422,6 +440,7 @@ beforeEach(() => {
   reindexMock.mockReset();
   dimensionProbeMock.mockReset();
   connectivityProbeMock.mockReset();
+  asrProbeMock.mockReset();
   setRag();
 });
 
@@ -854,7 +873,8 @@ describe("functional-model layout", () => {
     renderPage();
     openFunctionalView();
 
-    for (const label of [F.apiKeyLabel, F.asrModel, F.qdrantUrl, F.mineruToken]) {
+    // ASR 那几行的可见标签也换成了共享词（spec 2026-09-28 D1），角色的区分在 aria-label 上。
+    for (const label of [F.apiKeyLabel, F.modelLabel, F.qdrantUrl, F.mineruToken]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.getByLabelText(F.embeddingApiKey)).toBeTruthy();
@@ -2261,5 +2281,196 @@ describe("ASR model row: in-field candidates and the provider switch (spec 2026-
 
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
     expect(saveMock.mock.calls[0]?.[0]).not.toHaveProperty("video");
+  });
+});
+
+/**
+ * ASR 行（spec 2026-09-28 D1/D2/D3/D7）：四行、三组下拉、两态锁法、探针点。
+ *
+ * 四行的标签直接复用页面已有的词（提供商 / Model ID / API Key / 接口地址），角色的区分靠
+ * aria-label（`F.asr*`）——与检索那两列同一套做法。锁法只有两态：本地引擎（进程内）两格都锁，
+ * 服务档两格都填、地址格用厂商端点做灰字占位。
+ */
+describe("ASR row: four rows, grouped providers, and the probe (spec 2026-09-28)", () => {
+  const asrProvider = () =>
+    screen.getByRole("combobox", { name: F.asrProvider });
+  const probeDot = () =>
+    screen.getByRole("button", { name: new RegExp(F.asrProbe) });
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", { name: zhCN.common.save });
+  const lockedCells = () =>
+    document.querySelectorAll('[data-slot="asr-locked"]');
+
+  /** 服务档的默认形态：dashscope + 厂商地址 + 已存钥匙。 */
+  function setService(over: Partial<RagConfigView["config"]> = {}) {
+    setRag({
+      video: { asr_provider: "dashscope", asr_model: "qwen-audio-3.1-asr-flash" },
+      asr_base_url: "https://dashscope.aliyuncs.com",
+      asr_api_key: MASKED,
+      ...over,
+    });
+  }
+
+  /** 探针结论的桩：结论只认「取结论时的那组值」（与另两个探针同一把尺子）。 */
+  function setAsrProbe(
+    over: {
+      status?: "ok" | "no_timestamps" | "refused" | "unreachable";
+      detail?: string;
+      pending?: boolean;
+    } = {},
+  ) {
+    const current = formValuesFromConfig(
+      view({
+        video: {
+          asr_provider: "dashscope",
+          asr_model: "qwen-audio-3.1-asr-flash",
+        },
+        asr_base_url: "https://dashscope.aliyuncs.com",
+        asr_api_key: MASKED,
+      }),
+    );
+    ragHooksMock.useProbeAsrService.mockReturnValue({
+      mutate: asrProbeMock,
+      data:
+        over.status === undefined
+          ? undefined
+          : {
+              key: asrProbeKey(current, true),
+              status: over.status,
+              detail: over.detail ?? "服务端原话",
+            },
+      isPending: over.pending ?? false,
+    });
+  }
+
+  it("renders the four rows with the page's own labels", () => {
+    setService();
+    renderPage();
+    openFunctionalView();
+
+    expect(asrProvider()).toBeTruthy();
+    expect(screen.getByLabelText(F.asrModel)).toBeTruthy();
+    expect(screen.getByLabelText(F.asrApiKey)).toBeTruthy();
+    expect(screen.getByLabelText(F.asrBaseUrl)).toBeTruthy();
+  });
+
+  it("groups the provider menu into engines and protocol tiers", async () => {
+    setService();
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.click(asrProvider());
+    const listbox = await screen.findByRole("listbox");
+
+    expect(
+      within(listbox)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      F.asrProviderFunasr,
+      F.asrProviderWhisper,
+      F.asrProviderOpenaiAudio,
+      F.asrProviderDashscope,
+    ]);
+    // 三组各带自己的标题，且成员就是那四个值——按 Radix 的 group 元素读成员，别只读文本。
+    const members = (label: string) =>
+      within(
+        within(listbox).getByText(label).closest('[role="group"]')!,
+      )
+        .getAllByRole("option")
+        .map((option) => option.textContent);
+    expect(members(F.asrGroupLocal)).toEqual([
+      F.asrProviderFunasr,
+      F.asrProviderWhisper,
+    ]);
+    expect(members(F.asrGroupProtocol)).toEqual([F.asrProviderOpenaiAudio]);
+    expect(members(F.asrGroupNative)).toEqual([F.asrProviderDashscope]);
+  });
+
+  it("locks both service fields for an in-process engine and hides neither row", () => {
+    setRag(); // 默认 funasr
+    renderPage();
+    openFunctionalView();
+
+    expect(screen.queryByLabelText(F.asrApiKey)).toBeNull();
+    expect(screen.queryByLabelText(F.asrBaseUrl)).toBeNull();
+    // 铁律：恒显、锁而不藏——两格仍各占一行，锁框说明理由。
+    expect(lockedCells()).toHaveLength(2);
+  });
+
+  it("keeps both service fields editable and shows the vendor endpoint as the placeholder", () => {
+    setService({ asr_base_url: "" });
+    renderPage();
+    openFunctionalView();
+
+    const address = screen.getByLabelText<HTMLInputElement>(F.asrBaseUrl);
+    expect(address.disabled).toBe(false);
+    expect(address.placeholder).toBe("https://dashscope.aliyuncs.com");
+    expect(screen.getByLabelText(F.asrApiKey)).toBeTruthy();
+    expect(lockedCells()).toHaveLength(0);
+  });
+
+  it("hangs the probe on the provider row for services only", () => {
+    setRag();
+    renderPage();
+    openFunctionalView();
+
+    // 本地引擎本就有「加载失败 ⇒ asr_failed」的降级路径，不需要探针（D7）。
+    expect(
+      screen.queryByRole("button", { name: new RegExp(F.asrProbe) }),
+    ).toBeNull();
+  });
+
+  it("runs one real probe on click, carrying the values it is taken for", () => {
+    setService();
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.click(probeDot());
+
+    expect(asrProbeMock).toHaveBeenCalledTimes(1);
+    expect(asrProbeMock.mock.calls[0]![0]).toMatchObject({
+      asr_provider: "dashscope",
+      asr_model: "qwen-audio-3.1-asr-flash",
+      asr_base_url: "https://dashscope.aliyuncs.com",
+      // 钥匙从不回显：空表示"用已存的或环境里的那把"。
+      asr_api_key: null,
+    });
+  });
+
+  it("blocks Save on a no_timestamps verdict — the only blocking state", () => {
+    setService();
+    setAsrProbe({
+      status: "no_timestamps",
+      detail: "连得上，但没给出可用的段级时间戳（空，或只有一条整段）：服务端没分段。",
+    });
+    renderPage();
+    openFunctionalView();
+
+    // 先造一处真改动，否则 Save 本来就禁用（空 payload 会把整个文件清空）。改的是**别的行**：
+    // 动 ASR 那四格里的任何一格都会换掉探针的 key，结论就不算数了（那是另一条规则）。
+    fireEvent.change(screen.getByLabelText(F.qdrantUrl), {
+      target: { value: "http://qdrant:6334" },
+    });
+
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.getByText(F.asrProbeBlocksSave)).toBeTruthy();
+  });
+
+  it("leaves Save alone for the report-only states", () => {
+    setService();
+    setAsrProbe({
+      status: "unreachable",
+      detail: "未能连通（ConnectError）：All connection attempts failed",
+    });
+    renderPage();
+    openFunctionalView();
+
+    fireEvent.change(screen.getByLabelText(F.qdrantUrl), {
+      target: { value: "http://qdrant:6334" },
+    });
+
+    expect(saveButton().disabled).toBe(false);
+    expect(screen.queryByText(F.asrProbeBlocksSave)).toBeNull();
   });
 });

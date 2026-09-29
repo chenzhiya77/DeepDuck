@@ -232,6 +232,28 @@ export interface RagConnectivityProbeRequest {
   embedding_dimension?: number | null;
 }
 
+/** A candidate ASR service to reach, before anything is saved (spec 2026-09-28 D7). */
+export interface RagAsrProbeRequest {
+  asr_provider: string;
+  asr_model: string;
+  asr_base_url?: string | null;
+  /** Omitted (or the masking sentinel) means "use the stored or environment key". */
+  asr_api_key?: string | null;
+}
+
+/**
+ * Whether the service answers with *real* segment timestamps.
+ *
+ * `no_timestamps` covers both ways of not having any — no segments at all, and segments whose
+ * boundaries were fabricated by pro-rating the duration over character counts — because it is
+ * the one state allowed to block a save. `refused` is kept apart from `unreachable` for the
+ * same reason the connectivity probe keeps them apart: the repair each one points at differs.
+ */
+export interface RagAsrProbeResponse {
+  status: "ok" | "no_timestamps" | "refused" | "unreachable";
+  detail: string;
+}
+
 /**
  * `dimension_unavailable` is the second reason an embedding leg can be unusable: it answered,
  * but not with the width we asked for.

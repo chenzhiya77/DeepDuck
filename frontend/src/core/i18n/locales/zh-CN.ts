@@ -1798,12 +1798,24 @@ export const zhCN: Translations = {
       asrProvider: "语音识别 (ASR)",
       asrProviderFunasr: "funasr（本地）",
       asrProviderWhisper: "whisper（本地）",
+      asrProviderOpenaiAudio: "openai-audio（通用协议）",
+      asrProviderDashscope: "dashscope（百炼）",
+      asrGroupLocal: "本地引擎",
+      asrGroupProtocol: "通用协议",
+      asrGroupNative: "原生协议",
       asrModel: "ASR 模型",
       asrModelCandidates: "常用模型：",
       asrModelFunasrHint:
         "可填 ModelScope 模型 id 或本地目录。逐句时间戳：paraformer-zh 有，paraformer-en 未测；口述按 VAD 分段落到镜头卡，连续语音可能整段只落一张。",
       asrModelWhisperHint:
         "内置档位，越大越准越慢；常用 small。也可填任意合法名（如 large-v2、turbo，或本地 .pt 文件）。",
+      asrModelServiceHint:
+        "填服务侧的模型名（如 qwen-audio-3.1-asr-flash）；候选菜单只对本地引擎可用。",
+      asrApiKey: "ASR API Key",
+      asrBaseUrl: "ASR 接口地址",
+      asrProbe: "检测分段时间戳",
+      asrProbeBlocksSave:
+        "该服务没有给出可用的段级时间戳：换一个服务，或改回本地引擎。",
       services: "服务与令牌",
       qdrantUrl: "Qdrant 地址",
       mineruToken: "MinerU 解析令牌",
@@ -1835,6 +1847,7 @@ export const zhCN: Translations = {
       advancedSettings: (count) => `高级设置（${count} 项）`,
       endpointRequired: "请填写接口地址",
       lockedCloudOnly: "仅云 API 需要",
+      lockedServiceOnly: "仅服务档需要",
       lockedLocalOnly: "仅本地服务需要",
       lockedExternalOnly: "仅「独立稀疏服务」时可用",
       secretFromEnvBadge: "环境变量已提供",
