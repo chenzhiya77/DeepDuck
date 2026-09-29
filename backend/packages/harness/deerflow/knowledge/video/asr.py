@@ -155,7 +155,8 @@ _COLLAPSED_SPAN_RATIO = 0.9
 _COLLAPSED_WARNING = "ASR 转录整段一行（单段覆盖全片）：口述只会落在一张镜头卡上——连续语音时 VAD 只切出一段（spec 2026-09-28 §4.2）。"
 
 #: 服务档（走 HTTP）的名字 —— 与 allowlist 的 `asr` 腿同一份清单；另外两个是进程内引擎。
-_SERVICE_TIER_NAMES = frozenset({"openai-audio", "dashscope"})
+#: 公开常量：探针要按它判断"这一格有没有端点可测"（D7 只挂服务档）。
+SERVICE_TIER_NAMES = frozenset({"openai-audio", "dashscope"})
 #: D6：同步 + base64 只服务 ≤5 分钟；更长的整段留在本地腿（一期不投递）。
 SERVICE_TIER_MAX_AUDIO_MS = 5 * 60 * 1000
 #: 超长音频的落点：进程内引擎里的默认那支（D6 的「本地腿」）。
@@ -172,7 +173,7 @@ def resolve_leg_provider(provider_name: str, *, duration_ms: int | None) -> str:
 
     时长未知时不换（拿不到判据就不改行为）；进程内引擎的名字原样返回。
     """
-    if provider_name in _SERVICE_TIER_NAMES and duration_ms is not None and duration_ms > SERVICE_TIER_MAX_AUDIO_MS:
+    if provider_name in SERVICE_TIER_NAMES and duration_ms is not None and duration_ms > SERVICE_TIER_MAX_AUDIO_MS:
         return _LOCAL_ENGINE_NAME
     return provider_name
 

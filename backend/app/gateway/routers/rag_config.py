@@ -18,8 +18,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -44,7 +47,15 @@ from deerflow.knowledge.reranker_factory import build_reranker
 
 # The ASR leg has its own dispatch (spec 2026-09-28 §3 fence), so its `resolve_provider` is
 # imported under an alias — the retrieval allowlist's one owns the plain name above.
-from deerflow.knowledge.video.asr import resolve_provider as resolve_asr_provider
+from deerflow.knowledge.video.asr import (
+    SERVICE_TIER_NAMES,
+    TranscriptSegment,
+    normalize_transcript,
+)
+from deerflow.knowledge.video.asr import (
+    resolve_provider as resolve_asr_provider,
+)
+from deerflow.utils.file_io import run_file_io
 
 logger = logging.getLogger(__name__)
 
@@ -984,3 +995,138 @@ async def probe_leg_connectivity(
     # Say what the admin got, not how the leg is built: "this leg has no dimension question"
     # explains our design, which is not what a hover is for (2026-09-28).
     return RagConnectivityProbeResponse(status="ok", detail="连通正常，重排服务可用。")
+
+
+# ── the ASR probe (spec 2026-09-28 §3 D7) ────────────────────────────────
+#
+# D7 asks one question about a *service* before anything is saved: will this endpoint give
+# us segment-level timestamps we can project onto shot cards? Two things make the answer
+# non-trivial: the API only segments when the speaker flag is on (so "no segments" is a real
+# outcome), and a backend that only received text can synthesise segments by pro-rating the
+# duration over character counts (§5.2). Hence a fixture with a known pause and two
+# independent criteria.
+
+#: The probe fixture: a synthesised 8.965 s clip — sentence A read fast, a 1.2 s pause, then
+#: sentence B read slowly (Task 0, 2026-09-29). It must stay **tracked by git**: hatchling
+#: and the Docker build both take what git has, so an ignored asset would ship missing.
+ASR_PROBE_FIXTURE_PATH = Path(__file__).resolve().parent.parent / "assets" / "asr_probe.wav"
+
+#: The fixture's known pause, and how far a boundary may sit outside it. The pause is 1.9 s
+#: wide, so this tolerance is generous for any real segmenter and still rejects a boundary
+#: derived from character counts (which lands near 3.59 s).
+ASR_PROBE_PAUSE_MS = (1320, 3220)
+ASR_PROBE_PAUSE_TOLERANCE_MS = 150
+
+#: How far apart the segments' ms-per-character figures must be. Real segmentation puts
+#: sentence A (fast) and B (slow) about 2x apart; pro-rating over character counts makes
+#: them exactly equal by construction, whatever the split points.
+ASR_PROBE_MIN_SPREAD = 1.5
+
+
+def judge_asr_probe_transcript(segments: Sequence[TranscriptSegment]) -> tuple[str, str]:
+    """Judge one probe transcript: ``(status, detail)`` — the golden expectation of D7.
+
+    "Has segments" is not enough; the segments have to be *real*. Two independent criteria,
+    and either one failing is ``no_timestamps``: the save-time block is the only one this
+    route has, and a transcript whose times are wrong is worth exactly as little as one with
+    no times at all.
+
+    ``segments`` arrives already normalised, so an empty list means the service gave no
+    usable segmentation at all (empty, or a single whole-file row — see
+    ``_rows_from_dashscope``).
+    """
+    if not segments:
+        return "no_timestamps", "连得上，但没给出可用的段级时间戳（空，或只有一条整段）：服务端没分段。"
+
+    low, high = ASR_PROBE_PAUSE_MS
+    tolerance = ASR_PROBE_PAUSE_TOLERANCE_MS
+    edges = [segment.end_ms for segment in segments[:-1]] + [segment.start_ms for segment in segments[1:]]
+    if not any(low - tolerance <= edge <= high + tolerance for edge in edges):
+        return "no_timestamps", f"连得上，但段边界没落在夹具的静音处（应落在 {low / 1000:.2f}–{high / 1000:.2f} 秒）：时间轴对不上，落不到镜头卡上。"
+
+    per_character = [(segment.end_ms - segment.start_ms) / max(len(segment.text), 1) for segment in segments]
+    if min(per_character) <= 0 or max(per_character) / min(per_character) < ASR_PROBE_MIN_SPREAD:
+        return "no_timestamps", "连得上，但段边界与字符数等比（像是服务端自己造的段）：这类时间戳落不到镜头卡上。"
+
+    return "ok", f"连通正常，返回 {len(segments)} 段，边界落在夹具的静音处。"
+
+
+class RagAsrProbeRequest(BaseModel):
+    """A candidate ASR service to reach, before anything is saved (spec 2026-09-28 D7).
+
+    ``extra="forbid"`` for the same reason as its siblings: this route must not become a
+    second, unvalidated way to describe the configuration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    asr_provider: str = Field(..., description="Curated allowlist id; only the service rows can be probed.")
+    asr_model: str = Field(..., min_length=1, description="Model name as the service spells it.")
+    asr_base_url: str | None = Field(default=None, description="Candidate endpoint; the service rows need one.")
+    asr_api_key: str | None = Field(default=None, description="Candidate key, or the masking sentinel.")
+
+
+class RagAsrProbeResponse(BaseModel):
+    """Whether this service answers with *real* segment timestamps, and nothing else.
+
+    Four states, and only ``no_timestamps`` blocks a save: a service that cannot give
+    segment-level timestamps makes its whole row pointless, while an endpoint that is down
+    now may be up in a minute — the "report, never block" rule the probe family follows.
+    ``refused`` is kept apart from ``unreachable`` because the repair each one sends the
+    admin to is a different one.
+    """
+
+    status: Literal["ok", "no_timestamps", "refused", "unreachable"]
+    detail: str
+
+
+@router.post(
+    "/rag/config/probe-asr",
+    response_model=RagAsrProbeResponse,
+    summary="Probe Whether an ASR Service Returns Real Segment Timestamps (admin)",
+    description="Runs one real transcription of the built-in fixture through the submitted service and reports whether its segment boundaries are real. Nothing is persisted.",
+)
+async def probe_asr_service(
+    request: Request,
+    body: RagAsrProbeRequest,
+    config: AppConfig = Depends(get_config),
+) -> RagAsrProbeResponse:
+    """Answer "will this service give us timestamps we can project" — and nothing else (D7).
+
+    The call is the pipeline's own: the same provider the ingest builds, the same request it
+    sends, and the fixture the ingest never sees. Only the service rows are probed — an
+    in-process engine has no endpoint to reach and already degrades to ``asr=failed`` when
+    its models are missing.
+    """
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+
+    if body.asr_provider not in provider_ids("asr"):
+        raise HTTPException(status_code=422, detail=f"未知 ASR provider {body.asr_provider!r}（受控 allowlist）。")
+    if body.asr_provider not in SERVICE_TIER_NAMES:
+        raise HTTPException(status_code=422, detail="进程内引擎没有端点可探：探针只挂服务档（spec 2026-09-28 D7）。")
+
+    api_key = _probe_api_key("asr_api_key", body.asr_api_key, config, body.asr_provider)
+    if not api_key:
+        env_name = secret_env_var("asr", body.asr_provider)
+        raise HTTPException(status_code=422, detail=f"缺 API Key：填 rag.asr_api_key，或设置环境变量 {env_name}。")
+
+    try:
+        provider = resolve_asr_provider(body.asr_provider, model=body.asr_model, base_url=body.asr_base_url, api_key=api_key)
+    except RagConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        # Blocking HTTP + file read, off the loop; the wait is bounded like the other probes.
+        raw = await asyncio.wait_for(run_file_io(provider.transcribe, str(ASR_PROBE_FIXTURE_PATH)), timeout=_PROBE_TIMEOUT_SECONDS)
+    except TimeoutError:
+        return RagAsrProbeResponse(status="unreachable", detail=f"未能连通：探测超时（超过 {_PROBE_TIMEOUT_SECONDS:g} 秒）。")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            return RagAsrProbeResponse(status="refused", detail=f"凭据被拒（HTTP {exc.response.status_code}）：{_probe_detail(exc.response.text)}")
+        return RagAsrProbeResponse(status="unreachable", detail=f"未能连通（HTTP {exc.response.status_code}）：{_probe_detail(exc.response.text)}")
+    except Exception as exc:  # noqa: BLE001 — everything else means "no answer", with its own reason
+        logger.warning("ASR probe failed for %s/%s", body.asr_provider, body.asr_model, exc_info=True)
+        return RagAsrProbeResponse(status="unreachable", detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}")
+
+    status, detail = judge_asr_probe_transcript(normalize_transcript(raw, unit=getattr(provider, "unit", "ms")))
+    return RagAsrProbeResponse(status=status, detail=detail)
