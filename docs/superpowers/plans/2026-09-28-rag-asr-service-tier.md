@@ -133,12 +133,22 @@
 
 ## Task 2 — 后端：服务档 provider（spec D5 / D8 + §3 落点）
 
-- [ ] **RED**：桩测（替换 HTTP 调用）——① **请求形状**（地址 / 钥匙 / 模型名 / **`format` 必填** / **`speaker_diarization_enabled` 在 `parameters` 顶层**）；② **抽取**：`sentences[]` 优先、`utterances[]` 回退、空/单段 ⇒ 空 rows（**不抛**）；③ **降级**：网络失败 / 超时 / 401 ⇒ `AsrError`（不新增状态值）；④ **签名**：`base_url` / `api_key` 能传进 provider。此刻无实现 ⇒ 红。
-- [ ] **GREEN**：`asr.py:193`（`resolve_provider`）分派加一支（**并同步改那句"支持 funasr | whisper"**）+ 扩签名（`resolve_provider` / `transcribe_video` 收 `base_url` / `api_key`；`worker.py:599` 传 `cfg.asr_base_url` / `cfg.asr_api_key`）+ provider 实现（**同步 blocking** HTTP 客户端；`path` 是视频文件 ⇒ 自己读字节 + base64、`format` 填后缀）。
-- [ ] **neuter**：把降级去掉（失败直接抛原始异常）⇒ ③ 红（revert proof）。
-- [ ] **门禁**：`make test`（相关文件）+ `make lint` 净。
+- [x] **RED**：桩测（替换 HTTP 调用）——① **请求形状**（地址 / 钥匙 / 模型名 / **`format` 必填** / **`speaker_diarization_enabled` 在 `parameters` 顶层**）；② **抽取**：`sentences[]` 优先、`utterances[]` 回退、空/单段 ⇒ 空 rows（**不抛**）；③ **降级**：网络失败 / 超时 / 401 ⇒ `AsrError`（不新增状态值）；④ **签名**：`base_url` / `api_key` 能传进 provider。此刻无实现 ⇒ 红。
+- [x] **GREEN**：`asr.py`（`resolve_provider`）分派加两支（**并同步改那句"支持 funasr | whisper"**）+ 扩签名（`resolve_provider` / `transcribe_video` 收 `base_url` / `api_key`；worker 传 `rag.asr_base_url` / `rag.asr_api_key`）+ 两支服务 provider（**同步 blocking** `httpx.Client`；`path` 是视频文件 ⇒ 自己读字节 + base64 / multipart）+ **D6 的长音频闸门**（`resolve_leg_provider`）+ **服务档地址必填**（从 Task 1 挪来：`_reject_unusable_after_save` 里构造一次 ASR provider）。
+- [x] **neuter**：把降级去掉（失败直接抛原始异常）⇒ ③ 红（revert proof）。
+- [x] **门禁**：`make test`（相关文件）+ `make lint` 净。
 
-**实测**：（回填）
+**实测**（Task 2，2026-09-29）：
+
+- **RED**：`test_asr.py` **收集期 ImportError**（四个新名字还不存在）；API 侧两条新用例（地址必填 / 进程内引擎免地址）此刻红。
+- **GREEN**：`test_asr.py` **49 绿**（原 22 → 49）；`test_rag_config_api.py` **78 绿**（+2）；`tests/knowledge/video/` 全目录 **161 绿**；`make lint` 净（1308 文件）。
+- **neuter（两个受害者）**：① 去掉 `raise_for_status()` ⇒ **只有 401 那条红**（1 红 / 2 绿）；② 去掉 `transcribe_video` 的降级包装 ⇒ **connect / timeout / 401 三条全红**。⇒ 新代码两块（HTTP 状态判定、降级收敛）都是承重的，revert proof 成立。
+- **实现要点（与 spec §5.4 逐条对上）**：`parameters.format` = **文件后缀**；`speaker_diarization_enabled` 在 `parameters` **顶层**；音频 `data:audio/<后缀>;base64,…`；`sentences[]` 优先（两层嵌套都认）→ `utterances[]` 回退；**空或单段 ⇒ 空 rows**（硬要求 ③）；OpenAI 腿 `response_format=verbose_json` + multipart，路径走 `join_endpoint`（`/v1` 不写两遍）。
+- **偏差/决定（两处，需你过目）**：
+  1. **D6 的"本地腿"落成 `funasr`**：spec 只说"更长的整段走本地腿"，而配置里只有一个 `asr_provider` ⇒ `resolve_leg_provider()` 在**超 5 分钟**时把服务档换成 `funasr`（进程内默认那支），并打一条 info 日志；时长未知不换。**若不认可这个落点，改 3 行**。
+  2. **worker 的假配置要跟着长**：`test_worker_pipeline.py` 的 `_video_config()` 是 `SimpleNamespace`，新字段在 **`rag`** 层（不在 `video` 里）⇒ 给它补了 `asr_base_url=None` / `asr_api_key=None`；同时 worker 改成 `rag_cfg = get_app_config().rag` 再取 `.video`（原来只取 `.video`，拿不到顶层两格）。
+- **抽取器的键名**：三种拼法都认（OpenAI `start`/`end` 秒、百炼 `begin_time`/`end_time` 毫秒、火山 `start_time`/`end_time` 毫秒）——单位由 provider 的 `unit` 声明；火山那条形状**未实测**（随投递二期），先钉住回退路径。
+- **触碰面（同一批 5 个 rag 配置套件 + `tests/knowledge/`）**：**8 红 / 1477 绿 / 1 错**——与 Task 1 收官时**逐条相同**（6 条探针红在 HEAD 上同样红、2 条环境红由仓库根真实钥匙所致、1 条 qdrant 错），**绿数 1448 → 1477（+29 = 本 Task 新增的 27 条 ASR 用例 + 2 条 API 用例）** ⇒ **零回归**。
 
 ---
 
