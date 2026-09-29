@@ -596,7 +596,7 @@ class KnowledgeIndexWorker:
         await self._store.update_document_status(doc_id, "parsing", path_status={"asr": "indexing"})
         asr_failed = False
         try:
-            segments = await transcribe_video(storage_path, provider_name=cfg.asr_provider, model=cfg.asr_model)
+            segments = await transcribe_video(storage_path, provider_name=cfg.asr_provider, model=cfg.asr_model, duration_ms=duration_ms)
         except AsrError as exc:
             logger.warning("video ASR leg failed for document %s (%s); degrading asr=failed", doc_id, exc)
             segments = []

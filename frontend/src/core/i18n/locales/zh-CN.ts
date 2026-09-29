@@ -1801,7 +1801,7 @@ export const zhCN: Translations = {
       asrModel: "ASR 模型",
       asrModelCandidates: "常用模型：",
       asrModelFunasrHint:
-        "可填 ModelScope 模型 id 或本地目录。逐句时间戳：paraformer-zh 有，paraformer-en 未测；没有它时整段文字会挤进一张镜头卡、其余镜头卡写「（无）」。",
+        "可填 ModelScope 模型 id 或本地目录。逐句时间戳：paraformer-zh 有，paraformer-en 未测；口述按 VAD 分段落到镜头卡，连续语音可能整段只落一张。",
       asrModelWhisperHint:
         "内置档位，越大越准越慢；常用 small。也可填任意合法名（如 large-v2、turbo，或本地 .pt 文件）。",
       services: "服务与令牌",

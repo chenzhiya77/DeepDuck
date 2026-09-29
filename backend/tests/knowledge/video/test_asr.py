@@ -153,16 +153,45 @@ def test_rows_from_funasr_falls_back_to_utterance_timestamp():
     assert _rows_from_funasr(result) == [(0, 1200, "你好")]  # 首字 start → 末字 end
 
 
-def test_rows_from_funasr_warns_when_the_file_collapses_to_one_row(caplog):
-    # "整段一行"是退化信号（本件真机的实际形状）：没有句级 ⇒ 整篇口述并成一行、其余卡「（无）」。
-    result = [{"text": "你好", "timestamp": [[0, 600], [600, 1200]]}]
-    with caplog.at_level(logging.WARNING):
-        _rows_from_funasr(result)
-    assert any("sentence_info" in record.getMessage() for record in caplog.records)
-
-
 def test_rows_from_funasr_returns_empty_without_any_timing():
     assert _rows_from_funasr([{"text": "你好"}]) == []  # 不抛：降级语义不变
+
+
+# ── "整段一行"信号（spec 2026-09-28 §4.2：单段覆盖全片 ⇒ 口述只落一张卡）─────────
+
+
+async def test_transcribe_video_warns_when_one_segment_covers_the_file(tmp_path, caplog):
+    fake = _FakeProvider([(0.0, 18.0, "整段")], unit="s")
+    target = tmp_path / "clip.mp4"
+    target.write_bytes(b"placeholder")
+
+    with caplog.at_level(logging.WARNING):
+        segments = await transcribe_video(str(target), provider=fake, duration_ms=18_000)
+
+    assert len(segments) == 1
+    assert any("整段" in record.getMessage() for record in caplog.records)
+
+
+async def test_transcribe_video_stays_quiet_when_the_file_has_many_segments(tmp_path, caplog):
+    fake = _FakeProvider([(0.0, 9.0, "前"), (9.0, 18.0, "后")], unit="s")
+    target = tmp_path / "clip.mp4"
+    target.write_bytes(b"placeholder")
+
+    with caplog.at_level(logging.WARNING):
+        await transcribe_video(str(target), provider=fake, duration_ms=18_000)
+
+    assert not [record for record in caplog.records if "整段" in record.getMessage()]
+
+
+async def test_transcribe_video_cannot_judge_without_a_duration(tmp_path, caplog):
+    fake = _FakeProvider([(0.0, 18.0, "整段")], unit="s")
+    target = tmp_path / "clip.mp4"
+    target.write_bytes(b"placeholder")
+
+    with caplog.at_level(logging.WARNING):
+        await transcribe_video(str(target), provider=fake)  # 没给时长 ⇒ 不判、不报
+
+    assert not [record for record in caplog.records if "整段" in record.getMessage()]
 
 
 def test_rows_from_whisper_extracts_start_end_text():

@@ -141,19 +141,27 @@ class WhisperProvider:
         return _rows_from_whisper(result)
 
 
-#: 「整段一行」的信号（spec 2026-09-28 §2 D2）：没有句级切分时，整篇口述并成一行。
-_COLLAPSED_WARNING = "FunASR 未返回句级分段（sentence_info）：整篇口述会并成一行、其余镜头卡写「（无）」。装标点模型 + sentence_timestamp=True 才有句级切分（spec 2026-09-28 §2 D1）。"
+#: 「整段一行」的判据（spec 2026-09-28 §4.2）：只有一段、且覆盖 ≥90% 时长 ⇒ 口述只落一张卡。
+_COLLAPSED_SPAN_RATIO = 0.9
+_COLLAPSED_WARNING = "ASR 转录整段一行（单段覆盖全片）：口述只会落在一张镜头卡上——连续语音时 VAD 只切出一段（spec 2026-09-28 §4.2）。"
+
+
+def _is_collapsed(segments: Sequence[TranscriptSegment], duration_ms: int | None) -> bool:
+    """单段且跨度≈全片 ⇒ 退化；拿不到时长时不判（spec §4.2）。"""
+    if not duration_ms or len(segments) != 1:
+        return False
+    span = segments[0].end_ms - segments[0].start_ms
+    return span >= duration_ms * _COLLAPSED_SPAN_RATIO
 
 
 def _rows_from_funasr(result: Any) -> list[tuple[float, float, str]]:
     """FunASR ``generate()`` 输出 → (start_ms, end_ms, text) 三元组。
 
     真机校准（2026-09-29，spec 2026-09-28 §2 D2）：句级分段在 ``sentence_info``
-    （每项 ``{text, start, end, ...}``，毫秒；装 punc + ``sentence_timestamp=True`` 才出现）；
-    没有它时退回 ``timestamp``（逐字对）取首末 ⇒ **整段一行**，并记一条 warning 让退化可见。
+    （每项 ``{text, start, end, ...}``，毫秒；装 punc 或 cam++ 时才出现）；
+    没有它时退回 ``timestamp``（逐字对）取首末（"整段一行"的信号由调用方按跨度判，见 ``_is_collapsed``）。
     """
     rows: list[tuple[float, float, str]] = []
-    collapsed = False
     items = result if isinstance(result, (list, tuple)) else [result]
     for item in items:
         if not isinstance(item, dict):
@@ -169,9 +177,6 @@ def _rows_from_funasr(result: Any) -> list[tuple[float, float, str]]:
         stamps = item.get("timestamp")
         if isinstance(stamps, list) and stamps:
             rows.append((stamps[0][0], stamps[-1][-1], item.get("text", "")))
-            collapsed = True
-    if collapsed:
-        logger.warning(_COLLAPSED_WARNING)
     return rows
 
 
@@ -200,6 +205,7 @@ async def transcribe_video(
     provider: AsrProvider | None = None,
     provider_name: str = "funasr",
     model: str = "paraformer-zh",
+    duration_ms: int | None = None,
 ) -> list[TranscriptSegment]:
     """转录视频音轨为规整的口述段序列（第二条腿，降级腿）。
 
@@ -207,6 +213,9 @@ async def transcribe_video(
     provider。blocking 推理经 ``run_file_io`` 落线程池。任何失败——依赖缺失、
     模型崩溃、解码错误——都收敛为 ``AsrError`` 供 worker 降级（asr=failed），
     绝不让整篇文档因 ASR 挂掉。
+
+    ``duration_ms``（探测腿给的时长）用来判"整段一行"：只有一段且覆盖 ≥90%
+    时长时记一条 warning（spec 2026-09-28 §4.2）；不给就不判。
     """
     prov = provider or resolve_provider(provider_name, model=model)
     try:
@@ -215,4 +224,7 @@ async def transcribe_video(
         raise
     except Exception as exc:
         raise AsrError(f"ASR 转录失败（{getattr(prov, 'name', provider_name)}）：{exc}") from exc
-    return normalize_transcript(raw, unit=getattr(prov, "unit", "ms"))
+    segments = normalize_transcript(raw, unit=getattr(prov, "unit", "ms"))
+    if _is_collapsed(segments, duration_ms):
+        logger.warning(_COLLAPSED_WARNING)
+    return segments

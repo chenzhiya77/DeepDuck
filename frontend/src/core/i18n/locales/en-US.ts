@@ -1894,7 +1894,7 @@ export const enUS: Translations = {
       asrModel: "ASR model",
       asrModelCandidates: "Common models:",
       asrModelFunasrHint:
-        "A ModelScope model id, or a local directory. Sentence timestamps: paraformer-zh yes, paraformer-en not tested; without them the whole transcript lands on one shot card and the rest read “（none）”.",
+        "A ModelScope model id, or a local directory. Sentence timestamps: paraformer-zh yes, paraformer-en not tested; speech is split per VAD segment across the shot cards, and continuous speech may still land on a single one.",
       asrModelWhisperHint:
         "Built-in tiers — larger is more accurate and slower; small is the common pick. Any legal name works too (large-v2, turbo, or a local .pt file).",
       services: "Services & tokens",
