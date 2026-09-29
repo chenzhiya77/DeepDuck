@@ -5,7 +5,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-29-rag-parse-knobs-design.md](../specs/2026-09-29-rag-parse-knobs-design.md)
-**Status:** **2026-09-29 起草；Task 0 已完成**（只读核实，六框全勾、「实测」已回填）。**2026-09-30：A-3（OCR 语种）撤销**（改走 VLM，见文首与 spec 同节）；同日 **Task 1 已完成（2026-09-30 提交）**（RED 8 红／窄 159 绿／neuter ①1②1③50④3／全量零新增，见下「实测」）；**Task 2 已完成（2026-09-30 提交）**（RED 6 红／窄 119 绿／neuter ①2②2③1④1／前端全量 2751 例零失败）；**Task 3 已完成（2026-09-30 提交）**（RED 3 红／契约 7 绿／版本脚本 OK）；**Task 4 已完成（2026-09-30 提交）**（真栈三腿＋逐字节还原 ✓），**Task 5 待授权**。~~四项~~**三项**改法已按用户同日裁定落定；**spec §6.1 两项均已裁＝乙**（① 服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」，随之登记本对**唯一一条行为变化**，spec §6.2 首条；② **两个新控件进设置界面**——原三个含已废的 OCR 语种）。**本计划无待裁项**，全文按 ②＝乙 有效。Task 0 的探针全部走临时三件套（三个 `DEER_FLOW_*_PATH`），未读真实配置。
+**Status:** **2026-09-30 已交付**：Task 0–5 全部完成，复选框 **33／33**。**①＝乙**（服务地址**复用既有 `parse_base_url`**、界面标题改「服务地址」）／**②＝乙**（**两个**新控件进设置界面）；**A-3（OCR 语种）已于 2026-09-30 撤销**（屏幕文字改走 `rag.vlm_model`，不随本对交付，见 spec「A-3 的撤销与替换」）。**本对唯一的行为变化**＝`parse_base_url` 的语义扩大（spec §6.2 首条；云腿下从「被忽略」变「生效」）——真栈已具名验证（Task 4 实测）。实施提交 `5bea5cfe`（T1 后端）／`80fe8c01`（T2 前端）／`d231e430`（T3 模板与文档）／`5dc512f1`（T4 真栈），Task 5 交付回写为本笔（**均未推送**）。真栈阶段未读改任何用户配置，`config.yaml`／`rag_config.json` 已逐字节还原（见 Task 4 实测）。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 2」＝本对；**A-3 已于 2026-09-30 撤销**（余 `A-2` + `A-6` + `A-5`）；[2026-09-24 MinerU 4.x 那一对](../specs/2026-09-24-mineru-4x-parse-adaptation-design.md)（本地腿，明写「mineru-cloud 零改动」）；[2026-09-08 视频入库](../specs/2026-09-08-video-ingest-design.md)（A-3 所在腿）。
 
 **Architecture:** `config.yaml → RagConfig`／`rag_config.json → RagConfigFile → merge → AppConfig.rag`；**两个新字段**挂两层，另**扩大既有 `parse_base_url` 的语义**（云腿也读它，空则退官方常量）。**两个消费点**各自**现取配置**：云腿 `parser.py`（请求体的 `language`／`model_version` 与 URL 主机）——~~视频 ocr `video/ocr.py`（`PaddleOCR(lang=…)`）~~ **2026-09-30 撤销**（该消费点已消失）。响应侧靠 `_build_response` 反射（② 已裁乙，golden 同批）。**除 `parse_base_url` 语义扩大这唯一例外外**，不声明时余下三项行为逐字节不变。
@@ -217,9 +217,27 @@ Authorization: Bearer <token>
 
 ## Task 5 — 交付回写
 
-- [ ] **spec／plan Status** 改为已交付，记录 ①② 的裁定（①＝复用既有字段、②＝进界面）；**把 spec §6.2 首条的行为变化写进交付纪要**，并核对盘点档 A-6 行的登记已落；逐 Task 的「实测」补齐。
-- [ ] **盘点档**：A-2／A-5／A-6 三条标已交付并指向本对（**A-3 标「已被取代」——2026-09-30 已登记，不随本对交付**）；§4.2「对 2」标已交付；计数随 §4.2 与 §4 可做清单调整。
-- [ ] **文档缺口**（本对话 2026-09-29 查出的两处）随本对收口：~~`backend/AGENTS.md` 重依赖清单补 PaddleOCR（Task 3）~~ **2026-09-30 撤销**（屏幕文字走 `rag.vlm_model`，PaddleOCR 不入清单）；~~盘点档 A-3 行补一句"实施前重读引擎欠账"~~ **同日改记**：A-3 行的「已被取代」注已落（取代注随撤销轮登记），本处收口即可。
-- [ ] 提交按届时授权，Conventional Commits；不推送除非明确要求。
+- [x] **spec／plan Status** 改为已交付，记录 ①② 的裁定（①＝复用既有字段、②＝进界面）；**把 spec §6.2 首条的行为变化写进交付纪要**，并核对盘点档 A-6 行的登记已落；逐 Task 的「实测」补齐。
+- [x] **盘点档**：A-2／A-5／A-6 三条标已交付并指向本对（**A-3 标「已被取代」——2026-09-30 已登记，不随本对交付**）；§4.2「对 2」标已交付；计数随 §4.2 与 §4 可做清单调整。
+- [x] **文档缺口**（本对话 2026-09-29 查出的两处）随本对收口：~~`backend/AGENTS.md` 重依赖清单补 PaddleOCR（Task 3）~~ **2026-09-30 撤销**（屏幕文字走 `rag.vlm_model`，PaddleOCR 不入清单）；~~盘点档 A-3 行补一句"实施前重读引擎欠账"~~ **同日改记**：A-3 行的「已被取代」注已落（取代注随撤销轮登记），本处收口即可。
+- [x] 提交按届时授权，Conventional Commits；不推送除非明确要求。
 
-**实测（待回填）**：
+**实测（2026-09-30 完成，交付回写）**
+
+**性质**：文档回写任务——无 RED／neuter／revert proof（不改代码）；**未读改任何用户配置**。载体：spec、plan、盘点档。
+
+**交付物**（实施/验收 4 笔 ＋ 本回写 1 笔，均未推送）：
+
+| 提交 | 内容 |
+| --- | --- |
+| `5bea5cfe` | Task 1 后端：两字段两层 ＋ `parse_base_url` 语义扩大 ＋ 云腿两处 ＋ golden/用例 |
+| `80fe8c01` | Task 2 前端：解析区两行＋本地孪生、地址行解锁、清空编码 `""`→`null`（顺带修六个旧枚举字段）、i18n 6 键 |
+| `d231e430` | Task 3 模板与文档：`config_version` 40→41、两处注释示例、README/AGENTS、盘点档 A-2 收窄 |
+| `5dc512f1` | Task 4 真栈验收：三腿两向（抓包服务证 language/version/地址）＋逐字节还原 |
+| 本笔 | Task 5 交付回写：Status ×2、盘点档四条、计数与清单 |
+
+**行为变化（spec §6.2 首条，交付纪要）**：云腿下 `parse_base_url` 由「被忽略」变「生效」（空＝官方 `https://mineru.net`）。**影响面**：先设过本地地址、后切回云的部署，云请求会打到那个地址（失败可见、清掉即恢复）；本机该字段为空 ⇒ 无感。真栈具名证据见 Task 4 实测。
+
+**盘点档回写**：A-2／A-5／A-6 标已交付并指向本对；A-3 保持「已被取代」；§4.2「对 2」标已交付；计数：坏写死**现存 8 条**（16 − 闭合/取代 5 − 交付 3），**本仓待修 7 条**（再减 A-10）；§4 可做清单与 §4.1 同步。
+
+**开着的（不属本对）**：① 用户 `config.yaml` 版本 40 会在每次重载时打 outdated WARNING，直到跑 `make config-upgrade`（本对不代跑）；② 准备轮提的 OPTIONS 顺序用例未加（可撤）。
