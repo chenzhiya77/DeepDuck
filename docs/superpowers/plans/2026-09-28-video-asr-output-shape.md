@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-28-video-asr-output-shape-design.md](../specs/2026-09-28-video-asr-output-shape-design.md)
-**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅（`dcd1142d`）/ Task 2 ✅（`15b72ab5`）/ Task 1b ✅（`2c17c94b`）/ Task 3 ✅（文档+端到端+门禁；代码未提交）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20 + 真机复核（rows=1、warning 打出、跨度 1070→90305ms）；`tests/knowledge/video` **132 例**、`make lint` 净；**Task 3 未开工**。
+**Status:** ✅ **已交付（2026-09-28 成对；2026-09-29 收官）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判（当日再由 cam++ 二次改判，见 Task 1b）。**Task 1 ✅（`dcd1142d`）/ Task 1b ✅（`2c17c94b`）/ Task 2 ✅（`15b72ab5`）/ Task 3 ✅（`479a7ffa` 代码 + `d337f168` 文档）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 1b：RED 1 红/19 绿 → GREEN 20 → neuter 1 红（spk）→ 还原 20 + 真机（rows=8、每段带 `spk`）；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20；Task 3：文档 + 端到端（进程内真机）+ (a) 跨度判据 + (b) 跨件回改 + 门禁（后端全量 **163 / 12739 / 109**、A/B 双向差 1 条 flake ⇒ **零回归**）；`tests/knowledge/video` **134 例**、`make lint` 净。
 **来源**：[2026-09-27-rag-asr-model-picker.md](2026-09-27-rag-asr-model-picker.md) 的 `实测` 越界发现（那条线纯前端、本件动 `backend/`，两者零文件重叠）。
 
 **Architecture:** 两处——**① 调用侧只带 `vad_model="fsmn-vad"`**（`asr.py:98-99`；**不补 `punc_model`**——真机已证"分段绕不过 punc"，本件放弃分段）**② 抽取器按真机形状校准 + 把"整段一行"变可观测**（`asr.py:127-150`：键名按真机校正、保留回退，新增告警，按 D2）。
@@ -140,3 +140,12 @@
 - **跨件那条要翻案**：Task 3 的"取消留档"写"本件不修分段 ⇒ picker 的 ⓘ 后果句仍成立"——**cam++ 之后本件确实修了分段**（VAD 段粒度）⇒ picker 那条注记的"没有逐句时间戳时整段文字会挤进一张镜头卡"在常态下**已过期**（除连续语音这种 1 段情形）。建议**恢复**那条跨件回改（picker 的 ⓘ 文案 + 其 dom 断言各一处）。
 - **（a）已补：告警改成"跨度≈全长"判据**（2026-09-29，Task 3 内追加）：`transcribe_video(..., duration_ms=)` 拿到探测腿的时长后判"只有一段且覆盖 ≥90% ⇒ warning"（判据 `_is_collapsed` / 占比 `_COLLAPSED_SPAN_RATIO = 0.9`）；纯函数里的旧告警**移除**（单一信号点，纯函数恢复无日志）；`worker.py` 的 asr 腿传 `duration_ms`。RED **3 红 / 19 绿** → GREEN **22 绿** → neuter（去掉判据）**1 红 / 21 绿** → 还原 22；真机复核：18s MP4（连续语音、1 段）**warning 打出** ✓ / 90s WAV（8 段）**不报** ✓；`tests/knowledge/video` **134 例**、`make lint` 净。
 - **收官门禁**：后端全量套件 **163 failed / 12739 passed / 109 skipped**（19:08；失败全在既有环境条件红，`tests/knowledge/video/` **零条**）；按房规做 **A/B**（把这 163 个 id 在**本线三笔之前**的 `c8194d4a` 上跑同一批）⇒ **双向差 1 条**：`test_delta_channel_state.py::test_merge_message_writes_randomized_differential`（随机化差分用例、属 checkpoint 线、不在本线触碰面）**复跑 3/3 通过 ⇒ flake** ⇒ **本线零回归**。`make lint` 净（1308 文件）；A/B worktree 与两侧 basetemp 已清。
+
+---
+
+## 残留账（2026-09-29 登记，**不在本件范围**，按"要不要单独立项"排）
+
+1. **说话人进卡**（**最接近可用**）：`spk` 在 funasr 输出里**每段都有**（真机 8 段各一个号：`[0,1,0,0,0,0,0,0]`），但抽取器只取 `(start_ms, end_ms, text)` ⇒ `TranscriptSegment` 没有说话人字段 ⇒ **卡片上根本看不到**。要显示得动四处：`TranscriptSegment` 加字段 → `assign_transcript_to_shots` 带着它 → 卡片三行契约（现为 场景/口述/屏幕文字）加位 → 相关 dom / 接口用例。⚠️ 前提：单人音频会**假分裂**（实测 `0/1` 交替）⇒ 只能当"多人对话"的提示，不能当事实；whisper 腿没有这个信息。
+2. **0 行静默**：模型完全不返回计时（如 `sensevoice`）⇒ 空 rows，不报错也不 warning（Task 2 按计划只给"1 段覆盖全片"信号）。
+3. **标点**：文本仍逐字带空格、无标点 ⇒ 要装 punc（`ct-punc-c` 283 MB / `ct-punc` 1.2 GB）。
+4. **LLM 型模型**：`MOSS-Transcribe-Diarize` 等本机 CPU 跑不动（实测 RTF ≈ 14.6）⇒ 要 GPU 或走服务档（那条暂停线，决定表 D1–D8 已写）。
