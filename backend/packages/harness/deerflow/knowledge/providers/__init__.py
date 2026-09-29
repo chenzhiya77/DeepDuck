@@ -45,9 +45,11 @@ class ProviderSpec:
     #: take no such argument — the leg's factory reads this flag instead of matching on the
     #: provider id (spec 2026-09-24 §4.3).
     takes_model: bool = True
-    #: Whether the vendor fixes the endpoint itself, so the settings UI shows the address
-    #: as read-only rather than asking for it (spec 2026-09-17 §3 D1). Always agrees with
-    #: :attr:`default_endpoint` being set — the two are one rule, pinned by a single test.
+    #: Whether the vendor fixes the endpoint itself (spec 2026-09-17 §3 D1). Always agrees with
+    #: :attr:`default_endpoint` being set — the two are one rule, pinned by a single test. The
+    #: *retrieval* rows report it to the UI; the ASR row deliberately does not, because the lock
+    #: it used to drive was retired by the 2026-09-25 endpoint unlock (the address stays the
+    #: admin's to set, and the flag's only remaining effect there is the grey placeholder).
     has_fixed_endpoint: bool = False
     #: The vendor's own endpoint, used when ``rag.embedding_base_url`` is empty. A plain
     #: string on purpose: importing an implementation module for the constant would defeat
@@ -160,6 +162,48 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
             # Same rule as the TEI rerank row: one instance serves one model, and the request
             # (`{"inputs": [...]}`) carries no model field.
             takes_model=False,
+        ),
+    },
+    # The video ASR leg (spec 2026-09-28 D2「三组四值」). Two of its four rows run in-process
+    # and take neither an address nor a credential; the other two are services, one per
+    # protocol family. Order is the settings dropdown's: the engines first, then the
+    # protocol tiers.
+    "asr": {
+        "funasr": ProviderSpec(
+            leg="asr",
+            provider_id="funasr",
+            implementation="deerflow.knowledge.video.asr:FunAsrProvider",
+            # In-process: funasr is imported into this process, so there is no endpoint to
+            # point at and nothing to authenticate.
+            secret_env_var=None,
+        ),
+        "whisper": ProviderSpec(
+            leg="asr",
+            provider_id="whisper",
+            implementation="deerflow.knowledge.video.asr:WhisperProvider",
+            secret_env_var=None,
+        ),
+        "openai-audio": ProviderSpec(
+            leg="asr",
+            provider_id="openai-audio",
+            implementation="deerflow.knowledge.video.asr:OpenAiAudioProvider",
+            # One row for the whole protocol family: OpenAI's own `/v1/audio/transcriptions`,
+            # any compatible endpoint, and a local `funasr-server` are the same shape, so the
+            # address is what tells them apart. No vendor default to show — the row falls back
+            # to the shared example placeholder.
+            secret_env_var="RAG_ASR_API_KEY",
+        ),
+        "dashscope": ProviderSpec(
+            leg="asr",
+            provider_id="dashscope",
+            implementation="deerflow.knowledge.video.asr:DashScopeAsrProvider",
+            secret_env_var="DASHSCOPE_ASR_API_KEY",
+            # The vendor does fix its own endpoint, so the flag is true — it is one rule with
+            # `default_endpoint` being set. What the ASR *row* does with it differs: the address
+            # stays the admin's to set (2026-09-25 rag-endpoint-unlock retired the lock), so this
+            # is only what the field shows greyed out, never a value and never a fallback.
+            has_fixed_endpoint=True,
+            default_endpoint="https://dashscope.aliyuncs.com",
         ),
     },
 }

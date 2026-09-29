@@ -107,7 +107,7 @@ class RagVideoFileConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    asr_provider: Literal["funasr", "whisper"] | None = Field(default=None, description="ASR backend for video ingestion.")
+    asr_provider: Literal["funasr", "whisper", "openai-audio", "dashscope"] | None = Field(default=None, description="ASR backend: an in-process engine (funasr / whisper) or a transcription service (openai-audio / dashscope).")
     asr_model: str | None = Field(default=None, description="ASR model name for the chosen provider.")
 
 
@@ -149,6 +149,8 @@ class RagConfigFile(BaseModel):
     parse_provider: Literal["mineru-cloud", "mineru-local"] | None = Field(default=None, description="Document-parsing provider; None uses config.yaml.")
     parse_base_url: str | None = Field(default=None, description="Local MinerU service address; required when parse_provider=mineru-local.")
     parse_tier: Literal["flash", "basic", "standard", "advanced"] | None = Field(default=None, description="Optional tier for the local MinerU 4.x service; None lets the service decide.")
+    asr_base_url: str | None = Field(default=None, description="Transcription service endpoint; the service rows need one, the in-process engines take none.")
+    asr_api_key: str | None = Field(default=None, description="Transcription service API key; masked on read, env is the fallback.")
     video: RagVideoFileConfig | None = Field(default=None, description="Video-ingestion model choices.")
 
     @field_validator(*MODEL_REFERENCE_FIELDS, mode="before")

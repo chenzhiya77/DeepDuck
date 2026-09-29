@@ -153,8 +153,8 @@ class RagVideoConfig(BaseModel):
     max_shot_seconds: float = Field(default=5.0, gt=0, description="Upper bound for one shot; longer static scenes are force-cut (长镜头兜底).")
     fallback_window_seconds: float = Field(default=10.0, gt=0, description="Uniform window length when the scene-detection leg fails (degraded).")
     keyframes_per_shot: int = Field(default=1, ge=1, description="Persisted keyframes per shot; caption frames (≤3) are transient.")
-    asr_provider: Literal["funasr", "whisper"] = Field(default="funasr", description="ASR backend: funasr (Paraformer, local CPU) or whisper (local CPU fallback tier).")
-    asr_model: str = Field(default="paraformer-zh", description="ASR model name for the chosen provider (whisper tier example: small).")
+    asr_provider: Literal["funasr", "whisper", "openai-audio", "dashscope"] = Field(default="funasr", description="ASR backend: an in-process engine (funasr / whisper) or a transcription service (openai-audio / dashscope).")
+    asr_model: str = Field(default="paraformer-zh", description="ASR model name for the chosen provider (whisper tier example: small; a service tier takes the service-side name, e.g. qwen-audio-3.1-asr-flash).")
     card_text_mode: Literal["full", "caption_only", "asr_only"] = Field(default="full", description="Shot-card text assembly mode; non-full modes are caption-quality ablation experiments (spec §6), not a production path.")
 
 
@@ -218,6 +218,12 @@ class RagConfig(BaseModel):
         default=None,
         description="Optional tier for the local MinerU 4.x service; None lets the service decide (its own default is standard). A flash-only service needs an explicit tier: with none it answers 503 for PDFs.",
     )
+    # The ASR leg's connection info sits here rather than inside `video:` (spec 2026-09-28 D4,
+    # ① 乙): every other leg keeps its address and key at this level, and `video` holds the
+    # pipeline's own knobs. Only the two service rows read them; the in-process engines take
+    # neither.
+    asr_base_url: str | None = Field(default=None, description="Transcription service endpoint; required for the service rows (`openai-audio` / `dashscope`), unused by the in-process engines.")
+    asr_api_key: str | None = Field(default=None, description="Transcription service API key; None falls back to the selected provider's environment variable (`DASHSCOPE_ASR_API_KEY` / `RAG_ASR_API_KEY`).")
 
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
     extract_rate_limit_rps: float = Field(default=5.0, gt=0, description="Rate limit (requests/second) for graph-extraction LLM calls during indexing.")

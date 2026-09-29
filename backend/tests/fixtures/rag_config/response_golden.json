@@ -1,7 +1,7 @@
 {
   "_captured": "pre-change code, GET with an empty rag_config.json over YAML_RAG, PUT with PUT_PAYLOAD",
-  "_precondition": "config.yaml carries YAML_RAG; rag_config.json starts empty; the seven provider secret env vars are unset (so `sources` is deterministic)",
-  "_registered_additions": "`config.default_model` + `sources.default_model` were added by hand (spec 2026-09-23 default model R19): the pure-addition guard's allow-list is top-level only, so a *nested* new key has to be registered here or the guard would fail on every unrelated response field. The guard still proves nothing else moved. | Task 9 撤下的三项（`config`/`sources` 的 `vlm_base_url`、`vlm_api_key` 与嵌套的 `video.caption_model`）已从本基线删除，守卫代码未放宽。 | `config.wiki_model` / `sources.wiki_model` / `config.synthesis_model` / `sources.synthesis_model` were added by hand (spec 2026-09-26 wiki+synthesis roles; same R19 reason as above: nested new keys cannot go through the top-level `_ADDED_FIELDS` allow-list). The guard still proves nothing else moved.",
+  "_precondition": "config.yaml carries YAML_RAG; rag_config.json starts empty; the nine provider secret env vars are unset (so `sources` is deterministic)",
+  "_registered_additions": "`config.default_model` + `sources.default_model` were added by hand (spec 2026-09-23 default model R19): the pure-addition guard's allow-list is top-level only, so a *nested* new key has to be registered here or the guard would fail on every unrelated response field. The guard still proves nothing else moved. | Task 9 撤下的三项（`config`/`sources` 的 `vlm_base_url`、`vlm_api_key` 与嵌套的 `video.caption_model`）已从本基线删除，守卫代码未放宽。 | `config.wiki_model` / `sources.wiki_model` / `config.synthesis_model` / `sources.synthesis_model` were added by hand (spec 2026-09-26 wiki+synthesis roles; same R19 reason as above: nested new keys cannot go through the top-level `_ADDED_FIELDS` allow-list). The guard still proves nothing else moved. | `config.asr_base_url` / `sources.asr_base_url` / `config.asr_api_key` / `sources.asr_api_key` were added by hand (spec 2026-09-28 ASR service tier §3; same R19 reason: the allow-list is top-level only). The guard still proves nothing else moved.",
   "get": {
     "config": {
       "qdrant_url": "http://qdrant:6333",
@@ -29,6 +29,8 @@
       "parse_provider": "mineru-cloud",
       "parse_base_url": null,
       "parse_tier": null,
+      "asr_base_url": null,
+      "asr_api_key": "",
       "video": {
         "asr_provider": "funasr",
         "asr_model": "yaml-asr"
@@ -60,6 +62,8 @@
       "parse_provider": "config_file",
       "parse_base_url": "config_file",
       "parse_tier": "config_file",
+      "asr_base_url": "config_file",
+      "asr_api_key": "unset",
       "video.asr_provider": "config_file",
       "video.asr_model": "config_file"
     }
@@ -108,6 +112,8 @@
         "parse_provider": "mineru-local",
         "parse_base_url": "http://localhost:30000",
         "parse_tier": "flash",
+        "asr_base_url": null,
+        "asr_api_key": "",
         "video": {
           "asr_provider": "funasr",
           "asr_model": "ui-asr"
@@ -139,6 +145,8 @@
         "parse_provider": "ui",
         "parse_base_url": "ui",
         "parse_tier": "ui",
+        "asr_base_url": "config_file",
+        "asr_api_key": "unset",
         "video.asr_provider": "config_file",
         "video.asr_model": "ui"
       }

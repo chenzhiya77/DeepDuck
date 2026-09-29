@@ -231,6 +231,39 @@ describe("buildRagConfigInput", () => {
     });
   });
 
+  it("keeps a service-tier ASR provider instead of normalising it back to a local engine", () => {
+    // The provider select is an enum, not a two-value switch (spec 2026-09-28 D2): a value
+    // outside the old pair used to be silently rewritten to `funasr` on load *and* on submit,
+    // so the new tier could never be saved.
+    const current = view({ video: { asr_provider: "dashscope", asr_model: "qwen-audio-3.1-asr-flash" } });
+    const values = formValuesFromConfig(current);
+
+    expect(values.video.asr_provider).toBe("dashscope");
+    expect(buildRagConfigInput(values, current)).toEqual({});
+  });
+
+  it("round-trips the ASR address and key beside the other legs' fields", () => {
+    // ① 乙 (2026-09-29): the leg's connection info lives at the top level, not inside `video`.
+    const current = view(
+      { asr_base_url: "https://dashscope.aliyuncs.com", asr_api_key: "" },
+      { asr_base_url: "ui", asr_api_key: "unset" },
+    );
+    const values = formValuesFromConfig(current);
+
+    expect(values.asr_base_url).toBe("https://dashscope.aliyuncs.com");
+    expect(buildRagConfigInput(values, current)).toEqual({ asr_base_url: "https://dashscope.aliyuncs.com" });
+
+    values.video.asr_provider = "openai-audio";
+    values.asr_base_url = "http://127.0.0.1:8000/v1";
+    values.asr_api_key = "sk-asr";
+    expect(buildRagConfigInput(values, current)).toEqual({
+      // The model is operator-owned here, so only the rows that actually changed are submitted.
+      video: { asr_provider: "openai-audio" },
+      asr_base_url: "http://127.0.0.1:8000/v1",
+      asr_api_key: "sk-asr",
+    });
+  });
+
   it("trims what it submits", () => {
     const current = view();
     const values = formValuesFromConfig(current);

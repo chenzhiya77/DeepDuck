@@ -96,9 +96,11 @@ def config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "DASHSCOPE_EMBEDDING_API_KEY",
         "DASHSCOPE_RERANK_API_KEY",
         "DASHSCOPE_API_KEY",
+        "DASHSCOPE_ASR_API_KEY",
         "MINERU_API_TOKEN",
         "RAG_EMBEDDING_API_KEY",
         "RAG_RERANK_API_KEY",
+        "RAG_ASR_API_KEY",
         "RAG_SPARSE_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -818,6 +820,9 @@ _CAPABILITY_FIELD = "embedding_providers"
 #: The rerank leg's own capability block (spec 2026-09-17 alignment §3 D3): the address row is
 #: locked by *row capability* there too, so the frontend must stop naming the provider.
 _RERANK_CAPABILITY_FIELD = "rerank_providers"
+#: The ASR leg's own capability block (spec 2026-09-28 §3): the endpoint row's *placeholder*
+#: comes from `default_endpoint`, exactly as the two retrieval rows take theirs.
+_ASR_CAPABILITY_FIELD = "asr_providers"
 #: The save-time probe's verdict rides every response, GET included — always present, ``null``
 #: when there is nothing to say (spec 2026-09-17 save-time probe §3 D3). Registered here rather
 #: than subtracted ad hoc so the "pure addition" guards keep their teeth.
@@ -825,7 +830,7 @@ _WARNING_FIELD = "warning"
 #: The width migration's verdict (spec 2026-09-26 D5-7), same contract: always present, ``null``
 #: until a save with a width change starts one.
 _MIGRATION_FIELD = "migration"
-_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _WARNING_FIELD, _MIGRATION_FIELD}
+_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _ASR_CAPABILITY_FIELD, _WARNING_FIELD, _MIGRATION_FIELD}
 
 
 def _assert_pure_addition(body: dict, golden: dict) -> None:
@@ -896,6 +901,96 @@ def test_put_response_only_gained_the_capability_field(config_env: Path):
 
     assert response.status_code == 200
     _assert_pure_addition(response.json(), _GOLDEN["put"]["response"])
+
+
+# ── the ASR leg's service tier (spec 2026-09-28 D2/D4) ────────────────────
+#
+# The ASR row grows into a real leg: a provider from the curated allowlist, plus an address
+# and a key stored beside the other four legs' (① 乙, 2026-09-29). What is tested here is the
+# *config face* only — the provider itself, and the save-time address requirement, arrive
+# with the leg's implementation.
+
+
+def test_get_returns_the_asr_provider_capabilities(config_env: Path):
+    with _client(system_role="admin") as client:
+        body = client.get("/api/rag/config").json()
+
+    assert [entry["provider_id"] for entry in body[_ASR_CAPABILITY_FIELD]] == list(provider_ids("asr"))
+    # Only the vendor row has a default to show; the in-process engines and the generic
+    # protocol tier have none, so their row falls back to the shared example placeholder.
+    assert {entry["provider_id"]: entry["default_endpoint"] for entry in body[_ASR_CAPABILITY_FIELD]} == {
+        "funasr": None,
+        "whisper": None,
+        "openai-audio": None,
+        "dashscope": "https://dashscope.aliyuncs.com",
+    }
+
+
+def test_put_round_trips_the_asr_connection_fields(config_env: Path):
+    """Both service-tier values survive a save → reload round trip, and the two new fields
+    land at the top level — ``video`` keeps only the model choices."""
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/rag/config",
+            json={
+                "video": {"asr_provider": "dashscope", "asr_model": "qwen-audio-3.1-asr-flash"},
+                "asr_base_url": "https://dashscope.aliyuncs.com",
+                "asr_api_key": "sk-asr",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        reloaded = client.get("/api/rag/config").json()
+
+    stored = _read_rag_json(config_env)
+    assert stored["video"] == {"asr_provider": "dashscope", "asr_model": "qwen-audio-3.1-asr-flash"}
+    assert stored["asr_base_url"] == "https://dashscope.aliyuncs.com"
+    assert stored["asr_api_key"] == "sk-asr"
+    assert body["config"]["video"]["asr_provider"] == "dashscope"
+    assert body["config"]["asr_api_key"] == MASKED_SECRET
+    assert body["sources"]["asr_api_key"] == "ui"
+    assert body["sources"]["asr_base_url"] == "ui"
+    assert reloaded["config"]["video"]["asr_provider"] == "dashscope"
+    assert reloaded["config"]["asr_base_url"] == "https://dashscope.aliyuncs.com"
+    assert "sk-asr" not in json.dumps(reloaded)
+
+
+def test_put_sentinel_preserves_the_stored_asr_key(config_env: Path):
+    _write_rag_json(config_env, {"asr_api_key": "sk-kept"})
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/rag/config", json={"asr_api_key": MASKED_SECRET})
+
+    assert response.status_code == 200
+    assert _read_rag_json(config_env)["asr_api_key"] == "sk-kept"
+
+
+def test_the_asr_key_env_source_follows_the_selected_provider(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """The reported fallback must be the variable the *selected* provider reads — and the ASR
+    provider is the one selection that lives **inside** the ``video`` block, so this is where a
+    top-level-only lookup would silently answer for the wrong row."""
+    monkeypatch.setenv("DASHSCOPE_ASR_API_KEY", "env-dashscope")
+
+    with _client(system_role="admin") as client:
+        # funasr runs in-process and takes no credential, so an ambient variable is not its
+        # fallback: the row stays 「未设置」.
+        assert client.get("/api/rag/config").json()["sources"]["asr_api_key"] == "unset"
+
+        switched = client.put(
+            "/api/rag/config",
+            json={"video": {"asr_provider": "dashscope"}, "asr_base_url": "https://dashscope.aliyuncs.com"},
+        ).json()
+        # The switch re-points the fallback in the same response, not only after a reload.
+        assert switched["sources"]["asr_api_key"] == "env"
+        assert client.get("/api/rag/config").json()["sources"]["asr_api_key"] == "env"
+
+        client.put(
+            "/api/rag/config",
+            json={"video": {"asr_provider": "openai-audio"}, "asr_base_url": "http://127.0.0.1:8000/v1"},
+        )
+        assert client.get("/api/rag/config").json()["sources"]["asr_api_key"] == "unset"
+        monkeypatch.setenv("RAG_ASR_API_KEY", "env-generic")
+        assert client.get("/api/rag/config").json()["sources"]["asr_api_key"] == "env"
 
 
 # ── save-time validation of the configuration about to be persisted ──────────

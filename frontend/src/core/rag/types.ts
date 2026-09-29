@@ -8,7 +8,7 @@
 
 /** Video-ingestion model choices the settings UI may override. */
 export interface RagVideoValues {
-  asr_provider?: "funasr" | "whisper" | null;
+  asr_provider?: "funasr" | "whisper" | "openai-audio" | "dashscope" | null;
   asr_model?: string | null;
 }
 
@@ -57,6 +57,8 @@ export interface RagConfigValues {
   parse_provider?: "mineru-cloud" | "mineru-local" | null;
   parse_base_url?: string | null;
   parse_tier?: "flash" | "basic" | "standard" | "advanced" | null;
+  asr_base_url?: string | null;
+  asr_api_key?: string | null;
   video?: RagVideoValues | null;
 }
 
@@ -100,6 +102,19 @@ export interface RagRerankProviderCapability {
 }
 
 /**
+ * One ASR provider's declared capability (spec 2026-09-28 §3). Narrower than the two retrieval
+ * blocks on purpose: the ASR row reads only the placeholder source, because the lock the others'
+ * `has_fixed_endpoint` used to drive was retired by the 2026-09-25 endpoint unlock. Absent
+ * entirely on a response from a server that predates the field — the row then falls back to the
+ * shared example placeholder.
+ */
+export interface RagAsrProviderCapability {
+  provider_id: string;
+  /** The vendor's own endpoint, shown greyed out while the address field is empty. */
+  default_endpoint: string | null;
+}
+
+/**
  * GET/PUT response: the effective values plus the flattened per-field origin map.
  *
  * `warning` is the save-time probe's verdict (spec 2026-09-17 save-time probe §3 D3): `null` when
@@ -113,6 +128,7 @@ export interface RagConfigView {
   sources: Record<string, RagConfigSource>;
   embedding_providers?: RagEmbeddingProviderCapability[];
   rerank_providers?: RagRerankProviderCapability[];
+  asr_providers?: RagAsrProviderCapability[];
   warning: string | null;
   /**
    * Where the width migration stands (spec 2026-09-26 D5-7). A save that changes the width

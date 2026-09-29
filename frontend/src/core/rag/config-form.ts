@@ -58,8 +58,11 @@ export interface RagConfigFormValues {
   parse_provider: "mineru-cloud" | "mineru-local";
   parse_base_url: string;
   parse_tier: "flash" | "basic" | "standard" | "advanced" | "";
+  /** The ASR leg's connection info — top level, beside the other legs' (① 乙, 2026-09-29). */
+  asr_base_url: string;
+  asr_api_key: string;
   video: {
-    asr_provider: "funasr" | "whisper";
+    asr_provider: "funasr" | "whisper" | "openai-audio" | "dashscope";
     asr_model: string;
   };
 }
@@ -95,12 +98,27 @@ export const PARSE_TIER_OPTIONS = [
   "standard",
   "advanced",
 ] as const;
+/**
+ * The ASR leg's providers (spec 2026-09-28 D2「三组四值」): the two engines that run inside
+ * this process, then one row per protocol family — the generic OpenAI-audio shape and the
+ * vendor's own. The list mirrors the backend allowlist like the others above; the dropdown
+ * groups it, and `ASR_LOCAL_ENGINES` is the subset whose rows take neither an address nor a
+ * key.
+ */
+export const ASR_PROVIDER_OPTIONS = [
+  "funasr",
+  "whisper",
+  "openai-audio",
+  "dashscope",
+] as const;
+export const ASR_LOCAL_ENGINES = ["funasr", "whisper"] as const;
 
 const SECRET_FIELDS = [
   "embedding_api_key",
   "rerank_api_key",
   "mineru_api_token",
   "sparse_api_key",
+  "asr_api_key",
 ] as const;
 
 const TEXT_FIELDS = [
@@ -118,6 +136,7 @@ const TEXT_FIELDS = [
   "sparse_model",
   "rerank_base_url",
   "parse_base_url",
+  "asr_base_url",
 ] as const;
 
 /**
@@ -181,8 +200,10 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     parse_provider: asEnum(config.parse_provider, PARSE_PROVIDER_OPTIONS, "mineru-cloud"),
     parse_base_url: asText(config.parse_base_url),
     parse_tier: asEnum(config.parse_tier, PARSE_TIER_OPTIONS, ""),
+    asr_base_url: asText(config.asr_base_url),
+    asr_api_key: asText(config.asr_api_key),
     video: {
-      asr_provider: video.asr_provider === "whisper" ? "whisper" : "funasr",
+      asr_provider: asEnum(video.asr_provider, ASR_PROVIDER_OPTIONS, "funasr"),
       asr_model: asText(video.asr_model),
     },
   };
@@ -300,11 +321,11 @@ export function buildRagConfigInput(
     }
   }
 
-  // ...while the provider is an enum select, so it keeps its own union type.
-  const provider: "funasr" | "whisper" =
-    values.video.asr_provider === "whisper" ? "whisper" : "funasr";
-  const loadedProvider: "funasr" | "whisper" =
-    loadedVideo.asr_provider === "whisper" ? "whisper" : "funasr";
+  // ...while the provider is an enum select, so it keeps its own union type. Judged against
+  // the same option list the row renders: the old two-value narrowing silently rewrote a
+  // service tier back to `funasr`, so the new tiers could never be saved (spec 2026-09-28 D2).
+  const provider = asEnum(values.video.asr_provider, ASR_PROVIDER_OPTIONS, "funasr");
+  const loadedProvider = asEnum(loadedVideo.asr_provider, ASR_PROVIDER_OPTIONS, "funasr");
   if (provider !== loadedProvider || owned(view, VIDEO_SOURCES.asr_provider!)) {
     video.asr_provider = provider;
   }

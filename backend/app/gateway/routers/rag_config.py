@@ -49,7 +49,7 @@ router = APIRouter(prefix="/api", tags=["rag"])
 _ADMIN_DETAIL = "Admin privileges required to manage the RAG configuration."
 
 #: Secret fields: masked on read, sentinel-preserving on write, env-backed when unset.
-_SECRET_FIELDS: tuple[str, ...] = ("embedding_api_key", "rerank_api_key", "mineru_api_token", "sparse_api_key")
+_SECRET_FIELDS: tuple[str, ...] = ("embedding_api_key", "rerank_api_key", "mineru_api_token", "sparse_api_key", "asr_api_key")
 
 #: Secret field -> (allowlist leg, the config field naming that leg's provider). A secret's
 #: environment fallback is the one the *selected* provider reads, so switching provider
@@ -60,6 +60,9 @@ _SECRET_LEGS: dict[str, tuple[str, str]] = {
     "rerank_api_key": ("rerank", "rerank_provider"),
     "mineru_api_token": ("parse", "parse_provider"),
     "sparse_api_key": ("sparse", "sparse_provider"),
+    # The ASR leg's provider is the one selection nested inside the `video` block, so this
+    # path is dotted on purpose and read with `_read_field` (spec 2026-09-28 D4).
+    "asr_api_key": ("asr", "video.asr_provider"),
 }
 
 #: The video sub-block is a nested object in the file; the API reports/receives it as one.
@@ -116,6 +119,10 @@ class RagConfigResponse(BaseModel):
         default_factory=list,
         description="Capability of every rerank provider in the curated allowlist, in its own order.",
     )
+    asr_providers: list[AsrProviderCapability] = Field(
+        default_factory=list,
+        description="Capability of every ASR provider in the curated allowlist, in its own order.",
+    )
     warning: str | None = Field(
         default=None,
         description="Why the saved configuration could not be verified (null when it was, or was not probed).",
@@ -161,6 +168,20 @@ class RerankProviderCapability(BaseModel):
     )
 
 
+class AsrProviderCapability(BaseModel):
+    """One ASR provider's declared capability (spec 2026-09-28 §3).
+
+    The ASR row reads exactly one thing from this block: what to show greyed out in the
+    endpoint field while it is empty. Deliberately narrower than the two retrieval blocks —
+    their ``has_fixed_endpoint`` no longer drives anything in the UI (2026-09-25
+    rag-endpoint-unlock retired the lock and the reset-to-default), so carrying it here would
+    only add a second field nothing reads.
+    """
+
+    provider_id: str = Field(..., description="Curated allowlist id, exactly as the PUT accepts it.")
+    default_endpoint: str | None = Field(..., description="The vendor's own endpoint, shown as the address field's placeholder; None when the row has none.")
+
+
 def _declared_flat(stored: RagConfigFile) -> dict[str, Any]:
     """Flatten the file's declared fields, dropping blanks (an empty string is 'not set')."""
     declared: dict[str, Any] = {}
@@ -187,6 +208,22 @@ def _prune_empty(data: dict[str, Any]) -> dict[str, Any]:
     return pruned
 
 
+def _read_field(source: Any, path: str) -> Any:
+    """Read a dotted field path out of a payload dict or the live config object.
+
+    Four of the five secret-bearing legs name their provider with a top-level field; the ASR
+    leg's lives inside the nested ``video`` block. Without this the lookup would read nothing,
+    fall back to the allowlist's first row, and report the wrong environment variable — a
+    silent answer rather than an error (spec 2026-09-28 D4).
+    """
+    value = source
+    for part in path.split("."):
+        value = value.get(part) if isinstance(value, dict) else getattr(value, part, None)
+        if value is None:
+            return None
+    return value
+
+
 def _secret_env_name(field_name: str, config: AppConfig, written: dict[str, Any]) -> str | None:
     """The environment variable backing a secret when the file declares none.
 
@@ -196,7 +233,7 @@ def _secret_env_name(field_name: str, config: AppConfig, written: dict[str, Any]
     leg, provider_field = _SECRET_LEGS[field_name]
     # The submitted object wins: a PUT that switches provider must report the new fallback
     # in its own response, before ``get_app_config()`` reloads the file it just wrote.
-    provider = written.get(provider_field) or getattr(config.rag, provider_field, None)
+    provider = _read_field(written, provider_field) or _read_field(config.rag, provider_field)
     if provider is None:
         provider = provider_ids(leg)[0]
     return secret_env_var(leg, provider)
@@ -243,6 +280,7 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
         sources=sources,
         embedding_providers=_embedding_provider_capabilities(),
         rerank_providers=_rerank_provider_capabilities(),
+        asr_providers=_asr_provider_capabilities(),
         warning=warning,
         migration=migration,
     )
@@ -285,6 +323,19 @@ def _rerank_provider_capabilities() -> list[RerankProviderCapability]:
                 default_endpoint=spec.default_endpoint,
             )
         )
+    return capabilities
+
+
+def _asr_provider_capabilities() -> list[AsrProviderCapability]:
+    """The ASR leg of the allowlist, in its own order — the row's placeholder source.
+
+    The in-process engines and the generic protocol tier declare no default, so their endpoint
+    field keeps the shared example placeholder; only the vendor row has one to show.
+    """
+    capabilities: list[AsrProviderCapability] = []
+    for provider_id in provider_ids("asr"):
+        spec = resolve_provider("asr", provider_id)
+        capabilities.append(AsrProviderCapability(provider_id=provider_id, default_endpoint=spec.default_endpoint))
     return capabilities
 
 
