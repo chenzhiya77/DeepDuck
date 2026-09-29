@@ -139,19 +139,24 @@ class WhisperProvider:
         return _rows_from_whisper(result)
 
 
+#: 「整段一行」的信号（spec 2026-09-28 §2 D2）：没有句级切分时，整篇口述并成一行。
+_COLLAPSED_WARNING = "FunASR 未返回句级分段（sentence_info）：整篇口述会并成一行、其余镜头卡写「（无）」。装标点模型 + sentence_timestamp=True 才有句级切分（spec 2026-09-28 §2 D1）。"
+
+
 def _rows_from_funasr(result: Any) -> list[tuple[float, float, str]]:
     """FunASR ``generate()`` 输出 → (start_ms, end_ms, text) 三元组。
 
-    Paraformer 结果通常形如 ``[{"text":..., "timestamp": [[s_ms, e_ms], ...]}]``；
-    带标点/句读时另有 ``sentence`` 分段。此处做最小稳健提取（sentence 优先，
-    回退整句 timestamp 首末），**真实输出形状在 Task 7/12 集成时校准**。
+    真机校准（2026-09-29，spec 2026-09-28 §2 D2）：句级分段在 ``sentence_info``
+    （每项 ``{text, start, end, ...}``，毫秒；装 punc + ``sentence_timestamp=True`` 才出现）；
+    没有它时退回 ``timestamp``（逐字对）取首末 ⇒ **整段一行**，并记一条 warning 让退化可见。
     """
     rows: list[tuple[float, float, str]] = []
+    collapsed = False
     items = result if isinstance(result, (list, tuple)) else [result]
     for item in items:
         if not isinstance(item, dict):
             continue
-        sentences = item.get("sentence")
+        sentences = item.get("sentence_info")
         if isinstance(sentences, dict):
             sentences = [sentences]
         if isinstance(sentences, list) and sentences:
@@ -162,6 +167,9 @@ def _rows_from_funasr(result: Any) -> list[tuple[float, float, str]]:
         stamps = item.get("timestamp")
         if isinstance(stamps, list) and stamps:
             rows.append((stamps[0][0], stamps[-1][-1], item.get("text", "")))
+            collapsed = True
+    if collapsed:
+        logger.warning(_COLLAPSED_WARNING)
     return rows
 
 

@@ -14,6 +14,7 @@ TranscriptSegment 序列——单位换算、取整、去空白、丢弃无效�
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 
@@ -141,14 +142,27 @@ async def test_real_whisper_provider_degrades_to_asrerror(tmp_path):
 # ── 真实 provider 输出解析（白盒，钉死格式转换契约；真实形状待 Task 7 集成校准）──
 
 
-def test_rows_from_funasr_prefers_sentence_segments():
-    result = [{"text": "你好世界", "sentence": [{"start": 0, "end": 1200, "text": "你好"}, {"start": 1200, "end": 2500, "text": "世界"}]}]
+def test_rows_from_funasr_prefers_sentence_info_segments():
+    # 真机键名是 `sentence_info`（spec 2026-09-28 §2 D2 校准；`sentence` 键从不出现）。
+    result = [{"text": "你好世界", "sentence_info": [{"start": 0, "end": 1200, "text": "你好"}, {"start": 1200, "end": 2500, "text": "世界"}]}]
     assert _rows_from_funasr(result) == [(0, 1200, "你好"), (1200, 2500, "世界")]
 
 
 def test_rows_from_funasr_falls_back_to_utterance_timestamp():
     result = [{"text": "你好", "timestamp": [[0, 600], [600, 1200]]}]
     assert _rows_from_funasr(result) == [(0, 1200, "你好")]  # 首字 start → 末字 end
+
+
+def test_rows_from_funasr_warns_when_the_file_collapses_to_one_row(caplog):
+    # "整段一行"是退化信号（本件真机的实际形状）：没有句级 ⇒ 整篇口述并成一行、其余卡「（无）」。
+    result = [{"text": "你好", "timestamp": [[0, 600], [600, 1200]]}]
+    with caplog.at_level(logging.WARNING):
+        _rows_from_funasr(result)
+    assert any("sentence_info" in record.getMessage() for record in caplog.records)
+
+
+def test_rows_from_funasr_returns_empty_without_any_timing():
+    assert _rows_from_funasr([{"text": "你好"}]) == []  # 不抛：降级语义不变
 
 
 def test_rows_from_whisper_extracts_start_end_text():

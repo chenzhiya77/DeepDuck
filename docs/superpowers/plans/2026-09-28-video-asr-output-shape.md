@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Spec:** [2026-09-28-video-asr-output-shape-design.md](../specs/2026-09-28-video-asr-output-shape-design.md)
-**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅ 已交付（代码未提交）**：RED 1 红/17 绿 → GREEN 18 → neuter 1 红（VAD 那条）→ 还原 18；`tests/knowledge/video` 130 例、`make lint` 净；**Task 2 / 3 未开工**。
+**Status:** 🚧 **进行中（2026-09-28 成对）**。**D1 = 只补 VAD 且明确放弃分段 / D2 甲 / D3 = 默认全配 VAD + 例外名单（2026-09-29 裁）**；**Task 0 ✅ 已跑完**（真机记录见下 `实测`）——其中"补了配件也达不到 rows>1"一条促成了 D1 的改判。**Task 1 ✅（已提交 `dcd1142d`）/ Task 2 ✅（代码未提交）**——Task 1：RED 1 红/17 绿 → GREEN 18 → neuter 1 红 → 还原 18；Task 2：RED 2 红/18 绿 → GREEN 20 → neuter 1 红（告警）→ 还原 20 + 真机复核（rows=1、warning 打出、跨度 1070→90305ms）；`tests/knowledge/video` **132 例**、`make lint` 净；**Task 3 未开工**。
 **来源**：[2026-09-27-rag-asr-model-picker.md](2026-09-27-rag-asr-model-picker.md) 的 `实测` 越界发现（那条线纯前端、本件动 `backend/`，两者零文件重叠）。
 
 **Architecture:** 两处——**① 调用侧只带 `vad_model="fsmn-vad"`**（`asr.py:98-99`；**不补 `punc_model`**——真机已证"分段绕不过 punc"，本件放弃分段）**② 抽取器按真机形状校准 + 把"整段一行"变可观测**（`asr.py:127-150`：键名按真机校正、保留回退，新增告警，按 D2）。
@@ -78,13 +78,19 @@
 > 动到的文件：`asr.py`（`_rows_from_funasr` 与其 docstring）＋ 该腿测试。
 > **验收对应**：spec §4 的 2（可观测生效）。
 
-- [ ] **RED**：纯函数用例三形状——① `sentence_info` 非空（**真机键名**，装 punc 后才会出现）⇒ 多 rows；② 只有 `timestamp` 且跨度≈全长 ⇒ **1 行 + 一条 warning**（"整段一行"防御，**本件真机的实际形状**）；③ 两者都没有 ⇒ 空 rows（**不抛**，保持降级语义）。此刻无实现 ⇒ 红。
-- [ ] **GREEN**：按真机键名校准取数（`sentence_info` 优先 / `timestamp` 回退）+ 加告警；docstring 去掉"待 Task 7/12 校准"的自述（已校准）。
-- [ ] **neuter**：去掉"整段一行"告警 ⇒ ② 红、①③ 绿。
-- [ ] **真机复核**：90s 音频 ⇒ **1 行 + warning 出现**（rows 仍为 1——本件接受的现状）；分桶结果与今天一致（仍进 1 张卡）⇒ 把"不变"记成现状，**不是失败**。
-- [ ] **门禁**：`make test` + `make lint` 净。
+- [x] **RED**：纯函数用例三形状——① `sentence_info` 非空（**真机键名**，装 punc 后才会出现）⇒ 多 rows；② 只有 `timestamp` 且跨度≈全长 ⇒ **1 行 + 一条 warning**（"整段一行"防御，**本件真机的实际形状**）；③ 两者都没有 ⇒ 空 rows（**不抛**，保持降级语义）。此刻无实现 ⇒ 红。
+- [x] **GREEN**：按真机键名校准取数（`sentence_info` 优先 / `timestamp` 回退）+ 加告警；docstring 去掉"待 Task 7/12 校准"的自述（已校准）。
+- [x] **neuter**：去掉"整段一行"告警 ⇒ ② 红、①③ 绿。
+- [x] **真机复核**：90s 音频 ⇒ **1 行 + warning 出现**（rows 仍为 1——本件接受的现状）；分桶结果与今天一致（仍进 1 张卡）⇒ 把"不变"记成现状，**不是失败**。
+- [x] **门禁**：`make test` + `make lint` 净。
 
-**实测**：（回填）
+**实测**（Task 2，2026-09-29）：
+- **RED**：**2 红 / 18 绿**（单文件 20 例）。红的是 ①（`sentence_info` 未读）与 ②（告警未加）；③「两者都没有 ⇒ 空 rows」是**守卫**（实现前天然绿，与 Task 1 的例外名单同类）。另：既有用例 `test_rows_from_funasr_prefers_sentence_segments` 用的 `sentence` 键**就是校准对象本身** ⇒ 一并改成 `sentence_info`（真机里 `sentence` 从不出现）。
+- **GREEN**：**20 绿**（键名校准 + 回退告警）。
+- **neuter**（去掉告警调用）：**1 红 / 19 绿**，受害者 = ② ⇒ revert proof 成立；①③ 绿 ✓ 与计划一致。
+- **真机复核**（90s 重建样本，走真 `FunAsrProvider.transcribe`）：**rows = 1 / segments = 1 / 跨度 1070→90305 ms**，**warning 原文打出**，`load+gen ≈ 31.4 s`。分桶输入与改造前**完全相同**（同一条 1 行）⇒ 仍进 1 张卡，**记成现状**。
+- **门禁**：`tests/knowledge/video` **132 例全绿**；`make lint` 净（1308 文件）——期间它抓到我一处格式债（新常量被折成多行，仓里行长 240 ⇒ 应为单行），已改。
+- **偏差登记**：计划写「跨度≈全长 ⇒ 告警」，但**纯函数拿不到音频时长** ⇒ 落成「**走到 `timestamp` 回退即告警**」（这正是真机形状的退化信号：没有 `sentence_info` ⇒ 整篇并成一行）。另：0 行（无任何计时）**按计划不告警**——它仍是静默空（sensevoice 那类），要不要补信号留待二期。
 
 ---
 
