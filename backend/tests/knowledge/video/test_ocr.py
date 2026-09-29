@@ -1,79 +1,146 @@
-"""Screen-text OCR leg tests (spec 2026-09-08 §2/§8, plan Task 5).
+"""屏幕文字腿的契约测试（spec 2026-09-08 §2/§8；2026-09-30 起走 `rag.vlm_model`）。
 
-PaddleOCR 是重依赖（本机/CI 不装），故清洗拼接纯函数、engine 协议、降级用
-fake engine 全覆盖。真实 PaddleOCR 缺失时必须降级为空结果（不抛错）——OCR 是
-可选增强，单镜头失败 → 屏幕文字「（无）」（spec §2），绝不阻断镜头卡。
+清洗拼接是纯函数；腿本身（目标解析 / 无钥匙 / 单镜头失败 / >30% ⇒ degraded）与 caption
+腿**共用同一套骨架**（`run_shot_prompt`），所以这里用 `httpx.MockTransport` 覆盖调用与
+降级，不打真实 VLM 端点。与 caption 腿的差别只有两点：提问的 prompt（要转录、不要描述）
+与返回文本的清洗。
 """
 
 from __future__ import annotations
 
-from deerflow.knowledge.video.ocr import PaddleOcrEngine, _lines_from_paddle, normalize_ocr_text, ocr_frame
+import httpx
+import pytest
+
+from deerflow.knowledge.video.ocr import normalize_ocr_text, screen_text_shots
 
 # ── normalize_ocr_text 纯函数 ────────────────────────────────────────────
 
 
-def test_normalize_ocr_text_strips_and_joins():
-    assert normalize_ocr_text(["  你好 ", "", "   ", "世界"]) == "你好\n世界"
+def test_normalize_strips_and_joins_in_order():
+    assert normalize_ocr_text(["  你好  ", "世界", "  "]) == "你好\n世界"
 
 
-def test_normalize_ocr_text_empty_input_is_empty_string():
+def test_normalize_empty_is_empty_string():
     assert normalize_ocr_text([]) == ""
-    assert normalize_ocr_text(["", "   ", "\t"]) == ""
+    assert normalize_ocr_text(["   ", "\t"]) == ""
 
 
-def test_normalize_ocr_text_preserves_order():
-    assert normalize_ocr_text(["第三行", "第一行", "第二行"]) == "第三行\n第一行\n第二行"  # 不改序，按输入
+# ── screen_text_shots（VLM 路线）─────────────────────────────────────────
 
 
-# ── ocr_frame：fake engine 编排 ──────────────────────────────────────────
+def _vlm_transport(*, fail_first: int = 0, content: str = "季度经营分析会\nQ3 Revenue 128.4M") -> httpx.MockTransport:
+    """前 fail_first 次调用返回 500，其余返回固定文本（并发下失败总数确定）。"""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        index = state["n"]
+        state["n"] += 1
+        if index < fail_first:
+            return httpx.Response(500, text="vlm boom")
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    return httpx.MockTransport(handler)
 
 
-class _FakeEngine:
-    def __init__(self, lines=None, exc=None):
-        self._lines = lines or []
-        self._exc = exc
-        self.seen: list[bytes] = []
+_FRAMES = {0: [b"\xff\xd8frame0"], 1: [b"\xff\xd8frame1"]}
 
-    def recognize(self, image: bytes) -> list[str]:
-        self.seen.append(image)
-        if self._exc is not None:
-            raise self._exc
-        return self._lines
-
-
-async def test_ocr_frame_uses_injected_engine():
-    engine = _FakeEngine(lines=["标题", "正文"])
-    assert await ocr_frame(b"imgbytes", engine=engine) == "标题\n正文"
-    assert engine.seen == [b"imgbytes"]  # 帧 bytes 透传给 engine
+#: 与 caption 腿同一套目标解析：屏幕文字读的也是 `rag.vlm_model` 指的那条 `models:` 条目
+#: （spec 2026-09-30：不再有独立的 OCR 引擎，也没有 `video.ocr_lang`）。
+_VLM_ENTRY = {
+    "name": "test-vlm",
+    "use": "langchain_openai:ChatOpenAI",
+    "model": "test-vlm-wire",
+    "base_url": "https://vlm.example/v1",
+    "api_key": "test-key",
+    "supports_vision": True,
+}
 
 
-async def test_ocr_frame_engine_crash_degrades_to_empty():
-    """engine 抛错 → 空串降级，不向上抛（OCR 是可选增强，不阻断镜头卡）。"""
-    engine = _FakeEngine(exc=RuntimeError("ocr 炸了"))
-    assert await ocr_frame(b"img", engine=engine) == ""
+def _vlm_config(*, with_key: bool = True):
+    from deerflow.config.app_config import AppConfig
+
+    entry = {key: value for key, value in _VLM_ENTRY.items() if with_key or key != "api_key"}
+    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [entry], "rag": {"vlm_model": "test-vlm"}})
 
 
-# ── 真实 PaddleOCR 依赖缺失 → 降级（本机 paddleocr 未装）──────────────────
+@pytest.fixture(autouse=True)
+def _vlm_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 骨架住在 captioner 里（两条腿共用），目标解析也发生在那里。
+    monkeypatch.setattr("deerflow.knowledge.video.captioner.get_app_config", _vlm_config)
 
 
-def test_paddle_engine_missing_dep_returns_empty_list():
-    """PaddleOCR 未装 → recognize 返回 []（延迟 import 失败不抛错）。"""
-    assert PaddleOcrEngine().recognize(b"img") == []
+async def test_screen_text_shots_returns_the_transcription():
+    async with httpx.AsyncClient(transport=_vlm_transport()) as client:
+        outcome = await screen_text_shots(_FRAMES, client=client, model="test-vlm")
+
+    assert outcome.captions == {0: "季度经营分析会\nQ3 Revenue 128.4M", 1: "季度经营分析会\nQ3 Revenue 128.4M"}
+    assert outcome.failed == 0
+    assert outcome.degraded is False
 
 
-async def test_ocr_frame_default_engine_degrades_when_missing():
-    """默认 engine（PaddleOcrEngine）在本机未装时 → 空串。"""
-    assert await ocr_frame(b"img") == ""
+async def test_screen_text_shots_asks_for_a_transcript_not_a_description():
+    """这一句 prompt 是它与 caption 腿唯一的语义差别：要转录、不要描述。"""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.content.decode("utf-8"))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "屏幕上的字"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await screen_text_shots({0: [b"\xff\xd8frame"]}, client=client, model="test-vlm")
+
+    assert "转录" in seen[0]
+    assert "描述这个镜头" not in seen[0]
 
 
-# ── 真实 PaddleOCR 输出解析（白盒，钉死格式转换契约；真实形状待 Task 7 集成校准）──
+async def test_screen_text_shots_blank_lines_are_dropped():
+    async with httpx.AsyncClient(transport=_vlm_transport(content="第一行\n\n  \n第二行")) as client:
+        outcome = await screen_text_shots({0: [b"\xff\xd8frame"]}, client=client, model="test-vlm")
+
+    assert outcome.captions == {0: "第一行\n第二行"}
 
 
-def test_lines_from_paddle_extracts_nested_text():
-    result = [[["box", ("你好", 0.98)], ["box", ("世界", 0.95)]]]
-    assert _lines_from_paddle(result) == ["你好", "世界"]
+async def test_screen_text_shots_empty_input():
+    outcome = await screen_text_shots({})
+    assert outcome.captions == {}
+    assert outcome.failed == 0
+    assert outcome.degraded is False
 
 
-def test_lines_from_paddle_skips_malformed_entries():
-    result = [[["box", ("有效", 0.9)], "malformed", ["box", ("  ", 0.5)], ["box", (999, 0.1)]]]
-    assert _lines_from_paddle(result) == ["有效"]  # 跳过畸形/空白/非字符串
+async def test_a_single_failed_shot_keeps_the_others_and_does_not_degrade():
+    """1/4 失败 = 25% < 30%：那一个镜头空，其余照旧，腿不标 degraded。"""
+    frames = {0: [b"f0"], 1: [b"f1"], 2: [b"f2"], 3: [b"f3"]}
+    async with httpx.AsyncClient(transport=_vlm_transport(fail_first=1)) as client:
+        outcome = await screen_text_shots(frames, client=client, model="test-vlm")
+
+    assert outcome.failed == 1
+    assert len([text for text in outcome.captions.values() if text]) == 3
+    assert outcome.degraded is False
+
+
+async def test_a_failure_rate_over_the_threshold_degrades_the_leg():
+    frames = {0: [b"f0"], 1: [b"f1"], 2: [b"f2"]}
+    async with httpx.AsyncClient(transport=_vlm_transport(fail_first=2)) as client:
+        outcome = await screen_text_shots(frames, client=client, model="test-vlm")
+
+    assert outcome.failed == 2
+    assert outcome.degraded is True
+
+
+async def test_frameless_shots_are_not_failures():
+    """无帧镜头留空、不计失败（无输入 ≠ 调用失败）——与 caption 腿同一条规则。"""
+    async with httpx.AsyncClient(transport=_vlm_transport()) as client:
+        outcome = await screen_text_shots({0: [b"f0"], 1: []}, client=client, model="test-vlm")
+
+    assert outcome.captions[1] == ""
+    assert outcome.failed == 0
+    assert outcome.degraded is False
+
+
+async def test_a_keyless_target_degrades_without_a_call(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("deerflow.knowledge.video.captioner.get_app_config", lambda: _vlm_config(with_key=False))
+    outcome = await screen_text_shots(_FRAMES, model="test-vlm")
+
+    assert outcome.captions == {0: "", 1: ""}
+    assert outcome.failed == 2
+    assert outcome.degraded is True

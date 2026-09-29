@@ -46,7 +46,7 @@ from deerflow.knowledge.vector_store import KnowledgeVectorStore
 from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, resolve_leg_provider, transcribe_video
 from deerflow.knowledge.video.captioner import caption_shots
 from deerflow.knowledge.video.frames import extract_caption_frames, extract_keyframes
-from deerflow.knowledge.video.ocr import ocr_frame
+from deerflow.knowledge.video.ocr import screen_text_shots
 from deerflow.knowledge.video.probe import probe_video
 from deerflow.knowledge.video.segmentation import fallback_windows, merge_scene_bounds
 from deerflow.knowledge.video.shot_card import assemble_card_body, chunk_id_for_shot, heading_path_for_shot, is_empty_card
@@ -674,14 +674,23 @@ class KnowledgeIndexWorker:
             return fallback_windows(duration_ms, int(cfg.fallback_window_seconds * 1000))
 
     async def _video_ocr_leg(self, doc_dir: Path, keyframes: dict[int, str | None]) -> dict[int, str]:
-        """读每镜头持久化中帧 bytes → OCR 屏幕文字；缺帧镜头跳过（空串，spec §2 降级）。"""
+        """读每镜头持久化中帧 bytes → 屏幕文字（走 `rag.vlm_model`，spec 2026-09-30）。
+
+        缺帧镜头留空串、**不计失败**；整腿失败率 >30% 时打一条 warning——本腿没有自己的
+        `path_status` 状态（屏幕文字是可选增强，空即「（无）」），所以信号只有日志。
+        """
+        frames: dict[int, list[bytes]] = {}
         texts: dict[int, str] = {}
         for index, rel in keyframes.items():
             if rel is None:
                 texts[index] = ""
                 continue
-            frame_bytes = await run_file_io(_read_frame_bytes, doc_dir / rel)
-            texts[index] = await ocr_frame(frame_bytes)
+            frames[index] = [await run_file_io(_read_frame_bytes, doc_dir / rel)]
+        if frames:
+            outcome = await screen_text_shots(frames)
+            texts.update(outcome.captions)
+            if outcome.degraded:
+                logger.warning("视频屏幕文字腿失败率过高（%d/%d 帧）；本片屏幕文字按空处理", outcome.failed, len(frames))
         return texts
 
     async def _video_caption_leg(self, doc_id: str, kb_id: str, storage_path: str, legs: dict[str, str]) -> None:

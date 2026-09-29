@@ -1,100 +1,56 @@
-"""Screen-text OCR leg (spec 2026-09-08 §2/§8, plan Task 5).
+"""Screen-text leg (spec 2026-09-08 §2/§8, plan Task 5; VLM route 2026-09-30).
 
-第四条腿（ocr）的执行层：读镜头中帧的屏幕文字（PaddleOCR）。OCR 是**可选
-增强**——单镜头失败 → 屏幕文字「（无）」（spec §2），绝不阻断镜头卡；与 ASR
-（整腿降级 asr=failed）不同，OCR 每帧独立降级为空串，>30% 失败由 worker 标腿
-degraded。
+第四条腿（ocr）的执行层：读镜头中帧的屏幕文字，写进卡片第三行。
 
-PaddleOCR 是重依赖（本机/CI 不装）：延迟 import，未装 / 推理失败 → 空结果
-（不抛错）。清洗拼接是纯函数 ``normalize_ocr_text``；blocking 推理经
-``run_file_io`` 落线程池。
+**2026-09-30 起走 `rag.vlm_model`（与 caption 同一条链）**——不再依赖进程内的
+PaddleOCR：那条路本机/CI 都没装、装上也没校准过返回形状，而同一个 VLM 读屏幕文字
+当天就能用（实测：中英混排四行逐字全对，0.7–3.4 s/帧）。收益是**零新增依赖、零新增
+配置**（用户在设置页不需要再管一个 OCR 模型），代价是屏幕文字从"确定性引擎"变成
+生成式输出，且会像 caption 一样遇到网络/凭据失败。
+
+降级（spec §2）：屏幕文字是**可选增强**——单镜头失败 → 该镜头「（无）」，绝不阻断
+镜头卡；失败率 > 30% 由共用骨架标 degraded，本腿打一条 warning 说清（它没有自己的
+`path_status` 腿，与 caption 的状态面不同）。
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from typing import Any, Protocol
+from collections.abc import Iterable, Mapping, Sequence
 
-from deerflow.utils.file_io import run_file_io
+import httpx
+
+from deerflow.knowledge.video.captioner import CaptionOutcome, run_shot_prompt
 
 logger = logging.getLogger(__name__)
 
-
-class OcrEngine(Protocol):
-    """OCR 引擎协议：读一帧图像 bytes，返回文本行列表（失败返 ``[]``）。"""
-
-    def recognize(self, image: bytes) -> list[str]: ...
+#: 屏幕文字的提问方式：要的是**转录**，不是描述（caption 腿那句是双模式，这一句单一）。
+_SCREEN_TEXT_PROMPT = "完整转录画面中的全部文字，保留原有换行。如果画面里没有文字，只输出空内容。不要描述画面、不要解释、不要添加任何格式。"
 
 
 def normalize_ocr_text(lines: Iterable[str]) -> str:
     """OCR 结果清洗拼接纯函数：逐行 strip、丢弃空行、按输入序换行拼接；空 → 空串。
 
-    不改行序（阅读顺序由 OCR 引擎给出）；空串表示该帧无屏幕文字（spec §2「（无）」）。
+    不改行序（阅读顺序由引擎／模型给出）；空串表示该帧无屏幕文字（spec §2「（无）」）。
     """
     cleaned = [line.strip() for line in lines]
     return "\n".join(text for text in cleaned if text)
 
 
-class PaddleOcrEngine:
-    """PaddleOCR 屏幕文字（重依赖延迟 import，未装 / 失败 → 空结果，不抛错）。"""
+async def screen_text_shots(
+    shot_frames: Mapping[int, Sequence[bytes]],
+    *,
+    client: httpx.AsyncClient | None = None,
+    model: str | None = None,
+) -> CaptionOutcome:
+    """按镜头读屏幕文字（每镜头一帧）；降级语义与 caption 腿共用同一套骨架。
 
-    def __init__(self) -> None:
-        self._ocr: Any = None
-
-    def recognize(self, image: bytes) -> list[str]:
-        try:
-            result = self._engine().ocr(image)
-        except Exception as exc:  # 未装（ImportError）/ 推理失败统一降级空
-            logger.warning("PaddleOCR recognize failed (%s); degrading to empty screen text", exc)
-            return []
-        return _lines_from_paddle(result)
-
-    def _engine(self) -> Any:
-        if self._ocr is None:
-            from paddleocr import PaddleOCR  # 延迟 import：缺失即抛，被 recognize 捕获降级
-
-            self._ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
-        return self._ocr
-
-
-def _lines_from_paddle(result: Any) -> list[str]:
-    """PaddleOCR ``.ocr()`` 输出 → 文本行列表（真实形状待 Task 7/12 集成校准）。
-
-    结果通常形如 ``[[[box, (text, confidence)], ...]]``（外层每页、内层每文本框）。
-    对畸形/空白/非字符串条目防御性跳过。
+    返回值的字段名沿用 ``captions``（两条腿共用 ``run_shot_prompt`` 的骨架）——
+    屏幕文字腿读的就是它；``failed`` / ``degraded`` 同义。
     """
-    lines: list[str] = []
-    pages = result if isinstance(result, list) else [result]
-    for page in pages:
-        if not isinstance(page, list):
-            continue
-        for item in page:
-            if not isinstance(item, (list, tuple)) or len(item) < 2:
-                continue
-            payload = item[1]
-            if not isinstance(payload, (list, tuple)) or not payload:
-                continue
-            text = payload[0]
-            if isinstance(text, str) and text.strip():
-                lines.append(text)
-    return lines
-
-
-async def ocr_frame(image: bytes, *, engine: OcrEngine | None = None) -> str:
-    """OCR 一帧屏幕文字；``engine`` 可注入（fake）；未装 / 失败 → 空串（spec §2 降级，不抛）。
-
-    blocking 推理经 ``run_file_io`` 落线程池。engine.recognize 抛错也在此兜底降级
-    （双保险，OCR 绝不阻断镜头卡）。
-    """
-    eng = engine or PaddleOcrEngine()
-
-    def _blocking() -> str:
-        try:
-            lines = eng.recognize(image)
-        except Exception as exc:  # engine 崩溃也降级空串
-            logger.warning("OCR engine raised (%s); degrading to empty screen text", exc)
-            return ""
-        return normalize_ocr_text(lines)
-
-    return await run_file_io(_blocking)
+    outcome = await run_shot_prompt(shot_frames, prompt=_SCREEN_TEXT_PROMPT, client=client, model=model, what="屏幕文字")
+    return CaptionOutcome(
+        captions={index: normalize_ocr_text(text.splitlines()) for index, text in outcome.captions.items()},
+        failed=outcome.failed,
+        degraded=outcome.degraded,
+    )

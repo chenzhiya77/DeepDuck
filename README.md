@@ -42,7 +42,7 @@
 - **经 MinerU 解析**：`.pdf`、`.doc` / `.docx`、`.ppt` / `.pptx`、`.png` / `.jpg` / `.jpeg`。文档内的表格会归一为 GFM 表格；正文中抽出的图片由 VLM 生成说明，并保留在原文档位置就地渲染
 - **本地直读**（不走网络）：`.md` / `.markdown` / `.txt`
 - **表格**：`.csv` 始终可用；`.xlsx` / `.xls` / `.tsv` 由 `rag.table.enabled` 门控。统一归一为 GFM 表格——Excel 逐 sheet 一张表，`.csv` / `.tsv` 按分隔符解析
-- **视频**：`.mp4` / `.mov` / `.mkv` / `.webm`，由 `rag.video.enabled` 门控。**ASR（funasr / Paraformer）与关键帧 OCR（PaddleOCR）在本地运行**，不依赖外部推理服务；镜头画面说明与向量化仍走所配置的模型端点。ASR + 关键帧 + 分镜卡，产物以切片形式进入同一套检索
+- **视频**：`.mp4` / `.mov` / `.mkv` / `.webm`，由 `rag.video.enabled` 门控。**ASR（funasr / Paraformer）在本地运行**，不依赖外部推理服务；镜头画面说明、关键帧屏幕文字与向量化走所配置的模型端点。ASR + 关键帧 + 分镜卡，产物以切片形式进入同一套检索
 - **解析可接自建服务**：`rag.parse_provider` 默认 `mineru-cloud`（MinerU 官方 API）；改成 `mineru-local` 并填 `rag.parse_base_url` 即接**自建的 MinerU 服务**（对接上游 4.x 的 HTTP 契约，本仓按 4.0.7 验证：上传 → 建解析任务 → 轮询 → 取结果 zip；轻客户端形态，本机不跑模型推理；该服务本身不带鉴权，只应部署在内网）。`rag.parse_tier` 可选 `flash` / `basic` / `standard` / `advanced` 指定解析档位，留空则由服务端决定（服务端自身默认 `standard`；`standard` / `advanced` 需要服务端装 torch）。换解析来源不影响表格归一化、图片落盘与就地渲染
 
 全部开启时共支持 19 种后缀。

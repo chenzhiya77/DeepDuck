@@ -136,7 +136,7 @@ def _fake_legs(
     cuts_error: Exception | None = None,
     keyframes: dict[int, str | None] | None = None,
     caption_frames: list[bytes] | None = None,
-    ocr: str | None = None,
+    screen_text: str | None = None,
     caption: CaptionOutcome | None = None,
     config: SimpleNamespace | None = None,
 ) -> dict[str, int]:
@@ -147,7 +147,7 @@ def _fake_legs(
     """
     import deerflow.knowledge.worker as w
 
-    calls = {"probe": 0, "asr": 0, "cuts": 0, "keyframes": 0, "caption_frames": 0, "ocr": 0, "caption": 0}
+    calls = {"probe": 0, "asr": 0, "cuts": 0, "keyframes": 0, "caption_frames": 0, "screen_text": 0, "caption": 0}
 
     async def _probe(path, **kw):
         calls["probe"] += 1
@@ -179,9 +179,9 @@ def _fake_legs(
         calls["caption_frames"] += 1
         return caption_frames if caption_frames is not None else [b"\xff\xd8frame"]
 
-    async def _ocr(image, **kw):
-        calls["ocr"] += 1
-        return ocr if ocr is not None else "屏幕文字"
+    async def _screen_text(shot_frames, **kw):
+        calls["screen_text"] += 1
+        return CaptionOutcome(captions={i: (screen_text if screen_text is not None else "屏幕文字") for i in shot_frames}, failed=0, degraded=False)
 
     async def _caption(shot_frames, **kw):
         calls["caption"] += 1
@@ -194,7 +194,7 @@ def _fake_legs(
     monkeypatch.setattr(w, "_detect_scene_cuts", _cuts)
     monkeypatch.setattr(w, "extract_keyframes", _keyframes)
     monkeypatch.setattr(w, "extract_caption_frames", _caption_frames)
-    monkeypatch.setattr(w, "ocr_frame", _ocr)
+    monkeypatch.setattr(w, "screen_text_shots", _screen_text)
     monkeypatch.setattr(w, "caption_shots", _caption)
     monkeypatch.setattr(w, "get_app_config", lambda: config or _video_config())
     return calls

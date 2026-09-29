@@ -26,7 +26,7 @@ import httpx
 
 from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.caption_client import request_caption
-from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
+from deerflow.knowledge.vlm_target import resolve_vlm_target
 
 logger = logging.getLogger(__name__)
 
@@ -50,41 +50,39 @@ class CaptionOutcome:
     degraded: bool = False
 
 
-async def _caption_one_shot(client: httpx.AsyncClient, frames: Sequence[bytes], *, target: VlmTarget) -> str:
-    """多帧 → 单 caption（一个 message 含 ≤3 个图片块 + 双模式 prompt）。"""
-    return await request_caption(client, target=target, prompt=_SHOT_CAPTION_PROMPT, images=[(frame, "image/jpeg") for frame in frames])
-
-
-async def caption_shots(
+async def run_shot_prompt(
     shot_frames: Mapping[int, Sequence[bytes]],
     *,
+    prompt: str,
     client: httpx.AsyncClient | None = None,
     model: str | None = None,
+    what: str = "配文",
 ) -> CaptionOutcome:
-    """给每镜头帧序列生成 caption；降级非硬依赖（spec §2）。
+    """「按镜头问 VLM」的共用骨架（caption 腿与屏幕文字腿各给一句 prompt）。
 
-    - api_key 缺失 → 不 outbound，全镜头空 caption + ``degraded=True``；
+    - api_key 缺失 → 不 outbound，全镜头空 + ``degraded=True``；
     - 单镜头失败（VLM 异常 / 空返回）→ 该镜头空、``failed+1``；
-    - 无帧镜头 → 空 caption，**不计** failed（无输入 ≠ 调用失败）；
+    - 无帧镜头 → 空结果，**不计** failed（无输入 ≠ 调用失败）；
     - ``failed/total > 30%`` → ``degraded=True``（对齐 graph 规则，严格大于）。
 
-    ``model`` 默认取 ``rag.vlm_model``（视频腿与图片腿同一条链，R18）；``client``
-    可注入（测试 MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。
+    ``model`` 默认取 ``rag.vlm_model``（两条腿同一条链，R18）；``client`` 可注入
+    （测试 MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。``what`` 只进
+    日志，说清是哪个腿的失败。
     """
     if not shot_frames:
         return CaptionOutcome()
 
     cfg = get_app_config()
     if model is None:
-        # No layer of its own since R18: the video leg follows the same chain as the image
-        # leg (`rag.vlm_model` → the RAG default → the first model).
+        # No layer of its own since R18: both legs follow the same chain as the image leg
+        # (`rag.vlm_model` → the RAG default → the first model).
         model = cfg.rag.vlm_model
     target = resolve_vlm_target(cfg, model)
     api_key = target.api_key
 
     total = len(shot_frames)
     if not api_key:
-        logger.warning("配文目标 %r 没有可用的 API key；%d 个镜头 caption 降级为空（腿 degraded）", target.model, total)
+        logger.warning("%s目标 %r 没有可用的 API key；%d 个镜头降级为空（腿 degraded）", what, target.model, total)
         return CaptionOutcome(captions={index: "" for index in shot_frames}, failed=total, degraded=True)
 
     own_client = client is None
@@ -96,12 +94,12 @@ async def caption_shots(
     async def one(index: int, frames: Sequence[bytes]) -> tuple[int, str]:
         nonlocal failed
         if not frames:
-            return index, ""  # 无帧镜头：空 caption，不计 failed
+            return index, ""  # 无帧镜头：空结果，不计 failed
         async with semaphore:
             try:
-                return index, await _caption_one_shot(http, frames, target=target)
+                return index, await request_caption(http, target=target, prompt=prompt, images=[(frame, "image/jpeg") for frame in frames])
             except Exception as exc:
-                logger.warning("镜头 %d caption 失败（%s）；降级空", index, exc)
+                logger.warning("镜头 %d 的%s失败（%s）；降级空", index, what, exc)
                 failed += 1
                 return index, ""
 
@@ -114,3 +112,13 @@ async def caption_shots(
     captions = dict(results)
     degraded = total > 0 and (failed / total) > _DEGRADE_THRESHOLD
     return CaptionOutcome(captions=captions, failed=failed, degraded=degraded)
+
+
+async def caption_shots(
+    shot_frames: Mapping[int, Sequence[bytes]],
+    *,
+    client: httpx.AsyncClient | None = None,
+    model: str | None = None,
+) -> CaptionOutcome:
+    """给每镜头帧序列生成 caption（≤3 帧一个 message + 双模式 prompt）；降级非硬依赖（spec §2）。"""
+    return await run_shot_prompt(shot_frames, prompt=_SHOT_CAPTION_PROMPT, client=client, model=model, what="配文")
