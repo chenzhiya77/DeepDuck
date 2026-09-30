@@ -38,6 +38,7 @@ from pathlib import Path
 import httpx
 
 from deerflow.knowledge.embedder import RagConfigurationError
+from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.parser import (
     MineruError,
     MineruParseFailedError,
@@ -136,9 +137,9 @@ class MineruLocalParseProvider:
         timeout_seconds: float = 1800.0,
     ) -> None:
         if not (base_url or "").strip():
-            raise RagConfigurationError("本地解析需要服务地址：请设置 rag.parse_base_url（parse_provider=mineru-local）")
+            raise RagConfigurationError(bilingual("本地解析需要服务地址：请设置 rag.parse_base_url（parse_provider=mineru-local）", "Local parsing needs a service address: set rag.parse_base_url (parse_provider=mineru-local)"))
         if tier is not None and tier not in _TIERS:
-            raise RagConfigurationError(f"未知的 parse_tier {tier!r}；可选 {list(_TIERS)}")
+            raise RagConfigurationError(bilingual(f"未知的 parse_tier {tier!r}；可选 {list(_TIERS)}", f"Unknown parse_tier {tier!r}; expected one of {list(_TIERS)}"))
         self._base_url = base_url.strip().rstrip("/")
         # 空 = 由服务端决定（D2）：不下发 tier 字段。注意 flash-only 服务端没有默认质量档，
         # 空档位会被它 503 拒（服务端事实，不镜像——D8），那种部署要显式给档。

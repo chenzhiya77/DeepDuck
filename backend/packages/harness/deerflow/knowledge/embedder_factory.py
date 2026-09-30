@@ -27,6 +27,7 @@ from typing import Any
 
 from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.embedder import ComposedEmbedder, Embedder, RagConfigurationError, SparseHalfMissingError
+from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.providers import resolve_provider
 from deerflow.knowledge.sparse import BM25SparseEncoder
 
@@ -41,7 +42,10 @@ DEFAULT_COLLECTION_DIMENSION = 1024
 #: certifies *this* deployment's endpoint, and a config change alters the key anyway.
 _PROBED_DIMENSIONS: dict[tuple[str, str, str], int] = {}
 
-_REBUILD_HINT = "请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。"
+_REBUILD_HINT = bilingual(
+    "请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。",
+    "Use a model that returns the width in force (change it under Settings → Models → Functional models → Advanced → Dimension; a change rebuilds every collection), or switch models.",
+)
 
 
 def effective_dimension(rag: Any | None = None) -> int:
@@ -63,7 +67,7 @@ def dimension_mismatch_message(measured: int, expected: int) -> str:
     probe (``app.gateway.routers.rag_config``) — and they must not word it twice: the admin sees
     the same sentence while editing as the ingest would have shown days later.
     """
-    return f"嵌入模型返回 {measured} 维，而当前生效宽度是 {expected} 维 ⇒ 拒绝启用。{_REBUILD_HINT}"
+    return f"{bilingual(f'嵌入模型返回 {measured} 维，而当前生效宽度是 {expected} 维 ⇒ 拒绝启用。', f'The embedding model returned {measured} dimensions while the width in force is {expected} — refusing to enable it.')} {_REBUILD_HINT}"
 
 
 class _DimensionCheckedEmbedder:
@@ -148,7 +152,9 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
     spec = resolve_provider("embedding", provider_id)
 
     if sparse_source == "provider" and not spec.emits_sparse:
-        raise RagConfigurationError(f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。")
+        cn = f"嵌入 provider {provider_id!r} 只输出稠密向量 ⇒ embedding_sparse_source 不能是 'provider'；请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。"
+        en = f"Provider {provider_id!r} emits dense only ⇒ embedding_sparse_source cannot be 'provider'; use a separate sparse service ('external') or local BM25 ('bm25')."
+        raise RagConfigurationError(bilingual(cn, en))
 
     expected = effective_dimension(rag)
     dense = _build_dense(spec, rag, expected, client)
@@ -173,11 +179,13 @@ def _build_dense(spec, rag, expected: int, client: Any | None) -> Embedder:
     kwargs: dict = {"client": client}
     base_url = (rag.embedding_base_url or "").strip()
     if not base_url:
-        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url")
+        raise RagConfigurationError(bilingual(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url", f"Embedding provider {spec.provider_id!r} requires rag.embedding_base_url"))
     if not (rag.embedding_model or "").strip():
         # A-1 (spec 2026-09-30 D1): the model name has no default any more — an undeclared one is
         # refused here, before the adapter's own None-fallback could silently re-read the config.
-        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_model（没有默认值，请在 rag: 段声明）")
+        cn = f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_model（没有默认值，请在 rag: 段声明）"
+        en = f"Embedding provider {spec.provider_id!r} requires rag.embedding_model (no default; declare it in the rag: section)"
+        raise RagConfigurationError(bilingual(cn, en))
     kwargs["base_url"] = base_url
     if rag.embedding_model:
         kwargs["model"] = rag.embedding_model
@@ -212,7 +220,7 @@ def _build_sparse(rag, sparse_source: str, client: Any | None) -> Any:
         return BM25SparseEncoder()
     spec = resolve_provider("sparse", rag.sparse_provider) if rag.sparse_provider else None
     if spec is None:
-        raise RagConfigurationError("embedding_sparse_source='external' 需要 rag.sparse_provider（受控 allowlist）")
+        raise RagConfigurationError(bilingual("embedding_sparse_source='external' 需要 rag.sparse_provider（受控 allowlist）", "embedding_sparse_source='external' requires rag.sparse_provider (curated allowlist)"))
     from deerflow.reflection import resolve_variable
 
     kwargs: dict = {"base_url": rag.sparse_base_url, "client": client}

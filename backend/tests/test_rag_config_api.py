@@ -524,7 +524,7 @@ def test_save_maps_a_wrong_role_name_to_400(config_env: Path, field: str):
         response = client.put("/api/rag/config", json={field: "ghost-entry"})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "提交后的配置仍不可用：Model ghost-entry not found in config"
+    assert response.json()["detail"] == "提交后的配置仍不可用： / The configuration is still unusable after the save: 配置里没有模型「ghost-entry」 / Model ghost-entry not found in config"
     assert _read_rag_json(config_env) == {}
 
 
@@ -557,7 +557,7 @@ def test_save_refuses_a_declared_target_when_there_are_no_models_at_all(config_e
         response = client.put("/api/rag/config", json={"judge_model": "any-entry"})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "提交后的配置仍不可用：Model any-entry not found in config"
+    assert response.json()["detail"] == "提交后的配置仍不可用： / The configuration is still unusable after the save: 配置里没有模型「any-entry」 / Model any-entry not found in config"
 
 
 def test_save_maps_the_retired_prefix_to_the_same_400(config_env: Path):
@@ -566,7 +566,7 @@ def test_save_maps_the_retired_prefix_to_the_same_400(config_env: Path):
         response = client.put("/api/rag/config", json={"judge_model": "dashscope:qwen3.8-max"})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "提交后的配置仍不可用：Model dashscope:qwen3.8-max not found in config"
+    assert response.json()["detail"] == "提交后的配置仍不可用： / The configuration is still unusable after the save: 配置里没有模型「dashscope:qwen3.8-max」 / Model dashscope:qwen3.8-max not found in config"
 
 
 def test_save_refuses_a_stale_default_at_the_moment_it_is_declared(config_env: Path):
@@ -578,7 +578,7 @@ def test_save_refuses_a_stale_default_at_the_moment_it_is_declared(config_env: P
         response = client.put("/api/rag/config", json={"default_model": "gone-model"})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "提交后的配置仍不可用：Model gone-model not found in config"
+    assert response.json()["detail"] == "提交后的配置仍不可用： / The configuration is still unusable after the save: 配置里没有模型「gone-model」 / Model gone-model not found in config"
     assert _read_rag_json(config_env) == {}
 
 
@@ -608,7 +608,9 @@ def test_the_not_found_sentence_equals_the_factorys_own(config_env: Path):
     with pytest.raises(ValueError) as excinfo:
         create_chat_model(name="ghost", app_config=config)
 
-    assert str(excinfo.value) == model_not_found_message("ghost")
+    # C-1 (② 乙): the helper carries a Chinese half too now — the pin is on its English half,
+    # which must stay the upstream factory's own sentence, word for word.
+    assert model_not_found_message("ghost").split(" / ")[-1] == str(excinfo.value)
 
 
 def test_put_rejects_the_retired_top_level_vlm_fields(config_env: Path):

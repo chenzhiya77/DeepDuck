@@ -30,6 +30,7 @@ import httpx
 from deerflow.config.rag_config_file import configured_rag_secret
 from deerflow.knowledge.embedder import RagConfigurationError
 from deerflow.knowledge.endpoint_url import join_endpoint
+from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.providers import secret_env_var
 from deerflow.utils.file_io import run_file_io
 
@@ -199,7 +200,7 @@ class _ServiceAsrProvider:
         timeout_seconds: float = _SERVICE_TIMEOUT_SECONDS,
     ) -> None:
         if not (base_url or "").strip():
-            raise RagConfigurationError(f"服务档 ASR 需要服务地址：请设置 rag.asr_base_url（asr_provider={self.name}）")
+            raise RagConfigurationError(bilingual(f"服务档 ASR 需要服务地址：请设置 rag.asr_base_url（asr_provider={self.name}）", f"A service-tier ASR needs a service address: set rag.asr_base_url (asr_provider={self.name})"))
         self._model = model
         self._base_url = base_url.strip().rstrip("/")
         self._api_key = api_key

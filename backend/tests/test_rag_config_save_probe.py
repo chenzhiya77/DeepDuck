@@ -64,7 +64,11 @@ _SPARSE_PATH = "/embed_sparse"
 
 #: What a wrong dense width must say — the runtime guard's own sentence (D5: the save-time
 #: refusal reuses it rather than growing a second wording for the same fact).
-_WRONG_WIDTH_MESSAGE = "嵌入模型返回 2560 维，而向量库集合固定为 1024 维 ⇒ 拒绝启用。请改用 1024 维的模型，然后到「设置 → 模型 → 功能模型 → 重建索引」重新嵌入现有切片。"
+_WRONG_WIDTH_MESSAGE = (
+    "嵌入模型返回 2560 维，而当前生效宽度是 1024 维 ⇒ 拒绝启用。 / The embedding model returned 2560 dimensions while the width in force is 1024 — refusing to enable it. "
+    "请改用该模型支持的维度（到「设置 → 模型 → 功能模型 → 高级设置 → 维度」改，改值会触发全库重建），或换模型。 / Use a model that returns the width in force "
+    "(change it under Settings → Models → Functional models → Advanced → Dimension; a change rebuilds every collection), or switch models."
+)
 
 #: Anything outside the six watched fields must not make the probe fire (D2).
 _UNRELATED = {"rerank_model": "ui-rerank"}
@@ -176,7 +180,7 @@ def test_a_wrong_dense_width_is_refused_in_the_runtime_wording(config_env: Path,
 
     for response in (first, second):
         assert response.status_code == 400
-        assert response.json()["detail"] == f"提交后的配置仍不可用：{_WRONG_WIDTH_MESSAGE}"
+        assert response.json()["detail"] == f"提交后的配置仍不可用： / The configuration is still unusable after the save: {_WRONG_WIDTH_MESSAGE}"
 
 
 def test_the_save_time_refusal_says_what_the_runtime_would_say(config_env: Path, monkeypatch: pytest.MonkeyPatch):

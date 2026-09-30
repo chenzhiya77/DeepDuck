@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from deerflow.knowledge.embedder import RagConfigurationError
+from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.providers import resolve_provider
 
 
@@ -36,12 +37,14 @@ def build_reranker(config: Any | None = None, *, rag: Any | None = None) -> Any:
     endpoint = (section.rerank_base_url or "").strip()
     if not endpoint:
         raise RagConfigurationError(
-            f"rerank_provider={spec.provider_id!r} requires rag.rerank_base_url",
+            bilingual(f"重排 provider {spec.provider_id!r} 需要 rag.rerank_base_url", f"rerank_provider={spec.provider_id!r} requires rag.rerank_base_url"),
         )
     if spec.takes_model and not (section.rerank_model or "").strip():
         # A-1 (spec 2026-09-30 D1): required only where the row takes a model — TEI serves its
         # own and must not be asked for one (the kwargs below are gated the same way).
-        raise RagConfigurationError(f"rerank_provider={spec.provider_id!r} requires rag.rerank_model (no default; declare it in the rag: section)")
+        cn = f"重排 provider {spec.provider_id!r} 需要 rag.rerank_model（没有默认值，请在 rag: 段声明）"
+        en = f"rerank_provider={spec.provider_id!r} requires rag.rerank_model (no default; declare it in the rag: section)"
+        raise RagConfigurationError(bilingual(cn, en))
 
     from deerflow.reflection import resolve_variable
 

@@ -39,6 +39,7 @@ from deerflow.config.rag_config_file import (
 from deerflow.knowledge.dimension_probe import CANDIDATE_DIMENSIONS, DimensionProbeError, probe_dimensions
 from deerflow.knowledge.embedder import EmbedderAuthError, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.embedder_factory import build_embedder, dimension_mismatch_message, effective_dimension
+from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.model_target import model_not_found_message, rag_target_missing
 from deerflow.knowledge.parser import build_parse_provider
 from deerflow.knowledge.providers import provider_ids, resolve_provider, secret_env_var
@@ -259,7 +260,7 @@ def _load_stored() -> RagConfigFile:
     try:
         return RagConfigFile.from_file()
     except ValueError as exc:
-        raise HTTPException(status_code=500, detail=f"rag_config.json is invalid: {exc}") from exc
+        raise HTTPException(status_code=500, detail=bilingual(f"rag_config.json 无效：{exc}", f"rag_config.json is invalid: {exc}")) from exc
 
 
 def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None, warning: str | None = None, migration: dict[str, Any] | None = None) -> RagConfigResponse:
@@ -398,10 +399,10 @@ def _reject_unusable_role_targets(config: AppConfig, pending: RagConfig) -> None
             # included: the save *is* the declaration, so an unknown name is a usage error
             # there. D3's warning-and-fall-back is the *runtime* path, where a default that
             # used to be valid can go stale after a model is removed.
-            raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{model_not_found_message(name)}")
+            raise HTTPException(status_code=400, detail=f"{bilingual('提交后的配置仍不可用：', 'The configuration is still unusable after the save: ')}{model_not_found_message(name)}")
         reason = rag_target_missing(config, name, role=field)
         if reason is not None:
-            raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{reason}")
+            raise HTTPException(status_code=400, detail=f"{bilingual('提交后的配置仍不可用：', 'The configuration is still unusable after the save: ')}{reason}")
 
 
 def _reject_unusable_after_save(pending: RagConfig) -> None:
@@ -432,7 +433,7 @@ def _reject_unusable_after_save(pending: RagConfig) -> None:
             api_key=pending.asr_api_key,
         )
     except RagConfigurationError as exc:
-        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
+        raise HTTPException(status_code=400, detail=f"{bilingual('提交后的配置仍不可用：', 'The configuration is still unusable after the save: ')}{exc}") from exc
 
 
 #: The embedding settings the save-time probe answers for (spec 2026-09-17 save-time probe §3 D2).
@@ -445,7 +446,7 @@ _WATCHED_EMBEDDING_FIELDS: tuple[str, ...] = (
     "embedding_sparse_source",
 )
 
-_SAVED_BUT_UNVERIFIED = "提交后的配置已保存，但未能验证："
+_SAVED_BUT_UNVERIFIED = bilingual("提交后的配置已保存，但未能验证：", "The configuration was saved but could not be verified:")
 
 
 def _embedding_signature(rag: RagConfig) -> tuple[Any, ...]:
@@ -460,10 +461,12 @@ def _embedding_signature(rag: RagConfig) -> tuple[Any, ...]:
 def _unverified_warning(exc: BaseException) -> str:
     """One sentence saying *why* there is no verdict — never the same words for both causes."""
     if isinstance(exc, EmbedderAuthError):
-        return f"{_SAVED_BUT_UNVERIFIED}凭据被拒（{_probe_detail(str(exc))}）"
+        detail = _probe_detail(str(exc))
+        return f"{_SAVED_BUT_UNVERIFIED}{bilingual(f'凭据被拒（{detail}）', f'credentials refused ({detail})')}"
     if isinstance(exc, TimeoutError):
-        return f"{_SAVED_BUT_UNVERIFIED}探测超时（超过 {_PROBE_TIMEOUT_SECONDS:g} 秒）"
-    return f"{_SAVED_BUT_UNVERIFIED}未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}"
+        return f"{_SAVED_BUT_UNVERIFIED}{bilingual(f'探测超时（超过 {_PROBE_TIMEOUT_SECONDS:g} 秒）', f'the probe timed out (over {_PROBE_TIMEOUT_SECONDS:g} seconds)')}"
+    detail = _probe_detail(str(exc))
+    return f"{_SAVED_BUT_UNVERIFIED}{bilingual(f'未能连通（{type(exc).__name__}）：{detail}', f'could not connect ({type(exc).__name__}): {detail}')}"
 
 
 async def _probe_after_save(pending: RagConfig) -> str | None:
@@ -480,7 +483,7 @@ async def _probe_after_save(pending: RagConfig) -> str | None:
         # Caught *before* the blanket handler below and before anything else: a wrong width or an
         # empty sparse half is the model's answer, and burying it as "could not verify" is exactly
         # the hole this probe exists to close (spec §3 D4).
-        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{exc}") from exc
+        raise HTTPException(status_code=400, detail=f"{bilingual('提交后的配置仍不可用：', 'The configuration is still unusable after the save: ')}{exc}") from exc
     except Exception as exc:  # noqa: BLE001 — everything else means "no verdict", which never blocks a save
         logger.warning("embedding probe after save failed for provider %s", pending.embedding_provider, exc_info=True)
         return _unverified_warning(exc)
@@ -492,7 +495,7 @@ async def _probe_after_save(pending: RagConfig) -> str | None:
     measured = len(results[0].dense) if results else 0
     expected = effective_dimension(pending)
     if measured != expected:
-        raise HTTPException(status_code=400, detail=f"提交后的配置仍不可用：{dimension_mismatch_message(measured, expected)}")
+        raise HTTPException(status_code=400, detail=f"{bilingual('提交后的配置仍不可用：', 'The configuration is still unusable after the save: ')}{dimension_mismatch_message(measured, expected)}")
     return None
 
 
@@ -536,7 +539,7 @@ async def put_rag_config(
     target_width = effective_dimension(pending)
     migrating = target_width != live_width
     if migrating and migration_running():
-        raise HTTPException(status_code=409, detail="已有一次维度迁移正在进行；等它结束再改这一格。")
+        raise HTTPException(status_code=409, detail=bilingual("已有一次维度迁移正在进行；等它结束再改这一格。", "A dimension migration is already running; wait for it to finish before changing this."))
 
     # One real call, but only when one of the watched embedding settings actually changed: an
     # unrelated edit (rerank, parse, …) must not turn every save into a network round trip.
@@ -552,7 +555,7 @@ async def put_rag_config(
         # its vectors. The service is resolved first: a 503 must not leave a half-applied save.
         service = getattr(request.app.state, "knowledge_service", None)
         if service is None:  # pragma: no cover - the gateway always wires it
-            raise HTTPException(status_code=503, detail="维度迁移需要知识库服务在线，本次保存没有写入。")
+            raise HTTPException(status_code=503, detail=bilingual("维度迁移需要知识库服务在线，本次保存没有写入。", "The dimension migration needs the knowledge service online; nothing was written by this save."))
         written = dict(payload)
         stored_dimension = getattr(stored, "embedding_dimension", None)
         if stored_dimension is None:
@@ -595,7 +598,7 @@ _PROBE_TIMEOUT_SECONDS = 10.0
 _PROBE_TEXT = "probe"
 
 #: The two ways out, in the same words the runtime error and the settings copy use.
-_SPARSE_ALTERNATIVES = "请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。"
+_SPARSE_ALTERNATIVES = bilingual("请改为「独立稀疏服务」（external）或「本地 BM25」（bm25）。", "Use a separate sparse service ('external') or local BM25 ('bm25').")
 
 #: Probe failures carry their own reason, truncated like the models probe's body sample.
 _PROBE_DETAIL_LIMIT = 200
@@ -706,13 +709,17 @@ async def probe_embedding_capability(
     await require_admin_user(request, detail=_ADMIN_DETAIL)
 
     if body.embedding_provider not in provider_ids("embedding"):
-        raise HTTPException(status_code=422, detail=f"Unknown embedding provider {body.embedding_provider!r}.")
+        raise HTTPException(status_code=422, detail=bilingual(f"未知的嵌入 provider {body.embedding_provider!r}", f"Unknown embedding provider {body.embedding_provider!r}."))
 
     spec = resolve_provider("embedding", body.embedding_provider)
     if not spec.emits_sparse:
         return RagSparseProbeResponse(
             status="unsupported",
-            detail=f"嵌入 provider {body.embedding_provider!r} 只输出稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}",
+            detail=bilingual(
+                f"嵌入 provider {body.embedding_provider!r} 只输出稠密向量 ⇒ 不能由它提供稀疏；",
+                f"Embedding provider {body.embedding_provider!r} emits dense only ⇒ it cannot supply the sparse half; ",
+            )
+            + _SPARSE_ALTERNATIVES,
         )
 
     candidate = config.rag.model_copy(
@@ -735,23 +742,28 @@ async def probe_embedding_capability(
         # the answer arrives as an exception here (spec §3 D5).
         return RagSparseProbeResponse(
             status="unsupported",
-            detail=f"模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}（{_probe_detail(str(exc))}）",
+            detail=bilingual(
+                f"模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；",
+                f"Model {body.embedding_model!r} returned dense only ⇒ it cannot supply the sparse half; ",
+            )
+            + _SPARSE_ALTERNATIVES
+            + f"（{_probe_detail(str(exc))}）",
         )
     except Exception as exc:  # noqa: BLE001 — this route's job is to always answer with a status
         logger.warning("embedding capability probe failed for %s/%s", body.embedding_provider, body.embedding_model, exc_info=True)
         return RagSparseProbeResponse(
             status="unverifiable",
-            detail=f"未能验证（{type(exc).__name__}）：{_probe_detail(str(exc))}",
+            detail=bilingual(f"未能验证（{type(exc).__name__}）：{_probe_detail(str(exc))}", f"Could not verify ({type(exc).__name__}): {_probe_detail(str(exc))}"),
         )
 
     if results and results[0].sparse.indices:
         return RagSparseProbeResponse(
             status="supported",
-            detail=f"模型 {body.embedding_model!r} 一次调用同时返回稠密与稀疏。",
+            detail=bilingual(f"模型 {body.embedding_model!r} 一次调用同时返回稠密与稀疏。", f"Model {body.embedding_model!r} returned dense and sparse in one call."),
         )
     return RagSparseProbeResponse(
         status="unsupported",
-        detail=f"模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；{_SPARSE_ALTERNATIVES}",
+        detail=f"{bilingual(f'模型 {body.embedding_model!r} 只返回了稠密向量 ⇒ 不能由它提供稀疏；', f'Model {body.embedding_model!r} returned dense only ⇒ it cannot supply the sparse half; ')}{_SPARSE_ALTERNATIVES}",
     )
 
 
@@ -785,7 +797,7 @@ async def probe_sparse_service(
     spec = resolve_provider("sparse", body.sparse_provider)
     base_url = body.sparse_base_url or config.rag.sparse_base_url
     if not (base_url or "").strip():
-        return RagSparseServiceProbeResponse(status="unreachable", detail="未填写稀疏服务地址。")
+        return RagSparseServiceProbeResponse(status="unreachable", detail=bilingual("未填写稀疏服务地址。", "No sparse service address was given."))
 
     from deerflow.reflection import resolve_variable
 
@@ -801,14 +813,14 @@ async def probe_sparse_service(
         logger.warning("sparse service probe failed for %s", body.sparse_provider, exc_info=True)
         return RagSparseServiceProbeResponse(
             status="unreachable",
-            detail=f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}",
+            detail=bilingual(f"未能连通（{type(exc).__name__}）：{_probe_detail(str(exc))}", f"Could not connect ({type(exc).__name__}): {_probe_detail(str(exc))}"),
         )
 
     # No "wrong number of rows" branch here on purpose: the encoder already refuses that
     # (`TEISparseEncoder._encode_batch` compares the row count to the batch), so it arrives as an
     # exception above — a second check here would be unreachable code.
     if vectors[0].indices:
-        return RagSparseServiceProbeResponse(status="ok", detail="稀疏服务已连通，并返回了词项。")
+        return RagSparseServiceProbeResponse(status="ok", detail=bilingual("稀疏服务已连通，并返回了词项。", "The sparse service is reachable and returned terms."))
     return RagSparseServiceProbeResponse(
         status="empty",
         detail="稀疏服务已连通，但这段文本没有返回任何词项 ⇒ 请确认它加载的是支持稀疏的模型。",
@@ -864,7 +876,7 @@ async def probe_embedding_dimensions(
     await require_admin_user(request, detail=_ADMIN_DETAIL)
 
     if body.embedding_provider not in provider_ids("embedding"):
-        raise HTTPException(status_code=422, detail=f"Unknown embedding provider {body.embedding_provider!r}.")
+        raise HTTPException(status_code=422, detail=bilingual(f"未知的嵌入 provider {body.embedding_provider!r}", f"Unknown embedding provider {body.embedding_provider!r}."))
 
     try:
         result = await asyncio.wait_for(

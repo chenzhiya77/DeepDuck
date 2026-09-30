@@ -72,3 +72,22 @@ def test_the_empty_sparse_refusal_inherits_that_mapping(gateway_handlers):
 
     assert response.status_code == 400
     assert response.json()["detail"] == _MESSAGE
+
+
+# ── C-1: one copy strategy, both languages (spec 2026-09-30 D2, ② 已裁＝乙) ────
+
+
+def test_the_bilingual_helper_is_the_one_copy_shape():
+    """Every configuration-class refusal carries both languages, joined by ` / ` — the admin
+    reads one line whichever locale they work in (the frontend renders `detail` verbatim)."""
+    from deerflow.knowledge.messages import bilingual
+
+    assert bilingual("中文", "English") == "中文 / English"
+
+
+def test_the_previously_english_members_gained_a_chinese_half():
+    """The audit-② resolution: `Model … not found in config` used to be English-only, so the
+    family stayed mixed even after the Chinese members were made readable."""
+    from deerflow.knowledge.model_target import model_not_found_message
+
+    assert model_not_found_message("ghost-entry") == "配置里没有模型「ghost-entry」 / Model ghost-entry not found in config"

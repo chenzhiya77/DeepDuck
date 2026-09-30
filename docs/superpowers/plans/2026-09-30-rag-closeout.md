@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-30-rag-closeout-design.md](../specs/2026-09-30-rag-closeout-design.md)
-**Status:** **2026-09-30 起草，待开工。五项待裁**（spec §6.1：① A-1 收口形状；② C-1 语言策略；③ C-2 占位与形态；④ `B-1` 搭不搭车；⑤ `config_version` 升不升）。**本计划按推荐组合起草（①甲 ②乙 ③甲 ④甲 ⑤乙），每个受裁项影响的步骤都标了另一分支的落点**；裁完只动被裁的那几行。**未实现任何生产代码、未提交**；起草轮的核实全部只读。**同日起草后审查（7 条）已就地修正 5 条**：① 基线在 HEAD `75f3a186` 复核（他线两笔全前端、零后端重叠）；③ C-2 补 `config.example.yaml` 的 `video.asr_model` 一行；④ C-1 起点句标注"账本口径、已漂移"；⑤ A-1 前端零改动结论进 spec §6.2；⑥ ASR 收口点定为 **worker 的 ASR 腿入口**。**审查 ②（C-1 家族内已英文成员的处置）按用户「先落 ①③④⑤⑥」暂留待裁**。**Task 0（只读核实）已完成（2026-09-30，HEAD `a8a39423`）**：8 框全勾（1 框标不适用）、实测已回填（收口点 3 ＋ 两陷阱／受害者 5／C-1 清单 13 中＋5 英／碰撞面）。**Task 1 已实施（2026-09-30 提交）**：RED 10 红 → 窄面 123 passed → neuter ①5②4（逐次字节还原 md5）→ 全量 **163/12831/109/0** 与基线集合对照零新增（唯一差异＝已知抖动 `test_run_manager`；+57 passed ＝ 4 新用例 ＋ 2 对 3 模板用例 ＋ 51 条 Qdrant 集成用例转真跑）；并发 basetemp 自伤与漏改受害者（`test_embedder_ark`）两条已如实记入实测。
+**Status:** **2026-09-30 起草，待开工。五项待裁**（spec §6.1：① A-1 收口形状；② C-1 语言策略；③ C-2 占位与形态；④ `B-1` 搭不搭车；⑤ `config_version` 升不升）。**本计划按推荐组合起草（①甲 ②乙 ③甲 ④甲 ⑤乙），每个受裁项影响的步骤都标了另一分支的落点**；裁完只动被裁的那几行。**未实现任何生产代码、未提交**；起草轮的核实全部只读。**同日起草后审查（7 条）已就地修正 5 条**：① 基线在 HEAD `75f3a186` 复核（他线两笔全前端、零后端重叠）；③ C-2 补 `config.example.yaml` 的 `video.asr_model` 一行；④ C-1 起点句标注"账本口径、已漂移"；⑤ A-1 前端零改动结论进 spec §6.2；⑥ ASR 收口点定为 **worker 的 ASR 腿入口**。**审查 ②（C-1 家族内已英文成员的处置）已随 ②＝乙 落定＝「全家族双语」（已英文的成员补中文半边）**。**Task 0（只读核实）已完成（2026-09-30，HEAD `a8a39423`）**：8 框全勾（1 框标不适用）、实测已回填（收口点 3 ＋ 两陷阱／受害者 5／C-1 清单 13 中＋5 英／碰撞面）。**Task 2 已实施（2026-09-30，待提交）**：新建零依赖 `messages.py`（`bilingual`）＋ 约 41 处消息双语化；RED 14 红 → 窄面 282 passed → neuter ①11②10（逐次字节还原）→ 全量 **161/12835/109/0**（零新增、并修掉两条 save_probe 基线红）；上游工厂句不在范围（漂移钉改比 EN 半边）。**Task 1 已实施（2026-09-30 提交）**：RED 10 红 → 窄面 123 passed → neuter ①5②4（逐次字节还原 md5）→ 全量 **163/12831/109/0** 与基线集合对照零新增（唯一差异＝已知抖动 `test_run_manager`；+57 passed ＝ 4 新用例 ＋ 2 对 3 模板用例 ＋ 51 条 Qdrant 集成用例转真跑）；并发 basetemp 自伤与漏改受害者（`test_embedder_ark`）两条已如实记入实测。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 4」＝本对（`B-2` 剩余 + `A-1` + `C-2` + `C-1`；`B-1` 可搭车）；`knowledge/model_target.py`（D10 的 `RagConfigurationError` 形状先例）；[对 3 计划](2026-09-30-rag-caption-params-asr-default.md)（同文件、刚交付）。
 
 **Architecture:** `config.yaml → RagConfig`（三字段 `str | None = None`）＋ **单一构建点收口**（`build_embedder` / `build_reranker` / **worker 的 ASR 腿入口** ⇒ `RagConfigurationError`，保存期自动 400）；文案改动只动字符串（语言策略见 ②）；示例只动值/注释形态。**本对唯一行为变化＝未声明模型名的部署从"静默用厂商默认"变"响亮报错"**（spec D1/§6.2）。
@@ -90,18 +90,29 @@
 
 ---
 
-## Task 2 — 后端 C-1：配置类文案统一（② 乙：中英双语）
+## Task 2 — 后端 C-1：配置类文案统一（**② 已裁＝乙**：中英双语一行）
 
-> 文件：`knowledge/embedder_factory.py`、`app/gateway/routers/rag_config.py`、受影响的 4 个测试文件。**清单以 Task 0 冻结为准，不扩大**。
+> 文件：`knowledge/embedder_factory.py`、`knowledge/model_target.py`、`knowledge/parse_local.py`、`knowledge/sparse.py`、`knowledge/video/asr.py`、`knowledge/reranker_factory.py`、`knowledge/providers/__init__.py`、`app/gateway/routers/rag_config.py`、受影响的 3 个测试文件。**清单以 Task 0 冻结为准（13 中 ＋ 5 英）＋ Task 1 新增的三条收口文案**。
 > **验收对应**：spec §4 的 2。
+> **审查 ② 的口径（已随 ② 乙 落定）**：**全家族双语**——已英文的成员（`Model … not found in config`、`Unknown embedding provider`、`rerank_provider=… requires …` 等）**补中文半边**，不再保留单语成员（否则 C-1 的「两种语言策略」在家族内部原样留着）。
 
-- [ ] **RED：文案形状**：清单逐条一条用例（② 乙：断言"中文半边 ＋ `/` ＋ 英文半边"的形状；② 甲：断言全英文；② 丙：断言返回 code）——先写 1–2 条代表性的，全量在 GREEN 同批。
-- [ ] **RED：既有断言同批**：把 Task 0 列出的 6 行断言改成新文案（**逐字全文常量 2 处**），改前逐处记录"原文 → 新文"。
-- [ ] **GREEN**：清单逐条改毕；`providers/__init__.py` 的英文报错**不动**（② 乙下英文半边与之一致）；`vlm_target.py` 的角色前缀**不动**（登记不改）。
-- [ ] **neuter**：① 把一条文案还原成旧中文 ⇒ 对应用例转红；② 把 400 的 detail 还原 ⇒ 保存期用例转红。
-- [ ] **门禁**：ruff 双净；窄面（`test_rag_configuration_error.py` / `test_rag_config_api.py` / `test_rag_config_save_probe.py` ＋ 探针用例）绿；全量与基线集合对照零新增（与 Task 1 的全量可合并跑）。
+- [x] **RED：文案形状**：清单逐条一条用例，断言「中文半边 ＋ ` / ` ＋ 英文半边」的形状（② 已裁＝乙，甲/丙分支作废）——先写 1–2 条代表性的（含一条**已英文成员补中文**的，如 `model_not_found_message`），全量在 GREEN 同批。
+- [x] **RED：既有断言同批**：把 Task 0 冻结的断言清单改成新文案（**3 文件、含 2 处逐字全文常量 ＋ 4 处英文尾巴等值**），改前逐处记录"原文 → 新文"。
+- [x] **GREEN**：清单逐条改毕（中文 13 ＋ 英文 5 ＋ Task 1 新增 3）；`vlm_target.py` 的角色前缀**不动**（登记不改）；`providers/__init__.py` 的报错**改**（补中文半边——与 ② 甲 下"不动"相反，按已裁的乙执行）。
+- [x] **neuter**：① 把一条文案还原成旧单语 ⇒ 对应用例转红；② 把 400 的 detail 还原 ⇒ 保存期用例转红。
+- [x] **门禁**：ruff 双净；窄面（`test_rag_configuration_error.py` / `test_rag_config_api.py` / `test_rag_config_save_probe.py` ＋ 探针用例 ＋ 本轮新增的收口用例）绿；全量与基线集合对照零新增（与 Task 1 的全量可合并跑）。
 
-**实测（待回填）**：
+**实测（2026-09-30，开工 HEAD `72b58d10`）**：
+
+- **格式裁定（实施时定）**：新建**零依赖**的 `knowledge/messages.py`，一个 `bilingual(cn, en) -> f"{cn} / {en}"`（providers 那份是 import-light，不能拉 httpx ⇒ helper 必须无依赖）；全部消息改走它，格式只此一处。**组合式消息**（保存期 400 的 wrapper ＋ 内层句子）＝ `bilingual('提交后的配置仍不可用：', 'The configuration is still unusable after the save: ')` ＋ 内层（内层本身已双语）——CN 前缀原样保留，故 4 处 `startswith("提交后的配置仍不可用：")` 断言**不动**。
+- **RED（14 红）**：2 条新形状用例（`bilingual` 的格式 ＋ `model_not_found_message` 补了中文半边）＋ 12 处更新的钉点（api：6 参数化共享一条 ＋ 3 名单例；save_probe：陈旧常量与 wrapper 等值；eval_factory 等值）。
+- **GREEN**：**约 41 处消息**改毕（harness 20 ＋ router 21，含 Task 1 新增的三条收口）；`providers/__init__.py` 的 leg 消息**两处同文**（`:215`/`:222`）一并改；`Unknown embedding provider` **两处**（`:709`/`:867`）一并改。**实施时补进的清单**（Task 0 冻结清单是下限）：`_SAVED_BUT_UNVERIFIED` 家族（3 处）、迁移两条（`:539`/`:555`）、稀疏探针判定（`:788`/`:804`/`:811`）、`:744`/`:750`/`:754`、`rag_config.json 无效`（`:262`）。
+- **窄面（最终）**：**282 passed / 0 failed**（含**两条原基线红已修**——save_probe 的陈旧常量随本轮更新为现行双语文本）。
+- **实施期两处如实记**：① **`models/factory.py:302`（上游模型工厂自己的句子）不在 C-1 范围**——`test_the_not_found_sentence_equals_the_factorys_own` 的漂移钉改为比 **EN 半边**（`model_not_found_message(...).split(" / ")[-1] == 工厂句`）；`eval_factory` 那条我曾误改（它抛的是上游工厂的句子、不经过我们的 helper）⇒ **已撤回**。② 清单外站点（ASR 探针/维度探针/连通探针/迁移以外的文案）**登记不改**。
+- **neuter（两条独立跑、逐次字节还原）**：① `model_not_found_message` 还原为单语英文 ⇒ **11 红**；② 保存期 wrapper 还原为单语中文（5 处）⇒ **10 红**；两文件 md5 逐字节一致（`model_target.py d8c99c19…`／`rag_config.py 25730944…`）。
+- **revert proof**：还原后再跑窄面 ⇒ **282 passed**。
+- **ruff**：双净（自动修 5 处 import 排序 ＋ 手改 6 处 E501——CN/EN 两半提成局部变量）。
+- **门禁（全量）**：**161 failed / 12835 passed / 109 skipped / 0 error**（17:38）。与 Task 1 的集合（163 ids）逐条对照：**only-T2 ＝ 0（零新增）**；**only-T1 ＝ 2 ＝ 两条 save_probe 基线红被本轮修掉**（陈旧常量更新为现行双语文本）⇒ 净效果＝修掉两条、零新增。
 
 ---
 

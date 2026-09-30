@@ -43,20 +43,29 @@ _NOT_FOUND_PREFIX = "Model "
 _NOT_FOUND_SUFFIX = " not found in config"
 _NOT_FOUND_TEMPLATE = f"{_NOT_FOUND_PREFIX}{{name}}{_NOT_FOUND_SUFFIX}"
 
+#: The Chinese half of the same sentence (C-1, ② 已裁＝乙).
+_NOT_FOUND_CN = "配置里没有模型「{name}」"
+
 
 def model_not_found_message(name: str) -> str:
     """The sentence that says *name* is not a configured model (D9's not-found error)."""
-    return _NOT_FOUND_TEMPLATE.format(name=name)
+    from deerflow.knowledge.messages import bilingual
+
+    return bilingual(_NOT_FOUND_CN.format(name=name), _NOT_FOUND_TEMPLATE.format(name=name))
 
 
 def missing_key_reason(name: str) -> str:
     """The sentence for a target whose entry carries no usable key (D10.1/R14)."""
-    return f"RAG 目标「{name}」不可用：条目缺少非空 api_key。"
+    from deerflow.knowledge.messages import bilingual
+
+    return bilingual(f"RAG 目标「{name}」不可用：条目缺少非空 api_key。", f'RAG target "{name}" is unusable: its entry carries no non-empty api_key.')
 
 
 def missing_address_reason(name: str) -> str:
     """The sentence for the one cell that must name an address (D10.2)."""
-    return f"RAG 目标「{name}」不可用：openai-compatible 条目缺少接口地址（base_url）。"
+    from deerflow.knowledge.messages import bilingual
+
+    return bilingual(f"RAG 目标「{name}」不可用：openai-compatible 条目缺少接口地址（base_url）。", f'RAG target "{name}" is unusable: the openai-compatible entry declares no address (base_url).')
 
 
 def is_model_not_found_error(exc: BaseException) -> bool:
@@ -125,8 +134,11 @@ def require_rag_model_name(config: Any, name: str | None = None, *, rag: Any = N
     resolved = resolve_rag_model_name(config, name, rag=rag)
     if resolved is None:
         from deerflow.knowledge.embedder import RagConfigurationError
+        from deerflow.knowledge.messages import bilingual
 
-        raise RagConfigurationError(f"RAG 未配置可用模型：{role} 需要 config.models 里至少有一个条目，或为 rag.default_model 指定一个。")
+        cn = f"RAG 未配置可用模型：{role} 需要 config.models 里至少有一个条目，或为 rag.default_model 指定一个。"
+        en = f"No usable RAG model is configured: {role} needs at least one entry under config.models, or one named by rag.default_model."
+        raise RagConfigurationError(bilingual(cn, en))
     return resolved
 
 

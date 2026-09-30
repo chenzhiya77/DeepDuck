@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from deerflow.knowledge.messages import bilingual
+
 
 @dataclass(frozen=True, slots=True)
 class ProviderSpec:
@@ -212,17 +214,17 @@ PROVIDER_ALLOWLIST: dict[str, dict[str, ProviderSpec]] = {
 def provider_ids(leg: str) -> tuple[str, ...]:
     """The allowlisted ids for *leg*, in declaration order (the UI renders these)."""
     if leg not in PROVIDER_ALLOWLIST:
-        raise ValueError(f"Unknown RAG provider leg {leg!r}; expected one of {sorted(PROVIDER_ALLOWLIST)}")
+        raise ValueError(bilingual(f"未知的 RAG provider 腿 {leg!r}；可选 {sorted(PROVIDER_ALLOWLIST)}", f"Unknown RAG provider leg {leg!r}; expected one of {sorted(PROVIDER_ALLOWLIST)}"))
     return tuple(PROVIDER_ALLOWLIST[leg])
 
 
 def resolve_provider(leg: str, provider_id: str) -> ProviderSpec:
     """Resolve *provider_id* for *leg*, refusing anything outside the allowlist."""
     if leg not in PROVIDER_ALLOWLIST:
-        raise ValueError(f"Unknown RAG provider leg {leg!r}; expected one of {sorted(PROVIDER_ALLOWLIST)}")
+        raise ValueError(bilingual(f"未知的 RAG provider 腿 {leg!r}；可选 {sorted(PROVIDER_ALLOWLIST)}", f"Unknown RAG provider leg {leg!r}; expected one of {sorted(PROVIDER_ALLOWLIST)}"))
     spec = PROVIDER_ALLOWLIST[leg].get(provider_id)
     if spec is None:
-        raise ValueError(f"Unknown {leg} provider {provider_id!r}; expected one of {provider_ids(leg)}")
+        raise ValueError(bilingual(f"未知的 {leg} provider {provider_id!r}；可选 {provider_ids(leg)}", f"Unknown {leg} provider {provider_id!r}; expected one of {provider_ids(leg)}"))
     return spec
 
 

@@ -40,6 +40,7 @@ from deerflow.knowledge.graph.indexer import index_document_graph
 from deerflow.knowledge.graph.resolver import resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.indexer import index_chunks
+from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
@@ -604,7 +605,7 @@ class KnowledgeIndexWorker:
             # A-1 (spec 2026-09-30 D1): no default model name any more. Raised outside the try on
             # purpose — the `except AsrError` below degrades a *failure*, a missing declaration is a
             # configuration error and must reach the caller loudly.
-            raise RagConfigurationError("视频 ASR 需要 rag.video.asr_model（没有默认值，请在 rag.video 段声明）")
+            raise RagConfigurationError(bilingual("视频 ASR 需要 rag.video.asr_model（没有默认值，请在 rag.video 段声明）", "Video ASR requires rag.video.asr_model (no default; declare it in the rag.video section)"))
         try:
             segments = await transcribe_video(
                 storage_path,
