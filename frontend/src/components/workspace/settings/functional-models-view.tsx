@@ -1713,6 +1713,10 @@ export function FunctionalModelsView() {
                 <Input
                   value={values.parse_base_url}
                   aria-label={F.parseBaseUrl}
+                  // 灰字＝留空时的实际去向（官方端点，与后端 parser.MINERU_BASE_URL 同值）；
+                  // 与 embedding/rerank 地址行的既有形状一致。本地分支没有默认值，不给占位
+                  // （2026-09-30 交付后调整）。
+                  placeholder="https://mineru.net"
                   {...AUTOFILL_OFF_INPUT_PROPS}
                   onChange={(event) =>
                     update("parse_base_url", event.target.value)

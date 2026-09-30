@@ -172,6 +172,8 @@ Authorization: Bearer <token>
 
 **实施期发现**：① 空选项文案＝`judgeModelNone` 那句「（使用配置默认）」（准备轮已核）；② 清空编码的 `null` 修复走同一循环 ⇒ 六个旧枚举字段一并受益，**既有用例无一钉住旧行为**、无需改写；③ 前端全仓本来就有 prettier 历史格式债（`pnpm format` 非本仓门禁，CI 只跑 `pnpm check`）⇒ 新行按文件既有风格写即可，不动历史行。
 
+**交付后调整（2026-09-30，他审 UI 时提出并令做）**：云腿「服务地址」补**灰字占位 `https://mineru.net`**——留空时的实际去向，与 embedding/rerank 地址行的既有形状一致；**本地分支不给占位**（没有默认值，灰字会被读成"默认就是它"）。视图一行（`placeholder`＋注释说明与后端常量同值）；两条既有 parse 用例各加一条钉（云分支 `placeholder === "https://mineru.net"`／本地分支 `placeholder` 为 null）。复跑：两 dom 文件绿、`pnpm check` 净；全量 **247 文件／2752 例／0 失败**（2m54s）。
+
 ---
 
 ## Task 3 — 示例文件、版本与文档

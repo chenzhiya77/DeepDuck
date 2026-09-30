@@ -378,6 +378,11 @@ describe("provider rows", () => {
     expect(labelCount("parseBaseUrl")).toBeGreaterThan(0);
     expect(labelCount("parseLanguage")).toBeGreaterThan(0);
     expect(labelCount("parseModelVersion")).toBeGreaterThan(0);
+    // 云腿留空＝官方端点：字段自己用灰字说出去向（与 embedding/rerank 地址行同形状，
+    // 2026-09-30 交付后调整）。
+    expect(
+      screen.getByLabelText("parseBaseUrl").getAttribute("placeholder"),
+    ).toBe("https://mineru.net");
     // Only the local-only tier is shown locked: "local service only".
     expect(labelCount("parseTier")).toBe(0);
     expect(screen.getAllByText("lockedLocalOnly").length).toBe(1);
@@ -389,6 +394,10 @@ describe("provider rows", () => {
 
     expect(labelCount("mineruToken")).toBe(0);
     expect(labelCount("parseBaseUrl")).toBeGreaterThan(0);
+    // 本地分支没有默认值：不摆任何灰字，免得被读成"默认就是它"。
+    expect(
+      screen.getByLabelText("parseBaseUrl").getAttribute("placeholder"),
+    ).toBeNull();
     expect(labelCount("parseTier")).toBeGreaterThan(0);
     // The cloud-only rows are present as locked twins, never hidden: the token and the
     // two parse knobs.
