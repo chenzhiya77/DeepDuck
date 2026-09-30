@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-30-rag-caption-params-asr-default-design.md](../specs/2026-09-30-rag-caption-params-asr-default-design.md)
-**Status:** **2026-09-30 起草，待开工。四项已裁（2026-09-30）：①甲 ②甲 ③甲 ④乙**（spec §6.1）。**受裁项已按裁定收窄**：**Task 2 标「不适用」**（② 甲 ⇒ 无文件层/无界面/无 golden）、Task 1／Task 3 里带「② 裁乙时」的项不适用、**`B-1` 不搭车**（④ 乙）。**未实现任何生产代码、未提交**；起草轮的探针全部只读。**Task 0（只读核实）已完成（2026-09-30，HEAD `075b3b5b`）**：7 个复选框全勾、实测已回填；**D2 按实测就地修正**（值由两条腿在既有 `cfg` 点读取后传入，不在 `request_caption` 里现取——18 处既有桩的理由）；`transcribe_video` 补参清单实为 **7 处**（原写"约 6 处"）。**Task 1 已实施（2026-09-30 提交）**：RED 12 红 → GREEN 234 passed → neuter 2/4/3 红（逐次字节还原）→ 全量 162/12774/160/1 error 与基线集合对照零新增（1 error 已原地 A/B 判为环境条件）。**Task 3 已实施（2026-09-30 提交）**：契约 3 红 → 9 passed、版本 41→42（示例 ＋ chart 两件）、`AGENTS.md` 两处；示例读取面 192 passed / 4 pre-existing red（逐条在基线集合）；**Task 2 不适用（② 甲）**。**同日起草后审查（5 条）已就地修正**：必改＝Task 4 抓包腿按**甲**（探针 `models:` 条目 ＋ `models_config.json` 逐字节还原、需逐次授权）；应改 2 条（`transcribe_video` 锚点写法、清空腿"抓包条目不动"的措辞）；**可选项 2 条未加（可撤）**。
+**Status:** **2026-09-30 起草，待开工。四项已裁（2026-09-30）：①甲 ②甲 ③甲 ④乙**（spec §6.1）。**受裁项已按裁定收窄**：**Task 2 标「不适用」**（② 甲 ⇒ 无文件层/无界面/无 golden）、Task 1／Task 3 里带「② 裁乙时」的项不适用、**`B-1` 不搭车**（④ 乙）。**未实现任何生产代码、未提交**；起草轮的探针全部只读。**Task 0（只读核实）已完成（2026-09-30，HEAD `075b3b5b`）**：7 个复选框全勾、实测已回填；**D2 按实测就地修正**（值由两条腿在既有 `cfg` 点读取后传入，不在 `request_caption` 里现取——18 处既有桩的理由）；`transcribe_video` 补参清单实为 **7 处**（原写"约 6 处"）。**Task 1 已实施（2026-09-30 提交）**：RED 12 红 → GREEN 234 passed → neuter 2/4/3 红（逐次字节还原）→ 全量 162/12774/160/1 error 与基线集合对照零新增（1 error 已原地 A/B 判为环境条件）。**Task 3 已实施（2026-09-30 提交）**：契约 3 红 → 9 passed、版本 41→42（示例 ＋ chart 两件）、`AGENTS.md` 两处；示例读取面 192 passed / 4 pre-existing red（逐条在基线集合）；**Task 2 不适用（② 甲）**。**Task 4 已实施（2026-09-30 提交）**：真栈三次抓包（2048/0.15 → 1024/0.7 → 1024/0.15）；三份配置逐字节还原（md5 一致）、5 张探针文档按 id 删除、抓包服务停止；环境两折（旧网关经授权处置、前端由用户重启）与一次真 VLM 调用如实记入实测。**同日起草后审查（5 条）已就地修正**：必改＝Task 4 抓包腿按**甲**（探针 `models:` 条目 ＋ `models_config.json` 逐字节还原、需逐次授权）；应改 2 条（`transcribe_video` 锚点写法、清空腿"抓包条目不动"的措辞）；**可选项 2 条未加（可撤）**。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 3」＝本对（`A-4` + `C-3`）；`agents_config.py:194-203`（A-4 的形状先例）；[2026-09-28 ASR 服务档](../specs/2026-09-28-rag-asr-service-tier-design.md)（`asr.py` 的最近大改）。
 
 **Architecture:** `config.yaml → RagConfig`（**② 裁甲 ⇒ 无文件层**）；`caption_client` 的两个请求体函数与 `request_caption` 各收两参数（**值由两条腿在既有 `cfg = get_app_config()` 点现取后传入**——Task 0 修正，见 Task 0 实测）；`video/asr.py` 三处签名默认去掉（③ 甲）。**默认值全部保持现状**（1024 / 0.15 / `paraformer-zh`），不声明时行为逐字节不变。
@@ -135,12 +135,27 @@
 
 > 前提：服务运行且已加载本对代码；`config.yaml` 与 `rag_config.json` 先存档字节/md5，结束逐字节还原；**抓包腿另需 `models_config.json` 存档/还原，且动它前须经用户逐次授权**（caption 端点由 `models:` 条目携带，见执行纪律）。
 
-- [ ] **腿一（max_tokens）**：**抓包接法（审查后按甲）**：经授权后临时加一条探针 `models:` 条目（`base_url=http://127.0.0.1:8899`），把 `rag.vlm_model` 指向它 ⇒ 改 `caption_max_tokens=2048` ⇒ 入库一张图，抓包显示 `max_tokens: 2048`；清空该字段（**抓包条目不动**）⇒ 抓包回 `1024`。
-- [ ] **腿二（temperature）**：同上（**抓包条目不动**），`caption_temperature=0.7` ⇒ 抓包 `temperature: 0.7`；清空 ⇒ 回 `0.15`。
-- [ ] **还原**：**三份**配置逐字节还原（`config.yaml`／`rag_config.json`／`models_config.json`，md5 一致）；删除探针条目与本次创建的测试文档（按 id）；抓包服务停止。
-- [ ] **C-3**：无真栈面（纯签名形状），在实测里注明。
+- [x] **腿一（max_tokens）**：**抓包接法（审查后按甲）**：经授权后临时加一条探针 `models:` 条目（`base_url=http://127.0.0.1:8899`），把 `rag.vlm_model` 指向它 ⇒ 改 `caption_max_tokens=2048` ⇒ 入库一张图，抓包显示 `max_tokens: 2048`；清空该字段（**抓包条目不动**）⇒ 抓包回 `1024`。
+- [x] **腿二（temperature）**：同上（**抓包条目不动**），`caption_temperature=0.7` ⇒ 抓包 `temperature: 0.7`；清空 ⇒ 回 `0.15`。
+- [x] **还原**：**三份**配置逐字节还原（`config.yaml`／`rag_config.json`／`models_config.json`，md5 一致）；删除探针条目与本次创建的测试文档（按 id）；抓包服务停止。
+- [x] **C-3**：无真栈面（纯签名形状），在实测里注明。
 
-**实测（待回填）**：
+**实测（2026-09-30，真栈；用户逐次授权已获）**：
+
+- **前置（环境两折）**：① 运行中的 :8001 起初是 **15:07 启的旧实例**（无本对代码、reload 已死——socket 属主核实 PID 10668 ＋ touch 探针无重启）；**经用户授权**精确杀 9576/10668 后，15:41 栈（PID 4244，含本对代码）接管（socket 属主复核为 4244）。② 前端一度下线，**用户重启**后恢复（浏览器会话仍在）。
+- **抓包接法（甲）**：探针 `models:` 条目 `task4-caption-probe`（`use=ReasoningReplayChatOpenAI`、`base_url=http://127.0.0.1:8899`、自带 key、`supports_vision`）加进 `models_config.json`；`rag.vlm_model` 指向它。**首次只改了 config.yaml ⇒ 未生效**：`rag_config.json` 的 `vlm_model: mimo-v2.6-flash`（文件层）覆盖了它，第一张图走了真 VLM（**如实记：一次真实配文调用**，无碍后续）；把文件层也指向探针后生效。
+- **三次抓包**（每次入库一张 PNG；caption 腿触发 `POST /chat/completions`，`host=127.0.0.1:8899`、`auth_header=yes`、`model=task4-caption-probe-wire`）：
+
+  | # | config.yaml 旋钮状态 | 抓包 `params` |
+  | --- | --- | --- |
+  | 1（16:42:52） | `caption_max_tokens: 2048`；temperature 未声明 | `max_tokens=2048, temperature=0.15` |
+  | 2（16:43:27） | max_tokens 清空；`caption_temperature: 0.7` | `max_tokens=1024, temperature=0.7` |
+  | 3（16:44:03） | 两者都清空 | `max_tokens=1024, temperature=0.15` |
+
+  ⇒ 两旋钮各自「改配置跟着变 / 清空回默认」两个方向都具名（抓包日志：`task4_pair3_capture.log`；首轮截断日志 `task4_pair3_capture_round1.log`）。
+- **还原**：三份配置逐字节还原、md5 一致（`config.yaml ec1b49ae…`／`rag_config.json 323f9046…`／`models_config.json ff8d1d5b…`）；探针条目随还原消失（`GET /api/models` 复核 false）；5 张探针文档按 id 删除（204×5、残留 0）；抓包服务停止（:8899 已释放）。
+- **C-3 无真栈面**：纯签名形状，单测已钉（三处形状 ＋ 两条既有守卫）。
+- **实施期记录**：① `rag.vlm_model` 是**两层**字段（config.yaml 被 rag_config.json 覆盖）——只改一层不生效（首轮实证，见上）；② 本机 **Qdrant 未运行** ⇒ 5 张文档的 `vector`／`graph` 腿 `failed`（`caption` 腿 `done`），与全量套件那条 ERROR 同源、非本对引入；证据是 caption 请求体，抓包已具名，文档终态不影响。
 
 ---
 
