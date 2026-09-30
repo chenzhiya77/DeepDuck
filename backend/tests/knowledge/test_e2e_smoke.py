@@ -50,7 +50,6 @@ REQUIRED_KEYS = (
     "MINERU_API_TOKEN",
     "DASHSCOPE_EMBEDDING_API_KEY",
     "DASHSCOPE_RERANK_API_KEY",
-    "SILICONFLOW_VLM_API_KEY",
     "DEEPSEEK_API_KEY",
 )
 requires_live_keys = pytest.mark.skipif(

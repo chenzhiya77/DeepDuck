@@ -218,7 +218,6 @@ make setup
 # 2) 准备知识库所需的密钥（也可直接写进 config.yaml）
 export DASHSCOPE_EMBEDDING_API_KEY=...   # 向量（dense + sparse 一次调用）
 export DASHSCOPE_RERANK_API_KEY=...      # 重排
-export SILICONFLOW_VLM_API_KEY=...       # 图片说明
 export MINERU_API_TOKEN=...              # 文档解析
 
 # 3) 起一个 Qdrant（默认地址 http://localhost:6333，见 config.yaml 的 rag: 块）

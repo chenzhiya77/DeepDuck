@@ -7,9 +7,9 @@ otherwise a new role ships as a field the template never tells anyone about.
 block instead of activating one, because a name there points at a ``models:`` entry that
 most deployments do not have.
 
-Deliberately **not** asserted: that the JSON template carries no real model names. Three
-fields in it do today (``embedding_model`` / ``rerank_model`` / ``extract_model``); replacing
-them is the inventory's C-2 item, out of this pair's scope.
+The JSON template's vendor model names were replaced with semantic placeholders by the
+2026-09-30 closeout pair (inventory C-2); the vendor-name test below keeps the whole
+surface clean, including the YAML template's commented examples.
 """
 
 from __future__ import annotations

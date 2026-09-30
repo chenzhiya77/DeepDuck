@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-30-rag-closeout-design.md](../specs/2026-09-30-rag-closeout-design.md)
-**Status:** **2026-09-30 起草，待开工。五项待裁**（spec §6.1：① A-1 收口形状；② C-1 语言策略；③ C-2 占位与形态；④ `B-1` 搭不搭车；⑤ `config_version` 升不升）。**本计划按推荐组合起草（①甲 ②乙 ③甲 ④甲 ⑤乙），每个受裁项影响的步骤都标了另一分支的落点**；裁完只动被裁的那几行。**未实现任何生产代码、未提交**；起草轮的核实全部只读。**同日起草后审查（7 条）已就地修正 5 条**：① 基线在 HEAD `75f3a186` 复核（他线两笔全前端、零后端重叠）；③ C-2 补 `config.example.yaml` 的 `video.asr_model` 一行；④ C-1 起点句标注"账本口径、已漂移"；⑤ A-1 前端零改动结论进 spec §6.2；⑥ ASR 收口点定为 **worker 的 ASR 腿入口**。**审查 ②（C-1 家族内已英文成员的处置）已随 ②＝乙 落定＝「全家族双语」（已英文的成员补中文半边）**。**Task 0（只读核实）已完成（2026-09-30，HEAD `a8a39423`）**：8 框全勾（1 框标不适用）、实测已回填（收口点 3 ＋ 两陷阱／受害者 5／C-1 清单 13 中＋5 英／碰撞面）。**Task 2 已实施（2026-09-30 提交）**：新建零依赖 `messages.py`（`bilingual`）＋ 约 41 处消息双语化；RED 14 红 → 窄面 282 passed → neuter ①11②10（逐次字节还原）→ 全量 **161/12835/109/0**（零新增、并修掉两条 save_probe 基线红）；上游工厂句不在范围（漂移钉改比 EN 半边）。**Task 1 已实施（2026-09-30 提交）**：RED 10 红 → 窄面 123 passed → neuter ①5②4（逐次字节还原 md5）→ 全量 **163/12831/109/0** 与基线集合对照零新增（唯一差异＝已知抖动 `test_run_manager`；+57 passed ＝ 4 新用例 ＋ 2 对 3 模板用例 ＋ 51 条 Qdrant 集成用例转真跑）；并发 basetemp 自伤与漏改受害者（`test_embedder_ark`）两条已如实记入实测。**Task 3 已实施（2026-10-01 提交）**：示例两文件中性占位（YAML 两行 ＋ `asr_model` 行改注释＋"required — no default" 注记、其余注释示例 → `<your-model-name>`；JSON 四值 `your-*-model` 家族）＋ B-1 两处描述 ＋ `backend/AGENTS.md` 一句三事；RED 4 红 → 契约 13 passed → neuter ①2②0（描述零受害者＝ spec §6.1 ④ 预判的"零用例风险"，如实记负结果）→ 全量 **160/12840/109/0** 与 Task 2 集合对照零新增（唯一差异＝ `test_delta_channel_state` 由红转绿：Hypothesis `too_slow` 负载敏感、预基线集合内）；**spec 两处 ② 落尘随批更正**（§5／§6.2 原列 `providers/__init__.py`「不改」——②乙 ＋ 审查② 下 Task 2 已改，就地补更正注）。
+**Status:** **2026-09-30 起草，待开工。五项待裁**（spec §6.1：① A-1 收口形状；② C-1 语言策略；③ C-2 占位与形态；④ `B-1` 搭不搭车；⑤ `config_version` 升不升）。**本计划按推荐组合起草（①甲 ②乙 ③甲 ④甲 ⑤乙），每个受裁项影响的步骤都标了另一分支的落点**；裁完只动被裁的那几行。**未实现任何生产代码、未提交**；起草轮的核实全部只读。**同日起草后审查（7 条）已就地修正 5 条**：① 基线在 HEAD `75f3a186` 复核（他线两笔全前端、零后端重叠）；③ C-2 补 `config.example.yaml` 的 `video.asr_model` 一行；④ C-1 起点句标注"账本口径、已漂移"；⑤ A-1 前端零改动结论进 spec §6.2；⑥ ASR 收口点定为 **worker 的 ASR 腿入口**。**审查 ②（C-1 家族内已英文成员的处置）已随 ②＝乙 落定＝「全家族双语」（已英文的成员补中文半边）**。**Task 0（只读核实）已完成（2026-09-30，HEAD `a8a39423`）**：8 框全勾（1 框标不适用）、实测已回填（收口点 3 ＋ 两陷阱／受害者 5／C-1 清单 13 中＋5 英／碰撞面）。**Task 2 已实施（2026-09-30 提交）**：新建零依赖 `messages.py`（`bilingual`）＋ 约 41 处消息双语化；RED 14 红 → 窄面 282 passed → neuter ①11②10（逐次字节还原）→ 全量 **161/12835/109/0**（零新增、并修掉两条 save_probe 基线红）；上游工厂句不在范围（漂移钉改比 EN 半边）。**Task 1 已实施（2026-09-30 提交）**：RED 10 红 → 窄面 123 passed → neuter ①5②4（逐次字节还原 md5）→ 全量 **163/12831/109/0** 与基线集合对照零新增（唯一差异＝已知抖动 `test_run_manager`；+57 passed ＝ 4 新用例 ＋ 2 对 3 模板用例 ＋ 51 条 Qdrant 集成用例转真跑）；并发 basetemp 自伤与漏改受害者（`test_embedder_ark`）两条已如实记入实测。**Task 3 已实施（2026-10-01 提交）**：示例两文件中性占位（YAML 两行 ＋ `asr_model` 行改注释＋"required — no default" 注记、其余注释示例 → `<your-model-name>`；JSON 四值 `your-*-model` 家族）＋ B-1 两处描述 ＋ `backend/AGENTS.md` 一句三事；RED 4 红 → 契约 13 passed → neuter ①2②0（描述零受害者＝ spec §6.1 ④ 预判的"零用例风险"，如实记负结果）→ 全量 **160/12840/109/0** 与 Task 2 集合对照零新增（唯一差异＝ `test_delta_channel_state` 由红转绿：Hypothesis `too_slow` 负载敏感、预基线集合内）；**spec 两处 ② 落尘随批更正**（§5／§6.2 原列 `providers/__init__.py`「不改」——②乙 ＋ 审查② 下 Task 2 已改，就地补更正注）。**Task 4 已实施（2026-10-01 提交）**：四载体删行/删项/删名（`.env.example`／`README.md`／`UPSTREAM_README.md`／`test_e2e_smoke.py` 的 `REQUIRED_KEYS`）＋ 新守卫用例（零命中 ＋ 在役键正向对照）；RED 1 红 → 守卫 2 passed → neuter ①1②1（md5 还原）→ revert proof 2 passed → 四载体 grep 零命中、`test_e2e_smoke.py` 仍可收集；**README 前置的归属漂移已核并就地更正 spec**（多模态线已落地 `77debea3` 且未碰 README；在飞 4 行另有其主），经裁定**部分暂存**避让（提交时只入本对那一行）；全量 **161/12841/109/0** 与 Task 3 集合零新增（唯一差异＝ delta 抖动翻面：单跑绿、无存留反例）。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 4」＝本对（`B-2` 剩余 + `A-1` + `C-2` + `C-1`；`B-1` 可搭车）；`knowledge/model_target.py`（D10 的 `RagConfigurationError` 形状先例）；[对 3 计划](2026-09-30-rag-caption-params-asr-default.md)（同文件、刚交付）。
 
 **Architecture:** `config.yaml → RagConfig`（三字段 `str | None = None`）＋ **单一构建点收口**（`build_embedder` / `build_reranker` / **worker 的 ASR 腿入口** ⇒ `RagConfigurationError`，保存期自动 400）；文案改动只动字符串（语言策略见 ②）；示例只动值/注释形态。**本对唯一行为变化＝未声明模型名的部署从"静默用厂商默认"变"响亮报错"**（spec D1/§6.2）。
@@ -142,12 +142,20 @@
 > 文件：`.env.example`、`README.md`、`UPSTREAM_README.md`、`backend/tests/knowledge/test_e2e_smoke.py`。
 > **验收对应**：spec §4 的 4。
 
-- [ ] **RED：载体守卫**：一条守卫用例——四载体 grep `SILICONFLOW_VLM_API_KEY` 零命中（历史/轮次快照文档排除在外，白名单按 Task 0 的结论）。
-- [ ] **GREEN**：四处按 D4 表删行/删项/删名；**不改名**（Task 9 先例）。
-- [ ] **neuter**：把 `.env.example` 那行放回 ⇒ 守卫用例转红。
-- [ ] **门禁**：守卫用例绿；live 门禁文件仍可收集（`test_e2e_smoke.py` 不因删项而 import 失败）；grep 复核四载体零命中。
+- [x] **RED：载体守卫**：一条守卫用例——四载体 grep `SILICONFLOW_VLM_API_KEY` 零命中（历史/轮次快照文档排除在外，白名单按 Task 0 的结论）。
+- [x] **GREEN**：四处按 D4 表删行/删项/删名；**不改名**（Task 9 先例）。
+- [x] **neuter**：把 `.env.example` 那行放回 ⇒ 守卫用例转红。
+- [x] **门禁**：守卫用例绿；live 门禁文件仍可收集（`test_e2e_smoke.py` 不因删项而 import 失败）；grep 复核四载体零命中。
 
-**实测（待回填）**：
+**实测（2026-10-01，开工 HEAD `4f005aff`）**：
+
+- **RED（1 红）**：新建 `backend/tests/test_retired_vlm_env_carriers.py`——① 四载体逐文件断言退休名零命中；② **正向对照**＝三枚在役键（`DASHSCOPE_EMBEDDING_API_KEY` / `DASHSCOPE_RERANK_API_KEY` / `MINERU_API_TOKEN`）在每个载体仍在（防"删错行"式空洞绿）。RED 时 ① 红于 `.env.example`、② 绿（预期）。
+- **GREEN**：四处——`.env.example` 删整行；`README.md` 删 `export … # 图片说明` 行；`UPSTREAM_README.md` 从列举里删名（保留 `MINERU_API_TOKEN` 尾巴）；`test_e2e_smoke.py` 的 `REQUIRED_KEYS` 删项。**不改名**（Task 9 先例）。
+- **门禁**：守卫用例 **2 passed**；`test_e2e_smoke.py` **仍可收集**（1 test collected——不因删项 import 失败）；四载体 `git grep` **零命中**（rc=1；全仓余 6 命中＝白名单：账本 ＋ 2026-08-07 plan ＋ 2026-09-23 spec/plan ＋ 本对 spec/plan；**全盘裸扫**〔含忽略规则外〕多出的仅为工具缓存 `.qoder/`／`.mimosa/`、`__pycache__` 与守卫自身，**零新增载体**）；ruff 双净（含新守卫文件）。
+- **neuter（脚本一张表，改→跑→逐字节还原）**：① 退休行放回 `.env.example` ⇒ **1 红**（零命中用例）；② 删掉一枚在役键行 ⇒ **1 红**（正向对照用例）。`.env.example` md5 逐字节一致（`aa4b1f12…`）。
+- **revert proof**：还原后再跑守卫 ⇒ **2 passed**（与 GREEN 相同）。
+- **门禁（全量，按纪律加跑）**：**161 failed / 12841 passed / 109 skipped / 0 error**（00:52，20:27）。与 Task 3 的集合（160 ids）逐条对照：**only-T4 ＝ 0（零新增）**；**only-T3 ＝ 1 ＝ `test_delta_channel_state` 抖动翻面（T3 绿 → T4 红）**——单跑复验**即绿**、`.hypothesis/examples` **无存留反例** ⇒ 负载敏感 `too_slow` 而非真反例（与 T1/T2 同因）。**总数 13000 → 13002（+2 ＝ 本对守卫两条新用例）**：passed +1 ＝ ＋2 新用例 − 1 抖动翻面，逐项归因。
+- **实施期记录（如实记）**：① **前置归属漂移已核实**：多模态角色标题那一对**已落地**（`77debea3`，09-30 05:42，plan/spec/前端全套）且**未碰 README**；`README.md` 的在飞 4 行（intro 重写＋工作分支行，09-30 03:54，约 21h 未动）**另有其主**——spec §5.2／D4 的「多模态线在编辑」归属已就地补更正注。② 经用户裁定（2026-10-01）**按部分暂存执行**：提交时只入本对删的那一行（`git apply --cached`），他线 4 行原样留在工作树、两边互不扫（我的 hunk 与其 4 行分属不同区：其 diff 只碰 1–33 行）。③ 顺带更正 Task 3 落下的一处 docstring 相抵（`test_rag_config_example.py` 还写「不刻意钉厂商型号」而 Task 3 已加该用例）。
 
 ---
 

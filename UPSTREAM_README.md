@@ -149,7 +149,7 @@ That prompt is intended for coding agents. It tells the agent to clone the repo 
    > model's endpoint and API key. Values left unset fall back
    > to `config.yaml` and, for API keys, to the
    > environment variables (`DASHSCOPE_EMBEDDING_API_KEY`, `DASHSCOPE_RERANK_API_KEY`,
-   > `SILICONFLOW_VLM_API_KEY`, `MINERU_API_TOKEN`), so existing deployments need no change.
+   > `MINERU_API_TOKEN`), so existing deployments need no change.
    > Saved values go to a gitignored `rag_config.json` and take effect on the next document
    > ingest or retrieval — no restart. **Changing the embedding model requires re-indexing
    > your knowledge bases**, because their vectors were built with the previous one; the form
