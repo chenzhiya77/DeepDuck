@@ -1692,9 +1692,9 @@ export const zhCN: Translations = {
         "知识库的解析、检索与画像由这些模型承担，与对话模型分开配置。",
       extractModel: "图谱抽取模型",
       groupRetrieval: "检索",
-      groupRetrievalHint: "查询时使用：向量化 + 重排。",
+      groupRetrievalHint: "检索时使用：向量模型与重排模型。",
       retrievalEndpointHint:
-        "必填。填法随意：主机名（https://host）、带 /v1 的 base（https://host/v1）或整段端点（https://host/v1/embeddings）都能用——与固定段重复的那节不会重复拼。",
+        "必填。以下三种写法均可：主机名（https://host）、带 /v1 的 base（https://host/v1）或整段端点（https://host/v1/embeddings）；与固定段重复的一节不会重复拼接。",
       embeddingProvider: "向量提供方",
       rerankProvider: "重排提供方",
       providerDashscope: "阿里百炼 (DashScope)",
@@ -1711,11 +1711,11 @@ export const zhCN: Translations = {
       sparseSourceExternal: "独立稀疏服务",
       sparseSourceBm25: "本地 BM25",
       sparseModelHint:
-        "这一项会被保存到配置里，但从不发给服务：TEI 一个实例只服务一个模型，所以请求里不带 model 字段。",
+        "该项会写入配置，但不会随请求发送：TEI 一个实例只服务一个模型，故请求中不带 model 字段。",
       sparseSourceHint:
-        "百炼的向量模型一次调用同时给出稠密与稀疏；换成只出稠密的提供方后，这里必须改成「独立稀疏服务」或「本地 BM25」，否则该配置无法启用。",
+        "百炼的向量模型单次调用同时返回稠密与稀疏向量；换成仅输出稠密向量的提供方后，这里必须改为「独立稀疏服务」或「本地 BM25」，否则该配置无法启用。",
       sparseProbeHint:
-        "选中「跟随向量模型」会打一次真实嵌入调用（只读、不保存），用来确认所选模型确实给出稀疏向量。",
+        "选中「跟随向量模型」将发起一次真实嵌入调用（只读、不保存），用于确认所选模型确能返回稀疏向量。",
       sparseProbing: "检测中…",
       sparseUnverified: "未验证",
       sparseServiceUnreachable: "连不上",
@@ -1750,22 +1750,21 @@ export const zhCN: Translations = {
       parseProvider: "解析提供方",
       parseBaseUrl: "服务地址",
       parseBaseUrlHint:
-        "云腿留空即官方 https://mineru.net；本地 MinerU 服务必填——该服务不带鉴权，只应部署在内网。",
+        "MinerU 云 API 留空时使用官方地址 https://mineru.net；本地 MinerU 服务必填——该服务不带鉴权，只应部署在内网。",
       parseTier: "解析档位",
       parseTierAuto: "（由服务决定）",
       parseTierHint:
-        "档位由 MinerU 服务端定义：flash / basic 轻量，standard / advanced 需要服务端装 torch。空 = 由服务端决定（默认 standard）。",
+        "档位由 MinerU 服务端定义：flash / basic 为轻量档，standard / advanced 需要服务端安装 torch；留空表示由服务端决定（服务端默认 standard）。",
       parseLanguage: "解析语种",
-      parseLanguageHint:
-        "MinerU 云腿的文档语言包，ch 同时覆盖中英文；仅云 API 有此参数。",
+      parseLanguageHint: "MinerU 云 API 的文档语言包；ch 同时覆盖中英文。",
       parseLanguageDefault: "（使用配置默认）",
       parseModelVersion: "模型版本",
-      parseModelVersionHint: "MinerU 云腿的模型版本；本部署一直发送 vlm。",
+      parseModelVersionHint: "MinerU 云 API 的模型版本；本部署默认发送 vlm。",
       parseModelVersionDefault: "（使用配置默认）",
       groupExtraction: "图谱抽取",
       groupEvaluation: "评测裁判",
       groupEvaluationHint:
-        "用 ragas 给检索质量打分，与对话里选的模型无关。留空先撤掉本行的覆盖，配置里为它指定的值仍然生效；两边都空才由 RAG 默认模型接手。",
+        "用于评估检索质量（ragas），与对话所选模型无关。留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。",
       judgeModel: "裁判模型",
       judgeModelNone: "（使用配置默认）",
       synthesisModel: "考题合成模型",
@@ -1773,7 +1772,8 @@ export const zhCN: Translations = {
         "用于从文档合成评测候选题的模型。留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。",
       synthesisModelNone: "（使用配置默认）",
       groupMultimodal: "多模态与视频",
-      groupMultimodalHint: "图片描述把图片与关键帧转成文字；语音识别只服务视频入库。",
+      groupMultimodalHint:
+        "图片描述将图片与关键帧转为文字；语音识别仅服务视频入库。",
       groupServices: "服务与令牌",
       groupServicesHint: "仅当 Qdrant / MinerU 不在默认位置时才需要修改。",
       vlmNoVisionModel:
@@ -1787,7 +1787,7 @@ export const zhCN: Translations = {
       wikiModelNone: "（使用配置默认）",
       captionModel: "图片描述模型 (VLM)",
       captionModelHint:
-        "接口地址与 API Key 取自所选模型条目；留空先撤掉本行的覆盖，配置里为它指定的值仍然生效，两边都空才由 RAG 默认模型接手。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 形状。",
+        "接口地址与 API Key 取自所选模型条目；留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 兼容协议调用。",
       vlmModelDefault: "（使用配置默认）",
       defaultModel: "RAG 默认模型",
       defaultModelNone: "（使用配置默认）",
@@ -1815,11 +1815,11 @@ export const zhCN: Translations = {
       asrModel: "ASR 模型",
       asrModelCandidates: "常用模型：",
       asrModelFunasrHint:
-        "可填 ModelScope 模型 id 或本地目录。逐句时间戳：paraformer-zh 有，paraformer-en 未测；口述按 VAD 分段落到镜头卡，连续语音可能整段只落一张。",
+        "可填写 ModelScope 模型 id 或本地目录。逐句时间戳：paraformer-zh 支持，paraformer-en 未验证；口述按 VAD 分段落到镜头卡，连续语音可能整段只落一张。",
       asrModelWhisperHint:
-        "内置档位，越大越准越慢；常用 small。也可填任意合法名（如 large-v2、turbo，或本地 .pt 文件）。",
+        "内置档位，越大越准越慢；常用 small。也可填写任意合法名（如 large-v2、turbo，或本地 .pt 文件）。",
       asrModelServiceHint:
-        "填服务侧的模型名（如 qwen-audio-3.1-asr-flash）；候选菜单只对本地引擎可用。",
+        "填写服务侧的模型名（如 qwen-audio-3.1-asr-flash）；候选菜单仅对本地引擎可用。",
       asrApiKey: "ASR API Key",
       asrBaseUrl: "ASR 接口地址",
       asrProbe: "检测分段时间戳",
@@ -1828,13 +1828,13 @@ export const zhCN: Translations = {
       services: "服务与令牌",
       qdrantUrl: "Qdrant 地址",
       mineruToken: "MinerU 解析令牌",
-      secretHint: "留空 = 不再覆盖，改用环境变量",
+      secretHint: "留空表示不再覆盖，改用环境变量。",
       secretFromEnv: "当前由环境变量提供。",
       saved: "功能模型配置已保存",
       noChanges: "没有需要保存的改动",
       reindexTitle: "重建索引",
       reindexHint:
-        "更换嵌入 provider 或维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一并重新生成。只读取库中现有文本：不重新解析源文件，也不重新执行图谱抽取。",
+        "更换嵌入提供方或维度后，已有向量全部失效——由此入口重新嵌入：切片、实体、百科条目与人工卡片一并重新生成。仅读取库中现有文本：不重新解析源文件，也不重新执行图谱抽取。",
       reindexKbLabel: "目标知识库",
       reindexKbPlaceholder: "选择知识库",
       reindexNoKb: "还没有知识库可重建。",

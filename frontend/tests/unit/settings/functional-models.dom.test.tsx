@@ -78,11 +78,11 @@ const SAVE_WARNING =
  * （切片 / 实体 / 百科条目 / 人工卡片），源文件与图谱抽取都不重跑，句子必须说全。
  */
 const REINDEX_HINT_ZH =
-  "更换嵌入 provider 或维度后，已有向量全部失效——用这里的入口重新嵌入：切片、实体、百科条目与人工卡片一并重新生成。只读取库中现有文本：不重新解析源文件，也不重新执行图谱抽取。";
+  "更换嵌入提供方或维度后，已有向量全部失效——由此入口重新嵌入：切片、实体、百科条目与人工卡片一并重新生成。仅读取库中现有文本：不重新解析源文件，也不重新执行图谱抽取。";
 const REINDEX_CONFIRM_ZH =
   "将重新嵌入该知识库的全部向量（切片、实体、百科条目、人工卡片；不重解析源文件），期间检索结果可能不稳。目标知识库：";
 const REINDEX_HINT_EN =
-  "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here: chunks, entities, wiki entries and manual cards are regenerated together. This reads the library's existing text only: source files are not re-parsed, and graph extraction is not re-run.";
+  "Changing the embedding provider or the dimension invalidates every stored vector — re-embed them from this entry: chunks, entities, wiki entries and manual cards are regenerated together. Only the library's existing text is read: source files are not re-parsed, and graph extraction is not re-run.";
 const REINDEX_CONFIRM_EN =
   "Every vector in this library will be re-embedded — chunks, entities, wiki entries and manual cards (source files are not re-parsed) — and retrieval may be unstable while it runs. Target library:";
 
@@ -1917,8 +1917,10 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     renderPage();
     openFunctionalView();
 
+    // 锚定「<角色> · 」：LegHeading 的可及名是这个形状；组 ⓘ 的 aria 是整句提示
+    // （2026-09-30 起含「向量模型/重排模型」），不锚定会先命中 ⓘ。
     const heading = screen.getByRole<HTMLButtonElement>("button", {
-      name: new RegExp(F.embeddingModel),
+      name: new RegExp(`^${F.embeddingModel} ·`),
     });
     expect(heading.getAttribute("data-slot")).toBe("leg-heading");
     expect(heading.getAttribute("data-state")).toBe("untested");
@@ -1933,7 +1935,9 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     });
 
     // 重排腿同日就位，且它那发不带维度（spec §3）。
-    const rerank = screen.getByRole("button", { name: new RegExp(F.rerankModel) });
+    const rerank = screen.getByRole("button", {
+      name: new RegExp(`^${F.rerankModel} ·`),
+    });
     expect(rerank.getAttribute("data-slot")).toBe("leg-heading");
   });
 
@@ -1942,8 +1946,14 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     renderPage();
     openFunctionalView();
 
-    const heading = screen.getByRole("button", { name: new RegExp(F.embeddingModel) });
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: new RegExp(F.embeddingModel) }).disabled).toBe(true);
+    const heading = screen.getByRole("button", {
+      name: new RegExp(`^${F.embeddingModel} ·`),
+    });
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: new RegExp(`^${F.embeddingModel} ·`),
+      }).disabled,
+    ).toBe(true);
     expect(heading.getAttribute("data-state")).toBe("untested");
     fireEvent.click(heading);
     expect(connectivityProbeMock).not.toHaveBeenCalled();
@@ -1984,7 +1994,7 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     openFunctionalView();
 
     const bad = screen.getByRole<HTMLButtonElement>("button", {
-      name: new RegExp(F.embeddingModel),
+      name: new RegExp(`^${F.embeddingModel} ·`),
     });
     expect(bad.getAttribute("data-state")).toBe("bad");
     expect(bad.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-amber-500");
@@ -2016,9 +2026,12 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     renderPage();
     openFunctionalView();
 
+    // 锚定「<角色> ·」的理由同上：组 ⓘ 的提示语里含角色名。
     const dotOf = (label: string) =>
       screen
-        .getByRole<HTMLButtonElement>("button", { name: new RegExp(label) })
+        .getByRole<HTMLButtonElement>("button", {
+          name: new RegExp(`^${label} ·`),
+        })
         .querySelector('[data-slot="leg-dot"]')!;
     expect(dotOf(F.embeddingModel).className).toContain("bg-emerald-500");
     expect(dotOf(F.rerankModel).className).toContain("bg-emerald-500");
@@ -2031,7 +2044,7 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     openFunctionalView();
 
     const heading = screen.getByRole<HTMLButtonElement>("button", {
-      name: new RegExp(F.embeddingModel),
+      name: new RegExp(`^${F.embeddingModel} ·`),
     });
     expect(heading.hasAttribute("title")).toBe(false);
     // 那句原因仍在无障碍名里（提示气泡的内容就是它）。
@@ -2056,7 +2069,7 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     openFunctionalView();
 
     const head = screen.getByRole<HTMLButtonElement>("button", {
-      name: new RegExp(F.embeddingModel),
+      name: new RegExp(`^${F.embeddingModel} ·`),
     });
     expect(head.getAttribute("data-state")).toBe("bad-half");
     expect(head.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-amber-500");
@@ -2070,7 +2083,7 @@ describe("维度行 + 两标题连通点 (spec 2026-09-26 §3 / D5-5)", () => {
     openFunctionalView();
 
     const ok = screen.getByRole<HTMLButtonElement>("button", {
-      name: new RegExp(F.embeddingModel),
+      name: new RegExp(`^${F.embeddingModel} ·`),
     });
     expect(ok.getAttribute("data-state")).toBe("ok");
     expect(ok.querySelector('[data-slot="leg-dot"]')!.className).toContain("bg-emerald-500");

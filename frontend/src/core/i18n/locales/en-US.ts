@@ -1786,9 +1786,10 @@ export const enUS: Translations = {
         "Models the knowledge base uses for parsing, retrieval and profiling. They are configured separately from the chat models.",
       extractModel: "Graph extraction model",
       groupRetrieval: "Retrieval",
-      groupRetrievalHint: "Used at query time: vectorisation and reranking.",
+      groupRetrievalHint:
+        "Used at retrieval time: the embedding model and the rerank model.",
       retrievalEndpointHint:
-        "Required. Any of these work: the host (https://host), a base ending in /v1 (https://host/v1) or the full endpoint (https://host/v1/embeddings) — a segment repeated by the leg's fixed path is not joined twice.",
+        "Required. Any of the three forms is accepted: the host (https://host), a base ending in /v1 (https://host/v1), or the full endpoint (https://host/v1/embeddings); a segment already covered by the leg's fixed path is never joined twice.",
       embeddingProvider: "Embedding provider",
       rerankProvider: "Rerank provider",
       providerDashscope: "Aliyun Bailian (DashScope)",
@@ -1805,11 +1806,11 @@ export const enUS: Translations = {
       sparseSourceExternal: "A separate sparse service",
       sparseSourceBm25: "Local BM25",
       sparseModelHint:
-        "This value is stored in the configuration but never sent to the service: a TEI instance serves one model, so the request carries no model field.",
+        "The value is stored in the configuration but is never sent with a request: a TEI instance serves one model, so the request carries no model field.",
       sparseSourceHint:
-        "A Bailian embedding model returns dense and sparse in one call. After switching to a dense-only provider you must set this to a separate sparse service or local BM25, or the configuration cannot be enabled.",
+        "A Bailian embedding model returns both the dense and the sparse half in one call. After switching to a dense-only provider, set this to the separate sparse service or local BM25, or the configuration cannot be enabled.",
       sparseProbeHint:
-        "Selecting “Follow the embedding model” runs one real embedding call (read-only, nothing is saved) to confirm the model really returns the sparse half.",
+        "Selecting “Follow the embedding model” makes one real embedding call (read-only, nothing is saved) to confirm the model actually returns the sparse half.",
       sparseProbing: "Checking…",
       sparseUnverified: "Unverified",
       sparseServiceUnreachable: "unreachable",
@@ -1844,23 +1845,23 @@ export const enUS: Translations = {
       parseProvider: "Parsing provider",
       parseBaseUrl: "Service address",
       parseBaseUrlHint:
-        "Empty means the official https://mineru.net on the cloud leg; the local MinerU service needs it (it ships without auth, so keep it internal).",
+        "Empty means the official https://mineru.net for the cloud API; the local MinerU service needs it — that service ships without auth, so keep it internal.",
       parseTier: "Parsing tier",
       parseTierAuto: "(let the service decide)",
       parseTierHint:
-        "Tiers are defined by the MinerU service: flash / basic are light; standard / advanced need its torch extra. Empty lets the service decide (default: standard).",
+        "Tiers are defined by the MinerU service: flash / basic are light, while standard / advanced need torch installed on the service; empty means the service decides (its own default is standard).",
       parseLanguage: "Document language",
       parseLanguageHint:
-        "The cloud leg's MinerU language pack; ch covers Chinese and English. Cloud API only.",
+        "The MinerU cloud API's document language pack; ch covers Chinese and English.",
       parseLanguageDefault: "(use the configured default)",
       parseModelVersion: "Model version",
       parseModelVersionHint:
-        "The cloud leg's MinerU model version; this deployment has always sent vlm.",
+        "The MinerU cloud API's model version; this deployment sends vlm by default.",
       parseModelVersionDefault: "(use the configured default)",
       groupExtraction: "Graph extraction",
       groupEvaluation: "Evaluation judge",
       groupEvaluationHint:
-        "Scores retrieval quality with ragas, independently of the model you chat with. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
+        "Evaluates retrieval quality with ragas, independently of the chat model in use. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
       judgeModel: "Judge model",
       judgeModelNone: "(use the configured default)",
       synthesisModel: "Question synthesis model",
@@ -1868,7 +1869,8 @@ export const enUS: Translations = {
         "Synthesizes candidate evaluation questions from documents. Leaving it empty withdraws this row's override, so a value set for it in the configuration still applies; only when neither is set does the RAG default model take over.",
       synthesisModelNone: "(use the configured default)",
       groupMultimodal: "Multimodal & video",
-      groupMultimodalHint: "Captions turn images and keyframes into text; speech recognition only serves video ingestion.",
+      groupMultimodalHint:
+        "Image captioning turns images and keyframes into text; speech recognition serves video ingestion only.",
       groupServices: "Services & tokens",
       groupServicesHint: "Only change these when Qdrant or MinerU is not at its default location.",
       vlmNoVisionModel: "No configured model declares vision support — add a vision-capable model under Chat models first.",
@@ -1881,7 +1883,7 @@ export const enUS: Translations = {
       wikiModelNone: "(use the configured default)",
       captionModel: "Caption model (VLM)",
       captionModelHint:
-        "The endpoint and API key come from the selected model entry; leaving it empty withdraws this row's override, so a value set for it in the configuration still applies, and only when neither is set does the RAG default model take over. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry keeps the OpenAI shape.",
+        "The endpoint and API key come from the selected model entry; leaving it empty withdraws this row's override, so a value set for it in the configuration still applies, and only when neither is set does the RAG default model take over. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry over the OpenAI-compatible protocol.",
       vlmModelDefault: "(use the configured default)",
       defaultModel: "RAG default model",
       defaultModelNone: "(config default)",
@@ -1909,11 +1911,11 @@ export const enUS: Translations = {
       asrModel: "ASR model",
       asrModelCandidates: "Common models:",
       asrModelFunasrHint:
-        "A ModelScope model id, or a local directory. Sentence timestamps: paraformer-zh yes, paraformer-en not tested; speech is split per VAD segment across the shot cards, and continuous speech may still land on a single one.",
+        "A ModelScope model id, or a local directory. Sentence timestamps: paraformer-zh provides them, paraformer-en is unverified; speech is split per VAD segment across the shot cards, and continuous speech may still land on a single one.",
       asrModelWhisperHint:
-        "Built-in tiers — larger is more accurate and slower; small is the common pick. Any legal name works too (large-v2, turbo, or a local .pt file).",
+        "Built-in tiers — larger is more accurate and slower; small is the common choice. Any valid name also works (large-v2, turbo, or a local .pt file).",
       asrModelServiceHint:
-        "The name the service itself uses (e.g. qwen-audio-3.1-asr-flash); the candidate menu is for the local engines only.",
+        "The model name the service itself uses (e.g. qwen-audio-3.1-asr-flash); the candidate menu is available for the local engines only.",
       asrApiKey: "ASR API key",
       asrBaseUrl: "ASR endpoint",
       asrProbe: "Check segment timestamps",
@@ -1922,13 +1924,14 @@ export const enUS: Translations = {
       services: "Services & tokens",
       qdrantUrl: "Qdrant URL",
       mineruToken: "MinerU parsing token",
-      secretHint: "Leave blank to stop overriding and fall back to the environment variable.",
+      secretHint:
+        "Leaving it blank stops the override and falls back to the environment variable.",
       secretFromEnv: "Currently provided by an environment variable.",
       saved: "Functional model configuration saved",
       noChanges: "No changes to save",
       reindexTitle: "Rebuild index",
       reindexHint:
-        "Changing the embedding provider or dimension invalidates every stored vector — re-embed them here: chunks, entities, wiki entries and manual cards are regenerated together. This reads the library's existing text only: source files are not re-parsed, and graph extraction is not re-run.",
+        "Changing the embedding provider or the dimension invalidates every stored vector — re-embed them from this entry: chunks, entities, wiki entries and manual cards are regenerated together. Only the library's existing text is read: source files are not re-parsed, and graph extraction is not re-run.",
       reindexKbLabel: "Target library",
       reindexKbPlaceholder: "Choose a library",
       reindexNoKb: "No library to rebuild yet.",
