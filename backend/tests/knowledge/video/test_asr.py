@@ -14,6 +14,7 @@ TranscriptSegment 序列——单位换算、取整、去空白、丢弃无效�
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import sys
@@ -89,6 +90,45 @@ def test_resolve_provider_unknown_name_raises_asrerror():
         resolve_provider("nonexistent-provider", model="x")
 
 
+# ── C-3: 模型名必须由调用方给（spec 2026-09-30 D3，③＝甲）────────────────
+
+
+def test_transcribe_video_requires_the_model_name():
+    signature = inspect.signature(transcribe_video)
+
+    assert signature.parameters["model"].default is inspect.Parameter.empty
+
+
+def test_funasr_provider_requires_the_model_name():
+    signature = inspect.signature(FunAsrProvider.__init__)
+
+    assert signature.parameters["model"].default is inspect.Parameter.empty
+    with pytest.raises(TypeError):
+        FunAsrProvider()
+
+
+def test_whisper_provider_requires_the_model_name():
+    signature = inspect.signature(WhisperProvider.__init__)
+
+    assert signature.parameters["model"].default is inspect.Parameter.empty
+    with pytest.raises(TypeError):
+        WhisperProvider()
+
+
+def test_resolve_provider_still_requires_the_model_name():
+    """The pre-existing required shape stays a guard (it was already correct)."""
+    signature = inspect.signature(resolve_provider)
+
+    assert signature.parameters["model"].default is inspect.Parameter.empty
+
+
+def test_resolve_leg_provider_takes_no_model():
+    """The tier downgrade answers with a provider name only — never a model."""
+    signature = inspect.signature(resolve_leg_provider)
+
+    assert "model" not in signature.parameters
+
+
 # ── transcribe_video 编排（fake provider 注入）───────────────────────────
 
 
@@ -114,7 +154,7 @@ async def test_transcribe_video_uses_injected_provider_and_unit(tmp_path):
     target = tmp_path / "clip.mp4"
     target.write_bytes(b"placeholder")
 
-    segs = await transcribe_video(str(target), provider=fake)
+    segs = await transcribe_video(str(target), provider=fake, model="paraformer-zh")
 
     assert segs == [TranscriptSegment(0, 2500, "你好"), TranscriptSegment(2500, 4000, "世界")]
     assert fake.seen_paths == [str(target)]  # path 透传给 provider
@@ -123,14 +163,14 @@ async def test_transcribe_video_uses_injected_provider_and_unit(tmp_path):
 async def test_transcribe_video_wraps_provider_crash_as_asrerror(tmp_path):
     fake = _FakeProvider([], exc=RuntimeError("模型加载炸了"))
     with pytest.raises(AsrError) as excinfo:
-        await transcribe_video(str(tmp_path / "clip.mp4"), provider=fake)
+        await transcribe_video(str(tmp_path / "clip.mp4"), provider=fake, model="paraformer-zh")
     assert "模型加载炸了" in str(excinfo.value)  # 原始错误进降级信息
 
 
 async def test_transcribe_video_propagates_asrerror_unchanged(tmp_path):
     fake = _FakeProvider([], exc=AsrError("已经是 AsrError"))
     with pytest.raises(AsrError) as excinfo:
-        await transcribe_video(str(tmp_path / "clip.mp4"), provider=fake)
+        await transcribe_video(str(tmp_path / "clip.mp4"), provider=fake, model="paraformer-zh")
     assert str(excinfo.value) == "已经是 AsrError"  # 不二次包裹
 
 
@@ -174,7 +214,7 @@ async def test_transcribe_video_warns_when_one_segment_covers_the_file(tmp_path,
     target.write_bytes(b"placeholder")
 
     with caplog.at_level(logging.WARNING):
-        segments = await transcribe_video(str(target), provider=fake, duration_ms=18_000)
+        segments = await transcribe_video(str(target), provider=fake, model="paraformer-zh", duration_ms=18_000)
 
     assert len(segments) == 1
     assert any("整段" in record.getMessage() for record in caplog.records)
@@ -186,7 +226,7 @@ async def test_transcribe_video_stays_quiet_when_the_file_has_many_segments(tmp_
     target.write_bytes(b"placeholder")
 
     with caplog.at_level(logging.WARNING):
-        await transcribe_video(str(target), provider=fake, duration_ms=18_000)
+        await transcribe_video(str(target), provider=fake, model="paraformer-zh", duration_ms=18_000)
 
     assert not [record for record in caplog.records if "整段" in record.getMessage()]
 
@@ -197,7 +237,7 @@ async def test_transcribe_video_cannot_judge_without_a_duration(tmp_path, caplog
     target.write_bytes(b"placeholder")
 
     with caplog.at_level(logging.WARNING):
-        await transcribe_video(str(target), provider=fake)  # 没给时长 ⇒ 不判、不报
+        await transcribe_video(str(target), provider=fake, model="paraformer-zh")  # 没给时长 ⇒ 不判、不报
 
     assert not [record for record in caplog.records if "整段" in record.getMessage()]
 
@@ -431,7 +471,7 @@ async def test_a_service_failure_degrades_to_asrerror(tmp_path, failure):
 
     provider = DashScopeAsrProvider(model="m", base_url="https://dashscope.aliyuncs.com", api_key="sk", client=client)
     with pytest.raises(AsrError):
-        await transcribe_video(str(clip), provider=provider)
+        await transcribe_video(str(clip), provider=provider, model="paraformer-zh")
 
 
 # ── 服务档：签名把地址与钥匙送到 provider（worker 侧的同一条路）──────────

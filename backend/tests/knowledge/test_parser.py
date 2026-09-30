@@ -48,16 +48,17 @@ _VLM_ENTRY = {
 }
 
 
-def _vlm_config(*, with_key: bool = True):
+def _vlm_config(*, with_key: bool = True, rag: dict | None = None):
     """The entry-backed config; ``with_key=False`` leaves the entry keyless on purpose.
 
     It is still a *target* (the entry exists), which is exactly the out-of-scope case the
     strict rule does not judge: the leg degrades to placeholders, as it always did.
+    ``rag`` overrides the section's own keys (A-4's caption knobs).
     """
     from deerflow.config.app_config import AppConfig
 
     entry = {key: value for key, value in _VLM_ENTRY.items() if with_key or key != "api_key"}
-    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [entry], "rag": {"vlm_model": "test-vlm"}})
+    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [entry], "rag": {"vlm_model": "test-vlm", **(rag or {})}})
 
 
 def _mineru_transport(recorded: list[httpx.Request], *, poll_states: list[dict] | None = None) -> httpx.MockTransport:
@@ -298,6 +299,34 @@ async def test_caption_request_allows_transcription_length(monkeypatch):
 
     body = json.loads(recorded[0].content)
     assert body["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
+async def test_caption_request_carries_the_configured_generation_params(monkeypatch):
+    """A-4: the two knobs reach the wire from ``rag.caption_*`` (spec 2026-09-30 D1/D2)."""
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", lambda: _vlm_config(rag={"caption_max_tokens": 2048, "caption_temperature": 0.7}))
+    recorded: list[httpx.Request] = []
+    client = httpx.AsyncClient(transport=_vlm_transport(recorded))
+
+    await caption_images([_SAMPLE_IMAGE], client=client, model="test-vlm")
+
+    body = json.loads(recorded[0].content)
+    assert body["max_tokens"] == 2048
+    assert body["temperature"] == 0.7
+
+
+@pytest.mark.asyncio
+async def test_caption_request_defaults_are_the_pre_change_values(monkeypatch):
+    """The leg-level negative control: undeclared ⇒ 1024 / 0.15 on the wire (Task 0 capture)."""
+    monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)
+    recorded: list[httpx.Request] = []
+    client = httpx.AsyncClient(transport=_vlm_transport(recorded))
+
+    await caption_images([_SAMPLE_IMAGE], client=client, model="test-vlm")
+
+    body = json.loads(recorded[0].content)
+    assert body["max_tokens"] == 1024
+    assert body["temperature"] == 0.15
 
 
 # ── Task 16: DashScope qwen3.7-flash + concurrency (RED) ──────────────────

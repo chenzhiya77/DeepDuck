@@ -65,9 +65,10 @@ async def run_shot_prompt(
     - 无帧镜头 → 空结果，**不计** failed（无输入 ≠ 调用失败）；
     - ``failed/total > 30%`` → ``degraded=True``（对齐 graph 规则，严格大于）。
 
-    ``model`` 默认取 ``rag.vlm_model``（两条腿同一条链，R18）；``client`` 可注入
-    （测试 MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。``what`` 只进
-    日志，说清是哪个腿的失败。
+    ``model`` 默认取 ``rag.vlm_model``（两条腿同一条链，R18）；生成参数取
+    ``rag.caption_max_tokens`` / ``rag.caption_temperature``（两条 caption 腿共用一组，
+    spec 2026-09-30 ①甲）；``client`` 可注入（测试 MockTransport）；Semaphore 按
+    ``worker_concurrency`` 限流并发。``what`` 只进日志，说清是哪个腿的失败。
     """
     if not shot_frames:
         return CaptionOutcome()
@@ -79,6 +80,8 @@ async def run_shot_prompt(
         model = cfg.rag.vlm_model
     target = resolve_vlm_target(cfg, model)
     api_key = target.api_key
+    max_tokens = cfg.rag.caption_max_tokens
+    temperature = cfg.rag.caption_temperature
 
     total = len(shot_frames)
     if not api_key:
@@ -97,7 +100,7 @@ async def run_shot_prompt(
             return index, ""  # 无帧镜头：空结果，不计 failed
         async with semaphore:
             try:
-                return index, await request_caption(http, target=target, prompt=prompt, images=[(frame, "image/jpeg") for frame in frames])
+                return index, await request_caption(http, target=target, prompt=prompt, images=[(frame, "image/jpeg") for frame in frames], max_tokens=max_tokens, temperature=temperature)
             except Exception as exc:
                 logger.warning("镜头 %d 的%s失败（%s）；降级空", index, what, exc)
                 failed += 1

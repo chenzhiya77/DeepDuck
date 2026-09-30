@@ -112,7 +112,7 @@ class FunAsrProvider:
     name = "funasr"
     unit: Unit = "ms"  # Paraformer 时间戳为毫秒
 
-    def __init__(self, model: str = "paraformer-zh") -> None:
+    def __init__(self, model: str) -> None:
         self._model = model
 
     def transcribe(self, path: str) -> list[tuple[float, float, str]]:
@@ -134,7 +134,7 @@ class WhisperProvider:
     name = "whisper"
     unit: Unit = "s"  # whisper segment 时间戳为秒（float）
 
-    def __init__(self, model: str = "small") -> None:
+    def __init__(self, model: str) -> None:
         self._model = model
 
     def transcribe(self, path: str) -> list[tuple[float, float, str]]:
@@ -398,7 +398,7 @@ async def transcribe_video(
     *,
     provider: AsrProvider | None = None,
     provider_name: str = "funasr",
-    model: str = "paraformer-zh",
+    model: str,
     duration_ms: int | None = None,
     base_url: str | None = None,
     api_key: str | None = None,

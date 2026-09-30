@@ -9,17 +9,21 @@ graph 30% 规则，spec §2）。降级非硬依赖——caption 缺失时镜头
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
 from deerflow.knowledge.video.captioner import CaptionOutcome, caption_shots
 
 
-def _vlm_transport(*, fail_first: int = 0, content: str = "镜头描述") -> httpx.MockTransport:
+def _vlm_transport(*, fail_first: int = 0, content: str = "镜头描述", recorded: list[httpx.Request] | None = None) -> httpx.MockTransport:
     """前 fail_first 次调用返回 500，其余返回固定 caption（并发下失败总数确定）。"""
     state = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if recorded is not None:
+            recorded.append(request)
         index = state["n"]
         state["n"] += 1
         if index < fail_first:
@@ -44,12 +48,15 @@ _VLM_ENTRY = {
 }
 
 
-def _vlm_config(*, with_key: bool = True):
-    """The entry-backed config; ``with_key=False`` leaves the entry keyless on purpose."""
+def _vlm_config(*, with_key: bool = True, rag: dict | None = None):
+    """The entry-backed config; ``with_key=False`` leaves the entry keyless on purpose.
+
+    ``rag`` overrides the section's own keys (A-4's caption knobs).
+    """
     from deerflow.config.app_config import AppConfig
 
     entry = {key: value for key, value in _VLM_ENTRY.items() if with_key or key != "api_key"}
-    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [entry], "rag": {"vlm_model": "test-vlm"}})
+    return AppConfig.model_validate({"sandbox": {"use": "deerflow.sandbox.local:LocalSandboxProvider"}, "models": [entry], "rag": {"vlm_model": "test-vlm", **(rag or {})}})
 
 
 @pytest.fixture(autouse=True)
@@ -114,3 +121,26 @@ async def test_caption_shots_no_frames_for_shot_is_empty_not_failed(monkeypatch)
     assert outcome.captions[0] == ""
     assert outcome.captions[1] == "描述"
     assert outcome.failed == 0
+
+
+async def test_shot_caption_request_carries_the_configured_generation_params(monkeypatch):
+    """A-4: the two knobs reach the wire from ``rag.caption_*`` (spec 2026-09-30 D1/D2)."""
+    monkeypatch.setattr("deerflow.knowledge.video.captioner.get_app_config", lambda: _vlm_config(rag={"caption_max_tokens": 2048, "caption_temperature": 0.7}))
+    recorded: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=_vlm_transport(recorded=recorded)) as client:
+        await caption_shots(_FRAMES, client=client, model="test-vlm")
+
+    body = json.loads(recorded[0].content)
+    assert body["max_tokens"] == 2048
+    assert body["temperature"] == 0.7
+
+
+async def test_shot_caption_request_defaults_are_the_pre_change_values(monkeypatch):
+    """The leg-level negative control: undeclared ⇒ 1024 / 0.15 on the wire (Task 0 capture)."""
+    recorded: list[httpx.Request] = []
+    async with httpx.AsyncClient(transport=_vlm_transport(recorded=recorded)) as client:
+        await caption_shots(_FRAMES, client=client, model="test-vlm")
+
+    body = json.loads(recorded[0].content)
+    assert body["max_tokens"] == 1024
+    assert body["temperature"] == 0.15

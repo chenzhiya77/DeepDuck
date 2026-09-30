@@ -23,12 +23,6 @@ from deerflow.knowledge.vlm_target import VlmTarget
 #: a module constant on purpose — bumping it is a code change, not a config knob.
 ANTHROPIC_VERSION = "2023-06-01"
 
-#: Output cap shared by both dialects (Task 15: room for a full-page transcription).
-_MAX_TOKENS = 1024
-
-#: Low temperature keeps OCR-style transcriptions stable (Task 16).
-_TEMPERATURE = 0.15
-
 Dialect = Literal["openai", "anthropic"]
 
 
@@ -41,19 +35,19 @@ def _data_url(data: bytes, media_type: str) -> str:
     return f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
 
 
-def _openai_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]]) -> tuple[dict, dict]:
+def _openai_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float) -> tuple[dict, dict]:
     content = [{"type": "image_url", "image_url": {"url": _data_url(data, media_type)}} for data, media_type in images]
     content.append({"type": "text", "text": prompt})
-    body = {"model": target.model, "messages": [{"role": "user", "content": content}], "max_tokens": _MAX_TOKENS, "temperature": _TEMPERATURE}
+    body = {"model": target.model, "messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "temperature": temperature}
     headers = {"Authorization": f"Bearer {target.api_key or ''}", "Content-Type": "application/json"}
     return body, headers
 
 
-def _anthropic_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]]) -> tuple[dict, dict]:
+def _anthropic_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float) -> tuple[dict, dict]:
     content = [{"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64.b64encode(data).decode("ascii")}} for data, media_type in images]
     content.append({"type": "text", "text": prompt})
     # `max_tokens` is required by the Messages API; the value is the OpenAI leg's own.
-    body = {"model": target.model, "max_tokens": _MAX_TOKENS, "messages": [{"role": "user", "content": content}], "temperature": _TEMPERATURE}
+    body = {"model": target.model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": content}], "temperature": temperature}
     headers = {"X-Api-Key": target.api_key or "", "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json"}
     return body, headers
 
@@ -73,14 +67,17 @@ async def request_caption(
     target: VlmTarget,
     prompt: str,
     images: Sequence[tuple[bytes, str]],
+    max_tokens: int,
+    temperature: float,
 ) -> str:
     """Ask ``target`` to caption ``images`` and return the text, or raise.
 
     The three ways this can fail are the caller's to interpret: a non-2xx (``raise_for_status``),
-    an empty answer, and any transport error. Both legs degrade on all three.
+    an empty answer, and any transport error. Both legs degrade on all three. The generation
+    parameters come from the caller (``rag.caption_*``), so this module stays transport-only.
     """
     anthropic = target.dialect == "anthropic"
-    body, headers = _anthropic_request(target, prompt, images) if anthropic else _openai_request(target, prompt, images)
+    body, headers = _anthropic_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature) if anthropic else _openai_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature)
 
     response = await client.post(_url(target), headers=headers, json=body)
     response.raise_for_status()

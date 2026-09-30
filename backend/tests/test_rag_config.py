@@ -57,6 +57,27 @@ class TestRagConfig:
         with pytest.raises(ValueError):
             RagConfig(extract_rate_limit_rps=-1)
 
+    def test_caption_generation_defaults(self):
+        """A-4 (spec 2026-09-30 D1): the two caption knobs keep today's literal defaults."""
+        config = RagConfig()
+
+        assert config.caption_max_tokens == 1024
+        assert config.caption_temperature == 0.15
+
+    def test_caption_generation_overridable_from_dict(self):
+        config = RagConfig(caption_max_tokens=2048, caption_temperature=0.7)
+
+        assert config.caption_max_tokens == 2048
+        assert config.caption_temperature == 0.7
+
+    def test_rejects_out_of_range_caption_generation_params(self):
+        with pytest.raises(ValueError):
+            RagConfig(caption_max_tokens=0)
+        with pytest.raises(ValueError):
+            RagConfig(caption_temperature=-0.1)
+        with pytest.raises(ValueError):
+            RagConfig(caption_temperature=2.1)
+
     def test_loads_graph_quality_defaults(self):
         """Phase-2 graph-quality knobs (spec 2026-08-10 D1/D2)."""
         config = RagConfig()

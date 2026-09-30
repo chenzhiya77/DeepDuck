@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-30-rag-caption-params-asr-default-design.md](../specs/2026-09-30-rag-caption-params-asr-default-design.md)
-**Status:** **2026-09-30 起草，待开工。四项已裁（2026-09-30）：①甲 ②甲 ③甲 ④乙**（spec §6.1）。**受裁项已按裁定收窄**：**Task 2 标「不适用」**（② 甲 ⇒ 无文件层/无界面/无 golden）、Task 1／Task 3 里带「② 裁乙时」的项不适用、**`B-1` 不搭车**（④ 乙）。**未实现任何生产代码、未提交**；起草轮的探针全部只读。**Task 0（只读核实）已完成（2026-09-30，HEAD `075b3b5b`）**：7 个复选框全勾、实测已回填；**D2 按实测就地修正**（值由两条腿在既有 `cfg` 点读取后传入，不在 `request_caption` 里现取——18 处既有桩的理由）；`transcribe_video` 补参清单实为 **7 处**（原写"约 6 处"）。**同日起草后审查（5 条）已就地修正**：必改＝Task 4 抓包腿按**甲**（探针 `models:` 条目 ＋ `models_config.json` 逐字节还原、需逐次授权）；应改 2 条（`transcribe_video` 锚点写法、清空腿"抓包条目不动"的措辞）；**可选项 2 条未加（可撤）**。
+**Status:** **2026-09-30 起草，待开工。四项已裁（2026-09-30）：①甲 ②甲 ③甲 ④乙**（spec §6.1）。**受裁项已按裁定收窄**：**Task 2 标「不适用」**（② 甲 ⇒ 无文件层/无界面/无 golden）、Task 1／Task 3 里带「② 裁乙时」的项不适用、**`B-1` 不搭车**（④ 乙）。**未实现任何生产代码、未提交**；起草轮的探针全部只读。**Task 0（只读核实）已完成（2026-09-30，HEAD `075b3b5b`）**：7 个复选框全勾、实测已回填；**D2 按实测就地修正**（值由两条腿在既有 `cfg` 点读取后传入，不在 `request_caption` 里现取——18 处既有桩的理由）；`transcribe_video` 补参清单实为 **7 处**（原写"约 6 处"）。**Task 1 已实施（2026-09-30 提交）**：RED 12 红 → GREEN 234 passed → neuter 2/4/3 红（逐次字节还原）→ 全量 162/12774/160/1 error 与基线集合对照零新增（1 error 已原地 A/B 判为环境条件）。**同日起草后审查（5 条）已就地修正**：必改＝Task 4 抓包腿按**甲**（探针 `models:` 条目 ＋ `models_config.json` 逐字节还原、需逐次授权）；应改 2 条（`transcribe_video` 锚点写法、清空腿"抓包条目不动"的措辞）；**可选项 2 条未加（可撤）**。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 3」＝本对（`A-4` + `C-3`）；`agents_config.py:194-203`（A-4 的形状先例）；[2026-09-28 ASR 服务档](../specs/2026-09-28-rag-asr-service-tier-design.md)（`asr.py` 的最近大改）。
 
 **Architecture:** `config.yaml → RagConfig`（**② 裁甲 ⇒ 无文件层**）；`caption_client` 的两个请求体函数与 `request_caption` 各收两参数（**值由两条腿在既有 `cfg = get_app_config()` 点现取后传入**——Task 0 修正，见 Task 0 实测）；`video/asr.py` 三处签名默认去掉（③ 甲）。**默认值全部保持现状**（1024 / 0.15 / `paraformer-zh`），不声明时行为逐字节不变。
@@ -73,14 +73,26 @@
 > 文件：`config/app_config.py`、~~`config/rag_config_file.py`（② 裁乙时）~~、`knowledge/caption_client.py`、`knowledge/video/asr.py`、`backend/tests/…`、~~`tests/fixtures/rag_config/response_golden.json`（② 裁乙时）~~（② 裁甲 ⇒ 后两项不适用）。
 > **验收对应**：spec §4 的 1 / 2 / 3 / 4（第 6 条 ② 裁甲 ⇒ 不适用）。
 
-- [ ] **RED：加载链**：无覆盖 ⇒ 两字段取字面默认（`1024`／`0.15`）；范围外取值硬报错；~~（② 裁乙时）文件层覆盖生效、撤销回 config.yaml~~（不适用）。
-- [ ] **RED：caption 请求体（`MockTransport`，两方言）**：改配置 ⇒ OpenAI 与 Messages 两个请求体的 `max_tokens`/`temperature` 跟着变；不声明 ⇒ 与 Task 0 捕的两个请求体**逐字节相同**。两条腿（文档图／视频帧）各一条正向用例。
-- [ ] **RED：C-3 的签名形状**：`inspect.signature` 断言三处 `model` 的默认是 `inspect.Parameter.empty`（三处各一条）＋ 行为断言 `FunAsrProvider()` 抛 `TypeError`；`resolve_provider` / `resolve_leg_provider` 的既有形状有守卫。
-- [ ] **GREEN**：`RagConfig` 加两字段（照 `agents_config` 逐字）；`caption_client` 两个请求体函数与 `request_caption` 各收两参数、**删两个模块常量**；两条腿在既有 `cfg` 点读取两值传入（`_caption_one` 加两参数）——Task 0 修正的形状；`asr.py` 三处签名默认去掉（③＝甲）；给 Task 0 列出的调用点补 `model=`（7 处）；~~（② 裁乙时）`RagConfigFile` 两字段 ＋ golden 更新 ＋ `_registered_additions` 记一句~~（不适用）。
-- [ ] **neuter：整体还原旧行为**，逐项独立还原并证明 GREEN 恢复、各有对应用例转红：① 两条腿的传值整体还原（`request_caption` 回到只收 target/prompt/images 并读模块常量，值还原为字面 1024/0.15）；② 两方言的请求体函数回到读常量；③ 三个签名默认放回；~~（② 裁乙时）④ 文件层两字段去掉 ⇒ 形状守卫转红~~（不适用）。
-- [ ] **门禁**：ruff 双净；窄面（caption 两腿 ＋ asr ＋ 配置链）绿；`app_config.py` 是共享加载路径 ⇒ **跑后端全量**（后台执行，结果未回不报绿），与基线集合对照零新增。
+- [x] **RED：加载链**：无覆盖 ⇒ 两字段取字面默认（`1024`／`0.15`）；范围外取值硬报错；~~（② 裁乙时）文件层覆盖生效、撤销回 config.yaml~~（不适用）。
+- [x] **RED：caption 请求体（`MockTransport`，两方言）**：改配置 ⇒ OpenAI 与 Messages 两个请求体的 `max_tokens`/`temperature` 跟着变；不声明 ⇒ 与 Task 0 捕的两个请求体**逐字节相同**。两条腿（文档图／视频帧）各一条正向用例。
+- [x] **RED：C-3 的签名形状**：`inspect.signature` 断言三处 `model` 的默认是 `inspect.Parameter.empty`（三处各一条）＋ 行为断言 `FunAsrProvider()` 抛 `TypeError`；`resolve_provider` / `resolve_leg_provider` 的既有形状有守卫。
+- [x] **GREEN**：`RagConfig` 加两字段（照 `agents_config` 逐字）；`caption_client` 两个请求体函数与 `request_caption` 各收两参数、**删两个模块常量**；两条腿在既有 `cfg` 点读取两值传入（`_caption_one` 加两参数）——Task 0 修正的形状；`asr.py` 三处签名默认去掉（③＝甲）；给 Task 0 列出的调用点补 `model=`（7 处）；~~（② 裁乙时）`RagConfigFile` 两字段 ＋ golden 更新 ＋ `_registered_additions` 记一句~~（不适用）。
+- [x] **neuter：整体还原旧行为**，逐项独立还原并证明 GREEN 恢复、各有对应用例转红：① 两条腿的传值整体还原（`request_caption` 回到只收 target/prompt/images 并读模块常量，值还原为字面 1024/0.15）；② 两方言的请求体函数回到读常量；③ 三个签名默认放回；~~（② 裁乙时）④ 文件层两字段去掉 ⇒ 形状守卫转红~~（不适用）。
+- [x] **门禁**：ruff 双净；窄面（caption 两腿 ＋ asr ＋ 配置链）绿；`app_config.py` 是共享加载路径 ⇒ **跑后端全量**（后台执行，结果未回不报绿），与基线集合对照零新增。
 
-**实测（待回填）**：
+**实测（2026-09-30，开工 HEAD `46cfaf23`；实施期间他线落地 `77debea3`——仅前端面，与 Task 1 零重叠）**：
+
+- **RED（12 红 / 164 绿，窄面）**：新增 12 条按预期全红——配置链 3（`test_rag_config.py`：默认／覆盖／越界）、请求体 4（`tests/knowledge/test_caption_client.py` 新建：两方言逐字节负向对照 ＋ 两方言取值——RED 期因构建函数还不收参而 TypeError）、两条腿 2（`test_parser.py` 与 `video/test_captioner.py` 各一条「配置值上线上」）、签名形状 3（`test_asr.py` 三处）。**按设计保持绿的 4 条**：两条腿的默认值负向对照（今天就是 1024/0.15）＋ `resolve_provider`／`resolve_leg_provider` 两条既有形状守卫。
+- **GREEN（234 passed / 0 failed）**：窄面扩到含邻接面（`test_vlm_target.py` 两方言既有用例、`video/test_worker_pipeline.py`、`video/test_recaption.py` 的 fake 调用点）。命令：`PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe -m pytest <上述文件> -q --basetemp=.pytest-tmp`。
+- **neuter（脚本一张表，三条独立跑、逐次字节还原）**：
+  - ① 两条腿的传值整体还原（`request_caption` 回读模块常量、两条腿停传）⇒ **2 红**：两条腿的「配置值上线上」；两条负向对照保持绿（常量即 1024/0.15）。
+  - ② 两方言的请求体函数回读常量（签名保留、值取常量）⇒ **4 红**：两方言「取值」用例 ＋ 两条腿的「配置值上线上」（值在构建层被常量顶掉）。
+  - ③ 三个签名默认放回 ⇒ **3 红**：三条形状用例（含两条 `TypeError` 行为断言）。
+  - **还原**：四个文件 md5 逐字节一致——`caption_client.py 137b6615…`／`captioner.py ef07ce11…`／`video/captioner.py 7f5dc617…`／`video/asr.py cceb3d1f…`。
+- **revert proof**：还原后再跑同一窄面 ⇒ **234 passed**（与 GREEN 相同）。
+- **ruff**：`ruff check` All checks passed；`ruff format --check` 1310 files already formatted（格式化期就地修掉两条 E501：负向对照串拆成隐式拼接，字符串内容不变）。
+- **实施期记录**：① 本机 `Temp\pytest-of-h7242` 拒访（环境条件）⇒ 测试一律加 `--basetemp=.pytest-tmp`（仓内既有 gitignore 名，跑完即删）；② `captioner.py`／`video/captioner.py`／`video/asr.py` 是 CRLF ⇒ neuter 脚本按文件探行尾、模式逐文件转换；③ 他线 `77debea3`（多模态角色标题：前端 ＋ 其两份文档）在本 Task 进行中落地——与 Task 1 的九个文件**零重叠**，`② 甲` 的零碰撞结论不受影响（Task 0 实测的「仍未落地」是当时快照）；④ **A/B 备份同名互覆（如实记）**：为核全量那条 ERROR，备份五个生产文件时两个 `captioner.py` 用同一 basename 互相覆盖 ⇒ `knowledge/captioner.py` 一度被写成视频腿内容；随即以 HEAD ＋ 三处已知编辑**确定性重建**，md5 与 GREEN 记录（`ef07ce11…`）逐字节一致后写回，五个文件 md5 全部复核（`12701e5f…`／`137b6615…`／`ef07ce11…`／`cceb3d1f…`／`7f5dc617…`）、窄面复跑 207 passed。A/B 结论不受影响（ERROR 在 HEAD 同样复现）。
+- **门禁（全量）**：**162 failed / 12774 passed / 160 skipped / 1 error**（14:30）。与 09-30 基线（162 / 12756 / 160 / 1 error）**逐条集合对照零新增**：唯一差异是抖动族一换一——基线红·本轮绿 `test_run_manager.py::test_list_by_thread[asyncio]`（单跑复现红）、本轮红·单跑即过 `test_delta_channel_state.py::test_merge_message_writes_randomized_differential`（两条都不碰本对改动面：run 管理／checkpoint 机制）；`passed +18` ＝ 本对 16 条新用例 ＋ 对 2 Task 3 的 2 条模板用例（该基线早于它落地）。**1 error 是环境条件**：`tests/knowledge/wiki/test_generator.py::test_only_dirty_prune_removes_vector_point` setup 期 Qdrant 拒连（本机未运行，`curl localhost:6333` exit 7）；**已原地 A/B**——五个生产文件 `git checkout HEAD --` 后单跑同一用例仍 ERROR ⇒ 非本对引入。
 
 ---
 
