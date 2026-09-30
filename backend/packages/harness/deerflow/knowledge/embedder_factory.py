@@ -174,6 +174,10 @@ def _build_dense(spec, rag, expected: int, client: Any | None) -> Embedder:
     base_url = (rag.embedding_base_url or "").strip()
     if not base_url:
         raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_base_url")
+    if not (rag.embedding_model or "").strip():
+        # A-1 (spec 2026-09-30 D1): the model name has no default any more — an undeclared one is
+        # refused here, before the adapter's own None-fallback could silently re-read the config.
+        raise RagConfigurationError(f"嵌入 provider {spec.provider_id!r} 需要 rag.embedding_model（没有默认值，请在 rag: 段声明）")
     kwargs["base_url"] = base_url
     if rag.embedding_model:
         kwargs["model"] = rag.embedding_model

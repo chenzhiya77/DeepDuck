@@ -38,6 +38,10 @@ def build_reranker(config: Any | None = None, *, rag: Any | None = None) -> Any:
         raise RagConfigurationError(
             f"rerank_provider={spec.provider_id!r} requires rag.rerank_base_url",
         )
+    if spec.takes_model and not (section.rerank_model or "").strip():
+        # A-1 (spec 2026-09-30 D1): required only where the row takes a model — TEI serves its
+        # own and must not be asked for one (the kwargs below are gated the same way).
+        raise RagConfigurationError(f"rerank_provider={spec.provider_id!r} requires rag.rerank_model (no default; declare it in the rag: section)")
 
     from deerflow.reflection import resolve_variable
 

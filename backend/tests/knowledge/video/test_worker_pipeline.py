@@ -112,15 +112,15 @@ def _vector_store_mock() -> MagicMock:
 
 def _video_config(**overrides):
     """受控 rag.video 配置（max_shot=5s → 10s 视频切 2 镜头，不触发兜底再切）。"""
-    video = SimpleNamespace(
-        max_shot_seconds=5.0,
-        fallback_window_seconds=10.0,
-        keyframes_per_shot=1,
-        asr_provider="funasr",
-        asr_model="paraformer-zh",
-        card_text_mode="full",
-        **overrides,
-    )
+    defaults = {
+        "max_shot_seconds": 5.0,
+        "fallback_window_seconds": 10.0,
+        "keyframes_per_shot": 1,
+        "asr_provider": "funasr",
+        "asr_model": "paraformer-zh",
+        "card_text_mode": "full",
+    }
+    video = SimpleNamespace(**{**defaults, **overrides})
     # The ASR leg's connection info is top-level on `rag` (① 乙, 2026-09-29), not inside `video`.
     return SimpleNamespace(rag=SimpleNamespace(video=video, worker_concurrency=2, vlm_model="test-vlm", asr_base_url=None, asr_api_key=None))
 
@@ -513,3 +513,21 @@ async def test_delete_kb_cascades_video_shots(session_factory):
     assert await store.delete_kb("kb-1") is True
 
     assert await vstore.list_shots("doc-v") == []
+
+
+@pytest.mark.asyncio
+async def test_video_asr_model_missing_fails_loudly(session_factory, tmp_path, monkeypatch):
+    """A-1 (spec 2026-09-30 D1): an undeclared asr_model is a configuration error, not a
+    silent vendor pick — the leg entry refuses before any transcription attempt."""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    doc_id, _storage, _doc_dir = await _video_doc(store, tmp_path)
+    calls = _fake_legs(monkeypatch, config=_video_config(asr_model=None))
+    worker = _worker(store)
+
+    await worker.process_document(doc_id)
+
+    doc = await store.get_document(doc_id)
+    assert doc["status"] == "failed"
+    assert "asr_model" in (doc["error"] or "")
+    assert calls["asr"] == 0  # the refusal precedes any transcription attempt

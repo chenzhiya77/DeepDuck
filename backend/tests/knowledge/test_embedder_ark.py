@@ -267,7 +267,7 @@ async def test_the_default_provider_is_still_dashscope(monkeypatch):
 
     _stub_config(monkeypatch)
     assert RagConfig().embedding_provider == "dashscope"
-    assert RagConfig().embedding_model == "qwen3.7-text-embedding"
+    assert RagConfig().embedding_model is None  # no literal default since 2026-09-30 (A-1)
 
 
 # ── the fixed-endpoint rule keeps stored addresses in play (⑤-4) ──────────────

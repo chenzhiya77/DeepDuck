@@ -209,3 +209,19 @@ async def test_rerank_accepts_a_whole_endpoint():
     await reranker.rerank("q", ["a"], top_n=1)
 
     assert str(recorded[0].url) == f"{BASE_URL}/rerank"
+
+
+def test_the_factory_refuses_a_missing_rerank_model():
+    """A-1 (spec 2026-09-30 D1): the address is present, the model name is not — an undeclared
+    model is refused at the construction point instead of silently using a vendor pick."""
+    from deerflow.config.app_config import RagConfig
+    from deerflow.knowledge.embedder import RagConfigurationError
+    from deerflow.knowledge.reranker_factory import build_reranker
+
+    rag = RagConfig(rerank_provider="generic-rerank", rerank_base_url="http://127.0.0.1:8126").model_copy(update={"rerank_model": None})
+    assert rag.rerank_model is None
+
+    with pytest.raises(RagConfigurationError, match="rerank_model") as caught:
+        build_reranker(rag=rag)
+
+    assert isinstance(caught.value, ValueError)

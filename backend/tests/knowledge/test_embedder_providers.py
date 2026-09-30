@@ -549,3 +549,21 @@ async def test_a_rejected_dimension_parameter_is_dropped_once_and_remembered():
     async with httpx.AsyncClient(transport=_healing_transport(recorded_again, reject_dimensions=True)) as client2:
         await _openai_embedder(client2, dimension=1024).embed(["a"])
     assert "dimensions" not in json.loads(recorded_again[0].content), "记住之后不再白付那一发"
+
+
+# ── A-1: the model name has no default any more (spec 2026-09-30 D1) ─────────
+
+
+def test_the_factory_refuses_a_missing_embedding_model():
+    """An undeclared model is a configuration error at the construction point — never a silent
+    vendor pick. The address and the sparse source are set on purpose, so the refusal under test
+    is the model one (not the address or the dense-only cross-check)."""
+    from deerflow.config.app_config import RagConfig
+
+    rag = RagConfig(embedding_provider="openai-compatible", embedding_base_url=OPENAI_BASE, embedding_sparse_source="bm25").model_copy(update={"embedding_model": None})
+    assert rag.embedding_model is None
+
+    with pytest.raises(RagConfigurationError, match="embedding_model") as caught:
+        build_embedder(rag=rag)
+
+    assert isinstance(caught.value, ValueError)

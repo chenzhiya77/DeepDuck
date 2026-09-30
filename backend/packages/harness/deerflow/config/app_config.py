@@ -154,7 +154,7 @@ class RagVideoConfig(BaseModel):
     fallback_window_seconds: float = Field(default=10.0, gt=0, description="Uniform window length when the scene-detection leg fails (degraded).")
     keyframes_per_shot: int = Field(default=1, ge=1, description="Persisted keyframes per shot; caption frames (≤3) are transient.")
     asr_provider: Literal["funasr", "whisper", "openai-audio", "dashscope"] = Field(default="funasr", description="ASR backend: an in-process engine (funasr / whisper) or a transcription service (openai-audio / dashscope).")
-    asr_model: str = Field(default="paraformer-zh", description="ASR model name for the chosen provider (whisper tier example: small; a service tier takes the service-side name, e.g. qwen-audio-3.1-asr-flash).")
+    asr_model: str | None = Field(default=None, description="ASR model name for the chosen provider; required — no default (spec 2026-09-30 A-1). A service tier takes the service-side name, e.g. qwen-audio-3.1-asr-flash.")
     card_text_mode: Literal["full", "caption_only", "asr_only"] = Field(default="full", description="Shot-card text assembly mode; non-full modes are caption-quality ablation experiments (spec §6), not a production path.")
 
 
@@ -184,9 +184,9 @@ class RagConfig(BaseModel):
     """
 
     qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant server URL hosting the knowledge vector collections (kb_chunks / kb_entities / kb_wiki_entries).")
-    embedding_model: str = Field(default="qwen3.7-text-embedding", description="DashScope (Aliyun Bailian) embedding model producing dense+sparse vectors in a single call.")
+    embedding_model: str | None = Field(default=None, description="Embedding model name; required — no default, a config that declares none is refused at build time (spec 2026-09-30 A-1).")
     embedding_api_key: str | None = Field(default=None, description="Embedding API key from rag_config.json; None falls back to DASHSCOPE_EMBEDDING_API_KEY.")
-    rerank_model: str = Field(default="qwen3-rerank", description="DashScope rerank model used for hybrid-search precision ranking.")
+    rerank_model: str | None = Field(default=None, description="Rerank model name; required for providers that take one (TEI serves its own model), no default (spec 2026-09-30 A-1).")
     rerank_api_key: str | None = Field(default=None, description="Rerank API key from rag_config.json; None falls back to DASHSCOPE_RERANK_API_KEY.")
     vlm_model: str | None = Field(default=None, description="Name of a config `models:` entry used for captioning images and video shots; None follows the RAG default, then the first configured model.")
     vlm_timeout: float | None = Field(default=None, description="Read timeout for VLM requests; None uses default 180s from code. Connect timeout is always 15s.")

@@ -34,7 +34,7 @@ from typing import Any, Protocol
 from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.captioner import apply_captions, caption_images
 from deerflow.knowledge.chunker import chunk_markdown, count_tokens
-from deerflow.knowledge.embedder import EmbeddingResult
+from deerflow.knowledge.embedder import EmbeddingResult, RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.graph.indexer import index_document_graph
 from deerflow.knowledge.graph.resolver import resolve_entity_aliases
@@ -600,6 +600,11 @@ class KnowledgeIndexWorker:
         asr_leg = resolve_leg_provider(cfg.asr_provider, duration_ms=duration_ms)
         if asr_leg != cfg.asr_provider:
             logger.info("video ASR: %s is a service tier and the audio is %.1f min long ⇒ staying on the local leg (%s, D6)", cfg.asr_provider, duration_ms / 60000, asr_leg)
+        if not (cfg.asr_model or "").strip():
+            # A-1 (spec 2026-09-30 D1): no default model name any more. Raised outside the try on
+            # purpose — the `except AsrError` below degrades a *failure*, a missing declaration is a
+            # configuration error and must reach the caller loudly.
+            raise RagConfigurationError("视频 ASR 需要 rag.video.asr_model（没有默认值，请在 rag.video 段声明）")
         try:
             segments = await transcribe_video(
                 storage_path,

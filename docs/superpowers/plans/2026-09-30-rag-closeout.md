@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-30-rag-closeout-design.md](../specs/2026-09-30-rag-closeout-design.md)
-**Status:** **2026-09-30 起草，待开工。五项待裁**（spec §6.1：① A-1 收口形状；② C-1 语言策略；③ C-2 占位与形态；④ `B-1` 搭不搭车；⑤ `config_version` 升不升）。**本计划按推荐组合起草（①甲 ②乙 ③甲 ④甲 ⑤乙），每个受裁项影响的步骤都标了另一分支的落点**；裁完只动被裁的那几行。**未实现任何生产代码、未提交**；起草轮的核实全部只读。**同日起草后审查（7 条）已就地修正 5 条**：① 基线在 HEAD `75f3a186` 复核（他线两笔全前端、零后端重叠）；③ C-2 补 `config.example.yaml` 的 `video.asr_model` 一行；④ C-1 起点句标注"账本口径、已漂移"；⑤ A-1 前端零改动结论进 spec §6.2；⑥ ASR 收口点定为 **worker 的 ASR 腿入口**。**审查 ②（C-1 家族内已英文成员的处置）按用户「先落 ①③④⑤⑥」暂留待裁**。
+**Status:** **2026-09-30 起草，待开工。五项待裁**（spec §6.1：① A-1 收口形状；② C-1 语言策略；③ C-2 占位与形态；④ `B-1` 搭不搭车；⑤ `config_version` 升不升）。**本计划按推荐组合起草（①甲 ②乙 ③甲 ④甲 ⑤乙），每个受裁项影响的步骤都标了另一分支的落点**；裁完只动被裁的那几行。**未实现任何生产代码、未提交**；起草轮的核实全部只读。**同日起草后审查（7 条）已就地修正 5 条**：① 基线在 HEAD `75f3a186` 复核（他线两笔全前端、零后端重叠）；③ C-2 补 `config.example.yaml` 的 `video.asr_model` 一行；④ C-1 起点句标注"账本口径、已漂移"；⑤ A-1 前端零改动结论进 spec §6.2；⑥ ASR 收口点定为 **worker 的 ASR 腿入口**。**审查 ②（C-1 家族内已英文成员的处置）按用户「先落 ①③④⑤⑥」暂留待裁**。**Task 0（只读核实）已完成（2026-09-30，HEAD `a8a39423`）**：8 框全勾（1 框标不适用）、实测已回填（收口点 3 ＋ 两陷阱／受害者 5／C-1 清单 13 中＋5 英／碰撞面）。**Task 1 已实施（2026-09-30 提交）**：RED 10 红 → 窄面 123 passed → neuter ①5②4（逐次字节还原 md5）→ 全量 **163/12831/109/0** 与基线集合对照零新增（唯一差异＝已知抖动 `test_run_manager`；+57 passed ＝ 4 新用例 ＋ 2 对 3 模板用例 ＋ 51 条 Qdrant 集成用例转真跑）；并发 basetemp 自伤与漏改受害者（`test_embedder_ark`）两条已如实记入实测。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 4」＝本对（`B-2` 剩余 + `A-1` + `C-2` + `C-1`；`B-1` 可搭车）；`knowledge/model_target.py`（D10 的 `RagConfigurationError` 形状先例）；[对 3 计划](2026-09-30-rag-caption-params-asr-default.md)（同文件、刚交付）。
 
 **Architecture:** `config.yaml → RagConfig`（三字段 `str | None = None`）＋ **单一构建点收口**（`build_embedder` / `build_reranker` / **worker 的 ASR 腿入口** ⇒ `RagConfigurationError`，保存期自动 400）；文案改动只动字符串（语言策略见 ②）；示例只动值/注释形态。**本对唯一行为变化＝未声明模型名的部署从"静默用厂商默认"变"响亮报错"**（spec D1/§6.2）。
@@ -71,13 +71,22 @@
 > 文件：`config/app_config.py`、`knowledge/embedder_factory.py`、`knowledge/reranker.py`（或对应构建点）、**worker 的 ASR 腿入口**（`knowledge/worker.py`：`cfg.asr_model is None` ⇒ 拒绝；`transcribe_video(model=…)` 经对 3 已是必填 `str`，把 `None` 传进去只会在 provider 内部炸）、`backend/tests/…`。
 > **验收对应**：spec §4 的 1。
 
-- [ ] **RED：加载链与收口**：三字段各自一条——`RagConfig()` 不再有字面默认（`is None`）；`build_embedder` / `build_reranker` / **worker 的 ASR 腿入口**在缺项时抛 `RagConfigurationError`、**文案含字段名**；负向对照＝声明后构建照常（与今天的构造参数逐字相同）。
-- [ ] **RED：保存期 400**：PUT 一条缺 `embedding_model` 的配置 ⇒ 400 且 detail 是新文案（走既有 `RagConfigurationError` 映射）。
-- [ ] **GREEN**：三字段改 `str | None = None`；收口落在 Task 0 冻结的收口点（一处一份文案，照 `model_target.py` 的句式）；兜底分支按 Task 0 结论处置（删或留，留则注释说明为何不可达）。
-- [ ] **neuter：整体还原旧行为**，逐项独立还原并证明 GREEN 恢复、各有对应用例转红：① 三字段默认放回；② 收口点去掉 ⇒ 缺项用例转红。
-- [ ] **门禁**：ruff 双净；窄面（配置链 ＋ 三条腿的构建用例）绿；`app_config.py` 是共享加载路径 ⇒ **跑后端全量**（后台执行，结果未回不回绿），与基线集合对照零新增。
+- [x] **RED：加载链与收口**：三字段各自一条——`RagConfig()` 不再有字面默认（`is None`）；`build_embedder` / `build_reranker` / **worker 的 ASR 腿入口**在缺项时抛 `RagConfigurationError`、**文案含字段名**；负向对照＝声明后构建照常（与今天的构造参数逐字相同）。
+- [x] **RED：保存期 400**：PUT 一条缺 `embedding_model` 的配置 ⇒ 400 且 detail 是新文案（走既有 `RagConfigurationError` 映射）。
+- [x] **GREEN**：三字段改 `str | None = None`；收口落在 Task 0 冻结的收口点（一处一份文案，照 `model_target.py` 的句式）；兜底分支按 Task 0 结论处置（删或留，留则注释说明为何不可达）。
+- [x] **neuter：整体还原旧行为**，逐项独立还原并证明 GREEN 恢复、各有对应用例转红：① 三字段默认放回；② 收口点去掉 ⇒ 缺项用例转红。
+- [x] **门禁**：ruff 双净；窄面（配置链 ＋ 三条腿的构建用例）绿；`app_config.py` 是共享加载路径 ⇒ **跑后端全量**（后台执行，结果未回不回绿），与基线集合对照零新增。
 
-**实测（待回填）**：
+**实测（2026-09-30，开工 HEAD `a8a39423`）**：
+
+- **RED（10 红，窄面）**：预期 8 条——`test_rag_config.py` 四条受害者（改断言 `is None`）＋ 四条新收口用例（嵌入/重排/ASR/保存期 400）；另 2 条为**已知基线环境红**（`test_rag_config_save_probe.py` 的 `test_a_wrong_dense_width_is_refused_in_the_runtime_wording` 与 `test_the_save_time_refusal_says_what_the_runtime_would_say`，在 09-30 全量集合内）。
+- **GREEN**：`app_config.py` 三字段改 `str | None = None`（描述含 "required — no default"）；三处收口——`embedder_factory.py::build_embedder`（`embedding_base_url` 拒绝之后，**中文**照邻居句式）、`reranker_factory.py::build_reranker`（**条件化** `spec.takes_model`，**英文**照邻居句式）、`worker.py` 的 ASR 腿入口（try 之外，**中文**）；`worker.py` 的 import 行扩为 `EmbeddingResult, RagConfigurationError`。
+- **窄面（最终）**：**123 passed / 2 pre-existing red**（即上述两条基线红）。**加宽面首轮**（15 个文件）**307 passed / 5 red**：4 条基线（save_probe ×2 ＋ `test_reranker.py::test_rerank_missing_api_key` ＋ `test_indexer.py::test_embed_missing_api_key`，后两条亦在基线集合内）＋ **1 条真回归＝`test_embedder_ark.py::test_the_default_provider_is_still_dashscope`**——Task 0 扫描已把它列为受害者（`:270`），RED 时我只改了 `test_rag_config.py` 的四处、**漏改这一处**；加宽面逮住后已修（`is None`）、该文件复跑绿。
+- **neuter（脚本一张表，两条独立跑、逐次字节还原）**：① 三字段默认放回（`str` ＋ 字面量）⇒ **5 红**（`test_rag_config.py` 四处 ＋ `test_embedder_ark.py` 一处）；② 三处收口点去掉 ⇒ **4 红**（嵌入/重排/ASR/保存期四条新用例；两条基线红在两种状态下都红、不算受害者）。**还原**：四个文件 md5 逐字节一致（`app_config.py 60c2c3b8…`／`embedder_factory.py 9cadabc2…`／`reranker_factory.py 8ee67027…`／`worker.py d6a1e491…`）。
+- **revert proof**：还原后再跑窄面 ⇒ **123 passed / 2 pre-existing red**（与 GREEN 相同）。
+- **ruff**：双净（修掉一条 E501——`asr_model` 描述超 240，裁去 "Whisper tier example: small; " 半句）。
+- **门禁（全量）**：**163 failed / 12831 passed / 109 skipped / 0 error**（17:42）。与 09-30 基线（162 / 12774 / 160 / **1 error**）**逐条集合对照零新增**：唯一差异＝`test_run_manager.py::test_list_by_thread[asyncio]`（已知抖动——在对 2 基线内、对 3 那轮绿，**单跑复现红**）；**passed +57 ＝ 本对 4 条新用例 ＋ 对 3 T3 的 2 条模板用例 ＋ 51 条此前被跳过的 Qdrant 集成用例**（skipped 160 → 109、error 1 → 0——本机 Qdrant 已起，集成面真跑且全过）。
+- **实施期记录（如实记）**：① **并发 basetemp 自伤**：全量与 neuter 扫描共用仓内 `.pytest-tmp`（pytest 每次会话会清建同名 basetemp）⇒ 首轮全量被污染、已杀；neuter 改用**仓外独立 basetemp**（`Temp\pytest-pair4-neuter`，跑完删）后重跑，两条 neuter 结果如上；全量随后**干净重跑**（同一时刻不再跑第二个 pytest）。② `test_worker_pipeline.py` 的 `_video_config(**overrides)` 与硬编码同名参数相撞（`SimpleNamespace` 重复 kwarg）⇒ 改为 defaults 字典合并（顺带让该助手可覆盖任意键）。③ 三条新收口文案的语言**照各自文件邻居**（嵌入/worker 中文、重排英文）——② 若裁乙，Task 2 的清扫须把它们一并纳入（它们是 A-1 新增、不在 Task 0 冻结的 13＋5 清单里，实施时补）。
 
 ---
 

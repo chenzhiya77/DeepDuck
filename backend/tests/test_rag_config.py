@@ -12,8 +12,8 @@ class TestRagConfig:
         config = RagConfig()
 
         assert config.qdrant_url == "http://localhost:6333"
-        assert config.embedding_model == "qwen3.7-text-embedding"
-        assert config.rerank_model == "qwen3-rerank"
+        assert config.embedding_model is None  # the vendor literal default retired (2026-09-30, A-1)
+        assert config.rerank_model is None  # the vendor literal default retired (2026-09-30, A-1)
         assert config.vlm_model is None  # the vendor literal default retired (2026-09-23 D10.3)
         assert config.extract_model is None
         assert config.worker_concurrency == 2
@@ -143,8 +143,8 @@ class TestAppConfigRagSection:
         config = AppConfig.model_validate(_SANDBOX)
 
         assert config.rag.qdrant_url == "http://localhost:6333"
-        assert config.rag.embedding_model == "qwen3.7-text-embedding"
-        assert config.rag.rerank_model == "qwen3-rerank"
+        assert config.rag.embedding_model is None  # no literal default since 2026-09-30 (A-1)
+        assert config.rag.rerank_model is None  # no literal default since 2026-09-30 (A-1)
         assert config.rag.vlm_model is None  # follows the RAG default, then the first model
         assert config.rag.worker_concurrency == 2
         assert config.rag.extract_rate_limit_rps == 5.0
@@ -165,7 +165,7 @@ class TestAppConfigRagSection:
         assert config.rag.worker_concurrency == 4
         assert config.rag.extract_rate_limit_rps == 2.5
         # Untouched fields keep their defaults.
-        assert config.rag.embedding_model == "qwen3.7-text-embedding"
+        assert config.rag.embedding_model is None  # a missing model is a configuration error now (A-1)
 
     def test_rag_section_tolerates_unknown_keys(self):
         config = AppConfig.model_validate(
@@ -198,7 +198,7 @@ class TestRagVideoConfig:
         assert config.video.fallback_window_seconds == 10.0
         assert config.video.keyframes_per_shot == 1
         assert config.video.asr_provider == "funasr"
-        assert config.video.asr_model == "paraformer-zh"
+        assert config.video.asr_model is None  # no literal default since 2026-09-30 (A-1)
         assert config.video.card_text_mode == "full"
 
     def test_overridable_from_dict(self):

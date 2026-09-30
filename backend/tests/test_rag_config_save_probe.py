@@ -399,3 +399,20 @@ def test_warning_is_always_present_and_never_strips_null_fields(config_env: Path
     assert "warning" in body and body["warning"] is None
     assert "judge_model" in body["config"] and body["config"]["judge_model"] is None
     assert body["config"]["embedding_base_url"] == "http://127.0.0.1:8123/v1"
+
+
+def test_a_missing_embedding_model_is_refused_at_save_time(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """A-1 (spec 2026-09-30 D1): the save-time build refuses a config that never declared a
+    model name — the admin meets the refusal here, before anything is written."""
+    without_model = {key: value for key, value in YAML_RAG.items() if key != "embedding_model"}
+    (config_env / "config.yaml").write_text(
+        yaml.safe_dump({"sandbox": SANDBOX, "models": _YAML_MODELS, "rag": without_model}),
+        encoding="utf-8",
+    )
+    reset_app_config()
+
+    with _client() as client:
+        response = client.put(_PUT, json={"rerank_model": "ui-rerank"})
+
+    assert response.status_code == 400
+    assert "embedding_model" in response.json()["detail"]
