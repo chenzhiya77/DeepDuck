@@ -138,7 +138,7 @@ class RagConfigFile(BaseModel):
     # optional, so an existing file that only sets the models keeps loading unchanged.
     embedding_provider: Literal["dashscope", "volcengine-ark", "openai-compatible"] | None = Field(default=None, description="Embedding provider id; None uses config.yaml.")
     embedding_base_url: str | None = Field(default=None, description="Embedding endpoint; None uses the provider's own default.")
-    embedding_dimension: int | None = Field(default=None, ge=1, description="Dense dimension override; None probes the provider at enable time.")
+    embedding_dimension: int | None = Field(default=None, ge=1, description="Dense dimension override; None means 1024 (the historical width). Changing it rebuilds every collection into a new generation before the switch.")
     embedding_sparse_source: Literal["provider", "external", "bm25"] | None = Field(default=None, description="Where the sparse vectors come from; None uses config.yaml.")
     sparse_provider: Literal["tei-sparse"] | None = Field(default=None, description="Sparse service provider id; used when embedding_sparse_source=external.")
     sparse_base_url: str | None = Field(default=None, description="Sparse service endpoint; used when embedding_sparse_source=external.")

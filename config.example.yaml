@@ -2569,16 +2569,17 @@ rag:
   # Qdrant server hosting the kb_chunks / kb_entities / kb_wiki_entries
   # collections. Default matches the qdrant service in docker-compose*.yaml.
   qdrant_url: http://localhost:6333
-  # DashScope (Aliyun Bailian) embedding model; produces dense+sparse vectors
-  # in a single call (output_type=dense&sparse).
-  embedding_model: qwen3.7-text-embedding
-  # DashScope rerank model for hybrid-search precision ranking.
-  rerank_model: qwen3-rerank
+  # Embedding model name — required, there is no default (spec 2026-09-30 A-1).
+  # The row ships commented so `make config-upgrade` never injects a placeholder
+  # into an existing config; a config that declares none is refused at build time.
+  # embedding_model: your-embedding-model
+  # Rerank model name — required for providers that take one (TEI serves its own).
+  # rerank_model: your-rerank-model
   # Vision-language model used to caption images extracted from documents and
   # video shots. Name a `models:` entry — the caption call reuses that entry's
   # endpoint and API key, which is what the settings form picks from. Omit to
   # follow the RAG default, then the first configured model.
-  # vlm_model: qwen3-vl-plus
+  # vlm_model: <your-model-name>
   # Output cap for both caption dialects; room for a full-page transcription.
   # caption_max_tokens: 1024
   # Sampling temperature for caption requests; a low value keeps OCR-style
@@ -2586,14 +2587,14 @@ rag:
   # caption_temperature: 0.15
   # Name of the `models:` entry used for graph extraction — pick a small,
   # cheap model with stable JSON output. Omit to use the first configured model.
-  # extract_model: deepseek-v4-flash
+  # extract_model: <your-model-name>
   # Name of the `models:` entry used as the eval judge (grades retrieval quality
   # in the RAGAS eval). Omit to use the first configured model.
-  # judge_model: deepseek-v4-flash
+  # judge_model: <your-model-name>
   # Name of the `models:` entry every RAG role falls back to when it declares none of
   # its own (graph extraction, eval judge, image/video captions). Omit to use the first
   # configured model. Also editable in Settings → Models → Functional models.
-  # default_model: deepseek-v4-flash
+  # default_model: <your-model-name>
   # Name of the `models:` entry used to write knowledge-base wiki entries. Omit to follow
   # the RAG default, then the first configured model.
   # wiki_model: <your-model-name>
@@ -2635,7 +2636,7 @@ rag:
   graph_hop0_guarantee: 2
   # Hard cap on evidence chunks returned by graph_search after ranking.
   graph_evidence_limit: 8
-  # Opt-in qwen3-rerank precision pass over graph evidence candidates
+  # Opt-in rerank precision pass over graph evidence candidates (the configured rerank model)
   # (RerankerError degrades to the embedding-cosine order).
   graph_rerank: false
   # Only rerank when the candidate pool exceeds this size.
@@ -2678,7 +2679,9 @@ rag:
     keyframes_per_shot: 1
     # ASR backend: funasr (Paraformer, local CPU) | whisper (local fallback).
     asr_provider: funasr
-    asr_model: paraformer-zh
+    # ASR model name — required, there is no default (spec 2026-09-30 A-1); a local
+    # engine takes its own model id, a service tier the service-side name.
+    # asr_model: your-asr-model
     # Shot-card text assembly: full | caption_only | asr_only — non-full modes
     # are caption-quality ablation experiments (spec §6), not a production path.
     card_text_mode: full

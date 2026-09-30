@@ -117,3 +117,47 @@ def test_the_yaml_template_is_bumped_for_the_new_fields():
     version = int(re.search(r"^config_version:\s*(\d+)", text, re.MULTILINE).group(1))
 
     assert version >= 42, "config.example.yaml must be bumped for the two caption knobs"
+
+
+#: The vendor model names the two templates must not carry any more (C-2, spec 2026-09-30 D3).
+VENDOR_MODEL_NAMES = ("qwen3.7-text-embedding", "qwen3-rerank", "deepseek-v4-flash", "qwen3-vl-plus", "paraformer-zh")
+
+
+def test_the_example_files_carry_no_vendor_model_names():
+    """C-2: the templates are for strangers, not for the developer who wrote them — a vendor
+    pick in them reads as a recommendation. The `models:` section's own commented examples
+    are a different surface (out of C-2's scope, registered as-is)."""
+    for path in (RAG_EXAMPLE, CONFIG_EXAMPLE):
+        text = path.read_text(encoding="utf-8")
+        for name in VENDOR_MODEL_NAMES:
+            assert name not in text, f"{path.name} still carries the vendor model name {name!r}"
+
+
+def test_the_yaml_example_ships_the_required_model_rows_commented_out():
+    """③ 甲 (spec 2026-09-30 D3): a placeholder that stayed active would be injected into every
+    existing config by `make config-upgrade` — these rows ship commented (the
+    `embedding_base_url` precedent), and A-1's loud refusal covers the gap."""
+    block = _rag_block()
+
+    for field in ("embedding_model", "rerank_model"):
+        assert re.search(rf"^\s*#\s*{field}:\s*\S", block, re.MULTILINE), f"{field} has no commented example in the rag block"
+        assert not re.search(rf"^\s*{field}:", block, re.MULTILINE), f"{field} must stay commented out"
+
+
+def test_the_yaml_example_ships_the_asr_model_row_commented_out():
+    """The video block's row follows the same rule (③ 甲)."""
+    text = CONFIG_EXAMPLE.read_text(encoding="utf-8")
+
+    assert re.search(r"^\s*#\s*asr_model:\s*\S", text, re.MULTILINE), "asr_model has no commented example"
+    assert not re.search(r"^\s*asr_model:", text, re.MULTILINE), "asr_model must stay commented out"
+
+
+def test_the_json_example_ships_placeholder_model_names():
+    """The JSON template is a pure template: every model-shaped value is a placeholder the
+    reader replaces, and its shape still loads through the real model."""
+    payload = json.loads(RAG_EXAMPLE.read_text(encoding="utf-8"))
+
+    assert payload["embedding_model"] == "your-embedding-model"
+    assert payload["rerank_model"] == "your-rerank-model"
+    assert payload["extract_model"] == "your-extract-model"
+    assert payload["video"]["asr_model"] == "your-asr-model"
