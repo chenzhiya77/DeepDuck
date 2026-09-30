@@ -156,6 +156,7 @@
 - **还原**：三份配置逐字节还原、md5 一致（`config.yaml ec1b49ae…`／`rag_config.json 323f9046…`／`models_config.json ff8d1d5b…`）；探针条目随还原消失（`GET /api/models` 复核 false）；5 张探针文档按 id 删除（204×5、残留 0）；抓包服务停止（:8899 已释放）。
 - **C-3 无真栈面**：纯签名形状，单测已钉（三处形状 ＋ 两条既有守卫）。
 - **实施期记录**：① `rag.vlm_model` 是**两层**字段（config.yaml 被 rag_config.json 覆盖）——只改一层不生效（首轮实证，见上）；② 本机 **Qdrant 未运行** ⇒ 5 张文档的 `vector`／`graph` 腿 `failed`（`caption` 腿 `done`），与全量套件那条 ERROR 同源、非本对引入；证据是 caption 请求体，抓包已具名，文档终态不影响。
+- **2026-09-30 补跑（增量记；用户令「起 Qdrant 再跑一次真栈探针」）**：Qdrant 容器 `StartedAt` **16:52:30** 本地（在首轮抓包之后 ⇒ 首轮 `vector`／`graph` 失败属实、非误判）；探针**两层同时**指向（config.yaml ＋ rag_config.json，一次命中）＋ `caption_max_tokens: 2048` ⇒ 入库一张 PNG（doc `45ccc08c…`）：抓包 **18:49:13** `max_tokens=2048, temperature=0.15`；文档终态 **`ready` / 100%**（`path_status: vector done / graph done / caption done / wiki ready`），chunk 正文逐字含探针配文（`![task4 capture: caption](…)`）⇒ **端到端闭环**。还原/清理同纪律：三份配置 md5 逐字节一致（`ec1b49ae…`／`323f9046…`／`ff8d1d5b…`）、探针文档按 id 删（204、残留 0）、探针条目随还原消失（`GET /api/models` 复核）、抓包服务停止。
 
 ---
 
