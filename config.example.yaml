@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 41
+config_version: 42
 
 # ============================================================================
 # Logging
@@ -2579,6 +2579,11 @@ rag:
   # endpoint and API key, which is what the settings form picks from. Omit to
   # follow the RAG default, then the first configured model.
   # vlm_model: qwen3-vl-plus
+  # Output cap for both caption dialects; room for a full-page transcription.
+  # caption_max_tokens: 1024
+  # Sampling temperature for caption requests; a low value keeps OCR-style
+  # transcriptions stable.
+  # caption_temperature: 0.15
   # Name of the `models:` entry used for graph extraction — pick a small,
   # cheap model with stable JSON output. Omit to use the first configured model.
   # extract_model: deepseek-v4-flash

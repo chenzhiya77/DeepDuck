@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-09-30-rag-caption-params-asr-default-design.md](../specs/2026-09-30-rag-caption-params-asr-default-design.md)
-**Status:** **2026-09-30 起草，待开工。四项已裁（2026-09-30）：①甲 ②甲 ③甲 ④乙**（spec §6.1）。**受裁项已按裁定收窄**：**Task 2 标「不适用」**（② 甲 ⇒ 无文件层/无界面/无 golden）、Task 1／Task 3 里带「② 裁乙时」的项不适用、**`B-1` 不搭车**（④ 乙）。**未实现任何生产代码、未提交**；起草轮的探针全部只读。**Task 0（只读核实）已完成（2026-09-30，HEAD `075b3b5b`）**：7 个复选框全勾、实测已回填；**D2 按实测就地修正**（值由两条腿在既有 `cfg` 点读取后传入，不在 `request_caption` 里现取——18 处既有桩的理由）；`transcribe_video` 补参清单实为 **7 处**（原写"约 6 处"）。**Task 1 已实施（2026-09-30 提交）**：RED 12 红 → GREEN 234 passed → neuter 2/4/3 红（逐次字节还原）→ 全量 162/12774/160/1 error 与基线集合对照零新增（1 error 已原地 A/B 判为环境条件）。**同日起草后审查（5 条）已就地修正**：必改＝Task 4 抓包腿按**甲**（探针 `models:` 条目 ＋ `models_config.json` 逐字节还原、需逐次授权）；应改 2 条（`transcribe_video` 锚点写法、清空腿"抓包条目不动"的措辞）；**可选项 2 条未加（可撤）**。
+**Status:** **2026-09-30 起草，待开工。四项已裁（2026-09-30）：①甲 ②甲 ③甲 ④乙**（spec §6.1）。**受裁项已按裁定收窄**：**Task 2 标「不适用」**（② 甲 ⇒ 无文件层/无界面/无 golden）、Task 1／Task 3 里带「② 裁乙时」的项不适用、**`B-1` 不搭车**（④ 乙）。**未实现任何生产代码、未提交**；起草轮的探针全部只读。**Task 0（只读核实）已完成（2026-09-30，HEAD `075b3b5b`）**：7 个复选框全勾、实测已回填；**D2 按实测就地修正**（值由两条腿在既有 `cfg` 点读取后传入，不在 `request_caption` 里现取——18 处既有桩的理由）；`transcribe_video` 补参清单实为 **7 处**（原写"约 6 处"）。**Task 1 已实施（2026-09-30 提交）**：RED 12 红 → GREEN 234 passed → neuter 2/4/3 红（逐次字节还原）→ 全量 162/12774/160/1 error 与基线集合对照零新增（1 error 已原地 A/B 判为环境条件）。**Task 3 已实施（2026-09-30 提交）**：契约 3 红 → 9 passed、版本 41→42（示例 ＋ chart 两件）、`AGENTS.md` 两处；示例读取面 192 passed / 4 pre-existing red（逐条在基线集合）；**Task 2 不适用（② 甲）**。**同日起草后审查（5 条）已就地修正**：必改＝Task 4 抓包腿按**甲**（探针 `models:` 条目 ＋ `models_config.json` 逐字节还原、需逐次授权）；应改 2 条（`transcribe_video` 锚点写法、清空腿"抓包条目不动"的措辞）；**可选项 2 条未加（可撤）**。
 **相关基线:** [盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md) §4.2「对 3」＝本对（`A-4` + `C-3`）；`agents_config.py:194-203`（A-4 的形状先例）；[2026-09-28 ASR 服务档](../specs/2026-09-28-rag-asr-service-tier-design.md)（`asr.py` 的最近大改）。
 
 **Architecture:** `config.yaml → RagConfig`（**② 裁甲 ⇒ 无文件层**）；`caption_client` 的两个请求体函数与 `request_caption` 各收两参数（**值由两条腿在既有 `cfg = get_app_config()` 点现取后传入**——Task 0 修正，见 Task 0 实测）；`video/asr.py` 三处签名默认去掉（③ 甲）。**默认值全部保持现状**（1024 / 0.15 / `paraformer-zh`），不声明时行为逐字节不变。
@@ -117,11 +117,17 @@
 
 > 文件：`config.example.yaml`、`deploy/helm/deer-flow/values.yaml`、`deploy/helm/deer-flow/README.md`、~~（② 裁乙时）**仓根 `README.md`**~~（② 裁甲 ⇒ 不适用）、`backend/AGENTS.md`、[盘点档](../../PRE_RELEASE_HARDCODE_INVENTORY.md)。**不运行 `make config-upgrade`、不读改用户真实配置。**
 
-- [ ] **RED**：模板契约用例扩**两条**（两键的注释示例存在＋不激活；键序插在 parse 族之后或 caption 相关处，按 Task 0 实测的段内位置）＋版本底线 41 → **42**。
-- [ ] **GREEN**：示例按各段风格（rag 段两处注释示例；`caption_max_tokens: 1024`／`caption_temperature: 0.15`）／版本同批（`config_version` 41 → 42 ＋ chart 两件同升）；`backend/AGENTS.md` RAG 段补两个旋钮 ＋ ASR 段补"模型名必须由调用方给"；~~（② 裁乙时）仓根 `README.md` 补一句~~（不适用）；盘点档 A-4 / C-3 行按 Task 5 统一回写。
-- [ ] **门禁**：示例契约用例绿；`bash scripts/check_config_version.sh` OK；grep 复核两处新增键出现。
+- [x] **RED**：模板契约用例扩**两条**（两键的注释示例存在＋不激活；键序插在 parse 族之后或 caption 相关处，按 Task 0 实测的段内位置）＋版本底线 41 → **42**。
+- [x] **GREEN**：示例按各段风格（rag 段两处注释示例；`caption_max_tokens: 1024`／`caption_temperature: 0.15`）／版本同批（`config_version` 41 → 42 ＋ chart 两件同升）；`backend/AGENTS.md` RAG 段补两个旋钮 ＋ ASR 段补"模型名必须由调用方给"；~~（② 裁乙时）仓根 `README.md` 补一句~~（不适用）；盘点档 A-4 / C-3 行按 Task 5 统一回写。
+- [x] **门禁**：示例契约用例绿；`bash scripts/check_config_version.sh` OK；grep 复核两处新增键出现。
 
-**实测（待回填）**：
+**实测（2026-09-30）**：
+
+- **RED（3 红 / 6 绿，契约文件）**：两条新用例红（注释示例存在＋不激活；键序）＋版本底线改 42 后红；既有 6 条保持绿——**parse 族顺序用例不受影响**（两键没有插进 parse 族）。
+- **GREEN**：`config.example.yaml` 在 `# vlm_model: qwen3-vl-plus` 之后加两处注释示例（`# caption_max_tokens: 1024`／`# caption_temperature: 0.15`，注释语义取自字段描述）；`config_version` 41 → 42（`config.example.yaml` ＋ chart 两件同批）；`backend/AGENTS.md` 两处（Caption target resolution 段末补两旋钮句；Video Legs 的 ASR 句后补「模型名必须由调用方给」）。
+- **落点裁定（就地记）**：计划给的是"parse 族之后**或** caption 相关处"——选 **caption 相关处**（紧跟 `vlm_model`），理由：两键是 caption 腿的生成参数、配置层也把它们排在 vlm 族旁（`app_config.py:194-195`）；parse 族保持原样（其顺序用例原样绿）。
+- **门禁**：契约文件 **9 passed**；`check_config_version.sh` **OK（42 = 42）**；grep 命中 `config.example.yaml:2583` / `:2586`；**示例读取面**（7 个引用 `config.example.yaml` 的测试文件 ＋ 契约文件）**192 passed / 4 pre-existing red**——四条（`test_app_config_reload` ×2、`test_config_version` ×1、`test_doctor` ×1）**逐条都在 09-30 基线集合内**；ruff 对改动的测试文件双净。
+- **未跑全量**：本 Task 零生产代码改动（模板/版本/文档 ＋ 契约用例），与对 2 Task 3 同口径只跑示例读取面；`make config-upgrade` 未运行、用户真实配置未读改。
 
 ---
 

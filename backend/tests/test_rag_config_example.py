@@ -30,6 +30,9 @@ NEW_ROLE_FIELDS = ("wiki_model", "synthesis_model")
 #: The two MinerU cloud knobs that had no field at all before spec 2026-09-29.
 NEW_PARSE_KNOBS = ("parse_language", "parse_model_version")
 
+#: The two caption generation knobs that had no field at all before spec 2026-09-30.
+NEW_CAPTION_KNOBS = ("caption_max_tokens", "caption_temperature")
+
 
 def _json_keys() -> list[str]:
     return list(json.loads(RAG_EXAMPLE.read_text(encoding="utf-8")))
@@ -90,6 +93,22 @@ def test_the_yaml_template_keeps_the_parse_rows_in_order():
     assert names == ["parse_provider", "parse_base_url", "parse_tier", *NEW_PARSE_KNOBS]
 
 
+def test_the_yaml_template_advertises_both_caption_knobs_as_commented_examples():
+    block = _rag_block()
+
+    for field in NEW_CAPTION_KNOBS:
+        assert re.search(rf"^\s*#\s*{field}:\s*\S", block, re.MULTILINE), f"{field} has no commented example in the rag block"
+        # Plain values, but the template still activates nothing: every row ships commented.
+        assert not re.search(rf"^\s*{field}:", block, re.MULTILINE), f"{field} must stay commented out"
+
+
+def test_the_yaml_template_keeps_the_caption_rows_next_to_vlm_model():
+    block = _rag_block()
+    names = re.findall(r"^\s*#\s*(vlm_model|caption_\w+):", block, re.MULTILINE)
+
+    assert names == ["vlm_model", *NEW_CAPTION_KNOBS]
+
+
 def test_the_yaml_template_is_bumped_for_the_new_fields():
     # A floor, not an equality: the next schema bump may move it further (the same shape as
     # test_config_version's `> 26` check).
@@ -97,4 +116,4 @@ def test_the_yaml_template_is_bumped_for_the_new_fields():
 
     version = int(re.search(r"^config_version:\s*(\d+)", text, re.MULTILINE).group(1))
 
-    assert version >= 41, "config.example.yaml must be bumped for the two parse knobs"
+    assert version >= 42, "config.example.yaml must be bumped for the two caption knobs"
