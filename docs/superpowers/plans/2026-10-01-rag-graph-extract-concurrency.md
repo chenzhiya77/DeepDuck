@@ -65,11 +65,19 @@
 
 ## Task 5 — 思考 A/B（D8，并入本对；零产品代码改动）
 
-- [ ] **A/B① 对照准备**：定测试文档集 + golden 锚定（对齐 `backend/tests/fixtures/rag_eval/golden.jsonl` 的口径；缺锚定就先补 golden 问题再跑）；一次性驱动脚本走 `extract_graph(llm=...)` 注入（`extractor.py:128`），A 组 `create_chat_model(..., thinking_enabled=False)`、B 组 `True`，同条目同参。脚本不入产品代码、跑完删。
-- [ ] **A/B② A 组入库**（思考关＝现状口径）：记抽取成本账（token / 墙钟 / failed chunk 数）。
-- [ ] **A/B③ B 组入库**（思考开）：同口径记账；预期单发慢 ~2.5×、token 贵一个量级（spec §3.6 已提示，属预期不许"优化掉"）。
-- [ ] **A/B④ 双跑 Layer-1**：`backend/scripts/run_rag_eval.py` 对 A/B 两库各跑一遍（同 golden、同 top-k），回填 **Recall@k 分 category 对比表 + 成本账**到本 Task。
-- [ ] **A/B⑤ 判定交拍**：对比表交用户拍板（建议门槛：提升 <3 个百分点 ⇒ 不值得）；结论回写 spec D8（"补旋钮"或"D7 转正"）。
+- [x] **A/B① 对照准备**：测试文档集=golden 锚定的 4 篇 Java docx（39 chunk：基础11/集合6/并发13/JVM9，从库内 `测试1` 原 chunk 逐字复制）；**golden 口径偏差（如实登记）**：`chunk_id` 是 chunks 全局 PK 且 Qdrant point id 只由 `chunk_id` 派生 ⇒ 两库不可能共享同一 id 空间（连源库行都占着），golden 改用**派生件**（`golden-{A,B,B2}.jsonl`）——20 问逐字同、仅 `relevant_chunk_ids` 前缀按各库 doc_id 机械平移，top-k=5 同。驱动脚本 `ab_build.py` 走 `index_document_graph(llm=...)` 注入（与 `extract_graph(llm=...)` 同一注入面，多带向量腿/图谱腿全套入库），CountingLLM 包装器记 token/墙钟/reasoning 证据；**条目实测纠偏**：计划点名的 A/B 同条目若用生产抽取条目 `qwen3.8-flash` 是**空对照**——该条目无 thinking 形态，`thinking_enabled=True` 线上不发任何参数（factory 只对有 `when_thinking_*` 的条目动手）⇒ 改用 `deepseek-v4-flash`（唯一双形态条目，`when_thinking_enabled/disabled` 双向显式发），smoke 实测 wire 差异真实存在（thinking=off 0 reasoning token / on 31+ reasoning token 且带 `reasoning_content`）。脚本与报告全在仓外 `E:\app-model\deer-flow-scratch\task5\`，不入产品代码。
+- [x] **A/B② A 组入库**（思考关＝现状口径，`deepseek-v4-flash`，max_tokens 8192 条目原值）：39/39 done、0 failed；**成本账**：78 调用（39×(抽取+1 轮 gleaning)）、prompt 150.6K / completion 77.5K token、reasoning 0、调用墙钟合计 253s（中位 2.61s/发）、图谱腿合计 188s；图谱产出 **747 实体 / 867 关系**。
+- [x] **A/B③ B 组入库**（思考开）：**拆成两列防混淆——B1=同参直开（max_tokens 8192 不动）/ B2=开思考+给足输出预算（32768）**。B1：**35/39 chunk 截断失败**（`Unterminated string…`=思考吃光 8192 预算、JSON 被切，gleaning 只跑了 4 片 ⇒ 43 调用）、图谱只剩 76 实体/98 关系、reasoning 302K、中位 29.9s/发——**「旋钮开了就坏」的现实列**。B2：39/39 done、78 调用、prompt 223.1K / completion 738.2K（**reasoning 602K**）、调用墙钟合计 2534s（中位 35.4s/发、max 58.5s）、图谱腿合计 725s、**1391 实体 / 2272 关系**——预期「慢 ~2.5×」实测 **13.6×**（更慢），token 贵在 completion 9.5×（对预期 2–17× 带内）。
+- [x] **A/B④ 双跑 Layer-1**（`run_rag_eval.py`，同 golden 派生件、同 top-k=5；**per-path Recall@5 / Hit@5，n=20**）：
+
+  | 组 | 配置 | vector R@5 | **graph R@5**（fact/rel/concept/global） | graph Hit@5 | wiki |
+  |---|---|---|---|---|---|
+  | A | 思考关 | 0.883 | **0.725**（1.00/0.80/0.80/0.30） | 0.750 | 0（双侧都不建，D8 口径只抽图谱） |
+  | B1 | 思考开·8192 预算 | 0.883 | **0.050**（0.00/0.20/0.00/0.00） | 0.050 | 0 |
+  | B2 | 思考开·32K 预算 | 0.883 | **0.767**（1.00/0.80/1.00/0.27） | 0.800 | 0 |
+
+  向量路三组逐位相同（0.883/0.90）=**对照干净**，差异全部落在图谱路。**口径二（剔除 2 题无标注的 global 问，n=18）**：A=0.806 / B2=0.852 ⇒ **+4.6pp**，但逐题 diff 只 **3 题翻转**（q013 concept 0→1、q019 global 0→0.33、q018 global 0.5→0 **反跌**）——2 涨 1 跌、单题粒度=5.6pp，点估计过 3pp 线而**稳健性=单题噪声级**。同批发现：`graph_search` 查询侧实体抽取偶发 malformed JSON（A/B 各 2–3 例，双侧对称、压低绝对值但不影响对比）；q013 单题翻转提示「思考可能帮概念类抽取」——1 题证据，要判 category 差异得先扩 golden。
+- [ ] **A/B⑤ 判定交拍**：对比表已交用户（2026-10-02）：**我的判读=不值得现在落旋钮**（门槛本意是稳健提升；+4.6pp 由 3 题翻转构成、其中 1 题反跌，撑不起 4× token / 13.6× 单发时延；且 B1 列显示直开思考在条目原预算下会把图谱打穿）。**结构性前提**：生产的 `qwen3.8-flash` 条目无 thinking 形态 ⇒ `rag.extract_thinking` 旋钮在今天配置上是**空转**，只对 thinking-capable 条目有意义——落法若走旋钮必须连带「换条目+预算随思考抬」两件。**结论待用户拍板后回写 spec D8**（"补旋钮"或"D7 转正"）。
 
 ## Task 6 — （条件任务，仅 A/B 判定"值得"时执行）思考旋钮
 
