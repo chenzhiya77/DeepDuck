@@ -57,11 +57,11 @@
 
 ## Task 4 — 真栈验收（前后对照，回填真实数字）
 
-- [ ] 前测基线：当前 HEAD（未并发化）重传一篇 13 chunk 级 docx（或 retry），记图谱腿墙钟 = ____s（预期 ~290s 口径）。
-- [ ] 后测：GREEN 后同文档同法重传，图谱腿墙钟 = ____s；验收线 **≤ 90s**（spec §5）。
-- [ ] 失败面核对：`extract_status=failed` chunk 数与串行基线持平（并发不新增失败）。
-- [ ] 双文档并发（`worker_concurrency=2`）总时长不劣于两篇串行之和；`progress_percent` 前台观察单调。
-- [ ] 真栈收尾：改过的配置逐字节还原（若有），临时库/临时文档清理，探针脚本零残留（`_t_probe.py` 已删）。
+- [x] 前测基线：13 chunk 夹具（`chunk_markdown` 校准恰 13 片 / 865–958 token/片，markdown 直入免 MinerU）以 **`extract_concurrency: 1`** 重传——与"未并发化"串行代码调用序逐拍等价（Task 0/1 已证有序归并同序），图谱腿墙钟 = **260s**（00:44:37 首抽发出 → 00:48:57 归并收尾；26 LLM = 13×(抽取+1 轮 gleaning) + 13 实体嵌入，日志逐拍全序无并发）。**意外复测**：后测首跑因 `cp` 落错目录（bash cwd 漂到 `backend/`，还原写进 `backend/config.yaml`）实际仍跑在 N=1，白得第二条串行样本 = **294s** ⇒ 串行带 **260–294s**，与框内 ~290s 预期相符。口径=图谱腿首抽发出→归并/入库收尾，全部跑次同仪器（`gateway.log` 逐请求时间戳 + poller 秒级 progress 序列）。
+- [x] 后测：同夹具同法重传（键缺省走 Field default=8；热重载由日志 `Config file has been modified … reloading AppConfig` 01:05:55 坐实），图谱腿墙钟 = **64s**（01:06:01 → 01:07:04）**≤ 90s 验收线 ⇒ PASS**，较串行带 **4.1–4.6×**。曲线呈并发特征：progress 17.5s 内 0→61（分批落 7/23/30/46/61），串行复测则每 ~22.6s 单步 1 片；首波 8 发 LLM 在 01:06:05–08 同秒簇内返回。
+- [x] 失败面核对：五跑（260s / 294s / 64s / 双文档 2 篇）合计 **65 chunk 全 `extract_status=done`、0 failed** ⇒ 并发不新增失败 ✓。
+- [x] 双文档并发（`worker_concurrency=2`）：两篇 0.12s 内先后上传、同批入队，双跑总时长 = **80s**（01:19:02 同批起跑 → 01:20:22 双图谱腿收尾）**不劣于两篇串行之和 128s（2×64s）** ✓；分篇图谱腿 64s / 74s（重叠执行，单篇腿长与独跑 64s 同级，与 burst8/16 通量持平的膝点结论一致）；`progress_percent` 双序列各 70 点 **0→100 全单调** ✓。**过程发现（如实登记，非本对回归）**：百科腿在信号量内跑完才放槽（`worker.py:357` 起整段持槽含 `_maybe_generate_wiki`），前序文档的两次百科生成把 2 槽占满 ⇒ 新传双篇排队、不并发；处置=按原命令行重启网关，`recover()` 自动重入双篇（日志 `re-enqueued 2 non-terminal document(s)`），双篇即同批并发——本框数据取自重启后干净窗口。此发现顺带坐实「文档 status 转 ready 时百科腿仍在槽内跑」的既有行为，是否要把百科腿挪出槽是**另一条待办线**，不在本对范围。
+- [x] 真栈收尾：`config.yaml` 逐字节还原（md5 `073c322160072eba5155bb23c18168b8` 与改动前备份一致，`extract_concurrency` 键已除、默认 8 生效）；临时库 `T4-acceptance`（5 篇文档）DELETE 204 级联清理；探针脚本零残留（仓库 `git status` 无一行为本 Task 产物，`_t_probe.py` 时代已删；本轮仪器 poller/夹具/配置备份/日志副本全在仓外 `E:\app-model\deer-flow-scratch\task4\`）。**残余两件待知悉**：① 验收注册账号 `rag-task4-acceptance@example.com` 仍在本机 users 表（cookies 同上 scratch 目录）；② 网关 01:19 被我按原命令行重启（现仍运行，原日志已留副本 `gateway-runAB.log`）。
 
 ## Task 5 — 思考 A/B（D8，并入本对；零产品代码改动）
 
