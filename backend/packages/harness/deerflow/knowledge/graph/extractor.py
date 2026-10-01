@@ -12,6 +12,7 @@ LLM protocol: any object with ``ainvoke(messages)`` returning a message with
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -37,6 +38,10 @@ _FENCE_RE = re.compile(r"^```(?:json)?\s*(?P<body>.*?)\s*```$", re.DOTALL)
 
 class ExtractionError(Exception):
     """The model output could not be parsed into the extraction schema."""
+
+
+class ExtractionCallError(ExtractionError):
+    """The extraction LLM call kept failing (transient API-level errors, after retries)."""
 
 
 @dataclass(slots=True)
@@ -125,6 +130,31 @@ def get_extract_llm(app_config: Any = None):
     return create_chat_model(require_usable_rag_target(config, config.rag.extract_model, role="图谱抽取"), app_config=config)
 
 
+_RETRIES = 2
+_RETRY_BACKOFF = 0.5
+
+
+async def _ainvoke_with_retry(llm: Any, messages: list[dict[str, str]]) -> Any:
+    """``llm.ainvoke`` with two exponential-backoff retries (spec 2026-10-01 D3).
+
+    Anything the call itself raises counts as a transient API-level failure — the
+    protocol only promises ``ainvoke`` — so the retry budget lives here rather than
+    at the factory (``factory.py``'s ``max_retries`` stays untouched). Parse
+    failures happen after this boundary and keep the plain ``ExtractionError`` path.
+    """
+    last_error: Exception | None = None
+    for attempt in range(_RETRIES + 1):
+        try:
+            return await llm.ainvoke(messages)
+        except Exception as exc:
+            last_error = exc
+            if attempt < _RETRIES:
+                await asyncio.sleep(_RETRY_BACKOFF * (2**attempt))
+                continue
+            raise ExtractionCallError(f"extraction LLM call failed after {attempt + 1} attempts: {exc}") from exc
+    raise ExtractionCallError(f"extraction LLM call failed: {last_error}")
+
+
 async def extract_graph(text: str, *, llm: Any = None, gleaning_rounds: int = 1) -> ExtractionResult:
     """Extract entities+relations from one chunk, with optional gleaning rounds."""
     if llm is None:
@@ -133,7 +163,7 @@ async def extract_graph(text: str, *, llm: Any = None, gleaning_rounds: int = 1)
         {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
         {"role": "user", "content": text},
     ]
-    response = await llm.ainvoke(messages)
+    response = await _ainvoke_with_retry(llm, messages)
     result = _parse_payload(str(response.content))
     for _ in range(max(0, gleaning_rounds)):
         known = json.dumps(
@@ -147,6 +177,6 @@ async def extract_graph(text: str, *, llm: Any = None, gleaning_rounds: int = 1)
             {"role": "assistant", "content": str(response.content)},
             {"role": "user", "content": GLEANING_PROMPT_TEMPLATE.format(known=known)},
         ]
-        response = await llm.ainvoke(messages)
+        response = await _ainvoke_with_retry(llm, messages)
         _merge(result, _parse_payload(str(response.content)))
     return result

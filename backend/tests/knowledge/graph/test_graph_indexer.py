@@ -396,3 +396,99 @@ async def test_progress_callback_monotonic_under_concurrency(session_factory):
     assert all(t == 6 for _, t in snapshots)
     assert settled_seq == sorted(settled_seq), "settled must never decrease under concurrency"
     assert settled_seq[-1] == 6
+
+
+class _FlakyLLM:
+    """Serves routed responses, but raises a call-level error for the first N hits of a needle.
+
+    Models the transient API failures D3 backs off from (429/timeouts): the same
+    request succeeds once the hiccup passes.
+    """
+
+    def __init__(self, routes: list[tuple[str, str]], default: str, failures: list[tuple[str, int]]) -> None:
+        self.routes = routes
+        self.default = default
+        self.failures = {needle: remaining for needle, remaining in failures}
+        self.calls: list[str] = []
+
+    async def ainvoke(self, messages):
+        text = str(messages)
+        self.calls.append(text)
+        for needle, remaining in self.failures.items():
+            if needle in text and remaining > 0:
+                self.failures[needle] = remaining - 1
+                raise RuntimeError(f"simulated transient API error ({needle})")
+        for needle, response in self.routes:
+            if needle in text:
+                return SimpleNamespace(content=response)
+        return SimpleNamespace(content=self.default)
+
+
+@pytest.mark.asyncio
+async def test_transient_llm_error_retries_then_recovers(session_factory):
+    specs = [
+        ("c0", "DeerFlow 是一个基于 LangGraph 的超级智能体系统"),
+        ("c1", "索引流水线由 Parser 与 Chunker 组成"),
+    ]
+    store, graph_store = await _setup_chunks(session_factory, "kb-f", "doc-f", specs)
+    llm = _FlakyLLM(
+        routes=[("DeerFlow 是一个基于 LangGraph", _HAPPY_ROUTES[0][1]), ("索引流水线由 Parser", _HAPPY_ROUTES[1][1])],
+        default=_payload([], []),
+        failures=[("DeerFlow 是一个基于 LangGraph", 1)],
+    )
+    chunks = await store.list_chunks("doc-f", limit=10)
+
+    stats = await index_document_graph(store, graph_store, None, kb_id="kb-f", doc_id="doc-f", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0)
+
+    assert stats.done == 2 and stats.failed_chunk_ids == []
+    assert stats.touched_entities == {"DeerFlow", "Gateway", "Parser"}
+    rows = {c["chunk_id"]: c for c in await store.list_chunks("doc-f", limit=10)}
+    assert rows["doc-f-c0"]["extract_status"] == "done"
+    assert sorted(rows["doc-f-c0"]["entities"]) == ["DeerFlow", "Gateway"]
+    # The hiccupped chunk recovered on exactly one retry (2 attempts).
+    assert sum("DeerFlow 是一个基于 LangGraph" in text for text in llm.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_transient_llm_error_soft_fails_chunk_not_document(session_factory):
+    specs = [
+        ("c0", "坏切片的索引流水线由 Parser 组成"),
+        ("c1", "DeerFlow 是一个基于 LangGraph 的超级智能体系统"),
+        ("c2", "空切片甲 没有实体"),
+    ]
+    store, graph_store = await _setup_chunks(session_factory, "kb-g", "doc-g", specs)
+    llm = _FlakyLLM(
+        routes=[
+            ("DeerFlow 是一个基于 LangGraph", _HAPPY_ROUTES[0][1]),
+            ("索引流水线由 Parser", _HAPPY_ROUTES[1][1]),
+            ("空切片甲", _payload([], [])),
+        ],
+        default=_payload([], []),
+        failures=[("坏切片", 99)],
+    )
+    chunks = await store.list_chunks("doc-g", limit=10)
+
+    stats = await index_document_graph(store, graph_store, None, kb_id="kb-g", doc_id="doc-g", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0)
+
+    assert stats.failed_chunk_ids == ["doc-g-c0"]
+    assert stats.done == 1 and stats.empty == 1
+    rows = {c["chunk_id"]: c for c in await store.list_chunks("doc-g", limit=10)}
+    assert rows["doc-g-c0"]["extract_status"] == "failed"
+    assert "simulated transient API error" in rows["doc-g-c0"]["extract_error"]
+    assert rows["doc-g-c1"]["extract_status"] == "done"
+    assert rows["doc-g-c2"]["extract_status"] == "empty"
+    doc = await store.get_document("doc-g")
+    assert doc["error"] is None  # one bad chunk must not fail the document
+
+
+@pytest.mark.asyncio
+async def test_transient_llm_error_retry_budget_is_two_retries(session_factory):
+    specs = [("c0", "坏切片 永远失败")]
+    store, graph_store = await _setup_chunks(session_factory, "kb-h", "doc-h", specs)
+    llm = _FlakyLLM(routes=[], default=_payload([], []), failures=[("坏切片", 99)])
+    chunks = await store.list_chunks("doc-h", limit=10)
+
+    stats = await index_document_graph(store, graph_store, None, kb_id="kb-h", doc_id="doc-h", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0)
+
+    assert stats.failed_chunk_ids == ["doc-h-c0"]
+    assert sum("坏切片" in text for text in llm.calls) == 3  # initial attempt + 2 retries, then give up

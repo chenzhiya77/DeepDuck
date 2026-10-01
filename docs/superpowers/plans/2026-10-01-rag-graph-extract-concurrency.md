@@ -44,10 +44,10 @@
 
 ## Task 2 — 瞬态兜底（RED → GREEN）
 
-- [ ] **RED④ 瞬态软失败**：桩 LLM 第 1 次抛 APIError、第 2 次成功 ⇒ chunk 正常 done（今日行为=整篇 failed，红）；连续抛 3 次 ⇒ 该 chunk `extract_status=failed` + `error` 有原因、其余 chunk 不受影响、文档**不**整体打挂。
-- [ ] **GREEN**：`extractor.py::extract_graph` 对 API 级瞬态错误退避重试 2 次（0.5s×2ⁿ，与 `embedder_openai.py:198-214` 同风格），耗尽后抛出由 `indexer.py` 的 chunk 级 catch 转软失败；`ExtractionError` 路径不动。
-- [ ] **neuter③**：去掉重试 ⇒ RED④ 前半红；去掉 chunk 级 catch ⇒ RED④ 后半红（整篇打挂）。各自可复现后还原。
-- [ ] **门禁**：Task 1 门禁面复跑 + `tests/knowledge/` 全套绿。
+- [x] **RED④ 瞬态软失败**：`_FlakyLLM` 桩（按针前 N 次抛调用级错误、之后放行）三条用例——①`test_transient_llm_error_retries_then_recovers`（第 1 次抛、第 2 次成功 ⇒ chunk 正常 done）②`test_transient_llm_error_soft_fails_chunk_not_document`（连抛 ⇒ chunk `failed` + `error` 有原因、其余 chunk 不受影响、`documents.error` 不动）③`test_transient_llm_error_retry_budget_is_two_retries`（**预算钉**：恰好 3 次尝试后放弃）。RED 期 3/3 红，穿透点=今日整篇打挂路径（`extractor.py` `ainvoke` → gather → worker 外层）。
+- [x] **GREEN**：`extractor.py` 加 `ExtractionCallError(ExtractionError)` + `_ainvoke_with_retry`（共 3 次尝试、0.5s×2ⁿ 退避，`embedder_openai.py:198-214` 同风格；首轮与 gleaning **两处** `ainvoke` 调用点都走它）；耗尽后抛 `ExtractionCallError`——**子类**继承 ⇒ 被 `indexer.py` 既有 chunk 级 catch 按「与 `ExtractionError` 同路径」转软失败（`_run_one` / `extract_single_chunk` 零改动 ride-along，`indexer.py` 最终与 HEAD 零差=与 §源文件清单一致：D3 只落 extractor.py）；解析失败（`ExtractionError` 本体）不参与重试、路径不动。3 条转绿。
+- [x] **neuter③**：①`_RETRIES=0`（去重试）⇒ RED④ 前半红（无恢复）、**后半仍绿**（软失败不依赖重试）✓计划原文；②chunk 级 catch 改 `raise` ⇒ RED④ 后半红（整篇打挂）、前半仍绿 ✓计划原文。**如实登记**：预算钉③在两个 neuter 下都红（它同时钉重试次数与软失败落地）——计划原文只预测 RED④ 两半的分布。两项均还原，`grep DEBUG-neuter` 零残留。
+- [x] **门禁**：`make lint` 净 + 3 改动文件 `ruff format --check` 净；**影响集复跑 = 277 passed / 8 skipped**（对记录基线 274/8 差额恰为新 3 条、skip 数一致 ⇒ 零回归）；`tests/knowledge/ + test_rag_config.py` 全套 = **1413 passed / 50 skipped / 2 failed / 1 error**：50 条 skip 全部「Qdrant not reachable」（Docker 未起，含上框那 9 条待复跑名单在内）；2 failed（`test_embed_missing_api_key` / `test_rerank_missing_api_key`）+ 1 error（`test_only_dirty_prune_removes_vector_point`）＝Task 1 已定性的三条**环境红**（空配置指针实验坐实 / Qdrant 未起），**无新增红**。**口径注记**：上文 Task 1「知识树全量 1466 passed」与本次 collected=1466 同数异义（本次=1413+50+2+1，其中 knowledge 树 1440 条 + `test_rag_config.py` 26 条；knowledge 树较 Task 1 时恰 +3=本框新增用例，收集面别无变化）——判为 collected 口径误记，非回归；若要钉死可跑 HEAD worktree A/B 全量双向 diff。
 
 ## Task 3 — 文档与模板（同批，不另起）
 
