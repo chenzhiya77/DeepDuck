@@ -2624,6 +2624,9 @@ rag:
   # parse_model_version: vlm             # MinerU cloud model version: pipeline | vlm
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
+  # Chunk-level extraction concurrency for the graph leg (spec 2026-10-01);
+  # 8 is the measured knee of the reference endpoint — see AGENTS.md to re-derive.
+  extract_concurrency: 8
   # --- Phase-2 graph-path quality knobs (spec 2026-08-10 D1) ---
   # Max candidate evidence chunks kept per entity / relation source before
   # selection. Set large + graph_hop0_guarantee: 0 to approximate phase-1.

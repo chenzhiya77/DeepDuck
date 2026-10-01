@@ -51,9 +51,9 @@
 
 ## Task 3 — 文档与模板（同批，不另起）
 
-- [ ] `backend/AGENTS.md`：RAG 知识库段补一句"图谱腿 chunk 级并发（`rag.extract_concurrency`，默认 8，实测膝点）"+ 换端点重推公式 + D7 选型三标准（不带思考/JSON 遵从/解码快）。
-- [ ] `config.example.yaml` rag 块补 `extract_concurrency: 8`（与 `worker_concurrency` 相邻）。
-- [ ] spec §6 影响面核对：源文件数、配置键数与实际改动一致（不一致就地更正 spec）。
+- [x] `backend/AGENTS.md` **两处**（比框里多一处=spec §6 说的「旋钮表」）：`:1230` Ingestion 补并发句（`rag.extract_concurrency` 默认 8=实测膝点）+ 换端点重推公式（`N = min((RPM/60)*T, (TPM*T)/(60*K), 文档粒度)`，T/K 定义随附）+ 瞬态软失败句（重试 2 次后切片 `extract_status=failed`、文档不打挂）+ D7 选型三标准（不带思考/严格 JSON 遵从/解码快）；`:940` 路由表 `Requires the rag: config block` 清单补 `extract_concurrency`。
+- [x] `config.example.yaml` rag 块 `:2627-2629`：`worker_concurrency: 2` 正下方补 2 行注释 + `extract_concurrency: 8`。**`config_version` 不再抬**：42→43 台阶（`3423f768`）已覆盖本对全部 schema 变更（Task 1 加键 + Task 3 补模板同一台阶），模板测试只钉 `version >= 42`，再抬 44 只会多发一次过期告警。
+- [x] **spec §6 影响面核对 = 逐条一致、零更正**：源文件 3 个+worker 传参一处 ✓（Task 1/2 实际生产改动恰为 `graph/indexer.py`/`graph/extractor.py`/`config/app_config.py`+`worker.py`，测试与 plan 不计「源文件」）；配置键 1 个 `rag.extract_concurrency` ✓；「`config.example.yaml` rag 块与 `backend/AGENTS.md` 旋钮表同步」由本 Task 完成 ✓；对外 API、表结构、Qdrant、检索三路零变化 ✓（无 router/migration/检索代码改动）。**门禁**：模板三套件 = 48 passed / 1 failed——那条 `test_config_version.py::test_version_26_config_upgrades_to_checkpoint_channel_mode` 为**已定性环境红**（`execvpe(/bin/bash) failed`，WSL relay 跑不了升级脚本，subprocess 启动即挂、与本次编辑无关；模板解析与 version 读数 43 正常）；prettier 双文件 flag 均为**存量债**（AGENTS.md 106 hunk / config.example.yaml 各 hunk 与 HEAD 逐一同集合 ⇒ 零新债，行号交集法复核我新增行不进「想改」集合）。
 
 ## Task 4 — 真栈验收（前后对照，回填真实数字）
 
