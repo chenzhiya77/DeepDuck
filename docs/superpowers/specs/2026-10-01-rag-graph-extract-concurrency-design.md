@@ -1,6 +1,6 @@
 # RAG 图谱腿 chunk 级并发 —— 设计
 
-**Status:** ✅ **已定稿（2026-10-01）** —— **待拍清零：D1 已裁（结构性）/ D2 已裁 = 甲（`rag.extract_concurrency` 默认 8，实测膝点）/ D3 已裁 = 乙（瞬态重试 2 次后按 chunk 软失败）/ D4 已裁（gleaning 留 chunk 内）/ D5 已裁 = 二期（实体名 embed 不攒批）/ D6 非目标固定 / D7 已裁（抽取不带思考 + 选型三标准）**。**2026-10-01 追补两笔**：§2.1 多模型膝点对照（含探针口径教训）＋ D7。配套 plan：[2026-10-01-rag-graph-extract-concurrency.md](../plans/2026-10-01-rag-graph-extract-concurrency.md)（同批成对）。
+**Status:** ✅ **已定稿（2026-10-01）** —— **待拍清零：D1 已裁（结构性）/ D2 已裁 = 甲（`rag.extract_concurrency` 默认 8，实测膝点）/ D3 已裁 = 乙（瞬态重试 2 次后按 chunk 软失败）/ D4 已裁（gleaning 留 chunk 内）/ D5 已裁 = 二期（实体名 embed 不攒批）/ D6 非目标固定 / D7 已裁（抽取不带思考 + 选型三标准）/ D8 已裁 = 思考 A/B **并入本对**（用户裁「放一起」，2026-10-01）**。**2026-10-01 追补三笔**：§2.1 多模型膝点对照（含探针口径教训）、D7、D8。配套 plan：[2026-10-01-rag-graph-extract-concurrency.md](../plans/2026-10-01-rag-graph-extract-concurrency.md)（同批成对）。
 
 本对一件事：**图谱抽取腿从"逐 chunk 串行"改为"chunk 级有界并发"**，并发数 N 由 2026-10-01 真调用实测定为 8。除执行顺序由"逐个"变"并发"外，**语义零变化**（同样的抽取结果、同样的落库、同样的断点续跑与软失败契约）。
 
@@ -87,11 +87,23 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 - **D4**：gleaning 那一轮**留在 chunk 内部串行**（对话式追问，第二问带第一答，不可并行）——每 chunk 仍 2 次调用，chunk 与 chunk 之间并行。
 - **D5**：每 chunk 的实体名 embed（`:166`）**一期不攒批**（N 路下已是 N 个并行 embed 调用，够用）；攒批列二期。
 - **D6 非目标**：不与向量腿并行（向量腿秒级，重叠收益小、进度模型要重写）；不动生成 wiki、解析缓存、`worker_concurrency`、`gleaning_rounds`；不恢复限速旋钮。
-- **D7 抽取不带思考（已裁，2026-10-01 追补）**：图谱抽取是批量、高频、schema 明确的离线任务，**约定保持 `thinking_enabled=false`**（现状即如此：`extractor.py:125` 不传该参、工厂默认 `False`，`factory.py:269`；条目 `when_thinking_disabled` 随请求下发）。依据 = 思考实测单发慢 2.5×、token 贵 2–17×（§2.1 deepseek 两行），而质量增量未证明。**`extract_model` 选型三标准**：① 不开思考 ② 严格 JSON 遵从好 ③ 解码快。怀疑思考能提质量时走 Layer-1 评测（golden 集 recall@k）做 A/B，不拍脑袋。**二期候选（待裁）**：思考开关的 A/B 评测、输出瘦身（description 可选/短化）、`gleaning_rounds` 可配——均不动本期范围。
+- **D7 抽取不带思考（已裁，2026-10-01 追补）**：图谱抽取是批量、高频、schema 明确的离线任务，**约定保持 `thinking_enabled=false`**（现状即如此：`extractor.py:125` 不传该参、工厂默认 `False`，`factory.py:269`；条目关闭形态随请求下发——有 `when_thinking_disabled` 显式关 / 只有 enabled 形态工厂合成关 / 什么都没接则吃端点默认，`factory.py:353-372`）。依据 = 思考实测单发慢 2.5×、token 贵 2–17×（§2.1 deepseek 两行），而质量增量未证明。**`extract_model` 选型三标准**：① 不开思考 ② 严格 JSON 遵从好 ③ 解码快。**附注**：`reasoning_effort`（默认档）是另一轴、关思考也照发（实测 wire 可见），deepseek 无害但个别端点可能报错。**二期候选（待裁）**：输出瘦身（description 可选/短化）、`gleaning_rounds` 可配——不动本期范围。（思考 A/B 已由 D8 提前进本对。）
 
 ### 3.5 进度与并发安全（不变式）
 
 `progress_callback` 的 `settled` 计数（`worker.py:348-350`）在并发下的安全性：`settled += 1` 与 `await _report()` 之间没有让出点竞争窗口（asyncio 协作式调度，单线程），计数保持**单调**；任务完成顺序不定 ⇒ 现有用例的顺序型断言改为**集合语义**断言（见 §4）。
+
+### 3.6 D8 思考 A/B 并入本对（已裁 = 放一起，2026-10-01）
+
+**目的**：用数据判断"抽取开思考"有没有质量价值，再决定要不要补思考旋钮（原二期候选，用户裁并入本对）。
+
+**方法（零产品代码改动即可跑）**：同一批文档建**双库对照**——A 组 = 抽取思考关（现状口径），B 组 = 抽取思考开（`create_chat_model(..., thinking_enabled=True)`）；**除 thinking 外逐参相同**（同 `extract_model`、同 N、同 chunker、同 embedding）。`extract_graph` 本就接受 `llm=` 注入（`extractor.py:128`），用一次性脚本驱动两组抽取入库即可，不动生产代码。然后各跑 Layer-1 评测（`backend/scripts/run_rag_eval.py` + golden 集）对比 **Recall@k（分 category）**，顺带记抽取成本账（token / 墙钟）。
+
+**判定**：结果交用户拍板。建议门槛：**提升 <3 个百分点 ⇒ 不值得**（成本实测单发慢 2.5×、token 贵 2–17×，且思考输出方差大伤 JSON 确定性）；≥3pp ⇒ 进落法。
+
+**落法（条件）**：值得 ⇒ 新键 `rag.extract_thinking`（默认 false）+ `get_extract_llm` 传参一行 + 文档；不值得 ⇒ D7 从"约定"转正为"裁定"，候选关闭。
+
+**已知代价提示**：B 组（思考开）抽取会显著慢（实测 out 5.3K–17.7K、T 20–62s），属预期，用同 N=8 并发摊平；两组都跑完才算一次完整 A/B。
 
 ## 4. 测试计划（TDD，先红后绿）
 
