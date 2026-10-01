@@ -14,6 +14,7 @@ touches ``documents.error``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -116,6 +117,7 @@ async def index_document_graph(
     gleaning_rounds: int = 1,
     name_similarity_threshold: float = 0.92,
     progress_callback: Callable[[int, int], Awaitable[None]] | None = None,
+    concurrency: int = 1,
 ) -> GraphIndexStats:
     """Run graph extraction over a document's pending chunks.
 
@@ -141,41 +143,61 @@ async def index_document_graph(
         if progress_callback is not None:
             await progress_callback(settled, total_all)
 
-    touched_entities: set[str] = set()
-    backfill: dict[str, list[str]] = {}
-    for chunk in pending:
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
+    async def _run_one(chunk: dict[str, Any]) -> tuple[str, str, list[str]]:
+        """Extract one chunk behind the semaphore; returns (kind, chunk_id, names).
+
+        ``kind`` ∈ done/empty/failed. Per-chunk persistence (status, graph
+        upserts) stays inside the task exactly as the serial loop did it; the
+        stats merge happens in the caller in ``pending`` order so outputs are
+        identical to the serial baseline including ordering (spec 2026-10-01 D1).
+        """
+        nonlocal settled
         chunk_id = chunk["chunk_id"]
-        try:
-            result = await extract_graph(chunk["text"], llm=llm, gleaning_rounds=gleaning_rounds)
-        except ExtractionError as exc:
-            logger.warning("graph extraction failed for chunk %s: %s", chunk_id, exc)
-            await store.update_chunk_extract(chunk_id, "failed", error=str(exc))
-            stats.failed_chunk_ids.append(chunk_id)
-            settled += 1
-            await _report()
-            continue
-        if not result.entities and not result.relations:
-            await store.update_chunk_extract(chunk_id, "empty")
-            stats.empty += 1
-            settled += 1
-            await _report()
-            continue
+        names: list[str] = []
+        kind = "empty"
+        async with semaphore:
+            try:
+                result = await extract_graph(chunk["text"], llm=llm, gleaning_rounds=gleaning_rounds)
+            except ExtractionError as exc:
+                logger.warning("graph extraction failed for chunk %s: %s", chunk_id, exc)
+                await store.update_chunk_extract(chunk_id, "failed", error=str(exc))
+                kind = "failed"
+            else:
+                if not result.entities and not result.relations:
+                    await store.update_chunk_extract(chunk_id, "empty")
+                else:
+                    name_vectors = None
+                    if embedder is not None and result.entities:
+                        vectors = await embedder.embed([entity.name for entity in result.entities])
+                        name_vectors = {entity.name: embedding.dense for entity, embedding in zip(result.entities, vectors, strict=True)}
+                    result = normalize_extraction(result, name_vectors=name_vectors, similarity_threshold=name_similarity_threshold)
 
-        name_vectors = None
-        if embedder is not None and result.entities:
-            vectors = await embedder.embed([entity.name for entity in result.entities])
-            name_vectors = {entity.name: embedding.dense for entity, embedding in zip(result.entities, vectors, strict=True)}
-        result = normalize_extraction(result, name_vectors=name_vectors, similarity_threshold=name_similarity_threshold)
-
-        await graph_store.upsert_entities(kb_id, result.entities, chunk_id=chunk_id)
-        await graph_store.upsert_relations(kb_id, result.relations, chunk_id=chunk_id)
-        names = [entity.name for entity in result.entities]
-        await store.update_chunk_extract(chunk_id, "done", entities=names)
-        backfill[chunk_id] = names
-        touched_entities.update(names)
-        stats.done += 1
+                    await graph_store.upsert_entities(kb_id, result.entities, chunk_id=chunk_id)
+                    await graph_store.upsert_relations(kb_id, result.relations, chunk_id=chunk_id)
+                    names = [entity.name for entity in result.entities]
+                    await store.update_chunk_extract(chunk_id, "done", entities=names)
+                    kind = "done"
         settled += 1
         await _report()
+        return kind, chunk_id, names
+
+    # gather() preserves input order of the results, so the merge below walks
+    # ``pending`` order exactly like the serial loop — `stats` (including
+    # ``failed_chunk_ids``) and the backfill map stay byte-identical to it.
+    touched_entities: set[str] = set()
+    backfill: dict[str, list[str]] = {}
+    outcomes = await asyncio.gather(*(_run_one(chunk) for chunk in pending))
+    for kind, chunk_id, names in outcomes:
+        if kind == "failed":
+            stats.failed_chunk_ids.append(chunk_id)
+        elif kind == "done":
+            stats.done += 1
+            backfill[chunk_id] = names
+            touched_entities.update(names)
+        else:
+            stats.empty += 1
 
     # Reverse link: normalized names onto the kb_chunks payload.
     if vector_store is not None and backfill:

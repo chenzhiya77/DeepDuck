@@ -35,12 +35,12 @@
 
 ## Task 1 — 并发化（RED → GREEN）
 
-- [ ] **RED① 并发上限生效**：桩 LLM 记录在飞峰值；C=12、N=4 时峰值 >1 且 ≤4 —— 今日串行实现下红（峰值恒 1）。
-- [ ] **RED② 结果等价**：混合 done/empty/failed 的 chunk 集，`stats` 与落库内容与串行基线**逐项含顺序**相等（Task 0 ① 定形：实现保序归并，`test_graph_indexer.py:185` 列表序断言**不动**，其余断言本就集合/计数语义、零改写）。
-- [ ] **RED③ 进度单调**：`progress_callback` 收到的序列单调不减且终值 = total。
-- [ ] **GREEN**：`graph/indexer.py` 循环改 `Semaphore(N) + gather`（每任务返回结算、主协程统一合并）；`app_config.py` 加 `extract_concurrency`（默认 8，`ge=1, le=32`，描述里带 spec §2 公式）；worker 进图谱腿时现读传参；`test_rag_config.py` 补默认值/校验用例。三条 RED 转绿。
-- [ ] **neuter①**：N 置 1 ⇒ RED① 红（峰值 ≤1）、RED②③ 仍绿（语义等价）；**neuter②**：去掉结果统一合并（改回共享可变收集）⇒ RED② 红。两项各自可复现后还原。
-- [ ] **门禁**：`tests/knowledge/graph/` 全套 + `tests/test_rag_config.py` + `make lint` 全绿；全量后端抽跑无新增红（定性用「抽 node id → HEAD 同批 → 双向 diff」法）。
+- [x] **RED① 并发上限生效**：`test_concurrency_bounds_inflight_extractions`（C=12、N=4，桩记录在飞峰值）——今日串行实现下红（3/3 红，`TypeError: unexpected keyword argument 'concurrency'`）。
+- [x] **RED② 结果等价**：`test_concurrent_results_match_serial_including_order`——含"完成序≠输入序"前置断言（`坏一` 延迟 0.05s 强制反转）+ `failed_chunk_ids == [c1, c4]` 输入序契约（`:185` 断言不动）。RED 期同 TypeError 红。
+- [x] **RED③ 进度单调**：`test_progress_callback_monotonic_under_concurrency`——snapshot 单调不减 + 终值 = total。RED 期同 TypeError 红。
+- [x] **GREEN**：`graph/indexer.py` 循环改 `Semaphore(max(1, concurrency)) + gather`（每任务返回 `(kind, chunk_id, names)`、gather 保输入序、主协程按 `pending` 序归并 stats/backfill/touched）；`app_config.py:242` 加 `extract_concurrency`（默认 8，`ge=1, le=32`，描述含重推公式）；worker `:357` 图谱腿入口现读传参（热生效、**`app.py` 零改动**）；`test_rag_config.py` 三处（默认 8 / 覆写 4 / 拒绝 0 与 33）。三条 RED 全绿。**两笔实现期插曲**：① RED 期两条红的根因在桩不在实现（桩无让出点 ⇒ 峰值恒 1；空切片文本缺路由落坏 JSON 默认）——修桩后即绿；② video 8 条**真回归**（测试夹具 `SimpleNamespace` 桩缺新字段 ⇒ `AttributeError`）——按仓库惯例改夹具（`test_worker_pipeline.py:125` / `test_recaption.py:94` 补 `extract_concurrency=1`），非实现防御。
+- [x] **neuter①②**：① `Semaphore` 置 1 ⇒ RED① 红（峰值 1）、RED③ 仍绿；RED② 的**前置断言**也红（串行无反转）——原预测"RED② 仍绿"只对契约断言成立，前置断言红属预期（如实登记）；② 归并改 `reversed(outcomes)` ⇒ RED② 红（`failed_chunk_ids` 反序）、RED①③ 仍绿。两项均还原，`grep DEBUG-neuter` 零残留。
+- [x] **门禁**：`make lint` 净 + 7 改动文件 `ruff format --check` 净；`tests/knowledge/graph/ + video/ + test_rag_config.py` = **274 passed / 8 skipped**；知识树全量 = **1466 passed / 2 failed / 1 error**，逐条定性：2 failed（`test_embed_missing_api_key` / `test_rerank_missing_api_key`）＝**环境性**（仓库根真实 `rag_config.json`/`models_config.json` 供 key；空配置指针实验下转绿坐实，非回归家族）；1 error（`test_only_dirty_prune_removes_vector_point`）＝**Qdrant 未起**（Docker Desktop 未运行；8 条 `@requires_qdrant` 同因 skip）——**待你起 Docker 后复跑这 9 条**。
 
 ## Task 2 — 瞬态兜底（RED → GREEN）
 

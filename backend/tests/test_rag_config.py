@@ -17,6 +17,7 @@ class TestRagConfig:
         assert config.vlm_model is None  # the vendor literal default retired (2026-09-23 D10.3)
         assert config.extract_model is None
         assert config.worker_concurrency == 2
+        assert config.extract_concurrency == 8
 
     def test_overridable_from_dict(self):
         config = RagConfig(
@@ -27,6 +28,7 @@ class TestRagConfig:
                 "vlm_model": "custom-vlm",
                 "extract_model": "small-json-model",
                 "worker_concurrency": 8,
+                "extract_concurrency": 4,
             }
         )
 
@@ -35,6 +37,7 @@ class TestRagConfig:
         assert config.rerank_model == "custom-rerank"
         assert config.vlm_model == "custom-vlm"
         assert config.worker_concurrency == 8
+        assert config.extract_concurrency == 4
 
     def test_unknown_keys_tolerated(self):
         """AppConfig uses ``extra="allow"``; section models ignore unknown keys
@@ -47,6 +50,12 @@ class TestRagConfig:
     def test_rejects_invalid_worker_concurrency(self):
         with pytest.raises(ValueError):
             RagConfig(worker_concurrency=0)
+
+    def test_rejects_invalid_extract_concurrency(self):
+        with pytest.raises(ValueError):
+            RagConfig(extract_concurrency=0)
+        with pytest.raises(ValueError):
+            RagConfig(extract_concurrency=33)
 
     def test_caption_generation_defaults(self):
         """A-4 (spec 2026-09-30 D1): the two caption knobs keep today's literal defaults."""

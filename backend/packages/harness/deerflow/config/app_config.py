@@ -239,6 +239,7 @@ class RagConfig(BaseModel):
     asr_api_key: str | None = Field(default=None, description="Transcription service API key; None falls back to the selected provider's environment variable (`DASHSCOPE_ASR_API_KEY` / `RAG_ASR_API_KEY`).")
 
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
+    extract_concurrency: int = Field(default=8, ge=1, le=32, description="Graph-leg chunk-extraction semaphore width; the knee N = min((RPM/60)*T, (TPM*T)/(60*K)) is model/endpoint-specific (spec 2026-10-01).")
     # Phase-2 graph-quality knobs (spec 2026-08-10 D1). Setting the caps large
     # and the guarantee to 0 approximates the phase-1 behaviour.
     graph_per_entity_cap: int = Field(default=3, ge=1, description="Max candidate evidence chunks kept per entity source before selection.")

@@ -352,6 +352,9 @@ class KnowledgeIndexWorker:
             legs["graph"] = "indexing"
             await self._store.update_document_status(doc_id, "indexing", path_status={"graph": "indexing"})
             await self._require_alive(doc_id)  # checkpoint: before the (slowest) graph leg
+            # Chunk-level extraction concurrency is re-read per document (the
+            # table.card_mode precedent), so a config edit applies without a restart.
+            extract_concurrency = get_app_config().rag.extract_concurrency
             stats = await index_document_graph(
                 self._store,
                 self._graph_store,
@@ -364,6 +367,7 @@ class KnowledgeIndexWorker:
                 gleaning_rounds=self._gleaning_rounds,
                 name_similarity_threshold=self._entity_merge_similarity,
                 progress_callback=_on_progress,
+                concurrency=extract_concurrency,
             )
             # Checkpoint: the graph leg is the longest window for a delete to
             # land in. Entities written before this point CAN still reference a

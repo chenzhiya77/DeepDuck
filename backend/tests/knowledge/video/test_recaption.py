@@ -91,7 +91,7 @@ def _video_config(**overrides):
         card_text_mode="full",
         **overrides,
     )
-    return SimpleNamespace(rag=SimpleNamespace(video=video, worker_concurrency=2, vlm_model="test-vlm"))
+    return SimpleNamespace(rag=SimpleNamespace(video=video, worker_concurrency=2, extract_concurrency=1, vlm_model="test-vlm"))
 
 
 def _fake_media_legs(monkeypatch, *, caption: CaptionOutcome) -> dict[str, int]:

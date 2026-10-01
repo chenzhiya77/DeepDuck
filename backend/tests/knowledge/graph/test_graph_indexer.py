@@ -9,6 +9,7 @@ persist for resume; entity vectors land in ``kb_entities``; a document with
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -266,3 +267,132 @@ async def test_a_degraded_run_writes_no_error_itself(session_factory):
     assert stats.degraded is True  # 1/2 failed > 30%: the verdict is still the indexer's
     doc = await store.get_document("doc-w")
     assert doc["error"] is None  # …but the marker is the worker's to write
+
+
+# ── chunk-level concurrency (spec 2026-10-01 D1/D2) ─────────────────────────
+
+
+class _InflightLLM:
+    """_RoutingLLM plus in-flight peak tracking and per-needle delays.
+
+    The delay table lets a test force completion order to differ from input
+    order (so the ordered-merge contract has teeth).
+    """
+
+    def __init__(self, routes: list[tuple[str, str]], default: str, delays: list[tuple[str, float]] | None = None) -> None:
+        self.routes = routes
+        self.default = default
+        self.delays = list(delays or [])
+        self.inflight = 0
+        self.peak = 0
+        self.finished: list[str] = []
+
+    async def ainvoke(self, messages):
+        text = str(messages)
+        self.inflight += 1
+        self.peak = max(self.peak, self.inflight)
+        delay = 0.005  # unconditional yield so tasks genuinely overlap
+        for needle, seconds in self.delays:
+            if needle in text:
+                delay = max(delay, seconds)
+                break
+        try:
+            await asyncio.sleep(delay)
+        finally:
+            self.inflight -= 1
+        self.finished.append(text)
+        for needle, response in self.routes:
+            if needle in text:
+                return SimpleNamespace(content=response)
+        return SimpleNamespace(content=self.default)
+
+
+async def _setup_chunks(session_factory, kb_id: str, doc_id: str, specs: list[tuple[str, str]]):
+    from deerflow.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id=kb_id, owner_id="user-1", name=f"并发{kb_id}")
+    await store.create_document(doc_id=doc_id, kb_id=kb_id, uploader_id="user-1", name="并发.md", size_bytes=1, storage_path="/c.md")
+    await store.insert_chunks([{"chunk_id": f"{doc_id}-{suffix}", "doc_id": doc_id, "kb_id": kb_id, "chunk_index": i, "text": text} for i, (suffix, text) in enumerate(specs)])
+    return store, GraphStore(session_factory)
+
+
+@pytest.mark.asyncio
+async def test_concurrency_bounds_inflight_extractions(session_factory):
+    specs = [(f"c{i}", f"填充切片{i} 没有可抽取内容") for i in range(12)]
+    store, graph_store = await _setup_chunks(session_factory, "kb-k", "doc-k", specs)
+    llm = _InflightLLM(routes=[], default=_payload([], []))
+    chunks = await store.list_chunks("doc-k", limit=20)
+
+    stats = await index_document_graph(store, graph_store, None, kb_id="kb-k", doc_id="doc-k", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0, concurrency=4)
+
+    assert llm.peak > 1, "N=4 must actually overlap extractions"
+    assert llm.peak <= 4, "in-flight extractions must never exceed the semaphore"
+    assert stats.total == 12 and stats.empty == 12 and stats.done == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_results_match_serial_including_order(session_factory):
+    specs = [
+        ("c0", "第一条 DeerFlow 是一个基于 LangGraph 的智能体"),
+        ("c1", "慢的坏切片 坏一"),
+        ("c2", "空切片甲 没有实体"),
+        ("c3", "第二条 索引流水线由 Parser 与 Chunker 组成"),
+        ("c4", "快的坏切片 坏二"),
+        ("c5", "空切片乙 没有实体"),
+    ]
+    store, graph_store = await _setup_chunks(session_factory, "kb-x", "doc-x", specs)
+    llm = _InflightLLM(
+        routes=[
+            ("DeerFlow 是一个基于 LangGraph", _HAPPY_ROUTES[0][1]),
+            ("索引流水线由 Parser", _HAPPY_ROUTES[1][1]),
+            ("空切片甲", _payload([], [])),
+            ("空切片乙", _payload([], [])),
+        ],
+        default="这不是 JSON",
+        delays=[("坏一", 0.05), ("坏二", 0.001)],
+    )
+    chunks = await store.list_chunks("doc-x", limit=20)
+
+    stats = await index_document_graph(store, graph_store, None, kb_id="kb-x", doc_id="doc-x", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0, concurrency=4)
+
+    # The forced inversion actually happened (completion order != input order)…
+    first_failed_pos = next(i for i, t in enumerate(llm.finished) if "坏一" in t)
+    second_failed_pos = next(i for i, t in enumerate(llm.finished) if "坏二" in t)
+    assert first_failed_pos > second_failed_pos
+
+    # …yet results equal the serial baseline item by item, INCLUDING order.
+    assert stats.done == 2 and stats.empty == 2
+    assert stats.failed_chunk_ids == ["doc-x-c1", "doc-x-c4"]  # input order, not completion order
+    rows = {c["chunk_id"]: c for c in await store.list_chunks("doc-x", limit=20)}
+    assert rows["doc-x-c0"]["extract_status"] == "done"
+    assert sorted(rows["doc-x-c0"]["entities"]) == ["DeerFlow", "Gateway"]
+    assert rows["doc-x-c1"]["extract_status"] == "failed"
+    assert rows["doc-x-c2"]["extract_status"] == "empty"
+    assert rows["doc-x-c3"]["extract_status"] == "done"
+    assert rows["doc-x-c3"]["entities"] == ["Parser"]
+    assert rows["doc-x-c4"]["extract_status"] == "failed"
+    assert rows["doc-x-c5"]["extract_status"] == "empty"
+    assert stats.touched_entities == {"DeerFlow", "Gateway", "Parser"}
+    assert stats.degraded is True  # 2/6 failed = 33% > 30%
+
+
+@pytest.mark.asyncio
+async def test_progress_callback_monotonic_under_concurrency(session_factory):
+    specs = [(f"c{i}", ("第一条 DeerFlow 是一个基于 LangGraph 的智能体" if i % 2 == 0 else "坏切片 坏一")) for i in range(6)]
+    store, graph_store = await _setup_chunks(session_factory, "kb-p", "doc-p", specs)
+    llm = _InflightLLM(routes=[("DeerFlow 是一个基于 LangGraph", _HAPPY_ROUTES[0][1])], default="这不是 JSON", delays=[("坏一", 0.03)])
+    snapshots: list[tuple[int, int]] = []
+
+    async def _on_progress(settled: int, total: int) -> None:
+        snapshots.append((settled, total))
+
+    chunks = await store.list_chunks("doc-p", limit=20)
+
+    await index_document_graph(store, graph_store, None, kb_id="kb-p", doc_id="doc-p", chunks=chunks, llm=llm, embedder=None, gleaning_rounds=0, concurrency=4, progress_callback=_on_progress)
+
+    settled_seq = [s for s, _ in snapshots]
+    assert snapshots, "progress must fire per settled chunk"
+    assert all(t == 6 for _, t in snapshots)
+    assert settled_seq == sorted(settled_seq), "settled must never decrease under concurrency"
+    assert settled_seq[-1] == 6
