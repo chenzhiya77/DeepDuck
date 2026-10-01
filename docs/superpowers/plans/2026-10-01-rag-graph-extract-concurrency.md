@@ -49,7 +49,7 @@
 
 ## Task 3 — 文档与模板（同批，不另起）
 
-- [ ] `backend/AGENTS.md`：RAG 知识库段补一句"图谱腿 chunk 级并发（`rag.extract_concurrency`，默认 8，实测膝点）"+ 换端点重推公式。
+- [ ] `backend/AGENTS.md`：RAG 知识库段补一句"图谱腿 chunk 级并发（`rag.extract_concurrency`，默认 8，实测膝点）"+ 换端点重推公式 + D7 选型三标准（不带思考/JSON 遵从/解码快）。
 - [ ] `config.example.yaml` rag 块补 `extract_concurrency: 8`（与 `worker_concurrency` 相邻）。
 - [ ] spec §6 影响面核对：源文件数、配置键数与实际改动一致（不一致就地更正 spec）。
 

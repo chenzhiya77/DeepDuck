@@ -1,6 +1,6 @@
 # RAG 图谱腿 chunk 级并发 —— 设计
 
-**Status:** ✅ **已定稿（2026-10-01）** —— **待拍清零：D1 已裁（结构性）/ D2 已裁 = 甲（`rag.extract_concurrency` 默认 8，实测膝点）/ D3 已裁 = 乙（瞬态重试 2 次后按 chunk 软失败）/ D4 已裁（gleaning 留 chunk 内）/ D5 已裁 = 二期（实体名 embed 不攒批）/ D6 非目标固定**。配套 plan：[2026-10-01-rag-graph-extract-concurrency.md](../plans/2026-10-01-rag-graph-extract-concurrency.md)（同批成对）。
+**Status:** ✅ **已定稿（2026-10-01）** —— **待拍清零：D1 已裁（结构性）/ D2 已裁 = 甲（`rag.extract_concurrency` 默认 8，实测膝点）/ D3 已裁 = 乙（瞬态重试 2 次后按 chunk 软失败）/ D4 已裁（gleaning 留 chunk 内）/ D5 已裁 = 二期（实体名 embed 不攒批）/ D6 非目标固定 / D7 已裁（抽取不带思考 + 选型三标准）**。**2026-10-01 追补两笔**：§2.1 多模型膝点对照（含探针口径教训）＋ D7。配套 plan：[2026-10-01-rag-graph-extract-concurrency.md](../plans/2026-10-01-rag-graph-extract-concurrency.md)（同批成对）。
 
 本对一件事：**图谱抽取腿从"逐 chunk 串行"改为"chunk 级有界并发"**，并发数 N 由 2026-10-01 真调用实测定为 8。除执行顺序由"逐个"变"并发"外，**语义零变化**（同样的抽取结果、同样的落库、同样的断点续跑与软失败契约）。
 
@@ -51,6 +51,17 @@ N = min( (RPM ÷ 60) × T ,  (TPM × T) ÷ (60 × K) ,  文档粒度需要 )   �
 T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 ```
 
+### 2.1 多模型膝点对照（2026-10-01 追加实测，同 chunk/同探针）
+
+| 模型（端点） | 串行 T 中位 | 输出/次 | burst8 / burst16 吞吐 | 膝点 |
+|---|---|---|---|---|
+| mimo-v2.6-flash（`api.xiaomimimo.com/v1`，现用） | 11.15s | ~1K | 0.76 / 0.78 req/s（平） | **8**（唯一在 8 饱和的） |
+| mimo-v2.6-pro（同端点） | 23.59s | ~1.3K | 0.16 / 0.28（仍涨） | >16（straggler 至 57s） |
+| deepseek-flash **思考开**（`api.deepseek.com`，探针默认口径） | 7.73s | 1.6K–14K | 0.21 / 0.32（仍涨） | >16（思考 token 计入 completion） |
+| deepseek-flash **思考关**（生产口径：条目 `when_thinking_disabled → thinking:{type:disabled}`） | **3.06s** | ~800 | **2.09 / 3.24（仍涨）** | >16（全场最快：比 flash 单发快 3.6×、吞吐高 4×） |
+
+两条结论：**① N 是「模型×端点×档位」组合属性**——默认 8 只对现用 flash 成立，换 `extract_model` 必须重探（burst8/16 两发即可定膝点）；**② 探针必须带生产同款 thinking 开关**，否则数字口径全偏（deepseek 那行"输出爆炸/成本红旗"即探针误开思考所致，生产口径撤销）。deepseek-flash（思考关）是 `extract_model` 的现成提速选项，但 **JSON 可解析性未验**，换前须过解析成功率一关。
+
 ## 3. 设计
 
 ### 3.1 D1 并发结构（已裁：结构性）
@@ -71,11 +82,12 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 
 **乙：`extract_graph` 内对 API 级瞬态错误退避重试 2 次（0.5s×2ⁿ，与 `embedder_openai.py:198-214` 同风格），仍失败则按 chunk 软失败**——记 `extract_status=failed` + `error` 原因、继续其余 chunk（与 `ExtractionError` 同路径）。甲（只软失败不重试）已否：偶发 429 会让 chunk 白丢一次抽取；丙（维持现状）已否：整篇打挂的失败面配不上并发化。注意 `factory.py:402` 的 `max_retries=1` 不动——重试预算收在抽取这一层，不放大到所有模型调用。
 
-### 3.4 D4–D6 边界（已裁）
+### 3.4 D4–D7 边界（已裁）
 
 - **D4**：gleaning 那一轮**留在 chunk 内部串行**（对话式追问，第二问带第一答，不可并行）——每 chunk 仍 2 次调用，chunk 与 chunk 之间并行。
 - **D5**：每 chunk 的实体名 embed（`:166`）**一期不攒批**（N 路下已是 N 个并行 embed 调用，够用）；攒批列二期。
 - **D6 非目标**：不与向量腿并行（向量腿秒级，重叠收益小、进度模型要重写）；不动生成 wiki、解析缓存、`worker_concurrency`、`gleaning_rounds`；不恢复限速旋钮。
+- **D7 抽取不带思考（已裁，2026-10-01 追补）**：图谱抽取是批量、高频、schema 明确的离线任务，**约定保持 `thinking_enabled=false`**（现状即如此：`extractor.py:125` 不传该参、工厂默认 `False`，`factory.py:269`；条目 `when_thinking_disabled` 随请求下发）。依据 = 思考实测单发慢 2.5×、token 贵 2–17×（§2.1 deepseek 两行），而质量增量未证明。**`extract_model` 选型三标准**：① 不开思考 ② 严格 JSON 遵从好 ③ 解码快。怀疑思考能提质量时走 Layer-1 评测（golden 集 recall@k）做 A/B，不拍脑袋。**二期候选（待裁）**：思考开关的 A/B 评测、输出瘦身（description 可选/短化）、`gleaning_rounds` 可配——均不动本期范围。
 
 ### 3.5 进度与并发安全（不变式）
 
