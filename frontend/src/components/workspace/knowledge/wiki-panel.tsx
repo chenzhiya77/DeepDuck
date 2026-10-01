@@ -207,7 +207,7 @@ export function WikiPanel({
     >
       {/* Section header: collapse toggle + count + select-all checkbox. The
           toggle and the checkbox are siblings so neither nests in a button. */}
-      <div className="flex shrink-0 items-center gap-1 bg-[var(--wiki-ai-bg)] pr-3 transition-colors hover:bg-[var(--wiki-ai-bg-hover)]">
+      <div className="flex shrink-0 items-center gap-1 bg-[var(--wiki-ai-bg)] pr-3 pl-1.5 transition-colors hover:bg-[var(--wiki-ai-bg-hover)]">
         {/* 生成条目头部右键（2026-09-04）：承接搜索框旁 ⋯ 菜单的「更新百科/重建百科」
             （此前头部右键无动作）。左键仍是展开/收起。 */}
         <ContextMenu>

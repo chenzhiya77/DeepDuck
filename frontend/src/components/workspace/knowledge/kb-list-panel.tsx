@@ -130,18 +130,20 @@ export function KbListPanel({
 
       {/* 百科 Tab 容器同款 overlay 滚动条（2026-09-04）：库列表内滚改 ScrollArea
           （type="scroll"、停 2s 淡出），取代原生 overflow-y-auto。 */}
+      {/* px-2 在内容层而非 Root（焦点环修复 2026-10-02）：裁剪盒是 ScrollArea 视口自己，
+          Root 的留白挡不住外扩 3px 的 focus ring——留白下移到 ul/分组层后行几何不变。 */}
       <ScrollArea
-        className="flex-1 px-2 pb-2"
+        className="flex-1 pb-2"
         scrollHideDelay={2000}
         type="scroll"
       >
         {personalOpen &&
           (kbs.length === 0 ? (
-          <p className="text-muted-foreground px-2 py-6 text-center text-xs">
+          <p className="text-muted-foreground px-4 py-6 text-center text-xs">
             {tk.emptyKbList}
           </p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-0.5 px-2 py-1">
             {kbs.map((kb) => {
               const isActive = kb.id === selectedKbId;
               return (
@@ -214,7 +216,7 @@ export function KbListPanel({
 
         {/* 共享知识库（2026-09-10 纯展示）：后期规划的共享库分组预览——静态行
             （无按钮、不可拖拽、不可选中），数据未接后端，仅演示信息架构。 */}
-        <div className="mt-4 flex flex-col gap-0.5" data-testid="kb-shared-group">
+        <div className="mt-4 flex flex-col gap-0.5 px-2" data-testid="kb-shared-group">
           <div className="flex items-center gap-1.5 px-2 pb-1">
             <button
               aria-expanded={sharedOpen}

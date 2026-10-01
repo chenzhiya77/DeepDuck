@@ -615,7 +615,7 @@ export function ManualCardPanel({
           计数徽章取 total（tab 激活即有），收起态也显示，与生成条目一致。
           整行不再 hover 全亮（2026-09-04）：本区头部有多个条目（我的条目 + 用户
           抽屉），改为每个条目各自 hover 亮起（见标题按钮与 DrawerTab）。 */}
-      <div className="group/header flex shrink-0 items-center gap-1 bg-[var(--wiki-card-bg)] pr-3">
+      <div className="group/header flex shrink-0 items-center gap-1 bg-[var(--wiki-card-bg)] pr-3 pl-1.5">
         {/* 箭头 = 唯一的展开/收起控制（2026-09-04）：因为「我的条目」下有多个
             抽屉条目要来回切换，标题本身改为「切回首页」，收起交给这个箭头。 */}
         <button

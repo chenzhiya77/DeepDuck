@@ -76,15 +76,18 @@ export function WikiEditDialog({
             Root 封顶后由原语 Viewport 的 max-h-inherit 继承，滚动容器才有界。
             90vh 减去对话框 chrome（p-6×2 + border ≈ 50px）再留 6px 余量，
             保证先触到的是这层封顶而不是 DialogContent 的 overflow-hidden 裁剪。
-            -mr-6：Radix 滚动条绝对定位在 Root 右缘，Root 默认停在 p-6 内边距里会让
+            -mx-6：Radix 滚动条绝对定位在 Root 右缘，Root 默认停在 p-6 内边距里会让
             滑块离窗缘差 24px；负右边距把 Root 伸进沟槽贴齐对话框右缘，
-            内容包装的 pr-6 保持文字缩进不变（滑块落在空白沟槽内不压字）。 */}
+            内容包装的 px-6 保持文字缩进不变（滑块落在空白沟槽内不压字）。
+            负左边距同理反向：ViewPort 内联 overflow-x:hidden 会裁掉焦点环外扩的
+            3px（字段左缘与裁剪边零间隙时整条左环被吞），Root 向左伸进沟槽、
+            内容包装 pl-6 补回缩进后，环落在裁剪盒内才画得全。 */}
         <ScrollArea
-          className="-mr-6 max-h-[calc(90vh-3.5rem)] min-h-0 min-w-0 flex-1"
+          className="-mx-6 max-h-[calc(90vh-3.5rem)] min-h-0 min-w-0 flex-1"
           scrollHideDelay={2000}
           type="scroll"
         >
-          <div className="flex min-w-0 flex-col gap-4 pr-6">
+          <div className="flex min-w-0 flex-col gap-4 px-6">
             <DialogHeader>
               <DialogTitle>{te.title}</DialogTitle>
               <DialogDescription>{te.description}</DialogDescription>

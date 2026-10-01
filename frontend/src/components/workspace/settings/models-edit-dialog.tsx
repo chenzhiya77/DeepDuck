@@ -171,11 +171,11 @@ export function ModelsEditDialog({
             auto height capped by max-h (indefinite), so a flex-1 child inherits no
             bound and the viewport never becomes a scroll container. */}
         <ScrollArea
-          className="-mr-6 max-h-[calc(90vh-7rem)] min-h-0 min-w-0 flex-1"
+          className="-mx-6 max-h-[calc(90vh-7rem)] min-h-0 min-w-0 flex-1"
           scrollHideDelay={2000}
           type="scroll"
         >
-          <div className="flex min-w-0 flex-col gap-4 pr-6">
+          <div className="flex min-w-0 flex-col gap-4 px-6">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-1.5">
                 {M.editTitle}

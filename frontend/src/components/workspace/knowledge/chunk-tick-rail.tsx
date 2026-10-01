@@ -142,7 +142,8 @@ export function ChunkTickRail({
           style={{ height: bandHeight }}
         >
           <ScrollArea className="size-full" viewportRef={popupScrollRef}>
-            <div className="flex flex-col">
+            {/* p-1：跳转行全宽贴视口会把外扩 3px 的 focus ring 切掉，行盒内缩 4px 给环让位 */}
+            <div className="flex flex-col p-1">
               {Array.from({ length: total }, (_, index) => {
                 const preview = previews.get(index) ?? null;
                 const isActive = index === clampedActive;
