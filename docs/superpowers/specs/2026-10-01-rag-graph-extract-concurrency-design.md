@@ -69,7 +69,7 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 `graph/indexer.py::index_document_graph` 的 `for chunk in pending`（`:146`）改为：
 
 - `asyncio.Semaphore(N)` + `asyncio.gather`，每 chunk 一个协程任务，任务体 = 现循环体原样（`extract_graph` → 实体名 embed → `normalize_extraction` → `graph_store.upsert_entities/relations` → `store.update_chunk_extract`）；
-- 每任务**返回**本 chunk 的结算（done/empty/failed + 实体名列表），主协程统一合并 `backfill` / `touched_entities` / `stats`，**结尾的两笔批写保持现状一次执行**（`set_chunk_entities` `:181-182`、实体向量批 `:186-202`）；
+- 每任务**返回**本 chunk 的结算（done/empty/failed + 实体名列表），主协程统一合并 `backfill` / `touched_entities` / `stats`，**按 `pending` 输入序归并**（Task 0 定形：输出与串行版逐项含顺序等价，`test_graph_indexer.py:185` 的列表序断言因此不动）；**结尾的两笔批写保持现状一次执行**（`set_chunk_entities` `:181-182`、实体向量批 `:186-202`）；
 - 单 chunk 失败隔离与现在相同（`ExtractionError` → `extract_status=failed` + 继续），断点续跑的 `pending` 过滤（`:132`）不动。
 
 ### 3.2 D2 并发数来源（已裁 = 甲）
@@ -91,7 +91,7 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 
 ### 3.5 进度与并发安全（不变式）
 
-`progress_callback` 的 `settled` 计数（`worker.py:348-350`）在并发下的安全性：`settled += 1` 与 `await _report()` 之间没有让出点竞争窗口（asyncio 协作式调度，单线程），计数保持**单调**；任务完成顺序不定 ⇒ 现有用例的顺序型断言改为**集合语义**断言（见 §4）。
+`progress_callback` 的 `settled` 计数（`worker.py:348-350`）在并发下的安全性：`settled += 1` 与 `await _report()` 之间没有让出点竞争窗口（asyncio 协作式调度，单线程），计数保持**单调**；输出侧由主协程按 `pending` 输入序归并（D1，Task 0 核实定形）⇒ `stats`/落库与串行版**逐项含顺序**等价，现有顺序型断言**全部不动**（全文件仅 `:185` 一处真顺序断言，用保序合并化解，见 §4）。
 
 ### 3.6 D8 思考 A/B 并入本对（已裁 = 放一起，2026-10-01）
 
@@ -111,7 +111,7 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 
 **RED（并发化前先写）**：
 1. **并发上限生效**：桩 LLM 记录在飞峰值，C=12、N=4 时峰值 >1 且 ≤4；
-2. **结果集等价**：混合 done/empty/failed 的 chunk 集，乱序完成后 `stats`/落库内容与串行版逐项相等；
+2. **结果等价**：混合 done/empty/failed 的 chunk 集，`stats`/落库内容与串行基线**逐项含顺序**相等（Task 0 定形：实现保序归并；`test_graph_indexer.py:185` 列表序断言**不动**，其余断言本就集合/计数语义）；
 3. **进度单调**：`progress_callback` 序列单调不减且终值 = total；
 4. **瞬态软失败**：桩 LLM 第 1 次抛 APIError、第 2 次成功 ⇒ chunk 照常 done；连续抛 ⇒ 该 chunk `failed`、其余 chunk 不受影响、文档不整体打挂。
 

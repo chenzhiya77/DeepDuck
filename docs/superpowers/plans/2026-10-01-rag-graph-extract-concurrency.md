@@ -21,22 +21,22 @@
 ## 硭约束
 
 - **断点续跑契约不动**：`pending` 过滤（`indexer.py:132`）与 `extract_status` 逐 chunk 落库是并发化的前提，任何"先聚合再落库"的改法都算违约。
-- **进度单调**：`progress_callback`（`worker.py:348-350`）在并发下必须单调不减、终值 = total；现有顺序型断言改**集合语义**。
+- **进度单调 + 输出保序**：`progress_callback`（`worker.py:348-350`）在并发下必须单调不减、终值 = total；结算按 `pending` 输入序归并，`stats`/落库与串行版逐项含顺序等价（Task 0 ①②）。
 - **失败面只收窄不放大**：D3 之后，任何单 chunk 失败（解析失败或瞬态耗尽）只标该 chunk `failed`，不得把整篇文档打成 `failed`。
 - **默认值有实测背书**：N=8 的依据是 2026-10-01 真调用三组数据（spec §2）；换端点按 spec §2 公式重推，不许把 8 当真理。
 - **A/B 对照变量唯一**（spec §3.6）：双库除 thinking 外逐参相同（同模型/同 N/同 chunker/同 embedding），否则对比无效；B 组慢是预期，不许"优化掉"。
 
 ## Task 0 — 开工前核实（4 项，回填结论再开工）
 
-- [ ] ① 扫 `backend/tests/knowledge/graph/test_graph_indexer.py` 全部用例，列出依赖**执行顺序**的断言清单（预计 `test_graph_indexer.py:123/182/213/238/264` 五处调用点周边），逐条标注"改集合语义 / 不动"。
-- [ ] ② 核实并发化插入点与结果收集面：循环体 `indexer.py:146-178`、结尾批写 `:180-202`；确认 `backfill`/`touched_entities`/`stats` 三个收集点的合并语义在 gather 后不变。
-- [ ] ③ 核实参数贯通点：`app_config.py` RagConfig（`worker_concurrency` 在 `:241`，新字段插其后）→ `worker.py` 进图谱腿处（`:352-367` 调用点）→ `index_document_graph` 签名（`indexer.py:116`）；确认 `gleaning_rounds` 走构造器（`worker.py:193/206`）与新字段**现读**策略不冲突。
-- [ ] ④ 核实文档/模板落点清单：`backend/AGENTS.md` RAG 旋钮段、`config.example.yaml` rag 块（`worker_concurrency` 在 `:2626`）、`backend/tests/test_rag_config.py`（被删旋钮留下的用例位可复用）。
+- [x] ① **顺序断言清单**（`tests/knowledge/graph/test_graph_indexer.py` 全 5 用例扫完）：**唯一真顺序断言 = `:185` `stats.failed_chunk_ids == [c1, c2]`**。处置升级：**不改断言，改实现保序**——gather 后按 `pending` 输入序归并结算，输出与串行版**逐项含顺序**等价（契约更强）。其余断言全为计数/集合/sorted/按 key 取值（`test_end_to_end` :126-140/:144-146/:155-157/:166-169；`test_resume` :216-223（单 pending ⇒ `calls[0]` 恒定）；`:240`、`:266-268`）⇒ **全部不动**。桩安全：`_RoutingLLM` 按内容路由、`_StubEmbedder` 确定性 one-hot，均并发安全；⚠️ 并发后 `llm.calls` 顺序不定，新用例断言调用只用计数/集合。
+- [x] ② **并发化插入点与收集面**：循环体 `indexer.py:146-178`、结尾批写 `:180-202` 复核无误。三收集点在"每任务返回结算、主协程按 pending 序归并"下与串行逐项等价：`backfill`（dict 按 key 合并）/ `touched_entities`（set 并）/ `stats`（计数 + 保序列表）；`degraded` 在归并后由 `failed/total` 算（`:204`）不变。per-chunk `update_chunk_extract` 是独立行写、乱序无害；`settled += 1` 与 `await _report()` 无让出点竞争、单调成立；结尾两笔批写保持主协程单次执行。SQLite 并发写：`worker_concurrency=2` 今天已跨文档并发写同库 ⇒ 同文档并发不引入新级别，无需额外锁。
+- [x] ③ **参数贯通点**：新字段插 `app_config.py:241`（`worker_concurrency`）之后（`extract_rate_limit_rps` 已删、位置确认）；`indexer.py:116` 签名加 `concurrency: int = 1`；调用点 `worker.py:355-367`。**读取=图谱腿入口现读 `get_app_config().rag.extract_concurrency`**（`worker.py:352` 附近；`:518` card_mode 先例、`get_app_config` 已导入）⇒ 热生效、**`app.py:355` 不动**（不经构造器）。`gleaning_rounds` 走构造器（`worker.py:193/206`）与现读策略分属不同参数，确认无冲突。
+- [x] ④ **文档/模板落点**：`config.example.yaml:2626`（rag 块 `worker_concurrency: 2` 行后加 `extract_concurrency: 8`）；`backend/AGENTS.md` 两处（`:1230` Ingestion 段补并发句+重推公式+D7 三标准；`:940` Routers 表 rag 配置块清单加 `extract_concurrency`）；`backend/tests/test_rag_config.py` 复用槽位三模式（`test_loads_defaults` :11 / `test_overridable_from_dict` :21 / `test_rejects_invalid_worker_concurrency` :47）。
 
 ## Task 1 — 并发化（RED → GREEN）
 
 - [ ] **RED① 并发上限生效**：桩 LLM 记录在飞峰值；C=12、N=4 时峰值 >1 且 ≤4 —— 今日串行实现下红（峰值恒 1）。
-- [ ] **RED② 结果集等价**：混合 done/empty/failed 的 chunk 集，`stats` 与落库内容断言为**集合语义**（与串行基线逐项相等）—— 顺序断言按 Task 0 ①清单就地改写。
+- [ ] **RED② 结果等价**：混合 done/empty/failed 的 chunk 集，`stats` 与落库内容与串行基线**逐项含顺序**相等（Task 0 ① 定形：实现保序归并，`test_graph_indexer.py:185` 列表序断言**不动**，其余断言本就集合/计数语义、零改写）。
 - [ ] **RED③ 进度单调**：`progress_callback` 收到的序列单调不减且终值 = total。
 - [ ] **GREEN**：`graph/indexer.py` 循环改 `Semaphore(N) + gather`（每任务返回结算、主协程统一合并）；`app_config.py` 加 `extract_concurrency`（默认 8，`ge=1, le=32`，描述里带 spec §2 公式）；worker 进图谱腿时现读传参；`test_rag_config.py` 补默认值/校验用例。三条 RED 转绿。
 - [ ] **neuter①**：N 置 1 ⇒ RED① 红（峰值 ≤1）、RED②③ 仍绿（语义等价）；**neuter②**：去掉结果统一合并（改回共享可变收集）⇒ RED② 红。两项各自可复现后还原。
