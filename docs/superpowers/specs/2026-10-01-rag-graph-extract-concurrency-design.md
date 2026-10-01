@@ -1,6 +1,6 @@
 # RAG 图谱腿 chunk 级并发 —— 设计
 
-**Status:** ✅ **已定稿（2026-10-01）** —— **待拍清零：D1 已裁（结构性）/ D2 已裁 = 甲（`rag.extract_concurrency` 默认 8，实测膝点）/ D3 已裁 = 乙（瞬态重试 2 次后按 chunk 软失败）/ D4 已裁（gleaning 留 chunk 内）/ D5 已裁 = 二期（实体名 embed 不攒批）/ D6 非目标固定 / D7 已裁（抽取不带思考 + 选型三标准）/ D8 已裁 = 思考 A/B **并入本对**（用户裁「放一起」，2026-10-01）**。**2026-10-01 追补三笔**：§2.1 多模型膝点对照（含探针口径教训）、D7、D8。配套 plan：[2026-10-01-rag-graph-extract-concurrency.md](../plans/2026-10-01-rag-graph-extract-concurrency.md)（同批成对）。
+**Status:** ✅ **已定稿（2026-10-01）** —— **待拍清零：D1 已裁（结构性）/ D2 已裁 = 甲（`rag.extract_concurrency` 默认 8，实测膝点）/ D3 已裁 = 乙（瞬态重试 2 次后按 chunk 软失败）/ D4 已裁（gleaning 留 chunk 内）/ D5 已裁 = 二期（实体名 embed 不攒批）/ D6 非目标固定 / D7 已裁（抽取不带思考 + 选型三标准）/ D8 已裁 = 思考 A/B **并入本对**（用户裁「放一起」，2026-10-01）**。**2026-10-01 追补三笔**：§2.1 多模型膝点对照（含探针口径教训）、D7、D8。**2026-10-02：D8 结论已拍 = 甲+wiki**（不落思考旋钮、D7 转正为裁定、wiki 生成一并钉不带思考，见 §3.6 结论）；**本对已交付**（plan 32/32 框收官）。配套 plan：[2026-10-01-rag-graph-extract-concurrency.md](../plans/2026-10-01-rag-graph-extract-concurrency.md)（同批成对）。
 
 本对一件事：**图谱抽取腿从"逐 chunk 串行"改为"chunk 级有界并发"**，并发数 N 由 2026-10-01 真调用实测定为 8。除执行顺序由"逐个"变"并发"外，**语义零变化**（同样的抽取结果、同样的落库、同样的断点续跑与软失败契约）。
 
@@ -87,7 +87,7 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 - **D4**：gleaning 那一轮**留在 chunk 内部串行**（对话式追问，第二问带第一答，不可并行）——每 chunk 仍 2 次调用，chunk 与 chunk 之间并行。
 - **D5**：每 chunk 的实体名 embed（`:166`）**一期不攒批**（N 路下已是 N 个并行 embed 调用，够用）；攒批列二期。
 - **D6 非目标**：不与向量腿并行（向量腿秒级，重叠收益小、进度模型要重写）；不动生成 wiki、解析缓存、`worker_concurrency`、`gleaning_rounds`；不恢复限速旋钮。
-- **D7 抽取不带思考（已裁，2026-10-01 追补）**：图谱抽取是批量、高频、schema 明确的离线任务，**约定保持 `thinking_enabled=false`**（现状即如此：`extractor.py:125` 不传该参、工厂默认 `False`，`factory.py:269`；条目关闭形态随请求下发——有 `when_thinking_disabled` 显式关 / 只有 enabled 形态工厂合成关 / 什么都没接则吃端点默认，`factory.py:353-372`）。依据 = 思考实测单发慢 2.5×、token 贵 2–17×（§2.1 deepseek 两行），而质量增量未证明。**`extract_model` 选型三标准**：① 不开思考 ② 严格 JSON 遵从好 ③ 解码快。**附注**：`reasoning_effort`（默认档）是另一轴、关思考也照发（实测 wire 可见），deepseek 无害但个别端点可能报错。**二期候选（待裁）**：输出瘦身（description 可选/短化）、`gleaning_rounds` 可配——不动本期范围。（思考 A/B 已由 D8 提前进本对。）
+- **D7 抽取不带思考（已裁，2026-10-01 追补；2026-10-02 甲转正为"裁定"）**：图谱抽取是批量、高频、schema 明确的离线任务，**裁定保持 `thinking_enabled=false`**（现状即如此：`extractor.py:125` 不传该参、工厂默认 `False`，`factory.py:269`；条目关闭形态随请求下发——有 `when_thinking_disabled` 显式关 / 只有 enabled 形态工厂合成关 / 什么都没接则吃端点默认，`factory.py:353-372`）。依据 = 思考实测单发慢 2.5×、token 贵 2–17×（§2.1 deepseek 两行），而质量增量未证明。**`extract_model` 选型三标准**：① 不开思考 ② 严格 JSON 遵从好 ③ 解码快。**附注**：`reasoning_effort`（默认档）是另一轴、关思考也照发（实测 wire 可见），deepseek 无害但个别端点可能报错。**wiki 生成（`wiki_model` 腿）同裁定不带思考**（2026-10-02 随甲一并钉：机制同源=构造不传开关/条目形态/端点默认；市场同向=GraphRAG community reports、RAGFlow Wiki 模板均非思考模型；wiki 内容自图谱二手传递，思考增益更不可辨）。**二期候选（待裁）**：输出瘦身（description 可选/短化）、`gleaning_rounds` 可配——不动本期范围。（思考 A/B 已由 D8 提前进本对，结论见 §3.6。）
 
 ### 3.5 进度与并发安全（不变式）
 
@@ -104,6 +104,8 @@ T = 单次抽取延迟（本机 11.15s），K = 每次 token（本机 ~1.9K）
 **落法（条件）**：值得 ⇒ 新键 `rag.extract_thinking`（默认 false）+ `get_extract_llm` 传参一行 + 文档；不值得 ⇒ D7 从"约定"转正为"裁定"，候选关闭。
 
 **已知代价提示**：B 组（思考开）抽取会显著慢（实测 out 5.3K–17.7K、T 20–62s），属预期，用同 N=8 并发摊平；两组都跑完才算一次完整 A/B。
+
+**结论（2026-10-02 判定 = 甲+wiki，已交付）**：三列实测（39 chunk golden 语料、Layer-1 图谱路 Recall@5，n=20）——A 思考关 **0.725** / B1 思考开·条目原 8192 预算 **0.050**（35/39 片 JSON 被思考吃穿预算截断）/ B2 思考开·32K 预算 **0.767**；剔除 2 题无标注问（n=18）B2−A = **+4.6pp**，但逐题仅 3 题翻转（2 涨 1 跌、单题粒度 5.6pp）=**噪声级证据**，成本 4× token（completion 9.5×，reasoning 602K）· 13.6× 单发时延。**判定：不值得补 `rag.extract_thinking` 旋钮**——D7 转正为裁定、**wiki 生成一并钉不带思考**，Task 6 按替代路径关闭。**结构性注记**：① 生产抽取条目 `qwen3.8-flash` 无 thinking 形态，旋钮在今日配置上是空转（wire 两态逐字节相同），要开思考必须「换条目+预算随思考抬」两件同做；② 市场对照同向（LightRAG 明文"thinking mode disabled"、Graphiti 小模型+"no reasoning"、GraphRAG gpt-4.1+警告 o 系 CoT 伤抽取；全行业无抽取/摘要思考开关先例，思考只出现在 QUERY/回答侧）；③ 若将来要追"思考帮概念类抽取"假设，先扩 golden（每 category 20+ 题）再谈——查询侧思考是唯一保留的潜在落点（LightRAG 位置），不在本对范围。
 
 ## 4. 测试计划（TDD，先红后绿）
 

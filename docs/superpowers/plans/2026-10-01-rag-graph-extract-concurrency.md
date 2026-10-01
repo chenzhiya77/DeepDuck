@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-01-rag-graph-extract-concurrency-design.md](../specs/2026-10-01-rag-graph-extract-concurrency-design.md)
-**Status:** **待开工（2026-10-01 起草，与 spec 同批成对；同日两轮追补 §2.1/D7/D8）**。待拍：无（D1–D8 已裁，见 spec；D8＝思考 A/B「放一起」并入本对）。复选框共 **32**（Task 6 为条件任务，仅 A/B 判定"值得"时执行）。
+**Status:** ✅ **已交付（2026-10-02 收官）** —— Task 0–5 全交付，Task 6 按替代路径关闭（判定 = **甲+wiki 一并钉**：不落思考旋钮，D7 转正为裁定、wiki 生成同裁定不带思考）。复选框 **32/32 全勾**（T6①②③ 为划掉取消 + 勾替代路径关闭）。提交号：Task 0 `f3dc0bb8` / Task 1 `3423f768`+`860410b2` / Task 2 `63645d16` / Task 3 `13a07c5c` / Task 4 `4cf519c8` / Task 5 `98833590` / 收官=本笔。**实测两表**：Task 4 图谱腿墙钟 串行 260–294s → N=8 **64s**（≤90s 过线，双文档 80s≤128s、65 chunk 零 failed）；Task 5 思考 A/B 图谱路 Recall@5 = A 0.725 / B1 0.050（同参截断）/ B2 0.767（+4.6pp=3 题噪声级，成本 4× token·13.6× 单发）。
 
 **Architecture:** `config.yaml → RagConfig.extract_concurrency`（默认 8，`ge=1, le=32`）→ worker 进图谱腿时 `get_app_config()` 现读（`table.card_mode` 先例，热生效）→ `index_document_graph(..., concurrency=N)` → `Semaphore(N) + gather` 并发跑 pending chunks，每 chunk 结果回传统一结算；`extract_graph` 内对 API 级瞬态错误退避重试 2 次后按 chunk 软失败。**除执行顺序（串行→并发）与 D3 的失败面收窄外，语义零变化**。
 
@@ -77,15 +77,15 @@
   | B2 | 思考开·32K 预算 | 0.883 | **0.767**（1.00/0.80/1.00/0.27） | 0.800 | 0 |
 
   向量路三组逐位相同（0.883/0.90）=**对照干净**，差异全部落在图谱路。**口径二（剔除 2 题无标注的 global 问，n=18）**：A=0.806 / B2=0.852 ⇒ **+4.6pp**，但逐题 diff 只 **3 题翻转**（q013 concept 0→1、q019 global 0→0.33、q018 global 0.5→0 **反跌**）——2 涨 1 跌、单题粒度=5.6pp，点估计过 3pp 线而**稳健性=单题噪声级**。同批发现：`graph_search` 查询侧实体抽取偶发 malformed JSON（A/B 各 2–3 例，双侧对称、压低绝对值但不影响对比）；q013 单题翻转提示「思考可能帮概念类抽取」——1 题证据，要判 category 差异得先扩 golden。
-- [ ] **A/B⑤ 判定交拍**：对比表已交用户（2026-10-02）：**我的判读=不值得现在落旋钮**（门槛本意是稳健提升；+4.6pp 由 3 题翻转构成、其中 1 题反跌，撑不起 4× token / 13.6× 单发时延；且 B1 列显示直开思考在条目原预算下会把图谱打穿）。**结构性前提**：生产的 `qwen3.8-flash` 条目无 thinking 形态 ⇒ `rag.extract_thinking` 旋钮在今天配置上是**空转**，只对 thinking-capable 条目有意义——落法若走旋钮必须连带「换条目+预算随思考抬」两件。**结论待用户拍板后回写 spec D8**（"补旋钮"或"D7 转正"）。
+- [x] **A/B⑤ 判定交拍**：对比表已交用户（2026-10-02）：**我的判读=不值得现在落旋钮**（门槛本意是稳健提升；+4.6pp 由 3 题翻转构成、其中 1 题反跌，撑不起 4× token / 13.6× 单发时延；且 B1 列显示直开思考在条目原预算下会把图谱打穿）。**结构性前提**：生产的 `qwen3.8-flash` 条目无 thinking 形态 ⇒ `rag.extract_thinking` 旋钮在今天配置上是**空转**，只对 thinking-capable 条目有意义——落法若走旋钮必须连带「换条目+预算随思考抬」两件。**判定已拍（2026-10-02）= 甲 + wiki 一并钉**：不落旋钮，D7 从"约定"转正为"裁定"、**wiki 生成同裁定不带思考**；结论已回写 spec D8（§3.6 结论块）。
 
 ## Task 6 — （条件任务，仅 A/B 判定"值得"时执行）思考旋钮
 
-- [ ] **T6①** `rag.extract_thinking` 新键（默认 false）+ `get_extract_llm` 传参一行（`extractor.py:125` 处把开关透传 `create_chat_model`）。
-- [ ] **T6②** 用例：开/关两态构造断言（请求体 `thinking:{type:enabled/disabled}` 各钉一条）+ `test_rag_config.py` 键校验。
-- [ ] **T6③** 文档三处（AGENTS.md / config.example.yaml / spec 回写"已交付"）。
-- [ ] **T6 替代路径**：若 A/B 判定"不值得"——本 Task 不执行，勾此行写明"不值得，D7 转正"即关闭。
+- [x] ~~**T6①** `rag.extract_thinking` 新键（默认 false）+ `get_extract_llm` 传参一行（`extractor.py:125` 处把开关透传 `create_chat_model`）~~ **已取消**（2026-10-02 判定甲+wiki：不落旋钮；替代=D7 转正裁定 + wiki 一并钉，见 spec §3.6 结论）。
+- [x] ~~**T6②** 用例：开/关两态构造断言（请求体 `thinking:{type:enabled/disabled}` 各钉一条）+ `test_rag_config.py` 键校验~~ **已取消**（同上）。
+- [x] ~~**T6③** 文档三处（AGENTS.md / config.example.yaml / spec 回写"已交付"）~~ **已取消**（同上；文档侧改由 spec D8 结论块承担）。
+- [x] **T6 替代路径**：**不值得，D7 转正**——2026-10-02 判定**甲+wiki 一并钉**：不补 `rag.extract_thinking`，D7「抽取不带思考」从约定升格为裁定，**wiki 生成（`wiki_model` 腿）同裁定不带思考**；市场对照同向（LightRAG/Graphiti/GraphRAG 全部抽取与摘要走非思考快模型，全行业无抽取思考开关先例）。
 
 ## 交付回写
 
-- [ ] 完成后回写本文件 Status（提交号 + 复选框计数 + 实测表），并同步 spec Status 行一句"已交付"。
+- [x] 完成后回写本文件 Status（提交号 + 复选框计数 + 实测表），并同步 spec Status 行一句"已交付"（本笔完成）。
