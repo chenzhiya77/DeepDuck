@@ -957,7 +957,6 @@ rag:
   # Name of a `models:` entry (its endpoint and API key are then reused).
   # vlm_model: qwen3-vl-plus
   worker_concurrency: 2
-  extract_rate_limit_rps: 5.0
 ```
 
 Deleting a document or a base cascades through its chunks, vectors, graph triples, and wiki entries.

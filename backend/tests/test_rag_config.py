@@ -17,7 +17,6 @@ class TestRagConfig:
         assert config.vlm_model is None  # the vendor literal default retired (2026-09-23 D10.3)
         assert config.extract_model is None
         assert config.worker_concurrency == 2
-        assert config.extract_rate_limit_rps == 5.0
 
     def test_overridable_from_dict(self):
         config = RagConfig(
@@ -28,7 +27,6 @@ class TestRagConfig:
                 "vlm_model": "custom-vlm",
                 "extract_model": "small-json-model",
                 "worker_concurrency": 8,
-                "extract_rate_limit_rps": 1.5,
             }
         )
 
@@ -37,7 +35,6 @@ class TestRagConfig:
         assert config.rerank_model == "custom-rerank"
         assert config.vlm_model == "custom-vlm"
         assert config.worker_concurrency == 8
-        assert config.extract_rate_limit_rps == 1.5
 
     def test_unknown_keys_tolerated(self):
         """AppConfig uses ``extra="allow"``; section models ignore unknown keys
@@ -50,12 +47,6 @@ class TestRagConfig:
     def test_rejects_invalid_worker_concurrency(self):
         with pytest.raises(ValueError):
             RagConfig(worker_concurrency=0)
-
-    def test_rejects_invalid_extract_rate_limit(self):
-        with pytest.raises(ValueError):
-            RagConfig(extract_rate_limit_rps=0)
-        with pytest.raises(ValueError):
-            RagConfig(extract_rate_limit_rps=-1)
 
     def test_caption_generation_defaults(self):
         """A-4 (spec 2026-09-30 D1): the two caption knobs keep today's literal defaults."""
@@ -147,7 +138,6 @@ class TestAppConfigRagSection:
         assert config.rag.rerank_model is None  # no literal default since 2026-09-30 (A-1)
         assert config.rag.vlm_model is None  # follows the RAG default, then the first model
         assert config.rag.worker_concurrency == 2
-        assert config.rag.extract_rate_limit_rps == 5.0
 
     def test_rag_section_overridable_from_dict(self):
         config = AppConfig.model_validate(
@@ -156,14 +146,12 @@ class TestAppConfigRagSection:
                 "rag": {
                     "qdrant_url": "http://qdrant:6333",
                     "worker_concurrency": 4,
-                    "extract_rate_limit_rps": 2.5,
                 },
             }
         )
 
         assert config.rag.qdrant_url == "http://qdrant:6333"
         assert config.rag.worker_concurrency == 4
-        assert config.rag.extract_rate_limit_rps == 2.5
         # Untouched fields keep their defaults.
         assert config.rag.embedding_model is None  # a missing model is a configuration error now (A-1)
 

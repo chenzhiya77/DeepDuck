@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 42
+config_version: 43
 
 # ============================================================================
 # Logging
@@ -2624,8 +2624,6 @@ rag:
   # parse_model_version: vlm             # MinerU cloud model version: pipeline | vlm
   # Max documents the offline indexing worker processes concurrently.
   worker_concurrency: 2
-  # Requests/second cap for graph-extraction LLM calls during indexing.
-  extract_rate_limit_rps: 5.0
   # --- Phase-2 graph-path quality knobs (spec 2026-08-10 D1) ---
   # Max candidate evidence chunks kept per entity / relation source before
   # selection. Set large + graph_hop0_guarantee: 0 to approximate phase-1.

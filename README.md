@@ -1,10 +1,8 @@
 # DeepDuck · Harness RAG
 
-> 一套**内置本地知识库（RAG）子系统**，构建在 **harness agent** 框架之上：不依赖任何外部 RAG 引擎，从文档 / 表格 / 视频的解析与切分，到实体图谱、百科条目、三路检索、工作区管理与检索质量评测，整条链路都在框架内完成。
+> 一套**内置本地知识库（Harness RAG）**，实现于 **DeerFlow**（[bytedance/deer-flow](https://github.com/bytedance/deer-flow)，MIT）的 **harness agent 框架**之上：从文档 / 表格 / 视频的解析与切分，到实体图谱、百科条目、三路检索、工作区管理与检索质量评测，整条链路都由本仓库自己完成，不依赖任何外部 RAG 引擎。
 >
-> 本仓库是一个**通用 agent**——底座是 harness agent 框架（lead agent 与子代理编排、中间件链、沙箱执行、工具 / MCP / 技能、记忆与持久化、网关运行时），其上为本项目实现的 **harness RAG**。框架部分来自 **DeerFlow**（[bytedance/deer-flow](https://github.com/bytedance/deer-flow)，MIT）。除 harness RAG 之外，agent 层还有本项目的自有能力（如「Agent 观测宠物」，见下文）。
->
-> 工作分支：`feat/rag-knowledge-base`
+> 本仓库是一个**通用 agent**——底座是来自 DeerFlow 的 harness agent 框架（lead agent 与子代理编排、中间件链、沙箱执行、工具 / MCP / 技能、记忆与持久化、网关运行时），其上叠加 Harness RAG 与本项目的其它自有能力（如「Agent 观测宠物」，见下文）。
 
 ## 📋 目录
 
@@ -32,6 +30,8 @@
 - **默认不改变既有行为**：三个检索工具是 `opt_in`，只有显式声明 `rag` 工具组的 agent 才会装配；不配置就不影响现有 agent
 - **知识库属主私有**：检索工具执行前先做属主校验，非属主取不到任何内容；共享（`visibility`）为二期预留，当前不做团队共享
 - **agent 只读**：不存在 agent 侧的写入工具——上传、删除、触发解析、生成百科都是人类操作
+
+**工作分支**：`feat/rag-knowledge-base`（默认分支 `main` 仍是上游镜像）
 
 ## 🔍 harness RAG 提供什么
 
@@ -236,7 +236,6 @@ rag:
   rerank_model: qwen3-rerank
   vlm_model: qwen3.7-flash
   worker_concurrency: 2
-  extract_rate_limit_rps: 5.0
 ```
 
 表格与视频摄取默认关闭，分别由 `rag.table.enabled` 与 `rag.video.enabled` 打开。
