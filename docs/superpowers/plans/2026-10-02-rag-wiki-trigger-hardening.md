@@ -43,9 +43,9 @@
 
 ## Task 0 追补 — 开机扫描核实（3 项，回填结论再开工）
 
-- [ ] ① **挂载点**：`worker.start()`（`:216-233`：init_collections → `recover()` → dispatcher）在哪一步排扫描；`recover()` 重入的文档后续自带触发（阈值门）是否会与开机补跑撞车（预期：单飞+合并消化，需核对）。
-- [ ] ② **dirty 查询面**：`WikiStore.list_entries(kb_id, status="dirty")` 是按库的——全库扫描需要什么（现有 `store.list_kbs()` 逐库查 vs 新增一条 distinct kb_id 查询）；选最窄面。
-- [ ] ③ **测试面影响**：`start()` 加扫描后，现有调 `start()` 的用例（`:415`/`:449`/hanging 等）会不会被顺带触发（预期：无 dirty 条目零动作）；`test_new_document_marks_touched_wiki_entries_dirty` 的阈值门断言不受影响（D2 边界）。
+- [x] ① **挂载点**：`start()`（`:216-233`）= init_collections（已兜底）→ `recover()` → dispatcher ⇒ 扫描挂 `recover()` 之后、整段 try/except（含 `build_embedder` 配置错）只记日志。**撞车核对**：recover() 重入文档的后续触发与开机补跑同 KB 相遇 ⇒ 单飞+合并消化，但**口径要合并**——`_wiki_pending` 从 set 升 `dict[str, bool]`（flag=各触发 `require_threshold` 的 AND：任一触发免检则合并轮免检），否则「文档触发先建 runner、开机触发搭 pending」会把免检意图挤掉（尾随按 runner 口径跑回阈值门 ⇒ boot 补跑失灵）。
+- [x] ② **dirty 查询面**：`WikiStore.list_entries(kb_id, status=)` 只按库；`store.list_kbs(owner_id)` **按用户过滤**（开机要全局，不可用）⇒ 选**新增 `WikiStore.list_kb_ids_with_dirty()`**（`SELECT DISTINCT kb_id … status='dirty'`），与 `list_non_terminal_documents()` 的全局无过滤先例同形。
+- [x] ③ **测试面影响**：调 `start()` 的用例（`:415`/`:449`/hanging/`test_e2e_smoke`/`test_phase2_smoke`）全无 wiki 行 ⇒ 扫描零动作、不受影响；`test_new_document_marks_touched_wiki_entries_dirty` 不经 `start()` ⇒ 阈值门断言不受影响 ✓。RED① 用**零文档库**钉 D2（`wiki_trigger_ready` total==0 必拒）。
 
 ## Task 3 — 开机扫描（D2=不过阈值门）
 
