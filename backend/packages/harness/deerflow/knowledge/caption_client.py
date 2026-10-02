@@ -6,13 +6,15 @@ Two dialects today: the OpenAI shape (`POST {base}/chat/completions`, `Authoriza
 Anthropic's Messages shape (`POST {base}/v1/messages`, `X-Api-Key`, `anthropic-version`).
 
 Both legs call :func:`request_caption` so each shape is written once; the prompts and the
-degradation semantics stay with the legs themselves.
+degradation semantics stay with the legs themselves. What carries "thinking off" to the
+endpoint is the entry's declaration (spec 2026-10-02 D1=甲′), and an empty answer borrows
+the reasoning draft before it degrades (D2=甲).
 """
 
 from __future__ import annotations
 
 import base64
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 import httpx
@@ -35,10 +37,40 @@ def _data_url(data: bytes, media_type: str) -> str:
     return f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
 
 
+def _merge_shape(body: dict, shape: Mapping) -> None:
+    """Deep-merge a declared shape into the body, unwrapping ``extra_body`` on the way.
+
+    Shapes are written the way LangChain consumes them (``extra_body`` = "spread into the
+    request body"); this leg speaks raw HTTP, so the wire body is the shape one level up.
+    """
+    for key, value in shape.items():
+        if key == "extra_body" and isinstance(value, Mapping):
+            _merge_shape(body, value)
+        elif isinstance(value, Mapping) and isinstance(body.get(key), dict):
+            _merge_shape(body[key], value)
+        else:
+            body[key] = value
+
+
+def _apply_thinking_off(target: VlmTarget, body: dict) -> None:
+    """Carry "thinking off" in the spelling this entry declares (spec 2026-10-02 D1=甲′).
+
+    A declared ``when_thinking_disabled`` shape wins, and the two spellings are never both
+    sent — stacking disable parameters is how the ``minimal`` request earned its 400. No
+    shape and no declared effort support means nothing is added: an undeclared parameter is
+    the sick request the capability gate exists to prevent.
+    """
+    if target.disable_shape:
+        _merge_shape(body, target.disable_shape)
+    elif target.supports_reasoning_effort:
+        body["reasoning_effort"] = "none"
+
+
 def _openai_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float) -> tuple[dict, dict]:
     content = [{"type": "image_url", "image_url": {"url": _data_url(data, media_type)}} for data, media_type in images]
     content.append({"type": "text", "text": prompt})
     body = {"model": target.model, "messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "temperature": temperature}
+    _apply_thinking_off(target, body)
     headers = {"Authorization": f"Bearer {target.api_key or ''}", "Content-Type": "application/json"}
     return body, headers
 
@@ -53,12 +85,20 @@ def _anthropic_request(target: VlmTarget, prompt: str, images: Sequence[tuple[by
 
 
 def _openai_caption(payload: dict) -> str:
-    return (payload.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+    message = (payload.get("choices") or [{}])[0].get("message") or {}
+    # An empty answer borrows the reasoning draft (D2=甲): for a thinking model that draft
+    # is often the whole transcription, and the alternative is a filename placeholder.
+    return (message.get("content") or "").strip() or (message.get("reasoning_content") or "").strip()
 
 
 def _anthropic_caption(payload: dict) -> str:
-    """Concatenate every text block; a reply may interleave other kinds (e.g. thinking)."""
-    return "".join(block.get("text", "") for block in payload.get("content") or [] if block.get("type") == "text").strip()
+    """Concatenate every text block; a reply may interleave other kinds (e.g. thinking).
+
+    Empty text borrows the thinking blocks' drafts (D2=甲) before giving up.
+    """
+    blocks = payload.get("content") or []
+    text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text").strip()
+    return text or "".join(block.get("thinking", "") for block in blocks if block.get("type") == "thinking").strip()
 
 
 async def request_caption(
@@ -73,8 +113,9 @@ async def request_caption(
     """Ask ``target`` to caption ``images`` and return the text, or raise.
 
     The three ways this can fail are the caller's to interpret: a non-2xx (``raise_for_status``),
-    an empty answer, and any transport error. Both legs degrade on all three. The generation
-    parameters come from the caller (``rag.caption_*``), so this module stays transport-only.
+    an empty answer (no text and no reasoning draft left to borrow), and any transport error.
+    Both legs degrade on all three. The generation parameters come from the caller
+    (``rag.caption_*``), so this module stays transport-only.
     """
     anthropic = target.dialect == "anthropic"
     body, headers = _anthropic_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature) if anthropic else _openai_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature)

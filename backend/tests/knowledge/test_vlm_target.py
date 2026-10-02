@@ -589,3 +589,33 @@ def test_the_rag_side_carries_no_vendor_url_literal():
     assert "anthropic.com" not in source
     assert "deepseek.com" not in source
     assert "dashscope.aliyuncs.com" not in source
+
+
+# ── the thinking-off declarations ride along (spec 2026-10-02 D1=甲′) ──────
+# The caption request body's "thinking off" spelling is the entry's declaration read here,
+# so both must arrive on the target: the declared `when_thinking_disabled` shape and whether
+# the entry takes `reasoning_effort` at all. Undeclared means not sent.
+
+
+def test_the_entrys_thinking_declarations_reach_the_target():
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    entry = {
+        **VL_ENTRY,
+        "supports_reasoning_effort": True,
+        "when_thinking_disabled": {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}},
+    }
+
+    target = resolve_vlm_target(_config([entry]), "vl-entry")
+
+    assert target.supports_reasoning_effort is True
+    assert target.disable_shape == {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+
+
+def test_an_entry_declaring_nothing_carries_no_thinking_declarations():
+    from deerflow.knowledge.vlm_target import resolve_vlm_target
+
+    target = resolve_vlm_target(_config([VL_ENTRY]), "vl-entry")
+
+    assert target.supports_reasoning_effort is False
+    assert target.disable_shape is None

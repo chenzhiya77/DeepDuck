@@ -59,13 +59,21 @@ def _sdk_default_endpoint(provider: str | None) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class VlmTarget:
-    """Where a caption call goes, what it authenticates with, and which protocol it speaks."""
+    """Where a caption call goes, what it authenticates with, and which protocol it speaks.
+
+    The two thinking declarations ride along because the request body's "thinking off"
+    spelling is the entry's own (spec 2026-10-02 D1=甲′): ``disable_shape`` is its declared
+    ``when_thinking_disabled`` shape, and ``supports_reasoning_effort`` says whether the
+    entry takes ``reasoning_effort`` at all. Undeclared means not sent.
+    """
 
     model: str
     base_url: str
     api_key: str | None
     dialect: Dialect
     source: Literal["model_entry"]
+    disable_shape: dict | None = None
+    supports_reasoning_effort: bool = False
 
 
 def resolve_vlm_target(config: AppConfig, model: str | None = None) -> VlmTarget:
@@ -102,6 +110,8 @@ def resolve_vlm_target(config: AppConfig, model: str | None = None) -> VlmTarget
             api_key=dumped.get("api_key") or None,
             dialect=_dialect_for(entry.use),
             source="model_entry",
+            disable_shape=dumped.get("when_thinking_disabled") or None,
+            supports_reasoning_effort=bool(dumped.get("supports_reasoning_effort")),
         )
 
     # A name with no entry used to be a bare provider id pointed at the retired RAG endpoint.
