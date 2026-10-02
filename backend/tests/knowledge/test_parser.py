@@ -251,6 +251,39 @@ def test_apply_captions_merges_back_into_markdown():
     assert "旧alt" not in merged
 
 
+# ── 落表清洗（spec 2026-10-03 §2.4；评审③=甲）───────────────────────────────
+
+
+def test_apply_captions_flattens_newlines_so_the_table_row_stays_one_line():
+    """D2=乙 把图链接放进表行内；多行 caption 会把 GFM 表行切断（chunker 的
+    表收集随之提前终止），落笔前必须压成单行。"""
+    md = "| a | b |\n| --- | --- |\n| 1 ![图片](images/x.png) | 2 |"
+
+    merged = apply_captions(md, {"images/x.png": "第一行\r\n第二行\n第三行\r第四行"})
+
+    assert merged.splitlines()[2] == "| 1 ![第一行 第二行 第三行 第四行](images/x.png) | 2 |"
+
+
+def test_apply_captions_escapes_pipes_brackets_and_backslashes():
+    r"""`|` 会串列、`[`/`]` 会破掉图片语法；先翻倍 `\` 再插入转义，保证后加的
+    `\|`/`\[` 不再被二次转义。"""
+    md = "| a | b |\n| --- | --- |\n| 1 ![图片](images/x.png) | 2 |"
+
+    merged = apply_captions(md, {"images/x.png": "c:\\tmp | [草稿] 表"})
+
+    assert merged.splitlines()[2] == r"| 1 ![c:\\tmp \| \[草稿\] 表](images/x.png) | 2 |"
+
+
+def test_apply_captions_rewrites_anchored_cells_and_tail_images():
+    """D2=乙 组装产物（表行内 ref、同格多图、段尾图）重写后结构不变、每处 alt
+    就地换 caption（评审⑤钉点）。"""
+    md = "## Sheet1\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 ![图片](images/image1.png) ![图片](images/image2.png) |\n\n![图片](images/image3.png)"
+
+    merged = apply_captions(md, {"images/image1.png": "柱状图", "images/image2.png": "折线图", "images/image3.png": "尾图"})
+
+    assert merged == ("## Sheet1\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 ![柱状图](images/image1.png) ![折线图](images/image2.png) |\n\n![尾图](images/image3.png)")
+
+
 @pytest.mark.asyncio
 async def test_vlm_failure_degrades_to_filename_placeholder(monkeypatch):
     monkeypatch.setattr("deerflow.knowledge.captioner.get_app_config", _vlm_config)

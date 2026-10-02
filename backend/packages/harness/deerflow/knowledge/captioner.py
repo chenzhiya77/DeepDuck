@@ -122,14 +122,34 @@ async def caption_images(
     return CaptionOutcome(captions=captions, failed=failed, degraded=(failed / total) > DEGRADED_FAILURE_THRESHOLD)
 
 
+def _sanitize_caption(text: str) -> str:
+    r"""Make one caption safe for the single GFM line it lands on (spec 2026-10-03 §2.4).
+
+    The caption is rewritten into ``![caption](ref)`` alt text, which can now sit inside
+    a table row (workbook anchors, D2=乙): a newline would cut the row short — the chunker
+    stops collecting the table there — and a raw ``|`` would split the column, while
+    ``[``/``]`` would break the image syntax itself. Backslashes are doubled *first* so
+    the escapes inserted here render literally instead of being re-escaped.
+    """
+    text = text.replace("\\", "\\\\")
+    text = re.sub(r"\r\n?|\n", " ", text)
+    for char in "|[]":
+        text = text.replace(char, f"\\{char}")
+    return text
+
+
 def apply_captions(markdown: str, captions: Mapping[str, str]) -> str:
-    """Rewrite ``![alt](ref)`` alt text with captions for known refs."""
+    """Rewrite ``![alt](ref)`` alt text with captions for known refs.
+
+    Captions are sanitized before they land (see ``_sanitize_caption``): single line,
+    with ``|``/``[``/``]`` escaped, so a caption cannot break a GFM row it sits in.
+    """
 
     def _sub(match: re.Match[str]) -> str:
         ref = match.group(1)
         caption = captions.get(ref)
         if caption is None:
             return match.group(0)
-        return f"![{caption}]({ref})"
+        return f"![{_sanitize_caption(caption)}]({ref})"
 
     return _IMAGE_REF_RE.sub(_sub, markdown)

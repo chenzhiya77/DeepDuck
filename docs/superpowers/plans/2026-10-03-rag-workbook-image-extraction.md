@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-workbook-image-extraction-design.md](../specs/2026-10-03-rag-workbook-image-extraction-design.md)
-**Status:** ✅ **已裁（D1=甲 / D2=乙 / D3=甲）** —— 2026-10-03 成对起草、同日裁定；评审九项已并入（③=甲：caption 清洗=Task 3）；Task 0 已核 5 项（含 D2=乙 锚点语义 probe，下）；**Task 1 已交付**（窄面 15 绿 / neuter 3 红 / 整文件 88 绿 / ruff 双净）；**Task 2 已交付**（RED 11 红 / GREEN 窄面 25 绿 / neuter 4 红 / `tests/knowledge` 全套 1470 绿 + 2 条在册环境红）；**Task 0–2 已提交**（`3273fdb0` docs 成对 + `dc2fea73` 代码一笔，2026-10-03 按「先提交 Task 0 到 2」指示提前落账）；可开工 Task 3。
+**Status:** ✅ **已裁（D1=甲 / D2=乙 / D3=甲）** —— 2026-10-03 成对起草、同日裁定；评审九项已并入（③=甲：caption 清洗=Task 3）；Task 0 已核 5 项（含 D2=乙 锚点语义 probe，下）；**Task 1 已交付**（窄面 15 绿 / neuter 3 红 / 整文件 88 绿 / ruff 双净）；**Task 2 已交付**（RED 11 红 / GREEN 窄面 25 绿 / neuter 4 红 / `tests/knowledge` 全套 1470 绿 + 2 条在册环境红）；**Task 0–2 已提交**（`3273fdb0` docs 成对 + `dc2fea73` 代码一笔，2026-10-03 按「先提交 Task 0 到 2」指示提前落账）；**Task 3 已交付**（RED 2 红/1 绿 / GREEN 4 绿 / neuter 2 红 / caption 窄面 60 绿 / ruff 双净）；可开工 Task 4。
 
 **Architecture:** `.xlsx` 走本地腿不变（calamine 读行 + `sheet.start` 原点）；新增 stdlib 解析（`workbook.xml`→…→drawing XML 锚点 `xdr:from` + `a:blip r:embed`→drawing rels）取 `xl/media/*` → `ParsedImage(ref=images/…)`；锚点命中 ⇒ 图链接**并入该单元格文本**（`start` 归一；越界/绝对锚回退 sheet 段尾）；`_parse_excel` 改返 `ParsedDocument`；现配文腿/落盘链吃图（唯一配套=Task 3 caption 落笔前清洗）。
 
@@ -55,10 +55,10 @@
 
 ## Task 3 — caption 落 markdown 清洗（captioner.py，TDD；评审③=甲）
 
-- [ ] ① RED：`apply_captions` 用例——换行 caption（`\r\n`/`\n`）落笔后行仍单行（GFM 表行不中断）；`|`→`\|`、`[`/`]` 转义（渲染等价）；组装产物（表行内 ref、多图同格）alt 就地重写（评审⑤钉点）。既有 plain-caption 断言（`test_parser.py:245`）保持不变。
-- [ ] ② GREEN：`apply_captions` `_sub` 落笔前清洗（先 `\`→`\\`，再换行→空格、再 `|`/`[`/`]` 转义；调用点唯一 `worker.py:580`，视频腿不经此处）。
-- [ ] ③ neuter：去清洗 ⇒ 换行用例红；还原。
-- [ ] ④ 窄面：`pytest backend/tests/knowledge -k "caption"` 绿 + ruff。
+- [x] ① RED：`apply_captions` 用例——换行 caption（`\r\n`/`\n`）落笔后行仍单行（GFM 表行不中断）；`|`→`\|`、`[`/`]` 转义（渲染等价）；组装产物（表行内 ref、多图同格）alt 就地重写（评审⑤钉点）。既有 plain-caption 断言（`test_parser.py:245`）保持不变。**实测：2 红 / 1 绿**（换行、转义两条红=无清洗；组装钉子条绿=既有重写行为已满足，属防回归钉）+ 既有 plain-caption 用例原样未动；三条插在 `test_apply_captions_merges_back_into_markdown` 之后。
+- [x] ② GREEN：`apply_captions` `_sub` 落笔前清洗（先 `\`→`\\`，再换行→空格、再 `|`/`[`/`]` 转义；调用点唯一 `worker.py:580`，视频腿不经此处）。**实测：4 绿**（3 新 + 既有 plain）。实现= `captioner.py` 新增 `_sanitize_caption`（三序清洗：`\` 翻倍 → `\r\n?|\n`→空格 → `|`/`[`/`]` 逐字转义）+ `_sub` 落笔前调用 + `apply_captions` docstring 补口径；调用面重核仍唯一（仅 `worker.py:580`）。
+- [x] ③ neuter：去清洗 ⇒ 换行用例红；还原。**实测：旁路 `_sanitize_caption` ⇒ 2 红**（换行+转义）+ 2 绿（组装钉子+既有 plain）；已还原、复绿。
+- [x] ④ 窄面：`pytest backend/tests/knowledge -k "caption"` 绿 + ruff。**实测：60 passed / 0 failed（隔离 basetemp）/ 23.2s**；ruff check + format --check 双净（首跑 18 条 ERROR 定性=另一并发 pytest 会话共用 `.pytest-tmp` 的已知假红——会话启动清 basetemp 撞 sqlite 句柄；换仓外隔离 basetemp 后全绿。另修我新写行的 ruff format 等价重排一处）。
 
 ## Task 4 — 真 e2e 与文档
 
