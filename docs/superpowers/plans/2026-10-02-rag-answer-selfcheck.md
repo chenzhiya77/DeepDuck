@@ -1,7 +1,7 @@
 # RAG 作答前自查与有界补检 —— 实施计划
 
 **Spec:** [2026-10-02-rag-answer-selfcheck-design.md](../specs/2026-10-02-rag-answer-selfcheck-design.md)
-**Status:** ✅ **已交付（2026-10-02 收官）** —— Task 0–3 全勾；交付后补档（薄对）。**提交：未提交**（SOUL.md 工作区 `M` + 本对 untracked；建议同笔提交）。
+**Status:** ✅ **已交付（2026-10-02 收官）** —— Task 0–3 全勾；交付后补档（薄对）。**提交：`93ea0edf`**（与 SOUL.md、主 spec 半行同笔）。
 
 **Architecture:** 纯提示词层——SOUL.md（`backend/packages/harness/deerflow/agents/assets/rag/SOUL.md`）两处补丁：新增「作答前自查」节 + 拒答首行触发条件改写。工具、中间件、前端、配置零改动。
 
