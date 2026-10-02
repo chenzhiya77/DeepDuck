@@ -72,6 +72,8 @@
 
 **推荐乙。** 判忙必须是同步段（asyncio 单线程，check-and-claim 之间不得 `await`）；查 `wiki_generation_in_progress` 保证双向口径：worker 跑时手动按钮照旧回 `already_running`，手动跑时 worker 触发推迟为尾随增量。
 
+**实施口径修正（Task 2 回填）**：claim 只判 worker 自己的 busy 集——把 `wiki_generation_in_progress` 并进 claim 会让「推迟的触发」无人认领（手动跑完没人来接）。跨路径互斥改放在 runner 体里：每次运行前 `wiki_generation_in_progress` 在飞就 0.5s 轮询让路。效果与表内表述同义（双向不重叠 + pending 不丢），形状不同。
+
 ### 2.3 生命周期与口径
 
 - `wait_idle()`：queue 排空 + inflight 收拢后再排干 `_wiki_tasks`（排干要循环判空——尾随增量会再入任务）⇒ tests 里「`wait_idle` 之后 wiki 条目已定稿」成立。

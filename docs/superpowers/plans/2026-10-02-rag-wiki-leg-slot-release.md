@@ -51,8 +51,8 @@
 
 ## Task 3 — 文档
 
-- [ ] `backend/AGENTS.md` Ingestion/并发口径：补「百科腿在槽外（`ready` 即放槽），`worker_concurrency` 只算文档腿；同 KB 生成触发单飞+合并」句。
-- [ ] spec 回填裁定（D1/D2 转「已裁」）与实施中发现的口径修正。
+- [x] `backend/AGENTS.md` Ingestion 段补口径：百科腿在槽外（`ready` 即放槽）、`worker_concurrency` 只算文档腿、同 KB 触发单飞+合并（`_spawn_wiki`/`_wiki_runner`）、手动按钮 `already_running` 不变、内存集重启即丢+dirty 兜底链（2026-10-02 审查两缺口一并写入）。
+- [x] spec 回填：D1/D2 已裁（`a420ed8c`）+ D2 **实施口径修正**（claim 只判 worker busy 集——union 进 `wiki_generation_in_progress` 会让推迟触发无人认领；跨路径互斥移到 runner 体 0.5s 轮询让路，效果与表述同义）。
 
 ## Task 4 — 真栈验收（复刻 Task 4 撞车窗口，回填真实数字）
 
