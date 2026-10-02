@@ -85,9 +85,10 @@
 
 ## 4. 验收
 
-- **Task 0 能力表**：四变体（基线 1024 / `enable_thinking=false` / `thinking_budget` / 4096）× 同夹具各 N 发 ⇒ HTTP 码、`finish_reason`、content/reasoning 长度、`reasoning_tokens`、空返率。
-- **RED→GREEN→neuter**：按 D1/D2 裁定写红（空返桩：content 空 + reasoning 有货 ⇒ 现形状降级、修后取回）；门禁 `tests/knowledge` + ruff 双净。
-- **复验**：修后同夹具同档位空返率（目标：甲/乙=0%、丙+丁≈0%），对照修前 30–52%。
+- **Task 0 能力表 ✅**：四变体 + 三别名实测 ⇒ 端点认 `reasoning_effort:"none"` 与 vLLM 形状（真关思考）、不认 `enable_thinking`/`thinking_budget`（静默忽略）；`minimal` 400；4096 有效但贵。产物 `fix_probe*.json`/`effort_probe.json`。
+- **RED→GREEN→neuter ✅**（Task 1 `8536ebcc`）：RED 7 红/38 绿 → GREEN 45 绿 → neuter ①拆形状臂恰 1 红、②拆两兜底恰 2 红；门禁 `tests/knowledge` 2 缺 key 环境红外全绿（1470 passed）+ ruff 双净。
+- **复验 ✅**（Task 2，`t2_recheck.json`，走应用 `request_caption` 真出站口）：修后同夹具同档位**空返率单图 0/6、三帧 0/6＝0%**（对照修前 30–52%、三帧最高 79%）；延迟 2.7–9.0s / 4.3–6.9s（修前单发 ~11s 带思考）。
+- **D3 三格 ✅**（用户亲手 + 补测 `d3_verify.json`）：形状格两拼法 mimo 都真关（各 2/2 reasoning=0）；minimal 仅 mimo 不收（deepseek×2/qwen 200 接受）；形状关+默认档 medium 同发 0 reasoning ⇒ medium 留。
 
 ## 5. 非目标
 

@@ -43,19 +43,19 @@
 - [x] GREEN：`caption_client.py` 落 `_apply_thinking_off`（分发表四行：形状优先不双发 / `effort:"none"` 默认臂 / 未声明不发=守卫行 / Anthropic 不发）+ `_openai_caption`/`_anthropic_caption` 兜底；声明经 `VlmTarget.disable_shape`/`supports_reasoning_effort` 随目标带入 ⇒ 45 绿。
 - [x] neuter：反证①拆形状臂 ⇒ 恰 1 红（换臂用例）；反证②拆两兜底 ⇒ 恰 2 红；还原后 45 绿。门禁实测（2026-10-03）：`tests/knowledge` 全量 **2 failed / 1470 passed / 2 skipped / 0 errors**（2＝缺 key 环境红对 `test_embed_missing_api_key`/`test_rerank_missing_api_key`，与本改动无关；爆炸半径 worker+video+wiki+caption+vlm **293/293 绿**）+ ruff check/format **双净**（4 文件）。
 
-## Task 2 — 复验与收尾
+## Task 2 — 复验与收尾 ✅（2026-10-03 交付）
 
-- [ ] 修后同夹具同档位空返率复验（目标：甲′+丁=0%），对照修前 30–52%。
-- [ ] spec/plan 数字回填、提交链回填；scratch 留档。
+- [x] 修后同夹具同档位空返率复验（`caption-knee/t2_recheck.py`→`t2_recheck.json`，走应用 `request_caption` 真出站口、形状臂）：**单图 0/6 空、三帧 0/6 空＝双形状 0%**（对照修前 30–52%、三帧最高 79%）；延迟单图 2.7–9.0s、三帧 4.3–6.9s（修前单发 ~11s 带思考）；正文最短 63/629 字符。
+- [x] spec/plan 数字回填、提交链回填：`be529c83`（起草成对）→ `596ff3ad`（Task 0 能力表回填）→ `8536ebcc`（Task 1 TDD）→ 本笔（Task 2 复验+收尾）；scratch 留档（`fix_probe*.json`/`effort_probe.json`/`d3_verify.json`/`t2_recheck.json` 全在仓外 caption-knee\）。
 
-## D3 三格（用户亲手设置页，零产品代码）+ 补测
+## D3 三格（用户亲手设置页，零产品代码）+ 补测 ✅（2026-10-03 全验完）
 
-- [ ] ① mimo 条目「思考开关写法」选 `chat_template_kwargs`（保存后 GET 核两形状块已入条目）。
-- [ ] ② mimo 子集去 `minimal`（不补 `none`——档位不兼职开关；四档词表不动）。
-- [ ] ③ 默认档 `medium` 留/删——等交互补测定。
-- [ ] 补测三发：deepseek / qwen3.8-flash-2 各一发 `minimal`（据实修各自子集）；mimo 形状关 × 默认档 medium **同发**一发（0 reasoning ⇒ medium 无害留；还有 ⇒ 必撤③）。
-- [ ] 换臂复核：D3① 落后真调一发 caption，确认请求体走形状臂（`chat_template_kwargs.enable_thinking=false`、无 `reasoning_effort`）。
+- [x] ① mimo 条目思考开关写法——**终态=选 `chat_template_kwargs（vLLM / SGLang）` 格**（他两轮：先选 `extra_body.thinking` 格实测也有效〔2/2 reasoning=0，推翻「未测、别选」旧注〕，后换推荐格）。端点侧 `chat_template_kwargs.enable_thinking=false`+medium 同发 2/2 reasoning=0；离线换臂核对 body 带该形状、无 `reasoning_effort`。
+- [x] ② mimo 子集去 `minimal` ✅（`[low,medium,high]`）；deepseek/qwen 的 minimal **补测 200 接受**（不 400）⇒ 两台保留合法，全对照只有 mimo 不收 minimal。
+- [x] ③ 默认档 `medium` **留**——交互格实测：形状关 + medium 同发 2/2 reasoning=0 ⇒ medium 无害，留作思考开时的默认深度。
+- [x] 补测三发（`caption-knee/d3_verify.py`→`d3_verify.json`）：deepseek-flash/deepseek-v4-flash/qwen3.8-flash-2 的 minimal 均 200；mimo 交互格两形状各 2 发全 0 reasoning。
+- [x] 换臂复核：应用代码离线组体=**形状臂**（`thinking:{type:disabled}` 入 body、无 `reasoning_effort` 不双发）✅；同形状真调 4 发 0 空返（正文 222–362 字符）。
 
 ## 收尾
 
-- [ ] plan 复选框全勾 + 提交号回填；spec/plan 成对提交（本笔起草起）。
+- [x] plan 复选框全勾 + 提交号回填（`be529c83`/`596ff3ad`/`8536ebcc`/Task 2 本笔，均未推送）；spec/plan 成对提交（起草 `be529c83` 起）。
