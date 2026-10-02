@@ -65,4 +65,4 @@
 
 - [x] plan 复选框全勾 + 提交号回填（见 Status 行）；spec/plan 成对提交（`d544234f` 起）。
 
-**2026-10-02 修订行（审查五条残余复核后登记）**：③「`existing` 在 runner 多次运行不重算」前提**不成立**——尾随每轮重调 `_maybe_generate_wiki`（`:873` 现算）、「only_dirty 口径未变」结论本身对；④ 两条单测的固定 settle 窗（`sleep(1.0)`/`sleep(0.05)`）接受为已知成本——GREEN 侧断言由结构保证不假红，极端加载只降检出力；⑤ `_spawn_wiki` 若 `create_task` 失败会残留 `_wiki_busy`（今天不可达：调用点全在 async 上下文），后续小修=把 `create_task` 提到 `busy.add` 之前（同同步段仍原子，失败即无残留），留待下对顺手带上。
+**2026-10-02 修订行（审查五条残余复核后登记）**：③「`existing` 在 runner 多次运行不重算」前提**不成立**——尾随每轮重调 `_maybe_generate_wiki`（`:873` 现算）、「only_dirty 口径未变」结论本身对；④ 两条单测的固定 settle 窗（`sleep(1.0)`/`sleep(0.05)`）接受为已知成本——GREEN 侧断言由结构保证不假红，极端加载只降检出力；⑤ `_spawn_wiki` 若 `create_task` 失败会残留 `_wiki_busy`（今天不可达：调用点全在 async 上下文），后续小修=把 `create_task` 提到 `busy.add` 之前（同同步段仍原子，失败即无残留），留待下对顺手带上。**（2026-10-02 晚补）④⑤ 已由加固对收掉**：[2026-10-02-rag-wiki-trigger-hardening.md](2026-10-02-rag-wiki-trigger-hardening.md)（⑤ 换序 = `e2d3810e`、④ 三条去 settle + 判别力三连反证 = `47b46127`）。

@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-02-rag-wiki-trigger-hardening-design.md](../specs/2026-10-02-rag-wiki-trigger-hardening-design.md)
-**Status:** 🔨 **已定稿开工（2026-10-02）**——D1=甲 已拍；Task 0 三项核实已回填（本笔），进 Task 1。
+**Status:** ✅ **已交付（2026-10-02 收官）** —— Task 0–3 全交付，复选框全勾。提交号：成对 `5765571f` / 裁定+Task 0 `901d8ff6` / Task 1（⑤ 换序）`e2d3810e` / Task 2（④ 去 settle）`47b46127` / Task 3+收尾=本笔。**实测**：⑤ RED=busy 残留实证→换序绿→neuter 同红因；④ 三条零时间窗断言 + 判别力三连反证（去 claim 5/4、去推迟 TimeoutError、去尾随 1）全照红。
 
 **Architecture:** ⑤ `_spawn_wiki` 换序（`create_task` → `busy.add`，同同步段原子性不变、失败即无残留）；④ 三条用例去固定 settle（`calls`/`peak` 计数断言 + `polled` Event）。**零产品语义变化。**
 
@@ -43,8 +43,8 @@
 
 ## Task 3 — 文档
 
-- [ ] 上对 plan 修订行注记 ④⑤ 已收（指回本对提交号）；本对 Status 回填提交号。
+- [x] 上对 plan 修订行注记 ④⑤ 已收（指回本对提交号 `e2d3810e`/`47b46127`）；本对 Status 回填提交链（见上）。
 
 ## 收尾
 
-- [ ] plan 复选框全勾 + 提交号回填；spec/plan 成对提交。
+- [x] plan 复选框全勾 + 提交号回填（见 Status 行）；spec/plan 成对提交（`5765571f` 起）。
