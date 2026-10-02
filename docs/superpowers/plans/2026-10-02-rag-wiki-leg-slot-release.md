@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-02-rag-wiki-leg-slot-release-design.md](../specs/2026-10-02-rag-wiki-leg-slot-release-design.md)
-**Status:** 🔨 **已定稿开工（2026-10-02）**——D1=乙 / D2=乙 已拍；Task 0 四项核实已回填（本笔），进 Task 1。
+**Status:** ✅ **已交付（2026-10-02 收官）** —— Task 0–4 全交付，复选框全勾。提交号：成对 `d544234f` / Task 0 `a420ed8c` / Task 1 `992f35cd` / Task 2 `0a34523b` / Task 3 `4c327358` / Task 4+收尾=本笔。**实测**：撞车窗 B+C 零排队同批并发（busy 后 0.08s 上传、0.09s 入流水线，未重启）；负载叠加腿均值 +1.7%（带内）；尾随增量补写 B/C 新实体（28 条、`last_run: succeeded`）。
 
 **Architecture:** `process_document` 写完 `ready` 后 `self._spawn_wiki(kb_id, embedder)`（`:416` 一行改）→ 同步判忙（worker 本地 busy 集 ∪ `wiki_generation_in_progress`）→ 不忙则 `asyncio.create_task(_maybe_generate_wiki…)` 入 `self._wiki_tasks`（`wait_idle`/`stop` 排干）；忙则记 `pending`，运行收尾补一轮 `only_dirty=bool(existing)` 尾随增量。信号量只包文档腿。**除「谁在什么时候占槽」与 D2 的并发面收窄外，语义零变化。**
 
@@ -56,11 +56,11 @@
 
 ## Task 4 — 真栈验收（复刻 Task 4 撞车窗口，回填真实数字）
 
-- [ ] 撞车复刻：临时库 + 手动「全部重建」占住 wiki 期间新传两篇 → 两篇同批并发入流水线（双 `progress_percent` 序列重叠、总时长不劣于两篇串行之和），**全程不重启网关**（上一对靠重启解撞车，本对要证明不重启也能并发；重启会丢 pending/在飞生成，见 Task 2 重启残余面格）；对照登记放槽前行为（排队）。
-- [ ] **负载叠加核对（2026-10-02 审查补）**：撞车复刻窗口记**抽取腿单发耗时**（`gateway.log` 逐请求时间戳口径，同图谱并发对 Task 4 仪器）对比无 wiki 并发的基线带——不劣化才算过。预期影响小（百科生成是串行单发、不占抽取 8 路并发预算），但未实测不得当免检。
-- [ ] 生成正确性抽查：尾随增量吃掉新文档的 dirty 标记（新增实体条目落库、`last_run: succeeded`）。
-- [ ] 收尾：临时库 DELETE 级联、验收账号删除、scratch 留仓外、仓库 `git status` 无本 Task 产物。
+- [x] 撞车复刻（2026-10-02 16:34–16:48，临时库 `T4-wiki-slot`+对照库 `T4-wiki-control`，验收账号 `rag-wiki-slot-acceptance@…`）：A（13 片）16:36:22 图谱腿收尾（91.5s）→ 16:36:27.26 转 ready、自动全量生成起跑（镜像 `wiki:generating`）→ **B+C 于 busy 确认后 0.08s 上传、双双 0.09s 内进入 indexing、同拍 `graph:indexing`**——生成占住期间两篇同批并发、**零排队、全程未重启网关** ✓。双 `progress_percent` 序列全程交错重叠；B 16:37:21 / C 16:37:47 ready，腿墙钟 48.3s/76.0s（7 片/篇，重叠执行），**76.0s < 两篇串行之和 124.3s** ✓。手动闸探针（busy 期间 `POST /wiki/generate`）→ `{"status":"already_running"}` ✓（Task 0④ 方向 1 真栈坐实）。
+- [x] **负载叠加核对**：对照组（同 B/C 文件、wiki 空闲）腿墙钟 65.7s/56.5s。**两口径**：腿均值 62.2s vs 61.1s = **+1.7%（片均 8.9s vs 8.7s，带内 ⇒ 不劣化 ✓）**；对组墙钟 76.0s vs 65.7s = +15.7%（尾部单篇波动，n=1，两向噪声都有——碰撞组 B 反而更快）。**归因备注**：百科生成走 `wiki_model`=dashscope、抽取走 mimo——**不同端点、端点级不竞争**，实测的叠加是同进程 DB/向量写资源层面的（日志逐发拆账：碰撞窗 mimo 28 发=双篇抽取、dash 0 发；百科 LLM 调用 16:37:52 起 17 发落排干段）。判定=**不劣化成立**，尾部波动未排除（样本量 n=1 撑不起更强结论）。
+- [x] 生成正确性抽查：全部运行排干后 `generation: idle`、`last_run: succeeded`，28 条条目含 B/C 新实体（MarlinRouter/NimbusStore/OnyxTrace/PineMetric、QuartzScheduler/ReefCodec/SolsticeAPI/TundraWorker）⇒ 在飞期间到达的触发被推迟、尾随增量把新晋实体补写 ✓（A 的首轮全量只覆盖 A 的实体，B/C 条目只能出自尾随轮——内容即证据）。
+- [x] 收尾：两库 DELETE 204 级联、验收账号 rows=1 删除、cookies.txt 已删、仪器全在仓外 `E:\app-model\deer-flow-scratch\wiki-slot\`、仓库 `git status` 无本 Task 产物（混入的 `SOUL.md` 等为别线未提交改动，未触碰）。**登记**：网关 16:29 按原命令行重启换新代码（`make gateway`，现仍运行）；验收期间用户侧有 chat 流量（16:28/16:52 各数发，计入噪声源）。
 
 ## 收尾
 
-- [ ] plan 复选框全勾 + 提交号回填；spec/plan 成对提交。
+- [x] plan 复选框全勾 + 提交号回填（见 Status 行）；spec/plan 成对提交（`d544234f` 起）。

@@ -1,6 +1,6 @@
 # RAG 百科腿放槽 —— 设计
 
-**Status:** ✅ **已定稿（2026-10-02）** —— **D1 已裁 = 乙（派生受跟踪任务）/ D2 已裁 = 乙（单飞+合并）**（用户拍板）；Task 0 四项核实结论已回填 plan。配套 plan：[2026-10-02-rag-wiki-leg-slot-release.md](../plans/2026-10-02-rag-wiki-leg-slot-release.md)。
+**Status:** ✅ **已定稿交付（2026-10-02）** —— **D1 已裁 = 乙（派生受跟踪任务）/ D2 已裁 = 乙（单飞+合并）**（用户拍板）；Task 0–4 全交付（plan 收官，含 2026-10-02 审查补的重启残余面/负载叠加两格验收）。配套 plan：[2026-10-02-rag-wiki-leg-slot-release.md](../plans/2026-10-02-rag-wiki-leg-slot-release.md)。
 
 本对一件事：**百科生成腿不再占用工位**——文档转 `ready` 即释放 `worker_concurrency` 信号量，百科生成挪到槽外跑。除「谁在什么时候占槽」外语义零变化：触发时机、生成内容、失败面、镜像口径全部照旧。
 
