@@ -97,6 +97,18 @@ class WikiStore:
             result = await session.execute(stmt)
             return [self._to_dict(row) for row in result.scalars().all()]
 
+    async def list_kb_ids_with_dirty(self) -> list[str]:
+        """Every KB carrying at least one ``dirty`` entry (boot scan scope).
+
+        Global and unfiltered on purpose — startup resume must cover all
+        owners' libraries (same shape as ``list_non_terminal_documents()``);
+        ``list_kbs(owner_id)`` filters by user and cannot serve this.
+        """
+        stmt = select(WikiEntryRow.kb_id).where(WikiEntryRow.status == "dirty").distinct()
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
     async def delete_entries(self, kb_id: str, titles: Collection[str]) -> int:
         """Delete entries titled in ``titles`` (spec §3.5 条目生命周期：失格即删).
 

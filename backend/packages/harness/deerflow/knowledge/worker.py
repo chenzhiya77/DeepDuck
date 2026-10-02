@@ -212,7 +212,12 @@ class KnowledgeIndexWorker:
         self._inflight: set[asyncio.Task[None]] = set()
         self._wiki_tasks: set[asyncio.Task[None]] = set()
         self._wiki_busy: set[str] = set()
-        self._wiki_pending: set[str] = set()
+        #: kb_id → whether the coalesced run still owes the trigger threshold.
+        #: AND-merge: one gate-free trigger (boot scan) makes the merged run
+        #: gate-free, so a doc trigger claiming the runner first can never
+        #: squeeze the boot intent out (it would re-gate the trailing run and
+        #: the resume would silently fail on a below-threshold KB).
+        self._wiki_pending: dict[str, bool] = {}
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -233,7 +238,29 @@ class KnowledgeIndexWorker:
         recovered = await self.recover()
         if recovered:
             logger.info("knowledge worker recovery: re-enqueued %d non-terminal document(s)", recovered)
+        await self.scan_dirty_wikis()
         self._dispatcher = asyncio.create_task(self._dispatch_loop(), name="knowledge-index-worker")
+
+    async def scan_dirty_wikis(self) -> None:
+        """Boot resume for wiki runs lost to a restart (spec 2026-10-02 Task 3).
+
+        A dirty entry can outlive the process that flagged it (crash between
+        the dirty hook and the generation run, or a run cut mid-flight) —
+        unlike documents, there is no other resume path. Per D2 this leg skips
+        the trigger threshold: the manual button's "有 dirty 就跑" stance, since
+        a below-threshold KB would otherwise strand its dirty entries forever.
+        Failure is log-only: a Qdrant/config outage must not block startup.
+        """
+        try:
+            kb_ids = await self._wiki_store.list_kb_ids_with_dirty()
+            if not kb_ids:
+                return
+            embedder = self._embedder or build_embedder()
+            for kb_id in kb_ids:
+                self._spawn_wiki(kb_id, embedder, require_threshold=False)
+            logger.info("knowledge worker boot scan: resumed wiki generation for %d KB(s) with dirty entries", len(kb_ids))
+        except Exception:
+            logger.exception("wiki boot scan failed at worker start; dirty entries stay dirty until the next trigger")
 
     async def stop(self) -> None:
         dispatcher, self._dispatcher = self._dispatcher, None
@@ -310,15 +337,19 @@ class KnowledgeIndexWorker:
         finally:
             self._queue.task_done()
 
-    def _spawn_wiki(self, kb_id: str, embedder: _Embedder) -> None:
+    def _spawn_wiki(self, kb_id: str, embedder: _Embedder, *, require_threshold: bool = True) -> None:
         """Fire the wiki leg outside the worker slot (spec 2026-10-02 D1).
 
         The document is ``ready`` at this point; a whole generation run must not
         eat a ``worker_concurrency`` slot for minutes. Tracked in ``_wiki_tasks``
         so ``wait_idle``/``stop`` still cover the run — the lifecycle contract is
         unchanged, only the slot is released earlier.
+
+        ``require_threshold`` marks whether the merged run still owes the
+        trigger threshold (boot scan passes False — see the dict comment in
+        ``__init__`` for the AND-merge rule).
         """
-        self._wiki_pending.add(kb_id)
+        self._wiki_pending[kb_id] = self._wiki_pending.get(kb_id, True) and require_threshold
         if kb_id in self._wiki_busy:
             return
         # Create the runner before claiming: a failed create_task must not leave
@@ -334,17 +365,18 @@ class KnowledgeIndexWorker:
 
         The busy/pending claim in ``_spawn_wiki`` is synchronous, so triggers
         landing while a run is live collapse into exactly one trailing run
-        instead of overlapping LLM passes over the same entries.
+        instead of overlapping LLM passes over the same entries. Each drained
+        trigger carries its own threshold flag.
         """
         try:
             while kb_id in self._wiki_pending:
-                self._wiki_pending.discard(kb_id)
+                require_threshold = self._wiki_pending.pop(kb_id)
                 # Cross-path single-flight: while a manual run owns the KB
                 # (trigger_wiki_generation refuses while one is live), wait it
                 # out: the two must never overlap on the same entries.
                 while wiki_generation_in_progress(kb_id):
                     await asyncio.sleep(0.5)
-                await self._maybe_generate_wiki(kb_id, embedder)
+                await self._maybe_generate_wiki(kb_id, embedder, require_threshold=require_threshold)
         finally:
             self._wiki_busy.discard(kb_id)
 
@@ -907,16 +939,19 @@ class KnowledgeIndexWorker:
         await self._vector_store.delete_chunks([chunk_id])
         await self._store.delete_chunk(chunk_id)
 
-    async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder) -> None:
+    async def _maybe_generate_wiki(self, kb_id: str, embedder: _Embedder, *, require_threshold: bool = True) -> None:
         """Triggered batch on first completion, dirty incremental afterwards.
 
         The model is resolved **per trigger** (spec 2026-09-26 D3): the boot-time instance was
         retired, so a settings change applies without a restart. ``main_llm`` stays as a
         construction-time injection port for tests — production callers must not pass it, since
         it short-circuits the resolution below.
+
+        ``require_threshold=False`` (boot scan only, D2) skips the completion-share
+        gate — see ``scan_dirty_wikis`` for why that leg must.
         """
         try:
-            if not await wiki_trigger_ready(self._store, kb_id):
+            if require_threshold and not await wiki_trigger_ready(self._store, kb_id):
                 return
             existing = await self._wiki_store.list_entries(kb_id)
             from deerflow.config.app_config import get_app_config

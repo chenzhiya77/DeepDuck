@@ -1286,3 +1286,61 @@ async def test_a_failed_task_creation_never_freezes_the_kb(session_factory, monk
     await worker.wait_idle()
 
     assert calls == 1, "the trigger after a failed spawn never ran"
+
+
+# ── 开机扫描（spec 2026-10-02 Task 3，D2=不过阈值门）────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_boot_scan_resumes_dirty_wikis_without_new_documents(session_factory, monkeypatch):
+    """D2=不过阈值门: a dirty entry stranded by a crash is resumed at boot.
+
+    The KB has zero documents, so the trigger threshold can never pass
+    (``wiki_trigger_ready`` refuses total==0) — the boot scan is the one leg
+    that skips it, matching the manual button's "有 dirty 就跑" stance.
+    Without the scan the entry strands until the next document completes.
+    """
+    store = KnowledgeStore(session_factory)
+    wiki_store = WikiStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await wiki_store.upsert_entry("kb-1", title="DeerFlow", content="旧条目", source_chunk_ids=[], status="dirty")
+    seen: list[bool] = []
+
+    async def _counting_generate(*_args, **kwargs):
+        seen.append(kwargs.get("only_dirty"))
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _counting_generate)
+    worker = _worker(store, session_factory, main_llm=_WikiLLM())
+
+    await worker.start()
+    await worker.wait_idle()
+    await worker.stop()
+
+    assert seen == [True], f"boot scan must resume the dirty entry exactly once as a dirty pass, got {seen}"
+
+
+@pytest.mark.asyncio
+async def test_boot_scan_skips_kbs_without_dirty_entries(session_factory, monkeypatch):
+    """Scope guard: the boot scan touches only KBs carrying dirty entries.
+
+    A boot scan over every KB would re-run generation for libraries that are
+    fully settled — wasted LLM passes on every restart.
+    """
+    store = KnowledgeStore(session_factory)
+    wiki_store = WikiStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await wiki_store.upsert_entry("kb-1", title="DeerFlow", content="旧条目", source_chunk_ids=[], status="ready")
+    calls = 0
+
+    async def _counting_generate(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _counting_generate)
+    worker = _worker(store, session_factory, main_llm=_WikiLLM())
+
+    await worker.start()
+    await worker.wait_idle()
+    await worker.stop()
+
+    assert calls == 0, f"a settled KB must not be regenerated at boot, got {calls} run(s)"
