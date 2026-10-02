@@ -1126,3 +1126,112 @@ async def test_wait_idle_covers_the_detached_wiki_leg(session_factory, monkeypat
 
     assert entries, "wait_idle returned before the detached wiki run wrote its entry"
     assert entries[0]["title"] == "DeerFlow"
+
+
+# ── 同 KB 生成单飞+合并（spec 2026-10-02 D2=乙）────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_same_kb_wiki_triggers_are_single_flight(session_factory, monkeypatch):
+    """D2=乙: concurrent triggers for one KB run one generation at a time."""
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    active = 0
+    peak = 0
+
+    async def _hanging_generate(*_args, **_kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        started.set()
+        try:
+            await release.wait()
+        finally:
+            active -= 1
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _hanging_generate)
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_trigger_ready", AsyncMock(return_value=True))
+    worker = _worker(store, session_factory, main_llm=_WikiLLM())
+    embedder = FakeEmbedder()
+
+    for _ in range(5):
+        worker._spawn_wiki("kb-1", embedder)
+    await started.wait()
+    # Without single-flight the other four pile up here while the first hangs;
+    # config/DB cold-start is sub-second, so 1s is a generous settle either way.
+    await asyncio.sleep(1.0)
+    release.set()
+    await worker.wait_idle()
+
+    assert peak == 1, f"{peak} wiki runs overlapped for one KB"
+
+
+@pytest.mark.asyncio
+async def test_wiki_triggers_during_a_run_coalesce_into_one_trailing_run(session_factory, monkeypatch):
+    """D2=乙: triggers that land mid-run collapse into exactly one trailing run."""
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    calls = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _hanging_generate(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _hanging_generate)
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_trigger_ready", AsyncMock(return_value=True))
+    worker = _worker(store, session_factory, main_llm=_WikiLLM())
+    embedder = FakeEmbedder()
+
+    worker._spawn_wiki("kb-1", embedder)
+    await entered.wait()
+    entered.clear()
+    for _ in range(3):
+        worker._spawn_wiki("kb-1", embedder)
+    release.set()
+    await worker.wait_idle()
+    await asyncio.sleep(0.05)  # a spurious second trailing run would land here
+    await worker.wait_idle()
+
+    assert calls == 2, f"expected one run plus one coalesced trailing run, got {calls}"
+
+
+@pytest.mark.asyncio
+async def test_worker_defers_wiki_while_a_manual_run_is_in_flight(session_factory, monkeypatch):
+    """D2=乙 cross-path: a manual run owns the KB — the worker waits its turn.
+
+    The deferred trigger runs exactly once afterwards (a lone trigger is not
+    "in flight" for itself: no trailing run on top).
+    """
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    calls = 0
+    manual_running = True
+
+    async def _counting_generate(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _counting_generate)
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_trigger_ready", AsyncMock(return_value=True))
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_generation_in_progress", lambda _kb_id: manual_running, raising=False)
+    worker = _worker(store, session_factory, main_llm=_WikiLLM())
+
+    worker._spawn_wiki("kb-1", FakeEmbedder())
+    await asyncio.sleep(0.05)
+    assert calls == 0, "the worker run overlapped the manual run"
+    manual_running = False
+    await worker.wait_idle()
+
+    assert calls == 1, f"a lone trigger must run exactly once, got {calls}"

@@ -41,11 +41,13 @@
 
 ## Task 2 — RED→GREEN 单飞+合并（D2=乙）
 
-- [ ] **RED①**：新用例「同 KB 触发单飞」：N 次并发 `_spawn_wiki`（stub 挂起）→ 断 `generate_wiki` 同时在飞 ≤1 → 红。
-- [ ] **RED②**：新用例「在飞期间触发合并为一次尾随」：运行中再触发 k 次 → 收尾后恰好再跑 1 次（`only_dirty=bool(existing)` 口径），k=0 时不跑 → 红。
-- [ ] **GREEN**：busy/pending 集（worker 实例级）+ 收尾尾随循环；判忙含 `wiki_generation_in_progress`（手动在飞→推迟）。
-- [ ] **neuter**：去掉 pending 尾随 → RED② 反证红（丢活）→ 还原。
-- [ ] 门禁：`tests/knowledge` 全绿、ruff check/format 干净。
+- [x] **RED①**：`test_same_kb_wiki_triggers_are_single_flight`——5 连发 `_spawn_wiki` + 挂起 stub 记并发峰值 → **红（5 重叠）**。⚠️ 首版计时竞速假绿（peak 真值=1：配置冷启/DB 让 5 任务全落在 release 之后、stub 串行）⇒ 改事件驱动（首入桩后定住 1s 让红侧攒堆）后红因才真。
+- [x] **RED②**：`test_wiki_triggers_during_a_run_coalesce_into_one_trailing_run`——在飞期间 3 连发 → **红（got 4：4 轮重叠）**。
+- [x] **RED③（跨路径）**：`test_worker_defers_wiki_while_a_manual_run_is_in_flight`——手动在飞时 worker 触发必须让路、事后恰好跑 1 次 → **红（worker run overlapped the manual run）**。
+- [x] **GREEN**：`_spawn_wiki` = 同步 claim（`_wiki_pending` 记意图 + `_wiki_busy` 单飞）→ 每 KB 一个 `_wiki_runner` 循环（消费 pending → `wiki_generation_in_progress` 在飞则等 0.5s 轮询让路 → `_maybe_generate_wiki`，其 `only_dirty=bool(existing)` 即尾随口径）；`wait_idle` 排干无需改（尾随在同一 runner 任务内，无新任务）。**注**：claim 只按 worker 自己的 busy 集判（union 进 `wiki_generation_in_progress` 会让推迟的触发无人认领）；跨路径互斥放在 runner 体里等 manual 排空——效果=双向不重叠 + pending 不丢，与 D2 表述同义。`test_worker.py` **38/38 全绿**。
+- [x] **neuter**（三连反证）：**A 摘尾随循环** → RED② 红（`got 1`＝丢活实证）；**B 摘 claim（回退每触发一任务）** → RED①② 双红（`5 overlapped`/`got 4`）；**C 摘跨路径等待** → RED③ 红（overlapped）。三处均还原转绿。
+- [x] 门禁：`tests/knowledge` **1441 passed / 2 skipped / 2 failed**（2026-10-02）——2 条即 Task 1 已定性的环境红（`test_embed_missing_api_key`/`test_rerank_missing_api_key`，本机 env 带真 key）；`test_worker.py` 38/38 全绿；ruff check/format 两文件双净。
+- [x] **重启残余面（2026-10-02 审查补，如实登记）**：`_wiki_pending`/`_wiki_busy` 是 worker 实例级内存集、**重启即丢**——兜底链存在：dirty 标记落库（`worker.py:412`）+ `wiki_trigger_ready` 每次文档完成重算阈值 ⇒ **下一篇文档的 `only_dirty` 补跑**；但 **若之后再无新文档，剩余 dirty 只能等手动按钮**（spec §3 硬约束 1 / §5 非目标已登记"下一次触发或手动按钮补"，本格补进验收口径防 Task 4 踩空）。与放槽前同形：重启丢一轮在飞生成是既有行为，本对不放大。
 
 ## Task 3 — 文档
 
@@ -54,7 +56,8 @@
 
 ## Task 4 — 真栈验收（复刻 Task 4 撞车窗口，回填真实数字）
 
-- [ ] 撞车复刻：临时库 + 手动「全部重建」占住 wiki 期间新传两篇 → 两篇同批并发入流水线（双 `progress_percent` 序列重叠、总时长不劣于两篇串行之和），**全程不重启网关**；对照登记放槽前行为（排队）。
+- [ ] 撞车复刻：临时库 + 手动「全部重建」占住 wiki 期间新传两篇 → 两篇同批并发入流水线（双 `progress_percent` 序列重叠、总时长不劣于两篇串行之和），**全程不重启网关**（上一对靠重启解撞车，本对要证明不重启也能并发；重启会丢 pending/在飞生成，见 Task 2 重启残余面格）；对照登记放槽前行为（排队）。
+- [ ] **负载叠加核对（2026-10-02 审查补）**：撞车复刻窗口记**抽取腿单发耗时**（`gateway.log` 逐请求时间戳口径，同图谱并发对 Task 4 仪器）对比无 wiki 并发的基线带——不劣化才算过。预期影响小（百科生成是串行单发、不占抽取 8 路并发预算），但未实测不得当免检。
 - [ ] 生成正确性抽查：尾随增量吃掉新文档的 dirty 标记（新增实体条目落库、`last_run: succeeded`）。
 - [ ] 收尾：临时库 DELETE 级联、验收账号删除、scratch 留仓外、仓库 `git status` 无本 Task 产物。
 

@@ -52,7 +52,7 @@ from deerflow.knowledge.video.probe import probe_video
 from deerflow.knowledge.video.segmentation import fallback_windows, merge_scene_bounds
 from deerflow.knowledge.video.shot_card import assemble_card_body, chunk_id_for_shot, heading_path_for_shot, is_empty_card
 from deerflow.knowledge.video.store import VideoShotStore
-from deerflow.knowledge.wiki.generator import generate_wiki, mark_dirty_for_entities, wiki_trigger_ready
+from deerflow.knowledge.wiki.generator import generate_wiki, mark_dirty_for_entities, wiki_generation_in_progress, wiki_trigger_ready
 from deerflow.knowledge.wiki.store import WikiStore
 from deerflow.utils.file_io import run_file_io
 
@@ -211,6 +211,8 @@ class KnowledgeIndexWorker:
         self._dispatcher: asyncio.Task[None] | None = None
         self._inflight: set[asyncio.Task[None]] = set()
         self._wiki_tasks: set[asyncio.Task[None]] = set()
+        self._wiki_busy: set[str] = set()
+        self._wiki_pending: set[str] = set()
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -316,9 +318,32 @@ class KnowledgeIndexWorker:
         so ``wait_idle``/``stop`` still cover the run — the lifecycle contract is
         unchanged, only the slot is released earlier.
         """
-        task = asyncio.create_task(self._maybe_generate_wiki(kb_id, embedder), name=f"kb-wiki-{kb_id}")
+        self._wiki_pending.add(kb_id)
+        if kb_id in self._wiki_busy:
+            return
+        self._wiki_busy.add(kb_id)
+        task = asyncio.create_task(self._wiki_runner(kb_id, embedder), name=f"kb-wiki-{kb_id}")
         self._wiki_tasks.add(task)
         task.add_done_callback(self._wiki_tasks.discard)
+
+    async def _wiki_runner(self, kb_id: str, embedder: _Embedder) -> None:
+        """One runner per KB (D2): drain coalesced triggers, never overlap runs.
+
+        The busy/pending claim in ``_spawn_wiki`` is synchronous, so triggers
+        landing while a run is live collapse into exactly one trailing run
+        instead of overlapping LLM passes over the same entries.
+        """
+        try:
+            while kb_id in self._wiki_pending:
+                self._wiki_pending.discard(kb_id)
+                # Cross-path single-flight: while a manual run owns the KB
+                # (trigger_wiki_generation refuses while one is live), wait it
+                # out: the two must never overlap on the same entries.
+                while wiki_generation_in_progress(kb_id):
+                    await asyncio.sleep(0.5)
+                await self._maybe_generate_wiki(kb_id, embedder)
+        finally:
+            self._wiki_busy.discard(kb_id)
 
     # ── pipeline ─────────────────────────────────────────────────────────
 
