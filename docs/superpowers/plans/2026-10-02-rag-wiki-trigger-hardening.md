@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-02-rag-wiki-trigger-hardening-design.md](../specs/2026-10-02-rag-wiki-trigger-hardening-design.md)
-**Status:** 📝 **已起草（2026-10-02）待审**——D1 待拍（甲=换序 / 乙=兜清），拍定后 Task 0 先行。
+**Status:** 🔨 **已定稿开工（2026-10-02）**——D1=甲 已拍；Task 0 三项核实已回填（本笔），进 Task 1。
 
 **Architecture:** ⑤ `_spawn_wiki` 换序（`create_task` → `busy.add`，同同步段原子性不变、失败即无残留）；④ 三条用例去固定 settle（`calls`/`peak` 计数断言 + `polled` Event）。**零产品语义变化。**
 
@@ -22,9 +22,9 @@
 
 ## Task 0 — 开工前核实（3 项，回填结论再开工）
 
-- [ ] ① **换序原子性前提**：`_spawn_wiki`（`worker.py:313-327`）全同步无 `await` 复核；换序后 `_wiki_tasks.add` / done_callback 仍只在创建成功后执行；`_wiki_runner` 首个可让出点在自身体内 ⇒ runner 不可能在 `busy.add` 前跑起来。
-- [ ] ② **固定 settle 全扫**：`test_worker.py` 百科触发用例块的固定 sleep 逐条登记（预期 = `:1166`/`:1232`/`:1202` 三处）+ 各断言的判别方向（哪边红/哪边绿）记清，防改写时判别力倒退。
-- [ ] ③ **同类辨析**：`test_a_hanging_wiki_leg_does_not_block_new_documents` 的 poll 看门狗（300×0.01）与 `slow_parse` 交错窗（`:1071`）是否属 settle（预期：前者是看门狗上限、后者是观测窗，均不动）。
+- [x] ① **换序原子性前提**：`_spawn_wiki`（`worker.py:313-327`）全同步无 `await` ✓；`_wiki_tasks.add`/done_callback（`:326-327`）在 `create_task` 成功之后 ✓；runner 首个可让出点在自身体内（`:343` 轮询 sleep / `:344` 生成 await）⇒ 任务必晚于 `_spawn_wiki` 返回才启动 ⇒ **换序后 claim 检查与建任务仍在同一同步段、原子性不变**，`create_task` 抛错则 busy 从未占位。
+- [x] ② **固定 settle 全扫**：百科触发用例块内**恰好三处** = `:1166`（1.0s 攒堆）/ `:1202`（0.05s 抓多余尾随 + 冗余二次 `wait_idle`）/ `:1232`（0.05s 断 `calls==0` 前）✓。判别方向登记：`single_flight` 现断 `peak==1`（破=peak>1；慢机攒堆不足**会漏检** ⇒ 升级 `calls==2 && peak==1`）；`coalesce` 断 `calls==2`（破=去尾随 1 / 无单飞 4）；`defers` 断 `calls==0`→`calls==1`（破=首轮即 ≥1）。
+- [x] ③ **同类辨析**：`slow_parse` 的 `sleep(0.05)`（`:1071`）= 并发观测交错窗（同 `test_concurrency_cap_respected` 先例）、hanging 用例的 300×0.01 poll = 看门狗上限（带 `entered` 标志）⇒ **均非 settle 断言，不动** ✓。
 
 ## Task 1 — ⑤ RED→GREEN→neuter（换序）
 

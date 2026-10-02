@@ -1,6 +1,6 @@
 # RAG 百科触发面加固（④+⑤）—— 设计
 
-**Status:** 📝 **已起草（2026-10-02）待拍 D1**；配套 plan 同批成对：[2026-10-02-rag-wiki-trigger-hardening.md](../plans/2026-10-02-rag-wiki-trigger-hardening.md)。
+**Status:** ✅ **已定稿（2026-10-02）** —— **D1 已裁 = 甲（换序）**（用户拍板）；Task 0 三项核实结论已回填 plan。配套 plan：[2026-10-02-rag-wiki-trigger-hardening.md](../plans/2026-10-02-rag-wiki-trigger-hardening.md)。
 
 本对一件事：收掉上对（百科腿放槽）登记的两条残余——**⑤** `_spawn_wiki` 的 `create_task` 失败残留 `_wiki_busy`（换序修）、**④** 百科触发三条用例的固定 settle 窗换事件/计数断言。**零产品语义变化**：单飞+合并、`_wiki_tasks` 收编、手动 `already_running` 全不动。
 
@@ -28,7 +28,7 @@
 
 ## 2. 设计
 
-### 2.1 D1 ⑤ 修法（待拍）
+### 2.1 D1 ⑤ 修法（已裁：甲）
 
 **在问什么**：`create_task` 失败不留 busy 残留，怎么修？
 
