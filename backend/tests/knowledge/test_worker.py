@@ -1235,3 +1235,46 @@ async def test_worker_defers_wiki_while_a_manual_run_is_in_flight(session_factor
     await worker.wait_idle()
 
     assert calls == 1, f"a lone trigger must run exactly once, got {calls}"
+
+
+# ── 触发面加固（spec 2026-10-02 ⑤）────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_failed_task_creation_never_freezes_the_kb(session_factory, monkeypatch):
+    """⑤: a create_task failure must not leave the busy claim stuck.
+
+    The claim exists to keep one runner per KB; if no runner can start, the
+    claim must not survive — otherwise every later trigger folds into a
+    pending set nothing drains and the KB goes silently dead.
+    """
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    calls = 0
+
+    async def _counting_generate(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _counting_generate)
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_trigger_ready", AsyncMock(return_value=True))
+    worker = _worker(store, session_factory, main_llm=_WikiLLM())
+    embedder = FakeEmbedder()
+    real_create_task = asyncio.create_task
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("no running loop")
+
+    monkeypatch.setattr("asyncio.create_task", _boom)
+    with pytest.raises(RuntimeError):
+        worker._spawn_wiki("kb-1", embedder)
+    assert "kb-1" not in worker._wiki_busy, "a failed spawn froze the KB behind a dead claim"
+    assert "kb-1" in worker._wiki_pending
+    monkeypatch.setattr("asyncio.create_task", real_create_task)
+
+    worker._spawn_wiki("kb-1", embedder)
+    await worker.wait_idle()
+
+    assert calls == 1, "the trigger after a failed spawn never ran"

@@ -28,10 +28,10 @@
 
 ## Task 1 — ⑤ RED→GREEN→neuter（换序）
 
-- [ ] **RED**：`create_task` 换抛错桩 → 断 `_wiki_busy` 无残留、`_wiki_pending` 保持 → 现形状**红**（busy 残留）。
-- [ ] **GREEN**（D1=甲）：`create_task` 提到 `busy.add` 之前 + 一行原子性注释 → 断言转绿。
-- [ ] **neuter**：换回旧序（`busy.add` 在前）→ RED 反证红 → 还原。
-- [ ] 门禁：`tests/knowledge/test_worker.py` 全绿、ruff 双净。
+- [x] **RED**：`test_a_failed_task_creation_never_freezes_the_kb`——`asyncio.create_task` 换抛错桩（无 await 窗口内换回真身）→ **红（正确红因）**：`a failed spawn froze the KB behind a dead claim`（`busy` 残留 `{'kb-1'}`）；断言含「pending 保持 + 后续触发仍能跑」。
+- [x] **GREEN**（D1=甲）：`create_task` 提到 `busy.add` 之前 + 原子性注释（「本函数保持全同步，claim 检查与占位必须同一不间断步骤」）→ 转绿。
+- [x] **neuter**：换回旧序（`busy.add` 在前）→ **红（同红因）** → 还原转绿。
+- [x] 门禁：`test_worker.py` **39/39 全绿**、ruff check/format 双净。
 
 ## Task 2 — ④ 去 settle（计数/事件断言）
 

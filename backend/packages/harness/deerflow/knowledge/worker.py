@@ -321,8 +321,11 @@ class KnowledgeIndexWorker:
         self._wiki_pending.add(kb_id)
         if kb_id in self._wiki_busy:
             return
-        self._wiki_busy.add(kb_id)
+        # Create the runner before claiming: a failed create_task must not leave
+        # a dead claim freezing the KB. Safe only while this function stays fully
+        # synchronous — keep the claim check and the claim in one unbroken step.
         task = asyncio.create_task(self._wiki_runner(kb_id, embedder), name=f"kb-wiki-{kb_id}")
+        self._wiki_busy.add(kb_id)
         self._wiki_tasks.add(task)
         task.add_done_callback(self._wiki_tasks.discard)
 
