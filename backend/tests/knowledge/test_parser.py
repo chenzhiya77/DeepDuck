@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import xml.etree.ElementTree as ET
 import zipfile
 
 import httpx
@@ -1196,15 +1197,19 @@ def test_workbook_to_markdown_header_only_sheet():
     assert _workbook_rows_to_markdown([("S", [["a", "b"]])]) == "## S\n\n| a | b |\n| --- | --- |"
 
 
-def _install_fake_calamine(monkeypatch, sheets):
+def _install_fake_calamine(monkeypatch, sheets, starts=None):
     """把 fake `python_calamine` 塞进 sys.modules：CalamineWorkbook.from_path →
-    sheet_names（属性）/ get_sheet_by_name(name).to_python() → rows，镜像真实 API。"""
+    sheet_names（属性）/ get_sheet_by_name(name).to_python() → rows，镜像真实 API。
+
+    ``starts`` 按 sheet 覆盖 ``sheet.start``（0-based 绝对 (row, col) 原点；缺省
+    ``(0, 0)``，显式传 ``None`` 模拟空 sheet —— 真实 calamine 空 sheet 即 None）。"""
     import sys
     import types
 
     class _FakeSheet:
-        def __init__(self, rows):
+        def __init__(self, rows, start):
             self._rows = rows
+            self.start = start
 
         def to_python(self, **kwargs):
             return self._rows
@@ -1219,7 +1224,8 @@ def _install_fake_calamine(monkeypatch, sheets):
             return cls(sheets)
 
         def get_sheet_by_name(self, name):
-            return _FakeSheet(self._data[name])
+            start = starts[name] if starts and name in starts else (0, 0)
+            return _FakeSheet(self._data[name], start)
 
     module = types.ModuleType("python_calamine")
     module.CalamineWorkbook = _FakeWorkbook
@@ -1258,15 +1264,19 @@ async def test_parse_excel_missing_calamine_raises_clear_error(tmp_path, monkeyp
 @pytest.mark.asyncio
 async def test_parse_excel_happy_path_via_fake_calamine(tmp_path, monkeypatch):
     """fake calamine 走完接线：from_path → sheet_names → get_sheet_by_name → to_python
-    → 每 sheet 一段 GFM；证明 run_file_io 包裹的 blocking 读取产出正确 markdown。"""
+    → 每 sheet 一段 GFM；证明 run_file_io 包裹的 blocking 读取产出正确 markdown。
+    .xlsx 会尽力读一次 zip（本夹具是假字节 ⇒ 落回退腿、images 空，spec 2026-10-03）。"""
     from deerflow.knowledge.parser import _parse_excel
 
     _stub_gates(monkeypatch, table=True)
     _install_fake_calamine(monkeypatch, {"Sales": [["Region", "Q1"], ["North", 120]], "Empty": []})
+    p = tmp_path / "book.xlsx"
+    p.write_bytes(b"xlsx-bytes")  # 假字节：图片提取走 BadZipFile 回退腿
 
-    md = await _parse_excel(tmp_path / "book.xlsx")
+    doc = await _parse_excel(p)
 
-    assert md == "## Sales\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 |"
+    assert doc.markdown == "## Sales\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 |"
+    assert doc.images == []
 
 
 @pytest.mark.asyncio
@@ -1318,6 +1328,421 @@ async def test_parse_excel_real_xlsx_end_to_end(tmp_path, monkeypatch):
     assert "| Region | Q1 |" in doc.markdown
     assert "| North | 120 |" in doc.markdown
     assert "## Empty" not in doc.markdown
+
+
+# ── 工作簿内嵌图片提取（spec 2026-10-03 D2=乙/§2.4）────────────────────────────
+#
+# `.xlsx` 是 zip：提取只读 OOXML 关系链（workbook → sheet rels → drawing 锚点 →
+# drawing rels → media），纯 stdlib。夹具手造最小 OOXML 包，不依赖 openpyxl/calamine；
+# 真 .xlsx 端到端在 Task 4。锚点=`xdr:from` 0-based 绝对 (row, col)；只取包内
+# `xl/media/` 下经 `r:embed` 引用的白名单媒体（`r:link` 外部图、越界部件跳过）。
+
+_XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_XLSX_RELS_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_XLSX_R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_XLSX_XDR_NS = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+_XLSX_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+
+def _rel(rid, rel_type, target, *, external=False):
+    mode = ' TargetMode="External"' if external else ""
+    return f'<Relationship Id="{rid}" Type="{rel_type}" Target="{target}"{mode}/>'
+
+
+def _rels(*entries):
+    return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="{_XLSX_RELS_NS}">' + "".join(entries) + "</Relationships>"
+
+
+def _anchor(kind, *, embed=None, link=None, frm=None, to=None, pic_id=1):
+    """一个 drawing 锚（oneCell/twoCell/absolute）包一张图。
+
+    ``frm``/``to`` 为 0-based ``(col, row)``（XML 子元素序）；``embed`` 写 ``r:embed``
+    （包内字节），``link`` 写 ``r:link``（外部图，刻意没有字节可取）。
+    """
+
+    def _cell(tag, pair):
+        return f"<xdr:{tag}><xdr:col>{pair[0]}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{pair[1]}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:{tag}>"
+
+    blip = f'<a:blip r:embed="{embed}"/>' if embed is not None else f'<a:blip r:link="{link}"/>'
+    body = []
+    if kind == "absoluteAnchor":
+        body.append('<xdr:pos x="0" y="0"/><xdr:ext cx="200000" cy="200000"/>')
+    else:
+        if frm is not None:
+            body.append(_cell("from", frm))
+        if to is not None:
+            body.append(_cell("to", to))
+        if kind == "oneCellAnchor":
+            body.append('<xdr:ext cx="200000" cy="200000"/>')
+    body.append(f'<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="{pic_id}" name="Picture {pic_id}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill>{blip}<a:stretch/></xdr:blipFill><xdr:spPr/></xdr:pic>')
+    body.append("<xdr:clientData/>")
+    return f"<xdr:{kind}>" + "".join(body) + f"</xdr:{kind}>"
+
+
+def _drawing(*anchors):
+    return f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="{_XLSX_XDR_NS}" xmlns:a="{_XLSX_A_NS}" xmlns:r="{_XLSX_R_NS}">' + "".join(anchors) + "</xdr:wsDr>"
+
+
+def _build_xlsx(path, *, sheet1_rels=None, drawing=None, drawing_rels=None, members=None):
+    """最小两 sheet OOXML 包：``Sheet1`` 挂（可选）drawing 链、``Notes`` 永无 rels；
+    workbook rels 刻意一绝对一相对，钉住 Target 两形态。返回 ``path``。"""
+    parts = {
+        "xl/workbook.xml": (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<workbook xmlns="{_XLSX_MAIN_NS}" xmlns:r="{_XLSX_R_NS}"><sheets>'
+            f'<sheet name="Sheet1" sheetId="1" r:id="rId1"/><sheet name="Notes" sheetId="2" r:id="rId2"/>'
+            f"</sheets></workbook>"
+        ),
+        "xl/_rels/workbook.xml.rels": _rels(
+            _rel("rId1", f"{_XLSX_R_NS}/worksheet", "/xl/worksheets/sheet1.xml"),
+            _rel("rId2", f"{_XLSX_R_NS}/worksheet", "worksheets/sheet2.xml"),
+        ),
+        "xl/worksheets/sheet1.xml": f'<worksheet xmlns="{_XLSX_MAIN_NS}"/>',
+        "xl/worksheets/sheet2.xml": f'<worksheet xmlns="{_XLSX_MAIN_NS}"/>',
+    }
+    if sheet1_rels is not None:
+        parts["xl/worksheets/_rels/sheet1.xml.rels"] = sheet1_rels
+    if drawing is not None:
+        parts["xl/drawings/drawing1.xml"] = drawing
+    if drawing_rels is not None:
+        parts["xl/drawings/_rels/drawing1.xml.rels"] = drawing_rels
+    parts.update(members or {})
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, content in parts.items():
+            zf.writestr(name, content)
+    return path
+
+
+# Sheet1 的 sheet rels：一个 drawing 关系 + 一个 hyperlink 关系（只认 /drawing 类型）。
+_SHEET1_RELS = _rels(
+    _rel("rId1", f"{_XLSX_R_NS}/drawing", "/xl/drawings/drawing1.xml"),
+    _rel("rId2", f"{_XLSX_R_NS}/hyperlink", "https://example.com/", external=True),
+)
+
+# 富夹具：7 个锚覆盖三形态/白名单/去重/双闸/悬空引用——
+# ① oneCell(4,2) embed rId1 → image1.png 命中锚（首见）
+# ② twoCell from=(19,5) to=(20,6) embed rId2 → image2.jpeg（只读 from）
+# ③ absoluteAnchor embed rId3 → image3.png（无 from ⇒ 无锚）
+# ④ oneCell(1,1) embed rId4 → image4.emf（白名单外跳过）
+# ⑤ oneCell(3,3) r:link rId5 → 外部图跳过
+# ⑥ oneCell(0,0) embed rId6 → /xl/embeddings/note.png（xl/media 硬界外跳过）
+# ⑦ oneCell(7,7) embed rId1 → 同媒体第二次引用（去重，归①的锚）
+_RICH_DRAWING = _drawing(
+    _anchor("oneCellAnchor", embed="rId1", frm=(4, 2), pic_id=1),
+    _anchor("twoCellAnchor", embed="rId2", frm=(19, 5), to=(20, 6), pic_id=2),
+    _anchor("absoluteAnchor", embed="rId3", pic_id=3),
+    _anchor("oneCellAnchor", embed="rId4", frm=(1, 1), pic_id=4),
+    _anchor("oneCellAnchor", link="rId5", frm=(3, 3), pic_id=5),
+    _anchor("oneCellAnchor", embed="rId6", frm=(0, 0), pic_id=6),
+    _anchor("oneCellAnchor", embed="rId1", frm=(7, 7), pic_id=7),
+)
+
+# drawing rels：绝对/相对 Target 各一；rId5=External；rId6=越界部件；rId7=悬空（无锚引用）。
+_RICH_DRAWING_RELS = _rels(
+    _rel("rId1", f"{_XLSX_R_NS}/image", "/xl/media/image1.png"),
+    _rel("rId2", f"{_XLSX_R_NS}/image", "../media/image2.jpeg"),
+    _rel("rId3", f"{_XLSX_R_NS}/image", "/xl/media/image3.png"),
+    _rel("rId4", f"{_XLSX_R_NS}/image", "/xl/media/image4.emf"),
+    _rel("rId5", f"{_XLSX_R_NS}/image", "https://example.com/remote.png", external=True),
+    _rel("rId6", f"{_XLSX_R_NS}/image", "/xl/embeddings/note.png"),
+    _rel("rId7", f"{_XLSX_R_NS}/image", "../media/ghost.png"),
+)
+
+_RICH_MEMBERS = {
+    "xl/media/image1.png": b"png-one",
+    "xl/media/image2.jpeg": b"jpeg-two",
+    "xl/media/image3.png": b"png-three",
+    "xl/media/image4.emf": b"emf-four",
+    "xl/media/zzz_orphan.png": b"orphan",
+    "xl/embeddings/note.png": b"outside",
+}
+
+
+def test_xlsx_sheet_images_maps_anchors_media_and_bytes(tmp_path):
+    from deerflow.knowledge.parser import _extract_xlsx_images, _xlsx_sheet_images
+
+    book = _build_xlsx(
+        tmp_path / "rich.xlsx",
+        sheet1_rels=_SHEET1_RELS,
+        drawing=_RICH_DRAWING,
+        drawing_rels=_RICH_DRAWING_RELS,
+        members=_RICH_MEMBERS,
+    )
+
+    with zipfile.ZipFile(book) as zf:
+        result = _xlsx_sheet_images(zf)
+
+    assert set(result) == {"Sheet1"}  # Notes（无 rels）不产出；孤儿媒体不被取
+    assert [(image.ref, image.content, image.media_type, row, col) for image, row, col in result["Sheet1"]] == [
+        ("images/image1.png", b"png-one", "image/png", 2, 4),  # oneCell 锚 from=(col 4, row 2)
+        ("images/image2.jpeg", b"jpeg-two", "image/jpeg", 5, 19),  # twoCell 取 from、不取 to
+        ("images/image3.png", b"png-three", "image/png", None, None),  # absoluteAnchor 无 from
+    ]
+    # 白名单外的 emf、r:link 外部图、硬界外的 embeddings 部件、重复引用的 rId1 都不在清单里。
+
+    assert _extract_xlsx_images(book) == result
+
+
+def test_xlsx_sheet_images_sheet_with_only_filtered_images_is_absent(tmp_path):
+    from deerflow.knowledge.parser import _xlsx_sheet_images
+
+    book = _build_xlsx(
+        tmp_path / "filtered.xlsx",
+        sheet1_rels=_SHEET1_RELS,
+        drawing=_drawing(
+            _anchor("oneCellAnchor", embed="rId1", frm=(0, 0), pic_id=1),  # .emf 不在白名单
+            _anchor("oneCellAnchor", link="rId2", frm=(1, 1), pic_id=2),  # r:link：字节不在包内
+        ),
+        drawing_rels=_rels(
+            _rel("rId1", f"{_XLSX_R_NS}/image", "/xl/media/icon.emf"),
+            _rel("rId2", f"{_XLSX_R_NS}/image", "https://example.com/remote.png", external=True),
+        ),
+        members={"xl/media/icon.emf": b"emf-bytes"},
+    )
+
+    with zipfile.ZipFile(book) as zf:
+        assert _xlsx_sheet_images(zf) == {}
+
+
+def test_xlsx_sheet_images_dedupes_same_media_keeping_first_anchor(tmp_path):
+    from deerflow.knowledge.parser import _xlsx_sheet_images
+
+    book = _build_xlsx(
+        tmp_path / "dedupe.xlsx",
+        sheet1_rels=_SHEET1_RELS,
+        drawing=_drawing(
+            _anchor("oneCellAnchor", embed="rId1", frm=(4, 2), pic_id=1),
+            _anchor("oneCellAnchor", embed="rId1", frm=(7, 7), pic_id=2),
+        ),
+        drawing_rels=_rels(_rel("rId1", f"{_XLSX_R_NS}/image", "/xl/media/image1.png")),
+        members={"xl/media/image1.png": b"png-one"},
+    )
+
+    with zipfile.ZipFile(book) as zf:
+        items = _xlsx_sheet_images(zf)["Sheet1"]
+
+    assert [(image.ref, row, col) for image, row, col in items] == [("images/image1.png", 2, 4)]
+
+
+def test_xlsx_sheet_images_skips_missing_drawing_and_missing_media(tmp_path):
+    from deerflow.knowledge.parser import _xlsx_sheet_images
+
+    # sheet rels 指向包内不存在的 drawing9 → 该件跳过、不炸（其余照出）
+    book = _build_xlsx(
+        tmp_path / "no-drawing.xlsx",
+        sheet1_rels=_rels(_rel("rId1", f"{_XLSX_R_NS}/drawing", "/xl/drawings/drawing9.xml")),
+    )
+    with zipfile.ZipFile(book) as zf:
+        assert _xlsx_sheet_images(zf) == {}
+
+    # drawing 在、其中一个 media 部件缺失 → 该图跳过、其余照出（件级容错）
+    book = _build_xlsx(
+        tmp_path / "no-media.xlsx",
+        sheet1_rels=_SHEET1_RELS,
+        drawing=_drawing(
+            _anchor("oneCellAnchor", embed="rId1", frm=(4, 2), pic_id=1),
+            _anchor("oneCellAnchor", embed="rId2", frm=(5, 5), pic_id=2),
+        ),
+        drawing_rels=_rels(
+            _rel("rId1", f"{_XLSX_R_NS}/image", "/xl/media/image1.png"),
+            _rel("rId2", f"{_XLSX_R_NS}/image", "/xl/media/missing.png"),
+        ),
+        members={"xl/media/image1.png": b"png-one"},
+    )
+    with zipfile.ZipFile(book) as zf:
+        items = _xlsx_sheet_images(zf)["Sheet1"]
+
+    assert [(image.ref, row, col) for image, row, col in items] == [("images/image1.png", 2, 4)]
+
+
+def test_extract_xlsx_images_bad_zip_raises(tmp_path):
+    from deerflow.knowledge.parser import _extract_xlsx_images
+
+    p = tmp_path / "broken.xlsx"
+    p.write_bytes(b"this is not a zip")
+
+    with pytest.raises(zipfile.BadZipFile):
+        _extract_xlsx_images(p)
+
+
+# ── Task 2: 挂载与接线（同一 spec；D2=乙 并入规则 + 回退）──────────────────────
+
+
+def _img(ref):
+    return ParsedImage(ref=ref, content=b"", media_type="image/png")
+
+
+def test_merge_anchor_links_merges_into_cells_keeping_text_form():
+    from deerflow.knowledge.parser import _merge_anchor_links
+
+    rows = [["Region", "Q1"], ["North", 120.0], ["South", None]]
+
+    merged, tail = _merge_anchor_links(
+        rows,
+        (0, 0),
+        [
+            (_img("images/p1.png"), 1, 1),  # 数字格：经 _cell_to_text 写 120，不写 120.0
+            (_img("images/p2.png"), 2, 1),  # 空格：仅链接
+            (_img("images/p3.png"), 1, 1),  # 同格第二图：空格连接
+        ],
+    )
+
+    assert merged[0] == ["Region", "Q1"]  # 未命中单元格不动
+    assert merged[1][1] == "120 ![图片](images/p1.png) ![图片](images/p3.png)"
+    assert merged[2][1] == "![图片](images/p2.png)"
+    assert tail == []
+
+
+def test_merge_anchor_links_normalizes_anchors_against_sheet_start():
+    from deerflow.knowledge.parser import _merge_anchor_links
+
+    entries = [
+        (_img("images/hit.png"), 3, 2),  # abs (3,2) − start (2,1) → 矩阵 (1,1)
+        (_img("images/row.png"), 9, 1),  # 越界行
+        (_img("images/col.png"), 2, 9),  # 超表宽
+        (_img("images/above.png"), 1, 1),  # 原点之上（行小于 start）
+    ]
+
+    merged, tail = _merge_anchor_links([["a", "b"], ["1", "2"]], (2, 1), entries)
+
+    assert merged[1][1] == "2 ![图片](images/hit.png)"
+    assert [image.ref for image in tail] == ["images/row.png", "images/col.png", "images/above.png"]
+
+
+def test_merge_anchor_links_falls_back_when_unplaceable():
+    from deerflow.knowledge.parser import _merge_anchor_links
+
+    absolute = (_img("images/abs.png"), None, None)  # absoluteAnchor：无 from
+    anchored = (_img("images/cell.png"), 0, 0)
+
+    merged, tail = _merge_anchor_links([["a"]], (0, 0), [absolute, anchored])
+
+    assert merged[0][0] == "a ![图片](images/cell.png)"
+    assert [image.ref for image in tail] == ["images/abs.png"]
+
+    merged, tail = _merge_anchor_links([["a"]], None, [anchored])  # 空 sheet start=None
+
+    assert merged == [["a"]]
+    assert [image.ref for image in tail] == ["images/cell.png"]
+
+
+def test_workbook_to_markdown_trailing_images_and_image_only_sheet():
+    from deerflow.knowledge.parser import _workbook_rows_to_markdown
+
+    md = _workbook_rows_to_markdown(
+        [("Data", [["a"], ["1"]]), ("Shots", [])],
+        trailing_images_by_sheet={"Data": [_img("images/tail.png"), _img("images/tail2.png")], "Shots": [_img("images/bare.png")]},
+    )
+
+    assert md == "## Data\n\n| a |\n| --- |\n| 1 |\n\n![图片](images/tail.png)\n\n![图片](images/tail2.png)\n\n## Shots\n\n![图片](images/bare.png)"
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_merges_anchor_links_and_flattens_images(tmp_path, monkeypatch):
+    from deerflow.knowledge.parser import _parse_excel
+
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"Sheet1": [["Region", "Q1"], ["North", 120.0]]})
+    book = _build_xlsx(
+        tmp_path / "anchored.xlsx",
+        sheet1_rels=_SHEET1_RELS,
+        drawing=_drawing(
+            _anchor("oneCellAnchor", embed="rId1", frm=(1, 1), pic_id=1),  # 命中 (row 1, col 1)
+            _anchor("oneCellAnchor", embed="rId2", frm=(0, 9), pic_id=2),  # 越界行 → 段尾
+        ),
+        drawing_rels=_rels(
+            _rel("rId1", f"{_XLSX_R_NS}/image", "/xl/media/image1.png"),
+            _rel("rId2", f"{_XLSX_R_NS}/image", "/xl/media/image2.png"),
+        ),
+        members={"xl/media/image1.png": b"png-one", "xl/media/image2.png": b"png-two"},
+    )
+
+    doc = await _parse_excel(book)
+
+    assert doc.markdown == "## Sheet1\n\n| Region | Q1 |\n| --- | --- |\n| North | 120 ![图片](images/image1.png) |\n\n![图片](images/image2.png)"
+    assert [(image.ref, image.content) for image in doc.images] == [("images/image1.png", b"png-one"), ("images/image2.png", b"png-two")]
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_startless_sheet_appends_images_section(tmp_path, monkeypatch):
+    from deerflow.knowledge.parser import _parse_excel
+
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"Sheet1": []}, starts={"Sheet1": None})
+    book = _build_xlsx(
+        tmp_path / "image-only.xlsx",
+        sheet1_rels=_SHEET1_RELS,
+        drawing=_drawing(_anchor("oneCellAnchor", embed="rId1", frm=(0, 0), pic_id=1)),
+        drawing_rels=_rels(_rel("rId1", f"{_XLSX_R_NS}/image", "/xl/media/image1.png")),
+        members={"xl/media/image1.png": b"png-one"},
+    )
+
+    doc = await _parse_excel(book)
+
+    assert doc.markdown == "## Sheet1\n\n![图片](images/image1.png)"
+    assert [image.ref for image in doc.images] == ["images/image1.png"]
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_broken_xlsx_falls_back_to_text_only(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from deerflow.knowledge.parser import _parse_excel
+
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"S": [["a"], ["1"]]})
+    p = tmp_path / "broken.xlsx"
+    p.write_bytes(b"not a zip at all")
+
+    with caplog.at_level(logging.WARNING, logger="deerflow.knowledge.parser"):
+        doc = await _parse_excel(p)
+
+    assert doc.markdown == "## S\n\n| a |\n| --- |\n| 1 |"
+    assert doc.images == []
+    assert "failed to extract embedded images" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", [zipfile.BadZipFile("bad"), ET.ParseError("bad"), KeyError("bad")])
+async def test_parse_excel_image_extraction_errors_degrade_to_text(tmp_path, monkeypatch, caplog, exc):
+    import logging
+
+    from deerflow.knowledge import parser as knowledge_parser
+
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"S": [["a"], ["1"]]})
+    p = tmp_path / "book.xlsx"
+    p.write_bytes(b"x")
+
+    def _boom(path):
+        raise exc
+
+    monkeypatch.setattr(knowledge_parser, "_extract_xlsx_images", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="deerflow.knowledge.parser"):
+        doc = await knowledge_parser._parse_excel(p)
+
+    assert doc.markdown == "## S\n\n| a |\n| --- |\n| 1 |"
+    assert doc.images == []
+    assert "failed to extract embedded images" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_parse_excel_xls_never_reads_the_zip_leg(tmp_path, monkeypatch):
+    from deerflow.knowledge import parser as knowledge_parser
+
+    _stub_gates(monkeypatch, table=True)
+    _install_fake_calamine(monkeypatch, {"S": [["a"], ["1"]]})
+    calls: list = []
+    monkeypatch.setattr(knowledge_parser, "_extract_xlsx_images", lambda path: calls.append(path) or {})
+    p = tmp_path / "old.xls"
+    p.write_bytes(b"biff-bytes")
+
+    doc = await knowledge_parser._parse_excel(p)
+
+    assert calls == []
+    assert doc.markdown == "## S\n\n| a |\n| --- |\n| 1 |"
+    assert doc.images == []
 
 
 # ── caption_images()'s outcome (spec 2026-09-23 D8/R13) ────────────────────

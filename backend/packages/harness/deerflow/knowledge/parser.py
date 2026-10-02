@@ -33,8 +33,10 @@ import csv
 import io
 import logging
 import os
+import posixpath
 import re
 import time
+import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -116,6 +118,16 @@ _MEDIA_TYPES = {
     ".bmp": "image/bmp",
     ".webp": "image/webp",
 }
+
+#: OOXML namespaces the workbook-image extraction reads (spec 2026-10-03 §2.4):
+#: the spreadsheet main namespace, the package relationships namespace, the
+#: officeDocument relationship *attribute* namespace, and the drawing namespaces
+#: (worksheetDrawing for the anchors, drawingml main for ``a:blip``).
+_XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_XLSX_RELS_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_XLSX_R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_XLSX_XDR_NS = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+_XLSX_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
 
 def video_ingest_enabled() -> bool:
@@ -271,7 +283,11 @@ def _cell_to_text(value: object) -> str:
     return str(value)
 
 
-def _workbook_rows_to_markdown(sheets: Iterable[tuple[str, list[list[object]]]]) -> str:
+def _workbook_rows_to_markdown(
+    sheets: Iterable[tuple[str, list[list[object]]]],
+    *,
+    trailing_images_by_sheet: dict[str, list[ParsedImage]] | None = None,
+) -> str:
     """Assemble one ``## {sheet_name}`` + GFM pipe table per non-empty sheet.
 
     Pure transform over ``(sheet_name, rows)`` pairs (rows are calamine's
@@ -279,21 +295,71 @@ def _workbook_rows_to_markdown(sheets: Iterable[tuple[str, list[list[object]]]])
     padded/truncated to the header width, blank rows and empty sheets are
     skipped, and sheets are concatenated in order (spec 2026-09-09 §5). The
     ``##`` heading lets the chunker file every row card under the sheet name.
+
+    ``trailing_images_by_sheet`` (spec 2026-10-03 D2=乙) renders the images a
+    sheet could not place into a cell after its table, one ``![图片](ref)`` line
+    per image separated by blank lines — a sheet with images but no rows still
+    emits its ``##`` section.
     """
+    trailing = trailing_images_by_sheet or {}
     blocks: list[str] = []
     for sheet_name, raw_rows in sheets:
         rows = [[_cell_to_text(cell) for cell in row] for row in raw_rows]
         rows = [row for row in rows if any(cell.strip() for cell in row)]
-        if not rows:
+        images = trailing.get(sheet_name, [])
+        if not rows and not images:
             continue  # empty sheet
-        width = len(rows[0])
-        table = [_gfm_row(rows[0]), _gfm_separator(width)]
-        table.extend(_gfm_row(_fit_width(row, width)) for row in rows[1:])
-        blocks.append(f"## {sheet_name}\n\n" + "\n".join(table))
+        block = f"## {sheet_name}"
+        if rows:
+            width = len(rows[0])
+            table = [_gfm_row(rows[0]), _gfm_separator(width)]
+            table.extend(_gfm_row(_fit_width(row, width)) for row in rows[1:])
+            block += "\n\n" + "\n".join(table)
+        if images:
+            block += "\n\n" + "\n\n".join(f"![图片]({image.ref})" for image in images)
+        blocks.append(block)
     return "\n\n".join(blocks)
 
 
-async def _parse_excel(path: Path) -> str:
+def _merge_anchor_links(
+    rows: list[list[object]],
+    start: tuple[int, int] | None,
+    images: list[tuple[ParsedImage, int | None, int | None]],
+) -> tuple[list[list[object]], list[ParsedImage]]:
+    """Place each image's link into its anchor cell, or fall back to the sheet tail.
+
+    ``start`` is calamine's ``sheet.start`` — the 0-based absolute ``(row, col)``
+    origin of the used range — so an anchor hits when ``abs − start`` lands inside
+    the matrix (row < row count, column < header width). Anything unplaceable —
+    out-of-range rows/columns, an ``absoluteAnchor`` without ``xdr:from``, a sheet
+    with no ``start`` at all — goes to the returned tail, which the caller renders
+    after the table. A hit cell becomes composite text: its own text first
+    (``_cell_to_text``: numbers keep their integer form) then the link, with
+    images sharing a cell joined by spaces in anchor order (spec 2026-10-03 D2=乙).
+    """
+    if not images:
+        return rows, []
+    matrix = [list(row) for row in rows]
+    tail: list[ParsedImage] = []
+    width = len(matrix[0]) if matrix else 0
+    for image, abs_row, abs_col in images:
+        if abs_row is None or abs_col is None or start is None:
+            tail.append(image)
+            continue
+        row_idx, col_idx = abs_row - start[0], abs_col - start[1]
+        if not (0 <= row_idx < len(matrix) and 0 <= col_idx < width):
+            tail.append(image)
+            continue
+        row = matrix[row_idx]
+        while len(row) <= col_idx:
+            row.append(None)
+        text = _cell_to_text(row[col_idx])
+        link = f"![图片]({image.ref})"
+        row[col_idx] = f"{text} {link}" if text else link
+    return matrix, tail
+
+
+async def _parse_excel(path: Path) -> ParsedDocument:
     """Parse an ``.xlsx``/``.xls`` workbook into one GFM table per sheet.
 
     Gated behind ``rag.table.enabled`` and needs ``python-calamine`` (lazy
@@ -302,20 +368,188 @@ async def _parse_excel(path: Path) -> str:
     producing nothing (spec 2026-09-09 §4/§8). The blocking workbook read runs on
     the file-IO pool via ``run_file_io``; each sheet becomes ``## {sheet_name}`` +
     a GFM pipe table (see ``_workbook_rows_to_markdown``).
+
+    ``.xlsx`` embedded images ride along (spec 2026-10-03 D2=乙): each image's
+    ``xdr:from`` anchor is normalized against calamine's ``sheet.start`` and the
+    link merges into its cell (``原文本 ![图片](ref)``); unplaceable images fall
+    back to the sheet tail. The extraction is best-effort — ``BadZipFile`` /
+    ``ET.ParseError`` / ``KeyError`` degrade to the text-only leg with a warning.
+    ``.xls`` never attempts the zip read (D1=甲: the old binary format keeps no
+    image support).
     """
     if not table_ingest_enabled():
         raise ValueError("Excel 解析被门控关闭：需开启 rag.table.enabled 才能入库 .xlsx/.xls（spec 2026-09-09 §4）")
 
-    def _blocking() -> list[tuple[str, list[list[object]]]]:
+    def _blocking() -> list[tuple[str, list[list[object]], tuple[int, int] | None]]:
         try:
             from python_calamine import CalamineWorkbook  # 延迟 import：缺失即降级
         except ImportError as exc:
             raise ValueError("python-calamine 未安装：Excel 解析需要它（pip install python-calamine，对齐视频重依赖的 uv pip 安装先例）") from exc
         workbook = CalamineWorkbook.from_path(str(path))
-        return [(name, workbook.get_sheet_by_name(name).to_python()) for name in workbook.sheet_names]
+        sheets: list[tuple[str, list[list[object]], tuple[int, int] | None]] = []
+        for name in workbook.sheet_names:
+            sheet = workbook.get_sheet_by_name(name)
+            sheets.append((name, sheet.to_python(), sheet.start))
+        return sheets
 
     sheets = await run_file_io(_blocking)
-    return _workbook_rows_to_markdown(sheets)
+
+    images_by_sheet: dict[str, list[tuple[ParsedImage, int | None, int | None]]] = {}
+    if path.suffix.lower() == ".xlsx":
+        try:
+            images_by_sheet = await run_file_io(lambda: _extract_xlsx_images(path))
+        except (zipfile.BadZipFile, ET.ParseError, KeyError):
+            logger.warning("failed to extract embedded images from workbook %s; parsing text only", path, exc_info=True)
+
+    sheet_rows: list[tuple[str, list[list[object]]]] = []
+    trailing_images_by_sheet: dict[str, list[ParsedImage]] = {}
+    images: list[ParsedImage] = []
+    for name, rows, start in sheets:
+        entries = images_by_sheet.get(name, [])
+        merged_rows, tail = _merge_anchor_links(rows, start, entries)
+        sheet_rows.append((name, merged_rows))
+        if tail:
+            trailing_images_by_sheet[name] = tail
+        images.extend(image for image, _, _ in entries)
+
+    return ParsedDocument(markdown=_workbook_rows_to_markdown(sheet_rows, trailing_images_by_sheet=trailing_images_by_sheet), images=images)
+
+
+# ── 工作簿内嵌图片提取（spec 2026-10-03 D2=乙/§2.4）────────────────────────────
+#
+# ``.xlsx`` is a zip: the images inside it are read straight from the OOXML
+# relationship chain (workbook → sheet rels → drawing anchors → drawing rels →
+# ``xl/media/``) with the stdlib only. The returned anchor is the ``xdr:from``
+# 0-based absolute ``(row, col)`` — ``None``s when the anchor has none — which
+# ``_parse_excel`` normalizes against calamine's sheet origin afterwards.
+
+
+def _rels_part(part: str) -> str:
+    """``xl/drawings/drawing1.xml`` → ``xl/drawings/_rels/drawing1.xml.rels``."""
+    parent, _, base = part.rpartition("/")
+    return f"{parent}/_rels/{base}.rels" if parent else f"_rels/{base}.rels"
+
+
+def _resolve_part(base_part: str, target: str) -> str:
+    """A relationship target → package part: absolute (``/xl/…``) or relative
+    (``../media/…``, resolved against ``base_part``'s directory)."""
+    if target.startswith("/"):
+        return target.lstrip("/")
+    return posixpath.normpath(posixpath.join(base_part.rpartition("/")[0], target))
+
+
+def _read_rels(zf: zipfile.ZipFile, part: str) -> dict[str, tuple[str, str, bool]]:
+    """``part``'s relationships as ``{Id: (Type, Target, is_external)}``.
+
+    A missing rels part reads as empty — sheets without relationships are normal
+    (spec 2026-10-03 §2.4). A malformed part propagates: the ``_parse_excel``
+    caller turns any ``BadZipFile``/``ET.ParseError``/``KeyError`` into the
+    text-only fallback.
+    """
+    try:
+        raw = zf.read(_rels_part(part))
+    except KeyError:
+        return {}
+    rels: dict[str, tuple[str, str, bool]] = {}
+    for node in ET.fromstring(raw).findall(f"{{{_XLSX_RELS_NS}}}Relationship"):
+        rel_id = node.get("Id")
+        if rel_id:
+            rels[rel_id] = (node.get("Type") or "", node.get("Target") or "", node.get("TargetMode") == "External")
+    return rels
+
+
+def _anchor_cell(anchor: ET.Element) -> tuple[int | None, int | None]:
+    """The anchor's ``xdr:from`` as 0-based absolute ``(row, col)``.
+
+    ``None``s when it has none (``absoluteAnchor``) or the coordinates do not
+    parse — both fall back to the sheet tail downstream (spec 2026-10-03 D2=乙).
+    """
+    from_el = anchor.find(f"{{{_XLSX_XDR_NS}}}from")
+    if from_el is None:
+        return None, None
+    try:
+        return int(from_el.findtext(f"{{{_XLSX_XDR_NS}}}row", "")), int(from_el.findtext(f"{{{_XLSX_XDR_NS}}}col", ""))
+    except ValueError:
+        return None, None
+
+
+def _drawing_images(zf: zipfile.ZipFile, drawing_part: str, seen_media: set[str]) -> list[tuple[ParsedImage, int | None, int | None]]:
+    """Images one drawing part anchors: ``r:embed`` refs into ``xl/media/`` only.
+
+    ``r:link`` (external image) carries no bytes in the package and is skipped,
+    along with out-of-boundary parts, non-allowlisted media types, dangling
+    relationships and repeated references (``seen_media`` keeps the first
+    anchor). A drawing or media part missing from the package is skipped per
+    part — everything else still comes out (spec 2026-10-03 §2.4).
+    """
+    try:
+        raw = zf.read(drawing_part)
+    except KeyError:
+        return []  # part-level: a missing drawing is skipped, the rest still comes out
+    rels = _read_rels(zf, drawing_part)
+    entries: list[tuple[ParsedImage, int | None, int | None]] = []
+    for anchor in ET.fromstring(raw):
+        if not anchor.tag.endswith("Anchor"):
+            continue
+        blip = anchor.find(f".//{{{_XLSX_A_NS}}}blip")
+        embed_id = blip.get(f"{{{_XLSX_R_NS}}}embed") if blip is not None else None
+        if not embed_id:
+            continue  # r:link (external) or a blipless anchor
+        rel = rels.get(embed_id)
+        if rel is None or rel[2]:
+            continue  # dangling relationship or an external target
+        media_part = _resolve_part(drawing_part, rel[1])
+        media_key = media_part.lower()
+        if not media_key.startswith("xl/media/") or media_key in seen_media:
+            continue  # out-of-boundary part or a repeated reference
+        media_type = _MEDIA_TYPES.get(posixpath.splitext(media_key)[1])
+        if media_type is None:
+            continue  # not in the frozen image allowlist (e.g. .emf/.wmf)
+        try:
+            content = zf.read(media_part)
+        except KeyError:
+            continue  # part-level: a missing media part is skipped, the rest still comes out
+        seen_media.add(media_key)
+        row, col = _anchor_cell(anchor)
+        entries.append((ParsedImage(ref=f"images/{posixpath.basename(media_part)}", content=content, media_type=media_type), row, col))
+    return entries
+
+
+def _xlsx_sheet_images(zf: zipfile.ZipFile) -> dict[str, list[tuple[ParsedImage, int | None, int | None]]]:
+    """Extract the workbook's embedded images, sheet by sheet, from an open zip.
+
+    Follows ``xl/workbook.xml`` → workbook rels → worksheet part → sheet rels →
+    drawing part (spec 2026-10-03 §2.4). Sheets come back in workbook order,
+    images in anchor order; a sheet with nothing extracted is absent.
+    """
+    sheets: dict[str, list[tuple[ParsedImage, int | None, int | None]]] = {}
+    seen_media: set[str] = set()
+    workbook_rels = _read_rels(zf, "xl/workbook.xml")
+    root = ET.fromstring(zf.read("xl/workbook.xml"))
+    for node in root.findall(f"{{{_XLSX_MAIN_NS}}}sheets/{{{_XLSX_MAIN_NS}}}sheet"):
+        name = node.get("name")
+        rel = workbook_rels.get(node.get(f"{{{_XLSX_R_NS}}}id") or "")
+        if not name or rel is None or rel[2] or not rel[0].endswith("/worksheet"):
+            continue
+        sheet_part = _resolve_part("xl/workbook.xml", rel[1])
+        entries: list[tuple[ParsedImage, int | None, int | None]] = []
+        for rel_type, target, external in _read_rels(zf, sheet_part).values():
+            if external or not rel_type.endswith("/drawing"):
+                continue
+            entries.extend(_drawing_images(zf, _resolve_part(sheet_part, target), seen_media))
+        if entries:
+            sheets[name] = entries
+    return sheets
+
+
+def _extract_xlsx_images(path: Path) -> dict[str, list[tuple[ParsedImage, int | None, int | None]]]:
+    """``_xlsx_sheet_images`` over a workbook path (see there for the rules).
+
+    Raises ``zipfile.BadZipFile`` for a non-zip file — the caller degrades that
+    to the text-only leg (spec 2026-10-03 §2.4).
+    """
+    with zipfile.ZipFile(path) as zf:
+        return _xlsx_sheet_images(zf)
 
 
 class MineruError(Exception):
@@ -791,7 +1025,7 @@ async def parse_document(
     if suffix in _DELIMITED_SUFFIXES:
         return ParsedDocument(markdown=_parse_delimited(path), images=[])
     if suffix in _EXCEL_SUFFIXES:
-        return ParsedDocument(markdown=await _parse_excel(path), images=[])
+        return await _parse_excel(path)
     if is_local_suffix(suffix):
         return ParsedDocument(markdown=_read_local_text(path), images=[])
 
