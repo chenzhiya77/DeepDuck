@@ -503,6 +503,7 @@ async def test_ready_document_auto_triggers_wiki_generation(session_factory):
     worker = _worker(store, session_factory, parse_fn=_parse_fn(md=TWO_CHUNK_MD), llm=llm, main_llm=_WikiLLM())
 
     await worker.process_document("doc-1")
+    await worker.wait_idle()  # the wiki leg is a tracked task now (D1): settle before asserting
 
     assert (await store.get_document("doc-1"))["status"] == "ready"
     entries = await WikiStore(session_factory).list_entries("kb-1")
@@ -568,6 +569,7 @@ async def test_entity_resolution_failure_degrades_without_blocking(session_facto
     worker = _worker(store, session_factory, llm=_PartialFailLLM(), main_llm=_WikiLLM())
 
     await worker.process_document("doc-1")
+    await worker.wait_idle()  # the wiki leg is a tracked task now (D1): settle before asserting
 
     doc = await store.get_document("doc-1")
     assert doc["status"] == "ready"
@@ -601,6 +603,7 @@ async def test_new_document_marks_touched_wiki_entries_dirty(session_factory):
     worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=llm, main_llm=_WikiLLM())
 
     await worker.process_document("doc-1")
+    await worker.wait_idle()  # the wiki leg is a tracked task now (D1): settle before asserting
 
     assert (await store.get_document("doc-1"))["status"] == "ready"
     entries = {entry["title"]: entry for entry in await wiki_store.list_entries("kb-1")}
@@ -1026,3 +1029,100 @@ def test_the_boot_snapshot_is_gone_from_both_sides():
     # The worker must read the *current* config where it used to consume a boot snapshot.
     assert "get_app_config" in worker_source
     assert "startup_config" not in worker_source
+
+
+# ── 百科腿放槽（spec 2026-10-02 D1=乙）────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_hanging_wiki_leg_does_not_block_new_documents(session_factory, monkeypatch):
+    """D1=乙: the wiki leg must not hold a worker slot.
+
+    W=2; doc-1 finishes and triggers a wiki run that hangs (the slot-hogging
+    shape of the pre-D1 pipeline). Two more documents submitted while it hangs
+    must enter parse at full concurrency 2 — before the fix the hanging run
+    eats one of the two slots and the newcomers serialize at 1.
+    """
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="1.md", size_bytes=1, storage_path="/tmp/1.md")
+
+    hang = asyncio.Event()
+    wiki_started = asyncio.Event()
+
+    async def _hanging_generate(*_args, **_kwargs):
+        wiki_started.set()
+        await hang.wait()
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _hanging_generate)
+    # Gate isolated: this test is about slot occupancy, not the trigger threshold.
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_trigger_ready", AsyncMock(return_value=True))
+
+    active = 0
+    peak = 0
+
+    async def slow_parse(path: str) -> ParsedDocument:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.05)
+            return ParsedDocument(markdown="# 标题\n\n正文。", images=[])
+        finally:
+            active -= 1
+
+    worker = _worker(store, session_factory, parse_fn=slow_parse, llm=FakeLLM({}), main_llm=_WikiLLM(), concurrency=2)
+    await worker.start()  # recover() re-enqueues doc-1
+    await wiki_started.wait()
+    for i in (2, 3):
+        await store.create_document(doc_id=f"doc-{i}", kb_id="kb-1", uploader_id="user-1", name=f"{i}.md", size_bytes=1, storage_path=f"/tmp/{i}.md")
+        await worker.submit(f"doc-{i}")
+
+    entered = False
+    for _ in range(300):
+        statuses = [(await store.get_document(f"doc-{i}"))["status"] for i in (2, 3)]
+        if all(status != "uploaded" for status in statuses):
+            entered = True
+            break
+        await asyncio.sleep(0.01)
+    hang.set()
+    await worker.wait_idle()
+    await worker.stop()
+
+    assert entered, "new documents never entered the pipeline while the wiki leg hung"
+    assert peak == 2, f"parse concurrency collapsed to {peak} while the wiki leg held a slot"
+
+
+@pytest.mark.asyncio
+async def test_wait_idle_covers_the_detached_wiki_leg(session_factory, monkeypatch):
+    """D1=乙: by the time ``wait_idle`` returns, the wiki run it spawned has settled.
+
+    Regression guard for the slot release: the wiki leg becomes a tracked task,
+    and the test-visible drain point is ``wait_idle`` — returning before the
+    entry is written would strand every wiki assertion in the suite.
+    """
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    wiki_store = WikiStore(session_factory)
+
+    async def _writing_generate(*_args, **_kwargs):
+        # 0.2s >> the drain gap: without the wait_idle drain this returns long
+        # before the entry lands, so the neuter proof cannot race past it.
+        await asyncio.sleep(0.2)
+        await wiki_store.upsert_entry("kb-1", title="DeerFlow", content="新条目", source_chunk_ids=[], status="ready")
+
+    monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _writing_generate)
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=FakeLLM({}), main_llm=_WikiLLM())
+    await worker.start()
+    await worker.wait_idle()
+    # Read BETWEEN wait_idle and stop: stop() gathers the tracked tasks too, and
+    # asserting after it could never tell the two drain points apart.
+    entries = await wiki_store.list_entries("kb-1")
+    await worker.stop()
+
+    assert entries, "wait_idle returned before the detached wiki run wrote its entry"
+    assert entries[0]["title"] == "DeerFlow"

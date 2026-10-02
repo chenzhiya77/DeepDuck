@@ -210,6 +210,7 @@ class KnowledgeIndexWorker:
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._dispatcher: asyncio.Task[None] | None = None
         self._inflight: set[asyncio.Task[None]] = set()
+        self._wiki_tasks: set[asyncio.Task[None]] = set()
 
     # ── lifecycle ────────────────────────────────────────────────────────
 
@@ -240,6 +241,8 @@ class KnowledgeIndexWorker:
                 await dispatcher
         if self._inflight:
             await asyncio.gather(*list(self._inflight), return_exceptions=True)
+        if self._wiki_tasks:
+            await asyncio.gather(*list(self._wiki_tasks), return_exceptions=True)
 
     async def recover(self) -> int:
         """Re-enqueue every non-terminal document; returns the count."""
@@ -285,6 +288,11 @@ class KnowledgeIndexWorker:
         while self._inflight:
             await asyncio.gather(*list(self._inflight), return_exceptions=True)
             await asyncio.sleep(0)
+        # The wiki leg is a tracked task outside the slot (D1): drain it here so
+        # "wait_idle returned" still means every trigger has settled.
+        while self._wiki_tasks:
+            await asyncio.gather(*list(self._wiki_tasks), return_exceptions=True)
+            await asyncio.sleep(0)
 
     async def _dispatch_loop(self) -> None:
         while True:
@@ -299,6 +307,18 @@ class KnowledgeIndexWorker:
                 await self.process_document(doc_id)
         finally:
             self._queue.task_done()
+
+    def _spawn_wiki(self, kb_id: str, embedder: _Embedder) -> None:
+        """Fire the wiki leg outside the worker slot (spec 2026-10-02 D1).
+
+        The document is ``ready`` at this point; a whole generation run must not
+        eat a ``worker_concurrency`` slot for minutes. Tracked in ``_wiki_tasks``
+        so ``wait_idle``/``stop`` still cover the run — the lifecycle contract is
+        unchanged, only the slot is released earlier.
+        """
+        task = asyncio.create_task(self._maybe_generate_wiki(kb_id, embedder), name=f"kb-wiki-{kb_id}")
+        self._wiki_tasks.add(task)
+        task.add_done_callback(self._wiki_tasks.discard)
 
     # ── pipeline ─────────────────────────────────────────────────────────
 
@@ -413,7 +433,7 @@ class KnowledgeIndexWorker:
             except Exception:
                 logger.exception("wiki dirty marking failed for kb %s", kb_id)
             await self._store.update_document_status(doc_id, "ready", progress_percent=100)
-            await self._maybe_generate_wiki(kb_id, embedder)
+            self._spawn_wiki(kb_id, embedder)
         except _DocumentDeletedError:
             logger.info("document %s was deleted mid-indexing; pipeline aborted quietly", doc_id)
             return None

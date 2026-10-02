@@ -32,12 +32,12 @@
 
 ## Task 1 — RED→GREEN 放槽（D1=乙）
 
-- [ ] **RED①**：新用例「wiki 挂起不占工位」：`_maybe_generate_wiki` 换慢速 stub（事件等待），W=2 连提 3 篇 → 断 parse 并发峰值 = 2（放槽前 = 1）→ 红。
-- [ ] **RED②**：新用例「`wait_idle` 覆盖 wiki 任务」：stub 生成落一条目，`wait_idle()` 返回后断条目已定稿 → 红。
-- [ ] **GREEN**：`_spawn_wiki` + `self._wiki_tasks` 实现；`:416` 改调用点；`wait_idle` 排干（循环判空）、`stop` gather；Task 0② 三条用例按处置转绿（后置 drain）。
-- [ ] **neuter①**：去掉 `wait_idle` 的 `_wiki_tasks` 排干 → RED② 反证红 → 还原。
-- [ ] **neuter②**：把 `_spawn_wiki` 改回槽内 await → RED① 反证红 → 还原。
-- [ ] 门禁：`tests/knowledge` 全绿、ruff check/format 干净。
+- [x] **RED①**：`test_a_hanging_wiki_leg_does_not_block_new_documents`——`generate_wiki` 换挂起 stub + `wiki_trigger_ready` 恒 True（隔离阈值门），W=2：doc-1 走完触发挂起后同批提 doc-2/3 → **红（正确红因）**：`new documents never entered the pipeline while the wiki leg hung`（挂起腿吃掉 1 槽，doc-3 卡死在 `uploaded`，parse 峰值 0）。
+- [x] **RED②**：`test_wait_idle_covers_the_detached_wiki_leg`——契约守卫（改前内联形态天然绿，"移动但不收编"才红）。**写法修正一笔**：首版把读取放在 `stop()` 之后，被 `stop()` 的 gather 兜住 ⇒ neuter① 反证不出差异；改为「`wait_idle` 与 `stop` 之间读条目」后该点位才真正钉住 `wait_idle`；stub 写入延迟定 0.2s（≫ 排干间隙，反证不可竞过）。
+- [x] **GREEN**：`worker.py` 四处——`__init__` 加 `_wiki_tasks`；`_spawn_wiki`（`:311-323`，spawn 入 `_wiki_tasks` + done-callback discard）；`:436` 调用点 `await …`→`self._spawn_wiki(…)`；`wait_idle` 尾部循环排干 `_wiki_tasks`、`stop()` 同法 gather。三条既有用例断言点后补 `await worker.wait_idle()`（`:492`/`:551`/`:581` 三处，各带一行注释）。`test_worker.py` **35/35 全绿**。
+- [x] **neuter①**：摘掉 `wait_idle` 的 wiki 排干 → `test_wait_idle_covers_the_detached_wiki_leg` **红（entries 空）** → 还原转绿。
+- [x] **neuter②**：调用点回退槽内 `await` → `test_a_hanging_wiki_leg_does_not_block_new_documents` **红（entered False）** → 还原转绿。
+- [x] 门禁：`tests/knowledge` **1437 passed / 2 skipped / 3 failed**（2026-10-02）——3 条全非本对：`test_embed_missing_api_key` / `test_rerank_missing_api_key` = **环境红**（本机 env 带真 key ⇒ 期望的 `*AuthError` 不抛、反而发出真调用）；`test_progress_callback_monotonic_under_concurrency` **复跑即绿**（flake，且不触 worker）。ruff check/format 两文件双净。
 
 ## Task 2 — RED→GREEN 单飞+合并（D2=乙）
 
