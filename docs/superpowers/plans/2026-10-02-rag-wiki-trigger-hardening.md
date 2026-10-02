@@ -1,9 +1,9 @@
-# RAG 百科触发面加固（④+⑤）—— 实施计划
+# RAG 百科触发面加固（④+⑤+开机扫描）—— 实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-02-rag-wiki-trigger-hardening-design.md](../specs/2026-10-02-rag-wiki-trigger-hardening-design.md)
-**Status:** ✅ **已交付（2026-10-02 收官）** —— Task 0–3 全交付，复选框全勾。提交号：成对 `5765571f` / 裁定+Task 0 `901d8ff6` / Task 1（⑤ 换序）`e2d3810e` / Task 2（④ 去 settle）`47b46127` / Task 3+收尾=本笔。**实测**：⑤ RED=busy 残留实证→换序绿→neuter 同红因；④ 三条零时间窗断言 + 判别力三连反证（去 claim 5/4、去推迟 TimeoutError、去尾随 1）全照红。
+**Status:** 🔨 **重开在飞（2026-10-02）**——用户裁「开机扫描并入本对 + D2=不过阈值门」；Task 0–2 已交付（⑤ 换序 `e2d3810e`、④ 去 settle `47b46127`），进 Task 0 追补 → Task 3（开机扫描）。
 
 **Architecture:** ⑤ `_spawn_wiki` 换序（`create_task` → `busy.add`，同同步段原子性不变、失败即无残留）；④ 三条用例去固定 settle（`calls`/`peak` 计数断言 + `polled` Event）。**零产品语义变化。**
 
@@ -41,10 +41,25 @@
 - [x] **判别力反证三连**（新断言形状下）：**A 去 claim**（每触发一任务）→ `single_flight` 红（`got 5`）+ `coalesce` 红（`got 4`）；**B 去推迟**（闸恒假）→ `defers` 红（探针不至 ⇒ `TimeoutError`）；**C 去尾随**（while→if）→ `coalesce` 红（`got 1`）。三处均还原转绿。
 - [x] 门禁：`test_worker.py` **39/39 全绿**、ruff check/format 双净；`tests/knowledge` **1442 passed / 2 skipped / 2 failed**（2026-10-02）——2 条即已定性的环境红（`test_embed_missing_api_key`/`test_rerank_missing_api_key`，本机 env 带真 key）。
 
-## Task 3 — 文档
+## Task 0 追补 — 开机扫描核实（3 项，回填结论再开工）
+
+- [ ] ① **挂载点**：`worker.start()`（`:216-233`：init_collections → `recover()` → dispatcher）在哪一步排扫描；`recover()` 重入的文档后续自带触发（阈值门）是否会与开机补跑撞车（预期：单飞+合并消化，需核对）。
+- [ ] ② **dirty 查询面**：`WikiStore.list_entries(kb_id, status="dirty")` 是按库的——全库扫描需要什么（现有 `store.list_kbs()` 逐库查 vs 新增一条 distinct kb_id 查询）；选最窄面。
+- [ ] ③ **测试面影响**：`start()` 加扫描后，现有调 `start()` 的用例（`:415`/`:449`/hanging 等）会不会被顺带触发（预期：无 dirty 条目零动作）；`test_new_document_marks_touched_wiki_entries_dirty` 的阈值门断言不受影响（D2 边界）。
+
+## Task 3 — 开机扫描（D2=不过阈值门）
+
+- [ ] **RED①**：`test_boot_scan_resumes_dirty_wikis_without_new_documents`——造 dirty 条目 + **零文档库**（阈值门必拒）→ `start()` → `wait_idle` → 断 `generate_wiki` 恰好 1 次且 `only_dirty=True` → 现形状**红**（不跑）。
+- [ ] **RED②**：`test_boot_scan_skips_kbs_without_dirty_entries`——无 dirty 的库零动作 → 红/绿口径先核（现形状天然绿=范围守卫）。
+- [ ] **GREEN**：`start()` 挂扫描（`scan_dirty_wikis()`：按 Task 0② 选定的最窄查询取 dirty 库 → 逐库 `_spawn_wiki(..., require_threshold=False)`）；`_maybe_generate_wiki`/`_spawn_wiki` 加 `require_threshold` 关键字（**默认 True，文档完成路径零改动**）；扫描失败只记日志不影响启动。
+- [ ] **neuter①**：摘扫描 → RED① 红 → 还原。
+- [ ] **neuter②**：给扫描路径加回阈值门 → RED① 红（零文档库被拒）→ 还原（钉 D2）。
+- [ ] 门禁：`tests/knowledge/test_worker.py` 全绿 + 受影响面复跑、ruff 双净。
+
+## Task 4 — 文档
 
 - [x] 上对 plan 修订行注记 ④⑤ 已收（指回本对提交号 `e2d3810e`/`47b46127`）；本对 Status 回填提交链（见上）。
 
 ## 收尾
 
-- [x] plan 复选框全勾 + 提交号回填（见 Status 行）；spec/plan 成对提交（`5765571f` 起）。
+- [ ] plan 复选框全勾 + 提交号回填（见 Status 行）；spec/plan 成对提交（`5765571f` 起）。
