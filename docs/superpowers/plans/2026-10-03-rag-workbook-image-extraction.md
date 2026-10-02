@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-workbook-image-extraction-design.md](../specs/2026-10-03-rag-workbook-image-extraction-design.md)
-**Status:** ✅ **已裁（D1=甲 / D2=乙 / D3=甲）** —— 2026-10-03 成对起草、同日裁定；评审九项已并入（③=甲：caption 清洗=Task 3）；Task 0 已核 5 项（含 D2=乙 锚点语义 probe，下）；**Task 1 已交付**（窄面 15 绿 / neuter 3 红 / 整文件 88 绿 / ruff 双净）；**Task 2 已交付**（RED 11 红 / GREEN 窄面 25 绿 / neuter 4 红 / `tests/knowledge` 全套 1470 绿 + 2 条在册环境红）；**Task 0–2 已提交**（`3273fdb0` docs 成对 + `dc2fea73` 代码一笔，2026-10-03 按「先提交 Task 0 到 2」指示提前落账）；**Task 3 已交付**（RED 2 红/1 绿 / GREEN 4 绿 / neuter 2 红 / caption 窄面 60 绿 / ruff 双净）；可开工 Task 4。
+**Status:** ✅ **已裁（D1=甲 / D2=乙 / D3=甲）** —— 2026-10-03 成对起草、同日裁定；评审九项已并入（③=甲：caption 清洗=Task 3）；Task 0 已核 5 项（含 D2=乙 锚点语义 probe，下）；**Task 1 已交付**（窄面 15 绿 / neuter 3 红 / 整文件 88 绿 / ruff 双净）；**Task 2 已交付**（RED 11 红 / GREEN 窄面 25 绿 / neuter 4 红 / `tests/knowledge` 全套 1470 绿 + 2 条在册环境红）；**Task 0–2 已提交**（`3273fdb0` docs 成对 + `dc2fea73` 代码一笔，2026-10-03 按「先提交 Task 0 到 2」指示提前落账）；**Task 3 已交付**（RED 2 红/1 绿 / GREEN 4 绿 / neuter 2 红 / caption 窄面 60 绿 / ruff 双净；已提交 `052e5166`）；**Task 4 已交付**（真 e2e 1 绿 / 文档四处 / 全量 1474 绿 + 2 在册环境红 / ruff 双净）；可开工 Task 5。
 
 **Architecture:** `.xlsx` 走本地腿不变（calamine 读行 + `sheet.start` 原点）；新增 stdlib 解析（`workbook.xml`→…→drawing XML 锚点 `xdr:from` + `a:blip r:embed`→drawing rels）取 `xl/media/*` → `ParsedImage(ref=images/…)`；锚点命中 ⇒ 图链接**并入该单元格文本**（`start` 归一；越界/绝对锚回退 sheet 段尾）；`_parse_excel` 改返 `ParsedDocument`；现配文腿/落盘链吃图（唯一配套=Task 3 caption 落笔前清洗）。
 
@@ -62,9 +62,9 @@
 
 ## Task 4 — 真 e2e 与文档
 
-- [ ] ① 真 `.xlsx` e2e：openpyxl+PIL 造（数据 + 命中锚图 + 远锚图）→ `parse_document` → images 数、ref 字节==原图、命中图链接在锚点**行内**、远锚图回退 `## {sheet}` 段尾；skipif（calamine/PIL/openpyxl 缺）。
-- [ ] ② 文档：`parser.py` 模块 docstring 本地腿段、`_EXCEL_SUFFIXES` 注释、`_parse_excel`/`parse_document` docstring；`apply_captions` docstring（清洗口径）；`backend/AGENTS.md` 表格/摄取段补行。
-- [ ] ③ 门禁：`tests/knowledge` 全绿 + `ruff check` + `ruff format --check`。
+- [x] ① 真 `.xlsx` e2e：openpyxl+PIL 造（数据 + 命中锚图 + 远锚图）→ `parse_document` → images 数、ref 字节==原图、命中图链接在锚点**行内**、远锚图回退 `## {sheet}` 段尾；skipif（calamine/PIL/openpyxl 缺）。**实测：1 passed（14.4s）**。先探针证 openpyxl 嵌入字节与源 PNG **逐字节一致**（⇒ `content == 原图字节` 可钉精确相等）；断言四条=images==2 / 两图字节相等 / `| North | 120 ![图片](ref0) |` 行内 / `endswith("\n\n![图片](ref1)")` 段尾；skipif=calamine+openpyxl+Pillow 任一缺（`_xlsx_imaging_available`）。
+- [x] ② 文档：`parser.py` 模块 docstring 本地腿段、`_EXCEL_SUFFIXES` 注释、`_parse_excel`/`parse_document` docstring；`apply_captions` docstring（清洗口径）；`backend/AGENTS.md` 表格/摄取段补行。**实测：四处落地**——`parser.py` 模块 docstring（`.xlsx` 嵌图句 + `.xls` D1=甲 注）、`_EXCEL_SUFFIXES` 注释（嵌图指向 `_extract_xlsx_images`）、`parse_document` docstring（嵌图并入锚点句）、`backend/AGENTS.md` 表格摄取段（OOXML 链/双闸/回退/caption 清洗口径/`.xls` 纯文本/坏 zip 降级）；`_parse_excel`（Task 2）与 `apply_captions`（Task 3）两处 docstring 已随各自任务落笔。
+- [x] ③ 门禁：`tests/knowledge` 全绿 + `ruff check` + `ruff format --check`。**实测：1474 passed / 2 skipped / 2 failed（392.5s，仓外隔离 basetemp）**；2 条=在册环境红对（缺 key，本对零耦合；阳性对照前轮已证）；passed +4 与新增用例（Task 3 三条 + Task 4 一条）逐一对上。**ruff 全后端双净**（`All checks passed!` + `1312 files already formatted`）。
 
 ## Task 5 — RFC 两格升级与收尾
 

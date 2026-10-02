@@ -20,7 +20,11 @@ already parse output (or plain text), ``.csv``/``.tsv`` are delimited text, and
 ``.xlsx``/``.xls`` are workbooks — all are read locally without any MinerU call.
 ``.csv``/``.tsv`` normalize into a GFM pipe table and ``.xlsx``/``.xls`` into one
 GFM table per sheet via python-calamine (gated by ``rag.table.enabled``,
-spec 2026-09-09 §5). MinerU's own output has its HTML ``<table>`` blocks
+spec 2026-09-09 §5); ``.xlsx`` additionally yields its embedded images through
+the same local read (spec 2026-10-03 D2=乙: ``r:embed``-referenced media under
+``xl/media/`` merges into its ``xdr:from`` anchor cell, out-of-range or
+anchorless images fall back to the sheet tail, while ``.xls`` keeps no image
+support, D1=甲). MinerU's own output has its HTML ``<table>`` blocks
 normalized to GFM as well, because v4 with the default ``model_version="vlm"``
 emits HTML rather than GFM (Task 0 实测门). The API token always comes from the
 ``MINERU_API_TOKEN`` env var — never from the caller.
@@ -91,8 +95,10 @@ _DELIMITED_SUFFIXES: frozenset[str] = frozenset({".csv", ".tsv"})
 
 #: Excel workbook suffixes parsed by ``_parse_excel`` (python-calamine) into one
 #: GFM table per sheet — gated behind ``rag.table.enabled`` and never sent to
-#: MinerU (spec 2026-09-09 §5). ``.tsv`` is deliberately absent: it is delimited
-#: text, not a workbook (see ``_DELIMITED_SUFFIXES``).
+#: MinerU (spec 2026-09-09 §5). ``.xlsx`` additionally yields its embedded images
+#: via ``_extract_xlsx_images`` (spec 2026-10-03 D2=乙); ``.xls`` keeps no image
+#: support (D1=甲). ``.tsv`` is deliberately absent: it is delimited text, not a
+#: workbook (see ``_DELIMITED_SUFFIXES``).
 _EXCEL_SUFFIXES: frozenset[str] = frozenset({".xlsx", ".xls"})
 
 #: Video upload allowlist (spec 2026-09-08 §2, frozen): an independent
@@ -1014,8 +1020,10 @@ async def parse_document(
     ``.md``/``.markdown``/``.txt`` files are read locally (UTF-8 strict with GBK
     fallback); ``.csv``/``.tsv`` are parsed locally into a GFM pipe table and
     ``.xlsx``/``.xls`` into one GFM table per sheet via python-calamine
-    (spec 2026-09-09 §5) — none of these ever hit the network, whichever provider is
-    configured. Provider output has its HTML ``<table>`` blocks normalized to GFM and a
+    (spec 2026-09-09 §5; ``.xlsx`` also contributes its embedded images, their
+    links merged into the anchor cells — spec 2026-10-03 D2=乙) — none of these
+    ever hit the network, whichever provider is configured. Provider output has
+    its HTML ``<table>`` blocks normalized to GFM and a
     trailing title relocated (see ``normalize_mineru_markdown``). The cloud token comes
     from the ``MINERU_API_TOKEN`` env var; the local service ships without auth. Image
     references in the returned markdown point at ``ParsedImage.ref`` entries.

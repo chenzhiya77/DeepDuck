@@ -1778,6 +1778,54 @@ async def test_parse_excel_xls_never_reads_the_zip_leg(tmp_path, monkeypatch):
     assert doc.images == []
 
 
+# ── Task 4: 真 .xlsx 端到端（openpyxl+PIL 造图 → calamine 读行 + zip 提取）──────
+
+
+def _xlsx_imaging_available() -> bool:
+    try:
+        import openpyxl  # noqa: F401
+        import python_calamine  # noqa: F401
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _xlsx_imaging_available(), reason="python-calamine/openpyxl/Pillow 未安装（uv sync --extra table）")
+@pytest.mark.asyncio
+async def test_parse_excel_real_xlsx_merges_anchored_images(tmp_path, monkeypatch):
+    """真实 .xlsx 端到端（spec 2026-10-03）：命中锚（B2）的图链接并入锚点单元格
+    行内、越界锚（F50）回退 `## {sheet}` 段尾、images 字节==原图。缺任一依赖 →
+    skip，不阻塞回归（对齐既有真 e2e 的 skipif 纪律）。"""
+    import openpyxl
+    from openpyxl.drawing.image import Image as XLImage
+    from PIL import Image
+
+    _stub_gates(monkeypatch, table=True)
+    hit_png = tmp_path / "hit.png"
+    far_png = tmp_path / "far.png"
+    Image.new("RGB", (8, 8), (255, 0, 0)).save(hit_png)
+    Image.new("RGB", (8, 8), (0, 0, 255)).save(far_png)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Shots"
+    ws.append(["Region", "Q1"])
+    ws.append(["North", 120])
+    ws.add_image(XLImage(str(hit_png)), "B2")  # 命中：B2 = 数据格 120
+    ws.add_image(XLImage(str(far_png)), "F50")  # 越界行 → 段尾
+    book = tmp_path / "anchored.xlsx"
+    wb.save(book)
+
+    doc = await parse_document(book, client=httpx.AsyncClient(transport=_mineru_transport([])))
+
+    assert len(doc.images) == 2
+    assert doc.images[0].content == hit_png.read_bytes()  # ref 字节==原图
+    assert doc.images[1].content == far_png.read_bytes()
+    assert f"| North | 120 ![图片]({doc.images[0].ref}) |" in doc.markdown  # 命中图在锚点行内
+    assert doc.markdown.endswith(f"\n\n![图片]({doc.images[1].ref})")  # 越界锚回退段尾
+
+
 # ── caption_images()'s outcome (spec 2026-09-23 D8/R13) ────────────────────
 #
 # The return shape is a dataclass, not a bare mapping: the worker needs the failure count
