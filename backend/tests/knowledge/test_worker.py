@@ -1142,9 +1142,11 @@ async def test_same_kb_wiki_triggers_are_single_flight(session_factory, monkeypa
     release = asyncio.Event()
     active = 0
     peak = 0
+    calls = 0
 
     async def _hanging_generate(*_args, **_kwargs):
-        nonlocal active, peak
+        nonlocal active, peak, calls
+        calls += 1
         active += 1
         peak = max(peak, active)
         started.set()
@@ -1161,13 +1163,14 @@ async def test_same_kb_wiki_triggers_are_single_flight(session_factory, monkeypa
     for _ in range(5):
         worker._spawn_wiki("kb-1", embedder)
     await started.wait()
-    # Without single-flight the other four pile up here while the first hangs;
-    # config/DB cold-start is sub-second, so 1s is a generous settle either way.
-    await asyncio.sleep(1.0)
     release.set()
     await worker.wait_idle()
 
     assert peak == 1, f"{peak} wiki runs overlapped for one KB"
+    # All five triggers land before the runner even starts, so they coalesce
+    # into the single initial run (no trailing needed); a claim-less shape
+    # would run the stub five times.
+    assert calls == 1, f"expected one coalesced run, got {calls}"
 
 
 @pytest.mark.asyncio
@@ -1199,8 +1202,6 @@ async def test_wiki_triggers_during_a_run_coalesce_into_one_trailing_run(session
         worker._spawn_wiki("kb-1", embedder)
     release.set()
     await worker.wait_idle()
-    await asyncio.sleep(0.05)  # a spurious second trailing run would land here
-    await worker.wait_idle()
 
     assert calls == 2, f"expected one run plus one coalesced trailing run, got {calls}"
 
@@ -1218,18 +1219,25 @@ async def test_worker_defers_wiki_while_a_manual_run_is_in_flight(session_factor
     await _create_doc(store)
     calls = 0
     manual_running = True
+    polled = asyncio.Event()
 
     async def _counting_generate(*_args, **_kwargs):
         nonlocal calls
         calls += 1
 
+    def _manual_gate(_kb_id):
+        polled.set()
+        return manual_running
+
     monkeypatch.setattr("deerflow.knowledge.worker.generate_wiki", _counting_generate)
     monkeypatch.setattr("deerflow.knowledge.worker.wiki_trigger_ready", AsyncMock(return_value=True))
-    monkeypatch.setattr("deerflow.knowledge.worker.wiki_generation_in_progress", lambda _kb_id: manual_running, raising=False)
+    monkeypatch.setattr("deerflow.knowledge.worker.wiki_generation_in_progress", _manual_gate, raising=False)
     worker = _worker(store, session_factory, main_llm=_WikiLLM())
 
     worker._spawn_wiki("kb-1", FakeEmbedder())
-    await asyncio.sleep(0.05)
+    # The runner has reached its cross-path gate and is deferring: assert on the
+    # probe, not on elapsed time.
+    await asyncio.wait_for(polled.wait(), timeout=5)
     assert calls == 0, "the worker run overlapped the manual run"
     manual_running = False
     await worker.wait_idle()

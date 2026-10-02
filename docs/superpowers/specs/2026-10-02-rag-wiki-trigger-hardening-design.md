@@ -41,7 +41,7 @@
 
 ### 2.2 D2 ④ 修法（定案，无待拍）
 
-- `single_flight`（`:1135`）：删 1s 攒堆——`release.set()` → `wait_idle` 排干 → 断 **`calls == 2 && peak == 1`**。无 claim 的破形状无论快慢必得 `calls==5`（`peak` 视时序为 1~5）⇒ `calls` 断言恒红；GREEN 由同步 claim 恒 2/1，**零时间窗**。
+- `single_flight`（`:1135`）：删 1s 攒堆——`release.set()` → `wait_idle` 排干 → 断 **`calls == 1 && peak == 1`**（5 连发全在 runner 启动前落袋 ⇒ 整单被首次运行吸收，无尾随；无 claim 的破形状必得 `calls==5` ⇒ 恒红）。GREEN 由同步 claim 保证，**零时间窗**。（实施更正：初稿写 `calls == 2` 是把「落袋时机」想错了——尾随场景归 `coalesce` 用例。）
 - `defers_wiki`（`:1209`）：patched `wiki_generation_in_progress` **首次被探**时 set `polled` Event → `await asyncio.wait_for(polled.wait(), 5)` 后断 `calls == 0` ⇒ 断言点钉在「runner 真到轮询点」，非计时猜测。
 - `coalesce`（`:1202`）：删冗余 settle——尾随在同一 runner 任务内完成、`wait_idle` 循环排干已覆盖 ⇒ 直接断 `calls == 2`。
 

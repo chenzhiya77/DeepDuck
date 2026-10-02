@@ -23,7 +23,7 @@
 ## Task 0 — 开工前核实（3 项，回填结论再开工）
 
 - [x] ① **换序原子性前提**：`_spawn_wiki`（`worker.py:313-327`）全同步无 `await` ✓；`_wiki_tasks.add`/done_callback（`:326-327`）在 `create_task` 成功之后 ✓；runner 首个可让出点在自身体内（`:343` 轮询 sleep / `:344` 生成 await）⇒ 任务必晚于 `_spawn_wiki` 返回才启动 ⇒ **换序后 claim 检查与建任务仍在同一同步段、原子性不变**，`create_task` 抛错则 busy 从未占位。
-- [x] ② **固定 settle 全扫**：百科触发用例块内**恰好三处** = `:1166`（1.0s 攒堆）/ `:1202`（0.05s 抓多余尾随 + 冗余二次 `wait_idle`）/ `:1232`（0.05s 断 `calls==0` 前）✓。判别方向登记：`single_flight` 现断 `peak==1`（破=peak>1；慢机攒堆不足**会漏检** ⇒ 升级 `calls==2 && peak==1`）；`coalesce` 断 `calls==2`（破=去尾随 1 / 无单飞 4）；`defers` 断 `calls==0`→`calls==1`（破=首轮即 ≥1）。
+- [x] ② **固定 settle 全扫**：百科触发用例块内**恰好三处** = `:1166`（1.0s 攒堆）/ `:1202`（0.05s 抓多余尾随 + 冗余二次 `wait_idle`）/ `:1232`（0.05s 断 `calls==0` 前）✓。判别方向登记：`single_flight` 现断 `peak==1`（破=peak>1；慢机攒堆不足**会漏检** ⇒ 升级 `calls==1 && peak==1`——5 连发在 runner 启动前落袋、整单吸收，无 claim 必 `calls==5`）；`coalesce` 断 `calls==2`（破=去尾随 1 / 无单飞 4）；`defers` 断 `calls==0`→`calls==1`（破=首轮即 ≥1）。
 - [x] ③ **同类辨析**：`slow_parse` 的 `sleep(0.05)`（`:1071`）= 并发观测交错窗（同 `test_concurrency_cap_respected` 先例）、hanging 用例的 300×0.01 poll = 看门狗上限（带 `entered` 标志）⇒ **均非 settle 断言，不动** ✓。
 
 ## Task 1 — ⑤ RED→GREEN→neuter（换序）
@@ -35,11 +35,11 @@
 
 ## Task 2 — ④ 去 settle（计数/事件断言）
 
-- [ ] `single_flight`：删 1s 攒堆，改 `release.set()` → `wait_idle` → 断 `calls == 2 && peak == 1`。
-- [ ] `defers_wiki`：`wiki_generation_in_progress` 探针 set `polled` Event，`wait_for(polled.wait(), 5)` 后断 `calls == 0`；尾随后断 `calls == 1` 不变。
-- [ ] `coalesce`：删 `:1202` 冗余 settle，直接断 `calls == 2`。
-- [ ] **判别力反证三连**：破形状（去 claim / 去推迟 / 去尾随）在新断言下各照红 → 还原。
-- [ ] 门禁：`tests/knowledge` 全绿、ruff check/format 干净。
+- [x] `single_flight`：删 1s 攒堆，改 `release.set()` → `wait_idle` → 断 `calls == 1 && peak == 1`。⚠️ **实施更正一处**：spec 初稿写 `calls == 2` 是把「5 连发的落袋时机」想错了（全在 runner 启动前落袋 ⇒ 整单被首次运行吸收、无尾随；尾随场景归 `coalesce`）——实测纠偏后 spec §2.2 / Task 0 ② 已同步改为 `calls == 1`。
+- [x] `defers_wiki`：`wiki_generation_in_progress` 换 `_manual_gate` 探针（首次被调 set `polled` Event），`wait_for(polled.wait(), 5)` 后断 `calls == 0`；尾随后断 `calls == 1` 不变。**零计时猜测**。
+- [x] `coalesce`：删 0.05s 冗余 settle + 二次 `wait_idle`（尾随在同一 runner 任务内、一次 `wait_idle` 循环排干已覆盖），直接断 `calls == 2`。
+- [x] **判别力反证三连**（新断言形状下）：**A 去 claim**（每触发一任务）→ `single_flight` 红（`got 5`）+ `coalesce` 红（`got 4`）；**B 去推迟**（闸恒假）→ `defers` 红（探针不至 ⇒ `TimeoutError`）；**C 去尾随**（while→if）→ `coalesce` 红（`got 1`）。三处均还原转绿。
+- [x] 门禁：`test_worker.py` **39/39 全绿**、ruff check/format 双净；`tests/knowledge` **1442 passed / 2 skipped / 2 failed**（2026-10-02）——2 条即已定性的环境红（`test_embed_missing_api_key`/`test_rerank_missing_api_key`，本机 env 带真 key）。
 
 ## Task 3 — 文档
 
