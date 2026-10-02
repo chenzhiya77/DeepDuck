@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-workbook-image-extraction-design.md](../specs/2026-10-03-rag-workbook-image-extraction-design.md)
-**Status:** ✅ **已裁（D1=甲 / D2=乙 / D3=甲）** —— 2026-10-03 成对起草、同日裁定；评审九项已并入（③=甲：caption 清洗=Task 3）；Task 0 已核 5 项（含 D2=乙 锚点语义 probe，下）；**Task 1 已交付**（窄面 15 绿 / neuter 3 红 / 整文件 88 绿 / ruff 双净）；**Task 2 已交付**（RED 11 红 / GREEN 窄面 25 绿 / neuter 4 红 / `tests/knowledge` 全套 1470 绿 + 2 条在册环境红）；**Task 0–2 已提交**（`3273fdb0` docs 成对 + `dc2fea73` 代码一笔，2026-10-03 按「先提交 Task 0 到 2」指示提前落账）；**Task 3 已交付**（RED 2 红/1 绿 / GREEN 4 绿 / neuter 2 红 / caption 窄面 60 绿 / ruff 双净；已提交 `052e5166`）；**Task 4 已交付**（真 e2e 1 绿 / 文档四处 / 全量 1474 绿 + 2 在册环境红 / ruff 双净）；可开工 Task 5。
+**Status:** ✅ **已裁（D1=甲 / D2=乙 / D3=甲）** —— 2026-10-03 成对起草、同日裁定；评审九项已并入（③=甲：caption 清洗=Task 3）；Task 0 已核 5 项（含 D2=乙 锚点语义 probe，下）；**Task 1 已交付**（窄面 15 绿 / neuter 3 红 / 整文件 88 绿 / ruff 双净）；**Task 2 已交付**（RED 11 红 / GREEN 窄面 25 绿 / neuter 4 红 / `tests/knowledge` 全套 1470 绿 + 2 条在册环境红）；**Task 0–2 已提交**（`3273fdb0` docs 成对 + `dc2fea73` 代码一笔，2026-10-03 按「先提交 Task 0 到 2」指示提前落账）；**Task 3 已交付**（RED 2 红/1 绿 / GREEN 4 绿 / neuter 2 红 / caption 窄面 60 绿 / ruff 双净；已提交 `052e5166`）；**Task 4 已交付**（真 e2e 1 绿 / 文档四处 / 全量 1474 绿 + 2 在册环境红 / ruff 双净；已提交 `fec6e8f6`）；**Task 5 已交付——本对全对收官**（RFC v3 L47 两格 + L355 升级，md5 `ce3562b2`→`f50c7577`；提交链 `3273fdb0`→`fec6e8f6`，未推送；②批次验收（L45 切分/标题定位、L46 表格行来源、L47 工作表行来源）跟交付后另账同跑）。
 
 **Architecture:** `.xlsx` 走本地腿不变（calamine 读行 + `sheet.start` 原点）；新增 stdlib 解析（`workbook.xml`→…→drawing XML 锚点 `xdr:from` + `a:blip r:embed`→drawing rels）取 `xl/media/*` → `ParsedImage(ref=images/…)`；锚点命中 ⇒ 图链接**并入该单元格文本**（`start` 归一；越界/绝对锚回退 sheet 段尾）；`_parse_excel` 改返 `ParsedDocument`；现配文腿/落盘链吃图（唯一配套=Task 3 caption 落笔前清洗）。
 
@@ -68,9 +68,9 @@
 
 ## Task 5 — RFC 两格升级与收尾
 
-- [ ] ① **先重读 RFC v3 全文**：L47「内嵌图片」「现状与缺口」两格 → 按裁定升级（如「.xlsx 已实现：zip 提取 + 行列锚点并入所在单元格（越界回退 sheet 段尾），入现配文腿；`.xls` 不覆盖」）；L355 去「待补图片实现」。
-- [ ] ② plan 复选框全勾 + 提交号回填；**spec/plan 成对提交已提前落账**（`3273fdb0`，含 Task 0–2 回填；Task 1–2 代码随 `dc2fea73`）——本项收窄为「Task 3–5 的提交链回填 + RFC 升级笔与代码交付笔相邻」。
+- [x] ① **先重读 RFC v3 全文**（373 行重读核过：L45 已是「设计上不提取」、L47/L355 未漂移）：L47「内嵌图片」「现状与缺口」两格升级 + L355 去「待补图片实现」。**实测：改后 md5 `f50c7577…`（前 `ce3562b2…`）、373 行不变、恰好 2 行改**——L47「内嵌图片」=「已实现（.xlsx）：从工作簿 zip 内提取内嵌图片，按行列锚点并入所在单元格（越界回退工作表段尾）；.xls 不覆盖」、「现状与缺口」=「单元格解析与 .xlsx 内嵌图片提取均已实现；.xls 图片不覆盖，按矩阵如实标注」；L355=删「待补图片实现、」；全文「待补/空图片列表」0 残留。RFC 为未跟踪对外稿，不入 git（待他贴 #5391）。
+- [x] ② plan 复选框全勾 + 提交号回填；spec/plan 成对提交已提前落账（`3273fdb0`；Task 1–2 代码 `dc2fea73`；**Task 3 `052e5166` / Task 4 `fec6e8f6`**）；本项收窄为「Task 3–5 的提交链回填 + RFC 升级笔与代码交付笔相邻」——均已落。
 
 ## 收尾
 
-- [ ] 复选框回填、提交链回填；RFC 升级笔与代码交付笔相邻。
+- [x] 复选框回填、提交链回填；RFC 升级笔与代码交付笔相邻（RFC 升级发生在代码全部交付/提交之后）。本对残余：仅 plan 自身这笔收尾改动待提交；②批次四项验收另账（跟交付后同跑）。
