@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-02-rag-caption-thinking-truncation-fix-design.md](../specs/2026-10-02-rag-caption-thinking-truncation-fix-design.md)
-**Status:** 🔨 **Task 0 在飞（2026-10-02）**——成对起草即开工 Task 0（端点能力实测），数据回填后拍 D1/D2。
+**Status:** 📝 **Task 0 已交付、待拍 D1/D2（2026-10-02）**——成对起草 `be529c83` → Task 0 实测（本笔）：端点**不认** `enable_thinking`/`thinking_budget`（静默忽略）、**认** `reasoning_effort:"none"` 与 vLLM 形状（实测 0 思考 0 空返）。
 
 **Architecture:** Task 0 用带外探针打四变体（基线 1024 / `enable_thinking=false` / `thinking_budget` / 4096）测端点认不认参数与空返率；D1 主修法（关思考/独立预算/涨预算/兜底）+ D2 兜底叠加拍板后走 TDD，修点在 `caption_client.py` 单处，失败语义不放宽。
 
@@ -22,9 +22,20 @@
 
 ## Task 0 — 端点能力实测（开工即跑，回填后拍 D1/D2）
 
-- [ ] ① **四变体探针**（同 640px 夹具、每变体 6 发）：基线（1024）/ `enable_thinking=false` / `thinking_budget`（小值逼截断转正文）/ `max_tokens=4096` ⇒ 逐发记 HTTP 码（**400=参数被拒、200 且 reasoning 依旧=静默忽略**）、`finish_reason`、content/reasoning 长度、`reasoning_tokens`、空返率。
-- [ ] ② **判读表**：端点认哪些参数（甲/乙是否可行）；4096 对照空返率（丙的效果）；`reasoning_content` 是否稳定返回（丁的可行性）。
-- [ ] ③ **兜底样本**：空返发的 reasoning 内容抽查（草稿里有没有可救的正文级信息），给 D2 提供依据。
+- [x] ① **四变体探针**（`fix_probe.py`，同 640px 夹具、每变体 6 发）+ **补三个别名变体**（`fix_probe2.py`，各 3 发）实测判读：
+
+| 变体 | 请求体附加 | 200 | 空返 | 思考 | 判读 |
+|---|---|---|---|---|---|
+| 基线 | `max_tokens=1024` | 6/6 | **3/6 (50%)** | 6/6 有 | 复现膝点对的空返 |
+| `enable_thinking=false`（DashScope 名） | +该字段 | 6/6 | 2/6 | **6/6 照跑**（rtok 172–1024） | **静默忽略**——不 400 也不生效 |
+| `thinking_budget=256`（DashScope 名） | +该字段 | 6/6 | 2/6 | **照跑**（rtok 最高 1028 ≫ 256） | **静默忽略** |
+| `max_tokens=4096` | 改预算 | 6/6 | **0/6** | 6/6（rtok 最高 2083） | **有效但贵**：空返归零、思考跑更远、单发 8–49s |
+| **`reasoning_effort: "none"`** | +该字段 | 3/3 | **0/3** | **0/3（rtok=0）** | ✅ **完全关思考**，正文 64–632 字符全出 |
+| `reasoning_effort: "minimal"` | +该字段 | 0/3 | — | — | **400 拒**（枚举不含 minimal） |
+| `chat_template_kwargs.enable_thinking=false`（vLLM 形状） | +该字段 | 3/3 | **0/3** | **0/3** | ✅ 同样完全关思考（第二条可用路） |
+
+- [x] ② **判读表结论**：端点认 **`reasoning_effort`（OpenAI 式枚举，含 `none`）与 vLLM 形状 `chat_template_kwargs`**，**不认 DashScope 的 `enable_thinking`/`thinking_budget`**（静默忽略）。⇒ **甲可行**（两条参数路任选）、**乙不可行**、丙有效但成本高、丁可行。
+- [x] ③ **兜底样本**（空返发 reasoning_preview 抽查）：**草稿里就有正文级转录**（逐字在转录界面文字，如「设置、账号、外观、通知、宠物、模型…」）⇒ 兜底取回的质量**不差**，D2=甲 有据。产物：`fix_probe.json` / `fix_probe2.json`（含逐发 reasoning_preview）。
 
 ## Task 1 — 依 D1/D2 裁定 TDD
 
