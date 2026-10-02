@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 每个 Task 走完 RED → GREEN → neuter → revert proof → 门禁 再进下一个；「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-02-rag-wiki-leg-slot-release-design.md](../specs/2026-10-02-rag-wiki-leg-slot-release-design.md)
-**Status:** 📝 **已起草（2026-10-02）待审**——D1/D2 两项待拍，拍定后 Task 0 先行。
+**Status:** 🔨 **已定稿开工（2026-10-02）**——D1=乙 / D2=乙 已拍；Task 0 四项核实已回填（本笔），进 Task 1。
 
 **Architecture:** `process_document` 写完 `ready` 后 `self._spawn_wiki(kb_id, embedder)`（`:416` 一行改）→ 同步判忙（worker 本地 busy 集 ∪ `wiki_generation_in_progress`）→ 不忙则 `asyncio.create_task(_maybe_generate_wiki…)` 入 `self._wiki_tasks`（`wait_idle`/`stop` 排干）；忙则记 `pending`，运行收尾补一轮 `only_dirty=bool(existing)` 尾随增量。信号量只包文档腿。**除「谁在什么时候占槽」与 D2 的并发面收窄外，语义零变化。**
 
@@ -25,10 +25,10 @@
 
 ## Task 0 — 开工前核实（4 项，回填结论再开工）
 
-- [ ] ① **触发与脏标链路全扫**：`_maybe_generate_wiki` 全仓调用点（预期唯一 = `worker.py:416`）；`mark_dirty_for_entities` 在 `:412`（ready 前）；recaption 收尾 `:851` 只标脏不触发；`_maybe_generate_wiki` 体内 `wiki_trigger_ready` 早退分支；`test_worker.py:958/981/999` 三个直呼 `_maybe_generate_wiki` 的用例是否受落点移动影响（预期不受——它们不经 `process_document`）。
-- [ ] ② **受影响用例清单**：直调 `process_document` 且断言 wiki 产物的用例逐条给处置——`test_ready_document_auto_triggers_wiki_generation`（`:492-512`）、`test_entity_resolution_failure_degrades_without_blocking`（`:551-577`，断 wiki 未被阻断）、`test_new_document_marks_touched_wiki_entries_dirty`（`:581-608`）；`wait_idle` 全消费者盘点（`:440`/`:469` 及 e2e smoke）。
-- [ ] ③ **生命周期面**：`stop()`（`:235-242`）/`wait_idle()`（`:278-287`）现语义与 `_wiki_tasks` 收编点；`test_concurrency_cap_respected`（`:415-445`）的 parse 峰值断言不被 wiki 触及（wiki 不经 `parse_fn`）；`stop()` 里 dispatcher cancel 后 gather 的顺序。
-- [ ] ④ **跨路径闸核对**：`wiki_generation_in_progress`（`generator.py:69`）与 `generate_wiki` 的 `_IN_FLIGHT` 同源 ⇒ worker 运行时手动闸命中、手动运行时 worker 可查得；两方向判据写清（worker 在飞→按钮 `already_running`；手动在飞→worker 触发推迟尾随）；check-and-claim 无 `await` 原子性成立的依据。
+- [x] ① **触发与脏标链路全扫**：`_maybe_generate_wiki` 全仓产品调用**唯一 = `worker.py:416`** ✓；`mark_dirty_for_entities` 在 `:412`（ready 前）✓；recaption 收尾 `:851` 只标脏不触发 ✓；`_maybe_generate_wiki` 体内 = `wiki_trigger_ready` 早退（`:871-872`）→ 模型逐触发解析（`:873-879`）→ 兜底 except（`:890-891`）✓；`test_worker.py:958/981/999` 三个直呼 `_maybe_generate_wiki` 的用例不经 `process_document`，**不受落点移动影响** ✓。
+- [x] ② **受影响用例清单**（逐条处置）：`test_ready_document_auto_triggers_wiki_generation`（`:492-512`，`main_llm=_WikiLLM` 真跑生成、断条目 + `upsert_wiki_entries` 计数）**受影响** → 断言前补 drain；`test_entity_resolution_failure_degrades_without_blocking`（`:551-577`，断 wiki 未被阻断）**受影响** → 同上；`test_new_document_marks_touched_wiki_entries_dirty`（`:581-608`）**轻度**：dirty 标记 `:412` 内联落库、断言即时成立，但为确定性补 drain（该用例阈值门 1/2<0.9 本就不触发，docstring 已钉）；`test_wiki_dirty_hook_failure_never_blocks_ready`（`:612-625`）**不受影响**（只断文档状态，spawn 走兜底 except 永不抛）。`wait_idle` 全消费者仅 `test_worker.py:440`/`:469`（均不断 wiki 产物）⇒ 扩 drain 安全；smoke（`test_e2e_smoke.py:144`/`test_phase2_smoke.py:126`）走 `stop()` + API 轮询。
+- [x] ③ **生命周期面**：`wait_idle`（`:278-287`）= queue.join + inflight gather ⇒ `_wiki_tasks` 排干加在其后、**循环判空**（D2 尾随会再入任务）；`stop()`（`:235-242`）= dispatcher cancel → inflight gather ⇒ `_wiki_tasks` 同法 gather。**外层停机上限既有**：`app.py:430` `wait_for(worker.stop(), 5.0)`（常量 `:66`），超时取消传播到被 gather 的任务——今天卡 15 min 的生成同样被 5s 掐断，放槽前后同形。`test_concurrency_cap_respected`（`:415-445`）峰值断言只量 `parse_fn` 并发（wiki 不经 parse）⇒ 不受影响。
+- [x] ④ **跨路径闸核对**：`wiki_generation_in_progress`（`generator.py:69`）读 `_IN_FLIGHT`，`generate_wiki` 在首个 await 前 `+1`（`:403`）、finally 归还（`:461-465`）⇒ worker 运行期间手动闸命中 ✓。双向判据：worker 在飞 → `trigger_wiki_generation` 回 `already_running`（`knowledge_service.py:573-576`）；手动在飞 → worker 判忙推迟、收尾尾随 ✓。原子性：worker 侧 check-and-claim 全同步（判忙与 busy 集写入同一同步段）✓。**残余窗口（登记不改）**：worker claim 到 `_IN_FLIGHT +1` 之间隔 `wiki_trigger_ready` 一次 DB 查询（ms 级），此窗内手动触发可与 worker 运行重叠——既有形态（手动闸早就有），放槽不放大；丢活面由 D2 尾随兜住。
 
 ## Task 1 — RED→GREEN 放槽（D1=乙）
 
