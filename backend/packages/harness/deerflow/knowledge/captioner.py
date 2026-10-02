@@ -22,7 +22,7 @@ from pathlib import Path
 import httpx
 
 from deerflow.config.app_config import get_app_config
-from deerflow.knowledge.caption_client import request_caption
+from deerflow.knowledge.caption_client import _CAPTION_CONCURRENCY, request_caption
 from deerflow.knowledge.graph.indexer import DEGRADED_FAILURE_THRESHOLD
 from deerflow.knowledge.parser import ParsedImage
 from deerflow.knowledge.vlm_target import VlmTarget, resolve_vlm_target
@@ -68,7 +68,8 @@ async def caption_images(
     The target (model id, endpoint, key) is resolved by :func:`resolve_vlm_target` — naming
     a configured ``models:`` entry supplies all three. A missing key degrades every image to
     its placeholder without any outbound call. *model* overrides ``rag.vlm_model``. Uses
-    asyncio.gather with Semaphore(4) for concurrency control; results are returned in input
+    asyncio.gather with the shared ``_CAPTION_CONCURRENCY`` cap for concurrency control;
+    results are returned in input
     list order to protect Markdown image position mapping.
 
     The verdict travels with the data (spec 2026-09-23 D8/R13): the failure count and the
@@ -97,7 +98,7 @@ async def caption_images(
     # Task 16: concurrent execution with semaphore-limited parallelism
     captions: dict[str, str] = {}
     failed = 0
-    semaphore = asyncio.Semaphore(4)  # max 4 concurrent requests
+    semaphore = asyncio.Semaphore(_CAPTION_CONCURRENCY)  # one cap, both legs (spec 2026-10-03 D1=甲)
 
     async def caption_with_semaphore(img: ParsedImage) -> tuple[str, str]:
         nonlocal failed

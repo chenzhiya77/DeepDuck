@@ -25,6 +25,11 @@ from deerflow.knowledge.vlm_target import VlmTarget
 #: a module constant on purpose — bumping it is a code change, not a config knob.
 ANTHROPIC_VERSION = "2023-06-01"
 
+#: The one cap on concurrent caption requests within a leg run, shared by both legs
+#: (spec 2026-10-03 D1=甲). A constant on purpose: the global total already scales with
+#: ``worker_concurrency`` (this × the worker count), so the cap must not scale with it too.
+_CAPTION_CONCURRENCY = 4
+
 Dialect = Literal["openai", "anthropic"]
 
 

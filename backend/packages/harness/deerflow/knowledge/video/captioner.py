@@ -12,7 +12,7 @@ caption 缺失时镜头卡仍含 asr+ocr（三路并列，幻觉/缺失可被原
 VLM 目标（模型 id / endpoint / key / 方言）由 ``resolve_vlm_target`` 解析：目标必须命名一条
 ``models:`` 条目，四者都取自该条目（条目缺地址时按 provider 借其 SDK 自己的默认值，
 openai-compatible 格例外 ⇒ 直接报配置错）。``httpx.AsyncClient`` 可注入（测试用
-MockTransport）；Semaphore 按 ``worker_concurrency`` 限流并发。
+MockTransport）；Semaphore 按共用常量 ``_CAPTION_CONCURRENCY`` 限流并发（两腿同一把锁，不随 worker_concurrency 放大）。
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from deerflow.config.app_config import get_app_config
-from deerflow.knowledge.caption_client import request_caption
+from deerflow.knowledge.caption_client import _CAPTION_CONCURRENCY, request_caption
 from deerflow.knowledge.vlm_target import resolve_vlm_target
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ async def run_shot_prompt(
     ``model`` 默认取 ``rag.vlm_model``（两条腿同一条链，R18）；生成参数取
     ``rag.caption_max_tokens`` / ``rag.caption_temperature``（两条 caption 腿共用一组，
     spec 2026-09-30 ①甲）；``client`` 可注入（测试 MockTransport）；Semaphore 按
-    ``worker_concurrency`` 限流并发。``what`` 只进日志，说清是哪个腿的失败。
+    共用常量 ``_CAPTION_CONCURRENCY`` 限流并发（两腿同一把锁）。``what`` 只进日志，说清是哪个腿的失败。
     """
     if not shot_frames:
         return CaptionOutcome()
@@ -91,7 +91,7 @@ async def run_shot_prompt(
     own_client = client is None
     timeout = httpx.Timeout(cfg.rag.vlm_timeout or 180.0, connect=cfg.rag.vlm_connect_timeout or 15.0)
     http = client or httpx.AsyncClient(timeout=timeout)
-    semaphore = asyncio.Semaphore(max(1, cfg.rag.worker_concurrency) * 2)
+    semaphore = asyncio.Semaphore(_CAPTION_CONCURRENCY)  # one cap, both legs (spec 2026-10-03 D1=甲)
     failed = 0
 
     async def one(index: int, frames: Sequence[bytes]) -> tuple[int, str]:
