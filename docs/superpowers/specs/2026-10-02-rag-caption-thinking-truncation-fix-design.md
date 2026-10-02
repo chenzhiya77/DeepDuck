@@ -1,0 +1,71 @@
+# RAG caption 思考截断修法小对 —— 设计
+
+**Status:** 📝 **待裁（D1/D2，Task 0 实测后拍）** —— 2026-10-02 起草；配套 plan：[2026-10-02-rag-caption-thinking-truncation-fix.md](../plans/2026-10-02-rag-caption-thinking-truncation-fix.md)。
+
+本对一件事：修掉 **caption 空返降级**——思考模型（`mimo-v2.6-flash`）的 reasoning 把 `caption_max_tokens=1024` 吃光、content 截空（`finish_reason: length`），`request_caption` 判空抛错，真管线把该图降级成文件名占位（>30% 整腿 degraded）。修法四选，**Task 0 先实测端点能力再拍**。
+
+**相关记录**：
+
+- [2026-10-02-rag-caption-knee-check.md](../plans/2026-10-02-rag-caption-knee-check.md) §6 发现 1/2（空返机制与空返率随并发升 0%→79%）
+- `reference-max-tokens-thinking-budget` 市场取证（三协议口径 + 三公约数：宽松上界 / 分离保答案 / 小任务不开思考）
+
+## 1. 问题
+
+### 1.0 一眼看懂
+
+`mimo-v2.6-flash` 是思考模型：响应带 `reasoning_content`，思考 token 计入输出预算。`caption_max_tokens=1024` 下，**思考写满 1024 就整体收卷**（OpenAI 兼容口径的「合并收卷」），正文一个字没有 ⇒ `request_caption` 抛 `VLM returned an empty caption` ⇒ 两条 caption 腿把该图/镜头降级成占位、计入 failed。实测空返率 30–52%（单图）/最高 79%（三帧 N=16）。
+
+### 1.1 机制证据
+
+| 事实 | 位置 |
+|---|---|
+| 请求体无任何思考控制参数（`max_tokens`/`temperature` 之外全无） | `caption_client.py:41`（`_openai_request`） |
+| 解析只读 `message.content`，`reasoning_content` 直接丢弃 | `caption_client.py:56`（`_openai_caption`） |
+| 空答案=显式失败（三选一失败语义之一），两腿降级占位 | `caption_client.py:85-86`、`captioner.py:108-111`、`video/captioner.py:104-106` |
+| 诊断：同夹具 5 发 2 空，空返发 `finish_reason: length`、`reasoning_tokens≈1024/1024`、content len=0 | `caption-knee/diag.py` 实录（2026-10-02） |
+| 生成参数两腿共用 `rag.caption_*`（修点单处可覆盖两腿） | `captioner.py:84-85`、`video/captioner.py:83-84` |
+
+## 2. 设计
+
+### 2.1 D1 主修法（待拍——Task 0 数据后）
+
+**在问什么**：空返从源头怎么止？
+
+| 选项 | 含义 | 推荐理由 | 选错后果 |
+|---|---|---|---|
+| **甲：关思考**（请求体带 `enable_thinking=false`，若端点认） | 思考归零，1024 全给正文 | 市场对照六家先例（处理腿=非思考快模型）；成本还降 | 端点不认 ⇒ 无效（Task 0 会判）；caption 质量对少数图可能降 |
+| **乙：思考独立预算**（`thinking_budget` 小值，截断思考即转正文，若端点认） | 百炼官方语义「超预算截断思考、立刻生成最终回复」——保答案 | 保留思考对难图的加成 | 端点不认 ⇒ 无效；思考被截时质量降 |
+| **丙：涨预算**（1024→4096 宽松档） | 降概率不归零 | Dify 4096/Qwen 2× 先例，一行默认值 | 思考仍可能吃 4096；成本/时长升；高并发空返更宽 |
+| **丁：兜底读 `reasoning_content`**（content 空时取 reasoning 截断尾/或重试一次） | 把丢的图找回来 | 零协议依赖、总能做 | 无主流先例（属补救）；reasoning 是草稿，质量打折 |
+
+### 2.2 D2 兜底叠加（待拍）
+
+**在问什么**：主修法之外，丁要不要**常开**当第二道网？
+
+| 选项 | 含义 | 推荐理由 | 选错后果 |
+|---|---|---|---|
+| **甲（推荐）：常开** | 无论主修法是哪个，content 空时兜底取 reasoning | 空返=丢图，兜底把「丢」降为「质量打折」；成本≈0 | 草稿文本偶尔进索引（可在 prompt/清洗里再收） |
+| 乙：只在主修法失败时上 | 甲/乙生效就不加 | 面更窄 | 甲/乙被端点静默忽略时无人兜底 |
+
+### 2.3 修点与口径（定案，无待拍）
+
+修点在 `caption_client.py`（两腿唯一出站口）：请求体参数 + `_openai_caption` 解析兜底。`caption_max_tokens` 默认值只在 D1=丙 时动。**失败语义不变**：兜底也拿不到正文才降级占位（三选一失败语义不放宽）。
+
+## 3. 硬约束
+
+1. **修点单处**：两腿共用 `request_caption`/`_openai_*`，不许在腿里各修一份。
+2. **失败语义不放宽**：只有「请求失败 / 空答案且兜底也空」才降级；空返修复不得把真失败也吞掉。
+3. **零/一旋钮**：D1=甲/乙/丁 不新增配置；D1=丙 只改 `caption_max_tokens` 默认值语义（已有旋钮）。
+4. **实测先行**：D1 拍板依据 = Task 0 的端点能力实测（认不认参数、静默忽略还是 400、4096 对照空返率），不拍脑袋。
+
+## 4. 验收
+
+- **Task 0 能力表**：四变体（基线 1024 / `enable_thinking=false` / `thinking_budget` / 4096）× 同夹具各 N 发 ⇒ HTTP 码、`finish_reason`、content/reasoning 长度、`reasoning_tokens`、空返率。
+- **RED→GREEN→neuter**：按 D1/D2 裁定写红（空返桩：content 空 + reasoning 有货 ⇒ 现形状降级、修后取回）；门禁 `tests/knowledge` + ruff 双净。
+- **复验**：修后同夹具同档位空返率（目标：甲/乙=0%、丙+丁≈0%），对照修前 30–52%。
+
+## 5. 非目标
+
+- caption 质量调优（prompt 改写、双模式调整）。
+- 思考开关进 UI/配置面（D1=甲/乙 是请求级常数，不是旋钮）。
+- 抽取腿/wiki 腿的思考口径（另有裁定线）。
