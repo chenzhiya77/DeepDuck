@@ -220,7 +220,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
 - **关（默认）**：模型自主选路；SOUL.md 引导"简单问题优先向量路，按需再升级 wiki/图谱"——控成本、控延迟
 - **开**：prompt 注入强制指令"本轮必须调用 wiki_search 和 graph_search，并综合三路证据作答"
 - **边界**：开关是"强制升级"而非三路总开关——默认模式下模型仍保有自主调用 wiki/图谱的能力，不被阉割
-- **一期实现为 prompt 软强制**：SOUL.md 是静态文件无法按 run 切换——双模式静态规则写入 SOUL.md，动态强制指令由 middleware（before_model 钩子读取 `context.deep_research`）按 run 注入；二期以召回测试的评测数据为支撑，再评估是否在工具层做硬编排（三路强制并行 + 统一 rerank）。**形态约束（2026-08-10 补充 spec D5）**：硬编排落地时按"分格预算"——各路内部同类候选精排 + 跨路按角色分配 token 预算，禁止三路产物混池平铺排序
+- **一期实现为 prompt 软强制**：SOUL.md 是静态文件无法按 run 切换——双模式静态规则写入 SOUL.md，动态强制指令由 middleware（before_model 钩子读取 `context.deep_research`）按 run 注入；二期以召回测试的评测数据为支撑，再评估是否在工具层做硬编排（三路强制并行 + 统一 rerank）。**（2026-10-02 补充）**：一期软约束一侧已补「作答前自查+有界补检」，见 [2026-10-02-rag-answer-selfcheck-design.md](2026-10-02-rag-answer-selfcheck-design.md)。**形态约束（2026-08-10 补充 spec D5）**：硬编排落地时按"分格预算"——各路内部同类候选精排 + 跨路按角色分配 token 预算，禁止三路产物混池平铺排序
 
 ## 5. DeerFlow 集成方案
 
@@ -232,7 +232,7 @@ query → embedding → kb_wiki_entries 向量检索 top-k
   - `tool_groups: ["rag"]`——RAG 三工具仅对本 agent 可见
   - `skills: []` 或仅保留 deep-research
   - `model_settings.temperature: 0.1`——保证回答严谨
-- `SOUL.md`：专精 prompt——强制引用格式、来源标注、"检索不到就说不知道"拒答策略
+- `SOUL.md`：专精 prompt——强制引用格式、来源标注、"检索不到就说不知道"拒答策略、作答前自查与有界补检（2026-10-02 补充，见 [2026-10-02-rag-answer-selfcheck-design.md](2026-10-02-rag-answer-selfcheck-design.md)）
 
 工具落地：`backend/packages/harness/deerflow/tools/builtins/` 下新建三个工具文件，`@tool(parse_docstring=True)` 注册；config.yaml 的 `tool_groups` 定义 `"rag"` 组。工具描述写清各自适用场景（决定 LLM 选路质量）。
 
