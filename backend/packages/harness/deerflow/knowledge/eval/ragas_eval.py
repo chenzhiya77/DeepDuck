@@ -343,6 +343,11 @@ def parse_judge_json(text: str) -> dict[str, Any]:
     return data
 
 
+#: citation judge 的全局并发上限（所有题共享一个信号量）——贴 mimo 端点的
+#: 承受力（图谱腿 N=8 先例）；串行链是评分段长尾，8 路已把尾巴除以 ~8。
+_JUDGE_CONCURRENCY = 8
+
+
 async def judge_citation_support(claim: str, evidence: str, *, judge_llm: Any) -> bool:
     """One support verdict for a (claim, evidence) pair.
 
@@ -371,8 +376,16 @@ async def citation_precision_recall(
     citation_map: Mapping[int, str],
     *,
     judge_llm: Any,
+    semaphore: asyncio.Semaphore | None = None,
 ) -> CitationScore:
-    """Citation accuracy for one answer against the run's evidence map."""
+    """Citation accuracy for one answer against the run's evidence map.
+
+    The (claim, evidence) verdicts are fetched concurrently (bounded by the
+    caller's optional semaphore) — the old serial ``await`` chain was the
+    scoring phase's long tail (10-30 judge calls queued per question).
+    Verdicts are collected in input order, so ``unsupported`` ordering and the
+    missing-bookkeeping semantics are unchanged.
+    """
 
     claims = split_answer_claims(answer)
     supported = 0
@@ -380,6 +393,7 @@ async def citation_precision_recall(
     unsupported: list[int] = []
     missing_instances = 0
     missing_numbers: list[int] = []
+    jobs: list[tuple[str, int, str]] = []
     for claim, numbers in claims:
         for number in numbers:
             evidence = citation_map.get(number)
@@ -389,12 +403,22 @@ async def citation_precision_recall(
                 if number not in missing_numbers:
                     missing_numbers.append(number)
                 continue
-            judged += 1
-            if await judge_citation_support(claim, evidence, judge_llm=judge_llm):
-                supported += 1
-            else:
-                if number not in unsupported:
-                    unsupported.append(number)
+            jobs.append((claim, number, evidence))
+
+    async def _verdict(claim: str, number: int, evidence: str) -> tuple[int, bool]:
+        if semaphore is None:
+            ok = await judge_citation_support(claim, evidence, judge_llm=judge_llm)
+        else:
+            async with semaphore:
+                ok = await judge_citation_support(claim, evidence, judge_llm=judge_llm)
+        return number, ok
+
+    for number, ok in await asyncio.gather(*(_verdict(claim, number, evidence) for claim, number, evidence in jobs)):
+        judged += 1
+        if ok:
+            supported += 1
+        elif number not in unsupported:
+            unsupported.append(number)
 
     total_marks = judged + missing_instances
     precision = supported / total_marks if total_marks else None
@@ -748,6 +772,17 @@ async def run_layer2_evaluation(
         for question, row in zip(live_questions, ragas_rows, strict=True):
             ragas_by_question[question.id] = row
 
+    # 逐题 citation judge 全并发启动（共享 `_JUDGE_CONCURRENCY` 信号量限流）、
+    # 按题序收割：两层串行链（题间×题内）是评分段长尾的全部来源。
+    judge_sem = asyncio.Semaphore(_JUDGE_CONCURRENCY) if judge_llm is not None else None
+    citation_tasks: dict[str, asyncio.Task[CitationScore]] = {}
+    if judge_llm is not None:
+        for question in questions:
+            if question.id in failures:
+                continue
+            outcome = outcomes[question.id]
+            citation_tasks[question.id] = asyncio.create_task(citation_precision_recall(outcome.answer, outcome.citation_map, judge_llm=judge_llm, semaphore=judge_sem))
+
     results: list[QuestionEvalResult] = []
     judged = 0
     for question in questions:
@@ -756,8 +791,8 @@ async def run_layer2_evaluation(
             continue
         outcome = outcomes[question.id]
         citation = None
-        if judge_llm is not None:
-            citation = await citation_precision_recall(outcome.answer, outcome.citation_map, judge_llm=judge_llm)
+        if question.id in citation_tasks:
+            citation = await citation_tasks[question.id]
             judged += 1
             if progress_hook is not None:
                 # ragas 失败/跳过也按预期 job 数结算，保证第三段单调推进到满。

@@ -9,6 +9,7 @@ pattern as the graph extractor tests), and Langfuse is a fake client.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -49,6 +50,27 @@ class _FakeJudgeLLM:
     async def ainvoke(self, messages):
         self.calls.append(messages)
         return SimpleNamespace(content=self.responses[min(len(self.calls) - 1, len(self.responses) - 1)])
+
+
+class _ConcurrencyJudgeLLM:
+    """Records the peak number of in-flight ``ainvoke`` calls.
+
+    Each call yields once via ``asyncio.sleep`` so overlapping verdicts are
+    observable — a serial chain can never report more than one active call.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.active = 0
+        self.max_active = 0
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(0.01)
+        self.active -= 1
+        return SimpleNamespace(content='{"supported": true, "reason": "ok"}')
 
 
 def _question(qid: str, *, category: str = "fact", expected_path: str = "vector", expected_paths: tuple[str, ...] | None = None, entities=(), reference: str | None = "参考答案") -> GoldenQuestion:
@@ -289,6 +311,49 @@ class TestCitationScore:
 
         assert score.precision == 0.0
         assert score.unsupported == (1,)
+
+
+class TestJudgeParallelism:
+    """The citation judge is the scoring phase's long tail — verdicts must run
+    concurrently (bounded by the shared cap), not one await chain per question."""
+
+    async def test_verdicts_within_one_answer_run_concurrently(self):
+        judge = _ConcurrencyJudgeLLM()
+
+        score = await citation_precision_recall("论断一[1]。论断二[2]。论断三[3]。", {1: "证据一", 2: "证据二", 3: "证据三"}, judge_llm=judge)
+
+        assert score.claims_judged == 3
+        assert judge.max_active == 3
+
+    async def test_semaphore_caps_concurrent_verdicts(self):
+        judge = _ConcurrencyJudgeLLM()
+
+        await citation_precision_recall("论断[1][2][3][4]。", {1: "一", 2: "二", 3: "三", 4: "四"}, judge_llm=judge, semaphore=asyncio.Semaphore(2))
+
+        assert judge.max_active == 2
+
+    async def test_unsupported_order_survives_concurrency(self):
+        judge = _FakeJudgeLLM(['{"supported": false, "reason": "a"}', '{"supported": true, "reason": "b"}', '{"supported": false, "reason": "c"}'])
+
+        score = await citation_precision_recall("论断一[1]。论断二[2]。论断三[3]。", {1: "证据一", 2: "证据二", 3: "证据三"}, judge_llm=judge)
+
+        assert score.unsupported == (1, 3)
+        assert score.precision == 1 / 3
+
+    async def test_cross_question_judge_shares_the_concurrency_cap(self):
+        from deerflow.knowledge.eval.ragas_eval import _JUDGE_CONCURRENCY
+
+        questions = [_question(f"q{i}") for i in range(3)]
+
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            return _outcome(question.id, answer="论断[1][2][3][4]。", citation_map={1: "一", 2: "二", 3: "三", 4: "四"})
+
+        judge = _ConcurrencyJudgeLLM()
+        report = await run_layer2_evaluation(questions, agent_runner=runner, judge_llm=judge, kb_id="kb-1")
+
+        assert report.aggregate["failures"] == 0
+        assert judge.calls == 12  # 3 questions x 4 marks, all judged
+        assert judge.max_active == _JUDGE_CONCURRENCY  # 12 in flight share the one cap
 
 
 class TestRagasUnavailable:
