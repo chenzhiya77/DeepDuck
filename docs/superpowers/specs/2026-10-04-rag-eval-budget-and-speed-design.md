@@ -27,7 +27,7 @@
 
 ### 1.2 谁写的 60、影响面
 
-- `ragas_eval.py:839` 的 `60` 是本仓 RAG 评测线 2026-08-24 引入（`936b8e0bd`，scheduled RAGAS 评测）；上游 DeerFlow 无 knowledge/eval 模块。
+- `build_lead_agent_runner` run config 里的 `60` 是本仓 RAG 评测线 2026-08-24 引入（`936b8e0bd`，scheduled RAGAS 评测）；上游 DeerFlow 无 knowledge/eval 模块。
 - **chat 零影响**：chat 走 gateway `build_run_config`（默认 100、上限 `max_recursion_limit`=1000 钳制）、IM 100/GitHub 250、TUI 250，与本对改动面不相交。
 - 同款「次数当步数」换算坑还有一处：`subagents/executor.py:851` 拿 `max_turns` 当 `recursion_limit`（#3875 有 `turn_capped` 兜底语义）——**登记观察、本对不动**。
 
@@ -35,7 +35,7 @@
 
 ### 2.1 D1 = 甲：`recursion_limit` 60 → 300（结构修；✅ 他拍「跑一下评测看看 300」+ 实测背书）
 
-- 落点：`ragas_eval.py:839`（`build_lead_agent_runner` 的 run config）一行。
+- 落点：`build_lead_agent_runner` 的 run config 一行（现 `ragas_eval.py:875`，行号随并行化漂移过、以函数名为准）。
 - 刻度口径写进注释：**recursion_limit 单位是 super-step，≈15 步/轮 ⇒ 300 ≈ 20 轮**，观测最贪 ≤75 步 ⇒ 4 倍余量。
 - 已在工作树验证（2026-10-04 实测见 §1.1-3），随 Task 1 正式提交。
 - 不动 chat/gateway/subagent 各处的值。
@@ -51,9 +51,10 @@
 
 > 2026-10-04 他纠：「D3 是现在应该修改的问题的反面——是兜底」。慢的结构修见 §2.5（丙）。本条保留但降格为兜底：防的是重试 10×600s 的最坏尾部，不是串行结构本身。
 
-- 落点：`ragas_eval.py:543` `RunConfig`：`max_retries` 10 → 2、`timeout` 600 → 120。
+- 落点：`compute_ragas_scores` 里的 `RunConfig`（现 `ragas_eval.py:568`）：`max_retries` 10 → 2、`timeout` 600 → 120。
 - 依据：单次调用实测 p50 2.7–3.3s/max ≤70s，600s×10 重试的最坏 1.8h 是「1–2 小时」的放大器；120s 超时已 1.7 倍于观测最大值。
 - 初值跑一阵校准。
+- **⚠️ Task 0 核出的冲突（2026-10-04，待他重拍 timeout）**：代码现注释明记「ragas 默认 180s 对慢 judge（qwen-max 长 faithfulness prompt）太紧 ⇒ 故意抬 600」⇒ 120s 不仅低于 600、还低于 ragas 上游默认 180，会复触发当年「太紧」的病。选项：甲=120（原裁，最紧）/ 乙=180（上游默认，仍 3.3× 紧于 600、2.6× 于观测最大 70s，推荐）。`max_retries` 10→2 无冲突（10 是 ragas 默认、代码未显式写，D3=显式写 2；`exception_types=(Exception,)` 任何异常都重试）。
 
 ### 2.4 D4 = 甲：逐 LLM 调用计时日志（观测项）
 

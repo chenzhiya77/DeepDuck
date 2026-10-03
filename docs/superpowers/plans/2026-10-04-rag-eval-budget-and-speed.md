@@ -15,13 +15,13 @@
 - 计时日志 debug 级、无正文无密钥。
 - 门禁用 `backend/.venv/Scripts/python.exe`（见 [[env-induced-test-failures]]）；basetemp 用仓外隔离目录、跑完删。
 
-## Task 0 — 落点核实
+## Task 0 — 落点核实（✅ 2026-10-04 核完）
 
-- [ ] ① `ragas_eval.py:839` 零漂移确认（`build_lead_agent_runner` run config 内）；工作树已改 300 ⇒ 核对 diff 仅此一行。
-- [ ] ② D2 落点核实：`run_layer2_evaluation` 逐题循环的现状（异常处置/`failure` 字段写法/`on_progress` 语义），确认 `asyncio.wait_for` 包裹点与 `failures` 记账的最小改面。
-- [ ] ③ D3 落点核实：`ragas_eval.py:543` `RunConfig` 构造点；受害者=是否有用例断言 `max_retries==10`/`timeout==600`（含 `ragas` 库内部语义：`max_retries` 覆盖哪类异常）。
-- [ ] ④ D4 落点核实：`build_lead_agent_runner` 的 config["callbacks"] 现状（langfuse 已挂）；计时 callback 的挂法与 `on_llm_end` 能拿到的字段（模型名/token）。
-- [ ] ⑤ 受害者扫描：`test_ragas_eval*.py` / `test_eval_*.py` 中断言 recursion_limit、RunConfig、runner config 的用例清单。
+- [x] ① `build_lead_agent_runner` run config 零漂移：diff 恰一行 60→300。⚠️ 行号漂移：现 `ragas_eval.py:875`（丙并行改动 +36 行，旧号 839 作废，spec/plan 已改引用为函数名）。
+- [x] ② D2 落点钉住：`run_layer2_evaluation` 逐题循环（现 :737–745）= `try: outcomes[qid] = await agent_runner(q) / except Exception → failures[qid]`，progress 每题毕回调。最小改面=包 `asyncio.wait_for(..., 180)`（TimeoutError 落同一 except）；`_failure_result` 的 failure 串=`"{type(exc).__name__}: {exc}"` ⇒ 精确记 `failure="timeout"` 需抛 `TimeoutError("timeout")` 或特判（Task 1 拍一个）。D5 改 gather 时记账/progress 语义可直接搬。
+- [x] ③ D3 落点 `ragas_eval.py:568`（旧号 543 作废）：**代码只写 `RunConfig(timeout=600)`、`max_retries` 未写**（=ragas 默认 10，源码确认：默认 timeout 180/max_retries 10/exception_types=(Exception,) 任何异常都重试）⇒ D3 的「10→2」实为「显式写 2」。⚠️ **待他重拍**：代码注释明记「ragas 默认 180s 对慢 judge（qwen-max 长 faithfulness prompt）太紧 ⇒ 故意抬 600」，spec 的 120s 低于上游默认 180 ⇒ 会复触发注释里的「太紧」；甲=120（spec 原裁）/乙=180（上游默认、比 600 紧 3.3×、2.6× 于观测最大 70s），推荐乙。max_retries 2 无冲突。
+- [x] ④ D4 落点：`build_lead_agent_runner` 不显式挂 callbacks——langfuse handler 由 `make_lead_agent(config)` 内挂（`_langfuse_trace_id_from_callbacks` 读 `config["callbacks"]` 可证）⇒ 计时 handler 也是挂 config["callbacks"] 列表追加，与 langfuse 共存。`on_llm_end` 可拿：`LLMResult.generations[0][0].message.usage_metadata`（token）+ `invocation_params`/`serialized`（模型名）；耗时由 start/end 自记。
+- [x] ⑤ 受害者扫描（`tests/knowledge/eval/` 全部 + `test_eval_*`）：**零受害者**——无用例断言 recursion_limit/RunConfig/runner config 值；唯二引用 `build_lead_agent_runner` 的用例（`test_eval_persistence.py:490`、`test_ondemand.py:113`）monkeypatch 整体替换 runner 不碰内部；`test_ragas_eval_cli.py:283` 的 timeout=180 是 subprocess 墙钟无关。RED 全新增、无需给夹具补值。
 
 ## Task 1 — D1+D2 TDD：预算钉 300 + 答题墙钟
 
