@@ -399,6 +399,71 @@ class TestAnswerPhaseBudget:
         assert report.aggregate["failures"] == 1
 
 
+class TestAnswerConcurrency:
+    """D5: question runs overlap across the batch (bounded by
+    ``_ANSWER_CONCURRENCY``), while results and progress stay in question order."""
+
+    @staticmethod
+    def _peak_runner(delays: dict[str, float], *, peak: dict):
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            peak["active"] = peak.get("active", 0) + 1
+            peak["max"] = max(peak.get("max", 0), peak["active"])
+            await asyncio.sleep(delays.get(question.id, 0.02))
+            peak["active"] -= 1
+            return _outcome(question.id)
+
+        return runner
+
+    async def test_questions_run_concurrently(self):
+        peak: dict = {}
+        questions = [_question(f"q{i}") for i in range(3)]
+
+        report = await run_layer2_evaluation(questions, agent_runner=self._peak_runner({}, peak=peak), judge_llm=None, kb_id="kb-1")
+
+        assert report.aggregate["failures"] == 0
+        assert peak["max"] == 3  # 3 questions < cap 4 -> all overlap
+
+    async def test_answer_concurrency_capped(self, monkeypatch):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        monkeypatch.setattr(mod, "_ANSWER_CONCURRENCY", 2)
+        peak: dict = {}
+        questions = [_question(f"q{i}") for i in range(4)]
+
+        await run_layer2_evaluation(questions, agent_runner=self._peak_runner({}, peak=peak), judge_llm=None, kb_id="kb-1")
+
+        assert peak["max"] == 2  # 4 questions share the cap of 2
+
+    async def test_results_keep_question_order_and_progress_counts(self):
+        events: list[tuple[str, int, int, int]] = []
+        peak: dict = {}
+        questions = [_question("q1"), _question("q2"), _question("q3")]
+
+        def on_progress(phase, done, failed, total):
+            events.append((phase, done, failed, total))
+
+        # q1 finishes LAST yet must still be reported first — order is the contract.
+        report = await run_layer2_evaluation(questions, agent_runner=self._peak_runner({"q1": 0.06, "q2": 0.01, "q3": 0.03}, peak=peak), judge_llm=None, kb_id="kb-1", progress_hook=on_progress)
+
+        assert [r.question_id for r in report.results] == ["q1", "q2", "q3"]
+        q_events = [e for e in events if e[0] == "questions"]
+        assert q_events == [("questions", 0, 0, 3), ("questions", 1, 0, 3), ("questions", 2, 0, 3), ("questions", 3, 0, 3)]
+
+    async def test_timeout_question_does_not_block_batch(self, monkeypatch):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        monkeypatch.setattr(mod, "_ANSWER_TIMEOUT_S", 0.05)
+        peak: dict = {}
+        questions = [_question("q1"), _question("q2"), _question("q3")]
+
+        report = await run_layer2_evaluation(questions, agent_runner=self._peak_runner({"q1": 0.3}, peak=peak), judge_llm=None, kb_id="kb-1")
+
+        by_id = {r.question_id: r for r in report.results}
+        assert "timeout" in (by_id["q1"].failure or "")
+        assert by_id["q2"].failure is None and by_id["q3"].failure is None
+        assert peak["max"] == 3  # the timed-out question overlapped, not queued
+
+
 class TestRagasUnavailable:
     async def test_compute_ragas_scores_returns_none_when_unavailable(self, monkeypatch):
         import deerflow.knowledge.eval.ragas_eval as mod

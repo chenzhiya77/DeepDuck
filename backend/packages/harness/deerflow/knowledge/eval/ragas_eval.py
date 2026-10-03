@@ -353,6 +353,10 @@ _JUDGE_CONCURRENCY = 4
 #: 初值 180s = 观测最大 ~90s 的 2 倍，跑一阵校准。
 _ANSWER_TIMEOUT_S = 180
 
+#: 答题段题间并发上限（D5，与 `_JUDGE_CONCURRENCY` 统一 4——他拍「统一 4」）：
+#: 4 题一波、端点上最多 4 路长调用，给共用同一 LLM 端点的聊天邻居留余量。
+_ANSWER_CONCURRENCY = 4
+
 
 async def judge_citation_support(claim: str, evidence: str, *, judge_llm: Any) -> bool:
     """One support verdict for a (claim, evidence) pair.
@@ -739,15 +743,28 @@ async def run_layer2_evaluation(
         # 毕才回调 → 首题在飞期间（agent 多轮可达分钟级）phase 停 layer1，UI 一直
         # 显「检索评测」——与用户批评过的假进度同族缺陷。
         progress_hook("questions", 0, 0, total_questions)
+    # 答题段题间并发（D5）：所有题的任务一次全启动、共享 `_ANSWER_CONCURRENCY`
+    # 信号量，按题序收割——结果顺序与 progress 计数和串行时代逐字一致。
+    answer_sem = asyncio.Semaphore(_ANSWER_CONCURRENCY)
+
+    async def _answer_one(question: GoldenQuestion) -> tuple[TraceOutcome | None, BaseException | None]:
+        async with answer_sem:
+            try:
+                return await asyncio.wait_for(agent_runner(question), timeout=_ANSWER_TIMEOUT_S), None
+            except TimeoutError:
+                logger.warning("agent run timed out for %s after %ss", question.id, _ANSWER_TIMEOUT_S)
+                return None, TimeoutError("timeout")
+            except Exception as exc:  # noqa: BLE001 — degradation contract
+                logger.warning("agent run failed for %s: %s", question.id, exc)
+                return None, exc
+
+    answer_tasks = {question.id: asyncio.create_task(_answer_one(question)) for question in questions}
     for question in questions:
-        try:
-            outcomes[question.id] = await asyncio.wait_for(agent_runner(question), timeout=_ANSWER_TIMEOUT_S)
-        except TimeoutError:
-            logger.warning("agent run timed out for %s after %ss", question.id, _ANSWER_TIMEOUT_S)
-            failures[question.id] = TimeoutError("timeout")
-        except Exception as exc:  # noqa: BLE001 — degradation contract
-            logger.warning("agent run failed for %s: %s", question.id, exc)
+        outcome, exc = await answer_tasks[question.id]
+        if exc is not None:
             failures[question.id] = exc
+        else:
+            outcomes[question.id] = outcome  # type: ignore[assignment]
         if progress_hook is not None:
             # 单题失败计入 failed，done 仍计（failed 独立不从 done 扣）。
             progress_hook("questions", len(outcomes) + len(failures), len(failures), total_questions)
