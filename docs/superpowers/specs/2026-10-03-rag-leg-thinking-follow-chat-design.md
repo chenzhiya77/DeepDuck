@@ -4,7 +4,7 @@
 
 本对一件事：把五个 RAG 功能腿的思考口径从**写死不思考**变成**用户可勾选「跟随 chat」**。UI 形态他已定（多选下拉框，勾=跟随 chat、不勾=现状），本对把机制、配置形状、caption 预算联动落定。
 
-**⚠️ 翻案记录**：本对**推翻** D7/D8（[2026-10-02 图谱腿并发化](2026-10-02-rag-graph-extract-concurrency-design.md) 的「索引期不带思考、**不落旋钮**」）。翻案理由=用户控制权优先（他的产品裁定），且**默认全不勾=零行为变化**、市场默认（六家全关）被保留为 UI 默认值而非禁令。D7 的数据（T5 A/B +4.6pp 噪声级）仍作为「默认不开」的论据保留。
+**⚠️ 翻案记录**：本对**推翻** D7/D8（[2026-10-01 图谱腿并发化](2026-10-01-rag-graph-extract-concurrency-design.md) 的「索引期不带思考、**不落旋钮**」）。翻案理由=用户控制权优先（他的产品裁定），且**默认全不勾=零行为变化**、市场默认（六家全关）被保留为 UI 默认值而非禁令。D7 的数据（T5 A/B +4.6pp 噪声级）仍作为「默认不开」的论据保留。
 
 **相关记录**：
 
@@ -25,7 +25,8 @@
 | 五角色模型字段齐备（`extract_model`/`wiki_model`/`judge_model`/`synthesis_model`/`vlm_model`） | `config/app_config.py:191-200`（RagConfig） |
 | 抽取构造点裸调（默认 False） | `knowledge/graph/extractor.py:130` |
 | wiki 构造点裸调 ×2（`generator.py:220` + `worker.py:962`） | 同左 |
-| eval 裁判/考题合成裸调 | `knowledge/eval/factory.py:72`、`eval/synthesis.py:149` |
+| eval 裁判裸调（`build_judge_llm`）/考题合成裸调 | `knowledge/eval/factory.py:59,72`、`eval/synthesis.py:149` |
+| 新布尔写入链是**双层**（漏一处=勾选静默无效）：独立 schema + 网关字段遍历 | `config/rag_config_file.py:74`（`MODEL_REFERENCE_FIELDS`）、`gateway/routers/rag_config.py:393` |
 | caption 两腿走裸 HTTP 出站口，D1 甲′ 只做**关闭**分发 | `knowledge/caption_client.py`（`_apply_thinking_off`） |
 | chat 恒发 true、条目闸在 `lead_agent/agent.py:762-764` | 提交公式 `core/threads/hooks.ts:2294` |
 | 工厂两分支按 `thinking_enabled` 发开/关形状（条目声明的 `when_thinking_*`） | `models/factory.py:348-372` |
@@ -56,15 +57,17 @@
 
 | 选项 | 含义 | 推荐理由 | 选错后果 |
 |---|---|---|---|
-| **甲（✅ 已裁）：生效层联动** | `vlm_thinking: true` 时 caption 腿实际发送 `max_tokens = 4096`（不动用户 `caption_max_tokens` 字面） | 勾了就能用，空返前科从源头堵住；配置字面不动、取消勾选即回 | 输出预算×4 的成本/时长自动发生 |
+| **甲（✅ 已裁）：生效层联动** | `vlm_thinking: true` 时 caption 腿实际发送 `max_tokens = max(用户 caption_max_tokens, 4096)`（保底 4096、不砍用户调高的值；配置字面不动） | 勾了就能用，空返前科从源头堵住；取消勾选即回 | 成本/时长升（输出预算保底×4） |
 | 乙：只提示 | UI ⓘ「开思考建议同步调高 caption_max_tokens」 | 用户全权 | 多数人不调 ⇒ 空返换形态回来（兜底=reasoning 草稿、质量打折） |
 | 丙：不联动 | 靠已常开的 D2 reasoning 兜底保命 | 零新机制 | 同乙且连提示都没有 |
 
-### 2.3 修点与口径（定案，无待拍）
+### 2.3 修点与口径（定案，无待拍；含 2026-10-03 审查修正）
 
-- 后端：五个角色构造点读对应布尔传 `thinking_enabled=…`（wiki 两处都要）；caption 出站口加**开启**分发（对称于既有 `_apply_thinking_off`：发条目 `when_thinking_enabled` 形状、无声明则不发）。
+- **共享条目闸（审查①）**：五构造点不走 `lead_agent`，闸（`agent.py:762-764`：`supports_thinking` 假 ⇒ 降级 `False`+warning）不能"继承"、要**复刻**——工厂对裸传 `True` 的行为是 `factory.py:348-350` **raise**（条目有思考声明但 `supports_thinking: false`）或**静默不发**（零声明 ⇒ 端点默认照想），两者都≠chat、前者会把索引跑炸。落法=一个包装函数 `create_rag_chat_model(name, *, thinking: bool, …)`（落在 `knowledge/model_target.py`）：先过闸再调 `create_chat_model`，五构造点（wiki 两处）全走它。
+- **写入链双层（审查③）**：新布尔同时进 `config/rag_config_file.py`（独立 schema）与 `gateway/routers/rag_config.py` 字段遍历，漏一处=勾选静默无效。
+- **caption 开启分发（审查④）**：`VlmTarget`（`vlm_target.py:70-76`）扩 `enable_shape`（条目 `when_thinking_enabled`）与 `supports_thinking`；勾选且条目不支持 ⇒ 同款降级（发关闭形状+warning）。出站口加 `_apply_thinking_on` 对称于既有 `_apply_thinking_off`（无声明不发）。
 - 工厂不动——开/关分发已在那里，本对只把"谁说开"的输入接出来。
-- 「跟随 chat」的定义=**与 chat 完全一致**：条目闸、默认档位、warning 行为全继承，不发明第三种语义。
+- 「跟随 chat」的定义=**与 chat 完全一致**：条目闸、默认档位、warning 行为全对齐，不发明第三种语义。
 
 ## 3. 硬约束
 
@@ -75,7 +78,7 @@
 
 ## 4. 验收
 
-- **RED→GREEN→neuter**：按 D1/D2 裁定写红（勾选角色 ⇒ 构造点带 `thinking_enabled=True`；默认全 False 零变化；caption 开启分发 + D2 联动）；门禁 `tests/knowledge` + models 面 + ruff 双净。
+- **RED→GREEN→neuter**：按 D1/D2 裁定写红（勾选角色 ⇒ 构造点带 `thinking_enabled=True`；默认全 False 零变化；**勾选 + 条目 `supports_thinking: false` ⇒ 降级 `False`+warning（审查⑥）**；caption 开启分发 + D2 联动）；门禁 `tests/knowledge` + models 面 + ruff 双净。
 - **真栈**：勾一格 ⇒ 该腿请求体带开启形状（探针实录）；不勾 ⇒ 与基线逐字节一致；`vlm_thinking` 勾上后 caption 请求 `max_tokens` 按 D2 裁定。
 - **UI**：下拉框五行/勾选保存热重载生效/占位文案在框内无前置标签。
 

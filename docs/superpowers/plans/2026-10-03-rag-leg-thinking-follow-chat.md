@@ -21,17 +21,17 @@
 
 ## Task 0 — 落点核实
 
-- [ ] ① 五构造点现址复核（`graph/extractor.py:130`、`wiki/generator.py:220`+`worker.py:962`、`eval/factory.py:72`+`eval/synthesis.py:149`、caption 出站口）+ 配置字段落点（`RagConfig` + 设置页写入链/热重载）+ 既有用例受害者扫描（断言 `thinking_enabled` 的用例清单）。
+- [ ] ① 五构造点现址复核（`graph/extractor.py:130`、`wiki/generator.py:220`+`worker.py:962`、`eval/factory.py:59,72`（`build_judge_llm`）+`eval/synthesis.py:149`、caption 出站口）+ 配置字段落点（`RagConfig` `app_config.py:191-200` + **双层写入链** `config/rag_config_file.py:74`/`gateway/routers/rag_config.py:393` + 热重载）+ 共享闸落点（`create_rag_chat_model` 包装进 `knowledge/model_target.py`）+ `VlmTarget` 扩字段面（`vlm_target.py:70-76`）+ 既有用例受害者扫描（断言 `thinking_enabled` 的用例清单）。
 
 ## Task 1 — D1 执行：后端 TDD
 
-- [ ] RED：按 D1 裁定写红——五角色各一用例（勾⇒构造点收到 `thinking_enabled=True`；默认⇒False 且请求体不变）+ 「跟随 chat 含条目闸」用例（`supports_thinking: false` 条目 ⇒ 闸回 warning）。
-- [ ] GREEN：`RagConfig` 加字段（D1 形状）+ 五构造点传参（wiki 两处）+ caption 出站口开启分发（发 `when_thinking_enabled` 形状、无声明不发）。
+- [ ] RED：按 D1 裁定写红——五角色各一用例（勾⇒构造点收到 `thinking_enabled=True`；默认⇒False 且请求体不变）+ 「跟随 chat 含条目闸」用例（`supports_thinking: false` 条目 ⇒ 闸回 warning）。⚠️ wiki 用例别走 `main_llm` 注入口（`worker.py:962` 的 `self._main_llm or` 是文档明示的测试旁路、生产不传）——要测决议路径用真构造点。
+- [ ] GREEN：`RagConfig` + **双层写入链**加 5 布尔（D1 形状）+ `create_rag_chat_model` 共享闸包装 + 五构造点改走它（wiki 两处）+ `VlmTarget` 扩 `enable_shape`/`supports_thinking` + caption 出站口开启分发（`_apply_thinking_on`，无声明不发）。
 - [ ] neuter：还原一处勾选读取 ⇒ 对应红；全还原全绿。
 
 ## Task 2 — D2 执行：caption 预算联动
 
-- [ ] 按 D2 裁定实现（甲=生效层 `max(…, 4096)`；乙=UI ⓘ 文案；丙=无）+ 用例钉住（勾上⇒发送预算按裁定、不勾⇒1024 不变）。
+- [ ] D2=甲：caption 发送预算 = `max(用户 caption_max_tokens, 4096)`（生效层、不动配置字面、不砍用户调高的值）+ 用例钉住（勾上⇒按上式、不勾⇒照用户值原样）。
 
 ## Task 3 — 前端下拉框
 
