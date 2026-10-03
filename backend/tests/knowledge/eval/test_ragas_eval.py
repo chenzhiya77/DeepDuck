@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -462,6 +464,56 @@ class TestAnswerConcurrency:
         assert "timeout" in (by_id["q1"].failure or "")
         assert by_id["q2"].failure is None and by_id["q3"].failure is None
         assert peak["max"] == 3  # the timed-out question overlapped, not queued
+
+
+class TestRunConfigAndTiming:
+    """D3 ragas RunConfig guard (retry/timeout cap) and the D4 per-call timing log."""
+
+    def test_ragas_run_config_pins_retries_and_timeout(self):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        factory = getattr(mod, "_ragas_run_config", None)
+        assert factory is not None, "ragas RunConfig factory missing"
+        cfg = factory()
+        assert cfg.max_retries == 2
+        assert cfg.timeout == 180
+
+    async def test_runner_mounts_timing_handler(self, monkeypatch):
+        import deerflow.agents.lead_agent.agent as lead_agent_mod
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        handler_cls = getattr(mod, "EvalCallTimingHandler", None)
+        assert handler_cls is not None, "EvalCallTimingHandler missing"
+        captured: dict = {}
+
+        class _FakeGraph:
+            async def ainvoke(self, payload, config, context=None):
+                captured.update(config)
+                return {"messages": [AIMessage(content="答案")]}
+
+        monkeypatch.setattr(lead_agent_mod, "make_lead_agent", lambda config: (captured.update(config), _FakeGraph())[1])
+        runner = build_lead_agent_runner(kb_id="kb-1", user_id="u-1", run_id="run-1")
+        await runner(_question("q1"))
+
+        assert any(isinstance(cb, handler_cls) for cb in captured.get("callbacks") or [])
+
+    def test_timing_handler_logs_model_and_duration(self, caplog):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        handler_cls = getattr(mod, "EvalCallTimingHandler", None)
+        assert handler_cls is not None, "EvalCallTimingHandler missing"
+        handler = handler_cls()
+        run_id = uuid.uuid4()
+        response = SimpleNamespace(generations=[[SimpleNamespace(message=SimpleNamespace(usage_metadata={"input_tokens": 3, "output_tokens": 5}))]])
+
+        with caplog.at_level(logging.DEBUG, logger="deerflow.knowledge.eval.ragas_eval"):
+            handler.on_llm_start({"name": "m"}, ["prompt"], run_id=run_id)
+            handler.on_llm_end(response, run_id=run_id, invocation_params={"model_name": "mimo-v2.6-flash"})
+
+        timing = [r for r in caplog.records if "llm call" in r.getMessage()]
+        assert timing, "no per-call timing line logged"
+        assert "mimo-v2.6-flash" in timing[0].getMessage()
+        assert "dur=" in timing[0].getMessage()
 
 
 class TestRagasUnavailable:

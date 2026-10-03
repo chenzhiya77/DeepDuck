@@ -51,10 +51,10 @@
 
 > 2026-10-04 他纠：「D3 是现在应该修改的问题的反面——是兜底」。慢的结构修见 §2.5（丙）。本条保留但降格为兜底：防的是重试 10×600s 的最坏尾部，不是串行结构本身。
 
-- 落点：`compute_ragas_scores` 里的 `RunConfig`（现 `ragas_eval.py:568`）：`max_retries` 10 → 2、`timeout` 600 → 120。
-- 依据：单次调用实测 p50 2.7–3.3s/max ≤70s，600s×10 重试的最坏 1.8h 是「1–2 小时」的放大器；120s 超时已 1.7 倍于观测最大值。
+- 落点：`compute_ragas_scores` 的 `_ragas_run_config()` 工厂（D3 已落）：`max_retries` 10 → 2、`timeout` 600 → **180**（✅ 他拍乙）。
+- 依据：单次调用实测 p50 2.7–3.3s/max ≤70s，600s×10 重试的最坏 1.8h 是「1–2 小时」的放大器；180s=ragas 上游默认、2.6× 于观测最大值，仍比 600 紧 3.3×。
 - 初值跑一阵校准。
-- **⚠️ Task 0 核出的冲突（2026-10-04，待他重拍 timeout）**：代码现注释明记「ragas 默认 180s 对慢 judge（qwen-max 长 faithfulness prompt）太紧 ⇒ 故意抬 600」⇒ 120s 不仅低于 600、还低于 ragas 上游默认 180，会复触发当年「太紧」的病。选项：甲=120（原裁，最紧）/ 乙=180（上游默认，仍 3.3× 紧于 600、2.6× 于观测最大 70s，推荐）。`max_retries` 10→2 无冲突（10 是 ragas 默认、代码未显式写，D3=显式写 2；`exception_types=(Exception,)` 任何异常都重试）。
+- **Task 0 冲突已拍（2026-10-04 他拍乙=180s）**：代码注释明记「ragas 默认 180s 对慢 judge（qwen-max 长 faithfulness prompt）太紧 ⇒ 故意抬 600」⇒ 甲=120 会复触发「太紧」，故取乙=180（=上游默认，收紧与历史教训的平衡点）。`max_retries` 10→2 无冲突（10 是 ragas 默认、代码未显式写，D3=显式写 2；`exception_types=(Exception,)` 任何异常都重试）。
 
 ### 2.4 D4 = 甲：逐 LLM 调用计时日志（观测项）
 
@@ -95,7 +95,7 @@
 1. **A1 零撞墙**：测试1 全 17 题 L1+L2 零 `GraphRecursionError`、17/17 出分（实现后复测；基线=§1.1-3 已跑）。
 2. **A2 钉 300**：用例断言 runner run config 的 `recursion_limit == 300`（防回退成 60）。
 3. **A3 墙钟**：假 runner 拖 >180s ⇒ 该题 `failure="timeout"` 且后续题继续跑。
-4. **A4 RunConfig**：用例钉 `max_retries == 2`、`timeout == 120`。
+4. **A4 RunConfig**：用例钉 `max_retries == 2`、`timeout == 180`。
 5. **A5 计时**：跑一次评测、debug 日志可见逐调用计时行。
 6. **A6 并行 judge（已过，2026-10-04）**：`TestJudgeParallelism` 四例钉 题内并发 / semaphore 截流 / 题间共享上限恰 `_JUDGE_CONCURRENCY` / 并行下序不变；真跑 17 题 judge 尾巴 57.2s vs 工作量 462.9s = 8.1×、评分段 281s（对基线 564s）。
 7. **A7 答题并发**：用例钉 题间并发（多题重叠）/ `_ANSWER_CONCURRENCY` 截流 / 超时题与其他题互不拖累（D2 同批）/ 结果按题序、progress 计数不变；真跑 4 题基准 3.3×（§1.1-7 已给基线）。

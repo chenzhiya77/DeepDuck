@@ -34,12 +34,15 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from langchain_core.callbacks import BaseCallbackHandler
 
 from deerflow.knowledge.eval.dataset import GoldenQuestion
 
@@ -357,6 +360,48 @@ _ANSWER_TIMEOUT_S = 180
 #: 4 题一波、端点上最多 4 路长调用，给共用同一 LLM 端点的聊天邻居留余量。
 _ANSWER_CONCURRENCY = 4
 
+#: ragas 每次 LLM 调用的重试/超时上限（D3 兜底）：重试 2、超时 180s（他拍乙=
+#: ragas 上游默认——比 120s 宽是因「慢 judge 太紧」是当年实证过的病；仍比旧的
+#: 600s×10 收紧 3.3×/5×）。
+_RAGAS_MAX_RETRIES = 2
+_RAGAS_TIMEOUT_S = 180
+
+
+def _ragas_run_config() -> Any:
+    """Per-LLM-call retry/timeout profile for every ragas evaluation call."""
+
+    from ragas.run_config import RunConfig
+
+    return RunConfig(max_retries=_RAGAS_MAX_RETRIES, timeout=_RAGAS_TIMEOUT_S)
+
+
+class EvalCallTimingHandler(BaseCallbackHandler):
+    """Debug-level per-LLM-call timing for the eval chain (D4 观测项).
+
+    One line per call — model name, wall time, token counts. Prompts and
+    completions are deliberately never logged (no content, no keys).
+    """
+
+    def __init__(self) -> None:
+        self._started: dict[Any, float] = {}
+
+    def on_llm_start(self, serialized: dict[str, Any], prompts: list[str], *, run_id: Any, **kwargs: Any) -> None:
+        self._started[run_id] = time.monotonic()
+
+    def on_llm_end(self, response: Any, *, run_id: Any, **kwargs: Any) -> None:
+        started = self._started.pop(run_id, None)
+        if started is None:
+            return
+        params = kwargs.get("invocation_params") or {}
+        model = params.get("model_name") or params.get("model") or "?"
+        usage = "-"
+        try:
+            meta = getattr(response.generations[0][0].message, "usage_metadata", None) or {}
+            usage = f"in={meta.get('input_tokens')}/out={meta.get('output_tokens')}"
+        except Exception:  # noqa: BLE001 — best-effort observability
+            pass
+        logger.debug("eval llm call model=%s dur=%.2fs usage=%s", model, time.monotonic() - started, usage)
+
 
 async def judge_citation_support(claim: str, evidence: str, *, judge_llm: Any) -> bool:
     """One support verdict for a (claim, evidence) pair.
@@ -569,12 +614,8 @@ async def compute_ragas_scores(
 
     from ragas.dataset_schema import EvaluationDataset, SingleTurnSample
     from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
-    from ragas.run_config import RunConfig
 
-    # ragas' default per-LLM-call timeout (180s) is too tight for slow judges
-    # (qwen-max on long faithfulness prompts) — 600s matches the project model
-    # profile timeout.
-    run_config = RunConfig(timeout=600)
+    run_config = _ragas_run_config()
 
     def _evaluate(group: list[dict[str, Any]], metrics: list[Any]) -> list[dict[str, Any]]:
         dataset = EvaluationDataset(
@@ -898,6 +939,9 @@ def build_lead_agent_runner(
             "configurable": {"thread_id": thread_id},
             "context": context,
             "recursion_limit": 300,
+            # D4 观测：逐 LLM 调用计时（debug 级、只记耗时/token）；make_lead_agent
+            # 把 langfuse 追加进同一列表。
+            "callbacks": [EvalCallTimingHandler()],
             # langfuse_session_id ← run_id groups all questions of one eval run
             # into one Langfuse session; trace name carries the question id.
             "metadata": build_langfuse_trace_metadata(

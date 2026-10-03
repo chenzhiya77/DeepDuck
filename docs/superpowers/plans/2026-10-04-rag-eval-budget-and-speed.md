@@ -30,12 +30,12 @@
 - [x] neuter：①还原 60 ⇒ 恰红钉 300 那条；②拆墙钟 ⇒ 恰红超时续跑那条；受害者不相交，还原复绿。
 - [x] 门禁：knowledge/eval 面 336 例全绿 + ruff 双净。
 
-## Task 2 — D3+D4 TDD：RunConfig 收紧 + 计时日志
+## Task 2 — D3+D4 TDD：RunConfig 收紧 + 计时日志（✅ 2026-10-04）
 
-- [ ] RED：①断言 `RunConfig` `max_retries == 2` 且 `timeout == 180`（现状=ragas 默认 10/显式 600 ⇒ 红；timeout 已改拍乙=180）；②跑一次假评测 ⇒ debug 日志应含逐调用计时行（现状无 ⇒ 红）。
-- [ ] GREEN：`RunConfig` 显式 `max_retries=2, timeout=180` + 计时 callback 挂 `build_lead_agent_runner` config（`on_llm_end` 记 模型名/耗时/token，debug 级、一行一调用）。
-- [ ] neuter：①还原 10/600 ⇒ 红；②摘 callback ⇒ 红；还原复绿。
-- [ ] 门禁：knowledge/eval 面 + ruff 双净。
+- [x] RED：`TestRunConfigAndTiming` 三例——工厂钉 `max_retries == 2`/`timeout == 180` / runner config 挂计时 handler / handler 逐调用打 debug 行（模型名+dur+usage）⇒ 现状 3 红（工厂与 handler 都不存在）。
+- [x] GREEN：`_ragas_run_config()` 工厂（`RunConfig(max_retries=2, timeout=180)`，常量 `_RAGAS_MAX_RETRIES`/`_RAGAS_TIMEOUT_S`）+ `EvalCallTimingHandler`（`on_llm_start/end` 记耗时、`usage_metadata` 记 token、**不记正文**）挂 `build_lead_agent_runner` config["callbacks"]（langfuse 由 `make_lead_agent` 追加同一列表）。
+- [x] neuter：①工厂还原 `timeout=600` ⇒ 恰红钉值那条；②摘挂载 ⇒ 恰红挂载那条；受害者不相交，还原复绿。
+- [x] 门禁：knowledge/eval 面 343 例全绿 + ruff 双净。
 
 ## Task 3 — 门禁 + 文档
 
