@@ -343,9 +343,10 @@ def parse_judge_json(text: str) -> dict[str, Any]:
     return data
 
 
-#: citation judge 的全局并发上限（所有题共享一个信号量）——贴 mimo 端点的
-#: 承受力（图谱腿 N=8 先例）；串行链是评分段长尾，8 路已把尾巴除以 ~8。
-_JUDGE_CONCURRENCY = 8
+#: citation judge 的全局并发上限（所有题共享一个信号量）——与答题并发统一 4
+#: （他拍「统一 4」）：评测与聊天共用 LLM 端点，统一低档留邻居余量；代价=judge
+#: 尾巴对 8 路翻倍（~57→~110s/17 题）。数字可调。
+_JUDGE_CONCURRENCY = 4
 
 
 async def judge_citation_support(claim: str, evidence: str, *, judge_llm: Any) -> bool:
