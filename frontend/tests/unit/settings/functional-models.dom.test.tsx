@@ -719,20 +719,22 @@ describe("thinking follow-chat menu (spec 2026-10-03 D1=甲)", () => {
 
     // The label exists only as the trigger's aria-label; the visible text is the state.
     expect(screen.queryAllByText(F.thinkingMenuLabel)).toHaveLength(0);
-    expect(trigger().textContent).toContain("点击开启");
+    expect(trigger().textContent).toContain("未选择");
   });
 
   it("ships the trigger copy verbatim in both locales", () => {
-    expect(F.thinkingMenuLabel).toBe("思考 · 跟随 chat");
-    expect(F.thinkingMenuState(0)).toBe("思考 · 跟随 chat（点击开启）");
-    expect(F.thinkingMenuState(3)).toBe("思考 · 跟随 chat（已选 3）");
+    expect(F.thinkingMenuLabel).toBe("思考跟随对话模型");
+    expect(F.thinkingMenuState(0)).toBe("思考跟随对话模型（未选择）");
+    expect(F.thinkingMenuState(3)).toBe("思考跟随对话模型（已选 3 项）");
 
     const FE = enUS.settings.functionalModels;
-    expect(FE.thinkingMenuLabel).toBe("Thinking · follows chat");
+    expect(FE.thinkingMenuLabel).toBe("Thinking follows the chat model");
     expect(FE.thinkingMenuState(0)).toBe(
-      "Thinking · follows chat (click to enable)",
+      "Thinking follows the chat model (none selected)",
     );
-    expect(FE.thinkingMenuState(2)).toBe("Thinking · follows chat (2 selected)");
+    expect(FE.thinkingMenuState(2)).toBe(
+      "Thinking follows the chat model (2 selected)",
+    );
   });
 
   it("lists the five role slots with the model each slot points at", async () => {
@@ -771,7 +773,7 @@ describe("thinking follow-chat menu (spec 2026-10-03 D1=甲)", () => {
         name: `${F.wikiModel} · （使用配置默认）`,
       }),
     ).toBeTruthy();
-    expect(trigger().textContent).toContain("已选 1");
+    expect(trigger().textContent).toContain("已选 1 项");
     expect(saveButton().disabled).toBe(false);
   });
 
@@ -808,7 +810,7 @@ describe("thinking follow-chat menu (spec 2026-10-03 D1=甲)", () => {
     renderPage();
     openFunctionalView();
 
-    expect(trigger().textContent).toContain("已选 1");
+    expect(trigger().textContent).toContain("已选 1 项");
 
     openMenu();
     fireEvent.click(
@@ -823,7 +825,7 @@ describe("thinking follow-chat menu (spec 2026-10-03 D1=甲)", () => {
     const payload = saveMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload.vlm_thinking).toBe(false);
     expect(payload).not.toHaveProperty("extract_thinking");
-    expect(trigger().textContent).toContain("点击开启");
+    expect(trigger().textContent).toContain("未选择");
   });
 });
 

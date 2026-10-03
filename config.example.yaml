@@ -2605,7 +2605,7 @@ rag:
   # One flag per role slot. `true` makes that leg ask its model with thinking enabled —
   # through the same entry gate chat uses, so a model that declares no thinking support
   # downgrades to non-thinking with a warning. `false` (the default) keeps the
-  # non-thinking dispatch. Also editable as the 思考 · 跟随 chat multi-select in
+  # non-thinking dispatch. Also editable as the follow-chat thinking multi-select in
   # Settings → Models → Functional models. Caption thinking additionally raises the
   # caption output budget to at least 4096 (max with caption_max_tokens).
   # extract_thinking: false
