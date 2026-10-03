@@ -348,6 +348,11 @@ def parse_judge_json(text: str) -> dict[str, Any]:
 #: 尾巴对 8 路翻倍（~57→~110s/17 题）。数字可调。
 _JUDGE_CONCURRENCY = 4
 
+#: 答题段每题墙钟预算（秒）——兜底（D2）：「失控题 × 慢端点」组合无上界
+#: （20 轮 × 60s ≈ 20 分钟/题），墙钟保批不保题；超时题记 TimeoutError 续跑。
+#: 初值 180s = 观测最大 ~90s 的 2 倍，跑一阵校准。
+_ANSWER_TIMEOUT_S = 180
+
 
 async def judge_citation_support(claim: str, evidence: str, *, judge_llm: Any) -> bool:
     """One support verdict for a (claim, evidence) pair.
@@ -736,7 +741,10 @@ async def run_layer2_evaluation(
         progress_hook("questions", 0, 0, total_questions)
     for question in questions:
         try:
-            outcomes[question.id] = await agent_runner(question)
+            outcomes[question.id] = await asyncio.wait_for(agent_runner(question), timeout=_ANSWER_TIMEOUT_S)
+        except TimeoutError:
+            logger.warning("agent run timed out for %s after %ss", question.id, _ANSWER_TIMEOUT_S)
+            failures[question.id] = TimeoutError("timeout")
         except Exception as exc:  # noqa: BLE001 — degradation contract
             logger.warning("agent run failed for %s: %s", question.id, exc)
             failures[question.id] = exc
@@ -872,7 +880,7 @@ def build_lead_agent_runner(
         config: dict[str, Any] = {
             "configurable": {"thread_id": thread_id},
             "context": context,
-            "recursion_limit": 60,
+            "recursion_limit": 300,
             # langfuse_session_id ← run_id groups all questions of one eval run
             # into one Langfuse session; trace name carries the question id.
             "metadata": build_langfuse_trace_metadata(

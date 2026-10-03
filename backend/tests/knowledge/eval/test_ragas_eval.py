@@ -20,6 +20,7 @@ from deerflow.knowledge.eval.dataset import GoldenQuestion
 from deerflow.knowledge.eval.ragas_eval import (
     JudgeParseError,
     TraceOutcome,
+    build_lead_agent_runner,
     citation_precision_recall,
     compute_ragas_scores,
     expected_ragas_jobs,
@@ -354,6 +355,48 @@ class TestJudgeParallelism:
         assert report.aggregate["failures"] == 0
         assert judge.calls == 12  # 3 questions x 4 marks, all judged
         assert judge.max_active == _JUDGE_CONCURRENCY  # 12 in flight share the one cap
+
+
+class TestAnswerPhaseBudget:
+    """D1 recursion budget (300 = ~20 model rounds at 15 super-steps each) and
+    the D2 per-question wall clock — the answer phase must never hang a batch."""
+
+    async def test_runner_recursion_limit_is_300(self, monkeypatch):
+        import deerflow.agents.lead_agent.agent as lead_agent_mod
+
+        captured: dict = {}
+
+        class _FakeGraph:
+            async def ainvoke(self, payload, config, context=None):
+                captured.update(config)
+                return {"messages": [AIMessage(content="答案")]}
+
+        monkeypatch.setattr(lead_agent_mod, "make_lead_agent", lambda config: (captured.update(config), _FakeGraph())[1])
+
+        runner = build_lead_agent_runner(kb_id="kb-1", user_id="u-1", run_id="run-1")
+        await runner(_question("q1"))
+
+        assert captured["recursion_limit"] == 300
+
+    async def test_slow_question_times_out_and_batch_continues(self, monkeypatch):
+        import deerflow.knowledge.eval.ragas_eval as mod
+
+        monkeypatch.setattr(mod, "_ANSWER_TIMEOUT_S", 0.05, raising=False)
+        seen: list[str] = []
+
+        async def runner(question: GoldenQuestion) -> TraceOutcome:
+            seen.append(question.id)
+            if question.id == "q1":
+                await asyncio.sleep(0.3)
+            return _outcome(question.id)
+
+        report = await run_layer2_evaluation([_question("q1"), _question("q2")], agent_runner=runner, judge_llm=None, kb_id="kb-1")
+
+        by_id = {r.question_id: r for r in report.results}
+        assert "timeout" in (by_id["q1"].failure or "")
+        assert by_id["q2"].failure is None
+        assert seen == ["q1", "q2"]  # the batch ran on
+        assert report.aggregate["failures"] == 1
 
 
 class TestRagasUnavailable:
