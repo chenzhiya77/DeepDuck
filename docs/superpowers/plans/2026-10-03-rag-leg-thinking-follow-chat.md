@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** 🚧 **Task 0–1 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。后端 TDD 已交付；下一棒 Task 2（D2 预算联动）。
+**Status:** 🚧 **Task 0–2 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。后端 TDD + 预算联动已交付；下一棒 Task 3（前端下拉框）。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -33,9 +33,9 @@
 - [x] neuter：①还原抽取勾选读取 ⇒ 恰 **2 红**（extract 勾选 + 该腿闸用例）；②拆腿闸 ⇒ 恰 **1 红**（caption 闸独立、反证面不相交）；全还原复绿。
 - [x] 门禁：knowledge + config/models 面 **1805 passed / 4 env 红**（缺 key 对 `test_embed_missing_api_key`/`test_rerank_missing_api_key` + parser 对=本机真实 MinerU token 泄进隔离断言）；ruff check/format 双净。**受害者处置**：判官两夹具补 `judge_thinking`/`get_model_config`（`test_eval_factory.py`/`test_ragas_eval_cli.py`，前例「给夹具补值」）+ `response_golden.json` 补 10 嵌套键（`config`×5=`False`、`sources`×5=`config_file`；字段面守卫拦对了=预期的"字段面变动"）。
 
-## Task 2 — D2 执行：caption 预算联动
+## Task 2 — D2 执行：caption 预算联动 ✅
 
-- [ ] D2=甲：caption 发送预算 = `max(用户 caption_max_tokens, 4096)`（生效层、不动配置字面、不砍用户调高的值）+ 用例钉住（勾上⇒按上式、不勾⇒照用户值原样）。
+- [x] D2=甲：caption 发送预算 = `max(用户 caption_max_tokens, 4096)`（生效层 `request_caption`、闸后才涨、不动配置字面、不砍用户调高的值）+ 用例钉住（勾上⇒按上式、不勾⇒照用户值原样、被闸降级⇒不涨）。实测：RED 恰 1 红（地板用例）/3 守护绿 → GREEN **18/18** → neuter 拆地板恰 1 红（守护不相交）→ 还原绿；caption 面门禁 **235/235** + ruff 双净。
 
 ## Task 3 — 前端下拉框
 

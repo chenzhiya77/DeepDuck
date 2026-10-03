@@ -219,3 +219,48 @@ async def test_caption_checked_but_the_entry_declares_no_support_downgrades_with
     assert body["thinking"] == {"type": "disabled"}  # pressed back to the off spelling
     # The caption door names the wire model (VlmTarget carries no entry name).
     assert "wire-plain" in caplog.text and "does not support" in caplog.text
+
+
+# ── D2=甲: the output budget rises while thinking is on ───────────────────
+#
+# Thinking tokens draw from the same output budget (the truncation post-mortem), so the
+# effective budget gets a 4096 floor when thinking is on — never cutting a higher user
+# value, and never rising once the entry gate has pressed thinking back off.
+
+
+async def _sent_max_tokens(entry_name: str, *, thinking: bool, user_budget: int) -> int:
+    import json as _json
+
+    from deerflow.knowledge.caption_client import request_caption
+
+    target = _vlm_target(_config([THINKING_ENTRY if entry_name == "think-entry" else UNSUPPORTED_ENTRY]), entry_name)
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await request_caption(client, target=target, prompt="p", images=[(b"jpeg", "image/jpeg")], max_tokens=user_budget, temperature=0.15, thinking=thinking)
+    return _json.loads(recorded[0].content)["max_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_checked_caption_raises_the_budget_to_at_least_4096():
+    assert await _sent_max_tokens("think-entry", thinking=True, user_budget=1024) == 4096
+
+
+@pytest.mark.asyncio
+async def test_checked_caption_keeps_a_higher_user_budget():
+    assert await _sent_max_tokens("think-entry", thinking=True, user_budget=8192) == 8192
+
+
+@pytest.mark.asyncio
+async def test_unchecked_caption_keeps_the_user_budget():
+    assert await _sent_max_tokens("think-entry", thinking=False, user_budget=1024) == 1024
+
+
+@pytest.mark.asyncio
+async def test_downgraded_caption_keeps_the_user_budget():
+    """Ordering pin: the gate runs first, so a pressed-back request never earns the floor."""
+    assert await _sent_max_tokens("plain-entry", thinking=True, user_budget=1024) == 1024

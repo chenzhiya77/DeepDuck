@@ -33,6 +33,11 @@ ANTHROPIC_VERSION = "2023-06-01"
 #: ``worker_concurrency`` (this × the worker count), so the cap must not scale with it too.
 _CAPTION_CONCURRENCY = 4
 
+#: The output-budget floor while thinking is on (spec 2026-10-03 D2=甲): thinking tokens
+#: draw from the same budget, so 1024 truncates the answer away (the empty-caption
+#: post-mortem). A floor, not a value — a higher user budget is never cut.
+_THINKING_MAX_TOKENS_FLOOR = 4096
+
 Dialect = Literal["openai", "anthropic"]
 
 
@@ -143,10 +148,14 @@ async def request_caption(
 
     ``thinking`` mirrors chat's entry gate (spec 2026-10-03): an entry that declares no
     thinking support is pressed back to "off" with the chat-side warning, never sent "on".
+    While thinking is on, the effective ``max_tokens`` gets a 4096 floor (D2=甲) — a higher
+    user budget is never cut.
     """
     if thinking and not target.supports_thinking:
         logger.warning("Thinking mode is enabled but model '%s' does not support it; fallback to non-thinking mode.", target.model)
         thinking = False
+    if thinking:
+        max_tokens = max(max_tokens, _THINKING_MAX_TOKENS_FLOOR)
     anthropic = target.dialect == "anthropic"
     if anthropic:
         body, headers = _anthropic_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature, thinking=thinking)
