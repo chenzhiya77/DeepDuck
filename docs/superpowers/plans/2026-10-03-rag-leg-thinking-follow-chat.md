@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** 📝 **D1/D2 待裁** —— 2026-10-03 成对起草；UI 形态已定（多选下拉框，勾=跟随 chat / 不勾=现状 / 默认全不勾）。
+**Status:** ✅ **D1=甲 / D2=甲 已裁（2026-10-03）** —— D1=每角色一布尔（`extract_thinking` 等 5 个，默认 `False`）、D2=caption 生效层联动 4096；UI 形态定案（多选下拉框，勾=跟随 chat / 不勾=现状 / 默认全不勾）。待开工 Task 0。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -11,8 +11,8 @@
 
 | 决策 | 本期落点 | 明确移出 |
 | --- | --- | --- |
-| D1 配置形状 | 待拍（甲=每角色一布尔 推荐 / 乙=单列表字段） | 对话腿思考（10-03 已结案） |
-| D2 caption 预算联动 | 待拍（甲=生效层 4096 推荐 / 乙=只提示 / 丙=不联动） | 档位（深度）选择面 |
+| D1 配置形状 | ✅ 已裁=甲（每角色一布尔，默认 `False`） | 对话腿思考（10-03 已结案） |
+| D2 caption 预算联动 | ✅ 已裁=甲（生效层 `max_tokens=4096`，不动配置字面） | 档位（深度）选择面 |
 | UI 多选下拉框 | 定案（spec §2.0，五角色行+占位文案） | 思考能力保存期探针（搁置） |
 
 ## 硬约束

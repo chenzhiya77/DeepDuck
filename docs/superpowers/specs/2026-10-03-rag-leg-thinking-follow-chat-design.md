@@ -1,6 +1,6 @@
 # RAG 功能腿思考「跟随 chat」勾选 —— 设计
 
-**Status:** 📝 **待裁（D1/D2，拍板后开工）** —— 2026-10-03 起草；配套 plan：[2026-10-03-rag-leg-thinking-follow-chat.md](../plans/2026-10-03-rag-leg-thinking-follow-chat.md)。
+**Status:** ✅ **D1=甲 / D2=甲 已裁（2026-10-03）** —— UI 形态他已定（多选下拉框，勾=跟随 chat、不勾=现状）；D1=每角色一布尔、D2=caption 生效层联动 4096。待开工执行；配套 plan：[2026-10-03-rag-leg-thinking-follow-chat.md](../plans/2026-10-03-rag-leg-thinking-follow-chat.md)。
 
 本对一件事：把五个 RAG 功能腿的思考口径从**写死不思考**变成**用户可勾选「跟随 chat」**。UI 形态他已定（多选下拉框，勾=跟随 chat、不勾=现状），本对把机制、配置形状、caption 预算联动落定。
 
@@ -41,22 +41,22 @@
 - **不勾 = 现状**：`False`（发关闭形状/白烧防线），**默认全不勾 = 零行为变化**。
 - **占位文案在框内背景、前置无标签**（如「思考 · 跟随 chat（点击开启）」），一动手就让位。
 
-### 2.1 D1 配置形状（待拍）
+### 2.1 D1 配置形状（✅ 已裁=甲）
 
 **在问什么**：勾选状态落进 `rag:` 配置块的形状是哪种？
 
 | 选项 | 含义 | 推荐理由 | 选错后果 |
 |---|---|---|---|
-| **甲（推荐）：每角色一布尔**（`extract_thinking`/`wiki_thinking`/`judge_thinking`/`synthesis_thinking`/`vlm_thinking`，默认 `False`） | 与 `*_model` 一格对一格并排命名 | 复用既有配置词汇（他的 UI 原则）；类型自明免校验；每个角色读写一处 | 5 个新字段，配置面略宽 |
+| **甲（✅ 已裁）：每角色一布尔**（`extract_thinking`/`wiki_thinking`/`judge_thinking`/`synthesis_thinking`/`vlm_thinking`，默认 `False`） | 与 `*_model` 一格对一格并排命名 | 复用既有配置词汇（他的 UI 原则）；类型自明免校验；每个角色读写一处 | 5 个新字段，配置面略宽 |
 | 乙：单列表字段（`thinking_roles: ["extract", …]`，默认空） | 勾=角色名进列表 | 一个字段装五个勾、与一个下拉框一一对应 | 列表值要校验合法角色名；与 `*_model` 的并排结构不一致 |
 
-### 2.2 D2 caption 预算联动（待拍）
+### 2.2 D2 caption 预算联动（✅ 已裁=甲）
 
 **在问什么**：图片描述那行勾上（思考开）时，`caption_max_tokens`（1024）怎么办？——思考吃输出预算，1024 下空返 30–52%（前科实录）。
 
 | 选项 | 含义 | 推荐理由 | 选错后果 |
 |---|---|---|---|
-| **甲（推荐）：生效层联动** | `vlm_thinking: true` 时 caption 腿实际发送 `max_tokens = 4096`（不动用户 `caption_max_tokens` 字面） | 勾了就能用，空返前科从源头堵住；配置字面不动、取消勾选即回 | 输出预算×4 的成本/时长自动发生 |
+| **甲（✅ 已裁）：生效层联动** | `vlm_thinking: true` 时 caption 腿实际发送 `max_tokens = 4096`（不动用户 `caption_max_tokens` 字面） | 勾了就能用，空返前科从源头堵住；配置字面不动、取消勾选即回 | 输出预算×4 的成本/时长自动发生 |
 | 乙：只提示 | UI ⓘ「开思考建议同步调高 caption_max_tokens」 | 用户全权 | 多数人不调 ⇒ 空返换形态回来（兜底=reasoning 草稿、质量打折） |
 | 丙：不联动 | 靠已常开的 D2 reasoning 兜底保命 | 零新机制 | 同乙且连提示都没有 |
 
