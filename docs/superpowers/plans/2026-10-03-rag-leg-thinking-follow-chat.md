@@ -46,7 +46,7 @@
 - [x] 门禁实测：后端 knowledge + models/config 面 **1730 passed / 2 skipped**，9 红全环境账（缺 key 对 2 + parser 对 2 + 本机真实 `models_config.json` 对 3 + `test_config_version` 要 bash 1）+ 1 条**已登记图谱并发 flake**（`test_concurrent_results_match_serial_including_order` 同面 3 跑 2 红 1 绿、Task 1 同面为绿 ⇒ 非本对回归）；ruff check/format **双净**（knowledge+config+tests/knowledge，213 文件）；前端 `pnpm check` 零诊断、全量 **247 文件绿**。
 - [x] 文档：`config.example.yaml` rag 块补 5 行注释示例（含 caption 4096 联动句）+ 模板钉 `test_the_yaml_template_advertises_the_thinking_flags_as_commented_examples`（`test_rag_config_example.py` 14/14 绿）；`backend/AGENTS.md` 四处（功能模型段=5 布尔+共享闸+多选入口 / Ingestion 段=D7 加翻案限定 / model-targets 段=`create_rag_chat_model` / caption 段=vlm_thinking+预算联动）；图谱并发化 spec 状态行加翻案指回。
 - [x] UI 复审修法（他 2026-10-03 三条）：① 两框间距 8→16px（页面字段栈 `gap-4` 词汇）；② 触发器表面改 `border-input bg-transparent`（Button outline 自带的 `bg-background` 压白卡片显暖，兄弟框是 SelectTrigger 表面）；③ 触发器文案已裁=**甲**并落地（`思考跟随对话模型（未选择）`→`（已选 N 项）`，en 对齐 `Thinking follows the chat model (none selected / N selected)`；乙/丙 未选、已关）。
-- [x] 提交链回填：`bbb95aca3`（成对起草）→ `e191274c7`（D1/D2 落档）→ `452b0c8da`（审查八处）→ `c660fdc6e`（Task 0）→ `5394fde76`（Task 1）→ `377172fc9`（Task 2）→ `59b87bd9a`（Task 3）→ `7aaa1dba2`（Task 4）→ `5f21b8d24`（文案甲）→ 本笔（Task 5 端到端验收）。
+- [x] 提交链回填：`21f648487`（成对起草）→ `d001e999d`（D1/D2 落档）→ `655ab3abf`（审查八处）→ `5cf7964b3`（Task 0）→ `c14a0962c`（Task 1）→ `5c3427102`（Task 2）→ `45f37bf6e`（Task 3）→ `4586e09db`（Task 4）→ `1dd2410fe`（文案甲）→ 本笔（Task 5 端到端验收）。
 
 ## Task 5 — 真栈端到端验收（补验）✅
 

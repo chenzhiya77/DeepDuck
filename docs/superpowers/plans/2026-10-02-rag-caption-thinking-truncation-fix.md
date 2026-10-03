@@ -46,7 +46,7 @@
 ## Task 2 — 复验与收尾 ✅（2026-10-03 交付）
 
 - [x] 修后同夹具同档位空返率复验（`caption-knee/t2_recheck.py`→`t2_recheck.json`，走应用 `request_caption` 真出站口、形状臂）：**单图 0/6 空、三帧 0/6 空＝双形状 0%**（对照修前 30–52%、三帧最高 79%）；延迟单图 2.7–9.0s、三帧 4.3–6.9s（修前单发 ~11s 带思考）；正文最短 63/629 字符。
-- [x] spec/plan 数字回填、提交链回填：`be529c83`（起草成对）→ `596ff3ad`（Task 0 能力表回填）→ `8536ebcc`（Task 1 TDD）→ 本笔（Task 2 复验+收尾）；scratch 留档（`fix_probe*.json`/`effort_probe.json`/`d3_verify.json`/`t2_recheck.json` 全在仓外 caption-knee\）。
+- [x] spec/plan 数字回填、提交链回填：`be529c83`（起草成对）→ `596ff3ad`（Task 0 能力表回填）→ `97f48ceb`（Task 1 TDD）→ 本笔（Task 2 复验+收尾）；scratch 留档（`fix_probe*.json`/`effort_probe.json`/`d3_verify.json`/`t2_recheck.json` 全在仓外 caption-knee\）。
 
 ## D3 三格（用户亲手设置页，零产品代码）+ 补测 ✅（2026-10-03 全验完）
 
@@ -58,4 +58,4 @@
 
 ## 收尾
 
-- [x] plan 复选框全勾 + 提交号回填（`be529c83`/`596ff3ad`/`8536ebcc`/Task 2 本笔，均未推送）；spec/plan 成对提交（起草 `be529c83` 起）。
+- [x] plan 复选框全勾 + 提交号回填（`be529c83`/`596ff3ad`/`97f48ceb`/Task 2 本笔，均未推送）；spec/plan 成对提交（起草 `be529c83` 起）。
