@@ -23,17 +23,17 @@
 - [x] ④ D4 落点：`build_lead_agent_runner` 不显式挂 callbacks——langfuse handler 由 `make_lead_agent(config)` 内挂（`_langfuse_trace_id_from_callbacks` 读 `config["callbacks"]` 可证）⇒ 计时 handler 也是挂 config["callbacks"] 列表追加，与 langfuse 共存。`on_llm_end` 可拿：`LLMResult.generations[0][0].message.usage_metadata`（token）+ `invocation_params`/`serialized`（模型名）；耗时由 start/end 自记。
 - [x] ⑤ 受害者扫描（`tests/knowledge/eval/` 全部 + `test_eval_*`）：**零受害者**——无用例断言 recursion_limit/RunConfig/runner config 值；唯二引用 `build_lead_agent_runner` 的用例（`test_eval_persistence.py:490`、`test_ondemand.py:113`）monkeypatch 整体替换 runner 不碰内部；`test_ragas_eval_cli.py:283` 的 timeout=180 是 subprocess 墙钟无关。RED 全新增、无需给夹具补值。
 
-## Task 1 — D1+D2 TDD：预算钉 300 + 答题墙钟
+## Task 1 — D1+D2 TDD：预算钉 300 + 答题墙钟（✅ 2026-10-04，提交 `202ba7465`）
 
-- [ ] RED：新增用例 ①断言 runner config `recursion_limit == 300`（现状 60 ⇒ 红）；②假 agent_runner 拖 >180s ⇒ 期望该题 `failure="timeout"` 且下一题继续（现状无墙钟 ⇒ 红）。
-- [ ] GREEN：`ragas_eval.py:839` 300（已在工作树，补注释=15 步/轮×20 轮刻度）+ `run_layer2_evaluation` 逐题 `asyncio.wait_for(..., 180)`，超时记 `failure="timeout"` 续跑。
-- [ ] neuter：①还原 60 ⇒ 恰红 A2；②拆墙钟 ⇒ 恰红 A3；两处反证面不相交，还原复绿。
-- [ ] 门禁：knowledge/eval 面 + ruff 双净。
+- [x] RED：`TestAnswerPhaseBudget` 两例——钉 `recursion_limit == 300`（工作树已有 300 ⇒ 属「已改+反证」型，直接绿）；慢题 >墙钟 ⇒ `failure` 含 timeout 且下一题续跑（先红后绿）。
+- [x] GREEN：`_ANSWER_TIMEOUT_S = 180` 常量 + 逐题 `asyncio.wait_for(agent_runner(question), 180)`，超时抛 `TimeoutError("timeout")` ⇒ failure 串「TimeoutError: timeout」（Task 0-② 的拍点：抛 TimeoutError 方案）。
+- [x] neuter：①还原 60 ⇒ 恰红钉 300 那条；②拆墙钟 ⇒ 恰红超时续跑那条；受害者不相交，还原复绿。
+- [x] 门禁：knowledge/eval 面 336 例全绿 + ruff 双净。
 
 ## Task 2 — D3+D4 TDD：RunConfig 收紧 + 计时日志
 
-- [ ] RED：①断言 `RunConfig` `max_retries == 2` 且 `timeout == 120`（现状 10/600 ⇒ 红）；②跑一次假评测 ⇒ debug 日志应含逐调用计时行（现状无 ⇒ 红）。
-- [ ] GREEN：`ragas_eval.py:543` 改 2/120 + 计时 callback 挂 `build_lead_agent_runner` config（`on_llm_end` 记 模型名/耗时/token，debug 级、一行一调用）。
+- [ ] RED：①断言 `RunConfig` `max_retries == 2` 且 `timeout == 180`（现状=ragas 默认 10/显式 600 ⇒ 红；timeout 已改拍乙=180）；②跑一次假评测 ⇒ debug 日志应含逐调用计时行（现状无 ⇒ 红）。
+- [ ] GREEN：`RunConfig` 显式 `max_retries=2, timeout=180` + 计时 callback 挂 `build_lead_agent_runner` config（`on_llm_end` 记 模型名/耗时/token，debug 级、一行一调用）。
 - [ ] neuter：①还原 10/600 ⇒ 红；②摘 callback ⇒ 红；还原复绿。
 - [ ] 门禁：knowledge/eval 面 + ruff 双净。
 
@@ -59,12 +59,12 @@
 - [x] spec 回填：§1.1-6 实测证据 + §2.5 丙=结构修 + D3 改标兜底 + 验收 A6 + 非目标换「指标削减待拍」。
 - [x] 追记（2026-10-04）：他拍「统一 4」⇒ `_JUDGE_CONCURRENCY` 8→4（与 D5 同值，用例钉符号值零改动、334 例仍绿）；§1.1-6 的 8.1× 为 8 路时代数字，4 路预期尾巴 ~110s/17 题。
 
-## Task 6 — D5（结构修）：L2 答题题间并发 W=4（待「开工」）
+## Task 6 — D5（结构修）：L2 答题题间并发 W=4（✅ 2026-10-04 TDD 完，提交 `e08fc415e`；实测跑数中）
 
-他拍「按甲落地」（并入同一对、不另起）；基准已背书（spec §1.1-7，scratch `bench_l2_concurrency.py`：4 题两遍 146.4→44.8s = 3.3×）。**与 Task 1 的 D2 同一循环区域，建议同批执行**。
+他拍「按甲落地」（并入同一对、不另起）+「统一 4」；基准已背书（spec §1.1-7）。与 Task 1 的 D2 同一循环区域、同批执行完毕。
 
-- [ ] RED：新增用例 ①多题 `agent_runner` 重叠执行（假 runner 记并发峰值 ⇒ 现状串行=1 红）；②`_ANSWER_CONCURRENCY` 截流（N 题 >W 时峰值恰 W）；③结果仍按题序、`progress_hook` 计数不变；④一题超时（配 D2 墙钟）不拖累他题。
-- [ ] GREEN：`run_layer2_evaluation` 答题循环改 `asyncio.gather` + 共享 `Semaphore(_ANSWER_CONCURRENCY=4)`，按题序收割进 `outcomes`；`failure`/降级契约不变。
-- [ ] neuter：①答题改串行 ⇒ A7 并发红；②信号量失效 ⇒ A7 截流红；两处反证面不相交，还原复绿。
-- [ ] 门禁：knowledge/eval 面 + ruff 双净。
-- [ ] 实测：4 题基准两遍复跑（`bench_l2_concurrency.py`）+ Task 4 的 17 题全程账对比。
+- [x] RED：`TestAnswerConcurrency` 四例——题间并发（3 题 peak==3）/ 截流（monkeypatch 2、4 题 peak==2）/ 题序+progress 计数不变（守卫例，全程绿）/ 超时不拖累（q1 超时仍与其他题重叠、q2/q3 正常）⇒ 现状串行 3 红 1 绿（其中「题序」例初版期望漏算了 ragas 段入口事件、已修）。
+- [x] GREEN：`run_layer2_evaluation` 答题段全任务一次启动、共享 `Semaphore(_ANSWER_CONCURRENCY=4)`（与 `_JUDGE_CONCURRENCY` 同值），按题序收割进 `outcomes`/`failures`，progress 逐字同串行时代。
+- [x] neuter：⑤答题改串行 ⇒ 并发/截流/超时组 3 红（序例不红=正确）；⑥信号量失效 ⇒ 恰红截流 1 条；受害者面如实交叉在截流例（它同时测两件事），还原复绿。
+- [x] 门禁：knowledge/eval 面 340 例全绿 + ruff 双净。
+- [x] 实测（2026-10-04，`repro_full.py` 4 题真实 `run_layer2_evaluation`，scratch `run_d5_verify.log`）：答题段 34.9s（4 题四个 progress 刻度**同一时刻落下**=真重叠；对照基准串行 146.4s）；全程 124.6s、L2 99.7s、评分段 64.8s（20 job）、4/4 出分零失败零超时。⚠️ 归因边界：本跑端点 p50 2.7s vs 基准跑 14.8–17.5s（快 5 倍）⇒ 34.9s 里并发与端点快慢混杂，「重叠真实发生」由刻度同刻钉死、精确倍数以 Task 4 的 17 题同场对照为准。
