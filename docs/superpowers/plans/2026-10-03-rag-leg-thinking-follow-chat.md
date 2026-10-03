@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** ✅ **D1=甲 / D2=甲 已裁（2026-10-03）** —— D1=每角色一布尔（`extract_thinking` 等 5 个，默认 `False`）、D2=caption 生效层联动 4096；UI 形态定案（多选下拉框，勾=跟随 chat / 不勾=现状 / 默认全不勾）。待开工 Task 0。
+**Status:** 🚧 **Task 0 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。下一棒 Task 1 后端 TDD。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -19,9 +19,12 @@
 
 - 默认全不勾=五腿请求体与今天逐字节一致；「跟随 chat」语义唯一（含条目闸+默认档位+warning）；行=角色位（同模型互不干扰）；翻案记录进 spec + 图谱并发化 spec 状态行指回。
 
-## Task 0 — 落点核实
+## Task 0 — 落点核实 ✅
 
-- [ ] ① 五构造点现址复核（`graph/extractor.py:130`、`wiki/generator.py:220`+`worker.py:962`、`eval/factory.py:59,72`（`build_judge_llm`）+`eval/synthesis.py:149`、caption 出站口）+ 配置字段落点（`RagConfig` `app_config.py:191-200` + **双层写入链** `config/rag_config_file.py:74`/`gateway/routers/rag_config.py:393` + 热重载）+ 共享闸落点（`create_rag_chat_model` 包装进 `knowledge/model_target.py`）+ `VlmTarget` 扩字段面（`vlm_target.py:70-76`）+ 既有用例受害者扫描（断言 `thinking_enabled` 的用例清单）。
+- [x] ① 五构造点行号**零漂移**：`graph/extractor.py:130`、`wiki/generator.py:220` + `worker.py:962`、`eval/factory.py:72`（`build_judge_llm` :59）+ `eval/synthesis.py:149`；caption 出站口=`caption_client.py`（`_apply_thinking_off` :60、`request_caption` :109，`max_tokens` 由 `captioner.py:84-85`/`video/captioner.py:83-84` 传入）。
+- [x] ② 写入链实为**两层 schema**（修正审查③措辞）：`RagConfig`（`app_config.py:191-200`）+ `RagConfigFile`（`rag_config_file.py`，`extra="forbid"` ⇒ 漏声明是 400 响亮报错、不会静默丢）；`merge_rag_config` 通用透传（`model_dump(exclude_none=True)`，**`false` 会落盘**）；`rag_config.py:393` 是模型名校验环、**不涉布尔**。布尔三态=None=未声明（吃 config.yaml 默认 `False`）/true/false 显式。热重载 ✓（`get_app_config()` 每触发解析，wiki 注释明写 per-trigger）。
+- [x] ③ 共享闸落点：`model_target.py` 纯函数模块（8 def、无类），`create_rag_chat_model` 全仓 0 命中可用；包装内**懒 import** `deerflow.models.factory` 并按模块属性调用（保住 monkeypatch 面）。`VlmTarget`（`vlm_target.py:60-76`，frozen dataclass）扩 `enable_shape`/`supports_thinking` 两带默认字段=零破坏。
+- [x] ④ 受害者扫描：**零用例断言五构造点的 thinking 参数**；间接面 3 文件 Task 1 后复跑——`test_eval_factory.py`（4 处 monkeypatch `models_factory.create_chat_model`）、`test_ragas_eval_cli.py:142`、`test_e2e_smoke.py:115`（走 `main_llm` 旁路=审查⑦那只）。
 
 ## Task 1 — D1 执行：后端 TDD
 
