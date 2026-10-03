@@ -976,14 +976,16 @@ export function FunctionalModelsView() {
         </Select>
 
         {/* The follow-chat thinking menu: no label in front — the trigger names itself and
-            its tail carries the state (idle hint → selected count), per his UI rule. */}
+            its tail carries the state (idle hint → selected count), per his UI rule. The
+            trigger borrows SelectTrigger's own surface (border-input / bg-transparent): a
+            Button outline's bg-background reads as a tinted box beside its sibling. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
               variant="outline"
               aria-label={F.thinkingMenuLabel}
-              className="mt-2 w-full justify-between font-normal"
+              className="mt-4 w-full justify-between border-input bg-transparent font-normal"
             >
               {F.thinkingMenuState(thinkingCount)}
               <ChevronDown className="size-4 opacity-50" />

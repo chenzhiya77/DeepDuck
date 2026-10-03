@@ -690,6 +690,14 @@ wire model id, the endpoint and the key all come from the named entry), wiki wri
 and eval-question synthesis (`synthesis_model`) — the two roles that had no field at all until spec
 2026-09-26, both plain pickers over the same list — embedding, rerank, the video ASR provider/model,
 and the Qdrant / MinerU settings.
+Each of the five model roles also carries a follow-chat thinking flag (`extract_thinking` /
+`wiki_thinking` / `judge_thinking` / `synthesis_thinking` / `vlm_thinking`, default `false`, spec
+2026-10-03 D1): checked, that leg asks its model with thinking enabled through the same entry gate
+chat uses — `create_rag_chat_model()` below — so a model that declares no thinking support
+downgrades to non-thinking with a warning instead of raising; unchecked keeps the non-thinking
+dispatch (the market convention, preserved as the default). The settings form exposes them as a
+follow-chat thinking multi-select under the RAG default row (rows are role slots, each showing the
+model its slot points at).
 It writes a second API-writable file, `rag_config.json` (gitignored, project root), which
 `AppConfig.from_file()` overlays onto `config.yaml`'s `rag:` block **field by field** — the nested
 `video` block merges key by key, so setting one model cannot drop an operator's gates. Untouched
@@ -724,7 +732,11 @@ This is also why the settings form asks for no endpoint and no key on that row: 
 both. The two generation parameters both dialects carry are `rag.caption_max_tokens` (default 1024 —
 room for a full-page transcription) and `rag.caption_temperature` (default 0.15 — low, so OCR-style
 transcriptions stay stable): each leg reads them at its existing config read and passes them into
-`request_caption`, so `caption_client` stays transport-only (spec 2026-09-30 D1/D2).
+`request_caption`, so `caption_client` stays transport-only (spec 2026-09-30 D1/D2). Thinking
+(spec 2026-10-03) enters at the same place: `rag.vlm_thinking` (default `false`) turns it on
+through the entry's declared enable shape — a target whose entry declares no thinking support
+downgrades with a warning naming the wire model — and raises the effective output budget to at
+least 4096 (`max(caption_max_tokens, 4096)`), so reasoning tokens cannot crowd out the caption.
 
 **RAG model targets** (`knowledge/model_target.py`, spec 2026-09-23 D2/D3): each RAG role declares its
 own target in the `rag:` block — `extract_model` / `judge_model` / `vlm_model` / `wiki_model` /
@@ -740,7 +752,10 @@ factory and raises), and only the default itself may be superseded — with a wa
 OpenAI-compatible entry its address); a target the system picked itself is never judged. Blank
 spellings (`""` / whitespace) mean "not declared" everywhere: `RagConfigFile`'s one field validator
 turns them into `None` before the file is written, so clearing a row withdraws the override instead
-of declaring an empty name.
+of declaring an empty name. Thinking dispatch rides the same resolution (spec 2026-10-03):
+`create_rag_chat_model()` wraps the factory call with the chat entry gate — the per-role
+`*_thinking` flag decides the intent, and an entry with `supports_thinking: false` downgrades to
+non-thinking with a warning naming the entry instead of the factory's raise.
 
 Security boundary: `GET/PUT /api/rag/config` are admin-gated. A read never returns a stored key — it
 comes back as the masking sentinel (or empty when the environment backs it), plus a flattened
@@ -1227,7 +1242,9 @@ E2B output sync records remote file versions and actual host file metadata in a 
 
 Per-user knowledge bases with three retrieval paths over one ingestion pipeline (Phase-2 Batch-1 completed 2026-08-14):
 
-- **Ingestion**: upload → MinerU parse (VLM captions for extracted images; the images themselves are persisted next to the source document under `images/` and served via `GET /documents/{doc_id}/files/{path}` so the chunk viewer renders them in place) → chunk → async worker (`knowledge/worker.py`, `rag.worker_concurrency`) builds all three indexes. The graph leg runs chunk-level bounded concurrency (`rag.extract_concurrency` extractions in flight, default 8 = the measured knee of the reference endpoint; switching `extract_model`/endpoint means re-deriving `N = min((RPM/60)*T, (TPM*T)/(60*K), doc granularity)` — T = per-call latency, K = tokens per call — spec 2026-10-01), and transient LLM-call failures back off twice before the chunk soft-fails as `extract_status=failed` without failing the document. Per-document status carries non-fatal sub-markers (`graph degraded`, `entity-resolution failed`); path-level tracking via `documents.path_status` JSON column (vector/graph/wiki states). `rag.extract_model` selection follows three criteria (spec 2026-10-01 D7): no thinking (extraction runs `thinking_enabled=false`), strict-JSON compliance, fast decoding. The wiki leg runs **outside** the worker slot (spec 2026-10-02 D1): the document reaches `ready` and releases its slot before generation starts, so `rag.worker_concurrency` budgets the document legs only. Wiki triggers are single-flight per KB with coalescing (`worker._spawn_wiki` → one `_wiki_runner` per KB): a trigger landing while a worker or manual run is live folds into exactly one trailing `only_dirty` run, and the runner waits out a manual run entirely (the `already_running` contract of the manual button is unchanged). The busy/pending sets are in-memory — a restart drops them, and leftover `dirty` entries re-trigger on the next document completion or the manual button.
+- **Ingestion**: upload → MinerU parse (VLM captions for extracted images; the images themselves are persisted next to the source document under `images/` and served via `GET /documents/{doc_id}/files/{path}` so the chunk viewer renders them in place) → chunk → async worker (`knowledge/worker.py`, `rag.worker_concurrency`) builds all three indexes. The graph leg runs chunk-level bounded concurrency (`rag.extract_concurrency` extractions in flight, default 8 = the measured knee of the reference endpoint; switching `extract_model`/endpoint means re-deriving `N = min((RPM/60)*T, (TPM*T)/(60*K), doc granularity)` — T = per-call latency, K = tokens per call — spec 2026-10-01), and transient LLM-call failures back off twice before the chunk soft-fails as `extract_status=failed` without failing the document. Per-document status carries non-fatal sub-markers (`graph degraded`, `entity-resolution failed`); path-level tracking via `documents.path_status` JSON column (vector/graph/wiki states). `rag.extract_model` selection follows three criteria (spec 2026-10-01 D7 — with its thinking half
+reopened by spec 2026-10-03: default no thinking, `extract_thinking` turns it on): default
+non-thinking dispatch, strict-JSON compliance, fast decoding. The wiki leg runs **outside** the worker slot (spec 2026-10-02 D1): the document reaches `ready` and releases its slot before generation starts, so `rag.worker_concurrency` budgets the document legs only. Wiki triggers are single-flight per KB with coalescing (`worker._spawn_wiki` → one `_wiki_runner` per KB): a trigger landing while a worker or manual run is live folds into exactly one trailing `only_dirty` run, and the runner waits out a manual run entirely (the `already_running` contract of the manual button is unchanged). The busy/pending sets are in-memory — a restart drops them, and leftover `dirty` entries re-trigger on the next document completion or the manual button.
 - **Storage split**: business rows (documents / chunks / entities / relations / wiki entries) in SQLite via `knowledge/store.py`; dense+sparse vectors in Qdrant (`kb_chunks` / `kb_entities` / `kb_wiki_entries`, deterministic `uuid5` point ids); the entity/relation graph in `knowledge/graph/store.py` (SQLite, queried as a NetworkX DiGraph). The business-column `chunks.entities` is the source of truth for the chunk-drawer display; `vector_store.set_chunk_entities` mirrors it into the `kb_chunks` payload (foundation for a future true-mention marker).
 - **Retrieval tools** (`tools/builtins/`): `hybrid_search` (vector RRF + qwen3-rerank), `graph_search` (structure-driven), `wiki_search` (pre-digested entries). Access is gated per-thread by KB binding.
 - **Recall-test API** (P1, 2026-08-11): `POST /api/knowledge-bases/{kb_id}/recall-test` — direct exposure of the three retrieval impls for offline tuning; returns raw hits/scores/elapsed_ms without LLM synthesis (`docs/superpowers/plans/2026-08-11-rag-phase2-batch1.md` Task 2).

@@ -33,6 +33,15 @@ NEW_PARSE_KNOBS = ("parse_language", "parse_model_version")
 #: The two caption generation knobs that had no field at all before spec 2026-09-30.
 NEW_CAPTION_KNOBS = ("caption_max_tokens", "caption_temperature")
 
+#: The five follow-chat thinking flags that had no field at all before spec 2026-10-03.
+NEW_THINKING_FLAGS = (
+    "extract_thinking",
+    "wiki_thinking",
+    "judge_thinking",
+    "synthesis_thinking",
+    "vlm_thinking",
+)
+
 
 def _json_keys() -> list[str]:
     return list(json.loads(RAG_EXAMPLE.read_text(encoding="utf-8")))
@@ -107,6 +116,15 @@ def test_the_yaml_template_keeps_the_caption_rows_next_to_vlm_model():
     names = re.findall(r"^\s*#\s*(vlm_model|caption_\w+):", block, re.MULTILINE)
 
     assert names == ["vlm_model", *NEW_CAPTION_KNOBS]
+
+
+def test_the_yaml_template_advertises_the_thinking_flags_as_commented_examples():
+    block = _rag_block()
+
+    for field in NEW_THINKING_FLAGS:
+        assert re.search(rf"^\s*#\s*{field}:\s*\S", block, re.MULTILINE), f"{field} has no commented example in the rag block"
+        # Plain `false` values, but the template still activates nothing: every row ships commented.
+        assert not re.search(rf"^\s*{field}:", block, re.MULTILINE), f"{field} must stay commented out"
 
 
 def test_the_yaml_template_is_bumped_for_the_new_fields():

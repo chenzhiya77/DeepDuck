@@ -2601,6 +2601,18 @@ rag:
   # Name of the `models:` entry used to synthesize eval questions. Omit to follow the RAG
   # default, then the first configured model.
   # synthesis_model: <your-model-name>
+  # --- Follow-chat thinking toggles (spec 2026-10-03 D1) ---
+  # One flag per role slot. `true` makes that leg ask its model with thinking enabled —
+  # through the same entry gate chat uses, so a model that declares no thinking support
+  # downgrades to non-thinking with a warning. `false` (the default) keeps the
+  # non-thinking dispatch. Also editable as the 思考 · 跟随 chat multi-select in
+  # Settings → Models → Functional models. Caption thinking additionally raises the
+  # caption output budget to at least 4096 (max with caption_max_tokens).
+  # extract_thinking: false
+  # wiki_thinking: false
+  # judge_thinking: false
+  # synthesis_thinking: false
+  # vlm_thinking: false
   # --- Provider selection (spec 2026-09-14, §4.1) ---
   # Curated ids from `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`. Every default
   # reproduces the behaviour of a config that sets only the models above; the fields

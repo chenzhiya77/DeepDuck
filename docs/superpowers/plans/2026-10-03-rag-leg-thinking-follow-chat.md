@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** 🚧 **Task 0–3 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。后端 TDD + 预算联动 + 前端下拉框已交付；下一棒 Task 4（门禁 + 文档收尾）。
+**Status:** ✅ **Task 0–4 全交付（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；后端 TDD + 预算联动 + 前端下拉框 + 门禁/文档收尾已交付。**待拍一处**：触发器文案（Task 4 ③，改后另起小笔）。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -41,8 +41,9 @@
 
 - [x] 设置页 RAG 区多选下拉框：五行=五角色位（每行「角色名 · 当前所选模型名」，同模型两槽=两行）、勾选保存走既有 rag 配置热重载、触发器自述（`思考 · 跟随 chat（点击开启）`→`…（已选 N）`）无前置标签；D2=甲 ⇒ 勾 vlm 行无额外提示。实测：`config-form` **130 绿**（+27：种子/开/关/带出/回退）+ `functional-models.dom` **117 绿**（+6）+ 全量 **247 文件全绿**、`pnpm check` 零诊断。夹具补值=第三份 DOM 夹具 KEYS Proxy 按键函数名单补 `thinkingMenuState`（前例「给夹具补值」）；Radix 模态层会 aria-hide 菜单外内容 ⇒ 开着菜单时外部元素查询须 `hidden: true`。
 
-## Task 4 — 门禁 + 文档 + 收尾
+## Task 4 — 门禁 + 文档 + 收尾 ✅（触发器文案一处待拍）
 
-- [ ] 门禁：`tests/knowledge` + models 面 + `frontend pnpm check` + ruff 双净（实测数字回填）。
-- [ ] 文档：spec/plan 回填实测、图谱并发化 spec 状态行加翻案指回、`config.example.yaml`/模板三套件补新字段注释、AGENTS.md 配置节同步。
-- [ ] 提交链回填：本笔（成对起草）→ 后续交付笔。
+- [x] 门禁实测：后端 knowledge + models/config 面 **1730 passed / 2 skipped**，9 红全环境账（缺 key 对 2 + parser 对 2 + 本机真实 `models_config.json` 对 3 + `test_config_version` 要 bash 1）+ 1 条**已登记图谱并发 flake**（`test_concurrent_results_match_serial_including_order` 同面 3 跑 2 红 1 绿、Task 1 同面为绿 ⇒ 非本对回归）；ruff check/format **双净**（knowledge+config+tests/knowledge，213 文件）；前端 `pnpm check` 零诊断、全量 **247 文件绿**。
+- [x] 文档：`config.example.yaml` rag 块补 5 行注释示例（含 caption 4096 联动句）+ 模板钉 `test_the_yaml_template_advertises_the_thinking_flags_as_commented_examples`（`test_rag_config_example.py` 14/14 绿）；`backend/AGENTS.md` 四处（功能模型段=5 布尔+共享闸+多选入口 / Ingestion 段=D7 加翻案限定 / model-targets 段=`create_rag_chat_model` / caption 段=vlm_thinking+预算联动）；图谱并发化 spec 状态行加翻案指回。
+- [x] UI 复审修法（他 2026-10-03 三条）：① 两框间距 8→16px（页面字段栈 `gap-4` 词汇）；② 触发器表面改 `border-input bg-transparent`（Button outline 自带的 `bg-background` 压白卡片显暖，兄弟框是 SelectTrigger 表面）；③ 触发器文案**待拍留原地**（甲=「思考跟随对话模型（未选择/已选 N 项）」推荐 / 乙=留「点击选择」尾注 / 丙=「角色思考开关」）。
+- [x] 提交链回填：`bbb95aca3`（成对起草）→ `e191274c7`（D1/D2 落档）→ `452b0c8da`（审查八处）→ `c660fdc6e`（Task 0）→ `5394fde76`（Task 1）→ `377172fc9`（Task 2）→ `59b87bd9a`（Task 3）→ 本笔（Task 4 收尾）。
