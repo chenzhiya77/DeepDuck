@@ -37,10 +37,11 @@
 - [x] neuter：①工厂还原 `timeout=600` ⇒ 恰红钉值那条；②摘挂载 ⇒ 恰红挂载那条；受害者不相交，还原复绿。
 - [x] 门禁：knowledge/eval 面 343 例全绿 + ruff 双净。
 
-## Task 3 — 门禁 + 文档
+## Task 3 — 门禁 + 文档（✅ 2026-10-04）
 
-- [ ] 全量门禁：knowledge 面全绿（环境红按既有账登记）+ ruff check/format 双净；受害者按「给夹具补值」处置并登记。
-- [ ] 文档：`backend/AGENTS.md` 评测段补一句（recursion 300=20 轮刻度 + 每题墙钟 + RunConfig 口径）；spec/plan 回填实测数字与提交链。
+- [x] 全量门禁：`tests/knowledge/` **1506 绿 / 4 红 / 2 跳**（4 红全为已知环境条件、与本线零交集：`test_embed_missing_api_key`+`test_rerank_missing_api_key`=本机真 key 在场使缺 key 负向断言失效、`test_parser` 两条=真 MinerU token 覆盖假 token + DNS 网络态；照既有账登记、不修）；ruff check（backend 全量）双净。
+- [x] 文档：`backend/AGENTS.md` Layer 2 评测段补「Budgets, concurrency & timing」段（recursion 300=super-step 单位 ≈20 轮刻度 + 每题墙钟 180s + 答题/judge 并发统一 4 + `RunConfig(2, 180)` + `EvalCallTimingHandler` 逐调用计时，四旋钮标「初值待校准」）。
+- [x] spec/plan 回填提交链：Task 0=`bb975b45e` → Task 1=`202ba7465` → Task 6=`e08fc415e`（实测回填 `e4932c7dd`）→ Task 2=`4d3fae94f` → Task 3=本笔。
 
 ## Task 4 — 真评测复测 + 收尾
 
