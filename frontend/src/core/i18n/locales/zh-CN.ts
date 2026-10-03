@@ -1789,6 +1789,11 @@ export const zhCN: Translations = {
       captionModelHint:
         "接口地址与 API Key 取自所选模型条目；留空表示移除本行的覆盖值，配置文件中为它指定的值仍然生效；两处都为空时由 RAG 默认模型接管。仅列出支持视觉的条目——Anthropic 条目按其 Messages 协议调用，其余按 OpenAI 兼容协议调用。",
       vlmModelDefault: "（使用配置默认）",
+      thinkingMenuLabel: "思考 · 跟随 chat",
+      thinkingMenuState: (count: number) =>
+        count > 0
+          ? `思考 · 跟随 chat（已选 ${count}）`
+          : "思考 · 跟随 chat（点击开启）",
       defaultModel: "RAG 默认模型",
       defaultModelNone: "（使用配置默认）",
       defaultModelHint:

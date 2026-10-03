@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -922,6 +923,31 @@ export function FunctionalModelsView() {
 
   const sparseExternal = values.embedding_sparse_source === "external";
 
+  // The thinking toggle menu (spec 2026-10-03 D1=甲): rows are the five *role slots* — a
+  // model shared by two roles is two independent rows. Each row shows the model its slot
+  // currently points at, so the menu reads as "which role, on what".
+  const thinkingRows = (
+    [
+      ["extract_thinking", F.extractModel, "extract_model", F.extractModelNone],
+      ["wiki_thinking", F.wikiModel, "wiki_model", F.wikiModelNone],
+      ["judge_thinking", F.judgeModel, "judge_model", F.judgeModelNone],
+      ["synthesis_thinking", F.synthesisModel, "synthesis_model", F.synthesisModelNone],
+      ["vlm_thinking", F.captionModel, "vlm_model", F.vlmModelDefault],
+    ] as const
+  ).map(([key, label, modelField, noneLabel]) => {
+    const modelValue = values[modelField];
+    return {
+      key,
+      label,
+      checked: values[key],
+      modelLabel:
+        modelReferenceOptions(models, modelValue, noneLabel).find(
+          (option) => option.value === (modelValue || MODEL_REFERENCE_NONE),
+        )?.label ?? noneLabel,
+    };
+  });
+  const thinkingCount = thinkingRows.filter((row) => row.checked).length;
+
   return (
     <div className="flex w-full flex-col gap-4">
       {/* The RAG-wide default (spec 2026-09-23 D4): above the role settings because it is the
@@ -948,6 +974,38 @@ export function FunctionalModelsView() {
             ))}
           </SelectContent>
         </Select>
+
+        {/* The follow-chat thinking menu: no label in front — the trigger names itself and
+            its tail carries the state (idle hint → selected count), per his UI rule. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label={F.thinkingMenuLabel}
+              className="mt-2 w-full justify-between font-normal"
+            >
+              {F.thinkingMenuState(thinkingCount)}
+              <ChevronDown className="size-4 opacity-50" />
+            </Button>
+          </DropdownMenuTrigger>
+          {/* Stays open across picks: the five roles are one decision, not five. */}
+          <DropdownMenuContent
+            align="start"
+            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+          >
+            {thinkingRows.map((row) => (
+              <DropdownMenuCheckboxItem
+                key={row.key}
+                checked={row.checked}
+                onCheckedChange={() => update(row.key, !row.checked)}
+                onSelect={(event) => event.preventDefault()}
+              >
+                {row.label} · {row.modelLabel}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </Group>
 
       <Group title={F.groupRetrieval} info={F.groupRetrievalHint}>

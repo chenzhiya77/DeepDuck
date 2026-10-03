@@ -1708,6 +1708,8 @@ export interface Translations {
     functionalModels: {
       description: string;
       /** The RAG-wide default row (spec 2026-09-23 D5): its label, its none option, its ⓘ. */
+      thinkingMenuLabel: string;
+      thinkingMenuState: (count: number) => string;
       defaultModel: string;
       defaultModelNone: string;
       defaultModelHint: string;

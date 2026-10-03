@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** 🚧 **Task 0–2 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。后端 TDD + 预算联动已交付；下一棒 Task 3（前端下拉框）。
+**Status:** 🚧 **Task 0–3 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。后端 TDD + 预算联动 + 前端下拉框已交付；下一棒 Task 4（门禁 + 文档收尾）。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -37,9 +37,9 @@
 
 - [x] D2=甲：caption 发送预算 = `max(用户 caption_max_tokens, 4096)`（生效层 `request_caption`、闸后才涨、不动配置字面、不砍用户调高的值）+ 用例钉住（勾上⇒按上式、不勾⇒照用户值原样、被闸降级⇒不涨）。实测：RED 恰 1 红（地板用例）/3 守护绿 → GREEN **18/18** → neuter 拆地板恰 1 红（守护不相交）→ 还原绿；caption 面门禁 **235/235** + ruff 双净。
 
-## Task 3 — 前端下拉框
+## Task 3 — 前端下拉框 ✅
 
-- [ ] 设置页 RAG 区多选下拉框：五行=五角色位（副文案=当前所选模型名）、勾选保存走既有 rag 配置热重载、占位文案「思考 · 跟随 chat（点击开启）」类在框内无前置标签、勾 vlm 行时按 D2=乙 显示提示（若裁定为乙）。
+- [x] 设置页 RAG 区多选下拉框：五行=五角色位（每行「角色名 · 当前所选模型名」，同模型两槽=两行）、勾选保存走既有 rag 配置热重载、触发器自述（`思考 · 跟随 chat（点击开启）`→`…（已选 N）`）无前置标签；D2=甲 ⇒ 勾 vlm 行无额外提示。实测：`config-form` **130 绿**（+27：种子/开/关/带出/回退）+ `functional-models.dom` **117 绿**（+6）+ 全量 **247 文件全绿**、`pnpm check` 零诊断。夹具补值=第三份 DOM 夹具 KEYS Proxy 按键函数名单补 `thinkingMenuState`（前例「给夹具补值」）；Radix 模态层会 aria-hide 菜单外内容 ⇒ 开着菜单时外部元素查询须 `hidden: true`。
 
 ## Task 4 — 门禁 + 文档 + 收尾
 

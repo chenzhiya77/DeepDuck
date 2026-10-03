@@ -576,6 +576,114 @@ describe("wiki and synthesis roles", () => {
   );
 });
 
+describe("thinking follow-chat toggles (spec 2026-10-03 D1=甲)", () => {
+  // Five role slots, one boolean each: checked = this leg follows chat's thinking default.
+  // A checkbox is two-state, so `false` is how the form *says* "not this leg" — an omitted
+  // key would be read as a carry-forward by the whole-object PUT, just like the text rows.
+  const FIELDS = [
+    "extract_thinking",
+    "wiki_thinking",
+    "judge_thinking",
+    "synthesis_thinking",
+    "vlm_thinking",
+  ] as const;
+  const over = (field: (typeof FIELDS)[number], value: boolean | null) =>
+    ({ [field]: value }) as Partial<RagConfigValues>;
+
+  it.each(FIELDS)(
+    "%s seeds false when nothing declares it, and that is no change",
+    (field) => {
+      const current = view();
+      const values = formValuesFromConfig(current);
+
+      expect(values[field]).toBe(false);
+      expect(hasFormChanges(values, current)).toBe(false);
+      expect(buildRagConfigInput(values, current)).toEqual({});
+    },
+  );
+
+  it.each(FIELDS)(
+    "%s seeds the stored boolean without marking a change",
+    (field) => {
+      const current = view(over(field, true));
+      const values = formValuesFromConfig(current);
+
+      expect(values[field]).toBe(true);
+      expect(hasFormChanges(values, current)).toBe(false);
+      expect(buildRagConfigInput(values, current)).toEqual({});
+    },
+  );
+
+  it.each(FIELDS)("%s is submitted as true when it is switched on", (field) => {
+    const current = view();
+    const values = {
+      ...formValuesFromConfig(current),
+      [field]: true,
+    };
+
+    expect(hasFormChanges(values, current)).toBe(true);
+    expect(buildRagConfigInput(values, current)).toEqual({ [field]: true });
+  });
+
+  it.each(FIELDS)("%s is submitted as false when it is switched off", (field) => {
+    const current = view(over(field, true));
+    const values = {
+      ...formValuesFromConfig(current),
+      [field]: false,
+    };
+
+    expect(hasFormChanges(values, current)).toBe(true);
+    expect(buildRagConfigInput(values, current)).toEqual({ [field]: false });
+  });
+
+  it.each(FIELDS)(
+    "%s counts as a change when toggled, and not once reverted",
+    (field) => {
+      const current = view();
+      const seeded = formValuesFromConfig(current);
+      const on = { ...seeded, [field]: true };
+
+      expect(hasFormChanges(on, current)).toBe(true);
+      expect(hasFormChanges({ ...on, [field]: false }, current)).toBe(false);
+    },
+  );
+
+  it.each(FIELDS)(
+    "%s survives an unrelated edit when the file owns it",
+    (field) => {
+      const current = view(
+        { ...over(field, true), rerank_model: "qwen3-rerank" },
+        { [field]: "ui" },
+      );
+      const values = {
+        ...formValuesFromConfig(current),
+        rerank_model: "qwen3-rerank-v2",
+      };
+
+      expect(buildRagConfigInput(values, current)).toEqual({
+        [field]: true,
+        rerank_model: "qwen3-rerank-v2",
+      });
+    },
+  );
+
+  it("carries a stored false forward too — false is a value, not an absence", () => {
+    const current = view(
+      { extract_thinking: false, rerank_model: "qwen3-rerank" },
+      { extract_thinking: "ui" },
+    );
+    const values = {
+      ...formValuesFromConfig(current),
+      rerank_model: "qwen3-rerank-v2",
+    };
+
+    expect(buildRagConfigInput(values, current)).toEqual({
+      extract_thinking: false,
+      rerank_model: "qwen3-rerank-v2",
+    });
+  });
+});
+
 describe("hasFormChanges", () => {
   it("is false right after seeding, even when the file owns fields", () => {
     const current = viewWithStoredKey();

@@ -36,11 +36,13 @@ const catalogues = rs.hoisted(() => ({
 
 /**
  * Every label resolves to its own key, so an assertion can name the i18n key directly. The
- * two count-taking keys answer as functions (a plain string would throw when called).
+ * count-taking keys answer as functions (a plain string would throw when called).
  */
 const KEYS = new Proxy({} as Record<string, unknown>, {
   get: (_target, key) =>
-    key === "advancedSettings" || key === "subsetSelected"
+    key === "advancedSettings" ||
+    key === "subsetSelected" ||
+    key === "thinkingMenuState"
       ? (count: number) => `${String(key)}(${count})`
       : String(key),
 });

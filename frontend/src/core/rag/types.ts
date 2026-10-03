@@ -35,6 +35,15 @@ export interface RagConfigValues {
    */
   wiki_model?: string | null;
   synthesis_model?: string | null;
+  /**
+   * Follow-chat thinking toggles (spec 2026-10-03 leg-thinking-follow-chat D1=甲): one
+   * boolean per functional role; a checked leg sends "thinking on" exactly like chat does.
+   */
+  extract_thinking?: boolean | null;
+  wiki_thinking?: boolean | null;
+  judge_thinking?: boolean | null;
+  synthesis_thinking?: boolean | null;
+  vlm_thinking?: boolean | null;
   mineru_api_token?: string | null;
   /**
    * Provider dimension (spec 2026-09-14 §4.1). Ids mirror the backend's curated

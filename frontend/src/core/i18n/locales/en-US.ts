@@ -1885,6 +1885,11 @@ export const enUS: Translations = {
       captionModelHint:
         "The endpoint and API key come from the selected model entry; leaving it empty withdraws this row's override, so a value set for it in the configuration still applies, and only when neither is set does the RAG default model take over. Only vision-capable entries are listed — an Anthropic entry is called over its Messages protocol, and every other entry over the OpenAI-compatible protocol.",
       vlmModelDefault: "(use the configured default)",
+      thinkingMenuLabel: "Thinking · follows chat",
+      thinkingMenuState: (count: number) =>
+        count > 0
+          ? `Thinking · follows chat (${count} selected)`
+          : "Thinking · follows chat (click to enable)",
       defaultModel: "RAG default model",
       defaultModelNone: "(config default)",
       defaultModelHint:

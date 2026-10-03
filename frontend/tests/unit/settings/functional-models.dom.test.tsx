@@ -698,6 +698,135 @@ describe("wiki and synthesis rows", () => {
   });
 });
 
+describe("thinking follow-chat menu (spec 2026-10-03 D1=甲)", () => {
+  // One dropdown under the RAG default row. Its five rows are the five *role slots* — a
+  // model in two slots is two rows — each showing the model its slot points at. The trigger
+  // names itself (no label in front) and carries the state at its tail (his UI rule).
+  // Radix DropdownMenu opens on keydown in jsdom, not on click (三点菜单先例). Its modal
+  // layer aria-hides the rest of the page while open, so out-of-menu queries need `hidden`.
+  const trigger = () =>
+    screen.getByRole("button", { name: F.thinkingMenuLabel, hidden: true });
+  const openMenu = () => fireEvent.keyDown(trigger(), { key: "ArrowDown" });
+  const saveButton = () =>
+    screen.getByRole<HTMLButtonElement>("button", {
+      name: zhCN.common.save,
+      hidden: true,
+    });
+
+  it("names itself in the trigger with the state at the tail, and no label in front", () => {
+    renderPage();
+    openFunctionalView();
+
+    // The label exists only as the trigger's aria-label; the visible text is the state.
+    expect(screen.queryAllByText(F.thinkingMenuLabel)).toHaveLength(0);
+    expect(trigger().textContent).toContain("点击开启");
+  });
+
+  it("ships the trigger copy verbatim in both locales", () => {
+    expect(F.thinkingMenuLabel).toBe("思考 · 跟随 chat");
+    expect(F.thinkingMenuState(0)).toBe("思考 · 跟随 chat（点击开启）");
+    expect(F.thinkingMenuState(3)).toBe("思考 · 跟随 chat（已选 3）");
+
+    const FE = enUS.settings.functionalModels;
+    expect(FE.thinkingMenuLabel).toBe("Thinking · follows chat");
+    expect(FE.thinkingMenuState(0)).toBe(
+      "Thinking · follows chat (click to enable)",
+    );
+    expect(FE.thinkingMenuState(2)).toBe("Thinking · follows chat (2 selected)");
+  });
+
+  it("lists the five role slots with the model each slot points at", async () => {
+    setRag({ wiki_model: "qwen-max", synthesis_model: "qwen-max" });
+    renderPage();
+    openFunctionalView();
+
+    openMenu();
+    const items = await screen.findAllByRole("menuitemcheckbox");
+
+    // Rows are role slots, not models: extraction and judging point at the same entry and
+    // still get one row each. An unset slot shows the row's own "not set" copy.
+    expect(items.map((item) => item.textContent)).toEqual([
+      `${F.extractModel} · DeepSeek Chat`,
+      `${F.wikiModel} · Qwen Max`,
+      `${F.judgeModel} · DeepSeek Chat`,
+      `${F.synthesisModel} · Qwen Max`,
+      `${F.captionModel} · vl-model`,
+    ]);
+  });
+
+  it("keeps the menu open across picks and counts them in the trigger", async () => {
+    renderPage();
+    openFunctionalView();
+
+    openMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", {
+        name: `${F.extractModel} · DeepSeek Chat`,
+      }),
+    );
+
+    // One decision, five rows: a pick must not close the menu on the admin.
+    expect(
+      screen.getByRole("menuitemcheckbox", {
+        name: `${F.wikiModel} · （使用配置默认）`,
+      }),
+    ).toBeTruthy();
+    expect(trigger().textContent).toContain("已选 1");
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("submits the toggles through the RAG save, and nothing for the untouched legs", async () => {
+    renderPage();
+    openFunctionalView();
+
+    openMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", {
+        name: `${F.extractModel} · DeepSeek Chat`,
+      }),
+    );
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    // The fixture's other file-owned fields ride along; what this edit owns is the one toggle,
+    // and the four legs left alone must stay out of the payload (an omitted key is the PUT's
+    // "no change").
+    const payload = saveMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.extract_thinking).toBe(true);
+    for (const key of [
+      "wiki_thinking",
+      "judge_thinking",
+      "synthesis_thinking",
+      "vlm_thinking",
+    ]) {
+      expect(payload).not.toHaveProperty(key);
+    }
+  });
+
+  it("seeds a stored true as checked, and an uncheck is submitted as false", async () => {
+    setRag({ vlm_thinking: true });
+    renderPage();
+    openFunctionalView();
+
+    expect(trigger().textContent).toContain("已选 1");
+
+    openMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", {
+        name: `${F.captionModel} · vl-model`,
+      }),
+    );
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(saveMock).toHaveBeenCalled());
+    // `false`, not an omitted key: the whole-object PUT would read an omission as "keep it".
+    const payload = saveMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.vlm_thinking).toBe(false);
+    expect(payload).not.toHaveProperty("extract_thinking");
+    expect(trigger().textContent).toContain("点击开启");
+  });
+});
+
 describe("save-time verification notice", () => {
   it("shows what the server could not verify about the configuration it saved", async () => {
     renderPage();

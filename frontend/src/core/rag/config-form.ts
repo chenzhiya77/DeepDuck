@@ -39,6 +39,13 @@ export interface RagConfigFormValues {
   default_model: string;
   wiki_model: string;
   synthesis_model: string;
+  /** Follow-chat thinking toggles (spec 2026-10-03 D1=甲); a checkbox is two-state, so an
+   * explicit `false` is how the form says "not this leg" (the file's `null` = undeclared). */
+  extract_thinking: boolean;
+  wiki_thinking: boolean;
+  judge_thinking: boolean;
+  synthesis_thinking: boolean;
+  vlm_thinking: boolean;
   mineru_api_token: string;
   embedding_provider: "dashscope" | "volcengine-ark" | "openai-compatible";
   embedding_base_url: string;
@@ -208,6 +215,15 @@ const SELECT_FIELDS = [
   "parse_model_version",
 ] as const;
 
+/** The follow-chat thinking toggles: plain booleans, unlike the text/select fields. */
+const THINKING_FIELDS = [
+  "extract_thinking",
+  "wiki_thinking",
+  "judge_thinking",
+  "synthesis_thinking",
+  "vlm_thinking",
+] as const;
+
 const VIDEO_SOURCES: Record<string, string> = {
   asr_provider: "video.asr_provider",
   asr_model: "video.asr_model",
@@ -238,6 +254,11 @@ export function formValuesFromConfig(view: RagConfigView): RagConfigFormValues {
     default_model: asText(config.default_model),
     wiki_model: asText(config.wiki_model),
     synthesis_model: asText(config.synthesis_model),
+    extract_thinking: Boolean(config.extract_thinking),
+    wiki_thinking: Boolean(config.wiki_thinking),
+    judge_thinking: Boolean(config.judge_thinking),
+    synthesis_thinking: Boolean(config.synthesis_thinking),
+    vlm_thinking: Boolean(config.vlm_thinking),
     mineru_api_token: asText(config.mineru_api_token),
     embedding_provider: asEnum(config.embedding_provider, EMBEDDING_PROVIDER_OPTIONS, "dashscope"),
     embedding_base_url: asText(config.embedding_base_url),
@@ -356,6 +377,16 @@ export function buildRagConfigInput(
     // A cleared select must be *said* as `null`: `""` fails the Literal on the PUT body (422),
     // so an empty option used to leave the override unremovable (spec 2026-09-29 §6.2 末条).
     if (next !== "" || owned(view, key)) writeField(input, key, next === "" ? null : next);
+  }
+
+  for (const key of THINKING_FIELDS) {
+    const next = values[key];
+    const previous = Boolean(view.config?.[key]);
+    if (next === previous) {
+      if (owned(view, key)) writeField(input, key, next); // carry the file's own override
+      continue;
+    }
+    writeField(input, key, next);
   }
 
   const video: RagVideoValues = {};
@@ -811,6 +842,7 @@ export function hasFormChanges(
     NUMERIC_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SECRET_FIELDS.some((key) => edited(values[key], seeded[key])) ||
     SELECT_FIELDS.some((key) => values[key] !== seeded[key]) ||
+    THINKING_FIELDS.some((key) => values[key] !== seeded[key]) ||
     (["asr_provider", "asr_model"] as const).some((key) =>
       edited(values.video[key], seeded.video[key]),
     )
