@@ -53,8 +53,8 @@ def _placeholder(ref: str) -> str:
     return f"图片 {Path(ref).name}"
 
 
-async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, target: VlmTarget, max_tokens: int, temperature: float) -> str:
-    return await request_caption(client, target=target, prompt=_CAPTION_PROMPT, images=[(image.content, image.media_type)], max_tokens=max_tokens, temperature=temperature)
+async def _caption_one(client: httpx.AsyncClient, image: ParsedImage, *, target: VlmTarget, max_tokens: int, temperature: float, thinking: bool = False) -> str:
+    return await request_caption(client, target=target, prompt=_CAPTION_PROMPT, images=[(image.content, image.media_type)], max_tokens=max_tokens, temperature=temperature, thinking=thinking)
 
 
 async def caption_images(
@@ -104,7 +104,7 @@ async def caption_images(
         nonlocal failed
         async with semaphore:
             try:
-                result = await _caption_one(http, img, target=target, max_tokens=max_tokens, temperature=temperature)
+                result = await _caption_one(http, img, target=target, max_tokens=max_tokens, temperature=temperature, thinking=bool(cfg.rag.vlm_thinking))
                 return img.ref, result
             except Exception as exc:
                 logger.warning("VLM caption failed for %s (%s); using filename placeholder", img.ref, exc)

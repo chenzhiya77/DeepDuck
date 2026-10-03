@@ -123,11 +123,10 @@ def get_extract_llm(app_config: Any = None):
     resolved from, so a check and its construction cannot disagree.
     """
     from deerflow.config.app_config import get_app_config
-    from deerflow.knowledge.model_target import require_usable_rag_target
-    from deerflow.models.factory import create_chat_model
+    from deerflow.knowledge.model_target import create_rag_chat_model, require_usable_rag_target
 
     config = app_config if app_config is not None else get_app_config()
-    return create_chat_model(require_usable_rag_target(config, config.rag.extract_model, role="图谱抽取"), app_config=config)
+    return create_rag_chat_model(require_usable_rag_target(config, config.rag.extract_model, role="图谱抽取"), thinking=bool(config.rag.extract_thinking), app_config=config)
 
 
 _RETRIES = 2

@@ -65,11 +65,10 @@ def build_judge_llm(judge_model: str | None, *, config):
     and fails loudly rather than quietly grading with a model nobody asked for.
     """
 
-    from deerflow.knowledge.model_target import require_usable_rag_target
-    from deerflow.models.factory import create_chat_model
+    from deerflow.knowledge.model_target import create_rag_chat_model, require_usable_rag_target
 
     target = require_usable_rag_target(config, judge_model or config.rag.judge_model, role="评测裁判")
-    return create_chat_model(name=target, app_config=config, attach_tracing=False)
+    return create_rag_chat_model(target, thinking=bool(config.rag.judge_thinking), app_config=config, attach_tracing=False)
 
 
 def build_ragas_evaluator(judge_llm, *, embeddings_cls=None):

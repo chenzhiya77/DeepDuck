@@ -190,3 +190,23 @@ def require_usable_rag_target(config: Any, declared: str | None, *, role: str, r
 
         raise RagConfigurationError(reason)
     return resolved
+
+
+def create_rag_chat_model(name: str, *, thinking: bool, app_config: Any = None, **kwargs):
+    """The RAG legs' model constructor: chat's thinking treatment, with chat's entry gate.
+
+    The legs never pass through the lead agent, and the factory *raises* on "thinking on"
+    for an entry that declares no support instead of pressing back like chat does — so the
+    gate is mirrored here (same downgrade, same warning) rather than inherited (spec
+    2026-10-03 leg-thinking-follow-chat). The factory is called through its module
+    attribute so tests can still patch it.
+    """
+    from deerflow.config.app_config import get_app_config
+    from deerflow.models import factory as models_factory
+
+    config = app_config if app_config is not None else get_app_config()
+    model_config = config.get_model_config(name) if thinking else None
+    if thinking and model_config is not None and not model_config.supports_thinking:
+        logger.warning("Thinking mode is enabled but model '%s' does not support it; fallback to non-thinking mode.", name)
+        thinking = False
+    return models_factory.create_chat_model(name, thinking_enabled=thinking, app_config=config, **kwargs)

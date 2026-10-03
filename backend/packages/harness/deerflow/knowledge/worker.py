@@ -955,11 +955,10 @@ class KnowledgeIndexWorker:
                 return
             existing = await self._wiki_store.list_entries(kb_id)
             from deerflow.config.app_config import get_app_config
-            from deerflow.knowledge.model_target import require_usable_rag_target
-            from deerflow.models.factory import create_chat_model
+            from deerflow.knowledge.model_target import create_rag_chat_model, require_usable_rag_target
 
             config = get_app_config()
-            llm = self._main_llm or create_chat_model(require_usable_rag_target(config, config.rag.wiki_model, role="百科生成"), app_config=config)
+            llm = self._main_llm or create_rag_chat_model(require_usable_rag_target(config, config.rag.wiki_model, role="百科生成"), thinking=bool(config.rag.wiki_thinking), app_config=config)
             await generate_wiki(
                 self._store,
                 self._graph_store,

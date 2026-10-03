@@ -213,11 +213,10 @@ def _default_llm():
     the settings view govern this role too.
     """
     from deerflow.config.app_config import get_app_config
-    from deerflow.knowledge.model_target import require_usable_rag_target
-    from deerflow.models.factory import create_chat_model
+    from deerflow.knowledge.model_target import create_rag_chat_model, require_usable_rag_target
 
     config = get_app_config()
-    return create_chat_model(require_usable_rag_target(config, config.rag.wiki_model, role="百科生成"), app_config=config)
+    return create_rag_chat_model(require_usable_rag_target(config, config.rag.wiki_model, role="百科生成"), thinking=bool(config.rag.wiki_thinking), app_config=config)
 
 
 def _parse_batch_response(text: str, expected_titles: set[str]) -> dict[str, str]:

@@ -100,7 +100,7 @@ async def run_shot_prompt(
             return index, ""  # 无帧镜头：空结果，不计 failed
         async with semaphore:
             try:
-                return index, await request_caption(http, target=target, prompt=prompt, images=[(frame, "image/jpeg") for frame in frames], max_tokens=max_tokens, temperature=temperature)
+                return index, await request_caption(http, target=target, prompt=prompt, images=[(frame, "image/jpeg") for frame in frames], max_tokens=max_tokens, temperature=temperature, thinking=bool(cfg.rag.vlm_thinking))
             except Exception as exc:
                 logger.warning("镜头 %d 的%s失败（%s）；降级空", index, what, exc)
                 failed += 1

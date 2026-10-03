@@ -158,7 +158,9 @@ class TestJudgeModelSelection:
         monkeypatch.setattr(factory, "create_chat_model", lambda name=None, **kwargs: seen.setdefault("name", name) or object())
         config = SimpleNamespace(
             models=[SimpleNamespace(name="A"), SimpleNamespace(name="B")],
-            rag=SimpleNamespace(judge_model=None, default_model="B"),
+            rag=SimpleNamespace(judge_model=None, default_model="B", judge_thinking=False),
+            # The shared wrapper's entry gate looks the entry up when thinking is on (spec 2026-10-03).
+            get_model_config=lambda name: SimpleNamespace(supports_thinking=True),
         )
 
         cli._build_judge_llm(None, config=config)

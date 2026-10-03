@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** 🚧 **Task 0 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。下一棒 Task 1 后端 TDD。
+**Status:** 🚧 **Task 0–1 ✅（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；UI 形态定案。后端 TDD 已交付；下一棒 Task 2（D2 预算联动）。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -26,11 +26,12 @@
 - [x] ③ 共享闸落点：`model_target.py` 纯函数模块（8 def、无类），`create_rag_chat_model` 全仓 0 命中可用；包装内**懒 import** `deerflow.models.factory` 并按模块属性调用（保住 monkeypatch 面）。`VlmTarget`（`vlm_target.py:60-76`，frozen dataclass）扩 `enable_shape`/`supports_thinking` 两带默认字段=零破坏。
 - [x] ④ 受害者扫描：**零用例断言五构造点的 thinking 参数**；间接面 3 文件 Task 1 后复跑——`test_eval_factory.py`（4 处 monkeypatch `models_factory.create_chat_model`）、`test_ragas_eval_cli.py:142`、`test_e2e_smoke.py:115`（走 `main_llm` 旁路=审查⑦那只）。
 
-## Task 1 — D1 执行：后端 TDD
+## Task 1 — D1 执行：后端 TDD ✅
 
-- [ ] RED：按 D1 裁定写红——五角色各一用例（勾⇒构造点收到 `thinking_enabled=True`；默认⇒False 且请求体不变）+ 「跟随 chat 含条目闸」用例（`supports_thinking: false` 条目 ⇒ 闸回 warning）。⚠️ wiki 用例别走 `main_llm` 注入口（`worker.py:962` 的 `self._main_llm or` 是文档明示的测试旁路、生产不传）——要测决议路径用真构造点。
-- [ ] GREEN：`RagConfig` + **双层写入链**加 5 布尔（D1 形状）+ `create_rag_chat_model` 共享闸包装 + 五构造点改走它（wiki 两处）+ `VlmTarget` 扩 `enable_shape`/`supports_thinking` + caption 出站口开启分发（`_apply_thinking_on`，无声明不发）。
-- [ ] neuter：还原一处勾选读取 ⇒ 对应红；全还原全绿。
+- [x] RED：`test_leg_thinking_toggle.py` **13 红 / 1 守护行绿**（「默认仍发关闭形状」=今日行为）。红因=五腿不传 `thinking_enabled`、caption 无 `thinking` 参数/无开启形状。wiki 用例走真决议路径（未用 `main_llm` 注入口）。
+- [x] GREEN：两层 schema 加 5 布尔 + `create_rag_chat_model` 共享闸（`model_target.py`，懒 import 保 monkeypatch 面；**闸只在开思考时查条目**）+ 五构造点传 `thinking=`（wiki 两处）+ `VlmTarget` 扩 `enable_shape`/`supports_thinking` + caption `_apply_thinking_on` + `request_caption` 闸 ⇒ **14/14**。
+- [x] neuter：①还原抽取勾选读取 ⇒ 恰 **2 红**（extract 勾选 + 该腿闸用例）；②拆腿闸 ⇒ 恰 **1 红**（caption 闸独立、反证面不相交）；全还原复绿。
+- [x] 门禁：knowledge + config/models 面 **1805 passed / 4 env 红**（缺 key 对 `test_embed_missing_api_key`/`test_rerank_missing_api_key` + parser 对=本机真实 MinerU token 泄进隔离断言）；ruff check/format 双净。**受害者处置**：判官两夹具补 `judge_thinking`/`get_model_config`（`test_eval_factory.py`/`test_ragas_eval_cli.py`，前例「给夹具补值」）+ `response_golden.json` 补 10 嵌套键（`config`×5=`False`、`sources`×5=`config_file`；字段面守卫拦对了=预期的"字段面变动"）。
 
 ## Task 2 — D2 执行：caption 预算联动
 

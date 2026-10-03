@@ -102,7 +102,7 @@ class TestBuildJudgeLlm:
         monkeypatch.setattr(models_factory, "create_chat_model", lambda name=None, **kwargs: seen.setdefault("name", name) or object())
         config = SimpleNamespace(
             models=[SimpleNamespace(name="A"), SimpleNamespace(name="B")],
-            rag=SimpleNamespace(judge_model=None, default_model="B"),
+            rag=SimpleNamespace(judge_model=None, default_model="B", judge_thinking=False),
         )
 
         factory.build_judge_llm(None, config=config)

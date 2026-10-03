@@ -14,12 +14,15 @@ the reasoning draft before it degrades (D2=甲).
 from __future__ import annotations
 
 import base64
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
 import httpx
 
 from deerflow.knowledge.vlm_target import VlmTarget
+
+logger = logging.getLogger(__name__)
 
 #: Sent on every Messages request. The SDK's own default value (`anthropic/_client.py:180`);
 #: a module constant on purpose — bumping it is a code change, not a config knob.
@@ -71,20 +74,35 @@ def _apply_thinking_off(target: VlmTarget, body: dict) -> None:
         body["reasoning_effort"] = "none"
 
 
-def _openai_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float) -> tuple[dict, dict]:
+def _apply_thinking_on(target: VlmTarget, body: dict) -> None:
+    """The symmetric half (spec 2026-10-03): "thinking on" in the declared spelling.
+
+    Only a declared ``when_thinking_enabled`` shape is sent — undeclared means not sent, the
+    same guard as the off half.
+    """
+    if target.enable_shape:
+        _merge_shape(body, target.enable_shape)
+
+
+def _openai_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float, thinking: bool = False) -> tuple[dict, dict]:
     content = [{"type": "image_url", "image_url": {"url": _data_url(data, media_type)}} for data, media_type in images]
     content.append({"type": "text", "text": prompt})
     body = {"model": target.model, "messages": [{"role": "user", "content": content}], "max_tokens": max_tokens, "temperature": temperature}
-    _apply_thinking_off(target, body)
+    if thinking:
+        _apply_thinking_on(target, body)
+    else:
+        _apply_thinking_off(target, body)
     headers = {"Authorization": f"Bearer {target.api_key or ''}", "Content-Type": "application/json"}
     return body, headers
 
 
-def _anthropic_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float) -> tuple[dict, dict]:
+def _anthropic_request(target: VlmTarget, prompt: str, images: Sequence[tuple[bytes, str]], *, max_tokens: int, temperature: float, thinking: bool = False) -> tuple[dict, dict]:
     content = [{"type": "image", "source": {"type": "base64", "media_type": media_type, "data": base64.b64encode(data).decode("ascii")}} for data, media_type in images]
     content.append({"type": "text", "text": prompt})
     # `max_tokens` is required by the Messages API; the value is the OpenAI leg's own.
     body = {"model": target.model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": content}], "temperature": temperature}
+    if thinking:
+        _apply_thinking_on(target, body)  # "off" stays absent: Messages thinking is opt-in (D1=甲′)
     headers = {"X-Api-Key": target.api_key or "", "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json"}
     return body, headers
 
@@ -114,6 +132,7 @@ async def request_caption(
     images: Sequence[tuple[bytes, str]],
     max_tokens: int,
     temperature: float,
+    thinking: bool = False,
 ) -> str:
     """Ask ``target`` to caption ``images`` and return the text, or raise.
 
@@ -121,9 +140,18 @@ async def request_caption(
     an empty answer (no text and no reasoning draft left to borrow), and any transport error.
     Both legs degrade on all three. The generation parameters come from the caller
     (``rag.caption_*``), so this module stays transport-only.
+
+    ``thinking`` mirrors chat's entry gate (spec 2026-10-03): an entry that declares no
+    thinking support is pressed back to "off" with the chat-side warning, never sent "on".
     """
+    if thinking and not target.supports_thinking:
+        logger.warning("Thinking mode is enabled but model '%s' does not support it; fallback to non-thinking mode.", target.model)
+        thinking = False
     anthropic = target.dialect == "anthropic"
-    body, headers = _anthropic_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature) if anthropic else _openai_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature)
+    if anthropic:
+        body, headers = _anthropic_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature, thinking=thinking)
+    else:
+        body, headers = _openai_request(target, prompt, images, max_tokens=max_tokens, temperature=temperature, thinking=thinking)
 
     response = await client.post(_url(target), headers=headers, json=body)
     response.raise_for_status()

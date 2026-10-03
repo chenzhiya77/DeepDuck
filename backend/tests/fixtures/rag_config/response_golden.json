@@ -36,7 +36,12 @@
       "video": {
         "asr_provider": "funasr",
         "asr_model": "yaml-asr"
-      }
+      },
+      "extract_thinking": false,
+      "wiki_thinking": false,
+      "judge_thinking": false,
+      "synthesis_thinking": false,
+      "vlm_thinking": false
     },
     "sources": {
       "qdrant_url": "config_file",
@@ -69,7 +74,12 @@
       "asr_base_url": "config_file",
       "asr_api_key": "unset",
       "video.asr_provider": "config_file",
-      "video.asr_model": "config_file"
+      "video.asr_model": "config_file",
+      "extract_thinking": "config_file",
+      "wiki_thinking": "config_file",
+      "judge_thinking": "config_file",
+      "synthesis_thinking": "config_file",
+      "vlm_thinking": "config_file"
     }
   },
   "put": {
@@ -123,7 +133,12 @@
         "video": {
           "asr_provider": "funasr",
           "asr_model": "ui-asr"
-        }
+        },
+        "extract_thinking": false,
+        "wiki_thinking": false,
+        "judge_thinking": false,
+        "synthesis_thinking": false,
+        "vlm_thinking": false
       },
       "sources": {
         "qdrant_url": "config_file",
@@ -156,7 +171,12 @@
         "asr_base_url": "config_file",
         "asr_api_key": "unset",
         "video.asr_provider": "config_file",
-        "video.asr_model": "ui"
+        "video.asr_model": "ui",
+        "extract_thinking": "config_file",
+        "wiki_thinking": "config_file",
+        "judge_thinking": "config_file",
+        "synthesis_thinking": "config_file",
+        "vlm_thinking": "config_file"
       }
     }
   }

@@ -132,6 +132,13 @@ class RagConfigFile(BaseModel):
     default_model: str | None = Field(default=None, description="Name of a config `models:` entry used by every RAG role that declares none of its own; None uses the first configured model.")
     wiki_model: str | None = Field(default=None, description="Name of a config `models:` entry used to write wiki entries; None uses the first configured model.")
     synthesis_model: str | None = Field(default=None, description="Name of a config `models:` entry used to synthesize eval questions; None uses the first configured model.")
+    # Follow-chat thinking toggles (spec 2026-10-03 leg-thinking-follow-chat D1=甲). The
+    # three-state rule applies: None means "not declared here" and config.yaml's value stands.
+    extract_thinking: bool | None = Field(default=None, description="Graph-extraction leg follows chat's thinking treatment; None uses config.yaml.")
+    wiki_thinking: bool | None = Field(default=None, description="Wiki-writing leg follows chat's thinking treatment; None uses config.yaml.")
+    judge_thinking: bool | None = Field(default=None, description="Ragas judge leg follows chat's thinking treatment; None uses config.yaml.")
+    synthesis_thinking: bool | None = Field(default=None, description="Eval-question synthesis leg follows chat's thinking treatment; None uses config.yaml.")
+    vlm_thinking: bool | None = Field(default=None, description="Caption legs follow chat's thinking treatment (output budget rises to at least 4096 while on); None uses config.yaml.")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token; masked on read, env is the fallback.")
     # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Ids are
     # validated against `deerflow.knowledge.providers.PROVIDER_ALLOWLIST`; every field is

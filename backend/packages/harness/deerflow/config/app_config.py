@@ -198,6 +198,14 @@ class RagConfig(BaseModel):
     default_model: str | None = Field(default=None, description="Name of the config `models:` entry every RAG role falls back to when it declares none of its own; None uses the first configured model.")
     wiki_model: str | None = Field(default=None, description="Name of the config `models:` entry used to write wiki entries; None uses the first configured model.")
     synthesis_model: str | None = Field(default=None, description="Name of the config `models:` entry used to synthesize eval questions; None uses the first configured model.")
+    # Follow-chat thinking toggles (spec 2026-10-03 leg-thinking-follow-chat D1=甲): a
+    # checked leg sends "thinking on" exactly like chat does — entry gate and the entry's
+    # default effort included. Default False keeps today's non-thinking legs unchanged.
+    extract_thinking: bool = Field(default=False, description="Follow chat's thinking treatment on the graph-extraction leg.")
+    wiki_thinking: bool = Field(default=False, description="Follow chat's thinking treatment on the wiki-writing leg.")
+    judge_thinking: bool = Field(default=False, description="Follow chat's thinking treatment on the ragas eval judge leg.")
+    synthesis_thinking: bool = Field(default=False, description="Follow chat's thinking treatment on the eval-question synthesis leg.")
+    vlm_thinking: bool = Field(default=False, description="Follow chat's thinking treatment on the caption legs; while on, the effective output budget rises to at least 4096 (spec D2=甲).")
     mineru_api_token: str | None = Field(default=None, description="MinerU parsing token from rag_config.json; None falls back to MINERU_API_TOKEN.")
 
     # Provider dimension (spec 2026-09-14 rag model provider adaptation §4.1). Every

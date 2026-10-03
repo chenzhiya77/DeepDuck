@@ -61,10 +61,11 @@ def _sdk_default_endpoint(provider: str | None) -> str | None:
 class VlmTarget:
     """Where a caption call goes, what it authenticates with, and which protocol it speaks.
 
-    The two thinking declarations ride along because the request body's "thinking off"
-    spelling is the entry's own (spec 2026-10-02 D1=甲′): ``disable_shape`` is its declared
-    ``when_thinking_disabled`` shape, and ``supports_reasoning_effort`` says whether the
-    entry takes ``reasoning_effort`` at all. Undeclared means not sent.
+    The thinking declarations ride along because the request body's thinking spelling is the
+    entry's own (spec 2026-10-02 D1=甲′): ``disable_shape`` / ``enable_shape`` are its declared
+    ``when_thinking_*`` shapes, and the two flags mirror the chat-side gate and effort rules
+    (``supports_thinking`` downgrades "on" to "off", ``supports_reasoning_effort`` says
+    whether the entry takes ``reasoning_effort`` at all). Undeclared means not sent.
     """
 
     model: str
@@ -74,6 +75,8 @@ class VlmTarget:
     source: Literal["model_entry"]
     disable_shape: dict | None = None
     supports_reasoning_effort: bool = False
+    enable_shape: dict | None = None
+    supports_thinking: bool = False
 
 
 def resolve_vlm_target(config: AppConfig, model: str | None = None) -> VlmTarget:
@@ -112,6 +115,8 @@ def resolve_vlm_target(config: AppConfig, model: str | None = None) -> VlmTarget
             source="model_entry",
             disable_shape=dumped.get("when_thinking_disabled") or None,
             supports_reasoning_effort=bool(dumped.get("supports_reasoning_effort")),
+            enable_shape=dumped.get("when_thinking_enabled") or None,
+            supports_thinking=bool(dumped.get("supports_thinking")),
         )
 
     # A name with no entry used to be a bare provider id pointed at the retired RAG endpoint.
