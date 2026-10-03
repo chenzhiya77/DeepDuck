@@ -1,6 +1,6 @@
 # RAG 功能腿思考「跟随 chat」勾选 —— 设计
 
-**Status:** ✅ **D1=甲 / D2=甲 已裁并交付（2026-10-03）** —— UI 形态他已定（多选下拉框，勾=跟随 chat、不勾=现状）；D1=每角色一布尔、D2=caption 生效层联动 4096。Task 0–4 全交付、触发器文案复审定甲（plan 有实测与提交链），**零待拍**。配套 plan：[2026-10-03-rag-leg-thinking-follow-chat.md](../plans/2026-10-03-rag-leg-thinking-follow-chat.md)。
+**Status:** ✅ **D1=甲 / D2=甲 已裁并交付（2026-10-03）** —— UI 形态他已定（多选下拉框，勾=跟随 chat、不勾=现状）；D1=每角色一布尔、D2=caption 生效层联动 4096。Task 0–5 全交付（含真栈端到端验收四相）、触发器文案复审定甲（plan 有实测与提交链），**零待拍**。配套 plan：[2026-10-03-rag-leg-thinking-follow-chat.md](../plans/2026-10-03-rag-leg-thinking-follow-chat.md)。
 
 本对一件事：把五个 RAG 功能腿的思考口径从**写死不思考**变成**用户可勾选「跟随 chat」**。UI 形态他已定（多选下拉框，勾=跟随 chat、不勾=现状），本对把机制、配置形状、caption 预算联动落定。
 

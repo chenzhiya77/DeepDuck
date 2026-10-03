@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-03-rag-leg-thinking-follow-chat-design.md](../specs/2026-10-03-rag-leg-thinking-follow-chat-design.md)
-**Status:** ✅ **Task 0–4 全交付（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；后端 TDD + 预算联动 + 前端下拉框 + 门禁/文档收尾已交付；触发器文案已裁=甲并落地（Task 4 ③），**零待拍**。
+**Status:** ✅ **Task 0–5 全交付（2026-10-03）** —— D1=甲（每角色一布尔，默认 `False`）、D2=甲（caption 生效层 `max(用户值, 4096)`）；后端 TDD + 预算联动 + 前端下拉框 + 门禁/文档收尾 + 真栈端到端验收全交付；触发器文案已裁=甲并落地（Task 4 ③），**零待拍**。
 
 **Architecture:** 五个角色构造点把配置布尔传进既有工厂（`thinking_enabled=…`），工厂的开/关形状分发不动；caption 出站口加对称的开启分发；UI 一个多选下拉框读写五个角色位。
 
@@ -46,4 +46,10 @@
 - [x] 门禁实测：后端 knowledge + models/config 面 **1730 passed / 2 skipped**，9 红全环境账（缺 key 对 2 + parser 对 2 + 本机真实 `models_config.json` 对 3 + `test_config_version` 要 bash 1）+ 1 条**已登记图谱并发 flake**（`test_concurrent_results_match_serial_including_order` 同面 3 跑 2 红 1 绿、Task 1 同面为绿 ⇒ 非本对回归）；ruff check/format **双净**（knowledge+config+tests/knowledge，213 文件）；前端 `pnpm check` 零诊断、全量 **247 文件绿**。
 - [x] 文档：`config.example.yaml` rag 块补 5 行注释示例（含 caption 4096 联动句）+ 模板钉 `test_the_yaml_template_advertises_the_thinking_flags_as_commented_examples`（`test_rag_config_example.py` 14/14 绿）；`backend/AGENTS.md` 四处（功能模型段=5 布尔+共享闸+多选入口 / Ingestion 段=D7 加翻案限定 / model-targets 段=`create_rag_chat_model` / caption 段=vlm_thinking+预算联动）；图谱并发化 spec 状态行加翻案指回。
 - [x] UI 复审修法（他 2026-10-03 三条）：① 两框间距 8→16px（页面字段栈 `gap-4` 词汇）；② 触发器表面改 `border-input bg-transparent`（Button outline 自带的 `bg-background` 压白卡片显暖，兄弟框是 SelectTrigger 表面）；③ 触发器文案已裁=**甲**并落地（`思考跟随对话模型（未选择）`→`（已选 N 项）`，en 对齐 `Thinking follows the chat model (none selected / N selected)`；乙/丙 未选、已关）。
-- [x] 提交链回填：`bbb95aca3`（成对起草）→ `e191274c7`（D1/D2 落档）→ `452b0c8da`（审查八处）→ `c660fdc6e`（Task 0）→ `5394fde76`（Task 1）→ `377172fc9`（Task 2）→ `59b87bd9a`（Task 3）→ 本笔（Task 4 收尾）。
+- [x] 提交链回填：`bbb95aca3`（成对起草）→ `e191274c7`（D1/D2 落档）→ `452b0c8da`（审查八处）→ `c660fdc6e`（Task 0）→ `5394fde76`（Task 1）→ `377172fc9`（Task 2）→ `59b87bd9a`（Task 3）→ `7aaa1dba2`（Task 4）→ `5f21b8d24`（文案甲）→ 本笔（Task 5 端到端验收）。
+
+## Task 5 — 真栈端到端验收（补验）✅
+
+- [x] 隔离实例四相实测（scratch 根 + 6 个 `DEER_FLOW_*` 变量 + `DEER_FLOW_AUTH_DISABLED=1` + 本机 recorder，零出网、真 `rag_config.json` md5 前后一致 `524cbfb3…`）：**P1 全不勾**=抽取 8 发 `thinking={type:disabled}`、caption 3 发 `disabled`+`max_tokens=512`（用户值原样）、wiki 静默零形状；**P2 勾 extract+vlm**（走真 `PUT /api/rag/config` 写入链+热重载）=抽取 8 发 `enabled`、caption 3 发 `enabled`+`max_tokens=4096`（下限 `max(512,4096)` 生效）；**P3B 闸降级**（vlm 指无声明条目、旗保住）=caption 3 发零开启形状+`max_tokens=512`（降级后不涨）+ 网关 3 条警告（点名 wire 名 `e2e-plain`）。
+- [x] UI 只读冒烟（真栈浏览器）：菜单开合、五行=五角色位各带该槽当前模型名（抽取/裁判/考题/VLM=`mimo-v2.6-flash`、百科=`qwen3.8-flash`）、全未勾、触发器「思考跟随对话模型（未选择）」。
+- [x] 踩坑两条（验收方法账）：① `rag_config.json` 不设 `DEER_FLOW_RAG_CONFIG_PATH` 会走到**仓根真配置**（他的 `mimo-v2.6-flash` 泄进隔离实例）⇒ 隔离必须 6 变量；② PUT 整对象替换、**漏键=撤 UI 覆盖**（手写 PUT 必须带出既有字段——前端 carry-forward 的必要性真栈实证）。收尾：3 临时库 204 级联删、scratch 目录删、recorder+网关停。
