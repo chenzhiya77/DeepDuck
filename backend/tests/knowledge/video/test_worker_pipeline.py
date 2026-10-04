@@ -425,6 +425,33 @@ async def test_video_empty_shot_produces_no_chunk(session_factory, tmp_path, mon
     assert chunks[0]["chunk_id"] == f"{doc_id}#0000"
 
 
+@pytest.mark.asyncio
+async def test_video_all_empty_shots_fail_as_no_indexable_content(session_factory, tmp_path, monkeypatch):
+    """全镜头三路俱空 → 零切片 ⇒ 文档 failed（「无可索引内容」，RFC §5.2
+    表行 4），不再静默 ready；空镜头行保留、wiki 不启动。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    doc_id, _storage, _doc_dir = await _video_doc(store, tmp_path)
+    _fake_legs(
+        monkeypatch,
+        transcript=[],
+        keyframes={0: None, 1: None},
+        caption=CaptionOutcome(captions={0: "", 1: ""}, failed=0, degraded=False),
+    )
+    worker = _worker(store)
+
+    await worker.process_document(doc_id)
+
+    doc = await store.get_document(doc_id)
+    assert doc["status"] == "failed"
+    assert "无可索引内容" in (doc["error"] or "")
+    assert doc["chunk_count"] in (None, 0)
+    assert await store.list_chunks(doc_id, limit=10) == []
+    assert doc["path_status"] == {"asr": "done", "segment": "done", "caption": "done", "vector": "failed", "graph": "done"}
+    shots = await VideoShotStore(session_factory).list_shots(doc_id)
+    assert all(shot["caption_status"] == "empty" for shot in shots)
+
+
 # ── resume：重入只跑 pending 镜头（spec §2 caption_status 状态机）───────────────
 
 

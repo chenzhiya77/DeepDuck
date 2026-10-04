@@ -350,10 +350,10 @@ async def test_path_status_marks_unfinished_legs_failed_on_pipeline_error(sessio
 
 
 class _FailingEmbedder:
-    """EmbedderError 软失败：index_chunks 逐批降级，不阻断文档 ready。
+    """EmbedderError 软失败：index_chunks 逐批降级。
 
     仅首次调用（向量路切片批次）抛错；后续调用（图谱路实体向量）正常返回——
-    模拟部分限流场景：向量路零切片入库，但图谱路实体向量仍可写入。
+    模拟全批次限流：向量路零切片入库，管线照走、文档落 failed（见下方用例）。
     """
 
     batch_size = 20
@@ -370,10 +370,29 @@ class _FailingEmbedder:
         return [EmbeddingResult(dense=[0.01 * (i + 1)] * 1024, sparse=SparseVector(indices=[i + 1], values=[0.5])) for i, _ in enumerate(texts)]
 
 
+class _SecondCallFailingEmbedder:
+    """第二批软失败（部分入库）：batch_size=1 ⇒ 每切片一次调用，第 2 次抛错、
+    其余照常——模拟瞬时限流下「部分切片未入库」的索引不完整场景。"""
+
+    batch_size = 1
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def embed(self, texts, *, text_type: str = "document"):
+        from deerflow.knowledge.embedder import EmbedderError
+
+        self.calls += 1
+        if self.calls == 2:
+            raise EmbedderError("rate limited")
+        return [EmbeddingResult(dense=[0.01 * (i + 1)] * 1024, sparse=SparseVector(indices=[i + 1], values=[0.5])) for i, _ in enumerate(texts)]
+
+
 @pytest.mark.asyncio
 async def test_path_status_vector_failed_when_embed_soft_fails(session_factory):
-    """向量路软失败（零切片入向量库）：文档仍 ready，但 path_status 如实
-    标记 vector=failed——这是该失败首个可观测面（此前完全静默）。"""
+    """向量路软失败（零切片入向量库）：文档落 failed，不再静默 ready——
+    索引不完整不得放行（RFC §5.2 表行 4）；error 记计数，path_status 如实
+    标记 vector=failed、graph 照走（半截产物保留，可整篇重试）。"""
     store = KnowledgeStore(session_factory)
     await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
     await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
@@ -383,8 +402,33 @@ async def test_path_status_vector_failed_when_embed_soft_fails(session_factory):
     await worker.process_document("doc-1")
 
     doc = await store.get_document("doc-1")
-    assert doc["status"] == "ready"
+    total = len(await store.list_chunks("doc-1", limit=10))
+    assert doc["status"] == "failed"
+    assert f"向量索引不完整：{total}/{total} 切片未入库" in (doc["error"] or "")
     assert doc["path_status"] == {"vector": "failed", "graph": "done"}
+
+
+@pytest.mark.asyncio
+async def test_vector_partial_index_fails_document_and_keeps_indexed_chunks(session_factory):
+    """部分批次软失败（索引不完整）：不因「部分成功」放行 ready（RFC §5.2
+    表行 4）；文档落 failed、error 记「N/M 切片未入库」，已入库切片保留
+    （半截可见），可整篇重试。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    llm = FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}})
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(md=TWO_CHUNK_MD), llm=llm, embedder=_SecondCallFailingEmbedder())
+
+    await worker.process_document("doc-1")
+
+    doc = await store.get_document("doc-1")
+    assert doc["status"] == "failed"
+    assert "向量索引不完整：1/2 切片未入库" in (doc["error"] or "")
+    assert doc["chunk_count"] == 1
+    assert doc["path_status"] == {"vector": "failed", "graph": "done"}
+    # 半截保留：成功批次已写向量库（1 条），失败切片行仍在（可整篇重试重建）
+    upserted = [item for call in worker._vector_store.upsert_chunks.await_args_list for item in call.args[0]]
+    assert len(upserted) == 1
 
 
 @pytest.mark.asyncio

@@ -79,6 +79,10 @@ _PROGRESS_AFTER_MATERIALIZE = 75
 _CAPTION_MARKER_PREFIX = "image caption degraded:"
 _GRAPH_MARKER_PREFIX = "graph degraded:"
 
+#: 索引完整性失败标记（RFC §5.2 表行 4）：索引不完整 / 无可索引内容 ⇒ 文档 failed。
+_VECTOR_INCOMPLETE_PREFIX = "向量索引不完整"
+_NO_CONTENT_PREFIX = "无可索引内容"
+
 
 def _drop_error_markers(error: str, prefix: str) -> str:
     """删掉 ``error`` 里以 *prefix* 开头的 ``; `` 分隔子标记，其余原样保留。"""
@@ -410,14 +414,19 @@ class KnowledgeIndexWorker:
             await self._store.update_document_status(doc_id, "indexing", path_status=legs)
             chunks = await self._store.list_chunks(doc_id, limit=1_000_000)
             embedder = self._embedder or build_embedder()
+            vector_note: str | None = None
             if chunks:
                 index_stats = await index_chunks(self._store, self._vector_store, embedder, kb_id=kb_id, doc_id=doc_id, chunks=chunks)
-                # Every batch soft-failed (EmbedderError degradation) → nothing
-                # indexed: surface the first observable failure marker for the
-                # vector leg instead of a misleading "done".
-                legs["vector"] = "done" if index_stats.indexed > 0 else "failed"
+                if index_stats.indexed == index_stats.total:
+                    legs["vector"] = "done"
+                else:
+                    # 任何批次软失败（EmbedderError 降级）都使索引不完整 → 不 done：
+                    # 不能因向量「部分成功」而放行（RFC §5.2 表行 4）。
+                    legs["vector"] = "failed"
+                    vector_note = f"{_VECTOR_INCOMPLETE_PREFIX}：{index_stats.total - index_stats.indexed}/{index_stats.total} 切片未入库"
             else:
-                legs["vector"] = "done"
+                legs["vector"] = "failed"
+                vector_note = f"{_NO_CONTENT_PREFIX}：文档未产生任何可索引切片"
             await self._store.update_document_status(doc_id, "indexing", path_status={"vector": legs["vector"]})
 
             # Video docs spent 0–75% on the media legs (materialize); the shared
@@ -492,8 +501,16 @@ class KnowledgeIndexWorker:
                 await mark_dirty_for_entities(self._wiki_store, kb_id, stats.touched_entities)
             except Exception:
                 logger.exception("wiki dirty marking failed for kb %s", kb_id)
-            await self._store.update_document_status(doc_id, "ready", progress_percent=100)
-            self._spawn_wiki(kb_id, embedder)
+            if legs["vector"] == "done":
+                await self._store.update_document_status(doc_id, "ready", progress_percent=100)
+                self._spawn_wiki(kb_id, embedder)
+            else:
+                # 索引不完整/无可索引内容 ⇒ 文档 failed（RFC §5.2 表行 4）；wiki 不启动。
+                # 标记追加式刷新（replace 同族）——不遮蔽既有 caption/graph 子标记。
+                note = vector_note or f"{_VECTOR_INCOMPLETE_PREFIX}：切片未全部入库"
+                replace = _NO_CONTENT_PREFIX if note.startswith(_NO_CONTENT_PREFIX) else _VECTOR_INCOMPLETE_PREFIX
+                await self._append_error_marker(doc_id, note, replace_prefix=replace)
+                await self._store.update_document_status(doc_id, "failed")
         except _DocumentDeletedError:
             logger.info("document %s was deleted mid-indexing; pipeline aborted quietly", doc_id)
             return None
