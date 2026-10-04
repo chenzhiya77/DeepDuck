@@ -26,6 +26,7 @@ import logging
 from typing import Any
 
 from deerflow.config.app_config import get_app_config
+from deerflow.knowledge.embed_identity import identity_from_rag
 from deerflow.knowledge.embedder import ComposedEmbedder, Embedder, RagConfigurationError, SparseHalfMissingError
 from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.providers import resolve_provider
@@ -138,6 +139,9 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
     it has *not written yet*, so it passes the merge it is about to persist — reusing the live
     ``config.rag`` there would answer for the file being replaced (spec 2026-09-16 §3 D3).
 
+    The returned embedder carries ``.identity`` (spec 2026-10-04 D2): which coordinate space
+    its vectors land in, taken from ``rag`` here rather than re-read from config later.
+
     Raises ``ValueError`` when the configuration cannot describe a usable embedder: a
     dense-only provider paired with ``sparse_source=provider``, a missing sparse endpoint,
     a missing address, or a declared dimension the model cannot honour (caught on the first
@@ -158,13 +162,18 @@ def build_embedder(config: Any | None = None, *, rag: Any | None = None, client:
 
     expected = effective_dimension(rag)
     dense = _build_dense(spec, rag, expected, client)
+    identity = identity_from_rag(rag)
     if sparse_source == "provider":
         # The provider was trusted to supply both halves (allowlist + the model-level probe);
         # this is the fallback for the corners the probe could not reach (D5).
-        return _SparseHalfCheckedEmbedder(dense)
+        checked = _SparseHalfCheckedEmbedder(dense)
+        checked.identity = identity
+        return checked
 
     sparse = _build_sparse(rag, sparse_source, client)
-    return ComposedEmbedder(dense=dense, sparse=sparse)
+    composed = ComposedEmbedder(dense=dense, sparse=sparse)
+    composed.identity = identity
+    return composed
 
 
 def _build_dense(spec, rag, expected: int, client: Any | None) -> Embedder:

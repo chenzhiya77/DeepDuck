@@ -567,3 +567,18 @@ def test_the_factory_refuses_a_missing_embedding_model():
         build_embedder(rag=rag)
 
     assert isinstance(caught.value, ValueError)
+
+
+# ── D2 嵌入身份（spec 2026-10-04 §2.2：指纹=provider/model/base_url，不含 api_key）──
+
+
+def test_the_identity_covers_exactly_the_space_fields(monkeypatch):
+    """换钥不换身份（防误触发重建/失配告警），换模型才换；宽度另有独立轴。"""
+    _stub_dashscope_config(monkeypatch, embedding_base_url="https://dashscope.aliyuncs.com", embedding_api_key="sk-first")
+    first = build_embedder().identity
+
+    _stub_dashscope_config(monkeypatch, embedding_base_url="https://dashscope.aliyuncs.com", embedding_api_key="sk-rotated")
+    assert build_embedder().identity == first, "轮换密钥不改身份"
+
+    _stub_dashscope_config(monkeypatch, embedding_base_url="https://dashscope.aliyuncs.com", embedding_api_key="sk-rotated", embedding_model="another-embedding")
+    assert build_embedder().identity != first, "换模型才改身份"

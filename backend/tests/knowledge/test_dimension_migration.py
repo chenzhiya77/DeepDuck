@@ -78,6 +78,7 @@ class _Generations:
 
 class _DeterministicEmbedder:
     batch_size = 4
+    identity = "space-target"
 
     async def embed(self, texts, *, text_type: str = "document") -> list[EmbeddingResult]:
         return [EmbeddingResult(dense=[float(len(text)), float(sum(map(ord, text)) % 97)], sparse=SparseVector(indices=[0, 1], values=[0.5, 0.25])) for text in texts]

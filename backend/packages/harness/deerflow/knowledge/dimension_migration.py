@@ -36,9 +36,14 @@ logger = logging.getLogger(__name__)
 
 
 class _Embedder(Protocol):
-    """Structural type for the embedder dependency (real or stub)."""
+    """Structural type for the embedder dependency (real or stub).
+
+    ``identity`` mirrors ``reindex._Embedder``: the delta pass stamps the library with
+    the space it just rebuilt into (spec 2026-10-04 D2).
+    """
 
     batch_size: int
+    identity: str
 
     async def embed(self, texts, *, text_type: str = "document"): ...
 

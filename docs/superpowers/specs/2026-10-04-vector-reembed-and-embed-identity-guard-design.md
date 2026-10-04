@@ -45,6 +45,8 @@
 - 落点：库级身份字段（KB 表加列 `embedding_identity`，迁移 0019；精确落点 Task 0 核实），值=**嵌入指纹 `hash(provider, model, base_url)`**——不含 api_key（轮换密钥不触发，沿 §2.3-④）、不含宽度（宽度已有独立轴）。
 - 写入时机：①`reindex_kb` 全程成功后更新；②新库首次入库完成时写入。
 - 裁定记录：粒度=**甲=按库一列**（2026-10-04 他拍）；乙=按集合记不做（重建按库、造不出混代，收益低）。
+- 裁定记录（2026-10-04 GREEN 期定形）：**编码=紧凑 JSON `{"base_url":…,"model":…,"provider":…}`（`sort_keys`+无分隔空格）而非 `hash(...)` 速记**——结构化才能让 D4 的 warning 点名「差在哪个字段」（§2.4 要求）；空串与 `None` 归一同一值。api_key、宽度继续不进（前者沿 §2.3-④、后者已有独立轴）。
+- 裁定记录（2026-10-04 GREEN 期定形）：两处写入精确化——①`reindex_kb` **全程完整**才写：任一非终态文档跳过 / 文档失败 / 批次软失败（`indexed < total`，四类同判）⇒ 不写，**NULL=未知**而非「当前」；②worker 在**库的首个完成文档**写（前提=身份未记 且 无其他终态文档），增量文档永不覆盖遗留库的 NULL。身份取自**真正产出向量的那个 embedder**（`build_embedder` 按构建它的 rag 挂 `.identity`，对迁移的目标 embedder 同样成立）；读取姿态分两档：`reindex` Protocol 强要求、worker 软读（拿不到=不声明）。宽度迁移的 delta 重建同样按①盖章。
 
 ### 2.3 D3：换模型触发重建（结构修；✅ 已裁甲=自动逐库重建）
 
@@ -53,6 +55,7 @@
 - 重建复用 D1 同一入口（`reindex_kb` / `knowledge_service` 的库级重建，`knowledge_service.py:1726-1745`）。
 - 裁定记录（2026-10-04 GREEN 期定形）：**响应=报文件现状**，目标挂 `reembed.target_provider/target_model/target_base_url`——hold 期间 PUT 响应报的还是生效值（宽度通道同款：`migration` 也是响应报旧宽度、`target_dimension` 报目标），理由=**记录必须等于生效值**（沿 effort 对裁定）且 `RagConfigResponse` 是 GET/PUT 共用读形状。旧契约「同一次响应里兜底跟着新 provider 换」（`test_embedding_secret_env_source_follows_the_selected_provider`）在延迟翻转下改为「**翻转即换、状态点名目标**」——两条既有用例按此改向，弯本身有钉子（`test_a_model_change_defers…` 断言响应报旧值+状态带目标）。
 - 裁定记录（2026-10-04 GREEN 期定形）：**凭据跟身份一起扣**——`embedding_api_key` 进 hold 集、仍不进指纹。窗口里旧端点必须还拿得到旧钥，不留「旧端点+新钥」拼接态（换厂商+贴新钥正是本通道的主用例）；轮换单独保存仍即时生效（不触发重建，那半不动）。分类=结构修（`test_the_credential_waits_with_the_identity`）。
+- 残余风险注记（2026-10-04 Task 2 发现，待拍）：D3 的就地重建**没有**宽度通道的 delta 复走（`migrate_collections` 的 `include_non_terminal=True` 二遍）⇒ 重建窗口内新入库/未跑完的文档在翻转后仍留旧空间向量（增量腿读的是窗口里的旧配置）。D2 盖章规则不会替它遮掩（库身份已记，不重写），D4 能看见；修法=翻转后每库补一遍 `reindex_kb(include_non_terminal=True)`（`rag_reembed` 小改），建议并入 Task 5，不进 Task 2。
 
 ### 2.4 D4：失配检测（兜底/观测）
 

@@ -1452,3 +1452,35 @@ async def test_boot_scan_skips_kbs_without_dirty_entries(session_factory, monkey
     await worker.stop()
 
     assert calls == 0, f"a settled KB must not be regenerated at boot, got {calls} run(s)"
+
+
+# ── D2 嵌入身份（spec 2026-10-04 §2.2：新库首次入库完成 ⇒ 盖章）────────────────
+
+
+class _IdentityEmbedder(FakeEmbedder):
+    identity = "space-a"
+
+
+@pytest.mark.asyncio
+async def test_the_first_completed_document_stamps_the_library_identity(session_factory):
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}}), embedder=_IdentityEmbedder())
+
+    await worker.process_document("doc-1")
+
+    assert (await store.get_kb("kb-1"))["embedding_identity"] == "space-a"
+
+
+@pytest.mark.asyncio
+async def test_an_incremental_document_never_overwrites_the_library_identity(session_factory):
+    """遗留库（已有终态文档、身份未记）不能被新入库盖成「均匀」——那会遮掉存量的旧空间声明。"""
+    store = KnowledgeStore(session_factory)
+    await _create_doc(store)
+    await store.update_document_status("doc-1", "ready")
+    await store.create_document(doc_id="doc-2", kb_id="kb-1", uploader_id="user-1", name="b.md", size_bytes=3, storage_path="/tmp/b.md")
+    worker = _worker(store, session_factory, parse_fn=_parse_fn(), llm=FakeLLM({"DeerFlow": {"entities": [{"name": "DeerFlow", "type": "系统", "description": "框架"}], "relations": []}}), embedder=_IdentityEmbedder())
+
+    await worker.process_document("doc-2")
+
+    assert (await store.get_kb("kb-1"))["embedding_identity"] is None

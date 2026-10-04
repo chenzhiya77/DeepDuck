@@ -34,6 +34,7 @@ from typing import Any, Protocol
 from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.captioner import apply_captions, caption_images
 from deerflow.knowledge.chunker import chunk_markdown, count_tokens
+from deerflow.knowledge.embed_identity import write_kb_identity
 from deerflow.knowledge.embedder import EmbeddingResult, RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.graph.indexer import index_document_graph
@@ -521,6 +522,7 @@ class KnowledgeIndexWorker:
             except Exception:
                 logger.exception("wiki dirty marking failed for kb %s", kb_id)
             if legs["vector"] == "done":
+                await self._stamp_library_identity(doc_id, kb_id, embedder)
                 await self._store.update_document_status(doc_id, "ready", progress_percent=100)
                 self._spawn_wiki(kb_id, embedder)
             else:
@@ -540,6 +542,28 @@ class KnowledgeIndexWorker:
             failed_legs = {leg: "failed" for leg, state in legs.items() if state not in ("done", "degraded")}
             await self._store.update_document_status(doc_id, "failed", error=str(exc)[:500], path_status=failed_legs or None)
         return await self._store.get_document(doc_id)
+
+    async def _stamp_library_identity(self, doc_id: str, kb_id: str, embedder: _Embedder) -> None:
+        """Stamp the library's embedding identity at its first completed document (D2).
+
+        Only when the library has made no claim yet and no *other* document has settled:
+        an earlier document may sit in an older vector space, and a mixed library must
+        stay unstamped (``NULL`` = unknown) rather than claim uniformity. Read soft — an
+        embedder that cannot say which space it writes into gets no stamp.
+        """
+        identity = getattr(embedder, "identity", None)
+        if not identity:
+            return
+        try:
+            kb = await self._store.get_kb(kb_id)
+            if kb is None or kb.get("embedding_identity"):
+                return
+            for other in await self._store.list_documents(kb_id):
+                if other["id"] != doc_id and other["status"] in ("ready", "failed"):
+                    return
+            await write_kb_identity(self._store._sf, kb_id, identity)
+        except Exception:
+            logger.exception("library identity stamp failed for kb %s", kb_id)
 
     async def _append_error_marker(self, doc_id: str, marker: str, *, replace_prefix: str | None = None) -> None:
         """Append a visible sub-marker to the document error field without

@@ -77,6 +77,7 @@ class _DeterministicEmbedder:
     """Text → a stable vector, so the same chunk must always land on the same point."""
 
     batch_size = 2
+    identity = "space-test"
 
     def __init__(self, *, fail_texts: set[str] | None = None) -> None:
         self.calls: list[list[str]] = []
@@ -548,3 +549,31 @@ async def test_run_reindex_hands_the_two_shared_stores_to_the_rebuild(session_fa
 
     assert spy.await_args.kwargs["graph_store"] is service.graph_store
     assert spy.await_args.kwargs["wiki_store"] is service.wiki_store
+
+
+# ── D2 嵌入身份（spec 2026-10-04 §2.2：重建全程成功 ⇒ 库身份=本次 embedder 身份）──
+
+
+@pytest.mark.asyncio
+async def test_reindex_stamps_the_library_identity_after_a_full_rebuild(session_factory):
+    """记录=实发：盖章的必须是「真正产出这批向量」的 embedder 身份，不是事后读的配置。"""
+    store = KnowledgeStore(session_factory)
+    await _kb(store)
+    await _seed_doc(store, doc_id="doc-1", texts=["风急天高", "渚清沙白"])
+
+    embedder = _DeterministicEmbedder()
+    await reindex_kb(store, _FakeVectorStore(), embedder, kb_id=KB_ID, **_stores(store))
+
+    assert (await store.get_kb(KB_ID))["embedding_identity"] == embedder.identity
+
+
+@pytest.mark.asyncio
+async def test_an_incomplete_rebuild_never_stamps_the_library_identity(session_factory):
+    """有批次软失败 ⇒ 不盖章：库不是均匀空间，宁可保持 NULL（未知）也不做假声明。"""
+    store = KnowledgeStore(session_factory)
+    await _kb(store)
+    await _seed_doc(store, doc_id="doc-1", texts=["会失败的文本", "风急天高"])
+
+    await reindex_kb(store, _FakeVectorStore(), _DeterministicEmbedder(fail_texts={"会失败的文本"}), kb_id=KB_ID, **_stores(store))
+
+    assert (await store.get_kb(KB_ID))["embedding_identity"] is None

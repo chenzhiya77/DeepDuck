@@ -39,6 +39,11 @@ class KnowledgeBaseRow(Base):
     # Phase 1: always "private". Phase 2 activates "shared" + kb_members.
     visibility: Mapped[str] = mapped_column(String(16), default="private")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    # Which embedding coordinate space this library's vectors live in (spec 2026-10-04 D2):
+    # compact JSON of {provider, model, base_url}, written only by a full rebuild or the
+    # library's first completed document. NULL = unstamped (legacy or mixed) — never a
+    # claim of "current".
+    embedding_identity: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
 class DocumentRow(Base):

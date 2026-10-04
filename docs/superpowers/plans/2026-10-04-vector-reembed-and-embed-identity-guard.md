@@ -2,7 +2,7 @@
 
 - 成对 spec：`docs/superpowers/specs/2026-10-04-vector-reembed-and-embed-identity-guard-design.md`
 - 日期：2026-10-04
-- 状态：实施中（Task 0②③④ + Task 3 已交付 2026-10-04；Task 1/2/4/5/6/7 未动。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
+- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 已交付 2026-10-04；Task 4/5/6/7 未动；Task 1 尾项=存量盖章待拍。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
 
 ## 范围与交接
 
@@ -18,7 +18,7 @@
 
 ## Task 0 — 落点核实
 
-- [ ] ① KB 表模型与迁移：`knowledge/store.py` / persistence models 里 KB 行的落点，`embedding_identity` 加列走迁移 0019 的写法（对照 0018 的先例）。
+- [x] ① KB 表模型与迁移：`knowledge/store.py` / persistence models 里 KB 行的落点，`embedding_identity` 加列走迁移 0019 的写法（对照 0018 的先例）。（已核 2026-10-04：列落 `deerflow/knowledge/models.py` 的 `KnowledgeBaseRow`；迁移 `0019_kb_embedding_identity`（down_revision=`77df30935788`，`safe_add_column`/`safe_drop_column`）；**`store.py` 零改动**——`_row_to_dict` 是列无关的 `row.to_dict()`，新列自动出现在 get_kb/list_kbs；D2 写入走独立模块 `knowledge/embed_identity.py`（GraphStore/WikiStore 的 `store._sf` 先例），绕开 store.py 的别线未提交 hunk）
 - [x] ② 保存路径触发点：`rag_config.py:452` `_embedding_signature` 现比较哪几个字段、api_key 排除法怎么落；同宽指纹差分支的插入点。（已核 2026-10-04：指纹=provider/model/base_url 三字段、api_key 明确排除；插入点=`put_rag_config` 的 `rebuilding` 分支，宽度差优先吸收）
 - [x] ③ 重建入口现状：`knowledge_service.py:1726-1745` 库级重建/状态查询的签名与并发语义（`reindex_in_progress` 单飞），D3 触发复用它要不要过 `rag_migration` 的「先建后切」通道（宽度变更走的是 `start_migration`）。（已核 2026-10-04：`migrate_collections` 开头就 `drop_collections` ⇒ 同宽不可复用；D3 走独立 `services/rag_reembed.py` 逐库 `reindex_kb`，不过先建后切通道；同跑互斥由保存路径 409 承担）
 - [x] ④ 受害者扫描：断言 `_embedding_signature`/保存响应/重建状态的既有用例清单（`tests/knowledge/test_reindex.py`、rag_config 相关），谁会被「指纹字段/新响应键」波及。（已核 2026-10-04：api 面 41 条受害者修夹具/豁免归零；`test_rag_config_save_probe.py` 6 条门禁期二波抓到并修；`test_rag_config_probe.py` 4 条=预存红，HEAD A/B 定性见 Task 3 门禁）
@@ -30,14 +30,14 @@
 - [x] 逐库跑 `reindex_kb`（4 库；单库失败不连坐、记录 last_run）。—— 实测 **5 库全过、0 失败、253.9s**：29 档 94 块 1055 实体 224 wiki 3 卡=**1376 条全量重嵌**（测试2 的 8/10=两档零块文档无物可嵌）；日志=scratch `ragas-perf/d1_reembed_run.log`。
 - [x] 抽验：四类各抽样 cos(存库, 现算) ≥ 0.9（复用 scratch `vec_space_check.py` 口径）。—— **11 样本全 PASS，最差 0.997**（chunks/entities/wiki/cards 每类 2–3，跨库；stale 期同口径 ≈-0.008~0.03）。
 - [x] 小样本 L1 前后对照：3–6 题（含 q011/q005/q009）逐题翻盘 + Δhit/Δrecall 报数（基线=本对前实测 0.471/0.314，见 spec §1）。—— 6 题（q001/q002/q006/q005/q009/q011）**前 0.167/0.167 → 后 1.000/1.000（Δhit/Δrecall=+0.833/+0.833）**；三道点名 miss 全翻盘、q006 对照守住、三腿全活（前值三腿全 0）；前后日志=`l1_pair_before.log`/`l1_pair_after.log`。
-- [ ] D2 身份写入落地后补跑一次：重建完成 ⇒ `embedding_identity` = 当前指纹。（待 Task 2）
+- [ ] D2 身份写入落地后补跑一次：重建完成 ⇒ `embedding_identity` = 当前指纹。（Task 2 已落地 2026-10-04 ⇒ **待拍**：甲=直接盖章（5 库、零 API 调用，凭 D1 实测 cos 最差 0.997 / 0 失败）vs 乙=挑库真跑一遍 `reindex_kb` 验「重建⇒盖章」机制（真嵌入调用、分钟级）；推荐=甲全库 + 乙只挑最小一库；他拍后执行）
 
-## Task 2 — D2 记身份 TDD（已裁：甲=按库列）
+## Task 2 — D2 记身份 TDD（已裁：甲=按库列）✅ 2026-10-04 交付
 
-- [ ] RED：①入库完成/重建完成 ⇒ 身份字段=当前指纹（现状无字段 ⇒ 红）；②api_key 轮换 ⇒ 指纹不变（防误触发）。
-- [ ] GREEN：迁移 0019 + 写入两处（新库入库 / `reindex_kb` 成功后）。
-- [ ] neuter：拆「成功后更新」⇒ 恰红 A1；还原复绿。
-- [ ] 门禁：knowledge 面 + ruff 双净。
+- [x] RED：①入库完成/重建完成 ⇒ 身份字段=当前指纹（现状无字段 ⇒ 红）；②api_key 轮换 ⇒ 指纹不变（防误触发）。—— 5 例恰红：4× `KeyError: 'embedding_identity'`（列不存在）+ 1× `AttributeError`（embedder 无 `identity`）；②钉子=`test_the_identity_covers_exactly_the_space_fields`（换钥同身份 / 换模异身份）。
+- [x] GREEN：迁移 0019 + 写入两处（新库入库 / `reindex_kb` 成功后）。—— 新增 `knowledge/embed_identity.py`（`embedding_identity`/`identity_from_rag`/`write_kb_identity`）+ `models.py` 加列 + `0019_kb_embedding_identity`（down_revision=`77df30935788`）；写入两处精确化（spec §2.2 已记）：①`reindex_kb` **全程完整**后（非终态跳过 / 文档失败 / 批次软失败任一 ⇒ 不写）②worker **库首完成文档**（软读 `.identity`；身份已记或已有其他终态文档 ⇒ 跳过）；`build_embedder` 按构建它的 rag 挂 `.identity`；**`store.py` 零改动**（`_row_to_dict` 列无关）。编码=紧凑 JSON 而非 `hash(...)` 速记——D4 要点名差在哪个字段（spec §2.2 GREEN 期定形）。每迁移一测先例补 `test_migration_0019_kb_embedding_identity.py`（加列遗留行 NULL / downgrade 掉列回环）。
+- [x] neuter：拆「成功后更新」⇒ 恰红 A1；还原复绿。—— 实测四次拆解各恰红 1 条、受害者不相交：A 拆 `reindex_kb` 盖章⇒`test_reindex_stamps…`；B 拆 worker 盖章⇒`test_the_first_completed…`；C 拆完整性闸（`if complete`）⇒`test_an_incomplete_rebuild…`；D 拆首件闸（其他终态文档判据）⇒`test_an_incremental_document…`；还原后 7/7 复绿。
+- [x] 门禁：knowledge 面 + ruff 双净。—— `tests/knowledge` + 迁移 0019 + `test_rag_config_api.py` 共 **1608 passed / 2 skipped / 4 failed（全环境红，非本对回归）**：`test_embed_missing_api_key`/`test_rerank_missing_api_key`=本机 `rag_config.json` 真钥经 `configured_rag_secret` 兜到 ⇒ 缺钥断言不抛；`test_parse_pdf_full_flow`/`test_token_read_from_env_never_from_caller`=env 真 MinerU token + 无 DNS（`getaddrinfo failed`）。四条都不经过本对改的文件（测试直接构造 `DashScopeEmbedder`/`DashScopeReranker`/parser）。ruff check/format 双净（新迁移测试格式化后重跑 2/2）。
 
 ## Task 3 — D3 换模型触发重建 TDD（已裁：甲=自动逐库重建）✅ 2026-10-04 交付
 

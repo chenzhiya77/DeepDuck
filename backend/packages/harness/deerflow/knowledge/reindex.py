@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from deerflow.knowledge.embed_identity import write_kb_identity
 from deerflow.knowledge.embed_texts import entity_embed_text, manual_card_embed_text, wiki_entry_embed_text
 from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.graph.store import GraphStore
@@ -50,9 +51,15 @@ _PROGRESS: dict[str, dict[str, int]] = {}
 
 
 class _Embedder(Protocol):
-    """Structural type for the embedder dependency (real or stub)."""
+    """Structural type for the embedder dependency (real or stub).
+
+    ``identity`` is required on purpose (D2): the stamp must name the space this very
+    embedder writes into, so a caller that cannot say which space that is must not run
+    a rebuild that claims one.
+    """
 
     batch_size: int
+    identity: str
 
     async def embed(self, texts: Sequence[str], *, text_type: str = "document") -> list[EmbeddingResult]: ...
 
@@ -122,6 +129,10 @@ async def reindex_kb(
     and wrong during a switch, because until the switch "the current configuration" is
     still the old generation, so that document is exactly the one that would be left
     behind.
+
+    A run that leaves nothing behind stamps the library's embedding identity
+    (spec 2026-10-04 D2): a skipped non-terminal document, a failed document or a
+    partial batch anywhere means the library is *not* one space, and no claim is made.
     """
     documents = await store.list_documents(kb_id)
     report = ReindexReport(
@@ -136,23 +147,30 @@ async def reindex_kb(
     )
     _IN_FLIGHT[kb_id] = _IN_FLIGHT.get(kb_id, 0) + 1
     _PROGRESS[kb_id] = {"documents_total": len(documents), "documents_done": 0, "chunks_indexed": 0, "entities_indexed": 0, "wiki_entries_indexed": 0, "cards_indexed": 0}
+    complete = True
     try:
         for document in documents:
             doc_id = document["id"]
             try:
                 if not include_non_terminal and document["status"] not in _TERMINAL_STATUSES:
                     report.documents_skipped += 1
+                    # Left in whatever space it was ingested in ⇒ the library is mixed.
+                    complete = False
                 else:
-                    indexed = await _reindex_document(store, vector_store, embedder, kb_id=kb_id, doc_id=doc_id, page_size=page_size)
-                    if indexed is None:
+                    result = await _reindex_document(store, vector_store, embedder, kb_id=kb_id, doc_id=doc_id, page_size=page_size)
+                    if result is None:
                         report.documents_skipped += 1
                     else:
+                        indexed, chunks_total = result
                         report.documents_reindexed += 1
                         report.chunks_indexed += indexed
                         _bump(kb_id, chunks_indexed=indexed)
+                        if indexed != chunks_total:
+                            complete = False
             except Exception:
                 logger.exception("reindex failed for document %s (kb %s); continuing with the rest", doc_id, kb_id)
                 report.documents_failed += 1
+                complete = False
             finally:
                 _bump(kb_id, documents_done=1)
         if vector_store is not None:
@@ -160,17 +178,27 @@ async def reindex_kb(
             # skipped, like a per-document failure: a partial rebuild still covers
             # most of the library, and the library-wide verdict stays "succeeded".
             try:
-                report.entities_indexed = await _reindex_entity_vectors(graph_store, vector_store, embedder, kb_id=kb_id, page_size=page_size)
+                report.entities_indexed, entities_total = await _reindex_entity_vectors(graph_store, vector_store, embedder, kb_id=kb_id, page_size=page_size)
+                complete = complete and report.entities_indexed == entities_total
             except Exception:
                 logger.exception("reindex entity pass failed (kb %s); continuing with the rest", kb_id)
+                complete = False
             try:
-                report.wiki_entries_indexed = await _reindex_wiki_entry_vectors(wiki_store, vector_store, embedder, kb_id=kb_id, page_size=page_size)
+                report.wiki_entries_indexed, wiki_total = await _reindex_wiki_entry_vectors(wiki_store, vector_store, embedder, kb_id=kb_id, page_size=page_size)
+                complete = complete and report.wiki_entries_indexed == wiki_total
             except Exception:
                 logger.exception("reindex wiki-entry pass failed (kb %s); continuing with the rest", kb_id)
+                complete = False
             try:
-                report.cards_indexed = await _reindex_manual_card_vectors(store, vector_store, embedder, kb_id=kb_id, page_size=page_size)
+                report.cards_indexed, cards_total = await _reindex_manual_card_vectors(store, vector_store, embedder, kb_id=kb_id, page_size=page_size)
+                complete = complete and report.cards_indexed == cards_total
             except Exception:
                 logger.exception("reindex manual-card pass failed (kb %s); continuing with the rest", kb_id)
+                complete = False
+            if complete:
+                # Every live vector now sits in this embedder's space — record which
+                # one (D2). Never a partial claim: nothing to write means nothing written.
+                await write_kb_identity(store._sf, kb_id, embedder.identity)
         _LAST_RUN[kb_id] = "succeeded"
     except Exception:
         _LAST_RUN[kb_id] = "failed"
@@ -192,8 +220,11 @@ async def _reindex_entity_vectors(
     *,
     kb_id: str,
     page_size: int,
-) -> int:
-    """Re-embed every entity row's (normalized) name+description into ``kb_entities``."""
+) -> tuple[int, int]:
+    """Re-embed every entity row's (normalized) name+description into ``kb_entities``.
+
+    Returns ``(indexed, total)`` — the two differ when a batch soft-failed.
+    """
     rows = await graph_store.list_entities(kb_id)
     indexed = 0
     for start in range(0, len(rows), page_size):
@@ -207,7 +238,7 @@ async def _reindex_entity_vectors(
             _bump(kb_id, entities_indexed=len(batch))
         except Exception:
             logger.exception("reindex entity batch failed (kb %s); continuing with the rest", kb_id)
-    return indexed
+    return indexed, len(rows)
 
 
 async def _reindex_wiki_entry_vectors(
@@ -217,11 +248,12 @@ async def _reindex_wiki_entry_vectors(
     *,
     kb_id: str,
     page_size: int,
-) -> int:
+) -> tuple[int, int]:
     """Re-embed every wiki entry into ``kb_wiki_entries`` — any status.
 
     The point holds a vector, not the dirty marker, so keeping ``dirty`` entries
-    out would leave exactly those entries in the old vector space.
+    out would leave exactly those entries in the old vector space. Returns
+    ``(indexed, total)``.
     """
     rows = await wiki_store.list_entries(kb_id)
     indexed = 0
@@ -234,7 +266,7 @@ async def _reindex_wiki_entry_vectors(
             _bump(kb_id, wiki_entries_indexed=len(batch))
         except Exception:
             logger.exception("reindex wiki-entry batch failed (kb %s); continuing with the rest", kb_id)
-    return indexed
+    return indexed, len(rows)
 
 
 async def _reindex_manual_card_vectors(
@@ -244,8 +276,11 @@ async def _reindex_manual_card_vectors(
     *,
     kb_id: str,
     page_size: int,
-) -> int:
-    """Re-embed the flagged manual cards into ``kb_manual_cards`` (cursor-paged)."""
+) -> tuple[int, int]:
+    """Re-embed the flagged manual cards into ``kb_manual_cards`` (cursor-paged).
+
+    Returns ``(indexed, total)``.
+    """
     total = await store.count_manual_cards(kb_id, include_in_wiki_search=True)
     indexed = 0
     offset = 0
@@ -261,7 +296,7 @@ async def _reindex_manual_card_vectors(
         except Exception:
             logger.exception("reindex manual-card batch failed (kb %s); continuing with the rest", kb_id)
         offset += len(page)
-    return indexed
+    return indexed, total
 
 
 async def _reindex_document(
@@ -272,10 +307,10 @@ async def _reindex_document(
     kb_id: str,
     doc_id: str,
     page_size: int,
-) -> int | None:
+) -> tuple[int, int] | None:
     """Page one document's chunks through ``index_chunks``.
 
-    Returns the number of chunks indexed, or ``None`` when the document has no chunks to
+    Returns ``(indexed, total chunks)``, or ``None`` when the document has no chunks to
     re-embed. ``index_chunks`` reports ``chunk_count`` as *this call's* indexed count, so
     a paged walk writes the document's real total itself once the pages are done.
     """
@@ -294,7 +329,7 @@ async def _reindex_document(
     document = await store.get_document(doc_id)
     if document is not None:
         await store.update_document_status(doc_id, document["status"], chunk_count=indexed)
-    return indexed
+    return indexed, total
 
 
 def reindex_status(kb_id: str) -> dict[str, Any]:
