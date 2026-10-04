@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.gateway.deps import get_config, require_admin_user
 from app.gateway.services.rag_migration import migration_running, migration_status, start_migration
+from app.gateway.services.rag_reembed import reembed_running, reembed_status, start_reembed
 from deerflow.config.app_config import AppConfig, RagConfig
 from deerflow.config.rag_config_file import (
     MASKED_SECRET,
@@ -147,6 +148,26 @@ class RagConfigResponse(BaseModel):
         default=None,
         description="The width migration this save started or the last one's verdict (null when none ever ran).",
     )
+    reembed: RagReembedStatus | None = Field(
+        default=None,
+        description="The same-width embedding rebuild this save started or the last one's verdict (null when none ever ran).",
+    )
+
+
+class RagReembedStatus(BaseModel):
+    """Where the same-width embedding rebuild stands (spec 2026-10-04 D3).
+
+    The width migration's twin contract: ``running`` means the written file still
+    declares the *old* model, and the switch is an atomic replace inside the
+    background task — a reader treats ``config.embedding_*`` as "what is in force",
+    and ``target_*`` as what becomes true when this turns ``succeeded``.
+    """
+
+    state: Literal["running", "succeeded", "failed"]
+    detail: str | None = None
+    target_provider: str | None = None
+    target_model: str | None = None
+    target_base_url: str | None = None
 
 
 class RagMigrationStatus(BaseModel):
@@ -263,7 +284,7 @@ def _load_stored() -> RagConfigFile:
         raise HTTPException(status_code=500, detail=bilingual(f"rag_config.json 无效：{exc}", f"rag_config.json is invalid: {exc}")) from exc
 
 
-def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None, warning: str | None = None, migration: dict[str, Any] | None = None) -> RagConfigResponse:
+def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str, str] | None = None, warning: str | None = None, migration: dict[str, Any] | None = None, reembed: dict[str, Any] | None = None) -> RagConfigResponse:
     """Compose the read shape from the file just written plus the current config.
 
     ``written`` is the new file content, so a field it carries is ``ui``-sourced; anything
@@ -299,6 +320,7 @@ def _build_response(config: AppConfig, written: dict[str, Any], *, env: dict[str
         asr_providers=_asr_provider_capabilities(),
         warning=warning,
         migration=migration,
+        reembed=reembed,
     )
 
 
@@ -367,7 +389,7 @@ async def get_rag_config(
 ) -> RagConfigResponse:
     """Report the effective RAG configuration the ingestion pipeline will use."""
     await require_admin_user(request, detail=_ADMIN_DETAIL)
-    return _build_response(config, _declared_flat(_load_stored()))
+    return _build_response(config, _declared_flat(_load_stored()), migration=migration_status(), reembed=reembed_status())
 
 
 def _pending_rag(config: AppConfig, payload: dict[str, Any]) -> RagConfig:
@@ -458,6 +480,42 @@ def _embedding_signature(rag: RagConfig) -> tuple[Any, ...]:
     return tuple(values)
 
 
+#: The embedding values that decide which coordinate space vectors live in — the
+#: rebuild fingerprint (spec 2026-10-04 D2/D3). ``api_key`` is deliberately absent:
+#: rotating credentials changes no vector, so it must never trigger a rebuild
+#: (§2.3-④). The width is absent too: it has its own channel (``rag_migration``).
+_EMBEDDING_FINGERPRINT_FIELDS: tuple[str, ...] = ("embedding_provider", "embedding_model", "embedding_base_url")
+
+
+#: What a rebuild withholds until the flip. The fingerprint above decides *whether*
+#: vectors move; this decides what the switch window keeps serving — and the window
+#: still calls the old endpoint, which needs the old credential. A rotation saved
+#: alone never gets here (no fingerprint change), so rotating stays instant; saved
+#: in the same write as a model change, it lands with the rest of the identity
+#: rather than leaving "old endpoint, new key" serving in the window (spec 2026-10-04 D3).
+_EMBEDDING_HELD_FIELDS: tuple[str, ...] = (*_EMBEDDING_FINGERPRINT_FIELDS, "embedding_api_key")
+
+
+def _embedding_fingerprint_changed(live: RagConfig, pending: RagConfig) -> bool:
+    """Whether this save moves vectors to a different coordinate space.
+
+    A field the live configuration never set cannot have *changed*: there is no
+    working space in force to preserve — the endpoint-unlock rules refuse to embed
+    without ``embedding_base_url``, so pinning one for the first time is repair,
+    not migration. Everything set on both sides must match exactly (blank == absent).
+    """
+    for name in _EMBEDDING_FINGERPRINT_FIELDS:
+        old = getattr(live, name, None)
+        new = getattr(pending, name, None)
+        old = old.strip() or None if isinstance(old, str) else old
+        new = new.strip() or None if isinstance(new, str) else new
+        if old is None:
+            continue
+        if old != new:
+            return True
+    return False
+
+
 def _unverified_warning(exc: BaseException) -> str:
     """One sentence saying *why* there is no verdict — never the same words for both causes."""
     if isinstance(exc, EmbedderAuthError):
@@ -538,8 +596,13 @@ async def put_rag_config(
     live_width = effective_dimension(config.rag)
     target_width = effective_dimension(pending)
     migrating = target_width != live_width
-    if migrating and migration_running():
-        raise HTTPException(status_code=409, detail=bilingual("已有一次维度迁移正在进行；等它结束再改这一格。", "A dimension migration is already running; wait for it to finish before changing this."))
+    # Same-width model change (spec 2026-10-04 D3): the collections keep their names, so
+    # this is an in-place rebuild — and the model fields stay at their old values until it
+    # completes. A width change absorbs a model change (its channel embeds with the new
+    # model into the new generation), so the two triggers never overlap.
+    rebuilding = not migrating and _embedding_fingerprint_changed(config.rag, pending)
+    if (migrating or rebuilding) and (migration_running() or reembed_running()):
+        raise HTTPException(status_code=409, detail=bilingual("已有一次向量迁移或重建正在进行；等它结束再改这一格。", "A vector migration or rebuild is already running; wait for it to finish before changing this."))
 
     # One real call, but only when one of the watched embedding settings actually changed: an
     # unrelated edit (rerank, parse, …) must not turn every save into a network round trip.
@@ -562,6 +625,21 @@ async def put_rag_config(
             written.pop("embedding_dimension", None)
         else:
             written["embedding_dimension"] = stored_dimension
+    elif rebuilding:
+        # The twin hold: the embedding identity keeps declaring the old model — credential
+        # included — until every library has been re-embedded, so queries stay on the one
+        # space their vectors are in and on the endpoint its key belongs to. The service is
+        # resolved first for the same no-half-save reason.
+        service = getattr(request.app.state, "knowledge_service", None)
+        if service is None or getattr(service, "vector_store", None) is None:  # pragma: no cover - the gateway always wires it
+            raise HTTPException(status_code=503, detail=bilingual("向量重建需要知识库服务在线，本次保存没有写入。", "The vector rebuild needs the knowledge service online; nothing was written by this save."))
+        written = dict(payload)
+        for field in _EMBEDDING_HELD_FIELDS:
+            held = getattr(stored, field, None)
+            if held is None:
+                written.pop(field, None)
+            else:
+                written[field] = held
 
     await asyncio.to_thread(write_rag_config, written)
     if migrating:
@@ -575,7 +653,16 @@ async def put_rag_config(
             target_payload=payload,
             embedder=build_embedder(rag=pending),
         )
-    return _build_response(config, written, warning=warning, migration=migration_status())
+    elif rebuilding:
+        start_reembed(
+            store=service.store,
+            graph_store=service.graph_store,
+            wiki_store=service.wiki_store,
+            vector_store=service.vector_store,
+            embedder=build_embedder(rag=pending),
+            target_payload=payload,
+        )
+    return _build_response(config, written, warning=warning, migration=migration_status(), reembed=reembed_status())
 
 
 @router.get(
@@ -589,6 +676,19 @@ async def get_rag_migration_status(request: Request) -> RagMigrationStatus | Non
     await require_admin_user(request, detail=_ADMIN_DETAIL)
     status = migration_status()
     return None if status is None else RagMigrationStatus.model_validate(status)
+
+
+@router.get(
+    "/rag/config/reembed",
+    response_model=RagReembedStatus | None,
+    summary="Read the same-width embedding rebuild status (admin)",
+    description="Where the rebuild this deployment started stands; null when none ever ran.",
+)
+async def get_rag_reembed_status(request: Request) -> RagReembedStatus | None:
+    """Poll payload for the settings entry while a model change works through the libraries."""
+    await require_admin_user(request, detail=_ADMIN_DETAIL)
+    status = reembed_status()
+    return None if status is None else RagReembedStatus.model_validate(status)
 
 
 #: Mirrors the models-config validate probe: bounded, observational, never persisted.

@@ -130,6 +130,20 @@ class _EndpointSeededClient(TestClient):
         return super().put(url, json=json, **kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _reembed_libraries_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A save that changes the embedding fingerprint now starts a rebuild (spec 2026-10-04
+    D3). Cases not about that get a trivial instant success so the flip settles quietly;
+    the D3 cases replace this stub with their own gated/failing one.
+    """
+    from app.gateway.services import rag_reembed as reembed_module
+
+    async def _noop(store, *, vector_store, embedder, graph_store, wiki_store):
+        return 0
+
+    monkeypatch.setattr(reembed_module, "reembed_libraries", _noop)
+
+
 def _client(*, system_role: str) -> TestClient:
     app = make_authed_test_app(
         user_factory=lambda: User(
@@ -140,7 +154,13 @@ def _client(*, system_role: str) -> TestClient:
         )
     )
     app.include_router(rag_config_router.router)
-    return _EndpointSeededClient(app)
+    client = _EndpointSeededClient(app)
+    # The gateway always wires a knowledge service; cases that care about its contents
+    # call ``_attach_service`` to replace this placeholder.
+    from types import SimpleNamespace
+
+    client.app.state.knowledge_service = SimpleNamespace(store=object(), graph_store=object(), wiki_store=object(), vector_store=object())
+    return client
 
 
 @pytest.fixture(autouse=True)
@@ -248,6 +268,7 @@ def test_put_writes_only_the_rag_file(config_env: Path):
                 "video": {"asr_model": "ui-asr"},
             },
         )
+        _settled_reembed(client)
 
     assert response.status_code == 200
     stored = _read_rag_json(config_env)
@@ -265,6 +286,7 @@ def test_put_sentinel_preserves_the_stored_secret(config_env: Path):
             "/api/rag/config",
             json={"embedding_model": "ui-embedding", "embedding_api_key": MASKED_SECRET},
         )
+        _settled_reembed(client)
 
     assert response.status_code == 200
     stored = _read_rag_json(config_env)
@@ -273,6 +295,7 @@ def test_put_sentinel_preserves_the_stored_secret(config_env: Path):
 
     with _client(system_role="admin") as client:
         client.put("/api/rag/config", json={"embedding_model": "ui-embedding", "embedding_api_key": "sk-rotated"})
+        _settled_reembed(client)
 
     assert _read_rag_json(config_env)["embedding_api_key"] == "sk-rotated"
 
@@ -650,6 +673,8 @@ def test_put_takes_effect_without_a_restart(config_env: Path):
     with _client(system_role="admin") as client:
         assert client.get("/api/rag/config").json()["config"]["embedding_model"] == "yaml-embedding"
         assert client.put("/api/rag/config", json={"embedding_model": "ui-embedding"}).status_code == 200
+        # 换模型触发重建（D3）：模型字段等重建完成才翻，settle 后才生效。
+        _settled_reembed(client)
         body = client.get("/api/rag/config").json()
 
     assert body["config"]["embedding_model"] == "ui-embedding"
@@ -722,7 +747,9 @@ def test_put_round_trips_the_provider_fields_and_marks_them_ui(config_env: Path)
             },
         )
         assert response.status_code == 200
-        body = response.json()
+        # 指纹字段（provider/base_url）触发重建（D3）：settle 后读生效值。
+        _settled_reembed(client)
+        body = client.get("/api/rag/config").json()
 
     assert body["config"]["embedding_provider"] == "openai-compatible"
     assert body["config"]["parse_tier"] == "flash"
@@ -775,8 +802,14 @@ def test_embedding_secret_env_source_follows_the_selected_provider(config_env: P
                 "embedding_sparse_source": "bm25",
             },
         ).json()
-        # The switch re-points the fallback in the same response, not only after a reload.
-        assert switched["sources"]["embedding_api_key"] == "unset"
+        # A provider switch is a deferred switch (D3): the response reports the file as it
+        # stands — still the old provider, so still the old fallback — and the status names
+        # the target the flip will write.
+        assert switched[_REEMBED_FIELD]["state"] == "running"
+        assert switched[_REEMBED_FIELD]["target_provider"] == "openai-compatible"
+        assert switched["sources"]["embedding_api_key"] == "env"
+        assert _settled_reembed(client)["state"] == "succeeded"
+        # The switch re-points the fallback the moment the flip lands — no reload.
         assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "unset"
         monkeypatch.setenv("RAG_EMBEDDING_API_KEY", "env-generic")
         assert client.get("/api/rag/config").json()["sources"]["embedding_api_key"] == "env"
@@ -832,7 +865,9 @@ _WARNING_FIELD = "warning"
 #: The width migration's verdict (spec 2026-09-26 D5-7), same contract: always present, ``null``
 #: until a save with a width change starts one.
 _MIGRATION_FIELD = "migration"
-_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _ASR_CAPABILITY_FIELD, _WARNING_FIELD, _MIGRATION_FIELD}
+_MIGRATION_FIELD = "migration"
+_REEMBED_FIELD = "reembed"
+_ADDED_FIELDS = {_CAPABILITY_FIELD, _RERANK_CAPABILITY_FIELD, _ASR_CAPABILITY_FIELD, _WARNING_FIELD, _MIGRATION_FIELD, _REEMBED_FIELD}
 
 
 def _assert_pure_addition(body: dict, golden: dict) -> None:
@@ -899,6 +934,14 @@ def test_get_response_only_gained_the_capability_field(config_env: Path):
 
 def test_put_response_only_gained_the_capability_field(config_env: Path):
     with _client(system_role="admin") as client:
+        # This payload changes the embedding identity, so the first save takes the deferred
+        # channel (D3) and its response reports the held file. The golden, captured from
+        # pre-change bytes, pins the settled shape: with the identity already in force a
+        # save of the same payload is an ordinary save again — which is the second PUT here.
+        first = client.put("/api/rag/config", json=_GOLDEN["put"]["payload"])
+        assert first.status_code == 200
+        assert first.json()[_REEMBED_FIELD]["state"] == "running"
+        assert _settled_reembed(client)["state"] == "succeeded"
         response = client.put("/api/rag/config", json=_GOLDEN["put"]["payload"])
 
     assert response.status_code == 200
@@ -1311,7 +1354,7 @@ def _attach_service(client: TestClient) -> None:
     """The gateway always wires this; the test app has no knowledge stack of its own."""
     from types import SimpleNamespace
 
-    client.app.state.knowledge_service = SimpleNamespace(store=object(), graph_store=object(), wiki_store=object())
+    client.app.state.knowledge_service = SimpleNamespace(store=object(), graph_store=object(), wiki_store=object(), vector_store=object())
 
 
 def _migration_of(client: TestClient) -> dict | None:
@@ -1425,6 +1468,193 @@ def test_an_unrelated_edit_does_not_start_a_migration(config_env: Path, monkeypa
     assert response.status_code == 200
     assert response.json()[_MIGRATION_FIELD] is None
     assert calls == [], "没改宽度就不该有迁移"
+
+
+# ── 同宽换模型的自动重建（spec 2026-10-04 D3：hold→逐库重嵌→原子 flip）────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_reembed_state():
+    from app.gateway.services import rag_reembed as reembed_module
+
+    reembed_module.reset_state()
+    yield
+    reembed_module.reset_state()
+
+
+def _stub_reembed(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fail: str | None = None,
+    calls: list | None = None,
+    gate: threading.Event | None = None,
+) -> None:
+    """Patch the rebuild's heavy end: the per-library re-embedding loop.
+
+    Mirrors ``_stub_runner``: ``gate`` holds the run open so a case can look at the state a
+    *running* rebuild leaves behind without racing the flip.
+    """
+    from app.gateway.services import rag_reembed as reembed_module
+
+    async def _reembed_libraries(store, *, vector_store, embedder, graph_store, wiki_store):
+        if calls is not None:
+            calls.append((store, vector_store, embedder))
+        if gate is not None:
+            await asyncio.to_thread(gate.wait, 10)
+        if fail is not None:
+            raise RuntimeError(fail)
+        return 1
+
+    monkeypatch.setattr(reembed_module, "reembed_libraries", _reembed_libraries)
+
+
+def _settled_reembed(client: TestClient, *, tries: int = 100) -> dict | None:
+    import time
+
+    state = client.get("/api/rag/config").json()["reembed"]
+    for _ in range(tries):
+        if state is None or state["state"] != "running":
+            return state
+        time.sleep(0.02)
+        state = client.get("/api/rag/config").json()["reembed"]
+    raise AssertionError(f"reembed never settled: {state}")
+
+
+def test_reembed_status_is_null_until_a_model_change_starts_one(config_env: Path):
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        assert client.get("/api/rag/config").json()["reembed"] is None
+
+
+def test_a_model_change_defers_the_model_and_rebuilds_in_place(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """同宽换模型的那一次保存：其余字段立刻落地，模型字段等逐库重嵌完成后由后台原子翻。"""
+    import threading
+
+    _answer_with(monkeypatch, dims=1024, recorded=[])
+    calls: list = []
+    gate = threading.Event()
+    _stub_reembed(monkeypatch, calls=calls, gate=gate)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        response = client.put("/api/rag/config", json={"embedding_model": "ui-embedding"})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["reembed"]["state"] == "running"
+        # 响应按「文件现状」报（宽度通道同款）：扣下的字段报的还是生效值，目标挂在状态里。
+        assert response.json()["sources"]["embedding_model"] == "config_file"
+        assert response.json()["reembed"]["target_model"] == "ui-embedding"
+        # 重建还卡在闸里 ⇒ 模型字段一定还没翻：文件里仍是旧的（未声明 ⇒ 继续走 config.yaml）。
+        stored = _read_rag_json(config_env)
+        assert "embedding_model" not in stored
+        assert len(calls) == 1, "逐库重建必须已经启动"
+
+        gate.set()
+        finished = _settled_reembed(client)
+
+    assert finished["state"] == "succeeded", finished
+    assert _read_rag_json(config_env)["embedding_model"] == "ui-embedding", "重建完成后才原子翻配置"
+
+
+def test_a_reembed_that_fails_never_flips_the_model(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """回滚＝什么都没发生：配置仍指旧模型、旧向量继续服务（spec §3 硬约束）。"""
+    _answer_with(monkeypatch, dims=1024, recorded=[])
+    _stub_reembed(monkeypatch, fail="向量库连不上")
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        assert client.put("/api/rag/config", json={"embedding_model": "ui-embedding"}).status_code == 200
+        failed = _settled_reembed(client)
+
+    assert failed["state"] == "failed"
+    assert "向量库连不上" in failed["detail"]
+    assert "embedding_model" not in _read_rag_json(config_env), "没跑完就不许翻"
+
+
+def test_a_second_save_mid_reembed_is_refused(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    import threading
+
+    _answer_with(monkeypatch, dims=1024, recorded=[])
+    gate = threading.Event()
+    _stub_reembed(monkeypatch, gate=gate)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        assert client.put("/api/rag/config", json={"embedding_model": "ui-embedding"}).status_code == 200
+        again = client.put("/api/rag/config", json={"embedding_model": "other-model"})
+        gate.set()
+        finished = _settled_reembed(client)
+
+    assert again.status_code == 409
+    assert finished["state"] == "succeeded", finished
+    assert _read_rag_json(config_env)["embedding_model"] == "ui-embedding", "被拒的第二次保存什么都不许写"
+
+
+def test_key_rotation_does_not_start_a_reembed(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """轮换密钥不触发重建（沿 §2.3-④；指纹不含 api_key）。
+
+    先落一版基线配置：测试客户端会给每个 PUT 注入两个端点（09-25 端点必填），
+    基线里得先把它们写进去，第二次保存才是「只换密钥」。
+    """
+    _write_rag_json(config_env, {"embedding_model": "yaml-embedding", "embedding_base_url": "http://localhost:8080/v1", "embedding_api_key": "sk-old"})
+    _answer_with(monkeypatch, dims=1024, recorded=[])
+    calls: list = []
+    _stub_reembed(monkeypatch, calls=calls)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        response = client.put("/api/rag/config", json={"embedding_api_key": "sk-rotated"})
+
+    assert response.status_code == 200
+    assert response.json()["reembed"] is None
+    assert calls == [], "轮换密钥不该有重建"
+
+
+def test_the_credential_waits_with_the_identity(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """换模型连着换钥的那次保存：密钥跟着身份一起扣、一起翻——窗口里旧端点拿到的还是旧钥。
+
+    轮换单独保存仍然立即生效（上一例）；这里钉「和重建同批」的那半：身份整套扣下、
+    整套翻过去，窗口里不留「旧端点 + 新钥」的拼接态（spec 2026-10-04 D3）。
+    """
+    import threading
+
+    _write_rag_json(config_env, {"embedding_model": "old-embedding", "embedding_base_url": "http://localhost:8080/v1", "embedding_api_key": "sk-old"})
+    _answer_with(monkeypatch, dims=1024, recorded=[])
+    gate = threading.Event()
+    _stub_reembed(monkeypatch, gate=gate)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        response = client.put("/api/rag/config", json={"embedding_model": "new-embedding", "embedding_api_key": "sk-new"})
+
+        assert response.status_code == 200, response.text
+        stored = _read_rag_json(config_env)
+        assert stored["embedding_model"] == "old-embedding"
+        assert stored["embedding_api_key"] == "sk-old", "窗口里旧端点必须还拿得到旧钥"
+
+        gate.set()
+        assert _settled_reembed(client)["state"] == "succeeded"
+
+    landed = _read_rag_json(config_env)
+    assert landed["embedding_model"] == "new-embedding"
+    assert landed["embedding_api_key"] == "sk-new", "整套身份一次性翻过去"
+
+
+def test_a_width_change_still_takes_the_width_channel_not_reembed(config_env: Path, monkeypatch: pytest.MonkeyPatch):
+    """宽度差仍走先建后切迁移（回归钉住，不许被 D3 改道）。"""
+    _answer_with(monkeypatch, dims=1536, recorded=[])
+    _stub_runner(monkeypatch)
+    calls: list = []
+    _stub_reembed(monkeypatch, calls=calls)
+
+    with _client(system_role="admin") as client:
+        _attach_service(client)
+        response = client.put("/api/rag/config", json={"embedding_dimension": 1536})
+
+    assert response.status_code == 200, response.text
+    assert response.json()[_MIGRATION_FIELD]["state"] == "running"
+    assert response.json()["reembed"] is None
+    assert calls == [], "宽度差走迁移，不该走同宽重建"
 
 
 # ── 解析的两个旋钮（spec 2026-09-29 D1；OCR 语种那一格 2026-09-30 已撤）──────

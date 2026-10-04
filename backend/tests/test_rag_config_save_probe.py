@@ -112,7 +112,45 @@ def _client(*, system_role: str = "admin") -> TestClient:
         )
     )
     app.include_router(rag_config_router.router)
-    return TestClient(app)
+    client = TestClient(app)
+    # The gateway always wires a knowledge service; a save that changes the embedding
+    # identity now starts a rebuild off it (spec 2026-10-04 D3).
+    from types import SimpleNamespace
+
+    client.app.state.knowledge_service = SimpleNamespace(store=object(), graph_store=object(), wiki_store=object(), vector_store=object())
+    return client
+
+
+@pytest.fixture(autouse=True)
+def _reembed_libraries_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A save that changes the embedding identity starts a rebuild (spec 2026-10-04 D3).
+
+    These cases are about the save-time probe, not the rebuild: give them a trivial instant
+    success so the flip settles quietly, and forget the verdict between cases so one case's
+    still-running task cannot 409 the next one's save.
+    """
+    from app.gateway.services import rag_reembed as reembed_module
+
+    async def _noop(store, *, vector_store, embedder, graph_store, wiki_store):
+        return 0
+
+    monkeypatch.setattr(reembed_module, "reembed_libraries", _noop)
+    reembed_module.reset_state()
+    yield
+    reembed_module.reset_state()
+
+
+def _settled_reembed(client: TestClient) -> dict | None:
+    """Wait for the rebuild a save started, so a file assertion reads the flipped file."""
+    import time
+
+    state = client.get("/api/rag/config").json()["reembed"]
+    for _ in range(100):
+        if state is None or state["state"] != "running":
+            return state
+        time.sleep(0.02)
+        state = client.get("/api/rag/config").json()["reembed"]
+    raise AssertionError(f"reembed never settled: {state}")
 
 
 def _stub(monkeypatch: pytest.MonkeyPatch, handler) -> list[httpx.Request]:
@@ -282,6 +320,9 @@ def test_an_unreachable_endpoint_saves_with_a_warning(config_env: Path, monkeypa
 
     with _client() as client:
         response = client.put(_PUT, json=_INVALID_WIDTH_PAYLOAD)
+        # The identity change takes the deferred channel (D3); wait for the flip before
+        # reading the file, and while it runs the file still declares the old model.
+        assert _settled_reembed(client)["state"] == "succeeded"
 
     assert response.status_code == 200
     assert "未能验证" in response.json()["warning"]
