@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-file-orphan-reconcile-design.md](../specs/2026-10-05-rag-file-orphan-reconcile-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–3 完成（Task 1–3 已实现未提交）。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–4 完成（Task 1–4 已实现未提交；真栈 17/17）。
 
 ## 范围与交接
 
@@ -82,8 +82,14 @@
 
 ## Task 4 — 真栈验收
 
-- [ ] 隔离实例：文件相（删文档后手动重建目录 + 一次"上传中途失败"）+ 向量相（停 Qdrant 后删库、关卡片开关 → 起 Qdrant）+ 代次相（手造一组残留代集合）→ 跑一轮清扫 → 目录、残留点与残留代清零；正常库检索不受影响。
-- [ ] 收尾：临时库/进程/文件清理并核验。
+- [x] 隔离实例：文件相（删文档后手动重建目录 + 一次"上传中途失败"）+ 向量相（停 Qdrant 后删库、关卡片开关 → 起 Qdrant）+ 代次相（手造一组残留代集合）→ 跑一轮清扫 → 目录、残留点与残留代清零；正常库检索不受影响。
+- [x] 收尾：临时库/进程/文件清理并核验。
+
+**实测（2026-10-05，Task 4 · 隔离实例全绿）**：
+
+- 隔离面：临时 Qdrant 容器 `kb-sweep-t4-qdrant`（:6399）+ 仓外 scratch 根（`DEER_FLOW_PROJECT_ROOT`/`DEER_FLOW_HOME` 全指 `E:/app-model/deer-flow-scratch/sweep-t4`）；脚本 `sweep-t4/e2e.py`（直调真 store + 真 worker `_sweep_once`）。**零触碰**：他的 6333 Qdrant/真配置全程未读写。
+- 结果 **17 PASS / 0 FAIL**：文件相（活目录与 kb 级 `golden.jsonl` 保留；孤儿目录 / 崩溃窗口目录 / 已删库整棵清除）；向量相（ghost 点清、活点留；卡片关开关与"停 Qdrant 关开关"残留清、开的留；已删库四集合组清零）；代次相（`kb_*_1000` 残留代被收、声明代四个在位不动）；行不动、活库完整。停 Qdrant 删库一相里 `delete_by_kb` 的吞错栈（`ResponseHandlingException: All connection attempts failed`）如实出现在 stderr、流程继续——即验证点本身。
+- 收尾：容器已 `docker rm -f` 并核验（6333 容器照旧、无其它容器）；scratch 脚本/目录留 `E:/app-model/deer-flow-scratch/sweep-t4/` 待他点名清理。
 
 ## Task 5 — 文档与收尾
 
