@@ -43,6 +43,6 @@
 - [x] 全量门禁 + spec/plan 回填实测数字与提交链；`backend/AGENTS.md` 的「Embedding identity & rebuilds」段更新。—— 数字逐任务回填（Task 1 全面 1644/2/5、Task 2 全面 1704/2/4，4 条环境账、flake 一次响一次未响）；AGENTS.md「Known gap」句已换 delta 语义 + ③ 姿态 + 尾部残余。**提交链**：`86c1deba6` ①草稿成对 → `fd7348ee1` 三裁回填 → `7a0eb7dbf` 审查裁定十条 → `86c402173` Task 1 复走+盖章后移 → `94e3522b3` Task 2 翻转写加固 → 本笔 Task 3 文档。
 - [x] 登记三件落文档（审查 7/8/9）+ 尾部残余。—— 已在裁定笔落 spec §6（孪生竞态=只修 rag 路径 / 清扫 busy 面=可选 / 进度观感）与 §4·§5（单文档嵌入时延=尾部残余、与宽度通道同口径）。
 
-## Task 4 — 真栈验收（审查 5）
+## Task 4 — 真栈验收（审查 5）✅ 2026-10-05 交付
 
-- [ ] 触发重建（改模型名→保存）→ 窗口里塞一篇文档 → 验：delta 把它补进新空间（cos 抽验复常）、章最后落、D4 静默；顺手看一眼 `reembed.state` 全程不卡。配置逐字节还原（`cp`+md5 老配方）、临时文档/库删净、scratch 留 `E:\app-model\deer-flow-scratch\`。
+- [x] 触发重建（改模型名→保存）→ 窗口里塞一篇文档 → 验：delta 把它补进新空间（cos 抽验复常）、章最后落、D4 静默；顺手看一眼 `reembed.state` 全程不卡。配置逐字节还原（`cp`+md5 老配方）、临时文档/库删净、scratch 留 `E:\app-model\deer-flow-scratch\`。—— **2026-10-05 真栈 A5 全过**：①触发 PUT flash→`qwen3.7-text-embedding` 回 `state=running`+`target_model` 点名、文件仍报旧模型（hold 契约活证）；②窗口句（临时库 `90ebf314…` + 文档 `d3ac28b1…`，02:56:29 时 `ready`）**六库章全 withheld**（=主行走 `stamp=False` 活证）；③翻转帧 **03:00:19**：配置翻 + 六库章齐落（watcher「config flipped and every kb stamped」）；④cos 抽验：窗口句重建中 0.999（旧空间、洞的形状）→ delta 后 **1.000 fresh**、存量样本同 1.000，`现算侧模型 = qwen3.7-text-embedding`；⑤D4 `recall-test` 临时库+测试1 双 `mismatch: false`、`reembed.state=succeeded`；⑥还原遍 03:02:40→03:06:00 回 flash，配置 md5 `4d92921eba884f167429edf9cab78c2f` 与备份**逐字节相同**（顺手活证 ② 剥离补丁：整对象往返两遍零物化）、临时库+文档行删净（剩原 5 库）。
