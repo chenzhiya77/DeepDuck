@@ -43,10 +43,11 @@
 - [x] 文档：`backend/AGENTS.md` Layer 2 评测段补「Budgets, concurrency & timing」段（recursion 300=super-step 单位 ≈20 轮刻度 + 每题墙钟 180s + 答题/judge 并发统一 4 + `RunConfig(2, 180)` + `EvalCallTimingHandler` 逐调用计时，四旋钮标「初值待校准」）。
 - [x] spec/plan 回填提交链：Task 0=`bb975b45e` → Task 1=`202ba7465` → Task 6=`e08fc415e`（实测回填 `e4932c7dd`）→ Task 2=`4d3fae94f` → Task 3=本笔。
 
-## Task 4 — 真评测复测 + 收尾
+## Task 4 — 真评测复测 + 收尾（✅ 2026-10-04，全程 `run_task4_full.log`）
 
-- [ ] 测试1 全 17 题 L1+L2 复测（`ragas-perf/repro_full.py` 配方：cwd=backend + 4 个 `DEER_FLOW_*CONFIG_PATH` + `RAGAS_DO_NOT_TRACK=true`；模型=mimo-v2.6-flash，qwen 额度未恢复则保持）：验收 A1（零 `GraphRecursionError`、17/17）+ A5（计时日志可见）+ A7（答题并发生效）+ 前后时间账对比（基线=985s 那轮）。
-- [ ] 收尾：scratch 脚本留 `ragas-perf/` 不进仓；工作树核对仅本对改动（其他线未提交内容不入提交）；提交链回填。
+- [x] 测试1 全 17 题 L1+L2 复测（mimo，六决策全套生效）：**A1 = 17/17 出分、零 `GraphRecursionError`、零超时**；**A5 = debug 计时行 51 条可见**（其中暴露 `model=?` 瑕疵——模型名要从 `serialized.kwargs` 在 `on_llm_start` 取，已修并补真实形状用例）；**A7 = 答题段 184.5s**（对串行基线 576s = **3.1×**，进度刻度 3 题一批同刻落下=并发实证）；L1 59.7s / hit 0.47 recall 0.33（与基线同档）。
+- [x] 时间账：全程 1134s vs 基线 985s——答题省 390s、评分段 872s（**端点又慢：单次 p50 7.1s vs 基线 3.0s（2.4×）× judge cap 8→4**；结构收益被端点漂移淹没，与「答题段那次赶上快端点」互为镜像）；⚠️ 口径注：scratch CALL 记录器本跑漏记答题窗（只 patch 四个调用口），产品级 D4 全量抓到 51 次答题调用 ⇒ 分段归因以墙钟+D4 为准。
+- [x] 收尾：scratch 脚本留 `ragas-perf/` 不进仓；本对提交链=`bb975b45e`→`202ba7465`→`e08fc415e`→`e4932c7dd`→`4d3fae94f`→`c037da09d`→复测/D4 修=本笔；其他线未提交内容零入提交。
 
 ## Task 5 — 丙（结构修）：citation judge 并行化（✅ 2026-10-04 先行完成）
 

@@ -505,10 +505,13 @@ class TestRunConfigAndTiming:
         handler = handler_cls()
         run_id = uuid.uuid4()
         response = SimpleNamespace(generations=[[SimpleNamespace(message=SimpleNamespace(usage_metadata={"input_tokens": 3, "output_tokens": 5}))]])
+        # Real-world shape: the model name rides serialized.kwargs, and on_llm_end
+        # carries no invocation_params — reading it only at the end yields "?".
+        serialized = {"name": "ChatOpenAI", "kwargs": {"model_name": "mimo-v2.6-flash"}}
 
         with caplog.at_level(logging.DEBUG, logger="deerflow.knowledge.eval.ragas_eval"):
-            handler.on_llm_start({"name": "m"}, ["prompt"], run_id=run_id)
-            handler.on_llm_end(response, run_id=run_id, invocation_params={"model_name": "mimo-v2.6-flash"})
+            handler.on_llm_start(serialized, ["prompt"], run_id=run_id)
+            handler.on_llm_end(response, run_id=run_id)
 
         timing = [r for r in caplog.records if "llm call" in r.getMessage()]
         assert timing, "no per-call timing line logged"

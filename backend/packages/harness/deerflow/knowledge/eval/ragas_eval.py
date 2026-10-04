@@ -383,24 +383,25 @@ class EvalCallTimingHandler(BaseCallbackHandler):
     """
 
     def __init__(self) -> None:
-        self._started: dict[Any, float] = {}
+        self._started: dict[Any, tuple[float, str]] = {}
 
     def on_llm_start(self, serialized: dict[str, Any], prompts: list[str], *, run_id: Any, **kwargs: Any) -> None:
-        self._started[run_id] = time.monotonic()
+        params = kwargs.get("invocation_params") or {}
+        model = params.get("model_name") or params.get("model") or params.get("ls_model_name") or (serialized or {}).get("kwargs", {}).get("model_name") or (serialized or {}).get("name") or "?"
+        self._started[run_id] = (time.monotonic(), model)
 
     def on_llm_end(self, response: Any, *, run_id: Any, **kwargs: Any) -> None:
         started = self._started.pop(run_id, None)
         if started is None:
             return
-        params = kwargs.get("invocation_params") or {}
-        model = params.get("model_name") or params.get("model") or "?"
+        begin, model = started
         usage = "-"
         try:
             meta = getattr(response.generations[0][0].message, "usage_metadata", None) or {}
             usage = f"in={meta.get('input_tokens')}/out={meta.get('output_tokens')}"
         except Exception:  # noqa: BLE001 — best-effort observability
             pass
-        logger.debug("eval llm call model=%s dur=%.2fs usage=%s", model, time.monotonic() - started, usage)
+        logger.debug("eval llm call model=%s dur=%.2fs usage=%s", model, time.monotonic() - begin, usage)
 
 
 async def judge_citation_support(claim: str, evidence: str, *, judge_llm: Any) -> bool:
