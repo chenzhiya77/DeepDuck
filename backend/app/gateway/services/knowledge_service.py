@@ -29,6 +29,7 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.embed_identity import identity_diff_fields, identity_from_rag
 from deerflow.knowledge.embed_texts import manual_card_embed_text
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.eval import question_bank, synthesis
@@ -1224,11 +1225,20 @@ class KnowledgeService:
         await self._inject_video_citations(kb_id, vector_path["hits"])
         await self._inject_video_citations(kb_id, graph_path["evidence"])
 
+        # D4 失配检测（spec 2026-10-04 §2.4）：库的向量空间身份 ≠ 当前配置 ⇒ 响应带
+        # 标记 + warning 点名差异字段（无密钥），查询照常返回（不锁定——混用可查、
+        # 质量不保证）。身份未记（NULL）= 不做声明：既不说失配，也不说一致。
+        diff = identity_diff_fields((await self.store.get_kb(kb_id) or {}).get("embedding_identity"), identity_from_rag(rag))
+        mismatch_flag = {"embedding_mismatch": True} if diff else {}
+        if diff:
+            logger.warning("kb %s: vectors were embedded under a different embedding space (%s changed); serving results anyway, but retrieval quality is degraded until the library is rebuilt", kb_id, "/".join(diff))
+
         return {
             "query": query,
             "paths": {"vector": vector_path, "graph": graph_path, "wiki": wiki_path},
             "score_type": self._recall_score_types(rag, graph_raw.get("score_source") if isinstance(graph_raw, dict) else None),
             "elapsed_ms": {"vector": vector_ms, "graph": graph_ms, "wiki": wiki_ms},
+            **mismatch_flag,
         }
 
     async def _chunk_position_map(self, chunk_ids: Iterable[str]) -> dict[str, int]:

@@ -507,3 +507,75 @@ async def test_a_bad_rerank_config_answers_400_not_500(service, monkeypatch, gat
 
     assert response.status_code == 400
     assert "rerank_base_url" in response.json()["detail"]
+
+
+# ── D4 嵌入失配检测（spec 2026-10-04 §2.4：库身份 ≠ 当前指纹 ⇒ 响应带标记 +
+# warning（无密钥）、查询照常返回；一致/未盖章 ⇒ 两样都没有）──────────────────
+
+
+async def test_a_mismatched_library_flags_the_response_and_warns_without_the_key(service, monkeypatch, caplog):
+    """失配 ⇒ `embedding_mismatch: true` + warning 点名库与差异字段；查询不被拒绝。"""
+    import logging
+
+    from deerflow.knowledge.embed_identity import embedding_identity, write_kb_identity
+
+    vector, _graph, _wiki = _mock_impls(monkeypatch)
+    _pin_rag(monkeypatch, embedding_provider="dashscope", embedding_model="m-new", embedding_base_url="https://new.example/v1", embedding_api_key="sk-super-secret-never-log")
+    client = _client(service)
+    kb = _create_kb(client)
+    # 库身份=旧模型（model 一字段移动），当前配置=m-new ⇒ 失配。
+    await write_kb_identity(service.store._sf, kb["id"], embedding_identity("dashscope", "m-old", "https://new.example/v1"))
+
+    with caplog.at_level(logging.WARNING, logger="app.gateway.services.knowledge_service"):
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "Gateway 职责"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["embedding_mismatch"] is True
+    # ③不锁定：命中照常返回，只是质量不保证。
+    assert [hit["chunk_id"] for hit in body["paths"]["vector"]["hits"]] == ["c1", "c2"]
+    assert vector.await_count == 1
+
+    warnings = [record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING]
+    assert any(kb["id"] in message and "model" in message for message in warnings), f"warning 应点名库与差异字段，实际：{warnings}"
+    assert "sk-super-secret-never-log" not in caplog.text, "warning 不许携带密钥"
+
+
+async def test_a_matching_library_carries_no_flag_and_no_warning(service, monkeypatch, caplog):
+    """一致 ⇒ 响应无该键、无 warning（D4 只在失配时开口）。"""
+    import logging
+
+    from deerflow.knowledge.embed_identity import identity_from_rag, write_kb_identity
+
+    _mock_impls(monkeypatch)
+    _pin_rag(monkeypatch, embedding_provider="dashscope", embedding_model="m-new", embedding_base_url="https://new.example/v1")
+    client = _client(service)
+    kb = _create_kb(client)
+    pinned = app_config_module.get_app_config()
+    await write_kb_identity(service.store._sf, kb["id"], identity_from_rag(pinned.rag))
+
+    with caplog.at_level(logging.WARNING, logger="app.gateway.services.knowledge_service"):
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "Gateway 职责"})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert "embedding_mismatch" not in body
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING], caplog.text
+
+
+async def test_an_unstamped_library_claims_nothing(service, monkeypatch, caplog):
+    """未盖章（NULL）= 不做声明：既不说「一致」也不说「失配」——spec §2.4 NULL 语义钉子。"""
+    import logging
+
+    _mock_impls(monkeypatch)
+    _pin_rag(monkeypatch, embedding_provider="dashscope", embedding_model="m-new", embedding_base_url="https://new.example/v1")
+    client = _client(service)
+    kb = _create_kb(client)
+
+    with caplog.at_level(logging.WARNING, logger="app.gateway.services.knowledge_service"):
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json={"query": "Gateway 职责"})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert "embedding_mismatch" not in body
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING], caplog.text

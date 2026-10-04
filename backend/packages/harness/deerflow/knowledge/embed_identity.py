@@ -32,6 +32,26 @@ def identity_from_rag(rag: Any) -> str:
     return embedding_identity(rag.embedding_provider, rag.embedding_model, rag.embedding_base_url)
 
 
+def identity_diff_fields(stored: str | None, current: str) -> tuple[str, ...] | None:
+    """Which space fields moved since the library was stamped (D4's read-side verdict).
+
+    ``None`` = no claim: an unstamped (or unparsable) library is *unknown*, so the
+    caller must neither warn about a mismatch nor assert the two agree. Otherwise the
+    tuple names the differing fields — empty when the library is in the current space.
+    """
+    text = (stored or "").strip()
+    if not text:
+        return None
+    try:
+        stored_fields = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(stored_fields, dict):
+        return None
+    current_fields = json.loads(current)
+    return tuple(key for key in ("provider", "model", "base_url") if _norm(stored_fields.get(key)) != _norm(current_fields.get(key)))
+
+
 def _norm(value: str | None) -> str | None:
     text = (value or "").strip()
     return text or None

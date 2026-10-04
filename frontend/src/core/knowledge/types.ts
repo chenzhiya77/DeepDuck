@@ -338,6 +338,9 @@ export interface RecallTestResponse {
   /** Per-path score semantics — never compare scores across paths. */
   score_type: Record<RecallPathName, string>;
   elapsed_ms: Record<RecallPathName, number>;
+  /** D4（spec 2026-10-04 §2.4）：库的向量空间与当前配置不一致时为 true；
+      缺键=不做声明（一致或未盖章）——查询照常返回，只是质量不保证。 */
+  embedding_mismatch?: boolean;
 }
 
 /**

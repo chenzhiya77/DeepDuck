@@ -917,3 +917,21 @@ describe("RecallTestPanel 耗时排名色（2026-09-05）", () => {
     );
   });
 });
+
+describe("D4 失配提示（spec 2026-10-04 §2.4）", () => {
+  it("复用设置页同一文案：embedding_mismatch 才显示", () => {
+    mockRecallTest({ data: { ...RESULT, embedding_mismatch: true } });
+    renderPanel();
+    expect(
+      screen.getByText(zhCN.settings.functionalModels.embeddingChangeWarning),
+    ).toBeTruthy();
+  });
+
+  it("一致/未盖章（缺键）不显示失配提示", () => {
+    mockRecallTest({ data: RESULT });
+    renderPanel();
+    expect(
+      screen.queryByText(zhCN.settings.functionalModels.embeddingChangeWarning),
+    ).toBeNull();
+  });
+});

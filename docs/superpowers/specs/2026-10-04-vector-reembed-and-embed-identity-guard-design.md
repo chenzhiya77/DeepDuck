@@ -61,6 +61,9 @@
 
 - 读侧比对 `kb.embedding_identity` vs 当前配置指纹：不一致 ⇒ `logger.warning`（点名库+差异字段、无密钥）+ 检索 API 返回 `embedding_mismatch: true`，设置页复用/升级现有提示文案。
 - **不拒绝查询**（沿「修法收敛、不锁定」：混用可查、只是质量不保证）；本项与 D3 是「触发重建」+「事后仍可见」的两层。
+- 裁定记录（2026-10-04 GREEN 期定形）：**NULL=不做声明**——身份未记（或不可解析）的库既不说失配、也不说一致：响应无 `embedding_mismatch` 键、无 warning。判词三态由 `identity_diff_fields` 分开：`None`=无主张（未盖章）/ 空元组=一致 / 非空元组=失配且点名差异字段。钉子=`test_an_unstamped_library_claims_nothing`。
+- 裁定记录（2026-10-04 GREEN 期定形）：**面=只在检索测试 API**——`KnowledgeService.recall_test` 响应加 `embedding_mismatch: true`（router 透传零改动，绕开 `knowledge_bases.py` 别线未提交 hunk）；chat 工具输出不带标记（这是给调试面板的观测面，不进对话）。warning 日志点名 kb_id + 差异字段（`provider/model/base_url` 以 `/` 连接），密钥永不进日志（用例钉住）。
+- 裁定记录（2026-10-04 GREEN 期定形）：**文案=逐字复用设置页 `zhCN.settings.functionalModels.embeddingChangeWarning`**，不新增 i18n 键；落点=召回测试面板（`recall-test-panel.tsx`，`role="alert"` 红字），缺键/一致/未盖章都不显示（前端用例钉住复用同一条文案）。
 - 残余风险注记：同名漂移（服务端换代、配置未动）D2–D4 抓不到——周期抽样探测登记为非目标。
 
 ## 3. 硬约束

@@ -524,6 +524,14 @@ export function RecallTestPanel({
         )}
         {result && (
           <>
+            {/* D4 失配提示（spec 2026-10-04 §2.4）：库的向量空间与当前配置不一致
+                ⇒ 复用设置页同一条文案（embeddingChangeWarning）——查询不被拒绝，
+                只提示检索质量会降；缺键/一致/未盖章都不显示。 */}
+            {result.embedding_mismatch && (
+              <p className="text-destructive text-xs" role="alert">
+                {t.settings.functionalModels.embeddingChangeWarning}
+              </p>
+            )}
             <div className="flex min-h-0 flex-1 flex-col gap-2">
               {PATH_ORDER.map((path) => {
                 const Icon = PATH_ICONS[path];

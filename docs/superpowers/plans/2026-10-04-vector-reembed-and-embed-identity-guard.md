@@ -2,7 +2,7 @@
 
 - 成对 spec：`docs/superpowers/specs/2026-10-04-vector-reembed-and-embed-identity-guard-design.md`
 - 日期：2026-10-04
-- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 已交付 2026-10-04；Task 4/5/6/7 未动；Task 1 尾项=存量盖章待拍。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
+- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 + Task 4 已交付 2026-10-04；Task 5/6/7 未动；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
 
 ## 范围与交接
 
@@ -46,12 +46,12 @@
 - [x] neuter：拆触发分支 ⇒ 恰红；宽度回归例保持绿（受害者不相交）。—— 实测：拆触发=6 红（启动侧断言）、拆 flip=9 红（落地侧断言）；交集 5（两头都断的集成形）、①独有 1（失败不翻）、②独有 4（落地断言）；三条「不该触发」钉子双绿。与「不相交」预期有出入，按实测报。
 - [x] 门禁：knowledge 面 + ruff 双净。—— `test_rag_config_api.py` 87/87；`test_rag_config_save_probe.py` 6 条（我的 503 受害者）修夹具转绿（服务占位+即时重建桩+settle）；`test_rag_config_probe.py` 4 条预存红 HEAD worktree A/B 定性（双向同 4 条同签名=「provider 需要 embedding_base_url」，09-25 端点必填线欠账，非本对回归、不进本对修）；ruff check/format 双净。
 
-## Task 4 — D4 失配检测 TDD
+## Task 4 — D4 失配检测 TDD ✅ 2026-10-04 交付
 
-- [ ] RED：①库身份 ≠ 当前指纹 ⇒ 检索 API 响应带 `embedding_mismatch: true` + warning 日志（无密钥）；②一致 ⇒ 两样都没有；③查询不被拒绝（不锁定）。
-- [ ] GREEN：读侧比对 + 响应键 + 文案（复用/升级 `embeddingChangeWarning`）。
-- [ ] neuter：摘比对 ⇒ 恰红；还原复绿。
-- [ ] 门禁：knowledge 面 + ruff 双净；前端 `pnpm check`（若文案动）。
+- [x] RED：①库身份 ≠ 当前指纹 ⇒ 检索 API 响应带 `embedding_mismatch: true` + warning 日志（无密钥）；②一致 ⇒ 两样都没有；③查询不被拒绝（不锁定）。—— 3 例写红进 `test_recall_test_api.py`：①恰红（响应无键 `KeyError`），②③是缺键断言=先天空心绿（老规矩：牙在 neuter 补——B/C 两次反证专打这两条）；①同时钉「密钥字符串不出现在 caplog」（`sk-super-secret-never-log`）与「命中照常返回」（③不锁定）。
+- [x] GREEN：读侧比对 + 响应键 + 文案（复用/升级 `embeddingChangeWarning`）。—— `embed_identity.py` 加纯函数 `identity_diff_fields(stored, current)`（三态：`None`=未盖章无主张 / 空元组=一致 / 非空元组=差异字段名）；`knowledge_service.recall_test` 返回前比对 `store.get_kb(kb_id).embedding_identity` vs `identity_from_rag(rag)`，失配 ⇒ 响应 `embedding_mismatch: true` + warning 点名 kb/差异字段；前端 `recall-test-panel.tsx` 复用 `zhCN.settings.functionalModels.embeddingChangeWarning`（零新键），`types.ts` 加可选 `embedding_mismatch`。后端 3/3、前端 dom 34/34、`pnpm check` 净。落点全在净文件（router/store 零改动——router 透传响应字典）。
+- [x] neuter：摘比对 ⇒ 恰红；还原复绿。—— 三次拆解各恰红且受害者不相交：A 摘比对⇒`test_a_mismatched_library_flags…` 1 红；B 反向恒报（无条件插键）⇒两条缺键对照恰 2 红（空心绿补上牙）；C NULL 当失配（`identity_diff_fields` 对空 stored 返回主张）⇒`test_an_unstamped_library_claims_nothing` 恰 1 红。还原后 3/3 复绿。
+- [x] 门禁：knowledge 面 + ruff 双净；前端 `pnpm check`（若文案动）。—— 文案复用未新增键但仍动了组件 ⇒ `pnpm check` 双净 + dom 34/34；`tests/knowledge` 面 **1522 passed / 2 skipped / 4 failed（411s，全环境红=既有 4 条账：`test_embed_missing_api_key`/`test_rerank_missing_api_key`（本机真钥兜到）+ `test_parse_pdf_full_flow`/`test_token_read_from_env_never_from_caller`（env MinerU token/无 DNS））**；ruff check/format 三文件双净。
 
 ## Task 5 — 门禁 + 文档
 
