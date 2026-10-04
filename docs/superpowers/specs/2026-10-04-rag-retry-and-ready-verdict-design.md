@@ -1,6 +1,6 @@
 # RAG 重试与就绪判定对齐（RFC §5.2 落地）—— 设计
 
-**Status:** ✅ **D1–D3 全裁=甲（2026-10-04）**—— 任一腿 `degraded` 可重试／状态格悬停卡复用失败卡／worker 在途合并；按 plan Task 0–5 执行。配套 plan：[2026-10-04-rag-retry-and-ready-verdict.md](../plans/2026-10-04-rag-retry-and-ready-verdict.md)。
+**Status:** ✅ **全交付（2026-10-04）**—— D1–D3 全裁=甲（任一腿 `degraded` 可重试／状态格悬停卡复用失败卡／worker 在途合并）；Task 0–5 完成（后端 TDD + 前端 + 真栈 A3 验收），实测见配套 plan：[2026-10-04-rag-retry-and-ready-verdict.md](../plans/2026-10-04-rag-retry-and-ready-verdict.md)。
 
 本对一件事：把 RFC v3 §5.2（状态与重试）从文本承诺落到代码——**降级文档可整篇重试**、**就绪判定按「索引完整」收紧**、**重试与删除交错的幂等机制定案**（RFC L171「具体字段与事务方案需要在实现设计中确定并通过测试」的落点）。检索侧不建状态门：五处措辞对齐后（RAGFlow 档），可见性=切片写入进度，代码现状已符合，本对只补重试与判定差并为档位补验证用例。
 
@@ -77,7 +77,7 @@ done  ⟺  total > 0 且 indexed == total（即零批次失败）
 
 - 降级判定：`any(v == "degraded" for v in (path_status or {}).values())`（D1=甲，任一腿）。wiki 键为库级读时注入、不在存储 `path_status` 内，不参与判定。
 - 重试门（`knowledge_bases.py:246-247` 改）：`status == "failed"` 或（`status == "ready"` 且命中降级判定）→ 202；其余 409，detail 更新为「仅失败或降级文档可重试」。
-- 受理逻辑不动：`retry_document` 对两类通用（有 chunk 先擦、reset、入队）；重试使用保存的源文件与有效配置，全量重建正文/图片说明/切片/索引，覆盖原先未成功的图片说明（RFC L162 逐条对应）。
+- 受理逻辑主体不动（有 chunk 先擦、reset、入队），**视频专化一处**（真栈验收补口，2026-10-04）：视频重试走 resume 路、只补跑 pending 镜头 ⇒ 受理时把无图说的镜头（`failed`／`empty`）翻回 `pending`；`done` 保持（重刷已有图说属 recaption 职责，其「done/failed→pending、empty 保持」矩阵不动）。`empty` 必须在内：静默视频 + VLM 故障时 run#1 会把 caption 全败的镜头物化成 `empty`，不翻则重试永远停在零切片失败。重试使用保存的源文件与有效配置，全量重建正文/图片说明/切片/索引，覆盖原先未成功的图片说明（RFC L162 逐条对应）。
 
 ### 2.3 重试幂等与删除优先（RFC L171 定案）
 
@@ -98,7 +98,7 @@ done  ⟺  total > 0 且 indexed == total（即零批次失败）
 
 - 409 detail 沿用英文风格：`Only failed or degraded documents can be retried`（现状 detail 为英文，不新增 i18n 键）。
 - 失败侧 error 文案按情形 ≥2 条（zh，写入 `documents.error`）：索引不完整（N/M 切片未入库）、无可索引内容；零切片改 failed 必须携带可读原因，不得裸失败。
-- 前端分类联动（失败侧）：`classifyDocError`（doc-errors.ts:8-19）加 pattern/kind + `docErrors` i18n（zh/en）覆盖上述文案。
+- 前端分类联动（失败侧）：`classifyDocError`（doc-errors.ts:8-19）加 pattern/kind + `docErrors` i18n（zh/en）覆盖上述文案；**终态结论文优先**于既有腿标记匹配——caption 降级串里的 `timeout` 不抢占索引终态原因（它才是 failed 的直接解释）。
 - 降级悬停卡说明文案 1 条（zh/en）：**不点名具体腿**（如「部分产物未成功，可重试补齐」），具体腿由卡内 breakdown 行（已琥珀着色）指出；独立分支、不走 `classifyDocError`（避免落 unknown 兜底）；重试按钮复用既有 `retryDocument` 文案。
 
 ## 3. 硬约束
