@@ -357,6 +357,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 entity_merge_similarity=startup_config.rag.entity_merge_similarity,
                 sweep_enabled=startup_config.rag.sweep_enabled,
                 sweep_interval_hours=startup_config.rag.sweep_interval_hours,
+                data_dir=get_paths().base_dir / "data",
             )
             app.state.knowledge_worker = knowledge_worker
             app.state.knowledge_service = KnowledgeService(

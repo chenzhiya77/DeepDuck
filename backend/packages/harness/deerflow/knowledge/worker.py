@@ -46,7 +46,7 @@ from deerflow.knowledge.indexer import index_chunks
 from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
-from deerflow.knowledge.sweep import sweep_library
+from deerflow.knowledge.sweep import reconcile_files, sweep_library
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
 from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, resolve_leg_provider, transcribe_video
 from deerflow.knowledge.video.captioner import caption_shots
@@ -203,6 +203,7 @@ class KnowledgeIndexWorker:
         entity_merge_similarity: float = 0.92,
         sweep_enabled: bool = True,
         sweep_interval_hours: float = 24.0,
+        data_dir: str | Path | None = None,
     ) -> None:
         self._store = store
         self._vector_store = vector_store
@@ -219,6 +220,8 @@ class KnowledgeIndexWorker:
         #: 孤儿向量对账清扫（spec 2026-10-04 D2=甲/D3=乙）：周期任务 + 忙库闸。
         self._sweep_enabled = sweep_enabled
         self._sweep_interval_seconds = max(60.0, float(sweep_interval_hours) * 3600.0)
+        #: 文件侧对账的数据根（spec 2026-10-05 §2.2）；None = 不跑文件腿（测试夹具等）。
+        self._data_dir = Path(data_dir) if data_dir is not None else None
         self._sweep_task: asyncio.Task[None] | None = None
         self._busy_kbs: set[str] = set()
         self._sem = asyncio.Semaphore(concurrency)
@@ -414,7 +417,8 @@ class KnowledgeIndexWorker:
             await asyncio.sleep(self._sweep_interval_seconds)
 
     async def _sweep_once(self) -> None:
-        """一轮全库清扫：迁移在飞整轮跳过；逐库在忙（含 wiki 腿）时跳过该库。"""
+        """一轮全库清扫：迁移在飞整轮跳过；逐库在忙（含 wiki 腿）时跳过该库；
+        文件腿随同一轮、忙库整库跳过（spec 2026-10-05 §2.3）。"""
         if migration_in_progress():
             logger.info("orphan sweep round skipped: dimension migration is in flight")
             return
@@ -425,6 +429,8 @@ class KnowledgeIndexWorker:
                 logger.info("orphan sweep skipped for kb %s: a live run is in flight", kb_id)
                 continue
             await sweep_library(store=self._store, vector_store=self._vector_store, graph_store=self._graph_store, wiki_store=self._wiki_store, kb_id=kb_id)
+        if self._data_dir is not None:
+            await reconcile_files(data_dir=self._data_dir, store=self._store, skip_kb_ids=busy)
 
     def _spawn_wiki(self, kb_id: str, embedder: _Embedder, *, require_threshold: bool = True) -> None:
         """Fire the wiki leg outside the worker slot (spec 2026-10-02 D1).

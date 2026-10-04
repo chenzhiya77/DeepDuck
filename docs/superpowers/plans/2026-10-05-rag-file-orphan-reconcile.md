@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-file-orphan-reconcile-design.md](../specs/2026-10-05-rag-file-orphan-reconcile-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–1 完成（Task 1 已实现未提交）。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–2 完成（Task 1–2 已实现未提交）。
 
 ## 范围与交接
 
@@ -54,9 +54,16 @@
 
 ## Task 2 — 目录对账并入清扫轮（TDD）
 
-- [ ] RED：孤儿目录→消失；正常目录/正常库不动；KB 目录（无 kb 行）整棵清；候选复核守护；闸跳过。
-- [ ] GREEN：`reconcile_files(data_dir, store)`（两段式）+ `worker` 新参数 `data_dir` + `_sweep_once` 接线（`app.py` 传参）。
-- [ ] neuter：关判据 → 孤儿用例恰红；还原复绿；门禁 + 实测回填。
+- [x] RED：孤儿目录→消失；正常目录/正常库不动；KB 目录（无 kb 行）整棵清；候选复核守护；闸跳过。
+- [x] GREEN：`reconcile_files(data_dir, store)`（两段式）+ `worker` 新参数 `data_dir` + `_sweep_once` 接线（`app.py` 传参）。
+- [x] neuter：关判据 → 孤儿用例恰红；还原复绿；门禁 + 实测回填。
+
+**实测（2026-10-05，Task 2 · 已实现未提交）**：
+
+- 用例：`tests/knowledge/test_file_reconcile.py`（新文件，5 例）——孤儿 doc 目录清/活目录与 kb 级文件保留（含 kb_id 不匹配一相）；kb 行缺整棵清；候选复核守护（flaky `get_document`：复核时行已落 → 不删、`kept==1`）；忙库整库跳过；接线（`_sweep_once` 带 `data_dir`：空闲库孤儿被收、忙库不动）。RED 首跑 = ImportError（模块面不存在）；GREEN **5 passed**；neuter（关 doc 判据 `if False`）→ **3 failed / 2 passed**（受害者 = 孤儿清收 ×2 + 复核守护；kb 级整棵清与忙库跳过不受影响——如实记，非不相交）；还原复绿。
+- 落点：`sweep.py` 新增 `FileReconcileReport` + `reconcile_files`（两段式；判据=业务行存在性、只有 `<kb_id>/<doc_id>` 形状子目录才算文档目录）；`worker.py` 新参数 `data_dir: str | Path | None = None`（None=不跑文件腿，既有夹具零改动）+ `_sweep_once` 尾部接文件腿（`skip_kb_ids=busy`）；`app.py` 传 `data_dir=get_paths().base_dir / "data"`。
+- 一处测试自身笔误（如实记）：kb 级整棵清用例首跑断言了一个从未创建的活库目录 ⇒ 先修测试（给活库建真目录）再绿；非实现缺陷。
+- 门禁：`tests/knowledge/` 全量 **1549 passed / 4 failed / 2 skipped**（385.65s；+5 = 本 Task 新用例，4 条全为既有环境条件红）⇒ 零新增；ruff check + format 双净（四文件）。
 
 ## Task 3 — 向量侧盲区收口（TDD）
 
