@@ -340,6 +340,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # knowledge API to 503 without taking the gateway down.
         try:
             from app.gateway.services.knowledge_service import KnowledgeService
+            from app.gateway.services.rag_migration import migration_running
             from deerflow.knowledge.store import get_knowledge_store
             from deerflow.knowledge.vector_store import get_vector_store
             from deerflow.knowledge.worker import KnowledgeIndexWorker
@@ -358,6 +359,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 sweep_enabled=startup_config.rag.sweep_enabled,
                 sweep_interval_hours=startup_config.rag.sweep_interval_hours,
                 data_dir=get_paths().base_dir / "data",
+                migration_running_fn=migration_running,
             )
             app.state.knowledge_worker = knowledge_worker
             app.state.knowledge_service = KnowledgeService(

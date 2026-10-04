@@ -38,7 +38,7 @@ from deerflow.knowledge.chunker import chunk_markdown, count_tokens
 from deerflow.knowledge.dimension_migration import migration_in_progress
 from deerflow.knowledge.embed_identity import write_kb_identity
 from deerflow.knowledge.embedder import EmbeddingResult, RagConfigurationError
-from deerflow.knowledge.embedder_factory import build_embedder
+from deerflow.knowledge.embedder_factory import build_embedder, effective_dimension
 from deerflow.knowledge.graph.indexer import index_document_graph
 from deerflow.knowledge.graph.resolver import resolve_entity_aliases
 from deerflow.knowledge.graph.store import GraphStore
@@ -46,7 +46,7 @@ from deerflow.knowledge.indexer import index_chunks
 from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
-from deerflow.knowledge.sweep import reconcile_files, sweep_library
+from deerflow.knowledge.sweep import reconcile_files, sweep_generations, sweep_round
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
 from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, resolve_leg_provider, transcribe_video
 from deerflow.knowledge.video.captioner import caption_shots
@@ -204,6 +204,7 @@ class KnowledgeIndexWorker:
         sweep_enabled: bool = True,
         sweep_interval_hours: float = 24.0,
         data_dir: str | Path | None = None,
+        migration_running_fn: Callable[[], bool] | None = None,
     ) -> None:
         self._store = store
         self._vector_store = vector_store
@@ -222,6 +223,8 @@ class KnowledgeIndexWorker:
         self._sweep_interval_seconds = max(60.0, float(sweep_interval_hours) * 3600.0)
         #: 文件侧对账的数据根（spec 2026-10-05 §2.2）；None = 不跑文件腿（测试夹具等）。
         self._data_dir = Path(data_dir) if data_dir is not None else None
+        #: app 层迁移闸（spec 2026-10-05 D6）：交接窗口里 in-flight 旗已落、旧代仍在服务。
+        self._migration_running_fn = migration_running_fn
         self._sweep_task: asyncio.Task[None] | None = None
         self._busy_kbs: set[str] = set()
         self._sem = asyncio.Semaphore(concurrency)
@@ -417,20 +420,16 @@ class KnowledgeIndexWorker:
             await asyncio.sleep(self._sweep_interval_seconds)
 
     async def _sweep_once(self) -> None:
-        """一轮全库清扫：迁移在飞整轮跳过；逐库在忙（含 wiki 腿）时跳过该库；
-        文件腿随同一轮、忙库整库跳过（spec 2026-10-05 §2.3）。"""
-        if migration_in_progress():
-            logger.info("orphan sweep round skipped: dimension migration is in flight")
+        """一轮全库清扫：迁移在飞（含 app 闸的交接窗口）整轮跳过；组内闸逐库跳过；
+        文件腿与代次 GC 随同一轮（spec 2026-10-05 §2.3/§2.6）。"""
+        if migration_in_progress() or (self._migration_running_fn is not None and self._migration_running_fn()):
+            logger.info("orphan sweep round skipped: a migration is in flight or mid hand-off")
             return
         busy = self.busy_kb_ids()
-        for kb in await self._store.list_all_kbs():
-            kb_id = kb["id"]
-            if kb_id in busy or wiki_generation_in_progress(kb_id):
-                logger.info("orphan sweep skipped for kb %s: a live run is in flight", kb_id)
-                continue
-            await sweep_library(store=self._store, vector_store=self._vector_store, graph_store=self._graph_store, wiki_store=self._wiki_store, kb_id=kb_id)
+        await sweep_round(store=self._store, vector_store=self._vector_store, graph_store=self._graph_store, wiki_store=self._wiki_store, skip_kb_ids=busy)
         if self._data_dir is not None:
             await reconcile_files(data_dir=self._data_dir, store=self._store, skip_kb_ids=busy)
+        await sweep_generations(vector_store=self._vector_store, declared_width=effective_dimension())
 
     def _spawn_wiki(self, kb_id: str, embedder: _Embedder, *, require_threshold: bool = True) -> None:
         """Fire the wiki leg outside the worker slot (spec 2026-10-02 D1).

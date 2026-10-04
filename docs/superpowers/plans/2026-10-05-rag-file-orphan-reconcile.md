@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-file-orphan-reconcile-design.md](../specs/2026-10-05-rag-file-orphan-reconcile-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–2 完成（Task 1–2 已实现未提交）。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–3 完成（Task 1–3 已实现未提交）。
 
 ## 范围与交接
 
@@ -67,11 +67,18 @@
 
 ## Task 3 — 向量侧盲区收口（TDD）
 
-- [ ] RED（D4）：已删库残留点（kb 行无、四集合有点）→ 整组清；正常库点不动；忙库组跳过；复核守护（候选后 kb 行出现 → 不删）。
-- [ ] RED（D5）：卡片开关关 + 残留点 → 清；开关开 → 保留；复核守护（候选后开关翻回 → 不删）。
-- [ ] RED（D6）：残留代（旧宽度集合组 + 生效代在位）→ 收；生效代不动；建完未翻窗口（app 闸 True）→ 不收；生效代缺失（手改宽度态）→ 不收；并发删"已不存在"吞错。
-- [ ] GREEN：`_sweep_once` 收集段改集合级 pass（无过滤 scroll + kb 分组 + 组内闸跳过）+ `_sweep_manual_cards` 判据升级 + `vector_store.scroll_collection` 无过滤支持 + `sweep_generations`（集合枚举 + 严格匹配 + 声明宽度锚 + 两道前置）+ worker 注入 `migration_running_fn`（`app.py` 接线）。
-- [ ] neuter：关 kb 存在判据 → D4 用例恰红；关卡片开关判据 → D5 用例恰红；去掉 app 闸 → D6"建完未翻"用例恰红；去掉生效代在位前置 → D6"手改态"用例恰红；还原复绿；门禁 + 实测回填。
+- [x] RED（D4）：已删库残留点（kb 行无、四集合有点）→ 整组清；正常库点不动；忙库组跳过；复核守护（候选后 kb 行出现 → 不删）。
+- [x] RED（D5）：卡片开关关 + 残留点 → 清；开关开 → 保留；复核守护（候选后开关翻回 → 不删）。
+- [x] RED（D6）：残留代（旧宽度集合组 + 生效代在位）→ 收；生效代不动；建完未翻窗口（app 闸 True）→ 不收；生效代缺失（手改宽度态）→ 不收；并发删"已不存在"吞错。
+- [x] GREEN：`_sweep_once` 收集段改集合级 pass（无过滤 scroll + kb 分组 + 组内闸跳过）+ `_sweep_manual_cards` 判据升级 + `vector_store.scroll_collection` 无过滤支持 + `sweep_generations`（集合枚举 + 严格匹配 + 声明宽度锚 + 两道前置）+ worker 注入 `migration_running_fn`（`app.py` 接线）。
+- [x] neuter：关 kb 存在判据 → D4 用例恰红；关卡片开关判据 → D5 用例恰红；去掉 app 闸 → D6"建完未翻"用例恰红；去掉生效代在位前置 → D6"手改态"用例恰红；还原复绿；门禁 + 实测回填。
+
+**实测（2026-10-05，Task 3 · 已实现未提交）**：
+
+- 重构（如实记）：`sweep_library`（逐库）→ **`sweep_round`**（集合级：四集合各无过滤扫一遍 + payload `kb_id` 分组 + 组内闸 `skip_kb_ids ∪ wiki 腿`）；`_sweep_once` 不再枚举 `list_all_kbs()`（盲区正是它）；旧 per-KB API 调用方只有 worker + 本文件用例，已同步。核心语义原样保留（两段式、单集合失败不拖累、幂等）。
+- 用例：`test_sweep.py` 重写（17 例：原 8 例语义保留 + D4 整组清/复核守护/忙组跳过 + D5 关清开留/翻转守护）+ 新文件 `test_sweep_generations.py`（5 例：残留代收/无关集合不动/声明代缺停手/单删失败继续/已不存在吞错/非默认宽度反向）。RED 首跑 = 两文件 ImportError；GREEN **四文件 71 passed**；neuter 四刀同落 → **恰 6 红**（D4×2、D5×2、app 闸×1、生效代前置×1；受害者互不相交、余全绿）→ 还原复绿（20/20）。
+- 落点：`vector_store.py`（`scroll_collection` kb_id 可选=无过滤、`names_at_width`/`collection_prefix`、`list_all_collections`/`drop_collection`）；`sweep.py`（`SweepReport` 增 `deleted_kb_groups`、`sweep_round`、四 kind 的已删库组整删、`_card_is_live`（D5）、`GenerationReport`+`sweep_generations`）；`worker.py`（`migration_running_fn` 参数 + `_sweep_once` 重写：两闸整轮跳 → `sweep_round` → 文件腿 → 代次 GC（锚=声明宽度 `effective_dimension()`））；`app.py`（`migration_running_fn=migration_running` 接线）。
+- 门禁：`tests/knowledge/` 全量 **1561 passed / 4 failed / 2 skipped**（387.96s；较 Task 2 +12 = 新用例，4 条全为既有环境条件红）⇒ 零新增；ruff check + format 双净（七文件）。
 
 ## Task 4 — 真栈验收
 

@@ -160,8 +160,20 @@ class KnowledgeVectorStore:
         self._dense_size = dense_size
 
     def _name(self, kind: str) -> str:
-        suffix = "" if self._dense_size == DEFAULT_COLLECTION_DIMENSION else f"_{self._dense_size}"
-        return f"{self._prefix}_{kind}{suffix}"
+        return f"{self._prefix}_{kind}{self._suffix(self._dense_size)}"
+
+    @staticmethod
+    def _suffix(width: int) -> str:
+        return "" if width == DEFAULT_COLLECTION_DIMENSION else f"_{width}"
+
+    @property
+    def collection_prefix(self) -> str:
+        return self._prefix
+
+    def names_at_width(self, width: int) -> tuple[str, ...]:
+        """This deployment's four collection names at *width* (the generation GC's anchor)."""
+        suffix = self._suffix(width)
+        return tuple(f"{self._prefix}_{kind}{suffix}" for kind in _KINDS)
 
     @property
     def chunks_collection(self) -> str:
@@ -246,6 +258,18 @@ class KnowledgeVectorStore:
                 await self._client.delete_collection(name)
                 dropped.append(name)
         return dropped
+
+    async def list_all_collections(self) -> list[str]:
+        """Every collection name in the deployment's Qdrant (generation GC input)."""
+        response = await self._client.get_collections()
+        return sorted(collection.name for collection in response.collections)
+
+    async def drop_collection(self, name: str) -> bool:
+        """Drop one named collection; returns False when it did not exist."""
+        if not await self._client.collection_exists(name):
+            return False
+        await self._client.delete_collection(name)
+        return True
 
     async def create_collections(self) -> None:
         """Create the collections + payload indexes at this store's width, idempotently.
@@ -495,19 +519,20 @@ class KnowledgeVectorStore:
     async def scroll_collection(
         self,
         collection_name: str,
-        kb_id: str,
+        kb_id: str | None = None,
         *,
         with_vectors: bool = False,
         batch_size: int = 512,
     ) -> list[Record]:
-        """Page through every point of one KB in a collection (vector-space projection).
+        """Page through a collection: one KB's points, or all of them when *kb_id* is None.
 
         Default is ids + payload only — the projection fetcher's sampling
         candidate source; dense vectors are fetched afterwards for the chosen
         subset via ``retrieve_vectors``, so a large KB never puts its full
-        vector payload on the wire twice.
+        vector payload on the wire twice. The unfiltered form is the sweep
+        round's enumeration (spec 2026-10-05 D4).
         """
-        kb_filter = Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
+        kb_filter = None if kb_id is None else Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
         records: list[Record] = []
         offset = None
         while True:
