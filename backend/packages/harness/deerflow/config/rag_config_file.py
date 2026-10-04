@@ -23,6 +23,7 @@ import os
 import stat
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -315,7 +316,8 @@ def atomic_write_rag_config(path: Path, data: dict[str, Any]) -> None:
     """Write the rag config without exposing a truncated or partial file.
 
     Mirrors ``atomic_write_models_config`` (temp file in the target directory, fsync,
-    ``os.replace``, best-effort directory fsync, temp cleanup on failure).
+    ``os.replace``, best-effort directory fsync, temp cleanup on failure) — plus the
+    bounded replace retry (spec 2026-10-05 ③), which the models twin does not have yet.
     """
     path = Path(path)
     target_path = path.resolve(strict=False) if path.is_symlink() else path
@@ -344,7 +346,7 @@ def atomic_write_rag_config(path: Path, data: dict[str, Any]) -> None:
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
 
-        os.replace(temporary_path, target_path)
+        _replace_with_retry(temporary_path, target_path)
         _fsync_directory_best_effort(target_path.parent)
     finally:
         if temporary_path is not None:
@@ -352,6 +354,27 @@ def atomic_write_rag_config(path: Path, data: dict[str, Any]) -> None:
                 temporary_path.unlink(missing_ok=True)
             except OSError:
                 logger.warning("Could not remove temporary rag config file: %s", temporary_path, exc_info=True)
+
+
+#: Bounded retries for the replace step only (spec 2026-10-05 ③). A Python reader — the
+#: config load or the hot-reload signature check — holds the target open without
+#: ``FILE_SHARE_DELETE``, so Windows answers the replace with EACCES for the length of
+#: that read: transient by construction, but unbounded retry would turn a reader that
+#: never closes into a hung writer.
+_REPLACE_RETRIES = 3
+_REPLACE_RETRY_SLEEP = 0.05
+
+
+def _replace_with_retry(temporary_path: Path, target_path: Path) -> None:
+    for attempt in range(_REPLACE_RETRIES + 1):
+        try:
+            os.replace(temporary_path, target_path)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_RETRIES:
+                raise
+            logger.info("rag config replace collided with a reader (attempt %d/%d); retrying", attempt + 1, _REPLACE_RETRIES)
+            time.sleep(_REPLACE_RETRY_SLEEP)
 
 
 #: Serializes read-modify-write cycles on ``rag_config.json`` across writers (the rag

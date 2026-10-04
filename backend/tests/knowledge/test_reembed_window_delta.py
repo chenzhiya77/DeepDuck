@@ -97,11 +97,13 @@ def _clean_state():
     reembed_module.reset_state()
 
 
-async def _run_channel(store: KnowledgeStore, monkeypatch, embedder, *, after_walk=None) -> tuple[_FakeVectorStore, list[str]]:
+async def _run_channel(store: KnowledgeStore, monkeypatch, embedder, *, after_walk=None, flip=None, swallow_errors: bool = False) -> tuple[_FakeVectorStore, list[str]]:
     """Drive one rebuild through the real ``_run``: real walks, stubbed file write.
 
     ``after_walk`` runs after the main walk completes and before the flip — the window
     where a new document is invisible to the walk's snapshot but still in the old space.
+    ``flip`` replaces the file write (a raising one is how the flip-failure case reaches
+    ``_run``); ``swallow_errors`` keeps a dying task from masking the state assertions.
     """
     vector_store = _FakeVectorStore()
     events: list[str] = []
@@ -120,7 +122,7 @@ async def _run_channel(store: KnowledgeStore, monkeypatch, embedder, *, after_wa
         await real_stamp(session_factory, kb_id, identity)
 
     monkeypatch.setattr(reembed_module, "reembed_libraries", _walk)
-    monkeypatch.setattr(reembed_module, "write_rag_config", lambda data: events.append("flip"))
+    monkeypatch.setattr(reembed_module, "write_rag_config", flip or (lambda data: events.append("flip")))
     monkeypatch.setattr(reindex_mod, "write_kb_identity", _stamp)
     monkeypatch.setattr(reembed_module, "write_kb_identity", _stamp)
 
@@ -133,7 +135,7 @@ async def _run_channel(store: KnowledgeStore, monkeypatch, embedder, *, after_wa
         embedder=embedder,
         target_payload={"embedding_provider": "p", "embedding_model": "m-target", "embedding_base_url": "https://target.example/v1"},
     )
-    await asyncio.gather(*tuple(reembed_module._TASKS))
+    await asyncio.gather(*tuple(reembed_module._TASKS), return_exceptions=swallow_errors)
     return vector_store, events
 
 
@@ -258,3 +260,23 @@ async def test_an_untouched_library_that_walked_incompletely_stays_unstamped(ses
 
     assert reembed_module.reembed_status()["state"] == "succeeded"
     assert (await store.get_kb("kb-1"))["embedding_identity"] == "old-space"
+
+
+# ── 翻转写加固（③）─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_flip_write_that_raises_fails_the_run_instead_of_sticking_on_running(session_factory, monkeypatch):
+    """翻转写在保护罩外 ⇒ 任务死、状态永驻 running ⇒ 后续保存全 409：必须落 failed（③ 半二）。"""
+    store = KnowledgeStore(session_factory)
+    await _kb(store, kb_id="kb-1")
+    await _seed_doc(store, kb_id="kb-1", doc_id="doc-1", texts=["风急天高"])
+
+    def _boom(data):
+        raise PermissionError(13, "拒绝访问。")
+
+    _vector_store, events = await _run_channel(store, monkeypatch, _DeterministicEmbedder(), flip=_boom, swallow_errors=True)
+
+    assert reembed_module.reembed_status()["state"] == "failed", "翻转写死了，状态必须落 failed"
+    assert reembed_module.reembed_running() is False, "不许永驻 running——那会让后续保存全被 409 挡到重启"
+    assert "stamp" not in events, "翻转都没成功，章不许落"

@@ -202,8 +202,16 @@ async def _run(
         logger.exception("embedding rebuild failed; the config and the stored vectors are untouched")
         return
 
-    # The switch: one atomic replace, and only here — after a complete rebuild.
-    await asyncio.to_thread(write_rag_config, dict(target_payload))
+    # The switch: one atomic replace, and only here — after a complete rebuild. A write
+    # failure is a failed run, not a dead task (spec 2026-10-05 ③): the state must leave
+    # "running" or every later save is 409 until the process restarts.
+    try:
+        await asyncio.to_thread(write_rag_config, dict(target_payload))
+    except Exception as exc:
+        state.state = "failed"
+        state.detail = f"{type(exc).__name__}: {exc}"
+        logger.exception("embedding rebuild could not flip rag_config.json; the file still declares the old model and the delta pass did not run (the walk already re-embedded in place, so a rerun finishes the job)")
+        return
 
     # The delta pass stamps the identity (D2=乙): the flip just closed the target set,
     # so what this walk catches up is exactly what the main walk's snapshot missed.

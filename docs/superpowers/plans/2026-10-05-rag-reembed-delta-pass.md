@@ -31,12 +31,12 @@
 - [x] neuter：四拆各恰红且受害者按实测报（与「不相交」预期有出入，同 D3 对先例）——A 拆 delta 复走 ⇒ 4 红（快照缝/门槛/raise/软失败）；B 拆盖章后移（主行走恢复 stamp）⇒ 3 红（事件序/raise/软失败）；C 拆指纹门（基线恒等）⇒ 4 红（同 A 集）；D 拆完整性判词（f 补牙）⇒ **恰 1 红**（未动+不完整例）。还原后 27/27 复绿。
 - [x] 门禁：knowledge 面 + API 两族 + ruff 双净。—— 窄面 **130 passed**（delta 7 + reindex 20 + api 87 + save_probe）；knowledge 面 + API 两族 **1644 passed / 2 skipped / 5 failed（419s）**——4 条=既有环境账（embed/rerank 缺钥 + parser 两条），1 条=在案 flake（`test_concurrent_results_match_serial_including_order` 图谱并发，本日单跑 2/2 复绿）；ruff check/format **6 文件双净**。
 
-## Task 2 — ③ 翻转写加固 TDD
+## Task 2 — ③ 翻转写加固 TDD ✅ 2026-10-05 交付
 
-- [ ] RED：①翻转写抛异常 ⇒ 状态落 `failed`（不是永驻 `running`）、后续保存不再被 409 挡死；②replace 瞬态撞车（`PermissionError(13)` 一次后成功）⇒ 有界重试后任务存活、配置落盘；③重试耗尽 ⇒ 按翻转失败落 `failed`。—— 反证桩按老打法（monkeypatch 写失败/撞车 N 次）。
-- [ ] GREEN：翻转写纳入 try/except 失败记账 + `atomic_write_rag_config` 有界重试（3 次、50–100ms 退避；审查 4）。
-- [ ] neuter：摘失败记账 ⇒ ①恰红；摘重试 ⇒ ②恰红；摘上限 ⇒ ③恰红；还原复绿、受害者不相交。
-- [ ] 门禁：同 Task 1 面。
+- [x] RED：①翻转写抛异常 ⇒ 状态落 `failed` 不留 `running`、章不落；②replace 撞车一次 ⇒ 重试后落盘；③重试耗尽 ⇒ 抛出且恰好 1 首试+3 重试。—— **3 例恰红**，红因核对：状态 `'running' != 'failed'`（正是 409 死锁的病灶）/ `PermissionError` 直接抛出 / `len(calls) 1 != 4`。①落 `tests/knowledge/test_reembed_window_delta.py`（翻转写加固节），②③落 `tests/test_rag_config_file.py`（atomic 写节）。
+- [x] GREEN：`_run` 翻转写纳入 try/except 失败记账（失败 ⇒ `failed` + 日志点名「文件仍旧模型、delta 未跑」）+ `rag_config_file._replace_with_retry`（3 次重试、50ms 退避、只接 `PermissionError`——病灶是 Windows EACCES；无界重试=常驻读方变悬挂）。
+- [x] neuter：三拆按实测报——N1 摘失败记账 ⇒ **恰 1 红**（翻转例）；N2 摘重试 ⇒ 2 红（②+③计数，同源）；N3 上限改 2 ⇒ **恰 1 红**（上限例）。还原后窄面 86/86 复绿。
+- [ ] 门禁：同 Task 1 面 + `test_rag_config_file.py` 族。—— 窄面 **86 passed**（delta 8 + reindex 20 + rag_config_file 58）；ruff check/format **4 文件双净**；全面数字待后台跑完回填。
 
 ## Task 3 — 门禁 + 回填 + 登记
 

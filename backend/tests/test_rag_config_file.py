@@ -452,6 +452,41 @@ def test_atomic_write_leaves_no_temp_file(tmp_path: Path):
     assert leftovers == []
 
 
+def test_atomic_write_retries_a_transient_replace_collision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Windows 读方句柄让 os.replace 报 13（spec 2026-10-05 ③）：瞬态撞车要重试，不许打死写方。"""
+    target = tmp_path / "rag_config.json"
+    calls: list[tuple] = []
+    real_replace = os.replace
+
+    def _collide_once(src, dst):
+        calls.append((src, dst))
+        if len(calls) == 1:
+            raise PermissionError(13, "拒绝访问。")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("os.replace", _collide_once)
+    atomic_write_rag_config(target, {"embedding_model": "x"})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"embedding_model": "x"}
+    assert len(calls) == 2, "首试撞车一次，重试后落盘"
+
+
+def test_atomic_write_gives_up_after_the_bounded_retries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """耗尽必须抛（1 次首试 + 3 次重试）：无界重试会把常驻读方变成任务悬挂。"""
+    target = tmp_path / "rag_config.json"
+    calls: list[tuple] = []
+
+    def _collide_always(src, dst):
+        calls.append((src, dst))
+        raise PermissionError(13, "拒绝访问。")
+
+    monkeypatch.setattr("os.replace", _collide_always)
+    with pytest.raises(PermissionError):
+        atomic_write_rag_config(target, {"embedding_model": "x"})
+
+    assert len(calls) == 4, "1 次首试 + 3 次重试后放弃"
+
+
 def test_preserve_secret_honors_the_sentinel():
     assert preserve_secret(MASKED_SECRET, "sk-stored") == "sk-stored"
     assert preserve_secret("sk-new", "sk-stored") == "sk-new"
