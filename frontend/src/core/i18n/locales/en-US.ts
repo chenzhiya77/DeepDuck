@@ -584,6 +584,7 @@ export const enUS: Translations = {
     deleteDocumentConfirmDescription:
       "Its chunks, vectors and graph contributions will be cascade-deleted. This cannot be undone.",
     retryDocument: "Retry",
+    degradedRetryHint: "Some outputs did not succeed — retry to complete them",
     uploaderMe: "Me",
     dropzoneHint: "Drop files here to upload",
     emptyDocuments: "Upload or drop files to build the index",
@@ -1153,6 +1154,10 @@ export const enUS: Translations = {
       serviceUnconfigured:
         "The document parsing service is not configured — contact your admin",
       timeout: "Parsing timed out — please retry",
+      indexIncomplete:
+        "The document index is incomplete — some chunks were not indexed; please retry",
+      noIndexableContent:
+        "The document had no indexable content — check the file and retry",
       unknown: "Processing failed — please retry",
     },
   },

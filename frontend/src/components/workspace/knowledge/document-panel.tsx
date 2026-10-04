@@ -311,7 +311,10 @@ function DocumentStatusCell({
   );
   // 失败态（2026-08-31）：重试不占操作列，悬停失败状态出卡片；行级 ⋯ 与右键
   // 菜单都保留重试兜底，所以本列被隐藏时重试入口不会跟着消失。
+  // 降级态（2026-10-04 D2=甲）：ready+任一腿 degraded 复用同款重试卡（说明不点名
+  // 具体腿，明细行自证）；干净行保持 Tooltip。
   // P3：path_status 非 null 才挂悬停（老行/未进索引不展示）。
+  const degraded = doc.status === "ready" && hasDegradedLeg(doc.path_status);
   const content =
     doc.status === "failed" ? (
       <HoverCard closeDelay={200} openDelay={150}>
@@ -339,6 +342,35 @@ function DocumentStatusCell({
           </Button>
         </HoverCardContent>
       </HoverCard>
+    ) : degraded ? (
+      <HoverCard closeDelay={200} openDelay={150}>
+        <HoverCardTrigger asChild>
+          <span className="cursor-default" data-testid="doc-retry-trigger">
+            {indicator}
+          </span>
+        </HoverCardTrigger>
+        <HoverCardContent
+          align="start"
+          className="w-60 p-3"
+          data-testid="doc-retry-card"
+          side="top"
+        >
+          <p className="text-muted-foreground mb-2 text-xs">
+            {tk.degradedRetryHint}
+          </p>
+          <Button
+            className="h-7 gap-1.5 px-2.5"
+            size="sm"
+            onClick={() => onRetryDocument(doc.id)}
+          >
+            <RotateCcw className="size-3.5" />
+            {tk.retryDocument}
+          </Button>
+          <div className="mt-2">
+            <PathStatusBreakdown doc={doc} />
+          </div>
+        </HoverCardContent>
+      </HoverCard>
     ) : doc.path_status ? (
       <Tooltip content={<PathStatusBreakdown doc={doc} />}>{indicator}</Tooltip>
     ) : (
@@ -347,6 +379,14 @@ function DocumentStatusCell({
   // 单元格单行（2026-08-31）：错误行已删，不再需要 flex-col 叠放，nowrap
   // 防换行（图 1 反馈失败行被撑高）。
   return <td className="px-2 py-2 whitespace-nowrap">{content}</td>;
+}
+
+/** 任一腿 degraded（RFC §5.2 D1=甲：caption/graph/视频腿统一）——降级=ready+标记，
+    与后端 ``has_degraded_leg`` 同判据；整篇重试入口的条件源。 */
+function hasDegradedLeg(
+  pathStatus: KnowledgeDocument["path_status"],
+): boolean {
+  return Object.values(pathStatus ?? {}).some((state) => state === "degraded");
 }
 
 /**
@@ -1038,7 +1078,9 @@ export function DocumentPanel({
                                       {tk.downloadDocument}
                                     </DropdownMenuItem>
                                   )}
-                                  {doc.status === "failed" && (
+                                  {(doc.status === "failed" ||
+                                    (doc.status === "ready" &&
+                                      hasDegradedLeg(doc.path_status))) && (
                                     <DropdownMenuItem
                                       onSelect={() => onRetryDocument(doc.id)}
                                     >
@@ -1135,7 +1177,9 @@ export function DocumentPanel({
                                 {tk.generateQuestion}
                               </ContextMenuItem>
                             )}
-                            {doc.status === "failed" && (
+                            {(doc.status === "failed" ||
+                              (doc.status === "ready" &&
+                                hasDegradedLeg(doc.path_status))) && (
                               <ContextMenuItem
                                 onSelect={() => onRetryDocument(doc.id)}
                               >

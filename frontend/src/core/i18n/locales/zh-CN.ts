@@ -541,6 +541,7 @@ export const zhCN: Translations = {
     deleteDocumentConfirmDescription:
       "将级联清理该文档的切片、向量与图谱贡献，且不可恢复。",
     retryDocument: "重试",
+    degradedRetryHint: "部分产物未成功，可重试补齐",
     uploaderMe: "我",
     dropzoneHint: "拖拽文件到此处上传",
     emptyDocuments: "上传或拖拽文件开始构建索引",
@@ -1077,6 +1078,8 @@ export const zhCN: Translations = {
       retryLimit: "解析服务多次重试仍失败，请检查文件是否损坏或稍后重试",
       serviceUnconfigured: "文档解析服务未配置，请联系管理员",
       timeout: "解析超时，请重试",
+      indexIncomplete: "文档索引不完整，部分切片未能入库，请重试",
+      noIndexableContent: "文档没有可索引的内容，请检查文件内容",
       unknown: "处理失败，请重试",
     },
   },

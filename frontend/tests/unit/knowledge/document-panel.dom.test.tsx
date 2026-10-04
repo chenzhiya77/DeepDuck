@@ -406,9 +406,61 @@ describe("DocumentPanel table", () => {
     expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
   });
 
+  it("降级行悬停出重试卡：说明 + 重试按钮 + 明细行，说明不点名具体腿（D2=甲，2026-10-04）", async () => {
+    const handlers = renderPanel({
+      documents: [
+        doc({
+          path_status: {
+            vector: "done",
+            graph: "done",
+            wiki: "ready",
+            caption: "degraded",
+          },
+        }),
+      ],
+    });
+    const trigger = screen.getByTestId("doc-retry-trigger");
+    fireEvent.pointerEnter(trigger);
+    fireEvent.pointerMove(trigger);
+    const card = await screen.findByTestId("doc-retry-card");
+    // 说明句只说「有产物未成功、可重试」，具体腿由卡内明细行自证——配文一词
+    // 只允许出现在 breakdown 里，不出现在说明句里（spec §2.5）。
+    const hint = card.querySelector("p")!;
+    expect(hint.textContent).toContain("部分产物未成功");
+    expect(hint.textContent).not.toContain("配文");
+    expect(
+      within(card).getByTestId("path-status-breakdown").textContent,
+    ).toContain("配文");
+    fireEvent.click(within(card).getByRole("button", { name: "重试" }));
+    expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("干净就绪行不出现重试入口：明细仍走 Tooltip（D2=甲边界）", () => {
+    renderPanel({
+      documents: [
+        doc({ path_status: { vector: "done", graph: "done", wiki: "ready" } }),
+      ],
+    });
+    expect(screen.queryByTestId("doc-retry-trigger")).toBeNull();
+    expect(screen.getByTestId("path-status-trigger")).toBeTruthy();
+  });
+
   it("右键菜单为失败行提供重试兜底（Drive/OneDrive 主流兜底路径）", async () => {
     const handlers = renderPanel({
       documents: [doc({ status: "failed", error: "boom", chunk_count: null })],
+    });
+    fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
+    expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("右键菜单为降级行提供重试兜底（与失败行同款路径，2026-10-04）", async () => {
+    const handlers = renderPanel({
+      documents: [
+        doc({
+          path_status: { vector: "done", graph: "degraded", wiki: "ready" },
+        }),
+      ],
     });
     fireEvent.contextMenu(screen.getByText("产品手册.pdf"));
     fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
@@ -539,6 +591,26 @@ describe("DocumentPanel 悬停三个点窄列", () => {
   it("失败行窄列菜单额外提供重试", async () => {
     const handlers = renderPanel({
       documents: [doc({ status: "failed", error: "boom", chunk_count: null })],
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /重试/ }));
+    expect(handlers.onRetryDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("降级行窄列菜单同步提供重试（两处入口一致，2026-10-04）", async () => {
+    const handlers = renderPanel({
+      documents: [
+        doc({
+          path_status: {
+            vector: "done",
+            graph: "done",
+            wiki: "ready",
+            caption: "degraded",
+          },
+        }),
+      ],
     });
     fireEvent.keyDown(screen.getByRole("button", { name: "更多操作" }), {
       key: "ArrowDown",

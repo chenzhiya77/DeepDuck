@@ -34,6 +34,21 @@ describe("classifyDocError", () => {
     expect(classifyDocError("Retry Limit Reached (5 attempts)")).toBe("retryLimit");
   });
 
+  it("maps the index-integrity verdicts (RFC §5.2 表行 4，2026-10-04)", () => {
+    expect(classifyDocError("向量索引不完整：3/50 切片未入库")).toBe("indexIncomplete");
+    expect(classifyDocError("无可索引内容：文档未产生任何可索引切片")).toBe("noIndexableContent");
+  });
+
+  it("terminal index verdict wins over earlier leg markers in a stacked error", () => {
+    // 子标记是「; 」追加的：caption 腿先写降级原因、索引终态后追加——failed
+    // 的直接解释是后者（spec §2.1），即使前者串里含 timeout 也不该抢占。
+    expect(
+      classifyDocError(
+        "image caption degraded: timeout; 向量索引不完整：3/50 切片未入库",
+      ),
+    ).toBe("indexIncomplete");
+  });
+
   it("falls back to unknown for null/empty/unrecognized text", () => {
     expect(classifyDocError(null)).toBe("unknown");
     expect(classifyDocError(undefined)).toBe("unknown");

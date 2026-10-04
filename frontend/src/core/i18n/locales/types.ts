@@ -494,6 +494,8 @@ export interface Translations {
     deleteDocumentConfirmTitle: string;
     deleteDocumentConfirmDescription: string;
     retryDocument: string;
+    /** 降级悬停卡说明（2026-10-04 D2=甲）：不点名具体腿，明细由卡内 breakdown 行自证。 */
+    degradedRetryHint: string;
     uploaderMe: string;
     dropzoneHint: string;
     emptyDocuments: string;
@@ -1135,6 +1137,9 @@ export interface Translations {
       retryLimit: string;
       serviceUnconfigured: string;
       timeout: string;
+      /** 索引完整性终态（RFC §5.2 表行 4，2026-10-04）。 */
+      indexIncomplete: string;
+      noIndexableContent: string;
       unknown: string;
     };
   };

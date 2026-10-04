@@ -191,6 +191,39 @@ describe("document mutations", () => {
     await waitFor(() => expect(api.listDocuments).toHaveBeenCalledTimes(2));
   });
 
+  it("retry re-fetch surfaces the re-queued state for a degraded document", async () => {
+    rs.mocked(api.listDocuments)
+      .mockResolvedValueOnce([
+        {
+          ...READY_DOC,
+          path_status: {
+            vector: "done",
+            graph: "done",
+            wiki: "ready",
+            caption: "degraded",
+          },
+        },
+      ])
+      .mockResolvedValue([{ ...READY_DOC, status: "uploaded", progress_percent: 0 }]);
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const docs = renderHook(() => useDocuments("kb-1"), { wrapper });
+    await waitFor(() => expect(docs.result.current.isSuccess).toBe(true));
+    expect(docs.result.current.data?.[0]?.path_status).toEqual({
+      vector: "done",
+      graph: "done",
+      wiki: "ready",
+      caption: "degraded",
+    });
+
+    const retry = renderHook(() => useRetryDocument("kb-1"), { wrapper });
+    await retry.result.current.mutateAsync("doc-1");
+    // 降级行与 failed 同管道：受理后行回到 uploaded（进度清零）。
+    await waitFor(() =>
+      expect(docs.result.current.data?.[0]?.status).toBe("uploaded"),
+    );
+  });
+
   it("documents query cache uses the kb-scoped key", async () => {
     const queryClient = freshQueryClient();
     const wrapper = createWrapper(queryClient);
