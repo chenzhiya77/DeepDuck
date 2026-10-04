@@ -113,7 +113,7 @@ class FakeVectorStore:
     async def init_collections(self) -> None:
         return None
 
-    async def scroll_collection(self, collection_name, kb_id, *, with_vectors=False, batch_size=512):
+    async def scroll_collection(self, collection_name, kb_id=None, *, with_vectors=False, batch_size=512):
         return []
 
 
@@ -122,7 +122,13 @@ async def test_sweep_once_reconciles_files_for_idle_kbs_only(session_factory, tm
     idle_ghost = _tree(tmp_path, "kb-other", "ghost-2")
     busy_ghost = _tree(tmp_path, KB, "ghost-1")
     worker = KnowledgeIndexWorker(store=store, vector_store=FakeVectorStore(), sweep_enabled=False, data_dir=tmp_path)
+
+    async def _noop(**kwargs):
+        return None
+
     monkeypatch.setattr("deerflow.knowledge.worker.migration_in_progress", lambda: False)
+    monkeypatch.setattr("deerflow.knowledge.worker.sweep_generations", _noop)
+    monkeypatch.setattr("deerflow.knowledge.worker.effective_dimension", lambda: 1024)
 
     worker._busy_kbs.add(KB)
     await worker._sweep_once()
