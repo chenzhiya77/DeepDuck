@@ -41,7 +41,7 @@
 - [x] GREEN：`knowledge_bases.py:246-247` 门 + 降级判定 helper（后端一处、文档口径 spec §2.2）；D3=甲 在途合并 + 收尾补跑落 `worker.py`。**实测：retry 族 6 绿；`_run_guarded` 判档在任何 await 之前；`has_degraded_leg` 为唯一判定源（router 与服务共用）。**
 - [x] neuter/复绿；门禁同 Task 1。**实测：① router 还原 ⇒ 3 红；② worker 合并还原 ⇒ 1 红；还原复绿；`test_api.py`+`test_worker.py` 98 绿。**
 - [x] 补口（真栈验收前置，2026-10-04）：视频重试走 resume 路、只补跑 pending 镜头 ⇒ 受理翻无图说镜头（`failed`/`empty`）回 `pending`（spec §2.2 修订）：`test_retry_video_document_requeues_captionless_shots`（RED 1 红 → GREEN；empty 分支 neuter ⇒ 恰 1 红）；受理后删除窗口 `test_worker_noops_when_document_deleted_after_retry_acceptance`（spec §4.3 第三项）。recaption / citations 两套 21 绿零回归。
-- [x] 门禁（合并树最终态）：knowledge 面全量 **1512 passed / 4 failed / 2 skipped / 470.55s**（4 红全为在案环境账；另有一次 1507/5 中的第 5 红＝已登记图谱并发 flake，单跑复绿）；**ruff check `All checks passed!` + ruff format `1314 files already formatted`。**
+- [x] 门禁（合并树）：knowledge 面全量 **1512 passed / 4 failed / 2 skipped / 470.55s**（4 红全为在案环境账；另有一次 1507/5 中的第 5 红＝已登记图谱并发 flake，单跑复绿）；**ruff check `All checks passed!` + ruff format `1314 files already formatted`。补口后终态（含 2 个新用例）：1514 passed / 4 failed / 2 skipped / 401.58s，ruff 同双净。**
 
 ## Task 3 — 前端：降级重试入口 ✅
 
