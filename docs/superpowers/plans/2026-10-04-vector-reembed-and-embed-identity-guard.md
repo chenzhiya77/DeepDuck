@@ -22,15 +22,15 @@
 - [x] ② 保存路径触发点：`rag_config.py:452` `_embedding_signature` 现比较哪几个字段、api_key 排除法怎么落；同宽指纹差分支的插入点。（已核 2026-10-04：指纹=provider/model/base_url 三字段、api_key 明确排除；插入点=`put_rag_config` 的 `rebuilding` 分支，宽度差优先吸收）
 - [x] ③ 重建入口现状：`knowledge_service.py:1726-1745` 库级重建/状态查询的签名与并发语义（`reindex_in_progress` 单飞），D3 触发复用它要不要过 `rag_migration` 的「先建后切」通道（宽度变更走的是 `start_migration`）。（已核 2026-10-04：`migrate_collections` 开头就 `drop_collections` ⇒ 同宽不可复用；D3 走独立 `services/rag_reembed.py` 逐库 `reindex_kb`，不过先建后切通道；同跑互斥由保存路径 409 承担）
 - [x] ④ 受害者扫描：断言 `_embedding_signature`/保存响应/重建状态的既有用例清单（`tests/knowledge/test_reindex.py`、rag_config 相关），谁会被「指纹字段/新响应键」波及。（已核 2026-10-04：api 面 41 条受害者修夹具/豁免归零；`test_rag_config_save_probe.py` 6 条门禁期二波抓到并修；`test_rag_config_probe.py` 4 条=预存红，HEAD A/B 定性见 Task 3 门禁）
-- [ ] ⑤ D1 成本核实：四库实际待嵌文本数与批大小（`embedder.batch_size`），报数后再跑。
+- [x] ⑤ D1 成本核实：四库实际待嵌文本数与批大小（`embedder.batch_size`），报数后再跑。（已核 2026-10-04：**5 库 1376 条文本 / 18.6 万字符 / 最长 2178**（chunks 94·entities 1055·wiki 224·cards 3），批宽=10（`qwen3.7-text-embedding-flash` 走 `DASHSCOPE_SAFE_BATCH_SIZE`）⇒ **163 次嵌入调用**（chunks 逐文档批 31 + entities 107 + wiki 24 + cards 1）；实测单批 10 条=1.75s ⇒ 串行约 **3–8 分钟**；≈13–16 万 token。明细=scratch `ragas-perf/d1_cost_inventory.py`（零调用点数））
 
-## Task 1 — D1：全量重灌（执行 + 对照）
+## Task 1 — D1：全量重灌（执行 + 对照）✅ 2026-10-04 交付
 
-- [ ] 报成本（批次数/预计调用数）等他点头再动手。
-- [ ] 逐库跑 `reindex_kb`（4 库；单库失败不连坐、记录 last_run）。
-- [ ] 抽验：四类各抽样 cos(存库, 现算) ≥ 0.9（复用 scratch `vec_space_check.py` 口径）。
-- [ ] 小样本 L1 前后对照：3–6 题（含 q011/q005/q009）逐题翻盘 + Δhit/Δrecall 报数（基线=本对前实测 0.471/0.314，见 spec §1）。
-- [ ] D2 身份写入落地后补跑一次：重建完成 ⇒ `embedding_identity` = 当前指纹。
+- [x] 报成本（批次数/预计调用数）等他点头再动手。（账见 Task 0⑤；2026-10-04 他拍「跑 D1 全量重灌」）
+- [x] 逐库跑 `reindex_kb`（4 库；单库失败不连坐、记录 last_run）。—— 实测 **5 库全过、0 失败、253.9s**：29 档 94 块 1055 实体 224 wiki 3 卡=**1376 条全量重嵌**（测试2 的 8/10=两档零块文档无物可嵌）；日志=scratch `ragas-perf/d1_reembed_run.log`。
+- [x] 抽验：四类各抽样 cos(存库, 现算) ≥ 0.9（复用 scratch `vec_space_check.py` 口径）。—— **11 样本全 PASS，最差 0.997**（chunks/entities/wiki/cards 每类 2–3，跨库；stale 期同口径 ≈-0.008~0.03）。
+- [x] 小样本 L1 前后对照：3–6 题（含 q011/q005/q009）逐题翻盘 + Δhit/Δrecall 报数（基线=本对前实测 0.471/0.314，见 spec §1）。—— 6 题（q001/q002/q006/q005/q009/q011）**前 0.167/0.167 → 后 1.000/1.000（Δhit/Δrecall=+0.833/+0.833）**；三道点名 miss 全翻盘、q006 对照守住、三腿全活（前值三腿全 0）；前后日志=`l1_pair_before.log`/`l1_pair_after.log`。
+- [ ] D2 身份写入落地后补跑一次：重建完成 ⇒ `embedding_identity` = 当前指纹。（待 Task 2）
 
 ## Task 2 — D2 记身份 TDD（已裁：甲=按库列）
 
@@ -72,3 +72,5 @@
 ## C 线去留判据（✅ 2026-10-04 他拍）
 
 A（Task 1）完成后 3–6 题对照：「落上却空手」类（q011/q005/q009 型）**全翻盘 ⇒ C 转观察项**；仅剩多跳题仍 miss ⇒ 另立小对动 ④ 剪枝。
+
+**判定（2026-10-04，Task 1 后测）**：q005/q009/q011 三道**全翻盘**（6 题样本 hit/recall 0.167→1.000）⇒ **C 转观察项，④ 剪枝不动**。
