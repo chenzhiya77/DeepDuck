@@ -65,6 +65,7 @@
 - 裁定记录（2026-10-04 GREEN 期定形）：**面=只在检索测试 API**——`KnowledgeService.recall_test` 响应加 `embedding_mismatch: true`（router 透传零改动，绕开 `knowledge_bases.py` 别线未提交 hunk）；chat 工具输出不带标记（这是给调试面板的观测面，不进对话）。warning 日志点名 kb_id + 差异字段（`provider/model/base_url` 以 `/` 连接），密钥永不进日志（用例钉住）。
 - 裁定记录（2026-10-04 GREEN 期定形）：**文案=逐字复用设置页 `zhCN.settings.functionalModels.embeddingChangeWarning`**，不新增 i18n 键；落点=召回测试面板（`recall-test-panel.tsx`，`role="alert"` 红字），缺键/一致/未盖章都不显示（前端用例钉住复用同一条文案）。
 - 残余风险注记：同名漂移（服务端换代、配置未动）D2–D4 抓不到——周期抽样探测登记为非目标。
+- 受影响前端文案键表（Task 5 回填）：**零新增键、零改动既有键**。唯一相关键=`zhCN.settings.functionalModels.embeddingChangeWarning`（设置页原有），D4 在召回测试面板**逐字复用**同一键；后端新增响应键 `embedding_mismatch`（布尔、缺键=不做声明，`RecallTestResponse.embedding_mismatch?: boolean`）不属于文案键。
 
 ## 3. 硬约束
 

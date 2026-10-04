@@ -2,7 +2,7 @@
 
 - 成对 spec：`docs/superpowers/specs/2026-10-04-vector-reembed-and-embed-identity-guard-design.md`
 - 日期：2026-10-04
-- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 + Task 4 已交付 2026-10-04；Task 5/6/7 未动；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
+- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 + Task 4 + Task 5 已交付 2026-10-04；Task 6/7 未动；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
 
 ## 范围与交接
 
@@ -53,10 +53,10 @@
 - [x] neuter：摘比对 ⇒ 恰红；还原复绿。—— 三次拆解各恰红且受害者不相交：A 摘比对⇒`test_a_mismatched_library_flags…` 1 红；B 反向恒报（无条件插键）⇒两条缺键对照恰 2 红（空心绿补上牙）；C NULL 当失配（`identity_diff_fields` 对空 stored 返回主张）⇒`test_an_unstamped_library_claims_nothing` 恰 1 红。还原后 3/3 复绿。
 - [x] 门禁：knowledge 面 + ruff 双净；前端 `pnpm check`（若文案动）。—— 文案复用未新增键但仍动了组件 ⇒ `pnpm check` 双净 + dom 34/34；`tests/knowledge` 面 **1522 passed / 2 skipped / 4 failed（411s，全环境红=既有 4 条账：`test_embed_missing_api_key`/`test_rerank_missing_api_key`（本机真钥兜到）+ `test_parse_pdf_full_flow`/`test_token_read_from_env_never_from_caller`（env MinerU token/无 DNS））**；ruff check/format 三文件双净。
 
-## Task 5 — 门禁 + 文档
+## Task 5 — 门禁 + 文档 ✅ 2026-10-04 交付
 
-- [ ] 全量门禁：knowledge 面全绿（环境红按既有账登记）+ ruff 双净。
-- [ ] 文档：`backend/AGENTS.md` RAG 段补「嵌入身份与重建」一段；spec/plan 回填实测数字与提交链；受影响前端文案键表。
+- [x] 全量门禁：knowledge 面全绿（环境红按既有账登记）+ ruff 双净。—— Task 5 仅文档、零代码 delta ⇒ knowledge 面沿用 Task 4 同树数字 **1522 passed / 2 skipped / 4 failed（411s；环境红=既有 4 条账：embed/rerank 缺钥 + parser 两条）**；ruff check/format 全后端双净。
+- [x] 文档：`backend/AGENTS.md` RAG 段补「嵌入身份与重建」一段；spec/plan 回填实测数字与提交链；受影响前端文案键表。—— AGENTS.md「Recall-test API」条后新增 `**Embedding identity & rebuilds**` 一段（身份列=三字段 JSON / 两处写入与 NULL 语义 / D3 自动重建与 503·409 / D4 读侧检测不锁定 / 已知缺口=delta 复走待拍）；spec §2.4 补「受影响前端文案键表」（**零新增键、零改动既有键**，唯一相关键=`embeddingChangeWarning` 逐字复用）。**提交链（本对 6 笔 + 本笔）**：`61a598218` spec+plan 草案 → `132e8d353` D3 同宽换模型自动重建 → `0eeda48fe` D1 全量重灌数字 → `c9bb5832f` D2 按库记身份 → `1fba23148` 存量盖章记录 → `779f8dd21` D4 失配检测 → 本笔 Task 5 文档。
 
 ## Task 6 — 真栈验收 + 收尾
 
