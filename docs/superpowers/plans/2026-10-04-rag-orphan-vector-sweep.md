@@ -34,11 +34,12 @@
 - [x] 门禁：knowledge 面全量 + ruff 双净。**实测：1532 passed / 4 failed / 2 skipped / 388.74s；4 红全为在案环境账（缺 key 对 `test_embed_missing_api_key`/`test_rerank_missing_api_key`＋解析器对 `test_parse_pdf_full_flow`/`test_token_read_from_env_never_from_caller`）；ruff check + format 双净。**
 - [x] 实测回填（2026-10-05）。
 
-## Task 2 — 触发接线（D2=甲：启动+周期；D3=乙：空闲闸）
+## Task 2 — 触发接线（D2=甲：启动+周期；D3=乙：空闲闸）✅
 
-- [ ] 启动 jitter 一次 + 周期循环挂在 `KnowledgeIndexWorker.start()/stop()`；worker 加结构化 `_busy_kbs` 并暴露 `busy_kb_ids()`（Task 0③ 定案）；`rag.sweep_enabled` / `rag.sweep_interval_hours` 加进 `RagConfig`（config.yaml `rag:` 段，不进 UI 文件）；守卫 = `busy_kb_ids()` ∪ `wiki_generation_in_progress(kb_id)`（逐库）+ `migration_in_progress()`（全局）。
-- [ ] 用例：开关关→不跑；守卫命中→跳过并记录。
-- [ ] 门禁 + 实测回填。
+- [x] 启动 jitter（≤600s）+ 周期循环挂 `KnowledgeIndexWorker.start()/stop()`（`_sweep_task`，name=`knowledge-orphan-sweep`）；worker 加结构化 `_busy_kbs`（文档腿 `_run_guarded`、recaption 腿 `_run_recaption_guarded` 增删）并暴露 `busy_kb_ids()`（∪ `_wiki_busy`）；`sweep_enabled` / `sweep_interval_hours` 进 `RagConfig`（默认 true / 24h；`config.example.yaml` 同步、`config_version` 43→44）；`app.py` 生命周期传参；守卫 = `busy_kb_ids()` ∪ `wiki_generation_in_progress(kb_id)`（逐库）+ `migration_in_progress()`（全局整轮跳过）。**实测：忙库登记在等槽位前完成（排队中的一跑也算忙）。**
+- [x] 用例：开关关→不调度（`_sweep_task is None`）；守卫命中→跳过（忙库 / wiki 腿 / 迁移三态）；全空闲→恰扫一次；`busy_kb_ids()` 两腿并集。**实测：RED 3 红（TypeError）→ GREEN 8 passed / 14.56s；neuter 去忙库闸 ⇒ 恰 1 红 → 还原复绿。**
+- [x] 门禁：knowledge 面全量 **1535 passed / 4 failed / 2 skipped / 486.79s**（4 红逐名等于在案环境账，无新增）；配置三件 77 passed / 2 failed（环境账：本机真实 models 配置混入）；ruff 4 文件双净。
+- [x] 实测回填（2026-10-05）。
 
 ## Task 3 — 真栈验收
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import random
 import shutil
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
@@ -34,6 +35,7 @@ from typing import Any, Protocol
 from deerflow.config.app_config import get_app_config
 from deerflow.knowledge.captioner import apply_captions, caption_images
 from deerflow.knowledge.chunker import chunk_markdown, count_tokens
+from deerflow.knowledge.dimension_migration import migration_in_progress
 from deerflow.knowledge.embed_identity import write_kb_identity
 from deerflow.knowledge.embedder import EmbeddingResult, RagConfigurationError
 from deerflow.knowledge.embedder_factory import build_embedder
@@ -44,6 +46,7 @@ from deerflow.knowledge.indexer import index_chunks
 from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
+from deerflow.knowledge.sweep import sweep_library
 from deerflow.knowledge.vector_store import KnowledgeVectorStore
 from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, resolve_leg_provider, transcribe_video
 from deerflow.knowledge.video.captioner import caption_shots
@@ -198,6 +201,8 @@ class KnowledgeIndexWorker:
         gleaning_rounds: int = 1,
         resolution_full_scan_threshold: int = 500,
         entity_merge_similarity: float = 0.92,
+        sweep_enabled: bool = True,
+        sweep_interval_hours: float = 24.0,
     ) -> None:
         self._store = store
         self._vector_store = vector_store
@@ -211,6 +216,11 @@ class KnowledgeIndexWorker:
         self._gleaning_rounds = gleaning_rounds
         self._resolution_full_scan_threshold = resolution_full_scan_threshold
         self._entity_merge_similarity = entity_merge_similarity
+        #: 孤儿向量对账清扫（spec 2026-10-04 D2=甲/D3=乙）：周期任务 + 忙库闸。
+        self._sweep_enabled = sweep_enabled
+        self._sweep_interval_seconds = max(60.0, float(sweep_interval_hours) * 3600.0)
+        self._sweep_task: asyncio.Task[None] | None = None
+        self._busy_kbs: set[str] = set()
         self._sem = asyncio.Semaphore(concurrency)
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._dispatcher: asyncio.Task[None] | None = None
@@ -250,6 +260,8 @@ class KnowledgeIndexWorker:
             logger.info("knowledge worker recovery: re-enqueued %d non-terminal document(s)", recovered)
         await self.scan_dirty_wikis()
         self._dispatcher = asyncio.create_task(self._dispatch_loop(), name="knowledge-index-worker")
+        if self._sweep_enabled:
+            self._sweep_task = asyncio.create_task(self._sweep_loop(), name="knowledge-orphan-sweep")
 
     async def scan_dirty_wikis(self) -> None:
         """Boot resume for wiki runs lost to a restart (spec 2026-10-02 Task 3).
@@ -278,6 +290,11 @@ class KnowledgeIndexWorker:
             dispatcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await dispatcher
+        sweep_task, self._sweep_task = self._sweep_task, None
+        if sweep_task is not None:
+            sweep_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sweep_task
         if self._inflight:
             await asyncio.gather(*list(self._inflight), return_exceptions=True)
         if self._wiki_tasks:
@@ -306,8 +323,16 @@ class KnowledgeIndexWorker:
         task.add_done_callback(self._inflight.discard)
 
     async def _run_recaption_guarded(self, doc_id: str) -> None:
-        async with self._sem:
-            await self.recaption_document(doc_id)
+        document = await self._store.get_document(doc_id)
+        kb_id = document["kb_id"] if document is not None else None
+        if kb_id is not None:
+            self._busy_kbs.add(kb_id)
+        try:
+            async with self._sem:
+                await self.recaption_document(doc_id)
+        finally:
+            if kb_id is not None:
+                self._busy_kbs.discard(kb_id)
 
     async def _require_alive(self, doc_id: str) -> None:
         """Liveness checkpoint against the delete-vs-worker race: a document
@@ -349,17 +374,57 @@ class KnowledgeIndexWorker:
             self._pending.add(doc_id)
         else:
             self._active.add(doc_id)
+        kb_id: str | None = None
         try:
             if not already_active:
+                # D3=乙 忙库闸输入（spec 2026-10-04）：运行期间该库对外声明忙，
+                # 清扫轮会跳过它；等槽位前就登记，排队中的一跑也算忙。
+                document = await self._store.get_document(doc_id)
+                if document is not None:
+                    kb_id = document["kb_id"]
+                    self._busy_kbs.add(kb_id)
                 async with self._sem:
                     await self.process_document(doc_id)
         finally:
+            if kb_id is not None:
+                self._busy_kbs.discard(kb_id)
             if not already_active:
                 self._active.discard(doc_id)
                 if doc_id in self._pending:
                     self._pending.discard(doc_id)
                     await self.submit(doc_id)
             self._queue.task_done()
+
+    def busy_kb_ids(self) -> set[str]:
+        """D3=乙 忙库闸输入：文档腿与 wiki 腿在飞时对外声明该库忙（spec 2026-10-04）。
+
+        结构化维护而非“按文档行反推”：文档被删后行会消失，反推会把仍在收尾
+        的运行误判成空闲。
+        """
+        return set(self._busy_kbs) | set(self._wiki_busy)
+
+    async def _sweep_loop(self) -> None:
+        """周期跑一轮全库清扫（spec §2.3；D2=甲）：启动 jitter 一次再进稳态。"""
+        await asyncio.sleep(random.uniform(0.0, min(600.0, self._sweep_interval_seconds)))
+        while True:
+            try:
+                await self._sweep_once()
+            except Exception:
+                logger.exception("orphan sweep round failed; the next round retries")
+            await asyncio.sleep(self._sweep_interval_seconds)
+
+    async def _sweep_once(self) -> None:
+        """一轮全库清扫：迁移在飞整轮跳过；逐库在忙（含 wiki 腿）时跳过该库。"""
+        if migration_in_progress():
+            logger.info("orphan sweep round skipped: dimension migration is in flight")
+            return
+        busy = self.busy_kb_ids()
+        for kb in await self._store.list_all_kbs():
+            kb_id = kb["id"]
+            if kb_id in busy or wiki_generation_in_progress(kb_id):
+                logger.info("orphan sweep skipped for kb %s: a live run is in flight", kb_id)
+                continue
+            await sweep_library(store=self._store, vector_store=self._vector_store, graph_store=self._graph_store, wiki_store=self._wiki_store, kb_id=kb_id)
 
     def _spawn_wiki(self, kb_id: str, embedder: _Embedder, *, require_threshold: bool = True) -> None:
         """Fire the wiki leg outside the worker slot (spec 2026-10-02 D1).

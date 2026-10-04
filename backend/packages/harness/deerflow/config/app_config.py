@@ -248,6 +248,8 @@ class RagConfig(BaseModel):
 
     worker_concurrency: int = Field(default=2, ge=1, description="Max documents the offline indexing worker processes concurrently.")
     extract_concurrency: int = Field(default=8, ge=1, le=32, description="Graph-leg chunk-extraction semaphore width; the knee N = min((RPM/60)*T, (TPM*T)/(60*K)) is model/endpoint-specific (spec 2026-10-01).")
+    sweep_enabled: bool = Field(default=True, description="Run the background orphan-vector sweep (spec 2026-10-04): deletes Qdrant points whose business rows no longer exist; a library with a live run is skipped.")
+    sweep_interval_hours: float = Field(default=24.0, gt=0, description="Hours between orphan-vector sweep rounds; the first round runs after a short startup jitter.")
     # Phase-2 graph-quality knobs (spec 2026-08-10 D1). Setting the caps large
     # and the guarantee to 0 approximates the phase-1 behaviour.
     graph_per_entity_cap: int = Field(default=3, ge=1, description="Max candidate evidence chunks kept per entity source before selection.")

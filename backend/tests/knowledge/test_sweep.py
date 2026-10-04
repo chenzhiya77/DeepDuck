@@ -15,6 +15,7 @@ from deerflow.knowledge.graph.store import GraphStore
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.sweep import sweep_library
 from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.knowledge.worker import KnowledgeIndexWorker
 
 KB = "kb-sweep"
 OWNER = "u-1"
@@ -46,6 +47,9 @@ class FakeVectorStore:
 
     def add(self, collection: str, payload: dict, *, point_id: str) -> None:
         self.points[collection][point_id] = payload
+
+    async def init_collections(self) -> None:
+        return None
 
     async def scroll_collection(self, collection_name: str, kb_id: str, *, with_vectors: bool = False, batch_size: int = 512):
         if collection_name in self.raise_on_scroll:
@@ -189,3 +193,58 @@ async def test_sweep_is_idempotent(session_factory):
     assert first.deleted == {"chunks": 1, "entities": 1, "wiki_entries": 1, "manual_cards": 1}
     assert second.deleted == {"chunks": 0, "entities": 0, "wiki_entries": 0, "manual_cards": 0}
     assert second.failed == []
+
+
+# ── Task 2：触发接线（worker 挂靠 + D3=乙 守闸） ─────────────────────────
+
+
+async def test_sweep_loop_not_scheduled_when_disabled(session_factory):
+    store, graph, wiki, entry = await _seed(session_factory)
+    worker = KnowledgeIndexWorker(store=store, vector_store=FakeVectorStore(), graph_store=graph, wiki_store=wiki, sweep_enabled=False)
+
+    await worker.start()
+    try:
+        assert worker._sweep_task is None
+    finally:
+        await worker.stop()
+
+
+async def test_busy_kb_ids_covers_doc_and_wiki_legs(session_factory):
+    store, graph, wiki, entry = await _seed(session_factory)
+    worker = KnowledgeIndexWorker(store=store, vector_store=FakeVectorStore(), graph_store=graph, wiki_store=wiki, sweep_enabled=False)
+
+    assert worker.busy_kb_ids() == set()
+    worker._busy_kbs.add(KB)
+    worker._wiki_busy.add("kb-2")
+    assert worker.busy_kb_ids() == {KB, "kb-2"}
+
+
+async def test_sweep_once_skips_busy_and_migration_and_runs_when_idle(session_factory, monkeypatch):
+    store, graph, wiki, entry = await _seed(session_factory)
+    worker = KnowledgeIndexWorker(store=store, vector_store=FakeVectorStore(), graph_store=graph, wiki_store=wiki, sweep_enabled=False)
+    calls: list[str] = []
+
+    async def spy_sweep(**kwargs):
+        calls.append(kwargs["kb_id"])
+
+    monkeypatch.setattr("deerflow.knowledge.worker.sweep_library", spy_sweep)
+    monkeypatch.setattr("deerflow.knowledge.worker.migration_in_progress", lambda: False)
+
+    # 1) 文档在飞 → 跳过该库
+    worker._busy_kbs.add(KB)
+    await worker._sweep_once()
+    assert calls == []
+    # 2) wiki 腿在飞 → 跳过该库
+    worker._busy_kbs.discard(KB)
+    worker._wiki_busy.add(KB)
+    await worker._sweep_once()
+    assert calls == []
+    # 3) 迁移在飞 → 整轮跳过
+    worker._wiki_busy.discard(KB)
+    monkeypatch.setattr("deerflow.knowledge.worker.migration_in_progress", lambda: True)
+    await worker._sweep_once()
+    assert calls == []
+    # 4) 全空闲 → 扫
+    monkeypatch.setattr("deerflow.knowledge.worker.migration_in_progress", lambda: False)
+    await worker._sweep_once()
+    assert calls == [KB]

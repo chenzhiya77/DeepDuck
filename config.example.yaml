@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 43
+config_version: 44
 
 # ============================================================================
 # Logging
@@ -2639,6 +2639,11 @@ rag:
   # Chunk-level extraction concurrency for the graph leg (spec 2026-10-01);
   # 8 is the measured knee of the reference endpoint — see AGENTS.md to re-derive.
   extract_concurrency: 8
+  # Run the orphan-vector reconciliation sweep (spec 2026-10-04): deletes Qdrant
+  # points whose business rows are gone; skips a library while a live run holds it.
+  sweep_enabled: true
+  # Hours between sweep rounds (the first round runs after a short startup jitter).
+  sweep_interval_hours: 24
   # --- Phase-2 graph-path quality knobs (spec 2026-08-10 D1) ---
   # Max candidate evidence chunks kept per entity / relation source before
   # selection. Set large + graph_hop0_guarantee: 0 to approximate phase-1.
