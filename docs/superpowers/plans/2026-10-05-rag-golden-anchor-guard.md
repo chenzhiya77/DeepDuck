@@ -24,7 +24,8 @@
 - [ ] RED：q008 形状贴错被拦（红=今天创建成功）/ **带确认标记重存放行**（甲′ 绕过）/ 空答案放行 / 多片 BEATEN 放行 / 多片单片 ZERO 拦 / create 与 accept 双口过闸。—— 用例数与红因逐条记录。
 - [ ] GREEN：`eval/anchor_check.py`（纯判定函数 + store 取正文的 async 包装）+ `add_question` guard 注入 + 两调用方传 guard；拦截响应带明细。
 - [ ] neuter：拆豁免 ⇒ 假阳例红；拆收口（只挂 create）⇒ accept 例红；放宽判定阈值 ⇒ q008 形状例红。受害者按实测报。
-- [ ] 门禁：eval 面 + knowledge API 面 + ruff 双净。
+- [ ] 前端交互 B′（spec §2 末细则）：行内红字明细块 + 按钮换文案「仍要入库/仍要接受」；dom 三钉=红字出现且不入库 / 换文案后点击才入库 / 重复点原「保存」不入库（先例=recall-test-panel dom 测试）。
+- [ ] 门禁：eval 面 + knowledge API 面 + 前端 dom + ruff/pnpm check 双净。
 
 ## Task 2 — 存量修复（q008 修锚）
 
@@ -38,4 +39,4 @@
 
 ## Task 4 — 真栈验收
 
-- [ ] UI 手工创建 q008 形状贴错题被拦（响应含明细）→ 点确认后入库成功 → 改正锚再存成功；合成 accept 过闸路径通；收尾临时题删净、配置零改动。
+- [ ] UI 手工创建 q008 形状贴错题被拦（响应含明细）→ 点「仍要入库」入库成功 → 改正锚再存成功；合成 accept 过闸路径通；收尾临时题删净、配置零改动。
