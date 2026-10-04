@@ -78,4 +78,4 @@
 
 - `backend/AGENTS.md` 迁移段补「两取值口每次读取自检 `(qdrant_url, 声明宽度)` 并原地换新（spec 2026-10-05 D1）」；清扫条 D5 判据补 60s 点龄宽限（新点不得回收、无键=老）。
 - spec / plan 状态行 → ✅ 全交付；提交链见下。
-- **提交链**：`f2ec4578b`（spec+plan 起草）→ `b495041e9`（Task 1）→ `3b64fa9a1`（Task 2）→ `ff735dcaa`（Task 3）→ 收尾提交（下笔回填）。
+- **提交链**：`f2ec4578b`（spec+plan 起草）→ `b495041e9`（Task 1）→ `3b64fa9a1`（Task 2）→ `ff735dcaa`（Task 3）→ `e301d844f`（收尾）。
