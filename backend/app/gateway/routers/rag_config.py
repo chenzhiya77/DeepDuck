@@ -496,6 +496,30 @@ _EMBEDDING_FINGERPRINT_FIELDS: tuple[str, ...] = ("embedding_provider", "embeddi
 _EMBEDDING_HELD_FIELDS: tuple[str, ...] = (*_EMBEDDING_FINGERPRINT_FIELDS, "embedding_api_key")
 
 
+def _drop_no_op_declarations(config: AppConfig, payload: dict[str, Any], stored: RagConfigFile) -> dict[str, Any]:
+    """Drop declarations that declare nothing: without the key the effective config is identical.
+
+    GET serves the resolved view, so a whole-object client (script, probe, integration) sends
+    every fallback back as if it were a choice — writing those pins values nobody chose, and a
+    later fallback change can never reach them (the 2026-10-04 round trip wrote ten such keys
+    into rag_config.json). A key is kept when the file already declares it (an existing
+    declaration is never reinterpreted), when it is a secret, or when it belongs to the
+    embedding identity: that trio plus the width *records* the vector space, so pinning it is
+    the point rather than the hazard.
+    """
+    kept = dict(payload)
+    declared = set(stored.model_dump(exclude_none=True))
+    for key in list(payload):
+        if key in _SECRET_FIELDS or key in _EMBEDDING_HELD_FIELDS or key == "embedding_dimension" or key in declared:
+            continue
+        without = {k: v for k, v in payload.items() if k != key}
+        # Compared on the *effective* configs, not the raw merged dicts: an undeclared
+        # toggle and an explicit False resolve to the same thing, and that is the question.
+        if _pending_rag(config, without) == _pending_rag(config, payload):
+            kept.pop(key)
+    return kept
+
+
 def _embedding_fingerprint_changed(live: RagConfig, pending: RagConfig) -> bool:
     """Whether this save moves vectors to a different coordinate space.
 
@@ -585,6 +609,7 @@ async def put_rag_config(
             submitted[name] = preserve_secret(submitted[name], getattr(stored, name, "") or "")
 
     payload = _prune_empty(submitted)
+    payload = _drop_no_op_declarations(config, payload, stored)
     pending = _pending_rag(config, payload)
     _reject_unusable_role_targets(config, pending)
     _reject_unusable_after_save(pending)

@@ -312,6 +312,70 @@ def test_put_omitting_a_field_clears_it(config_env: Path):
     assert get_app_config().rag.rerank_model == "yaml-rerank"  # back to config.yaml
 
 
+def test_put_round_trip_does_not_materialize_no_op_defaults(config_env: Path):
+    """GET→PUT 整对象往返（脚本/探针/集成方的常态姿势）不许把解析兜底物化成声明。
+
+    真栈 A4 实测：整对象 PUT 把 10 个解析默认值写进 rag_config.json（917B→1284B、
+    零值变更）。UI 的 buildRagConfigInput 只发「本次编辑 + 文件自有声明」、从不踩；
+    这道闸是给非 UI 客户端的结构性防线——没选过的值不许被写成「选过」，否则将来
+    兜底一变，旧保存会把它静默钉死。
+    """
+    # 端点一并预置：测试客户端会把境内地址注进每次 PUT，指纹不变才不会顺带触发
+    # 重建/探测——本例测的是往返物化这一件事。
+    _write_rag_json(
+        config_env,
+        {
+            "embedding_model": "ui-embedding",
+            "parse_language": "en",
+            "embedding_base_url": "http://localhost:8080/v1",
+            "rerank_base_url": "http://localhost:8000",
+        },
+    )
+
+    with _client(system_role="admin") as client:
+        view = client.get("/api/rag/config").json()["config"]
+        assert client.put("/api/rag/config", json=view).status_code == 200
+        _settled_reembed(client)
+
+    stored = _read_rag_json(config_env)
+    assert stored["embedding_model"] == "ui-embedding", "文件自有声明原样保留（owned ≠ no-op）"
+    assert stored["parse_language"] == "en"
+    for noise in (
+        "qdrant_url",
+        "vlm_model",
+        "rerank_model",
+        "extract_thinking",
+        "wiki_thinking",
+        "judge_thinking",
+        "synthesis_thinking",
+        "vlm_thinking",
+        "parse_provider",
+        "parse_model_version",
+        "video",
+        "asr_base_url",
+    ):
+        assert noise not in stored, f"{noise} 是解析兜底，不许物化成声明"
+
+
+def test_put_keeps_identity_fields_even_when_they_equal_the_fallback(config_env: Path):
+    """身份四件豁免剥离：显式值=「向量空间的记录」，钉住是本意（防 yaml 兜底一变
+    就悄悄换空间/换宽度）；同一次保存里的非身份 no-op 照样不落盘。"""
+    _write_rag_json(config_env, {"embedding_base_url": "http://localhost:8080/v1", "rerank_base_url": "http://localhost:8000"})
+
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/rag/config",
+            json={"embedding_dimension": 1024, "extract_thinking": False, "qdrant_url": "http://qdrant:6333"},
+        )
+        _settled_reembed(client)
+
+    assert response.status_code == 200
+    stored = _read_rag_json(config_env)
+    assert stored["embedding_dimension"] == 1024
+    assert "extract_thinking" not in stored
+    assert "qdrant_url" not in stored
+
+
 # ── eval judge (a model reference, never a secret) ────────────────────────
 
 
