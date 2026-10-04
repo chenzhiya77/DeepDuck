@@ -2,13 +2,13 @@
 
 **Status:** ✅ **全交付（2026-10-04）**—— D1–D3 全裁=甲（任一腿 `degraded` 可重试／状态格悬停卡复用失败卡／worker 在途合并）；Task 0–5 完成（后端 TDD + 前端 + 真栈 A3 验收），实测见配套 plan：[2026-10-04-rag-retry-and-ready-verdict.md](../plans/2026-10-04-rag-retry-and-ready-verdict.md)。
 
-本对一件事：把 RFC v3 §5.2（状态与重试）从文本承诺落到代码——**降级文档可整篇重试**、**就绪判定按「索引完整」收紧**、**重试与删除交错的幂等机制定案**（RFC L171「具体字段与事务方案需要在实现设计中确定并通过测试」的落点）。检索侧不建状态门：五处措辞对齐后（RAGFlow 档），可见性=切片写入进度，代码现状已符合，本对只补重试与判定差并为档位补验证用例。
+本对一件事：把 RFC v3 §5.2（状态与重试）从文本承诺落到代码——**降级文档可整篇重试**、**就绪判定按「索引完整」收紧**、**重试与删除交错的幂等机制定案**（RFC §5.2「重试以本轮任务与产物为准：有效切片只保留一份、向量与切片同轮一致、文档状态以最新任务为准；处理中发生删除时以删除为准」的落点）。检索侧不建状态门：五处措辞对齐后（RAGFlow 档），可见性=切片写入进度，代码现状已符合，本对只补重试与判定差并为档位补验证用例。
 
 **⚠️ 翻案记录**：本对**推翻** [2026-08-11 二期批次一](../plans/2026-08-11-rag-phase2-batch1.md)（L126）两条现状语义——「部分批次失败仍记 done」「全部批次软失败（`indexed == 0`）文档仍 ready」（后者钉在其用例 `test_worker.py:374-387`，文件名 `test_path_status_vector_failed_when_embed_soft_fails`，docstring 明写「文档仍 ready」）。翻案依据 = RFC v3 §5.2「不能因为向量部分成功就把整篇文档标成 `ready`」与表行 4「索引不完整 → 保持失败」。
 
 **相关记录**：
 
-- RFC：[2026-09-22-local-knowledge-base-rfc-v3.md](../plans/2026-09-22-local-knowledge-base-rfc-v3.md) §5.2 表行 1–4、L160/L162/L171、A3/A4/A8。
+- RFC：[2026-09-22-local-knowledge-base-rfc-v3.md](../plans/2026-09-22-local-knowledge-base-rfc-v3.md) §5.2 表行 1–4、L160/L162、A3/A4/A8。
 - 删除竞态前科与防复活机制：`test_worker.py:633`（Task 9）、`worker._require_alive`。
 - 重试先擦后写与服务受理：`knowledge_service.retry_document`（2026-08 期既有）。
 
@@ -79,7 +79,7 @@ done  ⟺  total > 0 且 indexed == total（即零批次失败）
 - 重试门（`knowledge_bases.py:246-247` 改）：`status == "failed"` 或（`status == "ready"` 且命中降级判定）→ 202；其余 409，detail 更新为「仅失败或降级文档可重试」。
 - 受理逻辑主体不动（有 chunk 先擦、reset、入队），**视频专化一处**（真栈验收补口，2026-10-04）：视频重试走 resume 路、只补跑 pending 镜头 ⇒ 受理时把无图说的镜头（`failed`／`empty`）翻回 `pending`；`done` 保持（重刷已有图说属 recaption 职责，其「done/failed→pending、empty 保持」矩阵不动）。`empty` 必须在内：静默视频 + VLM 故障时 run#1 会把 caption 全败的镜头物化成 `empty`，不翻则重试永远停在零切片失败。重试使用保存的源文件与有效配置，全量重建正文/图片说明/切片/索引，覆盖原先未成功的图片说明（RFC L162 逐条对应）。
 
-### 2.3 重试幂等与删除优先（RFC L171 定案）
+### 2.3 重试幂等与删除优先（RFC §5.2 定案）
 
 **裁决：不新增处理代次字段。** 沿用并补强现有机制，全部以用例钉住：
 
