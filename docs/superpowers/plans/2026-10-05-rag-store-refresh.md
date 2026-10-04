@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-store-refresh-design.md](../specs/2026-10-05-rag-store-refresh-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0 完成（落点已回填）。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0–1 完成（Task 1 已实现未提交）。
 
 ## 范围与交接
 
@@ -36,9 +36,15 @@
 
 ## Task 1 — 取值口自检换新（TDD）
 
-- [ ] RED：宽度差 ⇒ 换新且复用同一 client、集合名带新宽度；一致 ⇒ 同一实例；url 差 ⇒ 重建；假体直通；`url=None`（client 注入）⇒ 直通不重建（**死循环式换新回归钉**）；worker 与 service 两取值口各一（真 store + 配置桩换新、fake 原样）。
-- [ ] GREEN：`vector_store.py` 补 `dense_size`/`url` 访问器（ctor 有 client 时也记 url）与 `refreshed_store(held)`（判别含 url-未知直通；换新构造带 url）；`worker._vector_store` 与 `service.vector_store` 变自检属性（存量字段改名，调用点零改动）。
-- [ ] neuter：关自检（恒返回 held）⇒ 换新用例恰红；还原复绿；门禁 + 实测回填。
+- [x] RED：宽度差 ⇒ 换新且复用同一 client、集合名带新宽度；一致 ⇒ 同一实例；url 差 ⇒ 重建；假体直通；`url=None`（client 注入）⇒ 直通不重建（**死循环式换新回归钉**）；worker 与 service 两取值口各一（真 store + 配置桩换新、fake 原样）。
+- [x] GREEN：`vector_store.py` 补 `dense_size`/`url` 访问器（ctor 有 client 时也记 url）与 `refreshed_store(held)`（判别含 url-未知直通；换新构造带 url）；`worker._vector_store` 与 `service.vector_store` 变自检属性（存量字段改名，调用点零改动）。
+- [x] neuter：关自检（恒返回 held）⇒ 换新用例恰红；还原复绿；门禁 + 实测回填。
+
+**实测（2026-10-05，Task 1 · 已实现未提交）**：
+
+- 用例：`tests/knowledge/test_store_refresh.py`（新文件，9 例）——宽度差换新复用同 client / 一致同一实例 / url 差重建 / 假体直通（不读配置）/ `url=None` 直通（不读配置，**死循环回归钉**）/ worker 与 service 两取值口各一（真 store + 配置桩换新、fake 原样）。RED 首跑 = ImportError；GREEN = 本文件 9 绿 + 受影响面（test_sweep / test_worker / test_api）共 **127 passed**；neuter（自检判定恒真）→ **恰 4 红**（宽度差 / url 差 / 两取值口；一致、假体、url-None 五例不受影响）→ 还原复绿。
+- 落点：`vector_store.py`（ctor 记 `_url`；`dense_size`/`url` 属性；`refreshed_store(held)`——判别=真实例且 url 已知，仅宽度差复用 client、url 差重建、换新打 info 日志）；`worker.py`（`_vector_store` 属性自检，存量字段改名 `_vector_store_held`，12 处调用点零改动）；`knowledge_service.py`（`vector_store` 属性同款，~26 处调用点与 router 读法零改动）。
+- 门禁：`tests/knowledge/` 全量 **1570 passed / 4 failed / 2 skipped**（438.50s；+9 = 本 Task 新用例，4 条全为既有环境条件红）⇒ 零新增；ruff check + format 双净（四文件）。
 
 ## Task 2 — 卡片点龄判据（①，TDD）
 

@@ -47,7 +47,7 @@ from deerflow.knowledge.messages import bilingual
 from deerflow.knowledge.parser import VIDEO_UPLOAD_SUFFIXES, ParsedDocument, ParsedImage, parse_document
 from deerflow.knowledge.store import KnowledgeStore
 from deerflow.knowledge.sweep import reconcile_files, sweep_generations, sweep_round
-from deerflow.knowledge.vector_store import KnowledgeVectorStore
+from deerflow.knowledge.vector_store import KnowledgeVectorStore, refreshed_store
 from deerflow.knowledge.video.asr import AsrError, TranscriptSegment, resolve_leg_provider, transcribe_video
 from deerflow.knowledge.video.captioner import caption_shots
 from deerflow.knowledge.video.frames import extract_caption_frames, extract_keyframes
@@ -207,7 +207,7 @@ class KnowledgeIndexWorker:
         migration_running_fn: Callable[[], bool] | None = None,
     ) -> None:
         self._store = store
-        self._vector_store = vector_store
+        self._vector_store_held = vector_store
         self._graph_store = graph_store or GraphStore(store._sf)
         self._wiki_store = wiki_store or WikiStore(store._sf)
         self._video_store = video_shot_store or VideoShotStore(store._sf)
@@ -244,6 +244,12 @@ class KnowledgeIndexWorker:
         #: 加至多一次补跑（镜像 wiki runner 的 busy/pending 先例）。
         self._active: set[str] = set()
         self._pending: set[str] = set()
+
+    @property
+    def _vector_store(self) -> KnowledgeVectorStore:
+        """取值口自检（spec 2026-10-05 D1）：配置声明（url/宽度）变了就换新实例。"""
+        self._vector_store_held = refreshed_store(self._vector_store_held)
+        return self._vector_store_held
 
     # ── lifecycle ────────────────────────────────────────────────────────
 

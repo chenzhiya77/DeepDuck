@@ -27,9 +27,11 @@ tools off the event loop's blocking path.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
@@ -52,6 +54,8 @@ from qdrant_client.models import (
 )
 
 from deerflow.knowledge.embedder_factory import DEFAULT_COLLECTION_DIMENSION, effective_dimension
+
+logger = logging.getLogger(__name__)
 
 #: Payload fields that get a KEYWORD index on ``kb_chunks`` (spec §3.3) —
 #: only filter conditions are indexed; display metadata stays unindexed.
@@ -156,6 +160,7 @@ class KnowledgeVectorStore:
                 raise ValueError("KnowledgeVectorStore requires a Qdrant url or a client")
             client = AsyncQdrantClient(url)
         self._client = client
+        self._url = url
         self._prefix = collection_prefix
         self._dense_size = dense_size
 
@@ -169,6 +174,14 @@ class KnowledgeVectorStore:
     @property
     def collection_prefix(self) -> str:
         return self._prefix
+
+    @property
+    def dense_size(self) -> int:
+        return self._dense_size
+
+    @property
+    def url(self) -> str | None:
+        return self._url
 
     def names_at_width(self, width: int) -> tuple[str, ...]:
         """This deployment's four collection names at *width* (the generation GC's anchor)."""
@@ -602,6 +615,31 @@ class KnowledgeVectorStore:
         kb_filter = Filter(must=[FieldCondition(key="kb_id", match=MatchValue(value=kb_id))])
         for name in self.collection_names:
             await self._client.delete(collection_name=name, points_selector=FilterSelector(filter=kb_filter))
+
+
+def refreshed_store(held: Any) -> Any:
+    """Return *held* unless the live config now declares a different (url, width).
+
+    自检只对「真实例且 url 已知」生效：假体与 ``client=`` 注入的实例（url 未知）
+    直通——生产恒经 ``get_vector_store()`` 带 url；url 未知时若自检会把每次取值都
+    判成不符、死循环式重建（spec 2026-10-05 D1）。仅宽度差复用同一 client；url 差
+    按新配置重建。
+    """
+    if not isinstance(held, KnowledgeVectorStore) or held.url is None:
+        return held
+    from deerflow.config.app_config import get_app_config
+
+    rag = get_app_config().rag
+    declared_url = rag.qdrant_url
+    declared_width = effective_dimension(rag)
+    if held.url == declared_url and held.dense_size == declared_width:
+        return held
+    if held.url == declared_url:
+        refreshed = KnowledgeVectorStore(url=declared_url, client=held._client, collection_prefix=held.collection_prefix, dense_size=declared_width)
+    else:
+        refreshed = KnowledgeVectorStore(declared_url, collection_prefix=held.collection_prefix, dense_size=declared_width)
+    logger.info("knowledge vector store refreshed: url %s→%s, width %s→%s", held.url, declared_url, held.dense_size, declared_width)
+    return refreshed
 
 
 def get_vector_store() -> KnowledgeVectorStore:

@@ -49,6 +49,7 @@ from deerflow.knowledge.projection.reducer import pca_reduce, umap_reduce
 from deerflow.knowledge.reindex import reindex_in_progress, reindex_kb, reindex_last_run_status, reindex_progress
 from deerflow.knowledge.reranker_factory import build_reranker
 from deerflow.knowledge.store import KnowledgeStore
+from deerflow.knowledge.vector_store import refreshed_store
 from deerflow.knowledge.video.store import VideoShotStore
 from deerflow.knowledge.wiki.generator import generate_wiki, regenerate_wiki_entries, wiki_generation_in_progress, wiki_last_run_status
 from deerflow.knowledge.wiki.store import WikiStore
@@ -239,7 +240,7 @@ class KnowledgeService:
         projection_cache: ProjectionCache | None = None,
     ) -> None:
         self.store = store
-        self.vector_store = vector_store
+        self._vector_store_held = vector_store
         self.graph_store = graph_store or GraphStore(store._sf)
         self.wiki_store = wiki_store or WikiStore(store._sf)
         self.video_shot_store = video_shot_store or VideoShotStore(store._sf)
@@ -255,6 +256,12 @@ class KnowledgeService:
         self._eval_tasks: set[asyncio.Task[None]] = set()
         self._synthesis_tasks: set[asyncio.Task[None]] = set()
         self._reindex_tasks: set[asyncio.Task[None]] = set()
+
+    @property
+    def vector_store(self) -> Any:
+        """取值口自检（spec 2026-10-05 D1）：配置声明（url/宽度）变了就换新实例。"""
+        self._vector_store_held = refreshed_store(self._vector_store_held)
+        return self._vector_store_held
 
     # ── documents ────────────────────────────────────────────────────────
 
