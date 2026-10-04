@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-store-refresh-design.md](../specs/2026-10-05-rag-store-refresh-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0–3 完成（Task 2 门禁回填待出数）。
+**Status:** ✅ 全交付（2026-10-05）：D1=甲、D2=甲；Task 0–4 完成（真栈 9/9；门禁 1574/4/2 零新增）；提交链见 Task 4。
 
 ## 范围与交接
 
@@ -56,7 +56,7 @@
 
 - 用例（`test_sweep.py` +4）：新点保留（flag 关 / 行缺两条，**修前红——合成交错最小复现**）、老点删、无键存量删（既有用例覆盖）、已删库组照清。RED 首跑 **2 红 / 17 绿**（恰两条新点保留）；GREEN 三文件（sweep + manual_knowledge_api + api）**90 passed**；neuter（关龄门）→ **2 红 / 17 绿**（恰两条新点用例）→ 还原复绿（19/19）。
 - 落点：`sweep.py`（`_CARD_ORPHAN_GRACE_SECONDS = 60.0`；`_sweep_manual_cards` 收集段龄门，无键=老）；`vector_store.py`（`ManualCardUpsert.updated_at: float = 0.0` + payload 键）；`knowledge_service.py`（create / update 传 `time.time()`；重嵌路留默认）；`reindex.py` **零改动**（默认即老）。
-- 门禁：`tests/knowledge/` 全量后台在跑（`--basetemp=E:/app-model/deer-flow-scratch/pytest-refresh-t2`），出数后以回填笔补。
+- 门禁：`tests/knowledge/` 全量 **1574 passed / 4 failed / 2 skipped**（413.16s；+4 = 本 Task 新用例，4 条全为既有环境条件红）⇒ 零新增。
 
 ## Task 3 — 真栈验收
 
@@ -71,5 +71,11 @@
 
 ## Task 4 — 文档与收尾
 
-- [ ] `backend/AGENTS.md` 迁移段补一句（翻转后持有实例随配置换新，取值口自检）；清扫条补一句（D5 判据含点龄宽限）；spec/plan 状态行与实测回填。
-- [ ] 提交链回填。
+- [x] `backend/AGENTS.md` 迁移段补一句（翻转后持有实例随配置换新，取值口自检）；清扫条补一句（D5 判据含点龄宽限）；spec/plan 状态行与实测回填。
+- [x] 提交链回填。
+
+**实测（2026-10-05，Task 4 · 纯文档）**：
+
+- `backend/AGENTS.md` 迁移段补「两取值口每次读取自检 `(qdrant_url, 声明宽度)` 并原地换新（spec 2026-10-05 D1）」；清扫条 D5 判据补 60s 点龄宽限（新点不得回收、无键=老）。
+- spec / plan 状态行 → ✅ 全交付；提交链见下。
+- **提交链**：`f2ec4578b`（spec+plan 起草）→ `b495041e9`（Task 1）→ `3b64fa9a1`（Task 2）→ `ff735dcaa`（Task 3）→ 收尾提交（下笔回填）。
