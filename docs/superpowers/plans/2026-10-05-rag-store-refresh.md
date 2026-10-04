@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-store-refresh-design.md](../specs/2026-10-05-rag-store-refresh-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0–2 完成（Task 2 门禁回填待出数）。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0–3 完成（Task 2 门禁回填待出数）。
 
 ## 范围与交接
 
@@ -60,8 +60,14 @@
 
 ## Task 3 — 真栈验收
 
-- [ ] 隔离实例（stale-store 场景改造）：真迁移三步 + 不重启 → 经取值口入库成功、点落在新代、检索可读；重启对照仍过；**①相**：闸门撑开 [upsert → 行写] 窗口、跑真 `sweep_round` ⇒ 新点不被删；放闸后行开、点仍在。
-- [ ] 收尾：容器/进程清理并核验。
+- [x] 隔离实例（stale-store 场景改造）：真迁移三步 + 不重启 → 经取值口入库成功、点落在新代、检索可读；重启对照仍过；**①相**：闸门撑开 [upsert → 行写] 窗口、跑真 `sweep_round` ⇒ 新点不被删；放闸后行开、点仍在。
+- [x] 收尾：容器/进程清理并核验。
+
+**实测（2026-10-05，Task 3 · 隔离实例 9/9 全绿）**：
+
+- 隔离面：临时 Qdrant 容器 `kb-stale-store-qdrant`（:6399）+ 仓外 scratch 根（`stale-store/`）；脚本 `stale-store/e2e_fixed.py`（真迁移三步 + 真 `sweep_round` + 真 `update_manual_card` 闸门；嵌入器用桩——网络调用与本对无关）。**零触碰**他的 6333 / 真配置。
+- 结果 **9 PASS / 0 FAIL**：②（翻转前经取值口入库 ✓；翻转后旧代在场 / 已删两态经**取值口**入库均成功、`store_width` 已换 1536、点在新代可读；重启对照 ✓）；①（闸门撑开窗口时点已写、行仍关；同一轮真 `sweep_round` 下**新点存活**、老 flag-off 残留**照收**（龄门没关掉 D5 的对照组）；放闸后行开、点仍在）。
+- 收尾：容器已 `docker rm -f` 并核验（6333 照旧）；scratch 脚本/目录留 `E:/app-model/deer-flow-scratch/stale-store/` 待他点名清理。
 
 ## Task 4 — 文档与收尾
 
