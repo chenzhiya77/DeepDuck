@@ -2,7 +2,7 @@
 
 - 成对 spec：`docs/superpowers/specs/2026-10-04-vector-reembed-and-embed-identity-guard-design.md`
 - 日期：2026-10-04
-- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 + Task 4 + Task 5 已交付 2026-10-04；Task 6/7 未动；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
+- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 + Task 4 + Task 5 + Task 6 已交付 2026-10-04；仅剩 Task 7；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
 
 ## 范围与交接
 
@@ -58,10 +58,10 @@
 - [x] 全量门禁：knowledge 面全绿（环境红按既有账登记）+ ruff 双净。—— Task 5 仅文档、零代码 delta ⇒ knowledge 面沿用 Task 4 同树数字 **1522 passed / 2 skipped / 4 failed（411s；环境红=既有 4 条账：embed/rerank 缺钥 + parser 两条）**；ruff check/format 全后端双净。
 - [x] 文档：`backend/AGENTS.md` RAG 段补「嵌入身份与重建」一段；spec/plan 回填实测数字与提交链；受影响前端文案键表。—— AGENTS.md「Recall-test API」条后新增 `**Embedding identity & rebuilds**` 一段（身份列=三字段 JSON / 两处写入与 NULL 语义 / D3 自动重建与 503·409 / D4 读侧检测不锁定 / 已知缺口=delta 复走待拍）；spec §2.4 补「受影响前端文案键表」（**零新增键、零改动既有键**，唯一相关键=`embeddingChangeWarning` 逐字复用）。**提交链（本对 6 笔 + 本笔）**：`61a598218` spec+plan 草案 → `132e8d353` D3 同宽换模型自动重建 → `0eeda48fe` D1 全量重灌数字 → `c9bb5832f` D2 按库记身份 → `1fba23148` 存量盖章记录 → `779f8dd21` D4 失配检测 → 本笔 Task 5 文档。
 
-## Task 6 — 真栈验收 + 收尾
+## Task 6 — 真栈验收 + 收尾 ✅ 2026-10-04 交付
 
-- [ ] 真栈 A4：同宽换模型保存（改模型名→保存→改回，配置逐字节还原、md5 前后对照）⇒ 触发语义按待拍结果验证；完成后身份一致、L1 检索复常。
-- [ ] 收尾：scratch 留 `ragas-perf/` 不进仓；工作树核对仅本对改动；提交链回填。
+- [x] 真栈 A4：同宽换模型保存（改模型名→保存→改回，配置逐字节还原、md5 前后对照）⇒ 触发语义按待拍结果验证；完成后身份一致、L1 检索复常。—— 真栈（:3000 登录会话驱动 `PUT /api/rag/config`）`qwen3.7-text-embedding-flash → qwen3.7-text-embedding → 改回`（同厂商/端点/1024 宽 ⇒ D3 通道）：**触发语义=甲自动重建**坐实（响应 `reembed.state=running` + `target_model`，零确认）；**hold→逐库盖章→翻转殿后**的顺序两遍都对（看守日志：盖章 1→2→4→5 期间文件恒持旧值、5/5 才翻）；改回再触发第二遍（target=flash）。收口三样：**身份一致 5/5**（=原指纹逐字相等）、**配置 md5 逐字节还原** `4d92921e…`、**L1 6 题复常 hit/recall=1.000/1.000**（=D1 后值持平）。成本：2×163 嵌入调用（每遍约 4.5/3.75 分钟，LLM 零调用）。附带两条实测注记：①保存后探测（`_probe_after_save`）对窗口模型把关宽度/稀疏半边，不合格400 免写；②整对象 PUT 会把 10 个默认值物化进 `rag_config.json`（5 thinking 布尔 + parse 三件 + `qdrant_url` + `video` 块，零值变更）⇒ md5 必漂，**逐字节还原走备份回拷**（本次照此复原）；「GET→PUT 往返不物化默认值」可作后续小补丁候选。
+- [x] 收尾：scratch 留 `ragas-perf/` 不进仓；工作树核对仅本对改动；提交链回填。—— scratch 只新增 `rag_config.a4-before.json`（含真实密钥，**不进仓**）；工作树核对=仅别线未提交件（`knowledge_bases.py`/`store.py`/`test_api.py`/README 等），本对 Task 6 零仓内文件改动。**提交链（7 笔）**：`61a598218` 草案 → `132e8d353` D3 → `0eeda48fe` D1 数字 → `c9bb5832f` D2 → `1fba23148` 存量盖章 → `779f8dd21` D4 → `efef6cc49` Task 5 文档。
 
 ## Task 7 — D 小补丁：graph_search 抽取 malformed JSON 兜底（✅ 2026-10-04 他拍并入本对）
 
