@@ -22,6 +22,7 @@ from app.gateway.services.knowledge_service import (
     NotVideoDocumentError,
     ProjectionModelUnavailableError,
     ProjectionNotComputedError,
+    has_degraded_leg,
 )
 from deerflow.knowledge.access import can_access
 from deerflow.knowledge.eval.dataset import GoldenDatasetError
@@ -243,8 +244,9 @@ async def delete_document(request: Request, kb_id: str, doc_id: str):
 async def retry_document(request: Request, kb_id: str, doc_id: str):
     service = await _require_kb_access(request, kb_id)
     document = await _get_document_or_404(service, kb_id, doc_id)
-    if document["status"] != "failed":
-        raise HTTPException(status_code=409, detail="Only failed documents can be retried")
+    degraded = document["status"] == "ready" and has_degraded_leg(document)
+    if document["status"] != "failed" and not degraded:
+        raise HTTPException(status_code=409, detail="Only failed or degraded documents can be retried")
     return await service.retry_document(kb_id=kb_id, doc_id=doc_id)
 
 

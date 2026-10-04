@@ -211,6 +211,12 @@ def _normalized_supplement(value: str | None) -> str | None:
     return text or None
 
 
+def has_degraded_leg(document: dict[str, Any]) -> bool:
+    """任一腿处于 ``degraded``（RFC §5.2 D1=甲：caption/graph/视频腿统一）——
+    降级文档（ready + 标记）可整篇重试；wiki 键为库级读时注入、不参与判定。"""
+    return any(state == "degraded" for state in (document.get("path_status") or {}).values())
+
+
 class KnowledgeService:
     """Coordinates stores + worker for the knowledge-base endpoints."""
 
@@ -484,7 +490,7 @@ class KnowledgeService:
         await self.wiki_store.delete_entries(kb_id, titles)
 
     async def retry_document(self, *, kb_id: str, doc_id: str) -> dict[str, Any] | None:
-        """Wipe a failed document's derived state and re-enqueue indexing."""
+        """Wipe a failed or degraded document's derived state and re-enqueue indexing."""
         document = await self.store.get_document(doc_id)
         if document is None or document["kb_id"] != kb_id:
             return None
@@ -507,6 +513,15 @@ class KnowledgeService:
                 await self.wiki_store.mark_dirty_for_titles(kb_id, affected)
             await self.store.delete_chunks_by_doc(doc_id)
         reset = await self.store.reset_document_for_retry(doc_id)
+        shots = await self.video_shot_store.list_shots(doc_id)
+        requeue = [{"shot_index": int(shot["shot_index"]), "caption_status": "pending"} for shot in shots if shot.get("caption_status") in ("failed", "empty")]
+        if requeue:
+            # 视频重试走 resume 路（骨架已在），只补跑 pending 镜头 ⇒ 无图说的镜头
+            # 必须在这里翻回 pending 才会补跑（RFC §5.2 L162「覆盖原先未成功的
+            # 图片说明」，2026-10-04 验收补口）：failed=尝试过但空；empty=三路俱空
+            # 但 caption 同样缺失——VLM 故障恢复后本可补出（静默视频否则永远停在
+            # 零切片失败）。done 保持：重刷已有图说是 recaption 的职责。
+            await self.video_shot_store.bulk_upsert_shots(doc_id, kb_id=kb_id, shots=requeue)
         if self.worker is not None:
             await self.worker.submit(doc_id)
         return reset

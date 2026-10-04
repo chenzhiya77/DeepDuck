@@ -223,6 +223,11 @@ class KnowledgeIndexWorker:
         #: the resume would silently fail on a below-threshold KB).
         self._wiki_pending: dict[str, bool] = {}
 
+        #: D3=甲 在途合并（2026-10-04）：同一文档并发重复提交收敛为单次运行
+        #: 加至多一次补跑（镜像 wiki runner 的 busy/pending 先例）。
+        self._active: set[str] = set()
+        self._pending: set[str] = set()
+
     # ── lifecycle ────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -335,10 +340,24 @@ class KnowledgeIndexWorker:
             task.add_done_callback(self._inflight.discard)
 
     async def _run_guarded(self, doc_id: str) -> None:
+        # D3=甲 在途合并：判档在任何 await 之前完成——同一事件循环内两个任务
+        # 先后进入，后到者必见先到者已入档（无同刻竞态）；重复只登记一次补跑，
+        # 补跑排在原运行收尾之后（终态复检兜底），绝不并发进入管线。
+        already_active = doc_id in self._active
+        if already_active:
+            self._pending.add(doc_id)
+        else:
+            self._active.add(doc_id)
         try:
-            async with self._sem:
-                await self.process_document(doc_id)
+            if not already_active:
+                async with self._sem:
+                    await self.process_document(doc_id)
         finally:
+            if not already_active:
+                self._active.discard(doc_id)
+                if doc_id in self._pending:
+                    self._pending.discard(doc_id)
+                    await self.submit(doc_id)
             self._queue.task_done()
 
     def _spawn_wiki(self, kb_id: str, embedder: _Embedder, *, require_threshold: bool = True) -> None:

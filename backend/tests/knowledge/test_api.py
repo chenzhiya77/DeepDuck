@@ -660,6 +660,97 @@ async def test_retry_non_failed_document_conflicts(service):
     assert client.post(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/retry").status_code == 409
 
 
+async def test_retry_degraded_document_wipes_and_reenqueues(service, session_factory):
+    """降级文档（ready + 含 degraded 腿）可整篇重试（RFC §5.2 L162 / D1=甲）：
+    受理先擦旧产物（向量→行）再入队，保留文档 ID；resume 全量重建。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")}).json()["id"]
+    store = KnowledgeStore(session_factory)
+    await store.update_document_status(doc_id, "ready", chunk_count=2, path_status={"vector": "done", "graph": "done", "caption": "degraded"})
+    await store.insert_chunks(
+        [
+            {"chunk_id": f"{doc_id}#0000", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 0, "text": "甲", "heading_path": [], "page": None, "token_count": 1},
+            {"chunk_id": f"{doc_id}#0001", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 1, "text": "乙", "heading_path": [], "page": None, "token_count": 1},
+        ]
+    )
+    order: list[str] = []
+    service.vector_store.delete_by_doc = AsyncMock(side_effect=lambda *a, **k: order.append("delete"))
+    service.worker.submit = AsyncMock(side_effect=lambda *a, **k: order.append("submit"))
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/retry")
+
+    assert response.status_code == 202, response.text
+    doc = response.json()
+    assert doc["status"] == "uploaded"
+    assert doc["progress_percent"] == 0
+    assert doc["error"] is None
+    assert doc["chunk_count"] is None
+    assert doc["path_status"] is None
+    # 受理序=先删向量后入队；旧切片行清空（不重复创建有效切片、不混用旧向量）
+    assert order == ["delete", "submit"]
+    assert await store.list_chunks(doc_id, limit=10) == []
+
+
+async def test_retry_video_document_requeues_captionless_shots(service, session_factory):
+    """视频重试走 resume 路（骨架已在），只补跑 pending 镜头 ⇒ 受理时必须把无图说的
+    镜头翻回 pending（RFC §5.2 L162「覆盖原先未成功的图片说明」，2026-10-04 验收补口）：
+    failed=尝试过但空；empty=三路俱空但 caption 同样缺失——VLM 故障恢复后本可补出
+    （静默视频否则永远停在零切片失败）。done 保持：重刷已有图说是 recaption 的职责。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = uuid.uuid4().hex
+    doc_dir = service.data_dir / "knowledge" / kb["id"] / doc_id
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    (doc_dir / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    await service.store.create_document(doc_id=doc_id, kb_id=kb["id"], uploader_id=OWNER_ID, name="clip.mp4", size_bytes=100, storage_path=str(doc_dir / "clip.mp4"))
+    await service.store.update_document_status(doc_id, "ready", chunk_count=2, path_status={"vector": "done", "graph": "done", "caption": "degraded"})
+    await service.video_shot_store.bulk_upsert_shots(
+        doc_id,
+        kb_id=kb["id"],
+        shots=[
+            {"shot_index": 0, "start_ms": 0, "end_ms": 3000, "caption": "旧图说", "asr_text": "甲", "ocr_text": "", "caption_status": "done", "keyframe_path": "frames/0.jpg"},
+            {"shot_index": 1, "start_ms": 3000, "end_ms": 6000, "caption": "", "asr_text": "乙", "ocr_text": "", "caption_status": "failed", "keyframe_path": "frames/1.jpg"},
+            {"shot_index": 2, "start_ms": 6000, "end_ms": 9000, "caption": "", "asr_text": "", "ocr_text": "", "caption_status": "empty", "keyframe_path": "frames/2.jpg"},
+        ],
+    )
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/retry")
+
+    assert response.status_code == 202, response.text
+    by_index = {shot["shot_index"]: shot["caption_status"] for shot in await service.video_shot_store.list_shots(doc_id)}
+    assert by_index == {0: "done", 1: "pending", 2: "pending"}
+
+
+async def test_retry_graph_degraded_document_is_allowed(service, session_factory):
+    """D1=甲：任一腿 degraded 均可重试——图谱腿降级同属「有未成功产物」。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")}).json()["id"]
+    store = KnowledgeStore(session_factory)
+    await store.update_document_status(doc_id, "ready", path_status={"vector": "done", "graph": "degraded"})
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/retry")
+
+    assert response.status_code == 202, response.text
+    assert response.json()["status"] == "uploaded"
+
+
+async def test_retry_processing_document_conflicts_with_new_copy(service, session_factory):
+    """处理中文档不得重试（即便腿上带着历史 degraded 标记）——入口只认
+    failed 或 ready+降级；409 文案同步更新（同一文档不重复启动重试）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("a.md", b"# a", "text/markdown")}).json()["id"]
+    store = KnowledgeStore(session_factory)
+    await store.update_document_status(doc_id, "indexing", path_status={"vector": "pending", "graph": "pending", "caption": "degraded"})
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/retry")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Only failed or degraded documents can be retried"
+
+
 async def test_wiki_generate_enqueues_background_task(service):
     generate = MagicMock(return_value=None)
     service.wiki_generate_fn = generate

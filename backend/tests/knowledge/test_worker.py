@@ -698,6 +698,26 @@ async def test_pipeline_aborts_quietly_when_document_deleted_mid_parse(session_f
     assert len(graph.nodes) == 0  # no phantom entities
 
 
+@pytest.mark.asyncio
+async def test_worker_noops_when_document_deleted_after_retry_acceptance(session_factory):
+    """重试受理后、worker 接手前的删除窗口（spec §4.3「重试受理中删除」）：受理面
+    已把行 reset 回 ``uploaded``（旧切片/向量已擦），删除先落 ⇒ worker 静默收尾——
+    行不复活、零僵尸切片（Task 9 删除竞态同族）。"""
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    await store.update_document_status("doc-1", "failed", error="boom")
+    await store.reset_document_for_retry("doc-1")  # 受理面：先擦后写的第一步
+    assert await store.delete_document("doc-1") is True  # 删除先于 worker 接手
+
+    worker = _worker(store, session_factory, parse_fn=_parse_fn())
+    result = await worker.process_document("doc-1")
+
+    assert result is None
+    assert await store.get_document("doc-1") is None  # row stays deleted
+    assert await store.list_chunks("doc-1", limit=10) == []  # no zombie chunks
+
+
 # ── caption lifecycle & the marker's producer (spec 2026-09-23 D8/R8/R21) ──
 #
 # The pipeline order is caption → vector → graph, and both degraded legs write a marker into
@@ -1137,6 +1157,50 @@ async def test_a_hanging_wiki_leg_does_not_block_new_documents(session_factory, 
 
     assert entered, "new documents never entered the pipeline while the wiki leg hung"
     assert peak == 2, f"parse concurrency collapsed to {peak} while the wiki leg held a slot"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_submits_coalesce_into_serial_rerun(session_factory):
+    """D3=甲（2026-10-04）：同一文档并发重复提交收敛为「单次运行 + 至多一次
+    补跑」——补跑排在原运行收尾之后（终态复检兜底），绝不并发进入管线。"""
+    import asyncio
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-1", owner_id="user-1", name="k")
+    await store.create_document(doc_id="doc-1", kb_id="kb-1", uploader_id="user-1", name="a.md", size_bytes=10, storage_path="/tmp/a.md")
+    worker = _worker(store, session_factory)
+
+    depth = 0
+    max_depth = 0
+    entered: list[str] = []
+    first_entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_process(doc_id: str) -> None:
+        nonlocal depth, max_depth
+        entered.append(doc_id)
+        depth += 1
+        max_depth = max(max_depth, depth)
+        first_entered.set()
+        await release.wait()
+        depth -= 1
+
+    worker.process_document = slow_process  # type: ignore[method-assign]
+
+    await worker.start()
+    await worker.submit("doc-1")
+    await first_entered.wait()  # 首个运行已进入且被挂起
+    await worker.submit("doc-1")  # 在途重复提交 ×2（同一文档不重复启动重试）
+    await worker.submit("doc-1")
+    await asyncio.sleep(0.05)  # 让重复任务入档登记（pending）
+    release.set()
+    await worker.wait_idle()
+    await worker.stop()
+
+    assert max_depth == 1, f"same doc entered the pipeline concurrently (depth={max_depth})"
+    assert entered == ["doc-1", "doc-1"]  # 至多一次补跑（两支重复收敛为一）
+    assert worker._active == set()
+    assert worker._pending == set()
 
 
 @pytest.mark.asyncio
