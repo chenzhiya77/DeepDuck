@@ -36,12 +36,12 @@
 - [x] RED：①翻转写抛异常 ⇒ 状态落 `failed` 不留 `running`、章不落；②replace 撞车一次 ⇒ 重试后落盘；③重试耗尽 ⇒ 抛出且恰好 1 首试+3 重试。—— **3 例恰红**，红因核对：状态 `'running' != 'failed'`（正是 409 死锁的病灶）/ `PermissionError` 直接抛出 / `len(calls) 1 != 4`。①落 `tests/knowledge/test_reembed_window_delta.py`（翻转写加固节），②③落 `tests/test_rag_config_file.py`（atomic 写节）。
 - [x] GREEN：`_run` 翻转写纳入 try/except 失败记账（失败 ⇒ `failed` + 日志点名「文件仍旧模型、delta 未跑」）+ `rag_config_file._replace_with_retry`（3 次重试、50ms 退避、只接 `PermissionError`——病灶是 Windows EACCES；无界重试=常驻读方变悬挂）。
 - [x] neuter：三拆按实测报——N1 摘失败记账 ⇒ **恰 1 红**（翻转例）；N2 摘重试 ⇒ 2 红（②+③计数，同源）；N3 上限改 2 ⇒ **恰 1 红**（上限例）。还原后窄面 86/86 复绿。
-- [ ] 门禁：同 Task 1 面 + `test_rag_config_file.py` 族。—— 窄面 **86 passed**（delta 8 + reindex 20 + rag_config_file 58）；ruff check/format **4 文件双净**；全面数字待后台跑完回填。
+- [x] 门禁：同 Task 1 面 + `test_rag_config_file.py` 族。—— 窄面 **86 passed**（delta 8 + reindex 20 + rag_config_file 58）；全面 **1704 passed / 2 skipped / 4 failed（459s）**——4 条全环境账（embed/rerank 缺钥 + parser 两条），在案 flake 未响；ruff check/format **4 文件双净**。
 
-## Task 3 — 门禁 + 回填 + 登记
+## Task 3 — 门禁 + 回填 + 登记 ✅ 2026-10-05 交付
 
-- [ ] 全量门禁 + spec/plan 回填实测数字与提交链；`backend/AGENTS.md` 的「Embedding identity & rebuilds」段更新已知缺口（delta 复走落地后删缺口行、换 delta 语义与 ③ 姿态）。
-- [ ] 登记三件落文档（审查 7/8/9）：孪生竞态（models_config）、清扫 busy 面、进度观感；尾部残余（单文档嵌入时延）登记同 spec §6。
+- [x] 全量门禁 + spec/plan 回填实测数字与提交链；`backend/AGENTS.md` 的「Embedding identity & rebuilds」段更新。—— 数字逐任务回填（Task 1 全面 1644/2/5、Task 2 全面 1704/2/4，4 条环境账、flake 一次响一次未响）；AGENTS.md「Known gap」句已换 delta 语义 + ③ 姿态 + 尾部残余。**提交链**：`86c1deba6` ①草稿成对 → `fd7348ee1` 三裁回填 → `7a0eb7dbf` 审查裁定十条 → `86c402173` Task 1 复走+盖章后移 → `94e3522b3` Task 2 翻转写加固 → 本笔 Task 3 文档。
+- [x] 登记三件落文档（审查 7/8/9）+ 尾部残余。—— 已在裁定笔落 spec §6（孪生竞态=只修 rag 路径 / 清扫 busy 面=可选 / 进度观感）与 §4·§5（单文档嵌入时延=尾部残余、与宽度通道同口径）。
 
 ## Task 4 — 真栈验收（审查 5）
 
