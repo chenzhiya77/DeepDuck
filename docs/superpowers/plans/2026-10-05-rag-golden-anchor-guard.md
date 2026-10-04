@@ -18,10 +18,10 @@
 
 > 动到的文件：只读核实 + 本 plan/spec 回填
 
-- [ ] ① `question_bank.add_question` 签名与两个调用方（`knowledge_service.py:1543` create / `synthesis.py:399` accept——**accept 链 `synthesis.accept_candidate` 签名要透传 guard**）；guard 注入形状（保持文件层纯度 + 现有测试不受扰）。
-- [ ] ② `_tokenize` 可复用性（私有→导出/共享）+ CJK 二元组对 q008 判据的实测复核（"装箱/拆箱"二元组在 `#0001` 命中、`#0002` 零命中）。
-- [ ] ③ 服务层拿切片正文的路径（`KnowledgeStore.get_chunk`；guard 的 fetch 注入形状）。
-- [ ] ④ 受害者扫描：既有题库相关用例（`test_synthesis.py` / `test_question_bank` 族 / eval API 用例）受影响面；拦截错误形状=独立异常 + 结构化 detail（`miss_terms`/`suggested_chunk`/`hits`/`best_hits`，spec §4），4xx 选型随 D1=甲′。
+- [x] ① `question_bank.add_question(path, *, query, category, expected_paths, relevant_chunk_ids=(), relevant_entities=(), reference_answer=None)`（`question_bank.py:69`）；两调用方核实无误：`knowledge_service.py:1543`（create）/ `synthesis.py:399`（在 `accept_candidate(bank_path, staging_path, candidate_id)`，`synthesis.py:384`）⇒ guard 需给 `accept_candidate` 加透传参数。注入形状定为 **keyword-only 可选参数（默认 None=不拦）** ⇒ 直接调 `add_question` 的既有用例（`test_question_bank` / `test_ondemand` / `test_video_eval` / `test_table_eval`）零扰动。
+- [x] ② `_tokenize` 在 `knowledge/sparse.py:57`（模块私有）⇒ 提共享导出、不复制第二份。二元组口径实测复核（14 有答案题 20 锚）：q008 锚 `#0002` h=5 vs 同文档最佳 B=8（差 3 ⇒ 被「B−h≥2 且锚非最佳」拦，`#0001` 是最佳片）；单片 10 锚全 h==B 零误报、多片 5 处压制全被豁免 ⇒ **1 拦 0 误杀**（注意：`#0002` 二元组口径不是零命中，「h=0」那半不触发，判据靠差值半拦住）。
+- [x] ③ `KnowledgeStore.get_chunk(chunk_id) -> dict | None`（`store.py:342`）取单片正文；create 路复用既有 `get_chunks_by_ids(chunk_ids, *, kb_id=None)`（`store.py:326`，与实体派生同一次取数）。guard 的 fetch 注入形状=async callable（拿 chunk id 列表回正文）。
+- [x] ④ 受害者扫描：直调 `add_question` 的用例族=`test_question_bank` / `test_ondemand` / `test_video_eval` / `test_table_eval`；accept 链=`test_synthesis.py` + API 层 `test_eval_questions_api.py` / `test_synthesis_api.py`。guard 默认关 ⇒ 预期零受害者（Task 1 门禁实测复核）。错误形状：`QuestionBankInvalidQuestion` → `knowledge_bases.py:767` `HTTPException(422, detail=str(exc))` 纯字符串 ⇒ 拦截走**独立异常类 + 结构化 detail**（`miss_terms`/`suggested_chunk`/`hits`/`best_hits`），router 加 except 分支映射 422，4xx 选型随 D1=甲′。
 
 ## Task 1 — 核验函数 + 收口挂载 TDD
 
