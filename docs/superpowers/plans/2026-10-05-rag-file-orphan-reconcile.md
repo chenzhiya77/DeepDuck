@@ -100,4 +100,4 @@
 
 - RFC §5.3 条目 3：半句从"也须纳入恢复"改为已实现表述（行创建失败即清 + 孤儿文件与目录由清扫轮对账回收）。
 - `backend/AGENTS.md` 清扫条重写：集合级枚举 / 已删库整组 / 卡片开关判据 / 文件腿 / 代次 GC（锚=声明宽度、生效代在位前置）/ 双闸（in-flight ∪ app `migration_running`），spec 双链接。
-- **提交链**：`15044db00`（RFC 回收口径）→ `a1cb45d3c`（spec+plan 起草）→ `d9ca5b644`（Task 1）→ `f0207aba7`（Task 2）→ `46718eee4`（Task 3）→ `1a66509dc`（Task 4）→ 收尾提交（下笔回填）。
+- **提交链**：`15044db00`（RFC 回收口径）→ `a1cb45d3c`（spec+plan 起草）→ `d9ca5b644`（Task 1）→ `f0207aba7`（Task 2）→ `46718eee4`（Task 3）→ `1a66509dc`（Task 4）→ `f54843c7f`（收尾）。
