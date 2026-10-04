@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-file-orphan-reconcile-design.md](../specs/2026-10-05-rag-file-orphan-reconcile-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–4 完成（Task 1–4 已实现未提交；真栈 17/17）。
+**Status:** ✅ 全交付（2026-10-05）：D1–D6 全甲；Task 0–5 完成（真栈 17/17；门禁 1561/4/2 零新增）；提交链见 Task 5。
 
 ## 范围与交接
 
@@ -93,5 +93,11 @@
 
 ## Task 5 — 文档与收尾
 
-- [ ] §5.3 条目 3 半句改写实口径（"须纳入恢复"→已实现表述）；`backend/AGENTS.md` 清扫条补文件腿、向量侧枚举与代次三句；spec/plan 状态行与实测回填。
-- [ ] 提交链回填。
+- [x] §5.3 条目 3 半句改写实口径（"须纳入恢复"→已实现表述）；`backend/AGENTS.md` 清扫条补文件腿、向量侧枚举与代次三句；spec/plan 状态行与实测回填。
+- [x] 提交链回填。
+
+**实测（2026-10-05，Task 5 · 纯文档）**：
+
+- RFC §5.3 条目 3：半句从"也须纳入恢复"改为已实现表述（行创建失败即清 + 孤儿文件与目录由清扫轮对账回收）。
+- `backend/AGENTS.md` 清扫条重写：集合级枚举 / 已删库整组 / 卡片开关判据 / 文件腿 / 代次 GC（锚=声明宽度、生效代在位前置）/ 双闸（in-flight ∪ app `migration_running`），spec 双链接。
+- **提交链**：`15044db00`（RFC 回收口径）→ `a1cb45d3c`（spec+plan 起草）→ `d9ca5b644`（Task 1）→ `f0207aba7`（Task 2）→ `46718eee4`（Task 3）→ `1a66509dc`（Task 4）→ 收尾提交（下笔回填）。
