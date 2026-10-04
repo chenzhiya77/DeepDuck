@@ -58,4 +58,4 @@
 | 对（草稿+Task 0 回填） | `f0f163ee0` | docs(rag): draft the orphan-vector sweep spec and plan |
 | Task 1 | `33d661d38` | feat(rag): add the orphan-vector reconciliation sweep（核心 + 5 用例 + plan 回填） |
 | Task 2 | `e930fd3b1` | feat(rag): run the orphan sweep from the knowledge worker（接线 + 守卫 + 配置 + 3 用例 + plan 回填） |
-| Task 3–4 | `待本笔回填` | docs(rag): close out the orphan-vector sweep pair（真栈记录 + 状态行 + AGENTS.md + RFC 一句） |
+| Task 3–4 | `6fe1eacd4` | docs(rag): close out the orphan-vector sweep pair（真栈记录 + 状态行 + AGENTS.md + RFC 一句） |
