@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-store-refresh-design.md](../specs/2026-10-05-rag-store-refresh-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0–1 完成（Task 1 已实现未提交）。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲；施工中：Task 0–2 完成（Task 2 门禁回填待出数）。
 
 ## 范围与交接
 
@@ -48,9 +48,15 @@
 
 ## Task 2 — 卡片点龄判据（①，TDD）
 
-- [ ] RED：flag 关 + 新点（`updated_at≈now`）⇒ 保留（**当前代码会删——即合成交错的最小复现，修前红**）；flag 关 + 老点 ⇒ 删；无 `updated_at` 键的存量点 ⇒ 删；行缺 + 新点 ⇒ 保留；已删库组（kb 行无）不受龄门影响 ⇒ 照清。
-- [ ] GREEN：`ManualCardUpsert` 加 `updated_at` + payload 键；create / update 两处 upsert 传 `time.time()`（重嵌 `reindex.py:300` 留默认 `0.0`=老）；`_sweep_manual_cards` 收集段加龄门（`_CARD_ORPHAN_GRACE_SECONDS = 60.0`；无键=老）。
-- [ ] neuter：关龄门（恒可删）⇒ 新点保留用例恰红；还原复绿；门禁 + 实测回填。
+- [x] RED：flag 关 + 新点（`updated_at≈now`）⇒ 保留（**当前代码会删——即合成交错的最小复现，修前红**）；flag 关 + 老点 ⇒ 删；无 `updated_at` 键的存量点 ⇒ 删；行缺 + 新点 ⇒ 保留；已删库组（kb 行无）不受龄门影响 ⇒ 照清。
+- [x] GREEN：`ManualCardUpsert` 加 `updated_at` + payload 键；create / update 两处 upsert 传 `time.time()`（重嵌 `reindex.py:300` 留默认 `0.0`=老）；`_sweep_manual_cards` 收集段加龄门（`_CARD_ORPHAN_GRACE_SECONDS = 60.0`；无键=老）。
+- [x] neuter：关龄门（恒可删）⇒ 新点保留用例恰红；还原复绿；门禁 + 实测回填。
+
+**实测（2026-10-05，Task 2 · 已实现，随本笔提交）**：
+
+- 用例（`test_sweep.py` +4）：新点保留（flag 关 / 行缺两条，**修前红——合成交错最小复现**）、老点删、无键存量删（既有用例覆盖）、已删库组照清。RED 首跑 **2 红 / 17 绿**（恰两条新点保留）；GREEN 三文件（sweep + manual_knowledge_api + api）**90 passed**；neuter（关龄门）→ **2 红 / 17 绿**（恰两条新点用例）→ 还原复绿（19/19）。
+- 落点：`sweep.py`（`_CARD_ORPHAN_GRACE_SECONDS = 60.0`；`_sweep_manual_cards` 收集段龄门，无键=老）；`vector_store.py`（`ManualCardUpsert.updated_at: float = 0.0` + payload 键）；`knowledge_service.py`（create / update 传 `time.time()`；重嵌路留默认）；`reindex.py` **零改动**（默认即老）。
+- 门禁：`tests/knowledge/` 全量后台在跑（`--basetemp=E:/app-model/deer-flow-scratch/pytest-refresh-t2`），出数后以回填笔补。
 
 ## Task 3 — 真栈验收
 

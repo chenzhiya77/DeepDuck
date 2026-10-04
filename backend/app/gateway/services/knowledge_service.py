@@ -959,7 +959,7 @@ class KnowledgeService:
         if embedding is not None:
             from deerflow.knowledge.vector_store import ManualCardUpsert
 
-            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=title, dense=embedding.dense)])
+            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=title, dense=embedding.dense, updated_at=time.time())])
         return await self.store.create_manual_card(
             card_id=card_id,
             kb_id=kb_id,
@@ -1048,7 +1048,7 @@ class KnowledgeService:
         if embedding is not None:
             from deerflow.knowledge.vector_store import ManualCardUpsert
 
-            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=effective_title, dense=embedding.dense)])
+            await self.vector_store.upsert_manual_cards([ManualCardUpsert(card_id=card_id, kb_id=kb_id, title=effective_title, dense=embedding.dense, updated_at=time.time())])
 
         updated = await self.store.update_manual_card(
             card_id,

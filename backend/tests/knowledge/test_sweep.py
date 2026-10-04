@@ -10,6 +10,7 @@ pin 住的契约：
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 
 from deerflow.knowledge.graph.extractor import ExtractedEntity
@@ -299,6 +300,56 @@ async def test_card_flag_flip_recheck_keeps_point(session_factory):
     assert "p-card-off" in fake.points[fake.manual_cards_collection]
     assert report.deleted["manual_cards"] == 0
     assert report.skipped["manual_cards"] == 1
+
+
+async def test_fresh_flag_off_point_kept_by_age_gate(session_factory):
+    """①合成交错最小复现：toggle-on 的 [upsert→行写] 窗口里新点（龄≈0）不被删——修前此条红。"""
+    store, graph, wiki, entry = await _seed(session_factory)
+    await store.create_manual_card(card_id="card-2", kb_id=KB, owner_id=OWNER, title="关卡", content="关正文", include_in_wiki_search=False)
+    fake = FakeVectorStore()
+    fake.add(fake.manual_cards_collection, {"card_id": "card-2", "kb_id": KB, "title": "关卡", "updated_at": time.time()}, point_id="p-card-fresh")
+
+    report = await _round(store, graph, wiki, fake)
+
+    assert "p-card-fresh" in fake.points[fake.manual_cards_collection]
+    assert report.deleted["manual_cards"] == 0
+    assert fake.calls["delete_manual_cards"] == []
+
+
+async def test_old_flag_off_point_deleted_by_age_gate(session_factory):
+    store, graph, wiki, entry = await _seed(session_factory)
+    await store.create_manual_card(card_id="card-2", kb_id=KB, owner_id=OWNER, title="关卡", content="关正文", include_in_wiki_search=False)
+    fake = FakeVectorStore()
+    fake.add(fake.manual_cards_collection, {"card_id": "card-2", "kb_id": KB, "title": "关卡", "updated_at": time.time() - 3600}, point_id="p-card-old")
+
+    report = await _round(store, graph, wiki, fake)
+
+    assert "p-card-old" not in fake.points[fake.manual_cards_collection]
+    assert report.deleted["manual_cards"] == 1
+
+
+async def test_fresh_point_with_missing_row_kept(session_factory):
+    """行缺 + 新点（create 的 [upsert→行插] 窗口）同样被龄门挡住。"""
+    store, graph, wiki, entry = await _seed(session_factory)
+    fake = FakeVectorStore()
+    fake.add(fake.manual_cards_collection, {"card_id": "card-new", "kb_id": KB, "title": "新卡", "updated_at": time.time()}, point_id="p-card-create-window")
+
+    report = await _round(store, graph, wiki, fake)
+
+    assert "p-card-create-window" in fake.points[fake.manual_cards_collection]
+    assert report.deleted["manual_cards"] == 0
+
+
+async def test_deleted_kb_group_ignores_age_gate(session_factory):
+    """已删库组不走龄门：组内新点照清。"""
+    store, graph, wiki, entry = await _seed(session_factory)
+    fake = FakeVectorStore()
+    fake.add(fake.manual_cards_collection, {"card_id": "c-gone", "kb_id": GONE, "title": "走卡", "updated_at": time.time()}, point_id="p-g-card")
+
+    report = await _round(store, graph, wiki, fake)
+
+    assert report.deleted_kb_groups["manual_cards"] == 1
+    assert "p-g-card" not in fake.points[fake.manual_cards_collection]
 
 
 async def test_sweep_is_idempotent(session_factory):

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 _COLLECTION_KEYS: tuple[str, ...] = ("chunks", "entities", "wiki_entries", "manual_cards")
 _CHUNK_CHECK_BATCH = 512
+#: 点龄门（spec 2026-10-05 D2=甲）：toggle-on 的 [upsert→行写] 窗口里新点龄≈0，
+#: 低于宽限永不进候选——窗口单调关闭；无 updated_at 键=老、照删。
+_CARD_ORPHAN_GRACE_SECONDS = 60.0
 
 
 @dataclass(slots=True)
@@ -180,7 +184,13 @@ async def _sweep_manual_cards(report: SweepReport, *, records, store, vector_sto
     card_ids = sorted({(record.payload or {}).get("card_id") for record in records if (record.payload or {}).get("card_id")})
     if not card_ids:
         return
-    candidates = [card_id for card_id in card_ids if not await _card_is_live(store, card_id)]
+    updated_by_id: dict[str, float] = {}
+    for record in records:
+        payload = record.payload or {}
+        if payload.get("card_id"):
+            updated_by_id[payload["card_id"]] = float(payload.get("updated_at") or 0.0)
+    now = time.time()
+    candidates = [card_id for card_id in card_ids if not await _card_is_live(store, card_id) and now - updated_by_id.get(card_id, 0.0) > _CARD_ORPHAN_GRACE_SECONDS]
     if not candidates:
         return
     still_orphans = [card_id for card_id in candidates if not await _card_is_live(store, card_id)]

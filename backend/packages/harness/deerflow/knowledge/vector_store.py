@@ -136,12 +136,15 @@ class ManualCardUpsert:
     Same pointer-not-text rule as wiki entries: the full card lives in the
     business DB ``manual_knowledge`` table; only cards whose
     ``include_in_wiki_search`` toggle is on get a point (spec §8 可选混合).
+    ``updated_at`` 供清扫点龄门（spec 2026-10-05 D2）：create/update 落写入时刻；
+    重嵌路留默认 ``0.0``=老（它只重嵌 flag-on 卡、恒被行判据保住）。
     """
 
     card_id: str
     kb_id: str
     title: str
     dense: list[float]
+    updated_at: float = 0.0
 
 
 class KnowledgeVectorStore:
@@ -585,7 +588,7 @@ class KnowledgeVectorStore:
             PointStruct(
                 id=self._manual_card_point_id(card.card_id),
                 vector={"dense": card.dense},
-                payload={"card_id": card.card_id, "kb_id": card.kb_id, "title": card.title},
+                payload={"card_id": card.card_id, "kb_id": card.kb_id, "title": card.title, "updated_at": card.updated_at},
             )
             for card in cards
         ]
