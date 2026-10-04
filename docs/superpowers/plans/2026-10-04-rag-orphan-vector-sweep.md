@@ -1,0 +1,51 @@
+# RAG 孤儿向量对账清扫 —— 实施计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
+
+**Spec:** [2026-10-04-rag-orphan-vector-sweep-design.md](../specs/2026-10-04-rag-orphan-vector-sweep-design.md)
+**Status:** 已裁（2026-10-04）——D1=甲、D2=甲、D3=乙、D4=甲；落点已回填，待开工。
+
+## 范围与交接
+
+| 决策 | 本期落点 | 明确移出 |
+| --- | --- | --- |
+| D1 清扫范围 | ✅ 已裁=甲：四集合全扫 | 检索侧读取守卫 |
+| D2 触发方式 | ✅ 已裁=甲：启动 jitter 一次 + 周期（默认开，24h） | 前端与手动入口 |
+| D3 并发姿态 | ✅ 已裁=乙：该库无在飞、无迁移才跑 | — |
+| D4 可观测 | ✅ 已裁=甲：仅日志 | 状态查询接口 |
+
+## 硬约束
+
+- 只删 Qdrant 点；业务行/文件不动；不新增持久记录；幂等可重复；检索/写入路径零改动。
+- 清扫实现放 `deerflow.knowledge`（harness 层），复用 `KnowledgeVectorStore` 既有删除方法；不碰 `app.*`。
+
+## Task 0 — 落点核实 ✅
+
+- [x] ① 写序四路（已核）：chunks / entities / wiki = 行先行（`worker.py:664→439`、`graph/indexer.py:177→213`、`wiki/generator.py:299→302`）；cards = 创建向量先行（`knowledge_service.py:941-950`，embed→upsert→insert）。**实测：12 组锚全部零漂移。**
+- [x] ② 点键与载荷（已核）：`scroll_collection(collection_name, kb_id)` 按 kb 过滤滚动（`vector_store.py:495-524`，payload 全带、内部分页）；复用删除方法 = `delete_chunks` / `delete_entities` / `delete_wiki_entries` / `delete_manual_cards`（`:482/330/370/559`），分别按 (kb,name)/(kb,title)/point-id 过滤，与 payload 键一一对应。**实测：`delete_by_doc failed during retry` 锚 `:504` ✓。**
+- [x] ③ 并发面（已定）：闸输入 =（a）逐库：worker busy-kb 集合——**现无**（`_active`/`_pending` 仅 doc_id，`worker.py:229-230`），Task 2 给 worker 加结构化 `_busy_kbs` 并暴露 `busy_kb_ids()`（不用"查行反推"，避免文档被删后误判空闲）；wiki 腿并入 `wiki_generation_in_progress(kb_id)`（`wiki/generator.py:69`）；（b）全局：`dimension_migration.migration_in_progress()`（`dimension_migration.py:80`）为真则整轮跳过。**挂靠宿主 = `KnowledgeIndexWorker.start()/stop()`**（`app.py:366` 已在 lifespan 起停；sweep 作为 worker 自己的后台任务，与其生命周期一致）。**实测：`_queue`:215 / `_inflight`:217 / `start`:234 / `stop`:275。**
+- [x] ④ 基线与成本（实测 2026-10-04，Qdrant :6333 在线）：全量四集合 = chunks 123 / entities 1335 / wiki 268 / cards 3（共 1729 点）；5 库中最大 = 测试1（67/736/142/3）。一圈滚动请求量 = Σceil(count/512) ≈ **6 次 scroll + 1729 次业务行回查（分批）——近零成本**。观察项：Qdrant 里有数十个测试遗留集合（`test_*`/`testt*`）与一个空库「测试3」（四集合全 0）；清扫只扫本部署四集合，不触它们。
+
+## Task 1 — 核心清扫（TDD）
+
+- [ ] RED：四集合孤儿→消失；正常点全保留；单集合失败续跑；候选复核（收集后出现业务行→不删）；守卫跳过（D3=乙）。
+- [ ] GREEN：`knowledge/sweep.py`：按库滚动↔对账↔两段式（收集候选→复核→批量删点）；`sweep_library(kb_id)` 返回报告（各集合扫描数/删除数/失败）。
+- [ ] neuter：关判据→孤儿用例恰红；关守卫（D3=乙 时）→跳过用例恰红；还原复绿。
+- [ ] 门禁：knowledge 面全量 + ruff 双净。
+- [ ] 实测回填。
+
+## Task 2 — 触发接线（D2=甲：启动+周期；D3=乙：空闲闸）
+
+- [ ] 启动 jitter 一次 + 周期循环挂在 `KnowledgeIndexWorker.start()/stop()`；worker 加结构化 `_busy_kbs` 并暴露 `busy_kb_ids()`（Task 0③ 定案）；`rag.sweep_enabled` / `rag.sweep_interval_hours` 加进 `RagConfig`（config.yaml `rag:` 段，不进 UI 文件）；守卫 = `busy_kb_ids()` ∪ `wiki_generation_in_progress(kb_id)`（逐库）+ `migration_in_progress()`（全局）。
+- [ ] 用例：开关关→不跑；守卫命中→跳过并记录。
+- [ ] 门禁 + 实测回填。
+
+## Task 3 — 真栈验收
+
+- [ ] 隔离实例：停 Qdrant → 删文档（残留产生）→ 起 Qdrant → 跑一轮清扫（直调或等自动轮）→ 残留清零；正常库检索结果不变。
+- [ ] 收尾：临时库/进程/文件清理并核验。
+
+## Task 4 — 文档与收尾
+
+- [ ] spec 状态行与本文实测回填；`backend/AGENTS.md` knowledge 段补清扫一句；RFC §6.x 是否补"残留由对账回收"随 D 裁决定。
+- [ ] 提交链回填。
