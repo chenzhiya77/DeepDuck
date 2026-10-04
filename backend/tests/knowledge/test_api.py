@@ -166,6 +166,29 @@ async def test_upload_document_returns_202_with_uploaded_row_and_enqueues(servic
     assert str(tmp_path) in str(stored)
 
 
+async def test_upload_compensates_when_row_creation_fails(service, tmp_path, monkeypatch):
+    """文件→行半段（spec 2026-10-05 §2.1）：``create_document`` 抛错 ⇒ 请求报错、
+    已写文件不残留、不进入队列。"""
+    app = make_authed_test_app(user_factory=_owner)
+    app.state.knowledge_service = service
+    app.include_router(knowledge_bases.router)
+    client = TestClient(app, raise_server_exceptions=False)
+    kb = _create_kb(client)
+    payload = "# 标题\n\n正文内容".encode()
+
+    async def _boom(**kwargs):
+        raise RuntimeError("row write failed")
+
+    monkeypatch.setattr(service.store, "create_document", _boom)
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("手册.md", payload, "text/markdown")})
+
+    assert response.status_code == 500
+    kb_root = tmp_path / "knowledge" / kb["id"]
+    assert not kb_root.exists() or list(kb_root.iterdir()) == []
+    service.worker.submit.assert_not_awaited()
+
+
 async def test_upload_rejects_unsupported_suffix(service):
     """Task 6 (spec §6): allowlist gate at the upload entry; rejection lists
     the supported set and leaves no document row behind."""

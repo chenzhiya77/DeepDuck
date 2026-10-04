@@ -426,16 +426,22 @@ class KnowledgeService:
             doc_dir.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(content)
 
-        await run_file_io(_write)
-        document = await self.store.create_document(
-            doc_id=doc_id,
-            kb_id=kb_id,
-            uploader_id=uploader_id,
-            name=safe_name,
-            size_bytes=len(content),
-            storage_path=str(dest),
-            content_hash=content_hash,
-        )
+        # 文件→行半段（spec 2026-10-05 §2.1）：行没落地就把已写的文件带走，异常路径
+        # 不留无主文件；行落地即止（行→入队半段由 worker.recover 兜）。
+        try:
+            await run_file_io(_write)
+            document = await self.store.create_document(
+                doc_id=doc_id,
+                kb_id=kb_id,
+                uploader_id=uploader_id,
+                name=safe_name,
+                size_bytes=len(content),
+                storage_path=str(dest),
+                content_hash=content_hash,
+            )
+        except Exception:
+            await self._remove_dir(doc_dir)
+            raise
         if self.worker is not None:
             await self.worker.submit(doc_id)
         return document

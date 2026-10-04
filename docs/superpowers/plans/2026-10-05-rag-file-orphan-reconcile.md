@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
 
 **Spec:** [2026-10-05-rag-file-orphan-reconcile-design.md](../specs/2026-10-05-rag-file-orphan-reconcile-design.md)
-**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；落点已回填，待开工。
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；施工中：Task 0–1 完成（Task 1 已实现未提交）。
 
 ## 范围与交接
 
@@ -42,9 +42,15 @@
 
 ## Task 1 — 异常即清（TDD）
 
-- [ ] RED：`create_document` 桩抛错 → 请求报错且 `doc_dir` 不残留。
-- [ ] GREEN：`upload_document` 的 write→create→submit 包补偿（失败 `_remove_dir` 再抛）。
-- [ ] neuter：去掉补偿 → 用例恰红；还原复绿；门禁 + 实测回填。
+- [x] RED：`create_document` 桩抛错 → 请求报错且 `doc_dir` 不残留。
+- [x] GREEN：`upload_document` 的 write→create→submit 包补偿（失败 `_remove_dir` 再抛）。
+- [x] neuter：去掉补偿 → 用例恰红；还原复绿；门禁 + 实测回填。
+
+**实测（2026-10-05，Task 1 · 已实现未提交）**：
+
+- 用例：`tests/knowledge/test_api.py::test_upload_compensates_when_row_creation_fails`——`raise_server_exceptions=False` 的 TestClient（既有先例 `test_chunk_edit_api.py:69`）断言 500 + `knowledge/<kb_id>/` 无残留 + `submit` 未调用。RED 首跑 **1 红**（恰是残留断言，孤儿目录实测存在）；GREEN 整文件 **57 passed**；neuter（补偿动作换 `pass`）→ **1 failed / 56 passed**（受害者=新用例、不相交）；还原复绿。
+- **实现更正（一处收窄）**：补偿范围 = **write + create（行落地即止）**，**不含 submit**——submit 是 `await self._queue.put`（无界队列、不可失败面），且行已落地时删文件会制造「行无文件」孤儿；「行→入队」半段本由 `worker.recover()` 兜（spec §1 原话）。plan 原文「write→create→submit 包补偿」按此收窄。
+- 门禁：`tests/knowledge/` 全量 **1544 passed / 4 failed / 2 skipped**（386.98s）；4 条全是既有环境条件红（embed/rerank 缺 key、`test_parse_pdf_full_flow`、`test_token_read_from_env_never_from_caller`）⇒ 零新增；ruff check + format 双净（两文件）。
 
 ## Task 2 — 目录对账并入清扫轮（TDD）
 
