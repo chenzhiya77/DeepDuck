@@ -1,0 +1,71 @@
+# RAG 清扫轮盲区收口 —— 实施计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. 「实测」段回填真实命令与数字，不预填、不估算。
+
+**Spec:** [2026-10-05-rag-file-orphan-reconcile-design.md](../specs/2026-10-05-rag-file-orphan-reconcile-design.md)
+**Status:** 已裁（2026-10-05）——D1=甲、D2=甲、D3=甲、D4=甲、D5=甲、D6=甲；落点已回填，待开工。
+
+## 范围与交接
+
+| 决策 | 本期落点 | 明确移出 |
+| --- | --- | --- |
+| D1 两层 | ✅ 已裁=甲：异常即清 + 对账清扫 | 上传管线重构 |
+| D2 落点 | ✅ 已裁=甲：并入清扫轮（`data_dir` 传 worker） | 独立目录任务 |
+| D3 范围 | ✅ 已裁=甲：`knowledge/` 整棵 | 通用磁盘清理 |
+| D4 向量侧枚举 | ✅ 已裁=甲：集合级 pass 取代逐库枚举 | tombstone 表 |
+| D5 卡片判据 | ✅ 已裁=甲：行存在且开关开才保留 | 不修 / 改姿态 |
+| D6 代次残留 | ✅ 已裁=甲：集合级枚举 + 注入闸（§2.6） | 单开小对 / 不修 |
+
+## 硬约束
+
+- 只删 `knowledge/` 下目录；业务行/Qdrant 不动；不新增配置面（复用 `rag.sweep_*`）；两段式；失败仅记录、下轮重试。向量侧同款：只删两段判据内的点，闸逐库精确（组内跳过，不做全轮收缩）。
+
+## Task 0 — 落点核实
+
+- [x] ① 锚点与顺序：`knowledge_service.py:422-441`（write→create→submit 无补偿）；`_remove_dir` 语义（`:1769`，ignore_errors）；service 与 worker 各自拿到的 `data_dir` 现状（`app.py:352-364`）。
+- [x] ② 目录布局：`knowledge/<kb_id>/<doc_id>/` 下有哪些内容（原文件、`images/`、video `frames/` 等），是否有 kb 级直挂文件；确认 walk 判据只认这两级。
+- [x] ③ 清扫轮接线面：`_sweep_once` 现状（本仓上一对）、worker 构造参数表、闸信号（`busy_kb_ids`/`wiki_generation_in_progress`/`migration_in_progress`）——文件腿复用同一轮。
+- [x] ④ 基线与成本：目标部署 `knowledge/` 目录数与体量（实测回填）。
+- [x] ⑤ 向量侧枚举面：`scroll_collection` 现签名（`vector_store.py:495`，kb_id 必填）→ 无过滤扫描的落点（新参数或新方法）；四集合 payload 的 `kb_id` 字段核实；`delete_*` helper 签名表（chunks=ids / entities=kb_id+names / wiki=kb_id+titles / manual=ids）。
+- [x] ⑥ 卡片判据锚点：`sweep.py:122/125` 两段判据；`update_manual_card` 顺序（`knowledge_service.py:1027-1054`：upsert→行写→关删）——竞态窗口按此评估。
+- [x] ⑦ 代次面：两闸现状与注入点（`dimension_migration.migration_in_progress` / `rag_migration.migration_running`，worker 构造参数 + `app.py` 接线）；Qdrant 集合枚举 API 在用的客户端版本可用性；`drop_collections` 的吞错面（`vector_store.py:235-248` 无逐项吞错 ⇒ 与 GC 并发的微竞态登记）；worker/service 持有的实例在宽度翻转后是否换新（锚点=声明宽度，不依赖它；若陈旧登记另议）。
+
+**实测（2026-10-05，Task 0 · 只读）**：
+
+- ① ✓ 逐行对上：`_write`（`:425-429`）→ `create_document`（`:430`）→ `worker.submit`（`:440`），异常路径无补偿；`_remove_dir`（`:1769-1776`）= `shutil.rmtree(ignore_errors=True)` + except 吞。service 拿 `data_dir`（`app.py:366` = `get_paths().base_dir/"data"`）；**worker 现不拿 `data_dir`**（`app.py:352-360`：store/vector_store/concurrency/resolution_full_scan_threshold/entity_merge_similarity/sweep_enabled/sweep_interval_hours）——D2 新增。
+- ② ✓ 布局实测（真实数据盘 `backend/.deer-flow/data/knowledge`）：doc 目录 = 原文件 + `images/`（文本/PDF）或 `frames/`（视频，`shot_XXXX.jpg`）；**kb 级直挂文件存在**：`golden.jsonl`、`eval_candidates.json`（eval 题库/候选，`question_bank.py:125` / `synthesis.py:268`）⇒ walk 判据 = 只有 `<kb_id>/<doc_id>` 形状的**目录**才算文档目录（doc 行缺**或 kb_id 不匹配**才删）；kb 级文件不属对账面（kb 行在即保留，kb 行无走整棵清）。eval 报告输出（`write_reports`）只被 CLI 脚本用 `args.out`，不落 knowledge 树。
+- ③ ✓ `_sweep_once`（`worker.py:416-427`）：`migration_in_progress()` 整轮跳；逐库 `busy_kb_ids()`（`:398-404`）∪ `wiki_generation_in_progress(kb_id)` 跳；随后 `sweep_library`。构造参数 15 项（`:188-206`）。
+- ④ ✓ 基线（本机真实栈）：`knowledge/` = **4 库 / 31 文档目录 / 31M**（per-kb：4.0K / 1.7M / 29M / 196K）。成本：walk 规模 31 个目录级、两段式后每轮全树 stat 可忽略。
+- ⑤ ✓ `scroll_collection(collection_name, kb_id, *, with_vectors=False, batch_size=512)`（`:495-524`）kb_id 必填（内部构造 kb Filter）→ D4 需无过滤变体（参数 `kb_id: str | None = None` 或新方法）。四集合 payload 全带 `kb_id`：chunks `:275-279`、entities `:321`、wiki `:361`、manual `:550`。`delete_*` 签名：chunks=ids（payload 过滤 `:482`）/ entities=kb_id+names（点 id `:330`）/ wiki=kb_id+titles（payload 过滤 `:370`）/ manual=ids（点 id `:559`）。
+- ⑥ ✓ `sweep.py:122/125` 两段「行存在」判据在位；`update_manual_card` 顺序 upsert（`:1038`）→ 行写（`:1040`）→ 关删（`:1052`，吞）——竞态窗口 = upsert 与行写之间（ms 级），§2.5 已登记。
+- ⑦ ✓ 两闸：`migration_in_progress()`（`dimension_migration.py:80-81`）、`rag_migration.migration_running()`（`:44-45`，app 层）；注入点 = worker 构造（`:188-206`）+ `app.py:352-360` 接线（同 D2 的 `data_dir`）。Qdrant 枚举：`qdrant-client 1.19.0`，`AsyncQdrantClient.get_collections` 在（`async_qdrant_client.py:1511`）。`drop_collections`（`vector_store.py:235-248`）= 存在检查后逐个 delete、**无逐项吞错** ⇒ 与 GC 并发的微竞态按计划登记。**实例换新：静态未见路径**——`worker.py:208` 与 `knowledge_service.py:242` 均只构造一次赋值，`app.py` 启动构造一次、无配置重载回调 ⇒ 登记另议（本对锚点 = 声明宽度，不依赖它）。
+
+## Task 1 — 异常即清（TDD）
+
+- [ ] RED：`create_document` 桩抛错 → 请求报错且 `doc_dir` 不残留。
+- [ ] GREEN：`upload_document` 的 write→create→submit 包补偿（失败 `_remove_dir` 再抛）。
+- [ ] neuter：去掉补偿 → 用例恰红；还原复绿；门禁 + 实测回填。
+
+## Task 2 — 目录对账并入清扫轮（TDD）
+
+- [ ] RED：孤儿目录→消失；正常目录/正常库不动；KB 目录（无 kb 行）整棵清；候选复核守护；闸跳过。
+- [ ] GREEN：`reconcile_files(data_dir, store)`（两段式）+ `worker` 新参数 `data_dir` + `_sweep_once` 接线（`app.py` 传参）。
+- [ ] neuter：关判据 → 孤儿用例恰红；还原复绿；门禁 + 实测回填。
+
+## Task 3 — 向量侧盲区收口（TDD）
+
+- [ ] RED（D4）：已删库残留点（kb 行无、四集合有点）→ 整组清；正常库点不动；忙库组跳过；复核守护（候选后 kb 行出现 → 不删）。
+- [ ] RED（D5）：卡片开关关 + 残留点 → 清；开关开 → 保留；复核守护（候选后开关翻回 → 不删）。
+- [ ] RED（D6）：残留代（旧宽度集合组 + 生效代在位）→ 收；生效代不动；建完未翻窗口（app 闸 True）→ 不收；生效代缺失（手改宽度态）→ 不收；并发删"已不存在"吞错。
+- [ ] GREEN：`_sweep_once` 收集段改集合级 pass（无过滤 scroll + kb 分组 + 组内闸跳过）+ `_sweep_manual_cards` 判据升级 + `vector_store.scroll_collection` 无过滤支持 + `sweep_generations`（集合枚举 + 严格匹配 + 声明宽度锚 + 两道前置）+ worker 注入 `migration_running_fn`（`app.py` 接线）。
+- [ ] neuter：关 kb 存在判据 → D4 用例恰红；关卡片开关判据 → D5 用例恰红；去掉 app 闸 → D6"建完未翻"用例恰红；去掉生效代在位前置 → D6"手改态"用例恰红；还原复绿；门禁 + 实测回填。
+
+## Task 4 — 真栈验收
+
+- [ ] 隔离实例：文件相（删文档后手动重建目录 + 一次"上传中途失败"）+ 向量相（停 Qdrant 后删库、关卡片开关 → 起 Qdrant）+ 代次相（手造一组残留代集合）→ 跑一轮清扫 → 目录、残留点与残留代清零；正常库检索不受影响。
+- [ ] 收尾：临时库/进程/文件清理并核验。
+
+## Task 5 — 文档与收尾
+
+- [ ] §5.3 条目 3 半句改写实口径（"须纳入恢复"→已实现表述）；`backend/AGENTS.md` 清扫条补文件腿、向量侧枚举与代次三句；spec/plan 状态行与实测回填。
+- [ ] 提交链回填。
