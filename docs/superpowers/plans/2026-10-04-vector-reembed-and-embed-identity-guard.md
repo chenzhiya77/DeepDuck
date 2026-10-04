@@ -2,7 +2,7 @@
 
 - 成对 spec：`docs/superpowers/specs/2026-10-04-vector-reembed-and-embed-identity-guard-design.md`
 - 日期：2026-10-04
-- 状态：实施中（Task 0①–⑤ + Task 1 + Task 2 + Task 3 + Task 4 + Task 5 + Task 6 已交付 2026-10-04；仅剩 Task 7；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建，2026-10-04 他拍）
+- 状态：✅ **全对交付**（Task 0①–⑤ + Task 1–7 于 2026-10-04 交付；Task 1 尾项=存量盖章已执行（甲 4 库 + 乙 最小非空库）。✅ 全裁：D1=四类全量 / D2=甲按库一列 / D3=甲自动重建 / D 并入本对，2026-10-04 他拍）
 
 ## 范围与交接
 
@@ -63,11 +63,11 @@
 - [x] 真栈 A4：同宽换模型保存（改模型名→保存→改回，配置逐字节还原、md5 前后对照）⇒ 触发语义按待拍结果验证；完成后身份一致、L1 检索复常。—— 真栈（:3000 登录会话驱动 `PUT /api/rag/config`）`qwen3.7-text-embedding-flash → qwen3.7-text-embedding → 改回`（同厂商/端点/1024 宽 ⇒ D3 通道）：**触发语义=甲自动重建**坐实（响应 `reembed.state=running` + `target_model`，零确认）；**hold→逐库盖章→翻转殿后**的顺序两遍都对（看守日志：盖章 1→2→4→5 期间文件恒持旧值、5/5 才翻）；改回再触发第二遍（target=flash）。收口三样：**身份一致 5/5**（=原指纹逐字相等）、**配置 md5 逐字节还原** `4d92921e…`、**L1 6 题复常 hit/recall=1.000/1.000**（=D1 后值持平）。成本：2×163 嵌入调用（每遍约 4.5/3.75 分钟，LLM 零调用）。附带两条实测注记：①保存后探测（`_probe_after_save`）对窗口模型把关宽度/稀疏半边，不合格400 免写；②整对象 PUT 会把 10 个默认值物化进 `rag_config.json`（5 thinking 布尔 + parse 三件 + `qdrant_url` + `video` 块，零值变更）⇒ md5 必漂，**逐字节还原走备份回拷**（本次照此复原）；「GET→PUT 往返不物化默认值」可作后续小补丁候选。
 - [x] 收尾：scratch 留 `ragas-perf/` 不进仓；工作树核对仅本对改动；提交链回填。—— scratch 只新增 `rag_config.a4-before.json`（含真实密钥，**不进仓**）；工作树核对=仅别线未提交件（`knowledge_bases.py`/`store.py`/`test_api.py`/README 等），本对 Task 6 零仓内文件改动。**提交链（7 笔）**：`61a598218` 草案 → `132e8d353` D3 → `0eeda48fe` D1 数字 → `c9bb5832f` D2 → `1fba23148` 存量盖章 → `779f8dd21` D4 → `efef6cc49` Task 5 文档。
 
-## Task 7 — D 小补丁：graph_search 抽取 malformed JSON 兜底（✅ 2026-10-04 他拍并入本对）
+## Task 7 — D 小补丁：graph_search 抽取 malformed JSON 兜底（✅ 2026-10-04 他拍并入本对）✅ 2026-10-04 交付
 
-- [ ] RED：`_extract_query_entities` 收到畸形 JSON ⇒ 按既有兜底路径走整句候选（现状抛/返回空的行为差异用例钉住）。
-- [ ] GREEN：解析失败的防御（一行级）；不动抽取 prompt 与模型。
-- [ ] 门禁：knowledge 面 + ruff 双净。
+- [x] RED：`_extract_query_entities` 收到畸形 JSON ⇒ 按既有兜底路径走整句候选（现状抛/返回空的行为差异用例钉住）。—— 5 例写红进 `test_graph_search.py`：畸形形状三态恰 3 红（`{"entities": 5}` TypeError 抛死图路 / `{"entities": {...}}` 静默挖出垃圾名 `["x"]` / `{"entities": "PDF"}` 拆成 `["P","F","D"]`）+ 端到端（impl 级、真 Qdrant）恰 1 红（标量形状把整条图路抛死）；`{not json` → `[]` 是现状「返回空」半边=先天空心绿，当回归钉子留着（牙在三形状红上）。
+- [x] GREEN：解析失败的防御（一行级）；不动抽取 prompt 与模型。—— `entities` 非列表 ⇒ warning + `[]`（与解析失败同一兜底，调用方拿整句当落点候选）；prompt/模型零改动。文件 29/29。
+- [x] 门禁：knowledge 面 + ruff 双净。—— `tests/knowledge` **1527 passed / 2 skipped / 4 failed（402s；比 Task 4 面 +5=恰为本 Task 新增用例；环境红=既有 4 条账）**；ruff check/format 两文件双净。
 
 ## C 线去留判据（✅ 2026-10-04 他拍）
 

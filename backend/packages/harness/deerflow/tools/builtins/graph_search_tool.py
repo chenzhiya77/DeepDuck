@@ -119,7 +119,14 @@ async def _extract_query_entities(query: str, llm: Any) -> list[str]:
         return []
     if not isinstance(data, dict):
         return []
-    return [str(name).strip() for name in (data.get("entities") or []) if str(name).strip()]
+    names = data.get("entities")
+    if not isinstance(names, list):
+        # Malformed shape (scalar/object/string): the whole-query fallback in the
+        # caller is the same landing path an empty list takes — never a throw, never
+        # garbage names mined out of a string.
+        logger.warning("graph_search: query entity extraction returned a malformed entities field")
+        return []
+    return [str(name).strip() for name in names if str(name).strip()]
 
 
 async def _score_candidates(

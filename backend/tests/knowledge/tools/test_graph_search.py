@@ -53,6 +53,40 @@ async def test_extract_query_entities_isolated_from_messages_stream():
     assert TAG_NOSTREAM in tags, "extractor tokens must stay off the messages stream"
 
 
+class _RawContentLLM:
+    """Returns verbatim extractor output — malformed shapes included."""
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+
+    async def ainvoke(self, messages, **_kwargs):
+        return SimpleNamespace(content=self._content)
+
+
+@pytest.mark.asyncio
+async def test_malformed_json_degrades_to_no_names():
+    """解析失败 ⇒ []（调用方据此走整句候选兜底）——现状即如此，钉住不许回退。"""
+    from deerflow.tools.builtins.graph_search_tool import _extract_query_entities
+
+    names = await _extract_query_entities("Gateway", _RawContentLLM("{not json"))
+    assert names == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content",
+    ['{"entities": 5}', '{"entities": {"x": 1}}', '{"entities": "PDF"}'],
+    ids=["scalar", "object", "string"],
+)
+async def test_malformed_entity_shapes_degrade_to_no_names(content):
+    """畸形形状三态（Task 7 D）：标量会 TypeError 抛死整条图路、对象/字符串
+    静默产出垃圾名——都应收敛到 []，与解析失败同一兜底。"""
+    from deerflow.tools.builtins.graph_search_tool import _extract_query_entities
+
+    names = await _extract_query_entities("Gateway", _RawContentLLM(content))
+    assert names == []
+
+
 def test_graph_message_notes_pool_exhaustion_when_evidence_below_limit():
     """top_k 是上限而非承诺（2026-09-05）：图谱证据由命中子图的源切片并集
     定义，候选池不足 top_k 时消息必须说明「候选池共 N 片，已全量返回」，
@@ -141,6 +175,22 @@ async def test_graph_search_falls_back_to_query_when_extraction_empty(tools_env)
     names = {e["name"] for e in result["entities"]}
     assert "Gateway" in names, "query fallback must land on the Gateway entity"
     assert result["evidence"], "the landed entity must surface its source chunks as evidence"
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_graph_search_falls_back_to_query_when_extraction_is_malformed(tools_env):
+    """畸形 JSON 不许抛死图路（Task 7 D）——与空抽取同一条兜底：整句当落点候选。"""
+    result = await _graph_search_impl(
+        "Gateway",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        **_impl_args(tools_env, _RawContentLLM('{"entities": 5}')),
+    )
+
+    names = {e["name"] for e in result["entities"]}
+    assert "Gateway" in names, "malformed extraction must fall back to the query candidate"
+    assert result["evidence"]
 
 
 @requires_qdrant
