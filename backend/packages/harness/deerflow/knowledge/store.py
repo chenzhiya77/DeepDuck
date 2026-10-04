@@ -323,11 +323,17 @@ class KnowledgeStore:
             "entities": int(entities_count),
         }
 
-    async def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[dict[str, Any]]:
-        """Fetch chunk rows by id (graph/wiki aggregation of source_chunk_ids)."""
+    async def get_chunks_by_ids(self, chunk_ids: list[str], *, kb_id: str | None = None) -> list[dict[str, Any]]:
+        """Fetch chunk rows by id (graph/wiki aggregation of source_chunk_ids).
+
+        ``kb_id`` narrows the fetch to one knowledge base; management batch
+        reads pass it so ids from another KB can never leak through.
+        """
         if not chunk_ids:
             return []
         stmt = select(ChunkRow).where(ChunkRow.chunk_id.in_(chunk_ids))
+        if kb_id is not None:
+            stmt = stmt.where(ChunkRow.kb_id == kb_id)
         async with self._sf() as session:
             result = await session.execute(stmt)
             rows = {row.chunk_id: self._row_to_dict(row, datetime_keys=()) for row in result.scalars().all()}

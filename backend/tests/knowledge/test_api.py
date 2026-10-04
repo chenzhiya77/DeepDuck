@@ -546,6 +546,37 @@ async def test_chunks_by_ids_endpoint_returns_requested_order_with_doc_name(serv
     assert empty.json()["items"] == []
 
 
+async def test_chunks_by_ids_endpoint_never_returns_another_kbs_chunks(service, session_factory):
+    """资源范围：批量按 id 取切片只返回 URL 目标库的行——他库的 chunk id
+    就算被猜中也不返回。"""
+    client = _client(service)
+    kb_a = _create_kb(client, "A 库")
+    kb_b = _create_kb(client, "B 库")
+    doc_b = client.post(
+        f"/api/knowledge-bases/{kb_b['id']}/documents",
+        files={"file": ("b.md", b"# b", "text/markdown")},
+    ).json()["id"]
+    store = KnowledgeStore(session_factory)
+    await store.insert_chunks(
+        [
+            {
+                "chunk_id": f"{doc_b}#0000",
+                "doc_id": doc_b,
+                "kb_id": kb_b["id"],
+                "chunk_index": 0,
+                "text": "B 库切片",
+                "heading_path": [],
+                "page": 0,
+                "token_count": 10,
+            }
+        ]
+    )
+
+    resp = client.get(f"/api/knowledge-bases/{kb_a['id']}/chunks", params={"ids": [f"{doc_b}#0000"]})
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
 async def test_delete_document_cascades_vectors_graph_wiki_and_rows(service, session_factory):
     client = _client(service)
     kb = _create_kb(client)

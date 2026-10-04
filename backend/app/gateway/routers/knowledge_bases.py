@@ -274,10 +274,11 @@ async def list_chunks_by_ids(
     The wiki entry drawer expands ``source_chunk_ids`` into read-only cards:
     one batched request returns the rows in the *requested* order, each
     carrying its source document's name. Unknown ids drop silently (the
-    chunk may have been deleted; the UI reports the count delta).
+    chunk may have been deleted; the UI reports the count delta); ids that
+    belong to another knowledge base are filtered out (resource scope).
     """
     service = await _require_kb_access(request, kb_id)
-    items = await service.store.get_chunks_by_ids(ids)
+    items = await service.store.get_chunks_by_ids(ids, kb_id=kb_id)
     names: dict[str, str] = {}
     for doc_id in {item["doc_id"] for item in items}:
         document = await service.store.get_document(doc_id)
