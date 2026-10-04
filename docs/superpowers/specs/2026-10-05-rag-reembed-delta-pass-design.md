@@ -25,6 +25,8 @@
 
 窗口的单向门是翻转：delta **必须**在翻转后跑才有封闭的目标集（翻转前跑，行还在不断到达）。因此盖章时序也要跟着动（D2）。时机与宽度通道相反也在此：宽度通道的二遍在**切换前**（新代未活，另需 `_drop_documents_that_left` 收尾）；本对 in-place、删除走自己的路，不需要那件，且必须在**翻转后**。
 
+**GREEN 期定形（2026-10-05）：章按两条分支落。** 复走过的库由 delta 自身的完整性盖（`reindex_kb` 现成语义）；**未动的库由主行走的完整性判词盖**（未动+完整=均匀，未动+软失败=不盖）——否则门槛跳过的库永远没人盖章（RED 期当场翻出）。`reembed_libraries` 因此逐库交出判词（`ReindexReport.complete`）。
+
 **已知盲区（登记）**：指纹门的实体信号只有 `count`（`store.py:318`；`graph_entities` 表无时间戳列）——「同数实体描述编辑、且其余四信号全不动」的改动过不了门。实况核对：描述写入全挂在抽取/归一/别名合并路径（`graph/normalizer.py:205`、`graph/store.py:80/244/285`），必伴随文档切片落库（chunks 信号会动）⇒ 未指认到独立触发路径。按登记不做；若日后出现该形态，补列 `updated_at` 进指纹即可关掉。
 
 **并入件 ③（2026-10-05 他拍甲）：重建通道加固。** 两半叠出（flake A/B 实锤、HEAD 同在，非新回归）：①`atomic_write_rag_config` 的 tmp+`os.replace` 在 Windows 上撞上不带 `FILE_SHARE_DELETE` 的读方（load `rag_config_file.py:226` / 签名检查 `file_signature.py:49`）⇒ `PermissionError(13)`；②`rag_reembed._run` 的翻转写在 try/except 之外（:145-146）⇒ 任务带异常死掉、状态永远卡 `running`，此后所有保存被 409 挡到重启（409 死锁）。修姿：翻转写纳入失败记账（失败 ⇒ 状态 `failed` + 日志，绝不留 `running`）；replace 撞车按瞬态**有界**重试（3 次、50–100ms 退避），耗尽按翻转失败处理——无界重试会把「读方一直开着」变成任务悬挂。重试落写文件助手（生产调用方只有 `write_rag_config` 一个，所有写方受益）；读方姿势不动。

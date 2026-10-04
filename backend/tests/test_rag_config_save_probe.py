@@ -132,9 +132,17 @@ def _reembed_libraries_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.gateway.services import rag_reembed as reembed_module
 
     async def _noop(store, *, vector_store, embedder, graph_store, wiki_store):
+        return {}
+
+    async def _noop_marks(store):
+        return {}
+
+    async def _noop_delta(store, *, vector_store, embedder, graph_store, wiki_store, marks, main_complete):
         return 0
 
     monkeypatch.setattr(reembed_module, "reembed_libraries", _noop)
+    monkeypatch.setattr(reembed_module, "collect_window_marks", _noop_marks)
+    monkeypatch.setattr(reembed_module, "reembed_window_delta", _noop_delta)
     reembed_module.reset_state()
     yield
     reembed_module.reset_state()

@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from deerflow.config.rag_config_file import write_rag_config
+from deerflow.knowledge.embed_identity import write_kb_identity
 from deerflow.knowledge.reindex import reindex_kb
 
 logger = logging.getLogger(__name__)
@@ -110,17 +111,76 @@ async def reembed_libraries(
     embedder: Any,
     graph_store: Any,
     wiki_store: Any,
-) -> int:
-    """Re-embed every library in place; returns how many libraries were walked.
+) -> dict[str, bool]:
+    """Re-embed every library in place; returns each library's completeness verdict.
 
     The rebuild's heavy end, kept module-level so tests can patch it. Per-library
     reindex already refuses to sink the run on one document; a raise here means
-    something library-wide broke and the caller must not flip.
+    something library-wide broke and the caller must not flip. ``stamp=False`` on
+    purpose: this walk is only half of the switch, the delta pass owns the stamp
+    (spec 2026-10-05 D2=乙) — and the verdict it returns is exactly what that stamp
+    needs: an untouched library is one space precisely when its walk left nothing behind.
     """
-    kbs = await store.list_all_kbs()
-    for kb in kbs:
-        await reindex_kb(store, vector_store, embedder, kb_id=kb["id"], graph_store=graph_store, wiki_store=wiki_store)
-    return len(kbs)
+    complete: dict[str, bool] = {}
+    for kb in await store.list_all_kbs():
+        report = await reindex_kb(store, vector_store, embedder, kb_id=kb["id"], graph_store=graph_store, wiki_store=wiki_store, stamp=False)
+        complete[kb["id"]] = report.complete
+    return complete
+
+
+async def collect_window_marks(store: Any) -> dict[str, Any]:
+    """Per-library content marks taken before the walk — the switch window's baseline.
+
+    Same shape as the width channel's content mark (``dimension_migration._content_mark``,
+    D5-6): the store's invalidation signature per collection plus the document id set, so
+    an arriving document, an edited chunk, a regenerated wiki entry or a delete all move
+    the mark. The rebuild's own writes touch only the documents table, so they cannot
+    dirty their own baseline.
+    """
+    marks: dict[str, Any] = {}
+    for kb in await store.list_all_kbs():
+        marks[kb["id"]] = await _content_mark(store, kb["id"])
+    return marks
+
+
+async def _content_mark(store: Any, kb_id: str) -> Any:
+    documents = await store.list_documents(kb_id)
+    return await store.get_kb_content_stats(kb_id), frozenset(document["id"] for document in documents)
+
+
+async def reembed_window_delta(
+    store: Any,
+    *,
+    vector_store: Any,
+    embedder: Any,
+    graph_store: Any,
+    wiki_store: Any,
+    marks: dict[str, Any],
+    main_complete: dict[str, bool],
+) -> int:
+    """Post-flip catch-up and the stamp (D2=乙): what this walk owns, it also claims.
+
+    The main walk snapshots its document list at the start, so anything that appeared or
+    completed behind that snapshot is still in the old space. Walking only the *changed*
+    libraries keeps the common case free — one aggregate query per untouched library and
+    zero embeddings, the width channel's gate. A library that exists only after the
+    baseline has no mark and is always walked.
+
+    The stamp follows the same honesty rule on both branches: a re-walked library stamps
+    from its own completeness, an untouched one from the main walk's verdict — a window
+    untouched library is one space precisely when its walk left nothing behind.
+    """
+    walked = 0
+    for kb in await store.list_all_kbs():
+        kb_id = kb["id"]
+        if marks.get(kb_id) == await _content_mark(store, kb_id):
+            if main_complete.get(kb_id):
+                await write_kb_identity(store._sf, kb_id, embedder.identity)
+            continue
+        logger.info("re-embedding library %s: it changed during the rebuild window", kb_id)
+        await reindex_kb(store, vector_store, embedder, kb_id=kb_id, graph_store=graph_store, wiki_store=wiki_store, include_non_terminal=True)
+        walked += 1
+    return walked
 
 
 async def _run(
@@ -134,7 +194,8 @@ async def _run(
     assert _STATE is not None  # set by start_reembed before the task was scheduled
     state = _STATE
     try:
-        kbs = await reembed_libraries(store, vector_store=vector_store, embedder=embedder, graph_store=graph_store, wiki_store=wiki_store)
+        marks = await collect_window_marks(store)
+        main_complete = await reembed_libraries(store, vector_store=vector_store, embedder=embedder, graph_store=graph_store, wiki_store=wiki_store)
     except Exception as exc:
         state.state = "failed"
         state.detail = f"{type(exc).__name__}: {exc}"
@@ -143,5 +204,16 @@ async def _run(
 
     # The switch: one atomic replace, and only here — after a complete rebuild.
     await asyncio.to_thread(write_rag_config, dict(target_payload))
+
+    # The delta pass stamps the identity (D2=乙): the flip just closed the target set,
+    # so what this walk catches up is exactly what the main walk's snapshot missed.
+    try:
+        await reembed_window_delta(store, vector_store=vector_store, embedder=embedder, graph_store=graph_store, wiki_store=wiki_store, marks=marks, main_complete=main_complete)
+    except Exception as exc:
+        state.state = "failed"
+        state.detail = f"{type(exc).__name__}: {exc}"
+        logger.exception("embedding rebuild delta pass failed; rag_config.json declares the new model but the library identity is left unstamped")
+        return
+
     state.state = "succeeded"
-    logger.info("embedding rebuild complete for %d libraries; rag_config.json now declares the new model", kbs)
+    logger.info("embedding rebuild complete for %d libraries; rag_config.json now declares the new model", len(main_complete))

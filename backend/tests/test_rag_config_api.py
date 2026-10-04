@@ -134,14 +134,24 @@ class _EndpointSeededClient(TestClient):
 def _reembed_libraries_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     """A save that changes the embedding fingerprint now starts a rebuild (spec 2026-10-04
     D3). Cases not about that get a trivial instant success so the flip settles quietly;
-    the D3 cases replace this stub with their own gated/failing one.
+    the D3 cases replace the walk stub with their own gated/failing one. The window marks
+    and the post-flip delta pass (spec 2026-10-05) are stubbed alongside — the placeholder
+    service stores in this file are plain objects, not databases.
     """
     from app.gateway.services import rag_reembed as reembed_module
 
     async def _noop(store, *, vector_store, embedder, graph_store, wiki_store):
+        return {}
+
+    async def _noop_marks(store):
+        return {}
+
+    async def _noop_delta(store, *, vector_store, embedder, graph_store, wiki_store, marks, main_complete):
         return 0
 
     monkeypatch.setattr(reembed_module, "reembed_libraries", _noop)
+    monkeypatch.setattr(reembed_module, "collect_window_marks", _noop_marks)
+    monkeypatch.setattr(reembed_module, "reembed_window_delta", _noop_delta)
 
 
 def _client(*, system_role: str) -> TestClient:
@@ -1567,7 +1577,7 @@ def _stub_reembed(
             await asyncio.to_thread(gate.wait, 10)
         if fail is not None:
             raise RuntimeError(fail)
-        return 1
+        return {}
 
     monkeypatch.setattr(reembed_module, "reembed_libraries", _reembed_libraries)
 

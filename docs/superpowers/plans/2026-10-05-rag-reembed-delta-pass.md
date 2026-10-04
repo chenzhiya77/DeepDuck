@@ -19,17 +19,17 @@
 ## Task 0 — 落点核实
 
 - [x] ① `reindex_kb` 签名与语义（已核 2026-10-05 审查）：`include_non_terminal=True`（reindex.py:117）=整库复走、含非终态文档（:155 的跳过闸只对默认形生效）；宽度通道二遍（dimension_migration.py:141-165）带**指纹门**——`_content_mark` 基线（`get_kb_content_stats` 四信号 + 文档 id 集）对比，没动过的库零嵌入跳过；门不受重建自身写入污染（`index_chunks`/`update_document_status` 只碰 documents 表）。实体信号盲区（count only、表无时间戳列）已在 spec §2 登记。
-- [ ] ② 盖章点参数化（部分已核）：写点唯一=reindex.py:198-201（`if complete:`），`stamp` 参数=一行闸；受害者清单（`test_reindex_stamps…` 等）留 RED 期一起扫。worker 首件闸不动。
+- [x] ② 盖章点参数化（已核 2026-10-05）：写点唯一=reindex.py:198-201（`if complete:`），`stamp` 参数=一行闸；受害者=零（默认 True 全部旧调用方语义不动），钉子=test_reindex.py 的盖章三例（含新增 `stamp=False` 例）。worker 首件闸不动。
 - [x] ③ 插入点（已核 2026-10-05 审查）：翻转写在 try/except 外=rag_reembed.py:145-146（③ 半二实锤）；delta 循环插在 flip 后、按指纹门逐库；失败记账落 `_Run`（`failed` 只给 raise）；重跑路径 `reembed_libraries` 天然再走一遍（门基线随新 run 重拍）。
-- [ ] ④ 受害者扫描：断言 flip 时序/盖章时序/`reindex_kb` 调用次数的既有用例清单（`tests/knowledge/test_rag_reembed*.py`、`test_reindex.py`），谁会被「章后移/delta 多一轮调用/翻转失败落状态」波及。
+- [x] ④ 受害者扫描（已核 2026-10-05）：通道测试全 stub `reembed_libraries`（`test_rag_config_api.py` 两 fixture + `test_rag_config_save_probe.py` 一处）⇒ 新增两个 seam 后这三处要跟着扩 stub（GREEN 期已做）；`stamp` 参数默认 True ⇒ 零受害；`_stub_reembed` 返回形 int→dict 一并改。
 - [x] ⑤ ③ 竞态面（已核 2026-10-05 审查）：`atomic_write_rag_config`（rag_config_file.py:314，tmp+fsync+`os.replace` :347、无重试）；生产调用方唯一=`write_rag_config`（:301）⇒ 重试落助手、所有写方受益；并发读方=load（:226）+ 热重载签名检查（file_signature.py:49）——Windows 打开句柄无 FILE_SHARE_DELETE ⇒ replace 报 13。孪生 `atomic_write_models_config` 同病已登记（spec §6）。
 
-## Task 1 — delta 复走 + 盖章后移 + 指纹门 TDD（D1=甲、D2=乙、门槛=甲）
+## Task 1 — delta 复走 + 盖章后移 + 指纹门 TDD（D1=甲、D2=乙、门槛=甲）✅ 2026-10-05 交付
 
-- [ ] RED：①主行走完成不写身份、delta 完整走完才写（=当前指纹）；②两遍之间插入完成的文档（快照缝）⇒ delta 把它补进新空间；③门槛：窗口里没动过的库零嵌入跳过、动过的库整库复走；④delta raise ⇒ 章留旧值/NULL、状态 `failed`，重跑修复；软失败 ⇒ `succeeded`+无章。—— 写红进 `tests/knowledge/`（落点按 Task 0④ 定），缺键对照的牙按老规矩留 neuter 补。
-- [ ] GREEN：`reindex_kb` 加 `stamp` 参数（默认不变）+ `rag_reembed._run` flip 后按指纹门逐库 `reindex_kb(include_non_terminal=True)`（基线在 run 开始拍、翻转后对比）+ 失败记账（`failed` 只给 raise）+ `reindex.py:126` docstring「exists for one caller」改两调用方（审查 6）。
-- [ ] neuter：拆 delta 循环 ⇒ 窗口文档用例恰红；拆盖章后移 ⇒ 完整性用例恰红；拆门槛（基线恒等）⇒ 门槛用例恰红；还原复绿、受害者不相交。
-- [ ] 门禁：knowledge 面（环境红按既有账）+ `test_rag_config_api.py` + ruff 双净。
+- [x] RED：①主行走完成不写身份、delta 完整走完才写；②快照缝文档 ⇒ delta 补进新空间；③门槛：未动库零嵌入、动过库整库复走；④delta raise ⇒ 旧章+`failed`、软失败 ⇒ `succeeded`+无章。—— **6 例恰红**（新文件 `tests/knowledge/test_reembed_window_delta.py` 5 例 + `test_reindex.py` 的 `stamp=False` 1 例 TypeError），红因逐条核过：事件序 `['stamp','flip']` / 窗口句 0 命中 / 复走计数 1≠2 / 状态 succeeded≠failed / 软失败 0 命中。
+- [x] GREEN：`reindex_kb` 加 `stamp`（默认 True）+ `rag_reembed` 三件（`collect_window_marks` 基线 / `reembed_window_delta` 复走+盖章 / `_run` 基线→行走→翻转→delta）+ `ReindexReport.complete` 外露 + docstring 两调用方（审查 6）。**GREEN 期翻出真缺口并当场补**：门槛跳过的库没人盖章（章只在 delta 走完落、而未动库恰被跳过 ⇒ 章永不落）⇒ 修法=主行走交出逐库完整性判词（`reembed_libraries` 返回 `dict[str, bool]`，契约一改、三处 stub 跟上），delta 对「未动+完整」的库直接盖章；补第 7 例对照 `test_an_untouched_library_that_walked_incompletely_stays_unstamped`（未动≠均匀）。
+- [x] neuter：四拆各恰红且受害者按实测报（与「不相交」预期有出入，同 D3 对先例）——A 拆 delta 复走 ⇒ 4 红（快照缝/门槛/raise/软失败）；B 拆盖章后移（主行走恢复 stamp）⇒ 3 红（事件序/raise/软失败）；C 拆指纹门（基线恒等）⇒ 4 红（同 A 集）；D 拆完整性判词（f 补牙）⇒ **恰 1 红**（未动+不完整例）。还原后 27/27 复绿。
+- [x] 门禁：knowledge 面 + API 两族 + ruff 双净。—— 窄面 **130 passed**（delta 7 + reindex 20 + api 87 + save_probe）；knowledge 面 + API 两族 **1644 passed / 2 skipped / 5 failed（419s）**——4 条=既有环境账（embed/rerank 缺钥 + parser 两条），1 条=在案 flake（`test_concurrent_results_match_serial_including_order` 图谱并发，本日单跑 2/2 复绿）；ruff check/format **6 文件双净**。
 
 ## Task 2 — ③ 翻转写加固 TDD
 

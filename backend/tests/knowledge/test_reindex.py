@@ -577,3 +577,15 @@ async def test_an_incomplete_rebuild_never_stamps_the_library_identity(session_f
     await reindex_kb(store, _FakeVectorStore(), _DeterministicEmbedder(fail_texts={"会失败的文本"}), kb_id=KB_ID, **_stores(store))
 
     assert (await store.get_kb(KB_ID))["embedding_identity"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_complete_walk_stamps_only_when_asked_to(session_factory):
+    """stamp=False（spec 2026-10-05 D2=乙）：主行走走完不盖章，章留给 delta 完整走完那一刻。"""
+    store = KnowledgeStore(session_factory)
+    await _kb(store)
+    await _seed_doc(store, doc_id="doc-1", texts=["风急天高", "渚清沙白"])
+
+    await reindex_kb(store, _FakeVectorStore(), _DeterministicEmbedder(), kb_id=KB_ID, stamp=False, **_stores(store))
+
+    assert (await store.get_kb(KB_ID))["embedding_identity"] is None

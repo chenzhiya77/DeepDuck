@@ -76,6 +76,9 @@ class ReindexReport:
     entities_indexed: int
     wiki_entries_indexed: int
     cards_indexed: int
+    #: Whether the walk left nothing behind — the D2 stamp's precondition. A caller
+    #: that withholds the stamp (``stamp=False``) still gets the verdict for later.
+    complete: bool = False
 
 
 def reindex_in_progress(kb_id: str) -> bool:
@@ -115,6 +118,7 @@ async def reindex_kb(
     wiki_store: WikiStore,
     page_size: int = DEFAULT_PAGE_SIZE,
     include_non_terminal: bool = False,
+    stamp: bool = True,
 ) -> ReindexReport:
     """Re-embed every live chunk of every terminal document in ``kb_id``.
 
@@ -123,16 +127,18 @@ async def reindex_kb(
     stores are required on purpose: making them optional would silently skip three
     collections — the exact defect this rebuild exists to fix.
 
-    ``include_non_terminal`` exists for one caller: the width migration's delta pass
-    (spec 2026-09-26 D5-6). Skipping a document that is still moving is right when the
-    library stays where it is — its later legs read the current configuration anyway —
-    and wrong during a switch, because until the switch "the current configuration" is
-    still the old generation, so that document is exactly the one that would be left
-    behind.
+    ``include_non_terminal`` serves the delta passes — the width migration's (spec
+    2026-09-26 D5-6) and, since spec 2026-10-05, the same-width rebuild window's.
+    Skipping a document that is still moving is right when the library stays where it
+    is — its later legs read the current configuration anyway — and wrong during a
+    switch, because until the switch "the current configuration" is still the old
+    generation, so that document is exactly the one that would be left behind.
 
     A run that leaves nothing behind stamps the library's embedding identity
     (spec 2026-10-04 D2): a skipped non-terminal document, a failed document or a
     partial batch anywhere means the library is *not* one space, and no claim is made.
+    ``stamp=False`` withholds even that claim: the rebuild window's main walk is only
+    half of the switch, so the stamp belongs to its delta pass (spec 2026-10-05 D2=乙).
     """
     documents = await store.list_documents(kb_id)
     report = ReindexReport(
@@ -195,10 +201,11 @@ async def reindex_kb(
             except Exception:
                 logger.exception("reindex manual-card pass failed (kb %s); continuing with the rest", kb_id)
                 complete = False
-            if complete:
+            if complete and stamp:
                 # Every live vector now sits in this embedder's space — record which
                 # one (D2). Never a partial claim: nothing to write means nothing written.
                 await write_kb_identity(store._sf, kb_id, embedder.identity)
+        report.complete = complete
         _LAST_RUN[kb_id] = "succeeded"
     except Exception:
         _LAST_RUN[kb_id] = "failed"
