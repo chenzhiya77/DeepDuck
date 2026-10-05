@@ -1,6 +1,6 @@
 # 题库锚定可视、改锚与悬空标记 —— 设计
 
-**Status:** 实施中（Task 0–3 已交付：后端 `update_question`+PATCH+悬空派生、前端抽屉内容卡+折叠选片+列口径；全量门禁 153/13030 环境红带内零新增、AGENTS.md 改锚口同闸半句已回填；Task 4 真栈待验收）。2026-10-05 裁决：D1=甲 / D2=甲 / D3=甲＋折叠分组与分页细则 / **D4=甲′ 跟锚收缩**〔审查改判，原「重派生覆盖」作废——合成题实体是精选子集，覆盖会冲成全集〕。成对 plan 同名（`../plans/2026-10-05-rag-question-anchor-edit.md`）。
+**Status:** 已完工（2026-10-06 真栈验收全过：悬空两面标 + 改锚 B′ 三态 + 正锚直过 + 实体随锚收缩 16→9，验收中发现选片区悬空锚不可摘除的死锁并当场补上 `d647f656f`；全量门禁 153/13030 环境红带内零新增、前端 2819 绿；提交链 `ad788c979`→`d647f656f` 11 笔未推）。2026-10-05 裁决：D1=甲 / D2=甲 / D3=甲＋折叠分组与分页细则 / **D4=甲′ 跟锚收缩**〔审查改判，原「重派生覆盖」作废——合成题实体是精选子集，覆盖会冲成全集〕。成对 plan 同名（`../plans/2026-10-05-rag-question-anchor-edit.md`）。
 
 **本对一件事：把题目锚定从「看得见文档、看不见切片、改不了、失锚也不知道」补齐成——锚定可见（切片内容级）、可改（抽屉内、过同一道锚定核验）、悬空有标（重切片/删片后标出悬空锚）。**
 
@@ -46,7 +46,7 @@
 
 - 后端**唯一新增写入口** `question_bank.update_question(path, question_id, *, relevant_chunk_ids, relevant_entities=None, anchor_guard=None, anchor_ack=False)`：与 `add_question` 并列收口，同 `_lock` 读改写 + `_atomic_write`；query/category/expected_paths/reference_answer 等**不动**；清空勾选=解除锚定（变无锚题，与添加框产物同态，**允许**）。挂**同一 `anchor_check.build_anchor_guard`**（store 取正文；`missing_chunk` 无条件拦、ack 也放不过）。
 - 服务 `update_eval_question(kb_id, question_id, *, relevant_chunk_ids, anchor_ack)`：一次 `get_chunks_by_ids` 喂核验正文 + 实体**跟锚收缩**（D4=甲′：旧实体 ∩ 新锚实体词汇表——只删失去支撑的、**不新增**；合成题精选子集保住，create「显式非空尊重原值」契约不破坏）；router `PATCH /{kb_id}/eval/questions/{question_id}`（过 `_require_kb_access`，与 create/delete 同权；body：`relevant_chunk_ids` + `anchor_ack?`）→ 200 题体 / 404 / 422 结构化 detail（与 create 同一 `AnchorMismatchError` 映射，detail 键 `reason`/`miss_terms`/`hits`/`best_hits`/`suggested_chunk` 不变）。
-- 前端：抽屉参考文档卡加「编辑锚定」入口 → **折叠分组勾选区**（D3 细则，2026-10-05 他展开）：组头=文档名 + 「已选 n/N」计数、**默认收起**（含已锚片的文档默认展开）、组内=该文档全部切片（每片内容摘要行+勾选框、已锚默认勾上）、**组内分页**（`listDocumentChunks` 50 片/页滚动加载）、**勾选后可整组收起**（组头计数实时变 ⇒ 整卡高度上界=文档数×一行组头，文档多也不撑长）。复用 `listDocumentChunks` + 文档列表词汇，不手填 id。拦截交互**原样复用 B′**：`useAnchorConfirm`（keyed=抽屉）+ `AnchorBlockNotice` 红块，红块里**变出**「仍要保存」；原「保存」留复检键、重复点不落库（盲双击≠看见）；悬空锚不可确认绕过（与写入口同语义）。
+- 前端：抽屉参考文档卡加「编辑锚定」入口 → **折叠分组勾选区**（D3 细则，2026-10-05 他展开）：组头=文档名 + 「已选 n/N」计数、**默认收起**（含已锚片的文档默认展开）、组内=该文档全部切片（每片内容摘要行+勾选框、已锚默认勾上）、**组内分页**（`listDocumentChunks` 50 片/页滚动加载）、**勾选后可整组收起**（组头计数实时变 ⇒ 整卡高度上界=文档数×一行组头，文档多也不撑长）。复用 `listDocumentChunks` + 文档列表词汇，不手填 id。拦截交互**原样复用 B′**：`useAnchorConfirm`（keyed=抽屉）+ `AnchorBlockNotice` 红块，红块里**变出**「仍要保存」；原「保存」留复检键、重复点不落库（盲双击≠看见）；悬空锚不可确认绕过（与写入口同语义）。**悬空锚在选片区单列可摘除行**（序号徽章 + 「悬空」+ 勾选框，与读态警示行同款）——悬空锚随草稿播种但不在存活切片列表里，缺这行它就无从摘除、`missing_chunk` 恒拦成死锁（真栈验收 2026-10-06 发现并当场补上，`d647f656f`，新口径=读态警示行的可摘除版）。
 
 ## 3. 决策点（已裁 2026-10-05：D1=甲、D2=甲、D3=甲＋折叠分组与分页、**D4=甲′ 跟锚收缩**〔审查改判〕）
 
