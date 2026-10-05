@@ -733,6 +733,23 @@ export interface EvalQuestionCreateInput {
   relevant_chunk_ids?: string[];
   relevant_entities?: string[];
   reference_answer?: string | null;
+  /** B′ 锚定确认（2026-10-05）：机器核验拦截后的「仍要入库」覆盖开关，缺省 false。 */
+  anchor_ack?: boolean;
+}
+
+/**
+ * 锚定核验拦截的结构化 422 detail（B′，2026-10-05）：detail 是对象（普通
+ * 错误的 detail 是字符串），携带机器证据——缺失术语、建议锚与命中计数。
+ * missing_chunk（锚定切片已不存在）不可被 anchor_ack 覆盖。
+ */
+export interface AnchorBlockDetail {
+  reason: "mismatch" | "zero_hit" | "missing_chunk";
+  miss_terms: string[];
+  /** 命中计数（参考答案在锚定切片上的命中数）。 */
+  hits: number;
+  /** 文档内最佳切片的命中数（对照基准）。 */
+  best_hits: number;
+  suggested_chunk: string | null;
 }
 
 /** GET /eval/questions 响应：全量题库（50–100 题规模，无分页）。 */
@@ -775,6 +792,13 @@ export interface SynthesisTriggerInput {
 /** 202 应答：与评测触发同形（enqueued / already_running）。 */
 export interface SynthesisTriggerResponse {
   status: "enqueued" | "already_running";
+}
+
+/** 采纳候选的 mutation 入参（B′，2026-10-05）：anchor_ack 真值时请求体带
+ *  {"anchor_ack": true}；缺省保持无请求体（旧契约兼容）。 */
+export interface SynthesisAcceptInput {
+  candidate_id: string;
+  anchor_ack?: boolean;
 }
 
 /** 历史列表行（轻量摘要，指标本体留在 drawer 详情里）。 */

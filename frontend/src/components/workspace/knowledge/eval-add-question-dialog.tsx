@@ -8,6 +8,11 @@
  * relevant_entities 输入：手填 chunk id 痛苦且无意义，锚定的正确来源是召回面
  * 板「存为考题」（§7.1）；提交体不含锚定键，后端补空数组即无锚定题（Layer 1 仅参与
  * 路径判定）。编辑不支持（§4.2 规则 5）。
+ * B′ 锚定拦截（2026-10-05）：提交被锚定核验 422 拦下时按钮行下方出红块，
+ * 原「添加」重提恒不带确认（盲双击不绕过），仅红块内「仍要入库」以
+ * anchor_ack=true 覆盖（missing_chunk 不可覆盖，无确认钮）；改参考答案即
+ * 清块，下一次保存重新机器核验。本 dialog 无锚定输入，生产里不会触发，仍
+ * 按同契约接线（测试模拟 422）。
  */
 import { Info } from "lucide-react";
 import { useState } from "react";
@@ -27,7 +32,9 @@ import { useI18n } from "@/core/i18n/hooks";
 import { useAddEvalQuestion } from "@/core/knowledge/hooks";
 import type { RecallPathName } from "@/core/knowledge/types";
 
+import { AnchorBlockNotice } from "./anchor-block-notice";
 import { toast } from "./kb-toast";
+import { useAnchorConfirm } from "./use-anchor-confirm";
 
 export interface EvalAddQuestionDialogProps {
   kbId: string;
@@ -38,11 +45,17 @@ export interface EvalAddQuestionDialogProps {
 const CATEGORY_OPTIONS = ["fact", "relation", "concept", "global"] as const;
 const PATH_OPTIONS = ["vector", "graph", "wiki"] as const;
 
+/** B′ 拦截状态 key（单表单面一个）。 */
+const ANCHOR_KEY = "form";
+
 export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuestionDialogProps) {
   const { t } = useI18n();
   const etk = t.knowledge.eval;
   const dtk = etk.questions.addDialog;
   const addMutation = useAddEvalQuestion(kbId);
+  // B′ 锚定拦截（2026-10-05）：见文件头。
+  const anchor = useAnchorConfirm();
+  const anchorBlock = anchor.blockFor(ANCHOR_KEY);
 
   // 分类必填，默认取第一项——不设空占位项（2026-08-28 用户反馈：
   // 下拉框里的空行观感差且易误选）。预期路径 Checkbox 组，默认仅勾 vector。
@@ -63,20 +76,39 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
       setCategory("fact");
       setExpectedPaths(["vector"]);
       setReferenceAnswer("");
+      anchor.clear(ANCHOR_KEY);
     }
     onOpenChange(next);
   };
 
+  // 提交体共用（首击与红块确认仅 anchor_ack 不同）：原按钮恒不带确认重提。
+  const submitQuestion = (ack: boolean) =>
+    addMutation.mutateAsync({
+      query: query.trim(),
+      category,
+      expected_paths: expectedPaths,
+      // 锚定键不出现在提交体（测试钉死）；无参考答案显式 null
+      reference_answer: referenceAnswer.trim() ? referenceAnswer.trim() : null,
+      anchor_ack: ack,
+    });
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
     try {
-      await addMutation.mutateAsync({
-        query: query.trim(),
-        category,
-        expected_paths: expectedPaths,
-        // 锚定键不出现在提交体（测试钉死）；无参考答案显式 null
-        reference_answer: referenceAnswer.trim() ? referenceAnswer.trim() : null,
-      });
+      const saved = await anchor.submit(ANCHOR_KEY, submitQuestion);
+      if (!saved) return;
+      toast.success(etk.questions.addedToast);
+      handleClose(false);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : etk.questions.saveFailed);
+    }
+  };
+
+  // 红块内「仍要入库」：anchor_ack=true 覆盖词条级拦截后走正常保存收尾。
+  const handleConfirm = async () => {
+    try {
+      const saved = await anchor.confirm(ANCHOR_KEY, submitQuestion);
+      if (!saved) return;
       toast.success(etk.questions.addedToast);
       handleClose(false);
     } catch (error) {
@@ -135,7 +167,11 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
             <textarea
               aria-label={dtk.referenceAnswerLabel}
               className="border-input min-h-16 rounded-md border bg-transparent px-3 py-2 text-sm"
-              onChange={(event) => setReferenceAnswer(event.target.value)}
+              onChange={(event) => {
+                setReferenceAnswer(event.target.value);
+                // B′：参考答案是锚定核验输入，改动即清红块（重新机器核验）。
+                anchor.clear(ANCHOR_KEY);
+              }}
               value={referenceAnswer}
             />
           </label>
@@ -158,6 +194,16 @@ export function EvalAddQuestionDialog({ kbId, open, onOpenChange }: EvalAddQuest
             {dtk.submit}
           </Button>
         </DialogFooter>
+        {/* B′ 红块：按钮行正下方（同表单内联错误位，非弹窗）；原「添加」保留原
+            文案与无确认重提语义，仅红块内「仍要入库」携 anchor_ack=true。 */}
+        {anchorBlock !== null && (
+          <AnchorBlockNotice
+            confirmLabel={etk.anchorBlock.confirmSave}
+            confirming={addMutation.isPending}
+            detail={anchorBlock}
+            onConfirm={() => void handleConfirm()}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

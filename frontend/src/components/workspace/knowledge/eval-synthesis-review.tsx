@@ -18,6 +18,10 @@
  * 暂存；批量动作逐条串行（后端无批量端点——整体替换语义下暂存量小）。
  * 轮询由 useSynthesisStatus 的 refetchInterval 门控（in_progress 时 3s），
  * 本组件只消费数据。
+ * B′ 锚定拦截（2026-10-05）：采纳被锚定核验 422 拦下时该候选卡动作行下方
+ * 出红块（key = candidate_id），原「采纳」重提恒不带确认（盲双击不绕过），
+ * 仅红块内「仍要接受」以 anchor_ack=true 覆盖（missing_chunk 不可覆盖，无
+ * 确认钮）；审核面无表单输入，红块留存至该卡被采纳/忽略。
  */
 import { Check, Inbox, Info, Loader2, X } from "lucide-react";
 import { useState } from "react";
@@ -46,7 +50,9 @@ import {
 } from "@/core/knowledge/hooks";
 import { cn } from "@/lib/utils";
 
+import { AnchorBlockNotice } from "./anchor-block-notice";
 import { toast } from "./kb-toast";
+import { useAnchorConfirm } from "./use-anchor-confirm";
 
 export interface EvalSynthesisReviewProps {
   kbId: string;
@@ -64,6 +70,8 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
   const docsQuery = useDocuments(kbId);
   const accept = useAcceptSynthesisCandidate(kbId);
   const reject = useRejectSynthesisCandidate(kbId);
+  // B′ 锚定拦截（2026-10-05）：key = candidate_id，各候选卡独立红块。
+  const anchor = useAnchorConfirm();
   // 收起态（2026-09-07）：默认展开（审核是短任务，展开一次审完）；无候选时
   // 强制单行头（常驻空态不白占 1/3 高），collapsed 仅对有候选态生效。
   const [collapsed, setCollapsed] = useState(false);
@@ -74,9 +82,25 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
   const inProgress = Boolean(data?.in_progress);
   const expanded = hasCandidates && !collapsed;
 
+  // 采纳载荷共用（原按钮与红块确认仅 anchor_ack 不同）：原按钮恒不带确认重提。
+  const acceptCandidate = (candidateId: string, ack: boolean) =>
+    accept.mutateAsync({ candidate_id: candidateId, anchor_ack: ack });
+
   const handleAccept = async (candidateId: string) => {
     try {
-      await accept.mutateAsync(candidateId);
+      const accepted = await anchor.submit(candidateId, (ack) => acceptCandidate(candidateId, ack));
+      if (!accepted) return;
+      toast.success(qtk.addedToast);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : stk.acceptFailed);
+    }
+  };
+
+  // 红块内「仍要接受」：anchor_ack=true 覆盖词条级拦截后走正常采纳收尾。
+  const handleAcceptConfirmed = async (candidateId: string) => {
+    try {
+      const accepted = await anchor.confirm(candidateId, (ack) => acceptCandidate(candidateId, ack));
+      if (!accepted) return;
       toast.success(qtk.addedToast);
     } catch (error) {
       toast.error(error instanceof Error && error.message ? error.message : stk.acceptFailed);
@@ -86,6 +110,8 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
   const handleReject = async (candidateId: string) => {
     try {
       await reject.mutateAsync(candidateId);
+      // 该卡退出暂存，其红块一并退场（无表单输入可清）。
+      anchor.clear(candidateId);
     } catch (error) {
       toast.error(error instanceof Error && error.message ? error.message : stk.rejectFailed);
     }
@@ -98,11 +124,14 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
   };
 
   // 全部采纳（2026-09-08）：逐条 accept；成功只发一条 toast（逐条会刷屏）。
+  // B′：逐条走无确认提交——被拦的落各自红块，不发错误 toast。
   const handleAcceptAll = async () => {
-    const results = await Promise.allSettled(candidates.map((candidate) => accept.mutateAsync(candidate.candidate_id)));
+    const results = await Promise.allSettled(
+      candidates.map((candidate) => anchor.submit(candidate.candidate_id, (ack) => acceptCandidate(candidate.candidate_id, ack))),
+    );
     if (results.some((result) => result.status === "rejected")) {
       toast.error(stk.acceptFailed);
-    } else {
+    } else if (results.some((result) => result.status === "fulfilled" && result.value)) {
       toast.success(qtk.addedToast);
     }
   };
@@ -227,6 +256,8 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
               // tooltip 列标题，切片级分解属下钻层）——候选卡采纳后就是题库
               // 行，采纳前后同一单位；无锚定候选空单元格。
               const docIds = refDocIds(candidate.relevant_chunk_ids);
+              // B′：本卡拦截红块（key = candidate_id），渲染在动作行正下方。
+              const candidateBlock = anchor.blockFor(candidate.candidate_id);
               /* 候选卡（2026-09-08）：边框加深一档（border-foreground/20，默认
                  --border 在卡容器内边际不清）；右键菜单承接行级采纳/忽略，
                  卡内按钮保留作双入口。 */
@@ -266,6 +297,16 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
                     {stk.reject}
                   </Button>
                 </div>
+                {/* B′ 红块：动作行正下方；原「采纳」保留原文案与无确认重提语义，
+                    仅红块内「仍要接受」携 anchor_ack=true。 */}
+                {candidateBlock !== null && (
+                  <AnchorBlockNotice
+                    confirmLabel={etk.anchorBlock.confirmAccept}
+                    confirming={busy}
+                    detail={candidateBlock}
+                    onConfirm={() => void handleAcceptConfirmed(candidate.candidate_id)}
+                  />
+                )}
                   </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-40">

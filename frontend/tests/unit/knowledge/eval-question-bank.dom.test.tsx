@@ -19,7 +19,8 @@ import { EvalAddQuestionDialog } from "@/components/workspace/knowledge/eval-add
 import { EvalQuestionBank } from "@/components/workspace/knowledge/eval-question-bank";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import type { EvalQuestion, EvalQuestionListResponse } from "@/core/knowledge/types";
+import { AnchorBlockError } from "@/core/knowledge/api";
+import type { AnchorBlockDetail, EvalQuestion, EvalQuestionListResponse } from "@/core/knowledge/types";
 
 const hooksMock = rs.hoisted(() => ({
   useEvalQuestions: rs.fn(),
@@ -574,6 +575,60 @@ describe("EvalAddQuestionDialog", () => {
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已添加")).toBe(true);
     });
+  });
+
+  // ── B′ 锚定拦截（2026-10-05；本 dialog 无锚定输入，测试模拟 422）────
+  it("B′：首击被拦落红块（无错误 toast），原「添加」重提恒无确认，「仍要入库」携 anchor_ack=true 入库", async () => {
+    const detail: AnchorBlockDetail = {
+      reason: "mismatch",
+      miss_terms: ["装箱"],
+      hits: 1,
+      best_hits: 3,
+      suggested_chunk: "abc#0001",
+    };
+    const mutateAsync = rs
+      .fn()
+      .mockRejectedValueOnce(new AnchorBlockError(detail))
+      .mockRejectedValueOnce(new AnchorBlockError(detail))
+      .mockResolvedValue({ ...Q_ANCHORED, id: "q_new00002", query: "新考题" });
+    hooksMock.useAddEvalQuestion.mockReturnValue({ mutateAsync, isPending: false });
+    const onOpenChange = rs.fn();
+    renderWithI18n(<EvalAddQuestionDialog kbId="kb-1" onOpenChange={onOpenChange} open />);
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    const block = await screen.findByRole("alert");
+    expect(block.textContent).toContain("装箱");
+    expect(screen.getByRole("button", { name: "仍要入库" })).toBeTruthy();
+    expect(rs.mocked(toast.error)).not.toHaveBeenCalled();
+
+    // 原按钮保留原文案，再点仍是无确认重提（盲双击不绕过）。
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+    expect((mutateAsync.mock.calls[1]?.[0] as Record<string, unknown>).anchor_ack).toBeFalsy();
+
+    // 「仍要入库」→ anchor_ack=true → 正常保存收尾（成功 toast + 关闭）。
+    fireEvent.click(screen.getByRole("button", { name: "仍要入库" }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(3));
+    expect((mutateAsync.mock.calls[2]?.[0] as Record<string, unknown>).anchor_ack).toBe(true);
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("B′ missing_chunk：红块渲染但无确认钮（不可绕过）", async () => {
+    const mutateAsync = rs
+      .fn()
+      .mockRejectedValue(
+        new AnchorBlockError({ reason: "missing_chunk", miss_terms: [], hits: 0, best_hits: 0, suggested_chunk: null }),
+      );
+    hooksMock.useAddEvalQuestion.mockReturnValue({ mutateAsync, isPending: false });
+    renderWithI18n(<EvalAddQuestionDialog kbId="kb-1" onOpenChange={() => undefined} open />);
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    const block = await screen.findByRole("alert");
+    expect(block.textContent).toContain(zhCN.knowledge.eval.anchorBlock.missing);
+    expect(screen.queryByRole("button", { name: "仍要入库" })).toBeNull();
+    expect(rs.mocked(toast.error)).not.toHaveBeenCalled();
   });
 });
 

@@ -856,6 +856,21 @@ export interface Translations {
         contextRecallLabel: string;
         notRun: string;
       };
+      /** B′ 锚定拦截红块（2026-10-05）：机器核验证据 + 覆盖确认钮，三面共用。 */
+      anchorBlock: {
+        /** mismatch / zero_hit 标题。 */
+        title: string;
+        /** missing_chunk 专属（不可覆盖）。 */
+        missing: string;
+        missTerms: string;
+        suggest: string;
+        /** 命中计数标签（渲染「命中 1/3」= hits/best_hits）。 */
+        hits: string;
+        /** 覆盖确认钮（添加/存为考题 dialog）。 */
+        confirmSave: string;
+        /** 覆盖确认钮（合成审核面板）。 */
+        confirmAccept: string;
+      };
     };
     /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
     vectorSpace: {

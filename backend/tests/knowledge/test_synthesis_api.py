@@ -97,7 +97,7 @@ _GOOD_PAYLOAD = json.dumps(
     {
         "questions": [
             {"query": "切片一讲了什么？", "category": "fact", "expected_paths": ["vector"], "chunk_refs": [1], "reference_answer": "切片 1 的内容。"},
-            {"query": "两个切片有什么联系？", "category": "concept", "expected_paths": ["vector", "wiki"], "chunk_refs": [1, 2], "reference_answer": "综合。"},
+            {"query": "两个切片有什么联系？", "category": "concept", "expected_paths": ["vector", "wiki"], "chunk_refs": [1, 2], "reference_answer": "综合两片：切片 1 的内容与切片 2 的内容。"},
         ]
     },
     ensure_ascii=False,
@@ -281,6 +281,48 @@ async def test_accept_unknown_candidate_404(session_factory, tmp_path) -> None:
     kb = _create_kb(client)
 
     assert client.post(_url(kb["id"], "/c_missing0/accept")).status_code == 404
+
+
+_MISMATCH_PAYLOAD = json.dumps(
+    {
+        "questions": [
+            {"query": "什么是装箱？", "category": "fact", "expected_paths": ["vector"], "chunk_refs": [2], "reference_answer": "装箱是把基本数据类型转成包装类型。"},
+        ]
+    },
+    ensure_ascii=False,
+)
+
+
+async def test_accept_misanchored_candidate_is_422_and_ack_overrides(session_factory, tmp_path) -> None:
+    """accept 口过闸（spec 2026-10-05 D1=甲′）：q008 形状候选 422 回显机器依据、
+    候选留暂存不入库；带 anchor_ack 重提放行。"""
+    service = _synth_service(session_factory, tmp_path, MagicMock())
+    client = _client(service)
+    kb = _create_kb(client)
+    await _seed_indexed_doc(service, kb["id"])
+    chunks = await service.store.list_chunks(DOC)
+    await synthesis.synthesize_for_docs(
+        kb_id=kb["id"],
+        docs=[(DOC, "Java 并发.md", chunks)],
+        count=1,
+        staging_path=service._synthesis_staging_path(kb["id"]),
+        llm_factory=lambda: _StubLLM(_MISMATCH_PAYLOAD),
+    )
+    target = (await synthesis.load_staging(service._synthesis_staging_path(kb["id"])))["candidates"][0]
+
+    response = client.post(_url(kb["id"], f"/{target['candidate_id']}/accept"))
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["reason"] in ("mismatch", "zero_hit")
+    # 拦截不入库、候选留在暂存（可改正或确认后重提）。
+    assert [c["candidate_id"] for c in client.get(_url(kb["id"])).json()["candidates"]] == [target["candidate_id"]]
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["total"] == 0
+
+    overridden = client.post(_url(kb["id"], f"/{target['candidate_id']}/accept"), json={"anchor_ack": True})
+
+    assert overridden.status_code == 201, overridden.text
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["total"] == 1
 
 
 async def test_reject_removes_candidate_without_touching_bank(session_factory, tmp_path) -> None:

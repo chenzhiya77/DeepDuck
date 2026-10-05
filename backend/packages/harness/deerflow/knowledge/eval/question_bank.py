@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -75,12 +75,19 @@ async def add_question(
     relevant_chunk_ids: list[str] | tuple[str, ...] = (),
     relevant_entities: list[str] | tuple[str, ...] = (),
     reference_answer: str | None = None,
+    anchor_guard: Callable[[Sequence[str], str | None, bool], Awaitable[None]] | None = None,
+    anchor_ack: bool = False,
 ) -> GoldenQuestion:
     """Validate + append one question; returns the stored (server-id) question.
 
     Writes always use the canonical ``expected_paths`` list format (spec
     2026-08-28 §3); the validator accepts legacy single-value lines on read,
     so banks with mixed generations stay loadable until touched.
+
+    ``anchor_guard`` is the write-path anchor verification (spec 2026-10-05)
+    — injected by the two real write ports, default off keeps this module
+    file-layer pure. ``anchor_ack`` is the one-shot human confirm flag that
+    overrides term-level blocks (never a missing chunk).
     """
 
     path = Path(path)
@@ -103,6 +110,9 @@ async def add_question(
             question = validate_question(raw)
         except GoldenDatasetError as exc:
             raise QuestionBankInvalidQuestion(str(exc)) from exc
+
+        if anchor_guard is not None:
+            await anchor_guard(list(relevant_chunk_ids), reference_answer, anchor_ack)
 
         _atomic_write(path, [*existing, question])
         return question

@@ -97,6 +97,10 @@ async def test_empty_bank_returns_empty_list(service) -> None:
 async def test_get_returns_full_question_fields(service) -> None:
     client = _client(service)
     kb = _create_kb(client)
+    # 锚定核验（2026-10-05）后，锚定片必须真实存在——种出用例声明的那片。
+    doc_id = "a" * 32
+    await service.store.create_document(doc_id=doc_id, kb_id=kb["id"], uploader_id=OWNER_ID, name="图谱.docx", size_bytes=1, storage_path="p")
+    await service.store.insert_chunks([{"chunk_id": f"{doc_id}#0001", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 1, "text": "图谱路径。"}])
 
     created = client.post(
         f"/api/knowledge-bases/{kb['id']}/eval/questions",
@@ -288,6 +292,43 @@ async def test_unknown_kb_404_on_post(service) -> None:
     response = client.post("/api/knowledge-bases/kb-missing/eval/questions", json=_valid_body())
 
     assert response.status_code == 404
+
+
+# ── 锚定核验（spec 2026-10-05 D1=甲′）────────────────────────────────────
+
+
+async def test_post_misanchored_question_is_422_with_structured_detail(service) -> None:
+    """create 口过闸：q008 形状（答案锚贴到不含答案术语的切片）422 回显机器
+    依据；带 anchor_ack 重存放行（人做最后检验）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = "c" * 32
+    await service.store.create_document(doc_id=doc_id, kb_id=kb["id"], uploader_id=OWNER_ID, name="java基础.docx", size_bytes=1, storage_path="p")
+    await service.store.insert_chunks(
+        [
+            {"chunk_id": f"{doc_id}#0001", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 1, "text": "什么是自动拆箱/装箱？装箱：将基本数据类型转换为包装类型。拆箱：将包装类型转换为基本数据类型。"},
+            {"chunk_id": f"{doc_id}#0002", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": 2, "text": "Integer 会缓存 -128 到 127 的对象，==比较的是引用地址。"},
+        ]
+    )
+    body = _valid_body(
+        query="什么是自动拆箱和装箱？",
+        relevant_chunk_ids=[f"{doc_id}#0002"],
+        reference_answer="装箱是把基本数据类型转成包装类型；拆箱是把包装类型转成基本数据类型。",
+    )
+
+    response = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json=body)
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["reason"] in ("mismatch", "zero_hit")
+    assert "装箱" in detail["miss_terms"]
+    assert detail["suggested_chunk"] == f"{doc_id}#0001"
+    # 拦截即不落盘。
+    assert _golden_file(service, kb["id"]).exists() is False or not _golden_file(service, kb["id"]).read_text(encoding="utf-8").strip()
+
+    overridden = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json={**body, "anchor_ack": True})
+
+    assert overridden.status_code == 201, overridden.text
 
 
 # ── DELETE ───────────────────────────────────────────────────────────────

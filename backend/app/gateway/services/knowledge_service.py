@@ -32,7 +32,7 @@ import numpy as np
 from deerflow.knowledge.embed_identity import identity_diff_fields, identity_from_rag
 from deerflow.knowledge.embed_texts import manual_card_embed_text
 from deerflow.knowledge.embedder_factory import build_embedder
-from deerflow.knowledge.eval import question_bank, synthesis
+from deerflow.knowledge.eval import anchor_check, question_bank, synthesis
 from deerflow.knowledge.eval.metrics import DEFAULT_FAIL_THRESHOLD
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty, cancel_eval_run, eval_run_in_progress, get_eval_progress, run_full_eval_for_kb, run_layer1_for_kb
 from deerflow.knowledge.eval.persistence import ENV_CI, STATUS_COMPLETED
@@ -1532,13 +1532,15 @@ class KnowledgeService:
         relevant_chunk_ids: Collection[str],
         relevant_entities: Collection[str],
         reference_answer: str | None,
+        anchor_ack: bool = False,
     ) -> dict[str, Any]:
-        if not relevant_entities and relevant_chunk_ids:
+        # 一次取行喂两处：实体派生 + 锚定核验（spec 2026-10-05 收口）。
+        rows = await self.store.get_chunks_by_ids(list(relevant_chunk_ids), kb_id=kb_id) if relevant_chunk_ids else []
+        if not relevant_entities:
             # 实体标注派生（2026-09-08，与合成路同源）：造题面（存为考题/添加
             # dialog）本无实体输入，空标注会让 seed_hit_rate 永久不适用——
             # 有锚定时取锚定切片 entities 保序去重并集；body 显式非空尊重
             # 原值（API 契约）。
-            rows = await self.store.get_chunks_by_ids(list(relevant_chunk_ids))
             relevant_entities = synthesis.chunk_entities_union(rows)
         question = await question_bank.add_question(
             self._golden_path(kb_id),
@@ -1548,6 +1550,12 @@ class KnowledgeService:
             relevant_chunk_ids=relevant_chunk_ids,
             relevant_entities=relevant_entities,
             reference_answer=reference_answer,
+            anchor_guard=anchor_check.build_anchor_guard(
+                self.store,
+                kb_id,
+                anchor_texts={row["chunk_id"]: row.get("text") or "" for row in rows},
+            ),
+            anchor_ack=anchor_ack,
         )
         return asdict(question)
 
@@ -1625,8 +1633,14 @@ class KnowledgeService:
             "dropped": data.get("dropped", 0),
         }
 
-    async def accept_synthesis_candidate(self, kb_id: str, candidate_id: str) -> dict[str, Any]:
-        question = await synthesis.accept_candidate(self._golden_path(kb_id), self._synthesis_staging_path(kb_id), candidate_id)
+    async def accept_synthesis_candidate(self, kb_id: str, candidate_id: str, anchor_ack: bool = False) -> dict[str, Any]:
+        question = await synthesis.accept_candidate(
+            self._golden_path(kb_id),
+            self._synthesis_staging_path(kb_id),
+            candidate_id,
+            anchor_guard=anchor_check.build_anchor_guard(self.store, kb_id),
+            anchor_ack=anchor_ack,
+        )
         return asdict(question)
 
     async def reject_synthesis_candidate(self, kb_id: str, candidate_id: str) -> None:

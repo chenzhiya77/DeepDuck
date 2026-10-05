@@ -576,10 +576,11 @@ describe("合成造题数据 hooks（plan Task 8）", () => {
     await waitFor(() => expect(questions.result.current.isSuccess).toBe(true));
 
     const accept = renderHook(() => useAcceptSynthesisCandidate("kb-1"), { wrapper });
-    const question = await accept.result.current.mutateAsync("c_a1b2c3d4");
+    const question = await accept.result.current.mutateAsync({ candidate_id: "c_a1b2c3d4" });
 
     expect(question.id).toBe("q_new12345");
-    expect(api.acceptSynthesisCandidate).toHaveBeenCalledWith("kb-1", "c_a1b2c3d4");
+    // anchor_ack 缺省保持 bodyless 旧契约（api 层默认 false，不发确认体）。
+    expect(api.acceptSynthesisCandidate).toHaveBeenCalledWith("kb-1", "c_a1b2c3d4", false);
     await waitFor(() => expect(api.getSynthesisStatus).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
   });

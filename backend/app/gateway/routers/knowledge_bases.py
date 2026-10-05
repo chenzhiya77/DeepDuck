@@ -25,6 +25,7 @@ from app.gateway.services.knowledge_service import (
     has_degraded_leg,
 )
 from deerflow.knowledge.access import can_access
+from deerflow.knowledge.eval.anchor_check import AnchorMismatchError
 from deerflow.knowledge.eval.dataset import GoldenDatasetError
 from deerflow.knowledge.eval.ondemand import EvalQuestionBankEmpty
 from deerflow.knowledge.eval.question_bank import QuestionBankInvalidQuestion
@@ -78,6 +79,9 @@ class EvalQuestionCreateRequest(BaseModel):
     relevant_chunk_ids: list[str] = Field(default_factory=list)
     relevant_entities: list[str] = Field(default_factory=list)
     reference_answer: str | None = None
+    # 锚定核验（spec 2026-10-05 D1=甲′）的一次性确认标记：被拦后「仍要入库」
+    # 按钮带 true 重提。请求级、不进题库 schema；锚失效（片不存在）不认它。
+    anchor_ack: bool = False
 
 
 class EvalRunTriggerRequest(BaseModel):
@@ -752,7 +756,8 @@ async def list_eval_questions(request: Request, kb_id: str):
 
 @router.post("/{kb_id}/eval/questions", status_code=201)
 async def create_eval_question(request: Request, kb_id: str, body: EvalQuestionCreateRequest):
-    """新增一题：id 服务端生成；新入参违例 → 422，存量文件脏 → 500 指行号。"""
+    """新增一题：id 服务端生成；新入参违例 → 422，锚定核验拦截 → 422 结构化明细
+    （带 anchor_ack 重提可放行术语级拦截），存量文件脏 → 500 指行号。"""
     service = await _require_kb_access(request, kb_id)
     try:
         return await service.create_eval_question(
@@ -763,7 +768,10 @@ async def create_eval_question(request: Request, kb_id: str, body: EvalQuestionC
             relevant_chunk_ids=body.relevant_chunk_ids,
             relevant_entities=body.relevant_entities,
             reference_answer=body.reference_answer,
+            anchor_ack=body.anchor_ack,
         )
+    except AnchorMismatchError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
     except QuestionBankInvalidQuestion as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except GoldenDatasetError as exc:
@@ -797,6 +805,13 @@ class SynthesisTriggerRequest(BaseModel):
     count: int = Field(default=5, ge=1, le=10)
 
 
+class SynthesisAcceptRequest(BaseModel):
+    """采纳候选的可选请求体（spec 2026-10-05 D1=甲′）：``anchor_ack`` 是被拦后
+    「仍要接受」的一次性确认标记；无 body 与旧调用兼容（= 不带确认）。"""
+
+    anchor_ack: bool = False
+
+
 @router.post("/{kb_id}/eval/questions/synthesize", status_code=202)
 async def trigger_question_synthesis(request: Request, kb_id: str, body: SynthesisTriggerRequest):
     """自底向上合成候选题（spec §6.1）：复刻评测触发的 in-flight 幂等语义——
@@ -818,11 +833,14 @@ async def get_synthesis_status(request: Request, kb_id: str):
 
 
 @router.post("/{kb_id}/eval/questions/synthesize/{candidate_id}/accept", status_code=201)
-async def accept_synthesis_candidate(request: Request, kb_id: str, candidate_id: str):
-    """采纳候选：经题库唯一写路径（add_question）入库并从暂存移除。"""
+async def accept_synthesis_candidate(request: Request, kb_id: str, candidate_id: str, body: SynthesisAcceptRequest | None = None):
+    """采纳候选：经题库唯一写路径（add_question）入库并从暂存移除；锚定核验
+    拦截 → 422 结构化明细（候选留在暂存，带 anchor_ack 重提可放行）。"""
     service = await _require_kb_access(request, kb_id)
     try:
-        return await service.accept_synthesis_candidate(kb_id, candidate_id)
+        return await service.accept_synthesis_candidate(kb_id, candidate_id, anchor_ack=bool(body and body.anchor_ack))
+    except AnchorMismatchError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Synthesis candidate not found") from exc
 

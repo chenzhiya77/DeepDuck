@@ -844,6 +844,15 @@ export const zhCN: Translations = {
         contextRecallLabel: "上下文召回率",
         notRun: "本次运行未执行该层",
       },
+      anchorBlock: {
+        title: "机器核验：答案与锚定切片对不上",
+        missing: "锚定切片不存在，需修正锚定后重新保存",
+        missTerms: "缺失术语",
+        suggest: "建议锚",
+        hits: "命中",
+        confirmSave: "仍要入库",
+        confirmAccept: "仍要接受",
+      },
     },
     vectorSpace: {
       loading: "计算投影中…",

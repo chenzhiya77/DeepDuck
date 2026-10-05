@@ -8,6 +8,7 @@ import { fetch } from "../api/fetcher";
 import { getBackendBaseURL } from "../config";
 
 import type {
+  AnchorBlockDetail,
   ChunkPositionsResponse,
   DeletePreviewResponse,
   EvalCancelResponse,
@@ -63,13 +64,56 @@ function formatErrorDetail(detail: unknown): string | null {
   return null;
 }
 
+/**
+ * 锚定核验拦截（B′，2026-10-05）：后端 422 的 detail 是**对象**（普通错误是
+ * 字符串），携带机器证据。命中该形状时抛本类型，由 useAnchorConfirm 转成
+ * 红块内联确认（「仍要入库/仍要接受」）；普通错误保持既有 Error + toast 路径。
+ */
+export class AnchorBlockError extends Error {
+  readonly detail: AnchorBlockDetail;
+
+  constructor(detail: AnchorBlockDetail) {
+    super(`anchor check failed: ${detail.reason}`);
+    this.name = "AnchorBlockError";
+    this.detail = detail;
+  }
+}
+
+/** 仅认结构化锚定 detail（对象 + reason 枚举 + miss_terms 数组）；其余 null。 */
+function parseAnchorBlockDetail(detail: unknown): AnchorBlockDetail | null {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const record = detail as Record<string, unknown>;
+  const reason = record.reason;
+  if (reason !== "mismatch" && reason !== "zero_hit" && reason !== "missing_chunk") return null;
+  const missTerms = record.miss_terms;
+  if (!Array.isArray(missTerms) || !missTerms.every((term) => typeof term === "string")) return null;
+  return {
+    reason,
+    miss_terms: [...missTerms],
+    hits: typeof record.hits === "number" ? record.hits : 0,
+    best_hits: typeof record.best_hits === "number" ? record.best_hits : 0,
+    suggested_chunk: typeof record.suggested_chunk === "string" ? record.suggested_chunk : null,
+  };
+}
+
+function buildResponseError(response: Response, detail: unknown, fallbackMessage: string): Error {
+  // 锚定核验专属形态：422 + 结构化 detail；普通字符串 detail 的 422 走旧路径。
+  if (response.status === 422) {
+    const anchorDetail = parseAnchorBlockDetail(detail);
+    if (anchorDetail !== null) {
+      return new AnchorBlockError(anchorDetail);
+    }
+  }
+  const detailMessage = formatErrorDetail(detail);
+  return new Error(detailMessage ?? `${fallbackMessage}: ${response.statusText}`);
+}
+
 async function readResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   if (!response.ok) {
     const errorData = (await response.json().catch(() => ({}))) as {
       detail?: unknown;
     };
-    const detailMessage = formatErrorDetail(errorData.detail);
-    throw new Error(detailMessage ?? `${fallbackMessage}: ${response.statusText}`);
+    throw buildResponseError(response, errorData.detail, fallbackMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -79,8 +123,7 @@ async function readEmptyResponse(response: Response, fallbackMessage: string): P
     const errorData = (await response.json().catch(() => ({}))) as {
       detail?: unknown;
     };
-    const detailMessage = formatErrorDetail(errorData.detail);
-    throw new Error(detailMessage ?? `${fallbackMessage}: ${response.statusText}`);
+    throw buildResponseError(response, errorData.detail, fallbackMessage);
   }
 }
 
@@ -607,10 +650,13 @@ export function getSynthesisStatus(kbId: string): Promise<SynthesisStatus> {
   );
 }
 
-/** POST .../synthesize/{candidate_id}/accept：采纳候选入题库（201；未知候选 404）。 */
-export function acceptSynthesisCandidate(kbId: string, candidateId: string): Promise<EvalQuestion> {
+/** POST .../synthesize/{candidate_id}/accept：采纳候选入题库（201；未知候选 404）。
+ *  ``ack``（B′，2026-10-05）：真值时发 ``{"anchor_ack": true}`` 覆盖词条级锚定
+ *  拦截；缺省保持无请求体（旧契约兼容，bodyless 调用不受影响）。 */
+export function acceptSynthesisCandidate(kbId: string, candidateId: string, ack = false): Promise<EvalQuestion> {
   return fetch(kbUrl(kbId, `/eval/questions/synthesize/${encodeURIComponent(candidateId)}/accept`), {
     method: "POST",
+    ...(ack ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anchor_ack: true }) } : {}),
   }).then((r) => readResponse<EvalQuestion>(r, "Failed to accept synthesis candidate"));
 }
 

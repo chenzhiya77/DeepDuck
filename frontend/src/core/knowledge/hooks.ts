@@ -18,6 +18,7 @@ import type {
   EvalRunListResponse,
   EvalTriggerInput,
   MetricsOverview,
+  SynthesisAcceptInput,
   SynthesisStatus,
   SynthesisTriggerInput,
   TrendResponse,
@@ -393,11 +394,12 @@ export function useTriggerSynthesis(kbId: string) {
   });
 }
 
-/** 采纳候选：入库后同时失效暂存与题库缓存（新题即时可见）。 */
+/** 采纳候选：入库后同时失效暂存与题库缓存（新题即时可见）。入参携可选
+ *  anchor_ack（B′，2026-10-05）：真值时透传给 accept 请求体覆盖词条级拦截。 */
 export function useAcceptSynthesisCandidate(kbId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (candidateId: string) => api.acceptSynthesisCandidate(kbId, candidateId),
+    mutationFn: (input: SynthesisAcceptInput) => api.acceptSynthesisCandidate(kbId, input.candidate_id, input.anchor_ack ?? false),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: knowledgeSynthesisKey(kbId) });
       void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });

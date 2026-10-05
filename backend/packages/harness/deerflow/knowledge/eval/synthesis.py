@@ -46,7 +46,7 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -381,12 +381,21 @@ def _existing_candidates(data: dict[str, Any]) -> list[SynthesisCandidate]:
     return rows
 
 
-async def accept_candidate(bank_path: str | Path, staging_path: str | Path, candidate_id: str) -> GoldenQuestion:
+async def accept_candidate(
+    bank_path: str | Path,
+    staging_path: str | Path,
+    candidate_id: str,
+    *,
+    anchor_guard: Callable[[Sequence[str], str | None, bool], Awaitable[None]] | None = None,
+    anchor_ack: bool = False,
+) -> GoldenQuestion:
     """Move one staged candidate into the bank (the only write route).
 
     The bank write goes through ``question_bank.add_question`` — server id
     regeneration and schema guard included. KeyError when the candidate is
-    unknown (already reviewed, or never existed).
+    unknown (already reviewed, or never existed). ``anchor_guard``/
+    ``anchor_ack`` pass through to the write-path anchor verification (spec
+    2026-10-05) so this port and the create port share one gate.
     """
     staging_path = Path(staging_path)
     async with _lock(staging_path):
@@ -404,6 +413,8 @@ async def accept_candidate(bank_path: str | Path, staging_path: str | Path, cand
             relevant_chunk_ids=row.get("relevant_chunk_ids") or [],
             relevant_entities=row.get("relevant_entities") or [],
             reference_answer=row.get("reference_answer"),
+            anchor_guard=anchor_guard,
+            anchor_ack=anchor_ack,
         )
         _write_staging(
             staging_path,

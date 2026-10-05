@@ -27,11 +27,11 @@
 
 > 动到的文件：`eval/anchor_check.py`（新）/ `question_bank.py` / `synthesis.py` / `knowledge_service.py` / `knowledge_bases.py`（结构化 detail）/ 前端 `eval-add-question-dialog.tsx` + `eval-save-question-dialog.tsx` + `eval-synthesis-review.tsx`（B′ 三处、逻辑一份 hook）/ 对应测试
 
-- [ ] RED：q008 形状贴错被拦（红=今天创建成功）/ **带确认标记重存放行**（甲′ 绕过）/ 空答案放行 / 多片 BEATEN 放行 / 多片单片 ZERO 拦 / create 与 accept 双口过闸。—— 用例数与红因逐条记录。
-- [ ] GREEN：`eval/anchor_check.py`（纯判定函数 + store 取正文的 async 包装）+ `add_question` guard 注入 + 两调用方传 guard；拦截响应带明细。
-- [ ] neuter：拆豁免 ⇒ 假阳例红；拆收口（只挂 create）⇒ accept 例红；放宽判定阈值 ⇒ q008 形状例红。受害者按实测报。
-- [ ] 前端交互 B′（spec §2 末细则）：行内红字明细块 + 按钮换文案「仍要入库/仍要接受」；dom 三钉=红字出现且不入库 / 换文案后点击才入库 / 重复点原「保存」不入库（先例=recall-test-panel dom 测试）。
-- [ ] 门禁：eval 面 + knowledge API 面 + 前端 dom + ruff/pnpm check 双净。
+- [x] RED：**11 用例**（`test_anchor_check.py` 6 单元 + create/accept 双口 4 + 零受害者钉 1）。红因：6 单元=`anchor_check` 未建（ImportError）；双口 4=今天贴错题直接 201（bug 路径）；零受害者钉首日即绿。
+- [x] GREEN：`eval/anchor_check.py`（`check_anchor` 纯判定 + `guard_from_fetch`/`store_fetch`/`build_anchor_guard`）+ `add_question(anchor_guard, anchor_ack)` 注入 + `synthesis.accept_candidate` 透传 + service 双口传 guard（create 路一次取行喂实体派生+核验）+ router `anchor_ack` 字段 / accept 可选 body / 结构化 422。**实测受害者 2 处（皆假锚 fixture，断言不动）**：`test_get_returns_full_question_fields`（假 chunk id ⇒ 补种声明的那片）/ `test_synthesis_api` 夹具答案「综合。」与锚零词面重叠 ⇒ 被正确拦（夹具答案改接地）——「抽象短答案拦一次、点『仍要接受』」属设计内，登记 §6 观察。
+- [x] neuter：①拆空答案豁免 ⇒ 1 红（受害 0）②拆 accept 收口 ⇒ 1 红（受害 0）③放宽判定阈值 ⇒ 2 红（受害 0）。
+- [x] 前端交互 B′（spec §2 末细则）：共享 hook `use-anchor-confirm.ts`（keyed：dialog="form"、合成审核=candidate_id）+ 共享红块 `anchor-block-notice.tsx` + 三面接线 + i18n 三件（`eval.anchorBlock`）+ dom 三钉 7 用例（首击落红块不入库无 error toast / 原按钮重提恒无 ack / 确认钮携 `anchor_ack=true` / `missing_chunk` 无确认钮 / save 面清块钉）。前端全量 **2805 绿/0 红**、`pnpm check` 双净。
+- [x] 门禁：eval 面 + knowledge API 面 41 绿 + knowledge 全面 **1583 绿/4 环境红**（预存账，零新增）+ 前端 2805 绿 + `ruff check`/`ruff format --check` 双净 + `pnpm check` 双净。
 
 ## Task 2 — 存量修复（q008 修锚）
 

@@ -5,6 +5,9 @@
  *   2026-09-02 起支持多篇联合出题（路线二）：清单多选、提交携带全部勾选 id。
  * - 审核面板：暂存空且非运行中不渲染；候选卡片字段全量；采纳/忽略/全部忽略
  *   分别驱动 accept/reject mutation；in_progress 显示「生成中…」。
+ * - B′ 锚定拦截（2026-10-05）：采纳被锚定核验 422 拦下时候选卡出红块（无错误
+ *   toast），原「采纳」重提恒不带确认，仅红块内「仍要接受」携 anchor_ack=true
+ *   入库；missing_chunk 红块无确认钮（不可绕过）。
  *
  * 轮询门控（refetchInterval）已在 hooks.dom.test（Task 8）钉死，此处不重复。
  */
@@ -31,7 +34,13 @@ import { EvalSynthesisDialog } from "@/components/workspace/knowledge/eval-synth
 import { EvalSynthesisReview } from "@/components/workspace/knowledge/eval-synthesis-review";
 import { I18nContext } from "@/core/i18n/context";
 import { zhCN } from "@/core/i18n/locales/zh-CN";
-import type { KnowledgeDocument, SynthesisCandidate, SynthesisStatus } from "@/core/knowledge/types";
+import { AnchorBlockError } from "@/core/knowledge/api";
+import type {
+  AnchorBlockDetail,
+  KnowledgeDocument,
+  SynthesisCandidate,
+  SynthesisStatus,
+} from "@/core/knowledge/types";
 
 const DOC = "a".repeat(32);
 
@@ -250,7 +259,7 @@ describe("EvalSynthesisReview（审核面板）", () => {
     const { acceptAsync } = renderReview(STATUS_WITH_CANDIDATES);
     const acceptButtons = screen.getAllByRole("button", { name: "采纳" });
     fireEvent.click(acceptButtons[0]!);
-    await waitFor(() => expect(acceptAsync).toHaveBeenCalledWith("c_aaaa1111"));
+    await waitFor(() => expect(acceptAsync).toHaveBeenCalledWith({ candidate_id: "c_aaaa1111", anchor_ack: false }));
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已添加")).toBe(true);
     });
@@ -277,8 +286,8 @@ describe("EvalSynthesisReview（审核面板）", () => {
     fireEvent.contextMenu(screen.getByTestId("eval-synthesis-review-toggle"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "全部采纳" }));
     await waitFor(() => expect(acceptAsync).toHaveBeenCalledTimes(2));
-    expect(acceptAsync).toHaveBeenNthCalledWith(1, "c_aaaa1111");
-    expect(acceptAsync).toHaveBeenNthCalledWith(2, "c_bbbb2222");
+    expect(acceptAsync).toHaveBeenNthCalledWith(1, { candidate_id: "c_aaaa1111", anchor_ack: false });
+    expect(acceptAsync).toHaveBeenNthCalledWith(2, { candidate_id: "c_bbbb2222", anchor_ack: false });
     await waitFor(() => {
       expect(rs.mocked(toast.success).mock.calls.length).toBe(1);
     });
@@ -291,11 +300,73 @@ describe("EvalSynthesisReview（审核面板）", () => {
     await waitFor(() => expect(rejectAsync).toHaveBeenCalledWith("c_bbbb2222"));
     fireEvent.contextMenu(screen.getByText(CAND_1.query));
     fireEvent.click(await screen.findByRole("menuitem", { name: "采纳" }));
-    await waitFor(() => expect(acceptAsync).toHaveBeenCalledWith("c_aaaa1111"));
+    await waitFor(() => expect(acceptAsync).toHaveBeenCalledWith({ candidate_id: "c_aaaa1111", anchor_ack: false }));
   });
 
   it("in_progress → 生成中文案", () => {
     renderReview({ ...STATUS_WITH_CANDIDATES, in_progress: true, candidates: [] });
     expect(screen.getByText("生成中…")).toBeTruthy();
+  });
+
+  // ── B′ 锚定拦截（2026-10-05）────────────────────────────────────────
+  const BLOCK_DETAIL: AnchorBlockDetail = {
+    reason: "mismatch",
+    miss_terms: ["装箱"],
+    hits: 1,
+    best_hits: 3,
+    suggested_chunk: "abc#0001",
+  };
+
+  function renderReviewWithAccept(acceptAsync: ReturnType<typeof rs.fn>) {
+    hooksMock.useSynthesisStatus.mockReturnValue({ data: STATUS_WITH_CANDIDATES, isLoading: false });
+    hooksMock.useAcceptSynthesisCandidate.mockReturnValue({ mutateAsync: acceptAsync, isPending: false });
+    hooksMock.useRejectSynthesisCandidate.mockReturnValue({ mutateAsync: rs.fn().mockResolvedValue(undefined), isPending: false });
+    hooksMock.useDocuments.mockReturnValue({ data: [READY_DOC, READY_DOC_2], isLoading: false });
+    renderWithI18n(<EvalSynthesisReview enabled kbId="kb-1" />);
+  }
+
+  it("B′：首击被拦落红块（无错误 toast），原「采纳」重提恒无确认，「仍要接受」携 anchor_ack=true 入库", async () => {
+    const acceptAsync = rs
+      .fn()
+      .mockRejectedValueOnce(new AnchorBlockError(BLOCK_DETAIL))
+      .mockRejectedValueOnce(new AnchorBlockError(BLOCK_DETAIL))
+      .mockResolvedValue({ id: "q_new12345", query: CAND_1.query });
+    renderReviewWithAccept(acceptAsync);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "采纳" })[0]!);
+    const block = await screen.findByRole("alert");
+    expect(block.textContent).toContain("装箱");
+    expect(screen.getByRole("button", { name: "仍要接受" })).toBeTruthy();
+    expect(rs.mocked(toast.error)).not.toHaveBeenCalled();
+
+    // 原按钮保留原文案，再点仍是无确认重提（盲双击不绕过）。
+    fireEvent.click(screen.getAllByRole("button", { name: "采纳" })[0]!);
+    await waitFor(() => expect(acceptAsync).toHaveBeenCalledTimes(2));
+    expect((acceptAsync.mock.calls[1]?.[0] as { anchor_ack?: boolean }).anchor_ack).toBeFalsy();
+    expect(screen.getAllByRole("button", { name: "采纳" })).toHaveLength(2);
+
+    // 红块内「仍要接受」→ anchor_ack=true → 正常采纳收尾（成功 toast + 红块退场）。
+    fireEvent.click(screen.getByRole("button", { name: "仍要接受" }));
+    await waitFor(() => expect(acceptAsync).toHaveBeenCalledTimes(3));
+    expect((acceptAsync.mock.calls[2]?.[0] as { anchor_ack?: boolean }).anchor_ack).toBe(true);
+    await waitFor(() => {
+      expect(rs.mocked(toast.success).mock.calls.some(([m]) => m === "考题已添加")).toBe(true);
+    });
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("B′ missing_chunk：红块渲染但无确认钮（不可绕过）", async () => {
+    const acceptAsync = rs
+      .fn()
+      .mockRejectedValue(
+        new AnchorBlockError({ reason: "missing_chunk", miss_terms: [], hits: 0, best_hits: 0, suggested_chunk: null }),
+      );
+    renderReviewWithAccept(acceptAsync);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "采纳" })[0]!);
+    const block = await screen.findByRole("alert");
+    expect(block.textContent).toContain(zhCN.knowledge.eval.anchorBlock.missing);
+    expect(screen.queryByRole("button", { name: "仍要接受" })).toBeNull();
+    expect(rs.mocked(toast.error)).not.toHaveBeenCalled();
   });
 });

@@ -898,6 +898,15 @@ export const enUS: Translations = {
         contextRecallLabel: "Context Recall",
         notRun: "This layer was not executed in this run",
       },
+      anchorBlock: {
+        title: "Machine check: reference answer doesn't match the anchored chunk",
+        missing: "Anchored chunk doesn't exist — fix the anchor and save again",
+        missTerms: "Missing terms",
+        suggest: "Suggested anchor",
+        hits: "hits",
+        confirmSave: "Save anyway",
+        confirmAccept: "Accept anyway",
+      },
     },
     vectorSpace: {
       loading: "Computing projection…",
