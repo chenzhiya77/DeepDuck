@@ -109,6 +109,15 @@ export function KnowledgeChatPanel({
     const expandDisabled = isNewThread || !agentsApiEnabled;
   const [deepResearch, setDeepResearch] = useState(false);
   const [draft, setDraft] = useState("");
+
+  // 切库即新对话（还原 `2711a35a2` 的重置，`52b0dd76d` 重构时误删）：
+  // 线程只绑定一个库。声明位序必须在下方 requestedThreadId 深链 effect 之前。
+  useEffect(() => {
+    setThreadId(uuid());
+    setIsNewThread(true);
+    setDraft("");
+  }, [kbId]);
+
   // Composer model selector: null = unselected → context.model_name stays
   // undefined and the backend resolves request → agent config → global
   // default. A picked model is remembered per kb (localStorage) and read back

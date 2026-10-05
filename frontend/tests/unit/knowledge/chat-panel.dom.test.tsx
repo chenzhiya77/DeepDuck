@@ -69,6 +69,8 @@ const KB: KnowledgeBase = {
   created_at: "2026-08-01T10:00:00Z",
 };
 
+const KB2: KnowledgeBase = { ...KB, id: "kb-2", name: "第二库" };
+
 function makeThread(threadId: string, kbId: string | null, title: string) {
   return {
     thread_id: threadId,
@@ -120,6 +122,18 @@ function renderPanel(
   props?: Partial<Parameters<typeof KnowledgeChatPanel>[0]>,
 ) {
   return render(
+    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <KnowledgeChatPanel kb={kb} {...props} />
+    </I18nContext.Provider>,
+  );
+}
+
+function rerenderPanel(
+  view: ReturnType<typeof renderPanel>,
+  kb: KnowledgeBase | null,
+  props?: Partial<Parameters<typeof KnowledgeChatPanel>[0]>,
+) {
+  view.rerender(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
       <KnowledgeChatPanel kb={kb} {...props} />
     </I18nContext.Provider>,
@@ -287,6 +301,22 @@ describe("KnowledgeChatPanel", () => {
     expect(latestStreamOptions().threadId).toBe("thread-kb1-a");
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     expect(latestStreamOptions().threadId).toBeUndefined();
+  });
+
+  // 2026-10-06 缺陷批：切库即新对话（还原 `2711a35a2` 的重置，`52b0dd76d` 重构时误删）。
+  it("starts a fresh conversation when the knowledge base is switched", () => {
+    const view = renderPanel();
+    fireEvent.keyDown(screen.getByRole("button", { name: "历史会话" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByText("如何上传文档"));
+    expect(latestStreamOptions().threadId).toBe("thread-kb1-a");
+    rerenderPanel(view, KB2);
+    expect(latestStreamOptions().threadId).toBeUndefined();
+  });
+
+  // 位序守卫：重置 effect 必须先于 requestedThreadId 深链 effect——先重置、后选中，深链才能胜出。
+  it("keeps the deep-linked thread selected under the switch reset (effect ordering)", () => {
+    renderPanel(KB, { requestedThreadId: "thread-kb1-a" });
+    expect(latestStreamOptions().threadId).toBe("thread-kb1-a");
   });
 
   it("renders the question tick rail over the message list (chunk-rail scheme, ticks = user questions)", () => {
