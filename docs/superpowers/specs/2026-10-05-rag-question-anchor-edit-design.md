@@ -1,6 +1,6 @@
 # 题库锚定可视、改锚与悬空标记 —— 设计
 
-**Status:** 已裁待开工（2026-10-05 他裁：D1=甲 / D2=甲 / D3=甲＋折叠分组与分页细则 / D4=甲）。成对 plan 同名（`../plans/2026-10-05-rag-question-anchor-edit.md`）。
+**Status:** 已裁待开工（2026-10-05 他裁：D1=甲 / D2=甲 / D3=甲＋折叠分组与分页细则 / **D4=甲′ 跟锚收缩**〔同日审查改判，原「重派生覆盖」作废——合成题实体是精选子集，覆盖会冲成全集〕）。成对 plan 同名（`../plans/2026-10-05-rag-question-anchor-edit.md`）。
 
 **本对一件事：把题目锚定从「看得见文档、看不见切片、改不了、失锚也不知道」补齐成——锚定可见（切片内容级）、可改（抽屉内、过同一道锚定核验）、悬空有标（重切片/删片后标出悬空锚）。**
 
@@ -14,7 +14,7 @@
 
 1. **看不清**：详情抽屉参考文档卡（`frontend/src/components/workspace/knowledge/eval-question-drawer.tsx:43` `groupChunksByDoc`）只显示「文档名 + `#稳定序号` 徽章」——序号是从 id 字符串切出来的（`chunkId.split("#")`），**不查库、不显示切片正文、无跳转**。锚悬空了照样渲染（字符串还在），看不出来；两篇文档各自的 `#0000` 观感上「只有文档信息」。
 2. **改不了**：题库路由只有 create/delete/accept（`backend/app/gateway/routers/knowledge_bases.py:747–850`），无更新端点；`question_bank` 只有 `add_question`/`delete_question`。改锚 = 删+重建（旧裁定：编辑不支持、改=删+建）。**当时理由**=手填锚易贴错、锚定正确来源是召回面板「存为考题」；**理由今天已被搬掉**——锚定核验（`eval/anchor_check.py`）落地后，改锚可走同一道闸（贴错当场拦、悬空锚无条件拦、人可确认放行），「不敢让人改」不再是安全前提。
-3. **失锚无感**：`_reparse_and_chunk`（`backend/packages/harness/deerflow/knowledge/worker.py:698`）重试/续传整篇 wipe+重切，`{doc_id}#NNNN` 序号移位；切片删除（`DELETE /{kb_id}/chunks/{chunk_id}`）同样造悬空。两路都不触碰题库 ⇒ 题目静默失效（L1 计分里该锚永不可命中=恒 MISS）。这正是「2 就是具体的体现」的机制：失锚本身是文档线的正常后果，**看不出来 + 看出来也改不了**才把它放大成只能删题重建。
+3. **失锚无感**：`_reparse_and_chunk`（`backend/packages/harness/deerflow/knowledge/worker.py:698`）重试/续传整篇 wipe+重切，`{doc_id}#NNNN` 序号移位；切片删除（`DELETE /{kb_id}/chunks/{chunk_id}`）同样造悬空。两路都不触碰题库 ⇒ 题目静默失效（该锚永远进不了 hits：单锚题整体恒 MISS，多锚题 recall@k 分母虚高、永久打不满——`metrics.py:91` 口径 `recall@k = |relevant∩hits|/|relevant|`）。这正是「2 就是具体的体现」的机制：失锚本身是文档线的正常后果，**看不出来 + 看出来也改不了**才把它放大成只能删题重建。
 
 **顺带澄清（不是缺陷，防再误读）**：「只有 LLM 才能有锚」不成立——三条来路是 添加框=无锚（故意）/ 召回面板「存为考题」=人工带锚 / LLM 合成=带锚。人工一直可以有锚，只是添加框不设入口（该入口候选仍开，见 §6）。
 
@@ -22,7 +22,7 @@
 
 ### ① 锚定可见（抽屉参考文档卡升级）
 
-参考文档卡从「文档名+序号徽章」升级为**逐片 ChunkCard**（复用 `frontend/src/components/workspace/knowledge/chunk-card.tsx`，wiki 血缘抽屉先例 `wiki-entry-drawer.tsx:161`）：一次 `listChunksByIds`（`api.ts:227`）取锚定片正文 + `doc_name`，**同一取数两用**——正文预览（看得见切片内容）+ 返回差额即悬空判定（服务端静默丢缺片，`knowledge_bases.py` `list_chunks_by_ids` docstring 明记 "Unknown ids drop silently"，请求集 − 返回集 = 悬空集）。序号徽章保留（稳定身份，与切片抽屉位置序的既有区分不变）；悬空的片在卡内单列一行警示。
+参考文档卡从「文档名+序号徽章」升级为**逐片 ChunkCard**（复用 `frontend/src/components/workspace/knowledge/chunk-card.tsx`，wiki 血缘抽屉先例 `wiki-entry-drawer.tsx:161`；**只读=不传 `onEdit`/`onDelete`/`onReExtract` 动作回调**——组件自带这些可选动作，抑制即纯展示，避免与改锚编辑态两套编辑口：它自带的编辑是改切片正文，另一根轴）：一次 `listChunksByIds`（`api.ts:227`）取锚定片正文 + `doc_name`，**同一取数两用**——正文预览（看得见切片内容）+ 返回差额即悬空判定（服务端静默丢缺片，`knowledge_bases.py` `list_chunks_by_ids` docstring 明记 "Unknown ids drop silently"，请求集 − 返回集 = 悬空集）。序号徽章保留（稳定身份，与切片抽屉位置序的既有区分不变）；悬空的片在卡内单列一行警示。
 
 **只读态不铺全量**（2026-10-05 他确认）：平时只显示**已锚定的那几片**内容卡——参考文档卡回答"这题答案锚在哪"，文档其余切片与本题无关、摆出来是噪音；文档全量切片只在**编辑态**出现（见 ③）。
 
@@ -32,18 +32,18 @@
 
 ### ③ 改锚（抽屉内编辑，过同一核验）
 
-- 后端**唯一新增写入口** `question_bank.update_question(path, question_id, *, relevant_chunk_ids, relevant_entities=None, anchor_guard=None, anchor_ack=False)`：与 `add_question` 并列收口，同 `_lock` 读改写 + `_atomic_write`；query/category/expected_paths/reference_answer 等**不动**；`relevant_entities=None` 保持原值。挂**同一 `anchor_check.build_anchor_guard`**（store 取正文；`missing_chunk` 无条件拦、ack 也放不过）。
-- 服务 `update_eval_question(kb_id, question_id, *, relevant_chunk_ids, anchor_ack)`：一次 `get_chunks_by_ids` 喂核验正文 + 实体派生（D4）；router `PATCH /{kb_id}/eval/questions/{question_id}`（body：`relevant_chunk_ids` + `anchor_ack?`）→ 200 题体 / 404 / 422 结构化 detail（与 create 同一 `AnchorMismatchError` 映射，detail 键 `reason`/`miss_terms`/`hits`/`best_hits`/`suggested_chunk` 不变）。
+- 后端**唯一新增写入口** `question_bank.update_question(path, question_id, *, relevant_chunk_ids, relevant_entities=None, anchor_guard=None, anchor_ack=False)`：与 `add_question` 并列收口，同 `_lock` 读改写 + `_atomic_write`；query/category/expected_paths/reference_answer 等**不动**；清空勾选=解除锚定（变无锚题，与添加框产物同态，**允许**）。挂**同一 `anchor_check.build_anchor_guard`**（store 取正文；`missing_chunk` 无条件拦、ack 也放不过）。
+- 服务 `update_eval_question(kb_id, question_id, *, relevant_chunk_ids, anchor_ack)`：一次 `get_chunks_by_ids` 喂核验正文 + 实体**跟锚收缩**（D4=甲′：旧实体 ∩ 新锚实体词汇表——只删失去支撑的、**不新增**；合成题精选子集保住，create「显式非空尊重原值」契约不破坏）；router `PATCH /{kb_id}/eval/questions/{question_id}`（过 `_require_kb_access`，与 create/delete 同权；body：`relevant_chunk_ids` + `anchor_ack?`）→ 200 题体 / 404 / 422 结构化 detail（与 create 同一 `AnchorMismatchError` 映射，detail 键 `reason`/`miss_terms`/`hits`/`best_hits`/`suggested_chunk` 不变）。
 - 前端：抽屉参考文档卡加「编辑锚定」入口 → **折叠分组勾选区**（D3 细则，2026-10-05 他展开）：组头=文档名 + 「已选 n/N」计数、**默认收起**（含已锚片的文档默认展开）、组内=该文档全部切片（每片内容摘要行+勾选框、已锚默认勾上）、**组内分页**（`listDocumentChunks` 50 片/页滚动加载）、**勾选后可整组收起**（组头计数实时变 ⇒ 整卡高度上界=文档数×一行组头，文档多也不撑长）。复用 `listDocumentChunks` + 文档列表词汇，不手填 id。拦截交互**原样复用 B′**：`useAnchorConfirm`（keyed=抽屉）+ `AnchorBlockNotice` 红块，红块里**变出**「仍要保存」；原「保存」留复检键、重复点不落库（盲双击≠看见）；悬空锚不可确认绕过（与写入口同语义）。
 
-## 3. 决策点（已裁 2026-10-05：D1=甲、D2=甲、D3=甲＋折叠分组与分页、D4=甲）
+## 3. 决策点（已裁 2026-10-05：D1=甲、D2=甲、D3=甲＋折叠分组与分页、**D4=甲′ 跟锚收缩**〔审查改判〕）
 
 | # | 决策 | 选项 | 推荐 | 选错后果 |
 |---|---|---|---|---|
 | D1 | 悬空标记机制 | 甲=**读时派生**（`missing_chunk_ids` 随 list 响应计算）/ 乙=重切片/删片时写标记进题库 / 丙=不做标记 | **甲** | 乙=文档线写题库跨线耦合、标记会陈旧（改锚后忘清）；丙=「看不出来」原样留着，本对只剩改锚半边 |
 | D2 | 标记与预览落点 | 甲=**抽屉逐片卡 + 题库行参考文档格警示** / 乙=只抽屉 | **甲** | 乙=不开抽屉发现不了哪题失锚（几十题逐个点开不现实） |
 | D3 | 改锚选片器 | 甲=**按文档折叠分组勾选**（组头「已选 n/N」默认收起、含已锚文档默认展开、组内分页 50/页、勾后可收起；复用 `listDocumentChunks`，零新读端点）/ 乙=新做切片关键词搜索端点 / 丙=跳召回面板重存（不做编辑器） | **甲**（他展开折叠细则） | 乙=一对变两对体量（新检索口+排序+空态）；丙=改锚仍是删+建，本对白做 |
-| D4 | 改锚时实体处置 | 甲=**跟锚重派生**（create 同源 `synthesis.chunk_entities_union`）/ 乙=保持原实体 / 丙=暴露实体编辑 | **甲** | 乙=实体与新锚脱钩、seed_hit_rate 口径错位；丙=又开手填口（与「实体不出手填」旧裁定相悖） |
+| D4 | 改锚时实体处置 | 甲′=**跟锚收缩**（旧实体 ∩ 新锚实体词汇表：只删失去支撑的、不新增）/ 乙=保持原实体 / 丙=重派生覆盖全集（原推荐，已作废）/ 丁=暴露实体编辑 | **甲′**（2026-10-05 审查改判） | 丙=合成题精选实体被冲成全集（`synthesis.py:235` 实证：候选实体是词汇表内**精选子集**+幻觉过滤）、create「显式非空尊重原值」契约被破；乙=实体与新锚脱钩、seed_hit_rate 口径错位；丁=又开手填口（与「实体不出手填」旧裁定相悖） |
 
 ## 4. 硬约束
 
@@ -55,17 +55,17 @@
 
 ## 5. 验收
 
-1. **TDD 红例**：update 口贴错锚被拦（红=今天无 update 口/无闸）；悬空锚改锚提交被拦且无确认绕过；合法改锚 200 且实体跟锚重派生、其余字段原样钉死；list 响应 `missing_chunk_ids` 悬空/存活两态正确。
+1. **TDD 红例**：update 口贴错锚被拦（红=今天无 update 口/无闸）；悬空锚改锚提交被拦且无确认绕过；合法改锚 200 且实体**跟锚收缩**（失去支撑者删、不新增——精选子集保住）、其余字段原样钉死；清空勾选=解除锚定落库为空；list 响应 `missing_chunk_ids` 悬空/存活两态正确。
 2. **neuter**：update 拆 guard ⇒ 贴错改锚例红；拆实体重派生 ⇒ 实体脱钩例红；list 派生改恒空 ⇒ 标记例红。
 3. **前端 dom 三钉**：抽屉逐片卡渲染 + 悬空徽章；编辑保存被拦 ⇒ 红块变出「仍要保存」且不落库、原按钮盲重复点仍不落库；确认钮携 `anchor_ack=true` 落库。
 4. **门禁面**：eval 面 + knowledge API 面 + 前端全量 + `ruff`/`pnpm check` 双净（零新增红，环境红带口径照旧）。
-5. **真栈（仅测试2）**：临时文档→造题带锚→删该切片→行级/抽屉悬空标出现→抽屉改锚（误锚被拦→红块「仍要保存」放行 / 正锚直过）→实体随锚变→收尾删题删文档、配置零改动。
+5. **真栈（仅测试2）**：临时文档（≥2 切片）→造题带锚→删锚定那片（留另一片当改锚目标）→行级/抽屉悬空标出现→抽屉改锚（误锚被拦→红块「仍要保存」放行 / 正锚直过）→实体随锚收缩→收尾删题删文档、配置零改动。
 
 ## 6. 非目标与登记
 
 - **改参考答案/题面/分类/路径**的编辑口不做——登记（答案编辑与词面核验耦合，单起）。
 - **自动改锚**（悬空自动重锚到建议片）不做——登记（机器建议锚已有 `suggested_chunk`，人来点；机器要求看一眼、不否决人）。
-- L1 计分对悬空锚的既有口径（永不可命中=恒 MISS）**不改**——本对只让其可见；历史 `eval_runs` 不重标。
+- L1 计分对悬空锚的既有口径**不改**（该锚永不命中：单锚题恒 MISS、多锚题 recall@k 每条悬空锚拖 1/|relevant| 永久打不满）——本对只让其可见；历史 `eval_runs` 不重标。
 - **添加框「勾选切片区」候选**仍开（与本对并列待拍：本对做抽屉改锚后，添加框带锚的紧迫性下降，可维持"要锚走召回面板"分工）。
 - 合成候选暂存不支持改锚（候选=出题时刻快照，接受前可拒绝重合成）。
 - 抽屉切片卡「点开切片抽屉」跳转不进本对（预览已够核对；跳转随 ChunkCard 先例自然长出）。
