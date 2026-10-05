@@ -44,8 +44,8 @@
 
 > 动到的文件：spec/plan 回填 + `backend/AGENTS.md`
 
-- [ ] 全量门禁 + spec/plan 回填实测数字与提交链；`backend/AGENTS.md`「Retrieval quality evaluation」段补锚定核验一行。
-- [ ] 登记项落 spec §6 定稿（徽章 / 重入库重验 / rel=0 坏题 / 无答案覆盖缺口）。
+- [x] 全量门禁：后端 `pytest -m "not live" tests/` **152 failed / 13019 passed / 109 skipped（18:57）**——红为历史环境红带（145–164 之间）内根级测试族，波及面零新增（eval 面 41 绿、knowledge 全面 1583 绿/4 预存环境红）；前端全量 2805 绿/0 红；`ruff check`+`ruff format --check`+`pnpm check` 三净。提交链（本对 8 笔，均未推）：`b02b51c45`（spec+plan 起草）→ `65cf786cc`（D1=甲′）→ `8f94f827a`（B′ 细则）→ `2ba19cb0a`（裁决记录）→ `08ccd53ea`（审查 ①–⑧）→ `fce400c94`（Task 0）→ `41bc01b95`（Task 1）→ `8959b6a3b`（Task 2）。`backend/AGENTS.md`「Retrieval quality evaluation」段已补锚定核验一行（合成出题条目之后，2026-10-05 收尾）。
+- [x] 登记项落 spec §6 定稿（徽章 / 重入库重验 / rel=0 坏题 / 无答案覆盖缺口 / q009 提示级 / 新增观察项「抽象短答案拦一次」）。
 
 ## Task 4 — 真栈验收
 
