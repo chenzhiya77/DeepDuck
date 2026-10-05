@@ -59,8 +59,17 @@
 
 > 范围来源：待办四连审计收编（落空=锚在、内容被换，三态表第三格）；判据/豁免/建议锚全部复用门禁件。动到的文件：`knowledge_service.py`（读时派生扩）/ `core/knowledge/{types,api}.ts` / `eval-question-bank.tsx` + `eval-question-drawer.tsx` / `locales`（`mismatchBadge`+明细键）/ 对应测试。
 
-- [ ] RED 用例（红=今天无派生判定无徽章）：①落空题（锚在、答案词面零命中/被压制）list 响应带派生判定 + `suggested_chunk` ②行级「存疑」徽章 + Tooltip 命中表与建议锚（项目 Tooltip）③好题零标 / 无参考答案不标 / 无锚不标 / 多片单片零命中才标 ④抽屉疑片行内同款。
-- [ ] GREEN：`list_eval_questions` 与 `missing_chunk_ids` **同一次取行**顺跑 `check_anchor`（判据+两条豁免原样）→ 响应每题派生字段（不落盘）；前端行级第二徽章（纯词「存疑」、有疑才显）+ Tooltip 机器依据（红块同款文案）+ 抽屉疑片行；i18n `mismatchBadge`/明细键。
-- [ ] neuter：①拆豁免 ⇒ 无答案例恰红 ②派生改恒 ok ⇒ 徽章例恰红——各一次反证后还原复绿。
-- [ ] 门禁：eval 面 + knowledge API 面 + 前端全量 + `ruff`/`pnpm check` 双净（环境红带口径照旧）。
-- [ ] 真栈（仅测试2）：临时文档造落空题（锚贴到不含答案词面的片）→ 行级/抽屉「存疑」+Tooltip 建议锚 → 抽屉改锚改对 → 徽章消失 → 收尾删题删文档、配置零改动。
+- [x] RED 用例（红=今天无派生判定无徽章）：①落空题（锚在、答案词面零命中/被压制）list 响应带派生判定 + `suggested_chunk` ②行级「存疑」徽章 + Tooltip 命中表与建议锚（项目 Tooltip）③好题零标 / 无参考答案不标 / 无锚不标 / 多片单片零命中才标 / 短答案 |K|<2 照标 ④抽屉疑片行内同款。**实测红**：后端 3 红（判定层 `chunk_ids` 钉 + 派生例 + 豁免/优先例；32 旧例过=零受害）+ 前端 2 红（bank 徽章/Tooltip 钉 + drawer 疑片行钉；49 过）。
+- [x] GREEN：`list_eval_questions` 与 `missing_chunk_ids` **同一次取行**顺跑 `check_anchor`（`store_fetch` 一次取锚+同文档切片喂判据，豁免原样）→ 响应每题 `anchor_mismatch`（detail 五键 + 疑片 `chunk_ids`，不落盘）；`AnchorVerdict.chunk_ids` 判定层给出疑片集（**不进 detail wire 契约**）；前端行级第二徽章（纯词「存疑」、amber 档=可确认待人看）+ Tooltip 机器依据（内嵌 `AnchorBlockNotice` 只读形态=红块同款文案）+ 抽屉疑片行（徽章随折叠触发行）；i18n `mismatchBadge`。**35 绿**（后端两文件）/ **51 绿**（前端两文件）。
+- [x] neuter：①拆豁免（无答案时以 query 代答案跑判定）⇒ 豁免/优先例恰 1 红 ②派生改恒 ok ⇒ 两徽章例恰 2 红——各一次反证后还原复绿 **35/35**。
+- [x] 门禁：后端 knowledge 面 **1594 绿 / 2 skip / 6 红 3 error 全定性**（4 条=在案环境红带内：缺 key 对＋parser 两条；5 条=与前端全量并跑的负载 flake〔graph indexer 并发两条 + 3 error〕，串行复跑 **17/17 全绿**；零新增）+ `ruff check`/`ruff format --check` 我方四文件双净（`test_nginx_knowledge_uploads.py` 格式债=别线未跟踪新文件，不动）+ 前端全量 **248 文件 / 2824 绿 / 0 红**（净 +4 钉）+ `pnpm check` 双净（首跑 1 条 eslint prefer-optional-chain 当场修）。
+- [x] 真栈（2026-10-06，仅测试2 / kb `5f532d37…`）：临时文档入库（md 两节 → 3 片）→ 落空题（锚贴 `#0002` StringBuilder 片=不含答案词面，`anchor_ack` 入库）→ **wire**：`anchor_mismatch` = `zero_hit`、命中 0/18、建议锚 `#0001`、疑片 `[#0002]`、缺失术语含「装箱/拆箱」；库内原有两题 `concern: null`（好题零标）→ **行级**：只落空题带「存疑」→ **Tooltip**：红块同款机器依据（缺失术语 + 建议锚 #0001（命中 0/18））→ **抽屉**：`#0002` 触发行带「存疑」（收起态可见）→ **改锚改对**（`#0001` 勾、`#0002` 摘）首击直过（无红块）→ 徽章两面归零（wire `concern: null` + 行级无徽章）。收尾：临时题 + 临时文档删净（204×2）、题库回原有 2 题、文档回原 10 篇、配置零改动。
+
+## Task 6（2026-10-06 追加）— 参考文档片级折叠（C1=甲）
+
+> 范围来源：真栈截图暴露——单片长文撑爆抽屉（参考答案/实体/动作栏被顶出视口）。动到的文件：`eval-question-drawer.tsx` / 对应 `*.dom.test.tsx` / spec §2⑤+§3 C1（后端零改动，不碰共享 `ChunkCard`）。
+
+- [x] RED（dom 钉，红=今天正文全量渲染、无触发行）：①默认收起显 `chunkPreview` 摘要行、长正文段不渲染 ②触发行 `aria-expanded` false→true→false 往返，展开落整卡（正文可见、仍无编辑动作）、收起正文让位回摘要 ③悬空行无触发行不折；既有「逐片 ChunkCard」钉同步改造（先展开再断言全文）。
+- [x] GREEN：`#序号` 徽章行升级折叠触发行（ChevronDown `rotate-180` + `aria-expanded`，勾选区组头同款）——收起态行下显 `chunkPreview` 两行摘要（与编辑勾选区逐字同口径）、**默认全收起**、展开才落整张 ChunkCard；折叠集按 chunk id 存抽屉本地 state；悬空行/编辑勾选区/共享 ChunkCard 零改动。**13 绿/0 红**。
+- [x] 门禁：前端全量 **248 文件 / 2820 绿 / 0 红**（净 +1 钉：折叠往返钉；既有逐片钉改造为先展开再断言）+ `pnpm check`（eslint+tsc）双净。
+- [x] 真栈一眼（2026-10-06，并入 Task 5 验收）：长文片抽屉**默认收起**（摘要行在、全文不在）→ 点触发行展开落整卡（正文 + token 页脚）→ 再点收起复位。
