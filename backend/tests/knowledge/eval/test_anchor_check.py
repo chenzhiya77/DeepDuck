@@ -147,3 +147,21 @@ async def test_no_guard_keeps_today_behavior(tmp_path) -> None:
 
     assert [q.id for q in await load_questions(path)] == [question.id]
     assert json.loads(path.read_text(encoding="utf-8").strip())["reference_answer"] == REFERENCE
+
+
+async def test_verdict_names_suspicious_chunks_for_read_time_badges(tmp_path) -> None:
+    """读时「存疑」徽章的疑片集（spec 2026-10-05 §2④）：判定层给出被疑的锚
+    （单片贴错=该片、多片零命中=全部零命中片），``detail`` 五键 wire 契约不动。"""
+    ac = _anchor_check()
+
+    single = ac.check_anchor(reference_answer=REFERENCE, anchor_chunk_ids=[WEAK_CHUNK], chunk_texts=CHUNK_TEXTS)
+    assert single.reason == "mismatch"
+    assert single.chunk_ids == (WEAK_CHUNK,)
+    assert set(single.detail) == {"reason", "miss_terms", "hits", "best_hits", "suggested_chunk"}
+
+    multi = ac.check_anchor(reference_answer=REFERENCE, anchor_chunk_ids=[GOOD_CHUNK, WRONG_CHUNK], chunk_texts=CHUNK_TEXTS)
+    assert multi.reason == "zero_hit"
+    assert multi.chunk_ids == (WRONG_CHUNK,)
+
+    ok = ac.check_anchor(reference_answer=REFERENCE, anchor_chunk_ids=[GOOD_CHUNK], chunk_texts=CHUNK_TEXTS)
+    assert ok.chunk_ids == ()

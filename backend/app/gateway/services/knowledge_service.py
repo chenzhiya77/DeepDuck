@@ -18,7 +18,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Callable, Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -1524,12 +1524,38 @@ class KnowledgeService:
         # 悬空派生（spec 2026-10-05 anchor-edit 对 D1=甲）：读时现算不落盘——
         # 全部锚 id 并集一次取行，缺行即悬空（重切片/删片的静默失效由此可见）。
         anchor_ids = list(dict.fromkeys(chunk_id for question in questions for chunk_id in question.relevant_chunk_ids))
-        present: set[str] = set()
-        if anchor_ids:
-            present = {row["chunk_id"] for row in await self.store.get_chunks_by_ids(anchor_ids, kb_id=kb_id)}
+        chunk_rows = await self.store.get_chunks_by_ids(anchor_ids, kb_id=kb_id) if anchor_ids else []
+        present = {row["chunk_id"] for row in chunk_rows}
+        # 落空派生（§2④，Task 5）：同一 store_fetch 顺带取同文档切片（找对照 B），
+        # check_anchor 原判据原豁免跑一遍——零命中/mismatch 记「存疑」。
+        texts = (
+            await anchor_check.store_fetch(
+                self.store,
+                kb_id,
+                anchor_ids,
+                known={row["chunk_id"]: row.get("text") or "" for row in chunk_rows},
+            )
+            if anchor_ids
+            else {}
+        )
         for row, question in zip(rows, questions):
             row["missing_chunk_ids"] = [chunk_id for chunk_id in question.relevant_chunk_ids if chunk_id not in present]
+            row["anchor_mismatch"] = self._anchor_mismatch_of(question, texts)
         return {"questions": rows, "total": len(rows)}
+
+    @staticmethod
+    def _anchor_mismatch_of(question: Any, texts: Mapping[str, str]) -> dict[str, Any] | None:
+        """落空判定（spec 2026-10-05 §2④）：豁免照抄门禁——无参考答案（skipped）、
+        无锚（ok）、悬空（missing 短路同一判定）都不记，一题至多显一类警示；
+        |K|<2 不豁免（B2=乙：标记非拦截）。"""
+        verdict = anchor_check.check_anchor(
+            reference_answer=question.reference_answer,
+            anchor_chunk_ids=question.relevant_chunk_ids,
+            chunk_texts=texts,
+        )
+        if verdict.reason not in (anchor_check.REASON_MISMATCH, anchor_check.REASON_ZERO_HIT):
+            return None
+        return {**verdict.detail, "chunk_ids": list(verdict.chunk_ids)}
 
     async def create_eval_question(
         self,

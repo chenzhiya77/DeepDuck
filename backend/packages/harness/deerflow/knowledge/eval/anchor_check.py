@@ -27,13 +27,16 @@ AnchorGuard = Callable[[Sequence[str], str | None, bool], Awaitable[None]]
 
 @dataclass(frozen=True)
 class AnchorVerdict:
-    """机器判定结果；``detail`` 即拦截响应回显的结构化明细（spec §4）。"""
+    """机器判定结果；``detail`` 即拦截响应回显的结构化明细（spec §4）。
+    ``chunk_ids`` 是被疑的锚（读时「存疑」徽章的疑片集，spec §2④）——
+    属内部标注、**不进 detail**（五键 wire 契约不变）。"""
 
     reason: str
     miss_terms: tuple[str, ...] = ()
     hits: int = 0
     best_hits: int = 0
     suggested_chunk: str | None = None
+    chunk_ids: tuple[str, ...] = ()
 
     @property
     def blocked(self) -> bool:
@@ -97,7 +100,7 @@ def check_anchor(
                 best_id, best_hits = chunk_id, hits
         return best_id, best_hits
 
-    def _verdict_for(anchor: str, *, hits: int, reason: str) -> AnchorVerdict:
+    def _verdict_for(anchor: str, *, hits: int, reason: str, suspects: Sequence[str] | None = None) -> AnchorVerdict:
         best_id, best_hits = _best_for(anchor)
         miss_terms = tuple(sorted(terms - set(_tokenize(chunk_texts[anchor]))))
         return AnchorVerdict(
@@ -106,6 +109,7 @@ def check_anchor(
             hits=hits,
             best_hits=best_hits,
             suggested_chunk=best_id if best_id != anchor else None,
+            chunk_ids=tuple(suspects) if suspects is not None else (anchor,),
         )
 
     if len(anchors) == 1:
@@ -120,7 +124,7 @@ def check_anchor(
 
     zero_chunks = [chunk_id for chunk_id in anchors if hits_by_chunk[chunk_id] == 0]
     if zero_chunks:
-        return _verdict_for(zero_chunks[0], hits=0, reason=REASON_ZERO_HIT)
+        return _verdict_for(zero_chunks[0], hits=0, reason=REASON_ZERO_HIT, suspects=tuple(zero_chunks))
     return AnchorVerdict(REASON_OK)
 
 

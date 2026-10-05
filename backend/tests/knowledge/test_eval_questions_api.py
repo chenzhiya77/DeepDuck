@@ -548,3 +548,102 @@ async def test_list_marks_missing_chunk_ids_three_states(service) -> None:
     assert rows[dying["id"]]["missing_chunk_ids"] == [f"{doc_id}#0002"]
     unanchored = [row for row in rows.values() if row["query"] == "无锚题"][0]
     assert unanchored["missing_chunk_ids"] == []
+
+
+# ── 读时词面派生（spec 2026-10-05 §2④，B1=甲「存疑」/B2=乙照标）────────────
+
+
+async def test_list_derives_anchor_mismatch_when_chunk_content_swapped(service) -> None:
+    """落空＝锚在、内容被换（重切同号不同文 / 切片编辑）：读时派生
+    anchor_mismatch（判定 / 命中 / suggested_chunk / 疑片 chunk_ids），不落盘。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(
+        service,
+        kb["id"],
+        "a" * 32,
+        [
+            {"text": "装箱：将基本数据类型转换为包装类型。"},
+            {"text": "拆箱：将包装类型转换为基本数据类型。"},
+        ],
+    )
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(
+            query="什么是装箱",
+            relevant_chunk_ids=[f"{doc_id}#0001"],
+            reference_answer="装箱是把基本数据类型转换为包装类型。",
+        ),
+    ).json()
+    # 闸先放行（彼时内容支撑答案），再换内容＝落空发生。
+    await service.store.update_chunk_text(f"{doc_id}#0001", "StringBuilder 是可变字符序列。", 6)
+
+    row = {r["id"]: r for r in client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["questions"]}[created["id"]]
+    concern = row["anchor_mismatch"]
+    assert concern["reason"] in ("mismatch", "zero_hit")
+    assert "装箱" in concern["miss_terms"]
+    assert concern["suggested_chunk"] == f"{doc_id}#0002"
+    assert concern["chunk_ids"] == [f"{doc_id}#0001"]
+    assert row["missing_chunk_ids"] == []
+    # D1=甲：派生不落盘（golden 文件里没有这个键）。
+    assert "anchor_mismatch" not in _golden_file(service, kb["id"]).read_text(encoding="utf-8")
+
+
+async def test_list_anchor_mismatch_exemptions_and_precedence(service) -> None:
+    """豁免照抄门禁 + 悬空优先：好题零标 / 无参考答案不标 / 无锚不标 /
+    多片全命中不标、单片零命中才标（疑片＝零命中片）/ 短答案（|K|<2）不豁免
+    （B2=乙照标）/ 有缺片只显悬空（同一判定短路，一题至多显一类警示）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(
+        service,
+        kb["id"],
+        "a" * 32,
+        [
+            {"text": "装箱：将基本数据类型转换为包装类型。"},
+            {"text": "拆箱：将包装类型转换为基本数据类型。"},
+            {"text": "StringBuilder 是可变字符序列。"},
+            {"text": "装箱与拆箱是包装类型和基本数据类型的互转。"},
+            {"text": "装箱：基本数据类型转包装类型。"},
+            {"text": "装箱就是包装。"},
+        ],
+    )
+
+    def create(query: str, **overrides) -> dict:
+        response = client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json=_valid_body(query=query, **overrides))
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    long_answer = "装箱是把基本数据类型转换为包装类型；拆箱是把包装类型转换为基本数据类型。"
+    good = create("好题", relevant_chunk_ids=[f"{doc_id}#0001"], reference_answer="装箱是把基本数据类型转换为包装类型。")
+    no_answer = create("无答案题", relevant_chunk_ids=[f"{doc_id}#0003"], reference_answer=None)
+    unanchored = create("无锚题")
+    multi_ok = create("多片全中", relevant_chunk_ids=[f"{doc_id}#0001", f"{doc_id}#0004"], reference_answer=long_answer)
+    multi_swapped = create("多片一零", relevant_chunk_ids=[f"{doc_id}#0001", f"{doc_id}#0002"], reference_answer=long_answer)
+    mixed = create("悬空混落空", relevant_chunk_ids=[f"{doc_id}#0002", f"{doc_id}#0005"], reference_answer=long_answer)
+    short = create("短答案题", relevant_chunk_ids=[f"{doc_id}#0006"], reference_answer="装箱")
+
+    # 落空与悬空各自发生：#0002/#0006 内容被换（零命中）、#0005 被删（缺片）。
+    await service.store.update_chunk_text(f"{doc_id}#0002", "StringBuilder 是可变字符序列。", 6)
+    await service.store.update_chunk_text(f"{doc_id}#0006", "可变字符序列。", 4)
+    await service.store.delete_chunk(f"{doc_id}#0005")
+
+    rows = {row["id"]: row for row in client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["questions"]}
+
+    assert rows[good["id"]]["anchor_mismatch"] is None
+    assert rows[no_answer["id"]]["anchor_mismatch"] is None
+    assert rows[unanchored["id"]]["anchor_mismatch"] is None
+    assert rows[multi_ok["id"]]["anchor_mismatch"] is None
+
+    swapped = rows[multi_swapped["id"]]["anchor_mismatch"]
+    assert swapped["reason"] in ("mismatch", "zero_hit")
+    assert swapped["chunk_ids"] == [f"{doc_id}#0002"]
+    assert rows[multi_swapped["id"]]["missing_chunk_ids"] == []
+
+    short_concern = rows[short["id"]]["anchor_mismatch"]
+    assert short_concern is not None
+    assert short_concern["chunk_ids"] == [f"{doc_id}#0006"]
+
+    # 悬空优先：缺片短路同一判定，活片上的落空暂不显（修完悬空自会浮出）。
+    assert rows[mixed["id"]]["anchor_mismatch"] is None
+    assert rows[mixed["id"]]["missing_chunk_ids"] == [f"{doc_id}#0005"]
