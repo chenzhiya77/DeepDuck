@@ -17,11 +17,11 @@
 
 > 动到的文件：只读核实 + 本 plan/spec 回填
 
-- [ ] ① `question_bank` 收口形状：`add_question`（`question_bank.py:69`）/ `delete_question`（:121）/ `_atomic_write`（:134）；`update_question` 与 `add_question` 并列新增，guard 注入形状一致（keyword-only、默认 None=不拦）。核实 `dataset.validate_question` 对 `relevant_chunk_ids` 的约束——空列表是否合法（=「解除锚定」口径，与添加框无锚题同态）。
-- [ ] ② 实体派生先例：`knowledge_service.create_eval_question`（`knowledge_service.py:1525`，派生在空标注分支 `synthesis.chunk_entities_union(rows)`；显式非空尊重原值）+ 合成候选实体=词汇表内**精选子集**（`synthesis.py:235`，幻觉过滤）⇒ update 口径（D4=甲′）：**跟锚收缩**=旧实体 ∩ 新锚 `chunk_entities_union` 词汇表、只删失去支撑的不新增；`update_question` 实体参数形状以 spec §2 ③ 为准（服务层把收缩结果显式传入）。
-- [ ] ③ `list_eval_questions` 现响应形状（`knowledge_service.py:1521` 返回 `{"questions", "total"}` + `knowledge_bases.py:748`）与 `missing_chunk_ids` 注入点；批量取行规模：全部题锚 id 并集 → `store.get_chunks_by_ids`（`store.py:326`）一次查询（内部无 200 上限，HTTP 端点 `max_length=200` 不适用）。
-- [ ] ④ 受害者扫描：直调 `add_question` 的用例族（`test_question_bank`/`test_ondemand`/`test_video_eval`/`test_table_eval`）零扰动（update 默认 guard 关）；前端 `EvalQuestion` 类型加可选字段 ⇒ 既有 dom 用例零破坏；`EvalQuestionCreateRequest` 不动。
-- [ ] ⑤ 前端复用件核实：`chunk-card.tsx` props 形状（**只读=不传 `onEdit`/`onDelete`/`onReExtract`**，组件自带可选动作、抑制即纯展示）、`listChunksByIds`（`api.ts:227`，缺片静默丢弃/调用方报差额）、`listDocumentChunks`（`api.ts:209` 分页）、`useAnchorConfirm` keyed 形状（新增 key=抽屉）、`eval-question-drawer.tsx` 现卡结构（`groupChunksByDoc:43` 保留稳定序号徽章）。
+- [x] ① `question_bank` 收口形状：`add_question`（`question_bank.py:69`）/ `delete_question`（:121）/ `_atomic_write`（:134）；`update_question` 与 `add_question` 并列新增，guard 注入形状一致（keyword-only、默认 None=不拦）。`dataset.validate_question` 空锚**合法**（`dataset.py:59` `_require_str_list` 只查类型、空表过；字段本身 required=必须在）⇒ 清空勾选=解除锚定口径成立；条目须过 `_CHUNK_ID_RE`（`<doc_id>#NNNN`），update 入参同约束。
+- [x] ② 实体派生先例：`knowledge_service.create_eval_question`（`knowledge_service.py:1525`，派生在空标注分支 `synthesis.chunk_entities_union(rows)`〔`synthesis.py:118`〕；显式非空尊重原值）+ 合成候选实体=词汇表内**精选子集**（`synthesis.py:235`，幻觉过滤）⇒ update 口径（D4=甲′）：**跟锚收缩**=旧实体 ∩ 新锚 `chunk_entities_union` 词汇表、只删失去支撑的不新增；`update_question` 实体参数形状以 spec §2 ③ 为准（服务层把收缩结果显式传入）。
+- [x] ③ `list_eval_questions`（`knowledge_service.py:1521` 返回 `{"questions": [...asdict], "total": n}` + `knowledge_bases.py:748`）⇒ `missing_chunk_ids` 按题加进 asdict 后的 dict（**不进 golden schema**）；批量取行：全部题锚 id 并集 → `store.get_chunks_by_ids`（`store.py:326`）一次查询（内部无 200 上限，HTTP 端点 `max_length=200` 不适用）。
+- [x] ④ 受害者扫描：直调 `add_question` 用例族=`test_question_bank`/`test_ondemand`/`test_video_eval`/`test_table_eval`/`test_synthesis`/`test_anchor_check` + API 层 `test_eval_questions_api`/`test_synthesis_api`；guard 默认 None ⇒ 预期零扰动（Task 1 门禁实测复核）。前端 `EvalQuestion`（`types.ts:722`）加可选 `missing_chunk_ids?: string[]` ⇒ 既有 dom 用例零破坏；`EvalQuestionCreateInput` 不动。
+- [x] ⑤ 前端复用件核实：`chunk-card.tsx:66` props——**只读=不传 `onEdit`/`onDelete`/`onReExtract`**（`:150` `hasFooterActions` 派生）；`listChunksByIds`（`api.ts:227`，缺片静默丢弃/调用方报差额）；`listDocumentChunks`（`api.ts:209` 分页）；`useAnchorConfirm`（`components/workspace/knowledge/use-anchor-confirm.ts`，keyed=**任意字符串** ⇒ 抽屉直接用 `question.id` 做 key，比"key=抽屉"更细）；`eval-question-drawer.tsx:43` `groupChunksByDoc`（稳定序号徽章保留）。CSRF 走 `core/api/fetcher` 共享 fetcher（`api.ts:7` import），PATCH 自动带。
 
 ## Task 1 — 后端：update 写入口 + 悬空派生 TDD
 
