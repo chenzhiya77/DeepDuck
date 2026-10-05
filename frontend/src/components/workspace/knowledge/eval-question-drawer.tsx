@@ -17,6 +17,11 @@
  * 片单列一行警示（序号徽章 + 「悬空」词），编辑态同样单列且带勾选框——摘除
  * 是悬空锚唯一的出路，缺这行草稿就永远带着缺片、missing_chunk 恒拦。只读态
  * 只显已锚定的片。
+ * 片级折叠（2026-10-06 甲）：#序号行升级折叠触发行（ChevronDown，勾选区组头
+ * 同款），收起显 chunkPreview 两行摘要、**默认全收起**（这面用途是扫锚了哪几
+ * 片），展开才落整张 ChunkCard；摘要行与编辑勾选区逐字同口径，悬空行不折。
+ * 疑片「存疑」徽章（Task 5，spec §2④）：随触发行可见（收起态不藏展开区），
+ * 行悬浮=Tooltip 机器依据（AnchorBlockNotice 只读形态）。
  * 「编辑锚定」入口（spec §2③）：按文档折叠分组勾选区——组头 = 文档名 +
  * 「已选 n/N」（实时）、默认收起（含已锚片的文档默认展开）、组内 = 该文档
  * 全部切片（内容摘要行 + 勾选框，已锚默认勾上）、组内分页 50/页加载更多
@@ -86,7 +91,8 @@ function groupChunksByDoc(
   return groups;
 }
 
-/** 编辑态切片行的单行内容摘要（首行非空文本，CSS 钉单行/两行截断）。 */
+/** 切片行的单行内容摘要（首行非空文本，CSS 钉单行/两行截断）：编辑勾选区行
+    与读态收起摘要共用同口径。 */
 function chunkPreview(text: string): string {
   const line = text.split(/\r?\n/).find((entry) => entry.trim().length > 0);
   return (line ?? text).trim();
@@ -140,6 +146,8 @@ export function EvalQuestionDrawer({
     (docsQuery.data ?? []).find((doc) => doc.id === docId)?.name ??
     docId.slice(0, 8);
   const groups = question ? groupChunksByDoc(question.relevant_chunk_ids) : [];
+  // 落空疑片集（spec §2④）：读时派生 anchor_mismatch 的 chunk_ids。
+  const concern = question?.anchor_mismatch ?? null;
 
   // ── 锚定片正文预览 + 悬空判定（spec §2①/②）：一次 listChunksByIds 两用——
   // 返回集给 ChunkCard 预览，请求集 − 返回集 = 悬空（服务端静默丢缺片）。
@@ -164,6 +172,8 @@ export function EvalQuestionDrawer({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+  // 读态片级折叠（2026-10-06 甲）：默认全收起，展开集按 chunk id 稳定身份。
+  const [openChunks, setOpenChunks] = useState<Set<string>>(new Set());
   const [docPages, setDocPages] = useState<Record<string, DocChunkPage>>({});
 
   // B′ 拦截状态（keyed=question.id，plan Task 0⑤：key 任意字符串、抽屉按题
@@ -252,6 +262,15 @@ export function EvalQuestionDrawer({
         ? current.filter((id) => id !== chunkId)
         : [...current, chunkId],
     );
+  };
+
+  const toggleChunk = (chunkId: string) => {
+    setOpenChunks((current) => {
+      const next = new Set(current);
+      if (next.has(chunkId)) next.delete(chunkId);
+      else next.add(chunkId);
+      return next;
+    });
   };
 
   // 提交体共用（原「保存」与红块确认仅 anchor_ack 不同）：复检键物理保证——
@@ -553,19 +572,72 @@ export function EvalQuestionDrawer({
                                     </div>
                                   );
                                 }
+                                const open = openChunks.has(chunkId);
+                                const suspect =
+                                  concern?.chunk_ids.includes(chunkId) ?? false;
+                                const triggerRow = (
+                                  <button
+                                    aria-expanded={open}
+                                    className="flex w-full flex-col items-start gap-0.5 text-left"
+                                    onClick={() => toggleChunk(chunkId)}
+                                    type="button"
+                                  >
+                                    <span className="flex items-center gap-1.5">
+                                      <ChevronDown
+                                        className={cn(
+                                          "size-3 shrink-0 transition-transform",
+                                          open && "rotate-180",
+                                        )}
+                                      />
+                                      {/* 稳定序号徽章保留（chunk id 身份）。 */}
+                                      <Badge
+                                        className="font-mono text-[10px]"
+                                        variant="secondary"
+                                      >
+                                        #{sequence}
+                                      </Badge>
+                                      {/* 疑片「存疑」徽章（spec §2④，B1=甲）：
+                                          随触发行可见（收起态不藏进展开区），
+                                          amber 档＝可确认待人看。 */}
+                                      {suspect && (
+                                        <Badge
+                                          className="border-amber-500/40 px-1.5 text-[10px] text-amber-700 dark:text-amber-500"
+                                          variant="outline"
+                                        >
+                                          {qtk.mismatchBadge}
+                                        </Badge>
+                                      )}
+                                    </span>
+                                    {!open && chunk !== undefined && (
+                                      <span className="text-muted-foreground line-clamp-2 pl-[18px] text-xs">
+                                        {chunkPreview(chunk.text)}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
                                 return (
                                   <div
                                     className="flex min-w-0 flex-col gap-1"
                                     key={chunkId}
                                   >
-                                    {/* 稳定序号徽章保留（chunk id 身份）。 */}
-                                    <Badge
-                                      className="w-fit font-mono text-[10px]"
-                                      variant="secondary"
-                                    >
-                                      #{sequence}
-                                    </Badge>
-                                    {chunk !== undefined && (
+                                    {/* 片级折叠触发行（2026-10-06 甲）：默认全
+                                        收起——这面用途是扫锚了哪几片；摘要行与
+                                        编辑勾选区同口径（chunkPreview）。悬空行
+                                        无内容可折，保持单列警示。疑片行悬浮＝
+                                        项目 Tooltip 机器依据（红块同款文案）。 */}
+                                    {suspect && concern !== null ? (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          {triggerRow}
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-60">
+                                          <AnchorBlockNotice detail={concern} />
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      triggerRow
+                                    )}
+                                    {open && chunk !== undefined && (
                                       <ChunkCard
                                         docId={chunk.doc_id}
                                         entities={chunk.entities}

@@ -110,6 +110,26 @@ const Q_DANGLING: EvalQuestion = {
   missing_chunk_ids: ["a".repeat(32) + "#0002"],
 };
 
+/** 落空题（2026-10-06 spec §2④）：锚在、内容被换 → 读时派生 anchor_mismatch
+    → 行级纯词「存疑」徽章 + Tooltip 机器依据（红块同款文案）。 */
+const Q_SUSPECT: EvalQuestion = {
+  id: "q_66666666",
+  query: "内容被换的考题",
+  category: "fact",
+  expected_paths: ["vector"],
+  relevant_chunk_ids: [CHUNK_A],
+  relevant_entities: [],
+  reference_answer: "装箱是把基本数据类型转换为包装类型。",
+  anchor_mismatch: {
+    reason: "zero_hit",
+    miss_terms: ["装箱", "包装"],
+    hits: 0,
+    best_hits: 3,
+    suggested_chunk: CHUNK_B,
+    chunk_ids: [CHUNK_A],
+  },
+};
+
 function questionsState(questions: EvalQuestion[]): { data: EvalQuestionListResponse } {
   return { data: { questions, total: questions.length } };
 }
@@ -235,6 +255,30 @@ describe("EvalQuestionBank 表格", () => {
     // 分类显示名走 i18n（wire 键不外露）
     expect(screen.getByText("事实")).toBeTruthy();
     expect(screen.getByText("全局")).toBeTruthy();
+  });
+
+  it("落空题行级纯词「存疑」徽章 + Tooltip 机器依据（spec §2④，B1=甲）", async () => {
+    hooksMock.useEvalQuestions.mockReturnValue({
+      isLoading: false,
+      error: null,
+      ...questionsState([Q_ANCHORED, Q_SUSPECT]),
+    });
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    // 有疑才显：健康行零徽章。
+    const healthyRow = screen.getByText("锚定了三个切片的考题").closest("tr")!;
+    expect(within(healthyRow as HTMLElement).queryByText("存疑")).toBeNull();
+    const suspectRow = screen.getByText("内容被换的考题").closest("tr")!;
+    expect(within(suspectRow as HTMLElement).getByText("存疑")).toBeTruthy();
+    // 悬浮＝项目 Tooltip 机器依据（红块同款文案：缺失术语 + 建议锚 + 命中表），
+    // 无原生 title。
+    const badge = within(suspectRow as HTMLElement).getByText("存疑");
+    expect(badge.closest("[title]")).toBeNull();
+    fireEvent.focus(badge.parentElement!);
+    const tooltips = await screen.findAllByRole("tooltip");
+    const evidence = tooltips.map((node) => node.textContent ?? "").join("\n");
+    expect(evidence).toContain("缺失术语");
+    expect(evidence).toContain("建议锚");
+    expect(evidence).toContain("命中");
   });
 
   it("表头为 问题/分类/参考切片/召回率@k（预期路径与锚定列退役）", () => {

@@ -706,6 +706,10 @@ export interface Translations {
         /** 悬空锚警示徽章（2026-10-06）：纯词、无数字无图标（对齐「检测到回退」
             先例）；行级挂参考切片格、抽屉挂悬空片警示行，两面同词。 */
         danglingBadge: string;
+        /** 落空警示徽章（2026-10-06 Task 5，spec §2④）：纯词「存疑」，与「悬空」
+            成一对白话状态词（B1=甲）；amber 档=可确认待人看（悬空是 destructive
+            档=已坏不可绕）。行级挂参考切片格、抽屉挂疑片触发行，两面同词。 */
+        mismatchBadge: string;
         addQuestion: string;
         emptyBank: string;
         /** 空态双入口第二句（2026-08-28 spec §7，Task 8）：合成造题引导。 */

@@ -729,6 +729,12 @@ export interface EvalQuestion {
    * = 不做声明），行级「悬空」徽章只在非空时渲染。
    */
   missing_chunk_ids?: string[];
+  /**
+   * 落空（2026-10-06 改锚对 Task 5，spec §2④）：锚在、参考答案词面已对不上
+   * （切片内容被换 / 贴错锚），读时派生、不落盘。null/缺省 = 无警示；悬空
+   * 优先——有缺片时为 null（一题至多显一类警示）。
+   */
+  anchor_mismatch?: AnchorMismatchInfo | null;
 }
 
 /** POST /eval/questions 请求体：锚定字段缺省即空数组。 */
@@ -768,6 +774,14 @@ export interface AnchorBlockDetail {
   /** 文档内最佳切片的命中数（对照基准）。 */
   best_hits: number;
   suggested_chunk: string | null;
+}
+
+/**
+ * 落空派生明细（2026-10-06 Task 5，spec §2④）：红块同款机器依据 + 疑片集
+ * （`chunk_ids` = 抽屉行级「存疑」落点；reason 只会是 zero_hit/mismatch）。
+ */
+export interface AnchorMismatchInfo extends AnchorBlockDetail {
+  chunk_ids: string[];
 }
 
 /** GET /eval/questions 响应：全量题库（50–100 题规模，无分页）。 */

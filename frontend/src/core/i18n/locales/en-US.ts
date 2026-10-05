@@ -765,6 +765,7 @@ export const enUS: Translations = {
         recallUntested: "Not tested or not in the latest run",
         unanchored: "Unanchored",
         danglingBadge: "Dangling",
+        mismatchBadge: "Suspect",
         addQuestion: "Add question",
         emptyBank:
           "No questions yet — tick the right chunks in the recall test panel to save one in a click",

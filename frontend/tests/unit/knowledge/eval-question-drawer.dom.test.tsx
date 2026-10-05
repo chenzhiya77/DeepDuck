@@ -5,6 +5,7 @@
  *   依据按文档分组 + 稳定序号徽章 / 实体卡）、无参考答案降级、复现/删除回调；
  * - 锚定可见（spec §2①/②）：逐片只读 ChunkCard（正文预览，无编辑动作回调）
  *   + 悬空片单行警示（一次 listChunksByIds 两用：请求集 − 返回集 = 悬空）；
+ *   片级折叠（甲）：默认收起显 chunkPreview 摘要行，触发行展开落整卡；
  * - 改锚（spec §2③ B′）：编辑保存被锚定核验拦下 → 红块变出「仍要保存」且
  *   **不落库**（原「保存」盲重复点恒不带 anchor_ack，wire 级断言）；「仍要
  *   保存」携 anchor_ack=true 落库；missing_chunk 无确认钮；清空勾选 = 解除
@@ -249,25 +250,77 @@ describe("EvalQuestionDrawer 读态", () => {
     expect(onDelete).toHaveBeenCalledWith(Q_ANCHORED);
   });
 
-  // ── ① 锚定可见 + 悬空徽章（2026-10-06 spec §2①/②）────────────────────
-  it("逐片只读 ChunkCard 渲染正文 + 悬空片单行警示（请求集 − 返回集）", async () => {
+  // ── ① 锚定可见 + 悬空徽章（2026-10-06 spec §2①/②）+ 片级折叠（甲）──
+  it("逐片只读 ChunkCard：默认收起显摘要行，展开落整卡 + 悬空片单行警示（请求集 − 返回集）", async () => {
     // 一次 listChunksByIds 两用：CHUNK_C 静默缺失 → 悬空。
     state.chunksByIds = [
-      chunk(CHUNK_A, "切片正文一：装箱与拆箱", "文档甲"),
-      chunk(CHUNK_B, "切片正文二：泛型边界", "文档乙"),
+      chunk(CHUNK_A, "切片一摘要行\n\n切片一长正文第二段", "文档甲"),
+      chunk(CHUNK_B, "切片二摘要行\n\n切片二长正文第二段", "文档乙"),
     ];
     renderDrawer(Q_ANCHORED);
 
-    expect(await screen.findByText("切片正文一：装箱与拆箱")).toBeTruthy();
-    expect(screen.getByText("切片正文二：泛型边界")).toBeTruthy();
-    // 悬空片（CHUNK_C）：序号徽章 + 「悬空」词的破坏性警示行，无正文卡。
-    expect(screen.getByText("悬空")).toBeTruthy();
-    expect(screen.getByText("#0003")).toBeTruthy();
-    // 只读 = 不传 onEdit/onDelete/onReExtract：切片卡无编辑动作（「编辑锚定」
-    // 入口是另一根轴，改锚编辑区才出现）。
+    // 默认全收起（甲）：摘要行（chunkPreview 同编辑勾选区口径）在、正文不在。
+    expect(await screen.findByText("切片一摘要行")).toBeTruthy();
+    expect(screen.getByText("切片二摘要行")).toBeTruthy();
+    expect(screen.queryByText("切片一长正文第二段")).toBeNull();
+    expect(screen.queryByText("切片二长正文第二段")).toBeNull();
+
+    // 展开后 ChunkCard 整卡落下（正文可见）；只读 = 不传 onEdit/onDelete/
+    // onReExtract：切片卡无编辑动作（「编辑锚定」入口是另一根轴）。
+    fireEvent.click(screen.getByRole("button", { name: /#0001/ }));
+    expect(await screen.findByText("切片一长正文第二段")).toBeTruthy();
     expect(screen.queryByText(zhCN.knowledge.chunkDrawer.delete)).toBeNull();
     expect(screen.queryByText(zhCN.knowledge.chunkDrawer.edit)).toBeNull();
     expect(screen.getByRole("button", { name: "编辑锚定" })).toBeTruthy();
+
+    // 悬空片（CHUNK_C）：序号徽章 + 「悬空」词的破坏性警示行，无正文卡、
+    // 无折叠触发行（没有内容可折）。
+    expect(screen.getByText("悬空")).toBeTruthy();
+    expect(screen.getByText("#0003")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /#0003/ })).toBeNull();
+  });
+
+  it("片折叠往返：触发行 aria-expanded 翻转，收起即正文让位回摘要行", async () => {
+    state.chunksByIds = [chunk(CHUNK_A, "切片一摘要行\n\n切片一长正文第二段", "文档甲")];
+    renderDrawer(Q_MULTI);
+
+    const trigger = await screen.findByRole("button", { name: /#0001/ });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(await screen.findByText("切片一长正文第二段")).toBeTruthy();
+    // 再点收起：正文卸载，摘要行回来（内容不悬空占位）。
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await waitFor(() => {
+      expect(screen.queryByText("切片一长正文第二段")).toBeNull();
+    });
+    expect(screen.getByText("切片一摘要行")).toBeTruthy();
+  });
+
+  it("疑片行「存疑」徽章（spec §2④）：触发行上随行可见 + 同款 Tooltip 机器依据", async () => {
+    state.chunksByIds = [chunk(CHUNK_A, "切片一摘要行\n\n切片一长正文第二段", "文档甲")];
+    renderDrawer({
+      ...Q_MULTI,
+      anchor_mismatch: {
+        reason: "zero_hit",
+        miss_terms: ["装箱"],
+        hits: 0,
+        best_hits: 3,
+        suggested_chunk: CHUNK_B,
+        chunk_ids: [CHUNK_A],
+      },
+    });
+
+    // 徽章在触发行上（默认收起也可见，不藏进展开区）。
+    const trigger = await screen.findByRole("button", { name: /#0001/ });
+    expect(trigger.textContent).toContain("存疑");
+    // 悬浮/聚焦触发行 → 项目 Tooltip 机器依据（红块同款文案）。
+    fireEvent.focus(trigger);
+    const tooltips = await screen.findAllByRole("tooltip");
+    const evidence = tooltips.map((node) => node.textContent ?? "").join("\n");
+    expect(evidence).toContain("缺失术语");
+    expect(evidence).toContain("建议锚");
   });
 
   it("悬空警示仅在取数返回后出现（缺片差额口径，不看 missing_chunk_ids 字段）", async () => {

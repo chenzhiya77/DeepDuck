@@ -57,6 +57,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AnchorBlockNotice } from "@/components/workspace/knowledge/anchor-block-notice";
 import { useI18n } from "@/core/i18n/hooks";
 import type { SortDirection } from "@/core/knowledge/document-view";
 import { refDocIds } from "@/core/knowledge/format";
@@ -471,6 +472,27 @@ export function EvalQuestionBank({
                       <Badge className="shrink-0 px-1.5 text-[10px]" variant="destructive">
                         {qtk.danglingBadge}
                       </Badge>
+                    )}
+                    {/* 落空「存疑」徽章（spec §2④，B1=甲）：anchor_mismatch 非空
+                        才显、纯词无数字无图标；amber 档＝可确认待人看（悬空
+                        destructive 档＝已坏不可绕）。悬浮＝项目 Tooltip 机器
+                        依据（红块同款文案：缺失术语/建议锚/命中表）。 */}
+                    {question.anchor_mismatch != null && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-default">
+                            <Badge
+                              className="shrink-0 border-amber-500/40 px-1.5 text-[10px] text-amber-700 dark:text-amber-500"
+                              variant="outline"
+                            >
+                              {qtk.mismatchBadge}
+                            </Badge>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-60">
+                          <AnchorBlockNotice detail={question.anchor_mismatch} />
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </span>
                 </TableCell>

@@ -716,6 +716,7 @@ export const zhCN: Translations = {
         recallUntested: "未测或上次运行未包含",
         unanchored: "未锚定",
         danglingBadge: "悬空",
+        mismatchBadge: "存疑",
         addQuestion: "添加考题",
         emptyBank: "题库为空——在召回测试面板勾选正确切片可一键存为考题",
         emptyBankSynthesis: "或从文档合成候选题，审核后采纳入题库",
