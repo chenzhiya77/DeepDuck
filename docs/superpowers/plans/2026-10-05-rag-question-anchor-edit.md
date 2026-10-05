@@ -2,7 +2,7 @@
 
 ## 范围与交接
 
-一对一件事 = ①锚定可见（抽屉逐片 ChunkCard 预览）②悬空标记（读时派生 `missing_chunk_ids`，行级+抽屉两面）③抽屉内改锚过同一道锚定核验（B′ 交互复用）。成对 spec 同名（`../specs/2026-10-05-rag-question-anchor-edit-design.md`），决策点 D1–D4 见 spec §3（推荐全甲；执行按推荐走，裁决翻转只动对应 Task）。**不碰**：`golden.jsonl` schema、评测指标口径、worker 重切片/删片路径、参考答案与题面编辑。TDD 必做（backend/AGENTS.md）；提交按线拆（工作树有别线未提交内容）。
+一对一件事 = ①锚定可见（抽屉逐片 ChunkCard 预览，只读态只显已锚片）②悬空标记（读时派生 `missing_chunk_ids`，行级+抽屉两面）③抽屉内改锚过同一道锚定核验（选片器=按文档折叠分组+组内分页，B′ 交互复用）。成对 spec 同名（`../specs/2026-10-05-rag-question-anchor-edit-design.md`），决策点 D1–D4 见 spec §3（2026-10-05 已裁全甲，D3 加折叠分组与分页细则）。**不碰**：`golden.jsonl` schema、评测指标口径、worker 重切片/删片路径、参考答案与题面编辑。TDD 必做（backend/AGENTS.md）；提交按线拆（工作树有别线未提交内容）。
 
 ## 硬约束（执行期注意）／Global Constraints
 
@@ -37,7 +37,7 @@
 > 动到的文件：`eval-question-drawer.tsx` / `eval-question-bank.tsx` / `core/knowledge/{api,hooks,types}.ts` / `locales/{types,en-US,zh-CN}.ts` / 对应 `*.dom.test.tsx`
 
 - [ ] RED（dom 钉）：①抽屉逐片 ChunkCard 渲染 + 悬空徽章 ②编辑保存被拦 ⇒ 红块变出「仍要保存」且**不落库**、原按钮盲重复点仍不落库 ③确认钮携 `anchor_ack=true` 落库 ④行级参考文档格悬空警示（有悬空才显）。
-- [ ] GREEN：参考文档卡升级逐片 ChunkCard（`listChunksByIds` 一次取数两用：预览+悬空差额）+「编辑锚定」入口 → 按文档分页勾选区（`listDocumentChunks` + 文档列表词汇，不手填 id）+ B′ 接线（keyed=抽屉）+ api `updateEvalQuestion`/hooks/types 字段 + i18n 三件 + 行级警示徽章。
+- [ ] GREEN：参考文档卡升级逐片 ChunkCard（只读态只显已锚片；`listChunksByIds` 一次取数两用：预览+悬空差额）+「编辑锚定」入口 → **按文档折叠分组勾选区**（组头「已选 n/N」默认收起、含已锚片文档默认展开、组内切片行=内容摘要+勾选框、分页 50/页、勾后可整组收起）+ B′ 接线（keyed=抽屉）+ api `updateEvalQuestion`/hooks/types 字段 + i18n 三件 + 行级警示徽章。
 - [ ] 门禁：前端全量 + `python ../scripts/pnpm.py check` 双净。
 
 ## Task 3 — 门禁 + 文档回填 + 登记

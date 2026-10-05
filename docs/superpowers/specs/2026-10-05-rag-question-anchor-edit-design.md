@@ -1,6 +1,6 @@
 # 题库锚定可视、改锚与悬空标记 —— 设计
 
-**Status:** 已起草（2026-10-05，待审查裁 D1–D4；推荐 D1=甲 / D2=甲 / D3=甲 / D4=甲）。成对 plan 同名（`../plans/2026-10-05-rag-question-anchor-edit.md`）。
+**Status:** 已裁待开工（2026-10-05 他裁：D1=甲 / D2=甲 / D3=甲＋折叠分组与分页细则 / D4=甲）。成对 plan 同名（`../plans/2026-10-05-rag-question-anchor-edit.md`）。
 
 **本对一件事：把题目锚定从「看得见文档、看不见切片、改不了、失锚也不知道」补齐成——锚定可见（切片内容级）、可改（抽屉内、过同一道锚定核验）、悬空有标（重切片/删片后标出悬空锚）。**
 
@@ -24,6 +24,8 @@
 
 参考文档卡从「文档名+序号徽章」升级为**逐片 ChunkCard**（复用 `frontend/src/components/workspace/knowledge/chunk-card.tsx`，wiki 血缘抽屉先例 `wiki-entry-drawer.tsx:161`）：一次 `listChunksByIds`（`api.ts:227`）取锚定片正文 + `doc_name`，**同一取数两用**——正文预览（看得见切片内容）+ 返回差额即悬空判定（服务端静默丢缺片，`knowledge_bases.py` `list_chunks_by_ids` docstring 明记 "Unknown ids drop silently"，请求集 − 返回集 = 悬空集）。序号徽章保留（稳定身份，与切片抽屉位置序的既有区分不变）；悬空的片在卡内单列一行警示。
 
+**只读态不铺全量**（2026-10-05 他确认）：平时只显示**已锚定的那几片**内容卡——参考文档卡回答"这题答案锚在哪"，文档其余切片与本题无关、摆出来是噪音；文档全量切片只在**编辑态**出现（见 ③）。
+
 ### ② 失锚标记（读时派生，不落状态）
 
 `list_eval_questions` 响应每题加 `missing_chunk_ids: string[]`（服务端对全部题的锚 id 并集一次 `store.get_chunks_by_ids`（`store.py:326`）派生，50–100 题规模一条查询）；题库行参考文档格挂警示徽章（**有悬空才显、无悬空零变化**；行内徽章=二期登记项由本实例触发转正，仅标存在性、不标词面 ✓/✗）。抽屉卡头同源显示。**不落盘、不在重切片/删片路径写标记**：读时派生永不陈旧、零跨线写（文档线不该写题库）。
@@ -32,15 +34,15 @@
 
 - 后端**唯一新增写入口** `question_bank.update_question(path, question_id, *, relevant_chunk_ids, relevant_entities=None, anchor_guard=None, anchor_ack=False)`：与 `add_question` 并列收口，同 `_lock` 读改写 + `_atomic_write`；query/category/expected_paths/reference_answer 等**不动**；`relevant_entities=None` 保持原值。挂**同一 `anchor_check.build_anchor_guard`**（store 取正文；`missing_chunk` 无条件拦、ack 也放不过）。
 - 服务 `update_eval_question(kb_id, question_id, *, relevant_chunk_ids, anchor_ack)`：一次 `get_chunks_by_ids` 喂核验正文 + 实体派生（D4）；router `PATCH /{kb_id}/eval/questions/{question_id}`（body：`relevant_chunk_ids` + `anchor_ack?`）→ 200 题体 / 404 / 422 结构化 detail（与 create 同一 `AnchorMismatchError` 映射，detail 键 `reason`/`miss_terms`/`hits`/`best_hits`/`suggested_chunk` 不变）。
-- 前端：抽屉参考文档卡加「编辑锚定」入口 → 勾选区（**按文档分页切片勾选**，D3；复用 `listDocumentChunks` + 文档列表词汇，不手填 id）+ 保存/取消。拦截交互**原样复用 B′**：`useAnchorConfirm`（keyed=抽屉）+ `AnchorBlockNotice` 红块，红块里**变出**「仍要保存」；原「保存」留复检键、重复点不落库（盲双击≠看见）；悬空锚不可确认绕过（与写入口同语义）。
+- 前端：抽屉参考文档卡加「编辑锚定」入口 → **折叠分组勾选区**（D3 细则，2026-10-05 他展开）：组头=文档名 + 「已选 n/N」计数、**默认收起**（含已锚片的文档默认展开）、组内=该文档全部切片（每片内容摘要行+勾选框、已锚默认勾上）、**组内分页**（`listDocumentChunks` 50 片/页滚动加载）、**勾选后可整组收起**（组头计数实时变 ⇒ 整卡高度上界=文档数×一行组头，文档多也不撑长）。复用 `listDocumentChunks` + 文档列表词汇，不手填 id。拦截交互**原样复用 B′**：`useAnchorConfirm`（keyed=抽屉）+ `AnchorBlockNotice` 红块，红块里**变出**「仍要保存」；原「保存」留复检键、重复点不落库（盲双击≠看见）；悬空锚不可确认绕过（与写入口同语义）。
 
-## 3. 决策点（待裁，各附推荐）
+## 3. 决策点（已裁 2026-10-05：D1=甲、D2=甲、D3=甲＋折叠分组与分页、D4=甲）
 
 | # | 决策 | 选项 | 推荐 | 选错后果 |
 |---|---|---|---|---|
 | D1 | 悬空标记机制 | 甲=**读时派生**（`missing_chunk_ids` 随 list 响应计算）/ 乙=重切片/删片时写标记进题库 / 丙=不做标记 | **甲** | 乙=文档线写题库跨线耦合、标记会陈旧（改锚后忘清）；丙=「看不出来」原样留着，本对只剩改锚半边 |
 | D2 | 标记与预览落点 | 甲=**抽屉逐片卡 + 题库行参考文档格警示** / 乙=只抽屉 | **甲** | 乙=不开抽屉发现不了哪题失锚（几十题逐个点开不现实） |
-| D3 | 改锚选片器 | 甲=**按文档分页切片勾选**（复用 `listDocumentChunks`，零新读端点）/ 乙=新做切片关键词搜索端点 / 丙=跳召回面板重存（不做编辑器） | **甲** | 乙=一对变两对体量（新检索口+排序+空态）；丙=改锚仍是删+建，本对白做 |
+| D3 | 改锚选片器 | 甲=**按文档折叠分组勾选**（组头「已选 n/N」默认收起、含已锚文档默认展开、组内分页 50/页、勾后可收起；复用 `listDocumentChunks`，零新读端点）/ 乙=新做切片关键词搜索端点 / 丙=跳召回面板重存（不做编辑器） | **甲**（他展开折叠细则） | 乙=一对变两对体量（新检索口+排序+空态）；丙=改锚仍是删+建，本对白做 |
 | D4 | 改锚时实体处置 | 甲=**跟锚重派生**（create 同源 `synthesis.chunk_entities_union`）/ 乙=保持原实体 / 丙=暴露实体编辑 | **甲** | 乙=实体与新锚脱钩、seed_hit_rate 口径错位；丙=又开手填口（与「实体不出手填」旧裁定相悖） |
 
 ## 4. 硬约束
