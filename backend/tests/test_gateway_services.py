@@ -1302,6 +1302,74 @@ async def test_pending_cancel_bypasses_thread_metadata_and_logs_failure(_stub_ap
 
 
 @pytest.mark.asyncio
+async def test_start_run_rejects_kb_binding_mismatch(_stub_app_config):
+    """2026-10-06 缺陷批：请求 kb_id 与线程既有绑定不一致 ⇒ 403（D2=甲/D3=甲）。"""
+    from unittest.mock import AsyncMock, patch
+
+    from fastapi import HTTPException
+
+    from app.gateway.services import start_run
+    from deerflow.runtime import RunManager
+    from deerflow.runtime.runs.store.memory import MemoryRunStore
+
+    async def fake_run_agent(*_args, **_kwargs):
+        return None
+
+    bound_store = SimpleNamespace(
+        get=AsyncMock(return_value={"user_id": "user-1", "metadata": {"kb_id": "kb-A"}}),
+        create=AsyncMock(),
+        update_owner=AsyncMock(),
+    )
+    run_manager = RunManager(store=MemoryRunStore())
+    body = _run_create_request(context={"kb_id": "kb-B"})
+    request = _make_start_run_request(run_manager, thread_store=bound_store)
+    with (
+        patch("app.gateway.services.resolve_agent_factory", return_value=object()),
+        patch("app.gateway.services.run_agent", side_effect=fake_run_agent),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await start_run(body, "thread-kb-bound", request)
+    assert excinfo.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_start_run_allows_matching_or_missing_kb_binding(_stub_app_config):
+    """一致 / 无绑定 / 请求不带 kb_id 三种情况都不拦（D2=甲）。"""
+    from unittest.mock import AsyncMock, patch
+
+    from app.gateway.services import start_run
+    from deerflow.runtime import RunManager
+    from deerflow.runtime.runs.store.memory import MemoryRunStore
+
+    async def fake_run_agent(*_args, **_kwargs):
+        return None
+
+    def store_with(row):
+        return SimpleNamespace(
+            get=AsyncMock(return_value=row),
+            create=AsyncMock(),
+            update_owner=AsyncMock(),
+        )
+
+    cases = [
+        ("thread-kb-match", store_with({"user_id": "user-1", "metadata": {"kb_id": "kb-A"}}), {"kb_id": "kb-A"}),
+        ("thread-kb-none", store_with({"user_id": "user-1", "metadata": {}}), {"kb_id": "kb-B"}),
+        ("thread-kb-missing-row", store_with(None), {"kb_id": "kb-B"}),
+        ("thread-kb-request-absent", store_with({"user_id": "user-1", "metadata": {"kb_id": "kb-A"}}), None),
+    ]
+    with (
+        patch("app.gateway.services.resolve_agent_factory", return_value=object()),
+        patch("app.gateway.services.run_agent", side_effect=fake_run_agent),
+    ):
+        for thread_id, thread_store, context in cases:
+            run_manager = RunManager(store=MemoryRunStore())
+            request = _make_start_run_request(run_manager, thread_store=thread_store)
+            record = await start_run(_run_create_request(context=context), thread_id, request)
+            assert record.thread_id == thread_id
+            await asyncio.wait_for(record.task, timeout=1)
+
+
+@pytest.mark.asyncio
 async def test_thread_metadata_timeout_logs_and_run_still_starts(_stub_app_config, caplog, monkeypatch):
     from unittest.mock import AsyncMock, patch
 

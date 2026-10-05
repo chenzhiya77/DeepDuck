@@ -1128,6 +1128,15 @@ async def start_run(
         if not allowed:
             raise HTTPException(status_code=404, detail=f"Thread {thread_id} not found")
 
+    # 单库绑定（缺陷批 2026-10-06，D2=甲/D3=甲）：请求 kb 与线程既有绑定不一致 ⇒ 拒绝；
+    # 线程有绑定而请求不带 kb 维持「不检索」；管理 API 的所有权校验不受影响。
+    request_kb_id = body_context.get("kb_id")
+    if request_kb_id:
+        existing_thread = await run_ctx.thread_store.get(thread_id)
+        bound_kb_id = ((existing_thread or {}).get("metadata") or {}).get("kb_id")
+        if bound_kb_id and bound_kb_id != request_kb_id:
+            raise HTTPException(status_code=403, detail="对话与知识库绑定不一致")
+
     owner_context_token = set_current_user(SimpleNamespace(id=owner_user_id)) if owner_user_id else None
     try:
         agent_factory = resolve_agent_factory(body.assistant_id)
