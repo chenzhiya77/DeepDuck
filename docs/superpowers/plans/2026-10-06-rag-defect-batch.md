@@ -1,6 +1,6 @@
 # 首期缺陷批（对话隔离回归 + 知识库上传路由） —— 实施 plan
 
-**Status:** 已裁（D1–D4 全甲）、待开工（2026-10-06）。Spec：`../specs/2026-10-06-rag-defect-batch-design.md`。
+**Status:** ✅ 完工（2026-10-06；D1–D4 全甲）。提交链：`62019263b` nginx＋守卫 → `f2e1689dd` 前端重置 → `e0ee6e01e` 网关校验 → `8547bc7d0` spec/plan/清单 → 本笔回填。Spec：`../specs/2026-10-06-rag-defect-batch-design.md`。
 
 **交接表**
 
@@ -38,6 +38,6 @@
 
 - [x] 真栈·nginx 通道（探针，2026-10-06）：一次性 `nginx:alpine` 容器＋从 `nginx.local.conf` 逐字取的两个 location（upstream 换死端口，断言只看非 413）——2MB POST：知识库路由 **502≠413**（放行）／通用 `/api/` **413**（对照，1m 默认仍在）／threads 路由 502≠413；容器已停、scratch 已清
 - [x] 真栈·行为两项（2026-10-06，浏览器＋页内 fetch）：①切到「测试1」面板重置为新会话（旧消息不跟随）→切回「测试2」历史重开 `a933d732…` 旧会话完好（消息/引用/来源/耗时全在、thread id 不变）；②旧线程＋他库 kb 的 run 请求 **403「对话与知识库绑定不一致」**；一致 kb 对照 **200 受理**（run `e71cbe11…`，防误杀）
-- [ ] 收尾：清单勾选已落（对话隔离 3＋nginx 1）；剩提交链（待「提交」令）与 spec 状态行
+- [x] 收尾：清单勾选已落（对话隔离 3＋nginx 1）；提交链 `62019263b`→`f2e1689dd`→`e0ee6e01e`→`8547bc7d0`→（本笔回填）；spec 状态行已更新。备注：前端 `pnpm check` 两处红（TS2353 `anchor_mismatch`）属**别线在途**文件（eval-question 两测试，非本批所碰），本批波及面绿
 
 **检查项**：提交信息英文 conventional；后端 `make format`／前端 `pnpm check` 净；不改 RFC 与 §10.2。
