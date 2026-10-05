@@ -36,8 +36,8 @@
 
 > 动到的文件：`eval-question-drawer.tsx` / `eval-question-bank.tsx` / `core/knowledge/{api,hooks,types}.ts` / `locales/{types,en-US,zh-CN}.ts` / 对应 `*.dom.test.tsx`
 
-- [ ] RED（dom 钉）：①抽屉逐片 ChunkCard 渲染 + 悬空徽章 ②编辑保存被拦 ⇒ 红块变出「仍要保存」且**不落库**、原按钮盲重复点仍不落库 ③确认钮携 `anchor_ack=true` 落库 ④行级参考文档格悬空警示（有悬空才显）。
-- [ ] GREEN：参考文档卡升级逐片 ChunkCard（只读态只显已锚片、**不传 `onEdit`/`onDelete`/`onReExtract`**；`listChunksByIds` 一次取数两用：预览+悬空差额）+「编辑锚定」入口 → **按文档折叠分组勾选区**（组头「已选 n/N」默认收起、含已锚片文档默认展开、组内切片行=内容摘要+勾选框、分页 50/页、勾后可整组收起）+ B′ 接线（keyed=抽屉）+ api `updateEvalQuestion`/hooks/types 字段 + i18n 三件 + 行级警示徽章。
+- [ ] RED（dom 钉）：①抽屉逐片 ChunkCard 渲染 + 悬空徽章 ②编辑保存被拦 ⇒ 红块变出「仍要保存」且**不落库**、原按钮盲重复点仍不落库 ③确认钮携 `anchor_ack=true` 落库 ④行级参考切片格：纯数字（无量词混排）+ 纯词「悬空」徽章仅悬空题显 ⑤问题列悬浮走项目 Tooltip（断言无原生 `title`）。
+- [ ] GREEN：参考文档卡升级逐片 ChunkCard（只读态只显已锚片、**不传 `onEdit`/`onDelete`/`onReExtract`**；`listChunksByIds` 一次取数两用：预览+悬空差额）+「编辑锚定」入口 → **按文档折叠分组勾选区**（组头「已选 n/N」默认收起、含已锚片文档默认展开、组内切片行=内容摘要+勾选框、分页 50/页、勾后可整组收起）+ B′ 接线（keyed=抽屉）+ api `updateEvalQuestion`/hooks/types 字段 + i18n 三件 + **列口径改造**（表头 `参考文档`→`参考切片`、格子纯数字=切片数、`refDocsCount` 退役、tooltip 文档名保留、抽屉卡头「参考文档」键分家保留原词）+ **警示徽章**（`Badge variant="destructive"` 小号纯词「悬空」，同「检测到回退」先例）+ **悬浮统一**（`eval-question-bank.tsx:419` 原生 `title` 换项目 Tooltip，同 tab 原生 `title` 扫尾）。
 - [ ] 门禁：前端全量 + `python ../scripts/pnpm.py check` 双净。
 
 ## Task 3 — 门禁 + 文档回填 + 登记
