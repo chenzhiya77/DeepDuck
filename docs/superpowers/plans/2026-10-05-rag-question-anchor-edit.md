@@ -36,16 +36,16 @@
 
 > 动到的文件：`eval-question-drawer.tsx` / `eval-question-bank.tsx` / `core/knowledge/{api,hooks,types}.ts` / `locales/{types,en-US,zh-CN}.ts` / 对应 `*.dom.test.tsx`
 
-- [ ] RED（dom 钉）：①抽屉逐片 ChunkCard 渲染 + 悬空徽章 ②编辑保存被拦 ⇒ 红块变出「仍要保存」且**不落库**、原按钮盲重复点仍不落库 ③确认钮携 `anchor_ack=true` 落库 ④行级参考切片格：纯数字（无量词混排）+ 纯词「悬空」徽章仅悬空题显 ⑤问题列悬浮走项目 Tooltip（断言无原生 `title`）。
-- [ ] GREEN：参考文档卡升级逐片 ChunkCard（只读态只显已锚片、**不传 `onEdit`/`onDelete`/`onReExtract`**；`listChunksByIds` 一次取数两用：预览+悬空差额）+「编辑锚定」入口 → **按文档折叠分组勾选区**（组头「已选 n/N」默认收起、含已锚片文档默认展开、组内切片行=内容摘要+勾选框、分页 50/页、勾后可整组收起）+ B′ 接线（keyed=抽屉）+ api `updateEvalQuestion`/hooks/types 字段 + i18n 三件 + **列口径改造**（表头 `参考文档`→`参考切片`、格子纯数字=切片数、`refDocsCount` 退役、tooltip 文档名保留；键分家三处：表头 `:331` 新词「参考切片」/排序选项 `:205` 新词「文档数」/抽屉卡头 `:155` 留「参考文档」；en-US + `types.ts` 注释随改；**合成候选卡 `eval-synthesis-review.tsx:279` 同步改切片纯数字**——「采纳前后同一单位」承诺）+ **排序保篇序**（比较器 `eval-question-bank.tsx:220` 不动=跨文档广度，仅 label 明义）+ **警示徽章**（`Badge variant="destructive"` 小号纯词「悬空」，同「检测到回退」先例）+ **悬浮统一**（封闭清单两处原生 `title` 换项目 Tooltip：`eval-question-bank.tsx:419` + `eval-question-drawer.tsx:171`；只换 DOM 原生属性、`MetricTile title=` prop 不动）。
-- [ ] 门禁：前端全量 + `python ../scripts/pnpm.py check` 双净。
+- [x] RED（dom 钉）：①抽屉逐片 ChunkCard 渲染 + 悬空徽章 ②编辑保存被拦 ⇒ 红块变出「仍要保存」且**不落库**、原按钮盲重复点仍不落库 ③确认钮携 `anchor_ack=true` 落库 ④行级参考切片格：纯数字（无量词混排）+ 纯词「悬空」徽章仅悬空题显 ⑤问题列悬浮走项目 Tooltip（断言无原生 `title`）。（实现随写、各钉落前逐一验红——非独立红跑，如实记录）
+- [x] GREEN：参考文档卡升级逐片 ChunkCard（只读态只显已锚片、**不传 `onEdit`/`onDelete`/`onReExtract`**；`listChunksByIds` 一次取数两用：预览+悬空差额）+「编辑锚定」入口 → **按文档折叠分组勾选区**（组头「已选 n/N」默认收起、含已锚片文档默认展开、组内切片行=内容摘要+勾选框、分页 50/页、勾后可整组收起）+ B′ 接线（keyed=question.id；**原「保存」请求体物理不带 `anchor_ack` 键**）+ api `updateEvalQuestion`/hooks/types 字段 + i18n（`columnRefChunks`/`sortDocsCount`/`danglingBadge`/`anchorEdit`/`anchorBlock.confirmUpdate`，`refDocsCount` 退役、`columnRefDocs` 留抽屉卡头）+ **列口径改造**（表头「参考切片」、格子纯数字=切片数、tooltip 文档名保留；合成候选卡同步纯数字）+ **排序保篇序**（比较器不动，label「文档数」）+ **警示徽章**（destructive 纯词「悬空」）+ **悬浮统一**（bank:419 + drawer 组头两处原生 `title` 换项目 Tooltip；`MetricTile title=` prop 未动）。
+- [x] 门禁：前端全量 **248 文件 / 2816 绿 / 0 红**（+11 净增钉）+ `pnpm check`（eslint+tsc）双净。
 
 ## Task 3 — 门禁 + 文档回填 + 登记
 
 > 动到的文件：spec/plan 回填 + `backend/AGENTS.md`
 
-- [ ] 全量门禁：后端 `pytest -m "not live" tests/`（basetemp 仓外、跑完删）+ 前端全量；红只许环境红带内、波及面零新增。实测数回填本 plan。
-- [ ] `backend/AGENTS.md`「Write-path anchor verification」条目补「改锚口同闸」半句；spec/plan 状态行与提交链回填；§6 登记项定稿。
+- [x] 全量门禁：后端 `pytest -m "not live" tests/`（basetemp 仓外 `E:\app-model\deer-flow-scratch\pytest-tmp-anchor-edit-full`、跑完删）**153 failed / 13030 passed / 109 skipped（20:49，2026-10-06）**——红全在历史环境红带（145–164）内且全为根级环境红族（provisioner/rag_config_probe/sandbox/skillscan/wechat…），波及面零新增（knowledge 全面 1595 绿/4 预存环境红、eval 面 46 绿）；前端全量 248 文件 / 2816 绿 / 0 红（Task 2 实测）；`ruff check`/`ruff format --check` 双净、`pnpm check` 双净。
+- [x] `backend/AGENTS.md`「Write-path anchor verification」条目补「改锚口同闸」半句（`update_question` 同注入 guard、实体跟锚收缩、`missing_chunk_ids` 读时派生，引本对 spec）；spec/plan 状态行回填；§6 登记项定稿（改答案/自动改锚/添加框勾选区/合成暂存改锚/切片跳转五条登记，L1 悬空口径不改）。
 
 ## Task 4 — 真栈验收（仅测试2）
 
