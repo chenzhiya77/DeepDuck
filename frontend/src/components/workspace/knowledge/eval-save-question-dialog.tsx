@@ -31,6 +31,7 @@ import type { RecallPathName } from "@/core/knowledge/types";
 
 import { AnchorBlockNotice } from "./anchor-block-notice";
 import { toast } from "./kb-toast";
+import { ScrollableTextarea } from "./scrollable-textarea";
 import { useAnchorConfirm } from "./use-anchor-confirm";
 
 export interface EvalSaveQuestionDialogProps {
@@ -152,9 +153,8 @@ export function EvalSaveQuestionDialog({
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium">{stk.queryLabel}</span>
-            <textarea
+            <ScrollableTextarea
               aria-label={stk.queryLabel}
-              className="border-input min-h-16 rounded-md border bg-transparent px-3 py-2 text-sm"
               onChange={(event) => setQuery(event.target.value)}
               value={query}
             />
@@ -192,9 +192,8 @@ export function EvalSaveQuestionDialog({
           <p className="text-muted-foreground text-xs">{stk.anchorHint}</p>
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium">{stk.referenceAnswerLabel}</span>
-            <textarea
+            <ScrollableTextarea
               aria-label={stk.referenceAnswerLabel}
-              className="border-input min-h-16 rounded-md border bg-transparent px-3 py-2 text-sm"
               onChange={(event) => {
                 setReferenceAnswer(event.target.value);
                 // B′：参考答案是锚定核验输入，改动即清红块（重新机器核验）。

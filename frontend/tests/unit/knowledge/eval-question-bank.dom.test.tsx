@@ -580,6 +580,18 @@ describe("EvalAddQuestionDialog", () => {
     expect(screen.getByRole("checkbox", { name: "wiki" }).getAttribute("aria-checked")).toBe("false");
   });
 
+  it("两块输入框都骑在 ScrollArea overlay 上（RAG 隐式滚动条配方，非原生滑块）", () => {
+    renderDialog();
+    for (const label of ["问题", "参考答案（可选）"]) {
+      const field = screen.getByLabelText(label);
+      // 结构钉（几何靠真浏览器量）：无边框 textarea 包在 data-slot="scroll-area" 里，
+      // 高度随内容涨、超过 max-h 由 ScrollArea 接管（type=scroll、停 2s 淡出）。
+      expect(field.closest('[data-slot="scroll-area"]')).not.toBeNull();
+      expect(field.className).toContain("border-0");
+      expect(field.className).toContain("resize-none");
+    }
+  });
+
   it("全不勾路径时提交禁用（至少一路）", () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText("问题"), { target: { value: "新考题" } });

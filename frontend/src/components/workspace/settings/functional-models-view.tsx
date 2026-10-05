@@ -991,19 +991,26 @@ export function FunctionalModelsView() {
               <ChevronDown className="size-4 opacity-50" />
             </Button>
           </DropdownMenuTrigger>
-          {/* Stays open across picks: the five roles are one decision, not five. */}
+          {/* Stays open across picks: the five roles are one decision, not five. The content is
+              a two-column grid and each row spans it as a subgrid, so every model name starts
+              at the same x — the aligned columns are what tells role from value now that the
+              「·」 is gone (2026-10-06). The aria-label keeps the old "role · model" read for
+              assistive tech. */}
           <DropdownMenuContent
             align="start"
-            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+            className="grid w-[var(--radix-dropdown-menu-trigger-width)] grid-cols-[max-content_minmax(0,1fr)]"
           >
             {thinkingRows.map((row) => (
               <DropdownMenuCheckboxItem
                 key={row.key}
+                aria-label={`${row.label} · ${row.modelLabel}`}
                 checked={row.checked}
                 onCheckedChange={() => update(row.key, !row.checked)}
                 onSelect={(event) => event.preventDefault()}
+                className="col-span-2 grid grid-cols-subgrid items-center"
               >
-                {row.label} · {row.modelLabel}
+                <span data-slot="thinking-role">{row.label}</span>
+                <span data-slot="thinking-model">{row.modelLabel}</span>
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuContent>

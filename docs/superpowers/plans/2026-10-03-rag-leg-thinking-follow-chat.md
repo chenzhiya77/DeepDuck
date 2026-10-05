@@ -39,14 +39,15 @@
 
 ## Task 3 — 前端下拉框 ✅
 
-- [x] 设置页 RAG 区多选下拉框：五行=五角色位（每行「角色名 · 当前所选模型名」，同模型两槽=两行）、勾选保存走既有 rag 配置热重载、触发器自述（终版文案=甲：`思考跟随对话模型（未选择）`→`…（已选 N 项）`，初版「思考 · 跟随 chat（点击开启）」经复审退役）无前置标签；D2=甲 ⇒ 勾 vlm 行无额外提示。实测：`config-form` **130 绿**（+27：种子/开/关/带出/回退）+ `functional-models.dom` **117 绿**（+6）+ 全量 **247 文件全绿**、`pnpm check` 零诊断。夹具补值=第三份 DOM 夹具 KEYS Proxy 按键函数名单补 `thinkingMenuState`（前例「给夹具补值」）；Radix 模态层会 aria-hide 菜单外内容 ⇒ 开着菜单时外部元素查询须 `hidden: true`。
+- [x] 设置页 RAG 区多选下拉框：五行=五角色位（每行两列=角色名 + 该槽当前模型名〔2026-10-06 复审：由行内「角色名 · 模型名」改两列对齐〕，同模型两槽=两行）、勾选保存走既有 rag 配置热重载、触发器自述（终版文案=甲：`思考跟随对话模型（未选择）`→`…（已选 N 项）`，初版「思考 · 跟随 chat（点击开启）」经复审退役）无前置标签；D2=甲 ⇒ 勾 vlm 行无额外提示。实测：`config-form` **130 绿**（+27：种子/开/关/带出/回退）+ `functional-models.dom` **117 绿**（+6）+ 全量 **247 文件全绿**、`pnpm check` 零诊断。夹具补值=第三份 DOM 夹具 KEYS Proxy 按键函数名单补 `thinkingMenuState`（前例「给夹具补值」）；Radix 模态层会 aria-hide 菜单外内容 ⇒ 开着菜单时外部元素查询须 `hidden: true`。
 
 ## Task 4 — 门禁 + 文档 + 收尾 ✅（触发器文案一处待拍）
 
 - [x] 门禁实测：后端 knowledge + models/config 面 **1730 passed / 2 skipped**，9 红全环境账（缺 key 对 2 + parser 对 2 + 本机真实 `models_config.json` 对 3 + `test_config_version` 要 bash 1）+ 1 条**已登记图谱并发 flake**（`test_concurrent_results_match_serial_including_order` 同面 3 跑 2 红 1 绿、Task 1 同面为绿 ⇒ 非本对回归）；ruff check/format **双净**（knowledge+config+tests/knowledge，213 文件）；前端 `pnpm check` 零诊断、全量 **247 文件绿**。
 - [x] 文档：`config.example.yaml` rag 块补 5 行注释示例（含 caption 4096 联动句）+ 模板钉 `test_the_yaml_template_advertises_the_thinking_flags_as_commented_examples`（`test_rag_config_example.py` 14/14 绿）；`backend/AGENTS.md` 四处（功能模型段=5 布尔+共享闸+多选入口 / Ingestion 段=D7 加翻案限定 / model-targets 段=`create_rag_chat_model` / caption 段=vlm_thinking+预算联动）；图谱并发化 spec 状态行加翻案指回。
 - [x] UI 复审修法（他 2026-10-03 三条）：① 两框间距 8→16px（页面字段栈 `gap-4` 词汇）；② 触发器表面改 `border-input bg-transparent`（Button outline 自带的 `bg-background` 压白卡片显暖，兄弟框是 SelectTrigger 表面）；③ 触发器文案已裁=**甲**并落地（`思考跟随对话模型（未选择）`→`（已选 N 项）`，en 对齐 `Thinking follows the chat model (none selected / N selected)`；乙/丙 未选、已关）。
-- [x] 提交链回填：`21f648487`（成对起草）→ `d001e999d`（D1/D2 落档）→ `655ab3abf`（审查八处）→ `5cf7964b3`（Task 0）→ `c14a0962c`（Task 1）→ `5c3427102`（Task 2）→ `45f37bf6e`（Task 3）→ `4586e09db`（Task 4）→ `1dd2410fe`（文案甲）→ 本笔（Task 5 端到端验收）。
+- [x] UI 复审修法（他 2026-10-06 截图一条）：思考菜单改**两列对齐**——内容两列 grid（`max-content`+`minmax(0,1fr)`）、每行跨列 `grid-cols-subgrid` 共享列宽、行内「·」退役；`aria-label` 保留「角色 · 模型」拼接 ⇒ 既有查名用例不破；真 Chrome 复刻实测五行角色列/模型列左缘各自全等。
+- [x] 提交链回填：`21f648487`（成对起草）→ `d001e999d`（D1/D2 落档）→ `655ab3abf`（审查八处）→ `5cf7964b3`（Task 0）→ `c14a0962c`（Task 1）→ `5c3427102`（Task 2）→ `45f37bf6e`（Task 3）→ `4586e09db`（Task 4）→ `1dd2410fe`（文案甲）→ `4d790c519`（Task 5 端到端验收）→ 本笔（2026-10-06 UI 复审：两列对齐）。
 
 ## Task 5 — 真栈端到端验收（补验）✅
 

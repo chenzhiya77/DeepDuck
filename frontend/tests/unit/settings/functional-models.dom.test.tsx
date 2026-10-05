@@ -746,13 +746,21 @@ describe("thinking follow-chat menu (spec 2026-10-03 D1=甲)", () => {
     const items = await screen.findAllByRole("menuitemcheckbox");
 
     // Rows are role slots, not models: extraction and judging point at the same entry and
-    // still get one row each. An unset slot shows the row's own "not set" copy.
-    expect(items.map((item) => item.textContent)).toEqual([
-      `${F.extractModel} · DeepSeek Chat`,
-      `${F.wikiModel} · Qwen Max`,
-      `${F.judgeModel} · DeepSeek Chat`,
-      `${F.synthesisModel} · Qwen Max`,
-      `${F.captionModel} · vl-model`,
+    // still get one row each. Each row carries two cells that share the menu's subgrid, so
+    // the model names line up as one column (2026-10-06); the old composite "role · model"
+    // read survives as the row's aria-label, which the by-name queries below rely on.
+    const cells = (item: HTMLElement) =>
+      [
+        ...item.querySelectorAll(
+          '[data-slot="thinking-role"], [data-slot="thinking-model"]',
+        ),
+      ].map((cell) => cell.textContent);
+    expect(items.map(cells)).toEqual([
+      [F.extractModel, "DeepSeek Chat"],
+      [F.wikiModel, "Qwen Max"],
+      [F.judgeModel, "DeepSeek Chat"],
+      [F.synthesisModel, "Qwen Max"],
+      [F.captionModel, "vl-model"],
     ]);
   });
 
