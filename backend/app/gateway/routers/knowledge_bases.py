@@ -84,6 +84,19 @@ class EvalQuestionCreateRequest(BaseModel):
     anchor_ack: bool = False
 
 
+class EvalQuestionUpdateRequest(BaseModel):
+    """改锚载荷（spec 2026-10-05 anchor-edit 对）：只收锚（+确认标记）——题面/
+    分类/预期路径/参考答案不在本端点可编辑范围；清空列表=解除锚定。chunk id
+    格式校验统一委托 ``validate_question``（schema 单一事实源）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    relevant_chunk_ids: list[str] = Field(default_factory=list)
+    # 与 create 同款一次性确认标记（D1=甲′）：术语级拦截可「仍要保存」放行；
+    # 锚失效（片不存在）不认它。
+    anchor_ack: bool = False
+
+
 class EvalRunTriggerRequest(BaseModel):
     """评测触发分档（2026-09-01 B 方案）：``layers`` 默认 ``l1``（无 body /
     空 body 向后兼容）；``question_ids`` 选题运行（``None`` = 全量）。
@@ -777,6 +790,22 @@ async def create_eval_question(request: Request, kb_id: str, body: EvalQuestionC
     except GoldenDatasetError as exc:
         # 存量 golden.jsonl 非法是运维问题（手工编辑引入脏行），不是调用方
         # 入参问题——500 显式暴露行号，绝不静默跳过。
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.patch("/{kb_id}/eval/questions/{question_id}")
+async def update_eval_question(request: Request, kb_id: str, question_id: str, body: EvalQuestionUpdateRequest):
+    """改锚：与 create 同一道锚定核验（422 结构化明细；悬空锚不可 ack 绕过）。"""
+    service = await _require_kb_access(request, kb_id)
+    try:
+        return await service.update_eval_question(kb_id, question_id, relevant_chunk_ids=body.relevant_chunk_ids, anchor_ack=body.anchor_ack)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Eval question not found") from exc
+    except AnchorMismatchError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
+    except QuestionBankInvalidQuestion as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except GoldenDatasetError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

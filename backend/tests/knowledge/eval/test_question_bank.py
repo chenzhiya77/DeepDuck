@@ -20,6 +20,7 @@ from deerflow.knowledge.eval.question_bank import (
     add_question,
     delete_question,
     load_questions,
+    update_question,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -176,3 +177,64 @@ async def test_add_upgrades_legacy_file_wholesale_to_new_format(tmp_path) -> Non
     assert all("expected_path" not in row for row in rows)
     questions = await load_questions(path)
     assert [q.expected_paths for q in questions] == [("wiki",), ("vector",)]
+
+
+# ── update_question：改锚写入口（spec 2026-10-05 anchor-edit 对 D4=甲′）───
+
+
+async def test_update_rewrites_anchors_and_keeps_other_fields(tmp_path) -> None:
+    path = tmp_path / "golden.jsonl"
+    question = await add_question(
+        path,
+        **_valid_fields() | {"relevant_chunk_ids": ["a" * 32 + "#0001"], "relevant_entities": ["甲", "乙"], "reference_answer": "答案。"},
+    )
+
+    updated = await update_question(path, question.id, relevant_chunk_ids=["a" * 32 + "#0002"], relevant_entities=None)
+
+    assert updated.id == question.id
+    assert updated.relevant_chunk_ids == ("a" * 32 + "#0002",)
+    assert updated.relevant_entities == ("甲", "乙")  # None=保持原值
+    assert updated.query == "什么是退休年龄"
+    assert updated.category == "fact"
+    assert updated.expected_paths == ("vector",)
+    assert updated.reference_answer == "答案。"
+
+
+async def test_update_explicit_entities_replace(tmp_path) -> None:
+    path = tmp_path / "golden.jsonl"
+    question = await add_question(path, **_valid_fields() | {"relevant_entities": ["甲"]})
+
+    updated = await update_question(path, question.id, relevant_chunk_ids=[], relevant_entities=["乙"])
+
+    assert updated.relevant_entities == ("乙",)
+
+
+async def test_update_clear_anchors_unanchors(tmp_path) -> None:
+    path = tmp_path / "golden.jsonl"
+    question = await add_question(path, **_valid_fields() | {"relevant_chunk_ids": ["a" * 32 + "#0001"]})
+
+    updated = await update_question(path, question.id, relevant_chunk_ids=[])
+
+    assert updated.relevant_chunk_ids == ()
+    assert (await load_questions(path))[0].relevant_chunk_ids == ()
+
+
+async def test_update_missing_question_raises_keyerror(tmp_path) -> None:
+    path = tmp_path / "golden.jsonl"
+    await add_question(path, **_valid_fields())
+
+    with pytest.raises(KeyError):
+        await update_question(path, "q_nope0000", relevant_chunk_ids=[])
+
+
+async def test_update_runs_anchor_guard_with_ack_flag(tmp_path) -> None:
+    path = tmp_path / "golden.jsonl"
+    question = await add_question(path, **_valid_fields() | {"reference_answer": "答案。"})
+    calls: list[tuple[list[str], str | None, bool]] = []
+
+    async def guard(chunk_ids, reference_answer, ack) -> None:
+        calls.append((list(chunk_ids), reference_answer, ack))
+
+    await update_question(path, question.id, relevant_chunk_ids=["a" * 32 + "#0001"], anchor_guard=guard, anchor_ack=True)
+
+    assert calls == [(["a" * 32 + "#0001"], "答案。", True)]

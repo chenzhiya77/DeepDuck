@@ -351,3 +351,200 @@ async def test_unknown_kb_404_on_delete(service) -> None:
     client = _client(service)
 
     assert client.delete("/api/knowledge-bases/kb-missing/eval/questions/q_whatever").status_code == 404
+
+
+# ── PATCH 改锚 + 悬空派生（spec 2026-10-05 anchor-edit 对，D4=甲′）───────
+
+
+async def _seed_chunks(service: KnowledgeService, kb_id: str, doc_id: str, chunks: list[dict]) -> str:
+    await service.store.create_document(doc_id=doc_id, kb_id=kb_id, uploader_id=OWNER_ID, name="java基础.docx", size_bytes=1, storage_path="p")
+    await service.store.insert_chunks([{"chunk_id": f"{doc_id}#{index:04d}", "doc_id": doc_id, "kb_id": kb_id, "chunk_index": index, **rest} for index, rest in enumerate(chunks, start=1)])
+    return doc_id
+
+
+async def test_patch_misanchored_is_422_structured_and_ack_overrides(service) -> None:
+    """改锚同闸：贴错锚 422 回显机器依据；anchor_ack 一次性放行（①②）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(
+        service,
+        kb["id"],
+        "c" * 32,
+        [
+            {"text": "什么是自动拆箱/装箱？装箱：将基本数据类型转换为包装类型。"},
+            {"text": "Integer 会缓存 -128 到 127 的对象。"},
+        ],
+    )
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0001"], reference_answer="装箱是把基本数据类型转成包装类型。"),
+    ).json()
+
+    response = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": [f"{doc_id}#0002"]},
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["reason"] in ("mismatch", "zero_hit")
+    assert "装箱" in detail["miss_terms"]
+    assert detail["suggested_chunk"] == f"{doc_id}#0001"
+    # 拦截即不落库。
+    stored = client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["questions"][0]
+    assert stored["relevant_chunk_ids"] == [f"{doc_id}#0001"]
+
+    overridden = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": [f"{doc_id}#0002"], "anchor_ack": True},
+    )
+
+    assert overridden.status_code == 200, overridden.text
+    assert overridden.json()["relevant_chunk_ids"] == [f"{doc_id}#0002"]
+
+
+async def test_patch_dangling_anchor_blocks_even_with_ack(service) -> None:
+    """悬空锚（片不存在）无条件拦，ack 也放不过（③）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(service, kb["id"], "b" * 32, [{"text": "装箱：将基本数据类型转换为包装类型。"}])
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0001"], reference_answer="装箱是转换。"),
+    ).json()
+
+    blocked = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": [f"{doc_id}#0009"]},
+    )
+
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"]["reason"] == "missing_chunk"
+
+    still_blocked = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": [f"{doc_id}#0009"], "anchor_ack": True},
+    )
+
+    assert still_blocked.status_code == 422
+    assert still_blocked.json()["detail"]["reason"] == "missing_chunk"
+
+
+async def test_patch_shrinks_entities_to_new_anchor_vocab(service) -> None:
+    """D4=甲′ 跟锚收缩：只删失去支撑的、不新增——精选子集保住（④）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(
+        service,
+        kb["id"],
+        "d" * 32,
+        [
+            {"text": "StringBuffer 可变且线程安全。", "entities": ["String", "StringBuffer"]},
+            {"text": "StringBuffer 可变但非线程安全。", "entities": ["StringBuffer", "StringBuilder"]},
+        ],
+    )
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(
+            relevant_chunk_ids=[f"{doc_id}#0001"],
+            relevant_entities=["String", "StringBuffer"],
+            reference_answer="StringBuffer 可变。",
+        ),
+    ).json()
+
+    patched = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": [f"{doc_id}#0002"]},
+    )
+
+    assert patched.status_code == 200, patched.text
+    question = patched.json()
+    assert question["relevant_chunk_ids"] == [f"{doc_id}#0002"]
+    # String 失去支撑被删；StringBuilder 不在旧实体里=不新增。
+    assert question["relevant_entities"] == ["StringBuffer"]
+
+
+async def test_patch_keeps_other_fields_untouched(service) -> None:
+    """改锚只动锚（+实体收缩）：题面/分类/路径/参考答案原样钉死（⑤）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(service, kb["id"], "e" * 32, [{"text": "装箱：转换。"}, {"text": "拆箱：逆转换。"}])
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(
+            query="什么是装箱",
+            category="relation",
+            expected_paths=["vector", "graph"],
+            relevant_chunk_ids=[f"{doc_id}#0001"],
+            reference_answer="装箱：转换。",
+        ),
+    ).json()
+
+    patched = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": [f"{doc_id}#0002"]},
+    )
+
+    assert patched.status_code == 200, patched.text
+    question = patched.json()
+    assert question["query"] == "什么是装箱"
+    assert question["category"] == "relation"
+    assert question["expected_paths"] == ["vector", "graph"]
+    assert question["reference_answer"] == "装箱：转换。"
+
+
+async def test_patch_unknown_question_404(service) -> None:
+    client = _client(service)
+    kb = _create_kb(client)
+
+    response = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/q_nope0000",
+        json={"relevant_chunk_ids": []},
+    )
+
+    assert response.status_code == 404
+
+
+async def test_patch_clear_anchors_unanchors_and_shrinks_entities(service) -> None:
+    """清空勾选=解除锚定（⑧）；实体跟锚收缩到空词表=清空。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(service, kb["id"], "f" * 32, [{"text": "装箱：转换。", "entities": ["装箱"]}])
+    created = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0001"], relevant_entities=["装箱"], reference_answer="装箱：转换。"),
+    ).json()
+
+    patched = client.patch(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions/{created['id']}",
+        json={"relevant_chunk_ids": []},
+    )
+
+    assert patched.status_code == 200, patched.text
+    question = patched.json()
+    assert question["relevant_chunk_ids"] == []
+    assert question["relevant_entities"] == []
+
+
+async def test_list_marks_missing_chunk_ids_three_states(service) -> None:
+    """读时派生 missing_chunk_ids：悬空/存活/无锚三态（⑦）。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    doc_id = await _seed_chunks(service, kb["id"], "a" * 32, [{"text": "装箱：转换。"}, {"text": "拆箱：逆转换。"}])
+    live = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0001"], reference_answer="装箱：转换。"),
+    ).json()
+    dying = client.post(
+        f"/api/knowledge-bases/{kb['id']}/eval/questions",
+        json=_valid_body(relevant_chunk_ids=[f"{doc_id}#0002"], reference_answer="拆箱：逆转换。"),
+    ).json()
+    client.post(f"/api/knowledge-bases/{kb['id']}/eval/questions", json=_valid_body(query="无锚题"))
+
+    await service.store.delete_chunk(f"{doc_id}#0002")
+
+    rows = {row["id"]: row for row in client.get(f"/api/knowledge-bases/{kb['id']}/eval/questions").json()["questions"]}
+    assert rows[live["id"]]["missing_chunk_ids"] == []
+    assert rows[dying["id"]]["missing_chunk_ids"] == [f"{doc_id}#0002"]
+    unanchored = [row for row in rows.values() if row["query"] == "无锚题"][0]
+    assert unanchored["missing_chunk_ids"] == []

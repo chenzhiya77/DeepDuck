@@ -27,10 +27,10 @@
 
 > 动到的文件：`eval/question_bank.py` / `app/gateway/services/knowledge_service.py` / `app/gateway/routers/knowledge_bases.py` / `tests/knowledge/eval/…` + `tests/knowledge/test_eval_questions_api.py`
 
-- [ ] RED 用例（红=今天无 update 口/无闸）：①贴错锚改锚被拦（422 结构化 detail）②`anchor_ack=true` 放行（术语级）③悬空锚提交被拦**且 ack 放不过** ④合法改锚 200、实体**跟锚收缩**（失去支撑者删、不新增——精选子集保住）⑤题面/分类/路径/参考答案原样钉死 ⑥question_id 不存在 → KeyError/404 ⑦list 响应 `missing_chunk_ids` 悬空/存活/无锚三态 ⑧清空勾选=解除锚定（落库为空数组）。
-- [ ] GREEN：`question_bank.update_question`（同 `_lock` 读改写、`_atomic_write`）+ `service.update_eval_question`（一次 `get_chunks_by_ids` 喂 `build_anchor_guard` + 实体收缩）+ router `PATCH /{kb_id}/eval/questions/{question_id}`（过 `_require_kb_access` 同权；body：`relevant_chunk_ids` + `anchor_ack?`；422 映射复用 `AnchorMismatchError` 分支）+ `list_eval_questions` 派生 `missing_chunk_ids`。
-- [ ] neuter：①update 拆 guard ⇒ 贴错例红 ②拆实体收缩（改全覆盖）⇒ 精选被冲例红 ③派生改恒空 ⇒ 标记例红——各一次反证后还原。
-- [ ] 门禁（eval 面 + knowledge API 面）+ `ruff check`/`ruff format --check` 双净。
+- [x] RED 用例（红=今天无 update 口/无闸）：①贴错锚改锚被拦（422 结构化 detail）②`anchor_ack=true` 放行（术语级）③悬空锚提交被拦**且 ack 放不过** ④合法改锚 200、实体**跟锚收缩**（失去支撑者删、不新增——精选子集保住）⑤题面/分类/路径/参考答案原样钉死 ⑥question_id 不存在 → KeyError/404 ⑦list 响应 `missing_chunk_ids` 悬空/存活/无锚三态 ⑧清空勾选=解除锚定（落库为空数组）。**实测红 12**：API 7 红 + 单测收集红 1（`update_question` 未建，含 5 用例）；18 旧例过=零受害者。
+- [x] GREEN：`question_bank.update_question`（同 `_lock` 读改写、`_atomic_write`、guard 用存库答案对新锚跑）+ `service.update_eval_question`（一次 `get_chunks_by_ids` 喂 `build_anchor_guard` + 实体收缩=旧实体∩新锚词汇表）+ router `PATCH /{kb_id}/eval/questions/{question_id}`（`EvalQuestionUpdateRequest` extra=forbid；过 `_require_kb_access`；404/422 结构化/422 字段串/500 四分支）+ `list_eval_questions` 派生 `missing_chunk_ids`（锚 id 并集一次取行）。**46 绿/0 红**。
+- [x] neuter：①update 拆 guard ⇒ 贴错例+悬空例恰 2 红 ②拆实体收缩（改全覆盖）⇒ 精选被冲例恰 1 红 ③派生改恒空 ⇒ 标记例恰 1 红——各一次反证后还原复绿。
+- [x] 门禁（eval 面 + knowledge API 面）：knowledge 全面 **1595 绿/4 环境红**（缺 key 对+parser 两条预存账，零新增）+ `ruff check`/`ruff format --check` 双净。
 
 ## Task 2 — 前端：抽屉可见 + 改锚面 + 行级标
 

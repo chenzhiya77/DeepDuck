@@ -118,6 +118,52 @@ async def add_question(
         return question
 
 
+async def update_question(
+    path: str | Path,
+    question_id: str,
+    *,
+    relevant_chunk_ids: Sequence[str],
+    relevant_entities: Sequence[str] | None = None,
+    anchor_guard: Callable[[Sequence[str], str | None, bool], Awaitable[None]] | None = None,
+    anchor_ack: bool = False,
+) -> GoldenQuestion:
+    """Rewrite one question's anchors; returns the updated question (KeyError when absent).
+
+    与 ``add_question`` 并列的第二写入口（spec 2026-10-05 anchor-edit 对）：
+    只动锚（+可选实体），题面/分类/预期路径/参考答案原样保留；清空
+    ``relevant_chunk_ids`` = 解除锚定（与添加框无锚题同态）。``relevant_entities``
+    为 ``None`` 保持原值。guard 注入形状与 ``add_question`` 一致（默认 None=不拦），
+    核验用**存库的** ``reference_answer`` 对新锚跑。
+    """
+
+    path = Path(path)
+    async with _lock(path):
+        existing = await load_questions(path)
+        target = next((question for question in existing if question.id == question_id), None)
+        if target is None:
+            raise KeyError(question_id)
+
+        raw: dict[str, Any] = {
+            "id": target.id,
+            "query": target.query,
+            "category": target.category,
+            "expected_paths": list(target.expected_paths),
+            "relevant_chunk_ids": list(relevant_chunk_ids),
+            "relevant_entities": list(target.relevant_entities if relevant_entities is None else relevant_entities),
+            "reference_answer": target.reference_answer,
+        }
+        try:
+            question = validate_question(raw)
+        except GoldenDatasetError as exc:
+            raise QuestionBankInvalidQuestion(str(exc)) from exc
+
+        if anchor_guard is not None:
+            await anchor_guard(list(relevant_chunk_ids), question.reference_answer, anchor_ack)
+
+        _atomic_write(path, [question if item.id == question_id else item for item in existing])
+        return question
+
+
 async def delete_question(path: str | Path, question_id: str) -> str:
     """Remove one question by id; returns the removed id (KeyError when absent)."""
 

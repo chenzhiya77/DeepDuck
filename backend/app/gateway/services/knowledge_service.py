@@ -1520,7 +1520,16 @@ class KnowledgeService:
 
     async def list_eval_questions(self, kb_id: str) -> dict[str, Any]:
         questions = await question_bank.load_questions(self._golden_path(kb_id))
-        return {"questions": [asdict(question) for question in questions], "total": len(questions)}
+        rows = [asdict(question) for question in questions]
+        # 悬空派生（spec 2026-10-05 anchor-edit 对 D1=甲）：读时现算不落盘——
+        # 全部锚 id 并集一次取行，缺行即悬空（重切片/删片的静默失效由此可见）。
+        anchor_ids = list(dict.fromkeys(chunk_id for question in questions for chunk_id in question.relevant_chunk_ids))
+        present: set[str] = set()
+        if anchor_ids:
+            present = {row["chunk_id"] for row in await self.store.get_chunks_by_ids(anchor_ids, kb_id=kb_id)}
+        for row, question in zip(rows, questions):
+            row["missing_chunk_ids"] = [chunk_id for chunk_id in question.relevant_chunk_ids if chunk_id not in present]
+        return {"questions": rows, "total": len(rows)}
 
     async def create_eval_question(
         self,
@@ -1561,6 +1570,41 @@ class KnowledgeService:
 
     async def delete_eval_question(self, kb_id: str, question_id: str) -> None:
         await question_bank.delete_question(self._golden_path(kb_id), question_id)
+
+    async def update_eval_question(
+        self,
+        kb_id: str,
+        question_id: str,
+        *,
+        relevant_chunk_ids: Collection[str],
+        anchor_ack: bool = False,
+    ) -> dict[str, Any]:
+        """改锚（spec 2026-10-05 anchor-edit 对）：与 create 同一道锚定核验 +
+        实体跟锚收缩（D4=甲′）。一次取行喂两处。"""
+        rows = await self.store.get_chunks_by_ids(list(relevant_chunk_ids), kb_id=kb_id) if relevant_chunk_ids else []
+        current = next(
+            (question for question in await question_bank.load_questions(self._golden_path(kb_id)) if question.id == question_id),
+            None,
+        )
+        if current is None:
+            raise KeyError(question_id)
+        # 跟锚收缩：旧实体 ∩ 新锚实体词汇表——只删失去支撑的、不新增（合成题
+        # 精选子集保住；实体编辑不进本端点，改锚只是不让标注与锚脱钩）。
+        supported = set(synthesis.chunk_entities_union(rows))
+        shrunk = [name for name in current.relevant_entities if name in supported]
+        question = await question_bank.update_question(
+            self._golden_path(kb_id),
+            question_id,
+            relevant_chunk_ids=relevant_chunk_ids,
+            relevant_entities=shrunk,
+            anchor_guard=anchor_check.build_anchor_guard(
+                self.store,
+                kb_id,
+                anchor_texts={row["chunk_id"]: row.get("text") or "" for row in rows},
+            ),
+            anchor_ack=anchor_ack,
+        )
+        return asdict(question)
 
     # ── question synthesis（spec 2026-08-28 §6）───────────────────────
 
