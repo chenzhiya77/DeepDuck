@@ -415,4 +415,29 @@ describe("EvalQuestionDrawer 改锚（B′）", () => {
     expect(docPageUrls.some((url) => url.includes("offset=0") && url.includes("limit=50"))).toBe(true);
     expect(docPageUrls.some((url) => url.includes("offset=3") && url.includes("limit=50"))).toBe(true);
   });
+
+  it("编辑态悬空锚单列可摘除行（否则悬空题死锁：草稿含缺片、missing_chunk 恒拦）", async () => {
+    // CHUNK_C 悬空（取数静默缺它）；选片区须给它一行（序号徽章 + 「悬空」+
+    // 勾选框），摘除后提交体不含该片。缺这行 = 悬空锚在草稿里无从去掉。
+    state.chunksByIds = [
+      chunk(CHUNK_A, "甲片一正文", "文档甲"),
+      chunk(CHUNK_B, "乙片正文", "文档乙"),
+    ];
+    state.docPages = {
+      [DOC_A]: { items: [chunk(CHUNK_A, "甲片一正文", "文档甲")], total: 1 },
+      [DOC_B]: { items: [chunk(CHUNK_B, "乙片正文", "文档乙")], total: 1 },
+      [DOC_C]: { items: [], total: 0 },
+    };
+    state.updateResponses = [jsonResponse(200, { ...Q_ANCHORED, relevant_chunk_ids: [CHUNK_A, CHUNK_B] })];
+    renderDrawer(Q_ANCHORED);
+    enterEdit();
+
+    const row = await screen.findByRole("checkbox", { name: /悬空/ });
+    expect(row.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(row);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(patchBodies()).toHaveLength(1));
+    expect(patchBodies()[0]?.relevant_chunk_ids).toEqual([CHUNK_A, CHUNK_B]);
+  });
 });

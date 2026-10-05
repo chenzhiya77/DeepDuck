@@ -14,7 +14,9 @@
  * （不传 onEdit/onDelete/onReExtract，与改锚编辑态避免两套编辑口）；一次
  * listChunksByIds 同时供正文预览与悬空判定（请求集 − 返回集 = 悬空，服务端
  * 静默丢缺片）；序号徽章保留（chunk id 稳定身份，非切片抽屉位置序）；悬空的
- * 片单列一行警示（序号徽章 + 「悬空」词）。只读态只显已锚定的片。
+ * 片单列一行警示（序号徽章 + 「悬空」词），编辑态同样单列且带勾选框——摘除
+ * 是悬空锚唯一的出路，缺这行草稿就永远带着缺片、missing_chunk 恒拦。只读态
+ * 只显已锚定的片。
  * 「编辑锚定」入口（spec §2③）：按文档折叠分组勾选区——组头 = 文档名 +
  * 「已选 n/N」（实时）、默认收起（含已锚片的文档默认展开）、组内 = 该文档
  * 全部切片（内容摘要行 + 勾选框，已锚默认勾上）、组内分页 50/页加载更多
@@ -150,6 +152,11 @@ export function EvalQuestionDrawer({
   });
   const chunkById = new Map(
     (chunksQuery.data ?? []).map((chunk) => [chunk.chunk_id, chunk]),
+  );
+  // 悬空锚集（与读态同一差额口径）。编辑态草稿仍含这些 id，选片区须单列
+  // 可摘除行——否则悬空题死锁（草稿带着缺片、missing_chunk 恒拦、无从去掉）。
+  const danglingIds = new Set(
+    chunksQuery.data !== undefined ? anchorIds.filter((id) => !chunkById.has(id)) : [],
   );
 
   // ── 改锚编辑态（spec §2③）：草稿勾选集 + 按文档折叠分组的分页缓存。 ──
@@ -428,6 +435,34 @@ export function EvalQuestionDrawer({
                                     </span>
                                   </label>
                                 ))}
+                                {/* 悬空锚草稿行（读态警示行的可摘除版）。 */}
+                                {draft
+                                  .filter(
+                                    (id) =>
+                                      id.startsWith(`${doc.id}#`) && danglingIds.has(id),
+                                  )
+                                  .map((id) => (
+                                    <label
+                                      className="flex cursor-pointer items-start gap-2 py-0.5"
+                                      key={id}
+                                    >
+                                      <Checkbox
+                                        checked
+                                        onCheckedChange={() => toggleDraft(id)}
+                                      />
+                                      <span className="flex items-center gap-1.5 text-xs">
+                                        <Badge
+                                          className="font-mono text-[10px]"
+                                          variant="destructive"
+                                        >
+                                          #{id.split("#")[1]}
+                                        </Badge>
+                                        <span className="text-destructive">
+                                          {qtk.danglingBadge}
+                                        </span>
+                                      </span>
+                                    </label>
+                                  ))}
                                 {page.items.length < page.total && (
                                   <Button
                                     disabled={page.loading}
