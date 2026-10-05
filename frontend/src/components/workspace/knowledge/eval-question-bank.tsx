@@ -156,7 +156,7 @@ export function EvalQuestionBank({
   // 与总览同 queryKey（useMetricsOverview），无新端点无新请求。
   const overview = useMetricsOverview(kbId, enabled);
 
-  const [drawerQuestion, setDrawerQuestion] = useState<EvalQuestion | null>(null);
+  const [drawerQuestionId, setDrawerQuestionId] = useState<string | null>(null);
   // 删除目标改数组（2026-09-02）：行内删除/drawer 删除 = 单元素，
   // 右键「删除所选」= 选中集；同一二次确认对话框承接。
   const [deleteTargets, setDeleteTargets] = useState<EvalQuestion[] | null>(null);
@@ -167,6 +167,13 @@ export function EvalQuestionBank({
   const visibleQuestions = trimmedSearch
     ? allQuestions.filter((question) => question.query.toLowerCase().includes(trimmedSearch))
     : allQuestions;
+
+  // drawer 题目按 id 从列表现取（2026-10-06 改锚对）：改锚保存成功后题库缓存
+  // 失效重拉，抽屉随之拿到新锚定集/悬空派生——不留陈旧副本。
+  const drawerQuestion =
+    drawerQuestionId !== null
+      ? (allQuestions.find((question) => question.id === drawerQuestionId) ?? null)
+      : null;
 
   // 数据刷新后剔除已不存在的选中（删除/刷新不残留幽灵选择）。
   useEffect(() => {
@@ -197,12 +204,14 @@ export function EvalQuestionBank({
   // 题库无可隐藏列，该钮只承接排序。初始 default：不默默重排既有视图。
   const [sort, setSort] = useState<{ key: QuestionSortKey; direction: SortDirection }>({ key: "default", direction: "asc" });
 
-  // 菜单项标签全量复用列头词汇（零新词）：召回键随 top_k 动态（召回率@5）。
+  // 菜单项标签复用列头词汇（召回键随 top_k 动态，召回率@5）；refDocs 例外
+  // （2026-10-06 列口径改造）：比较器按去重文档数落（跨文档广度），与格子
+  // 显示的切片数不同轴——label 明义那根轴叫「文档数」。
   const sortOptions: { key: QuestionSortKey; label: string }[] = [
     { key: "default", label: qtk.sortDefault },
     { key: "query", label: qtk.columnQuery },
     { key: "category", label: qtk.columnCategory },
-    { key: "refDocs", label: qtk.columnRefDocs },
+    { key: "refDocs", label: qtk.sortDocsCount },
     { key: "recall", label: etk.tableRecallAtK(overview.data?.layer1?.metrics.top_k ?? null) },
   ];
 
@@ -217,6 +226,8 @@ export function EvalQuestionBank({
           // 按显示名排（非 wire 键）：用户看到什么就按什么排。
           return etk.category[question.category];
         case "refDocs":
+          // 排序轴 = 去重文档数（跨文档广度——哪些题锚跨多篇即综合题）；
+          // 2026-10-06 他裁保篇序，比较器不随格子显示的切片数改。
           return refDocIds(question.relevant_chunk_ids).length;
         case "recall":
           return questionMetrics.get(question.id)?.recall ?? null;
@@ -326,9 +337,10 @@ export function EvalQuestionBank({
               </TableHead>
               <TableHead className={`${STICKY_HEAD} px-2 text-xs`}>{qtk.columnQuery}</TableHead>
               <TableHead className={`${STICKY_HEAD} px-2 text-xs`}>{qtk.columnCategory}</TableHead>
-              {/* 参考文档列头（2026-09-07）：数值列右对齐，与文档 tab 数值列
-                  （text-right tabular-nums）同轴语言。 */}
-              <TableHead className={`${STICKY_HEAD} px-2 text-right text-xs`}>{qtk.columnRefDocs}</TableHead>
+              {/* 参考切片列头（2026-10-06 列口径改造：单位进表头、格子纯数字
+                  = 切片数）：数值列右对齐，与文档 tab 数值列（text-right
+                  tabular-nums）同轴语言。 */}
+              <TableHead className={`${STICKY_HEAD} px-2 text-right text-xs`}>{qtk.columnRefChunks}</TableHead>
               {/* 召回率@k 列头（2026-09-07 表头重设计）：复用总览既有指标词汇
                   （零新词），时间口径进 ⓘ tooltip——同总览「表头=指标名、
                   tooltip=口径解释」模式；数值列右对齐与数据同轴。 */}
@@ -403,7 +415,7 @@ export function EvalQuestionBank({
                   行间，一并收掉）。 */}
               <TableRow
                 className="group cursor-pointer border-0"
-                onClick={() => setDrawerQuestion(question)}
+                onClick={() => setDrawerQuestionId(question.id)}
                 onContextMenu={() => handleRowContextMenu(question.id)}
               >
                 {/* 选题复选框（B 方案）：单元格 stopPropagation，勾选不开详情 drawer；
@@ -416,28 +428,51 @@ export function EvalQuestionBank({
                     onCheckedChange={(checked) => toggleQuestion(question.id, checked === true)}
                   />
                 </TableCell>
-                <TableCell className="max-w-52 truncate px-2 py-2" title={question.query}>
-                  {question.query}
+                <TableCell className="max-w-52 px-2 py-2">
+                  {/* 悬浮统一（2026-10-06）：原生 title 换项目 Tooltip（与文档名
+                      tooltip 同款 Radix 主题样式）。 */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="block truncate cursor-default">
+                        {question.query}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-60 text-pretty">
+                      {question.query}
+                    </TooltipContent>
+                  </Tooltip>
                 </TableCell>
                 <TableCell className="px-2 py-2">
                   {/* 胶囊盒体与列网格线齐线（2026-09-08 八轮用户纠正，历史表环境
                       列同款）：-ml-2 退役——盒体边缘才是对齐主体。 */}
                   <Badge variant="outline">{etk.category[question.category]}</Badge>
                 </TableCell>
-                {/* 参考文档列（2026-09-07）：计数+单位消歧义（篇 vs 切片 vs 实体）；
-                    hover 列文档标题，chunk 级分解进抽屉；无锚定题空单元格，与
-                    召回列 — 互相呼应（无锚定题不参与命中率计算）。 */}
+                {/* 参考切片格（2026-10-06 列口径改造：数字与中文量词不在数值格
+                    混排）：纯数字 = 切片数（与抽屉「N 切片」徽章同数同口径）；
+                    hover 仍列文档名（篇数 = 列表行数，不再单列）。悬空徽章
+                    （spec §2②）：missing_chunk_ids 非空才显、纯词无数字无图标
+                    （对齐「检测到回退」先例）；无锚定题空单元格，与召回列 —
+                    互相呼应（无锚定题不参与命中率计算）。 */}
                 <TableCell className="px-2 py-2 text-right tabular-nums">
-                  {docIds.length > 0 && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="cursor-default">{qtk.refDocsCount(docIds.length)}</span>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-60 text-pretty whitespace-pre-wrap">
-                        {docIds.map(docTitle).join("\n")}
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
+                  <span className="inline-flex items-center justify-end gap-1.5">
+                    {question.relevant_chunk_ids.length > 0 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-default">
+                            {question.relevant_chunk_ids.length}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-60 text-pretty whitespace-pre-wrap">
+                          {docIds.map(docTitle).join("\n")}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {(question.missing_chunk_ids?.length ?? 0) > 0 && (
+                      <Badge className="shrink-0 px-1.5 text-[10px]" variant="destructive">
+                        {qtk.danglingBadge}
+                      </Badge>
+                    )}
+                  </span>
                 </TableCell>
                 {/* 召回率@k 列（2026-09-07）：跨 run 合并的逐题最近结果（三态点+
                     百分比）；未测显 —；单元格 tooltip 带实际路径（未命中时即
@@ -582,11 +617,11 @@ export function EvalQuestionBank({
       <EvalQuestionDrawer
         kbId={kbId}
         onDelete={(question) => {
-          setDrawerQuestion(null);
+          setDrawerQuestionId(null);
           setDeleteTargets([question]);
         }}
         onOpenChange={(open) => {
-          if (!open) setDrawerQuestion(null);
+          if (!open) setDrawerQuestionId(null);
         }}
         onReproduce={onReproduce}
         open={drawerQuestion !== null}

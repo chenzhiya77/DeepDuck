@@ -252,8 +252,8 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
         <ScrollArea className="min-h-0 flex-1" scrollHideDelay={2000} type="scroll">
           <div className="flex flex-col gap-2 p-3">
             {candidates.map((candidate) => {
-              // 参考文档计数（2026-09-08）：与题库参考文档列同语言（N 篇 +
-              // tooltip 列标题，切片级分解属下钻层）——候选卡采纳后就是题库
+              // 参考切片计数（2026-10-06 列口径改造）：与题库参考切片列同语言
+              // （纯数字 = 切片数 + tooltip 列文档名）——候选卡采纳后就是题库
               // 行，采纳前后同一单位；无锚定候选空单元格。
               const docIds = refDocIds(candidate.relevant_chunk_ids);
               // B′：本卡拦截红块（key = candidate_id），渲染在动作行正下方。
@@ -276,7 +276,9 @@ export function EvalSynthesisReview({ kbId, enabled = true }: EvalSynthesisRevie
                   {docIds.length > 0 && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <span className="text-muted-foreground cursor-default text-xs">{qtk.refDocsCount(docIds.length)}</span>
+                        <span className="text-muted-foreground cursor-default text-xs tabular-nums">
+                          {candidate.relevant_chunk_ids.length}
+                        </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-60 text-pretty whitespace-pre-wrap">
                         {docIds.map(docTitle).join("\n")}

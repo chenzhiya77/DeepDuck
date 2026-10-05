@@ -24,6 +24,7 @@ rs.mock("@/core/knowledge/api", () => ({
   listEvalQuestions: rs.fn(),
   createEvalQuestion: rs.fn(),
   deleteEvalQuestion: rs.fn(),
+  updateEvalQuestion: rs.fn(),
   listEvalRuns: rs.fn(),
   triggerEvalRun: rs.fn(),
   triggerQuestionSynthesis: rs.fn(),
@@ -59,6 +60,7 @@ import {
   useSynthesisStatus,
   useTriggerEvalRun,
   useTriggerSynthesis,
+  useUpdateEvalQuestion,
   useUploadDocument,
 } from "@/core/knowledge/hooks";
 import { synthesisRefetchInterval } from "@/core/knowledge/synthesis-status";
@@ -451,6 +453,32 @@ describe("评测二期数据 hooks（plan Task 4）", () => {
     });
 
     expect(rs.mocked(api.createEvalQuestion).mock.calls[0]?.[0]).toEqual("kb-1");
+    await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it("update mutation routes the anchor body and invalidates the questions cache", async () => {
+    rs.mocked(api.updateEvalQuestion).mockResolvedValue({
+      id: "q_ab12cd34",
+      query: "题目",
+      category: "fact",
+      expected_paths: ["vector"],
+      relevant_chunk_ids: ["doc-1#0001"],
+      relevant_entities: [],
+      reference_answer: null,
+    });
+    const queryClient = freshQueryClient();
+    const wrapper = createWrapper(queryClient);
+    const list = renderHook(() => useEvalQuestions("kb-1", true), { wrapper });
+    await waitFor(() => expect(list.result.current.isSuccess).toBe(true));
+
+    const update = renderHook(() => useUpdateEvalQuestion("kb-1"), { wrapper });
+    await update.result.current.mutateAsync({
+      questionId: "q_ab12cd34",
+      body: { relevant_chunk_ids: ["doc-1#0001"] },
+    });
+
+    expect(api.updateEvalQuestion).toHaveBeenCalledWith("kb-1", "q_ab12cd34", { relevant_chunk_ids: ["doc-1#0001"] });
+    // 改锚成功 → 题库缓存失效（行级切片数/悬空徽章即时收敛）。
     await waitFor(() => expect(api.listEvalQuestions).toHaveBeenCalledTimes(2));
   });
 

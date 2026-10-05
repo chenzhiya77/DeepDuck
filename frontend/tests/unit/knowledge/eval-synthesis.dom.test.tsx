@@ -208,10 +208,11 @@ describe("EvalSynthesisReview（审核面板）", () => {
     expect(screen.getByText("关系")).toBeTruthy();
     expect(screen.getAllByText("vector").length).toBe(2);
     expect(screen.getByText("graph")).toBeTruthy();
-    // 参考文档计数与题库参考文档列同语言（N 篇；CAND_2 两切片同文档 → 1 篇）；
-    // 切片计数退役（配置噪声，分解属下钻层）。
-    expect(screen.getAllByText("1 篇")).toHaveLength(2);
-    expect(screen.queryByText(/切片/)).toBeNull();
+    // 参考切片计数与题库参考切片列同语言（2026-10-06 列口径改造：纯数字 =
+    // 切片数，无量词混排；CAND_2 两切片同文档仍显 2——采纳前后同一单位）。
+    expect(screen.getByText("1")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.queryByText(/篇/)).toBeNull();
     expect(screen.getByText("String 是不可变类型。")).toBeTruthy();
     // 计数徽章带单位（替换原裸数字）；丢弃 >0 显琥珀芯片，原因沉 tooltip。
     expect(screen.getByText("2 条待审")).toBeTruthy();

@@ -29,6 +29,7 @@ import {
   projectVectorQuery,
   reindexKnowledgeBase,
   retryDocument,
+  updateEvalQuestion,
   updateKnowledgeBase,
   uploadDocument,
 } from "@/core/knowledge/api";
@@ -116,6 +117,44 @@ describe("knowledge-base endpoints", () => {
   test("surfaces backend detail on failure", async () => {
     mockedFetch.mockResolvedValueOnce(jsonResponse(403, { detail: "你没有访问该知识库的权限" }));
     await expect(listKnowledgeBases()).rejects.toThrow("你没有访问该知识库的权限");
+  });
+
+  // ── 改锚（2026-10-06 改锚对，spec §2③）：PATCH 契约 + B′ 结构化 422 ──
+
+  test("updateEvalQuestion PATCHes the anchor-only body and parses the updated question", async () => {
+    const question = {
+      id: "q_ab12cd34",
+      query: "装箱与拆箱的区别？",
+      category: "fact",
+      expected_paths: ["vector"],
+      relevant_chunk_ids: ["doc-1#0001"],
+      relevant_entities: ["装箱"],
+      reference_answer: "答案",
+    };
+    mockedFetch.mockResolvedValueOnce(jsonResponse(200, question));
+    const result = await updateEvalQuestion("kb-1", "q_ab12cd34", { relevant_chunk_ids: ["doc-1#0001"] });
+    const [url, init] = mockedFetch.mock.calls[0]!;
+    expect(url).toBe("http://gw/api/knowledge-bases/kb-1/eval/questions/q_ab12cd34");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({ relevant_chunk_ids: ["doc-1#0001"] });
+    expect(result).toEqual(question);
+  });
+
+  test("updateEvalQuestion surfaces the structured anchor block on 422 (AnchorBlockError)", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(422, {
+        detail: { reason: "zero_hit", miss_terms: ["装箱"], hits: 0, best_hits: 3, suggested_chunk: "doc-1#0002" },
+      }),
+    );
+    await expect(
+      updateEvalQuestion("kb-1", "q_ab12cd34", { relevant_chunk_ids: ["doc-1#0003"], anchor_ack: true }),
+    ).rejects.toThrow("anchor check failed: zero_hit");
+    // 确认重提才携带 anchor_ack=true（B′ 复检键语义钉在请求体上）。
+    const [, init] = mockedFetch.mock.calls[0]!;
+    expect(JSON.parse(init?.body as string)).toEqual({
+      relevant_chunk_ids: ["doc-1#0003"],
+      anchor_ack: true,
+    });
   });
 });
 

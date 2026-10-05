@@ -722,6 +722,13 @@ export interface EvalQuestion {
   relevant_chunk_ids: string[];
   relevant_entities: string[];
   reference_answer: string | null;
+  /**
+   * 悬空锚（2026-10-06 改锚对，spec §2②）：`relevant_chunk_ids` 里在该库
+   * `chunks` 表已不存在的切片 id（重切片序号移位 / 切片被删）。响应派生
+   * 字段——读时计算、不落盘、**不进 golden.jsonl**；旧网关无此键（缺省
+   * = 不做声明），行级「悬空」徽章只在非空时渲染。
+   */
+  missing_chunk_ids?: string[];
 }
 
 /** POST /eval/questions 请求体：锚定字段缺省即空数组。 */
@@ -734,6 +741,17 @@ export interface EvalQuestionCreateInput {
   relevant_entities?: string[];
   reference_answer?: string | null;
   /** B′ 锚定确认（2026-10-05）：机器核验拦截后的「仍要入库」覆盖开关，缺省 false。 */
+  anchor_ack?: boolean;
+}
+
+/**
+ * PATCH /eval/questions/{id} 请求体（2026-10-06 改锚对，spec §2③）：**只动锚**
+ * （relevant_chunk_ids；实体由服务端跟锚收缩，题面/分类/路径/参考答案不动）。
+ * 清空数组 = 解除锚定（合法）。anchor_ack 同 B′ 口径：原「保存」永不携带
+ * （请求体不带该键），仅红块内「仍要保存」置 true；missing_chunk 不可覆盖。
+ */
+export interface EvalQuestionUpdateInput {
+  relevant_chunk_ids: string[];
   anchor_ack?: boolean;
 }
 

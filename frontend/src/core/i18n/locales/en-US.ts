@@ -756,13 +756,15 @@ export const enUS: Translations = {
         columnQuery: "Question",
         columnCategory: "Category",
         columnRefDocs: "Ref docs",
-        refDocsCount: (count: number) => `${count} docs`,
+        columnRefChunks: "Ref chunks",
         columnRecallNote:
           "Share of this question's reference chunks hit in the most recent run that included it (merged across runs); untested questions show —",
         sortDefault: "Default order",
+        sortDocsCount: "Docs",
         recallTip: (percent: string, path: string) => `Recall ${percent} · actual ${path}`,
         recallUntested: "Not tested or not in the latest run",
         unanchored: "Unanchored",
+        danglingBadge: "Dangling",
         addQuestion: "Add question",
         emptyBank:
           "No questions yet — tick the right chunks in the recall test panel to save one in a click",
@@ -797,6 +799,13 @@ export const enUS: Translations = {
         answerSection: "Reference answer",
         entitiesSection: "Entities",
         drawerChunksCount: (count: number) => `${count} chunks`,
+        anchorEdit: {
+          button: "Edit anchors",
+          selected: (selected: number, total: number) => `Selected ${selected}/${total}`,
+          loadMore: "Load more",
+          save: "Save",
+          cancel: "Cancel",
+        },
         addedToast: "Question added",
         deletedToast: "Question deleted",
       },
@@ -906,6 +915,7 @@ export const enUS: Translations = {
         hits: "hits",
         confirmSave: "Save anyway",
         confirmAccept: "Accept anyway",
+        confirmUpdate: "Save anyway",
       },
     },
     vectorSpace: {

@@ -1,11 +1,12 @@
 /**
- * 题库视图契约测试（2026-08-27 spec §4，plan Task 6）：
- * - 表格三态（loading / 失败 / 数据）与参考文档列推导（去重文档计数 / 无锚定空单元格）；
+ * 题库视图契约测试（2026-08-27 spec §4，plan Task 6；2026-10-06 改锚对列口径）：
+ * - 表格三态（loading / 失败 / 数据）与参考切片列口径（纯数字 = 切片数、
+ *   无量词混排；纯词「悬空」徽章仅 missing_chunk_ids 非空的行显）；
  * - 召回率@k 列三态点+百分比（最近一次 run 逐题 slim 指标 join）与未测 —；
  * - 行点击开详情 drawer；操作列 ↗/🗑 stopPropagation；
  * - 删除二次确认：取消不调 mutation，确认调并发成功 toast；
  * - 添加 dialog：必填校验、提交体不含锚定键（后端补空数组，spec §4.4）；
- * - 详情 drawer：字段全量渲染、无参考答案降级、复现/删除回调。
+ * - 问题列悬浮走项目 Tooltip（断言无原生 title 属性）。
  *
  * hooks 经 mock 注入（对齐 eval-tab.dom.test 先例）；drawer mock 记录 props；
  * 添加 dialog 与详情 drawer 在独立 describe 内渲染真实组件直测。
@@ -94,6 +95,19 @@ const Q_UNTESTED: EvalQuestion = {
   relevant_chunk_ids: [],
   relevant_entities: [],
   reference_answer: null,
+};
+
+/** 悬空锚题（2026-10-06 spec §2②）：missing_chunk_ids 非空 → 行级「悬空」徽章。
+    同文档两切片：格子显切片数 2（旧「N 篇」口径 = 1）——单位换轴的钉子。 */
+const Q_DANGLING: EvalQuestion = {
+  id: "q_55555555",
+  query: "带悬空锚的考题",
+  category: "concept",
+  expected_paths: ["vector"],
+  relevant_chunk_ids: [CHUNK_A, "a".repeat(32) + "#0002"],
+  relevant_entities: [],
+  reference_answer: null,
+  missing_chunk_ids: ["a".repeat(32) + "#0002"],
 };
 
 function questionsState(questions: EvalQuestion[]): { data: EvalQuestionListResponse } {
@@ -187,35 +201,61 @@ describe("EvalQuestionBank 表格", () => {
     expect(screen.queryByRole("button", { name: /添加考题/ })).toBeNull();
   });
 
-  it("行渲染与参考文档列推导（去重文档计数 / 无锚定空单元格）", () => {
-    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_UNANCHORED, Q_ANCHORED]) });
+  it("行渲染与参考切片列（2026-10-06 列口径：纯数字=切片数；纯词「悬空」徽章仅悬空题显）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({
+      isLoading: false,
+      error: null,
+      ...questionsState([Q_UNANCHORED, Q_ANCHORED, Q_DANGLING]),
+    });
     renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     expect(screen.getByText("未锚定的考题")).toBeTruthy();
     expect(screen.getByText("锚定了三个切片的考题")).toBeTruthy();
-    // 参考文档列：Q_ANCHORED 三切片来自三个不同文档 → 3 篇（同文档多切片算 1 篇）。
+    // 参考切片格（2026-10-06 列口径改造：数字与中文量词不在数值格混排）：
+    // 纯数字 = relevant_chunk_ids.length，无「篇/切片」量词词尾。
     const anchoredRow = screen.getByText("锚定了三个切片的考题").closest("tr")!;
-    expect(within(anchoredRow as HTMLElement).getByText("3 篇")).toBeTruthy();
+    const anchoredCell = within(anchoredRow as HTMLElement).getByText("3").closest("td")!;
+    expect(anchoredCell.textContent).toBe("3");
     // 数值列右对齐（同文档 tab 数值列 text-right tabular-nums 同轴语言）。
-    const refDocsCell = within(anchoredRow as HTMLElement).getByText("3 篇").closest("td")!;
-    expect(refDocsCell.className).toContain("text-right");
-    expect(refDocsCell.className).toContain("tabular-nums");
-    // 无锚定题：参考文档空单元格（计数与「未锚定」文案都不上行，语义收抽屉）。
+    expect(anchoredCell.className).toContain("text-right");
+    expect(anchoredCell.className).toContain("tabular-nums");
+    // 健康行（missing_chunk_ids 缺省）无「悬空」徽章。
+    expect(within(anchoredRow as HTMLElement).queryByText("悬空")).toBeNull();
+    // 悬空题：同文档两切片 → 格子显 2（旧「N 篇」口径 = 1，单位换轴钉子），
+    // 加纯词「悬空」徽章（无数字无图标）。
+    const danglingRow = screen.getByText("带悬空锚的考题").closest("tr")!;
+    const danglingCell = within(danglingRow as HTMLElement).getByText("2").closest("td")!;
+    expect(danglingCell.textContent).toContain("2");
+    expect(danglingCell.textContent).not.toContain("篇");
+    expect(within(danglingRow as HTMLElement).getByText("悬空")).toBeTruthy();
+    // 无锚定题：数字与徽章都不上行（与召回列 — 互相呼应）。
     const unanchoredRow = screen.getByText("未锚定的考题").closest("tr")!;
     expect(within(unanchoredRow as HTMLElement).queryByText(/篇/)).toBeNull();
+    expect(within(unanchoredRow as HTMLElement).queryByText("悬空")).toBeNull();
     expect(within(unanchoredRow as HTMLElement).queryByText("未锚定")).toBeNull();
     // 分类显示名走 i18n（wire 键不外露）
     expect(screen.getByText("事实")).toBeTruthy();
     expect(screen.getByText("全局")).toBeTruthy();
   });
 
-  it("表头为 问题/分类/参考文档/召回率@k（预期路径与锚定列退役）", () => {
+  it("表头为 问题/分类/参考切片/召回率@k（预期路径与锚定列退役）", () => {
     hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_MULTI]) });
     const { container } = renderWithI18n(<BankHarness enabled kbId="kb-1" />);
     const heads = [...container.querySelectorAll("th")].map((th) => th.textContent);
-    expect(heads).toEqual(["", "问题", "分类", "参考文档", "召回率@k", ""]);
+    expect(heads).toEqual(["", "问题", "分类", "参考切片", "召回率@k", ""]);
     // 预期路径 Badge 不再行级出现（配置契约收抽屉）。
     expect(screen.queryByText("vector")).toBeNull();
     expect(screen.queryByText("graph")).toBeNull();
+  });
+
+  it("问题列悬浮走项目 Tooltip（无原生 title 属性，2026-10-06 悬浮统一）", () => {
+    hooksMock.useEvalQuestions.mockReturnValue({ isLoading: false, error: null, ...questionsState([Q_ANCHORED]) });
+    renderWithI18n(<BankHarness enabled kbId="kb-1" />);
+    const queryCell = screen.getByText(Q_ANCHORED.query).closest("td")!;
+    expect(queryCell.getAttribute("title")).toBeNull();
+    expect(queryCell.querySelector("[title]")).toBeNull();
+    // 项目 Tooltip 组件（Radix 主题样式）承接悬浮——触发器即 span 本身
+    // （TooltipTrigger asChild 合并 data-slot）。
+    expect(queryCell.querySelector("[data-slot='tooltip-trigger']")).toBeTruthy();
   });
 
   it("召回率@k 列三态点+百分比（最近一次 run 逐题 slim 指标 join）", () => {
@@ -291,10 +331,12 @@ describe("EvalQuestionBank 表格", () => {
     expect(sortBtn.className).toContain("group-hover/colhead:opacity-100");
 
     // 菜单与文档 tab 完全同构：五键 + 升/降序恒常展示（默认态选方向只记档，
-    // 切真实排序键时生效）。
+    // 切真实排序键时生效）。refDocs 选项 label 明义排序轴（2026-10-06：
+    // 比较器按篇落 = 跨文档广度，与格子显示的切片数不同轴）。
     // jsdom 中 Radix DropdownMenu 须用 keyDown ArrowDown 展开（同三点菜单先例）。
     fireEvent.keyDown(sortBtn, { key: "ArrowDown" });
     expect(await screen.findByRole("menuitem", { name: "默认顺序" })).toBeTruthy();
+    expect(await screen.findByRole("menuitem", { name: "文档数" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "升序" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "降序" })).toBeTruthy();
 

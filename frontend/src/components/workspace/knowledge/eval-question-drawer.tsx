@@ -2,29 +2,44 @@
 
 /**
  * 考题详情 drawer（2026-08-27 spec §4.5，plan Task 6；2026-09-08 裸奔退役
- * 重设计）：Sheet 右侧覆盖式（EvalRunDrawer 同款），只读展示完整字段。
- * 容器化沿用图谱实体抽屉定案配方（09-05：bg-card + border + rounded-lg +
- * shadow-xs 卡 + 卡内分组头带 border-b；bg-muted/40 浅底被用户否决——米色
- * 底上 muted 是后退色、无包裹感）：
+ * 重设计；2026-10-06 改锚对升级，spec §2①/③）：Sheet 右侧覆盖式（EvalRunDrawer
+ * 同款），只读展示完整字段。容器化沿用图谱实体抽屉定案配方（09-05：bg-card +
+ * border + rounded-lg + shadow-xs 卡 + 卡内分组头带 border-b）：
  * - sticky 紧凑头：query 作标题（line-clamp-2）承载身份，泛称「考题详情」
  *   沉 sr-only 描述（项目 Sheet 配方）；分类/预期路径芯片行随头不随滚；
- * - 参考答案卡 / 参考文档卡（按文档分组：标题 + 切片稳定序号徽章 + 切片
- *   计数徽章 ml-auto）/ 实体卡（仅有值显，Waypoints 图谱路词汇）；
+ * - 参考答案卡 / 参考文档卡 / 实体卡（仅有值显，Waypoints 图谱路词汇）；
  * - 动作栏在 ScrollArea 外（SheetContent flex 列：滚动区 flex-1 + footer
  *   shrink-0 border-t）——复现主/删除次钉底，不随滚、短内容不悬空。
- * 编辑不支持（§4.2 规则 5）。
+ * 参考文档卡（2026-10-06 升级）：「文档名+序号徽章」→ 逐片**只读** ChunkCard
+ * （不传 onEdit/onDelete/onReExtract，与改锚编辑态避免两套编辑口）；一次
+ * listChunksByIds 同时供正文预览与悬空判定（请求集 − 返回集 = 悬空，服务端
+ * 静默丢缺片）；序号徽章保留（chunk id 稳定身份，非切片抽屉位置序）；悬空的
+ * 片单列一行警示（序号徽章 + 「悬空」词）。只读态只显已锚定的片。
+ * 「编辑锚定」入口（spec §2③）：按文档折叠分组勾选区——组头 = 文档名 +
+ * 「已选 n/N」（实时）、默认收起（含已锚片的文档默认展开）、组内 = 该文档
+ * 全部切片（内容摘要行 + 勾选框，已锚默认勾上）、组内分页 50/页加载更多
+ * （listDocumentChunks）、勾后可整组收起。清空勾选 = 解除锚定（允许）。保存
+ * 走 B′ 锚定核验（keyed=question.id，useAnchorConfirm + AnchorBlockNotice）：
+ * 原「保存」永不带 anchor_ack（盲双击不落库），红块「仍要保存」才以
+ * anchor_ack=true 重提；missing_chunk 不可覆盖（无确认钮）。改锚只动锚——
+ * 题面/分类/预期路径/参考答案的编辑仍不支持（§4.2 规则 5）。
  */
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpRight,
+  ChevronDown,
   FileText,
   HelpCircle,
   MessageSquareText,
+  Pencil,
   Trash2,
   Waypoints,
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -33,9 +48,24 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { ChunkCard } from "@/components/workspace/knowledge/chunk-card";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDocuments } from "@/core/knowledge/hooks";
-import type { EvalQuestion } from "@/core/knowledge/types";
+import { listChunksByIds, listDocumentChunks } from "@/core/knowledge/api";
+import { useDocuments, useUpdateEvalQuestion } from "@/core/knowledge/hooks";
+import type { EvalQuestion, KnowledgeChunk } from "@/core/knowledge/types";
+import { cn } from "@/lib/utils";
+
+import { AnchorBlockNotice } from "./anchor-block-notice";
+import { toast } from "./kb-toast";
+import { useAnchorConfirm } from "./use-anchor-confirm";
+
+/** 改锚编辑区组内分页（spec §2③ D3 细则）：50 片/页，「加载更多」续拉。 */
+const EDIT_PAGE_SIZE = 50;
 
 /** 依据按文档分组（2026-09-07）：组头 = 文档标题，组内 = chunk id 中 `#` 后的
     稳定序号——注意不是切片抽屉的位置序号（删除留空洞后位置序会变，这里
@@ -54,11 +84,29 @@ function groupChunksByDoc(
   return groups;
 }
 
+/** 编辑态切片行的单行内容摘要（首行非空文本，CSS 钉单行/两行截断）。 */
+function chunkPreview(text: string): string {
+  const line = text.split(/\r?\n/).find((entry) => entry.trim().length > 0);
+  return (line ?? text).trim();
+}
+
+/** chunk id → doc id（`{doc_id}#NNNN`；畸形 id 回退空串）。 */
+function docIdOf(chunkId: string): string {
+  return chunkId.split("#")[0] ?? "";
+}
+
 /** 卡容器（图谱实体抽屉 09-05 定案配方）：bg-card + border + rounded-lg +
     shadow-xs；分组头卡内带 border-b，计数徽章 ml-auto。 */
 const CARD = "bg-card text-card-foreground rounded-lg border shadow-xs";
 const CARD_HEAD =
   "text-muted-foreground flex items-center gap-1.5 border-b px-3 py-2 text-xs font-medium";
+
+/** 编辑态文档分组的一页切片（组内分页累积；total = 该文档切片总数）。 */
+interface DocChunkPage {
+  items: KnowledgeChunk[];
+  total: number;
+  loading: boolean;
+}
 
 export interface EvalQuestionDrawerProps {
   question: EvalQuestion | null;
@@ -83,12 +131,157 @@ export function EvalQuestionDrawer({
   const { t } = useI18n();
   const etk = t.knowledge.eval;
   const qtk = etk.questions;
+  const aek = qtk.anchorEdit;
   // 文档标题（与文档 tab 同 queryKey，缓存命中不新增请求）；抽屉关时不发请求。
   const docsQuery = useDocuments(open ? kbId : null);
   const docTitle = (docId: string) =>
     (docsQuery.data ?? []).find((doc) => doc.id === docId)?.name ??
     docId.slice(0, 8);
   const groups = question ? groupChunksByDoc(question.relevant_chunk_ids) : [];
+
+  // ── 锚定片正文预览 + 悬空判定（spec §2①/②）：一次 listChunksByIds 两用——
+  // 返回集给 ChunkCard 预览，请求集 − 返回集 = 悬空（服务端静默丢缺片）。
+  const anchorIds = question?.relevant_chunk_ids ?? [];
+  const anchorIdsKey = anchorIds.join("\n");
+  const chunksQuery = useQuery({
+    queryKey: ["knowledge", "eval-question-anchors", kbId, anchorIdsKey],
+    queryFn: () => listChunksByIds(kbId, anchorIds),
+    enabled: open && anchorIds.length > 0,
+  });
+  const chunkById = new Map(
+    (chunksQuery.data ?? []).map((chunk) => [chunk.chunk_id, chunk]),
+  );
+
+  // ── 改锚编辑态（spec §2③）：草稿勾选集 + 按文档折叠分组的分页缓存。 ──
+  const questionId = question?.id ?? null;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string[]>([]);
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+  const [docPages, setDocPages] = useState<Record<string, DocChunkPage>>({});
+
+  // B′ 拦截状态（keyed=question.id，plan Task 0⑤：key 任意字符串、抽屉按题
+  // 隔离）。改锚写口：成功失效题库缓存（bank 行切片数/悬空徽章即时收敛）。
+  const anchor = useAnchorConfirm();
+  const { blockFor, submit, confirm, clear } = anchor;
+  const anchorKey = questionId ?? "";
+  const anchorBlock = blockFor(anchorKey);
+  const updateMutation = useUpdateEvalQuestion(kbId);
+
+  // 换题即复位编辑态（上一题草稿/红块不残留）。
+  useEffect(() => {
+    setEditing(false);
+    setDraft([]);
+    setExpandedDocs(new Set());
+    setDocPages({});
+  }, [questionId]);
+
+  // B′：勾选锚定集（内容级比较）变化即清红块——下一次保存重新机器核验。
+  const draftKey = draft.join("\n");
+  useEffect(() => {
+    if (editing) clear(anchorKey);
+  }, [draftKey, editing, anchorKey, clear]);
+
+  const loadDocPage = useCallback(
+    async (docId: string, offset: number) => {
+      setDocPages((current) => {
+        const prev = current[docId] ?? { items: [], total: 0, loading: false };
+        return { ...current, [docId]: { ...prev, loading: true } };
+      });
+      try {
+        const page = await listDocumentChunks(kbId, docId, {
+          offset,
+          limit: EDIT_PAGE_SIZE,
+        });
+        setDocPages((current) => {
+          const prev = current[docId] ?? { items: [], total: 0, loading: false };
+          const seen = new Set(prev.items.map((item) => item.chunk_id));
+          const items = [
+            ...prev.items,
+            ...page.items.filter((item) => !seen.has(item.chunk_id)),
+          ];
+          return { ...current, [docId]: { items, total: page.total, loading: false } };
+        });
+      } catch {
+        setDocPages((current) => {
+          const prev = current[docId] ?? { items: [], total: 0, loading: false };
+          return { ...current, [docId]: { ...prev, loading: false } };
+        });
+      }
+    },
+    [kbId],
+  );
+
+  const enterEdit = () => {
+    const anchors = question?.relevant_chunk_ids ?? [];
+    setDraft([...anchors]);
+    // 含已锚片的文档默认展开，其余默认收起（spec §2③ D3 细则）。
+    const initialDocs = new Set(anchors.map(docIdOf).filter(Boolean));
+    setExpandedDocs(initialDocs);
+    setDocPages({});
+    clear(anchorKey);
+    setEditing(true);
+    for (const docId of initialDocs) void loadDocPage(docId, 0);
+  };
+
+  const exitEdit = () => {
+    setEditing(false);
+    clear(anchorKey);
+  };
+
+  const toggleDoc = (docId: string) => {
+    setExpandedDocs((current) => {
+      const next = new Set(current);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+    // 展开时才拉该文档第一页（未拉过）；已拉过复用缓存。
+    if (!expandedDocs.has(docId) && !docPages[docId]) void loadDocPage(docId, 0);
+  };
+
+  const toggleDraft = (chunkId: string) => {
+    setDraft((current) =>
+      current.includes(chunkId)
+        ? current.filter((id) => id !== chunkId)
+        : [...current, chunkId],
+    );
+  };
+
+  // 提交体共用（原「保存」与红块确认仅 anchor_ack 不同）：复检键物理保证——
+  // 原按钮的请求体根本不带 anchor_ack 键（盲双击不可能携带确认标记），
+  // 仅红块内「仍要保存」置 true。
+  const submitAnchors = (ack: boolean) => {
+    if (questionId === null) return Promise.reject(new Error("no question"));
+    return updateMutation.mutateAsync({
+      questionId,
+      body: { relevant_chunk_ids: [...draft], ...(ack ? { anchor_ack: true } : {}) },
+    });
+  };
+
+  const handleSave = async () => {
+    try {
+      const saved = await submit(anchorKey, submitAnchors);
+      if (!saved) return;
+      setEditing(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message ? error.message : qtk.saveFailed,
+      );
+    }
+  };
+
+  // 红块内「仍要保存」：anchor_ack=true 覆盖词条级拦截后走正常保存收尾。
+  const handleConfirmSave = async () => {
+    try {
+      const saved = await confirm(anchorKey, submitAnchors);
+      if (!saved) return;
+      setEditing(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message ? error.message : qtk.saveFailed,
+      );
+    }
+  };
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
@@ -153,44 +346,214 @@ export function EvalQuestionDrawer({
                   <header className={CARD_HEAD}>
                     <FileText className="size-3.5" />
                     {qtk.columnRefDocs}
-                    {question.relevant_chunk_ids.length > 0 && (
-                      <Badge
-                        className="ml-auto px-1.5 text-[10px]"
-                        variant="secondary"
+                    <div className="ml-auto flex items-center gap-1.5">
+                      {question.relevant_chunk_ids.length > 0 && (
+                        <Badge
+                          className="px-1.5 text-[10px]"
+                          variant="secondary"
+                        >
+                          {qtk.drawerChunksCount(question.relevant_chunk_ids.length)}
+                        </Badge>
+                      )}
+                      {/* 改锚入口（2026-10-06）：⇄ 读态/编辑态切换。 */}
+                      <Button
+                        className="h-6 px-2 text-[10px]"
+                        onClick={editing ? exitEdit : enterEdit}
+                        size="sm"
+                        variant="outline"
                       >
-                        {qtk.drawerChunksCount(question.relevant_chunk_ids.length)}
-                      </Badge>
-                    )}
+                        <Pencil className="mr-1 size-3" />
+                        {aek.button}
+                      </Button>
+                    </div>
                   </header>
-                  <div className="flex flex-col gap-2.5 p-3">
-                    {groups.length > 0 ? (
-                      groups.map((group) => (
-                        <div key={group.docId} className="flex min-w-0 flex-col gap-1">
-                          <p
-                            className="truncate text-xs font-medium"
-                            title={docTitle(group.docId)}
+                  {editing ? (
+                    /* 改锚编辑区（spec §2③）：按文档折叠分组勾选——组头「已选
+                       n/N」实时、含已锚片文档默认展开、组内 50/页加载更多、
+                       勾后可整组收起；清空勾选 = 解除锚定（允许）。 */
+                    <div className="flex flex-col gap-2.5 p-3">
+                      {(docsQuery.data ?? []).map((doc) => {
+                        const page = docPages[doc.id] ?? {
+                          items: [],
+                          total: 0,
+                          loading: false,
+                        };
+                        // 组头分母：已拉过分页用权威 total，未拉过显文档行的
+                        // chunk_count（0 = 空文档，不是「未加载」）。
+                        const total =
+                          docPages[doc.id] !== undefined
+                            ? page.total
+                            : (doc.chunk_count ?? 0);
+                        const selectedCount = draft.filter((id) =>
+                          id.startsWith(`${doc.id}#`),
+                        ).length;
+                        const expanded = expandedDocs.has(doc.id);
+                        return (
+                          <div
+                            className="flex min-w-0 flex-col gap-1 rounded-md border px-2 py-1.5"
+                            key={doc.id}
                           >
-                            {docTitle(group.docId)}
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {group.sequences.map((sequence) => (
-                              <Badge
-                                key={sequence}
-                                className="font-mono text-[10px]"
-                                variant="secondary"
-                              >
-                                #{sequence}
-                              </Badge>
-                            ))}
+                            <button
+                              aria-expanded={expanded}
+                              className="flex w-full items-center gap-1.5 text-left text-xs font-medium"
+                              onClick={() => toggleDoc(doc.id)}
+                              type="button"
+                            >
+                              <ChevronDown
+                                className={cn(
+                                  "size-3 shrink-0 transition-transform",
+                                  expanded && "rotate-180",
+                                )}
+                              />
+                              <span className="truncate">{doc.name}</span>
+                              <span className="text-muted-foreground ml-auto shrink-0 tabular-nums">
+                                {aek.selected(selectedCount, total)}
+                              </span>
+                            </button>
+                            {expanded && (
+                              <div className="flex flex-col gap-1 pl-5">
+                                {page.items.map((chunk) => (
+                                  <label
+                                    className="flex cursor-pointer items-start gap-2 py-0.5"
+                                    key={chunk.chunk_id}
+                                  >
+                                    <Checkbox
+                                      checked={draft.includes(chunk.chunk_id)}
+                                      onCheckedChange={() =>
+                                        toggleDraft(chunk.chunk_id)
+                                      }
+                                    />
+                                    <span className="line-clamp-2 min-w-0 flex-1 text-xs">
+                                      {chunkPreview(chunk.text)}
+                                    </span>
+                                  </label>
+                                ))}
+                                {page.items.length < page.total && (
+                                  <Button
+                                    disabled={page.loading}
+                                    onClick={() =>
+                                      void loadDocPage(doc.id, page.items.length)
+                                    }
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    {aek.loadMore}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground text-sm">
-                        {qtk.unanchored}
-                      </p>
-                    )}
-                  </div>
+                        );
+                      })}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          disabled={updateMutation.isPending}
+                          onClick={() => void handleSave()}
+                          size="sm"
+                        >
+                          {aek.save}
+                        </Button>
+                        <Button
+                          disabled={updateMutation.isPending}
+                          onClick={exitEdit}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {aek.cancel}
+                        </Button>
+                      </div>
+                      {/* B′ 红块：保存按钮行正下方；原「保存」保留原语义（永不带
+                          anchor_ack），仅红块内「仍要保存」携 anchor_ack=true。 */}
+                      {anchorBlock !== null && (
+                        <AnchorBlockNotice
+                          confirmLabel={etk.anchorBlock.confirmUpdate}
+                          confirming={updateMutation.isPending}
+                          detail={anchorBlock}
+                          onConfirm={() => void handleConfirmSave()}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5 p-3">
+                      {groups.length > 0 ? (
+                        groups.map((group) => {
+                          const title = docTitle(group.docId);
+                          return (
+                            <div
+                              className="flex min-w-0 flex-col gap-1.5"
+                              key={group.docId}
+                            >
+                              {/* 组头悬浮统一（2026-10-06）：原生 title 换项目
+                                  Tooltip（Radix 主题样式，与文档名 tooltip 同款）。 */}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="min-w-0 truncate text-xs font-medium">
+                                    {title}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-60 text-pretty">
+                                  {title}
+                                </TooltipContent>
+                              </Tooltip>
+                              {group.sequences.map((sequence) => {
+                                const chunkId = `${group.docId}#${sequence}`;
+                                const chunk = chunkById.get(chunkId);
+                                // 悬空判定（spec §2①）：取数返回后请求集 − 返回集。
+                                const dangling =
+                                  chunksQuery.data !== undefined &&
+                                  chunk === undefined;
+                                if (dangling) {
+                                  return (
+                                    <div
+                                      className="text-destructive flex items-center gap-1.5 text-xs"
+                                      key={chunkId}
+                                    >
+                                      <Badge
+                                        className="font-mono text-[10px]"
+                                        variant="destructive"
+                                      >
+                                        #{sequence}
+                                      </Badge>
+                                      <span>{qtk.danglingBadge}</span>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div
+                                    className="flex min-w-0 flex-col gap-1"
+                                    key={chunkId}
+                                  >
+                                    {/* 稳定序号徽章保留（chunk id 身份）。 */}
+                                    <Badge
+                                      className="w-fit font-mono text-[10px]"
+                                      variant="secondary"
+                                    >
+                                      #{sequence}
+                                    </Badge>
+                                    {chunk !== undefined && (
+                                      <ChunkCard
+                                        docId={chunk.doc_id}
+                                        entities={chunk.entities}
+                                        headingPath={chunk.heading_path}
+                                        kbId={kbId}
+                                        page={chunk.page}
+                                        text={chunk.text}
+                                        tokenCount={chunk.token_count}
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-muted-foreground text-sm">
+                          {qtk.unanchored}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </section>
 
                 {/* 实体卡（2026-09-08）：仅有值显——空标注诚实缺省不摆空卡；

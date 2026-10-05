@@ -14,6 +14,7 @@ import { synthesisRefetchInterval } from "./synthesis-status";
 import type {
   EvalQuestionCreateInput,
   EvalQuestionListResponse,
+  EvalQuestionUpdateInput,
   EvalRunDetail,
   EvalRunListResponse,
   EvalTriggerInput,
@@ -309,6 +310,22 @@ export function useDeleteEvalQuestion(kbId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (questionId: string) => api.deleteEvalQuestion(kbId, questionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });
+    },
+  });
+}
+
+/**
+ * 改锚（2026-10-06 改锚对，spec §2③）：只动 relevant_chunk_ids 的更新口。
+ * 成功失效题库缓存——抽屉改完锚，bank 行的切片数与「悬空」徽章即时收敛
+ * （missing_chunk_ids 是读时派生，重拉即新结论）。
+ */
+export function useUpdateEvalQuestion(kbId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ questionId, body }: { questionId: string; body: EvalQuestionUpdateInput }) =>
+      api.updateEvalQuestion(kbId, questionId, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: knowledgeEvalQuestionsKey(kbId) });
     },

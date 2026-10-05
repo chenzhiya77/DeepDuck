@@ -15,6 +15,7 @@ import type {
   EvalQuestion,
   EvalQuestionCreateInput,
   EvalQuestionListResponse,
+  EvalQuestionUpdateInput,
   EvalRunDeleteResponse,
   EvalRunDetail,
   EvalRunListResponse,
@@ -588,6 +589,24 @@ export async function deleteEvalQuestion(kbId: string, questionId: string): Prom
     method: "DELETE",
   });
   await readEmptyResponse(response, "Failed to delete eval question");
+}
+
+/**
+ * PATCH /eval/questions/{id}：改锚（2026-10-06 改锚对，spec §2③）——只动
+ * relevant_chunk_ids（实体服务端跟锚收缩），清空 = 解除锚定。B′ 锚定核验
+ * 同 create/accept：422 结构化 detail 转 AnchorBlockError；anchor_ack 仅
+ * 红块确认路径携带（原「保存」永为缺省/假值）。
+ */
+export function updateEvalQuestion(
+  kbId: string,
+  questionId: string,
+  body: EvalQuestionUpdateInput,
+): Promise<EvalQuestion> {
+  return fetch(kbUrl(kbId, `/eval/questions/${encodeURIComponent(questionId)}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then((r) => readResponse<EvalQuestion>(r, "Failed to update eval question"));
 }
 
 /** DELETE /eval-runs：批量删除运行历史（2026-09-08）；复选框选中集/行菜单/

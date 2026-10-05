@@ -686,18 +686,26 @@ export interface Translations {
       questions: {
         columnQuery: string;
         columnCategory: string;
-        /** 参考文档列（2026-09-07 表头重设计）：去重文档计数；空单元格 = 无锚定。 */
+        /** 抽屉参考文档卡标题（2026-10-06 列口径改造后唯一保留处：卡内装的是文档分组）。 */
         columnRefDocs: string;
-        refDocsCount: (count: number) => string;
+        /** 参考切片列头（2026-10-06 列口径改造，spec §2②）：单位进表头、格子纯数字
+            = relevant_chunk_ids.length（与抽屉「N 切片」徽章同数同口径）。 */
+        columnRefChunks: string;
         /** 召回率@k 列头 tooltip：时间口径（跨 run 合并的逐题最近结果）。 */
         columnRecallNote: string;
         /** 排序菜单首项（2026-09-07）：保持 golden.jsonl 原序，不参与排序。 */
         sortDefault: string;
+        /** 排序选项标签（2026-10-06）：比较器仍按去重文档数（跨文档广度）落，
+            与显示的切片数不同轴——label 明义那根轴叫「文档数」。 */
+        sortDocsCount: string;
         /** 召回列单元格 tooltip：召回百分比 + 实际路径（未命中时即分诊线索）。 */
         recallTip: (percent: string, path: string) => string;
         /** 召回列空值 aria（未测 / 上次 run 未包含）。 */
         recallUntested: string;
         unanchored: string;
+        /** 悬空锚警示徽章（2026-10-06）：纯词、无数字无图标（对齐「检测到回退」
+            先例）；行级挂参考切片格、抽屉挂悬空片警示行，两面同词。 */
+        danglingBadge: string;
         addQuestion: string;
         emptyBank: string;
         /** 空态双入口第二句（2026-08-28 spec §7，Task 8）：合成造题引导。 */
@@ -733,8 +741,21 @@ export interface Translations {
         answerSection: string;
         /** 详情抽屉实体卡 caption（仅有值显卡）。 */
         entitiesSection: string;
-        /** 详情抽屉参考文档卡切片计数徽章（下钻层词汇，区别于行级「N 篇」）。 */
+        /** 详情抽屉参考文档卡切片计数徽章（下钻层词汇，区别于行级纯数字）。 */
         drawerChunksCount: (count: number) => string;
+        /** 改锚编辑区（2026-10-06 改锚对，spec §2③）：卡片头「编辑锚定」入口 +
+            按文档折叠分组勾选（组头「已选 n/N」、组内分页 50/页）+ 保存/取消。 */
+        anchorEdit: {
+          /** 卡片头编辑入口（⇄ 读态/编辑态切换）。 */
+          button: string;
+          /** 组头实时计数：该文档草稿勾选数 / 该文档切片总数。 */
+          selected: (selected: number, total: number) => string;
+          /** 组内分页加载更多（50 片/页，还有余量才显）。 */
+          loadMore: string;
+          /** B′ 复检键：永不带 anchor_ack 的原「保存」。 */
+          save: string;
+          cancel: string;
+        };
         addedToast: string;
         deletedToast: string;
       };
@@ -870,6 +891,9 @@ export interface Translations {
         confirmSave: string;
         /** 覆盖确认钮（合成审核面板）。 */
         confirmAccept: string;
+        /** 覆盖确认钮（抽屉改锚，2026-10-06）：「仍要保存」——红块里变出来的那个，
+            携 anchor_ack=true 重提；missing_chunk 不渲染任何确认钮。 */
+        confirmUpdate: string;
       };
     };
     /** 向量空间 tab（2026-08-15 spec §8）：工具栏 + 三态 + 索引中提示。 */
