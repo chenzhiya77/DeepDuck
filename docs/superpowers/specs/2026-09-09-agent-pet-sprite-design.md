@@ -467,13 +467,13 @@ export function computeFatigueLevel(i: FatigueInput): FatigueLevel {
 ```bash
 # 1) 切帧:i 从 0 到 N-1(sheet 是横向单行,每帧 512 宽)
 ffmpeg -y -i frontend/public/pet/parrot/<state>.webp -vf "crop=512:512:$((i*512)):0" -frames:v 1 <tmp>/f$(printf %02d $i).png
-# 2) 合成:8fps、缩到 120、保留透明、96 色
+# 2) 合成:8fps、缩到 240、保留透明、96 色
 ffmpeg -y -framerate 8 -i <tmp>/f%02d.png \
-  -vf "scale=120:120,split[a][b];[a]palettegen=reserve_transparent=1:max_colors=96[p];[b][p]paletteuse=dither=none" \
+  -vf "scale=240:240,split[a][b];[a]palettegen=reserve_transparent=1:max_colors=96[p];[b][p]paletteuse=dither=none" \
   -loop 0 docs/assets/pet/parrot-<state>.gif
 ```
 
-实测参数:**`idle` 是唯一留 200×200 的一张**(表格里用 `<img width="120">` 统一显示尺寸),其余 6 张都是 **120×120**;`nb_frames` = 该态的帧数;GIF 时基只有 10 ms,故 8 fps 落成 `25/3`(与产品里的 8 fps 观感无差)。**换美术时这 7 张要用同一条配方一起重生成**,否则表格里会出现两种量化风格;两个一次性态在 README 里是**循环预览**(`-loop 0`),产品里只播一次,表下那行注释已说明。**验配方一致性的便宜办法**:重生成一张已入库的比字节 —— 同族产物应落在 ±5% 内(实测 `wait` 47,982 vs 入库 46,657 = **+2.8%**;ffmpeg 版本不同不会逐字节相同)。
+实测参数(**2026-10-02 起 7 张统一 240×240**,README 表格 `<img width="240">` 显示;此前为 `idle` 200×200、其余 120×120、表格 `width="120"`);`nb_frames` = 该态的帧数;GIF 时基只有 10 ms,故 8 fps 落成 `25/3`(与产品里的 8 fps 观感无差)。**换美术时这 7 张要用同一条配方一起重生成**,否则表格里会出现两种量化风格;两个一次性态在 README 里是**循环预览**(`-loop 0`),产品里只播一次,表下那行注释已说明。**验配方一致性的便宜办法**:重生成一张已入库的比字节 —— 同族产物应落在 ±5% 内(240 尺寸时代实测:按本配方重出 `wait` 146,688 vs 入库 147,153 = **-0.32%**;ffmpeg 版本不同不会逐字节相同)。
 
 ## 9. 渲染器
 
