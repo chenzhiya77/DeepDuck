@@ -572,6 +572,15 @@ on collision; `AppConfig.is_ui_managed_model(name)` reports which models came fr
 (tracked as a private attribute, never a `ModelConfig` field, so it cannot leak into provider
 constructor kwargs).
 
+Two display fields ride on this file (spec 2026-10-08 models-list-grouping): the top-level
+`hidden_in_chat: [name, ...]` list hides models from the three chat model pickers — a display
+filter only (hidden models stay usable and findable), written wholesale by the settings PUT so
+omitting the key clears it — and `GET /api/models/config` derives `order_pinned` per entry
+(`name` is declared under `config.yaml`'s `models:`, including a same-name UI override: such a
+row's merged slot is pinned, so the settings UI will not drag it). `AppConfig` records both name
+sets at load as private attributes (`hidden_in_chat_names` / `yaml_model_names`); the public
+`GET /api/models` carries `hidden_in_chat` additively and never exposes `order_pinned`.
+
 Security boundary: the management API (`GET/PUT /api/models/config`, admin-gated) never accepts a
 free-text `use:` class path — that is a dynamic-import / code-execution vector of the same class as
 `plugins:`. Callers submit a curated *provider id* that a fixed allowlist

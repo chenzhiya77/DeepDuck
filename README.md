@@ -110,7 +110,7 @@
 
 ### 模型配置（复用框架的 Settings → Models）
 
-- 聊天模型：两步向导（先探活密钥与模型 ID，再声明能力），密钥落盘到 gitignored 的 `models_config.json`
+- 聊天模型：两步向导（先探活密钥与模型 ID，再声明能力），密钥落盘到 gitignored 的 `models_config.json`；列表按提供商分组、组内可拖动排序，行尾「在对话列表中展示」开关控制该模型是否出现在对话的模型下拉里（只是不展示，不影响使用）
 - RAG 功能模型：图谱抽取 / 评测裁判 / 说明生成 VLM / 百科生成 / 考题合成 五个角色从已配置模型中选择（各自留空时逐级回落：RAG 默认模型 → 第一个已配置模型）；另含嵌入、重排、ASR、Qdrant / MinerU 设置，落盘到 `rag_config.json`
 - **三条外部依赖可选 provider**（与上面的聊天模型机制**互不相通**——不共享条目，也不继承其支持面）：嵌入可走百炼或火山方舟原生接口（两家都出稠密 + 稀疏），或任一 OpenAI 兼容的 `/v1/embeddings`（仅稠密）；重排可走百炼，或通用 `/rerank`（Cohere / Jina 形状），或自建 Text Embeddings Inference 的 `/rerank`；解析可走云，或自建的 MinerU 服务（上游 4.x，解析档位由 `rag.parse_tier` 指定，留空 = 服务端定）。**嵌入宽度是部署设置**（`rag.embedding_dimension`，留空 = 1024）：模型返回宽度与生效宽度不符会被拒绝启用；改宽度触发全库重建的维度迁移（入口：「设置 → 模型 → 功能模型 → 高级设置 → 维度」）。
 - **稀疏来源三选一**（`rag.embedding_sparse_source`）：随嵌入模型同出（百炼）、另配一个专门的稀疏服务（`tei-sparse`，对接 Text Embeddings Inference 的 `/embed_sparse`）、或本地 BM25（零模型、确定性最好，中文按字符二元切分）。换成只出稠密向量的嵌入模型后，必须选后两者之一

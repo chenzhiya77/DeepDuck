@@ -161,9 +161,15 @@ Edit-and-rerun is deliberately latest-turn-only. `core/messages/utils.ts::getLat
   the RAG functional-model editor. The section's own prose — and the functional view's, which
   used to sit alone under the view switch — lives in the **one ⓘ on the section title**
   (`info-tip.tsx`; `text` is the accessible name, `content` the rendered bubble), so neither view
-  spends a line on description. The chat-model rows are `bg-card` on purpose: the settings body
-  and an outlined row resolve to the same colour, and the filled row is what the functional
-  view's panels use. The functional view reads `core/rag/hooks.ts`
+  spends a line on description. The chat-model list is one merged `bg-card` container per
+  provider (spec 2026-10-08 models-list-grouping): single-line rows split by an inset divider, a
+  drag handle only on rows that are UI-managed and not `order_pinned` (crossings clamp inside the
+  movable sub-block; write-back order is the grouped flatten, both in the pure helpers of
+  `core/models/grouping.ts`), and a per-row display toggle backed by the top-level
+  `hidden_in_chat` name list. That list filters **only** the three chat pickers' options through
+  `core/models/visibility.ts::chatPickerOptions` (the default model is always exempt) — `useModels`
+  keeps returning the full list, so selection fallbacks and the functional / agent-default pickers
+  never see a filtered catalogue. The functional view reads `core/rag/hooks.ts`
   (`GET/PUT /api/rag/config`, admin-gated) and builds its payload with the pure helpers in
   `core/rag/config-form.ts`; the backend replaces the whole `rag_config.json` object, so those
   helpers carry the file's own overrides forward and keep Save disabled until the admin edits
