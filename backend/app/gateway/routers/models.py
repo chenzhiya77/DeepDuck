@@ -55,6 +55,10 @@ class ModelResponse(BaseModel):
         default=None,
         description="Total context window size in tokens (prompt + completion); None when unconfigured",
     )
+    hidden_in_chat: bool = Field(
+        default=False,
+        description="Listed in models_config.json's hidden_in_chat: hidden from the chat model pickers (display filter only; the model stays usable).",
+    )
 
 
 class TokenUsageResponse(BaseModel):
@@ -152,6 +156,7 @@ async def list_models(
             supported_reasoning_efforts=model.supported_reasoning_efforts,
             reasoning_effort=model.reasoning_effort,
             context_window=model.context_window,
+            hidden_in_chat=model.name in config.hidden_in_chat_names,
         )
         for model in visible_models
     ]
@@ -216,6 +221,10 @@ class ModelsConfigUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     models: list[ManagedModelInput] = Field(default_factory=list)
+    hidden_in_chat: list[str] = Field(
+        default_factory=list,
+        description="Names hidden from the chat model pickers, written wholesale: omitting the key on a save clears the list.",
+    )
 
 
 class ManagedModelResponse(BaseModel):
@@ -243,6 +252,8 @@ class ManagedModelResponse(BaseModel):
     use_responses_api: bool | None = Field(default=None, description="Route OpenAI-compatible calls through /v1/responses; None when never set.")
     source: str = Field(default="config_file", description="Origin: 'ui' (models_config.json) or 'config_file' (config.yaml).")
     editable: bool = Field(default=False, description="True only for UI-managed models.")
+    hidden_in_chat: bool = Field(default=False, description="Listed in hidden_in_chat: hidden from the chat model pickers (display filter).")
+    order_pinned: bool = Field(default=False, description="Merged position is pinned by config.yaml (name declared under models:); the settings UI may not drag the row.")
 
 
 class ModelsConfigResponse(BaseModel):
@@ -402,6 +413,8 @@ def _managed_response(
     max_tokens: int | None,
     use_responses_api: bool | None,
     source: str,
+    hidden_in_chat: bool = False,
+    order_pinned: bool = False,
 ) -> ManagedModelResponse:
     return ManagedModelResponse(
         name=name,
@@ -426,6 +439,8 @@ def _managed_response(
         use_responses_api=use_responses_api,
         source=source,
         editable=(source == "ui"),
+        hidden_in_chat=hidden_in_chat,
+        order_pinned=order_pinned,
     )
 
 
@@ -475,6 +490,8 @@ async def get_models_config(
                 max_tokens=dumped.get("max_tokens"),
                 use_responses_api=model.use_responses_api,
                 source=source,
+                hidden_in_chat=model.name in config.hidden_in_chat_names,
+                order_pinned=model.name in config.yaml_model_names,
             )
         )
     return ModelsConfigResponse(models=responses)
@@ -612,6 +629,7 @@ async def get_model(
         supported_reasoning_efforts=model.supported_reasoning_efforts,
         reasoning_effort=model.reasoning_effort,
         context_window=model.context_window,
+        hidden_in_chat=model.name in config.hidden_in_chat_names,
     )
 
 
@@ -635,6 +653,7 @@ async def put_models_config(
     """
     await require_admin_user(request, detail=_ADMIN_DETAIL)
 
+    hidden_set = set(body.hidden_in_chat)
     stored = ModelsConfig.from_file()
     stored_keys: dict[str, str] = {}
     for existing in stored.models:
@@ -706,6 +725,8 @@ async def put_models_config(
                 max_tokens=item.max_tokens,
                 use_responses_api=item.use_responses_api,
                 source="ui",
+                hidden_in_chat=item.name in hidden_set,
+                order_pinned=item.name in config.yaml_model_names,
             )
         )
 
@@ -713,7 +734,10 @@ async def put_models_config(
 
     def _write() -> None:
         with models_config_write_lock:
-            atomic_write_models_config(target_path, {"models": entries})
+            # The name list is written wholesale alongside the models: an omitted
+            # `hidden_in_chat` in the request means "clear the list", matching the
+            # whole-collection replacement semantics of `models` itself.
+            atomic_write_models_config(target_path, {"models": entries, "hidden_in_chat": list(body.hidden_in_chat)})
 
     await asyncio.to_thread(_write)
     return ModelsConfigResponse(models=responses)

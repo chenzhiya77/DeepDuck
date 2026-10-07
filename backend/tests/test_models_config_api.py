@@ -46,12 +46,19 @@ def _write_yaml_models(root: Path, models: list[dict]) -> None:
     )
 
 
-def _write_models_json(root: Path, models: list[dict]) -> None:
-    (root / "models_config.json").write_text(json.dumps({"models": models}), encoding="utf-8")
+def _write_models_json(root: Path, models: list[dict], hidden_in_chat: list[str] | None = None) -> None:
+    payload: dict = {"models": models}
+    if hidden_in_chat is not None:
+        payload["hidden_in_chat"] = hidden_in_chat
+    (root / "models_config.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _read_models_json(root: Path) -> list[dict]:
     return json.loads((root / "models_config.json").read_text(encoding="utf-8"))["models"]
+
+
+def _read_hidden_json(root: Path) -> list[str] | None:
+    return json.loads((root / "models_config.json").read_text(encoding="utf-8")).get("hidden_in_chat")
 
 
 @pytest.fixture
@@ -721,3 +728,145 @@ def test_support_bundle_redacts_models_config(config_env: Path):
     blob = json.dumps(summary)
     assert "sk-ui-secret" not in blob
     assert summary["models"][0]["api_key"] == "<redacted>"
+
+
+# ── hidden_in_chat: top-level display-filter list + order_pinned (spec 2026-10-08) ──
+# The list is a display filter for the chat model pickers, not a disable switch, and it
+# lives at the top level of models_config.json so config.yaml names can be hidden without
+# writing their entries into the UI file (which would override them on merge).
+
+
+def _ui_entry(name: str) -> dict:
+    return {"provider": "deepseek", "name": name, "model": "deepseek-chat", "api_key": MASKED_API_KEY}
+
+
+def test_put_hidden_in_chat_round_trip(config_env: Path):
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/models/config",
+            json={"models": [_ui_entry("ui-model")], "hidden_in_chat": ["ui-model", "cfg-model"]},
+        )
+        get_body = client.get("/api/models/config").json()
+
+    assert response.status_code == 200
+    assert _read_hidden_json(config_env) == ["ui-model", "cfg-model"]
+    by_name = {m["name"]: m for m in get_body["models"]}
+    assert by_name["ui-model"]["hidden_in_chat"] is True
+    assert by_name["cfg-model"]["hidden_in_chat"] is True
+
+
+def test_put_omitting_hidden_in_chat_clears_the_list(config_env: Path):
+    """Whole-collection replacement: the name list is written wholesale, so a save that
+    omits the key clears it (same semantics as the models list itself)."""
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [_ui_entry("ui-model")], "hidden_in_chat": ["ui-model"]}).status_code == 200
+        assert _read_hidden_json(config_env) == ["ui-model"]
+        assert client.put("/api/models/config", json={"models": [_ui_entry("ui-model")]}).status_code == 200
+
+    assert _read_hidden_json(config_env) == []
+
+
+def test_hidden_in_chat_accepts_config_file_names(config_env: Path):
+    """Hiding a config.yaml model must not draw its entry into models_config.json — that
+    would silently override the operator's entry on merge. The top-level list covers both
+    sources without touching entry bodies."""
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        response = client.put(
+            "/api/models/config",
+            json={"models": [_ui_entry("ui-model")], "hidden_in_chat": ["cfg-model", "ui-model"]},
+        )
+        get_body = client.get("/api/models/config").json()
+
+    assert response.status_code == 200
+    assert [entry["name"] for entry in _read_models_json(config_env)] == ["ui-model"]
+    by_name = {m["name"]: m for m in get_body["models"]}
+    assert by_name["cfg-model"]["hidden_in_chat"] is True
+    assert by_name["cfg-model"]["source"] == "config_file"  # not overridden by the list
+
+
+def test_get_models_config_derives_hidden_and_order_pinned(config_env: Path):
+    """Four order_pinned states (spec §3 D2): config_file entry True, same-name override
+    True (its slot comes from config.yaml), pure UI entry False; hidden_in_chat is plain
+    name membership in the stored list."""
+    _write_yaml_models(
+        config_env,
+        [
+            {"name": "cfg-model", "use": "langchain_openai:ChatOpenAI", "model": "gpt-4", "api_key": "sk-yaml"},
+            {"name": "shared", "use": "langchain_openai:ChatOpenAI", "model": "gpt-4", "api_key": "sk-yaml-shared"},
+        ],
+    )
+    _write_models_json(
+        config_env,
+        [
+            {"name": "shared", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "deepseek-chat", "api_key": "sk-ui-shared"},
+            {"name": "ui-only", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "deepseek-chat", "api_key": "sk-ui"},
+        ],
+        hidden_in_chat=["ui-only", "cfg-model"],
+    )
+
+    with _client(system_role="admin") as client:
+        body = client.get("/api/models/config").json()
+    by_name = {m["name"]: m for m in body["models"]}
+
+    assert by_name["cfg-model"]["order_pinned"] is True  # config_file entry
+    assert by_name["cfg-model"]["hidden_in_chat"] is True
+    assert by_name["shared"]["order_pinned"] is True  # same-name override keeps the yaml slot
+    assert by_name["shared"]["source"] == "ui"
+    assert by_name["shared"]["hidden_in_chat"] is False
+    assert by_name["ui-only"]["order_pinned"] is False  # pure UI entry
+    assert by_name["ui-only"]["hidden_in_chat"] is True
+
+
+def test_order_pinned_false_when_yaml_declares_no_models(config_env: Path):
+    """With an empty config.yaml `models:` there is no pinned slot: every row is movable."""
+    _write_yaml_models(config_env, [])
+    _write_models_json(config_env, [{"name": "ui-only", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "deepseek-chat", "api_key": "sk-ui"}])
+
+    with _client(system_role="admin") as client:
+        body = client.get("/api/models/config").json()
+
+    assert [m["name"] for m in body["models"]] == ["ui-only"]
+    assert all(m["order_pinned"] is False for m in body["models"])
+
+
+def test_public_models_carry_hidden_flag_but_never_order_pinned(config_env: Path):
+    """The public list gains the display flag additively; order_pinned is internal sort
+    mechanics and stays off the public surface."""
+    _seed(config_env)
+    with _client(system_role="admin") as client:
+        assert client.put("/api/models/config", json={"models": [_ui_entry("ui-model")], "hidden_in_chat": ["ui-model"]}).status_code == 200
+        public = client.get("/api/models").json()
+
+    by_name = {m["name"]: m for m in public["models"]}
+    assert by_name["ui-model"]["hidden_in_chat"] is True
+    assert by_name["cfg-model"]["hidden_in_chat"] is False
+    assert all("order_pinned" not in m for m in public["models"])
+
+
+def test_put_ui_reorder_keeps_yaml_block_first(config_env: Path):
+    """Drag sort reorders only the UI subset's relative order; the config.yaml block stays
+    in front and merged[0] — the default model — is untouched."""
+    _write_yaml_models(
+        config_env,
+        [
+            {"name": "yaml-first", "use": "langchain_openai:ChatOpenAI", "model": "gpt-4", "api_key": "sk-a"},
+            {"name": "yaml-second", "use": "langchain_openai:ChatOpenAI", "model": "gpt-4", "api_key": "sk-b"},
+        ],
+    )
+    _write_models_json(
+        config_env,
+        [
+            {"name": "ui-1", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "deepseek-chat", "api_key": "sk-1"},
+            {"name": "ui-2", "use": "deerflow.models.patched_deepseek:PatchedChatDeepSeek", "model": "deepseek-chat", "api_key": "sk-2"},
+        ],
+    )
+
+    with _client(system_role="admin") as client:
+        response = client.put("/api/models/config", json={"models": [_ui_entry("ui-2"), _ui_entry("ui-1")]})
+        names = [m["name"] for m in client.get("/api/models").json()["models"]]
+
+    assert response.status_code == 200
+    assert names == ["yaml-first", "yaml-second", "ui-2", "ui-1"]

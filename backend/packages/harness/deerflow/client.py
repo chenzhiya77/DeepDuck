@@ -1111,6 +1111,8 @@ class DeerFlowClient:
         if not isinstance(token_usage_enabled, bool):
             token_usage_enabled = False
 
+        hidden_names = getattr(self._app_config, "hidden_in_chat_names", ())
+
         return {
             "models": [
                 {
@@ -1120,6 +1122,7 @@ class DeerFlowClient:
                     "description": getattr(model, "description", None),
                     "supports_thinking": getattr(model, "supports_thinking", False),
                     "supports_reasoning_effort": getattr(model, "supports_reasoning_effort", False),
+                    "hidden_in_chat": model.name in hidden_names,
                 }
                 for model in self._app_config.models
             ],
@@ -1185,6 +1188,7 @@ class DeerFlowClient:
         model = self._app_config.get_model_config(name)
         if model is None:
             return None
+        hidden_names = getattr(self._app_config, "hidden_in_chat_names", ())
         return {
             "name": model.name,
             "model": getattr(model, "model", None),
@@ -1192,6 +1196,7 @@ class DeerFlowClient:
             "description": getattr(model, "description", None),
             "supports_thinking": getattr(model, "supports_thinking", False),
             "supports_reasoning_effort": getattr(model, "supports_reasoning_effort", False),
+            "hidden_in_chat": model.name in hidden_names,
         }
 
     # ------------------------------------------------------------------

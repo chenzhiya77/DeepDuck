@@ -465,6 +465,14 @@ class AppConfig(BaseModel):
     # 2026-09-10 §5.2). Derived at load, never written back to any config file;
     # kept off ModelConfig itself so it can never leak into provider kwargs.
     _ui_model_names: set[str] = PrivateAttr(default_factory=set)
+    # Names declared under config.yaml `models:` (captured before the UI file merges
+    # in). A name declared there owns its merged slot, so the settings UI may not
+    # drag it elsewhere (spec 2026-10-08 models-list-grouping §3 D2).
+    _yaml_model_names: set[str] = PrivateAttr(default_factory=set)
+    # The UI file's top-level `hidden_in_chat` name list: a chat-picker display filter
+    # (spec 2026-10-08 models-list-grouping §2④). Not a disable switch — hidden models
+    # stay usable and findable; only the picker's options shrink.
+    _hidden_in_chat: set[str] = PrivateAttr(default_factory=set)
     # The `rag:` block exactly as config.yaml declares it, captured before the API-writable
     # file is merged over it. The settings PUT validates the configuration it is *about to
     # persist*, and that merge is `config.yaml ⊕ file`: using the already-merged `rag` as the
@@ -570,7 +578,9 @@ class AppConfig(BaseModel):
         # collisions (spec 2026-09-10 §5.2). config.yaml is never written back.
         ui_models_config = ModelsConfig.from_file()
         ui_model_names = {model.name for model in ui_models_config.models}
-        config_data["models"] = merge_ui_models(config_data.get("models") or [], ui_models_config)
+        yaml_models = config_data.get("models") or []
+        yaml_model_names = {m["name"] for m in yaml_models if isinstance(m, dict) and isinstance(m.get("name"), str)}
+        config_data["models"] = merge_ui_models(yaml_models, ui_models_config)
 
         # Merge the API-writable rag file (rag_config.json) over config.yaml's `rag:`
         # block, field by field, so the settings UI can configure the RAG roles without
@@ -582,6 +592,8 @@ class AppConfig(BaseModel):
 
         result = cls.model_validate(config_data)
         result._ui_model_names = ui_model_names
+        result._yaml_model_names = yaml_model_names
+        result._hidden_in_chat = set(ui_models_config.hidden_in_chat)
         result._yaml_rag = dict(yaml_rag) if isinstance(yaml_rag, Mapping) else {}
         if not result.models:
             logger.warning(
@@ -763,6 +775,20 @@ class AppConfig(BaseModel):
         config.yaml-sourced models are display-only, UI-managed ones editable.
         """
         return name in self._ui_model_names
+
+    @property
+    def yaml_model_names(self) -> frozenset[str]:
+        """Names declared under config.yaml ``models:`` — their merged slot is pinned.
+
+        Includes a same-name entry that the UI file overrides: the override keeps the
+        yaml entry's position, so the slot stays unmovable (spec 2026-10-08 §3 D2).
+        """
+        return frozenset(self._yaml_model_names)
+
+    @property
+    def hidden_in_chat_names(self) -> frozenset[str]:
+        """Names the UI file lists under ``hidden_in_chat`` (chat-picker display filter)."""
+        return frozenset(self._hidden_in_chat)
 
     @property
     def yaml_rag(self) -> dict[str, Any]:

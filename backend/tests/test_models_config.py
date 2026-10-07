@@ -404,3 +404,45 @@ def test_legacy_config_without_capability_fields_still_loads(env_paths):
     assert merged.supported_context_windows is None
     assert merged.supported_reasoning_efforts is None
     assert merged.reasoning_effort is None
+
+
+# ---------------------------------------------------------------------------
+# hidden_in_chat + pinned-order name sets (spec 2026-10-08 models-list-grouping)
+# ---------------------------------------------------------------------------
+
+
+def test_hidden_in_chat_parses_from_file(env_paths):
+    """The top-level ``hidden_in_chat`` list survives load (a bare ``{"models": ...}``
+    validation dict would silently drop it: written but never read back)."""
+    _config_yaml, models_json = env_paths
+    models_json.write_text(json.dumps({"models": [_model("ui-only")], "hidden_in_chat": ["ui-only", "yaml-only"]}), encoding="utf-8")
+
+    config = ModelsConfig.from_file()
+
+    assert config.hidden_in_chat == ["ui-only", "yaml-only"]
+
+
+def test_hidden_in_chat_absent_means_nothing_hidden(env_paths):
+    _config_yaml, models_json = env_paths
+    _write_models_json(models_json, [_model("ui-only")])
+
+    config = ModelsConfig.from_file()
+
+    assert config.hidden_in_chat == []
+
+
+def test_load_records_yaml_names_and_hidden_names(env_paths):
+    """``AppConfig`` carries the two name sets the API derives its display fields from:
+    ``yaml_model_names`` pins merged order (any name declared under config.yaml
+    ``models:``), ``hidden_in_chat_names`` is the chat-picker display filter."""
+    config_yaml, models_json = env_paths
+    _write_config_yaml(config_yaml, [_model("yaml-only"), _model("shared", api_key="yaml-key")])
+    models_json.write_text(
+        json.dumps({"models": [_model("shared", api_key="ui-key"), _model("ui-only")], "hidden_in_chat": ["ui-only"]}),
+        encoding="utf-8",
+    )
+
+    config = AppConfig.from_file(str(config_yaml))
+
+    assert config.yaml_model_names == {"yaml-only", "shared"}
+    assert config.hidden_in_chat_names == {"ui-only"}

@@ -103,6 +103,10 @@ class ModelsConfig(BaseModel):
     """The UI-managed model set persisted in ``models_config.json``."""
 
     models: list[ModelConfig] = Field(default_factory=list, description="Models added/edited through the web settings UI.")
+    hidden_in_chat: list[str] = Field(
+        default_factory=list,
+        description="Model names hidden from the chat model pickers (display filter only). Written wholesale by the settings PUT: omitting the key on write clears the list.",
+    )
 
     @classmethod
     def resolve_config_path(cls, config_path: str | None = None) -> Path | None:
@@ -181,7 +185,13 @@ class ModelsConfig(BaseModel):
         try:
             resolved_models = cls.resolve_env_variables(raw.get("models") or [])
             normalized_models = [_normalize_legacy_use(entry) for entry in resolved_models] if isinstance(resolved_models, list) else resolved_models
-            return cls.model_validate({"models": normalized_models})
+            # The top-level `hidden_in_chat` list must be passed explicitly: this rebuilt
+            # validation dict is what the model sees, so an unlisted key would be dropped
+            # on load (a list that writes but never reads back).
+            payload: dict[str, Any] = {"models": normalized_models}
+            if "hidden_in_chat" in raw:
+                payload["hidden_in_chat"] = raw["hidden_in_chat"]
+            return cls.model_validate(payload)
         except ValueError:
             raise
         except Exception as e:

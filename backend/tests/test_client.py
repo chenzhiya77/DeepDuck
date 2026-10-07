@@ -1544,6 +1544,7 @@ class TestGetModel:
             "description": "A test model",
             "supports_thinking": True,
             "supports_reasoning_effort": True,
+            "hidden_in_chat": False,
         }
 
     def test_not_found(self, client):
@@ -3104,6 +3105,7 @@ class TestGatewayConformance:
         model.supports_reasoning_effort = False
         mock_app_config.models = [model]
         mock_app_config.token_usage.enabled = True
+        mock_app_config.hidden_in_chat_names = {"test-model"}
 
         with patch("deerflow.client.get_app_config", return_value=mock_app_config):
             client = DeerFlowClient()
@@ -3113,6 +3115,7 @@ class TestGatewayConformance:
         assert len(parsed.models) == 1
         assert parsed.models[0].name == "test-model"
         assert parsed.models[0].model == "gpt-test"
+        assert parsed.models[0].hidden_in_chat is True
         assert parsed.token_usage.enabled is True
 
     def test_get_model(self, mock_app_config):
@@ -3124,6 +3127,7 @@ class TestGatewayConformance:
         model.supports_thinking = True
         mock_app_config.models = [model]
         mock_app_config.get_model_config.return_value = model
+        mock_app_config.hidden_in_chat_names = {"other-model"}
 
         with patch("deerflow.client.get_app_config", return_value=mock_app_config):
             client = DeerFlowClient()
@@ -3133,6 +3137,7 @@ class TestGatewayConformance:
         parsed = ModelResponse(**result)
         assert parsed.name == "test-model"
         assert parsed.model == "gpt-test"
+        assert parsed.hidden_in_chat is False
 
     def test_list_skills(self, client):
         skill = MagicMock()
