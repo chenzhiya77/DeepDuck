@@ -4,8 +4,8 @@ import { getBackendBaseURL } from "../config";
 import { isStaticWebsiteOnly } from "../static-mode";
 
 import type {
-  ManagedModelInput,
   ModelsConfigResponse,
+  ModelsConfigSavePayload,
   ModelsResponse,
   ValidateModelsConfigInput,
   ValidateModelsConfigResult,
@@ -80,12 +80,17 @@ export async function loadModelsConfig(): Promise<ModelsConfigResponse> {
 }
 
 export async function saveModelsConfig(
-  models: ManagedModelInput[],
+  payload: ModelsConfigSavePayload,
 ): Promise<ModelsConfigResponse> {
   const response = await authFetch(`${getBackendBaseURL()}/api/models/config`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ models }),
+    // `hidden_in_chat` rides along on every save: the write is wholesale, so a
+    // dropped key would clear the list on the next edit of any row.
+    body: JSON.stringify({
+      models: payload.models,
+      hidden_in_chat: payload.hidden_in_chat,
+    }),
   });
   if (!response.ok) {
     throw new ModelsConfigRequestError(

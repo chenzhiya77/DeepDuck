@@ -186,3 +186,21 @@ describe("ModelsEditDialog read side", () => {
     });
   });
 });
+
+describe("ModelsEditDialog model id row", () => {
+  // 行内副标题删除后模型 ID 的唯一出口（spec 2026-10-08 models-list-grouping §2②，
+  // 裁决①）：灰显只读、值 = model.model、保存原样透传（handleSubmit 本就透传）。
+  it("shows the model id greyed out and passes it through unchanged", async () => {
+    const onSave = rs.fn();
+    renderDialog(managedModel({ name: "mini", model: "minimax-m3" }), onSave);
+
+    const idInput = screen.getByLabelText<HTMLInputElement>(M.modelIds);
+    expect(idInput.disabled).toBe(true);
+    expect(idInput.value).toBe("minimax-m3");
+
+    clickSave();
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [input] = onSave.mock.calls[0] as [ManagedModelInput];
+    expect(input.model).toBe("minimax-m3");
+  });
+});

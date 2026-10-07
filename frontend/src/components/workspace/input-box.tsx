@@ -74,6 +74,7 @@ import {
   reasoningEffortLevels,
   type InputMode,
 } from "@/core/models/reasoning-effort";
+import { chatPickerOptions } from "@/core/models/visibility";
 import {
   buildReferenceMessageMetadata,
   type SidecarContext,
@@ -2435,7 +2436,10 @@ export function InputBox({
               <ModelSelectorContent>
                 <ModelSelectorInput placeholder={t.inputBox.searchModels} />
                 <ModelSelectorList>
-                  {models.map((m) => (
+                  {/* Options only (spec 2026-10-08 models-list-grouping §2④): hidden
+                      models drop out of the dropdown; selection and fallbacks keep
+                      using the full list. */}
+                  {chatPickerOptions(models).map((m) => (
                     <ModelSelectorItem
                       key={m.name}
                       value={m.name}

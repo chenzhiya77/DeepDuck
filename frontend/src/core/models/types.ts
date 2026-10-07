@@ -12,6 +12,8 @@ export interface Model {
   reasoning_effort?: ReasoningEffortLevel | null;
   /** Total context window in tokens; null/undefined when unconfigured. */
   context_window?: number | null;
+  /** Hidden from the chat model pickers (display filter only; not disabled). */
+  hidden_in_chat?: boolean;
 }
 
 export interface TokenUsageSettings {
@@ -74,6 +76,10 @@ export interface ManagedModel {
   use_responses_api?: boolean | null;
   source: ModelSource;
   editable: boolean;
+  /** Listed in hidden_in_chat: hidden from the chat model pickers (display filter). */
+  hidden_in_chat?: boolean;
+  /** Merged position pinned by config.yaml (name declared under `models:`); not draggable. */
+  order_pinned?: boolean;
 }
 
 export interface ModelsConfigResponse {
@@ -101,6 +107,16 @@ export interface ManagedModelInput {
   when_thinking_enabled?: ThinkingRecipe;
   when_thinking_disabled?: ThinkingRecipe;
   default_headers?: Record<string, string>;
+}
+
+/** Body of `PUT /api/models/config`: the whole UI-managed collection. */
+export interface ModelsConfigSavePayload {
+  models: ManagedModelInput[];
+  /**
+   * Names hidden from the chat model pickers, written wholesale: the server
+   * clears the list when the key is omitted (models_config.json top-level list).
+   */
+  hidden_in_chat: string[];
 }
 
 /** Body of `POST /api/models/config/validate` (spec §5.3.2). */

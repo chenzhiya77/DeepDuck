@@ -11,7 +11,7 @@ import {
   ModelsConfigRequestError,
   saveModelsConfig,
 } from "./api";
-import type { ManagedModelInput } from "./types";
+import type { ModelsConfigSavePayload } from "./types";
 
 export function useModels({ enabled = true }: { enabled?: boolean } = {}) {
   const { data, isLoading, error } = useQuery({
@@ -49,7 +49,8 @@ export function useModelsConfig() {
 export function useSaveModelsConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (models: ManagedModelInput[]) => saveModelsConfig(models),
+    mutationFn: (payload: ModelsConfigSavePayload) =>
+      saveModelsConfig(payload),
     onSuccess: () => {
       // Refresh both the admin list and the chat model selector (the public
       // GET /api/models reflects the merged set after the config hot-reload).

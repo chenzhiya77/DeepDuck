@@ -52,6 +52,7 @@ import {
   type InputMode,
 } from "@/core/models/reasoning-effort";
 import type { Model } from "@/core/models/types";
+import { chatPickerOptions } from "@/core/models/visibility";
 import { useLocalSettings } from "@/core/settings";
 import {
   buildParentConversationContext,
@@ -770,7 +771,8 @@ function SidecarModelSelector({
       <ModelSelectorContent>
         <ModelSelectorInput placeholder={t.inputBox.searchModels} />
         <ModelSelectorList>
-          {models.map((model) => (
+          {/* Options only (spec 2026-10-08 models-list-grouping §2④). */}
+          {chatPickerOptions(models).map((model) => (
             <ModelSelectorItem
               key={model.name}
               value={model.name}

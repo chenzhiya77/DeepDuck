@@ -1749,7 +1749,10 @@ export const enUS: Translations = {
       editTitle: "Edit model",
       delete: "Delete",
       sourceConfigFile: "config.yaml · read-only",
-      sourceUi: "UI · editable",
+      defaultBadge: "Default",
+      showInChat: "Show in the chat model list",
+      defaultToggleLockReason:
+        "The default model is always shown in the chat model list",
       provider: "Provider",
       providerGroupGeneric: "Generic protocol",
       providerGroupVendor: "Vendors",

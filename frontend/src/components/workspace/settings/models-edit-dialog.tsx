@@ -194,6 +194,14 @@ export function ModelsEditDialog({
                 />
               </div>
 
+              {/* The model ID's only outlet now that the row subtitle is gone
+                  (spec 2026-10-08 models-list-grouping §2②): grey and read-only —
+                  handleSubmit already carries `model.model` verbatim. */}
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">{M.modelIds}</span>
+                <Input value={model.model} aria-label={M.modelIds} disabled />
+              </div>
+
               <div className="space-y-1.5">
                 <span className="text-sm font-medium">{M.apiKey}</span>
                 <Input

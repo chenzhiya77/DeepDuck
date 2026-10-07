@@ -47,6 +47,7 @@ import {
 } from "@/core/messages/human-input";
 import { getMessageCopyData } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
+import { chatPickerOptions } from "@/core/models/visibility";
 import { useRegisterActivity } from "@/core/threads/activity-context";
 import { useDeleteThread, useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { pathOfKnowledgeThread, pathOfThread } from "@/core/threads/utils";
@@ -692,7 +693,8 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
                 <ModelSelectorContent title={tc.selectModel}>
                   <ModelSelectorInput placeholder={tc.searchModels} />
                   <ModelSelectorList>
-                    {models.map((m) => (
+                    {/* Options only (spec 2026-10-08 models-list-grouping §2④). */}
+                    {chatPickerOptions(models).map((m) => (
                       <ModelSelectorItem
                         key={m.name}
                         value={m.name}
