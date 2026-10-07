@@ -114,7 +114,10 @@ export function MiddleTabs({
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="knowledge-middle-tabs">
       {/* Row 1: library header (fold toggle + name + library-level overflow menu) */}
-      <div className="relative flex items-center gap-2 border-b px-4 py-3">
+      <div
+        className="relative flex h-12 items-center gap-2 border-b px-4"
+        data-testid="knowledge-middle-header"
+      >
         {/* The kb-list restore overlay (2026-09-02): absolutely positioned by
             the shell relative to this relative row → zero layout advance in
             every fold phase. It is its own hover target, sized exactly to the

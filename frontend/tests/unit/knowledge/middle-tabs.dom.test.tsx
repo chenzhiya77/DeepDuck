@@ -77,4 +77,13 @@ describe("MiddleTabs 评测 tab 挂载", () => {
       expect(screen.getByTestId(testid)).toBeTruthy();
     }
   });
+
+  it("sizes the library header row to h-12, matching the chat panel header", () => {
+    // 两栏标题容器底线必须同一 y（2026-10-07 用户报错位 8px）：高度只能钉
+    // 结构类名，真实像素由真浏览器量。
+    renderTabs();
+    const row = screen.getByTestId("knowledge-middle-header");
+    expect(row.className).toContain("h-12");
+    expect(row.className).toContain("border-b");
+  });
 });
