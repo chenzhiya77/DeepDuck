@@ -63,6 +63,12 @@ def test_builtin_rag_soul_contains_citation_and_refusal_rules():
     assert "任何事实性问题必须至少调用一次" in soul, "vector-floor rule missing"
     assert "纯概念定义题" in soul, "the sole wiki-only exception must be enumerated"
     assert "回补" in soul, "wiki-miss fallback to hybrid_search missing"
+    # Corpus-boundary workflow (doc-tools spec 2026-10-08 §2.4): enumeration /
+    # structure / locator questions go through the document-level read-only
+    # tools, with the wide read budget (D4) stated in the soul.
+    assert "语料边界" in soul, "corpus-boundary section missing"
+    assert "list_knowledge_documents" in soul and "read_knowledge_document" in soul, "document-level tools must be referenced"
+    assert "4 个窗口" in soul and "6 次" in soul, "read budget (D4 wide tier) missing"
 
 
 def test_rag_group_tools_are_exactly_the_three_retrieval_tools(app_config):
