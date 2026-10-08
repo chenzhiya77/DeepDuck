@@ -1748,7 +1748,6 @@ export const enUS: Translations = {
       edit: "Edit",
       editTitle: "Edit model",
       delete: "Delete",
-      sourceConfigFile: "config.yaml · read-only",
       defaultBadge: "Default",
       showInChat: "Show in the chat model list",
       defaultToggleLockReason:

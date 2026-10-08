@@ -66,3 +66,13 @@
 - [x] 观感验收（设置页）：分组合并容器 + 内缩分隔线（左起名称文字起点、右止图标区前）；行单行；黑胶囊消失、config_file 灰胶囊在；「默认」胶囊恰在第一行。**分组预期锚**（审查 10）：按当前配置应得两组——「OpenAI 兼容」×5、「DeepSeek」×1。
 - [x] 交互验收：UI 行组内拖动刷新后位置保持、config_file 行无拖柄不动；**拖往钉住行方向 no-op（clamp，★2）**；**拖→存→刷新→显示序不变（稳定性，★2）**；展示开关关掉后主对话/侧栏/知识库三处下拉消失该模型、agent 默认模型选择器与功能模型选择器仍在、已选中隐藏模型的会话仍正常显示所选；**默认模型恒在对话下拉（即使名单含它，★1）**；默认行开关禁用且悬浮给原因；编辑弹窗模型 ID 灰显、保存后模型 ID 不变。
 - [x] 收尾：所有开关/拖动改动**还原到验收前状态**（逐字节对 `models_config.json` 验 md5）；`config.yaml` 零改动。
+
+## Task 5 — 二次微调（spec §7；落法=甲并入本对、③宽度=乙，2026-10-08 拍）
+
+> 动到的文件：`frontend/src/components/workspace/settings/models-settings-page.tsx`、`frontend/tests/unit/settings/models-settings-page.dom.test.tsx`、`frontend/src/core/i18n/locales/{zh-CN,en-US,types}.ts`（删 `sourceConfigFile`）。数据层零改动。
+
+- [x] RED：`models-settings-page.dom.test.tsx` 更新既有钉（灰胶囊断言反转为 null）＋新增钉（UI 行尾按钮序 `[编辑][删除][开关]`；组名 `model-group-tab` 不被 `model-group` 包含且带夹层类 `rounded-t-md`/`bg-muted/50`/`-mb-px`/`border-b-0`；两组夹层标签齐全）→ 未实现时红。→ 恰 3 红（胶囊反转/行尾序/组名夹层）。
+- [x] 实现：①去灰胶囊＋i18n 三处删 `sourceConfigFile` 键 ②行尾重排（UI 行 `[编辑][删除][开关]`、config 行 `[开关]`，滑块恒最右）③组名出容器＋夹层标签（样式钉见 spec §7③）＋宽度乙（布局测量取 max 作 min-width，名字变化自适应；happy-dom 量 0 退化 w-fit 不影响结构钉）。→ 27/27 绿。执行期修正一则：反转钉引用已删键会拿 undefined 当 matcher ⇒ 改按字面「配置文件·只读」守门。neuter 三连各恰 1 红（放回胶囊→胶囊钉红；开关挪回按钮前→行尾序钉红；标签挪进容器→夹层钉红），复绿。
+- [x] GREEN ＋ neuter 反证 ＋ `pnpm check` ＋ 前端全量。→ 27/27 绿；前端全量 251 文件 / 2850 例全过、`pnpm check` 双净（等宽修正后受影响文件单测复跑绿 + check 复净）。
+- [x] 真栈观感：夹层等宽（按最长组名）、融边视觉（`-mb-px` 与容器顶边 1px 融合）、开关列右缘对齐——几何只在真浏览器量，本轮只读不写配置。→ 真栈实测（隔离 8111/3001，避让并行会话的 8001/3000 栈）：两夹层 `offsetWidth` 138/138（min-width 随最长组名）；融边 1px 叠合（tab bottom 490 vs 容器 top 489）；五行开关右缘同列 572.3；行尾序 UI 行 `[编辑][删除][开关]`、config 行 `[开关]`；灰胶囊无、夹层在容器外。**执行期缺陷一枚已修**：等宽测量初版用 `getBoundingClientRect().width`——弹窗 zoom-in-95 动画把它缩 5%，max 采小 ⇒ 长标签撑破 min-width、两夹层 138.5/132 不等；改量 `offsetWidth`（布局宽、不受 transform 影响）后 138/138。
+- [x] 收官提交（英文 conventional）。

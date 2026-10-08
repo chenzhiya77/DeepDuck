@@ -205,20 +205,62 @@ describe("ModelsSettingsPage three states", () => {
 });
 
 describe("ModelsSettingsPage list", () => {
-  it("keeps the grey capsule on read-only rows and drops the black one", () => {
+  it("drops both source capsules: the row tail's buttons are the state", () => {
     setConfig([uiModel(), cfgModel()]);
     renderPage();
 
     // 黑胶囊退役（2026-10-08 裁决③）：可编辑由行尾按钮自证，不再打来源章。
     expect(screen.queryByText("UI·可编辑")).toBeNull();
-    // config_file 灰胶囊保留：它解释"为何没有铅笔/垃圾桶"（状态说明）。
-    expect(screen.getByText(M.sourceConfigFile)).toBeDefined();
+    // 灰胶囊同判（spec §7①，覆盖旧留用裁定）：它在替按钮说话，不是独立状态；
+    // 来源只决定能否编辑，按钮有无已经说明。键已删，断言按字面守门。
+    expect(screen.queryByText("配置文件·只读")).toBeNull();
     // display_name ?? name
     expect(screen.getByText("UI DeepSeek")).toBeDefined();
     expect(screen.getByText("cfg-model")).toBeDefined();
 
     expect(screen.getAllByRole("button", { name: M.delete })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: M.edit })).toHaveLength(1);
+  });
+
+  it("orders the row tail as edit, delete, then the switch — switch rightmost", () => {
+    // spec §7②：滑块恒贴右缘成一列（图 3 先例），编辑/删除在它前面。
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    const uiRow = document.querySelector(
+      "[data-testid='model-row'][data-model-name='ui-model']",
+    );
+    const tail = [...uiRow!.querySelectorAll("button")].map(
+      (button) => button.getAttribute("aria-label") ?? button.getAttribute("role"),
+    );
+    expect(tail).toEqual([M.edit, M.delete, M.showInChat]);
+
+    const cfgRow = document.querySelector(
+      "[data-testid='model-row'][data-model-name='cfg-model']",
+    );
+    const cfgTail = [...cfgRow!.querySelectorAll("button")].map(
+      (button) => button.getAttribute("aria-label") ?? button.getAttribute("role"),
+    );
+    expect(cfgTail).toEqual([M.showInChat]);
+  });
+
+  it("keeps the group label outside the container in a fused folder tab", () => {
+    // spec §7③：组名移出容器，夹层标签骑在容器顶边（-mb-px 融边）、淡色、等宽（数值真栈量）。
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    const tabs = [...document.querySelectorAll("[data-testid='model-group-tab']")];
+    expect(tabs).toHaveLength(2);
+    for (const tab of tabs) {
+      // 不在容器里
+      expect(tab.closest("[data-testid='model-group']")).toBeNull();
+      for (const token of ["rounded-t-md", "bg-muted/50", "-mb-px", "border-b-0"]) {
+        expect(tab.className).toContain(token);
+      }
+    }
+    // 首现序：uiModel(deepseek) 在前、cfgModel(openai-compatible) 在后。
+    expect(tabs[0]!.textContent).toBe(M.providerDeepseek);
+    expect(tabs[1]!.textContent).toBe(M.providerOpenaiCompatible);
   });
 
   it("groups rows into one filled container per provider", () => {

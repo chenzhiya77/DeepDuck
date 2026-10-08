@@ -1696,7 +1696,6 @@ export interface Translations {
       edit: string;
       editTitle: string;
       delete: string;
-      sourceConfigFile: string;
       defaultBadge: string;
       showInChat: string;
       defaultToggleLockReason: string;

@@ -1,7 +1,12 @@
 "use client";
 
 import { GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +90,25 @@ export function ModelsSettingsPage() {
   const [hiddenInChat, setHiddenInChat] = useState<string[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
   const dragMovedRef = useRef(false);
+  // spec §7③ width=乙: every group tab shares the width of the longest one,
+  // re-measured when the labels change. Measured as zero in jsdom/happy-dom,
+  // which degrades to the natural width and leaves the structure pins intact.
+  const groupTabRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [tabMinWidth, setTabMinWidth] = useState<number | undefined>(undefined);
+  const groupLabels = groupByProvider(rows)
+    .map((group) => groupLabel(group.provider))
+    .join("|");
+
+  useLayoutEffect(() => {
+    let max = 0;
+    for (const element of groupTabRefs.current.values()) {
+      // offsetWidth, not getBoundingClientRect: the dialog's zoom-in animation
+      // scales rects by 0.95 mid-flight, which under-measured the longest tab
+      // and left the tabs unequal (measured live on 2026-10-08).
+      max = Math.max(max, element.offsetWidth);
+    }
+    if (max > 0) setTabMinWidth(max);
+  }, [groupLabels]);
 
   useEffect(() => {
     if (!config) return;
@@ -258,14 +282,30 @@ export function ModelsSettingsPage() {
               // One merged container per provider (spec §2①): rows read as a list,
               // not a stack of loose cards. `bg-card` keeps the shared surface story
               // with the functional view's panels (2026-09-16).
-              <div
-                className="bg-card overflow-hidden rounded-lg border"
-                data-testid="model-group"
-                key={group.provider}
-              >
-                <div className="text-muted-foreground px-3 pt-2.5 pb-1 text-xs font-medium">
-                  {groupLabel(group.provider)}
+              <div key={group.provider}>
+                {/* The label rides outside the container on a fused folder tab
+                    (spec §7③): a light capsule hugging the longest group name,
+                    `-mb-px` merging its edge into the container's top border. */}
+                <div className="flex">
+                  <span
+                    className="-mb-px inline-flex h-7 items-center justify-center rounded-t-md border border-b-0 border-border/60 bg-muted/50 px-3 text-xs text-muted-foreground"
+                    data-testid="model-group-tab"
+                    ref={(element) => {
+                      if (element) {
+                        groupTabRefs.current.set(group.provider, element);
+                      } else {
+                        groupTabRefs.current.delete(group.provider);
+                      }
+                    }}
+                    style={tabMinWidth ? { minWidth: tabMinWidth } : undefined}
+                  >
+                    {groupLabel(group.provider)}
+                  </span>
                 </div>
+                <div
+                  className="bg-card overflow-hidden rounded-lg border"
+                  data-testid="model-group"
+                >
                 {group.rows.map((row, index) => {
                   const movable = isMovableRow(row);
                   const isDefault = row.name === rows[0]?.name;
@@ -329,11 +369,28 @@ export function ModelsSettingsPage() {
                         )}
                       </div>
                       <div className="flex w-52 shrink-0 items-center justify-end gap-2 py-2.5">
-                        {!row.editable && (
-                          // The read-only capsule explains the missing buttons
-                          // (state riding on the row it describes).
-                          <Badge variant="secondary">{M.sourceConfigFile}</Badge>
+                        {row.editable && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={M.edit}
+                              onClick={() => setEditing(row)}
+                            >
+                              <PencilIcon className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={M.delete}
+                              onClick={() => handleDelete(row.name)}
+                            >
+                              <TrashIcon className="size-4" />
+                            </Button>
+                          </>
                         )}
+                        {/* The switch hugs the right edge on every row (spec §7②):
+                            one aligned column, edit/delete in front of it. */}
                         {isDefault ? (
                           // A disabled button swallows hover and focus, so the
                           // reason lives on a wrapping trigger (D1).
@@ -355,30 +412,11 @@ export function ModelsSettingsPage() {
                             }
                           />
                         )}
-                        {row.editable && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={M.edit}
-                              onClick={() => setEditing(row)}
-                            >
-                              <PencilIcon className="size-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={M.delete}
-                              onClick={() => handleDelete(row.name)}
-                            >
-                              <TrashIcon className="size-4" />
-                            </Button>
-                          </>
-                        )}
                       </div>
                     </div>
                   );
                 })}
+                </div>
               </div>
             ))
           )}

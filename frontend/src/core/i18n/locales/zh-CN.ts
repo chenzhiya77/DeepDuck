@@ -1652,7 +1652,6 @@ export const zhCN: Translations = {
       edit: "编辑",
       editTitle: "编辑模型",
       delete: "删除",
-      sourceConfigFile: "配置文件·只读",
       defaultBadge: "默认",
       showInChat: "在对话列表中展示",
       defaultToggleLockReason: "默认模型始终在对话列表中展示",
