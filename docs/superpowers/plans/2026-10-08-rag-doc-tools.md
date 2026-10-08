@@ -76,7 +76,14 @@
 
 > 动到的文件：检索工具＋`knowledge/vector_store.py`（`hybrid_query` 可选 `doc_id`）＋测试
 
-- [ ] RED：`doc_id` 过滤命中/未命中/跨库；GREEN：工具可选入参＋filter 一处＋docstring。
+- [x] RED：`doc_id` 过滤命中/未命中/跨库；GREEN：工具可选入参＋filter 一处＋docstring。
+
+**实测（2026-10-08，Task 4）**：
+- RED：三件恰红——向量库 `test_hybrid_query_filters_by_doc_within_kb`（命中/未命中/跨库〔kb-2 的 doc-9 跨库查询〕）、工具 unit（`doc_id` 原样落到 `hybrid_query` 调用）、工具 integration（doc 范围命中＋`doc-elsewhere` 未命中文案）。
+- GREEN：`vector_store.py` `hybrid_query` 加可选 `doc_id`（并进同一 scope filter、两条 prefetch 共用；`kb_filter`→`scope_filter` 更名）；`hybrid_search_tool.py` impl 加 `doc_id`＋透传，包层加入参＋docstring（Use 第 3 条＋Args 条目）。
+- neuter：拆 filter 两行 ⇒ 恰红向量库件＋工具集成件（unit 转发断言仍绿，符合预期）；还原复绿。
+- 门禁（定向·终态）：`tests/knowledge/tools/`＋`test_vector_store.py`＋`test_recall_test_api.py` **108 passed**（recall-test 为 `hybrid_query` 受害面，签名加法零破坏）；ruff check／format --check 双净（四件）。
+- 提交：`fbc5f69da`。
 
 ## Task 5 — SOUL＋门控收口
 
