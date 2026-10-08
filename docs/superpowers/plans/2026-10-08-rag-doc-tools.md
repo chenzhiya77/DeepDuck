@@ -47,7 +47,7 @@
 > 动到的文件：新模块 `harness/deerflow/tools/builtins/knowledge_documents_tool.py`＋测试＋`config.example.yaml`／本地 `config.yaml`（注册双落）
 
 - [x] RED：多文档/混合状态/诚实计数；未绑定＝引导；空库；跨用户＝拒绝。GREEN：新模块（镜像检索工具写法：`@tool(parse_docstring=True)`＋`resolve_kb_scope` fail-closed＋**主树模块级 import**（照 `hybrid_search_tool.py:18-25`；函数内 import 是切片形态、见下条）；注册面可导）；主树注册两条（`group: rag, opt_in: true`）**双落**：`config.example.yaml`（tracked 模板）＋本地 `config.yaml`（gitignored 运行时）；rag 资产 `config.yaml` 零改动（`tool_groups: [rag]` 组已在）。
-- [ ] 切片形态草稿（函数内 import `deerflow_knowledge`）——随带组备件，本对不动切片树；机械变换口径见下实测末行，草稿块随 Task 8 交接单承载。
+- [x] 切片形态草稿（函数内 import `deerflow_knowledge`）——随带组备件，本对不动切片树；机械变换口径见下实测末行，草稿块已随 Task 8 交接单 §1 承载。
 
 **实测（2026-10-08，Task 2）**：
 - RED：新件 `test_knowledge_documents_tool.py`（5 例：混合状态＋诚实计数、零组省略、空库、未绑定、跨用户）——模块未建 ⇒ 采集错恰红。
@@ -90,7 +90,7 @@
 > 动到的文件：`agents/assets/rag/SOUL.md`（两树各自适配，非逐字同文）＋切片 `knowledge_scope_middleware.py`（草稿）
 
 - [x] 主树 SOUL：新增「语料边界问题」节（工作流＋D4 限次取值）＋L7 强制句两分修订；切片版草稿（按切片两件检索链适配；两树 L7 非同一句）。（主树干完；切片版草稿口径见下实测末行）
-- [ ] 切片门控集合扩列草稿（`{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处）＋拒绝文案收正（`_disabled_tool_message`：ToolMessage `name=` 与 content 按被拦工具名回填／泛化；`access.py:37` 同句一并核——第三处同句 `ragflow/tools.py:539` 属 RAGFlow 自答、不随扩列，维持不动）。（草稿口径见下实测末行；物理块随 Task 8 交接单承载）
+- [x] 切片门控集合扩列草稿（`{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处）＋拒绝文案收正（`_disabled_tool_message`：ToolMessage `name=` 与 content 按被拦工具名回填／泛化；`access.py:37` 同句一并核——第三处同句 `ragflow/tools.py:539` 属 RAGFlow 自答、不随扩列，维持不动）。（草稿口径见下实测末行；物理块已随 Task 8 交接单 §3 承载）
 
 **实测（2026-10-08，Task 5·主树）**：
 - RED：`test_builtin_rag_soul_contains_citation_and_refusal_rules` 增三条（`语料边界` 节在、两工具名在、限次 `4 个窗口`/`6 次` 在）⇒ 恰红 1 件。
@@ -129,5 +129,19 @@
 
 > 动到的文件：交接单（挂 ② 刻度轨恢复同批次）
 
-- [ ] 交接单：切片形态工具模块＋结果字段（切片同段）＋门控集合（两处）＋门控文档行同步（切片 `middlewares/AGENTS.md:47`「blocks `knowledge_search`」→三件套表述）＋SOUL（两树各自适配）＋配置（acceptance）＋验收相（同两问回归，基准会话 `c4af859d`）＋口径四处（RFC L17 句／清单行／审计 re-pin／材料补充相——发布前完成；**审计 re-pin 须在 RFC 全部在飞改动落定之后**〔本对 L17 句＋ui 线 §配置位置 两行〕对最终稿重算 md5/行数，否则 pin 立刻又陈旧；pin 现值 `5f9eeaab…` 与 RFC HEAD 逐字相符、346 行——被刷新的触发点正是这两笔落定）。
-- [ ] **提交前四门复核**（口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5）：切片树任何提交前必过——① `cd backend && make lint`（ruff check＋format 双净）② 仓库根 `python scripts/check_agent_guidance.py --base-ref <基座> --head-ref HEAD` → **errors=0** ③ `cd frontend && pnpm format`（prettier 零 diff）④ 后端定向 pytest（口径按批次）；既有绿项（`uv lock --check`／`pnpm lint`・`typecheck`・`build`）随门联跑；凡动 `.github/workflows/*` 的批次，另以推送后首跑复核（本地无 GitHub workflow 校验器）。
+- [x] 交接单：切片形态工具模块＋结果字段（切片同段）＋门控集合（两处）＋门控文档行同步（切片 `middlewares/AGENTS.md:47`「blocks `knowledge_search`」→三件套表述）＋SOUL（两树各自适配）＋配置（acceptance）＋验收相（同两问回归，基准会话 `c4af859d`）＋口径四处（RFC L17 句／清单行／审计 re-pin／材料补充相——发布前完成；**审计 re-pin 须在 RFC 全部在飞改动落定之后**〔本对 L17 句＋ui 线 §配置位置 两行〕对最终稿重算 md5/行数，否则 pin 立刻又陈旧；pin 现值 `5f9eeaab…` 与 RFC HEAD 逐字相符、346 行——被刷新的触发点正是这两笔落定）。
+- [ ] **提交前四门复核**（口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5）：切片树任何提交前必过——① `cd backend && make lint`（ruff check＋format 双净）② 仓库根 `python scripts/check_agent_guidance.py --base-ref <基座> --head-ref HEAD` → **errors=0** ③ `cd frontend && pnpm format`（prettier 零 diff）④ 后端定向 pytest（口径按批次）；既有绿项（`uv lock --check`／`pnpm lint`・`typecheck`・`build`）随门联跑；凡动 `.github/workflows/*` 的批次，另以推送后首跑复核（本地无 GitHub workflow 校验器）。（随带批次执行期逐条跑；口径已随交接单 §9 承载，本框待批次执行后勾）
+
+**交接单（切片移植批次执行用；本对只写不落）**
+
+- **批次口径**：切片随带批次（与 ② 刻度轨恢复同批次机制；A 对切片批已落——切片树 tip `af54b4d01`、工作区净，执行前先核 tip）。改动全部落切片树 `slice/knowledge-local-vector-retrieval`；提交按线拆、信息英文 conventional；每笔提交前过 §9 四门。
+- **§1 切片形态工具模块**（新件 `backend/packages/harness/deerflow/tools/builtins/knowledge_documents_tool.py`）：源＝主树件（`1104b5384`＋`0285e771c`）逐字搬运＋两处机械变换——① imports 下移**函数内**并改 `deerflow_knowledge.*`（照切片 `hybrid_search_tool.py:78-93` 现行形态：模块级仅 `langchain.tools.tool` 与 `deerflow.tools.types.Runtime`）；② 文案取 `deerflow_knowledge.access` 常量。契约逐字同主树（`_DEFAULT_LIMIT=20`／`_MAX_LIMIT=50`／`_MAX_ITEM_CHARS=2000`；`_doc_meta`／`_ready_document`／`_shape_items`＋两 impl＋两 `@tool(parse_docstring=True)` 包层）。
+- **§2 结果字段＋篇内检索（切片同段小改）**：切片 `hybrid_search_tool.py` item 构造（`:137` 起）补 `doc_id`／`chunk_index`（均取 DB 行）＋docstring 两字段句（照 `9e86b8b3c`）；`deerflow_knowledge/vector_store.py` `hybrid_query` 加可选 `doc_id` 并进同一 filter（两条 prefetch 共用；`kb_filter`→`scope_filter`，照 `fbc5f69da`）；检索工具加 `doc_id` 入参＋透传＋docstring（Use 第 3 条＋Args）。
+- **§3 门控集合（两处）**：`agents/middlewares/knowledge_scope_middleware.py:25` 单名常量 → `_KNOWLEDGE_TOOL_NAMES = frozenset({knowledge_search, list_knowledge_documents, read_knowledge_document})`；同扩两处按名生效（tools 过滤 `:83`＋拦截 `:89-98`）。拒绝文案收正：`_disabled_tool_message` 的 `name=` 与 content 按被拦工具名回填（保持 `disabled` 子串——兼容 `tests/test_knowledge_scope_middleware.py:143`）；`deerflow_knowledge/access.py:37` `SCOPE_DISABLED_MESSAGE` 同句随核（新工具沿用同模板）；`community/ragflow/tools.py:539` 维持不动。
+- **§4 门控文档行**：切片 `agents/middlewares/AGENTS.md:47`「blocks `knowledge_search`」→ 三件套表述。
+- **§5 SOUL（切片版）**：切片 `agents/assets/rag/SOUL.md`——L7（`:7`，`knowledge_search` 版）句尾补「语料边界类问题例外（有哪些文档 / 某篇讲什么 / 除了 X 还有什么 / 第几片）→ 见下节」＋新增「语料边界问题（枚举 / 结构 / 定位）」节 5 条（删 wiki／图谱／深度检索指代——切片链仅 2 件工作流；D4 限次同文 ≤4 窗口、≤6 次/轮）；切片 `test_rag_agent_assembly.py` SOUL 断言同批补三条（照主树 `63f89a7ea`）。
+- **§6 配置（acceptance）**：切片 acceptance 实例 config `tools[]` 补两条（`list_knowledge_documents`／`read_knowledge_document`，`group: rag, opt_in: true`，`use: deerflow.tools.builtins.knowledge_documents_tool:*`）；切片树 tracked `config.example.yaml` 本批不动（plan 口径＝切片侧落 acceptance；发布前随口径四处复核再定是否同步 example——登记）。
+- **§7 验收相（切片）**：acceptance-8 配方实例（gateway `:8101`／Qdrant `:6399`）跑同两问回归（基准会话 `c4af859d` 先后对照）——①「测试10中有哪些内容呀」list→read→清单；②「除了鹦鹉提示词还有什么」有据枚举到边界；③篇内检索一问（D1）；临时件收尾删净。
+- **§8 口径四处（发布前完成）**：① RFC v3 L17 句（`docs/plans/2026-09-22-local-knowledge-base-rfc-v3.md:17`）「…一个检索工具…」→ 含文档清单/读取（只读）的表述；② 工作清单（`docs/plans/2026-10-06-rfc-v3-eval-workitems.md`）加一行「文档级只读工具组（list/read＋结果补 doc_id＋门控＋SOUL）」＋同步 L55 旧句；③ 审计件 re-pin（`docs/plans/2026-10-06-rfc-v3-audit-findings.md`）——**须在 RFC 全部在飞改动落定之后**（本对 L17 句＋ui 线 §配置位置 两行）对最终稿重算 md5/行数（pin 现值 `5f9eeaab…`＝RFC HEAD、346 行）；④ 切片验收材料补相（切片移植 plan Task 8 材料行＋补充相记录）。
+- **§9 四门复核**：口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5（见上框四条），批次执行期逐条跑；既有绿项随门联跑。
+- **§10 提交链（预期 3–5 笔）**：① 结果字段＋篇内检索（feat）→ ② list/read 模块＋acceptance 注册（feat）→ ③ 门控集合＋文案＋AGENTS 行（fix/feat）→ ④ SOUL＋用例（feat）→ ⑤ 回填/材料（docs，如拆）。用例面：切片 `tests/knowledge/tools/` 同批扩（结果字段/双寻址/守卫/门控三件套）。
