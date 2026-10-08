@@ -73,8 +73,10 @@ class _FieldVectorStore:
         self.payloads = [
             {"chunk_id": "doc-u#0007", "doc_name": "手册.md", "page": 7, "heading_path": ["第7章"], "doc_id": "doc-u"},
         ]
+        self.calls: list[dict] = []
 
-    async def hybrid_query(self, *, dense, sparse, kb_id, top_k):
+    async def hybrid_query(self, *, dense, sparse, kb_id, top_k, doc_id=None):
+        self.calls.append({"kb_id": kb_id, "doc_id": doc_id})
         return [SimpleNamespace(payload=payload) for payload in self.payloads]
 
 
@@ -105,6 +107,25 @@ async def test_items_carry_doc_id_and_chunk_index_for_follow_up_reads() -> None:
     assert item["doc_name"] == "手册.md"
     assert item["page"] == 7
     assert item["heading_path"] == ["第7章"]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_forwards_the_doc_filter_to_the_vector_store() -> None:
+    """篇内检索（spec §2.3）: the optional doc_id rides the same store call."""
+    vector_store = _FieldVectorStore()
+
+    result = await _hybrid_search_impl(
+        "任意问题",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        store=_FieldStore(),
+        vector_store=vector_store,
+        embedder=_FieldEmbedder(),
+        reranker=_StubReranker(),
+        doc_id="doc-u",
+    )
+
+    assert vector_store.calls == [{"kb_id": KB_ID, "doc_id": "doc-u"}]
+    assert [item["doc_id"] for item in result["results"]] == ["doc-u"]
 
 
 @requires_qdrant
@@ -209,3 +230,24 @@ async def test_hybrid_search_rerank_failure_degrades_to_rrf_order(tools_env):
     assert len(result["results"]) == 2  # RRF order preserved, scores absent
     assert result["results"][0]["text"]
     assert "精排" in result["message"] or "rerank" in result["message"].lower()
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_hybrid_search_doc_scope_hits_and_misses(tools_env) -> None:
+    """篇内检索（spec 2026-10-08 §2.3）: doc_id scopes retrieval to one document."""
+    kwargs = dict(
+        store=tools_env["store"],
+        vector_store=tools_env["vector_store"],
+        embedder=tools_env["embedder"],
+        reranker=_StubReranker(),
+    )
+
+    scoped = await _hybrid_search_impl("Gateway", _runtime(kb_id=KB_ID, user_id=OWNER_ID), doc_id=DOC_ID, **kwargs)
+    assert scoped["results"]
+    assert all(item["doc_id"] == DOC_ID for item in scoped["results"])
+
+    missing = await _hybrid_search_impl("Gateway", _runtime(kb_id=KB_ID, user_id=OWNER_ID), doc_id="doc-elsewhere", **kwargs)
+    assert missing["results"] == []
+    assert missing["message"] == "知识库中未检索到与问题相关的内容。"

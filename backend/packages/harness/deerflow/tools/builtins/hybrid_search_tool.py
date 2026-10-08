@@ -35,6 +35,7 @@ async def _hybrid_search_impl(
     vector_store: KnowledgeVectorStore | None = None,
     embedder: Any = None,
     reranker: Any = None,
+    doc_id: str | None = None,
     top_k: int = 5,
     candidate_limit: int = 20,
 ) -> dict:
@@ -54,6 +55,7 @@ async def _hybrid_search_impl(
         dense=query_vector.dense,
         sparse=query_vector.sparse,
         kb_id=kb_id,
+        doc_id=doc_id,
         top_k=candidate_limit,
     )
     if not candidates:
@@ -107,12 +109,14 @@ async def hybrid_search(
     runtime: Runtime,
     query: Annotated[str, "The retrieval question, phrased in the user's language."],
     top_k: Annotated[int, "Number of chunks to return after precision ranking (default 5)."] = 5,
+    doc_id: Annotated[str | None, "Optional document id (from list_knowledge_documents or a previous result); when set, retrieval is scoped to that single document."] = None,
 ) -> dict:
     """Hybrid vector search over the knowledge base bound to this conversation (dense + sparse fused with RRF, then reranked).
 
     Use this tool when:
     - The user's question needs factual detail, precise wording, or citation-grade evidence from the bound knowledge base
     - You need the default, fast retrieval path before considering deeper paths
+    - You already know the document — pass its doc_id to search inside that one document only
 
     Skip this tool when:
     - The question is about relationships/multi-hop structure between concepts — use graph_search
@@ -124,5 +128,6 @@ async def hybrid_search(
         runtime: Tool runtime carrying the bound ``kb_id`` in its context.
         query: The retrieval question, phrased in the user's language.
         top_k: Number of chunks to return after precision ranking (default 5).
+        doc_id: Optional document id; when set, retrieval is scoped to that single document.
     """
-    return await _hybrid_search_impl(query, runtime, top_k=top_k)
+    return await _hybrid_search_impl(query, runtime, top_k=top_k, doc_id=doc_id)
