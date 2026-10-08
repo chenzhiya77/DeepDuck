@@ -18,20 +18,20 @@
 
 > 动到的文件：只读核实＋spec/plan 回填
 
-- [ ] ① 两树对照重核 spec §1 各锚（结果构造 81-87／store 282-326／vector_store 62·316-320·删除路 609/613（切片 :336）／chunker 369／服务 268·364（切片 160·100）／切片门控 25＋两处按名）；② 工具注册点（主树 `config.yaml` tools[]＋rag 资产 `tool_groups`；切片 acceptance config）；③ 两树 SOUL L7 强制句确切行；④ `chunk_positions` 语义重核（活体位置 vs `chunk_index` 差与换算）；⑤ 受害者扫描：结果 payload 新键的既有断言、门控常量改名影响面、SOUL 句改的用例面（点名主树 `test_rag_agent_assembly.py`：`test_builtin_rag_soul_contains_citation_and_refusal_rules`——L7 句改必撞、随 Task 5 同步；`test_rag_group_tools_are_exactly_the_three_retrieval_tools`——断言是超集⇒仍过、名称「exactly」陈旧可顺手更新）、预算中间件特判面（切片 `:665`／主树无）、**按名引用点全集**（切片 `knowledge_scope_admission.py:17-19·36`／`features.py:123-127`／`community/ragflow/sources.py:82`／前端 `citations.ts:13`·`sources.ts:34`／`src/AGENTS.md:213`——预期全零改动，核实确认）。
+- [ ] ① 两树对照重核 spec §1 各锚（结果构造 81-87／store 282-326／vector_store 62·316-320·删除路 609/613（切片 :336）／chunker 369／服务 268·364（切片 160·100）／切片门控 25＋两处按名）；② 工具注册点（主树 `config.yaml` tools[]＋rag 资产 `tool_groups`；切片 acceptance config）；③ 两树 SOUL L7 强制句确切行；④ `chunk_positions` 语义重核（活体位置 vs `chunk_index` 差与换算）；⑤ 受害者扫描：结果 payload 新键的既有断言、门控常量改名影响面、SOUL 句改的用例面（点名主树 `test_rag_agent_assembly.py`：`test_builtin_rag_soul_contains_citation_and_refusal_rules`——L7 句改必撞、随 Task 5 同步；`test_rag_group_tools_are_exactly_the_three_retrieval_tools`——断言是超集⇒仍过、名称「exactly」陈旧可顺手更新）、预算中间件特判面（切片 `:665`／主树无）、**按名引用点全集**（切片 `knowledge_scope_admission.py:17-20·36`／`routers/features.py:122-128`／`community/ragflow/sources.py:82`／前端 `citations.ts:13`·`sources.ts:34`／`src/AGENTS.md:213`＋主树对应面 `citations.ts:17`·`core/pet/tools.ts:56-58`——预期全零改动，核实确认）。
 
 ## Task 1 — 检索结果补字段（TDD）
 
 > 动到的文件：`harness/deerflow/tools/builtins/hybrid_search_tool.py`＋对应测试
 
-- [ ] RED：payload 断言 `doc_id`（＋`chunk_index`）出现；GREEN：item 构造（主仓 L81-87／切片 L137 起）补键＋docstring 提及结果含 `doc_id`/`chunk_index`（供 read 追问）；neuter 一次（去键恰红）。
+- [ ] RED：payload 断言 `doc_id`（＋`chunk_index`）出现；GREEN：item 构造（主仓 L81-87／切片 L137 起）补键——`chunk_index` 取 DB 行键（两树 payload 无此键）、`doc_id` payload／行俱有——＋docstring 提及结果含 `doc_id`/`chunk_index`（供 read 追问）；neuter 一次（去键恰红）。
 - [ ] 门禁：knowledge 面定向。
 
 ## Task 2 — list 工具（TDD＋注册）
 
 > 动到的文件：新模块 `harness/deerflow/tools/builtins/knowledge_documents_tool.py`＋测试＋`config.example.yaml`／本地 `config.yaml`（注册双落）
 
-- [ ] RED：多文档/混合状态/诚实计数；未绑定＝引导；空库；跨用户＝拒绝。GREEN：新模块（镜像检索工具写法：`@tool(parse_docstring=True)`＋函数内 import＋`resolve_kb_scope`；注册面可导、不依赖扩展在场）；主树注册两条（`group: rag, opt_in: true`）**双落**：`config.example.yaml`（tracked 模板）＋本地 `config.yaml`（gitignored 运行时）；rag 资产 `config.yaml` 零改动（`tool_groups: [rag]` 组已在）。
+- [ ] RED：多文档/混合状态/诚实计数；未绑定＝引导；空库；跨用户＝拒绝。GREEN：新模块（镜像检索工具写法：`@tool(parse_docstring=True)`＋`resolve_kb_scope` fail-closed＋**主树模块级 import**（照 `hybrid_search_tool.py:18-25`；函数内 import 是切片形态、见下条）；注册面可导）；主树注册两条（`group: rag, opt_in: true`）**双落**：`config.example.yaml`（tracked 模板）＋本地 `config.yaml`（gitignored 运行时）；rag 资产 `config.yaml` 零改动（`tool_groups: [rag]` 组已在）。
 - [ ] 切片形态草稿（函数内 import `deerflow_knowledge`）——随带组备件，本对不动切片树。
 
 ## Task 3 — read 工具（TDD）
@@ -52,7 +52,7 @@
 > 动到的文件：`agents/assets/rag/SOUL.md`（两树各自适配，非逐字同文）＋切片 `knowledge_scope_middleware.py`（草稿）
 
 - [ ] 主树 SOUL：新增「语料边界问题」节（工作流＋D4 限次取值）＋L7 强制句两分修订；切片版草稿（按切片两件检索链适配；两树 L7 非同一句）。
-- [ ] 切片门控集合扩列草稿（`{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处）＋拒绝文案收正（`_disabled_tool_message`：ToolMessage `name=` 与 content 按被拦工具名回填／泛化；`access.py:37` 同句一并核）。
+- [ ] 切片门控集合扩列草稿（`{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处）＋拒绝文案收正（`_disabled_tool_message`：ToolMessage `name=` 与 content 按被拦工具名回填／泛化；`access.py:37` 同句一并核——第三处同句 `ragflow/tools.py:539` 属 RAGFlow 自答、不随扩列，维持不动）。
 
 ## Task 6 — 真栈验收（主树）
 
