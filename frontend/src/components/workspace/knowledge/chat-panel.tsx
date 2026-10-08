@@ -43,10 +43,11 @@ import { threadsForKb } from "@/core/knowledge/kb-threads";
 import type { GraphRetrievalTrace, GraphRetrievalOverlay, KnowledgeBase } from "@/core/knowledge/types";
 import {
   buildHumanInputResponseText,
+  hasOpenHumanInputRequest,
   type HumanInputRequest,
   type HumanInputResponse,
 } from "@/core/messages/human-input";
-import { getMessageCopyData } from "@/core/messages/utils";
+import { getMessageCopyData, isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
 import { chatPickerOptions } from "@/core/models/visibility";
 import { useRegisterActivity } from "@/core/threads/activity-context";
@@ -194,6 +195,8 @@ export function KnowledgeChatPanel({
     thread,
     liveRunId,
     sendMessage,
+    regenerateMessage,
+    editAndRegenerateMessage,
     isHistoryLoading,
     hasMoreHistory,
     loadMoreHistory,
@@ -328,6 +331,26 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
     void sendMessage(threadId, { text, files: [] });
     setDraft("");
   }, [draft, kbId, sendMessage, thread.isLoading, threadId]);
+
+  const hasOpenHumanInputCard = useMemo(
+    () =>
+      hasOpenHumanInputRequest(
+        thread.messages,
+        (message) => !isHiddenFromUIMessage(message),
+      ),
+    [thread.messages],
+  );
+
+  const handleRegenerate = useCallback(
+    (messageId: string, supersededMessageIds: string[]) =>
+      regenerateMessage(threadId, messageId, supersededMessageIds),
+    [regenerateMessage, threadId],
+  );
+  const handleEditAndRegenerate = useCallback(
+    (messageId: string, replacementText: string) =>
+      editAndRegenerateMessage(threadId, messageId, replacementText),
+    [editAndRegenerateMessage, threadId],
+  );
 
   const renderMessageFooter = useCallback(
     (message: Message) => {
@@ -628,6 +651,10 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
               isHistoryLoading={isHistoryLoading}
               renderMessageContent={renderMessageContent}
               renderMessageFooter={renderMessageFooter}
+              canRegenerate={!isNewThread && !thread.isLoading}
+              onRegenerateMessage={handleRegenerate}
+              canEdit={!isNewThread && !thread.isLoading && !hasOpenHumanInputCard}
+              onEditAndRegenerateMessage={handleEditAndRegenerate}
               onSubmitHumanInput={handleSubmitHumanInput}
             />
             {/* 会话刻度轨（2026-09-08）：文档详情切片刻度轨同款方案——右缘刻度
