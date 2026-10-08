@@ -61,8 +61,16 @@
 
 > 动到的文件：同 Task 2 模块＋测试
 
-- [ ] RED：①`doc_id` 分页（offset/limit/has_more/边界）②`chunk_id` 居中窗口（`#` 序号→活体位置换算、边界收拢、第 K/共 N）③非 `ready` 拒绝（含状态文案）④跨库/不存在拒绝 ⑤伪造 `chunk_id` 前缀＝拒绝 ⑥超长单条：截断并标 `truncated`（不静默）。GREEN＋neuter（换算拆掉恰红、守卫拆掉恰红）。
-- [ ] 门禁定向。
+- [x] RED：①`doc_id` 分页（offset/limit/has_more/边界）②`chunk_id` 居中窗口（`#` 序号→活体位置换算、边界收拢、第 K/共 N）③非 `ready` 拒绝（含状态文案）④跨库/不存在拒绝 ⑤伪造 `chunk_id` 前缀＝拒绝 ⑥超长单条：截断并标 `truncated`（不静默）。GREEN＋neuter（换算拆掉恰红、守卫拆掉恰红）。
+- [x] 门禁定向。
+
+**实测（2026-10-08，Task 3）**：
+- RED：同文件追加 6 例（分页：首页/末页/offset 越界/上限钉（999→50）＋条目整字典断言；居中窗口：**空洞换算**〔索引 0,1,2,4,5⇒活体位次〕＋左右边界收拢＋第 K/共 N；非就绪：indexing 与 failed 各一；拒绝族：缺失/跨库/伪造 `d-1#9999`/无参/零切片 ready 文；截断：2100→2000＋`truncated` 且短条无该键；未绑定与越权）——`_read_document_impl` 未实现 ⇒ 采集错恰红。
+- GREEN：模块补 `_read_document_impl`＋`read_knowledge_document` 包层＋助手（`_doc_meta`／`_ready_document`／`_shape_items`）；常量 `_DEFAULT_LIMIT=20`／`_MAX_LIMIT=50`／`_MAX_ITEM_CHARS=2000`；窗口宽＝`min(limit,total)`、`start=max(1,min(K−half,total−window+1))`；`chunk_id` 优先于 `doc_id`；归属一律以行校验（不拆前缀）。测试自纠一处：窗口 3-5 已达尾 ⇒ `has_more=False`（原期望写错，以代码为准更正）。
+- neuter×2：①换算拆掉（`chunk_index+1` 顶替 `chunk_positions`）⇒恰红窗口件；②守卫拆掉（去切片归属检查）⇒恰红拒绝件；均还原复绿。
+- 注册双落补 read 条目（example 注释转复数＋entry；本地 `config.yaml` 同条）——本地解析实核两键在。
+- 门禁（定向·终态）：`tests/knowledge/tools/`＋`test_rag_agent_assembly.py` **80 passed**；ruff check／format --check 双净（期间修一处 E501：read docstring 超长段折行）。
+- 提交：`0285e771c`。
 
 ## Task 4 — 篇内检索（D1=甲，随本对）
 
