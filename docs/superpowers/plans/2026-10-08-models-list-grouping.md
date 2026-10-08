@@ -76,3 +76,13 @@
 - [x] GREEN ＋ neuter 反证 ＋ `pnpm check` ＋ 前端全量。→ 27/27 绿；前端全量 251 文件 / 2850 例全过、`pnpm check` 双净（等宽修正后受影响文件单测复跑绿 + check 复净）。
 - [x] 真栈观感：夹层等宽（按最长组名）、融边视觉（`-mb-px` 与容器顶边 1px 融合）、开关列右缘对齐——几何只在真浏览器量，本轮只读不写配置。→ 真栈实测（隔离 8111/3001，避让并行会话的 8001/3000 栈）：两夹层 `offsetWidth` 138/138（min-width 随最长组名）；融边 1px 叠合（tab bottom 490 vs 容器 top 489）；五行开关右缘同列 572.3；行尾序 UI 行 `[编辑][删除][开关]`、config 行 `[开关]`；灰胶囊无、夹层在容器外。**执行期缺陷一枚已修**：等宽测量初版用 `getBoundingClientRect().width`——弹窗 zoom-in-95 动画把它缩 5%，max 采小 ⇒ 长标签撑破 min-width、两夹层 138.5/132 不等；改量 `offsetWidth`（布局宽、不受 transform 影响）后 138/138。
 - [x] 收官提交（英文 conventional）。
+
+## Task 6 — 三次微调（spec §8；他令并入、设计取值我定，2026-10-08）
+
+> 动到的文件：`models-settings-page.tsx`、`models-settings-page.dom.test.tsx`。数据层零改动。
+
+- [x] RED：行标签钉反转（列表显示 `name` 不显 display_name）＋新钉（行 `min-h-12`；编辑/删除按钮 `h-7`＋暗色 token；标签 token 更新 `bg-muted/70`/`-mb-[11px]`）→ 未实现时红。→ 恰 3 红（标签/夹层 token/行高按钮）。
+- [x] 实现：①标签盒下延 10px 底衬（`h-[38px] items-start pt-1.5 -mb-[11px]`）＋`bg-muted/70` ②行 `min-h-12` 统一高、段去 `py-2.5`、按钮 `h-7 w-7`/`size-3.5`/`text-muted-foreground/60` hover 提亮 ③列表行标签改 `name`（对话下拉不动）。→ 28/28 绿；neuter 两轮各咬对（①标签+夹层 token 回退⇒恰 2 红；②按钮+行高回退⇒恰 1 红）。执行注：按钮类名走 `h-7 w-7`（twMerge 覆盖 `size="icon"` 的 `size-9`），钉按 `h-7` 断言。
+- [x] GREEN ＋ neuter ＋ `pnpm check` ＋ 前端全量。→ 前端全量 251 文件 / 2851 例全过、`pnpm check` 双净。
+- [x] 真栈观感：行高全等、过渡连续（弧角无残缺）、灰度、按钮观感——几何真浏览器量。→ 隔离栈实测（0.95 动画折算后为布局值）：五行高全 48；标签可见高 27、下延 11 入容器背后、左缘与容器齐平（弧角缺口由同色直边填掉）；夹层等宽 138/138、底色 muted/70；按钮 28×28、色 muted-foreground/60；行标签=qwen3.8-flash 等（前缀消失）；对话输入框触发钮仍显「DashScope / qwen3.8-flash」（display_name 留在下拉侧）。
+- [x] 收官提交（英文 conventional）＋ 可调旋钮表（灰度/按钮尺寸与暗度）交他复核。

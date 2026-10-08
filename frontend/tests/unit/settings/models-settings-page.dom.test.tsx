@@ -214,8 +214,10 @@ describe("ModelsSettingsPage list", () => {
     // 灰胶囊同判（spec §7①，覆盖旧留用裁定）：它在替按钮说话，不是独立状态；
     // 来源只决定能否编辑，按钮有无已经说明。键已删，断言按字面守门。
     expect(screen.queryByText("配置文件·只读")).toBeNull();
-    // display_name ?? name
-    expect(screen.getByText("UI DeepSeek")).toBeDefined();
+    // 列表行标签=name（spec §8③）：display_name 里的「DashScope /」等提供商前缀
+    // 在分组视图里冗余，组标签已经说了提供商；对话下拉仍用 display_name。
+    expect(screen.getByText("ui-model")).toBeDefined();
+    expect(screen.queryByText("UI DeepSeek")).toBeNull();
     expect(screen.getByText("cfg-model")).toBeDefined();
 
     expect(screen.getAllByRole("button", { name: M.delete })).toHaveLength(1);
@@ -254,13 +256,29 @@ describe("ModelsSettingsPage list", () => {
     for (const tab of tabs) {
       // 不在容器里
       expect(tab.closest("[data-testid='model-group']")).toBeNull();
-      for (const token of ["rounded-t-md", "bg-muted/50", "-mb-px", "border-b-0"]) {
+      for (const token of ["rounded-t-md", "bg-muted/70", "-mb-[11px]", "border-b-0"]) {
         expect(tab.className).toContain(token);
       }
     }
     // 首现序：uiModel(deepseek) 在前、cfgModel(openai-compatible) 在后。
     expect(tabs[0]!.textContent).toBe(M.providerDeepseek);
     expect(tabs[1]!.textContent).toBe(M.providerOpenaiCompatible);
+  });
+
+  it("gives every row the same floor and keeps the tail buttons small and dim", () => {
+    // spec §8②：按钮不再撑高行（统一 min-h-12），编辑/删除缩到 h-7 并压暗。
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    for (const row of document.querySelectorAll("[data-testid='model-row']")) {
+      expect(row.className).toContain("min-h-12");
+    }
+    const edit = screen.getByRole("button", { name: M.edit });
+    expect(edit.className).toContain("h-7");
+    expect(edit.className).toContain("text-muted-foreground/60");
+    const del = screen.getByRole("button", { name: M.delete });
+    expect(del.className).toContain("h-7");
+    expect(del.className).toContain("text-muted-foreground/60");
   });
 
   it("groups rows into one filled container per provider", () => {

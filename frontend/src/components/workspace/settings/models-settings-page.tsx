@@ -284,11 +284,13 @@ export function ModelsSettingsPage() {
               // with the functional view's panels (2026-09-16).
               <div key={group.provider}>
                 {/* The label rides outside the container on a fused folder tab
-                    (spec §7③): a light capsule hugging the longest group name,
-                    `-mb-px` merging its edge into the container's top border. */}
+                    (spec §7③): a light capsule hugging the longest group name.
+                    The box extends 10px below the seam behind the container
+                    (spec §8①) so the container's rounded corner cuts into the
+                    same-colored straight edge — no notch at the junction. */}
                 <div className="flex">
                   <span
-                    className="-mb-px inline-flex h-7 items-center justify-center rounded-t-md border border-b-0 border-border/60 bg-muted/50 px-3 text-xs text-muted-foreground"
+                    className="-mb-[11px] inline-flex h-[38px] items-start justify-center rounded-t-md border border-b-0 border-border/60 bg-muted/70 px-3 pt-1.5 text-xs text-muted-foreground"
                     data-testid="model-group-tab"
                     ref={(element) => {
                       if (element) {
@@ -312,7 +314,7 @@ export function ModelsSettingsPage() {
                   const hidden = hiddenInChat.includes(row.name);
                   return (
                     <div
-                      className="flex gap-3 px-3"
+                      className="flex min-h-12 gap-3 px-3"
                       data-model-name={row.name}
                       data-testid="model-row"
                       draggable={movable || undefined}
@@ -352,13 +354,13 @@ export function ModelsSettingsPage() {
                           a subtle, deliberately incomplete separator. */}
                       <div
                         className={cn(
-                          "flex min-w-0 flex-1 items-center gap-2 py-2.5",
+                          "flex min-w-0 flex-1 items-center gap-2",
                           index > 0 && "border-t border-border/50",
                         )}
                       >
-                        <span className="truncate text-sm">
-                          {row.display_name ?? row.name}
-                        </span>
+                        {/* name, not display_name (spec §8③): the provider prefix
+                            operators put in display_name duplicates the group tab. */}
+                        <span className="truncate text-sm">{row.name}</span>
                         {isDefault && (
                           <Badge
                             className="h-5 px-1.5 text-[11px]"
@@ -368,24 +370,26 @@ export function ModelsSettingsPage() {
                           </Badge>
                         )}
                       </div>
-                      <div className="flex w-52 shrink-0 items-center justify-end gap-2 py-2.5">
+                      <div className="flex w-52 shrink-0 items-center justify-end gap-2">
                         {row.editable && (
                           <>
                             <Button
                               variant="ghost"
                               size="icon"
+                              className="text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground h-7 w-7"
                               aria-label={M.edit}
                               onClick={() => setEditing(row)}
                             >
-                              <PencilIcon className="size-4" />
+                              <PencilIcon className="size-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
+                              className="text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground h-7 w-7"
                               aria-label={M.delete}
                               onClick={() => handleDelete(row.name)}
                             >
-                              <TrashIcon className="size-4" />
+                              <TrashIcon className="size-3.5" />
                             </Button>
                           </>
                         )}
