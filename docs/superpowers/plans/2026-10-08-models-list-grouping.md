@@ -50,13 +50,19 @@
 
 > 动到的文件：spec/plan 回填 + `frontend/AGENTS.md` + `backend/AGENTS.md` + `README.md`（若用户可见行为有说明价值）
 
-- [ ] 全量门禁：后端 `pytest -m "not live" tests/`（basetemp 仓外、跑完删；红全定性在环境红带内、零新增）+ 前端全量 + `ruff`/`pnpm check` 双净。
-- [ ] `frontend/AGENTS.md`「Interaction Ownership」models-settings 段补分组/拖动/`hidden_in_chat` 三句（含"过滤只在三处下拉的可选项、不进 useModels 本体"的不变量）；**`backend/AGENTS.md`「Models Configuration (models_config.json)」节补 `hidden_in_chat` 顶层名单 + `order_pinned` 派生字段一句**（该文件 schema 的权威文档，审查 7）；spec/plan 状态行回填；登记项定稿（spec §6：TUI picker 过滤留二期）。
+- [x] 全量门禁：后端 `pytest -m "not live" tests/`（basetemp 仓外、跑完删；红全定性在环境红带内、零新增）+ 前端全量 + `ruff`/`pnpm check` 双净。→ 后端 153 failed / 13051 passed / 109 skipped（1270s，两轮独立跑同数）；**零新增定性**=抽 153 个失败 id 到对子开工前的 `e62d90784` worktree 复跑得 152 failed / 1 passed，双向 diff 唯一多差 `test_delta_channel_state.py::test_merge_message_writes_randomized_differential`——随机差分用例，HEAD 上单测 5/5 绿 ⇒ 判 flake 非回归；失败清单里波及面（models/config/client）仅 `test_models_config.py::test_missing_models_file_falls_back_to_config_yaml` 一条=既有环境红（仓根真 models_config.json 泄漏），新钉 `test_models_config_api.py`/`test_client.py` 镜像全绿。前端全量 251 文件 / 2848 例全过；`ruff` 净；`pnpm check`（eslint+tsc）净。
+- [x] `frontend/AGENTS.md`「Interaction Ownership」models-settings 段补分组/拖动/`hidden_in_chat` 三句（含"过滤只在三处下拉的可选项、不进 useModels 本体"的不变量）；**`backend/AGENTS.md`「Models Configuration (models_config.json)」节补 `hidden_in_chat` 顶层名单 + `order_pinned` 派生字段一句**（该文件 schema 的权威文档，审查 7）；spec/plan 状态行回填；登记项定稿（spec §6：TUI picker 过滤留二期）。→ 交付 `bcfbfb7f0`（README 用户可见行为同步含在内；与并行线共改的文件按 hunk 部分暂存、他人行留工作树）。spec 状态行的「已完工」翻牌随收官提交落。
 
 ## Task 4 — 真栈验收（只读 + 可还原）
 
 > 动到的文件：零（真栈验证 + 状态还原）
 
-- [ ] 观感验收（设置页）：分组合并容器 + 内缩分隔线（左起名称文字起点、右止图标区前）；行单行；黑胶囊消失、config_file 灰胶囊在；「默认」胶囊恰在第一行。**分组预期锚**（审查 10）：按当前配置应得两组——「OpenAI 兼容」×5、「DeepSeek」×1。
-- [ ] 交互验收：UI 行组内拖动刷新后位置保持、config_file 行无拖柄不动；**拖往钉住行方向 no-op（clamp，★2）**；**拖→存→刷新→显示序不变（稳定性，★2）**；展示开关关掉后主对话/侧栏/知识库三处下拉消失该模型、agent 默认模型选择器与功能模型选择器仍在、已选中隐藏模型的会话仍正常显示所选；**默认模型恒在对话下拉（即使名单含它，★1）**；默认行开关禁用且悬浮给原因；编辑弹窗模型 ID 灰显、保存后模型 ID 不变。
-- [ ] 收尾：所有开关/拖动改动**还原到验收前状态**（逐字节对 `models_config.json` 验 md5）；`config.yaml` 零改动。
+> 交付（2026-10-08）：真栈直连路径（Windows 无 nginx ⇒ gateway `:8001` + frontend `:3000`，Next rewrites 同源代理 `/api/*`；gateway 以 `DEER_FLOW_AUTH_DISABLED=1` 起——官方 local/E2E 旁路，不动真实账号库）。验收人=browser-use CDP 驱动（指针面不可见 ⇒ 事件直派）。
+>
+> - 观感 ✓：两组锚命中——「OpenAI-compatible」×5、「DeepSeek」×1（组头渲染 provider 目录名；行名带 DashScope/DeepSeek 前缀的是 display_name）；合并容器 `bg-card overflow-hidden rounded-lg border` 每组一个；内缩分隔线在中间行（`border-t`，首行无）；行单行、黑胶囊消失、config_file 灰胶囊「配置文件·只读」在、「默认」胶囊恰第一行。
+> - 交互 ✓：拖 mimo→qwen3.8-flash-2（下拖跨位）落定 [deepseek-flash, qwen3.8-flash-2, mimo] 并整体写回（`hidden_in_chat` 同写保留）；刷新后显示序不变（稳定性 ★2）；拖往钉住行方向 clamp no-op 且**零写**（文件 md5 前后同 `17c0e13f…`，★2）；展示开关关 deepseek-flash ⇒ 落盘 `hidden_in_chat:["deepseek-flash"]`、主对话输入框下拉与知识库对话面板下拉均消失该模型（各 5 项），功能模型视图仍在（非对话选择器不筛）；**已选中隐藏模型的显示不受影响**（先在输入框选中 deepseek-flash 再隐藏它，触发钮仍显示所选；第二轮写后同法逐字节还原）；默认行开关禁用 + 悬浮「默认模型始终在对话列表中展示」（★1）；编辑弹窗「Model ID」灰显禁用、位于显示名与 API Key 之间。侧栏侧边对话（sidecar）下拉**未真栈验**：其面板要先建 sidecar 线程=在真数据里发一次模型请求，收益/侵入不成比——三处共用 `chatPickerOptions` 同一调用、纯函数已钉，此处据实登记。
+> - 收尾 ✓：`models_config.json` 逐字节还原（md5 `a6b98a82f79a2966b8ca12e457327436`）；`config.yaml` 零改动（`d4baf6c974e31b45476fed7d0e2addb2`）。执行期事故一则：验收备份放在 `--basetemp` 目录里、被 pytest 启动清场连带删除 ⇒ 改用「旧写手形状重建 + md5 预言机」复原（`json.dump(indent=2)` 文本模式 CRLF、顶层仅 `models`、entry 键序=PUT 写手键序、顺序 [mimo, deepseek-flash, qwen3.8-flash-2]），重建 md5 与基线**逐字节相等**后写回。教训：备份/日志永不放 basetemp 目录内。
+
+- [x] 观感验收（设置页）：分组合并容器 + 内缩分隔线（左起名称文字起点、右止图标区前）；行单行；黑胶囊消失、config_file 灰胶囊在；「默认」胶囊恰在第一行。**分组预期锚**（审查 10）：按当前配置应得两组——「OpenAI 兼容」×5、「DeepSeek」×1。
+- [x] 交互验收：UI 行组内拖动刷新后位置保持、config_file 行无拖柄不动；**拖往钉住行方向 no-op（clamp，★2）**；**拖→存→刷新→显示序不变（稳定性，★2）**；展示开关关掉后主对话/侧栏/知识库三处下拉消失该模型、agent 默认模型选择器与功能模型选择器仍在、已选中隐藏模型的会话仍正常显示所选；**默认模型恒在对话下拉（即使名单含它，★1）**；默认行开关禁用且悬浮给原因；编辑弹窗模型 ID 灰显、保存后模型 ID 不变。
+- [x] 收尾：所有开关/拖动改动**还原到验收前状态**（逐字节对 `models_config.json` 验 md5）；`config.yaml` 零改动。
