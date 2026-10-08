@@ -2,7 +2,7 @@
 
 ## 范围与交接
 
-一对一件事＝把切片树已提交内容修到**提交前四门**全绿（后端 ruff 2 文件／前端 prettier 69 文件／AGENTS 链 3 条超限）＋记录对账（切片 plan 勘误＋追记；`rag-doc-tools` plan Task 8 加四门行）＋**第四修＝无云工作流修复（GitHub 侧一行；spec §2.4）**＋**主树 1 件 format 债伴修（复审并入；spec §2.1）**。成对 spec 同名（`../specs/2026-10-08-rag-slice-ci-fix-design.md`）；决策点 D1–D3 见 spec §3（**已裁全甲**：D1 指针＋模块 guide〔新件 `knowledge-extension/AGENTS.md`〕／D2 主树登记不修／D3 勘误式补注）。**执行面**＝切片树（`E:\app\python\agent\deer-flow-slice`，分支 `slice/knowledge-local-vector-retrieval`，起点 HEAD `5cc0197b4`）＋主树（记录面＋1 件格式债）。**不碰**：代码语义/接口/用例行为、上游文件内容、主树前端 prettier／CRLF 面（D2 登记）、推送与 PR。**状态（2026-10-08）：已完工**——切片四笔 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树伴修 `20f8eb3a3`＋主树记录批 → 回填 `11c0576ae`（本提交）；**推送与 PR 更新＝待令**。
+一对一件事＝把切片树已提交内容修到**提交前四门**全绿（后端 ruff 2 文件／前端 prettier 69 文件／AGENTS 链 3 条超限）＋记录对账（切片 plan 勘误＋追记；`rag-doc-tools` plan Task 8 加四门行）＋**第四修＝无云工作流修复（GitHub 侧一行；spec §2.4）**＋**主树 1 件 format 债伴修（复审并入；spec §2.1）**。成对 spec 同名（`../specs/2026-10-08-rag-slice-ci-fix-design.md`）；决策点 D1–D3 见 spec §3（**已裁全甲**：D1 指针＋模块 guide〔新件 `knowledge-extension/AGENTS.md`〕／D2 主树登记不修／D3 勘误式补注）。**执行面**＝切片树（`E:\app\python\agent\deer-flow-slice`，分支 `slice/knowledge-local-vector-retrieval`，起点 HEAD `5cc0197b4`）＋主树（记录面＋1 件格式债）。**不碰**：代码语义/接口/用例行为、上游文件内容、主树前端 prettier／CRLF 面（D2 登记）、推送与 PR。**状态（2026-10-08）：已完工**——切片四笔 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树伴修 `bd22a5752`＋主树记录批 → 回填 `ad1ccc8dd`（本提交）；**推送与 PR 更新＝待令**。
 
 ## 硬约束（执行期注意）／Global Constraints
 
@@ -33,7 +33,7 @@
 - [x] 提交①（例：`style(backend): clear the ruff findings on the ported knowledge tests`）＋哈希回填。
 - [x] 实测回填（本 Task 下）。
 
-**实测（2026-10-08）**：切片＝`make_samples.py` 三处（L62 UP037 去引号／L147 删未用 `Pt`／format 折叠，5+/12−）；`test_gateway_services.py` 复跑后 clean 过滤哈希＝`5d6a7a79…`＝HEAD blob ⇒ 工件层为工作区行尾混排、**提交面零改动**（该文件不入提交）。复绿＝`ruff check .` All checks passed＋`ruff format --check .` 1970 files already formatted；knowledge 定向 pytest＝**751 passed／2 skipped／1 failed**（唯一红 `test_embed_missing_api_key`＝已登记环境条件红、与 T7-F／T8 基线一致）。提交①＝**`536368893`**。主树伴修＝`test_nginx_knowledge_uploads.py` L91 单 hunk 折叠（1+/4−）；复验＝全树 `format --check` 1327 files already formatted＋`check .` All checks passed；该文件 6 passed；提交＝**`20f8eb3a3`**。
+**实测（2026-10-08）**：切片＝`make_samples.py` 三处（L62 UP037 去引号／L147 删未用 `Pt`／format 折叠，5+/12−）；`test_gateway_services.py` 复跑后 clean 过滤哈希＝`5d6a7a79…`＝HEAD blob ⇒ 工件层为工作区行尾混排、**提交面零改动**（该文件不入提交）。复绿＝`ruff check .` All checks passed＋`ruff format --check .` 1970 files already formatted；knowledge 定向 pytest＝**751 passed／2 skipped／1 failed**（唯一红 `test_embed_missing_api_key`＝已登记环境条件红、与 T7-F／T8 基线一致）。提交①＝**`536368893`**。主树伴修＝`test_nginx_knowledge_uploads.py` L91 单 hunk 折叠（1+/4−）；复验＝全树 `format --check` 1327 files already formatted＋`check .` All checks passed；该文件 6 passed；提交＝**`bd22a5752`**。
 
 ## Task 2 — 前端 prettier 清零
 
@@ -80,4 +80,4 @@
 - [x] 主树提交：伴修一笔（Task 1 的 `style(backend): …`）＋记录批一笔（例：`docs(rag): reconcile the slice CI findings and pin the four-gate rubric`）；可同发、独立提交。
 - [ ] 推送与 PR 更新（含工作流修复的推送首跑复核）：**待令**（不擅自推送）。
 
-**实测（2026-10-08）**：切片 plan L177 勘误补注＋T8 实测追记＋提交链行修复链 append 已落；`rag-doc-tools` plan Task 8「提交前四门复核」行已加；本 spec/plan 回填完成（D1–D3 裁定＋实测＋哈希）；主树伴修 `20f8eb3a3`＋记录批 → 回填 `11c0576ae`（本提交）；收尾四门联跑＝ruff 0 错／0 件、guidance（ref）**0 errors**、`pnpm format` 零 diff、tests/knowledge 751／2／1（已登记环境红）、`uv lock --check` exit 0、`pnpm check` 零诊断、`pnpm test` 304／2895 全绿。**推送与 PR 更新＝待令（未执行）**。
+**实测（2026-10-08）**：切片 plan L177 勘误补注＋T8 实测追记＋提交链行修复链 append 已落；`rag-doc-tools` plan Task 8「提交前四门复核」行已加；本 spec/plan 回填完成（D1–D3 裁定＋实测＋哈希）；主树伴修 `bd22a5752`＋记录批 → 回填 `ad1ccc8dd`（本提交）；收尾四门联跑＝ruff 0 错／0 件、guidance（ref）**0 errors**、`pnpm format` 零 diff、tests/knowledge 751／2／1（已登记环境红）、`uv lock --check` exit 0、`pnpm check` 零诊断、`pnpm test` 304／2895 全绿。**推送与 PR 更新＝待令（未执行）**。

@@ -1,6 +1,8 @@
 # 验收反馈记录（十三则）：文档表底部状态段 · 切片详情缺口 · 功能模型布局 · VLM 视觉声明 · RAG 会话缺终止键 · RAG 会话缺重新生成键 · 刻度轨间距与显示门槛 · 知识库文档感知缺口（会话侧） · 失败悬停卡「重试」按钮位置 · RAG 思考档位接线（核实） · RAG 模型选择器未对齐（收藏分区） · RAG 会话消息区滑条未隐式化 · RAG 会话流式中输入框禁用
 
-- **状态：** 第一、二节已裁（2026-10-08）——① 乙（常态静默＋不折行加固）② 刻度轨随带恢复 ③ 编辑族仅记录为后置；第三、四节（同日续报）：③ 机制已澄清（＝乙 视图切换；控件形态开工一口定）、④ **已裁＝甲**；第五、六节（同日续报，无图）：**已裁**——⑤ 甲（自绘 composer 原地加「流式中发送键变停止键」）、⑥ 乙（「重新生成」＋「编辑重发」；「分支」不取）；根因为「KB 面板未接树内既有能力」（停止／重新生成／编辑重发／分支的链路全在切片树，属纯前端接线）；第七节（同日续报，开发分支实操反馈，无图）：**已裁并已实施**——刻度轨间距 34→26、显示门槛 ≥5（提交 `7bc9726d1`；会话轨＋切片轨共用组件一次生效）。第一–六节**未动任何代码、未出执行计划**（用户令「先不要生成 plan」）；第七节已实施；其余待「开工」后另出执行计划；第八节（同日续报，验收实例会话取证，无图）：**核实为真缺口、已裁补**——载体乙（独立成对＋本账留痕）、**并进首期口径（A）**、实现序主树先；设计另立 `../specs/2026-10-08-rag-doc-tools-design.md`（＋同名 plan），本账仅留痕、无代码改动；第九节（同日续报，图 5）：**已裁并已实施**——甲（同排右收）＝文案与按钮同排两端、按钮收右缘（主仓 `d8e336edd`／切片 `51f2ee9f1`，均未推送）；第十节（同日续报，无图）：**已核实**——RAG 腿无自有档位＝跟随模型条目声明、没声明不发（用户问的「就是默认」成立）；处置**已裁（2026-10-08）：甲＝维持现状**（不另加档位控件）；第十一–十三节（同日续报，本批随附图 3 帧＝用户口径图 1–3；用户所称图 4〔会话栏滑条〕未随附）：**新增核实、待裁**——⑪ RAG 模型选择器未对齐主会话（切片特有缝：上游基座自带收藏件、移植面未带；主仓零命中）⑫ RAG 会话消息区滑条未隐式化（fork `6df401c81` 未随带；主仓已带；全 RAG 面盘点唯一漏网）⑬ KB 会话流式中输入框禁用（⑤ 裁定文本不含「可输入」；主会话两树均可输入）。
+- **状态：** 第一、二节已裁（2026-10-08）——① 乙（常态静默＋不折行加固）② 刻度轨随带恢复 ③ 编辑族仅记录为后置；第三、四节（同日续报）：③ 机制已澄清（＝乙 视图切换；控件形态**已定＝乙-b**〔10-08 用户裁〕）、④ **已裁＝甲**；第五、六节（同日续报，无图）：**已裁**——⑤ 甲（自绘 composer 原地加「流式中发送键变停止键」）、⑥ 乙（「重新生成」＋「编辑重发」；「分支」不取）；根因为「KB 面板未接树内既有能力」（停止／重新生成／编辑重发／分支的链路全在切片树，属纯前端接线）；第七节（同日续报，开发分支实操反馈，无图）：**已裁并已实施**——刻度轨间距 34→26、显示门槛 ≥5（并入压合提交 `75cf89e22`；会话轨＋切片轨共用组件一次生效）。第一–六节**未动任何代码、未出执行计划**（用户令「先不要生成 plan」）；第七节已实施；其余待「开工」后另出执行计划；第八节（同日续报，验收实例会话取证，无图）：**核实为真缺口、已裁补**——载体乙（独立成对＋本账留痕）、**并进首期口径（A）**、实现序主树先；设计另立 `../specs/2026-10-08-rag-doc-tools-design.md`（＋同名 plan），本账仅留痕、无代码改动；第九节（同日续报，图 5）：**已裁并已实施**——甲（同排右收）＝文案与按钮同排两端、按钮收右缘（主仓侧并入压合提交 `75cf89e22`；**切片侧改动已撤回**、待 A 批次重放；均未推送）；第十节（同日续报，无图）：**已核实**——RAG 腿无自有档位＝跟随模型条目声明、没声明不发（用户问的「就是默认」成立）；处置**已裁（2026-10-08）：甲＝维持现状**（不另加档位控件）；第十一–十三节（同日续报，本批随附图 3 帧＝用户口径图 1–3；用户所称图 4〔会话栏滑条〕未随附）：**新增核实、待裁**——⑪ RAG 模型选择器未对齐主会话（切片特有缝：上游基座自带收藏件、移植面未带；主仓零命中）⑫ RAG 会话消息区滑条未隐式化（fork `6df401c81` 未随带；主仓已带；全 RAG 面盘点唯一漏网）⑬ KB 会话流式中输入框禁用（⑤ 裁定文本不含「可输入」；主会话两树均可输入）；**同日裁定：三则全甲**（⑪ 换 `ModelPickerContent`／⑫ 随带 fork 隐式化／⑬ 并入⑤）——均未动工，待「开工」后实施。**执行载体＝成对 `../plans/2026-10-08-rag-ui-findings.md`（2026-10-08 已起草；Task 0–13，含两树归属与提交链）。**
+- **执行（2026-10-08「开工」）：** 十三则＋§十五 **全部已实施**——主树 3 笔（`0b443612e`／`9da794d09`／`48e1d8111`）＋切片 10 笔（`6fbd71540`…`af54b4d01`）＋本回填笔；门禁零新增归因、真栈验收全项过（逐条见 plan 文末「执行实测」；逐节映射见文末「执行记录」）。均未推送。
+- **追加（同日）：第十五节「切片裁剪残留」（「少剪」全面核实新增，切片侧）并入本对**——①–④ 直接清理（删除文案 4 串＋断言／`embed_texts.py` 两件／chat-panel 测试死件／注释族 ~15 处），⑤ 销项（`GET /{kb_id}/chunks` 属留面「切片只读」），⑥ **已裁：削**（`chunk-card` 实体徽章行）。落点均＝plan Task 10。
 - **来源：** 2026-10-08 用户实操验收隔离实例（acceptance-8）反馈（第一、二节：图 1／图 2；第三、四节：同日续报另两图，本档顺延记作图 3／图 4；第五、六节：同日口述反馈，无图；第七节：同上开发分支（全量版）实操反馈，无图，自本条起为「已实施」项；第九节：同日续报（本轮），图 5；第十节：同上，口述无图；第十一–十三节：同日续报（本轮），随附图 3 帧〔本档顺延记作图 6–图 8＝用户口径图 1–3〕；用户所称图 4（会话栏滑条）未随附）＋逐条代码核实（切片树 vs 全量版两树对照；第五、六节另含同族扫描；第九、十节逐层核至工厂/客户端一级；第十一–十三节含 git 血缘核〔e325c90b2／a343b8b03／6df401c81〕与全 RAG 面滑条盘点）。
 - **日期：** 2026-10-08
 
@@ -12,10 +14,10 @@
 文档列表底部统计行：左段体量「文档 18 · 切片 264 · 828.5 KB」；右段状态「● 就绪 17 ● 索引中 1」。**栏宽拖窄、且状态段出现 ≥2 枚芯片时，右段整体折到第二行（靠右）**。用户初步倾向：这段状态是否已多余、直接做减法删掉。
 
 ### 核实
-- **代码位置**：`components/workspace/knowledge/document-panel.tsx` 底部统计行；切片树 L1165–1194、主仓 L1226 起，**两树同源同款**——属「原有项目就有」的既有实现（代码注释：`Two nowrap segments (spec 2026-09-24 §7.2 甲)`），非本次移植引入。
+- **代码位置**：`components/workspace/knowledge/document-panel.tsx` 底部统计行；切片树 L1163–1192（容器 L1167）、主仓 L1232–1261（容器 L1235），**两树同源同款**——属「原有项目就有」的既有实现（代码注释：`Two nowrap segments (spec 2026-09-24 §7.2 甲)`），非本次移植引入。
 - **折行机制**：容器 `flex flex-wrap gap-x-3 px-4 py-2 text-xs`；两段各自 `whitespace-nowrap`，状态段挂 `ml-auto`。⇒ 段内永不折；**两段总宽超出栏宽时右段整段掉到第二行，由 ml-auto 靠右**。
 - **宽度估算（12px 字号；供直觉，非实测）**：体量段 ≈160–180px；单枚芯片 ≈55–70px（标签 2–3 字＋数字）；含内边距与段间距 ⇒ **出现两枚芯片时约 320–350px 起触发**，芯片越多阈值越高。中栏可被拖至此宽度以下。
-- **数据与标签**：`core/knowledge/document-stats.ts` 聚合 `ready / inProgress / failed`（`inProgress`＝非终态 uploaded/parsing/chunking/indexing 合一）；**零计数不渲染**（既有哲学）；芯片标签＝`knowledge.status`（就绪／索引中／失败；zh-CN.ts L720–722）。
+- **数据与标签**：`core/knowledge/document-stats.ts` 聚合 `ready / inProgress / failed`（`inProgress`＝非终态 uploaded/parsing/chunking/indexing 合一）；**零计数不渲染**（既有哲学）；芯片标签＝`knowledge.status`（就绪／索引中／失败；zh-CN.ts L723–725）。
 - **冗余度**：「就绪」＝默认态、零信息（且与表内逐行状态列重复）；「索引中／失败」＝非默认态。失败另有兜底（文档失败面板＋行级红点＋重试），**但失败面板只在「转入失败」当次弹出、刷新不回填**——底部「失败 N」是刷新后唯一常驻的安静标记；「索引中」是后台仍在跑的一眼提示（无别处聚合）。
 
 ### 处置选项（✅ 已裁：乙）
@@ -52,13 +54,14 @@
 
 ### 核实
 - **现状来源（切片特有）**：`model-settings-page.tsx:140-142`——Task 6（`a630a3b3f`）把 `FunctionalModelsView` 内联挂进上游模型页（同 `canManage` 门，注释 :140-141 自证）；上游基座 e325c90b2 的模型页原本 0 处功能视图（grep 计数 0）。
-- **全量版对照（fork 切点 a343b8b03 已有现成解法）**：全量版 `models-settings-page.tsx` 用 **ToggleGroup 两视图切换**——`view: "chat" | "functional"`（:75）、切换行 :142-161（「添加模型」按钮仅对话视图出现 :165-170）、`view === "functional" ? <FunctionalModelsView /> : 对话列表`（:173 起）、两视图说明合并进标题 ⓘ（:119-121）。⇒ **全量版从不并排显示两视图；切片为不整体移植新模型系统，只搬了视图本体、未搬切换壳**。
+- **全量版对照（解法自 fork 切点 a343b8b03 起即有；行锚已按现行主仓重核）**：全量版 `models-settings-page.tsx` 用 **ToggleGroup 两视图切换**——view state `:95`、切换行 `:249-268`（「添加模型」按钮仅对话视图出现 `:272`）、`view === "functional" ? <FunctionalModelsView /> : 对话列表`（`:280-281`）。⇒ **全量版从不并排显示两视图；切片为不整体移植新模型系统，只搬了视图本体、未搬切换壳**。
 - **选项对照（2026-10-08 两轮澄清后修订：机制＝乙，控件形态二选一）**：
   - **用户澄清**：本意＝**乙**（「像原版那样的两视图切换」）；原话「功能模型放在按钮的界面中」的「按钮的界面」＝切换后落入的**视图**，**非对话框**（此前系对「界面」一词的误读）。机制无分歧（视图切换），唯一可变量＝切换控件形态：
   - 乙-b｜**单枚「功能模型」按钮（用户口述形态）**：按钮行加一枚 → 列表区条件渲染为功能视图；回程＝同一枚钮原地变「对话模型」；进功能视图后「添加模型／重新加载」隐藏（它们属列表）。比 a 少 `viewSwitchLabel` 一键。
   - 乙-a｜**原版两枚 ToggleGroup 切换片**：「对话模型｜功能模型」，与全量版一字不差（i18n 3 键）。
   - 丙｜设置导航独立入口：不取——偏离全量版结构、失去与模型列表同页的引用上下文（功能模型的引用选项来自模型列表）。
 - **推荐**：机制＝乙（已定）；控件形态开工时一口定（不指定则取 乙-b＝用户口述）。两形态落点同一处：`model-settings-page.tsx` 加 `view` 状态＋条件渲染，功能视图本体零改动、无对话框、无嵌套。
+- **✅ 裁定（2026-10-08）：控件形态＝乙-b**（单枚「功能模型」按钮；用户裁）——按钮行加一枚，进入功能视图后同钮原地变「对话模型」回程、「添加模型／重新加载」隐藏；i18n 2 键（`viewChatModels`／`viewFunctionalModels`，不用 `viewSwitchLabel`）；乙-a（原版两枚切换片）不取。未动工，待「开工」后随执行计划实施。
 
 ## 四、VLM 视觉声明：下拉选择不了模型（图 4）
 
@@ -66,10 +69,10 @@
 功能模型「多模态」卡：图片描述模型 (VLM) 下拉仅见当前值 qwen3.7-flash（另有「（使用配置默认）」项），选不到别的模型。用户三问：① 添加模型里没有视觉声明？② qwen3.7 是不是你强行加上去的？③ 是否应放行全部模型、只靠运行时结果（错误／模型自带 OCR）兜底？
 
 ### 核实（逐条）
-- **① 半对**：切片添加／编辑模型对话框**有**视觉声明——勾选框「支持图片输入」（`model-settings-page.tsx:337-345`；文案 zh-CN.ts:1540）；但仅覆盖 UI 添加的模型（source=managed）；config.yaml 的模型在 UI 只读（:100-107「服务器配置 · 只读」），其视觉声明载体＝config.yaml 的 `supports_vision` 字段。用户或未滚到对话框底部，或按全量版新系统的「视觉」字样找（切片沿用上游旧文案「支持图片输入」）。
-- **② 不是强加**：显示值是验收实例保存的配置数据（`rag_config.json:6` `"vlm_model": "qwen3.7-flash"`；config.yaml rag 块 :264 同值）；全树 grep 无设置面写死（命中皆为文档／测试／嵌入模型批量表）。它出现在下拉里是**防丢失回注**：`modelReferenceOptions` 把不在候选中的当前值补列一项（`config-form.ts:617-618`）——不是被放行。
-- **③ 根因（切片特有缺口）**：下拉候选＝按 `supports_vision` 过滤（`config-form.ts:658-660` `isCaptionCapable`；视图 :758-764）；候选来源＝`loadManagedModels` → `GET /api/managed-models`，其 **config.yaml 来源行不带 `supports_vision`**（`managed_models.py:32`，与上游 e325c90b2 逐字相同、零切片 delta；UI 添加的行经 `public()` 带上）⇒ 模型全在 config.yaml 的实例过滤后为空（acceptance 的 qwen3.8-flash :26、qwen3.7-flash :53 均声明 true，deepseek-v4-flash :35=false——UI 全看不到）⇒ 同时触发提示「还没有配置支持视觉的模型…」（zh-CN.ts:1662）。
-- **全量版对照**：新模型系统 `GET /api/models/config` 对两个来源均序列化 `supports_vision`（`models.py:455/:466`），全量版下拉正常。
+- **① 半对**：切片添加／编辑模型对话框**有**视觉声明——勾选框「支持图片输入」（`model-settings-page.tsx:337-345`；文案 zh-CN.ts:1544）；但仅覆盖 UI 添加的模型（source=managed）；config.yaml 的模型在 UI 只读（:100-107「服务器配置 · 只读」），其视觉声明载体＝config.yaml 的 `supports_vision` 字段。用户或未滚到对话框底部，或按全量版新系统的「视觉」字样找（切片沿用上游旧文案「支持图片输入」）。
+- **② 不是强加**：显示值是验收实例保存的配置数据（`rag_config.json:6` `"vlm_model": "qwen3.7-flash"`；config.yaml rag 块 :264 同值）；全树 grep 无设置面写死（命中皆为文档／测试／嵌入模型批量表）。它出现在下拉里是**防丢失回注**：`modelReferenceOptions` 把不在候选中的当前值补列一项（`config-form.ts:665-667`）——不是被放行。
+- **③ 根因（切片特有缺口）**：下拉候选＝按 `supports_vision` 过滤（`config-form.ts:706-708` `isCaptionCapable`；候选组装 `visionReferenceOptions` L717-727；视图调用 `functional-models-view.tsx:772-776`）；候选来源＝`loadManagedModels` → `GET /api/managed-models`，其 **config.yaml 来源行不带 `supports_vision`**（`managed_models.py:32`，与上游 e325c90b2 逐字相同、零切片 delta；UI 添加的行经 `public()` 带上）⇒ 模型全在 config.yaml 的实例过滤后为空（acceptance 的 qwen3.8-flash :26、qwen3.7-flash :53 均声明 true，deepseek-v4-flash :35=false——UI 全看不到）⇒ 同时触发提示「还没有配置支持视觉的模型…」（zh-CN.ts:1662）。
+- **全量版对照**：新模型系统 `GET /api/models/config` 对两个来源均序列化 `supports_vision`（`models.py:481`，双源经同一响应构造），全量版下拉正常。
 
 ### 处置选项（✅ 已裁：甲）
 - 甲｜补链修复（荐）＝**后端一行**：`_catalog()` 的 config 行补 `supports_vision`（源字段在 harness `model_config.py:174`，必然可得）。**前端无必改项、零界面变化**——筛选代码经 `VisionModelSource` 结构类型早已按可选字段读它，`ConfigModel` 类型补一行 `supports_vision?: boolean` 只是如实声明、可省；**不加任何按钮/控件**。此后 config.yaml 声明 true 的条目即出现在下拉；保留「声明门」语义；与全量版行为一致。该文件目前零切片 delta——此修为对上游旧模型系统的最小适配增量。TDD：后端响应断言＋前端既有筛选用例核对。
@@ -84,12 +87,12 @@
 KB 会话（RAG 对话面板）流式回答期间没有任何停止入口——点发送后只能等它跑完。
 
 ### 核实（两树对照＋在树能力盘点）
-- **现状（切片树）**：KB 面板 composer 为自绘（`chat-panel.tsx` L450–521：textarea＋模型选择器＋发送键），流式中发送键仅 `disabled`（`!kb || thread.isLoading`），无「变停止」。
+- **现状（切片树）**：KB 面板 composer 为自绘（`chat-panel.tsx` L476–560：textarea L480–496＋模型选择器 L499–543＋发送键 L550–556），流式中发送键 `disabled={!canSend}`（L552；`canSend` L256 含 `!thread.isLoading` 与草稿非空），无「变停止」——`!kb || thread.isLoading` 是 Textarea 的条件（L482，详见第十三节）。
 - **能力全在树内（只差接线）**：
   - hook：`useThreadStream` 返回 `stop`（`core/threads/hooks.ts` L3154 ← L2314 `stopThread` → `stopThreadAndInvalidateCaches(thread.stop())`）。
   - 后端：`POST /{thread_id}/runs/{run_id}/cancel` 已在切片树（`routers/thread_runs.py` L1251–1253；PAT 域 `auth/pat.py:116`；`extension_agent_runs.py:167` 复用 `cancel_run`）。
   - 主会话参照接线（slice 在树内即有）：`chats/chat-page.tsx` L362–364 `handleStop`＝`thread.stop()`、L657 `onStop`（＋L658 `canStopStreaming`）；`agents/[agent_name]/chats/[thread_id]/page.tsx` L321–323／L599 同款。
-- **两树同源**：主仓 KB 面板（`chat-panel.tsx` L620）同为自绘 composer、同样未接停止（grep 无 `onStop`）⇒ 修复应两树同步。
+- **两树同源**：主仓 KB 面板（composer 位 `chat-panel.tsx` L655 起：Textarea `disabled` L657、选择器 L693–715、发送键 L724；MessageList 调用 L620）同为自绘、同样未接停止（grep 无 `onStop`）⇒ 修复应两树同步。
 
 ### 处置选项（✅ 已裁：甲）
 - **甲｜自绘 composer 原地加停止（荐）**：保持面板尺寸与既有样式；发送键在流式中**原地变停止键**（主会话 InputBox 同款交互），点击调 `thread.stop()`。纯前端接线。
@@ -103,7 +106,7 @@ KB 会话（RAG 对话面板）流式回答期间没有任何停止入口——�
 RAG 会话每条回答下方动作行只有「复制」；主会话同位置另有「重新生成」。
 
 ### 核实
-- **动作行本体已在（切片树）**：`message-list.tsx` 动作行＝复制（恒有）＋分支（`enableBranchForTurn && onBranchTurn`，L964）＋重新生成（`enableRegenerateForTurn && onRegenerateMessage`，L1001–1037）＋编辑重发（`canEdit && onEditAndRegenerateMessage`，L1254–1260）——四键代码齐备；**缺的只是父级 props**：KB 面板 MessageList 调用（`chat-panel.tsx` L431–441）仅传 renderMessageContent／renderMessageFooter／onSubmitHumanInput。
+- **动作行本体已在（切片树）**：`message-list.tsx` 动作行＝复制（恒有）＋分支（`enableBranchForTurn && onBranchTurn`，L967）＋重新生成（`enableRegenerateForTurn && onRegenerateMessage`，L1001–1037）＋编辑重发（`canEdit && onEditAndRegenerateMessage`，L1254–1260）——四键代码齐备；**缺的只是父级 props**：KB 面板 MessageList 调用（`chat-panel.tsx` L455–465）未传 canRegenerate／onRegenerateMessage／canEdit／onEditAndRegenerateMessage（其余为数据类 props：className／threadId／thread／hasMoreHistory／loadMoreHistory／isHistoryLoading／renderMessageContent／renderMessageFooter／onSubmitHumanInput）。
 - **能力全在树内**：hook 已返回 `regenerateMessage`（hooks.ts L3163；走 `/runs/regenerate/prepare`）与 `editAndRegenerateMessage`（L3164；`/runs/edit-regenerate/prepare`）；后端两路由已在切片树（`thread_runs.py` L930／L941）。
 - **主会话参照接线**：`chats/chat-page.tsx` L524–556（canRegenerate／onRegenerateMessage／canEdit／onEditAndRegenerateMessage／canBranch／onBranchTurn 全套）；`agents/…/page.tsx` L478–479 已接重新生成＋编辑重发（**编辑重发带 knowledge-scope snapshot 先例**，L329–340，rag 场景直接可用）。
 - **两树同源**：主仓 KB 面板（L620）同款调用、同样未接（grep 无 `onRegenerate`）⇒ 修复应两树同步。
@@ -128,7 +131,7 @@ RAG 会话每条回答下方动作行只有「复制」；主会话同位置另�
 - **门槛 ≥5**：不足 5 条整条不渲染（会话轨按问题数、切片轨按切片数）；对齐上游先例。
 - 不取：动态间距（破坏「几何恒定」）、悬浮变距（hover 不位移为刻意设计）。
 - 落点：两处共用组件，一处常量＋一处判断一次生效；随 ② 刻度轨恢复以新值带进切片。
-- **✅ 已实施＋提交（2026-10-08）：`7bc9726d1`**——`chunk-tick-rail.tsx`（`TICK_GAP=26`／`MIN_TICKS=5`）＋同步用例（`chat-panel.dom` ×2 改门槛夹具、`chunk-drawer.dom` ×1 注释）；定向 3 文件 57 用例全绿；未推送。
+- **✅ 已实施（2026-10-08）：`75cf89e22`**（⑦⑨＋记账五笔压合）——`chunk-tick-rail.tsx`（`TICK_GAP=26`／`MIN_TICKS=5`）＋同步用例（`chat-panel.dom` ×2 改门槛夹具、`chunk-drawer.dom` ×1 注释）；定向 3 文件 57 用例全绿；未推送。
 
 ## 八、知识库文档感知缺口（会话侧；已裁补）
 
@@ -148,7 +151,7 @@ RAG 会话每条回答下方动作行只有「复制」；主会话同位置另�
 文档表失败行悬停卡＝两行文案（「解析服务多次重试仍失败，请检查文件是否损坏或稍后重试」）＋「⟳ 重试」按钮，全部靠左、按钮位于文案下方左角。用户：①文案有时只占左半边、右半边整片空；②按钮应在右侧才更符合直觉；③请给设计意见（最合理、好看）。
 
 ### 核实（两树同源同段）
-- 组件＝`document-panel.tsx` `DocumentStatusCell`：失败态（主仓 L319–344）与降级态（L345–373）共用同款卡片——`HoverCardContent className="w-60 p-3"`（固定 240px）＋`<p>` 块级文案（自然折行）＋`<Button size="sm">`；切片树同段同 class（约 L311–365）。
+- 组件＝`document-panel.tsx` `DocumentStatusCell`：失败态（主仓 L328–347）与降级态（L356–378）共用同款卡片——`HoverCardContent className="w-60 p-3"`（固定 240px）＋`<p>` 块级文案（自然折行）＋`<Button size="sm">`；切片树同段同 class（卡体 @L318／@L344）。
 - 根因：**固定卡宽＋内容全左对齐，右缘没有任何锚点**。短文案（如「解析超时，请重试」8 字）只剩左边一条；长文案末行同样是短尾；按钮是块级流里的下一项、贴左 ⇒ 同一观感。**非渲染缺陷，是布局问题。**
 - 影响面：两态共用一处 ⇒ 一次改动两态生效；两树同源 ⇒ 修复应两树同步（落点随执行计划细列）。
 
@@ -157,7 +160,7 @@ RAG 会话每条回答下方动作行只有「复制」；主会话同位置另�
 - **乙｜底排右对齐**：文案保持整宽（长文案不额外折行），按钮另起一排 `flex justify-end`；短文案时底排左半仍空（只是按钮到了右角）。
 - **丙｜卡片随内容收窄**（`w-fit max-w-60`＋按钮右收）：短文案整卡变窄、不存在「右半边」；代价＝卡片宽度随文案长短跳动（相邻行悬浮观感不一）。
 - **推荐理由**：甲①实现「按钮到右侧」的直觉；②右半边永远有按钮锚着、观感不空；③与同页文档失败面板「文左·钮右」同构（复用页面既有词汇）；④比乙更矮；⑤两态一处改动。选乙的后果＝短句时下半卡仍偏左、卡更高；选丙的后果＝宽度跳动。
-- **✅ 裁定（2026-10-08）：甲**——文案与按钮同排两端（`flex items-center justify-between gap-3`；文案 `min-w-0 flex-1`、按钮 `shrink-0`），按钮垂直居中；乙（底排右对齐）／丙（卡片随内容收窄）不取。**已实施并提交**：主仓 `d8e336edd`／切片 `51f2ee9f1`（均未推送）；定向用例＝主树 73/73、切片 61/61；两树 `pnpm check` 零诊断；实机截图未取（自动化浏览器停在登录页、未输入任何凭据），观感以实机复看为准。
+- **✅ 裁定（2026-10-08）：甲**——文案与按钮同排两端（`flex items-center justify-between gap-3`；文案 `min-w-0 flex-1`、按钮 `shrink-0`），按钮垂直居中；乙（底排右对齐）／丙（卡片随内容收窄）不取。**已实施**：主仓侧并入压合提交 `75cf89e22`（原 `d8e336edd`）；**切片侧改动已撤回**（原 `51f2ee9f1` 不保留——PR 面不落未定稿 A 项；改动内容＝本节甲案：失败/降级两卡 `flex items-center justify-between gap-3`＋文案 `min-w-0 flex-1`＋按钮 `shrink-0`＋用例结构钉，待 A 批次按计划重放）。定向用例＝主树 73/73、切片 61/61（撤回前实测）；两树 `pnpm check` 零诊断；实机截图未取（自动化浏览器停在登录页、未输入任何凭据），观感以实机复看为准。
 
 ## 十、RAG 模型「思考档位」接线（核实；无图）
 
@@ -199,7 +202,7 @@ KB 面板（RAG 会话）模型选择器＝扁平清单＋「搜索模型…」�
 - **丙｜保搜索＋加收藏（自绘混合）**：偏离主会话/上游件形态、维护再分叉，不荐。
 - **推荐理由**：甲即用户诉求「对齐」且一件三处同款。选乙＝缝留在用户可见面；选丙＝切片再分叉出自绘件。
 - **落点（切片）**：`chat-panel.tsx` 选择器块 → ModelPicker 接线；用例＝`chat-panel.dom.test.tsx` 三条选择器用例（触发 aria-label／选项文案／弹层关闭）结构照旧，需补 auth mock（`useAuth` 无 Provider 即 throw；样板＝`model-picker-content.dom.test.tsx`）。主仓零动作。TDD：选择器用例先行。
-- **✅ 待裁（2026-10-08）。**
+- **✅ 裁定（2026-10-08）：甲**——KB 面板换用与主会话同款 `ModelPickerContent`（切片侧；触发器保留现按钮；搜索框随壳消失，与主会话一字不差）；主仓零动作。未动工，待「开工」后随执行计划实施。
 
 ## 十二、RAG 会话消息区右侧滑条未走「隐式方案」＋全 RAG 面滑条盘点
 
@@ -209,7 +212,7 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 ### 核实（两树对照＋全 RAG 面 grep）
 - **切片树（缺口）**：KB 会话消息区＝`MessageList` → `ai-elements/conversation.tsx` 的 `Conversation`（`StickToBottom`＋`StickToBottom.Content`，L12–34）——库默认给 Content 挂 `overflow:auto`＋`scrollbar-gutter: stable both-edges` 的常驻原生滑条（fork 同段注释原文）。该 `message-list.tsx` 系上游基座版＋移植 2 个 render seam（`git diff e325c90b2` 实测 +20 行）——**fork 的隐式化未随带**。
 - **源（对照）**：fork 提交 `6df401c81`（"restore overlay scrolling in auto-height dialogs and roll out overlay scrollbars"；a343b8b03 祖先）把 `message-list.tsx` 改 `useStickToBottom()`＋`<ScrollArea type="scroll" scrollHideDelay={2000} viewportRef={stick.scrollRef}>`＋内容 div `ref={stick.contentRef}`（注释「滚动条只滚动时浮现、停 2s 淡出、不占布局宽度」「主聊天页同用 MessageList，一并同款」）。**主仓现状＝已带**（`message-list.tsx` L336–342／L1012–1025／L1390–1393）⇒ 主仓此面已对齐、零动作。
-- **全 RAG 面盘点（切片树）**：已 overlay＝文档表（`document-panel.tsx` L745）、失败面板（`doc-failure-panel.tsx` L113）、库列表（`kb-list-panel.tsx` L135）、切片抽屉（`chunk-drawer.tsx` L192）、历史弹层（`chat-panel.tsx` L386）、panels-shell 横滚（`panels-shell.tsx` L287）、刻度轨弹窗（`chunk-tick-rail.tsx` L148）。**唯一漏网＝会话消息区（本则）**；`ui/scroll-area.tsx` 本体已具备 overlay＋`viewportRef`（2026-09-04 注释），无需动。消息内部件（代码块 `overflow-x-auto`、工具详情 `pre` 内滚、选择器弹层内滚〔上游件〕）＝既有内件、非面板级滚动区——维持。
+- **全 RAG 面盘点（切片树）**：已 overlay＝文档表（`document-panel.tsx` L739）、失败面板（`doc-failure-panel.tsx` L113）、库列表（`kb-list-panel.tsx` L135）、切片抽屉（`chunk-drawer.tsx` L192）、历史弹层（`chat-panel.tsx` L386）、panels-shell 横滚（`panels-shell.tsx` L287）、刻度轨弹窗（`chunk-tick-rail.tsx` L148；主仓件，切片随 ② 带入）。**唯一漏网＝会话消息区（本则）**（口径＝原生常驻滑条类；`knowledge-scope-selector.tsx:406` 属 Radix 面、仅未带 `type="scroll"`／`scrollHideDelay`＝默认 hover 手感、非缺陷类，登记不改）；`ui/scroll-area.tsx` 本体已具备 overlay＋`viewportRef`（2026-09-04 注释），无需动。消息内部件（代码块 `overflow-x-auto`、工具详情 `pre` 内滚、选择器弹层内滚〔上游件〕）＝既有内件、非面板级滚动区——维持。
 - 影响面：切片全部 `MessageList` 面（KB 面板＋主会话＋agent 页）一并生效（同 fork 注释口径）——切片实例的主会话同为旧滑条（用户先在 RAG 注意到）。
 
 ### 处置选项（待裁；荐甲）
@@ -218,7 +221,7 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 - **丙｜改 `ai-elements/conversation.tsx`（组件级）**：影响面等同（仅 MessageList 用 Conversation）但动上游件本体、与 fork 成品不同构，不荐。
 - **推荐理由**：甲与 `6df401c81` 成品逐字同构（主仓即参照实现）；一处改动三面生效。选乙＝切片全体会话面留旧滑条；选丙＝偏离主仓已验形态、后续对照失真。
 - **落点（切片）**：`messages/message-list.tsx`（±30 行）；用例＝message-list 相关 DOM 定向；主仓零动作。
-- **✅ 待裁（2026-10-08）。**
+- **✅ 裁定（2026-10-08）：甲**——切片随带 fork 的隐式化（照主仓现行实现；保留 `role="log"`）；主仓零动作。未动工，待「开工」后实施。
 
 ## 十三、KB 会话流式中输入框禁用（主会话可输入）
 
@@ -236,29 +239,29 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 - **丙｜不修**：维持流式中全文锁定（能停但不能预打下一句）。
 - **推荐理由**：甲与主会话一字不差、避免同处两笔。选乙＝同区域连续两次动；选丙＝「对齐主会话」诉求不成立。
 - **落点（两树）**：KB `chat-panel.tsx` Textarea disabled 项＋回车分支（「等待」提示键两树已有——主会话在用）；TDD：流式中可输入用例（两树 chat-panel.dom）。与⑤同批实施时合并为同一提交序列。
-- **✅ 待裁（2026-10-08）。**
+- **✅ 裁定（2026-10-08）：甲**——并入⑤：KB composer 流式态对齐主会话（两树同款，与⑤同批落）。未动工，待「开工」后实施。
 
 ## 十四、涉及位置
 | 事项 | 切片树 | 全量版（主仓） |
 | --- | --- | --- |
-| 底部统计行 | `document-panel.tsx` L1165–1194 | `document-panel.tsx` L1226 起（同款） |
+| 底部统计行 | `document-panel.tsx` L1163–1192 | `document-panel.tsx` L1232–1261（同款） |
 | 状态聚合 | `core/knowledge/document-stats.ts` | 同 |
 | 切片抽屉 | `chunk-drawer.tsx`（只读版） | `chunk-drawer.tsx`（编辑族＋刻度轨接线） |
 | 切片卡片 | `chunk-card.tsx`（只读版） | `chunk-card.tsx`（编辑态＋三键） |
 | 刻度轨 | —（无） | `chunk-tick-rail.tsx` |
-| 刻度轨间距/门槛 | —（无组件；随 ② 恢复以 26/≥5 带入） | `chunk-tick-rail.tsx` `TICK_GAP=26`／`MIN_TICKS=5`（本次已改，`7bc9726d1`） |
-| i18n | `zh-CN.ts` L720–722（就绪/索引中/失败） | ＋`chunkDrawer.tickAria/notLoaded` 等 |
+| 刻度轨间距/门槛 | —（无组件；随 ② 恢复以 26/≥5 带入） | `chunk-tick-rail.tsx` `TICK_GAP=26`／`MIN_TICKS=5`（本次已改，并入 `75cf89e22`） |
+| i18n | `zh-CN.ts` L723–725（就绪/索引中/失败） | ＋`chunkDrawer.tickAria/notLoaded` 等 |
 | 裁件登记 | plan A5 L235／A6 L241 | — |
-| 功能模型挂载 | `model-settings-page.tsx` L140-142（内联挂载，Task 6 `a630a3b3f`） | `models-settings-page.tsx` ToggleGroup L142-161（两视图切换） |
+| 功能模型挂载 | `model-settings-page.tsx` L140-142（内联挂载，Task 6 `a630a3b3f`） | `models-settings-page.tsx` view state L95＋ToggleGroup L249-268（两视图切换） |
 | 视觉声明载体 | 勾选框「支持图片输入」`model-settings-page.tsx` L337-345 | 能力编辑器「视觉」芯片 `model-capability-editor.tsx` L132-135 |
-| VLM 候选来源 | `/api/managed-models`（config 行缺字段）`managed_models.py` L32 | `/api/models/config`（双源带字段）`models.py` L455/L466 |
-| 视图切换 i18n | 未带入（需补 `viewChatModels`／`viewFunctionalModels`／`viewSwitchLabel`；组合 ⓘ 另需 `functionalModels.description`） | zh-CN.ts L1709-1711 |
-| RAG 会话终止 | 缺：composer 无停止态（`chat-panel.tsx` L450–521）；链路在：`stop`（hooks.ts L3154←L2314）、后端 `/cancel`（`thread_runs.py` L1251） | 同缺（主仓同款 composer）；参照接线 `chat-page.tsx` L657–658、`agents/…/page.tsx` L599 |
+| VLM 候选来源 | `/api/managed-models`（config 行缺字段）`managed_models.py` L32 | `/api/models/config`（双源带字段）`models.py` L481／L688·L716 |
+| 视图切换 i18n | 未带入（乙-b 需补 `viewChatModels`／`viewFunctionalModels` 2 键，不需 `viewSwitchLabel`；组合 ⓘ 另需 `functionalModels.description`） | zh-CN.ts L1709-1711 |
+| RAG 会话终止 | 缺：composer 无停止态（`chat-panel.tsx` L476–560）；链路在：`stop`（hooks.ts L3154←L2314）、后端 `/cancel`（`thread_runs.py` L1251） | 同缺（主仓同款 composer，L655 起）；参照接线 `chat-page.tsx` L657–658、`agents/…/page.tsx` L599 |
 | RAG 会话重新生成 | 缺接线：键本体在 `message-list.tsx` L1001、父级未传；链路在 `regenerateMessage`／`editAndRegenerateMessage`（hooks.ts L3163–3164）、后端 L930·L941 | 同缺（主仓 KB 面板 L620 同款调用）；参照接线 `chat-page.tsx` L524–556、`agents/…/page.tsx` L478–479 |
 | 文档感知·结果字段 | `hybrid_search_tool.py` 结果 item＝`{chunk_id,text,doc_name,page,heading_path}`（同段）；缺 `doc_id`/`chunk_index` | 同（`hybrid_search_tool.py:81-87`） |
 | 文档感知·工具/门控 | 无文档级工具；门控＝单名常量 `knowledge_scope_middleware.py:25`（两处按名生效） | 无文档级工具；门控＝工具内 `resolve_kb_scope`（无中间件层） |
 | 文档感知·数据层（两树同） | chunk payload 带 doc_id＋索引 `(kb_id,doc_id,entities)`；`chunk_id={doc_id}#{index:04d}`；`list_chunks`/`chunk_positions`；服务 `list_documents`/`list_document_chunks`（L268/L364） | 同 |
-| 失败悬停卡（第九节） | `document-panel.tsx` L320–370（失败态 L320–339／降级态 L348–370；本次已改＝同排右收，`51f2ee9f1`） | `document-panel.tsx` L328–378（失败态 L328–347／降级态 L356–378；本次已改＝同排右收，`d8e336edd`） |
+| 失败悬停卡（第九节） | `document-panel.tsx` L320–370（原改动已撤回；同款内容待随 A 批次重放，见第九节） | `document-panel.tsx` L328–378（失败态 L328–347／降级态 L356–378；本次已改＝同排右收，并入 `75cf89e22`） |
 | 思考档位声明面（第十节） | 模型弹窗无思考/档位字段（`settings.models` 键表）；思考菜单单槽（VLM，L895–896）；唯一聊天模型腿＝VLM（原生 HTTP，`captioner.py:110`） | 模型弹窗能力区「可用/默认推理深度」（`model-capability-editor.tsx` L221–277）；思考菜单五槽（L931–935） |
 | 模型选择器（第十一节） | KB 面板＝扁平壳＋搜索（`chat-panel.tsx` L499–544，`ModelSelectorInput`＝「搜索模型」、`models.map`）；主会话＝收藏件 `ModelPickerContent`（`input-box.tsx` L3472–3494／`sidecar-panel.tsx` L929；core＝`core/models/favorites.ts`＋`use-model-favorites.ts`＋`favorites-store.ts`，上游 e325c90b2 自带；i18n zh-CN L318–325） | 全链无收藏件（零命中）；主会话＋KB 同为扁平壳＋`chatPickerOptions` 过滤（`input-box.tsx` L2442／`chat-panel.tsx` L697）——已对齐、零动作 |
 | 会话消息区滑条（第十二节） | `message-list.tsx` 经 `Conversation`（`ai-elements/conversation.tsx` L12–34）＝库原生常驻滑条；fork `6df401c81` 未随带 | `message-list.tsx` L336–342／L1012–1025＝`useStickToBottom`＋overlay ScrollArea（已带） |
@@ -271,7 +274,7 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 4. 动工：用户令「先不要生成 plan」⇒ 暂不出执行计划、未动工；落点（两树同步/随带进 slice）、TDD、门禁待「开工」后在执行计划内细列。
 
 ## 裁定记录（第三–六节，2026-10-08；含同日澄清）
-1. 第三节·功能模型布局：✅ **已澄清（10-08 两轮）**——机制＝乙（视图切换，非对话框）；控件形态二选一：乙-b 单枚「功能模型」钮（口述形态，回程同钮变「对话模型」）／乙-a 原版两枚切换片。丙（设置独立入口）不取。开工时一口定形态即可。
+1. 第三节·功能模型布局：✅ **已澄清＋已定（10-08）**——机制＝乙（视图切换，非对话框）；控件形态**已裁＝乙-b**（单枚「功能模型」钮：按钮行加一枚；进入功能视图后同钮原地变「对话模型」回程、「添加模型／重新加载」隐藏；i18n 2 键）。乙-a（原版两枚切换片）／丙（设置独立入口）不取。未动工，待「开工」后随执行计划实施。
 2. 第四节·VLM 视觉声明：✅ **已裁（10-08）：甲**——后端一行（`_catalog()` config 行补 `supports_vision`）＋前端零界面变化；乙（全放行＋兜底）／丙（不修）不取。待「开工」后随执行计划实施。
 3. 动工口径（沿用第一、二节）：落点（随带进 slice＋全量版同步）、TDD、门禁——待「开工」后在执行计划内细列；当前未动工。
 4. 第五节·RAG 会话终止：✅ **已裁（10-08）：甲**——自绘 composer 原地加「流式中发送键变停止键」＋`thread.stop()`；乙（整块换共享 InputBox）不取。纯前端接线；未动工，待「开工」后随执行计划实施。
@@ -280,7 +283,7 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 ## 裁定记录（第七节，2026-10-08）
 1. 刻度轨间距：**26**——24–28 带内取中（34 偏空、24 以下受热区留隙与弹窗行高所限）。
 2. 显示门槛：**≥5**——对齐上游 conversation-outline 先例；「>5」口径不取。
-3. **已实施并提交**：`7bc9726d1`（开发分支 feat/rag-knowledge-base；两处刻度轨所在树）；定向用例 57/57 绿；未推送。切片侧随 ② 恢复以新值带入。
+3. **已实施**：并入压合提交 `75cf89e22`（开发分支 feat/rag-knowledge-base；两处刻度轨所在树）；定向用例 57/57 绿；未推送。切片侧随 ② 恢复以新值带入。
 
 ## 裁定记录（第八节，2026-10-08）
 1. 缺口成立：两树同源；数据层关联已全、缺口在模型面（工具＋结果字段）——补＝薄壳。
@@ -292,7 +295,7 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 
 ## 裁定记录（第九节，2026-10-08）
 1. 案：**甲**（同排右收）——文案与按钮同排两端（`flex items-center justify-between gap-3`；文案 `min-w-0 flex-1`、按钮 `shrink-0`），按钮垂直居中；乙（底排右对齐）／丙（卡片随内容收窄）不取。
-2. **已实施并提交**：主仓 `d8e336edd`（源＋用例）＋本记录批；切片 `51f2ee9f1`（源＋用例）。两笔均未推送。
+2. **已实施**：主仓侧并入压合提交 `75cf89e22`（⑦⑨＋记账五笔压一）；**切片侧改动已撤回**（原 `51f2ee9f1` 不留——PR 面不落未定稿 A 项；改动内容已补记第九节，待 A 批次重放）。均未推送。
 3. 门禁：定向用例＝主树 73/73、切片 61/61 全绿；两树 `pnpm check` 零诊断；prettier＝切片全净、主树新行全净（余 1 处既有登记债＝`hasDegradedLeg` 签名，按「登记不修」不动）。
 4. 实机观感未由我截图核验：自动化浏览器停在登录页、未输入任何凭据；结构已由用例钉住（同排容器＋按钮右缘）。若嫌「按钮垂直居中」、想换「首行右角」＝`items-start`，一句话改。
 5. 第十节（RAG 思考档位）：**已裁（同日）：甲＝维持现状**（见下）。
@@ -301,3 +304,48 @@ KB 会话栏右侧上下滑条＝常驻原生滑条，非项目「隐式方案�
 1. 案：**甲（维持现状）**——RAG 腿按模型条目自己的默认档；不给 RAG 加档位控件；乙（功能视图加档位选择器）／丙（切片弹窗补声明字段）不取。
 2. 依据：市场惯例＝索引/后台腿走快模型、思考只在查询侧（`2026-10-03-rag-leg-thinking-follow-chat-design.md`）；RAG 腿为批量任务、逐条档位收益低；切片哲学＝最小适配增量。想让某腿带档 ⇒ 改该腿所指模型条目的声明（全量版弹窗／切片 `config.yaml`）。
 3. 无代码改动；本节至此收口。
+
+## 裁定记录（第十一–十三节，2026-10-08）
+1. 三则全取**甲**：⑪ KB 选择器换 `ModelPickerContent`（与主会话／sidecar 一字不差；搜索框随壳消失）／⑫ `message-list.tsx` 随带 fork 隐式化（照主仓成品）／⑬ 并入⑤（KB composer 流式可输入，两树同款）。
+2. 未动工：待「开工」后随执行计划实施。
+3. 提交口径（10-08 用户令）：A 档此后**不逐轮提交**——改动只留工作区，**待 plan 生成后与 plan 成对提交**。⑦⑨ 两处已实施改动在开发分支压合为一笔 `75cf89e22`；切片侧两处改动不保留（待 A 批次重放）。
+
+## 十五、切片裁剪残留（2026-10-08「少剪」全面核实新增；切片侧）
+
+### 由来
+用户令对切片树做「有没有少剪不相关内容」的全面核实（点名宠物／可视化／后置 RAG）。以「切片 vs 上游基座 `e325c90b2`」全部 329 个变更路径为全集逐面过＋全树墓碑词扫描＋命中内容级定性：**宠物、可视化（构成快照）、后置 RAG 腿（图谱·百科·视频·ASR·OCR）、其余别线特性（模型列表分组、门禁埋点、activity 灯）全部零命中**；余下 6 条痕迹级残留并入本对处理。
+
+### 各条
+- ①【补·用户可见】删除确认文案仍带被裁特性词——`zh-CN.ts:608-613`／`en-US.ts:647-652`（「…切片、向量**与图谱贡献**」／「…向量、**图谱与百科条目**」；渲染于 `document-panel.tsx:1203`〔删文档〕与 `middle-tabs.tsx:233`〔删库〕）⇒ 对齐切片事实改写 4 串；`document-panel.dom.test.tsx:386` 逐字断言随改。⚠️ 主仓该文案成立（图/百科在 Fork 真实存在）——只动切片。
+- ②【删·死代码】`embed_texts.py` 三函数（entity／wiki 条目／人工卡片向量文本）在切片零生产调用（切片向量集合只剩 chunks，`vector_store.py:60`）；仅同批新增的 `test_embed_texts.py` 在维系 ⇒ 两件删除。
+- ③【清·测试残留】`chat-panel.dom.test.tsx:37-42` mock 了切片不存在的 `@/core/threads/activity-context`（死件；实测该件 19/19 绿）＋`:49-57`「刻度轨接线」假滚动层与 `data-human-turn` 脚手架、`§10.3`／agent-pet 注释（切片 `chat-panel.tsx` 零引用）。
+- ④【扫·注释族】~15 处注释/文档串仍为 Fork 口径（后端 11＋前端 6；清单见 plan Task 10）——不影响运行。
+- ⑤【销项】`GET /{kb_id}/chunks`（批量取切片）：前端零调用（消费方＝被裁的 wiki 抽屉）、后端有测试在管——复核留面明文「切片只读」⇒ **属首期范围，维持不动**。
+- ⑥【削·已裁】`chunk-card.tsx` L190-210「实体」徽章行＋`entities` prop/state＋`ENTITY_CAP`（L13）：切片无图谱回填、`entities` 恒空 ⇒ 渲染实际休眠（用例 `chunk-drawer.dom.test.tsx:125-140`）。**✅ 裁定（2026-10-08）：削**——连同 `chunk-drawer.tsx:289` 传参行与上述用例一并删；`Chunk.entities` 类型（`types.ts:91`）与后端列保留（schema 对位）；并入 plan Task 10 同笔。
+
+### 已核销（不处理）
+`tab-strip.dom.test.tsx:23-39` 图谱/评测 tab 夹具＝有意自带（注释声明「标签自足」）；`entities` 列/Qdrant payload＝`models.py:81-83` 明文 schema 对位；TEI 稀疏/重排与方舟嵌入＝RFC v3 L240/L250/L251 范围；语音输入/输入优化键＝上游基座自带。
+
+## 裁定记录（第十五节，2026-10-08）
+1. 并联裁定：用户令「都放到 A 中」⇒ ①–④ 落本对（切片侧；执行载体＝plan Task 10）；⑤ 销项维持；⑥ **已裁（2026-10-08）：削**，并入 Task 10 同笔。
+2. 未动工：待「开工」后按 plan 执行。
+
+## 执行记录（2026-10-08「开工」全落）
+
+| 节 | 实施 | 提交 |
+| --- | --- | --- |
+| ① footer 状态段 | 两树 | 主 `0b443612e`／切 `6fbd71540` |
+| ② 刻度轨恢复 | 切片 | `a27c3d7d4` |
+| ③ 视图切换·乙-b | 切片 | `078248cd1` |
+| ④ VLM 补链 | 切片后端 | `d82bbd6c6` |
+| ⑤＋⑬ composer 流式态 | 两树 | 主 `9da794d09`／切 `5cbcf5708` |
+| ⑥ 消息动作行 | 两树 | 主 `48e1d8111`／切 `8057a1507` |
+| ⑦ 刻度轨间距/门槛 | 已随压合笔 | `75cf89e22`（留档） |
+| ⑨ 悬停卡右收 | 切片重放 | `1d8c88a8a` |
+| ⑩ 档位维持现状 | 零动作 | — |
+| ⑪ 选择器对齐 | 切片 | `f519e6110` |
+| ⑫ 滑条隐式化 | 切片 | `bf0d59cd7` |
+| ⑧ 文档感知缺口 | 另对 | `2026-10-08-rag-doc-tools*` |
+| §十五 ①②③④⑥ | 切片清理 | `af54b4d01` |
+
+门禁（零新增归因）与真栈验收（全项过；资源隔离于并行会话）逐条见 plan 文末「执行实测」；验收证据档＝`E:/app-model/deer-flow-scratch/acceptance-a12/acceptance-evidence.md`（截图 4 张随会话）。

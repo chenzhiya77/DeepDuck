@@ -1,6 +1,6 @@
 # 切片树 CI 合规修复（提交前四门清零） —— 设计
 
-**Status:** 已立（2026-10-08）；D1–D3 已裁全甲（2026-10-08）；**修复执行＝已完工（2026-10-08）**——切片四笔 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树伴修 `20f8eb3a3`＋主树记录批 → 回填 `11c0576ae`（本提交）；**推送与 PR 更新＝待令**。载体＝成对（本文件＋`../plans/2026-10-08-rag-slice-ci-fix.md`）。范围＝**切片树**（`deer-flow-slice`／`slice/knowledge-local-vector-retrieval`，HEAD `5cc0197b4`）＋主树（记录对账＋1 件格式债伴修，复审并入）。来源：2026-10-08 评审前实跑复核（上游 `lint-check.yml` 三 job 在本机逐项重跑）＋ GitHub Actions 侧取证（fork run `37675627281`）＋记录对账。10-08 复审并入**第四修（无云工作流 GitHub 侧无效，见 §1／§2.4；落法＝甲）**。
+**Status:** 已立（2026-10-08）；D1–D3 已裁全甲（2026-10-08）；**修复执行＝已完工（2026-10-08）**——切片四笔 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树伴修 `bd22a5752`＋主树记录批 → 回填 `ad1ccc8dd`（本提交）；**推送与 PR 更新＝待令**。载体＝成对（本文件＋`../plans/2026-10-08-rag-slice-ci-fix.md`）。范围＝**切片树**（`deer-flow-slice`／`slice/knowledge-local-vector-retrieval`，HEAD `5cc0197b4`）＋主树（记录对账＋1 件格式债伴修，复审并入）。来源：2026-10-08 评审前实跑复核（上游 `lint-check.yml` 三 job 在本机逐项重跑）＋ GitHub Actions 侧取证（fork run `37675627281`）＋记录对账。10-08 复审并入**第四修（无云工作流 GitHub 侧无效，见 §1／§2.4；落法＝甲）**。
 
 **本对一件事：把切片树已提交的移植内容修到上游 CI 门全绿＋清掉主树 1 件后端 format 债（复审并入）——纯机械（格式化／压缩／去未用导入），零语义、零行为变化；并把「提交前四门」固化为后续移植批次的复核口径、把记录与实况的偏差对账。**
 
@@ -74,7 +74,7 @@
 5. 记录：切片 plan 勘误＋追记已落；`rag-doc-tools` plan Task 8 已加四门行；本对状态/实测/哈希回填；
 6. 提交：切片树四笔＋主树伴修一笔＋主树记录批，信息全英文。
 
-**实测（2026-10-08）**：六条全过——①切片 `make lint` 0 错／0 件（1970 already formatted）＋主树 `format --check` 1 件→0（1327 already formatted）；②ref 模式 **0 errors**／13 warnings、exit 0；③`pnpm format` 零 diff＋`pnpm check` 零诊断＋`pnpm test` 304 文件／2895 用例全绿；④YAML 解析过＋全文复查仅 step 级 `runner.`；⑤记录三件已落（切片 plan 勘误＋T8 追记／doc-tools Task 8 四门行／本对回填）；⑥提交：切片 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树 `20f8eb3a3`＋记录批 → 回填 `11c0576ae`（本提交）。**推送与 PR 更新、工作流首跑复核＝待令**。
+**实测（2026-10-08）**：六条全过——①切片 `make lint` 0 错／0 件（1970 already formatted）＋主树 `format --check` 1 件→0（1327 already formatted）；②ref 模式 **0 errors**／13 warnings、exit 0；③`pnpm format` 零 diff＋`pnpm check` 零诊断＋`pnpm test` 304 文件／2895 用例全绿；④YAML 解析过＋全文复查仅 step 级 `runner.`；⑤记录三件已落（切片 plan 勘误＋T8 追记／doc-tools Task 8 四门行／本对回填）；⑥提交：切片 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树 `bd22a5752`＋记录批 → 回填 `ad1ccc8dd`（本提交）。**推送与 PR 更新、工作流首跑复核＝待令**。
 
 ## 6. 非目标
 
