@@ -89,8 +89,15 @@
 
 > 动到的文件：`agents/assets/rag/SOUL.md`（两树各自适配，非逐字同文）＋切片 `knowledge_scope_middleware.py`（草稿）
 
-- [ ] 主树 SOUL：新增「语料边界问题」节（工作流＋D4 限次取值）＋L7 强制句两分修订；切片版草稿（按切片两件检索链适配；两树 L7 非同一句）。
-- [ ] 切片门控集合扩列草稿（`{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处）＋拒绝文案收正（`_disabled_tool_message`：ToolMessage `name=` 与 content 按被拦工具名回填／泛化；`access.py:37` 同句一并核——第三处同句 `ragflow/tools.py:539` 属 RAGFlow 自答、不随扩列，维持不动）。
+- [x] 主树 SOUL：新增「语料边界问题」节（工作流＋D4 限次取值）＋L7 强制句两分修订；切片版草稿（按切片两件检索链适配；两树 L7 非同一句）。（主树干完；切片版草稿口径见下实测末行）
+- [ ] 切片门控集合扩列草稿（`{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处）＋拒绝文案收正（`_disabled_tool_message`：ToolMessage `name=` 与 content 按被拦工具名回填／泛化；`access.py:37` 同句一并核——第三处同句 `ragflow/tools.py:539` 属 RAGFlow 自答、不随扩列，维持不动）。（草稿口径见下实测末行；物理块随 Task 8 交接单承载）
+
+**实测（2026-10-08，Task 5·主树）**：
+- RED：`test_builtin_rag_soul_contains_citation_and_refusal_rules` 增三条（`语料边界` 节在、两工具名在、限次 `4 个窗口`/`6 次` 在）⇒ 恰红 1 件。
+- GREEN：主树 SOUL——L7 句尾补「语料边界类问题例外（有哪些文档 / 某篇讲什么 / 除了 X 还有什么 / 第几片）→ 见下节」（原钉句「任何事实性问题必须至少调用一次」逐字保留，用例 `:63`/`:64`/`:65` 不动）；新增「语料边界问题（枚举 / 结构 / 定位）」节 5 条：清单枚举（如实转状态计数）、doc_id 分页通读、chunk_id 居中窗口（第 K/共 N 片）、**D4 宽松档限次（≤4 窗口/文档、≤6 次/轮）**、引用两分（事实走 `[n]`；枚举/结构/定位直接 list/read、不虚构、出处用文字）。
+- 门禁（定向）：`test_rag_agent_assembly.py` **9 passed**；另三 SOUL 消费面（`test_soul_prompt_injection`／`test_custom_agent`／`test_agent_storage_backend`）**83 passed**；ruff 双净。
+- 提交：`63f89a7ea`。
+- **切片草稿（备件，物理块随 Task 8 交接单承载；本对不动切片树）**：① 切片 SOUL 版——L7＝`knowledge_search` 版（「任何事实性问题必须至少调用一次 `knowledge_search`」逐字保留）、「语料边界问题」节同义改写（删 wiki/图谱/深度检索指代——切片检索链仅 2 件工作流）；② 门控集合——`_KNOWLEDGE_SEARCH_TOOL_NAME` → `_KNOWLEDGE_TOOL_NAMES = frozenset({knowledge_search, list_knowledge_documents, read_knowledge_document})`，两处按名生效同扩（tools 过滤 `:83`＋拦截 `:89-98`）；③ 拒绝文案收正——`_disabled_tool_message` 的 `name=` 与 content 按被拦工具名回填（保持 `disabled` 子串以兼容 `test_knowledge_scope_middleware.py:143`）；`access.py:37` `SCOPE_DISABLED_MESSAGE` 同句随核（新工具沿用同模板）；`ragflow/tools.py:539` 维持不动。
 
 ## Task 6 — 真栈验收（主树）
 
