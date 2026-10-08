@@ -178,7 +178,7 @@ describe("ChunkDrawer", () => {
 
     renderWithI18n(<ChunkDrawer kbId="kb-1" doc={DOC} open onOpenChange={() => undefined} />);
 
-    // 刻度轨（total > 1）渲染窗口化刻度按钮，aria 带序号
+    // 刻度轨（total ≥ 5）渲染窗口化刻度按钮，aria 带序号
     expect(await screen.findByRole("button", { name: "切片 #1" })).toBeTruthy();
 
     fireEvent.click(await screen.findByRole("button", { name: "加载更多" }));

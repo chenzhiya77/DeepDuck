@@ -117,6 +117,14 @@ function makeThreadState(messages: unknown[] = []) {
   };
 }
 
+/** n 个问题轮（human/ai 成对）——刻度轨门槛为 ≥5，铺量用。 */
+function humanTurns(count: number) {
+  return Array.from({ length: count }, (_, index) => [
+    { id: `h${index + 1}`, type: "human", content: `问题 ${index + 1}` },
+    { id: `a${index + 1}`, type: "ai", content: `答${index + 1}` },
+  ]).flat();
+}
+
 function renderPanel(
   kb: KnowledgeBase | null = KB,
   props?: Partial<Parameters<typeof KnowledgeChatPanel>[0]>,
@@ -321,26 +329,18 @@ describe("KnowledgeChatPanel", () => {
 
   it("renders the question tick rail over the message list (chunk-rail scheme, ticks = user questions)", () => {
     mockUseThreadStream.mockImplementation(() => ({
-      thread: makeThreadState([
-        { id: "h1", type: "human", content: "第一个问题" },
-        { id: "a1", type: "ai", content: "答一" },
-        { id: "h2", type: "human", content: "第二个问题" },
-        { id: "a2", type: "ai", content: "答二" },
-      ]),
+      thread: makeThreadState(humanTurns(5)),
       sendMessage: mockSendMessage,
     }));
     renderPanel(KB);
-    // 两个问题轮 → 两刻度（aria 同切片刻度轨方案「问题 #N」）；弹窗行悬浮
-    // 才挂载，静止态只有刻度脊按钮。
-    expect(screen.getAllByRole("button", { name: /^问题 #/ }).length).toBe(2);
+    // 满 5 个问题轮 → 刻度轨显示（aria 同切片刻度轨方案「问题 #N」）；弹窗行
+    // 悬浮才挂载，静止态只有刻度脊按钮。
+    expect(screen.getAllByRole("button", { name: /^问题 #/ }).length).toBe(5);
 
-    // 单问题轮不显轨（同切片刻度轨 total<=1 退役纪律）。
+    // 低于门槛（4 个问题轮）不显轨（2026-10-08 三改：≥5 才显示）。
     cleanup();
     mockUseThreadStream.mockImplementation(() => ({
-      thread: makeThreadState([
-        { id: "h1", type: "human", content: "唯一的问题" },
-        { id: "a1", type: "ai", content: "答一" },
-      ]),
+      thread: makeThreadState(humanTurns(4)),
       sendMessage: mockSendMessage,
     }));
     renderPanel(KB);
@@ -349,12 +349,7 @@ describe("KnowledgeChatPanel", () => {
 
   it("jumps the message viewport to the picked question via the tick rail", () => {
     mockUseThreadStream.mockImplementation(() => ({
-      thread: makeThreadState([
-        { id: "h1", type: "human", content: "第一个问题" },
-        { id: "a1", type: "ai", content: "答一" },
-        { id: "h2", type: "human", content: "第二个问题" },
-        { id: "a2", type: "ai", content: "答二" },
-      ]),
+      thread: makeThreadState(humanTurns(5)),
       sendMessage: mockSendMessage,
     }));
     renderPanel(KB);

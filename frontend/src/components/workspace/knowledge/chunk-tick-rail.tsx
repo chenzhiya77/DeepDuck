@@ -7,10 +7,14 @@ import { cn } from "@/lib/utils";
 
 /** 可见刻度槽数（奇数 → active 居中）；弹窗可见行数同值（行与刻度一一对应）。 */
 const VISIBLE_TICKS = 11;
-/** 刻度间距 == 弹窗行高（2026-09-05 二改）：刻度是主体，悬浮前后几何恒定，
-    弹窗只是贴在刻度左侧的标签层，行槽与刻度槽逐一对齐。34px 也回应了
-    “刻度太密”的反馈。 */
-const TICK_GAP = 34;
+/** 渲染门槛：刻度总数 ≥5 才显示（2026-10-08 三改——低于门槛跳转价值低，
+    短带只是噪音；对齐上游 conversation-outline 的 ≥5 门槛）。 */
+const MIN_TICKS = 5;
+/** 刻度间距 == 弹窗行高（2026-09-05 二改；2026-10-08 三改 34→26 回应「间距偏空」：
+    下限被热区 16px 留隙与弹窗 12px 文字行高夹住，可取值带 24–28、取中）。
+    刻度是主体，悬浮前后几何恒定，弹窗只是贴在刻度左侧的标签层，行槽与刻度槽
+    逐一对齐。 */
+const TICK_GAP = 26;
 /** 刻度按钮热区高度（小于间距，热区之间留隙不粘连）。 */
 const TICK_HIT = 16;
 
@@ -124,7 +128,7 @@ export function ChunkTickRail({
     };
   }, [open]);
 
-  if (total <= 1) return null;
+  if (total < MIN_TICKS) return null;
 
   const bandHeight = Math.min(total, VISIBLE_TICKS) * TICK_GAP;
 
