@@ -81,6 +81,8 @@ async def _hybrid_search_impl(
         item: dict[str, Any] = {
             "chunk_id": row["chunk_id"],
             "text": row["text"],
+            "doc_id": row["doc_id"],
+            "chunk_index": row["chunk_index"],
             "doc_name": payload.get("doc_name") or "",
             "page": payload.get("page"),
             "heading_path": payload.get("heading_path") or [],
@@ -116,7 +118,7 @@ async def hybrid_search(
     - The question is about relationships/multi-hop structure between concepts — use graph_search
     - The question asks for a conceptual overview of an important entity — use wiki_search
 
-    Each result carries chunk text plus doc_name/page/heading_path for citation. Missing knowledge-base binding returns guidance instead of searching.
+    Each result carries chunk text plus doc_id/chunk_index (follow-up reads can address the same document/chunk) and doc_name/page/heading_path for citation. Missing knowledge-base binding returns guidance instead of searching.
 
     Args:
         runtime: Tool runtime carrying the bound ``kb_id`` in its context.

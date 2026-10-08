@@ -10,13 +10,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from qdrant_client.models import SparseVector
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE
+from deerflow.knowledge.embedder import EmbeddingResult
 from deerflow.knowledge.reranker import RerankerError
 from deerflow.tools.builtins.hybrid_search_tool import _hybrid_search_impl
 
 from ..conftest import requires_qdrant
-from .conftest import KB_ID, OWNER_ID
+from .conftest import DOC_ID, KB_ID, OWNER_ID
 
 
 class _StubReranker:
@@ -39,6 +41,70 @@ class _FailingReranker:
 
 def _runtime(**context) -> SimpleNamespace:
     return SimpleNamespace(context=context)
+
+
+class _FieldStore:
+    """Store double for the follow-up-field assertions (no Qdrant needed)."""
+
+    def __init__(self) -> None:
+        self.rows = [
+            {
+                "chunk_id": "doc-u#0007",
+                "doc_id": "doc-u",
+                "chunk_index": 7,
+                "text": "第七片正文",
+                "heading_path": ["第7章"],
+                "page": 7,
+            }
+        ]
+
+    async def get_kb(self, kb_id: str):
+        return {"id": kb_id, "owner_id": OWNER_ID}
+
+    async def get_chunks_by_ids(self, chunk_ids, *, kb_id=None):
+        wanted = set(chunk_ids)
+        return [row for row in self.rows if row["chunk_id"] in wanted]
+
+
+class _FieldVectorStore:
+    """Qdrant double whose payload deliberately omits ``chunk_index``."""
+
+    def __init__(self) -> None:
+        self.payloads = [
+            {"chunk_id": "doc-u#0007", "doc_name": "手册.md", "page": 7, "heading_path": ["第7章"], "doc_id": "doc-u"},
+        ]
+
+    async def hybrid_query(self, *, dense, sparse, kb_id, top_k):
+        return [SimpleNamespace(payload=payload) for payload in self.payloads]
+
+
+class _FieldEmbedder:
+    async def embed(self, texts, *, text_type: str = "document"):
+        return [EmbeddingResult(dense=[0.0] * 4, sparse=SparseVector(indices=[1], values=[0.5])) for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_items_carry_doc_id_and_chunk_index_for_follow_up_reads() -> None:
+    """追问链凭据（spec §2.2）：每条结果带 doc_id 与 chunk_index。
+
+    ``chunk_index`` 不存在于 Qdrant payload（夹具 payload 故意无此键）——
+    断言它必须取自业务库行；doc_name/page/heading_path 等既有引用元数据不变。
+    """
+    result = await _hybrid_search_impl(
+        "任意问题",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        store=_FieldStore(),
+        vector_store=_FieldVectorStore(),
+        embedder=_FieldEmbedder(),
+        reranker=_StubReranker(),
+    )
+
+    (item,) = result["results"]
+    assert item["doc_id"] == "doc-u"
+    assert item["chunk_index"] == 7
+    assert item["doc_name"] == "手册.md"
+    assert item["page"] == 7
+    assert item["heading_path"] == ["第7章"]
 
 
 @requires_qdrant
@@ -69,6 +135,10 @@ async def test_hybrid_search_end_to_end(tools_env):
     assert top["doc_name"] == "架构.md"
     assert top["page"] == 1
     assert top["heading_path"] == ["架构"]
+    # Follow-up credentials (spec §2.2): doc_id/chunk_index address the same
+    # document/chunk for follow-up reads; both ride the business-DB row.
+    assert top["doc_id"] == DOC_ID
+    assert top["chunk_index"] == 0
     assert "message" in result
 
 
