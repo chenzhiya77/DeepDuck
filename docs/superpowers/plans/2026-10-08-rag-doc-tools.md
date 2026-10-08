@@ -103,7 +103,14 @@
 
 > 动到的文件：零（真栈验证＋临时件收尾）
 
-- [ ] 两问回归＋追问链＋篇内检索一问（D1=甲）；临时件收尾、配置零改动。
+- [x] 两问回归＋追问链＋篇内检索一问（D1=甲）；临时件收尾、配置零改动。
+
+**实测（2026-10-08，Task 6·主树真栈）**：
+- 实例：主树隔离实例——gateway `:8101`（主树 venv；env 三件＋`.env`）／独立 sqlite＋home／**新 Qdrant 容器 `df-acc-t6-qdrant` `:6398`**（避与 acc8 的 :6399 集合相撞）；config＝主树 `config.yaml` 复制＋三处改（sqlite 绝对化／`allow_host_bash:false`〔W9 守卫〕／qdrant :6398）、rag_config 复制自 acceptance-8——**repo 配置零改动**；证据档 `E:/app-model/deer-flow-scratch/acceptance-t6/acceptance-evidence.md`＋转写 `evidence.txt`。
+- 语料：验收库四件（测试10／鹦鹉提示词／部署手册／旅行清单，各 1 片）＋多切片《长文样章.md》（**8 片**）。
+- ①「测试10中有哪些内容呀」：`list`→`read(doc_id)`→五部分枚举 ✓；②「除了鹦鹉提示词还有什么」：`list` 有据枚举 4 篇到边界 ✓＋「另外三篇都讲了什么」：**并行 3×`read(doc_id)`** 逐篇内容枚举 ✓；③ 追问链：「鹦鹉提示词里写了什么」`hybrid_search`（结果带 `doc_id`/`chunk_index`/`citation_no`）＋`graph_search`→带 `[1]` 引用 ✓ →「这条切片前后也读一下」`read(chunk_id)` 窗口「第 1/共 1 片」✓ →「整篇都读一下」模型复用已读全文（单切片文档，够答即止）；多切片整篇读由 B2/D 覆盖；④ **篇内检索（D1=甲）**：「只在长文样章.md 这一篇里检索」→`hybrid_search(query, doc_id, top_k=5)`→命中第五章切片→`read(chunk_id, limit=3)`→带引用答案 ✓（首轮收尾后发现的漏项：重建 Qdrant＋`POST /reindex` 后补测）。
+- **模型侧波动登记（非工具缺陷）**：D 首跑「整篇列章节」误报「共 7 章」；库内直查证实 `#0007` 含「第八章 总结」、读取结果含 8 条；D2 同问复跑 **8 章全对**且切片分布逐条相符 ⇒ 模型偶发误读（对照坐实）。
+- 收尾：gateway 停、容器停删、端口释放、主树工作树零临时件 ✓。
 
 ## Task 7 — 门禁＋提交＋回填
 
