@@ -116,7 +116,14 @@
 
 > 动到的文件：spec/plan 回填＋验收反馈记录第八节状态行同步＋`backend/AGENTS.md`／`README.md`（文档同步面）
 
-- [ ] 全量门禁（后台跑）＋提交链（英文）＋spec/plan 状态回填＋验收反馈记录第八节状态行同步＋文档同步面：`backend/AGENTS.md` 两处（L968「the three retrieval tools」、L1264 工具清单）＋`README.md` 两处（L32「三个检索工具」、L74-76 清单）随工具组扩为五件修订；快照类（`docs/HARNESS_EXECUTION_FLOW_MAP.md`／`docs/AGENT_HARNESS_VISUALIZATION_RESEARCH.md`）不追、登记。
+- [x] 全量门禁（后台跑）＋提交链（英文）＋spec/plan 状态回填＋验收反馈记录第八节状态行同步＋文档同步面：`backend/AGENTS.md` 两处（L968「the three retrieval tools」、L1264 工具清单）＋`README.md` 两处（L32「三个检索工具」、L74-76 清单）随工具组扩为五件修订；快照类（`docs/HARNESS_EXECUTION_FLOW_MAP.md`／`docs/AGENT_HARNESS_VISUALIZATION_RESEARCH.md`）不追、登记。
+
+**实测（2026-10-08，Task 7）**：
+- 全量门禁（后台·仓外 basetemp·完整落盘 `E:/app-model/deer-flow-scratch/pytest-t7.log`）：**153 failed / 13067 passed / 109 skipped（18:20）**——红带内（本机漂移区间 144–164；skip 109 与基线一致）；knowledge 面红＝登记族全数（缺 key 对 ×2／parser 对 ×2／`test_migration_0016` ×2）＋登记 flake 族（`pnpm_script` ×3／`review_changed_public_skills`／`invoke_acp_agent`）；**本对碰过的文件零红**；ruff 全树双净（`All checks passed!`＋`1329 files already formatted`）。
+- 文档同步面（只 stage 本线 hunk：HEAD 重建 mine-only→入 index→还原工作树，别线在飞改动原样留工作区）：`backend/AGENTS.md` 两处（路由行「plus the two document-level read-only tools」；Retrieval tools 条目→五件＋`doc_id` 作用域）＋`README.md` 两处（安全边界行→「rag 工具组的五个工具」；新增「### 文档级读取（只读，共用同一绑定）」小节）。
+- 状态回填：spec Status（主树已全落）＋验收反馈记录第八节状态行（已开工/全落注记）＋本纪行；提交链：Task 0–7 全在 `feat/rag-knowledge-base`（未推）。
+- 快照类登记：`docs/HARNESS_EXECUTION_FLOW_MAP.md`／`docs/AGENT_HARNESS_VISUALIZATION_RESEARCH.md` 不追（按计划）。
+- 提交：`c2606625b`（文档同步＋状态回填）＋本笔（纪行）。
 
 ## Task 8 — 随带组交接单（切片移植批次）
 
