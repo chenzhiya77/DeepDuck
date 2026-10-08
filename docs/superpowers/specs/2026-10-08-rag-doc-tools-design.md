@@ -36,7 +36,7 @@
 
 - **切片树**：`_KNOWLEDGE_SEARCH_TOOL_NAME` 单名常量→集合 `{knowledge_search, list_knowledge_documents, read_knowledge_document}`，两处按名生效同扩。
 - **主树**：无中间件；新工具按既有模式内置 `resolve_kb_scope` fail-closed（未绑定/无权限＝拒绝文案）。
-- **其余按名引用点（零改动核实清单）**：切片 `knowledge_scope_admission.py:17-20·36`（准入 provider＝检索工具全名＋`tool_groups` 检查）、`routers/features.py:122-128`（scope 感知谓词）、`community/ragflow/sources.py:82`（durable export 过滤 `{knowledge_search, task}`）、前端 `citations.ts:13`／`sources.ts:34`（来源区过滤）、`src/AGENTS.md:213`——全部只认**检索条目/检索 artifact**（D3=甲 下新工具不进引用体系），均零改动；主树对应点同机制（前端三件套 Set `citations.ts:17` 跳过新工具、`core/pet/tools.ts:56-58` 分类映射属观察面可不动），已核；本清单随 Task 0 ⑤ 全量重扫复核。
+- **其余按名引用点（零改动核实清单）**：切片 `knowledge_scope_admission.py:17-20·36·45-46`（准入 provider＝检索工具全名；`:36`＝工具名查找行、`:45-46`＝`tool_groups` 检查）、`routers/features.py:122-128`（scope 感知谓词）、`community/ragflow/sources.py:82`（durable export 过滤 `{knowledge_search, task}`）、前端 `citations.ts:13`／`sources.ts:34`（来源区过滤）、`src/AGENTS.md:213`——全部只认**检索条目/检索 artifact**（D3=甲 下新工具不进引用体系），均零改动；主树对应点同机制（前端三件套 Set `citations.ts:17` 跳过新工具、`core/pet/tools.ts:56-58` 分类映射属观察面可不动），已核；本清单随 Task 0 ⑤ 全量重扫复核。
 - **SOUL**（`backend/packages/harness/deerflow/agents/assets/rag/SOUL.md`，两树同路径各自适配）：新增「语料边界问题」节——有哪些文档/这篇讲什么/除了 X 还有什么/第几片 → 走 list/read；**与各树 L7 强制句同批修订**（⚠️ 两树并**非同文**：切片 L7＝「任何事实性问题必须至少调用一次 `knowledge_search`」（检索工作流 2 件）；主树 L7＝`hybrid_search` 版且另含 wiki 唯一例外／图谱路／深度检索模式三句——按各树检索链各自适配措辞），两分：事实性证据走检索（`[n]` 引用不变）；枚举/结构/定位类回答可直接依据 list/read，不虚构。
 - 读取限次（D4=甲 宽松档）：同文档续读 ≤4 窗口、单轮读取 ≤6 次；主控＝够答即止。
 - 输出预算（面 3 附项）：read/list **不并入** `tool_output_budget_middleware` 的 `{knowledge_search, task}` 特判——该特判护的是 citation↔来源配对（切片侧由 `budget_source_artifact` 承载），D3=甲 下 read 无引用可护、过大输出走通用预算（截断/外置）；两树现状已核（切片 `:665` 有特判、主树该中间件本就无）。
@@ -70,7 +70,7 @@ list/read 输出**不进** `citation_no` 引用体系（v1）：引用编号空�
 
 1. RFC v3 声明句（`docs/plans/2026-09-22-local-knowledge-base-rfc-v3.md:17`）：「…索引 → **一个检索工具** → 可核验引用…」改为含文档清单/读取（只读）的表述；
 2. 工作清单（`docs/plans/2026-10-06-rfc-v3-eval-workitems.md`）加一行「文档级只读工具组（list/read＋结果补 doc_id＋门控＋SOUL）」并同步「首期只含向量腿＋一个检索工具」旧句；
-3. 审计件 re-pin（`docs/plans/2026-10-06-rfc-v3-audit-findings.md` 的 md5/行数 pin）；
+3. 审计件 re-pin（`docs/plans/2026-10-06-rfc-v3-audit-findings.md` 的 md5/行数 pin；**须在第 1 项 RFC L17 落改、且全部在飞 RFC 改动落定之后**对最终稿重算——pin 现值 `5f9eeaab…`＝RFC HEAD 版，被刷新的触发点即在飞两笔：L17 句＋ui 线 §配置位置 两行）；
 4. 切片验收材料补相（Task 8 材料行＋补充相记录）。
 
 ## 6. 验收

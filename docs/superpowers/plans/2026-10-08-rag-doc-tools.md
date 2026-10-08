@@ -18,7 +18,16 @@
 
 > 动到的文件：只读核实＋spec/plan 回填
 
-- [ ] ① 两树对照重核 spec §1 各锚（结果构造 81-87／store 282-326／vector_store 62·316-320·删除路 609/613（切片 :336）／chunker 369／服务 268·364（切片 160·100）／切片门控 25＋两处按名）；② 工具注册点（主树 `config.yaml` tools[]＋rag 资产 `tool_groups`；切片 acceptance config）；③ 两树 SOUL L7 强制句确切行；④ `chunk_positions` 语义重核（活体位置 vs `chunk_index` 差与换算）；⑤ 受害者扫描：结果 payload 新键的既有断言、门控常量改名影响面、SOUL 句改的用例面（点名主树 `test_rag_agent_assembly.py`：`test_builtin_rag_soul_contains_citation_and_refusal_rules`——L7 句改必撞、随 Task 5 同步；`test_rag_group_tools_are_exactly_the_three_retrieval_tools`——断言是超集⇒仍过、名称「exactly」陈旧可顺手更新）、预算中间件特判面（切片 `:665`／主树无）、**按名引用点全集**（切片 `knowledge_scope_admission.py:17-20·36`／`routers/features.py:122-128`／`community/ragflow/sources.py:82`／前端 `citations.ts:13`·`sources.ts:34`／`src/AGENTS.md:213`＋主树对应面 `citations.ts:17`·`core/pet/tools.ts:56-58`——预期全零改动，核实确认）。
+- [x] ① 两树对照重核 spec §1 各锚（结果构造 81-87／store 282-326／vector_store 62·316-320·删除路 609/613（切片 :336）／chunker 369／服务 268·364（切片 160·100）／切片门控 25＋两处按名）；② 工具注册点（主树 `config.yaml` tools[]＋rag 资产 `tool_groups`；切片 acceptance config）；③ 两树 SOUL L7 强制句确切行；④ `chunk_positions` 语义重核（活体位置 vs `chunk_index` 差与换算）；⑤ 受害者扫描：结果 payload 新键的既有断言、门控常量改名影响面、SOUL 句改的用例面（点名主树 `test_rag_agent_assembly.py`：`test_builtin_rag_soul_contains_citation_and_refusal_rules`——L7 句改必撞、随 Task 5 同步；`test_rag_group_tools_are_exactly_the_three_retrieval_tools`——断言是超集⇒仍过、名称「exactly」陈旧可顺手更新）、预算中间件特判面（切片 `:665`／主树无）、**按名引用点全集**（切片 `knowledge_scope_admission.py:17-20·36·45-46`／`routers/features.py:122-128`／`community/ragflow/sources.py:82`／前端 `citations.ts:13`·`sources.ts:34`／`src/AGENTS.md:213`＋主树对应面 `citations.ts:17`·`core/pet/tools.ts:56-58`——预期全零改动，核实确认）。
+
+**Task 0 复核结果（2026-10-08 执行；含前序两轮全锚复核）**：
+- 两树：主树 `0b443612e`（本对起点后别线两笔：`1f70df544` models／`ac7b7c459` 本对 spec＋plan；别线未提交：README／`backend/AGENTS.md`／RFC 两行〔ui 线〕／若干文档）；切片 `c9dd96a59` 全净。
+- ① 两树对照：spec §1 各锚全中（主树 81-87／282-326／62·316-320／609·613／369／268·364；切片 137／57／336／160／100／25·83·89-98），二轮全锚复核（主树约 20 处、切片约 17 处）零漂移；勘误两条已落（锚点 `17-20·36·45-46`＋审计 re-pin 顺序句；未提交）。
+- ② 注册点：主树 `config.example.yaml:697-708`（三件 `group: rag, opt_in: true`）＋本地 `config.yaml:66`（hybrid_search 已在）＋rag 资产 `tool_groups: [rag]` 已核；切片 acceptance config＝实例侧（acceptance-8 配方），切片树内零落点。
+- ③ 两树 SOUL L7＝各自第 7 行（主树＝`hybrid_search` 版＋wiki 例外／图谱路／深度检索三句；切片＝`knowledge_search` 版仅 2 件工作流）——「两树非同文」确证。
+- ④ `store.py:294-305` docstring＝1-based 活体位置（空洞不占位）⇒ `chunk_index`（DB 列）→ 活体位置换算成立。
+- ⑤ 受害面：**零破坏**——主树 `tools/test_hybrid_search.py:63-71` 逐键断言（Task 1 加键不破；RED 可在此加 `doc_id`/`chunk_index` 断言；该件 `@requires_qdrant` integration，建议另配 unit 面自足）＋`tools/test_citation_numbering.py`（只钉 `citation_no` 序列）＋`test_recall_test_api.py`（**recall-test 对 vector hits 做白名单投影**〔`knowledge_service.py:1160-1172`：仅取 chunk_id/doc_name/text/heading_path/page/score/rank〕⇒ 新键**不入**其响应、fakes 亦不破——「同源拾取新键」的设想已现场核否）。SOUL 用例面＝`test_rag_agent_assembly.py:47`（`:63` 钉「任何事实性问题必须至少调用一次」——L7 句改必撞、随 Task 5 同步；`:64`/`:65` 另钉两句）＋`:68`（超集断言仍过、名称「exactly」陈旧可顺手更新）。切片门控：常量仅模块内 4 处引用（`:25`/`:83`/`:90`/`:98`）、测试零导名；`test_knowledge_scope_middleware.py:143`（钉 `disabled` 子串）／`:102`·`:176`（精确列表仅针对 knowledge_search 与启用态）⇒ 集合扩列与文案收正预期不收正破。预算特判：切片 `:665` 在、主树无（维持）；按名引用点全集全部零改动（清单＝spec §2.4，已核）。
+- 结论：无漂移、无新增勘误；开工可直接进 Task 1。
 
 ## Task 1 — 检索结果补字段（TDD）
 
@@ -70,5 +79,5 @@
 
 > 动到的文件：交接单（挂 ② 刻度轨恢复同批次）
 
-- [ ] 交接单：切片形态工具模块＋结果字段（切片同段）＋门控集合（两处）＋门控文档行同步（切片 `middlewares/AGENTS.md:47`「blocks `knowledge_search`」→三件套表述）＋SOUL（两树各自适配）＋配置（acceptance）＋验收相（同两问回归，基准会话 `c4af859d`）＋口径四处（RFC L17 句／清单行／审计 re-pin／材料补充相——发布前完成）。
+- [ ] 交接单：切片形态工具模块＋结果字段（切片同段）＋门控集合（两处）＋门控文档行同步（切片 `middlewares/AGENTS.md:47`「blocks `knowledge_search`」→三件套表述）＋SOUL（两树各自适配）＋配置（acceptance）＋验收相（同两问回归，基准会话 `c4af859d`）＋口径四处（RFC L17 句／清单行／审计 re-pin／材料补充相——发布前完成；**审计 re-pin 须在 RFC 全部在飞改动落定之后**〔本对 L17 句＋ui 线 §配置位置 两行〕对最终稿重算 md5/行数，否则 pin 立刻又陈旧；pin 现值 `5f9eeaab…` 与 RFC HEAD 逐字相符、346 行——被刷新的触发点正是这两笔落定）。
 - [ ] **提交前四门复核**（口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5）：切片树任何提交前必过——① `cd backend && make lint`（ruff check＋format 双净）② 仓库根 `python scripts/check_agent_guidance.py --base-ref <基座> --head-ref HEAD` → **errors=0** ③ `cd frontend && pnpm format`（prettier 零 diff）④ 后端定向 pytest（口径按批次）；既有绿项（`uv lock --check`／`pnpm lint`・`typecheck`・`build`）随门联跑；凡动 `.github/workflows/*` 的批次，另以推送后首跑复核（本地无 GitHub workflow 校验器）。
