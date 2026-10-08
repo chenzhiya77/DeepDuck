@@ -130,7 +130,7 @@
 > 动到的文件：交接单（挂 ② 刻度轨恢复同批次）
 
 - [x] 交接单：切片形态工具模块＋结果字段（切片同段）＋门控集合（两处）＋门控文档行同步（切片 `middlewares/AGENTS.md:47`「blocks `knowledge_search`」→三件套表述）＋SOUL（两树各自适配）＋配置（acceptance）＋验收相（同两问回归，基准会话 `c4af859d`）＋口径四处（RFC L17 句／清单行／审计 re-pin／材料补充相——发布前完成；**审计 re-pin 须在 RFC 全部在飞改动落定之后**〔本对 L17 句＋ui 线 §配置位置 两行〕对最终稿重算 md5/行数，否则 pin 立刻又陈旧；pin 现值 `5f9eeaab…` 与 RFC HEAD 逐字相符、346 行——被刷新的触发点正是这两笔落定）。
-- [ ] **提交前四门复核**（口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5）：切片树任何提交前必过——① `cd backend && make lint`（ruff check＋format 双净）② 仓库根 `python scripts/check_agent_guidance.py --base-ref <基座> --head-ref HEAD` → **errors=0** ③ `cd frontend && pnpm format`（prettier 零 diff）④ 后端定向 pytest（口径按批次）；既有绿项（`uv lock --check`／`pnpm lint`・`typecheck`・`build`）随门联跑；凡动 `.github/workflows/*` 的批次，另以推送后首跑复核（本地无 GitHub workflow 校验器）。（随带批次执行期逐条跑；口径已随交接单 §9 承载，本框待批次执行后勾）
+- [x] **提交前四门复核**（口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5）：切片树任何提交前必过——① `cd backend && make lint`（ruff check＋format 双净）② 仓库根 `python scripts/check_agent_guidance.py --base-ref <基座> --head-ref HEAD` → **errors=0** ③ `cd frontend && pnpm format`（prettier 零 diff）④ 后端定向 pytest（口径按批次）；既有绿项（`uv lock --check`／`pnpm lint`・`typecheck`・`build`）随门联跑；凡动 `.github/workflows/*` 的批次，另以推送后首跑复核（本地无 GitHub workflow 校验器）。（切片随带批次已执行并逐条跑过——见下实测；本框随批次收口）
 
 **交接单（切片移植批次执行用；本对只写不落）**
 
@@ -145,3 +145,10 @@
 - **§8 口径四处（发布前完成）**：① RFC v3 L17 句（`docs/plans/2026-09-22-local-knowledge-base-rfc-v3.md:17`）「…一个检索工具…」→ 含文档清单/读取（只读）的表述；② 工作清单（`docs/plans/2026-10-06-rfc-v3-eval-workitems.md`）加一行「文档级只读工具组（list/read＋结果补 doc_id＋门控＋SOUL）」＋同步 L55 旧句；③ 审计件 re-pin（`docs/plans/2026-10-06-rfc-v3-audit-findings.md`）——**须在 RFC 全部在飞改动落定之后**（本对 L17 句＋ui 线 §配置位置 两行）对最终稿重算 md5/行数（pin 现值 `5f9eeaab…`＝RFC HEAD、346 行）；④ 切片验收材料补相（切片移植 plan Task 8 材料行＋补充相记录）。
 - **§9 四门复核**：口径＝`../specs/2026-10-08-rag-slice-ci-fix-design.md` §2.5（见上框四条），批次执行期逐条跑；既有绿项随门联跑。
 - **§10 提交链（预期 3–5 笔）**：① 结果字段＋篇内检索（feat）→ ② list/read 模块＋acceptance 注册（feat）→ ③ 门控集合＋文案＋AGENTS 行（fix/feat）→ ④ SOUL＋用例（feat）→ ⑤ 回填/材料（docs，如拆）。用例面：切片 `tests/knowledge/tools/` 同批扩（结果字段/双寻址/守卫/门控三件套）。
+
+**实测（2026-10-08，Task 8·切片随带执行）**：
+- 切片树 4 笔（工作区净）：`b5e0a1ead` 结果字段＋篇内检索（item 补 `doc_id`/`chunk_index`＋`hybrid_query` 可选 `doc_id`＋工具入参/透传/docstring）／`38d4c1fde` list/read 模块（函数内 `deerflow_knowledge.*` import，契约逐字同主树）／`101b55b41` 门控集合（`_KNOWLEDGE_TOOL_NAMES` 三件套＋两处按名生效）＋文案按被拦工具名回填＋`middlewares/AGENTS.md:47` 行同步／`bb830cbdb` SOUL 语料边界节＋assembly 断言三条。
+- TDD：RED（新模块采集错＋10 红 1 错；24 绿＝既有面完好）→ GREEN（定向 **62 passed**：`tests/knowledge/tools/`＋`test_vector_store`＋`test_knowledge_scope_middleware`＋`test_rag_agent_assembly`）。
+- 四门：① `make lint` 双净（ruff check All passed／**1970 files already formatted**）② guidance **0 errors**（40 AGENTS.md；1 条 AG002 警告＝`middlewares` 链 97,988B 逼近硬限 98,304〔余 316B〕——**diff 作用域警告**：链在基座即超 soft 被祖父化、本笔触碰即报，非错误，余量登记）③ `pnpm format` 全过 ④ 定向 pytest 62 passed；联跑 `uv lock --check` ✓＋`pnpm lint`／`typecheck`／`build` 三件全过（exit 0）。
+- 切片形态与主树同契约（`knowledge_search` 的 artifact 配对不变；拒绝文案三态沿用切片 `access.py` 常量；`config.example.yaml` 本批不动——acceptance 实例侧注册，见交接单 §6）。
+- 余：切片验收相（交接单 §7）＋口径四处（§8，含审计 re-pin——须等 RFC L17＋ui 两行落定）。
