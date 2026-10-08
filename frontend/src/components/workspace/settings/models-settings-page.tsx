@@ -1,6 +1,12 @@
 "use client";
 
-import { GripVerticalIcon, PencilIcon, PlusIcon, TrashIcon } from "lucide-react";
+import {
+  GripVerticalIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
+  PlusIcon,
+  TrashIcon,
+} from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -11,6 +17,12 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip } from "@/components/workspace/tooltip";
@@ -287,10 +299,13 @@ export function ModelsSettingsPage() {
                     (spec §7③): a light capsule hugging the longest group name.
                     The box extends 10px below the seam behind the container
                     (spec §8①) so the container's rounded corner cuts into the
-                    same-colored straight edge — no notch at the junction. */}
+                    same-colored straight edge — no notch at the junction.
+                    The container needs an explicit layer (relative z-10): the
+                    tab is inline-flex, whose background paints after block
+                    backgrounds, so without it the extension covers the card. */}
                 <div className="flex">
                   <span
-                    className="-mb-[11px] inline-flex h-[38px] items-start justify-center rounded-t-md border border-b-0 border-border/60 bg-muted/70 px-3 pt-1.5 text-xs text-muted-foreground"
+                    className="-mb-[11px] inline-flex h-[38px] items-start justify-start rounded-t-md border border-b-0 border-border/60 bg-muted/70 px-3 pt-1.5 text-xs text-muted-foreground"
                     data-testid="model-group-tab"
                     ref={(element) => {
                       if (element) {
@@ -305,7 +320,7 @@ export function ModelsSettingsPage() {
                   </span>
                 </div>
                 <div
-                  className="bg-card overflow-hidden rounded-lg border"
+                  className="bg-card relative z-10 overflow-hidden rounded-lg border"
                   data-testid="model-group"
                 >
                 {group.rows.map((row, index) => {
@@ -372,29 +387,37 @@ export function ModelsSettingsPage() {
                       </div>
                       <div className="flex w-52 shrink-0 items-center justify-end gap-2">
                         {row.editable && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground h-7 w-7"
-                              aria-label={M.edit}
-                              onClick={() => setEditing(row)}
-                            >
-                              <PencilIcon className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground h-7 w-7"
-                              aria-label={M.delete}
-                              onClick={() => handleDelete(row.name)}
-                            >
-                              <TrashIcon className="size-3.5" />
-                            </Button>
-                          </>
+                          // Edit/delete collapse into a per-row menu (spec §9②):
+                          // the tail keeps one dim affordance plus the switch, and
+                          // the menu scales without widening the column.
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground h-7 w-7"
+                                aria-label={t.common.more}
+                              >
+                                <MoreHorizontalIcon className="size-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-32">
+                              <DropdownMenuItem onSelect={() => setEditing(row)}>
+                                <PencilIcon />
+                                <span>{M.edit}</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onSelect={() => handleDelete(row.name)}
+                              >
+                                <TrashIcon />
+                                <span>{M.delete}</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                         {/* The switch hugs the right edge on every row (spec §7②):
-                            one aligned column, edit/delete in front of it. */}
+                            one aligned column, the actions menu in front of it. */}
                         {isDefault ? (
                           // A disabled button swallows hover and focus, so the
                           // reason lives on a wrapping trigger (D1).

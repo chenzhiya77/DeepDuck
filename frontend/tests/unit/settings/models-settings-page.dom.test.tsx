@@ -98,6 +98,24 @@ function renderPage() {
   );
 }
 
+function rowByName(name: string): HTMLElement {
+  return document.querySelector(
+    `[data-testid='model-row'][data-model-name='${name}']`,
+  )!;
+}
+
+function openRowMenu(name: string) {
+  // Radix DropdownMenu opens on keyDown in jsdom/happy-dom, not on click.
+  fireEvent.keyDown(
+    within(rowByName(name)).getByRole("button", { name: zhCN.common.more }),
+    { key: "ArrowDown" },
+  );
+}
+
+function menuItem(label: string) {
+  return screen.getByRole("menuitem", { name: new RegExp(`^${label}`) });
+}
+
 beforeEach(() => {
   saveMock.mockReset();
   // Saves resolve by default; the rollback pin swaps in a failing implementation.
@@ -209,7 +227,7 @@ describe("ModelsSettingsPage list", () => {
     setConfig([uiModel(), cfgModel()]);
     renderPage();
 
-    // 黑胶囊退役（2026-10-08 裁决③）：可编辑由行尾按钮自证，不再打来源章。
+    // 黑胶囊退役（2026-10-08 裁决③）：可编辑由行尾 ⋯ 菜单自证，不再打来源章。
     expect(screen.queryByText("UI·可编辑")).toBeNull();
     // 灰胶囊同判（spec §7①，覆盖旧留用裁定）：它在替按钮说话，不是独立状态；
     // 来源只决定能否编辑，按钮有无已经说明。键已删，断言按字面守门。
@@ -220,30 +238,39 @@ describe("ModelsSettingsPage list", () => {
     expect(screen.queryByText("UI DeepSeek")).toBeNull();
     expect(screen.getByText("cfg-model")).toBeDefined();
 
-    expect(screen.getAllByRole("button", { name: M.delete })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: M.edit })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: zhCN.common.more })).toHaveLength(1);
   });
 
-  it("orders the row tail as edit, delete, then the switch — switch rightmost", () => {
-    // spec §7②：滑块恒贴右缘成一列（图 3 先例），编辑/删除在它前面。
+  it("orders the row tail as the actions menu, then the switch — switch rightmost", () => {
+    // spec §7②/§9②：滑块恒贴右缘成一列；编辑/删除收进 ⋯ 菜单（spec §9②）后尾列只剩 [⋯][开关]。
     setConfig([uiModel(), cfgModel()]);
     renderPage();
 
-    const uiRow = document.querySelector(
-      "[data-testid='model-row'][data-model-name='ui-model']",
-    );
-    const tail = [...uiRow!.querySelectorAll("button")].map(
+    const uiTail = [...rowByName("ui-model").querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("role"),
     );
-    expect(tail).toEqual([M.edit, M.delete, M.showInChat]);
+    expect(uiTail).toEqual([zhCN.common.more, M.showInChat]);
 
-    const cfgRow = document.querySelector(
-      "[data-testid='model-row'][data-model-name='cfg-model']",
-    );
-    const cfgTail = [...cfgRow!.querySelectorAll("button")].map(
+    const cfgTail = [...rowByName("cfg-model").querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("role"),
     );
     expect(cfgTail).toEqual([M.showInChat]);
+  });
+
+  it("puts edit and delete inside the row menu, delete destructive", () => {
+    // spec §9②：⋯ 菜单承载编辑/删除（项目 6 处 MoreHorizontal 先例）；删除走 destructive 档。
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    openRowMenu("ui-model");
+    expect(menuItem(M.edit)).toBeDefined();
+    expect(menuItem(M.delete).getAttribute("data-variant")).toBe("destructive");
+    // 只读行没有菜单入口（按钮有无自证来源，spec §7①）。
+    expect(
+      within(rowByName("cfg-model")).queryByRole("button", {
+        name: zhCN.common.more,
+      }),
+    ).toBeNull();
   });
 
   it("keeps the group label outside the container in a fused folder tab", () => {
@@ -256,29 +283,50 @@ describe("ModelsSettingsPage list", () => {
     for (const tab of tabs) {
       // 不在容器里
       expect(tab.closest("[data-testid='model-group']")).toBeNull();
-      for (const token of ["rounded-t-md", "bg-muted/70", "-mb-[11px]", "border-b-0"]) {
+      for (const token of [
+        "rounded-t-md",
+        "bg-muted/70",
+        "-mb-[11px]",
+        "border-b-0",
+        "justify-start",
+      ]) {
         expect(tab.className).toContain(token);
       }
+      // 等宽夹层下居中的短名会"漂"（spec §9①）：组名靠左，与容器内容左缘一条线。
+      expect(tab.className).not.toContain("justify-center");
     }
     // 首现序：uiModel(deepseek) 在前、cfgModel(openai-compatible) 在后。
     expect(tabs[0]!.textContent).toBe(M.providerDeepseek);
     expect(tabs[1]!.textContent).toBe(M.providerOpenaiCompatible);
   });
 
+  it("paints the model container above the tab's backer extension", () => {
+    // spec §8① 修正：inline-flex 的夹层在行内阶段绘制、晚于块级背景，向下延伸段
+    // 会盖住容器；容器显式 relative z-10 才能把延伸段压回底层（真栈 2026-10-08）。
+    setConfig([uiModel(), cfgModel()]);
+    renderPage();
+
+    for (const group of document.querySelectorAll("[data-testid='model-group']")) {
+      expect(group.className).toContain("relative");
+      expect(group.className).toContain("z-10");
+    }
+    for (const tab of document.querySelectorAll("[data-testid='model-group-tab']")) {
+      expect(tab.className).not.toContain("z-10");
+    }
+  });
+
   it("gives every row the same floor and keeps the tail buttons small and dim", () => {
-    // spec §8②：按钮不再撑高行（统一 min-h-12），编辑/删除缩到 h-7 并压暗。
+    // spec §8②：按钮不再撑高行（统一 min-h-12），行尾按钮缩到 h-7 并压暗；
+    // spec §9② 后行尾唯一按钮 = ⋯ 菜单触发钮，用色沿同一档。
     setConfig([uiModel(), cfgModel()]);
     renderPage();
 
     for (const row of document.querySelectorAll("[data-testid='model-row']")) {
       expect(row.className).toContain("min-h-12");
     }
-    const edit = screen.getByRole("button", { name: M.edit });
-    expect(edit.className).toContain("h-7");
-    expect(edit.className).toContain("text-muted-foreground/60");
-    const del = screen.getByRole("button", { name: M.delete });
-    expect(del.className).toContain("h-7");
-    expect(del.className).toContain("text-muted-foreground/60");
+    const menuTrigger = screen.getByRole("button", { name: zhCN.common.more });
+    expect(menuTrigger.className).toContain("h-7");
+    expect(menuTrigger.className).toContain("text-muted-foreground/60");
   });
 
   it("groups rows into one filled container per provider", () => {
@@ -313,7 +361,8 @@ describe("ModelsSettingsPage capability round trip", () => {
 
     // Open the second row's editor and save it untouched: the collection is
     // written wholesale, so the first row's capabilities must survive.
-    fireEvent.click(screen.getAllByRole("button", { name: M.edit })[1]!);
+    openRowMenu("no-caps");
+    fireEvent.click(menuItem(M.edit));
     fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
 
     await waitFor(() => expect(saveMock).toHaveBeenCalled());
@@ -348,7 +397,8 @@ describe("ModelsSettingsPage capability round trip", () => {
     ]);
     renderPage();
 
-    fireEvent.click(screen.getAllByRole("button", { name: M.edit })[1]!);
+    openRowMenu("plain");
+    fireEvent.click(menuItem(M.edit));
     fireEvent.click(screen.getByRole("button", { name: zhCN.common.save }));
 
     await waitFor(() => expect(saveMock).toHaveBeenCalled());
@@ -386,7 +436,8 @@ describe("ModelsSettingsPage capability round trip", () => {
     ]);
     renderPage();
 
-    fireEvent.click(screen.getAllByRole("button", { name: M.delete })[1]!);
+    openRowMenu("victim");
+    fireEvent.click(menuItem(M.delete));
 
     await waitFor(() => expect(saveMock).toHaveBeenCalled());
     const payload = savedPayload();
@@ -588,9 +639,8 @@ describe("ModelsSettingsPage grouped drag and display toggle", () => {
     setConfig(dragFixtures());
     renderPage();
 
-    fireEvent.click(
-      within(rowEl("beta")).getByRole("button", { name: M.delete }),
-    );
+    openRowMenu("beta");
+    fireEvent.click(menuItem(M.delete));
 
     expect(savedPayload(0).models.map((model) => model.name)).toEqual([
       "ovr",

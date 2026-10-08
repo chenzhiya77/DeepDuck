@@ -86,3 +86,12 @@
 - [x] GREEN ＋ neuter ＋ `pnpm check` ＋ 前端全量。→ 前端全量 251 文件 / 2851 例全过、`pnpm check` 双净。
 - [x] 真栈观感：行高全等、过渡连续（弧角无残缺）、灰度、按钮观感——几何真浏览器量。→ 隔离栈实测（0.95 动画折算后为布局值）：五行高全 48；标签可见高 27、下延 11 入容器背后、左缘与容器齐平（弧角缺口由同色直边填掉）；夹层等宽 138/138、底色 muted/70；按钮 28×28、色 muted-foreground/60；行标签=qwen3.8-flash 等（前缀消失）；对话输入框触发钮仍显「DashScope / qwen3.8-flash」（display_name 留在下拉侧）。
 - [x] 收官提交（英文 conventional）＋ 可调旋钮表（灰度/按钮尺寸与暗度）交他复核。
+- [x] 同日回归修正（他报夹层压住容器）：`inline-flex` 行内阶段晚于块级背景 ⇒ 下延段盖住 `bg-card`；容器加 `relative z-10` 压回底层。RED 恰 1 红→GREEN 29/29＋`pnpm check` 双净；结构钉入 §8 测试节。**随收官一并提交（2026-10-08，他令先提交当前改动）。**
+
+## Task 7 — 四次微调（spec §9；两案均按推荐=甲，2026-10-08）
+
+> 动到的文件：`models-settings-page.tsx`、`models-settings-page.dom.test.tsx`。数据层零改动。
+
+- [x] RED：钉反转（行尾序 `[⋯,开关]`/`[开关]`、按钮计数）＋新钉（⋯ 菜单编辑/删除 destructive、config 行无 ⋯、夹层 `justify-start` 非 `justify-center`）＋行为用例改道菜单。→ 9 红，全落两改动面。
+- [x] 实现：①夹层 `justify-center`→`justify-start`（§7③ 居中钉作废）②行尾 [编辑][删除] → `DropdownMenu`（`MoreHorizontalIcon`+`t.common.more` 触发钮常驻、暗档沿 §8②；菜单 [编辑][删除 destructive]）。→ 30/30 绿；`pnpm check` 双净。
+- [x] 文档：spec §9＋本 Task。**随收官一并提交（2026-10-08，他令先提交当前改动）。**
