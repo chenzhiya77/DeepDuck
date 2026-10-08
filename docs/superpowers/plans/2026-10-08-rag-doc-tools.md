@@ -33,8 +33,14 @@
 
 > 动到的文件：`harness/deerflow/tools/builtins/hybrid_search_tool.py`＋对应测试
 
-- [ ] RED：payload 断言 `doc_id`（＋`chunk_index`）出现；GREEN：item 构造（主仓 L81-87／切片 L137 起）补键——`chunk_index` 取 DB 行键（两树 payload 无此键）、`doc_id` payload／行俱有——＋docstring 提及结果含 `doc_id`/`chunk_index`（供 read 追问）；neuter 一次（去键恰红）。
-- [ ] 门禁：knowledge 面定向。
+- [x] RED：payload 断言 `doc_id`（＋`chunk_index`）出现；GREEN：item 构造（主仓 L81-87／切片 L137 起）补键——`chunk_index` 取 DB 行键（两树 payload 无此键）、`doc_id` payload／行俱有——＋docstring 提及结果含 `doc_id`/`chunk_index`（供 read 追问）；neuter 一次（去键恰红）。
+- [x] 门禁：knowledge 面定向。
+
+**实测（2026-10-08，Task 1）**：
+- RED：新增自足 unit 件 `test_items_carry_doc_id_and_chunk_index_for_follow_up_reads`（Qdrant-free；payload 夹具故意无 `chunk_index` ⇒ 钉该键必须取自业务库行）＋`test_hybrid_search_end_to_end` 补两断言；恰红 2 件（`KeyError: 'doc_id'`）、旁证 4 件绿。
+- GREEN：`hybrid_search_tool.py` item 构造补 `doc_id`/`chunk_index`（两者均取 DB 行）＋docstring 明示两字段；断言形态＝item（工具返回 payload）级——**Qdrant payload 本体零改动**。neuter（去两键）恰红 2 件、还原复绿。
+- 门禁（定向）：`tests/knowledge/tools/` **59 passed**；`test_recall_test_api.py` **21 passed**（recall-test 白名单投影受害面实跑确认）；ruff check／format --check 双净（两件）。
+- 提交：`9e86b8b3c`。
 
 ## Task 2 — list 工具（TDD＋注册）
 
