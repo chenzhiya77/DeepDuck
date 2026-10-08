@@ -46,8 +46,16 @@
 
 > 动到的文件：新模块 `harness/deerflow/tools/builtins/knowledge_documents_tool.py`＋测试＋`config.example.yaml`／本地 `config.yaml`（注册双落）
 
-- [ ] RED：多文档/混合状态/诚实计数；未绑定＝引导；空库；跨用户＝拒绝。GREEN：新模块（镜像检索工具写法：`@tool(parse_docstring=True)`＋`resolve_kb_scope` fail-closed＋**主树模块级 import**（照 `hybrid_search_tool.py:18-25`；函数内 import 是切片形态、见下条）；注册面可导）；主树注册两条（`group: rag, opt_in: true`）**双落**：`config.example.yaml`（tracked 模板）＋本地 `config.yaml`（gitignored 运行时）；rag 资产 `config.yaml` 零改动（`tool_groups: [rag]` 组已在）。
-- [ ] 切片形态草稿（函数内 import `deerflow_knowledge`）——随带组备件，本对不动切片树。
+- [x] RED：多文档/混合状态/诚实计数；未绑定＝引导；空库；跨用户＝拒绝。GREEN：新模块（镜像检索工具写法：`@tool(parse_docstring=True)`＋`resolve_kb_scope` fail-closed＋**主树模块级 import**（照 `hybrid_search_tool.py:18-25`；函数内 import 是切片形态、见下条）；注册面可导）；主树注册两条（`group: rag, opt_in: true`）**双落**：`config.example.yaml`（tracked 模板）＋本地 `config.yaml`（gitignored 运行时）；rag 资产 `config.yaml` 零改动（`tool_groups: [rag]` 组已在）。
+- [ ] 切片形态草稿（函数内 import `deerflow_knowledge`）——随带组备件，本对不动切片树；机械变换口径见下实测末行，草稿块随 Task 8 交接单承载。
+
+**实测（2026-10-08，Task 2）**：
+- RED：新件 `test_knowledge_documents_tool.py`（5 例：混合状态＋诚实计数、零组省略、空库、未绑定、跨用户）——模块未建 ⇒ 采集错恰红。
+- GREEN：新模块 `knowledge_documents_tool.py`（`_list_documents_impl`＋`@tool(parse_docstring=True)` 包层；主树模块级 import；`resolve_kb_scope`＋`can_access` fail-closed；返回 `documents=[{doc_id,name,status,chunk_count}]`＋「共 N 篇（就绪 X · 处理中 Y · 失败 Z）」零组省略、空库文案「当前知识库中还没有文档。」）；neuter（拆 `can_access` 守卫）恰红 1 件、还原复绿。
+- 注册双落：`config.example.yaml`（注释＋`list_knowledge_documents` 条目）＋本地 `config.yaml`（同条；gitignored 不进提交）——**微裁落法**：read 条目留待 Task 3（避免组装面引用未实现函数）。
+- 门禁（定向）：`tests/knowledge/tools/`＋`test_rag_agent_assembly.py` **73 passed**（assembly 夹具读 `config.example.yaml` ⇒ 注册面经真实解析）；本地 `config.yaml` YAML 解析实核含新条；ruff check／format --check 双净（两新件）。
+- 提交：`1104b5384`。
+- 切片形态草稿（备件）：机械变换口径＝imports 从模块级改函数内 `from deerflow_knowledge.*`（照切片 `hybrid_search_tool.py:78-93`）＋拒绝文案取切片 `access.py` 常量；草稿块随 Task 8 交接单落（本对不动切片树）。
 
 ## Task 3 — read 工具（TDD）
 
