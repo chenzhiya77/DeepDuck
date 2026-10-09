@@ -3,9 +3,9 @@
 **Status:** 草案（2026-10-06）；**D1–D7 已裁（全甲）＋D8 已裁（甲，10-07）**；起草时零实现→执行中：**Task 0 ①–⑨ 全核实；Task 1 已落（`cbdaec70c`→`d2b422f2b`）；Task 2 已落（`14ea2f93a`）；Task 3 已落（`e6df6edb8`）；Task 4 已落（`f47f5c618`）；Task 5 已落（`29b43cec2`）；Task 6 已落（`a630a3b3f`）；Task 7 已落（`b45eb9c02`）；Task 8 已落（`619c24586`／`9bb4ea9cb`／`5cc0197b4`）**。
 **基座：** `E:/app/python/agent/deer-flow-slice`（主仓 worktree）@ `e325c90b2`（upstream/main，2026-10-06 12:16）。
 **源：** `feat/rag-knowledge-base` @ `a343b8b03`（开发分支，已推送）。
-**输入：** RFC v3 §2–§10（`docs/plans/2026-09-22-local-knowledge-base-rfc-v3.md`，已提交）；首期切片工作项 25 条（`docs/plans/2026-10-06-rfc-v3-eval-workitems.md`）；审计发现清单（`docs/plans/2026-10-06-rfc-v3-audit-findings.md`——E1〔云腿回写，已随 `a343b8b03` 入库〕／D9〔前缀登记，已落 §2.3 与 Task 8〕）——本对 plan 并入或作为其输入，切完回填状态列。
+**输入：** RFC v3 §2–§10（`docs/plans/2026-09-22-local-knowledge-base-rfc-v3.md`，已提交）；首期切片工作项 26 条（`docs/plans/2026-10-06-rfc-v3-eval-workitems.md`，含 2026-10-08 随带组加行 1 条）；审计发现清单（`docs/plans/2026-10-06-rfc-v3-audit-findings.md`——E1〔云腿回写，已随 `a343b8b03` 入库〕／D9〔前缀登记，已落 §2.3 与 Task 8〕）——本对 plan 并入或作为其输入，切完回填状态列。
 
-**本对一件事：把开发分支的知识库模块搬上上游基座，并裁到首期口径。** 载体＝仓内可选扩展（RFC §6）；首期＝一个完整文档闭环：向量腿 + 一个检索工具 + 最小 UI + 基础评测。开发分支模块实测 **70 文件 / 15,919 行**（另有 **107 测试文件 / 31,816 行**、前端 **80 文件**〔另 71 测试文件〕），其中四条后置腿（`graph/` 8、`wiki/` 3、`video/` 10、`projection/` 4）与 eval **7 个子块**要真切——**worker 对 vector/graph 两腿无条件执行；video 按文件类型分支（`_is_video_path`）、wiki 为库级后置（`_spawn_wiki`/`_maybe_generate_wiki` 带阈值门）、projection 零引用——删文件不够、必须按真实接线拆**。迁移现挂宿主主链（`0011_knowledge` 一次 6 表 + `0012–0019` + `77df30935788`〔Alembic revision id，video_shots 建表〕）。上游侧已备：#5238 scope 契约（`knowledge_scope.py:99`：mode `Literal["all","selected","disabled"]` + `dataset_ids`）、#5551 引用、扩展接缝（`contracts.py`：`install(registry, config)` / `ExtensionService.start(deps)` / `registry.routers` / `ExtensionRuntimeDeps.session_factory`）与表前缀排除（`loader.py` `ExtensionSpec.table_prefix`＋迁移 `_env_filters` 双进程注册＋collision 检查）。
+**本对一件事：把开发分支的知识库模块搬上上游基座，并裁到首期口径。** 载体＝仓内可选扩展（RFC §6）；首期＝一个完整文档闭环：向量腿 + 一个检索工具 + 文档级只读工具组（随带） + 最小 UI + 基础评测。开发分支模块实测 **70 文件 / 15,919 行**（另有 **107 测试文件 / 31,816 行**、前端 **80 文件**〔另 71 测试文件〕），其中四条后置腿（`graph/` 8、`wiki/` 3、`video/` 10、`projection/` 4）与 eval **7 个子块**要真切——**worker 对 vector/graph 两腿无条件执行；video 按文件类型分支（`_is_video_path`）、wiki 为库级后置（`_spawn_wiki`/`_maybe_generate_wiki` 带阈值门）、projection 零引用——删文件不够、必须按真实接线拆**。迁移现挂宿主主链（`0011_knowledge` 一次 6 表 + `0012–0019` + `77df30935788`〔Alembic revision id，video_shots 建表〕）。上游侧已备：#5238 scope 契约（`knowledge_scope.py:99`：mode `Literal["all","selected","disabled"]` + `dataset_ids`）、#5551 引用、扩展接缝（`contracts.py`：`install(registry, config)` / `ExtensionService.start(deps)` / `registry.routers` / `ExtensionRuntimeDeps.session_factory`）与表前缀排除（`loader.py` `ExtensionSpec.table_prefix`＋迁移 `_env_filters` 双进程注册＋collision 检查）。
 
 ## 1. 现状与缺口（锚点）
 
@@ -89,7 +89,7 @@ nginx 三处上传路由**在基座配置上增量加入**（保留基座既有 
 
 ## 5. 验收
 
-- RFC A1–A12 全过；25 条工作项逐项回填状态列；`git diff vs e325c90b2` 只含首期面。
+- RFC A1–A12 全过；25 条工作项逐项回填状态列（后加随带组 1 条，随批回填）；`git diff vs e325c90b2` 只含首期面。
 - 专项：未启用启动零动作（无表/无 worker/无探测/前端入口不可达）＋ Qdrant 缺席可启动；启用后 15 后缀上传→解析→索引→（对话）检索→引用闭环；切库隔离；无云 CI 完整跑通＋真栈冒烟单独报告；门禁全量零新增（前端按单测口径，`test:e2e` 不在门禁）。
 
 ## 6. 非目标

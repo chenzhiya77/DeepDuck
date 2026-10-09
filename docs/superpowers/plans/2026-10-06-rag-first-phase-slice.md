@@ -185,7 +185,7 @@
 - [x] 恢复验收相：先备份→删除→恢复旧备份，核对权限/查询与引用/未完成处理三项。
 - [x] 全量门禁（后端＋前端单测；`test:e2e` 不在门禁）与源基线对比零新增红。
 - [x] 文档：AGENTS/部署说明（安装启停/表前缀/停用卸载与遗留表及前缀登记处置/备份保留期/恢复核对＋组件部署位置与离开环境内容清单/分词缓存与 `python-calamine` 需预置/备份内容与一致时间点；在线清理与历史聊天、历史备份边界、恢复重建耗时与成本说明、重建排除已删除〔A9/恢复验收〕）/README 相关节；spec/plan 状态行与实测回填。
-- [x] 提交链回填；工作项 25 条状态列核对。
+- [x] 提交链回填；工作项 25 条状态列核对（后加随带组 1 条 → 26，见并入表）。
 - [x] PR 面：分支名定死 `slice/knowledge-local-vector-retrieval`（开工前在 worktree 改名，零提交——**前置已核：与 upstream/main 平齐、0 领先，可直接执行**）；fork 未建需先建（2026-10-06 实查：`chenzhiya77/deer-flow` 不存在、DeepDuck `isFork:false`；本地 origin=DeepDuck 已推源分支，新 fork 建后 push 落点写一行）；PR 用 `Refs #5391`（不用 `Fixes`，发布前网络核实一次）。
 
 **实测（2026-10-08，Task 8 · 真栈验收＋门禁＋文档收尾）**：
@@ -204,13 +204,14 @@
 - 提交链：`619c24586`（修复）／`9bb4ea9cb`（材料）／`5cc0197b4`（文档）→ 回填 `f94bab1fc` → pin（本提交） → 修复链（10-08、未推）：四修合笔 `b9989c8c2`（后端 ruff／前端 prettier 69 件／AGENTS 链压缩＋新 guide／无云工作流一行）→ 回填 `f048b3344`（本提交）。
 - **补充相（10-08 晚，doc-tools 随带批次）**：切片随带 4 笔（`b8d584554` 结果字段＋篇内检索／`d4542a355` list/read 模块／`13e97ddc1` 门控集合＋文案＋AGENTS 行／`0ffefc916` SOUL＋断言）＋四门全过（ruff **1970 files** 双净／guidance **0 errors**〔1 条 diff-scoped AG002：`middlewares` 链 97,988B、hard 98,304〕／prettier 全过／定向 **62 passed**；联跑 `uv lock --check`・`pnpm lint`・`typecheck`・`build` 全过）；验收相＝隔离实例（gateway `:8101` slice venv＋Qdrant `:6399`；`DEER_FLOW_AUTH_DISABLED=1`；实例 config `tools[]` 补注册两件）跑七轮全 `wait=200`：A1 list→read→枚举／B1 list 边界枚举／B2 四连 read（含分页）／C1 检索（结果含 `doc_id`/`chunk_index`）＋引用／C2 窗口「第 1/共 1 片」／C3 整篇／F 篇内检索（`doc_id` 过滤命中第五章）——记录 `acceptance-8/acceptance-evidence.md` **W18**（转写 `evidence-slice-t8.txt`）。设计对＝`../specs/2026-10-08-rag-doc-tools-design.md`＋同名 plan（Task 8 交接单）。
 
-## 工作项并入表（25 条 → Task）
+## 工作项并入表（26 条 → Task）
 
 | 组 | 条数 | 落点 |
 | --- | --- | --- |
 | 评测（工作项 §8） | 11 | Task 7（+Task 0⑥ 核实） |
 | 对话隔离（§9 A4/A6） | 3 | 已在源分支（缺陷批）——Task 1 随带、Task 8 真栈复验 |
 | 交付形态/部署/接入/裁剪 | 6 | 可选启停→T3/T4；最小 UI→T6；nginx→T1；表格门→T2；契约接入→T5；首期裁剪→T2/T3 |
+| 文档级只读工具组（随带组；2026-10-08-rag-doc-tools） | 1 | 随带批次（主树先；与 ② 刻度轨恢复同批） |
 | §10.2 五行 | 5 | 设计结论（无动作，照录） |
 
 ## 附录 A — 源清单（Task 0①，留/裁＋行数；行数对源 a343b8b03）
