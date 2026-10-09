@@ -15,7 +15,7 @@
 **状态：** 独立草案，按完整文档闭环修订。  
 **议题：** #5391；依据[方向性评审](https://github.com/bytedance/deer-flow/issues/5391#issuecomment-5657810269)与本次首期范围讨论起草。  
 **定义：** 首期最小闭环——上传 → 解析 → 切分 → 索引 → 一个检索工具与文档感知（只读：文档清单、原文读取）→ 可核验引用，同时覆盖所有权与删除。  
-**开发分支：** 内部开发仓库的 `feat/rag-knowledge-base`——本提案完整实现的所在（含 §10 后置范围的各项能力；`main` 保持上游镜像）。  
+**开发分支：** 开发仓库 [chenzhiya77/DeepDuck](https://github.com/chenzhiya77/DeepDuck) 的 [`feat/rag-knowledge-base`](https://github.com/chenzhiya77/DeepDuck/tree/feat/rag-knowledge-base)——本提案完整实现的所在（含 §10 后置范围的各项能力；`main` 为复制时的上游基座、未随上游更新）。  
 **上游对接分支：** 向上游的工作在独立 fork（[chenzhiya77/deer-flow](https://github.com/chenzhiya77/deer-flow)）开展，[`slice/knowledge-local-vector-retrieval`](https://github.com/chenzhiya77/deer-flow/tree/slice/knowledge-local-vector-retrieval) 是紧跟上游最新改动的分支（基线随上游推进、差异保持最小）。
 
 ## 1. 提案摘要
