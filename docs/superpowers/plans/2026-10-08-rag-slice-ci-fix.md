@@ -2,7 +2,7 @@
 
 ## 范围与交接
 
-一对一件事＝把切片树已提交内容修到**提交前四门**全绿（后端 ruff 2 文件／前端 prettier 69 文件／AGENTS 链 3 条超限）＋记录对账（切片 plan 勘误＋追记；`rag-doc-tools` plan Task 8 加四门行）＋**第四修＝无云工作流修复（GitHub 侧一行；spec §2.4）**＋**主树 1 件 format 债伴修（复审并入；spec §2.1）**。成对 spec 同名（`../specs/2026-10-08-rag-slice-ci-fix-design.md`）；决策点 D1–D3 见 spec §3（**已裁全甲**：D1 指针＋模块 guide〔新件 `knowledge-extension/AGENTS.md`〕／D2 主树登记不修／D3 勘误式补注）。**执行面**＝切片树（`E:\app\python\agent\deer-flow-slice`，分支 `slice/knowledge-local-vector-retrieval`，起点 HEAD `5cc0197b4`）＋主树（记录面＋1 件格式债）。**不碰**：代码语义/接口/用例行为、上游文件内容、主树前端 prettier／CRLF 面（D2 登记）、推送与 PR。**状态（2026-10-08）：已完工**——切片四笔 `536368893`／`5cbd5fbdf`／`f36488af1`／`c9dd96a59`＋主树伴修 `f048b3344`＋主树记录批 → 回填 `f048b3344`（本提交）；**推送与 PR 更新＝待令**。
+一对一件事＝把切片树已提交内容修到**提交前四门**全绿（后端 ruff 2 文件／前端 prettier 69 文件／AGENTS 链 3 条超限）＋记录对账（切片 plan 勘误＋追记；`rag-doc-tools` plan Task 8 加四门行）＋**第四修＝无云工作流修复（GitHub 侧一行；spec §2.4）**＋**主树 1 件 format 债伴修（复审并入；spec §2.1）**。成对 spec 同名（`../specs/2026-10-08-rag-slice-ci-fix-design.md`）；决策点 D1–D3 见 spec §3（**已裁全甲**：D1 指针＋模块 guide〔新件 `knowledge-extension/AGENTS.md`〕／D2 主树登记不修／D3 勘误式补注）。**执行面**＝切片树（`E:\app\python\agent\deer-flow-slice`，分支 `slice/knowledge-local-vector-retrieval`，起点 HEAD `5cc0197b4`）＋主树（记录面＋1 件格式债）。**不碰**：代码语义/接口/用例行为、上游文件内容、主树前端 prettier／CRLF 面（D2 登记）、推送与 PR。**状态（2026-10-08）：已完工**——切片四修合笔 `b9989c8c2`＋主树伴修 `f048b3344`＋主树记录批 → 回填 `f048b3344`（本提交）；**推送与 PR 更新＝待令**。
 
 ## 硬约束（执行期注意）／Global Constraints
 
@@ -33,7 +33,7 @@
 - [x] 提交①（例：`style(backend): clear the ruff findings on the ported knowledge tests`）＋哈希回填。
 - [x] 实测回填（本 Task 下）。
 
-**实测（2026-10-08）**：切片＝`make_samples.py` 三处（L62 UP037 去引号／L147 删未用 `Pt`／format 折叠，5+/12−）；`test_gateway_services.py` 复跑后 clean 过滤哈希＝`5d6a7a79…`＝HEAD blob ⇒ 工件层为工作区行尾混排、**提交面零改动**（该文件不入提交）。复绿＝`ruff check .` All checks passed＋`ruff format --check .` 1970 files already formatted；knowledge 定向 pytest＝**751 passed／2 skipped／1 failed**（唯一红 `test_embed_missing_api_key`＝已登记环境条件红、与 T7-F／T8 基线一致）。提交①＝**`536368893`**。主树伴修＝`test_nginx_knowledge_uploads.py` L91 单 hunk 折叠（1+/4−）；复验＝全树 `format --check` 1327 files already formatted＋`check .` All checks passed；该文件 6 passed；提交＝**`f048b3344`**。
+**实测（2026-10-08）**：切片＝`make_samples.py` 三处（L62 UP037 去引号／L147 删未用 `Pt`／format 折叠，5+/12−）；`test_gateway_services.py` 复跑后 clean 过滤哈希＝`5d6a7a79…`＝HEAD blob ⇒ 工件层为工作区行尾混排、**提交面零改动**（该文件不入提交）。复绿＝`ruff check .` All checks passed＋`ruff format --check .` 1970 files already formatted；knowledge 定向 pytest＝**751 passed／2 skipped／1 failed**（唯一红 `test_embed_missing_api_key`＝已登记环境条件红、与 T7-F／T8 基线一致）。提交①＝**`b9989c8c2`**。主树伴修＝`test_nginx_knowledge_uploads.py` L91 单 hunk 折叠（1+/4−）；复验＝全树 `format --check` 1327 files already formatted＋`check .` All checks passed；该文件 6 passed；提交＝**`f048b3344`**。
 
 ## Task 2 — 前端 prettier 清零
 
@@ -44,7 +44,7 @@
 - [x] 提交②（例：`style(frontend): apply the repository prettier config to the ported knowledge surface`）＋哈希回填。
 - [x] 实测回填。
 
-**实测（2026-10-08）**：69 件 `--write` 后 `--list-different`＝0；改动面与清单逐件相符（外无清单文件）；`pnpm format`＝All matched files use Prettier code style!；`pnpm check`（eslint＋tsc）零诊断；`pnpm test`＝**304 文件／2895 用例全绿**（3m55s）；`pnpm build`＝10-08 审计复跑 exit 0（本批纯格式面未复跑）。提交②＝**`5cbd5fbdf`**（69 文件，+3389/−1643）。
+**实测（2026-10-08）**：69 件 `--write` 后 `--list-different`＝0；改动面与清单逐件相符（外无清单文件）；`pnpm format`＝All matched files use Prettier code style!；`pnpm check`（eslint＋tsc）零诊断；`pnpm test`＝**304 文件／2895 用例全绿**（3m55s）；`pnpm build`＝10-08 审计复跑 exit 0（本批纯格式面未复跑）。提交②＝**`b9989c8c2`**（69 文件，+3389/−1643）。
 
 ## Task 3 — AGENTS 链压缩（D1=甲）
 
@@ -57,7 +57,7 @@
 - [x] 复核（正式口径）：`--base-ref e325c90b2 --head-ref HEAD` → errors=0（残留 warnings＝spec §1 清单、非 errors）。
 - [x] 实测回填。
 
-**实测（2026-10-08）**：新件 `backend/packages/knowledge-extension/AGENTS.md`＝1713B（LOCAL 区间、自身零 finding；链＝root 14527＋backend 28901＋新件 1713＝**45141B**＜81920 soft）；指针净增＝**150B**（≤177 硬预算；`backend/AGENTS.md`＝28901B≤28928 硬线）；三链回限内＝middlewares 97931／sandbox 98277（**余 27B**）／subagents 97245；migrations 80860＜81920（warning 消）。工作区模式＝40 件、**0 errors**／12 warnings；提交③＝**`f36488af1`**；ref 模式复核＝**0 errors／13 warnings**、exit 0（第 13 条＝`frontend/src/AGENTS.md` 链 88504，其链含 backend/AGENTS.md 故居相关集；全为软警）。**措辞校正**：原节「rag 资产经 `tools:` 入口 opt-in」与码不符——实为 `tool_groups: [rag]`（`knowledge_scope_admission.py` 谓词），新 guide 已按码改书并补 admission 一环。
+**实测（2026-10-08）**：新件 `backend/packages/knowledge-extension/AGENTS.md`＝1713B（LOCAL 区间、自身零 finding；链＝root 14527＋backend 28901＋新件 1713＝**45141B**＜81920 soft）；指针净增＝**150B**（≤177 硬预算；`backend/AGENTS.md`＝28901B≤28928 硬线）；三链回限内＝middlewares 97931／sandbox 98277（**余 27B**）／subagents 97245；migrations 80860＜81920（warning 消）。工作区模式＝40 件、**0 errors**／12 warnings；提交③＝**`b9989c8c2`**；ref 模式复核＝**0 errors／13 warnings**、exit 0（第 13 条＝`frontend/src/AGENTS.md` 链 88504，其链含 backend/AGENTS.md 故居相关集；全为软警）。**措辞校正**：原节「rag 资产经 `tools:` 入口 opt-in」与码不符——实为 `tool_groups: [rag]`（`knowledge_scope_admission.py` 谓词），新 guide 已按码改书并补 admission 一环。
 
 ## Task 4 — 无云工作流修复（GitHub 侧，一行）
 
@@ -68,7 +68,7 @@
 - [x] 提交④（例：`fix(ci): make the no-cloud workflow valid on GitHub`）＋哈希回填。
 - [x] 实测回填（含「推送后首跑＝最终自证（待令）」一句）。
 
-**实测（2026-10-08）**：仅一行改（L48 `runner.temp`→`github.workspace`）；YAML 解析通过（PyYAML `safe_load`）；全文复查余 `runner.` 仅在 step 级（L121-122 `with.path`，合法）；本机无 actionlint/go——GitHub schema 校验不可本地代跑。提交④＝**`c9dd96a59`**。**推送后首跑＝最终自证（待令）**。
+**实测（2026-10-08）**：仅一行改（L48 `runner.temp`→`github.workspace`）；YAML 解析通过（PyYAML `safe_load`）；全文复查余 `runner.` 仅在 step 级（L121-122 `with.path`，合法）；本机无 actionlint/go——GitHub schema 校验不可本地代跑。提交④＝**`b9989c8c2`**。**推送后首跑＝最终自证（待令）**。
 
 ## Task 5 — 记录对账＋口径＋回填
 

@@ -21,7 +21,7 @@
 - [x] ① 两树对照重核 spec §1 各锚（结果构造 81-87／store 282-326／vector_store 62·316-320·删除路 609/613（切片 :336）／chunker 369／服务 268·364（切片 160·100）／切片门控 25＋两处按名）；② 工具注册点（主树 `config.yaml` tools[]＋rag 资产 `tool_groups`；切片 acceptance config）；③ 两树 SOUL L7 强制句确切行；④ `chunk_positions` 语义重核（活体位置 vs `chunk_index` 差与换算）；⑤ 受害者扫描：结果 payload 新键的既有断言、门控常量改名影响面、SOUL 句改的用例面（点名主树 `test_rag_agent_assembly.py`：`test_builtin_rag_soul_contains_citation_and_refusal_rules`——L7 句改必撞、随 Task 5 同步；`test_rag_group_tools_are_exactly_the_three_retrieval_tools`——断言是超集⇒仍过、名称「exactly」陈旧可顺手更新）、预算中间件特判面（切片 `:665`／主树无）、**按名引用点全集**（切片 `knowledge_scope_admission.py:17-20·36·45-46`／`routers/features.py:122-128`／`community/ragflow/sources.py:82`／前端 `citations.ts:13`·`sources.ts:34`／`src/AGENTS.md:213`＋主树对应面 `citations.ts:17`·`core/pet/tools.ts:56-58`——预期全零改动，核实确认）。
 
 **Task 0 复核结果（2026-10-08 执行；含前序两轮全锚复核）**：
-- 两树：主树 `6a17e966e`（本对起点后别线两笔：`aca334119` models／`3f536836c` 本对 spec＋plan；别线未提交：README／`backend/AGENTS.md`／RFC 两行〔ui 线〕／若干文档）；切片 `c9dd96a59` 全净。
+- 两树：主树 `6a17e966e`（本对起点后别线两笔：`aca334119` models／`3f536836c` 本对 spec＋plan；别线未提交：README／`backend/AGENTS.md`／RFC 两行〔ui 线〕／若干文档）；切片 `b9989c8c2` 全净。
 - ① 两树对照：spec §1 各锚全中（主树 81-87／282-326／62·316-320／609·613／369／268·364；切片 137／57／336／160／100／25·83·89-98），二轮全锚复核（主树约 20 处、切片约 17 处）零漂移；勘误两条已落（锚点 `17-20·36·45-46`＋审计 re-pin 顺序句；未提交）。
 - ② 注册点：主树 `config.example.yaml:697-708`（三件 `group: rag, opt_in: true`）＋本地 `config.yaml:66`（hybrid_search 已在）＋rag 资产 `tool_groups: [rag]` 已核；切片 acceptance config＝实例侧（acceptance-8 配方），切片树内零落点。
 - ③ 两树 SOUL L7＝各自第 7 行（主树＝`hybrid_search` 版＋wiki 例外／图谱路／深度检索三句；切片＝`knowledge_search` 版仅 2 件工作流）——「两树非同文」确证。
@@ -134,7 +134,7 @@
 
 **交接单（切片移植批次执行用；本对只写不落）**
 
-- **批次口径**：切片随带批次（与 ② 刻度轨恢复同批次机制；A 对切片批已落——切片树 tip `af54b4d01`、工作区净，执行前先核 tip）。改动全部落切片树 `slice/knowledge-local-vector-retrieval`；提交按线拆、信息英文 conventional；每笔提交前过 §9 四门。
+- **批次口径**：切片随带批次（与 ② 刻度轨恢复同批次机制；A 对切片批已落——切片树 tip `548f54706`、工作区净，执行前先核 tip）。改动全部落切片树 `slice/knowledge-local-vector-retrieval`；提交按线拆、信息英文 conventional；每笔提交前过 §9 四门。
 - **§1 切片形态工具模块**（新件 `backend/packages/harness/deerflow/tools/builtins/knowledge_documents_tool.py`）：源＝主树件（`009fb03b1`＋`c15e7f151`）逐字搬运＋两处机械变换——① imports 下移**函数内**并改 `deerflow_knowledge.*`（照切片 `hybrid_search_tool.py:78-93` 现行形态：模块级仅 `langchain.tools.tool` 与 `deerflow.tools.types.Runtime`）；② 文案取 `deerflow_knowledge.access` 常量。契约逐字同主树（`_DEFAULT_LIMIT=20`／`_MAX_LIMIT=50`／`_MAX_ITEM_CHARS=2000`；`_doc_meta`／`_ready_document`／`_shape_items`＋两 impl＋两 `@tool(parse_docstring=True)` 包层）。
 - **§2 结果字段＋篇内检索（切片同段小改）**：切片 `hybrid_search_tool.py` item 构造（`:137` 起）补 `doc_id`／`chunk_index`（均取 DB 行）＋docstring 两字段句（照 `8b184cbc9`）；`deerflow_knowledge/vector_store.py` `hybrid_query` 加可选 `doc_id` 并进同一 filter（两条 prefetch 共用；`kb_filter`→`scope_filter`，照 `9123bfb8c`）；检索工具加 `doc_id` 入参＋透传＋docstring（Use 第 3 条＋Args）。
 - **§3 门控集合（两处）**：`agents/middlewares/knowledge_scope_middleware.py:25` 单名常量 → `_KNOWLEDGE_TOOL_NAMES = frozenset({knowledge_search, list_knowledge_documents, read_knowledge_document})`；同扩两处按名生效（tools 过滤 `:83`＋拦截 `:89-98`）。拒绝文案收正：`_disabled_tool_message` 的 `name=` 与 content 按被拦工具名回填（保持 `disabled` 子串——兼容 `tests/test_knowledge_scope_middleware.py:143`）；`deerflow_knowledge/access.py:37` `SCOPE_DISABLED_MESSAGE` 同句随核（新工具沿用同模板）；`community/ragflow/tools.py:539` 维持不动。
@@ -147,7 +147,7 @@
 - **§10 提交链（预期 3–5 笔）**：① 结果字段＋篇内检索（feat）→ ② list/read 模块＋acceptance 注册（feat）→ ③ 门控集合＋文案＋AGENTS 行（fix/feat）→ ④ SOUL＋用例（feat）→ ⑤ 回填/材料（docs，如拆）。用例面：切片 `tests/knowledge/tools/` 同批扩（结果字段/双寻址/守卫/门控三件套）。
 
 **实测（2026-10-08，Task 8·切片随带执行）**：
-- 切片树 4 笔（工作区净）：`b5e0a1ead` 结果字段＋篇内检索（item 补 `doc_id`/`chunk_index`＋`hybrid_query` 可选 `doc_id`＋工具入参/透传/docstring）／`38d4c1fde` list/read 模块（函数内 `deerflow_knowledge.*` import，契约逐字同主树）／`101b55b41` 门控集合（`_KNOWLEDGE_TOOL_NAMES` 三件套＋两处按名生效）＋文案按被拦工具名回填＋`middlewares/AGENTS.md:47` 行同步／`bb830cbdb` SOUL 语料边界节＋assembly 断言三条。
+- 切片树 4 笔（工作区净）：`b8d584554` 结果字段＋篇内检索（item 补 `doc_id`/`chunk_index`＋`hybrid_query` 可选 `doc_id`＋工具入参/透传/docstring）／`d4542a355` list/read 模块（函数内 `deerflow_knowledge.*` import，契约逐字同主树）／`13e97ddc1` 门控集合（`_KNOWLEDGE_TOOL_NAMES` 三件套＋两处按名生效）＋文案按被拦工具名回填＋`middlewares/AGENTS.md:47` 行同步／`0ffefc916` SOUL 语料边界节＋assembly 断言三条。
 - TDD：RED（新模块采集错＋10 红 1 错；24 绿＝既有面完好）→ GREEN（定向 **62 passed**：`tests/knowledge/tools/`＋`test_vector_store`＋`test_knowledge_scope_middleware`＋`test_rag_agent_assembly`）。
 - 四门：① `make lint` 双净（ruff check All passed／**1970 files already formatted**）② guidance **0 errors**（40 AGENTS.md；1 条 AG002 警告＝`middlewares` 链 97,988B 逼近硬限 98,304〔余 316B〕——**diff 作用域警告**：链在基座即超 soft 被祖父化、本笔触碰即报，非错误，余量登记）③ `pnpm format` 全过 ④ 定向 pytest 62 passed；联跑 `uv lock --check` ✓＋`pnpm lint`／`typecheck`／`build` 三件全过（exit 0）。
 - 切片形态与主树同契约（`knowledge_search` 的 artifact 配对不变；拒绝文案三态沿用切片 `access.py` 常量；`config.example.yaml` 本批不动——acceptance 实例侧注册，见交接单 §6）。
