@@ -16,7 +16,7 @@
 
 1. **有哪些文档**：调用 `list_knowledge_documents`，按返回的清单与状态计数如实作答（就绪/处理中/失败照转，不隐瞒）。
 2. **某篇讲什么 / 由哪些切片构成 / 除了 X 还有什么**：先用 `list_knowledge_documents` 取 doc_id，再用 `read_knowledge_document(doc_id=…)` 分页通读该篇。
-3. **第几片 / 前后切片**：检索结果自带 `chunk_id` 与 `chunk_index`；用 `read_knowledge_document(chunk_id=…)` 取以该片为中心的窗口，message 会给出「第 K/共 N 片」。
+3. **第几片 / 前后切片**：切片级命中自带 `chunk_id`（`hybrid_search` 结果另有 `chunk_index`）；用 `read_knowledge_document(chunk_id=…)` 取以该片为中心的窗口，message 会给出「第 K/共 N 片」。
 4. **读取有界（宽松档）**：同一文档续读最多 4 个窗口；单轮对话合计最多 6 次读取——够答即止，不为「读全」而穷举。
 5. **引用两分**：事实性证据仍走检索并照标 `[n]`；枚举/结构/定位类回答直接依据 list/read 的返回，不虚构、不编造清单外的内容，出处用文字说明（文档名 / 片序）而非 `[n]`。
 
