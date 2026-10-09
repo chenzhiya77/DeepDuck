@@ -20,19 +20,19 @@
 
 ## Task 1 前端：切库重置＋用例
 
-- [ ] RED：`chat-panel.dom.test.tsx` 加两条用例——①切库开新会话（选历史 → 重渲 kb=B → 新 uuid/isNewThread）；②深链不被重置打断（`requestedThreadId` 选中后，重置不覆盖所选线程）
-- [ ] GREEN：按 D1 落重置；chat-panel 全用例（含新增两条）绿；`pnpm check` 零诊断
+- [x] RED：`chat-panel.dom.test.tsx` 加两条用例——①切库开新会话（选历史 → 重渲 kb=B → 新 uuid/isNewThread）；②深链不被重置打断（`requestedThreadId` 选中后，重置不覆盖所选线程）。**实落：两用例已落（`chat-panel.dom.test.tsx` L416 切库即新会话／L426 位序守卫）；提交 `f2e1689dd`。**
+- [x] GREEN：按 D1 落重置；chat-panel 全用例（含新增两条）绿；`pnpm check` 零诊断。**实落：重置 effect 已按 D1 落（`chat-panel.tsx`，位序在深链 effect 前）；chat-panel 全用例绿（含新增两条）；`pnpm check` 当时受别线在途 TS2353 红波及、本批波及面绿（见 Task 4 备注）。**
 
 ## Task 2 后端：绑定校验＋用例
 
-- [ ] RED：网关用例三态——绑定线程＋不一致 ⇒ 拒（D3 码）；一致 ⇒ 放行；无绑定 ⇒ 不拦
-- [ ] GREEN：落校验；目标面测试绿
+- [x] RED：网关用例三态——绑定线程＋不一致 ⇒ 拒（D3 码）；一致 ⇒ 放行；无绑定 ⇒ 不拦。**实落：三态用例已落（该提交共 4 用例）；提交 `e0ee6e01e`。**
+- [x] GREEN：落校验；目标面测试绿。**实落：`start_run` 绑定校验已落（不一致 ⇒ 403「对话与知识库绑定不一致」；线程有绑定、请求不带 kb 维持「不检索」）；目标面测试绿；提交 `e0ee6e01e`。**
 
 ## Task 3 nginx：三处＋守卫测试（按 D4）——核销为「已在」
 
 - [x] 三处知识上传 location 已在工作区（05:36 既有改动）：regex/100M/`proxy_request_buffering off` 与 spec 一致
 - [x] 守卫测试已在（未跟踪文件）：三文件参数化＋括号深度提取＋尺寸区间＋缓冲断言，6/6 绿
-- [ ] 归属记入 Task 4 提交链（该笔工作与两处本批改动同在工作区，提交时一并认领）
+- [x] 归属记入 Task 4 提交链（该笔工作与两处本批改动同在工作区，提交时一并认领）。**实落：nginx 三处＋守卫测试已随 `62019263b` 认领进 Task 4 提交链。**
 
 ## Task 4 收尾
 
