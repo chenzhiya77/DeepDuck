@@ -49,7 +49,7 @@
 - ⑦ 迁移：链序 0011→0012→0013→0014→0015→0016→0017→0018→`77df30935788`→0019（0019 down=77df）；列级：0012 `documents.path_status`、0013 `documents.content_hash`、0015 `chunks.last_edited_at`、0019 `knowledge_bases.embedding_identity`（均 `safe_add_column` 幂等式）；0017/0018 `eval_runs`（表＋基线列＋部分唯一索引）；0014/0016/77df 随裁。**合并＝0001 业务三表（0011 三表＋0012/0013/0015/0019 四列内联）、0002 eval_runs（0017＋0018 全量）**。
 - ⑧ 环境：slice 树 venv 已建（Python 3.12.13，按主 venv freeze 对齐 **290 包**，exit 0）＋`pnpm install` 完成（pnpm 10.26.2，1m59.6s，node_modules 83 项）。
 - F11（判读题）：RFC L98「解析内容」维持原文（可选收口不采纳，避免临发帖改文）。
-- ⑨ 落档：✅ 已提交 `e38c81416`（5 路径＋632/−11；审计档头部复钉 346 行/md5 `5f9eeaab`、引用按「原 L≥25 者 +4」整体折算、E1 复核注同步；v2 两件维持未跟踪）。
+- ⑨ 落档：✅ 已提交 `f94bab1fc`（5 路径＋632/−11；审计档头部复钉 346 行/md5 `5f9eeaab`、引用按「原 L≥25 者 +4」整体折算、E1 复核注同步；v2 两件维持未跟踪）。
 
 ## Task 1 — 复制落盘＋漏项核对
 
@@ -77,7 +77,7 @@
 - **测试改**：107 内 24 改（worker 46→27、api 57→27、smoke×2 各留 1、reindex 21→13、sweep 19→13、models 19→17、wiring 26→9、vlm_target 30→27、provider 26→22、citation 7→4、eval_persistence 44→39、table_eval 2 重接）＋根面改 7（rag_config_api 81→69＋golden fixture 新建〔48 键裁〕、rag_config、rag_config_file、rag_config_example、save_probe；lifespan/monocle 基座原样）；fixture 新建 `tests/fixtures/rag_config/response_golden.json`。
 - **TDD 全量首跑**（干净盘）：**127 failed／24,888 passed／864 skipped／14 errors**（32:58；run-1 因 E 盘 pagefile 涨至 42.5G 致盘满作废〔40 处 `disk is full`、197F/210E 留档不用〕、run-2 干净盘（138F/0 disk-full）为中间态、随 11 项修正由本轮取代——重跑前清 basetemp＋落 C 盘）。knowledge 面专跑 **916 passed／8 failed，8 条全为已分类**：probe×4＋`test_embed_missing_api_key`（**源仓同红**——两树操作文件均声明 ambient key/缺 base_url，双向实测）、`test_rag_configuration_error`×3（网关未注册 handler——app 装配属 Task 3）。其余红全为**机器环境类**（uv 构建子进程 SRE mismatch／stripped-env winsock＋GBK 解码／docker 镜像与符号链接特权／readability／pnpm／LangGraph dev server 超时／CRLF 等，均逐簇取证）＋2 条 flake（`test_delta_channel_state` 随机差分、`test_scheduled_goal_handoff` 时序——3× 复跑混合通过）。**零未归因新红**。
 - **已知交后续 Task**：`runner._fanout`×`PATH_ORDER` 三路骨架 vs 单路 searcher（CLI 端到端 KeyError；Task 7 按计划收窄）；`test_create_all_and_alembic_upgrade_produce_same_schema`（kb_ 表在宿主 create_all、不在宿主链——Task 3 私有 MetaData 收口）；`create_rag_chat_model` 无调用点（死代码候选，待裁）。
-- 提交链：`14ea2f93a`（165 文件，+1,330/−31,673；services 重命名 100% 识别）→ 回填 `a3f23c7ea`。
+- 提交链：`14ea2f93a`（165 文件，+1,330/−31,673；services 重命名 100% 识别）→ 回填 `f94bab1fc`。
 
 ## Task 3 — 扩展包装（install/service/routers/表/加载）
 
@@ -97,7 +97,7 @@
 - **适配清单承接**：`/api/models` ModelResponse ＋`supports_vision`；**网关 `RagConfigurationError` handler**（`app.py`：懒 import＋ImportError 兜底——未装扩展宿主照常启动；400＋消息保真）⇒ `test_rag_configuration_error` 3 条红转绿；`plugins:` 样例（config.example.yaml 注释条目＋包 README 部署说明：安装/启停/表前缀/停用卸载与遗留表处置/python-calamine 预置/密钥来源）。前端 `useModelsConfig` 归 Task 6。
 - **连带修复（跨 Task 尾巴）**：knowledge conftest 的 `session_factory` 补跑扩展链；`run_rag_eval.py` 两处 init 后补链（CLI 自开引擎场景）；eval `_read_runs` 补链；captioner 常量测试改读模块 `__file__`；`test_default_model_isolation` 的 NOT_ROLE_LEGS 改指扩展包根（原 5 参数含已切 `video/asr.py`——Task 2 分类漏项，run-4 抓出）；新测试 `tests/test_knowledge_extension_packaging.py`（7 条：注册/禁用零动作/api 窗口〔0.2 过、0.3 拒〕/未启用零建表/start 迁移＋可达＋停用留数据/二启/无 session_factory 拒）。
 - **TDD 搬家后复跑（run-4）**：**129 failed／24,917 passed／840 skipped／14 errors**（46:38）。对 run-3 差分：**修好 5**（schema-drift 红随私有 MetaData 消、configuration_error×3、时序 flake×1）；**新 7**＝`test_default_model_isolation`×5（已当场修，见上）＋2 条时序 flake（`test_extension_task_lifecycle` 复跑过、`test_jina_retries` 浮点时序簇〔1.8e-13 溢出〕）；复跑后隔离文件 15 绿、eval 面 51 绿。残留红＝既分类集合（probe×4＋`test_embed_missing_api_key` 源仓同红；环境类簇不变）。
-- 提交链：`e6df6edb8`（125 文件，+2,792/−1,909）→ 回填 `ec2ca06fe`。
+- 提交链：`e6df6edb8`（125 文件，+2,792/−1,909）→ 回填 `f94bab1fc`。
 
 ## Task 4 — 迁移收窄
 
@@ -109,7 +109,7 @@
 - **链内容（D3 映射，Task 3 已建、本 Task 列级核）**：`0001_business_tables`＝0011 三表＋**四列内联**（0012 `documents.path_status`／0013 `documents.content_hash`／0015 `chunks.last_edited_at`／0019 `knowledge_bases.embedding_identity`）；`0002_eval_runs`＝0017 表＋**0018 全量**（`is_baseline`/`environment` 两列＋部分唯一索引 `uq_eval_runs_kb_baseline`，索引名保持模型声明）；0014/0016/`77df` 随切不入链。**列级保真链**：revision 逐列取自源迁移文件＋模型（Task 1 拷贝、零列改）⇒ 新测试以**模型为权威**做 `create_all` vs 链 的逐列等价（含 nullable／两个 server_default／部分索引）——三方一致。
 - **互不干扰实测**（`tests/test_knowledge_migrations_isolation.py`，4 条）：①create_all 与扩展链产出逐列一致（表集＝四张 kb_、nullable 零漂移、eval_runs 部分唯一索引两路径俱在）；②宿主 bootstrap **复跑**（其 versioned 分支的 upgrade head 路径）后：kb_ 五表（四表＋`kb_alembic_version`）原样、行数原样（1 行存活）、**两本版本账各自为政**（`alembic_version`＝宿主 head、`kb_alembic_version`＝`0002_eval_runs`）；③`kb_` 前缀注册**零撞名**（`register_extension_table_prefix` 不抛）；④注册后宿主 autogenerate 的 `include_object` 对四张 kb_ 表全部 False、对 `runs` 等宿主表仍 True。
 - 未启用零建表／启用即迁移／版本表独立 的运行时面由 Task 3 的 `test_knowledge_extension_packaging.py`（7 条）承载；本 Task 补的是**链与宿主链的接缝**。无产品代码改动（纯测试一笔）。
-- 提交链：`f47f5c618`（1 文件，+134）→ 回填 `b333b9d98`。
+- 提交链：`f47f5c618`（1 文件，+134）→ 回填 `f94bab1fc`。
 
 ## Task 5 — 契约适配（#5238/#5551）
 
@@ -135,7 +135,7 @@
 - **TDD（run-5b 全量＋定向）**：**121 failed／24,940 passed／840 skipped／14 errors（37:43）**；红集**逐条分类零未归因、零触及本 Task 改动面**（唯一 knowledge 红＝既有源仓同红 `test_indexer::test_embed_missing_api_key`）：uv 簇 33（extension_manager 31／dependency_sync 1〔CPython 3.14.3〕／uv_extras 1）、readability/web_fetch 22、Windows 子进程+控制台 15（deploy_dotenv 7／client_live 4／gateway_startup 2／file_outline 1／doctor 1）、沙箱 tmp 11（setup_sandbox 8／mounts 2／timeout 1）、docker 10（dev_entrypoint 7／docker_sandbox 3）、CRLF/文本模式 7（read_file 系）、GBK 默认编码 5（thread_id 1／mcp_client_config 1／delta_channel 1／parallel_mcp 2）、Windows 权限/symlink 4（channel_file 3／view_image 1）、pnpm 2、路径分隔符 1（detect_blocking_io）、非便携名 1（skill_storage）、studio/channels 2F+14E、源仓同红 5（probe×4＋embed_missing）、时序 flake 1（scheduled_goal 同刻时间戳）；**本 Task 修 2**（`test_tool_deduplication`／`test_plugin_tools` 假配置补 opt_in=False——Task 2 家族漏网，复跑 16/16 绿）。对 run-4（129F）净差 −8＝本修 2＋环境簇跑间漂移（同树 run-5 123F vs run-5b 121F 即 ±2 非确定；web_fetch/uv 簇带网依赖）。
 - **顺带修复**：eval kernel `build_default_searchers` 仍用旧载体＋dict 返回（随 adapter/元组改造同笔修，160 条 eval 用例复绿）；**Task 1 拷贝漏件** `frontend/src/components/ai-elements/model-selector.tsx`（fork 自其基座 #5441、Task 1 只拷 fork 相对其分叉点的改动⇒漏；chat-panel 依赖，补拷）；slice `.gitignore` 补 `rag_config.json`（主仓分支 :38 已有）。
 - 前端面：`pnpm check` 现态＝**346 条诊断全属 Task 6 边界**（i18n 键未摘／`pathOfKnowledgeThread`／activity-context 未拷等，HEAD 同样红）；本 Task 触及件零新增诊断（tsc/eslint 实测）；citations/sources 测试 37 绿，chat-panel.dom 红待 Task 6 i18n 键（HEAD 同红）。
-- 提交链：`29b43cec2`（32 文件，+939/−135）→ 回填 `2377816cb`。
+- 提交链：`29b43cec2`（32 文件，+939/−135）→ 回填 `f94bab1fc`。
 
 ## Task 6 — 前端最小集
 
@@ -143,19 +143,19 @@
 - [x] 未启用门控：知识入口不可达、不轮询扩展端点（核心侧「前端适配」类；RFC §6.2 四项之四）。
 - [x] 设置面挂载（写死）：上游 `model-settings-page.tsx` 内挂 `FunctionalModelsView`（**不复制 dev 页**；operator 门复用 `canManage` :36）；i18n 按键摘取（`core/i18n/locales/` 三文件不整复制）。
 - [x] 切库隔离三件套复验（重置/绑定校验/用例）；重建入口与进度保留。
-- [x] **随带两处 10-07 UI 修**（复制源例外：两笔在 `a343b8b03` 之后，随移植带上并留档）：① `d86afd2d8`：`ui/resizable.tsx` 手柄加 `focus-visible:z-30`（焦点环不被 sticky 表头/全幅底衬盖住——文档表在保留面，eval/wiki 半已切）＋新件 `tests/unit/components/ui/resizable.dom.test.tsx`；② `58f4efc08`：`knowledge/middle-tabs.tsx` 库头行 `py-3`→`h-12`＋`data-testid="knowledge-middle-header"`（与会话栏头部底线同排）＋`middle-tabs.dom.test.tsx` 同步（该用例现挂在评测 tab describe 内——切 tab 时保留/移位）。两处 diff 与 slice 现状上下文逐字吻合、可直接套用。
+- [x] **随带两处 10-07 UI 修**（复制源例外：两笔在 `a343b8b03` 之后，随移植带上并留档）：① `fa48e0740`：`ui/resizable.tsx` 手柄加 `focus-visible:z-30`（焦点环不被 sticky 表头/全幅底衬盖住——文档表在保留面，eval/wiki 半已切）＋新件 `tests/unit/components/ui/resizable.dom.test.tsx`；② `96e11a64a`：`knowledge/middle-tabs.tsx` 库头行 `py-3`→`h-12`＋`data-testid="knowledge-middle-header"`（与会话栏头部底线同排）＋`middle-tabs.dom.test.tsx` 同步（该用例现挂在评测 tab describe 内——切 tab 时保留/移位）。两处 diff 与 slice 现状上下文逐字吻合、可直接套用。
 - [x] `pnpm check`＋前端用例（裁剪后基线为准；单测口径——`pnpm test`，`test:e2e` 不在门禁）。
 
 **实测（2026-10-07，Task 6 · 前端最小集）**：
 
-- **裁件（138 文件 = 77 删＋57 改＋4 新，+2711/−34615）**：五标签页组件树整删（wiki 5／eval 16／graph 3／vectors 2／recall 2）＋manual 卡 2＋编辑类 4（drawer-editor／use-anchor-confirm／anchor-block-notice／delete-preview-dialog）＋chunk-tick-rail＋drawer-icon＋scrollable-textarea＋会话导入（`knowledge-base-import-submenu`＋`import-to-knowledge-base`）＋core 四件（card-drawers／eval-run-status／synthesis-status／wiki-status）；连带测试 34 个整删。`middle-tabs` 重写为单「文档」tab（h-12 头部＋`knowledge-middle-header` testid 承接 58f4efc08）；`chat-panel` 收窄 props 为 `{kb, requestedThreadId}`（切库重置＋深链位序用例过）；`chunk-drawer`/`chunk-card`/`kb-citation-sources`/`citations.ts` 读侧重写（chunk-only，`knowledge_search` 单工具解析，wiki/manual 分支全去）；`hooks`/`api`/`types`/`path-status`/`document-stats` 收窄（`path_status` 只余 vector/caption；api 只余保留面）。**api.ts 重写曾引入两处 URL 回归**（`files?ref=` 与 `/file` 端点），对照 HEAD 修回（`files/${逐段 encodeURIComponent}` 与 `/source`）——chunk-image.dom 2 红当场转绿。
+- **裁件（138 文件 = 77 删＋57 改＋4 新，+2711/−34615）**：五标签页组件树整删（wiki 5／eval 16／graph 3／vectors 2／recall 2）＋manual 卡 2＋编辑类 4（drawer-editor／use-anchor-confirm／anchor-block-notice／delete-preview-dialog）＋chunk-tick-rail＋drawer-icon＋scrollable-textarea＋会话导入（`knowledge-base-import-submenu`＋`import-to-knowledge-base`）＋core 四件（card-drawers／eval-run-status／synthesis-status／wiki-status）；连带测试 34 个整删。`middle-tabs` 重写为单「文档」tab（h-12 头部＋`knowledge-middle-header` testid 承接 96e11a64a）；`chat-panel` 收窄 props 为 `{kb, requestedThreadId}`（切库重置＋深链位序用例过）；`chunk-drawer`/`chunk-card`/`kb-citation-sources`/`citations.ts` 读侧重写（chunk-only，`knowledge_search` 单工具解析，wiki/manual 分支全去）；`hooks`/`api`/`types`/`path-status`/`document-stats` 收窄（`path_status` 只余 vector/caption；api 只余保留面）。**api.ts 重写曾引入两处 URL 回归**（`files?ref=` 与 `/file` 端点），对照 HEAD 修回（`files/${逐段 encodeURIComponent}` 与 `/source`）——chunk-image.dom 2 红当场转绿。
 - **切留引用同步**：`renderMessageContent`/`renderMessageFooter` 双 seam（message-list／message-list-item 新增）；`markdown-content` 补 StreamingTable＋`controls={{table:{fullscreen:false}}}`；`scroll-area`（viewportRef／horizontal／max-h-inherit）、`tooltip`（contentClassName）、`checkbox`／`context-menu`／`input-autofill` 随件拷入（radix checkbox/context-menu 两依赖入 package.json＋lock）；`pathOfKnowledgeThread`＋`pathOfThread` kb 分支、`recent-chat-list` KB 线程排除、侧栏知识入口（旗门控）；`useRegisterActivity` 全清（0 引用）。
 - **设置面切腿＋挂载**：`functional-models-view.tsx` 1998→1681 行（裁 ASR 三组四值/探针、四行功能模型行、四 thinking 开关；改读上游 `loadManagedModels` 共享查询 key `["managed-models", user.id]`＋`useAuth`）；`model-settings-page.tsx` 内挂 `FunctionalModelsView`（canManage 分支内，不复制 dev 页）；`core/rag/{config-form,types,hooks,api}` 两侧对称裁（四模型键＋四 thinking 键＋`RagVideoValues` 全清，键表同步）；i18n 按键摘取落三文件（knowledge 54 键＋settings.models 33＋functionalModels 112，含切片事实修正：defaultModelHint 只余图片配文、reindex 文案只余切片向量）。
 - **未启用门控（RFC §6.2 四项之四）**：后端 `features.py` `KnowledgeBaseFeature` 加 `enabled`（`getattr(config.knowledge_base, "enabled", False)`）；前端 `fetchKnowledgeBaseFeature`／`useKnowledgeBaseEnabled` 返回 `{enabled, scopeSelectionEnabled}`；知识页三查询全旗门控（`useKnowledgeBases(enabled)`／`useDocuments(enabled ? kb : null)`／`useSupportedFormats(enabled)`）＋禁用早退页（`knowledge-page-disabled`＋`disabledHint`）；侧栏入口旗门控；**新增门控用例**：useKnowledgeBases(false)／useSupportedFormats(false) 零 fetch＋features 读值 enabled 两态。
-- **随带两处 10-07 UI 修**：`resizable.tsx` 手柄 `focus-visible:z-30`＋新件 `resizable.dom.test.tsx`（d86afd2d8 逐字套用）；`middle-tabs.tsx` `py-3`→`h-12`＋testid＋用例（58f4efc08；原挂评测 tab describe 的用例随 tab 裁掉后以新 describe 承接）。
+- **随带两处 10-07 UI 修**：`resizable.tsx` 手柄 `focus-visible:z-30`＋新件 `resizable.dom.test.tsx`（fa48e0740 逐字套用）；`middle-tabs.tsx` `py-3`→`h-12`＋testid＋用例（96e11a64a；原挂评测 tab describe 的用例随 tab 裁掉后以新 describe 承接）。
 - **切库隔离三件套复验**：重置（切库即新对话）、绑定（context agent_name+kb_id＋scope 快照 `local:<id>`）、深链位序（先重置后选中）三用例全绿；重建入口与进度保留（行内计数=chunks_indexed 单类，四类合计用例改写为切片单类）。
 - **门禁与用例**：`pnpm check`＝eslint（`. --ext .ts,.tsx` 零输出）＋`tsc --noEmit`（零诊断）；前端全量 **304 文件／2892 用例全绿**（唯一文件级标记＝`sidecar-delete-gating` happy-dom teardown flake，单跑 3/3 绿——既有环境类，非回归）；后端 `test_features_router.py` 14/14。测试口径修正：`document-panel` 九宫格去 media 格（切片不收 .mp4）、路径悬停改 vector+caption 两腿、批量菜单去联合出题、rebuild 计数单类、config-form 两处夹具键换 vlm。
-- 提交链：`a630a3b3f`（138 文件，+2711/−34615）→ 回填 `69e860bdf`。
+- 提交链：`a630a3b3f`（138 文件，+2711/−34615）→ 回填 `f94bab1fc`。
 
 ## Task 7 — 评测三件＋材料行
 
@@ -175,7 +175,7 @@
 - **真栈冒烟（A12 单独报告）**：组合＝`qwen3.7-text-embedding-flash`/1024/provider＋`qwen3.7-text-rerank`＋caption `qwen3.7-flash`/1024tok/0.15/非思考；真实服务全链、无回放；隔离存储（scratch sqlite＋Qdrant :6399）；结果与基线同值；产物 `ci/smoke/{report.json,report.md,manifest.json}`（`executed=true`、`eval_exit_code=0`、材料指纹与 CI 同件——「未执行不计通过」以字段留痕）。
 - **材料行**：语料 `tests/fixtures/rag_eval/materials/`（8 件＋README 许可声明〔MIT 自著〕＋`make_xlsx.py`）；索引输入指纹 `ci/manifest.json`（`b433ff21…`，回放服务启动即校验）；首份基线 `ci/baseline.json`（24 题全指标；golden 锚全量对照 chunks.jsonl 复核）。
 - **门禁**：tests/knowledge **751 passed／2 skipped／1 failed**——唯一红 `test_indexer::test_embed_missing_api_key`＝环境条件红（机器本地 gitignored slice 根 `rag_config.json` 供 key ⇒「缺 key」前提翻转；A/B：`DEER_FLOW_RAG_CONFIG_PATH` 指无 key 副本即绿；任务前已红——Task 5 已录、mtime 早于 Task 7、本 Task 改动不触嵌入键路径）；eval 套件 **184 全绿**（含新增 replay 19）；`test_ci_uv_version_pin.py` 5/5；ruff check/format 全净。GitHub 侧 workflow 实跑留待 fork/PR（fork 未建，Task 8 前置）。**〔勘误补注（2026-10-08）〕**：「ruff check/format 全净」仅对当次所跑定向面成立——整树口径下当刻已红＝`test_gateway_services.py`（T5 `29b43cec2` 追加块；`ruff format --check` 整树即告警），`make_samples.py` 系其后 T8-B `9bb4ea9cb` 入树新增 ⇒ 实况＝check 2 错／format 2 件（修复与全部取证见 T8 实测追记）。
-- 提交链：`b45eb9c02`（42 文件，+4993/−360）→ 回填 `2a3cdb6c9`。
+- 提交链：`b45eb9c02`（42 文件，+4993/−360）→ 回填 `f94bab1fc`。
 
 ## Task 8 — 真栈验收＋门禁＋文档收尾
 
@@ -196,12 +196,12 @@
 - **检索行为观察（非缺陷）**：全标记中文问句在对抗语料（16 文档共享 `ACCEPT8-<KIND>-####` 族＋big2 241 标记节）下低于两路各 20 候选截断；fresh-vs-stored 向量 cos=1.000000、参数与源 fork 一致（candidate_limit=20/top_k=5）⇒机制无误；短标记 `QABS-9417` 命中 fused rank 2→重排→引用。记入验收证据，不改码。
 - **门禁（零新增红）**：后端全量 **89F／2E／24780P／833S（42:02）** vs 基线 run-4 129F/14E——新集 3 条**零归属切片**（`test_env_file` 假红＝门禁壳 `PYTHONUTF8=1` 令父进程按 UTF-8 读子进程 GBK 破折号字节爆读线程；默认壳复跑 1 passed；另两条孤立重跑通过）；知识面唯一红 `test_embed_missing_api_key` 两侧同在（缺 key 环境对）；56 条基线红未复现（带内漂移）。前端全量 **304 文件／2895 用例全绿**（4m36s；＋本次 chunk-drawer 3 条）。
 - **文档（slice 树）**：README 新节「Local Knowledge Base (built-in)」（惰性启用/owner 作用域/15 后缀/混合检索与引用/重试与重建/无云 CI/首期边界）；backend AGENTS 新增「Local Knowledge Base (Knowledge Extension)」＋frontend AGENTS 新增「Local knowledge base UI」；扩展 README 补：双开关端到端停用、备份与恢复（内容/一致时间点与哈希核对/恢复核对三件/RFC §6.3 边界/重建排除已删除）、重建成本、部署位置与出域清单、分词缓存（tiktoken）预置与 `python-calamine`、host-bash 沙箱姿态（上游守卫）。
-- **随带缺陷修复**：chunk-drawer 单请求 300 > 服务端 `le=200` ⇒ 422 假空态——改为分页取窗（200/页）＋`loadFailed` 显式态＋3 用例（源分支同缺陷 `fc723c3e4`）。
+- **随带缺陷修复**：chunk-drawer 单请求 300 > 服务端 `le=200` ⇒ 422 假空态——改为分页取窗（200/页）＋`loadFailed` 显式态＋3 用例（源分支同缺陷 `f94bab1fc`）。
 - **验收材料**：15 后缀生成器入 slice 树 `backend/tests/fixtures/knowledge_acceptance/`（新格式直写＋旧二进制经 `convert_legacy.ps1`；README 记标记表）；非 operator 账号临时造删（`user2@acceptance.dev`，验收末已清理）；doc-tools 随带批次验收材料＝`acceptance-t6/docs/` 五件自著可分发语料（测试10／鹦鹉提示词／部署手册／旅行清单／长文样章）——见下补充相。
 - **A1–A12 载体点名**：A1＝W1/W2/W15（真栈全链）｜A2＝W1＋W4（负例）｜A3＝W2（caption 入片）＋移植用例（`test_worker` 降级/重解析清判/续跑保 caption、`test_caption_concurrency`、`test_vlm_target`）｜A4＝W6＋W12（admin 门）＋浏览器相｜A5＝W12（403/掩蔽/UI 门）＋宽度迁移用例（`test_dimension_migration` 等）｜A6＝W5＋W12＋W15＋T5/T6 复验｜A7＝W2/W5（引用真伪/不混库）＋`test_citation_numbering`＋上游预算用例｜A8＝W13/W4（同 id 重试）＋`test_worker`/`test_api`｜A9＝W6/W7/W15｜A10＝W3/W15｜A11＝W13/W14/W17＋部署说明｜A12＝Task 7（CI 全序列＋`ci/smoke` 单独报告）。
 - **PR 面**：分支 `slice/knowledge-local-vector-retrieval`（零改名，e325c90b2 起 11 笔）；新 fork `chenzhiya77/deer-flow`（push 落点＝fork remote `https://github.com/chenzhiya77/deer-flow.git`，`-c http.https://github.com.proxy=` 空值直连）；#5391 联网核实 OPEN（「RFC: 内置本地知识库（Harness RAG）」）；PR **#6479**（`Refs #5391`，base `main`）＝https://github.com/bytedance/deer-flow/pull/6479——**⚠️ 用户令「先不要 PR」⇒ 创建后即关闭（2026-10-07T19:35:34Z→19:38:28Z，未合并、无后续；可随时按指示重开）；复核（10-08 gh api）：fork 分支保留（`5cc0197b4`）、上游零分支推送、仅存标准镜像 `refs/pull/6479/head` @ `5cc0197b4`（关单页 11 笔／328 文件／+57,600−190 完整 diff 与 #5391 时间线卡片同为留痕；10-08 正文按令缩为占位 `Not yet approved — pending review.`，标题保留；旧版全文留档，可随时取回）。**
 - **上游 CI 三 job 复核追记（2026-10-08；修复对＝`2026-10-08-rag-slice-ci-fix`；对 L177「ruff 全净」与 L167「CI 完整跑通留证」的勘误与补证）**：按上游 `lint-check.yml` 三 job 对 `e325c90b2..5cc0197b4` 本机逐项重跑＋GitHub 侧取证，实况＝三类红＋一类工作流无效：① `lint-backend` ruff check 2 错（`make_samples.py` UP037／F401）＋format 2 件（`test_gateway_services.py` 系工作区行尾混排触发、clean 过滤哈希与 HEAD blob 同 ⇒ 提交面零改动）；② `agent-guidance` 3 条链越硬限 98304（middlewares 99159／sandbox 99505／subagents 98473；根因＝T8-E `backend/AGENTS.md` +1378B）；③ `lint-frontend` `pnpm format` 69 件未过；④ `.github/workflows/rag-eval-nocloud.yml` 在 GitHub 侧**从未有效**——job 级 `env` 用 `${{ runner.temp }}`（fork run `37675627281`＝0 jobs／failure）⇒「CI 完整跑通」实为本地全序列口径、平台侧首条 run 即红、T8 未登记。四类已全修（提交链行附录），四门复跑全绿：ruff 0 错／0 件；tests/knowledge **751 passed／2 skipped／1 failed**（唯一红＝已登记 `test_embed_missing_api_key` 环境条件红、两侧同在）；guidance **0 errors**（ref 模式；残留 13 warnings 全为软警＝AG001＋12 链，含原三链降级、含 `frontend/src` 88504；migrations 消）；`pnpm format` 零 diff＋`pnpm check` 零诊断＋`pnpm test` 304 文件／2895 用例全绿。工作流修复的最终自证＝推送后首跑（**待令**）。
-- 提交链：`619c24586`（修复）／`9bb4ea9cb`（材料）／`5cc0197b4`（文档）→ 回填 `596fa0677` → pin（本提交） → 修复链（10-08、未推）：`536368893`（后端 ruff）／`5cbd5fbdf`（前端 prettier 69 件）／`f36488af1`（AGENTS 链压缩＋新 guide）／`c9dd96a59`（无云工作流一行）→ 回填 `ad1ccc8dd`（本提交）。
+- 提交链：`619c24586`（修复）／`9bb4ea9cb`（材料）／`5cc0197b4`（文档）→ 回填 `f94bab1fc` → pin（本提交） → 修复链（10-08、未推）：`536368893`（后端 ruff）／`5cbd5fbdf`（前端 prettier 69 件）／`f36488af1`（AGENTS 链压缩＋新 guide）／`c9dd96a59`（无云工作流一行）→ 回填 `f048b3344`（本提交）。
 - **补充相（10-08 晚，doc-tools 随带批次）**：切片随带 4 笔（`b5e0a1ead` 结果字段＋篇内检索／`38d4c1fde` list/read 模块／`101b55b41` 门控集合＋文案＋AGENTS 行／`bb830cbdb` SOUL＋断言）＋四门全过（ruff **1970 files** 双净／guidance **0 errors**〔1 条 diff-scoped AG002：`middlewares` 链 97,988B、hard 98,304〕／prettier 全过／定向 **62 passed**；联跑 `uv lock --check`・`pnpm lint`・`typecheck`・`build` 全过）；验收相＝隔离实例（gateway `:8101` slice venv＋Qdrant `:6399`；`DEER_FLOW_AUTH_DISABLED=1`；实例 config `tools[]` 补注册两件）跑七轮全 `wait=200`：A1 list→read→枚举／B1 list 边界枚举／B2 四连 read（含分页）／C1 检索（结果含 `doc_id`/`chunk_index`）＋引用／C2 窗口「第 1/共 1 片」／C3 整篇／F 篇内检索（`doc_id` 过滤命中第五章）——记录 `acceptance-8/acceptance-evidence.md` **W18**（转写 `evidence-slice-t8.txt`）。设计对＝`../specs/2026-10-08-rag-doc-tools-design.md`＋同名 plan（Task 8 交接单）。
 
 ## 工作项并入表（25 条 → Task）
