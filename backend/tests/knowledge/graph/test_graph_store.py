@@ -227,3 +227,19 @@ async def test_rewrite_relation_endpoints_noop_without_hits(session_factory):
 
     relations = await store.list_relations("kb-1")
     assert [(r["source"], r["target"]) for r in relations] == [("A", "B")]
+
+
+@pytest.mark.asyncio
+async def test_get_entity_reads_by_computed_id(session_factory):
+    """主键直取（spec 2026-10-10 D3 甲）：id＝uuid5(kb_id, name) 一次 get 命中；
+    跨库同名天然 miss（uuid 的输入里含 kb_id）。"""
+    store = GraphStore(session_factory)
+    await store.upsert_entities("kb-1", [ExtractedEntity(name="DeerFlow", type="系统", description="智能体框架")], chunk_id="c-1")
+
+    row = await store.get_entity("kb-1", "DeerFlow")
+    assert row is not None
+    assert row["name"] == "DeerFlow"
+    assert row["source_chunk_ids"] == ["c-1"]
+
+    assert await store.get_entity("kb-1", "不存在") is None
+    assert await store.get_entity("kb-2", "DeerFlow") is None

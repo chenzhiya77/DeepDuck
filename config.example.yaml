@@ -717,6 +717,12 @@ tools:
     group: rag
     use: deerflow.tools.builtins.knowledge_documents_tool:read_knowledge_document
     opt_in: true
+  # Wiki-side enumeration (spec 2026-10-10): list the bound library's generated
+  # entries (titles + status) — the docs-side list tool's wiki twin.
+  - name: list_wiki_entries
+    group: rag
+    use: deerflow.tools.builtins.wiki_entries_tool:list_wiki_entries
+    opt_in: true
 
   # Web search tool (uses SearXNG, self-hosted, no API key required)
   # SearXNG is a free internet metasearch engine which aggregates results from

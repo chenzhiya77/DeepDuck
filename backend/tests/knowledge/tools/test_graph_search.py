@@ -749,3 +749,98 @@ async def test_graph_search_reports_cosine_ruler_after_rerank_degradation(trace_
 
     assert result["evidence"]
     assert result["score_source"] == "cosine"
+
+
+class _ExplodingLLM:
+    """Fails the test if the entity direct-fetch path ever extracts entities."""
+
+    async def ainvoke(self, messages, **_kwargs):
+        raise AssertionError("the entity direct-fetch path must not call the query-entity extractor")
+
+
+class _ExplodingEmbedder:
+    """Fails the test if this path embeds when it must not."""
+
+    batch_size = 1
+
+    async def embed(self, texts, *, text_type: str = "document"):
+        raise AssertionError("this path must not embed")
+
+
+@requires_qdrant
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_entity_direct_fetch_skips_extraction_and_matching(tools_env):
+    """实体名直参（spec 2026-10-10 D1 甲）：按键命中图节点、跳抽取与向量匹配；
+    下游扩张/打分/证据复用同链（extractor 若被调用即炸）。"""
+    result = await _graph_search_impl(
+        None,
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        entity="Gateway",
+        store=tools_env["store"],
+        graph_store=tools_env["graph_store"],
+        vector_store=tools_env["vector_store"],
+        embedder=tools_env["embedder"],
+        llm=_ExplodingLLM(),
+        hops=2,
+        neighbor_min_score=0.0,
+    )
+
+    entity_names = {e["name"] for e in result["entities"]}
+    assert "Gateway" in entity_names
+    assert {"DeerFlow", "MinerU"} <= entity_names  # 1-hop both directions
+    assert result["evidence"]
+    assert result["trace"]["seed_entities"] == ["Gateway"]
+
+
+@pytest.mark.asyncio
+async def test_entity_direct_fetch_miss_is_honest(session_factory) -> None:
+    from deerflow.knowledge.graph.store import GraphStore
+    from deerflow.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-e", owner_id=OWNER_ID, name="直取库")
+
+    result = await _graph_search_impl(
+        None,
+        _runtime(kb_id="kb-e", user_id=OWNER_ID),
+        entity="不存在",
+        store=store,
+        graph_store=GraphStore(session_factory),
+        embedder=_ExplodingEmbedder(),
+    )
+
+    assert result["entities"] == []
+    assert "不存在" in result["message"]
+    assert "没有" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_entity_direct_fetch_requires_query_or_entity(session_factory) -> None:
+    from deerflow.knowledge.graph.store import GraphStore
+    from deerflow.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-e", owner_id=OWNER_ID, name="直取库")
+
+    result = await _graph_search_impl(None, _runtime(kb_id="kb-e", user_id=OWNER_ID), store=store, graph_store=GraphStore(session_factory))
+
+    assert result["entities"] == []
+    assert "query" in result["message"] and "entity" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_entity_direct_fetch_respects_the_scope_gates(session_factory) -> None:
+    from deerflow.knowledge.graph.store import GraphStore
+    from deerflow.knowledge.store import KnowledgeStore
+
+    store = KnowledgeStore(session_factory)
+    await store.create_kb(kb_id="kb-g", owner_id=OWNER_ID, name="私有")
+
+    unbound = await _graph_search_impl(None, _runtime(user_id=OWNER_ID), entity="任意", store=store, graph_store=GraphStore(session_factory))
+    assert unbound["entities"] == []
+    assert unbound["message"] == NO_KB_GUIDANCE
+
+    denied = await _graph_search_impl(None, _runtime(kb_id="kb-g", user_id="user-2"), entity="任意", store=store, graph_store=GraphStore(session_factory))
+    assert denied["entities"] == []
+    assert denied["message"] == ACCESS_DENIED_MESSAGE

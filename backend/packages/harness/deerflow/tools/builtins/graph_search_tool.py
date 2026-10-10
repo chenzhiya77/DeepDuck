@@ -173,9 +173,10 @@ async def _score_candidates(
 
 
 async def _graph_search_impl(
-    query: str,
+    query: str | None,
     runtime: Any,
     *,
+    entity: str | None = None,
     store: KnowledgeStore | None = None,
     graph_store: GraphStore | None = None,
     vector_store: KnowledgeVectorStore | None = None,
@@ -202,48 +203,66 @@ async def _graph_search_impl(
     store = store or get_knowledge_store()
     if not await can_access(store, user_id, kb_id):
         return _empty(ACCESS_DENIED_MESSAGE)
+    if not entity and not query:
+        return _empty("请提供 query（按问题检索图谱）或 entity（按实体名直取图谱邻域）。")
+
     graph_store = graph_store or GraphStore(store._sf)
     vector_store = vector_store or get_vector_store()
     embedder = embedder or build_embedder()
-    llm = llm or get_extract_llm()
 
-    # 1. Query-side entity/keyword extraction (small model).
-    query_names = await _extract_query_entities(query, llm)
-    if not query_names:
-        # The extractor is flaky on terse entity-only queries ("PDF") and may
-        # return {"entities": []}. Fall back to the query itself as the
-        # landing candidate — the ENTITY_MATCH_MIN_SCORE floor still keeps
-        # chit-chat honest (an unrelated query matches no entity).
-        stripped = query.strip()
-        if stripped:
-            query_names = [stripped]
-    if not query_names:
-        return _empty("未能从问题中识别出可检索的实体；该问题可能更适合向量检索（hybrid_search）。")
+    if entity:
+        # Exact-name direct entry (spec 2026-10-10 D1): a primary-key read lands
+        # the node and skips extraction AND the vector match; one embedding of
+        # the name still serves the neighbour semantic gate and chunk scoring.
+        row = await graph_store.get_entity(kb_id, entity)
+        if row is None:
+            return _empty(f"知识图谱中没有名为「{entity}」的实体（可能尚未抽取，或名称与条目不一致）。")
+        query_names = [entity]
+        matched_names: list[str] = [entity]
+        entity_scores: dict[str, float] = {entity: 1.0}
+        (name_embedding,) = await embedder.embed([entity], text_type="query")
+        query_dense = name_embedding.dense
+    else:
+        llm = llm or get_extract_llm()
+        # 1. Query-side entity/keyword extraction (small model).
+        query_names = await _extract_query_entities(query, llm)
+        if not query_names:
+            # The extractor is flaky on terse entity-only queries ("PDF") and may
+            # return {"entities": []}. Fall back to the query itself as the
+            # landing candidate — the ENTITY_MATCH_MIN_SCORE floor still keeps
+            # chit-chat honest (an unrelated query matches no entity).
+            stripped = query.strip()
+            if stripped:
+                query_names = [stripped]
+        if not query_names:
+            return _empty("未能从问题中识别出可检索的实体；该问题可能更适合向量检索（hybrid_search）。")
 
-    # 2. One query embedding serves all semantic scoring.
-    (query_embedding,) = await embedder.embed([query], text_type="query")
-    query_dense = query_embedding.dense
+        # 2. One query embedding serves all semantic scoring.
+        (query_embedding,) = await embedder.embed([query], text_type="query")
+        query_dense = query_embedding.dense
 
-    # 3. Land on graph entities via kb_entities vector match; the landing
-    # score doubles as the entity score (max when several query entities hit
-    # the same graph entity).
-    matched_names: list[str] = []
-    entity_scores: dict[str, float] = {}
-    for name in query_names:
-        if name == query.strip():
-            # Query-fallback landing: the candidate IS the query — reuse the
-            # embedding from step 2 instead of paying a duplicate remote call.
-            name_dense = query_dense
-        else:
-            (name_vector,) = await embedder.embed([name], text_type="query")
-            name_dense = name_vector.dense
-        for point in await vector_store.query_entities(dense=name_dense, kb_id=kb_id, top_k=per_entity_match, score_threshold=ENTITY_MATCH_MIN_SCORE):
-            entity_name = str(point.payload["name"])
-            matched_names.append(entity_name)
-            entity_scores[entity_name] = max(entity_scores.get(entity_name, 0.0), float(point.score))
-    matched_names = list(dict.fromkeys(matched_names))
-    if not matched_names:
-        return _empty(f"知识图谱中未找到与「{'、'.join(query_names)}」相关的实体。")
+        # 3. Land on graph entities via kb_entities vector match; the landing
+        # score doubles as the entity score (max when several query entities hit
+        # the same graph entity).
+        matched_names = []
+        entity_scores = {}
+        for name in query_names:
+            if name == query.strip():
+                # Query-fallback landing: the candidate IS the query — reuse the
+                # embedding from step 2 instead of paying a duplicate remote call.
+                name_dense = query_dense
+            else:
+                (name_vector,) = await embedder.embed([name], text_type="query")
+                name_dense = name_vector.dense
+            for point in await vector_store.query_entities(dense=name_dense, kb_id=kb_id, top_k=per_entity_match, score_threshold=ENTITY_MATCH_MIN_SCORE):
+                entity_name = str(point.payload["name"])
+                matched_names.append(entity_name)
+                entity_scores[entity_name] = max(entity_scores.get(entity_name, 0.0), float(point.score))
+        matched_names = list(dict.fromkeys(matched_names))
+        if not matched_names:
+            return _empty(f"知识图谱中未找到与「{'、'.join(query_names)}」相关的实体。")
+
+    scoring_text = entity or query
 
     # 4. 1–2 hop expansion over the in-memory graph (both directions) with
     # D2 pruning: semantic gate per neighbour, node budget, hub guard.
@@ -281,7 +300,7 @@ async def _graph_search_impl(
     # dedupe → per-source caps → hop-0 guarantee → pure-score competition.
     candidates = collect_candidates(graph, hop_by_node)
     scores, score_source = await _score_candidates(
-        query,
+        scoring_text,
         query_dense,
         candidates,
         store=store,
@@ -392,7 +411,8 @@ def _build_trace(
 @tool(parse_docstring=True)
 async def graph_search(
     runtime: Runtime,
-    query: Annotated[str, "The relationship/structure question, phrased in the user's language."],
+    query: Annotated[str | None, "The relationship/structure question, phrased in the user's language. Provide this or ``entity``."] = None,
+    entity: Annotated[str | None, "Exact entity name to enter the graph directly — skips query understanding and vector matching."] = None,
     hops: Annotated[int, "Graph expansion depth from the matched entities (1 or 2, default 2)."] = 2,
 ) -> dict:
     """Search the knowledge graph of the bound knowledge base (entity relations + chunk evidence).
@@ -400,6 +420,7 @@ async def graph_search(
     Use this tool when:
     - The question is about relationships, dependencies, or multi-hop structure between concepts (e.g. "A 和 B 有什么关系")
     - You need to navigate from known entities to their neighborhood before fetching evidence
+    - You already know the exact entity name: pass ``entity`` to enter the graph directly (deterministic, no query understanding)
 
     Skip this tool when:
     - The question needs factual detail on a single topic — start with hybrid_search
@@ -410,6 +431,7 @@ async def graph_search(
     Args:
         runtime: Tool runtime carrying the bound ``kb_id`` in its context.
         query: The relationship/structure question, phrased in the user's language.
+        entity: Exact entity name to enter the graph directly; when provided, ``query`` is ignored.
         hops: Graph expansion depth from the matched entities (1 or 2, default 2).
     """
     from deerflow.config.app_config import get_app_config
@@ -418,6 +440,7 @@ async def graph_search(
     return await _graph_search_impl(
         query,
         runtime,
+        entity=entity,
         hops=hops,
         reranker=build_reranker() if rag.graph_rerank else None,
         per_entity_cap=rag.graph_per_entity_cap,

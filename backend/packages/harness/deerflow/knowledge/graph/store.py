@@ -110,6 +110,13 @@ class GraphStore:
             result = await session.execute(stmt)
             return [row.to_dict() for row in result.scalars().all()]
 
+    async def get_entity(self, kb_id: str, name: str) -> dict[str, Any] | None:
+        """Exact-name primary-key read (spec 2026-10-10 D3): the row id is a
+        pure function of ``(kb_id, name)``, so one get replaces the vector match."""
+        async with self._sf() as session:
+            row = await session.get(GraphEntityRow, _entity_id(kb_id, name))
+            return None if row is None else row.to_dict()
+
     async def list_relations(self, kb_id: str) -> list[dict[str, Any]]:
         stmt = select(GraphRelationRow).where(GraphRelationRow.kb_id == kb_id).order_by(GraphRelationRow.source, GraphRelationRow.target)
         async with self._sf() as session:

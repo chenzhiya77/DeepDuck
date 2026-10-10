@@ -8,6 +8,7 @@ from .setup_agent_tool import setup_agent
 from .task_tool import task_tool
 from .update_agent_tool import update_agent
 from .view_image_tool import view_image_tool
+from .wiki_entries_tool import list_wiki_entries
 from .wiki_search_tool import wiki_search
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "hybrid_search",
     "wiki_search",
     "graph_search",
+    "list_wiki_entries",
 ]

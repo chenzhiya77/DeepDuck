@@ -76,6 +76,7 @@ def test_rag_group_tools_are_exactly_the_three_retrieval_tools(app_config):
     names = {tool.name for tool in tools}
 
     assert {"hybrid_search", "wiki_search", "graph_search"} <= names
+    assert "list_wiki_entries" in names
     assert not {"web_search", "bash", "ls", "read_file", "write_file"} & names
 
 
@@ -84,7 +85,7 @@ def test_default_tool_resolution_excludes_opt_in_rag_tools(app_config):
     tools = get_available_tools(groups=None, include_mcp=False, app_config=app_config)
     names = {tool.name for tool in tools}
 
-    assert not {"hybrid_search", "wiki_search", "graph_search"} & names
+    assert not {"hybrid_search", "wiki_search", "graph_search", "list_wiki_entries"} & names
 
 
 def test_user_shadow_config_overrides_builtin(tmp_path, monkeypatch):
