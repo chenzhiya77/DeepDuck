@@ -55,6 +55,7 @@ class _FieldStore:
                 "text": "第七片正文",
                 "heading_path": ["第7章"],
                 "page": 7,
+                "entities": ["JVM", "垃圾回收", "JVM", "G1"],
             }
         ]
 
@@ -107,6 +108,60 @@ async def test_items_carry_doc_id_and_chunk_index_for_follow_up_reads() -> None:
     assert item["doc_name"] == "手册.md"
     assert item["page"] == 7
     assert item["heading_path"] == ["第7章"]
+
+
+@pytest.mark.asyncio
+async def test_items_carry_mentioned_entities_for_graph_follow_ups() -> None:
+    """切片→实体（spec 2026-10-10 §2.1）：每条结果带本片实体名，去重保序。"""
+    result = await _hybrid_search_impl(
+        "任意问题",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        store=_FieldStore(),
+        vector_store=_FieldVectorStore(),
+        embedder=_FieldEmbedder(),
+        reranker=_StubReranker(),
+    )
+
+    (item,) = result["results"]
+    assert item["entities"] == ["JVM", "垃圾回收", "G1"]
+
+
+@pytest.mark.asyncio
+async def test_entities_are_capped_at_ten() -> None:
+    """上限口径（spec 2026-10-10 D3）：每片最多暴露 10 个实体名。"""
+    store = _FieldStore()
+    store.rows[0]["entities"] = [f"实体{i:02d}" for i in range(12)]
+
+    result = await _hybrid_search_impl(
+        "任意问题",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        store=store,
+        vector_store=_FieldVectorStore(),
+        embedder=_FieldEmbedder(),
+        reranker=_StubReranker(),
+    )
+
+    (item,) = result["results"]
+    assert item["entities"] == [f"实体{i:02d}" for i in range(10)]
+
+
+@pytest.mark.asyncio
+async def test_entities_default_to_empty_list_when_unbackfilled() -> None:
+    """空态（spec 2026-10-10 D5）：图谱腿未回填时照常返回空数组。"""
+    store = _FieldStore()
+    store.rows[0].pop("entities")
+
+    result = await _hybrid_search_impl(
+        "任意问题",
+        _runtime(kb_id=KB_ID, user_id=OWNER_ID),
+        store=store,
+        vector_store=_FieldVectorStore(),
+        embedder=_FieldEmbedder(),
+        reranker=_StubReranker(),
+    )
+
+    (item,) = result["results"]
+    assert item["entities"] == []
 
 
 @pytest.mark.asyncio

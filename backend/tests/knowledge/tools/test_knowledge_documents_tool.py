@@ -94,7 +94,14 @@ async def test_non_owner_is_denied(session_factory) -> None:
     assert result == {"documents": [], "message": ACCESS_DENIED_MESSAGE}
 
 
-async def _seed_chunks(store: KnowledgeStore, doc_id: str, indexes_and_texts, *, kb_id: str = "kb-l") -> None:
+async def _seed_chunks(
+    store: KnowledgeStore,
+    doc_id: str,
+    indexes_and_texts,
+    *,
+    kb_id: str = "kb-l",
+    entities: dict[int, list[str]] | None = None,
+) -> None:
     await store.insert_chunks(
         [
             {
@@ -106,6 +113,7 @@ async def _seed_chunks(store: KnowledgeStore, doc_id: str, indexes_and_texts, *,
                 "heading_path": ["架构"],
                 "page": index + 1,
                 "token_count": 10,
+                "entities": (entities or {}).get(index, []),
             }
             for index, text in indexes_and_texts
         ]
@@ -127,8 +135,8 @@ async def test_read_pages_through_a_document(session_factory) -> None:
     assert first["has_more"] is True
     assert first["message"] == "共 5 片；已返回第 1-2 片。"
     assert first["items"] == [
-        {"chunk_id": "d-1#0000", "chunk_index": 0, "heading_path": ["架构"], "page": 1, "text": "第0片正文"},
-        {"chunk_id": "d-1#0001", "chunk_index": 1, "heading_path": ["架构"], "page": 2, "text": "第1片正文"},
+        {"chunk_id": "d-1#0000", "chunk_index": 0, "heading_path": ["架构"], "page": 1, "text": "第0片正文", "entities": []},
+        {"chunk_id": "d-1#0001", "chunk_index": 1, "heading_path": ["架构"], "page": 2, "text": "第1片正文", "entities": []},
     ]
 
     last = await _read_document_impl(_runtime(kb_id="kb-l", user_id="user-1"), doc_id="d-1", offset=4, limit=2, store=store)
@@ -252,6 +260,27 @@ async def test_read_truncates_oversized_chunks(session_factory) -> None:
     assert len(result["items"][0]["text"]) == 2000
     assert "truncated" not in result["items"][1]
     assert result["items"][1]["text"] == "短正文"
+
+
+@pytest.mark.asyncio
+async def test_read_items_carry_mentioned_entities(session_factory) -> None:
+    """切片→实体（spec 2026-10-10 §2.1）：read 的 items 带本片实体名，去重保序、cap 10。"""
+    store = KnowledgeStore(session_factory)
+    await _seed_kb(store)
+    await _add_document(store, "d-1", "架构.md")
+    await _seed_chunks(
+        store,
+        "d-1",
+        [(0, "第0片正文"), (1, "第1片正文")],
+        entities={0: ["JVM", "垃圾回收", "JVM"], 1: [f"实体{i:02d}" for i in range(12)]},
+    )
+    await store.update_document_status("d-1", "ready", chunk_count=2)
+
+    result = await _read_document_impl(_runtime(kb_id="kb-l", user_id="user-1"), doc_id="d-1", limit=5, store=store)
+
+    by_index = {item["chunk_index"]: item["entities"] for item in result["items"]}
+    assert by_index[0] == ["JVM", "垃圾回收"]
+    assert by_index[1] == [f"实体{i:02d}" for i in range(10)]
 
 
 @pytest.mark.asyncio

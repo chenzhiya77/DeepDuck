@@ -16,6 +16,7 @@ from typing import Annotated, Any
 from langchain.tools import tool
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
+from deerflow.knowledge.chunk_entities import surface_entities
 from deerflow.knowledge.citation_counter import claim_citation_range
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.reranker import RerankerError
@@ -88,6 +89,7 @@ async def _hybrid_search_impl(
             "doc_name": payload.get("doc_name") or "",
             "page": payload.get("page"),
             "heading_path": payload.get("heading_path") or [],
+            "entities": surface_entities(row),
         }
         if score is not None:
             item["score"] = score
@@ -122,7 +124,11 @@ async def hybrid_search(
     - The question is about relationships/multi-hop structure between concepts — use graph_search
     - The question asks for a conceptual overview of an important entity — use wiki_search
 
-    Each result carries chunk text plus doc_id/chunk_index (follow-up reads can address the same document/chunk) and doc_name/page/heading_path for citation. Missing knowledge-base binding returns guidance instead of searching.
+    Each result carries chunk text plus doc_id/chunk_index (follow-up reads can
+    address the same document/chunk), doc_name/page/heading_path for citation,
+    and the chunk's mentioned entities (normalized names, up to 10) — usable as
+    graph_search entry points to expand along the graph. Missing knowledge-base
+    binding returns guidance instead of searching.
 
     Args:
         runtime: Tool runtime carrying the bound ``kb_id`` in its context.

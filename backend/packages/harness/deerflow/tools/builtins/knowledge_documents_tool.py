@@ -17,6 +17,7 @@ from typing import Annotated, Any
 from langchain.tools import tool
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
+from deerflow.knowledge.chunk_entities import surface_entities
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.tools.types import Runtime
 
@@ -83,6 +84,7 @@ def _shape_items(rows: list[dict]) -> list[dict]:
             "heading_path": row["heading_path"],
             "page": row["page"],
             "text": text,
+            "entities": surface_entities(row),
         }
         if len(text) > _MAX_ITEM_CHARS:
             item["text"] = text[:_MAX_ITEM_CHARS]
@@ -204,7 +206,9 @@ async def read_knowledge_document(
     Two addressing modes: chunk_id reads the window centered on that chunk
     (edges clamped; the message states 第 K/共 N 片); doc_id + offset/limit
     pages through the document. Oversized chunk text is truncated at 2000
-    characters and flagged truncated=true. Missing binding, a foreign owner,
+    characters and flagged truncated=true; each item also carries the chunk's
+    mentioned entities (normalized names, up to 10) — usable as graph_search
+    entry points. Missing binding, a foreign owner,
     a document that is not ready yet, or a chunk outside the bound library
     all return an explicit refusal instead of an empty result.
 
