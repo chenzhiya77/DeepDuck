@@ -7,12 +7,14 @@ import {
   CheckIcon,
   ChevronDownIcon,
   HistoryIcon,
+  MicIcon,
+  PaperclipIcon,
   PlusIcon,
   SquareIcon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 
 import {
   ModelSelector,
@@ -23,6 +25,7 @@ import {
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector";
+import { PromptInputAttachment, PromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -53,7 +56,9 @@ import { chatPickerOptions } from "@/core/models/visibility";
 import { useRegisterActivity } from "@/core/threads/activity-context";
 import { useDeleteThread, useInfiniteThreads, useThreadStream } from "@/core/threads/hooks";
 import { pathOfKnowledgeThread, pathOfThread } from "@/core/threads/utils";
+import { formatUploadSize, splitUnsupportedUploadFiles, useUploadLimits, validateUploadLimits } from "@/core/uploads";
 import { uuid } from "@/core/utils/uuid";
+import { useVoiceInput } from "@/core/voice-input/use-voice-input";
 import { cn } from "@/lib/utils";
 
 import { ChunkTickRail } from "./chunk-tick-rail";
@@ -113,6 +118,20 @@ export function KnowledgeChatPanel({
     const expandDisabled = isNewThread || !agentsApiEnabled;
   const [deepResearch, setDeepResearch] = useState(false);
   const [draft, setDraft] = useState("");
+  const { attachments } = usePromptInputController();
+  const { data: uploadLimits } = useUploadLimits(threadId);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const {
+    supported: voiceInputSupported,
+    listening: voiceListening,
+    toggle: toggleVoiceInput,
+  } = useVoiceInput({
+    setInput: (value) => setDraft(value),
+    getInput: () => draft,
+    disabled: !kb,
+    onStarted: () => composerTextareaRef.current?.focus(),
+  });
 
   // 切库即新对话（还原 `2711a35a2` 的重置，`52b0dd76d` 重构时误删）：
   // 线程只绑定一个库。声明位序必须在下方 requestedThreadId 深链 effect 之前。
@@ -322,15 +341,92 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
     [deleteThread, handleNewChat, isNewThread, threadId],
   );
 
-  const canSend = Boolean(kbId) && draft.trim().length > 0 && !thread.isLoading;
-  const handleSubmit = useCallback(() => {
-    const text = draft.trim();
-    if (!kbId || !text || thread.isLoading) {
+  const addPickedFiles = useCallback(
+    (picked: File[] | FileList) => {
+      const { accepted, message } = splitUnsupportedUploadFiles(picked);
+      if (message) {
+        toast.error(message);
+      }
+      if (accepted.length > 0) {
+        attachments.add(accepted);
+      }
+    },
+    [attachments],
+  );
+
+  const handleComposerPaste = useCallback(
+    (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = event.clipboardData?.items;
+      if (!items) {
+        return;
+      }
+      const files = Array.from(items)
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+      if (files.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      addPickedFiles(files);
+    },
+    [addPickedFiles],
+  );
+
+  // 附件超限即摘除并如实提示（与主对话 input-box 同款；limits 取不到时跳过，
+  // 由上传端兜底）。
+  useEffect(() => {
+    if (!uploadLimits || attachments.files.length === 0) {
       return;
     }
-    void sendMessage(threadId, { text, files: [] });
+    const entries = attachments.files.flatMap((attachment) =>
+      attachment.file instanceof File
+        ? [{ id: attachment.id, file: attachment.file }]
+        : [],
+    );
+    if (entries.length === 0) {
+      return;
+    }
+    const validation = validateUploadLimits(
+      [],
+      entries.map((entry) => entry.file),
+      uploadLimits,
+    );
+    if (validation.rejected.length === 0) {
+      return;
+    }
+    const rejected = new Set(validation.rejected);
+    for (const entry of entries) {
+      if (rejected.has(entry.file)) {
+        attachments.remove(entry.id);
+      }
+    }
+    for (const violation of validation.violations) {
+      if (violation.code === "max_file_size") {
+        toast.error(t.uploads.filesTooLarge(violation.files.map((file) => file.name).join(", "), formatUploadSize(violation.limit)));
+      } else if (violation.code === "max_files") {
+        toast.error(t.uploads.tooManyFiles(violation.files.length, violation.limit));
+      } else {
+        toast.error(t.uploads.totalSizeTooLarge(violation.files.length, formatUploadSize(violation.limit)));
+      }
+    }
+  }, [attachments, uploadLimits, t.uploads]);
+
+  const canSend =
+    Boolean(kbId) &&
+    (draft.trim().length > 0 || attachments.files.length > 0) &&
+    !thread.isLoading;
+  const handleSubmit = useCallback(() => {
+    const text = draft.trim();
+    if (!kbId || (!text && attachments.files.length === 0) || thread.isLoading) {
+      return;
+    }
+    void sendMessage(threadId, { text, files: attachments.files }, undefined, {
+      // 附件只在发送真正过了 in-flight 门后清（被挡下时保留，可重发）。
+      onSent: () => attachments.clear(),
+    });
     setDraft("");
-  }, [draft, kbId, sendMessage, thread.isLoading, threadId]);
+  }, [attachments, draft, kbId, sendMessage, thread.isLoading, threadId]);
 
   const hasOpenHumanInputCard = useMemo(
     () =>
@@ -681,12 +777,31 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
           holds the textarea, the deep-retrieval toggle, and the send button. */}
       <div className="shrink-0 border-t p-3">
         <div className="focus-within:border-ring focus-within:ring-ring/50 rounded-xl border bg-white/80 shadow-xs transition-colors focus-within:ring-[3px] dark:bg-background/80">
+          <input
+            className="hidden"
+            data-testid="panel-attachment-input"
+            multiple
+            ref={attachInputRef}
+            type="file"
+            onChange={(event) => {
+              const files = event.target.files;
+              if (files && files.length > 0) {
+                addPickedFiles(files);
+              }
+              event.target.value = "";
+            }}
+          />
+          <PromptInputAttachments className="px-2 pt-2 pb-0">
+            {(attachment) => <PromptInputAttachment data={attachment} />}
+          </PromptInputAttachments>
           <Textarea
             className="max-h-32 min-h-14 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
             disabled={!kb}
             placeholder={tc.inputPlaceholder}
+            ref={composerTextareaRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onPaste={handleComposerPaste}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -700,6 +815,54 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
             <div className="flex min-w-0 items-center gap-2">
+              <Tooltip content={t.inputBox.addAttachments}>
+                <Button
+                  aria-label={t.inputBox.addAttachments}
+                  className="rounded-full"
+                  data-testid="panel-add-attachments-button"
+                  disabled={!kb}
+                  size="icon-sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => attachInputRef.current?.click()}
+                >
+                  <PaperclipIcon className="size-4" />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                content={
+                  voiceInputSupported
+                    ? voiceListening
+                      ? t.inputBox.voiceInputListening
+                      : t.inputBox.voiceInputStart
+                    : t.inputBox.voiceInputUnsupported
+                }
+              >
+                <Button
+                  aria-label={
+                    voiceListening
+                      ? t.inputBox.voiceInputStopLabel
+                      : t.inputBox.voiceInputStartLabel
+                  }
+                  aria-pressed={voiceListening}
+                  className={cn(
+                    "rounded-full",
+                    voiceListening && "text-primary bg-primary/10 hover:bg-primary/15",
+                  )}
+                  data-testid="panel-voice-input-button"
+                  disabled={!kb || !voiceInputSupported}
+                  size="icon-sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={toggleVoiceInput}
+                >
+                  {voiceListening ? (
+                    <SquareIcon className="size-4 fill-current" />
+                  ) : (
+                    <MicIcon className="size-4" />
+                  )}
+                </Button>
+              </Tooltip>
               <Tooltip content={tc.deepResearchHint}>
                 <label className="text-muted-foreground flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
                   <Switch

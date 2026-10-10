@@ -5,6 +5,7 @@
  * deep-retrieval toggle, citation footers, and an expand-to-full-page entry.
  */
 import { afterEach, beforeEach, describe, expect, it, rs } from "@rstest/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 
@@ -63,6 +64,7 @@ rs.mock("@/components/workspace/messages", () => ({
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM: 120,
 }));
 
+import { PromptInputProvider } from "@/components/ai-elements/prompt-input";
 import { KnowledgeChatPanel } from "@/components/workspace/knowledge/chat-panel";
 import { KB_TOASTER_ID } from "@/components/workspace/knowledge/kb-toast";
 import { I18nContext } from "@/core/i18n/context";
@@ -134,15 +136,29 @@ function humanTurns(count: number) {
   ]).flat();
 }
 
+let queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+/**
+ * 面板的全部宿主包装（与 app/workspace/knowledge/layout.tsx 的生产树同形）：
+ * i18n + react-query + 附件/输入控制器。**任何直接 render/rerender 面板的地方
+ * 都必须走这里**——包装深度不一致会让 React 重挂面板、复位去重/事件 ref
+ * （2026-10-10 实测：内联旧一层包装导致轨迹上报重复与丢失）。
+ */
+function wrapPanel(node: React.ReactNode) {
+  return (
+    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+      <QueryClientProvider client={queryClient}>
+        <PromptInputProvider>{node}</PromptInputProvider>
+      </QueryClientProvider>
+    </I18nContext.Provider>
+  );
+}
+
 function renderPanel(
   kb: KnowledgeBase | null = KB,
   props?: Partial<Parameters<typeof KnowledgeChatPanel>[0]>,
 ) {
-  return render(
-    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <KnowledgeChatPanel kb={kb} {...props} />
-    </I18nContext.Provider>,
-  );
+  return render(wrapPanel(<KnowledgeChatPanel kb={kb} {...props} />));
 }
 
 function rerenderPanel(
@@ -150,14 +166,15 @@ function rerenderPanel(
   kb: KnowledgeBase | null,
   props?: Partial<Parameters<typeof KnowledgeChatPanel>[0]>,
 ) {
-  view.rerender(
-    <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <KnowledgeChatPanel kb={kb} {...props} />
-    </I18nContext.Provider>,
-  );
+  view.rerender(wrapPanel(<KnowledgeChatPanel kb={kb} {...props} />));
 }
 
 beforeEach(() => {
+  // happy-dom 自带 createObjectURL 但严格 `instanceof Blob` 拒收其 File；
+  // 附件 add() 要它——本文件无条件覆写为桩（真实浏览器无此问题）。
+  (URL as unknown as Record<string, unknown>).createObjectURL = () => "blob:mock";
+  (URL as unknown as Record<string, unknown>).revokeObjectURL = () => undefined;
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   capturedMessageListProps = null;
   // The real sendMessage fires options.onSent once the in-flight guard passes;
   // the human-input handler reports success through that callback.
@@ -187,6 +204,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (window as unknown as Record<string, unknown>).SpeechRecognition;
   cleanup();
   rs.clearAllMocks();
 });
@@ -229,6 +247,105 @@ describe("KnowledgeChatPanel", () => {
     fireEvent.click(button);
     expect(mockStop).toHaveBeenCalledTimes(1);
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends attached files with the message and clears the row once the send proceeds (多模态①)", async () => {
+    renderPanel();
+    const file = new File(["png"], "示意图.png", { type: "image/png" });
+    fireEvent.change(screen.getByTestId("panel-attachment-input"), {
+      target: { files: [file] },
+    });
+    expect(await screen.findByText("示意图.png")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("向当前知识库提问…"), {
+      target: { value: "这张图讲了什么？" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+    const [sentThreadId, sentMessage] = mockSendMessage.mock.calls[0] as [
+      string,
+      { text: string; files?: Array<{ type: string; filename?: string }> },
+    ];
+    expect(sentThreadId).toBeTruthy();
+    expect(sentMessage.text).toBe("这张图讲了什么？");
+    expect(sentMessage.files).toHaveLength(1);
+    expect(sentMessage.files![0]).toMatchObject({ type: "file", filename: "示意图.png" });
+    // The row clears only after the in-flight guard passes (mock fires onSent).
+    await waitFor(() => expect(screen.queryByText("示意图.png")).toBeNull());
+  });
+
+  it("allows sending an attachment with an empty draft (多模态①)", async () => {
+    renderPanel();
+    const file = new File(["png"], "图.png", { type: "image/png" });
+    fireEvent.change(screen.getByTestId("panel-attachment-input"), {
+      target: { files: [file] },
+    });
+    expect(await screen.findByText("图.png")).toBeTruthy();
+
+    const send = screen.getByRole("button", { name: "发送" });
+    expect(send).toHaveProperty("disabled", false);
+    fireEvent.click(send);
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+    const [, sentMessage] = mockSendMessage.mock.calls[0] as [string, { text: string }];
+    expect(sentMessage.text).toBe("");
+  });
+
+  it("disables the mic button when speech recognition is unsupported (多模态②)", () => {
+    renderPanel();
+    const mic = screen.getByTestId("panel-voice-input-button");
+    expect(mic).toHaveProperty("disabled", true);
+  });
+
+  it("toggles dictation and streams the transcript into the draft (多模态②)", async () => {
+    class FakeRecognition {
+      static last: FakeRecognition | null = null;
+      onresult: ((event: { results: unknown }) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 0;
+      constructor() {
+        FakeRecognition.last = this;
+      }
+      start() {
+        // no-op
+      }
+      stop() {
+        // The real recognizer ends asynchronously; the state machine settles
+        // listening=false through onend.
+        this.onend?.();
+      }
+      abort() {
+        // no-op
+      }
+    }
+    (window as unknown as Record<string, unknown>).SpeechRecognition = FakeRecognition;
+    renderPanel();
+
+    const mic = await screen.findByTestId("panel-voice-input-button");
+    expect(mic).toHaveProperty("disabled", false);
+    fireEvent.click(mic);
+    await waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("true"));
+
+    act(() => {
+      FakeRecognition.last?.onresult?.({
+        results: {
+          length: 1,
+          0: { isFinal: true, length: 1, 0: { transcript: "证件里包含什么" } },
+        },
+      });
+    });
+    expect(screen.getByPlaceholderText("向当前知识库提问…")).toHaveProperty(
+      "value",
+      "证件里包含什么",
+    );
+
+    fireEvent.click(mic);
+    await waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("false"));
   });
 
   it("tells the user to wait when Enter is pressed while streaming (⑬)", () => {
@@ -660,11 +777,7 @@ describe("KnowledgeChatPanel 检索联动上报", () => {
     await waitFor(() => expect(onRetrievalOverlay).toHaveBeenCalledTimes(1));
 
     // 同一份 messages 重渲染（流式 token 追加之外的 re-render）→ 不重复上报。
-    rerender(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KnowledgeChatPanel kb={KB} onRetrievalOverlay={onRetrievalOverlay} />
-      </I18nContext.Provider>,
-    );
+    rerender(wrapPanel(<KnowledgeChatPanel kb={KB} onRetrievalOverlay={onRetrievalOverlay} />));
     expect(onRetrievalOverlay).toHaveBeenCalledTimes(1);
 
     // 新一轮完成 → 再报一次，内容换成最新一轮。
@@ -689,11 +802,7 @@ describe("KnowledgeChatPanel 检索联动上报", () => {
       thread: { ...makeThreadState(nextMessages), isLoading: false },
       sendMessage: mockSendMessage,
     }));
-    rerender(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KnowledgeChatPanel kb={KB} onRetrievalOverlay={onRetrievalOverlay} />
-      </I18nContext.Provider>,
-    );
+    rerender(wrapPanel(<KnowledgeChatPanel kb={KB} onRetrievalOverlay={onRetrievalOverlay} />));
     await waitFor(() => expect(onRetrievalOverlay).toHaveBeenCalledTimes(2));
     expect(onRetrievalOverlay).toHaveBeenLastCalledWith({
       source: "chat",
@@ -771,11 +880,7 @@ describe("KnowledgeChatPanel 图谱检索轨迹上报", () => {
   it("does not double-report the same turn on re-render（按 answer id 去重）", async () => {
     const { onGraphOverlay, rerender } = renderWithGraphTurn(GRAPH_TURN_MESSAGES, false);
     await waitFor(() => expect(onGraphOverlay).toHaveBeenCalledTimes(1));
-    rerender(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KnowledgeChatPanel kb={KB} onGraphOverlay={onGraphOverlay} />
-      </I18nContext.Provider>,
-    );
+    rerender(wrapPanel(<KnowledgeChatPanel kb={KB} onGraphOverlay={onGraphOverlay} />));
     expect(onGraphOverlay).toHaveBeenCalledTimes(1);
   });
 
@@ -817,11 +922,7 @@ describe("KnowledgeChatPanel 图谱检索轨迹上报", () => {
         evidence_entities: ["Gateway"],
       },
     });
-    utils.rerender(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KnowledgeChatPanel kb={KB} onGraphOverlay={onGraphOverlay} />
-      </I18nContext.Provider>,
-    );
+    utils.rerender(wrapPanel(<KnowledgeChatPanel kb={KB} onGraphOverlay={onGraphOverlay} />));
     await waitFor(() => expect(onGraphOverlay).toHaveBeenCalledTimes(1));
     expect(onGraphOverlay).toHaveBeenCalledWith({
       source: "chat",
@@ -858,19 +959,11 @@ describe("KnowledgeChatPanel model selector", () => {
 
   it("restores the remembered model per kb and falls back to default when switching to an unremembered kb", () => {
     localStorage.setItem("rag-chat-model:kb-1", "qwen-plus");
-    const utils = render(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KnowledgeChatPanel kb={KB} />
-      </I18nContext.Provider>,
-    );
+    const utils = render(wrapPanel(<KnowledgeChatPanel kb={KB} />));
     expect(latestStreamOptions().context.model_name).toBe("qwen-plus");
     expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("Qwen Plus");
 
-    utils.rerender(
-      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KnowledgeChatPanel kb={{ ...KB, id: "kb-2", name: "第二库" }} />
-      </I18nContext.Provider>,
-    );
+    utils.rerender(wrapPanel(<KnowledgeChatPanel kb={{ ...KB, id: "kb-2", name: "第二库" }} />));
     // kb-2 没有记忆 → 回落默认显示，context 恢复 undefined
     expect(latestStreamOptions().context.model_name).toBeUndefined();
     expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("DeepSeek V4 Flash");
