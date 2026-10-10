@@ -6,8 +6,10 @@ match → NetworkX 1–2 hop expansion with semantic pruning (D2: neighbor gate
 recall), ranked by semantic scores: the graph structure only defines the
 candidate pool, then dedupe → per-source caps → hop-0 guarantee (round-robin
 payout) → pure-score competition decides who gets in (D1). Chunk text always
-comes from the business-DB ``chunks`` table. An empty answer is returned
-honestly — the navigator never fabricates graph content.
+comes from the business-DB ``chunks`` table. Each evidence item carries the
+owning document's ``doc_id`` and ``doc_name``, so a follow-up read can address
+the document directly. An empty answer is returned honestly — the navigator
+never fabricates graph content.
 """
 
 from __future__ import annotations
@@ -313,6 +315,7 @@ async def _graph_search_impl(
             {
                 "chunk_id": row["chunk_id"],
                 "text": row["text"],
+                "doc_id": doc_id,
                 "doc_name": doc_names[doc_id],
                 "heading_path": row.get("heading_path") or [],
                 "page": row.get("page"),

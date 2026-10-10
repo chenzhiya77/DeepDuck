@@ -24,16 +24,17 @@ from deerflow.knowledge.citation_counter import claim_citation_range
 from deerflow.knowledge.embedder_factory import build_embedder
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.knowledge.vector_store import KnowledgeVectorStore, get_vector_store
-from deerflow.knowledge.wiki.store import WikiStore
+from deerflow.knowledge.wiki.store import WikiStore, wiki_entry_id
 from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
 
 
 async def _wiki_search_impl(
-    query: str,
+    query: str | None,
     runtime: Any,
     *,
+    title: str | None = None,
     store: KnowledgeStore | None = None,
     wiki_store: WikiStore | None = None,
     vector_store: KnowledgeVectorStore | None = None,
@@ -48,53 +49,77 @@ async def _wiki_search_impl(
     if not await can_access(store, user_id, kb_id):
         return {"entries": [], "message": ACCESS_DENIED_MESSAGE}
     wiki_store = wiki_store or WikiStore(store._sf)
-    vector_store = vector_store or get_vector_store()
-    embedder = embedder or build_embedder()
 
-    (query_vector,) = await embedder.embed([query], text_type="query")
-    wiki_points = await vector_store.query_wiki_entries(dense=query_vector.dense, kb_id=kb_id, top_k=top_k)
-    manual_points = await vector_store.query_manual_cards(dense=query_vector.dense, kb_id=kb_id, top_k=top_k)
-    # Shared top_k pool (spec §8): merge both candidate lists, sort by score
-    # desc (Python's sort is stable — wiki wins score ties), then hydrate in
-    # that order and keep the first top_k VALID hits. Stale manual points
-    # (toggle-off / card deleted after a swallowed vector-delete failure) are
-    # skipped at hydration so they never waste a pool slot.
-    candidates = [("wiki", point) for point in wiki_points] + [("manual", point) for point in manual_points]
-    candidates.sort(key=lambda item: item[1].score, reverse=True)
-    entries = []
-    for kind, point in candidates:
-        if len(entries) >= top_k:
-            break
-        if kind == "wiki":
-            entry = await wiki_store.get_entry(point.payload["entry_id"])
-            if entry is None:
-                continue
-            entries.append(
-                {
-                    "entry_id": entry["id"],
-                    "title": entry["title"],
-                    "content": entry["content"],
-                    "score": point.score,
-                    "updated_at": entry.get("updated_at"),
-                    "source_type": "wiki",
-                }
-            )
-        else:
-            card = await store.get_manual_card(point.payload["card_id"])
-            if card is None or not card.get("include_in_wiki_search"):
-                continue
-            entries.append(
-                {
-                    "entry_id": card["id"],
-                    "title": card["title"],
-                    "content": card["content"],
-                    "score": point.score,
-                    "updated_at": card.get("updated_at"),
-                    "source_type": "manual",
-                }
-            )
-    if not entries:
-        return {"entries": [], "message": "百科条目与人工知识卡片中均未找到相关内容（该知识库可能尚未生成百科条目）。"}
+    if title:
+        # Exact-title direct fetch (spec 2026-10-10 D1): the entry id is a pure
+        # function of (kb_id, title), so one primary-key read replaces the
+        # embedding + vector path entirely.
+        entry = await wiki_store.get_entry(wiki_entry_id(kb_id, title))
+        if entry is None:
+            return {"entries": [], "message": f"没有找到标题为「{title}」的百科条目（该实体可能未达条目门槛，或名称与条目不一致）。"}
+        entries = [
+            {
+                "entry_id": entry["id"],
+                "title": entry["title"],
+                "content": entry["content"],
+                # No vector score on this path; keep the key for a stable item shape.
+                "score": None,
+                "updated_at": entry.get("updated_at"),
+                "source_chunk_ids": list(entry.get("source_chunk_ids") or []),
+                "source_type": "wiki",
+            }
+        ]
+    elif not query:
+        return {"entries": [], "message": "请提供 query（按语义检索百科条目）或 title（按实体名精确直取条目）。"}
+    else:
+        vector_store = vector_store or get_vector_store()
+        embedder = embedder or build_embedder()
+
+        (query_vector,) = await embedder.embed([query], text_type="query")
+        wiki_points = await vector_store.query_wiki_entries(dense=query_vector.dense, kb_id=kb_id, top_k=top_k)
+        manual_points = await vector_store.query_manual_cards(dense=query_vector.dense, kb_id=kb_id, top_k=top_k)
+        # Shared top_k pool (spec §8): merge both candidate lists, sort by score
+        # desc (Python's sort is stable — wiki wins score ties), then hydrate in
+        # that order and keep the first top_k VALID hits. Stale manual points
+        # (toggle-off / card deleted after a swallowed vector-delete failure) are
+        # skipped at hydration so they never waste a pool slot.
+        candidates = [("wiki", point) for point in wiki_points] + [("manual", point) for point in manual_points]
+        candidates.sort(key=lambda item: item[1].score, reverse=True)
+        entries = []
+        for kind, point in candidates:
+            if len(entries) >= top_k:
+                break
+            if kind == "wiki":
+                entry = await wiki_store.get_entry(point.payload["entry_id"])
+                if entry is None:
+                    continue
+                entries.append(
+                    {
+                        "entry_id": entry["id"],
+                        "title": entry["title"],
+                        "content": entry["content"],
+                        "score": point.score,
+                        "updated_at": entry.get("updated_at"),
+                        "source_chunk_ids": list(entry.get("source_chunk_ids") or []),
+                        "source_type": "wiki",
+                    }
+                )
+            else:
+                card = await store.get_manual_card(point.payload["card_id"])
+                if card is None or not card.get("include_in_wiki_search"):
+                    continue
+                entries.append(
+                    {
+                        "entry_id": card["id"],
+                        "title": card["title"],
+                        "content": card["content"],
+                        "score": point.score,
+                        "updated_at": card.get("updated_at"),
+                        "source_type": "manual",
+                    }
+                )
+        if not entries:
+            return {"entries": [], "message": "百科条目与人工知识卡片中均未找到相关内容（该知识库可能尚未生成百科条目）。"}
     # Shared per-run citation counter — see hybrid_search_tool. The span is
     # also stated in the message text (prose >> JSON fields for attention).
     start = claim_citation_range(runtime, len(entries))
@@ -114,14 +139,16 @@ async def _wiki_search_impl(
 @tool(parse_docstring=True)
 async def wiki_search(
     runtime: Runtime,
-    query: Annotated[str, "The concept/topic question, phrased in the user's language."],
-    top_k: Annotated[int, "Number of wiki entries to return (default 3)."] = 3,
+    query: Annotated[str | None, "The concept/topic question, phrased in the user's language. Provide this or ``title``."] = None,
+    title: Annotated[str | None, "Exact entry title (an entity name) — fetches that entry directly, skipping semantic search."] = None,
+    top_k: Annotated[int, "Number of wiki entries to return (default 3; ignored by the exact-title fetch)."] = 3,
 ) -> dict:
     """Search the generated wiki entries (LLM-written encyclopedia pages) of the bound knowledge base.
 
     Use this tool when:
     - The question asks for a conceptual overview, definition, or deep dive on an important entity/topic
     - You want a digested long-form answer rather than raw evidence chunks
+    - You already know the exact entity name: pass ``title`` to fetch its entry directly (deterministic, no search)
 
     Skip this tool when:
     - The question needs precise wording or citation-grade facts — use hybrid_search
@@ -129,9 +156,12 @@ async def wiki_search(
 
     Entries cover only the head entities (~top 20%); a miss here does not mean the knowledge base lacks the topic — fall back to hybrid_search.
 
+    Every entry carries its ``source_chunk_ids`` — the chunks it was built from; read them back with ``read_knowledge_document(chunk_id=…)`` when you need the underlying passages.
+
     Args:
         runtime: Tool runtime carrying the bound ``kb_id`` in its context.
         query: The concept/topic question, phrased in the user's language.
+        title: Exact entry title (an entity name) to fetch directly; when provided, ``query`` is ignored.
         top_k: Number of wiki entries to return (default 3).
     """
-    return await _wiki_search_impl(query, runtime, top_k=top_k)
+    return await _wiki_search_impl(query, runtime, title=title, top_k=top_k)

@@ -226,8 +226,11 @@ async def test_graph_search_expands_and_fetches_evidence(tools_env):
     assert any("会话管理" in t for t in texts)
     assert any("文档解析" in t for t in texts)
     sample = result["evidence"][0]
-    assert {"chunk_id", "text", "doc_name", "heading_path", "page"} <= set(sample)
+    assert {"chunk_id", "text", "doc_name", "heading_path", "page", "doc_id"} <= set(sample)
     assert sample["doc_name"] == "架构.md"
+    # Credential alignment with hybrid items (spec 2026-10-10 D6/③): the owning
+    # document id rides the evidence so read_knowledge_document(doc_id=…) works.
+    assert sample["doc_id"] == DOC_ID
 
 
 @requires_qdrant
