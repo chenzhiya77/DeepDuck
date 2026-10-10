@@ -22,10 +22,17 @@ const CHUNK: KnowledgeCitation = {
   source_type: "chunk",
 };
 
-function renderContent(isLoading: boolean) {
+function renderContent(isLoading: boolean, content = "依据文档 [1] 可知") {
   return render(
     <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-      <KbAssistantContent content="依据文档 [1] 可知" isLoading={isLoading} messageId="m1" sources={[CHUNK]} />
+      <KbAssistantContent
+        content={content}
+        isLoading={isLoading}
+        messageId="m1"
+        sources={[CHUNK]}
+        threadId="thread-1"
+        artifactPaths={[]}
+      />
     </I18nContext.Provider>,
   );
 }
@@ -60,10 +67,57 @@ describe("KbAssistantContent real pipeline", () => {
     const chunk: KnowledgeCitation = { ...CHUNK, citation_nos: [5, 9] };
     render(
       <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
-        <KbAssistantContent content="依据文档 [9] 可知" isLoading={false} messageId="m1" sources={[wiki, chunk]} />
+        <KbAssistantContent
+          content="依据文档 [9] 可知"
+          isLoading={false}
+          messageId="m1"
+          sources={[wiki, chunk]}
+          threadId="thread-1"
+          artifactPaths={[]}
+        />
       </I18nContext.Provider>,
     );
     expect(screen.getByRole("button", { name: "引用 2：手册.pdf" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /引用 9/ })).toBeNull();
+  });
+});
+
+// 2026-10-11 修复：面板的引用渲染器曾只带 `sup` override，把默认路径上的
+// img/a 解析整体丢掉——助手回答里的 markdown 图按原始 `/mnt/...` src 渲染，
+// 浏览器按页面源拼接 → 404 → streamdown 占位「Image not available」。
+describe("KbAssistantContent artifact resolution", () => {
+  it("resolves a /mnt/ markdown image through the artifacts API", () => {
+    renderContent(false, "看图：\n\n![红圆](/mnt/user-data/uploads/circle.png)");
+    const img = screen.getByRole("img", { name: "红圆" });
+    expect(img.getAttribute("src")).toBe(
+      "/api/threads/thread-1/artifacts/mnt/user-data/uploads/circle.png",
+    );
+  });
+
+  it("resolves a relative image against the thread's artifact paths", () => {
+    render(
+      <I18nContext.Provider value={{ locale: "zh-CN", setLocale: () => undefined, t: zhCN }}>
+        <KbAssistantContent
+          content="![图](images/a.png)"
+          isLoading={false}
+          messageId="m1"
+          sources={[]}
+          threadId="thread-1"
+          artifactPaths={["/mnt/user-data/outputs/images/a.png"]}
+        />
+      </I18nContext.Provider>,
+    );
+    const img = screen.getByRole("img", { name: "图" });
+    expect(img.getAttribute("src")).toBe(
+      "/api/threads/thread-1/artifacts/mnt/user-data/outputs/images/a.png",
+    );
+  });
+
+  it("resolves /mnt/ artifact links", () => {
+    renderContent(false, "[报告](/mnt/user-data/outputs/report.md)");
+    const link = screen.getByRole("link", { name: "报告" });
+    expect(link.getAttribute("href")).toBe(
+      "/api/threads/thread-1/artifacts/mnt/user-data/outputs/report.md",
+    );
   });
 });

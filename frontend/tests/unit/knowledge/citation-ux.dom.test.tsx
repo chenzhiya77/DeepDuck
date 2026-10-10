@@ -183,13 +183,31 @@ describe("KbAssistantContent (deferred superscripts)", () => {
   }
 
   it("enables the citation plugin only after streaming ends", () => {
-    renderWithI18n(<KbAssistantContent content="回答 [1]" isLoading={true} messageId="m1" sources={[CHUNK_1]} />);
+    renderWithI18n(
+      <KbAssistantContent
+        content="回答 [1]"
+        isLoading={true}
+        messageId="m1"
+        sources={[CHUNK_1]}
+        threadId="thread-1"
+        artifactPaths={[]}
+      />,
+    );
     expect(markdownProps().rehypePlugins ?? []).toHaveLength(0);
 
     cleanup();
     rs.clearAllMocks();
 
-    renderWithI18n(<KbAssistantContent content="回答 [1]" isLoading={false} messageId="m1" sources={[CHUNK_1]} />);
+    renderWithI18n(
+      <KbAssistantContent
+        content="回答 [1]"
+        isLoading={false}
+        messageId="m1"
+        sources={[CHUNK_1]}
+        threadId="thread-1"
+        artifactPaths={[]}
+      />,
+    );
     const props = markdownProps();
     expect(props.rehypePlugins).toHaveLength(1);
     expect(props.components.sup).toBeTypeOf("function");

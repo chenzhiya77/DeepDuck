@@ -40,6 +40,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useAgentsApiEnabled } from "@/core/agents";
+import { extractArtifactsFromThread } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { latestGraphTraceTurn, latestRetrievalTurn, parseGraphSearchTrace, sourcesForAssistantMessage } from "@/core/knowledge/citations";
 import { threadsForKb } from "@/core/knowledge/kb-threads";
@@ -122,16 +123,26 @@ export function KnowledgeChatPanel({
   const { data: uploadLimits } = useUploadLimits(threadId);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // 听写中止桥：handleSubmit 等早期回调经它访问 hook 的 abort（hook 结果在
+  // 组件后段才生成）——与主对话同款（input-box 的 voiceAbortRef）。
+  const voiceAbortRef = useRef<(() => void) | null>(null);
   const {
     supported: voiceInputSupported,
     listening: voiceListening,
     toggle: toggleVoiceInput,
+    abort: abortVoiceInput,
   } = useVoiceInput({
     setInput: (value) => setDraft(value),
     getInput: () => draft,
     disabled: !kb,
     onStarted: () => composerTextareaRef.current?.focus(),
   });
+  voiceAbortRef.current = abortVoiceInput;
+
+  // 切会话照旧中止听写（主对话同款：挂在 threadId 依赖的 effect 清理上）。
+  useEffect(() => {
+    return () => voiceAbortRef.current?.();
+  }, [threadId]);
 
   // 切库即新对话（还原 `2711a35a2` 的重置，`52b0dd76d` 重构时误删）：
   // 线程只绑定一个库。声明位序必须在下方 requestedThreadId 深链 effect 之前。
@@ -421,6 +432,8 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
     if (!kbId || (!text && attachments.files.length === 0) || thread.isLoading) {
       return;
     }
+    // 主对话同款：提交即中止听写——否则草稿被清空后，旧文本+新转写会回填。
+    voiceAbortRef.current?.();
     void sendMessage(threadId, { text, files: attachments.files }, undefined, {
       // 附件只在发送真正过了 in-flight 门后清（被挡下时保留，可重发）。
       onSent: () => attachments.clear(),
@@ -469,6 +482,10 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
   // superscript CitationMarks once streaming ends (deferred — a half-typed
   // `[` mid-stream never flickers). Human messages stay untouched; surfaces
   // without this prop render plain markdown as before.
+  // 助手正文走 KbAssistantContent（引用上标渲染器）——它替换了默认
+  // MarkdownContent，必须同带 img/a 的 artifacts 解析（2026-10-11 修复：
+  // 缺了它，回答里的 markdown 图按原始 /mnt/... src 渲染 → 404 占位）。
+  const artifactPaths = extractArtifactsFromThread(thread);
   const renderMessageContent = useCallback(
     (message: Message, content: string, isLoading: boolean) => {
       if (message.type !== "ai") {
@@ -480,10 +497,12 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
           isLoading={isLoading}
           messageId={message.id ?? ""}
           sources={sourcesForAssistantMessage(thread.messages, message.id)}
+          threadId={threadId}
+          artifactPaths={artifactPaths}
         />
       );
     },
-    [thread.messages],
+    [artifactPaths, thread.messages, threadId],
   );
 
   // Mirrors the general chat page: answering an ask_clarification interrupt

@@ -348,6 +348,85 @@ describe("KnowledgeChatPanel", () => {
     await waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("false"));
   });
 
+  it("aborts dictation when the message is submitted (多模态②)", async () => {
+    class FakeRecognition {
+      static last: FakeRecognition | null = null;
+      onresult: ((event: { results: unknown }) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 0;
+      aborted = false;
+      constructor() {
+        FakeRecognition.last = this;
+      }
+      start() {
+        // no-op
+      }
+      stop() {
+        this.onend?.();
+      }
+      abort() {
+        this.aborted = true;
+      }
+    }
+    (window as unknown as Record<string, unknown>).SpeechRecognition = FakeRecognition;
+    renderPanel();
+
+    const mic = await screen.findByTestId("panel-voice-input-button");
+    fireEvent.click(mic);
+    await waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("true"));
+
+    fireEvent.change(screen.getByPlaceholderText("向当前知识库提问…"), {
+      target: { value: "发出去" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    // 主对话同款：提交即中止听写——否则草稿被清空后，旧文本+新转写会回填。
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+    expect(FakeRecognition.last?.aborted).toBe(true);
+    await waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("false"));
+  });
+
+  it("aborts dictation when the thread changes (多模态②)", async () => {
+    class FakeRecognition {
+      static last: FakeRecognition | null = null;
+      onresult: ((event: { results: unknown }) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 0;
+      aborted = false;
+      constructor() {
+        FakeRecognition.last = this;
+      }
+      start() {
+        // no-op
+      }
+      stop() {
+        this.onend?.();
+      }
+      abort() {
+        this.aborted = true;
+      }
+    }
+    (window as unknown as Record<string, unknown>).SpeechRecognition = FakeRecognition;
+    const view = renderPanel();
+
+    const mic = await screen.findByTestId("panel-voice-input-button");
+    fireEvent.click(mic);
+    await waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("true"));
+
+    // 切库即新会话（threadId 复位）——主对话的 [threadId] 清理同款。
+    rerenderPanel(view, KB2);
+
+    await waitFor(() => expect(FakeRecognition.last?.aborted).toBe(true));
+  });
+
   it("tells the user to wait when Enter is pressed while streaming (⑬)", () => {
     mockUseThreadStream.mockImplementation(() => ({
       thread: { ...makeThreadState(), isLoading: true, stop: mockStop },
