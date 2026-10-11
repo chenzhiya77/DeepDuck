@@ -130,6 +130,15 @@ export const zhCN: Translations = {
     previewFailed: "无法预览此文件，但仍可下载原始文件。",
   },
 
+  modelPicker: {
+    title: "选择模型",
+    favorites: "收藏",
+    otherModels: "其他模型",
+    noModels: "暂无可用模型",
+    favoriteModel: (displayName, name) => `收藏 ${displayName}（${name}）`,
+    sessionOnly: "收藏仅在本次会话中保留。",
+  },
+
   // Citations
   citations: {
     sourcesSummary: (count) => `使用了 ${count} 个来源`,

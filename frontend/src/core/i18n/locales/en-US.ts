@@ -134,6 +134,15 @@ export const enUS: Translations = {
       "This file could not be previewed. You can still download it.",
   },
 
+  modelPicker: {
+    title: "Choose a model",
+    favorites: "Favorites",
+    otherModels: "Other models",
+    noModels: "No models available",
+    favoriteModel: (displayName, name) => `Favorite ${displayName} (${name})`,
+    sessionOnly: "Favorites are stored for this session only.",
+  },
+
   // Citations
   citations: {
     sourcesSummary: (count) =>

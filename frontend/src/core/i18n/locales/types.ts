@@ -112,6 +112,15 @@ export interface Translations {
     previewFailed: string;
   };
 
+  modelPicker: {
+    title: string;
+    favorites: string;
+    otherModels: string;
+    noModels: string;
+    favoriteModel: (displayName: string, name: string) => string;
+    sessionOnly: string;
+  };
+
   // Citations
   citations: {
     sourcesSummary: (count: number) => string;

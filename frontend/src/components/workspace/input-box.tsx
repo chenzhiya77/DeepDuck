@@ -4,7 +4,6 @@ import type { Message } from "@langchain/langgraph-sdk";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ChatStatus } from "ai";
 import {
-  CheckIcon,
   Loader2Icon,
   MicIcon,
   PaperclipIcon,
@@ -107,15 +106,6 @@ import { useVoiceInput } from "@/core/voice-input/use-voice-input";
 import { isIMEComposing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 
-import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from "../ai-elements/model-selector";
 import { Suggestion, Suggestions } from "../ai-elements/suggestion";
 import {
   DropdownMenu,
@@ -145,6 +135,11 @@ import {
   type SlashSuggestion,
 } from "./input-box-helpers";
 import { useThread } from "./messages/context";
+import {
+  ModelPicker,
+  ModelPickerContent,
+  ModelPickerTrigger,
+} from "./model-picker-content";
 import { ReferenceAttachmentSummary, useMaybeSidecar } from "./sidecar";
 import { SlashSkillChip } from "./slash-skill-chip";
 import { Tooltip } from "./tooltip";
@@ -2186,50 +2181,32 @@ export function InputBox({
                 {goalObjectiveCounter.length}/{goalObjectiveCounter.max}
               </span>
             )}
-            <ModelSelector
+            <ModelPicker
               open={modelDialogOpen}
               onOpenChange={setModelDialogOpen}
             >
-              <ModelSelectorTrigger asChild>
+              <ModelPickerTrigger asChild>
                 <PromptInputButton
                   className="max-w-40 min-w-0 sm:max-w-56"
                   disabled={composerLocked}
                 >
-                  <div className="flex min-w-0 flex-col items-start text-left">
-                    <ModelSelectorName className="text-xs font-normal">
+                  <div className="flex min-w-0 flex-col text-left">
+                    <span className="flex-1 truncate text-left text-xs font-normal">
                       {selectedModel?.display_name}
-                    </ModelSelectorName>
+                    </span>
                   </div>
                 </PromptInputButton>
-              </ModelSelectorTrigger>
-              <ModelSelectorContent>
-                <ModelSelectorInput placeholder={t.inputBox.searchModels} />
-                <ModelSelectorList>
-                  {/* Options only (spec 2026-10-08 models-list-grouping §2④): hidden
-                      models drop out of the dropdown; selection and fallbacks keep
-                      using the full list. */}
-                  {chatPickerOptions(models).map((m) => (
-                    <ModelSelectorItem
-                      key={m.name}
-                      value={m.name}
-                      onSelect={() => handleModelSelect(m.name)}
-                    >
-                      <div className="flex min-w-0 flex-1 flex-col">
-                        <ModelSelectorName>{m.display_name}</ModelSelectorName>
-                        <span className="text-muted-foreground truncate text-[10px]">
-                          {m.model}
-                        </span>
-                      </div>
-                      {m.name === context.model_name ? (
-                        <CheckIcon className="ml-auto size-4" />
-                      ) : (
-                        <div className="ml-auto size-4" />
-                      )}
-                    </ModelSelectorItem>
-                  ))}
-                </ModelSelectorList>
-              </ModelSelectorContent>
-            </ModelSelector>
+              </ModelPickerTrigger>
+              {/* Options only (spec 2026-10-08 models-list-grouping §2④): hidden
+                  models drop out of the dropdown; selection and fallbacks keep
+                  using the full list. */}
+              <ModelPickerContent
+                open={modelDialogOpen}
+                models={chatPickerOptions(models)}
+                selectedModelName={selectedModel?.name}
+                onModelSelect={handleModelSelect}
+              />
+            </ModelPicker>
             <PromptInputSubmit
               className="rounded-full"
               disabled={composerLocked}
