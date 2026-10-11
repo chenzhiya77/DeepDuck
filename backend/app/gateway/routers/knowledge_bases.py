@@ -281,9 +281,16 @@ async def list_document_chunks(
     doc_id: str,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    chunk_id: str | None = Query(None),
 ):
     service = await _require_kb_access(request, kb_id)
     await _get_document_or_404(service, kb_id, doc_id)
+    if chunk_id is not None:
+        # 防御性归属校验：不在本文档（或已删）⇒ 404，不静默回错窗。
+        row = await service.store.get_chunk(chunk_id)
+        if row is None or row["doc_id"] != doc_id:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+        return await service.list_document_chunks(kb_id=kb_id, doc_id=doc_id, offset=offset, limit=limit, chunk_id=chunk_id)
     return await service.list_document_chunks(kb_id=kb_id, doc_id=doc_id, offset=offset, limit=limit)
 
 

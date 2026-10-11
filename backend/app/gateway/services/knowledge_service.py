@@ -29,6 +29,7 @@ from typing import Any
 import anyio
 import numpy as np
 
+from deerflow.knowledge.chunk_window import window_bounds
 from deerflow.knowledge.embed_identity import identity_diff_fields, identity_from_rag
 from deerflow.knowledge.embed_texts import manual_card_embed_text
 from deerflow.knowledge.embedder_factory import build_embedder
@@ -361,13 +362,41 @@ class KnowledgeService:
             return None
         return target
 
-    async def list_document_chunks(self, *, kb_id: str, doc_id: str, offset: int, limit: int) -> dict[str, Any]:
+    async def list_document_chunks(self, *, kb_id: str, doc_id: str, offset: int, limit: int, chunk_id: str | None = None) -> dict[str, Any]:
         """文档切片分页（切片抽屉数据源，spec 2026-09-08 §5）：在 store 行之上为
         视频镜头 chunk 补时间码四字段 + ``frame_url``——复用 recall-test 同款
         ``_inject_video_citations``（按 chunk_id 扁平序 ``{doc_id}#{shot_index:04d}``
         join ``video_shots``）；文本 chunk 字段一字不动（前端旧渲染零回归）。
         正文 ``text`` 不含时间码头（spec §3 嵌入文本契约），时间码由展示层合成。
+
+        ``chunk_id``（spec 2026-10-11 D2 乙，可选）：解析该切片的存活位次并返回
+        以其为中心、``limit`` 宽的窗（贴边夹取；数学与 read_knowledge_document
+        共用 ``window_bounds`` 单一口径）。缺省（不带 chunk_id）＝原 offset/limit
+        分页逐字不变。调用方须先校验 chunk_id 存在、属于本文档；本文档内仍须
+        复核（防御性——竞态删除窗洞为已知接受残留）。
         """
+        if chunk_id is not None:
+            row = await self.store.get_chunk(chunk_id)
+            if row is None or row["doc_id"] != doc_id:
+                return {"items": [], "total": 0, "offset": 0, "limit": limit, "message": "该切片不存在或已被删除。"}
+            total = await self.store.count_chunks(doc_id)
+            if total == 0:
+                return {"items": [], "total": 0, "offset": 0, "limit": limit, "message": "该文档当前没有切片。"}
+            position = (await self.store.chunk_positions(doc_id, {row["chunk_index"]})).get(row["chunk_index"])
+            if position is None:
+                return {"items": [], "total": total, "offset": 0, "limit": limit, "message": "该切片不存在或已被删除。"}
+            width = max(1, min(int(limit), 200))
+            start, end = window_bounds(position, width, total)
+            items = await self.store.list_chunks(doc_id, offset=start - 1, limit=min(width, total))
+            await self._inject_video_citations(kb_id, items)
+            return {
+                "items": items,
+                "total": total,
+                "offset": start - 1,
+                "limit": min(width, total),
+                "has_more": end < total,
+                "message": f"第 {position}/共 {total} 片；已返回第 {start}-{end} 片。",
+            }
         items = await self.store.list_chunks(doc_id, offset=offset, limit=limit)
         total = await self.store.count_chunks(doc_id)
         await self._inject_video_citations(kb_id, items)

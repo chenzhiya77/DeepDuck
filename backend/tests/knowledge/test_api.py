@@ -547,6 +547,52 @@ async def test_chunks_endpoint_paginates(service, session_factory):
     assert [c["chunk_index"] for c in page2.json()["items"]] == [2]
 
 
+async def test_chunks_endpoint_centers_window_on_chunk_id(service, session_factory):
+    """切片续读中心窗（spec 2026-10-11 D2 乙）：带 `chunk_id` 时服务端解析
+    该切片的存活位次并返回其中心窗——窗宽=limit、恰落中间；贴边向另一端
+    延伸（**夹取、非回卷**）；offset 返回 start-1 与 harness
+    `read_knowledge_document` 逐字一致；缺省（不带 chunk_id）＝原分页不动。"""
+    client = _client(service)
+    kb = _create_kb(client)
+    upload = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("w.md", b"# w", "text/markdown")})
+    doc_id = upload.json()["id"]
+    store = KnowledgeStore(session_factory)
+    await store.insert_chunks([{"chunk_id": f"{doc_id}#{i:04d}", "doc_id": doc_id, "kb_id": kb["id"], "chunk_index": i, "text": f"切片{i}", "heading_path": ["h"], "page": i, "token_count": 10} for i in range(12)])
+
+    # ① 中心：以 #0005 为中心取 5 片 → 3..7，恰在中间；offset=start-1。
+    resp = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"chunk_id": f"{doc_id}#0005", "limit": 5})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [c["chunk_index"] for c in body["items"]] == [3, 4, 5, 6, 7]
+    assert body["total"] == 12
+    assert body["offset"] == 3
+    assert body["limit"] == 5
+    assert body["message"].startswith("第 6/共 12 片；已返回第 4-8 片")
+
+    # ② 边界夹取（非回卷）：#0000 取 5 片 → 0..4（start=1）。
+    head = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"chunk_id": f"{doc_id}#0000", "limit": 5}).json()
+    assert [c["chunk_index"] for c in head["items"]] == [0, 1, 2, 3, 4]
+    assert head["offset"] == 0
+    # 末片：+#0011 取 5 片 → 7..11（total-window+1 夹取）。
+    tail = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"chunk_id": f"{doc_id}#0011", "limit": 5}).json()
+    assert [c["chunk_index"] for c in tail["items"]] == [7, 8, 9, 10, 11]
+
+    # ③ 窗宽大于总数 → 全量一窗。
+    wide = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"chunk_id": f"{doc_id}#0003", "limit": 50}).json()
+    assert [c["chunk_index"] for c in wide["items"]] == list(range(12))
+
+    # ④ 缺省不带 chunk_id＝原分页逐字不变（旧消费者零感知）。
+    plain = client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"offset": 2, "limit": 3}).json()
+    assert [c["chunk_index"] for c in plain["items"]] == [2, 3, 4]
+    assert plain["offset"] == 2
+
+    # ⑤ 错误输入：未知 / 已删 / 他文档的 chunk_id → 404（不静默给错窗）。
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"chunk_id": "gone#0000"}).status_code == 404
+    other = client.post(f"/api/knowledge-bases/{kb['id']}/documents", files={"file": ("o.md", b"# o", "text/markdown")}).json()["id"]
+    await store.insert_chunks([{"chunk_id": f"{other}#0000", "doc_id": other, "kb_id": kb["id"], "chunk_index": 0, "text": "他文档", "heading_path": ["h"], "page": 0, "token_count": 10}])
+    assert client.get(f"/api/knowledge-bases/{kb['id']}/documents/{doc_id}/chunks", params={"chunk_id": f"{other}#0000"}).status_code == 404
+
+
 async def test_chunks_by_ids_endpoint_returns_requested_order_with_doc_name(service, session_factory):
     """条目↔切片血缘（2026-09-05）：GET /chunks?ids= 批量按请求序返回切片并附
     doc_name（wiki 条目抽屉展开 source_chunk_ids 用）；未知 id 静默 dropped

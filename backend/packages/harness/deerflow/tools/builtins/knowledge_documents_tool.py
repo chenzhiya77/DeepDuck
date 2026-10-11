@@ -18,6 +18,7 @@ from langchain.tools import tool
 
 from deerflow.knowledge.access import ACCESS_DENIED_MESSAGE, NO_KB_GUIDANCE, can_access, resolve_kb_scope
 from deerflow.knowledge.chunk_entities import surface_entities
+from deerflow.knowledge.chunk_window import window_bounds
 from deerflow.knowledge.store import KnowledgeStore, get_knowledge_store
 from deerflow.tools.types import Runtime
 
@@ -134,8 +135,7 @@ async def _read_document_impl(
         if position is None:
             return {"doc": None, "items": [], "message": "该切片不存在或已被删除。"}
         window = min(width, total)
-        start = max(1, min(position - (window - 1) // 2, total - window + 1))
-        end = start + window - 1
+        start, end = window_bounds(position, width, total)  # 单一口径：chunks 路由同用（spec 2026-10-11 D2）
         items = _shape_items(await store.list_chunks(row["doc_id"], offset=start - 1, limit=window))
         return {
             "doc": _doc_meta(doc),
