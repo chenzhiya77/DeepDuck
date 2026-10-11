@@ -44,6 +44,12 @@ rs.mock("@/core/threads/activity-context", () => ({
   useRegisterActivity: () => undefined,
 }));
 
+// 新 picker（D10）的 ModelPickerContent 无条件调 useAuth（收藏层要 user id）；
+// 与 activity-context 同款处理：这里不包真 Provider，直接给最小用户。
+rs.mock("@/core/auth/AuthProvider", () => ({
+  useAuth: () => ({ user: { id: "test-user" }, isLoading: false }),
+}));
+
 let capturedMessageListProps: Record<string, unknown> | null = null;
 
 rs.mock("@/components/workspace/messages", () => ({
@@ -1016,6 +1022,16 @@ describe("KnowledgeChatPanel 图谱检索轨迹上报", () => {
 });
 
 describe("KnowledgeChatPanel model selector", () => {
+  it("opens the favourites picker with a star per row (D10 上游 picker)", () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "选择模型" }));
+    expect(screen.getByRole("group", { name: "其他模型" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "收藏" })).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: /^收藏 / }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("shows the first configured model as the effective default and keeps context.model_name undefined", () => {
     renderPanel();
     // 未显式选择时：触发器显示后端默认（models[0]），context 保持 undefined
@@ -1046,5 +1062,194 @@ describe("KnowledgeChatPanel model selector", () => {
     // kb-2 没有记忆 → 回落默认显示，context 恢复 undefined
     expect(latestStreamOptions().context.model_name).toBeUndefined();
     expect(screen.getByRole("button", { name: "选择模型" }).textContent).toContain("DeepSeek V4 Flash");
+  });
+});
+
+// D7–D9（2026-10-11 他裁全甲）：composer 与主对话逐项同值——按钮口径、
+// 模型选择/发送同排右侧、触发钮 PromptInputButton。
+describe("KnowledgeChatPanel composer alignment (D7/D8)", () => {
+  it("aligns the attach/mic/send buttons with the main chat (D7)", () => {
+    renderPanel();
+
+    const attach = screen.getByTestId("panel-add-attachments-button");
+    expect(attach.className).toContain("px-2!");
+    expect(attach.querySelector("svg")?.getAttribute("class")).toContain("size-3");
+
+    const mic = screen.getByTestId("panel-voice-input-button");
+    expect(mic.className).toContain("px-2!");
+    expect(mic.querySelector("svg")?.getAttribute("class")).toContain("size-3");
+
+    // 发送钮＝outline 圆（主对话同款）：非实心 primary 底（default 变体判别式；
+    // 不能断言 "border"——Button 基类自带 focus-visible:border-ring）。
+    const send = screen.getByRole("button", { name: "发送" });
+    expect(send.className).toContain("rounded-full");
+    expect(send.className).toContain("bg-background");
+    expect(send.className).not.toContain("bg-primary");
+  });
+
+  it("keeps the model picker in the right actions group, left of send (D8)", () => {
+    renderPanel();
+
+    const actions = screen.getByTestId("panel-composer-actions");
+    const trigger = screen.getByRole("button", { name: "选择模型" });
+    const send = screen.getByRole("button", { name: "发送" });
+
+    expect(actions.contains(trigger)).toBe(true);
+    expect(actions.contains(send)).toBe(true);
+    expect(
+      trigger.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+// D11–D12（2026-10-11 他裁全甲）：窄档行为——间距同主对话口径、模型钮可缩。
+describe("KnowledgeChatPanel composer narrow-width behavior (D11–D12)", () => {
+  it("tightens the composer row gaps to the main-chat value (D11)", () => {
+    renderPanel();
+    const actions = screen.getByTestId("panel-composer-actions");
+    const row = actions.parentElement!;
+    const leftGroup = row.firstElementChild!;
+
+    for (const el of [row, leftGroup, actions]) {
+      const tokens = el.className.split(/\s+/);
+      expect(tokens).toContain("gap-1");
+      expect(tokens).not.toContain("gap-2");
+    }
+  });
+
+  it("lets the model trigger shrink so the name ellipsizes instead of pushing the actions out (D12)", () => {
+    renderPanel();
+    const trigger = screen.getByRole("button", { name: "选择模型" });
+    const tokens = trigger.className.split(/\s+/);
+
+    // twMerge 覆盖 Button 基类的 shrink-0：允许收缩、由内层 truncate 出省略号。
+    expect(tokens).toContain("shrink");
+    expect(tokens).not.toContain("shrink-0");
+  });
+});
+
+// D14（2026-10-11 他裁甲）：深度检索文字改内容驱动——模型名被挤（truncate 出
+// 省略号）且行内空裕 ≤2px（空间性挤压，排除 max-w 上限的名义截断）才让位；
+// 空裕 ≥ 文字宽+6+8px 时恢复（滞回防抖）。happy-dom 无布局 ⇒ 钉
+// offset/clientWidth 模拟，eval-tab 先例。
+describe("KnowledgeChatPanel deep-label tier (D14)", () => {
+  type PanelGeometry = {
+    rowClient: number;
+    toolsWidth: number;
+    actionsWidth: number;
+    spanScroll: number;
+    spanClient: number;
+    labelWidth: number;
+  };
+
+  /** 按 testid 返回模拟布局值（其余元素恒 0，等同 happy-dom 无布局）。 */
+  function pinPanelGeometry(geometry: PanelGeometry): () => void {
+    const originalScroll = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollWidth",
+    );
+    const originalClient = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    );
+    const originalOffset = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetWidth",
+    );
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "panel-model-name"
+          ? geometry.spanScroll
+          : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (this.dataset.testid === "panel-model-name") return geometry.spanClient;
+        if (this.dataset.testid === "panel-composer-row") return geometry.rowClient;
+        return 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (this.dataset.testid === "panel-composer-tools") return geometry.toolsWidth;
+        if (this.dataset.testid === "panel-composer-actions") return geometry.actionsWidth;
+        if (this.dataset.testid === "panel-deep-research-label") return geometry.labelWidth;
+        return 0;
+      },
+    });
+    return () => {
+      if (originalScroll) {
+        Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScroll);
+      } else {
+        delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+      }
+      if (originalClient) {
+        Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClient);
+      } else {
+        delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      }
+      if (originalOffset) {
+        Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalOffset);
+      } else {
+        delete (HTMLElement.prototype as { offsetWidth?: number }).offsetWidth;
+      }
+    };
+  }
+
+  const labelTokens = () =>
+    screen.getByTestId("panel-deep-research-label").className.split(/\s+/);
+
+  it("keeps the deep-research text visible when the model name has room", () => {
+    renderPanel();
+    expect(labelTokens()).not.toContain("hidden");
+  });
+
+  it("hides the deep-research text once the name is squeezed with no row slack, and restores it when the row widens", async () => {
+    const geometry: PanelGeometry = {
+      rowClient: 310, // free = 310−16−150−4−140 = 0 ≤ 2 → 空间性挤压。
+      toolsWidth: 150,
+      actionsWidth: 140,
+      spanScroll: 300,
+      spanClient: 100,
+      labelWidth: 60,
+    };
+    const unpin = pinPanelGeometry(geometry);
+    try {
+      const view = renderPanel();
+      // 挤压态 → 文字隐藏，只留 Switch。
+      await waitFor(() => expect(labelTokens()).toContain("hidden"));
+
+      // 行宽放宽 → free = 400−16−150−4−140 = 90 ≥ 文字宽 60+6+8 → 恢复。
+      geometry.rowClient = 400;
+      rerenderPanel(view, KB);
+      await waitFor(() => expect(labelTokens()).not.toContain("hidden"));
+    } finally {
+      unpin();
+    }
+  });
+
+  it("keeps the text when the name merely hits the max-width cap with row slack (nominal truncation)", async () => {
+    const geometry: PanelGeometry = {
+      rowClient: 400, // free = 90 > 2 → 名义截断，不让位。
+      toolsWidth: 150,
+      actionsWidth: 140,
+      spanScroll: 300,
+      spanClient: 100,
+      labelWidth: 60,
+    };
+    const unpin = pinPanelGeometry(geometry);
+    try {
+      renderPanel();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(labelTokens()).not.toContain("hidden");
+    } finally {
+      unpin();
+    }
   });
 });

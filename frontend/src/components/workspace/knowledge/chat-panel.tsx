@@ -4,8 +4,6 @@ import type { Message } from "@langchain/langgraph-sdk";
 import {
   ArrowUpIcon,
   ArrowUpRightIcon,
-  CheckIcon,
-  ChevronDownIcon,
   HistoryIcon,
   MicIcon,
   PaperclipIcon,
@@ -14,18 +12,9 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type RefObject } from "react";
 
-import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from "@/components/ai-elements/model-selector";
-import { PromptInputAttachment, PromptInputAttachments, usePromptInputController } from "@/components/ai-elements/prompt-input";
+import { PromptInputAttachment, PromptInputAttachments, PromptInputButton, usePromptInputController } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +27,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/workspace/messages";
+import { ModelPicker, ModelPickerContent, ModelPickerTrigger } from "@/components/workspace/model-picker-content";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useAgentsApiEnabled } from "@/core/agents";
 import { extractArtifactsFromThread } from "@/core/artifacts/utils";
@@ -69,6 +59,86 @@ import { toast } from "./kb-toast";
 
 /** Per-kb composer model memory: `rag-chat-model:{kbId}` → model name. */
 const MODEL_STORAGE_PREFIX = "rag-chat-model:";
+
+/** 档级：0=深度检索文字显示 1=隐藏（只留 Switch）。 */
+type DeepLabelTier = 0 | 1;
+
+/** 行内布局常量（与行 className 同值）：px-2 左右各 8px、gap-1=4px、label gap-1.5=6px。 */
+const ROW_PADDING_X = 16;
+const ROW_GAP = 4;
+const LABEL_GAP = 6;
+/** 挤压守门：行内空裕 ≤2px 才认「空间性挤压」（长名撞 max-w 上限的名义截断不算）。 */
+const SQUEEZE_GATE_PX = 2;
+/** 恢复滞回余量（px）：恢复后仍留的空裕，防隐显抖动。 */
+const RESTORE_MARGIN_PX = 8;
+
+/**
+ * 深度检索文字的窄档降级（D14，内容驱动；useToolbarTier 同思想先例——固定
+ * 像素断点估不准真实渲染宽度）：模型名被挤（truncate 出省略号）且**行内确
+ * 无空裕**（≤2px，排除 max-w 上限的名义截断）时隐文字、把宽度让回给模型名；
+ * 行内空裕 ≥ 文字宽+6+8px 时恢复（滞回防抖）。空裕＝行内容宽 − 左组 −
+ * 组间距 − 右组；行宽与内容变化后校准（换模型、长名短名自动重判）＋
+ * ResizeObserver 监听行宽（拖面板即触发恢复重判）。
+ * happy-dom 无布局（offset/clientWidth 恒 0）→ 恒 0 档，窄档用例钉模拟值。
+ */
+function useDeepLabelTier({
+  rowRef,
+  toolsRef,
+  actionsRef,
+  modelNameRef,
+  deepLabelRef,
+}: {
+  rowRef: RefObject<HTMLElement | null>;
+  toolsRef: RefObject<HTMLElement | null>;
+  actionsRef: RefObject<HTMLElement | null>;
+  modelNameRef: RefObject<HTMLElement | null>;
+  deepLabelRef: RefObject<HTMLElement | null>;
+}): DeepLabelTier {
+  const [tier, setTier] = useState<DeepLabelTier>(0);
+  const tierRef = useRef<DeepLabelTier>(0);
+  const restoreSlack = useRef(0);
+
+  const evaluate = useCallback(() => {
+    const row = rowRef.current;
+    const span = modelNameRef.current;
+    const tools = toolsRef.current;
+    const actions = actionsRef.current;
+    if (!row || !span || !tools || !actions) return;
+    const free =
+      row.clientWidth -
+      ROW_PADDING_X -
+      tools.offsetWidth -
+      ROW_GAP -
+      actions.offsetWidth;
+    const squeezed = span.scrollWidth > span.clientWidth + 1;
+    if (squeezed && free <= SQUEEZE_GATE_PX && tierRef.current === 0) {
+      // 记下让位所需的空裕（文字宽 + 标签间距 + 滞回余量）——恢复档的精确
+      // 触发点。此刻文案仍可见（setTier 未提交），offsetWidth 有效。
+      restoreSlack.current =
+        (deepLabelRef.current?.offsetWidth ?? 0) + LABEL_GAP + RESTORE_MARGIN_PX;
+      tierRef.current = 1;
+      setTier(1);
+    } else if (tierRef.current === 1 && free >= restoreSlack.current) {
+      tierRef.current = 0;
+      setTier(0);
+    }
+  }, [actionsRef, deepLabelRef, modelNameRef, rowRef, toolsRef]);
+
+  // 每次渲染后校准（幂等：档级不变则不 setState，不自激）——覆盖模型名切换
+  // 与档级切换后的级联再评估。
+  useEffect(() => {
+    evaluate();
+  });
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(evaluate);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [evaluate, rowRef]);
+
+  return tier;
+}
 
 /**
  * Right-column chat panel bound to the selected knowledge base (spec
@@ -123,6 +193,20 @@ export function KnowledgeChatPanel({
   const { data: uploadLimits } = useUploadLimits(threadId);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // D14 内容驱动窄档：模型名 span 的截断态是让位信号、行内空裕定让位时机；
+  // 深度检索文字随档隐显。
+  const composerRowRef = useRef<HTMLDivElement | null>(null);
+  const composerToolsRef = useRef<HTMLDivElement | null>(null);
+  const composerActionsRef = useRef<HTMLDivElement | null>(null);
+  const modelNameRef = useRef<HTMLSpanElement | null>(null);
+  const deepLabelRef = useRef<HTMLSpanElement | null>(null);
+  const deepLabelTier = useDeepLabelTier({
+    rowRef: composerRowRef,
+    toolsRef: composerToolsRef,
+    actionsRef: composerActionsRef,
+    modelNameRef,
+    deepLabelRef,
+  });
   // 听写中止桥：handleSubmit 等早期回调经它访问 hook 的 abort（hook 结果在
   // 组件后段才生成）——与主对话同款（input-box 的 voiceAbortRef）。
   const voiceAbortRef = useRef<(() => void) | null>(null);
@@ -832,21 +916,26 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
               }
             }}
           />
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <div className="flex min-w-0 items-center gap-2">
+          <div
+            className="text-muted-foreground flex items-center justify-between gap-1 px-2 pb-2"
+            data-testid="panel-composer-row"
+            ref={composerRowRef}
+          >
+            <div
+              className="flex min-w-0 items-center gap-1"
+              data-testid="panel-composer-tools"
+              ref={composerToolsRef}
+            >
               <Tooltip content={t.inputBox.addAttachments}>
-                <Button
+                <PromptInputButton
                   aria-label={t.inputBox.addAttachments}
-                  className="rounded-full"
+                  className="px-2!"
                   data-testid="panel-add-attachments-button"
                   disabled={!kb}
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
                   onClick={() => attachInputRef.current?.click()}
                 >
-                  <PaperclipIcon className="size-4" />
-                </Button>
+                  <PaperclipIcon className="size-3" />
+                </PromptInputButton>
               </Tooltip>
               <Tooltip
                 content={
@@ -857,7 +946,7 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
                     : t.inputBox.voiceInputUnsupported
                 }
               >
-                <Button
+                <PromptInputButton
                   aria-label={
                     voiceListening
                       ? t.inputBox.voiceInputStopLabel
@@ -865,22 +954,19 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
                   }
                   aria-pressed={voiceListening}
                   className={cn(
-                    "rounded-full",
+                    "px-2!",
                     voiceListening && "text-primary bg-primary/10 hover:bg-primary/15",
                   )}
                   data-testid="panel-voice-input-button"
                   disabled={!kb || !voiceInputSupported}
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
                   onClick={toggleVoiceInput}
                 >
                   {voiceListening ? (
-                    <SquareIcon className="size-4 fill-current" />
+                    <SquareIcon className="size-3 fill-current" />
                   ) : (
-                    <MicIcon className="size-4" />
+                    <MicIcon className="size-3" />
                   )}
-                </Button>
+                </PromptInputButton>
               </Tooltip>
               <Tooltip content={tc.deepResearchHint}>
                 <label className="text-muted-foreground flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
@@ -890,64 +976,70 @@ const handleSelectThread = useCallback((nextThreadId: string) => {
                     disabled={!kb}
                     onCheckedChange={setDeepResearch}
                   />
-                  <span className="whitespace-nowrap">{tc.deepResearch}</span>
+                  <span
+                    ref={deepLabelRef}
+                    className={cn("whitespace-nowrap", deepLabelTier === 1 && "hidden")}
+                    data-testid="panel-deep-research-label"
+                  >
+                    {tc.deepResearch}
+                  </span>
                 </label>
               </Tooltip>
-              <ModelSelector open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
-                <ModelSelectorTrigger asChild>
-                  <button
-                    aria-label={tc.selectModel}
-                    className="text-muted-foreground hover:text-foreground flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
-                    disabled={!kb || models.length === 0}
-                    type="button"
-                  >
-                    <span className="truncate">{activeModel?.display_name ?? activeModel?.name ?? tc.selectModel}</span>
-                    <ChevronDownIcon className="size-3 shrink-0" />
-                  </button>
-                </ModelSelectorTrigger>
-                <ModelSelectorContent title={tc.selectModel}>
-                  <ModelSelectorInput placeholder={tc.searchModels} />
-                  <ModelSelectorList>
-                    {/* Options only (spec 2026-10-08 models-list-grouping §2④). */}
-                    {chatPickerOptions(models).map((m) => (
-                      <ModelSelectorItem
-                        key={m.name}
-                        value={m.name}
-                        onSelect={() => handleModelSelect(m.name)}
-                      >
-                        <div className="flex min-w-0 flex-1 flex-col">
-                          <ModelSelectorName>{m.display_name ?? m.name}</ModelSelectorName>
-                          <span className="text-muted-foreground truncate text-[10px]">{m.model}</span>
-                        </div>
-                        {m.name === selectedModelName ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </ModelSelectorItem>
-                    ))}
-                  </ModelSelectorList>
-                </ModelSelectorContent>
-              </ModelSelector>
             </div>
-            <Tooltip content={tc.send}>
-              {/* The span keeps the tooltip reachable while the button is disabled */}
-              <span className="inline-flex">
-                <Button
-                  aria-label={tc.send}
-                  className="rounded-full"
-                  disabled={thread.isLoading ? !kb : !canSend}
-                  size="icon-sm"
-                  onClick={thread.isLoading ? thread.stop : handleSubmit}
-                >
-                  {thread.isLoading ? (
-                    <SquareIcon className="size-4" />
-                  ) : (
-                    <ArrowUpIcon className="size-4" />
-                  )}
-                </Button>
-              </span>
-            </Tooltip>
+            {/* 模型选择与发送同排右侧、触发钮 PromptInputButton 同口径（D8/D9，
+                与主对话逐项同值）；行级 text-muted-foreground 对齐主对话
+                InputGroupAddon 的继承色（D7）。 */}
+            <div
+              className="flex min-w-0 items-center gap-1"
+              data-testid="panel-composer-actions"
+              ref={composerActionsRef}
+            >
+              <ModelPicker open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
+                <ModelPickerTrigger asChild>
+                  <PromptInputButton
+                    aria-label={tc.selectModel}
+                    className="max-w-40 min-w-0 shrink sm:max-w-56"
+                    disabled={!kb || models.length === 0}
+                  >
+                    <div className="flex min-w-0 flex-col text-left">
+                      <span
+                        ref={modelNameRef}
+                        className="flex-1 truncate text-left text-xs font-normal"
+                        data-testid="panel-model-name"
+                      >
+                        {activeModel?.display_name ?? activeModel?.name ?? tc.selectModel}
+                      </span>
+                    </div>
+                  </PromptInputButton>
+                </ModelPickerTrigger>
+                {/* Options only (spec 2026-10-08 models-list-grouping §2④). */}
+                <ModelPickerContent
+                  open={modelDialogOpen}
+                  models={chatPickerOptions(models)}
+                  selectedModelName={selectedModelName ?? undefined}
+                  onModelSelect={handleModelSelect}
+                />
+              </ModelPicker>
+              <Tooltip content={tc.send}>
+                {/* The span keeps the tooltip reachable while the button is disabled */}
+                <span className="inline-flex">
+                  <Button
+                    aria-label={tc.send}
+                    className="rounded-full"
+                    disabled={thread.isLoading ? !kb : !canSend}
+                    size="icon-sm"
+                    variant="outline"
+                    onClick={thread.isLoading ? thread.stop : handleSubmit}
+                  >
+                    {thread.isLoading ? (
+                      <SquareIcon className="size-4" />
+                    ) : (
+                      <ArrowUpIcon className="size-4" />
+                    )}
+                  </Button>
+                </span>
+              </Tooltip>
+            </div>
           </div>
         </div>
       </div>
