@@ -118,10 +118,17 @@ class EvalRunDeleteRequest(BaseModel):
 
 
 class RecallTestRequest(BaseModel):
-    """P1 recall-test payload: one query fanned out to the three paths."""
+    """P1 recall-test payload: one query fanned out to the three paths.
+
+    ``path`` (spec 2026-10-11 D1 乙, optional, additive): select a single
+    retrieval path; the response keeps its three-segment shape and only the
+    requested segment is computed and filled. Omitted ⇒ current behaviour
+    (all three paths computed), so existing consumers are unaffected.
+    """
 
     query: str
     top_k: int = Field(default=5, ge=1, le=20)
+    path: Literal["vector", "graph", "wiki"] | None = None
 
     @field_validator("query")
     @classmethod
@@ -677,7 +684,7 @@ async def recall_test(request: Request, kb_id: str, body: RecallTestRequest):
     无速率豁免；单路失败降级为空 hits，不拖垮整响应。
     """
     service = await _require_kb_access(request, kb_id)
-    return await service.recall_test(kb_id=kb_id, user_id=_user_id(request), query=body.query, top_k=body.top_k)
+    return await service.recall_test(kb_id=kb_id, user_id=_user_id(request), query=body.query, top_k=body.top_k, path=body.path)
 
 
 class ChunkPositionsRequest(BaseModel):

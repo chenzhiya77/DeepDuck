@@ -1094,18 +1094,26 @@ class KnowledgeService:
         source = graph_source if graph_source is not None else ("rerank" if rag.graph_rerank else "cosine")
         return {"vector": rerank_label, "graph": rerank_label if source == "rerank" else "embedding cosine", "wiki": "embedding cosine"}
 
-    async def recall_test(self, *, kb_id: str, user_id: str, query: str, top_k: int) -> dict[str, Any]:
+    async def recall_test(self, *, kb_id: str, user_id: str, query: str, top_k: int, path: str | None = None) -> dict[str, Any]:
         """Fan one query out to the three retrieval paths (spec P1).
 
         Reuses the online tools' ``_*_impl`` verbatim — the only difference
         from the agent path is that no LLM answer synthesis happens and raw
         hits/scores/elapsed are returned. A single path's failure degrades to
         empty hits with a failure note instead of failing the whole response.
+
+        ``path`` (spec 2026-10-11 D1 乙, optional): select one retrieval path —
+        only that path is computed (compute/latency parity with the single-path
+        tools); the response keeps its three-segment shape, unselected segments
+        stay empty. Omitted ⇒ current behaviour (all three paths computed).
         """
         from deerflow.config.app_config import get_app_config
 
         rag = get_app_config().rag
         runtime = SimpleNamespace(context={"kb_id": kb_id, "user_id": user_id})
+
+        def _not_selected(note_path: str) -> str:
+            return f"未请求该路（path={note_path}）。"
 
         async def _timed(coro) -> tuple[Any, int]:
             start = time.monotonic()
@@ -1115,9 +1123,21 @@ class KnowledgeService:
                 logger.exception("recall-test path failed for kb %s", kb_id)
                 return exc, int((time.monotonic() - start) * 1000)
 
-        (vector_raw, vector_ms), (graph_raw, graph_ms), (wiki_raw, wiki_ms) = await asyncio.gather(
-            _timed(_hybrid_search_impl(query, runtime, store=self.store, vector_store=self.vector_store, top_k=top_k)),
-            _timed(
+        # Single-path selection (D1 乙): the unselected paths are not computed —
+        # their segments/data/message stay empty. Raw ``None`` normalizes to the
+        # "not requested" note at each existing isinstance-branch; elapsed stays
+        # an int (0) so the schema keeps one type across both shapes.
+        selected = path if path in ("vector", "graph", "wiki") else None
+
+        async def _vector_call() -> tuple[Any, int]:
+            if selected not in (None, "vector"):
+                return None, 0
+            return await _timed(_hybrid_search_impl(query, runtime, store=self.store, vector_store=self.vector_store, top_k=top_k))
+
+        async def _graph_call() -> tuple[Any, int]:
+            if selected not in (None, "graph"):
+                return None, 0
+            return await _timed(
                 _graph_search_impl(
                     query,
                     runtime,
@@ -1138,8 +1158,17 @@ class KnowledgeService:
                     max_expanded_nodes=rag.graph_max_expanded_nodes,
                     hub_degree_threshold=rag.graph_hub_degree_threshold,
                 )
-            ),
-            _timed(_wiki_search_impl(query, runtime, store=self.store, wiki_store=self.wiki_store, vector_store=self.vector_store, top_k=top_k)),
+            )
+
+        async def _wiki_call() -> tuple[Any, int]:
+            if selected not in (None, "wiki"):
+                return None, 0
+            return await _timed(_wiki_search_impl(query, runtime, store=self.store, wiki_store=self.wiki_store, vector_store=self.vector_store, top_k=top_k))
+
+        (vector_raw, vector_ms), (graph_raw, graph_ms), (wiki_raw, wiki_ms) = await asyncio.gather(
+            _vector_call(),
+            _graph_call(),
+            _wiki_call(),
         )
 
         def _failure_note(exc: BaseException) -> str:
@@ -1155,6 +1184,8 @@ class KnowledgeService:
 
         if isinstance(vector_raw, BaseException):
             vector_path: dict[str, Any] = {"hits": [], "message": _failure_note(vector_raw)}
+        elif vector_raw is None:  # D1 乙：未选路不计算，段落留空
+            vector_path = {"hits": [], "message": _not_selected("vector")}
         else:
             vector_path = {
                 "hits": [
@@ -1175,6 +1206,8 @@ class KnowledgeService:
 
         if isinstance(graph_raw, BaseException):
             graph_path: dict[str, Any] = {"entities": [], "relations": [], "evidence": [], "message": _failure_note(graph_raw)}
+        elif graph_raw is None:  # D1 乙：未选路不计算，段落留空
+            graph_path = {"entities": [], "relations": [], "evidence": [], "message": _not_selected("graph")}
         else:
             graph_path = {
                 "entities": graph_raw.get("entities", []),
@@ -1185,6 +1218,8 @@ class KnowledgeService:
 
         if isinstance(wiki_raw, BaseException):
             wiki_path: dict[str, Any] = {"hits": [], "message": _failure_note(wiki_raw)}
+        elif wiki_raw is None:  # D1 乙：未选路不计算，段落留空
+            wiki_path = {"hits": [], "message": _not_selected("wiki")}
         else:
             entries = wiki_raw.get("entries", [])
 

@@ -579,3 +579,77 @@ async def test_an_unstamped_library_claims_nothing(service, monkeypatch, caplog)
     assert response.status_code == 200
     assert "embedding_mismatch" not in body
     assert not [record for record in caplog.records if record.levelno >= logging.WARNING], caplog.text
+
+
+async def test_recall_test_optional_path_computes_only_the_requested_segment(service, monkeypatch):
+    """单路化（spec 2026-10-11 D1 乙，面板多模态线复用）：`path` 选中路只跑
+    该路 impl；响应**保持三段形**、未选路段落留空；缺省不传＝三路全算全填
+    （旧消费者零感知）；非法值 422（Literal 拒收）。"""
+    vector, graph, wiki = _mock_impls(monkeypatch)
+    _pin_rag(monkeypatch)
+    client = _client(service)
+    kb = _create_kb(client)
+
+    def _post(path: str | None):
+        payload = {"query": "Gateway 职责", "top_k": 3}
+        if path is not None:
+            payload["path"] = path
+        return client.post(f"/api/knowledge-bases/{kb['id']}/recall-test", json=payload)
+
+    # ① 选中 vector：只跑 vector，其余两路零调用；三段形保留、未选段落空。
+    vector.reset_mock()
+    graph.reset_mock()
+    wiki.reset_mock()
+    response = _post("vector")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [hit["chunk_id"] for hit in body["paths"]["vector"]["hits"]] == ["c1", "c2"]
+    assert vector.call_count == 1
+    assert graph.call_count == 0, "未选中的 graph 路不得被计算"
+    assert wiki.call_count == 0, "未选中的 wiki 路不得被计算"
+    assert body["paths"]["graph"]["entities"] == []
+    assert body["paths"]["graph"]["relations"] == []
+    assert body["paths"]["graph"]["evidence"] == []
+    assert body["paths"]["wiki"]["hits"] == []
+
+    # ② 选中 graph：只跑 graph。
+    vector.reset_mock()
+    graph.reset_mock()
+    wiki.reset_mock()
+    response = _post("graph")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["paths"]["graph"]["entities"][0]["name"] == "Gateway"
+    assert graph.call_count == 1
+    assert vector.call_count == 0
+    assert wiki.call_count == 0
+    assert body["paths"]["vector"]["hits"] == []
+
+    # ③ 选中 wiki：只跑 wiki。
+    vector.reset_mock()
+    graph.reset_mock()
+    wiki.reset_mock()
+    response = _post("wiki")
+    assert response.status_code == 200
+    body = response.json()
+    assert [hit["entry_id"] for hit in body["paths"]["wiki"]["hits"]] == ["e1", "card-1"]
+    assert wiki.call_count == 1
+    assert vector.call_count == 0
+    assert graph.call_count == 0
+
+    # ④ 缺省不传＝现状：三路全算全填（旧消费者零感知）。
+    vector.reset_mock()
+    graph.reset_mock()
+    wiki.reset_mock()
+    response = _post(None)
+    assert response.status_code == 200
+    body = response.json()
+    assert vector.call_count == 1
+    assert graph.call_count == 1
+    assert wiki.call_count == 1
+    assert body["paths"]["vector"]["hits"]
+    assert body["paths"]["graph"]["evidence"]
+    assert body["paths"]["wiki"]["hits"]
+
+    # ⑤ 非法值 422（Literal 拒收，而非静默忽略）。
+    assert _post("bogus").status_code == 422
