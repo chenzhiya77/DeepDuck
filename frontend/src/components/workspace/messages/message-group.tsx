@@ -15,7 +15,7 @@ import {
   SquareTerminalIcon,
   WrenchIcon,
 } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type ImgHTMLAttributes } from "react";
 
 import {
   ChainOfThought,
@@ -48,6 +48,11 @@ import { FlipDisplay } from "../flip-display";
 import { Tooltip } from "../tooltip";
 
 import { MarkdownContent } from "./markdown-content";
+import { createMarkdownLinkComponent } from "./markdown-link";
+import { MessageImage } from "./message-image";
+
+/** 默认空 artifact 路径集（稳定引用，防 memo 比较器被新数组击穿）。 */
+const NO_ARTIFACT_PATHS: readonly string[] = [];
 
 interface MessageGroupProps {
   className?: string;
@@ -57,6 +62,7 @@ interface MessageGroupProps {
   tokenDebugSteps?: TokenDebugStep[];
   showTokenDebugSummaries?: boolean;
   threadId?: string;
+  artifactPaths?: readonly string[];
 }
 
 function MessageGroupComponent({
@@ -67,6 +73,7 @@ function MessageGroupComponent({
   tokenDebugSteps = [],
   showTokenDebugSummaries = false,
   threadId,
+  artifactPaths = NO_ARTIFACT_PATHS,
 }: MessageGroupProps) {
   const { t } = useI18n();
   const [showAbove, setShowAbove] = useState(
@@ -76,6 +83,19 @@ function MessageGroupComponent({
     env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
   );
   const steps = useMemo(() => convertToSteps(messages), [messages]);
+  // 步骤区与最终气泡是同一份内容——同带 img/a 的 artifacts 解析（2026-10-11 裁：
+  // 模型把图写在中间步骤时，不得再落回原始 /mnt src → "Image not available"）。
+  const components = useMemo(() => {
+    if (!threadId) {
+      return undefined;
+    }
+    return {
+      img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
+        <MessageImage {...props} threadId={threadId} artifactPaths={artifactPaths} />
+      ),
+      a: createMarkdownLinkComponent(threadId),
+    };
+  }, [artifactPaths, threadId]);
   const stepIndexByStep = useMemo(
     () => new Map(steps.map((step, index) => [step, index] as const)),
     [steps],
@@ -275,7 +295,7 @@ function MessageGroupComponent({
     <ChainOfThoughtStep
       key={step.id}
       icon={MessageSquareTextIcon}
-      label={<MarkdownContent content={step.content} isLoading={isLoading} />}
+      label={<MarkdownContent components={components} content={step.content} isLoading={isLoading} />}
     ></ChainOfThoughtStep>
   );
 
@@ -294,6 +314,7 @@ function MessageGroupComponent({
           key={step.id}
           label={
             <MarkdownContent
+              components={components}
               content={step.reasoning ?? ""}
               isLoading={isLoading}
             />
@@ -429,6 +450,7 @@ function MessageGroupComponent({
                 key={lastReasoningStep.id}
                 label={
                   <MarkdownContent
+                    components={components}
                     content={lastReasoningStep.reasoning ?? ""}
                     isLoading={isLoading}
                   />
@@ -468,6 +490,7 @@ function areMessageGroupPropsEqual(
     Boolean(previous.showTokenDebugSummaries) ===
       Boolean(next.showTokenDebugSummaries) &&
     previous.threadId === next.threadId &&
+    previous.artifactPaths === next.artifactPaths &&
     sameReferences(previous.messages, next.messages) &&
     sameReferences(previous.tokenDebugSteps, next.tokenDebugSteps)
   );

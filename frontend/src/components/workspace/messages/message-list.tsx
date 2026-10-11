@@ -1320,6 +1320,8 @@ export function MessageList({
                           messages={[message]}
                           isLoading={groupIsLoading}
                           deferBrowserPreviews={thread.isLoading}
+                          threadId={threadId}
+                          artifactPaths={artifactPaths}
                           tokenDebugSteps={getTokenDebugStepsForMessages([
                             message,
                           ])}
@@ -1368,6 +1370,7 @@ export function MessageList({
                       isLoading={groupIsLoading}
                       deferBrowserPreviews={thread.isLoading}
                       threadId={threadId}
+                      artifactPaths={artifactPaths}
                       tokenDebugSteps={getTokenDebugStepsForMessages(
                         group.messages,
                       )}

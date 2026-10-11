@@ -72,6 +72,33 @@ describe("MessageGroup", () => {
     expect(html).toContain("DeerFlow issue 4027");
   });
 
+  it("resolves artifact images inside processing steps (2026-10-11)", () => {
+    const html = renderGroup(
+      [
+        {
+          id: "ai-1",
+          type: "ai",
+          content: "看图：![红圆](/mnt/user-data/uploads/circle.png)",
+          tool_calls: [
+            {
+              id: "call-1",
+              name: "view_image",
+              args: { image_path: "/mnt/user-data/uploads/circle.png" },
+            },
+          ],
+        } as Message,
+      ],
+      { threadId: "thread-1" },
+    );
+
+    // 步骤区与最终气泡同一份内容——图必须同样走 artifacts 解析，
+    // 否则换一次生成落点就会显示 "Image not available"（2026-10-11 裁）。
+    expect(html).toContain(
+      "/api/threads/thread-1/artifacts/mnt/user-data/uploads/circle.png",
+    );
+    expect(html).not.toContain('src="/mnt/user-data/uploads/circle.png"');
+  });
+
   it("keeps assistant text visible while older tool steps stay collapsed", () => {
     const html = renderGroup([
       {
