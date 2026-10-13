@@ -1233,15 +1233,20 @@ class KnowledgeService:
                 "message": _user_facing(vector_raw.get("message", "")),
             }
 
+        # trace 透传（2026-10-13，T3 面板「检索路径高亮覆盖」数据面，只加不改）：
+        # impl 已立「trace 恒在」的前端解析契约（graph_search_tool._empty 注释），
+        # 本适配层此前仅丢掉了它；空值兜底保持段落形状统一。
+        _empty_trace: dict[str, Any] = {"seed_entities": [], "expanded_nodes": [], "evidence_entities": []}
         if isinstance(graph_raw, BaseException):
-            graph_path: dict[str, Any] = {"entities": [], "relations": [], "evidence": [], "message": _failure_note(graph_raw)}
+            graph_path: dict[str, Any] = {"entities": [], "relations": [], "evidence": [], "trace": _empty_trace, "message": _failure_note(graph_raw)}
         elif graph_raw is None:  # D1 乙：未选路不计算，段落留空
-            graph_path = {"entities": [], "relations": [], "evidence": [], "message": _not_selected("graph")}
+            graph_path = {"entities": [], "relations": [], "evidence": [], "trace": _empty_trace, "message": _not_selected("graph")}
         else:
             graph_path = {
                 "entities": graph_raw.get("entities", []),
                 "relations": graph_raw.get("relations", []),
                 "evidence": graph_raw.get("evidence", []),
+                "trace": graph_raw.get("trace") or _empty_trace,
                 "message": _user_facing(graph_raw.get("message", "")),
             }
 
