@@ -6,6 +6,9 @@
 >
 > 本仓库是一个**通用 agent**——底座是来自 DeerFlow 的 harness agent 框架（lead agent 与子代理编排、中间件链、沙箱执行、工具 / MCP / 技能、记忆与持久化、网关运行时），其上叠加 Agentic RAG 与本项目的其它自有能力（如「Agent 观测宠物」，见下文）。
 
+https://github.com/user-attachments/assets/a1312480-8084-4f66-9bf2-6331e1d5e0fb
+
+
 ## 📋 目录
 
 - [两个组成部分](#两个组成部分)
